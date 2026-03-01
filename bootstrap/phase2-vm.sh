@@ -1,0 +1,331 @@
+#!/usr/bin/env bash
+# ============================================================
+# ARCHITECT PRIME – PHASE 2 (ONE-SHOT)
+# GitHub CoreKit + OpenClaw (Vertex ADC)
+#
+# NORMALIZED:
+#   Host state lives at: /opt/openclaw/.openclaw   (user-independent)
+#
+# DEBUGGABLE:
+#   - Logs to /tmp/architect-prime-phase2-YYYYmmdd-HHMMSS.log
+#   - Fails fast with line + command on error
+#
+# HARDENED (doctor-clean):
+#   - Inside container: /home/node/.openclaw = 700
+#   - /home/node/.openclaw/openclaw.json = 600 (if present)
+#   - bin/oc + bootstrap_smoke remain executable
+#
+# NOTES:
+#   - This script intentionally uses sudo for docker + /opt reads/writes.
+#   - After hardening, reading /opt/openclaw/.openclaw from SSH user may require sudo.
+# ============================================================
+set -euo pipefail
+
+LOG_FILE="${LOG_FILE:-/tmp/architect-prime-phase2-$(date +%Y%m%d-%H%M%S).log}"
+exec > >(tee -a "$LOG_FILE") 2>&1
+trap 'echo; echo "[ERROR] Line $LINENO failed: $BASH_COMMAND"; echo "Log: $LOG_FILE"; exit 1' ERR
+
+info(){ echo -e "\n==> $*\n"; }
+warn(){ echo -e "\n[WARN] $*\n"; }
+die(){ echo -e "\n[ERROR] $*\nLog: $LOG_FILE\n"; exit 1; }
+
+# --- CONFIG START ---
+MY_TOKEN="${MY_TOKEN:-$(openssl rand -hex 16)}"
+EXPECTED_RUNTIME_SA_EMAIL="${EXPECTED_RUNTIME_SA_EMAIL:-architect-prime@architect-prime-beta.iam.gserviceaccount.com}"
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-architect-prime-beta}"
+
+GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
+GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
+CORE_REF="${CORE_REF:-main}"
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_HOST_DIR="${OC_HOST_DIR:-${OC_HOST_ROOT}/.openclaw}"
+
+# OpenClaw pin rule (kept from earlier)
+PIN_BEFORE="${PIN_BEFORE:-2026-02-17 00:00:00}"
+# --- CONFIG END ---
+
+CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
+
+info "Logging to: $LOG_FILE"
+info "CoreKit: ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
+echo "CORE_BASE   : ${CORE_BASE}"
+echo "OC_HOST_DIR : ${OC_HOST_DIR}"
+echo "PROJECT     : ${GCP_PROJECT_ID}"
+echo "TOKEN       : ${MY_TOKEN}"
+
+# 0) Verify attached VM service account (ADC source)
+info "Verifying attached VM service account..."
+META="http://metadata.google.internal/computeMetadata/v1"
+ATTACHED_SA_EMAIL="$(curl -fsS -H 'Metadata-Flavor: Google' "${META}/instance/service-accounts/default/email")"
+echo "Attached VM service account: ${ATTACHED_SA_EMAIL}"
+[[ "${ATTACHED_SA_EMAIL}" == "${EXPECTED_RUNTIME_SA_EMAIL}" ]] || die "VM SA mismatch. Expected=${EXPECTED_RUNTIME_SA_EMAIL} Actual=${ATTACHED_SA_EMAIL}"
+
+# 1) Prereqs
+info "Installing prereqs..."
+sudo apt-get update -y
+sudo apt-get install -y curl git python3 ca-certificates gnupg
+
+# 2) Docker (idempotent) + validate daemon
+info "Installing Docker (if missing)..."
+if ! command -v docker >/dev/null 2>&1; then
+  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  sudo sh /tmp/get-docker.sh
+fi
+sudo groupadd -f docker || true
+sudo usermod -aG docker "$USER" || true
+
+DOCKER_GID="$(getent group docker | cut -d: -f3)"
+[[ -n "${DOCKER_GID}" ]] || die "Could not determine docker group GID"
+echo "Docker group GID: ${DOCKER_GID}"
+
+info "Validating Docker daemon via sudo..."
+sudo docker version
+
+# 3) Prepare normalized host dirs
+info "Preparing normalized host directories..."
+sudo mkdir -p "${OC_HOST_DIR}"
+sudo chmod 755 "${OC_HOST_ROOT}" || true
+
+# Remove wrong-path leftovers from earlier bug (/opt/openclaw/openclaw/*)
+if sudo test -d "${OC_HOST_ROOT}/openclaw"; then
+  info "Removing stale wrong-path install: ${OC_HOST_ROOT}/openclaw"
+  sudo rm -rf "${OC_HOST_ROOT}/openclaw"
+fi
+
+# 4) Install CoreKit into /opt/openclaw/.openclaw (manifest-driven; sudo-safe)
+info "Installing CoreKit via manifest.txt..."
+tmpdir="$(mktemp -d)"
+manifest="${tmpdir}/manifest.txt"
+curl -fsSL "${CORE_BASE}/manifest.txt" -o "${manifest}"
+
+sudo python3 - "${CORE_BASE}" "${OC_HOST_ROOT}" "${manifest}" <<'PY'
+import sys, re, pathlib, subprocess
+
+core_base = sys.argv[1].rstrip("/")
+root = pathlib.Path(sys.argv[2])            # /opt/openclaw
+manifest_path = pathlib.Path(sys.argv[3])
+
+text = manifest_path.read_text(encoding="utf-8", errors="replace")
+
+lines = []
+for line in text.splitlines():
+    line = line.strip()
+    if not line or line.startswith("#"):
+        continue
+    line = re.sub(r"\s+#.*$", "", line).strip()
+    if line:
+        lines.append(line)
+
+tokens = []
+for ln in lines:
+    tokens.extend(ln.split())
+
+if len(tokens) % 2 != 0:
+    raise SystemExit(f"Manifest token count is odd ({len(tokens)}). Must be pairs: <rel> <dest>.")
+
+pairs = list(zip(tokens[0::2], tokens[1::2]))
+
+def curl_to(url: str, out: pathlib.Path):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.check_call(["curl", "-fsSL", url, "-o", str(out)])
+
+for rel, dest in pairs:
+    dest = dest.strip()
+
+    # Safety: never allow absolute output paths
+    if dest.startswith("/"):
+        raise SystemExit(f"Refusing absolute destination path: {dest}")
+
+    # Normalize ONLY safe prefixes (do NOT strip leading '.' from '.openclaw')
+    if dest.startswith("~/"):
+        dest = dest[2:]
+    if dest.startswith("./"):
+        dest = dest[2:]
+
+    out_path = root / dest     # dest like ".openclaw/..."
+    src = f"{core_base}/{rel}"
+    curl_to(src, out_path)
+
+print(f"Installed {len(pairs)} files into {root}.")
+PY
+
+# Normalize ownership/perms for bind mount + stat safety (temp; container will harden later)
+info "Normalizing CoreKit tree ownership/perms for container bind mount..."
+sudo chown -R 1000:1000 "${OC_HOST_DIR}" || true
+sudo find "${OC_HOST_DIR}" -type d -exec chmod 755 {} \; || true
+sudo find "${OC_HOST_DIR}" -type f -exec chmod 644 {} \; || true
+sudo chmod 755 "${OC_HOST_DIR}/bin/oc" 2>/dev/null || true
+sudo chmod 755 "${OC_HOST_DIR}/bin/bootstrap_smoke.sh" 2>/dev/null || true
+
+# Stamp provenance (fixed location)
+info "Stamping CoreKit SOURCE.json..."
+sudo mkdir -p "${OC_HOST_DIR}/corekit"
+sudo tee "${OC_HOST_DIR}/corekit/SOURCE.json" >/dev/null <<EOF
+{
+  "owner": "${GH_OWNER}",
+  "repo": "${GH_REPO}",
+  "ref": "${CORE_REF}",
+  "base": "${CORE_BASE}",
+  "installedAt": "$(date -Is)"
+}
+EOF
+sudo chown 1000:1000 "${OC_HOST_DIR}/corekit/SOURCE.json" || true
+sudo chmod 644 "${OC_HOST_DIR}/corekit/SOURCE.json" || true
+
+# Verify expected files exist (sudo avoids permission false negatives)
+info "Verifying CoreKit install..."
+sudo test -f "${OC_HOST_DIR}/agents/main/agent/auth-profiles.json" || die "Missing auth-profiles.json after CoreKit install"
+sudo test -f "${OC_HOST_DIR}/workspace/SOUL.md" || die "Missing SOUL.md after CoreKit install"
+sudo test -x "${OC_HOST_DIR}/bin/oc" || die "oc wrapper not executable after CoreKit install"
+info "CoreKit install OK."
+
+# 5) Build & run OpenClaw container (pinned stable commit)
+info "Cloning/updating OpenClaw repo..."
+cd "${HOME}"
+if [[ ! -d openclaw/.git ]]; then
+  git clone https://github.com/openclaw/openclaw.git
+fi
+
+cd openclaw
+git fetch --all --prune
+
+STABLE_COMMIT="$(git rev-list -n 1 --before="${PIN_BEFORE}" origin/main)"
+[[ -n "${STABLE_COMMIT}" ]] || die "Failed to resolve STABLE_COMMIT"
+git checkout "${STABLE_COMMIT}"
+info "Using OpenClaw commit: ${STABLE_COMMIT}"
+
+cat > .env <<EOF
+GATEWAY_BIND=loopback
+GATEWAY_PORT=18789
+OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN}
+OPENCLAW_CONFIG_DIR=/home/node/.openclaw
+OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
+OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json
+
+GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
+GCLOUD_PROJECT=${GCP_PROJECT_ID}
+CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
+
+GOOGLE_GENAI_USE_VERTEXAI=True
+GOOGLE_CLOUD_LOCATION=global
+EOF
+
+info "Building Docker image openclaw:local ..."
+sudo docker build -t openclaw:local .
+
+info "Removing old container (if any)..."
+sudo docker rm -f openclaw-gateway >/dev/null 2>&1 || true
+
+info "Starting OpenClaw container..."
+sudo docker run -d \
+  --name openclaw-gateway \
+  --network host \
+  --restart always \
+  --env-file .env \
+  -v "${OC_HOST_DIR}:/home/node/.openclaw" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "${DOCKER_GID}" \
+  openclaw:local
+
+info "Waiting 45s for first boot..."
+sleep 45
+
+# 6) Harden inside container (doctor-clean; preserve executables)
+info "Hardening /home/node/.openclaw inside container (doctor-clean)..."
+sudo docker exec -u 0 openclaw-gateway bash -lc '
+set -e
+mkdir -p /home/node/.openclaw/credentials
+
+chmod 700 /home/node/.openclaw
+chmod 700 /home/node/.openclaw/credentials
+chmod 700 /home/node/.openclaw/bin 2>/dev/null || true
+
+chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
+chmod 700 /home/node/.openclaw/bin/bootstrap_smoke.sh 2>/dev/null || true
+
+chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
+chmod 600 /home/node/.openclaw/corekit/SOURCE.json 2>/dev/null || true
+
+chown -R node:node /home/node/.openclaw
+'
+
+# 7) Render config template + apply via RPC (baseHash-safe)
+# NOTE: After hardening, OC_HOST_DIR becomes 700-owned by uid 1000, so render with sudo.
+info "Rendering /tmp/openclaw-bootstrap.json5 (sudo due to hardened perms)..."
+sudo python3 - <<PY
+import pathlib
+oc = pathlib.Path("${OC_HOST_DIR}")
+tmpl_path = oc / "corekit" / "openclaw-bootstrap.json5.tmpl"
+out_path = pathlib.Path("/tmp/openclaw-bootstrap.json5")
+
+tmpl = tmpl_path.read_text(encoding="utf-8")
+tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
+tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
+out_path.write_text(tmpl, encoding="utf-8")
+print("Wrote", out_path)
+PY
+
+info "Reading baseHash from gateway config.get..."
+CONFIG_GET_RAW="$(sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' )"
+
+BASE_HASH="$(python3 - <<'PY'
+import json, sys, re
+raw = sys.stdin.read()
+m = re.search(r"\{.*\}", raw, re.S)
+raw_json = m.group(0) if m else raw
+j = json.loads(raw_json)
+print(j.get("hash") or (j.get("payload") or {}).get("hash") or ((j.get("result") or {}).get("payload") or {}).get("hash") or "")
+PY
+<<<"$CONFIG_GET_RAW")"
+
+[[ -n "${BASE_HASH}" ]] || die "Could not read baseHash from config.get. Raw: ${CONFIG_GET_RAW}"
+echo "baseHash: ${BASE_HASH}"
+
+PARAMS="$(python3 - <<PY
+import json
+raw=open("/tmp/openclaw-bootstrap.json5","r",encoding="utf-8").read()
+print(json.dumps({"raw": raw, "baseHash": "${BASE_HASH}", "note": "bootstrap"}))
+PY
+)"
+
+info "Applying config via RPC (config.apply)..."
+sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.apply --json --params "${PARAMS}"
+
+info "Post-apply harden..."
+sudo docker exec -u 0 openclaw-gateway bash -lc '
+set -e
+chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
+chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
+chmod 700 /home/node/.openclaw/bin/bootstrap_smoke.sh 2>/dev/null || true
+chown -R node:node /home/node/.openclaw
+' || true
+
+# 8) Inject host Docker CLI into container (proven pattern)
+info "Injecting host Docker CLI into container..."
+sudo docker cp "$(which docker)" openclaw-gateway:/usr/local/bin/docker || true
+sudo docker exec -u 0 openclaw-gateway chmod +x /usr/local/bin/docker || true
+sudo docker exec -u 0 openclaw-gateway groupadd -g "${DOCKER_GID}" -o -r docker 2>/dev/null || true
+sudo docker exec -u 0 openclaw-gateway chown -R node:node /usr/local/bin/docker || true
+sudo docker exec -u 0 openclaw-gateway chown -R node:node /home/node/.openclaw || true
+
+# 9) Doctor + smoke
+info "Running doctor..."
+sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --fix || true'
+sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --non-interactive'
+
+info "Running bootstrap_smoke..."
+sudo docker exec openclaw-gateway bash -lc "/home/node/.openclaw/bin/bootstrap_smoke.sh" || true
+
+echo
+echo "✅ PHASE 2 COMPLETE (ONE-SHOT)"
+echo "---------------------------------------------------"
+echo "LOG FILE: ${LOG_FILE}"
+echo "YOUR ACCESS TOKEN: ${MY_TOKEN}"
+echo "CoreKit: ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
+echo "CoreKit host dir: ${OC_HOST_DIR}"
+echo "Attached VM SA verified: ${ATTACHED_SA_EMAIL}"
+echo
+echo "Next steps (run on your LOCAL machine):"
+echo "gcloud compute ssh architect-prime --zone us-central1-a --tunnel-through-iap -- -L 18889:127.0.0.1:18789"
+echo "Then open: http://127.0.0.1:18889/?token=${MY_TOKEN}"
