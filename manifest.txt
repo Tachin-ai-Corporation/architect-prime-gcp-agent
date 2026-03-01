@@ -1,5 +1,6 @@
 # manifest.txt
-# Format: <repo_relative_path> <dest_rel_to_HOME>
+# Format:
+#   <repo_relative_path> <dest_rel_to_HOME>
 # Lines beginning with '#' are comments.
 
 bundle/corekit/README.md .openclaw/corekit/README.md
@@ -7,7 +8,6 @@ bundle/corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-b
 bundle/corekit/exec-approvals.json .openclaw/exec-approvals.json
 bundle/corekit/bin/oc .openclaw/bin/oc
 bundle/corekit/bin/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh
-
 bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
 bundle/openclaw/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json
 
