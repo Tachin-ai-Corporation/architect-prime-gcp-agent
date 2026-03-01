@@ -157,30 +157,18 @@ echo "VM attached SA : $ATTACHED_SA"
 
 echo
 echo "============================================================"
-echo "VM ready. SSH in and run Phase 2."
+echo "VM ready."
+echo "SSH in and run Phase 2:"
 echo "gcloud compute ssh $VM --zone $ZONE"
 echo "Log file: $LOG_FILE"
 echo "============================================================"
 echo
 
-gcloud compute ssh "$VM" --zone "$ZONE"
-
-# Optional behavior:
-#   AUTO_SSH=1 (default) drops you into the VM after creation.
-#   AUTO_SSH=0 prints the SSH command and exits.
+# Safe default when invoked via: curl ... | bash
 AUTO_SSH="${AUTO_SSH:-1}"
-if [[ "${AUTO_SSH}" == "1" ]]; then
+if [[ ! -t 0 ]]; then AUTO_SSH=0; fi
 
-#   AUTO_SSH=0 prints the SSH command and exits.
-AUTO_SSH="${AUTO_SSH:-1}"
 if [[ "${AUTO_SSH}" == "1" ]]; then
-  gcloud compute ssh "$VM" --zone "$ZONE"
-else
-  echo
-  echo "============================================================"
-  echo "VM ready. SSH in and run Phase 2:"
-  echo "gcloud compute ssh $VM --zone $ZONE"
-  echo "Log file: $LOG_FILE"
-  echo "============================================================"
-  echo
+  # avoid consuming piped stdin; force interactive tty
+  gcloud compute ssh "$VM" --zone "$ZONE" </dev/tty
 fi
