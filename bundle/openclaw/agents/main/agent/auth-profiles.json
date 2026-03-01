@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "profiles": {
+    "google-vertex:default": {
+      "type": "api_key",
+      "provider": "google-vertex",
+      "key": "adc"
+    }
+  }
+}

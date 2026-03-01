@@ -1,0 +1,42 @@
+# manifest.txt
+# Format: <repo_relative_path> <dest_rel_to_HOME>
+# Lines beginning with '#' are comments.
+
+bundle/corekit/README.md .openclaw/corekit/README.md
+bundle/corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
+bundle/corekit/exec-approvals.json .openclaw/exec-approvals.json
+bundle/corekit/bin/oc .openclaw/bin/oc
+bundle/corekit/bin/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh
+
+bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
+bundle/openclaw/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json
+
+# MAIN workspace
+bundle/workspaces/main/AGENTS.md .openclaw/workspace/AGENTS.md
+bundle/workspaces/main/BOOTSTRAP.md .openclaw/workspace/BOOTSTRAP.md
+bundle/workspaces/main/HEARTBEAT.md .openclaw/workspace/HEARTBEAT.md
+bundle/workspaces/main/IDENTITY.md .openclaw/workspace/IDENTITY.md
+bundle/workspaces/main/SOUL.md .openclaw/workspace/SOUL.md
+bundle/workspaces/main/TOOLS.md .openclaw/workspace/TOOLS.md
+bundle/workspaces/main/USER.md .openclaw/workspace/USER.md
+bundle/workspaces/main/MEMORY.md .openclaw/workspace/MEMORY.md
+
+# ENGINEER workspace
+bundle/workspaces/engineer/AGENTS.md .openclaw/workspace-engineer/AGENTS.md
+bundle/workspaces/engineer/BOOTSTRAP.md .openclaw/workspace-engineer/BOOTSTRAP.md
+bundle/workspaces/engineer/HEARTBEAT.md .openclaw/workspace-engineer/HEARTBEAT.md
+bundle/workspaces/engineer/IDENTITY.md .openclaw/workspace-engineer/IDENTITY.md
+bundle/workspaces/engineer/SOUL.md .openclaw/workspace-engineer/SOUL.md
+bundle/workspaces/engineer/TOOLS.md .openclaw/workspace-engineer/TOOLS.md
+bundle/workspaces/engineer/USER.md .openclaw/workspace-engineer/USER.md
+bundle/workspaces/engineer/MEMORY.md .openclaw/workspace-engineer/MEMORY.md
+
+# DEVOPS workspace
+bundle/workspaces/devops/AGENTS.md .openclaw/workspace-devops/AGENTS.md
+bundle/workspaces/devops/BOOTSTRAP.md .openclaw/workspace-devops/BOOTSTRAP.md
+bundle/workspaces/devops/HEARTBEAT.md .openclaw/workspace-devops/HEARTBEAT.md
+bundle/workspaces/devops/IDENTITY.md .openclaw/workspace-devops/IDENTITY.md
+bundle/workspaces/devops/SOUL.md .openclaw/workspace-devops/SOUL.md
+bundle/workspaces/devops/TOOLS.md .openclaw/workspace-devops/TOOLS.md
+bundle/workspaces/devops/USER.md .openclaw/workspace-devops/USER.md
+bundle/workspaces/devops/MEMORY.md .openclaw/workspace-devops/MEMORY.md
