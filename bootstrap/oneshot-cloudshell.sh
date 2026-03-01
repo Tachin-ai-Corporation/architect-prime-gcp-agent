@@ -46,7 +46,7 @@ gcloud config set compute/zone "${ZONE}"
 
 # Run Phase 2 non-interactively on the VM
 gcloud compute ssh "${VM}" --zone "${ZONE}" --command \
-  "set -euo pipefail; $REMOTE_ENV bash -lc 'curl -fsSL "${CORE_BASE}/bootstrap/phase2-vm.sh" | bash'"
+  "set -euo pipefail; ${REMOTE_ENV} bash -lc 'curl -fsSL \"${CORE_BASE}/bootstrap/phase2-vm.sh\" | bash'"
 
 echo
 echo "✅ One-shot bootstrap finished."
