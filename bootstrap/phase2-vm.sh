@@ -31,8 +31,8 @@ die(){ echo -e "\n[ERROR] $*\nLog: $LOG_FILE\n"; exit 1; }
 
 # --- CONFIG START ---
 MY_TOKEN="${MY_TOKEN:-$(openssl rand -hex 16)}"
-EXPECTED_RUNTIME_SA_EMAIL="${EXPECTED_RUNTIME_SA_EMAIL:-architect-prime@architect-prime-beta.iam.gserviceaccount.com}"
-GCP_PROJECT_ID="${GCP_PROJECT_ID:-architect-prime-beta}"
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
+EXPECTED_RUNTIME_SA_EMAIL="${EXPECTED_RUNTIME_SA_EMAIL:-architect-prime@${GCP_PROJECT_ID}.iam.gserviceaccount.com}"
 
 GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
 GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
