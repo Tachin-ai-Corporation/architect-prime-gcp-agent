@@ -20,6 +20,8 @@ bundle/workspaces/main/SOUL.md .openclaw/workspace/SOUL.md
 bundle/workspaces/main/TOOLS.md .openclaw/workspace/TOOLS.md
 bundle/workspaces/main/USER.md .openclaw/workspace/USER.md
 bundle/workspaces/main/MEMORY.md .openclaw/workspace/MEMORY.md
+bundle/workspaces/main/STATE.md .openclaw/workspace/STATE.md
+bundle/workspaces/main/checkpoint/progress.json .openclaw/workspace/checkpoint/progress.json
 
 # ENGINEER workspace
 bundle/workspaces/engineer/AGENTS.md .openclaw/workspace-engineer/AGENTS.md
