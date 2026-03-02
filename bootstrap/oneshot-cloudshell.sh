@@ -22,6 +22,7 @@ PRIME_SA_NAME="${PRIME_SA_NAME:-architect-prime}"
 GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
 GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
 CORE_REF="${CORE_REF:-main}"
+OPENCLAW_PIN_SHA="${OPENCLAW_PIN_SHA:-}"
 
 # ---- Derived ----
 PRIME_SA_EMAIL="${PRIME_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -35,11 +36,17 @@ echo "==> Runtime SA:  ${PRIME_SA_EMAIL}"
 echo
 
 echo "==> Phase 1 (Cloud Shell): create/refresh SA + VM"
-curl -fsSL "${CORE_BASE}/bootstrap/phase1-cloudshell.sh" |   PROJECT_ID="${PROJECT_ID}"   ZONE="${ZONE}"   VM="${VM}"   PRIME_SA_NAME="${PRIME_SA_NAME}"   AUTO_SSH=0   bash
+curl -fsSL "${CORE_BASE}/bootstrap/phase1-cloudshell.sh" | \
+  PROJECT_ID="${PROJECT_ID}" \
+  ZONE="${ZONE}" \
+  VM="${VM}" \
+  PRIME_SA_NAME="${PRIME_SA_NAME}" \
+  AUTO_SSH=0 \
+  bash
 
 echo
 echo "==> Phase 2 (on VM): install CoreKit + start OpenClaw + apply config"
-REMOTE_ENV="GH_OWNER='${GH_OWNER}' GH_REPO='${GH_REPO}' CORE_REF='${CORE_REF}' GCP_PROJECT_ID='${PROJECT_ID}' EXPECTED_RUNTIME_SA_EMAIL='${PRIME_SA_EMAIL}'"
+REMOTE_ENV="GH_OWNER='${GH_OWNER}' GH_REPO='${GH_REPO}' CORE_REF='${CORE_REF}' GCP_PROJECT_ID='${PROJECT_ID}' EXPECTED_RUNTIME_SA_EMAIL='${PRIME_SA_EMAIL}' OPENCLAW_PIN_SHA='${OPENCLAW_PIN_SHA}'"
 
 gcloud config set project "${PROJECT_ID}"
 gcloud config set compute/zone "${ZONE}"
