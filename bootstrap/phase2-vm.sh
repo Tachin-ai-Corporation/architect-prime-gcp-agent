@@ -267,17 +267,18 @@ print("Wrote", out_path)
 PY
 
 info "Reading baseHash from gateway config.get..."
-CONFIG_GET_RAW="$(sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' )"
+CONFIG_GET_RAW="$(sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>&1)"
 
-BASE_HASH="$(python3 - <<'PY'
-import json, sys, re
-raw = sys.stdin.read()
-m = re.search(r"\{.*\}", raw, re.S)
-raw_json = m.group(0) if m else raw
-j = json.loads(raw_json)
+BASE_HASH="$(python3 -c 'import json,sys,re
+raw=sys.stdin.read()
+m=re.search(r"\{.*\}", raw, re.S)
+raw_json=m.group(0) if m else raw
+try:
+  j=json.loads(raw_json)
+except Exception:
+  sys.exit(0)
 print(j.get("hash") or (j.get("payload") or {}).get("hash") or ((j.get("result") or {}).get("payload") or {}).get("hash") or "")
-PY
-<<<"$CONFIG_GET_RAW")"
+' <<<"$CONFIG_GET_RAW")"
 
 [[ -n "${BASE_HASH}" ]] || die "Could not read baseHash from config.get. Raw: ${CONFIG_GET_RAW}"
 echo "baseHash: ${BASE_HASH}"
