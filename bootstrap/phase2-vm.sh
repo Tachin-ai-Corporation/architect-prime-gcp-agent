@@ -41,8 +41,9 @@ CORE_REF="${CORE_REF:-main}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 OC_HOST_DIR="${OC_HOST_DIR:-${OC_HOST_ROOT}/.openclaw}"
 
-# OpenClaw pin rule (kept from earlier)
-PIN_BEFORE="${PIN_BEFORE:-2026-02-17 00:00:00}"
+# OpenClaw version pin — commit SHA (preferred) or empty for latest.
+# Obtain a SHA with: git ls-remote https://github.com/openclaw/openclaw.git HEAD
+OPENCLAW_PIN_SHA="${OPENCLAW_PIN_SHA:-}"
 # --- CONFIG END ---
 
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
@@ -190,7 +191,12 @@ fi
 cd openclaw
 git fetch --all --prune
 
-STABLE_COMMIT="$(git rev-list -n 1 --before="${PIN_BEFORE}" origin/main)"
+if [[ -n "${OPENCLAW_PIN_SHA}" ]]; then
+  STABLE_COMMIT="${OPENCLAW_PIN_SHA}"
+  git cat-file -t "${STABLE_COMMIT}" >/dev/null 2>&1 || die "OPENCLAW_PIN_SHA=${OPENCLAW_PIN_SHA} not found in repo"
+else
+  STABLE_COMMIT="$(git rev-parse origin/main)"
+fi
 [[ -n "${STABLE_COMMIT}" ]] || die "Failed to resolve STABLE_COMMIT"
 git checkout "${STABLE_COMMIT}"
 info "Using OpenClaw commit: ${STABLE_COMMIT}"
@@ -310,6 +316,50 @@ sudo docker exec -u 0 openclaw-gateway groupadd -g "${DOCKER_GID}" -o -r docker 
 sudo docker exec -u 0 openclaw-gateway chown -R node:node /usr/local/bin/docker || true
 sudo docker exec -u 0 openclaw-gateway chown -R node:node /home/node/.openclaw || true
 
+# 8.5) Seed workspace state files (repeatability)
+info "Seeding workspace state files..."
+BOOTSTRAP_TS="$(date -Is)"
+sudo docker exec openclaw-gateway bash -lc "
+set -e
+mkdir -p /home/node/.openclaw/workspace/checkpoint
+mkdir -p /home/node/.openclaw/shared
+
+# STATE.md — initial bootstrap state
+cat > /home/node/.openclaw/workspace/STATE.md <<'STATE'
+# STATE
+
+## Current phase
+Bootstrap complete. No plans executed yet.
+
+## Environment
+- **Bootstrap timestamp:** ${BOOTSTRAP_TS}
+- **CoreKit ref:** ${GH_OWNER}/${GH_REPO}@${CORE_REF}
+- **OpenClaw commit:** ${STABLE_COMMIT}
+- **GCP project:** ${GCP_PROJECT_ID}
+- **Runtime SA:** ${ATTACHED_SA_EMAIL}
+
+## Active plan
+None.
+STATE
+
+# checkpoint/progress.json — initial empty checkpoint
+cat > /home/node/.openclaw/workspace/checkpoint/progress.json <<'CKPT'
+{
+  \"version\": 1,
+  \"bootstrapTimestamp\": \"${BOOTSTRAP_TS}\",
+  \"coreRef\": \"${CORE_REF}\",
+  \"openclawCommit\": \"${STABLE_COMMIT}\",
+  \"gcpProject\": \"${GCP_PROJECT_ID}\",
+  \"runtimeSA\": \"${ATTACHED_SA_EMAIL}\",
+  \"checkpoints\": [],
+  \"activePlan\": null
+}
+CKPT
+
+chown -R node:node /home/node/.openclaw/workspace/checkpoint
+chown -R node:node /home/node/.openclaw/shared
+"
+
 # 9) Doctor + smoke
 info "Running doctor..."
 sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --fix || true'
@@ -324,6 +374,7 @@ echo "---------------------------------------------------"
 echo "LOG FILE: ${LOG_FILE}"
 echo "YOUR ACCESS TOKEN: ${MY_TOKEN}"
 echo "CoreKit: ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
+echo "OpenClaw commit: ${STABLE_COMMIT}"
 echo "CoreKit host dir: ${OC_HOST_DIR}"
 echo "Attached VM SA verified: ${ATTACHED_SA_EMAIL}"
 echo
