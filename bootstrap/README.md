@@ -23,7 +23,7 @@ In Google Cloud Console → **Cloud Shell**, with the target project selected:
 
 ```bash
 # Pin to a tag whenever possible:
-export CORE_REF="main"  # TODO: replace with a checkpoint tag
+export CORE_REF="v0.1.0"
 
 # Auto-detect project from Cloud Shell config
 export PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
