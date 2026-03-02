@@ -13,6 +13,10 @@ These scripts are intentionally **NOT** part of `manifest.txt` (CoreKit install 
 
 For reliability, pin `CORE_REF` to a repo checkpoint tag (not `main`).
 
+## Security / repo hygiene
+
+Do **not** commit any service account keys. These scripts assume Vertex ADC via the VM-attached runtime service account.
+
 ## One-shot (Cloud Shell)
 
 In Google Cloud Console → **Cloud Shell**, with the target project selected:
@@ -34,7 +38,3 @@ export VM="architect-prime"
 export PRIME_SA_NAME="architect-prime"
 
 curl -fsSL "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/${CORE_REF}/bootstrap/oneshot-cloudshell.sh" | bash
-
-## Security / repo hygiene
-
-Do **not** commit any service account keys. These scripts assume Vertex ADC via the VM-attached runtime service account.
