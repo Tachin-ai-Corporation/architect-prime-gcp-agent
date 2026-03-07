@@ -7,16 +7,41 @@
 #   2. Downloads each file to the correct destination
 #   3. Writes STATE.json with provenance + file checksums
 #
-# Usage:
-#   export CORE_REF="v0.2.0"
-#   export OC_HOST_ROOT="/opt/openclaw"          # default
-#   export GH_OWNER="Tachin-ai-Corporation"      # default
-#   export GH_REPO="architect-prime-gcp-agent"   # default
-#   curl -fsSL "https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}/install.sh" | bash
+# Modes:
+#   install (default) — Full install from scratch or overwrite
+#   --check           — Compare installed files against STATE.json, report drift
+#   --upgrade <ref>   — Re-install from a new ref (preserves runtime state)
 #
-# When invoked from phase2-vm.sh, these vars are already set.
+# Exit codes:
+#   0 — Success / up-to-date (check mode)
+#   1 — Error
+#   2 — Upgrade available (check mode, different ref on remote)
+#   3 — Drift detected (check mode, files modified locally)
+#
+# Usage:
+#   # Fresh install
+#   export CORE_REF="v0.3.0"
+#   curl -fsSL ".../install.sh" | bash
+#
+#   # Check for drift
+#   install.sh --check
+#
+#   # Upgrade to new ref
+#   install.sh --upgrade v0.3.0
 # ============================================================
 set -euo pipefail
+
+# ---- Parse args ----
+MODE="install"
+UPGRADE_REF=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check)   MODE="check"; shift ;;
+    --upgrade) MODE="upgrade"; UPGRADE_REF="${2:-}"; shift 2 || die "Missing ref for --upgrade" ;;
+    --help|-h) echo "Usage: install.sh [--check | --upgrade <ref>]"; exit 0 ;;
+    *) echo "[ERROR] Unknown argument: $1"; exit 1 ;;
+  esac
+done
 
 # ---- CONFIG (env-overridable) ----
 GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
@@ -25,7 +50,16 @@ CORE_REF="${CORE_REF:-main}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}"
 
+# For upgrade mode, override CORE_REF with the target
+if [[ "$MODE" == "upgrade" ]]; then
+  if [[ -z "$UPGRADE_REF" ]]; then
+    echo "[ERROR] --upgrade requires a ref argument"; exit 1
+  fi
+  CORE_REF="$UPGRADE_REF"
+fi
+
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
+STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
 
 # ---- Helpers ----
 info()  { echo -e "\n==> $*\n"; }
@@ -58,7 +92,92 @@ compute_sha256() {
   fi
 }
 
-info "Architect Prime Installer"
+# ---- Simple JSON value extractor (no jq dependency) ----
+json_value() {
+  local key="$1" file="$2"
+  # Extracts a simple string value for a given key from JSON
+  grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$file" 2>/dev/null | head -1 | sed 's/.*: *"\([^"]*\)"/\1/'
+}
+
+# ==============================================================
+# MODE: CHECK — Compare installed files against STATE.json
+# ==============================================================
+if [[ "$MODE" == "check" ]]; then
+  info "Architect Prime — Integrity Check"
+
+  if [[ ! -f "$STATE_FILE" ]]; then
+    echo "No STATE.json found at: $STATE_FILE"
+    echo "CoreKit does not appear to be installed."
+    exit 1
+  fi
+
+  # Read installed ref from STATE.json
+  installed_ref="$(json_value "coreRef" "$STATE_FILE")"
+  installed_at="$(json_value "installedAt" "$STATE_FILE")"
+  echo "Installed : ${installed_ref} (at ${installed_at})"
+  echo "State     : ${STATE_FILE}"
+
+  # Check for file drift
+  drift_count=0
+  missing_count=0
+  ok_count=0
+
+  # Extract file hashes from STATE.json
+  # Format: "path":"sha256:hash"
+  while IFS= read -r match; do
+    file_path="$(echo "$match" | sed 's/"\([^"]*\)":"sha256:.*/\1/')"
+    expected_hash="$(echo "$match" | sed 's/.*"sha256:\([^"]*\)"/\1/')"
+
+    full_path="${OC_HOST_ROOT}/${file_path}"
+
+    if run test -f "$full_path"; then
+      # Compute current hash
+      tmpfile="$(mktemp)"
+      run cat "$full_path" > "$tmpfile"
+      actual_hash="$(compute_sha256 "$tmpfile")"
+      rm -f "$tmpfile"
+
+      if [[ "$actual_hash" == "$expected_hash" ]]; then
+        ok_count=$((ok_count + 1))
+      else
+        echo "  [DRIFT] ${file_path}"
+        echo "          expected: ${expected_hash}"
+        echo "          actual:   ${actual_hash}"
+        drift_count=$((drift_count + 1))
+      fi
+    else
+      echo "  [MISSING] ${file_path}"
+      missing_count=$((missing_count + 1))
+    fi
+  done < <(grep -o '"\.openclaw/[^"]*":"sha256:[^"]*"' "$STATE_FILE")
+
+  echo ""
+  echo "Results: ${ok_count} ok, ${drift_count} drifted, ${missing_count} missing"
+
+  if [[ $drift_count -gt 0 || $missing_count -gt 0 ]]; then
+    echo "Status: DRIFT DETECTED"
+    exit 3
+  else
+    echo "Status: OK (all files match STATE.json)"
+    exit 0
+  fi
+fi
+
+# ==============================================================
+# MODE: INSTALL / UPGRADE
+# ==============================================================
+if [[ "$MODE" == "upgrade" ]]; then
+  info "Architect Prime — Upgrade"
+  if [[ -f "$STATE_FILE" ]]; then
+    old_ref="$(json_value "coreRef" "$STATE_FILE")"
+    echo "Upgrading : ${old_ref} → ${CORE_REF}"
+  else
+    echo "No previous install found, performing fresh install."
+  fi
+else
+  info "Architect Prime Installer"
+fi
+
 echo "CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Target  : ${OC_HOST_ROOT}"
 
@@ -129,6 +248,7 @@ run find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null |
 run find "${OC_HOST_ROOT}/.openclaw" -type f -exec chmod 644 {} \; 2>/dev/null || true
 run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/oc" 2>/dev/null || true
 run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/bootstrap_smoke.sh" 2>/dev/null || true
+run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/upgrade-corekit" 2>/dev/null || true
 
 # ---- 5. Write STATE.json ----
 info "Writing STATE.json..."
@@ -173,7 +293,11 @@ for check_file in \
 done
 run test -x "${OC_HOST_ROOT}/.openclaw/bin/oc" || die "oc wrapper not executable after install"
 
-info "Install complete."
+if [[ "$MODE" == "upgrade" ]]; then
+  info "Upgrade complete."
+else
+  info "Install complete."
+fi
 echo "  CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Target  : ${OC_HOST_ROOT}"
 echo "  State   : ${state_dir}/STATE.json"
