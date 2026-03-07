@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# ============================================================
+# upgrade-corekit — Agent-facing CoreKit upgrade tool
+#
+# Usage:
+#   upgrade-corekit --check           # Check for drift
+#   upgrade-corekit --apply <ref>     # Upgrade to a new ref
+#   upgrade-corekit --status          # Show current install info
+#
+# This is a thin wrapper around install.sh.
+# ============================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+
+# Simple JSON value reader
+json_value() {
+  grep -o "\"${1}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$2" 2>/dev/null | head -1 | sed 's/.*: *"\([^"]*\)"/\1/'
+}
+
+case "${1:-}" in
+  --check)
+    # Delegate to install.sh --check
+    GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
+    GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
+    OC_HOST_ROOT="$OC_HOST_ROOT" \
+    INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
+    bash "${SCRIPT_DIR}/../../corekit/install-cached.sh" --check 2>/dev/null || {
+      # Fallback: run check inline if install-cached.sh not found
+      if [[ ! -f "$STATE_FILE" ]]; then
+        echo "No STATE.json found. CoreKit not installed."
+        exit 1
+      fi
+      ref="$(json_value "coreRef" "$STATE_FILE")"
+      at="$(json_value "installedAt" "$STATE_FILE")"
+      echo "Installed: ${ref} (at ${at})"
+      echo "Run 'install.sh --check' for full integrity check."
+    }
+    ;;
+  --apply)
+    ref="${2:-}"
+    if [[ -z "$ref" ]]; then
+      echo "Usage: upgrade-corekit --apply <ref>"
+      echo "  Example: upgrade-corekit --apply v0.3.0"
+      exit 1
+    fi
+    echo "==> Upgrading CoreKit to ${ref}..."
+    CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER:-Tachin-ai-Corporation}/${GH_REPO:-architect-prime-gcp-agent}/${ref}"
+    curl -fsSL "${CORE_BASE}/install.sh" | \
+      GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
+      GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
+      OC_HOST_ROOT="$OC_HOST_ROOT" \
+      INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
+      bash -s -- --upgrade "$ref"
+    ;;
+  --status)
+    if [[ ! -f "$STATE_FILE" ]]; then
+      echo "CoreKit: NOT INSTALLED"
+      exit 1
+    fi
+    ref="$(json_value "coreRef" "$STATE_FILE")"
+    at="$(json_value "installedAt" "$STATE_FILE")"
+    owner="$(json_value "owner" "$STATE_FILE")"
+    repo="$(json_value "repo" "$STATE_FILE")"
+    echo "CoreKit Status"
+    echo "  Ref       : ${ref}"
+    echo "  Installed : ${at}"
+    echo "  Source    : ${owner}/${repo}"
+    echo "  State     : ${STATE_FILE}"
+    ;;
+  *)
+    echo "upgrade-corekit — Architect Prime CoreKit upgrade tool"
+    echo ""
+    echo "Usage:"
+    echo "  upgrade-corekit --check           Check for file drift"
+    echo "  upgrade-corekit --apply <ref>     Upgrade to a new checkpoint"
+    echo "  upgrade-corekit --status          Show current install info"
+    exit 0
+    ;;
+esac
