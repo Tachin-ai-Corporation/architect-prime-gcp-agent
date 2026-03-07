@@ -21,6 +21,10 @@
 # ============================================================
 set -euo pipefail
 
+# Ensure HOME and USER are set (unset when running as GCE startup script)
+export HOME="${HOME:-/root}"
+export USER="${USER:-$(whoami)}"
+
 LOG_FILE="${LOG_FILE:-/tmp/architect-prime-phase2-$(date +%Y%m%d-%H%M%S).log}"
 exec > >(tee -a "$LOG_FILE") 2>&1
 trap 'echo; echo "[ERROR] Line $LINENO failed: $BASH_COMMAND"; echo "Log: $LOG_FILE"; exit 1' ERR
@@ -74,7 +78,7 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo sh /tmp/get-docker.sh
 fi
 sudo groupadd -f docker || true
-sudo usermod -aG docker "${USER:-$(whoami)}" || true
+sudo usermod -aG docker "$USER" || true
 
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 [[ -n "${DOCKER_GID}" ]] || die "Could not determine docker group GID"
