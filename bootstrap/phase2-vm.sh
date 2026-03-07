@@ -297,6 +297,42 @@ sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor -
 info "Running bootstrap_smoke..."
 sudo docker exec openclaw-gateway bash -lc "/home/node/.openclaw/bin/bootstrap_smoke.sh" || true
 
+# 10) Configure Chat + announce (best-effort, non-blocking)
+info "Configuring Google Chat..."
+CHAT_SPACE_ID="${CHAT_SPACE_ID:-}"
+if [[ -z "$CHAT_SPACE_ID" ]]; then
+  # Try to read from VM metadata
+  CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
+fi
+
+if [[ -n "$CHAT_SPACE_ID" ]]; then
+  # Write chat-config.json
+  chat_config="${OC_HOST_DIR}/corekit/chat-config.json"
+  cat > "$chat_config" <<CHATEOF
+{
+  "spaceId": "${CHAT_SPACE_ID}",
+  "botDisplayName": "Architect Prime",
+  "projectId": "${GCP_PROJECT_ID}"
+}
+CHATEOF
+  chmod 644 "$chat_config"
+  chown 1000:1000 "$chat_config" 2>/dev/null || true
+  echo "Chat config written to: $chat_config"
+
+  # Auto-announce (best-effort)
+  info "Announcing in Google Chat..."
+  export CHAT_SPACE_ID
+  export OC_HOST_ROOT="${OC_HOST_ROOT}"
+  "${OC_HOST_DIR}/bin/chat-send" \
+    "🏛 *Architect Prime* is online.
+Project: \`${GCP_PROJECT_ID}\`
+CoreKit: \`${GH_OWNER}/${GH_REPO}@${CORE_REF}\`
+Time: $(date -Is)" || warn "Chat announce failed (non-blocking)"
+else
+  warn "No CHAT_SPACE_ID found — skipping Chat announce. See docs/CHAT_SETUP.md"
+fi
+
 echo
 echo "✅ PHASE 2 COMPLETE (ONE-SHOT)"
 echo "---------------------------------------------------"
