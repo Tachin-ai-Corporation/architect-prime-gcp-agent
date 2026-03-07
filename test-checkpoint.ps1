@@ -71,15 +71,36 @@ function Invoke-Gcloud {
     return @{ Output = $text; ExitCode = $code }
 }
 
-# ---- Helper: run short SSH command on the VM ----
+# ---- Helper: resolve VM external IP ----
+function Get-VmIp {
+    $r = Invoke-Gcloud @(
+        "compute", "instances", "describe", $VmName,
+        "--zone=$Zone", "--project=$ProjectId",
+        "--format=value(networkInterfaces[0].accessConfigs[0].natIP)"
+    )
+    return $r.Output.Trim()
+}
+
+# ---- Helper: run short SSH command on the VM via native ssh.exe ----
 function Invoke-SshCmd {
     param([string]$RemoteCmd)
-    $r = Invoke-Gcloud @("compute", "ssh", $VmName, "--zone=$Zone", "--project=$ProjectId", "--quiet", "--command=$RemoteCmd")
-    # Filter out SSH warnings
-    $lines = $r.Output -split "`n" | Where-Object {
-        ($_ -notmatch "^WARNING:") -and ($_ -notmatch "^Access granted") -and ($_.Trim() -ne "")
-    }
-    return @{ Output = ($lines -join "`n"); ExitCode = $r.ExitCode }
+    if (-not $script:vmIp) { $script:vmIp = Get-VmIp }
+    $sshKey = Join-Path $env:USERPROFILE ".ssh\google_compute_engine"
+    $sshUser = $env:USERNAME
+
+    $sshArgs = @(
+        "-i", $sshKey,
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=NUL",
+        "-o", "LogLevel=ERROR",
+        "-o", "ConnectTimeout=10",
+        "${sshUser}@$($script:vmIp)",
+        $RemoteCmd
+    )
+    $output = & ssh @sshArgs 2>&1
+    $code = $LASTEXITCODE
+    $text = ($output | Out-String).Trim()
+    return @{ Output = $text; ExitCode = $code }
 }
 
 # ---- Generate startup script as a temp file ----
