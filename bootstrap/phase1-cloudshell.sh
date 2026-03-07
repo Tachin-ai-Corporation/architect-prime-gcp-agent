@@ -68,7 +68,11 @@ gcloud services enable \
   aiplatform.googleapis.com \
   chat.googleapis.com \
   iam.googleapis.com \
-  serviceusage.googleapis.com
+  serviceusage.googleapis.com \
+  cloudfunctions.googleapis.com \
+  cloudbuild.googleapis.com \
+  run.googleapis.com \
+  storage.googleapis.com
 
 echo
 echo "==> Ensure caller has Service Usage Admin (best-effort)"
@@ -121,6 +125,46 @@ if ! gcloud compute firewall-rules describe "$FW_RULE_NAME" >/dev/null 2>&1; the
     --network=default
 else
   echo "Firewall rule already exists: $FW_RULE_NAME"
+fi
+
+echo
+echo "==> Create Chat inbox bucket (if not exists)"
+INBOX_BUCKET="${GCP_PROJECT_ID}-chat-inbox"
+if ! gsutil ls -b "gs://${INBOX_BUCKET}" &>/dev/null; then
+  gsutil mb -l us-central1 "gs://${INBOX_BUCKET}"
+  echo "Created: gs://${INBOX_BUCKET}"
+else
+  echo "Bucket already exists: gs://${INBOX_BUCKET}"
+fi
+
+# Grant service account access to inbox bucket
+gsutil iam ch "serviceAccount:${PRIME_SA_EMAIL}:roles/storage.objectAdmin" "gs://${INBOX_BUCKET}"
+
+echo
+echo "==> Deploy Chat handler Cloud Function"
+CHAT_CF_NAME="chat-handler"
+CHAT_CF_SOURCE="$(cd "$(dirname "$0")/../cloud-functions/chat-handler" && pwd)"
+if [[ -d "$CHAT_CF_SOURCE" ]]; then
+  gcloud functions deploy "$CHAT_CF_NAME" \
+    --gen2 \
+    --runtime=python312 \
+    --region=us-central1 \
+    --source="$CHAT_CF_SOURCE" \
+    --entry-point=handle_chat_event \
+    --trigger-http \
+    --allow-unauthenticated \
+    --set-env-vars="INBOX_BUCKET=${INBOX_BUCKET},AGENT_ID=prime" \
+    --memory=256MB \
+    --timeout=30s \
+    --quiet || echo "[WARN] Cloud Function deploy failed (may need manual setup)"
+
+  CF_URL="$(gcloud functions describe "$CHAT_CF_NAME" --gen2 --region=us-central1 --format='value(serviceConfig.uri)' 2>/dev/null || true)"
+  if [[ -n "$CF_URL" ]]; then
+    echo "Cloud Function URL: $CF_URL"
+    echo ">> Set this URL as the Chat app HTTP endpoint in GCP console"
+  fi
+else
+  echo "[WARN] Cloud Function source not found at $CHAT_CF_SOURCE — skipping deploy"
 fi
 
 echo

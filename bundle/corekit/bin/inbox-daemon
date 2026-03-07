@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# ============================================================
+# inbox-daemon — Single-worker Chat message processor
+#
+# Polls GCS inbox for pending messages and processes them
+# one at a time through OpenClaw, then responds via chat-send.
+#
+# Runs as a systemd service. ONE instance per agent.
+# No parallel processing = no spawn explosion.
+#
+# Environment:
+#   AGENT_ID       — Agent identifier (default: prime)
+#   INBOX_BUCKET   — GCS bucket name
+#   OC_HOST_ROOT   — OpenClaw host root (default: /opt/openclaw)
+#   POLL_INTERVAL  — Seconds between polls (default: 5)
+#   PROCESS_TIMEOUT — Max seconds per message (default: 120)
+# ============================================================
+set -euo pipefail
+
+# ---- CONFIG ----
+AGENT_ID="${AGENT_ID:-prime}"
+INBOX_BUCKET="${INBOX_BUCKET:-architect-prime-beta-chat-inbox}"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+POLL_INTERVAL="${POLL_INTERVAL:-5}"
+PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-120}"
+CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+
+INBOX_PREFIX="${AGENT_ID}/pending/"
+PROCESSING_PREFIX="${AGENT_ID}/processing/"
+DONE_PREFIX="${AGENT_ID}/done/"
+
+# ---- Logging ----
+log() { echo "[$(date -Is)] [inbox-daemon] $*"; }
+warn() { echo "[$(date -Is)] [inbox-daemon] [WARN] $*" >&2; }
+die() { echo "[$(date -Is)] [inbox-daemon] [FATAL] $*" >&2; exit 1; }
+
+# ---- Verify deps ----
+command -v gsutil >/dev/null 2>&1 || die "gsutil not found"
+command -v jq >/dev/null 2>&1 || die "jq not found (apt install jq)"
+[[ -x "$CHAT_SEND" ]] || warn "chat-send not found at $CHAT_SEND"
+
+log "Starting inbox-daemon for agent=${AGENT_ID}"
+log "Bucket: gs://${INBOX_BUCKET}/${INBOX_PREFIX}"
+log "Poll interval: ${POLL_INTERVAL}s"
+
+# ---- Helper: extract JSON field ----
+json_field() {
+  local file="$1" field="$2"
+  jq -r ".${field} // empty" "$file" 2>/dev/null
+}
+
+# ---- Helper: process a single message ----
+process_message() {
+  local local_file="$1"
+  local msg_type msg_text sender space_name
+
+  msg_type="$(json_field "$local_file" "type")"
+  msg_text="$(json_field "$local_file" "text")"
+  sender="$(json_field "$local_file" "sender")"
+  space_name="$(json_field "$local_file" "space")"
+
+  log "Processing: type=${msg_type} sender=${sender} text=${msg_text:0:80}"
+
+  case "$msg_type" in
+    MESSAGE)
+      # Parse command from message text
+      local cmd="${msg_text%% *}"
+      cmd="${cmd,,}"  # lowercase
+
+      local response=""
+      case "$cmd" in
+        help|/help)
+          response="🏛 *Architect Prime* — Available Commands:
+• \`help\` — Show this message
+• \`status\` — System status (VM, CoreKit, container)
+• \`whoami\` — Your identity info
+• \`fleet\` — Fleet agent status (coming soon)"
+          ;;
+        status|/status)
+          local core_ref="unknown"
+          local state_file="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+          if [[ -f "$state_file" ]]; then
+            core_ref="$(json_field "$state_file" "coreRef")"
+          fi
+          local uptime_str
+          uptime_str="$(uptime -p 2>/dev/null || echo 'unknown')"
+          local container_status
+          container_status="$(sudo docker ps --filter name=openclaw-gateway --format '{{.Status}}' 2>/dev/null || echo 'unknown')"
+
+          response="📊 *Architect Prime Status*
+• CoreKit: \`${core_ref}\`
+• Agent ID: \`${AGENT_ID}\`
+• Uptime: ${uptime_str}
+• Container: ${container_status}
+• Inbox: gs://${INBOX_BUCKET}/${AGENT_ID}/"
+          ;;
+        whoami|/whoami)
+          response="👤 *Your Info*
+• Name: ${sender}
+• Space: ${space_name}"
+          ;;
+        fleet|/fleet)
+          response="🤖 *Fleet Status*
+Fleet management coming in v0.7.0.
+Currently running: Architect Prime (this agent)."
+          ;;
+        *)
+          response="🤔 Unknown command: \`${msg_text}\`
+Type \`help\` for available commands."
+          ;;
+      esac
+
+      # Send response via chat-send
+      if [[ -n "$space_name" ]]; then
+        export CHAT_SPACE_ID="$space_name"
+      fi
+      "$CHAT_SEND" "$response" || warn "chat-send failed for msg"
+      ;;
+
+    ADDED_TO_SPACE)
+      log "Bot added to space: ${space_name} by ${sender}"
+      ;;
+
+    REMOVED_FROM_SPACE)
+      log "Bot removed from space: ${space_name}"
+      ;;
+
+    *)
+      warn "Unknown message type: ${msg_type}"
+      ;;
+  esac
+}
+
+# ---- Main loop ----
+while true; do
+  # List pending messages (oldest first)
+  pending_files="$(gsutil ls "gs://${INBOX_BUCKET}/${INBOX_PREFIX}*.json" 2>/dev/null || true)"
+
+  if [[ -z "$pending_files" ]]; then
+    sleep "$POLL_INTERVAL"
+    continue
+  fi
+
+  # Process one at a time (FIFO)
+  first_file="$(echo "$pending_files" | head -1)"
+  filename="$(basename "$first_file")"
+
+  log "Found message: ${filename}"
+
+  # Move to processing
+  gsutil -q mv "$first_file" "gs://${INBOX_BUCKET}/${PROCESSING_PREFIX}${filename}" 2>/dev/null || {
+    warn "Failed to move ${filename} to processing (maybe already picked up)"
+    sleep "$POLL_INTERVAL"
+    continue
+  }
+
+  # Download and process
+  local_tmp="/tmp/inbox-${filename}"
+  gsutil -q cp "gs://${INBOX_BUCKET}/${PROCESSING_PREFIX}${filename}" "$local_tmp" 2>/dev/null || {
+    warn "Failed to download ${filename}"
+    sleep "$POLL_INTERVAL"
+    continue
+  }
+
+  # Process with timeout
+  if timeout "$PROCESS_TIMEOUT" bash -c "$(declare -f json_field process_message); process_message '$local_tmp'" 2>&1; then
+    log "Completed: ${filename}"
+  else
+    warn "Timeout or error processing: ${filename}"
+  fi
+
+  # Move to done
+  gsutil -q mv "gs://${INBOX_BUCKET}/${PROCESSING_PREFIX}${filename}" "gs://${INBOX_BUCKET}/${DONE_PREFIX}${filename}" 2>/dev/null || true
+
+  # Cleanup
+  rm -f "$local_tmp"
+
+  # Brief pause before next message
+  sleep 1
+done

@@ -10,6 +10,8 @@ bundle/corekit/bin/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh
 bundle/corekit/bin/upgrade-corekit .openclaw/bin/upgrade-corekit
 bundle/corekit/bin/chat-send .openclaw/bin/chat-send
 bundle/corekit/config/chat-config.json.tmpl .openclaw/corekit/chat-config.json.tmpl
+bundle/corekit/bin/inbox-daemon .openclaw/bin/inbox-daemon
+bundle/corekit/config/inbox-daemon.service .openclaw/corekit/inbox-daemon.service
 
 bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
 bundle/openclaw/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json

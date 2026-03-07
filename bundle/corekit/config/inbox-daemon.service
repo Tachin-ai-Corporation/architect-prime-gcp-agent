@@ -1,0 +1,20 @@
+[Unit]
+Description=Architect Prime Inbox Daemon
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=AGENT_ID=prime
+Environment=INBOX_BUCKET=architect-prime-beta-chat-inbox
+Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=POLL_INTERVAL=5
+ExecStart=/opt/openclaw/.openclaw/bin/inbox-daemon
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
