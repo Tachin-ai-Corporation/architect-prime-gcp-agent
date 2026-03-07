@@ -74,7 +74,7 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo sh /tmp/get-docker.sh
 fi
 sudo groupadd -f docker || true
-sudo usermod -aG docker "$USER" || true
+sudo usermod -aG docker "${USER:-$(whoami)}" || true
 
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 [[ -n "${DOCKER_GID}" ]] || die "Could not determine docker group GID"
