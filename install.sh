@@ -187,7 +187,7 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
 manifest="${tmpdir}/manifest.txt"
-curl -fsSL "${CORE_BASE}/manifest.txt" -o "${manifest}"
+curl -fsSL --retry 3 --retry-delay 2 "${CORE_BASE}/manifest.txt" -o "${manifest}"
 
 # ---- 2. Parse manifest into pairs ----
 # Format: <repo_relative_path> <dest_relative_to_HOME>
@@ -229,7 +229,7 @@ for pair in "${pairs[@]}"; do
 
   # Create directory and download
   run mkdir -p "$out_dir"
-  curl -fsSL "$src_url" -o "${tmpdir}/dl_tmp"
+  curl -fsSL --retry 3 --retry-delay 2 "$src_url" -o "${tmpdir}/dl_tmp"
   run cp "${tmpdir}/dl_tmp" "$out_path"
 
   # Compute hash for STATE.json
@@ -249,6 +249,7 @@ run find "${OC_HOST_ROOT}/.openclaw" -type f -exec chmod 644 {} \; 2>/dev/null |
 run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/oc" 2>/dev/null || true
 run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/bootstrap_smoke.sh" 2>/dev/null || true
 run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/upgrade-corekit" 2>/dev/null || true
+run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/chat-send" 2>/dev/null || true
 
 # ---- 5. Write STATE.json ----
 info "Writing STATE.json..."
