@@ -94,91 +94,16 @@ if sudo test -d "${OC_HOST_ROOT}/openclaw"; then
   sudo rm -rf "${OC_HOST_ROOT}/openclaw"
 fi
 
-# 4) Install CoreKit into /opt/openclaw/.openclaw (manifest-driven; sudo-safe)
-info "Installing CoreKit via manifest.txt..."
-tmpdir="$(mktemp -d)"
-manifest="${tmpdir}/manifest.txt"
-curl -fsSL "${CORE_BASE}/manifest.txt" -o "${manifest}"
+# 4) Install CoreKit via install.sh (manifest-driven, writes STATE.json)
+info "Installing CoreKit via install.sh..."
+curl -fsSL "${CORE_BASE}/install.sh" | \
+  GH_OWNER="${GH_OWNER}" \
+  GH_REPO="${GH_REPO}" \
+  CORE_REF="${CORE_REF}" \
+  OC_HOST_ROOT="${OC_HOST_ROOT}" \
+  INSTALL_USE_SUDO=1 \
+  bash
 
-sudo python3 - "${CORE_BASE}" "${OC_HOST_ROOT}" "${manifest}" <<'PY'
-import sys, re, pathlib, subprocess
-
-core_base = sys.argv[1].rstrip("/")
-root = pathlib.Path(sys.argv[2])            # /opt/openclaw
-manifest_path = pathlib.Path(sys.argv[3])
-
-text = manifest_path.read_text(encoding="utf-8", errors="replace")
-
-lines = []
-for line in text.splitlines():
-    line = line.strip()
-    if not line or line.startswith("#"):
-        continue
-    line = re.sub(r"\s+#.*$", "", line).strip()
-    if line:
-        lines.append(line)
-
-tokens = []
-for ln in lines:
-    tokens.extend(ln.split())
-
-if len(tokens) % 2 != 0:
-    raise SystemExit(f"Manifest token count is odd ({len(tokens)}). Must be pairs: <rel> <dest>.")
-
-pairs = list(zip(tokens[0::2], tokens[1::2]))
-
-def curl_to(url: str, out: pathlib.Path):
-    out.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.check_call(["curl", "-fsSL", url, "-o", str(out)])
-
-for rel, dest in pairs:
-    dest = dest.strip()
-
-    # Safety: never allow absolute output paths
-    if dest.startswith("/"):
-        raise SystemExit(f"Refusing absolute destination path: {dest}")
-
-    # Normalize ONLY safe prefixes (do NOT strip leading '.' from '.openclaw')
-    if dest.startswith("~/"):
-        dest = dest[2:]
-    if dest.startswith("./"):
-        dest = dest[2:]
-
-    out_path = root / dest     # dest like ".openclaw/..."
-    src = f"{core_base}/{rel}"
-    curl_to(src, out_path)
-
-print(f"Installed {len(pairs)} files into {root}.")
-PY
-
-# Normalize ownership/perms for bind mount + stat safety (temp; container will harden later)
-info "Normalizing CoreKit tree ownership/perms for container bind mount..."
-sudo chown -R 1000:1000 "${OC_HOST_DIR}" || true
-sudo find "${OC_HOST_DIR}" -type d -exec chmod 755 {} \; || true
-sudo find "${OC_HOST_DIR}" -type f -exec chmod 644 {} \; || true
-sudo chmod 755 "${OC_HOST_DIR}/bin/oc" 2>/dev/null || true
-sudo chmod 755 "${OC_HOST_DIR}/bin/bootstrap_smoke.sh" 2>/dev/null || true
-
-# Stamp provenance (fixed location)
-info "Stamping CoreKit SOURCE.json..."
-sudo mkdir -p "${OC_HOST_DIR}/corekit"
-sudo tee "${OC_HOST_DIR}/corekit/SOURCE.json" >/dev/null <<EOF
-{
-  "owner": "${GH_OWNER}",
-  "repo": "${GH_REPO}",
-  "ref": "${CORE_REF}",
-  "base": "${CORE_BASE}",
-  "installedAt": "$(date -Is)"
-}
-EOF
-sudo chown 1000:1000 "${OC_HOST_DIR}/corekit/SOURCE.json" || true
-sudo chmod 644 "${OC_HOST_DIR}/corekit/SOURCE.json" || true
-
-# Verify expected files exist (sudo avoids permission false negatives)
-info "Verifying CoreKit install..."
-sudo test -f "${OC_HOST_DIR}/agents/main/agent/auth-profiles.json" || die "Missing auth-profiles.json after CoreKit install"
-sudo test -f "${OC_HOST_DIR}/workspace/SOUL.md" || die "Missing SOUL.md after CoreKit install"
-sudo test -x "${OC_HOST_DIR}/bin/oc" || die "oc wrapper not executable after CoreKit install"
 info "CoreKit install OK."
 
 # 5) Build & run OpenClaw container (pinned stable commit)
