@@ -14,7 +14,8 @@
 set -euo pipefail
 
 # ---- CONFIG (env-overridable) ----
-PROJECT_ID="${PROJECT_ID:-architect-prime-beta}"
+PROJECT_ID="${PROJECT_ID:-}"
+[[ -n "$PROJECT_ID" ]] || { echo "[ERROR] PROJECT_ID is required. Run: export PROJECT_ID=your-project-id"; exit 1; }
 ZONE="${ZONE:-us-central1-a}"
 VM="${VM:-architect-prime}"
 PRIME_SA_NAME="${PRIME_SA_NAME:-architect-prime}"

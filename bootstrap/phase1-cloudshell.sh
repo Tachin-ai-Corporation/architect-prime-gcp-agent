@@ -14,8 +14,9 @@ echo "Logging to: $LOG_FILE"
 # ---- DEBUG TRAP ----
 trap 'echo; echo "[ERROR] Line $LINENO failed: $BASH_COMMAND"; echo "See log: $LOG_FILE"; exit 1' ERR
 
-# ---- CONFIG START (edit these) ----
-PROJECT_ID="${PROJECT_ID:-architect-prime-beta}"
+# ---- CONFIG START ----
+PROJECT_ID="${PROJECT_ID:-}"
+[[ -n "$PROJECT_ID" ]] || { echo "[ERROR] PROJECT_ID is required. Run: export PROJECT_ID=your-project-id"; exit 1; }
 ZONE="${ZONE:-us-central1-a}"
 
 VM="${VM:-architect-prime}"
@@ -28,6 +29,9 @@ MACHINE_TYPE="${MACHINE_TYPE:-e2-standard-2}"
 BOOT_DISK_SIZE="${BOOT_DISK_SIZE:-200GB}"
 IMAGE_FAMILY="${IMAGE_FAMILY:-ubuntu-2204-lts}"
 IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
+
+# Optional: billing account for fleet-deploy (passed as VM metadata)
+BILLING_ACCOUNT="${BILLING_ACCOUNT:-}"
 
 # Labels must be KEY=VALUE comma-separated
 LABELS="${LABELS:-app=architect-prime,role=prime,env=beta,managed=bootstrap}"
@@ -191,7 +195,7 @@ gcloud compute instances create "$VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot" \
   --tags="$VM_NET_TAG" \
   --labels="$LABELS" \
-  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-}"
+  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-},billing_account=${BILLING_ACCOUNT:-}"
 
 echo
 echo "==> Wait for boot + show facts"

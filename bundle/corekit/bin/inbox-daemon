@@ -19,7 +19,8 @@ set -euo pipefail
 
 # ---- CONFIG ----
 AGENT_ID="${AGENT_ID:-prime}"
-INBOX_BUCKET="${INBOX_BUCKET:-architect-prime-beta-chat-inbox}"
+INBOX_BUCKET="${INBOX_BUCKET:-}"
+[[ -n "$INBOX_BUCKET" ]] || { echo "[FATAL] INBOX_BUCKET not set" >&2; exit 1; }
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 POLL_INTERVAL="${POLL_INTERVAL:-5}"
 PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-120}"

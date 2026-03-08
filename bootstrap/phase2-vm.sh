@@ -342,7 +342,7 @@ if [[ -f "$INBOX_DAEMON_SVC" ]]; then
 
   # Configure service with project-specific bucket
   INBOX_BUCKET="${GCP_PROJECT_ID}-chat-inbox"
-  sed -i "s|architect-prime-beta-chat-inbox|${INBOX_BUCKET}|g" "$INBOX_DAEMON_SVC" 2>/dev/null || true
+  sed -i "s|__INBOX_BUCKET__|${INBOX_BUCKET}|g" "$INBOX_DAEMON_SVC" 2>/dev/null || true
 
   # Install and start systemd service
   sudo cp "$INBOX_DAEMON_SVC" /etc/systemd/system/inbox-daemon.service

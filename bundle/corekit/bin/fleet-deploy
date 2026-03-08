@@ -78,7 +78,14 @@ FLEET_SA_NAME="${FLEET_PROJECT}"
 FLEET_SA_EMAIL="${FLEET_SA_NAME}@${FLEET_PROJECT}.iam.gserviceaccount.com"
 FLEET_BUCKET="${FLEET_PROJECT}-chat-inbox"
 FLEET_VM="fleet-${AGENT_NAME}"
-BILLING_ACCOUNT="${BILLING_ACCOUNT:-01CB3A-C337CA-B3ED01}"
+
+# Billing account — resolve from metadata or env (never hardcoded)
+BILLING_ACCOUNT="${BILLING_ACCOUNT:-}"
+if [[ -z "$BILLING_ACCOUNT" ]]; then
+  BILLING_ACCOUNT="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/billing_account' 2>/dev/null || true)"
+fi
+[[ -n "$BILLING_ACCOUNT" ]] || die "Missing BILLING_ACCOUNT. Set via env or VM metadata 'billing_account'"
 
 # Resolve CoreKit ref from STATE.json
 CORE_REF="main"
@@ -307,7 +314,7 @@ INBOX_DAEMON_SVC="${OC_HOST_ROOT}/.openclaw/corekit/inbox-daemon.service"
 if [[ -f "$INBOX_DAEMON_SVC" ]]; then
   INBOX_BUCKET="${PROJECT_ID}-chat-inbox"
   sed -i "s|Environment=AGENT_ID=prime|Environment=AGENT_ID=${AGENT_ID}|g" "$INBOX_DAEMON_SVC"
-  sed -i "s|architect-prime-beta-chat-inbox|${INBOX_BUCKET}|g" "$INBOX_DAEMON_SVC"
+  sed -i "s|__INBOX_BUCKET__|${INBOX_BUCKET}|g" "$INBOX_DAEMON_SVC"
   cp "$INBOX_DAEMON_SVC" /etc/systemd/system/inbox-daemon.service
   systemctl daemon-reload
   systemctl enable inbox-daemon.service

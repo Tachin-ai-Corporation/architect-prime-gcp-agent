@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=ubuntu
 Environment=AGENT_ID=prime
-Environment=INBOX_BUCKET=architect-prime-beta-chat-inbox
+Environment=INBOX_BUCKET=__INBOX_BUCKET__
 Environment=OC_HOST_ROOT=/opt/openclaw
 Environment=POLL_INTERVAL=5
 ExecStart=/opt/openclaw/.openclaw/bin/inbox-daemon

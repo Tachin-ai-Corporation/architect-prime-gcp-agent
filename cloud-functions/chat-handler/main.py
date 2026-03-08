@@ -5,7 +5,7 @@ import time
 import os
 
 # ---- Config ----
-BUCKET_NAME = os.environ.get("INBOX_BUCKET", "architect-prime-beta-chat-inbox")
+BUCKET_NAME = os.environ.get("INBOX_BUCKET", "")
 AGENT_ID = os.environ.get("AGENT_ID", "prime")
 
 storage_client = storage.Client()
