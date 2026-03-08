@@ -68,7 +68,11 @@ gcloud services enable \
   aiplatform.googleapis.com \
   chat.googleapis.com \
   iam.googleapis.com \
-  serviceusage.googleapis.com
+  serviceusage.googleapis.com \
+  cloudfunctions.googleapis.com \
+  cloudbuild.googleapis.com \
+  run.googleapis.com \
+  storage.googleapis.com
 
 echo
 echo "==> Ensure caller has Service Usage Admin (best-effort)"
@@ -124,6 +128,46 @@ else
 fi
 
 echo
+echo "==> Create Chat inbox bucket (if not exists)"
+INBOX_BUCKET="${GCP_PROJECT_ID}-chat-inbox"
+if ! gsutil ls -b "gs://${INBOX_BUCKET}" &>/dev/null; then
+  gsutil mb -l us-central1 "gs://${INBOX_BUCKET}"
+  echo "Created: gs://${INBOX_BUCKET}"
+else
+  echo "Bucket already exists: gs://${INBOX_BUCKET}"
+fi
+
+# Grant service account access to inbox bucket
+gsutil iam ch "serviceAccount:${PRIME_SA_EMAIL}:roles/storage.objectAdmin" "gs://${INBOX_BUCKET}"
+
+echo
+echo "==> Deploy Chat handler Cloud Function"
+CHAT_CF_NAME="chat-handler"
+CHAT_CF_SOURCE="$(cd "$(dirname "$0")/../cloud-functions/chat-handler" && pwd)"
+if [[ -d "$CHAT_CF_SOURCE" ]]; then
+  gcloud functions deploy "$CHAT_CF_NAME" \
+    --gen2 \
+    --runtime=python312 \
+    --region=us-central1 \
+    --source="$CHAT_CF_SOURCE" \
+    --entry-point=handle_chat_event \
+    --trigger-http \
+    --allow-unauthenticated \
+    --set-env-vars="INBOX_BUCKET=${INBOX_BUCKET},AGENT_ID=prime" \
+    --memory=256MB \
+    --timeout=30s \
+    --quiet || echo "[WARN] Cloud Function deploy failed (may need manual setup)"
+
+  CF_URL="$(gcloud functions describe "$CHAT_CF_NAME" --gen2 --region=us-central1 --format='value(serviceConfig.uri)' 2>/dev/null || true)"
+  if [[ -n "$CF_URL" ]]; then
+    echo "Cloud Function URL: $CF_URL"
+    echo ">> Set this URL as the Chat app HTTP endpoint in GCP console"
+  fi
+else
+  echo "[WARN] Cloud Function source not found at $CHAT_CF_SOURCE — skipping deploy"
+fi
+
+echo
 echo "==> Hard reset VM (delete if exists)"
 gcloud compute instances delete "$VM" --zone "$ZONE" --quiet || true
 
@@ -139,7 +183,7 @@ gcloud compute instances create "$VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot" \
   --tags="$VM_NET_TAG" \
   --labels="$LABELS" \
-  --metadata="architect_prime=true,role=prime,env=beta"
+  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-}"
 
 echo
 echo "==> Wait for boot + show facts"
@@ -157,10 +201,26 @@ echo "VM attached SA : $ATTACHED_SA"
 
 echo
 echo "============================================================"
-echo "VM ready."
-echo "SSH in and run Phase 2:"
-echo "gcloud compute ssh $VM --zone $ZONE"
-echo "Log file: $LOG_FILE"
+echo " PHASE 1 COMPLETE"
+echo "============================================================"
+echo "VM ready:  $VM ($STATUS)"
+echo "External:  ${EXT_IP:-n/a}"
+echo "SA:        $ATTACHED_SA"
+echo "Log file:  $LOG_FILE"
+if [[ -n "${CF_URL:-}" ]]; then
+  echo
+  echo "============================================================"
+  echo " CHAT SETUP (one-time manual step)"
+  echo "============================================================"
+  echo "Cloud Function URL: ${CF_URL}"
+  echo
+  echo "1. Go to: https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${GCP_PROJECT_ID}"
+  echo "2. Configuration tab → Connection settings → HTTP endpoint URL"
+  echo "3. Paste: ${CF_URL}"
+  echo "4. Save"
+  echo
+  echo "Then message @Architect Prime in your Chat space to test."
+fi
 echo "============================================================"
 echo
 

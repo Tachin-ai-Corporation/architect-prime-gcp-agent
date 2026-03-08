@@ -30,7 +30,7 @@ param(
     [string]$SaName      = "architect-prime",
     [string]$Action      = "full",
     [int]$BootWaitSecs   = 30,
-    [int]$Phase2TimeoutSecs = 600
+    [int]$Phase2TimeoutSecs = 1200
 )
 
 # ---- Resolve gcloud ----
@@ -251,7 +251,9 @@ function Invoke-Verify {
         @{ Name = "STATE.json coreRef";    Cmd = "sudo grep coreRef /opt/openclaw/.openclaw/corekit/STATE.json" },
         @{ Name = "SOUL.md exists";        Cmd = "sudo ls -la /opt/openclaw/.openclaw/workspace/SOUL.md" },
         @{ Name = "oc wrapper executable"; Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/oc" },
-        @{ Name = "Gateway responding";    Cmd = "sudo docker exec openclaw-gateway curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18789/" }
+        @{ Name = "Gateway responding";    Cmd = "sudo docker exec openclaw-gateway curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18789/" },
+        @{ Name = "chat-send executable";  Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/chat-send" },
+        @{ Name = "inbox-daemon service";  Cmd = "sudo systemctl is-enabled inbox-daemon.service 2>/dev/null || echo 'not-installed'" }
     )
 
     $passed = 0

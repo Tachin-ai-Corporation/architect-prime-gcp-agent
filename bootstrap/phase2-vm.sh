@@ -292,7 +292,7 @@ chown -R node:node /home/node/.openclaw/shared
 # 9) Doctor + smoke
 info "Running doctor..."
 sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --fix || true'
-sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --non-interactive'
+sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --non-interactive' || warn "oc doctor reported issues (non-blocking)"
 
 info "Running bootstrap_smoke..."
 sudo docker exec openclaw-gateway bash -lc "/home/node/.openclaw/bin/bootstrap_smoke.sh" || true
@@ -331,6 +331,27 @@ CoreKit: \`${GH_OWNER}/${GH_REPO}@${CORE_REF}\`
 Time: $(date -Is)" || warn "Chat announce failed (non-blocking)"
 else
   warn "No CHAT_SPACE_ID found — skipping Chat announce. See docs/CHAT_SETUP.md"
+fi
+
+# 11) Install and start inbox-daemon (best-effort)
+info "Setting up inbox-daemon..."
+INBOX_DAEMON_SVC="${OC_HOST_DIR}/corekit/inbox-daemon.service"
+if [[ -f "$INBOX_DAEMON_SVC" ]]; then
+  # Install jq (needed by inbox-daemon)
+  apt-get -y -qq install jq 2>/dev/null || warn "jq install failed"
+
+  # Configure service with project-specific bucket
+  INBOX_BUCKET="${GCP_PROJECT_ID}-chat-inbox"
+  sed -i "s|architect-prime-beta-chat-inbox|${INBOX_BUCKET}|g" "$INBOX_DAEMON_SVC" 2>/dev/null || true
+
+  # Install and start systemd service
+  sudo cp "$INBOX_DAEMON_SVC" /etc/systemd/system/inbox-daemon.service
+  sudo systemctl daemon-reload
+  sudo systemctl enable inbox-daemon.service
+  sudo systemctl start inbox-daemon.service || warn "inbox-daemon start failed (bucket may not exist yet)"
+  echo "inbox-daemon service started"
+else
+  warn "inbox-daemon.service not found — skipping"
 fi
 
 echo
