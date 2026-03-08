@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-teardown — Remove a fleet agent
+#
+# Usage: fleet-teardown --name <agent-name>
+#
+# Deletes: VM, SA, registry entry. Runs on Prime's VM.
+# ============================================================
+set -euo pipefail
+
+log() { echo "[$(date -Is)] [fleet-teardown] $*"; }
+warn() { echo "[$(date -Is)] [fleet-teardown] [WARN] $*" >&2; }
+die() { echo "[$(date -Is)] [fleet-teardown] [FATAL] $*" >&2; exit 1; }
+
+AGENT_NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) AGENT_NAME="$2"; shift 2 ;;
+    --help|-h) echo "Usage: fleet-teardown --name <agent-name>"; exit 0 ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$AGENT_NAME" ]] || die "Missing --name"
+
+# ---- Resolve project context ----
+PROJECT_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PROJECT_ID" ]] || die "Cannot resolve PROJECT_ID from metadata"
+
+ZONE="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/zone' 2>/dev/null | awk -F/ '{print $NF}' || true)"
+[[ -n "$ZONE" ]] || ZONE="us-central1-a"
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
+
+VM_NAME="fleet-${AGENT_NAME}"
+SA_NAME="fleet-${AGENT_NAME}"
+SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+
+log "Tearing down fleet agent: ${AGENT_NAME}"
+
+# ---- 1. Delete VM ----
+log "Deleting VM: ${VM_NAME}"
+gcloud compute instances delete "$VM_NAME" \
+  --zone="$ZONE" \
+  --project="$PROJECT_ID" \
+  --quiet 2>/dev/null || warn "VM '${VM_NAME}' not found or already deleted"
+
+# ---- 2. Delete SA ----
+log "Deleting service account: ${SA_EMAIL}"
+gcloud iam service-accounts delete "$SA_EMAIL" \
+  --project="$PROJECT_ID" \
+  --quiet 2>/dev/null || warn "SA '${SA_EMAIL}' not found or already deleted"
+
+# ---- 3. Update registry ----
+if [[ -f "$REGISTRY_FILE" ]]; then
+  log "Removing from fleet registry"
+  jq --arg name "$AGENT_NAME" \
+     'del(.agents[$name]) | .lastUpdated = (now | todate)' \
+    "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
+fi
+
+# ---- 4. Notify ----
+CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
+
+if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
+  export CHAT_SPACE_ID OC_HOST_ROOT
+  "$CHAT_SEND" "🔥 Fleet agent *${AGENT_NAME}* has been decommissioned." || true
+fi
+
+log "Fleet agent '${AGENT_NAME}' torn down"

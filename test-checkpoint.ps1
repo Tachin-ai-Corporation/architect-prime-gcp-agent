@@ -253,7 +253,9 @@ function Invoke-Verify {
         @{ Name = "oc wrapper executable"; Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/oc" },
         @{ Name = "Gateway responding";    Cmd = "sudo docker exec openclaw-gateway curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18789/" },
         @{ Name = "chat-send executable";  Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/chat-send" },
-        @{ Name = "inbox-daemon service";  Cmd = "sudo systemctl is-enabled inbox-daemon.service 2>/dev/null || echo 'not-installed'" }
+        @{ Name = "inbox-daemon service";  Cmd = "sudo systemctl is-enabled inbox-daemon.service 2>/dev/null || echo 'not-installed'" },
+        @{ Name = "fleet-deploy exists";   Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/fleet-deploy" },
+        @{ Name = "fleet-registry exists"; Cmd = "sudo cat /opt/openclaw/.openclaw/corekit/fleet-registry.json" }
     )
 
     $passed = 0
