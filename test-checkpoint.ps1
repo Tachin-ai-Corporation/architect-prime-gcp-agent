@@ -30,7 +30,7 @@ param(
     [string]$SaName      = "architect-prime",
     [string]$Action      = "full",
     [int]$BootWaitSecs   = 30,
-    [int]$Phase2TimeoutSecs = 600
+    [int]$Phase2TimeoutSecs = 1200
 )
 
 # ---- Resolve gcloud ----
