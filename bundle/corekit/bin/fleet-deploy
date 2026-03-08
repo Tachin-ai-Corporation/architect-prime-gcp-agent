@@ -87,6 +87,14 @@ if [[ -z "$BILLING_ACCOUNT" ]]; then
 fi
 [[ -n "$BILLING_ACCOUNT" ]] || die "Missing BILLING_ACCOUNT. Set via env or VM metadata 'billing_account'"
 
+# GCP Org ID — required for project creation under an org
+GCP_ORG_ID="${GCP_ORG_ID:-}"
+if [[ -z "$GCP_ORG_ID" ]]; then
+  GCP_ORG_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/gcp_org_id' 2>/dev/null || true)"
+fi
+[[ -n "$GCP_ORG_ID" ]] || die "Missing GCP_ORG_ID. Set via env or VM metadata 'gcp_org_id'"
+
 # Resolve CoreKit ref from STATE.json
 CORE_REF="main"
 STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
@@ -107,6 +115,7 @@ log "  SA:            ${FLEET_SA_EMAIL}"
 log "  Specialty:     ${SPECIALTY}"
 log "  CoreRef:       ${CORE_REF}"
 log "  Billing:       ${BILLING_ACCOUNT}"
+log "  Org ID:        ${GCP_ORG_ID}"
 
 # ============================================================
 # 1. Create GCP project
@@ -117,6 +126,7 @@ if gcloud projects describe "$FLEET_PROJECT" &>/dev/null; then
 else
   gcloud projects create "$FLEET_PROJECT" \
     --name="Fleet Agent ${AGENT_NAME}" \
+    --organization="$GCP_ORG_ID" \
     --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
     --quiet
 fi

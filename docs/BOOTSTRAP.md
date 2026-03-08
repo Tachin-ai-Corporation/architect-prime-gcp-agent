@@ -15,9 +15,12 @@ Complete instructions to launch Prime from an empty GCP project.
 # Required
 export PROJECT_ID="your-gcp-project-id"
 
-# Required for fleet agent deployment (billing account for fleet projects)
+# Required for fleet agent deployment
 export BILLING_ACCOUNT="your-billing-account-id"
 # Find it: gcloud billing accounts list
+
+export GCP_ORG_ID="your-gcp-org-id"
+# Find it: gcloud organizations list
 
 # Optional overrides (these have sensible defaults)
 export ZONE="us-central1-a"

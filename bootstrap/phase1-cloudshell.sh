@@ -33,6 +33,10 @@ IMAGE_PROJECT="${IMAGE_PROJECT:-ubuntu-os-cloud}"
 # Optional: billing account for fleet-deploy (passed as VM metadata)
 BILLING_ACCOUNT="${BILLING_ACCOUNT:-}"
 
+# Optional: GCP org ID for fleet-deploy project creation (passed as VM metadata)
+# Find it: gcloud organizations list
+GCP_ORG_ID="${GCP_ORG_ID:-}"
+
 # Labels must be KEY=VALUE comma-separated
 LABELS="${LABELS:-app=architect-prime,role=prime,env=beta,managed=bootstrap}"
 # ---- CONFIG END ----
@@ -195,7 +199,7 @@ gcloud compute instances create "$VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot" \
   --tags="$VM_NET_TAG" \
   --labels="$LABELS" \
-  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-},billing_account=${BILLING_ACCOUNT:-}"
+  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-},billing_account=${BILLING_ACCOUNT:-},gcp_org_id=${GCP_ORG_ID:-}"
 
 echo
 echo "==> Wait for boot + show facts"
