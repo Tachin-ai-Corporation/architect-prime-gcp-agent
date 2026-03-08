@@ -361,7 +361,7 @@ gcloud compute instances create "$FLEET_VM" \
   --machine-type="$MACHINE_TYPE" \
   --boot-disk-size="$BOOT_DISK_SIZE" \
   --service-account="$FLEET_SA_EMAIL" \
-  --scopes="https://www.googleapis.com/auth/cloud-platform" \
+  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
   --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-}" \
