@@ -72,7 +72,7 @@ def handle_chat_event(request):
         if words:
             first_word = words[0].lower().lstrip("@")
             if first_word.startswith("fleet-"):
-                target_agent = first_word
+                target_agent = first_word[6:]  # strip "fleet-" → "alpha"
                 text = " ".join(words[1:]) if len(words) > 1 else "help"
 
         msg_data = {
