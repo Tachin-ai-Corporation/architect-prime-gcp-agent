@@ -99,8 +99,9 @@ fi
 CORE_REF="main"
 STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
 if [[ -f "$STATE_FILE" ]]; then
-  CORE_REF="$(jq -r '.coreRef // "main"' "$STATE_FILE")"
+  CORE_REF="$(jq -r '.coreRef // "main"' "$STATE_FILE" 2>/dev/null)"
 fi
+[[ -n "$CORE_REF" ]] || CORE_REF="main"
 GH_OWNER="$(jq -r '.owner // "Tachin-ai-Corporation"' "$STATE_FILE" 2>/dev/null || echo "Tachin-ai-Corporation")"
 GH_REPO="$(jq -r '.repo // "architect-prime-gcp-agent"' "$STATE_FILE" 2>/dev/null || echo "architect-prime-gcp-agent")"
 
@@ -168,7 +169,7 @@ for role in roles/compute.admin roles/aiplatform.user roles/chat.owner \
   gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
     --member="serviceAccount:${FLEET_SA_EMAIL}" \
     --role="$role" \
-    --quiet 2>/dev/null || true
+    --quiet > /dev/null 2>&1 || true
 done
 
 # Grant Cloud Build role to default compute SA
@@ -265,7 +266,7 @@ gcloud functions deploy chat-handler \
   --memory=256MB \
   --timeout=30s \
   --project="$FLEET_PROJECT" \
-  --quiet
+  --quiet || warn "Cloud Function deploy failed — may need manual setup"
 
 CF_URL="$(gcloud functions describe chat-handler \
   --region="$REGION" --project="$FLEET_PROJECT" \
