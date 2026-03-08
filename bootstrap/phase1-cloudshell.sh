@@ -183,7 +183,7 @@ gcloud compute instances create "$VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot" \
   --tags="$VM_NET_TAG" \
   --labels="$LABELS" \
-  --metadata="architect_prime=true,role=prime,env=beta"
+  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-}"
 
 echo
 echo "==> Wait for boot + show facts"
@@ -201,10 +201,26 @@ echo "VM attached SA : $ATTACHED_SA"
 
 echo
 echo "============================================================"
-echo "VM ready."
-echo "SSH in and run Phase 2:"
-echo "gcloud compute ssh $VM --zone $ZONE"
-echo "Log file: $LOG_FILE"
+echo " PHASE 1 COMPLETE"
+echo "============================================================"
+echo "VM ready:  $VM ($STATUS)"
+echo "External:  ${EXT_IP:-n/a}"
+echo "SA:        $ATTACHED_SA"
+echo "Log file:  $LOG_FILE"
+if [[ -n "${CF_URL:-}" ]]; then
+  echo
+  echo "============================================================"
+  echo " CHAT SETUP (one-time manual step)"
+  echo "============================================================"
+  echo "Cloud Function URL: ${CF_URL}"
+  echo
+  echo "1. Go to: https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${GCP_PROJECT_ID}"
+  echo "2. Configuration tab → Connection settings → HTTP endpoint URL"
+  echo "3. Paste: ${CF_URL}"
+  echo "4. Save"
+  echo
+  echo "Then message @Architect Prime in your Chat space to test."
+fi
 echo "============================================================"
 echo
 
