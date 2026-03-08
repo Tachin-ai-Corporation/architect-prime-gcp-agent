@@ -140,6 +140,14 @@ fi
 # Grant service account access to inbox bucket
 gsutil iam ch "serviceAccount:${PRIME_SA_EMAIL}:roles/storage.objectAdmin" "gs://${INBOX_BUCKET}"
 
+# Grant default compute SA the Cloud Build role (required for CF deploy)
+PROJECT_NUMBER="$(gcloud projects describe "${GCP_PROJECT_ID}" --format='value(projectNumber)')"
+DEFAULT_COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+  --member="serviceAccount:${DEFAULT_COMPUTE_SA}" \
+  --role="roles/cloudbuild.builds.builder" \
+  --quiet 2>/dev/null || true
+
 echo
 echo "==> Deploy Chat handler Cloud Function"
 CHAT_CF_NAME="chat-handler"
