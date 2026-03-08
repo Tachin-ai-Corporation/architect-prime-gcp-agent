@@ -138,29 +138,31 @@ See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md) for complete instructions.
 
 ---
 
-# 8. Fleet Architecture (Single-Project Model)
+# 8. Fleet Architecture (Multi-Project Model)
 
-All agents run as VMs within the same GCP project:
+Each fleet agent runs in its own GCP project with its own Chat app:
 
-    architect-prime-beta (GCP Project)
+    architect-prime-beta/          ← Prime's project
     ├── architect-prime (VM)       ← Fleet orchestrator
+    ├── Cloud Function             ← Prime's Chat app
+    └── GCS Inbox Bucket           ← Prime's message queue
+
+    fleet-alpha/                   ← Fleet agent's own project
     ├── fleet-alpha (VM)           ← Fleet agent
-    ├── Cloud Function             ← Chat event relay (shared)
-    ├── GCS Inbox Bucket           ← Message queue (per-agent paths)
-    └── Service Accounts           ← One per agent (least privilege)
+    ├── Cloud Function             ← Fleet Alpha Chat app
+    └── GCS Inbox Bucket           ← Fleet Alpha message queue
 
-**Why single-project:**
-- No org-level IAM needed
-- 10x faster deploy/teardown (VM lifecycle only)
-- Shared infrastructure (Cloud Function, GCS, Chat app)
-- Per-agent cost tracking via GCP labels
+**Why multi-project:**
+- Direct @-mentions per agent in Chat (`@Fleet Alpha`)
+- Clean auth (each agent's SA owns its Chat app)
+- Simple teardown (delete project = delete everything)
+- Independent scaling and billing
 
-**Chat relay (async):**
+**Deploy/Teardown:**
 
-    Chat → Cloud Function → GCS inbox/{agent-id}/pending/
-    → inbox-daemon → OpenClaw (Gemini AI) → chat-send → Chat
-
-**Fleet agent labels:** `app=architect-prime, role=fleet, agent={name}`
+    # From Prime VM:
+    fleet-deploy --name alpha --specialty "billing expert"
+    fleet-teardown --name alpha   # deletes entire project
 
 ---
 
@@ -171,4 +173,5 @@ All agents run as VMs within the same GCP project:
 - Self-upgradable (drift detection + upgrade)
 - Agent-maintainable (PR → approve → merge → tag)
 - Human-auditable (Chat relay, GCS audit trail)
-- Single-project fleet (shared infra, per-agent isolation via SA)
+- Multi-project fleet (independent projects, direct Chat @-mentions)
+

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================
-# fleet-teardown — Remove a fleet agent
+# fleet-teardown — Remove a fleet agent (deletes entire project)
 #
 # Usage: fleet-teardown --name <agent-name>
 #
-# Deletes: VM, SA, registry entry. Runs on Prime's VM.
+# Deletes the fleet agent's GCP project (removes everything:
+# VM, SA, bucket, Cloud Function) and updates Prime's registry.
 # ============================================================
 set -euo pipefail
 
@@ -24,38 +25,21 @@ done
 
 [[ -n "$AGENT_NAME" ]] || die "Missing --name"
 
-# ---- Resolve project context ----
-PROJECT_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
-  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
-[[ -n "$PROJECT_ID" ]] || die "Cannot resolve PROJECT_ID from metadata"
-
-ZONE="$(curl -s -f -H 'Metadata-Flavor: Google' \
-  'http://metadata.google.internal/computeMetadata/v1/instance/zone' 2>/dev/null | awk -F/ '{print $NF}' || true)"
-[[ -n "$ZONE" ]] || ZONE="us-central1-a"
-
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
+CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+FLEET_PROJECT="fleet-${AGENT_NAME}"
 
-VM_NAME="fleet-${AGENT_NAME}"
-SA_NAME="fleet-${AGENT_NAME}"
-SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
 
 log "Tearing down fleet agent: ${AGENT_NAME}"
+log "  Deleting project: ${FLEET_PROJECT}"
 
-# ---- 1. Delete VM ----
-log "Deleting VM: ${VM_NAME}"
-gcloud compute instances delete "$VM_NAME" \
-  --zone="$ZONE" \
-  --project="$PROJECT_ID" \
-  --quiet 2>/dev/null || warn "VM '${VM_NAME}' not found or already deleted"
+# ---- 1. Delete entire GCP project ----
+gcloud projects delete "$FLEET_PROJECT" --quiet 2>/dev/null || warn "Project '${FLEET_PROJECT}' not found or already deleted"
 
-# ---- 2. Delete SA ----
-log "Deleting service account: ${SA_EMAIL}"
-gcloud iam service-accounts delete "$SA_EMAIL" \
-  --project="$PROJECT_ID" \
-  --quiet 2>/dev/null || warn "SA '${SA_EMAIL}' not found or already deleted"
-
-# ---- 3. Update registry ----
+# ---- 2. Update registry ----
 if [[ -f "$REGISTRY_FILE" ]]; then
   log "Removing from fleet registry"
   jq --arg name "$AGENT_NAME" \
@@ -63,14 +47,10 @@ if [[ -f "$REGISTRY_FILE" ]]; then
     "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
 fi
 
-# ---- 4. Notify ----
-CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
-CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
-  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
-
+# ---- 3. Notify via Chat ----
 if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
   export CHAT_SPACE_ID OC_HOST_ROOT
-  "$CHAT_SEND" "🔥 Fleet agent *${AGENT_NAME}* has been decommissioned." || true
+  "$CHAT_SEND" "🔥 Fleet agent *${AGENT_NAME}* decommissioned. Project \`${FLEET_PROJECT}\` deleted." || true
 fi
 
-log "Fleet agent '${AGENT_NAME}' torn down"
+log "Fleet agent '${AGENT_NAME}' torn down (project deleted)"

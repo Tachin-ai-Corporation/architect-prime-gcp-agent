@@ -65,15 +65,7 @@ def handle_chat_event(request):
         msg_name = message.get("name", "")
         thread_name = message.get("thread", {}).get("name", "")
 
-        # Determine target agent from message text
-        # Route "fleet-{name} cmd" or "@fleet-{name} cmd" to fleet agent
         target_agent = AGENT_ID
-        words = text.split()
-        if words:
-            first_word = words[0].lower().lstrip("@")
-            if first_word.startswith("fleet-"):
-                target_agent = first_word[6:]  # strip "fleet-" → "alpha"
-                text = " ".join(words[1:]) if len(words) > 1 else "help"
 
         msg_data = {
             "type": "MESSAGE",
