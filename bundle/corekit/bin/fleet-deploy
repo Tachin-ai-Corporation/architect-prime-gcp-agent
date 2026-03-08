@@ -180,6 +180,10 @@ echo "✅ FLEET AGENT PHASE 2 COMPLETE"
 STARTUP_EOF
 )
 
+# Write startup script to temp file
+STARTUP_TMPFILE="$(mktemp /tmp/fleet-startup-XXXXXX.sh)"
+echo "$STARTUP_SCRIPT" > "$STARTUP_TMPFILE"
+
 # ---- 3. Create VM ----
 log "Creating VM: ${VM_NAME}"
 gcloud compute instances create "$VM_NAME" \
@@ -194,8 +198,11 @@ gcloud compute instances create "$VM_NAME" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
   --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-}" \
-  --metadata-from-file="startup-script=<(echo "$STARTUP_SCRIPT")" \
+  --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
+
+# Clean up temp file
+rm -f "$STARTUP_TMPFILE"
 
 # Get VM IP
 sleep 5
