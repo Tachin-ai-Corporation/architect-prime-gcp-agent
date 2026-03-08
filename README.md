@@ -129,10 +129,12 @@ commit secrets.
 
 # 7. Bootstrap Quickstart
 
-    export CORE_REF=v0.4.0
-    export GCP_PROJECT_ID=architect-prime-beta
-    bash bootstrap/phase1-cloudshell.sh    # Phase 1: GCP setup
-    # Phase 2 runs automatically on VM boot
+See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md) for complete instructions.
+
+    export PROJECT_ID=your-gcp-project-id
+    bash bootstrap/phase1-cloudshell.sh
+    # Phase 2 runs automatically on VM boot (~15-20 min)
+    # Phase 1 output prints Chat setup instructions
 
 ---
 

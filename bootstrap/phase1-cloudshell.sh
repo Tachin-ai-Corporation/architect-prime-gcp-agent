@@ -140,6 +140,14 @@ fi
 # Grant service account access to inbox bucket
 gsutil iam ch "serviceAccount:${PRIME_SA_EMAIL}:roles/storage.objectAdmin" "gs://${INBOX_BUCKET}"
 
+# Grant default compute SA the Cloud Build role (required for CF deploy)
+PROJECT_NUMBER="$(gcloud projects describe "${GCP_PROJECT_ID}" --format='value(projectNumber)')"
+DEFAULT_COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+  --member="serviceAccount:${DEFAULT_COMPUTE_SA}" \
+  --role="roles/cloudbuild.builds.builder" \
+  --quiet 2>/dev/null || true
+
 echo
 echo "==> Deploy Chat handler Cloud Function"
 CHAT_CF_NAME="chat-handler"
@@ -194,41 +202,68 @@ INT_IP="$(gcloud compute instances describe "$VM" --zone "$ZONE" --format='value
 EXT_IP="$(gcloud compute instances describe "$VM" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || true)"
 ATTACHED_SA="$(gcloud compute instances describe "$VM" --zone "$ZONE" --format='value(serviceAccounts[0].email)')"
 
-echo "VM status      : $STATUS"
-echo "VM internal IP : $INT_IP"
-echo "VM external IP : ${EXT_IP:-n/a}"
-echo "VM attached SA : $ATTACHED_SA"
-
 echo
 echo "============================================================"
-echo " PHASE 1 COMPLETE"
+echo "  PHASE 1 COMPLETE — Architect Prime"
 echo "============================================================"
-echo "VM ready:  $VM ($STATUS)"
-echo "External:  ${EXT_IP:-n/a}"
-echo "SA:        $ATTACHED_SA"
-echo "Log file:  $LOG_FILE"
+echo
+echo "  Project        : ${PROJECT_ID}"
+echo "  VM             : ${VM} (${STATUS})"
+echo "  Zone           : ${ZONE}"
+echo "  External IP    : ${EXT_IP:-n/a}"
+echo "  Internal IP    : ${INT_IP}"
+echo "  Service Account: ${ATTACHED_SA}"
+echo "  Machine Type   : ${MACHINE_TYPE}"
+echo "  Disk           : ${BOOT_DISK_SIZE}"
+echo "  Inbox Bucket   : gs://${INBOX_BUCKET:-${PROJECT_ID}-chat-inbox}"
+echo "  Cloud Function : ${CF_URL:-not deployed}"
+echo "  Log File       : ${LOG_FILE}"
+echo
+echo "============================================================"
+echo "  WHAT HAPPENS NEXT"
+echo "============================================================"
+echo
+echo "  Phase 2 is running automatically on the VM."
+echo "  It will take ~15-20 minutes to:"
+echo "    - Install Docker"
+echo "    - Build the OpenClaw container"
+echo "    - Install CoreKit (38 files via manifest)"
+echo "    - Start the inbox-daemon service"
+echo
+echo "  Monitor progress:"
+echo "    gcloud compute instances get-serial-port-output ${VM} --zone ${ZONE}"
+echo
+echo "  SSH into the VM:"
+echo "    gcloud compute ssh ${VM} --zone ${ZONE}"
+echo
 if [[ -n "${CF_URL:-}" ]]; then
-  echo
   echo "============================================================"
-  echo " CHAT SETUP (one-time manual step)"
+  echo "  CHAT SETUP (one-time manual steps)"
   echo "============================================================"
-  echo "Cloud Function URL: ${CF_URL}"
   echo
-  echo "1. Go to: https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${GCP_PROJECT_ID}"
-  echo "2. Configuration tab → Connection settings → HTTP endpoint URL"
-  echo "3. Paste: ${CF_URL}"
-  echo "4. Save"
+  echo "  Step 1: Configure the Chat app"
+  echo "    Go to: https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${PROJECT_ID}"
+  echo "    - App name: Architect Prime"
+  echo "    - Enable interactive features"
+  echo "    - Connection settings → HTTP endpoint URL"
+  echo "    - Paste: ${CF_URL}"
+  echo "    - Visibility: your domain or users"
+  echo "    - Save"
   echo
-  echo "Then message @Architect Prime in your Chat space to test."
+  echo "  Step 2: Create a Google Chat space"
+  echo "    - Open Google Chat → New space"
+  echo "    - Add the 'Architect Prime' app"
+  echo
+  echo "  Step 3: Set the space ID"
+  echo "    - Get the space ID from the Chat URL (format: spaces/XXXXXXXXX)"
+  echo "    - Run:"
+  echo "      gcloud compute instances add-metadata ${VM} --zone ${ZONE} \\"
+  echo "        --metadata=chat_space_id=spaces/YOUR_SPACE_ID"
+  echo
+  echo "  Step 4: Test"
+  echo "    Message '@Architect Prime help' in your Chat space."
+  echo
 fi
 echo "============================================================"
 echo
 
-# Safe default when invoked via: curl ... | bash
-AUTO_SSH="${AUTO_SSH:-1}"
-if [[ ! -t 0 ]]; then AUTO_SSH=0; fi
-
-if [[ "${AUTO_SSH}" == "1" ]]; then
-  # avoid consuming piped stdin; force interactive tty
-  gcloud compute ssh "$VM" --zone "$ZONE" </dev/tty
-fi

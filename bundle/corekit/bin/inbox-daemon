@@ -162,11 +162,11 @@ while true; do
     continue
   }
 
-  # Process with timeout
-  if timeout "$PROCESS_TIMEOUT" bash -c "$(declare -f json_field process_message); process_message '$local_tmp'" 2>&1; then
+  # Process directly (all functions/vars available in this shell)
+  if process_message "$local_tmp"; then
     log "Completed: ${filename}"
   else
-    warn "Timeout or error processing: ${filename}"
+    warn "Error processing: ${filename}"
   fi
 
   # Move to done
