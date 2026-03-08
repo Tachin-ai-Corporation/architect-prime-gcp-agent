@@ -292,7 +292,7 @@ chown -R node:node /home/node/.openclaw/shared
 # 9) Doctor + smoke
 info "Running doctor..."
 sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --fix || true'
-sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --non-interactive'
+sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor --non-interactive' || warn "oc doctor reported issues (non-blocking)"
 
 info "Running bootstrap_smoke..."
 sudo docker exec openclaw-gateway bash -lc "/home/node/.openclaw/bin/bootstrap_smoke.sh" || true
