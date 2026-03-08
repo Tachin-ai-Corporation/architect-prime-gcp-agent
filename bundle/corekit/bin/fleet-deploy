@@ -271,6 +271,15 @@ CF_URL="$(gcloud functions describe chat-handler \
   --region="$REGION" --project="$FLEET_PROJECT" \
   --format='value(serviceConfig.uri)' 2>/dev/null || echo 'unknown')"
 
+# Ensure Cloud Run service is publicly accessible (gen2 CF requirement)
+log "Granting public access to Cloud Function"
+gcloud run services add-iam-policy-binding chat-handler \
+  --member="allUsers" \
+  --role="roles/run.invoker" \
+  --region="$REGION" \
+  --project="$FLEET_PROJECT" \
+  --quiet 2>/dev/null || true
+
 rm -rf "$CF_TMPDIR"
 log "Cloud Function URL: ${CF_URL}"
 
