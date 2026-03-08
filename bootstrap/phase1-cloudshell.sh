@@ -252,6 +252,8 @@ if [[ -n "${CF_URL:-}" ]]; then
   echo "  Step 1: Configure the Chat app"
   echo "    Go to: https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${PROJECT_ID}"
   echo "    - App name: Architect Prime"
+  echo "    - Avatar URL: https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/robot_2/default/48px.svg"
+  echo "    - Description: GCP fleet orchestrator"
   echo "    - Enable interactive features"
   echo "    - Connection settings → HTTP endpoint URL"
   echo "    - Paste: ${CF_URL}"

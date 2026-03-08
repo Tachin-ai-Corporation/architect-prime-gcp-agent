@@ -421,6 +421,8 @@ echo
 echo "  Step 1: Configure the Chat app"
 echo "    Go to: https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${FLEET_PROJECT}"
 echo "    - App name: Fleet ${AGENT_NAME}"
+echo "    - Avatar URL: https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/smart_toy/default/48px.svg"
+echo "    - Description: Fleet agent — ${SPECIALTY}"
 echo "    - Enable interactive features"
 echo "    - Connection settings → HTTP endpoint URL"
 echo "    - Paste: ${CF_URL}"
