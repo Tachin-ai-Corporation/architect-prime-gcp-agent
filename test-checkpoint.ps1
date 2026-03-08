@@ -24,7 +24,7 @@
 #>
 param(
     [string]$CoreRef     = "main",
-    [string]$ProjectId   = "architect-prime-beta",
+    [Parameter(Mandatory=$true)][string]$ProjectId,
     [string]$Zone        = "us-central1-a",
     [string]$VmName      = "architect-prime",
     [string]$SaName      = "architect-prime",
