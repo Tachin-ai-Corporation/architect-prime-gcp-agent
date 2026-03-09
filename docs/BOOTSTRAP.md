@@ -8,6 +8,7 @@ Complete instructions to launch Prime from an empty GCP project.
 - `gcloud` CLI installed and authenticated (`gcloud auth login`)
 - You are a project Owner
 - The repo cloned (`git clone https://github.com/Tachin-ai-Corporation/architect-prime-gcp-agent`)
+- **For fleet deployment:** A GCP Workspace organization (find ID: `gcloud organizations list`)
 
 ## Step 1: Set your environment
 
@@ -43,7 +44,8 @@ Phase 1 automatically:
 - Creates GCS inbox bucket for Chat relay
 - Deploys the Chat handler Cloud Function
 - Creates the VM with Phase 2 startup script
-- Passes `billing_account` to VM metadata (for fleet-deploy)
+- Passes `billing_account`, `gcp_org_id`, and `admin_email` to VM metadata
+- If `GCP_ORG_ID` is set, auto-grants Prime SA org-level `projectCreator` + `billing.admin`
 
 **When it finishes, it prints all key values and next steps.**
 
@@ -117,6 +119,9 @@ sudo /opt/openclaw/.openclaw/bin/fleet-deploy --name alpha --specialty "billing 
 
 Each fleet agent gets its own GCP project, Cloud Function, and Chat app.
 Users can @-mention fleet agents directly (e.g., `@Fleet Alpha help`).
+
+> **Note:** Each fleet agent requires a one-time manual Chat app configuration.
+> `fleet-deploy` prints the exact setup instructions when it completes.
 
 ## Summary
 

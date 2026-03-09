@@ -95,6 +95,13 @@ if [[ -z "$GCP_ORG_ID" ]]; then
 fi
 [[ -n "$GCP_ORG_ID" ]] || die "Missing GCP_ORG_ID. Set via env or VM metadata 'gcp_org_id'"
 
+# Admin email — grant owner on fleet projects for human access
+ADMIN_EMAIL="${ADMIN_EMAIL:-}"
+if [[ -z "$ADMIN_EMAIL" ]]; then
+  ADMIN_EMAIL="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/admin_email' 2>/dev/null || true)"
+fi
+
 # Resolve CoreKit ref from STATE.json
 CORE_REF="main"
 STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
@@ -132,13 +139,28 @@ else
     --quiet
 fi
 
+# Grant human admin + Prime SA owner access on fleet project
+PRIME_SA_EMAIL="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email' 2>/dev/null || true)"
+if [[ -n "$ADMIN_EMAIL" ]]; then
+  log "Granting admin access to ${ADMIN_EMAIL}"
+  gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
+    --member="user:${ADMIN_EMAIL}" --role="roles/owner" \
+    --quiet > /dev/null 2>&1 || true
+fi
+if [[ -n "$PRIME_SA_EMAIL" ]]; then
+  gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
+    --member="serviceAccount:${PRIME_SA_EMAIL}" --role="roles/owner" \
+    --quiet > /dev/null 2>&1 || true
+fi
+
 # ============================================================
 # 2. Link billing account
 # ============================================================
 log "Linking billing account"
 gcloud billing projects link "$FLEET_PROJECT" \
   --billing-account="$BILLING_ACCOUNT" \
-  --quiet 2>/dev/null || log "Billing already linked"
+  --quiet > /dev/null 2>&1 || log "Billing already linked"
 
 # ============================================================
 # 3. Enable APIs

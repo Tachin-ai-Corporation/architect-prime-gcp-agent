@@ -255,7 +255,10 @@ function Invoke-Verify {
         @{ Name = "chat-send executable";  Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/chat-send" },
         @{ Name = "inbox-daemon service";  Cmd = "sudo systemctl is-enabled inbox-daemon.service 2>/dev/null || echo 'not-installed'" },
         @{ Name = "fleet-deploy exists";   Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/fleet-deploy" },
-        @{ Name = "fleet-registry exists"; Cmd = "sudo cat /opt/openclaw/.openclaw/corekit/fleet-registry.json" }
+        @{ Name = "fleet-teardown exists"; Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/fleet-teardown" },
+        @{ Name = "fleet-registry exists"; Cmd = "sudo cat /opt/openclaw/.openclaw/corekit/fleet-registry.json" },
+        @{ Name = "inbox-daemon.service uses placeholder"; Cmd = "grep '__INBOX_BUCKET__' /opt/openclaw/.openclaw/corekit/inbox-daemon.service && echo 'OK'" },
+        @{ Name = "no hardcoded project in fleet-deploy"; Cmd = "! grep -q 'architect-prime-beta' /opt/openclaw/.openclaw/bin/fleet-deploy && echo 'OK'" }
     )
 
     $passed = 0

@@ -71,11 +71,7 @@ process_message() {
       local response=""
       case "$cmd" in
         help|/help)
-          response="🏛 *Architect Prime* — Available Commands:
-• \`help\` — Show this message
-• \`status\` — System status (VM, CoreKit, container)
-• \`whoami\` — Your identity info
-• \`fleet\` — Fleet agent status (coming soon)"
+          response="👋 Hello! I'm **${AGENT_ID}**. Commands: \`help\`, \`status\`, \`whoami\`"
           ;;
         status|/status)
           local core_ref="unknown"
@@ -121,8 +117,8 @@ No fleet registry found."
           fi
           ;;
         *)
-          response="🤔 Unknown command: \`${msg_text}\`
-Type \`help\` for available commands."
+          response="❓ Unknown command: \`${cmd}\`
+Try \`help\` for available commands."
           ;;
       esac
 

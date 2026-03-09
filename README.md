@@ -132,6 +132,8 @@ commit secrets.
 See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md) for complete instructions.
 
     export PROJECT_ID=your-gcp-project-id
+    export BILLING_ACCOUNT=your-billing-account-id   # for fleet-deploy
+    export GCP_ORG_ID=your-gcp-org-id                # for fleet-deploy
     bash bootstrap/phase1-cloudshell.sh
     # Phase 2 runs automatically on VM boot (~15-20 min)
     # Phase 1 output prints Chat setup instructions
@@ -161,8 +163,8 @@ Each fleet agent runs in its own GCP project with its own Chat app:
 **Deploy/Teardown:**
 
     # From Prime VM:
-    fleet-deploy --name alpha --specialty "billing expert"
-    fleet-teardown --name alpha   # deletes entire project
+    fleet-deploy --name myagent --specialty "billing expert"
+    fleet-teardown --name myagent   # deletes entire project
 
 ---
 

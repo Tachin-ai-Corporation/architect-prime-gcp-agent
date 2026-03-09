@@ -122,6 +122,22 @@ add_bind "serviceAccount:${PRIME_SA_EMAIL}" "roles/serviceusage.serviceUsageCons
 # NOTE: roles/chat.bot is NOT a project-level role; do not bind it here.
 # Chat access is handled via Chat app configuration / Chat API + service identity.
 
+# Org-level roles for fleet-deploy (only if GCP_ORG_ID is set)
+if [[ -n "${GCP_ORG_ID:-}" ]]; then
+  echo
+  echo "==> Granting org-level roles for fleet deployment"
+  for org_role in roles/resourcemanager.projectCreator roles/billing.admin; do
+    echo "Binding: serviceAccount:${PRIME_SA_EMAIL} -> ${org_role} (org: ${GCP_ORG_ID})"
+    gcloud organizations add-iam-policy-binding "$GCP_ORG_ID" \
+      --member="serviceAccount:${PRIME_SA_EMAIL}" \
+      --role="$org_role" \
+      --quiet > /dev/null 2>&1 || echo "[WARN] Failed to bind ${org_role} at org level"
+  done
+else
+  echo
+  echo "[INFO] GCP_ORG_ID not set — skipping org-level IAM (fleet-deploy will require manual setup)"
+fi
+
 echo
 echo "==> Ensure firewall rule exists: $FW_RULE_NAME"
 if ! gcloud compute firewall-rules describe "$FW_RULE_NAME" >/dev/null 2>&1; then
@@ -199,7 +215,7 @@ gcloud compute instances create "$VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot" \
   --tags="$VM_NET_TAG" \
   --labels="$LABELS" \
-  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-},billing_account=${BILLING_ACCOUNT:-},gcp_org_id=${GCP_ORG_ID:-}"
+  --metadata="architect_prime=true,role=prime,env=beta,chat_space_id=${CHAT_SPACE_ID:-},chat_cf_url=${CF_URL:-},billing_account=${BILLING_ACCOUNT:-},gcp_org_id=${GCP_ORG_ID:-},admin_email=${CURRENT_USER}"
 
 echo
 echo "==> Wait for boot + show facts"
