@@ -246,13 +246,7 @@ info "Setting ownership and permissions..."
 run chown -R 1000:1000 "${OC_HOST_ROOT}/.openclaw" 2>/dev/null || true
 run find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 run find "${OC_HOST_ROOT}/.openclaw" -type f -exec chmod 644 {} \; 2>/dev/null || true
-run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/oc" 2>/dev/null || true
-run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/bootstrap_smoke.sh" 2>/dev/null || true
-run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/upgrade-corekit" 2>/dev/null || true
-run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/chat-send" 2>/dev/null || true
-run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/inbox-daemon" 2>/dev/null || true
-run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/fleet-deploy" 2>/dev/null || true
-run chmod 755 "${OC_HOST_ROOT}/.openclaw/bin/fleet-teardown" 2>/dev/null || true
+run find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
 # ---- 5. Write STATE.json ----
 info "Writing STATE.json..."
