@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# ============================================================
+# agent-ask — Answer a question using Vertex AI Gemini
+#
+# Calls the Gemini API with:
+#   - System prompt built from agent workspace (SOUL, MEMORY, etc.)
+#   - Google Search grounding for factual/current information
+#   - VM service account ADC for authentication
+#
+# Usage:
+#   agent-ask "What is the latest GKE pricing?"
+#   echo "question" | agent-ask --stdin
+#
+# Environment:
+#   AGENT_ID     — Agent identifier (default: prime)
+#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#   GEMINI_MODEL — Model to use (default: gemini-2.0-flash)
+#   REGION       — GCP region (default: us-central1)
+# ============================================================
+set -euo pipefail
+
+# ---- CONFIG ----
+AGENT_ID="${AGENT_ID:-prime}"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.0-flash}"
+REGION="${REGION:-us-central1}"
+MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-4096}"
+TEMPERATURE="${TEMPERATURE:-0.7}"
+
+BUILD_PROMPT="${OC_HOST_ROOT}/.openclaw/bin/build-system-prompt"
+
+# ---- Helpers ----
+die() { echo "[agent-ask] [ERROR] $*" >&2; exit 1; }
+
+# ---- Get access token ----
+get_token() {
+  curl -s -f \
+    -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | grep -o '"access_token":"[^"]*"' | sed 's/"access_token":"\([^"]*\)"/\1/'
+}
+
+# ---- Get project ID ----
+get_project() {
+  curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo ""
+}
+
+# ---- Parse question ----
+QUESTION=""
+case "${1:-}" in
+  --stdin)
+    QUESTION="$(cat)"
+    ;;
+  --help|-h)
+    echo "Usage: agent-ask <question>"
+    echo "       echo 'question' | agent-ask --stdin"
+    exit 0
+    ;;
+  "")
+    die "No question provided. Usage: agent-ask <question>"
+    ;;
+  *)
+    QUESTION="$1"
+    ;;
+esac
+
+[[ -n "$QUESTION" ]] || die "Empty question"
+
+# ---- Build system prompt ----
+SYSTEM_PROMPT=""
+if [[ -x "$BUILD_PROMPT" ]]; then
+  SYSTEM_PROMPT="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "$BUILD_PROMPT" 2>/dev/null || true)"
+fi
+if [[ -z "$SYSTEM_PROMPT" ]]; then
+  SYSTEM_PROMPT="You are ${AGENT_ID}, an AI assistant. Answer questions accurately and concisely. Use Google Search when you need current information."
+fi
+
+# ---- Get credentials ----
+TOKEN="$(get_token)" || die "Failed to get access token"
+PROJECT_ID="$(get_project)" || die "Failed to get project ID"
+
+[[ -n "$TOKEN" ]] || die "Empty access token"
+[[ -n "$PROJECT_ID" ]] || die "Empty project ID"
+
+# ---- Build API request ----
+API_URL="https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${GEMINI_MODEL}:generateContent"
+
+# Use python3 for safe JSON encoding (handles special chars, newlines, quotes)
+REQUEST_BODY="$(python3 -c "
+import json, sys
+
+system_prompt = sys.stdin.read()
+question = '''$(printf '%s' "$QUESTION" | sed "s/'/'\\''/g")'''
+
+body = {
+    'contents': [{
+        'role': 'user',
+        'parts': [{'text': question}]
+    }],
+    'systemInstruction': {
+        'parts': [{'text': system_prompt}]
+    },
+    'tools': [{
+        'google_search': {}
+    }],
+    'generationConfig': {
+        'maxOutputTokens': $MAX_OUTPUT_TOKENS,
+        'temperature': $TEMPERATURE
+    }
+}
+print(json.dumps(body))
+" <<< "$SYSTEM_PROMPT")" || die "Failed to build request body"
+
+# ---- Call Vertex AI ----
+RESPONSE="$(curl -s -w "\n%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  "$API_URL" \
+  -d "$REQUEST_BODY")"
+
+HTTP_CODE="$(echo "$RESPONSE" | tail -1)"
+BODY="$(echo "$RESPONSE" | sed '$d')"
+
+if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+  echo "[agent-ask] Vertex AI API error (HTTP ${HTTP_CODE})" >&2
+  echo "$BODY" >&2
+  die "API call failed"
+fi
+
+# ---- Extract answer text ----
+ANSWER="$(echo "$BODY" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    candidates = data.get('candidates', [])
+    if candidates:
+        parts = candidates[0].get('content', {}).get('parts', [])
+        texts = [p['text'] for p in parts if 'text' in p]
+        print(''.join(texts))
+    else:
+        print('No response generated.')
+except Exception as e:
+    print(f'Error parsing response: {e}')
+" 2>/dev/null)" || ANSWER="Error parsing AI response."
+
+# ---- Output ----
+# Truncate to ~3800 chars to stay within Chat's 4096 limit
+# (leaving room for formatting overhead)
+if [[ ${#ANSWER} -gt 3800 ]]; then
+  ANSWER="${ANSWER:0:3800}…"
+fi
+
+echo "$ANSWER"

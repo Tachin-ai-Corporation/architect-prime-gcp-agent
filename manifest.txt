@@ -14,6 +14,8 @@ bundle/corekit/bin/inbox-daemon .openclaw/bin/inbox-daemon
 bundle/corekit/config/inbox-daemon.service .openclaw/corekit/inbox-daemon.service
 bundle/corekit/bin/fleet-deploy .openclaw/bin/fleet-deploy
 bundle/corekit/bin/fleet-teardown .openclaw/bin/fleet-teardown
+bundle/corekit/bin/agent-ask .openclaw/bin/agent-ask
+bundle/corekit/bin/build-system-prompt .openclaw/bin/build-system-prompt
 bundle/corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json
 
 bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json

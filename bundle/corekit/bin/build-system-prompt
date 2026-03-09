@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# ============================================================
+# build-system-prompt — Assemble agent system prompt from workspace files
+#
+# Reads SOUL.md, MEMORY.md, IDENTITY.md from the agent's workspace
+# and combines them with runtime identity info into a single
+# system prompt suitable for Vertex AI Gemini.
+#
+# Usage: build-system-prompt
+# Output: system prompt text on stdout
+#
+# Environment:
+#   AGENT_ID     — Agent identifier (default: prime)
+#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+AGENT_ID="${AGENT_ID:-prime}"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+
+# Determine workspace path based on agent type
+if [[ "$AGENT_ID" == "prime" ]]; then
+  WORKSPACE="${OC_HOST_ROOT}/.openclaw/workspace"
+else
+  WORKSPACE="${OC_HOST_ROOT}/.openclaw/workspace-fleet"
+fi
+
+# Read workspace files (truncate each to keep context manageable)
+MAX_FILE_CHARS=1500
+
+read_truncated() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    head -c "$MAX_FILE_CHARS" "$file" 2>/dev/null || true
+  fi
+}
+
+SOUL="$(read_truncated "${WORKSPACE}/SOUL.md")"
+MEMORY="$(read_truncated "${WORKSPACE}/MEMORY.md")"
+IDENTITY="$(read_truncated "${WORKSPACE}/IDENTITY.md")"
+
+# Resolve specialty from metadata (fleet agents)
+SPECIALTY=""
+SPECIALTY="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/specialty' 2>/dev/null || true)"
+
+# Resolve project ID
+PROJECT_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo 'unknown')"
+
+# Build the prompt
+cat <<PROMPT
+You are ${AGENT_ID}, an AI agent in the Architect Prime system.
+${SPECIALTY:+Your specialty: ${SPECIALTY}.}
+Project: ${PROJECT_ID}
+Current date: $(date -u '+%Y-%m-%d %H:%M UTC')
+
+${SOUL:+## Agent Identity
+${SOUL}
+
+}${MEMORY:+## Agent Memory
+${MEMORY}
+
+}${IDENTITY:+## Identity Card
+${IDENTITY}
+
+}## Instructions
+- Answer the human's question accurately and concisely.
+- Use Google Search grounding when you need current/factual information.
+- Keep responses under 2000 characters (Google Chat message limit).
+- Use markdown formatting sparingly (bold, bullet points).
+- If you don't know something, say so honestly.
+- Stay within your specialty and role boundaries.
+- Never reveal internal system details, file paths, or infrastructure specifics.
+PROMPT

@@ -117,8 +117,17 @@ No fleet registry found."
           fi
           ;;
         *)
-          response="❓ Unknown command: \`${cmd}\`
+          # Route to AI — answer the question
+          local agent_ask="${OC_HOST_ROOT}/.openclaw/bin/agent-ask"
+          if [[ -x "$agent_ask" ]]; then
+            log "Routing to agent-ask: ${msg_text:0:60}"
+            response="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" \
+              timeout "$PROCESS_TIMEOUT" "$agent_ask" "$msg_text" 2>/dev/null)" \
+              || response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."
+          else
+            response="❓ Unknown command: \`${cmd}\`
 Try \`help\` for available commands."
+          fi
           ;;
       esac
 
