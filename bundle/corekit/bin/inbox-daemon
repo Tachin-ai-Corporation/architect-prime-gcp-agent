@@ -88,7 +88,7 @@ process_message() {
           local container_status
           container_status="$(sudo docker ps --filter name=openclaw-gateway --format '{{.Status}}' 2>/dev/null || echo 'unknown')"
 
-          response="📊 *Architect Prime Status*
+          response="📊 *Agent ${AGENT_ID} Status*
 • CoreKit: \`${core_ref}\`
 • Agent ID: \`${AGENT_ID}\`
 • Uptime: ${uptime_str}
