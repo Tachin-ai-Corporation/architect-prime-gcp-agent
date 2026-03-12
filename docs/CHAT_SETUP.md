@@ -1,50 +1,84 @@
-# Google Chat Setup Guide
+# Google Chat Setup (DWD — Domain-Wide Delegation)
 
-## Overview
+Architect Prime communicates through Google Chat using **Domain-Wide Delegation (DWD)**. Agents impersonate Workspace user accounts — no Chat apps or Cloud Functions needed.
 
-Bootstrap (`phase1-cloudshell.sh`) automatically:
-- Enables the Chat API
-- Creates the GCS inbox bucket
-- Deploys the Cloud Function (`chat-handler`)
-- Prints the Cloud Function URL at the end
+## Prerequisites
 
-You only need to do **one manual step**: point the Chat app to the Cloud Function URL.
+- Google Workspace domain with admin access
+- An Architect Prime deployment (see [BOOTSTRAP.md](BOOTSTRAP.md))
+- The SA Client ID (printed at the end of Phase 1 bootstrap)
 
-## One-Time Setup (per project)
+## One-Time Setup (Workspace Super Admin)
 
-### 1. Configure the Chat App
+### Step 1: Grant DWD
 
-Go to: `https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=YOUR_PROJECT_ID`
+1. Go to [Admin Console](https://admin.google.com) → **Security** → **Access and data control** → **API Controls**
+2. Scroll to **Domain-Wide Delegation** → click **Manage Domain Wide Delegation**
+3. Click **Add new**
+4. **Client ID:** Enter Prime's SA Client ID (printed by `phase1-cloudshell.sh`)
+5. **OAuth Scopes:**
+   ```
+   https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly
+   ```
+6. Click **Authorize**
+7. Wait up to 24 hours for propagation (usually much faster)
 
-- **App name**: `Architect Prime`
-- **Avatar URL**: `https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/robot_2/default/48px.svg`
-- **Description**: `GCP fleet orchestrator`
-- **Interactive features**: ✅ Enable
-- **Connection settings**: HTTP endpoint URL → paste the Cloud Function URL from bootstrap output
-- **Visibility**: Your domain or specific users
-- **Save**
+### Step 2: Create Agent User Accounts
 
-### 2. Create a Chat Space
+Create Workspace user accounts for each agent:
+- `prime@yourdomain.com` (for Architect Prime)
+- Fleet agents will need their own accounts (e.g., `fleet-alpha@yourdomain.com`)
 
-- Open Google Chat
-- Create a space (e.g., "Architect Prime Ops")
-- Add the "Architect Prime" app to the space
+### Step 3: Create a Chat Space
 
-### 3. Set the Space ID
+1. Open Google Chat → **New space**
+2. Add the agent user account (e.g., `prime@yourdomain.com`)
+3. Get the space ID from the Chat URL (format: `spaces/XXXXXXXXX`)
 
-Get the space ID from the Chat URL (format: `spaces/XXXXXXXXX`) and pass it to bootstrap:
+### Step 4: Configure the Agent
 
-    export CHAT_SPACE_ID=spaces/YOUR_SPACE_ID
+Set the agent user email and space ID via VM metadata:
+```bash
+gcloud compute instances add-metadata architect-prime --zone us-central1-a \
+  --metadata=agent_user_email=prime@yourdomain.com,chat_space_id=spaces/YOUR_SPACE_ID
+```
 
-Or set it in VM metadata:
+Or set env vars before bootstrap:
+```bash
+export AGENT_USER_EMAIL=prime@yourdomain.com
+export CHAT_SPACE_ID=spaces/YOUR_SPACE_ID
+```
 
-    gcloud compute instances add-metadata architect-prime \
-      --metadata=chat_space_id=spaces/YOUR_SPACE_ID
+### Step 5: Test
 
-### 4. Test
+@-mention the agent user in the Chat space. The `inbox-daemon` detects the mention and responds.
 
-Message `@Architect Prime help` in the Chat space. You should get a response with available commands.
+## How It Works
 
-## Architecture
+```
+Human @-mentions agent user in Chat
+    │
+    ▼
+inbox-daemon polls Chat API (spaces.messages.list)
+    │ uses DWD: SA impersonates agent user via signJwt
+    │
+    ▼
+Detects @-mention → processes message
+    │
+    ├── Built-in commands: help, status, whoami, fleet
+    └── Everything else → agent-ask (Vertex AI Gemini)
+            │
+            ▼
+    chat-send (DWD) → posts response as the agent user
+```
 
-    Chat → Cloud Function → GCS inbox/{agent-id}/pending/ → inbox-daemon → OpenClaw → chat-send → Chat
+## Adding Fleet Agents
+
+When Prime hires a fleet agent (`fleet-deploy`):
+
+1. Prime creates the fleet agent's GCP project + VM
+2. You (admin) create a Workspace user for the fleet agent
+3. Add the fleet user to the shared Chat space
+4. Prime verifies comms (fleet intro — coming in v0.8.0)
+
+The same DWD grant covers all agents — no per-agent Chat app configuration needed.

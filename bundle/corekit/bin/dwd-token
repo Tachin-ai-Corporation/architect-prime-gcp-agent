@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# ============================================================
+# dwd-token — Get a user-scoped access token via Domain-Wide Delegation
+#
+# Uses the VM-attached service account + signJwt to impersonate
+# a Workspace user. NO JSON key files required.
+#
+# Flow:
+#   1. Get VM SA email from metadata server
+#   2. Build JWT claim with sub=<user> and requested scopes
+#   3. Call iam.googleapis.com signJwt using VM metadata auth
+#   4. Exchange signed JWT for access token via oauth2.googleapis.com
+#   5. Print access token to stdout
+#
+# Usage:
+#   dwd-token --user prime@domain.com --scope "https://www.googleapis.com/auth/chat.messages"
+#   dwd-token --user prime@domain.com   # uses default Chat scopes
+#
+# Environment:
+#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+# ---- Defaults ----
+USER_EMAIL=""
+SCOPES=""
+DEFAULT_SCOPES="https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly"
+TOKEN_LIFETIME=3600  # seconds
+
+# ---- Helpers ----
+die() { echo "[dwd-token] [ERROR] $*" >&2; exit 1; }
+
+# ---- Parse args ----
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --user)    USER_EMAIL="$2"; shift 2 ;;
+    --scope)   SCOPES="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: dwd-token --user <email> [--scope <space-separated-scopes>]"
+      echo "Prints an access token on stdout."
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+# If no user specified, try reading from chat-config.json
+if [[ -z "$USER_EMAIL" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+  CONFIG_FILE="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+  if [[ -f "$CONFIG_FILE" ]]; then
+    USER_EMAIL="$(python3 -c "
+import json, sys
+try:
+    cfg = json.load(open('$CONFIG_FILE'))
+    print(cfg.get('agentUserEmail', ''))
+except: pass
+" 2>/dev/null)"
+  fi
+fi
+
+[[ -n "$USER_EMAIL" ]] || die "No user email. Use --user <email> or set agentUserEmail in chat-config.json"
+
+# Use default scopes if none specified
+[[ -n "$SCOPES" ]] || SCOPES="$DEFAULT_SCOPES"
+
+# ---- Step 1: Get VM SA email from metadata ----
+META="http://metadata.google.internal/computeMetadata/v1"
+SA_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' \
+  "${META}/instance/service-accounts/default/email" 2>/dev/null)" \
+  || die "Cannot read SA email from metadata server. Is this running on a GCE VM?"
+[[ -n "$SA_EMAIL" ]] || die "Empty SA email from metadata"
+
+# Get a metadata-based access token for calling signJwt
+META_TOKEN="$(curl -sf -H 'Metadata-Flavor: Google' \
+  "${META}/instance/service-accounts/default/token" 2>/dev/null \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" \
+  || die "Failed to get metadata access token"
+
+# ---- Step 2: Build JWT claim ----
+NOW="$(date +%s)"
+EXP="$((NOW + TOKEN_LIFETIME))"
+
+# Convert space-separated scopes to comma-separated for JWT
+JWT_SCOPES="$(echo "$SCOPES" | tr ' ' ',')"
+
+JWT_CLAIM="$(python3 -c "
+import json
+claim = {
+    'iss': '$SA_EMAIL',
+    'sub': '$USER_EMAIL',
+    'scope': '$JWT_SCOPES'.replace(',', ' '),
+    'aud': 'https://oauth2.googleapis.com/token',
+    'iat': $NOW,
+    'exp': $EXP
+}
+print(json.dumps(claim))
+")" || die "Failed to build JWT claim"
+
+# ---- Step 3: Sign JWT via IAM signJwt API ----
+SIGN_URL="https://iam.googleapis.com/v1/projects/-/serviceAccounts/${SA_EMAIL}:signJwt"
+
+SIGN_RESPONSE="$(curl -sf -X POST \
+  -H "Authorization: Bearer ${META_TOKEN}" \
+  -H "Content-Type: application/json" \
+  "$SIGN_URL" \
+  -d "{\"payload\": $(python3 -c "import json; print(json.dumps('$JWT_CLAIM'))" 2>/dev/null || echo "\"$JWT_CLAIM\"")}" \
+  2>/dev/null)" || die "signJwt API call failed. Ensure SA has roles/iam.serviceAccountTokenCreator on itself."
+
+SIGNED_JWT="$(echo "$SIGN_RESPONSE" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data['signedJwt'])
+except Exception as e:
+    print('', end='')
+    sys.exit(1)
+" 2>/dev/null)" || die "Failed to extract signedJwt from response"
+
+[[ -n "$SIGNED_JWT" ]] || die "Empty signedJwt. Response: ${SIGN_RESPONSE}"
+
+# ---- Step 4: Exchange signed JWT for access token ----
+TOKEN_RESPONSE="$(curl -sf -X POST \
+  "https://oauth2.googleapis.com/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${SIGNED_JWT}" \
+  2>/dev/null)" || die "Token exchange failed"
+
+ACCESS_TOKEN="$(echo "$TOKEN_RESPONSE" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if 'access_token' in data:
+        print(data['access_token'])
+    else:
+        print(data.get('error_description', data.get('error', 'unknown error')), file=sys.stderr)
+        sys.exit(1)
+except Exception as e:
+    print(f'Parse error: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null)" || die "Failed to extract access token. Response: ${TOKEN_RESPONSE}"
+
+[[ -n "$ACCESS_TOKEN" ]] || die "Empty access token"
+
+# ---- Step 5: Output ----
+echo "$ACCESS_TOKEN"

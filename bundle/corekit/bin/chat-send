@@ -2,22 +2,21 @@
 # ============================================================
 # chat-send — Send a message to a Google Chat space
 #
-# Uses Application Default Credentials (ADC) from the VM's
-# service account to authenticate with the Google Chat API.
+# Uses Domain-Wide Delegation (DWD) to send messages as an
+# impersonated Workspace user. Messages appear as that user,
+# not as a bot.
 #
 # Usage:
-#   chat-send "Hello from Architect Prime!"
+#   chat-send "Hello from Prime!"
 #   chat-send --card "Title" "Body text"
 #   echo "message" | chat-send --stdin
 #
 # Environment:
-#   CHAT_SPACE_ID  — Google Chat space ID (required)
-#                    Format: spaces/AAAA...
-#   GCP_PROJECT_ID — GCP project (for logging, optional)
+#   CHAT_SPACE_ID     — Google Chat space ID (spaces/XXXX)
+#   AGENT_USER_EMAIL  — Workspace user to impersonate
+#   OC_HOST_ROOT      — OpenClaw host root (default: /opt/openclaw)
 #
-# The Chat space ID is read from:
-#   1. $CHAT_SPACE_ID env var
-#   2. /opt/openclaw/.openclaw/corekit/chat-config.json
+# Config is read from chat-config.json if env vars are not set.
 # ============================================================
 set -euo pipefail
 
@@ -25,43 +24,49 @@ set -euo pipefail
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
 CHAT_API="https://chat.googleapis.com/v1"
+DWD_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
 
 # ---- Helpers ----
-die() { echo "[ERROR] $*" >&2; exit 1; }
+die() { echo "[chat-send] [ERROR] $*" >&2; exit 1; }
 
-# ---- Resolve Chat space ID ----
-resolve_space_id() {
-  if [[ -n "${CHAT_SPACE_ID:-}" ]]; then
-    echo "$CHAT_SPACE_ID"
-    return
-  fi
+# ---- Resolve config from JSON file ----
+resolve_config() {
   if [[ -f "$CHAT_CONFIG" ]]; then
-    # Extract spaceId from JSON (no jq dependency)
-    local sid
-    sid="$(grep -o '"spaceId"[[:space:]]*:[[:space:]]*"[^"]*"' "$CHAT_CONFIG" 2>/dev/null | head -1 | sed 's/.*: *"\([^"]*\)"/\1/')"
-    if [[ -n "$sid" ]]; then
-      echo "$sid"
-      return
+    if [[ -z "${CHAT_SPACE_ID:-}" ]]; then
+      CHAT_SPACE_ID="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('spaceId', ''))
+except: pass
+" 2>/dev/null)"
+    fi
+    if [[ -z "${AGENT_USER_EMAIL:-}" ]]; then
+      AGENT_USER_EMAIL="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('agentUserEmail', ''))
+except: pass
+" 2>/dev/null)"
     fi
   fi
-  die "No Chat space ID found. Set CHAT_SPACE_ID or configure chat-config.json"
 }
 
-# ---- Get access token via ADC (metadata server on GCE) ----
+# ---- Get DWD access token ----
 get_access_token() {
   local token
-  token="$(curl -s -f \
-    -H 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | grep -o '"access_token":"[^"]*"' | sed 's/"access_token":"\([^"]*\)"/\1/')"
-
-  if [[ -z "$token" ]]; then
-    die "Failed to get access token from metadata server. Is this running on a GCE VM?"
+  if [[ -x "$DWD_TOKEN" ]]; then
+    token="$("$DWD_TOKEN" --user "$AGENT_USER_EMAIL" 2>/dev/null)" \
+      || die "dwd-token failed for user ${AGENT_USER_EMAIL}"
+  else
+    die "dwd-token not found at ${DWD_TOKEN}"
   fi
+  [[ -n "$token" ]] || die "Empty access token"
   echo "$token"
 }
 
-# ---- Send a simple text message ----
+# ---- Send a text message ----
 send_text() {
   local space_id="$1"
   local text="$2"
@@ -82,7 +87,7 @@ send_text() {
   body="$(echo "$response" | sed '$d')"
 
   if [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]]; then
-    echo "[chat-send] Message sent to ${space_id} (HTTP ${http_code})"
+    echo "[chat-send] Message sent to ${space_id} as ${AGENT_USER_EMAIL} (HTTP ${http_code})"
   else
     echo "[chat-send] Failed to send message (HTTP ${http_code})" >&2
     echo "$body" >&2
@@ -131,7 +136,7 @@ send_card() {
   http_code="$(echo "$response" | tail -1)"
 
   if [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]]; then
-    echo "[chat-send] Card sent to ${space_id} (HTTP ${http_code})"
+    echo "[chat-send] Card sent to ${space_id} as ${AGENT_USER_EMAIL} (HTTP ${http_code})"
   else
     echo "[chat-send] Failed to send card (HTTP ${http_code})" >&2
     echo "$response" | sed '$d' >&2
@@ -140,28 +145,33 @@ send_card() {
 }
 
 # ---- Main ----
-SPACE_ID="$(resolve_space_id)"
+resolve_config
+
+[[ -n "${CHAT_SPACE_ID:-}" ]] || die "No Chat space ID. Set CHAT_SPACE_ID or configure chat-config.json"
+[[ -n "${AGENT_USER_EMAIL:-}" ]] || die "No agent user email. Set AGENT_USER_EMAIL or configure agentUserEmail in chat-config.json"
 
 case "${1:-}" in
   --card)
     [[ -n "${2:-}" ]] || die "Usage: chat-send --card <title> <body>"
     [[ -n "${3:-}" ]] || die "Usage: chat-send --card <title> <body>"
-    send_card "$SPACE_ID" "$2" "$3"
+    send_card "$CHAT_SPACE_ID" "$2" "$3"
     ;;
   --stdin)
     text="$(cat)"
     [[ -n "$text" ]] || die "No input on stdin"
-    send_text "$SPACE_ID" "$text"
+    send_text "$CHAT_SPACE_ID" "$text"
     ;;
   --help|-h)
     echo "Usage: chat-send <message>"
     echo "       chat-send --card <title> <body>"
     echo "       echo 'msg' | chat-send --stdin"
+    echo ""
+    echo "Sends as: \${AGENT_USER_EMAIL} (via DWD impersonation)"
     ;;
   "")
     die "Usage: chat-send <message>"
     ;;
   *)
-    send_text "$SPACE_ID" "$1"
+    send_text "$CHAT_SPACE_ID" "$1"
     ;;
 esac

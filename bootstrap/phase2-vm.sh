@@ -298,21 +298,26 @@ info "Running bootstrap_smoke..."
 sudo docker exec openclaw-gateway bash -lc "/home/node/.openclaw/bin/bootstrap_smoke.sh" || true
 
 # 10) Configure Chat + announce (best-effort, non-blocking)
-info "Configuring Google Chat..."
+info "Configuring Google Chat (DWD mode)..."
 CHAT_SPACE_ID="${CHAT_SPACE_ID:-}"
+AGENT_USER_EMAIL="${AGENT_USER_EMAIL:-}"
 if [[ -z "$CHAT_SPACE_ID" ]]; then
-  # Try to read from VM metadata
   CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
     'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
 fi
+if [[ -z "$AGENT_USER_EMAIL" ]]; then
+  AGENT_USER_EMAIL="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_user_email' 2>/dev/null || true)"
+fi
 
 if [[ -n "$CHAT_SPACE_ID" ]]; then
-  # Write chat-config.json
+  # Write chat-config.json (DWD format)
   chat_config="${OC_HOST_DIR}/corekit/chat-config.json"
   cat > "$chat_config" <<CHATEOF
 {
   "spaceId": "${CHAT_SPACE_ID}",
-  "botDisplayName": "Architect Prime",
+  "agentUserEmail": "${AGENT_USER_EMAIL:-}",
+  "agentDisplayName": "Architect Prime",
   "projectId": "${GCP_PROJECT_ID}"
 }
 CHATEOF
@@ -320,15 +325,17 @@ CHATEOF
   chown 1000:1000 "$chat_config" 2>/dev/null || true
   echo "Chat config written to: $chat_config"
 
-  # Auto-announce (best-effort)
-  info "Announcing in Google Chat..."
+  # Auto-announce (best-effort, requires DWD to be configured)
+  info "Announcing in Google Chat (DWD)..."
   export CHAT_SPACE_ID
+  export AGENT_USER_EMAIL
   export OC_HOST_ROOT="${OC_HOST_ROOT}"
   "${OC_HOST_DIR}/bin/chat-send" \
     "🏛 *Architect Prime* is online.
 Project: \`${GCP_PROJECT_ID}\`
 CoreKit: \`${GH_OWNER}/${GH_REPO}@${CORE_REF}\`
-Time: $(date -Is)" || warn "Chat announce failed (non-blocking)"
+Mode: DWD Chat polling
+Time: $(date -Is)" || warn "Chat announce failed (DWD may not be configured yet)"
 else
   warn "No CHAT_SPACE_ID found — skipping Chat announce. See docs/CHAT_SETUP.md"
 fi
@@ -340,16 +347,12 @@ if [[ -f "$INBOX_DAEMON_SVC" ]]; then
   # Install jq (needed by inbox-daemon)
   apt-get -y -qq install jq 2>/dev/null || warn "jq install failed"
 
-  # Configure service with project-specific bucket
-  INBOX_BUCKET="${GCP_PROJECT_ID}-chat-inbox"
-  sed -i "s|__INBOX_BUCKET__|${INBOX_BUCKET}|g" "$INBOX_DAEMON_SVC" 2>/dev/null || true
-
   # Install and start systemd service
   sudo cp "$INBOX_DAEMON_SVC" /etc/systemd/system/inbox-daemon.service
   sudo systemctl daemon-reload
   sudo systemctl enable inbox-daemon.service
-  sudo systemctl start inbox-daemon.service || warn "inbox-daemon start failed (bucket may not exist yet)"
-  echo "inbox-daemon service started"
+  sudo systemctl start inbox-daemon.service || warn "inbox-daemon start failed (DWD may not be configured yet)"
+  echo "inbox-daemon service started (DWD Chat polling mode)"
 else
   warn "inbox-daemon.service not found — skipping"
 fi
