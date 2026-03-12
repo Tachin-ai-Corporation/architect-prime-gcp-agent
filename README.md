@@ -34,16 +34,22 @@ internal URLs, or any environment-specific values.
 
 | Tag | Description |
 |---|---|
+| `v0.1.0` | CI foundation (forbid-secrets, shellcheck) |
 | `v0.2.0` | install.sh + STATE.json + test automation |
 | `v0.3.0` | Self-upgrade + drift detection |
 | `v0.4.0` | Google Chat integration (chat-send) |
+| `v0.5.1` | Chat command loop + inbox-daemon |
+| `v0.6.0` | Fleet agent template (multi-project) |
+| `v0.7.0` | Agent-ask: LLM + web search (fundamental skill) |
 
-Tags are created after `test-checkpoint.ps1` passes 7/7 GCP checks.
+Tags are created after `test-checkpoint.ps1` passes GCP verification checks.
+
+See [MISSION_PLAN.md](MISSION_PLAN.md) for the full roadmap to v1.0.
 
 ## Rule for `main`
 
 `main` may move forward with commits, but only checkpoint tags are stable.
-Pin to a tag: `CORE_REF=v0.4.0`
+Pin to a tag: `CORE_REF=v0.7.0`
 
 ---
 
