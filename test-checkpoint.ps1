@@ -170,7 +170,7 @@ function Invoke-Create {
         "--machine-type=e2-standard-2",
         "--boot-disk-size=200GB",
         "--service-account=$SaEmail",
-        "--scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot",
+        "--scopes=https://www.googleapis.com/auth/cloud-platform",
         "--tags=allow-https",
         "--labels=app=architect-prime,role=prime,env=beta,managed=bootstrap",
         "--metadata=architect_prime=true,role=prime,env=beta",
@@ -257,7 +257,10 @@ function Invoke-Verify {
         @{ Name = "fleet-deploy exists";   Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/fleet-deploy" },
         @{ Name = "fleet-teardown exists"; Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/fleet-teardown" },
         @{ Name = "fleet-registry exists"; Cmd = "sudo cat /opt/openclaw/.openclaw/corekit/fleet-registry.json" },
-        @{ Name = "inbox-daemon.service uses placeholder"; Cmd = "grep '__INBOX_BUCKET__' /opt/openclaw/.openclaw/corekit/inbox-daemon.service && echo 'OK'" },
+        @{ Name = "dwd-token exists";     Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/dwd-token" },
+        @{ Name = "chat-read exists";      Cmd = "sudo ls -la /opt/openclaw/.openclaw/bin/chat-read" },
+        @{ Name = "chat-config template";  Cmd = "sudo ls -la /opt/openclaw/.openclaw/corekit/chat-config.json.tmpl" },
+        @{ Name = "inbox-daemon.service uses placeholder"; Cmd = "grep 'DWD' /opt/openclaw/.openclaw/corekit/inbox-daemon.service && echo 'OK'" },
         @{ Name = "no hardcoded project in fleet-deploy"; Cmd = "! grep -q 'architect-prime-beta' /opt/openclaw/.openclaw/bin/fleet-deploy && echo 'OK'" }
     )
 

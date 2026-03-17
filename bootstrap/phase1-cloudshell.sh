@@ -160,6 +160,36 @@ echo
 echo "==> Hard reset VM (delete if exists)"
 gcloud compute instances delete "$VM" --zone "$ZONE" --quiet || true
 
+# ---- Generate Phase 2 startup script ----
+echo
+echo "==> Generating Phase 2 startup script..."
+CORE_REF="${CORE_REF:-main}"
+STARTUP_SCRIPT="$(mktemp /tmp/architect-prime-startup-XXXXXX.sh)"
+cat > "$STARTUP_SCRIPT" <<STARTUP_EOF
+#!/usr/bin/env bash
+set -euo pipefail
+LOG_FILE="/var/log/architect-prime-phase2.log"
+exec > >(tee -a "\$LOG_FILE") 2>&1
+
+echo "========== PHASE 2 STARTUP BEGIN =========="
+echo "CoreRef: ${CORE_REF}"
+echo "Project: ${PROJECT_ID}"
+echo "Time:    \$(date -Is)"
+
+export GH_OWNER='${GH_OWNER:-Tachin-ai-Corporation}'
+export GH_REPO='${GH_REPO:-architect-prime-gcp-agent}'
+export CORE_REF='${CORE_REF}'
+export GCP_PROJECT_ID='${PROJECT_ID}'
+export EXPECTED_RUNTIME_SA_EMAIL='${PRIME_SA_EMAIL}'
+export OPENCLAW_PIN_SHA=''
+
+CORE_BASE="https://raw.githubusercontent.com/\${GH_OWNER}/\${GH_REPO}/\${CORE_REF}"
+curl -fsSL "\${CORE_BASE}/bootstrap/phase2-vm.sh" | bash
+
+echo "========== PHASE 2 COMPLETE =========="
+STARTUP_EOF
+echo "Startup script written to: $STARTUP_SCRIPT"
+
 echo
 echo "==> Create VM"
 gcloud compute instances create "$VM" \
@@ -172,7 +202,11 @@ gcloud compute instances create "$VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="$VM_NET_TAG" \
   --labels="$LABELS" \
-  --metadata="architect_prime=true,role=prime,env=beta,agent_user_email=${AGENT_USER_EMAIL:-},chat_space_id=${CHAT_SPACE_ID:-},billing_account=${BILLING_ACCOUNT:-},gcp_org_id=${GCP_ORG_ID:-},admin_email=${CURRENT_USER}"
+  --metadata="architect_prime=true,role=prime,env=beta,agent_user_email=${AGENT_USER_EMAIL:-},chat_space_id=${CHAT_SPACE_ID:-},billing_account=${BILLING_ACCOUNT:-},gcp_org_id=${GCP_ORG_ID:-},admin_email=${CURRENT_USER}" \
+  --metadata-from-file startup-script="$STARTUP_SCRIPT"
+
+# Clean up temp file
+rm -f "$STARTUP_SCRIPT"
 
 echo
 echo "==> Wait for boot + show facts"

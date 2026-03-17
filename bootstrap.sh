@@ -272,7 +272,8 @@ echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-export PROJECT_ID ZONE BILLING_ACCOUNT GCP_ORG_ID AGENT_USER_EMAIL
+CORE_REF="${CORE_REF:-main}"
+export PROJECT_ID ZONE BILLING_ACCOUNT GCP_ORG_ID AGENT_USER_EMAIL CORE_REF
 export GCP_PROJECT_ID="$PROJECT_ID"  # phase1 uses this alias too
 
 # Run Phase 1 in a subshell so we can capture the SA info
@@ -383,7 +384,7 @@ while [[ "$PHASE2_DONE" == "false" && $CHECKS -lt $MAX_CHECKS ]]; do
     --zone "$ZONE" --project "$PROJECT_ID" \
     --start=0 2>/dev/null | tail -50)"
 
-  if echo "$SERIAL_OUTPUT" | grep -q "PHASE 2 COMPLETE"; then
+  if echo "$SERIAL_OUTPUT" | grep -q "========== PHASE 2 COMPLETE =========="; then
     PHASE2_DONE=true
     break
   fi

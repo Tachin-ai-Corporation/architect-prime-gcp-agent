@@ -358,7 +358,7 @@ else
 fi
 
 echo
-echo "✅ PHASE 2 COMPLETE (ONE-SHOT)"
+echo "PHASE 2 COMPLETE"
 echo "---------------------------------------------------"
 echo "LOG FILE: ${LOG_FILE}"
 echo "YOUR ACCESS TOKEN: ${MY_TOKEN}"
