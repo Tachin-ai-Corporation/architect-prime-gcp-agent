@@ -163,8 +163,22 @@ sudo docker run -d \
   --group-add "${DOCKER_GID}" \
   openclaw:local
 
-info "Waiting 45s for first boot..."
-sleep 45
+info "Waiting for OpenClaw gateway to become ready..."
+READY=false
+MAX_WAIT=180   # 3 minutes max
+WAITED=0
+INTERVAL=5
+while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
+  if sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' >/dev/null 2>&1; then
+    READY=true
+    break
+  fi
+  echo "  Gateway not ready yet (${WAITED}s elapsed, retrying in ${INTERVAL}s)..."
+  sleep "$INTERVAL"
+  WAITED=$((WAITED + INTERVAL))
+done
+[[ "$READY" == "true" ]] || die "Gateway did not become ready within ${MAX_WAIT}s"
+info "Gateway is ready (took ~${WAITED}s)."
 
 # 6) Harden inside container (doctor-clean; preserve executables)
 info "Hardening /home/node/.openclaw inside container (doctor-clean)..."
@@ -201,8 +215,9 @@ out_path.write_text(tmpl, encoding="utf-8")
 print("Wrote", out_path)
 PY
 
-info "Reading baseHash from gateway config.get..."
-CONFIG_GET_RAW="$(sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>&1)"
+info "Reading baseHash from gateway config.get (already verified ready)..."
+CONFIG_GET_RAW="$(sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>&1)" \
+  || die "config.get failed unexpectedly after readiness check"
 
 BASE_HASH="$(python3 -c 'import json,sys,re
 raw=sys.stdin.read()
