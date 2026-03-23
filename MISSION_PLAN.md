@@ -8,7 +8,7 @@
 
 Architect Prime is a **self-bootstrapping, fleet-orchestrating AI system** built on [OpenClaw](https://github.com/openclaw/openclaw) and GCP.
 
-**v1.0 Definition of Done:** From an empty GCP project, a single bootstrap command deploys Architect Prime — an OpenClaw instance that communicates with humans via Google Chat, and can **hire** (spin up) and **fire** (tear down) fleet agents across separate GCP projects within a Google Cloud organization. Each fleet agent is also an OpenClaw instance with its own Chat identity. The full message loop is closed: human → Chat → Cloud Function → GCS → inbox-daemon → LLM → Chat response, for both Prime and every fleet agent.
+**v1.0 Definition of Done:** From an empty GCP project, a single bootstrap command deploys Architect Prime — an OpenClaw instance that communicates with humans via Google Chat (using Domain-Wide Delegation to impersonate a Workspace user account), and can **hire** (spin up) and **fire** (tear down) fleet agents across separate GCP projects within a Google Cloud organization. Each fleet agent is also an OpenClaw instance with its own Workspace Chat identity. The full message loop is closed: human @-mention → DWD Chat polling → inbox-daemon → LLM → Chat response, for both Prime and every fleet agent.
 
 ---
 
@@ -84,7 +84,7 @@ Architect Prime is a **self-bootstrapping, fleet-orchestrating AI system** built
 
 ---
 
-### v0.7.0 — Agent-Ask: The Fundamental Skill (LLM + Web Search)  ← *current HEAD*
+### v0.7.0 — Agent-Ask: The Fundamental Skill (LLM + Web Search)
 > *Tagged: 2026-03-11*
 
 - [x] `agent-ask` — the core "answer question" skill shared by Prime and all fleet agents
@@ -93,22 +93,44 @@ Architect Prime is a **self-bootstrapping, fleet-orchestrating AI system** built
   - Read-only skill: agent queries its resources, knowledge, and the web to best answer the question
 - [x] `build-system-prompt` — assembles system prompt from workspace files
 - [x] Non-command Chat messages auto-routed to LLM for intelligent answers
-- [x] Full-circle message loop closed: Chat → Cloud Function → GCS → inbox-daemon → Gemini → chat-send → Chat
 - [x] Fleet agents inherit `agent-ask` via shared CoreKit install
 - [x] `.gitattributes` — forces LF line endings on all shell scripts
 
 ---
 
+### v0.7.1 — DWD Chat Migration + Bootstrap Hardening
+> *Tagged: 2026-03-22*
+
+- [x] **DWD Migration** — replaced Cloud Functions + GCS inbox with Domain-Wide Delegation (DWD) user impersonation
+  - `dwd-token` — keyless DWD via VM metadata `signJwt` (no JSON key files)
+  - `chat-send` — rewritten for DWD impersonation (messages appear as the Workspace user)
+  - `chat-read` — new script: reads messages via DWD-impersonated `spaces.messages.list`
+  - `inbox-daemon` — rewritten: polls Chat API directly instead of GCS bucket
+  - Removed `cloud-functions/chat-handler/` — no longer needed
+- [x] **Interactive bootstrap** — guided `bootstrap.sh` with env var prompts, `CORE_REF` selection, Phase 1 + Phase 2 automation
+- [x] **Phase 2 hardening** — deterministic gateway readiness poll loop (replaced fragile `sleep 45`)
+- [x] **chat-read fixes** — 4 bugs fixed:
+  - Pipe API response via stdin instead of triple-quote string embedding
+  - Client-side time filtering (server-side `filter` param unreliable with DWD)
+  - Mention matching without sender email (API doesn't return it)
+  - Normalize hyphens + spaces for Google Chat display name matching
+- [x] Full message loop verified: human @-mention → DWD polling → inbox-daemon → Gemini → chat-send → Chat response
+
+---
+
 ## Roadmap to v1.0
 
-### v0.8.0 — Inter-Agent Communication (via Google Chat)
+### v0.8.0 — Inter-Agent Communication (via Google Chat)  ← *next*
 > *Goal: Prime and fleet agents talk to each other through Google Chat — all comms visible to humans.*
 
 **Design principle:** All agent-to-agent communication flows through Google Chat, not through private channels. This ensures human visibility, auditability, and the ability for humans to participate in any agent conversation.
 
-- [ ] **Prime → fleet messaging** — Prime sends tasks/questions to fleet agents by @-mentioning them in Chat
-- [ ] **Fleet → Prime reporting** — fleet agents post status/results back to Chat, visible to Prime and humans
-- [ ] **Fleet intro ceremony** — after `fleet-deploy`, Prime provides exact Chat app setup instructions to human admin; once human enables Chat, Prime verifies the new agent responds ("fleet intro" handshake)
+Now that DWD is in place (v0.7.1), agents impersonate Workspace user accounts. Fleet agents need their own DWD-compatible Workspace identities.
+
+- [ ] **Fleet agent DWD provisioning** — `fleet-deploy` provisions DWD for each fleet agent's Workspace user, shares the same SA Client ID grant
+- [ ] **Prime → fleet messaging** — Prime sends tasks/questions to fleet agents by @-mentioning them in Chat (via `chat-send` targeting the fleet agent's display name)
+- [ ] **Fleet → Prime reporting** — fleet agents post status/results back to the shared Chat space, visible to Prime and humans
+- [ ] **Fleet intro ceremony** — after `fleet-deploy`, Prime provides DWD setup instructions to human admin (Workspace user creation + space membership); once human enables Chat, Prime verifies the new agent responds ("fleet intro" handshake)
 - [ ] **Task routing** — Prime routes human requests to the appropriate fleet agent by specialty (via Chat @-mention)
 - [ ] **Multi-agent conversation** — a human message to Prime can trigger a fleet agent consultation, with all exchanges in the shared Chat space
 
@@ -128,9 +150,9 @@ Architect Prime is a **self-bootstrapping, fleet-orchestrating AI system** built
 ### v1.0.0 — Production-Ready Fleet Orchestrator 🎯
 > *Goal: The complete, reliable, self-bootstrapping fleet system.*
 
-- [ ] **One-command bootstrap** — `oneshot-cloudshell.sh` fully verified from empty project to working Prime + Chat + fleet capability
-- [ ] **Manual Chat app config (by design)** — Chat API requires a one-time human configuration per agent; Prime provides exact step-by-step instructions after each hire, then verifies comms once enabled
-- [ ] **Agent-ask verification** — confirm `agent-ask` (the fundamental "answer question" skill) works end-to-end for both Prime and fleet agents: Chat prompt → Gemini + grounding → Chat response
+- [ ] **One-command bootstrap** — `bootstrap.sh` fully verified from empty project to working Prime + DWD Chat + fleet capability
+- [ ] **DWD-based Chat (by design)** — all agents communicate via DWD user impersonation; humans create Workspace accounts and add them to Chat spaces
+- [ ] **Agent-ask verification** — confirm `agent-ask` works end-to-end for both Prime and fleet agents: Chat @-mention → DWD polling → Gemini + grounding → Chat response
 - [ ] **Fleet agent upgrade** — Prime can upgrade all fleet agents to a new CoreKit version via Chat command
 - [ ] **Graceful fleet lifecycle** — hire, monitor, upgrade, and fire fleet agents entirely via Chat commands
 - [ ] **Checkpoint E2E test** — `test-checkpoint.ps1` covers the full lifecycle (bootstrap → hire agent → verify Chat comms → answer question → fire agent)
@@ -157,49 +179,45 @@ These are planned capabilities for after the core fleet system is production-rea
 ```
 Google Chat (Humans)
     │
-    ▼
-Cloud Function (per project)         ◄── webhook receiver
+    ▼  @-mention agent's Workspace user
     │
-    ▼
-GCS Inbox Bucket (per project)       ◄── message queue
-    │
-    ▼
-inbox-daemon (per VM)                ◄── polls GCS, processes messages
+inbox-daemon (per VM)                ◄── polls Chat API via DWD every 10s
+    │  uses: dwd-token → signJwt → OAuth2 token
+    │  uses: chat-read → spaces.messages.list
     │
     ├── Built-in commands (help, status, fleet, whoami)
     └── agent-ask → Vertex AI Gemini + Google Search
                 │
                 ▼
-        chat-send → Google Chat API   ◄── response posted back
+        chat-send (DWD) → Google Chat API   ◄── response posted as agent user
 ```
 
 ```
 GCP Organization
-├── Prime's Project
+├── Prime's Project (architect-prime-beta)
 │   ├── architect-prime (VM)          ◄── Fleet orchestrator
-│   ├── Cloud Function                ◄── Prime's Chat app
-│   ├── GCS Inbox Bucket              ◄── Prime's message queue
+│   ├── DWD via SA signJwt            ◄── No JSON key files needed
+│   ├── inbox-daemon (systemd)        ◄── DWD Chat polling
 │   └── fleet-registry.json           ◄── Tracks all fleet agents
 │
 ├── fleet-alpha/ (Project)
 │   ├── fleet-alpha (VM)              ◄── Fleet agent
-│   ├── Cloud Function                ◄── Alpha's Chat app
-│   └── GCS Inbox Bucket              ◄── Alpha's message queue
+│   ├── DWD (same SA Client ID grant) ◄── Shared DWD authorization
+│   └── inbox-daemon                  ◄── DWD Chat polling
 │
 └── fleet-beta/ (Project)
     ├── fleet-beta (VM)               ◄── Fleet agent
-    ├── Cloud Function                ◄── Beta's Chat app
-    └── GCS Inbox Bucket              ◄── Beta's message queue
+    └── inbox-daemon                  ◄── DWD Chat polling
 ```
 
 ---
 
 ## Principles
 
-1. **No secrets in repo** — all secrets injected at runtime via ADC or GCP Secret Manager
+1. **No secrets in repo** — all secrets injected at runtime via ADC, DWD signJwt, or GCP metadata
 2. **Manifest-driven** — `manifest.txt` is the single source of truth for installed files
 3. **Checkpoint-versioned** — only tagged checkpoints are stable; `main` may move forward
 4. **Idempotent** — every script safely re-runnable
 5. **Self-upgradable** — drift detection + in-place upgrade
 6. **Agent-maintainable** — Prime can propose changes via PR
-7. **Human-auditable** — Chat relay, GCS audit trail, tagged checkpoints
+7. **Human-auditable** — Chat relay (DWD = human-visible messages), tagged checkpoints
