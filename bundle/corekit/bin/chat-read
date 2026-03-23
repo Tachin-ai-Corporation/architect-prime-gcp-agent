@@ -82,18 +82,9 @@ TOKEN="$("$DWD_TOKEN" --user "$AGENT_USER_EMAIL" \
 
 # ---- Build API URL ----
 # spaces.messages.list endpoint
+# NOTE: The Chat API v1 filter parameter is unreliable with DWD auth,
+# so we always fetch recent messages and filter client-side.
 API_URL="${CHAT_API}/${CHAT_SPACE_ID}/messages?pageSize=${LIMIT}&orderBy=createTime%20desc"
-
-# Add time filter if --since specified
-if [[ -n "$SINCE_SECONDS" ]]; then
-  # Compute RFC3339 timestamp for the cutoff
-  CUTOFF="$(python3 -c "
-from datetime import datetime, timezone, timedelta
-cutoff = datetime.now(timezone.utc) - timedelta(seconds=$SINCE_SECONDS)
-print(cutoff.strftime('%Y-%m-%dT%H:%M:%S.000Z'))
-" 2>/dev/null)" || die "Failed to compute time cutoff"
-  API_URL="${API_URL}&filter=createTime%20%3E%20%22${CUTOFF}%22"
-fi
 
 # ---- Call Chat API ----
 RESPONSE="$(curl -sf \
@@ -103,8 +94,10 @@ RESPONSE="$(curl -sf \
 
 # ---- Process and output ----
 FILTER_MENTIONS_PY="$([[ "$FILTER_MENTIONS" == "true" ]] && echo "True" || echo "False")"
+SINCE_SECONDS_PY="${SINCE_SECONDS:-0}"
 echo "$RESPONSE" | python3 -c "
 import json, sys
+from datetime import datetime, timezone, timedelta
 
 raw = sys.stdin.read().strip()
 try:
@@ -114,35 +107,67 @@ except Exception:
 
 messages = data.get('messages', [])
 
+# Client-side time filter (since the API filter param is unreliable)
+since_seconds = ${SINCE_SECONDS_PY}
+if since_seconds > 0:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=since_seconds)
+    time_filtered = []
+    for msg in messages:
+        ct = msg.get('createTime', '')
+        if ct:
+            try:
+                # Parse RFC3339 timestamp
+                msg_time = datetime.fromisoformat(ct.replace('Z', '+00:00'))  
+                if msg_time >= cutoff:
+                    time_filtered.append(msg)
+            except Exception:
+                time_filtered.append(msg)  # include on parse failure
+        else:
+            time_filtered.append(msg)
+    messages = time_filtered
+
 # Filter for @-mentions of this user if requested
 filter_mentions = ${FILTER_MENTIONS_PY}
 agent_email = '${AGENT_USER_EMAIL}'
+agent_local = agent_email.split('@')[0].lower() if agent_email else ''
 
-if filter_mentions and agent_email:
+if filter_mentions and agent_local:
     filtered = []
     for msg in messages:
-        # Check annotations for user mention
+        # Check annotations for USER_MENTION matching agent email or name
         annotations = msg.get('annotations', [])
+        mentioned = False
         for ann in annotations:
             if ann.get('type') == 'USER_MENTION':
-                mentioned = ann.get('userMention', {}).get('user', {})
-                if mentioned.get('email', '') == agent_email:
-                    filtered.append(msg)
+                user_info = ann.get('userMention', {}).get('user', {})
+                # Check email (if present) or displayName
+                uemail = (user_info.get('email', '') or '').lower()
+                uname = (user_info.get('displayName', '') or '').lower()
+                if uemail == agent_email.lower():
+                    mentioned = True
                     break
-        # Also check if raw text contains the email
-        text = msg.get('text', '') or msg.get('argumentText', '')
-        if agent_email.split('@')[0].lower() in text.lower() and msg not in filtered:
+                # Also match on local part in display name
+                if agent_local.replace('-', ' ') in uname or agent_local in uname:
+                    mentioned = True
+                    break
+        # Fallback: check if agent local part appears in message text
+        if not mentioned:
+            text = (msg.get('text', '') or msg.get('argumentText', '') or '').lower()
+            if agent_local in text or agent_local.replace('-', ' ') in text:
+                mentioned = True
+        if mentioned:
             filtered.append(msg)
     messages = filtered
 
 # Output clean JSON
 output = []
 for msg in messages:
+    sender = msg.get('sender', {})
     output.append({
         'name': msg.get('name', ''),
-        'sender': msg.get('sender', {}).get('name', ''),
-        'senderEmail': msg.get('sender', {}).get('email', ''),
-        'senderDisplayName': msg.get('sender', {}).get('displayName', ''),
+        'sender': sender.get('name', ''),
+        'senderEmail': sender.get('email', ''),
+        'senderDisplayName': sender.get('displayName', ''),
         'text': msg.get('text', '') or msg.get('argumentText', ''),
         'createTime': msg.get('createTime', ''),
         'space': msg.get('space', {}).get('name', ''),
