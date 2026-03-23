@@ -102,19 +102,21 @@ RESPONSE="$(curl -sf \
   "$API_URL" 2>/dev/null)" || die "Chat API call failed"
 
 # ---- Process and output ----
-python3 -c "
+FILTER_MENTIONS_PY="$([[ "$FILTER_MENTIONS" == "true" ]] && echo "True" || echo "False")"
+echo "$RESPONSE" | python3 -c "
 import json, sys
 
+raw = sys.stdin.read().strip()
 try:
-    data = json.loads('''$RESPONSE''') if '''$RESPONSE''' else {}
-except:
-    data = json.loads(sys.stdin.read()) if not '''$RESPONSE''' else {}
+    data = json.loads(raw) if raw else {}
+except Exception:
+    data = {}
 
 messages = data.get('messages', [])
 
 # Filter for @-mentions of this user if requested
-filter_mentions = $([[ "$FILTER_MENTIONS" == "true" ]] && echo "True" || echo "False")
-agent_email = '$AGENT_USER_EMAIL'
+filter_mentions = ${FILTER_MENTIONS_PY}
+agent_email = '${AGENT_USER_EMAIL}'
 
 if filter_mentions and agent_email:
     filtered = []
@@ -148,4 +150,4 @@ for msg in messages:
     })
 
 print(json.dumps(output, indent=2))
-" <<< "" || die "Failed to parse Chat API response"
+" || die "Failed to parse Chat API response"
