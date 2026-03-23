@@ -130,8 +130,14 @@ if since_seconds > 0:
 filter_mentions = ${FILTER_MENTIONS_PY}
 agent_email = '${AGENT_USER_EMAIL}'
 agent_local = agent_email.split('@')[0].lower() if agent_email else ''
+# Normalize: replace both hyphens and spaces with a single canonical separator
+# so 'architect-agent prime', 'architect-agent-prime', 'architect agent prime' all match
+import re
+def normalize(s):
+    return re.sub(r'[-\s]+', ' ', s.strip().lower())
+agent_norm = normalize(agent_local)
 
-if filter_mentions and agent_local:
+if filter_mentions and agent_norm:
     filtered = []
     for msg in messages:
         # Check annotations for USER_MENTION matching agent email or name
@@ -140,20 +146,20 @@ if filter_mentions and agent_local:
         for ann in annotations:
             if ann.get('type') == 'USER_MENTION':
                 user_info = ann.get('userMention', {}).get('user', {})
-                # Check email (if present) or displayName
+                # Check email (if present)
                 uemail = (user_info.get('email', '') or '').lower()
-                uname = (user_info.get('displayName', '') or '').lower()
                 if uemail == agent_email.lower():
                     mentioned = True
                     break
-                # Also match on local part in display name
-                if agent_local.replace('-', ' ') in uname or agent_local in uname:
+                # Match normalized display name
+                uname = normalize(user_info.get('displayName', '') or '')
+                if agent_norm in uname or uname in agent_norm:
                     mentioned = True
                     break
-        # Fallback: check if agent local part appears in message text
+        # Fallback: check if normalized agent name appears in normalized text
         if not mentioned:
-            text = (msg.get('text', '') or msg.get('argumentText', '') or '').lower()
-            if agent_local in text or agent_local.replace('-', ' ') in text:
+            text = normalize(msg.get('text', '') or msg.get('argumentText', '') or '')
+            if agent_norm in text:
                 mentioned = True
         if mentioned:
             filtered.append(msg)
