@@ -6,7 +6,11 @@
 
 ## Vision
 
-Architect Prime is a **self-bootstrapping, fleet-orchestrating AI system** built on [OpenClaw](https://github.com/openclaw/openclaw) and GCP.
+Architect Prime is a **self-bootstrapping agent factory** built on [OpenClaw](https://github.com/openclaw/openclaw) and GCP.
+
+Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Prime does **not** route tasks or act as a PM — humans assign work to agents directly, and agents may delegate to other agents (e.g., PM agents routing to specialist agents).
+
+The end state: many **cells** of agents working across many projects and job descriptions, with Prime as the factory that builds and maintains the fleet.
 
 **v1.0 Definition of Done:** From an empty GCP project, a single bootstrap command deploys Architect Prime — an OpenClaw instance that communicates with humans via Google Chat (using Domain-Wide Delegation to impersonate a Workspace user account), and can **hire** (spin up) and **fire** (tear down) fleet agents across separate GCP projects within a Google Cloud organization. Each fleet agent is also an OpenClaw instance with its own Workspace Chat identity. The full message loop is closed: human @-mention → DWD Chat polling → inbox-daemon → LLM → Chat response, for both Prime and every fleet agent.
 
@@ -120,41 +124,41 @@ Architect Prime is a **self-bootstrapping, fleet-orchestrating AI system** built
 
 ## Roadmap to v1.0
 
-### v0.8.0 — Inter-Agent Communication (via Google Chat)  ← *next*
-> *Goal: Prime and fleet agents talk to each other through Google Chat — all comms visible to humans.*
+### v0.8.0 — Fleet DWD + Agent Cells  ← *next*
+> *Goal: Fleet agents get DWD Chat identities. Humans can talk to any agent directly. Prime manages agent lifecycle, not tasks.*
 
-**Design principle:** All agent-to-agent communication flows through Google Chat, not through private channels. This ensures human visibility, auditability, and the ability for humans to participate in any agent conversation.
+**Design principle:** Prime is the agent factory — it creates, upgrades, monitors, and tears down agents. Humans assign work to agents directly via @-mention in Chat. Agents may delegate to other agents (e.g., a PM agent routing to specialists). All comms flow through Google Chat for human visibility.
 
 Now that DWD is in place (v0.7.1), agents impersonate Workspace user accounts. Fleet agents need their own DWD-compatible Workspace identities.
 
 - [ ] **Fleet agent DWD provisioning** — `fleet-deploy` provisions DWD for each fleet agent's Workspace user, shares the same SA Client ID grant
-- [ ] **Prime → fleet messaging** — Prime sends tasks/questions to fleet agents by @-mentioning them in Chat (via `chat-send` targeting the fleet agent's display name)
-- [ ] **Fleet → Prime reporting** — fleet agents post status/results back to the shared Chat space, visible to Prime and humans
 - [ ] **Fleet intro ceremony** — after `fleet-deploy`, Prime provides DWD setup instructions to human admin (Workspace user creation + space membership); once human enables Chat, Prime verifies the new agent responds ("fleet intro" handshake)
-- [ ] **Task routing** — Prime routes human requests to the appropriate fleet agent by specialty (via Chat @-mention)
-- [ ] **Multi-agent conversation** — a human message to Prime can trigger a fleet agent consultation, with all exchanges in the shared Chat space
+- [ ] **Prime ↔ fleet comms** — Prime can send messages to fleet agents for lifecycle operations (health checks, upgrade notifications, shutdown warnings) — not task routing
+- [ ] **Agent cells** — support multiple Chat spaces (one per team/project), each with its own set of agents; Prime can deploy agents into specific spaces
+- [ ] **Human-direct task routing** — humans @-mention any agent directly to assign work; no Prime mediation required
 
 ---
 
-### v0.9.0 — Fleet Health Monitoring
-> *Goal: Prime monitors its fleet, detects problems, and reports to humans — leveraging inter-agent comms from v0.8.0.*
+### v0.9.0 — Fleet Health + Cost Monitoring
+> *Goal: Prime monitors fleet health and costs, auto-recovers unhealthy agents, reports to humans.*
 
-- [ ] **Fleet heartbeat** — Prime periodically @-mentions each fleet agent in Chat; agents respond with status (leverages v0.8.0 comms)
+- [ ] **Fleet heartbeat** — Prime periodically pings each fleet agent via Chat; agents respond with status
 - [ ] **GCP-level health checks** — Prime uses its project ownership to verify fleet VMs are running, inbox-daemons are alive, containers are healthy
 - [ ] **`fleet-status` command** — humans can ask Prime for fleet health report in Chat
 - [ ] **Registry sync** — `fleet-registry.json` updated with `healthy` / `unhealthy` / `offline` based on combined Chat response + GCP checks
 - [ ] **Error recovery** — if a fleet agent is unresponsive, Prime can restart or redeploy and reports action to humans in Chat
+- [ ] **Cost tracking** — Prime tracks per-agent GCP spend and reports to humans; can auto-hibernate idle agents
 
 ---
 
-### v1.0.0 — Production-Ready Fleet Orchestrator 🎯
-> *Goal: The complete, reliable, self-bootstrapping fleet system.*
+### v1.0.0 — Production-Ready Agent Factory 🎯
+> *Goal: The complete, reliable, self-bootstrapping agent factory.*
 
 - [ ] **One-command bootstrap** — `bootstrap.sh` fully verified from empty project to working Prime + DWD Chat + fleet capability
 - [ ] **DWD-based Chat (by design)** — all agents communicate via DWD user impersonation; humans create Workspace accounts and add them to Chat spaces
 - [ ] **Agent-ask verification** — confirm `agent-ask` works end-to-end for both Prime and fleet agents: Chat @-mention → DWD polling → Gemini + grounding → Chat response
 - [ ] **Fleet agent upgrade** — Prime can upgrade all fleet agents to a new CoreKit version via Chat command
-- [ ] **Graceful fleet lifecycle** — hire, monitor, upgrade, and fire fleet agents entirely via Chat commands
+- [ ] **Graceful fleet lifecycle** — hire, monitor, upgrade, and fire fleet agents entirely via Chat commands to Prime
 - [ ] **Checkpoint E2E test** — `test-checkpoint.ps1` covers the full lifecycle (bootstrap → hire agent → verify Chat comms → answer question → fire agent)
 - [ ] **Documentation** — complete Bootstrap, Operations, and Fleet Management guides
 - [ ] **README** updated with full checkpoint history and architecture diagrams
@@ -163,12 +167,12 @@ Now that DWD is in place (v0.7.1), agents impersonate Workspace user accounts. F
 
 ## Post-v1.0 — Future Capabilities
 
-These are planned capabilities for after the core fleet system is production-ready:
+These are planned capabilities for after the core factory is production-ready:
 
 - **Google Workspace skills** — fleet agents that manage Docs, Sheets, Calendar, Gmail on behalf of humans
-- **Mission queue / task system** — agents operate from a durable task queue with checkpoints, assigned by humans or by Prime
-- **Collaborative execution** — multiple fleet agents coordinate on multi-step tasks, with Prime as the orchestrator
-- **Cost governance** — Prime tracks and reports fleet spending, auto-scales or shuts down idle agents
+- **Agent cell templates** — pre-built team configurations (e.g., "engineering cell" = PM + 2 devs + QA) that Prime can deploy in one command
+- **Inter-agent delegation** — agents can @-mention other agents to delegate subtasks (PM → dev, dev → QA); Prime is not involved in task flow
+- **Cost governance** — Prime tracks and reports fleet spending per cell, auto-scales or shuts down idle agents
 - **Self-evolution** — Prime proposes its own CoreKit improvements via PR, human approves, Prime merges and tags
 - **Audit trail** — full GCS-based audit log of every command, decision, and action across the fleet
 
@@ -195,7 +199,7 @@ inbox-daemon (per VM)                ◄── polls Chat API via DWD every 10s
 ```
 GCP Organization
 ├── Prime's Project (architect-prime-beta)
-│   ├── architect-prime (VM)          ◄── Fleet orchestrator
+│   ├── architect-prime (VM)          ◄── Agent factory + fleet manager
 │   ├── DWD via SA signJwt            ◄── No JSON key files needed
 │   ├── inbox-daemon (systemd)        ◄── DWD Chat polling
 │   └── fleet-registry.json           ◄── Tracks all fleet agents
