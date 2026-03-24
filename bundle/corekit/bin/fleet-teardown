@@ -5,7 +5,7 @@
 # Usage: fleet-teardown --name <agent-name>
 #
 # Deletes the fleet agent's GCP project (removes everything:
-# VM, SA, bucket, Cloud Function) and updates Prime's registry.
+# VM, SA, DWD config) and updates Prime's registry.
 # ============================================================
 set -euo pipefail
 

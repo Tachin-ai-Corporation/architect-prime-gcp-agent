@@ -2,13 +2,14 @@
 # ============================================================
 # fleet-deploy — Deploy a fleet agent in its OWN GCP project
 #
-# Usage: fleet-deploy --name <agent-name> --specialty <description>
+# Usage: fleet-deploy --name <name> --specialty <desc> --agent-email <email>
 #
-# Creates: GCP project → billing link → APIs → SA → GCS bucket →
-#          Cloud Function → VM → registry entry
+# Creates: GCP project → billing link → APIs → SA → IAM (DWD) →
+#          VM (with DWD inbox-daemon) → registry entry
 #
-# Each fleet agent is a fully independent GCP project with its
-# own Chat app, so users can @-mention it directly in Chat.
+# Each fleet agent is a fully independent GCP project using DWD
+# to impersonate a Workspace user for Chat communication.
+# Humans @-mention agents directly — no Cloud Functions or GCS.
 #
 # Runs on Prime's VM. Requires Prime SA with org-level permissions:
 #   - roles/resourcemanager.projectCreator
@@ -24,15 +25,19 @@ die() { echo "[$(date -Is)] [fleet-deploy] [FATAL] $*" >&2; exit 1; }
 # ---- Parse args ----
 AGENT_NAME=""
 SPECIALTY=""
+AGENT_USER_EMAIL=""
+CHAT_SPACE_OVERRIDE=""
 MACHINE_TYPE="e2-small"
 BOOT_DISK_SIZE="50GB"
 
 usage() {
   cat <<EOF
-Usage: fleet-deploy --name <name> --specialty <desc> [options]
+Usage: fleet-deploy --name <name> --specialty <desc> --agent-email <email> [options]
 
-  --name         Agent name (lowercase, no spaces, e.g. 'alpha')
-  --specialty    Agent specialty description
+  --name         Agent name (lowercase, no spaces, e.g. 'stan')
+  --specialty    Agent specialty description (e.g. 'devops')
+  --agent-email  Workspace email for the agent (e.g. devops-agent-stan@tachin.ai)
+  --chat-space   Chat space ID override (default: Prime's space)
   --machine-type VM machine type (default: e2-small)
   --disk         Boot disk size (default: 50GB)
   --help         Show this message
@@ -44,6 +49,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --name) AGENT_NAME="$2"; shift 2 ;;
     --specialty) SPECIALTY="$2"; shift 2 ;;
+    --agent-email) AGENT_USER_EMAIL="$2"; shift 2 ;;
+    --chat-space) CHAT_SPACE_OVERRIDE="$2"; shift 2 ;;
     --machine-type) MACHINE_TYPE="$2"; shift 2 ;;
     --disk) BOOT_DISK_SIZE="$2"; shift 2 ;;
     --help|-h) usage ;;
@@ -53,6 +60,7 @@ done
 
 [[ -n "$AGENT_NAME" ]] || die "Missing --name"
 [[ -n "$SPECIALTY" ]] || die "Missing --specialty"
+[[ -n "$AGENT_USER_EMAIL" ]] || die "Missing --agent-email (Workspace user for DWD, e.g. devops-agent-stan@tachin.ai)"
 [[ "$AGENT_NAME" =~ ^[a-z][a-z0-9-]*$ ]] || die "Name must be lowercase alphanumeric with hyphens"
 
 # ---- Resolve Prime's project context ----
@@ -65,8 +73,12 @@ ZONE="$(curl -s -f -H 'Metadata-Flavor: Google' \
 [[ -n "$ZONE" ]] || ZONE="us-central1-a"
 REGION="${ZONE%-*}"
 
-CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
-  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
+# Chat space: use override, or read from Prime's config, or metadata
+CHAT_SPACE_ID="${CHAT_SPACE_OVERRIDE:-}"
+if [[ -z "$CHAT_SPACE_ID" ]]; then
+  CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
+fi
 
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
@@ -76,8 +88,10 @@ CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 FLEET_PROJECT="fleet-${AGENT_NAME}"
 FLEET_SA_NAME="${FLEET_PROJECT}"
 FLEET_SA_EMAIL="${FLEET_SA_NAME}@${FLEET_PROJECT}.iam.gserviceaccount.com"
-FLEET_BUCKET="${FLEET_PROJECT}-chat-inbox"
 FLEET_VM="fleet-${AGENT_NAME}"
+
+# Derive display name from email local part (e.g. devops-agent-stan → Devops Agent Stan)
+AGENT_DISPLAY_NAME="$(echo "${AGENT_USER_EMAIL%%@*}" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')"
 
 # Billing account — resolve from metadata or env (never hardcoded)
 BILLING_ACCOUNT="${BILLING_ACCOUNT:-}"
@@ -115,15 +129,18 @@ GH_REPO="$(jq -r '.repo // "architect-prime-gcp-agent"' "$STATE_FILE" 2>/dev/nul
 DEPLOY_TS="$(date -Is)"
 
 log "Deploying fleet agent: ${AGENT_NAME}"
-log "  Fleet Project: ${FLEET_PROJECT}"
-log "  Prime Project: ${PRIME_PROJECT}"
-log "  Zone:          ${ZONE}"
-log "  VM:            ${FLEET_VM}"
-log "  SA:            ${FLEET_SA_EMAIL}"
-log "  Specialty:     ${SPECIALTY}"
-log "  CoreRef:       ${CORE_REF}"
-log "  Billing:       ${BILLING_ACCOUNT}"
-log "  Org ID:        ${GCP_ORG_ID}"
+log "  Fleet Project:  ${FLEET_PROJECT}"
+log "  Prime Project:  ${PRIME_PROJECT}"
+log "  Zone:           ${ZONE}"
+log "  VM:             ${FLEET_VM}"
+log "  SA:             ${FLEET_SA_EMAIL}"
+log "  Agent Email:    ${AGENT_USER_EMAIL}"
+log "  Display Name:   ${AGENT_DISPLAY_NAME}"
+log "  Chat Space:     ${CHAT_SPACE_ID:-<not set>}"
+log "  Specialty:      ${SPECIALTY}"
+log "  CoreRef:        ${CORE_REF}"
+log "  Billing:        ${BILLING_ACCOUNT}"
+log "  Org ID:         ${GCP_ORG_ID}"
 
 # ============================================================
 # 1. Create GCP project
@@ -163,151 +180,36 @@ gcloud billing projects link "$FLEET_PROJECT" \
   --quiet > /dev/null 2>&1 || log "Billing already linked"
 
 # ============================================================
-# 3. Enable APIs
+# 3. Enable APIs (DWD — no Cloud Functions or Cloud Build needed)
 # ============================================================
 log "Enabling APIs"
 gcloud services enable \
   compute.googleapis.com \
   chat.googleapis.com \
-  cloudfunctions.googleapis.com \
-  cloudbuild.googleapis.com \
-  run.googleapis.com \
-  storage.googleapis.com \
   iam.googleapis.com \
+  iamcredentials.googleapis.com \
+  aiplatform.googleapis.com \
   serviceusage.googleapis.com \
   --project="$FLEET_PROJECT" \
   --quiet
 
 # ============================================================
-# 4. Create service account
+# 4. Create service account + grant DWD-required roles
 # ============================================================
 log "Creating service account: ${FLEET_SA_NAME}"
 gcloud iam service-accounts create "$FLEET_SA_NAME" \
   --display-name="Fleet Agent ${AGENT_NAME}" \
   --project="$FLEET_PROJECT" 2>/dev/null || log "SA already exists"
 
-for role in roles/compute.admin roles/aiplatform.user roles/chat.owner \
-            roles/storage.objectAdmin roles/iam.serviceAccountUser; do
+for role in roles/compute.admin roles/aiplatform.user roles/iam.serviceAccountTokenCreator; do
   gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
     --member="serviceAccount:${FLEET_SA_EMAIL}" \
     --role="$role" \
     --quiet > /dev/null 2>&1 || true
 done
 
-# Grant Cloud Build role to default compute SA
-PROJECT_NUMBER="$(gcloud projects describe "$FLEET_PROJECT" --format='value(projectNumber)')"
-DEFAULT_COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
-  --member="serviceAccount:${DEFAULT_COMPUTE_SA}" \
-  --role="roles/cloudbuild.builds.builder" \
-  --quiet 2>/dev/null || true
-
 # ============================================================
-# 5. Create GCS inbox bucket
-# ============================================================
-log "Creating inbox bucket: gs://${FLEET_BUCKET}"
-gsutil mb -p "$FLEET_PROJECT" -l "$REGION" "gs://${FLEET_BUCKET}" 2>/dev/null || log "Bucket already exists"
-gsutil iam ch "serviceAccount:${FLEET_SA_EMAIL}:roles/storage.objectAdmin" "gs://${FLEET_BUCKET}" 2>/dev/null || true
-
-# ============================================================
-# 6. Deploy Cloud Function
-# ============================================================
-log "Deploying Cloud Function"
-# Write CF source to temp dir
-CF_TMPDIR="$(mktemp -d /tmp/fleet-cf-XXXXXX)"
-cat > "${CF_TMPDIR}/main.py" <<'CFEOF'
-import functions_framework
-from google.cloud import storage
-import json, time, os
-
-BUCKET_NAME = os.environ.get("INBOX_BUCKET", "")
-AGENT_ID = os.environ.get("AGENT_ID", "prime")
-storage_client = storage.Client()
-
-def generate_ulid():
-    ts = int(time.time() * 1000)
-    return f"{ts:013d}-{os.urandom(4).hex()}"
-
-def write_to_inbox(message_data):
-    bucket = storage_client.bucket(BUCKET_NAME)
-    msg_id = generate_ulid()
-    blob = bucket.blob(f"{AGENT_ID}/pending/{msg_id}.json")
-    blob.upload_from_string(json.dumps(message_data, indent=2), content_type="application/json")
-    return msg_id
-
-@functions_framework.http
-def handle_chat_event(request):
-    event = request.get_json(silent=True)
-    if not event:
-        return json.dumps({"text": "No event data received."}), 200
-
-    event_type = event.get("type", "")
-    space = event.get("space", {})
-    space_name = space.get("name", "")
-    user = event.get("user", {})
-    user_name = user.get("displayName", "Unknown")
-
-    if event_type == "ADDED_TO_SPACE":
-        write_to_inbox({"type": "ADDED_TO_SPACE", "space": space_name, "user": user_name, "timestamp": time.time()})
-        return json.dumps({"text": f"👋 Hello! I'm *{AGENT_ID}*. Commands: `help`, `status`, `whoami`"})
-
-    if event_type == "MESSAGE":
-        message = event.get("message", {})
-        text = message.get("argumentText", message.get("text", "")).strip()
-        msg_name = message.get("name", "")
-        thread_name = message.get("thread", {}).get("name", "")
-        msg_data = {
-            "type": "MESSAGE", "text": text, "sender": user_name,
-            "senderEmail": user.get("email", ""), "space": space_name,
-            "messageName": msg_name, "threadName": thread_name, "timestamp": time.time()
-        }
-        msg_id = write_to_inbox(msg_data)
-        return json.dumps({"text": f"⏳ Processing: _{text}_\n`msg:{msg_id}`"})
-
-    if event_type == "REMOVED_FROM_SPACE":
-        write_to_inbox({"type": "REMOVED_FROM_SPACE", "space": space_name, "timestamp": time.time()})
-        return json.dumps({})
-
-    return json.dumps({"text": f"Unknown event type: {event_type}"}), 200
-CFEOF
-
-cat > "${CF_TMPDIR}/requirements.txt" <<'REQEOF'
-functions-framework==3.*
-google-cloud-storage==2.*
-REQEOF
-
-gcloud functions deploy chat-handler \
-  --gen2 \
-  --runtime=python312 \
-  --region="$REGION" \
-  --source="$CF_TMPDIR" \
-  --entry-point=handle_chat_event \
-  --trigger-http \
-  --allow-unauthenticated \
-  --set-env-vars="INBOX_BUCKET=${FLEET_BUCKET},AGENT_ID=${AGENT_NAME}" \
-  --memory=256MB \
-  --timeout=30s \
-  --project="$FLEET_PROJECT" \
-  --quiet || warn "Cloud Function deploy failed — may need manual setup"
-
-CF_URL="$(gcloud functions describe chat-handler \
-  --region="$REGION" --project="$FLEET_PROJECT" \
-  --format='value(serviceConfig.uri)' 2>/dev/null || echo 'unknown')"
-
-# Ensure Cloud Run service is publicly accessible (gen2 CF requirement)
-log "Granting public access to Cloud Function"
-gcloud run services add-iam-policy-binding chat-handler \
-  --member="allUsers" \
-  --role="roles/run.invoker" \
-  --region="$REGION" \
-  --project="$FLEET_PROJECT" \
-  --quiet 2>/dev/null || true
-
-rm -rf "$CF_TMPDIR"
-log "Cloud Function URL: ${CF_URL}"
-
-# ============================================================
-# 7. Build and create VM
+# 5. Build and create VM (with DWD inbox-daemon)
 # ============================================================
 log "Building startup script"
 STARTUP_TMPFILE="$(mktemp /tmp/fleet-startup-XXXXXX.sh)"
@@ -326,12 +228,14 @@ GH_OWNER="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.interna
 GH_REPO="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/gh_repo || echo 'architect-prime-gcp-agent')"
 PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/project/project-id)"
 CHAT_SPACE_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id || true)"
+AGENT_USER_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_user_email || true)"
+AGENT_DISPLAY_NAME="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_display_name || echo "$AGENT_ID")"
 
-echo "Agent: ${AGENT_ID} | Specialty: ${SPECIALTY} | CoreRef: ${CORE_REF}"
+echo "Agent: ${AGENT_ID} | Email: ${AGENT_USER_EMAIL} | CoreRef: ${CORE_REF}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq jq curl
+apt-get install -y -qq jq curl python3
 
 OC_HOST_ROOT="/opt/openclaw"
 mkdir -p "${OC_HOST_ROOT}/.openclaw"
@@ -342,28 +246,30 @@ chmod +x /tmp/install.sh
 CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \
   bash /tmp/install.sh
 
-if [[ -n "${CHAT_SPACE_ID}" ]]; then
+# Write DWD-aware chat-config.json
+if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   cat > "${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json" <<CHATCFG
 {
   "spaceId": "${CHAT_SPACE_ID}",
-  "botDisplayName": "Fleet: ${AGENT_ID}",
+  "agentUserEmail": "${AGENT_USER_EMAIL}",
+  "agentDisplayName": "${AGENT_DISPLAY_NAME}",
   "projectId": "${PROJECT_ID}"
 }
 CHATCFG
 fi
 
+# Install inbox-daemon systemd service
 INBOX_DAEMON_SVC="${OC_HOST_ROOT}/.openclaw/corekit/inbox-daemon.service"
 if [[ -f "$INBOX_DAEMON_SVC" ]]; then
-  INBOX_BUCKET="${PROJECT_ID}-chat-inbox"
   sed -i "s|Environment=AGENT_ID=prime|Environment=AGENT_ID=${AGENT_ID}|g" "$INBOX_DAEMON_SVC"
-  sed -i "s|__INBOX_BUCKET__|${INBOX_BUCKET}|g" "$INBOX_DAEMON_SVC"
   cp "$INBOX_DAEMON_SVC" /etc/systemd/system/inbox-daemon.service
   systemctl daemon-reload
   systemctl enable inbox-daemon.service
   systemctl start inbox-daemon.service || echo "[WARN] inbox-daemon start failed"
 fi
 
-if [[ -n "${CHAT_SPACE_ID}" ]]; then
+# Boot announce via DWD
+if [[ -n "${CHAT_SPACE_ID}" && -n "${AGENT_USER_EMAIL}" ]]; then
   export CHAT_SPACE_ID OC_HOST_ROOT
   "${OC_HOST_ROOT}/.openclaw/bin/chat-send" \
     "🤖 Fleet agent *${AGENT_ID}* is online.
@@ -384,10 +290,10 @@ gcloud compute instances create "$FLEET_VM" \
   --machine-type="$MACHINE_TYPE" \
   --boot-disk-size="$BOOT_DISK_SIZE" \
   --service-account="$FLEET_SA_EMAIL" \
-  --scopes="https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/chat.bot" \
+  --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-}" \
+  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME}" \
   --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
 
@@ -398,7 +304,7 @@ FLEET_IP="$(gcloud compute instances describe "$FLEET_VM" --zone="$ZONE" --proje
   --format='value(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || echo 'pending')"
 
 # ============================================================
-# 8. Update Prime's fleet registry
+# 6. Update Prime's fleet registry
 # ============================================================
 log "Updating fleet registry"
 if [[ ! -f "$REGISTRY_FILE" ]]; then
@@ -413,7 +319,9 @@ jq --arg name "$AGENT_NAME" \
    --arg ip "$FLEET_IP" \
    --arg zone "$ZONE" \
    --arg ref "$CORE_REF" \
-   --arg cf "$CF_URL" \
+   --arg email "$AGENT_USER_EMAIL" \
+   --arg display "$AGENT_DISPLAY_NAME" \
+   --arg space "${CHAT_SPACE_ID:-}" \
    --arg ts "$DEPLOY_TS" \
    '.agents[$name] = {
       "specialty": $specialty,
@@ -423,14 +331,16 @@ jq --arg name "$AGENT_NAME" \
       "ip": $ip,
       "zone": $zone,
       "coreRef": $ref,
-      "cfUrl": $cf,
+      "agentUserEmail": $email,
+      "agentDisplayName": $display,
+      "spaceId": $space,
       "deployedAt": $ts,
       "status": "deploying"
     } | .lastUpdated = $ts' \
   "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
 
 # ============================================================
-# 9. Print results + Chat setup instructions
+# 7. Print results + DWD setup instructions
 # ============================================================
 echo
 echo "============================================================"
@@ -441,31 +351,31 @@ echo "  Project        : ${FLEET_PROJECT}"
 echo "  VM             : ${FLEET_VM} (${FLEET_IP})"
 echo "  SA             : ${FLEET_SA_EMAIL}"
 echo "  Zone           : ${ZONE}"
-echo "  Cloud Function : ${CF_URL}"
-echo "  Inbox Bucket   : gs://${FLEET_BUCKET}"
+echo "  Agent Email    : ${AGENT_USER_EMAIL}"
+echo "  Display Name   : ${AGENT_DISPLAY_NAME}"
+echo "  Chat Space     : ${CHAT_SPACE_ID:-<not set>}"
 echo "  Specialty      : ${SPECIALTY}"
 echo "  CoreRef        : ${CORE_REF}"
 echo
 echo "============================================================"
-echo "  CHAT SETUP (one-time manual step)"
+echo "  DWD SETUP (one-time per agent)"
 echo "============================================================"
 echo
-echo "  Step 1: Configure the Chat app"
-echo "    Go to: https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${FLEET_PROJECT}"
-echo "    - App name: Fleet ${AGENT_NAME}"
-echo "    - Avatar URL: https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/smart_toy/default/48px.svg"
-echo "    - Description: Fleet agent — ${SPECIALTY}"
-echo "    - Enable interactive features"
-echo "    - Connection settings → HTTP endpoint URL"
-echo "    - Paste: ${CF_URL}"
-echo "    - Visibility: your domain or users"
-echo "    - Save"
+echo "  Step 1: Create Workspace User (if not already created)"
+echo "    Go to: https://admin.google.com → Users → Add new user"
+echo "    Create: ${AGENT_USER_EMAIL}"
 echo
-echo "  Step 2: Add to Chat space"
-echo "    - Open your Chat space → Add people & apps → Fleet ${AGENT_NAME}"
+echo "  Step 2: Add to Chat Space"
+echo "    Open your Chat space → Add people → ${AGENT_USER_EMAIL}"
 echo
-echo "  Step 3: Test"
-echo "    Message '@Fleet ${AGENT_NAME} help' in Chat."
+echo "  Step 3: Verify (DWD grant must be in place)"
+echo "    The SA Client ID for DWD is shared across all agents."
+echo "    If DWD was already granted for Prime, all fleet agents"
+echo "    using the same org are covered — no additional DWD setup."
+echo
+echo "  Step 4: Confirm"
+echo "    Run: fleet-verify --name ${AGENT_NAME}"
+echo "    Or @-mention '${AGENT_DISPLAY_NAME}' in Chat with 'help'"
 echo
 echo "============================================================"
 
@@ -473,12 +383,14 @@ echo "============================================================"
 if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
   export CHAT_SPACE_ID OC_HOST_ROOT
   "$CHAT_SEND" "🚀 Fleet agent *${AGENT_NAME}* deployed to project \`${FLEET_PROJECT}\`
+• Email: ${AGENT_USER_EMAIL}
 • IP: ${FLEET_IP}
-• CF: ${CF_URL}
 • Specialty: ${SPECIALTY}
 
-⚠️ *Manual step required:* Configure Chat app at:
-https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${FLEET_PROJECT}" || true
+⚠️ *Workspace setup required:*
+1. Create user \`${AGENT_USER_EMAIL}\` (if new)
+2. Add to Chat space
+3. Run \`fleet-verify --name ${AGENT_NAME}\`" || true
 fi
 
 log "Done. Phase 2 will complete on VM in ~1-2 minutes."

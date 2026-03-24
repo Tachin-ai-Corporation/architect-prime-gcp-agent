@@ -18,6 +18,8 @@ bundle/corekit/bin/agent-ask .openclaw/bin/agent-ask
 bundle/corekit/bin/build-system-prompt .openclaw/bin/build-system-prompt
 bundle/corekit/bin/dwd-token .openclaw/bin/dwd-token
 bundle/corekit/bin/chat-read .openclaw/bin/chat-read
+bundle/corekit/bin/fleet-verify .openclaw/bin/fleet-verify
+bundle/corekit/bin/fleet-upgrade .openclaw/bin/fleet-upgrade
 bundle/corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json
 
 bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
