@@ -230,6 +230,10 @@ for pair in "${pairs[@]}"; do
   # Create directory and download
   run mkdir -p "$out_dir"
   curl -fsSL --retry 3 --retry-delay 2 "$src_url" -o "${tmpdir}/dl_tmp"
+
+  # Strip Windows CRLF line endings (\r) — prevents shebang failures on Linux
+  sed -i 's/\r$//' "${tmpdir}/dl_tmp" 2>/dev/null || true
+
   run cp "${tmpdir}/dl_tmp" "$out_path"
 
   # Compute hash for STATE.json
@@ -247,6 +251,10 @@ run chown -R 1000:1000 "${OC_HOST_ROOT}/.openclaw" 2>/dev/null || true
 run find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 run find "${OC_HOST_ROOT}/.openclaw" -type f -exec chmod 644 {} \; 2>/dev/null || true
 run find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+
+# Belt-and-suspenders: ensure no CRLF in any bin scripts
+# (defensive against SCP from Windows, git autocrlf, etc.)
+run find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
 # ---- 5. Write STATE.json ----
 info "Writing STATE.json..."
