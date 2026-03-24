@@ -180,12 +180,15 @@ body = {
     }
 }
 
-# Add tools: function declarations + Google Search grounding
+# Add tools: function declarations for Prime, Google Search for others
+# Vertex AI does not allow functionDeclarations and google_search together
 tools = []
 if is_prime and func_decls:
     tools.append({'functionDeclarations': func_decls})
-tools.append({'google_search': {}})
-body['tools'] = tools
+else:
+    tools.append({'google_search': {}})
+if tools:
+    body['tools'] = tools
 
 print(json.dumps(body))
 " <<< "$SYSTEM_PROMPT")" || die "Failed to build request body"
@@ -266,7 +269,7 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
       fi
       ;;
     fleet_deploy)
-      local d_name d_specialty d_email
+      d_name="" d_specialty="" d_email=""
       d_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       d_specialty="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))" 2>/dev/null)"
       d_email="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('agent_email',''))" 2>/dev/null)"
@@ -278,7 +281,7 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
       fi
       ;;
     fleet_teardown)
-      local t_name
+      t_name=""
       t_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       if [[ -n "$t_name" ]]; then
         FUNC_RESULT="$("$FLEET_BIN/fleet-teardown" --name "$t_name" 2>&1 | tail -20)" \
@@ -288,7 +291,7 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
       fi
       ;;
     fleet_verify)
-      local v_name
+      v_name=""
       v_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       if [[ -n "$v_name" ]]; then
         FUNC_RESULT="$("$FLEET_BIN/fleet-verify" --name "$v_name" 2>&1 | tail -20)" \
@@ -298,11 +301,11 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
       fi
       ;;
     fleet_upgrade)
-      local u_name u_ref
+      u_name="" u_ref=""
       u_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       u_ref="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref',''))" 2>/dev/null)"
       if [[ -n "$u_name" ]]; then
-        local upgrade_args="--name $u_name"
+        upgrade_args="--name $u_name"
         [[ -n "$u_ref" ]] && upgrade_args="$upgrade_args --ref $u_ref"
         FUNC_RESULT="$("$FLEET_BIN/fleet-upgrade" $upgrade_args 2>&1 | tail -20)" \
           || FUNC_RESULT="fleet-upgrade failed: ${FUNC_RESULT}"
