@@ -139,95 +139,13 @@ No fleet registry found."
       fi
       ;;
     *)
-      # Route to AI — answer the question
+      # Route to AI — agent-ask handles function calling internally
       local agent_ask="${OC_HOST_ROOT}/.openclaw/bin/agent-ask"
       if [[ -x "$agent_ask" ]]; then
         log "Routing to agent-ask: ${clean_text:0:60}"
         response="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" \
           timeout "$PROCESS_TIMEOUT" "$agent_ask" "$clean_text" 2>/dev/null)" \
           || response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."
-
-        # ---- Action block detection (colloquial tool invocation) ----
-        if echo "$response" | grep -q '```action'; then
-          local action_json
-          action_json="$(echo "$response" | python3 -c "
-import sys, json, re
-text = sys.stdin.read()
-m = re.search(r'\`\`\`action\s*\n(.*?)\n\`\`\`', text, re.DOTALL)
-if m:
-    print(m.group(1).strip())
-" 2>/dev/null || echo "")"
-
-          if [[ -n "$action_json" ]]; then
-            local tool_name tool_result
-            tool_name="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tool',''))" 2>/dev/null || echo "")"
-            log "Action detected: tool=${tool_name}"
-
-            if [[ -n "$tool_name" ]]; then
-              local fleet_bin="${OC_HOST_ROOT}/.openclaw/bin"
-
-              case "$tool_name" in
-                fleet-deploy)
-                  local d_name d_specialty d_email
-                  d_name="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('args',{}).get('name',''))" 2>/dev/null)"
-                  d_specialty="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('args',{}).get('specialty',''))" 2>/dev/null)"
-                  d_email="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('args',{}).get('agentEmail',''))" 2>/dev/null)"
-                  if [[ -n "$d_name" && -n "$d_specialty" && -n "$d_email" ]]; then
-                    tool_result="$("$fleet_bin/fleet-deploy" --name "$d_name" --specialty "$d_specialty" --agent-email "$d_email" 2>&1)" \
-                      || tool_result="⚠️ fleet-deploy failed: ${tool_result}"
-                  else
-                    tool_result="⚠️ Missing required args for fleet-deploy (need: name, specialty, agentEmail)"
-                  fi
-                  ;;
-                fleet-teardown)
-                  local t_name
-                  t_name="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('args',{}).get('name',''))" 2>/dev/null)"
-                  if [[ -n "$t_name" ]]; then
-                    tool_result="$("$fleet_bin/fleet-teardown" --name "$t_name" 2>&1)" \
-                      || tool_result="⚠️ fleet-teardown failed: ${tool_result}"
-                  else
-                    tool_result="⚠️ Missing 'name' arg for fleet-teardown"
-                  fi
-                  ;;
-                fleet-verify)
-                  local v_name
-                  v_name="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('args',{}).get('name',''))" 2>/dev/null)"
-                  if [[ -n "$v_name" ]]; then
-                    tool_result="$("$fleet_bin/fleet-verify" --name "$v_name" 2>&1)" \
-                      || tool_result="⚠️ fleet-verify failed: ${tool_result}"
-                  else
-                    tool_result="⚠️ Missing 'name' arg for fleet-verify"
-                  fi
-                  ;;
-                fleet-upgrade)
-                  local u_name u_ref
-                  u_name="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('args',{}).get('name',''))" 2>/dev/null)"
-                  u_ref="$(echo "$action_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('args',{}).get('ref',''))" 2>/dev/null)"
-                  if [[ -n "$u_name" ]]; then
-                    local upgrade_args="--name $u_name"
-                    [[ -n "$u_ref" ]] && upgrade_args="$upgrade_args --ref $u_ref"
-                    tool_result="$("$fleet_bin/fleet-upgrade" $upgrade_args 2>&1)" \
-                      || tool_result="⚠️ fleet-upgrade failed: ${tool_result}"
-                  else
-                    tool_result="⚠️ Missing 'name' arg for fleet-upgrade"
-                  fi
-                  ;;
-                *)
-                  tool_result="⚠️ Unknown tool: ${tool_name}"
-                  ;;
-              esac
-
-              # Strip action block from response, append tool result summary
-              response="$(echo "$response" | python3 -c "
-import sys, re
-text = sys.stdin.read()
-text = re.sub(r'\`\`\`action\s*\n.*?\n\`\`\`', '', text, flags=re.DOTALL).strip()
-print(text)
-" 2>/dev/null || echo "$response")"
-              log "Tool result: ${tool_result:0:200}"
-            fi
-          fi
-        fi
       else
         response="❓ Unknown command: \`${cmd}\`
 Try \`help\` for available commands."

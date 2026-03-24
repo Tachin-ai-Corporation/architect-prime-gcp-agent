@@ -2,11 +2,15 @@
 # ============================================================
 # agent-ask — Answer a question using Vertex AI Gemini
 #
-# Calls the Gemini API with:
+# Uses Gemini function calling for tool invocation:
 #   - System prompt built from agent workspace (SOUL, MEMORY, etc.)
-#   - Google Search grounding for general knowledge questions
-#   - Skill-first routing: disables grounding for self-knowledge queries
+#   - Function declarations for lifecycle tools (fleet-deploy, etc.)
+#   - Google Search grounding for general knowledge
 #   - VM service account ADC for authentication
+#
+# When Gemini decides a tool is needed, it returns a functionCall.
+# This script executes the tool, then sends the result back to
+# Gemini for a final conversational response.
 #
 # Usage:
 #   agent-ask "What is the latest GKE pricing?"
@@ -29,9 +33,11 @@ MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-4096}"
 TEMPERATURE="${TEMPERATURE:-0.7}"
 
 BUILD_PROMPT="${OC_HOST_ROOT}/.openclaw/bin/build-system-prompt"
+FLEET_BIN="${OC_HOST_ROOT}/.openclaw/bin"
 
 # ---- Helpers ----
 die() { echo "[agent-ask] [ERROR] $*" >&2; exit 1; }
+log() { echo "[agent-ask] $*" >&2; }
 
 # ---- Get access token ----
 get_token() {
@@ -84,30 +90,81 @@ PROJECT_ID="$(get_project)" || die "Failed to get project ID"
 [[ -n "$TOKEN" ]] || die "Empty access token"
 [[ -n "$PROJECT_ID" ]] || die "Empty project ID"
 
-# ---- Skill-first intent routing ----
-# Detect questions about the agent's own capabilities, tools, or fleet.
-# These should be answered from system prompt context, NOT web search.
-#
-# When grounding is enabled, Gemini prioritizes web results over the
-# system prompt — causing answers about "hiring agents" to return
-# generic staffing agency info instead of fleet agent types.
-USE_GROUNDING=true
-SKILL_PATTERNS="hire|fire|deploy|teardown|upgrade|verify|fleet|agents? type|what .* can you|who are you|your role|your capabilities|what do you|introduce yourself|spin up|tear down|shut down|list .* agent|agent factory|new agent|remove agent|check on|status of|ping|what kind|what sort|help me"
-QUESTION_LOWER="$(echo "$QUESTION" | tr '[:upper:]' '[:lower:]')"
-if echo "$QUESTION_LOWER" | grep -qEi "$SKILL_PATTERNS"; then
-  USE_GROUNDING=false
-fi
-
-# ---- Build API request ----
+# ---- Build API request with function declarations ----
 API_URL="https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${GEMINI_MODEL}:generateContent"
 
-# Use python3 for safe JSON encoding (handles special chars, newlines, quotes)
+# Build function declarations (only for Prime)
+FUNC_DECLS="[]"
+if [[ "$AGENT_ID" == "prime" ]]; then
+  FUNC_DECLS='[
+    {
+      "name": "list_agent_types",
+      "description": "List the available pre-defined agent types that can be hired. Call this when the user asks what kinds of agents are available.",
+      "parameters": {"type": "object", "properties": {}}
+    },
+    {
+      "name": "fleet_status",
+      "description": "Get the current status of all deployed fleet agents. Call this when the user asks about fleet status, active agents, or who is deployed.",
+      "parameters": {"type": "object", "properties": {}}
+    },
+    {
+      "name": "fleet_deploy",
+      "description": "Deploy/hire a new fleet agent. Only call this after confirming the agent name, specialty, and Workspace email with the user. Walk the user through Workspace setup requirements first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Agent name (lowercase, e.g. stan)"},
+          "specialty": {"type": "string", "description": "Agent specialty (e.g. devops, qa, finance)"},
+          "agent_email": {"type": "string", "description": "Confirmed Workspace email (e.g. devops-agent-stan@tachin.ai)"}
+        },
+        "required": ["name", "specialty", "agent_email"]
+      }
+    },
+    {
+      "name": "fleet_teardown",
+      "description": "Remove/fire a fleet agent. Confirm with the user before proceeding — this permanently deletes the agent project.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Agent name to remove"}
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "fleet_verify",
+      "description": "Verify a fleet agent is alive and responding by sending a ping.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Agent name to verify"}
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "fleet_upgrade",
+      "description": "Upgrade a fleet agent CoreKit to a new version.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Agent name to upgrade"},
+          "ref": {"type": "string", "description": "CoreKit ref/version to upgrade to (optional, defaults to current)"}
+        },
+        "required": ["name"]
+      }
+    }
+  ]'
+fi
+
+# Build request body with python3 for safe JSON encoding
 REQUEST_BODY="$(python3 -c "
 import json, sys
 
 system_prompt = sys.stdin.read()
 question = '''$(printf '%s' "$QUESTION" | sed "s/'/'\\\\''/g")'''
-use_grounding = '$USE_GROUNDING' == 'true'
+func_decls = json.loads('''$FUNC_DECLS''')
+is_prime = '$AGENT_ID' == 'prime'
 
 body = {
     'contents': [{
@@ -123,33 +180,188 @@ body = {
     }
 }
 
-# Only add Google Search grounding for general knowledge questions
-# Skill/self-knowledge questions use system prompt context only
-if use_grounding:
-    body['tools'] = [{'google_search': {}}]
+# Add tools: function declarations + Google Search grounding
+tools = []
+if is_prime and func_decls:
+    tools.append({'functionDeclarations': func_decls})
+tools.append({'google_search': {}})
+body['tools'] = tools
 
 print(json.dumps(body))
 " <<< "$SYSTEM_PROMPT")" || die "Failed to build request body"
 
 # ---- Call Vertex AI ----
-RESPONSE="$(curl -s -w "\n%{http_code}" \
-  -X POST \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  "$API_URL" \
-  -d "$REQUEST_BODY")"
+call_gemini() {
+  local req_body="$1"
+  local resp
+  resp="$(curl -s -w "\n%{http_code}" \
+    -X POST \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    "$API_URL" \
+    -d "$req_body")"
 
-HTTP_CODE="$(echo "$RESPONSE" | tail -1)"
-BODY="$(echo "$RESPONSE" | sed '$d')"
+  local http_code body
+  http_code="$(echo "$resp" | tail -1)"
+  body="$(echo "$resp" | sed '$d')"
 
-if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
-  echo "[agent-ask] Vertex AI API error (HTTP ${HTTP_CODE})" >&2
-  echo "$BODY" >&2
-  die "API call failed"
+  if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+    log "Vertex AI API error (HTTP ${http_code})"
+    log "$body"
+    die "API call failed"
+  fi
+  echo "$body"
+}
+
+RESPONSE_BODY="$(call_gemini "$REQUEST_BODY")"
+
+# ---- Check for function call ----
+FUNC_CALL="$(echo "$RESPONSE_BODY" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    candidates = data.get('candidates', [])
+    if candidates:
+        parts = candidates[0].get('content', {}).get('parts', [])
+        for p in parts:
+            if 'functionCall' in p:
+                print(json.dumps(p['functionCall']))
+                break
+        else:
+            print('')
+    else:
+        print('')
+except:
+    print('')
+" 2>/dev/null || echo "")"
+
+if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
+  # ---- Execute the function ----
+  FUNC_NAME="$(echo "$FUNC_CALL" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
+  FUNC_ARGS="$(echo "$FUNC_CALL" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('args',{})))" 2>/dev/null)"
+
+  log "Function call: ${FUNC_NAME} args=${FUNC_ARGS}"
+
+  FUNC_RESULT=""
+  case "$FUNC_NAME" in
+    list_agent_types)
+      TYPES_FILE="${OC_HOST_ROOT}/.openclaw/corekit/agent-types.json"
+      if [[ -f "$TYPES_FILE" ]]; then
+        FUNC_RESULT="$(jq -r '.types[] | "\(.id): \(.title) — \(.specialty)"' "$TYPES_FILE" 2>/dev/null || echo "Error reading agent types")"
+      else
+        FUNC_RESULT="No agent types file found."
+      fi
+      ;;
+    fleet_status)
+      REGISTRY="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
+      if [[ -f "$REGISTRY" ]]; then
+        FUNC_RESULT="$(jq -r '
+          if (.agents | length) > 0 then
+            (.agents | to_entries[] | "\(.key): \(.value.specialty) (\(.value.status // "unknown")) — \(.value.agentUserEmail // "no email")")
+          else
+            "No fleet agents currently deployed."
+          end' "$REGISTRY" 2>/dev/null || echo "Error reading registry")"
+      else
+        FUNC_RESULT="No fleet registry found."
+      fi
+      ;;
+    fleet_deploy)
+      local d_name d_specialty d_email
+      d_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
+      d_specialty="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))" 2>/dev/null)"
+      d_email="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('agent_email',''))" 2>/dev/null)"
+      if [[ -n "$d_name" && -n "$d_specialty" && -n "$d_email" ]]; then
+        FUNC_RESULT="$("$FLEET_BIN/fleet-deploy" --name "$d_name" --specialty "$d_specialty" --agent-email "$d_email" 2>&1 | tail -30)" \
+          || FUNC_RESULT="fleet-deploy failed: ${FUNC_RESULT}"
+      else
+        FUNC_RESULT="Missing required args for fleet-deploy (need: name, specialty, agent_email)"
+      fi
+      ;;
+    fleet_teardown)
+      local t_name
+      t_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
+      if [[ -n "$t_name" ]]; then
+        FUNC_RESULT="$("$FLEET_BIN/fleet-teardown" --name "$t_name" 2>&1 | tail -20)" \
+          || FUNC_RESULT="fleet-teardown failed: ${FUNC_RESULT}"
+      else
+        FUNC_RESULT="Missing 'name' arg for fleet-teardown"
+      fi
+      ;;
+    fleet_verify)
+      local v_name
+      v_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
+      if [[ -n "$v_name" ]]; then
+        FUNC_RESULT="$("$FLEET_BIN/fleet-verify" --name "$v_name" 2>&1 | tail -20)" \
+          || FUNC_RESULT="fleet-verify failed: ${FUNC_RESULT}"
+      else
+        FUNC_RESULT="Missing 'name' arg for fleet-verify"
+      fi
+      ;;
+    fleet_upgrade)
+      local u_name u_ref
+      u_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
+      u_ref="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref',''))" 2>/dev/null)"
+      if [[ -n "$u_name" ]]; then
+        local upgrade_args="--name $u_name"
+        [[ -n "$u_ref" ]] && upgrade_args="$upgrade_args --ref $u_ref"
+        FUNC_RESULT="$("$FLEET_BIN/fleet-upgrade" $upgrade_args 2>&1 | tail -20)" \
+          || FUNC_RESULT="fleet-upgrade failed: ${FUNC_RESULT}"
+      else
+        FUNC_RESULT="Missing 'name' arg for fleet-upgrade"
+      fi
+      ;;
+    *)
+      FUNC_RESULT="Unknown function: ${FUNC_NAME}"
+      ;;
+  esac
+
+  log "Function result: ${FUNC_RESULT:0:200}"
+
+  # ---- Second API call: send function result back for conversational response ----
+  # Also extract any text parts from the first response (Gemini may have said something before calling the function)
+  FIRST_TEXT="$(echo "$RESPONSE_BODY" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    parts = data.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+    texts = [p['text'] for p in parts if 'text' in p]
+    print(' '.join(texts))
+except:
+    print('')
+" 2>/dev/null || echo "")"
+
+  FOLLOWUP_BODY="$(python3 -c "
+import json, sys
+
+system_prompt = sys.stdin.read()
+question = '''$(printf '%s' "$QUESTION" | sed "s/'/'\\\\''/g")'''
+func_name = '$FUNC_NAME'
+func_args = json.loads('''$(echo "$FUNC_ARGS" | sed "s/'/'\\\\''/g")''')
+func_result = '''$(printf '%s' "$FUNC_RESULT" | sed "s/'/'\\\\''/g")'''
+first_text = '''$(printf '%s' "$FIRST_TEXT" | sed "s/'/'\\\\''/g")'''
+
+body = {
+    'contents': [
+        {'role': 'user', 'parts': [{'text': question}]},
+        {'role': 'model', 'parts': [{'functionCall': {'name': func_name, 'args': func_args}}]},
+        {'role': 'function', 'parts': [{'functionResponse': {'name': func_name, 'response': {'content': func_result}}}]}
+    ],
+    'systemInstruction': {
+        'parts': [{'text': system_prompt}]
+    },
+    'generationConfig': {
+        'maxOutputTokens': $MAX_OUTPUT_TOKENS,
+        'temperature': $TEMPERATURE
+    }
+}
+print(json.dumps(body))
+" <<< "$SYSTEM_PROMPT")" || die "Failed to build followup request"
+
+  RESPONSE_BODY="$(call_gemini "$FOLLOWUP_BODY")"
 fi
 
 # ---- Extract answer text ----
-ANSWER="$(echo "$BODY" | python3 -c "
+ANSWER="$(echo "$RESPONSE_BODY" | python3 -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
@@ -166,9 +378,8 @@ except Exception as e:
 
 # ---- Output ----
 # Truncate to ~3800 chars to stay within Chat's 4096 limit
-# (leaving room for formatting overhead)
 if [[ ${#ANSWER} -gt 3800 ]]; then
-  ANSWER="${ANSWER:0:3800}…"
+  ANSWER="${ANSWER:0:3800}..."
 fi
 
 echo "$ANSWER"
