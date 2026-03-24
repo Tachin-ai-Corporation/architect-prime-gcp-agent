@@ -4,7 +4,8 @@
 #
 # Calls the Gemini API with:
 #   - System prompt built from agent workspace (SOUL, MEMORY, etc.)
-#   - Google Search grounding for factual/current information
+#   - Google Search grounding for general knowledge questions
+#   - Skill-first routing: disables grounding for self-knowledge queries
 #   - VM service account ADC for authentication
 #
 # Usage:
@@ -73,7 +74,7 @@ if [[ -x "$BUILD_PROMPT" ]]; then
   SYSTEM_PROMPT="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "$BUILD_PROMPT" 2>/dev/null || true)"
 fi
 if [[ -z "$SYSTEM_PROMPT" ]]; then
-  SYSTEM_PROMPT="You are ${AGENT_ID}, an AI assistant. Answer questions accurately and concisely. Use Google Search when you need current information."
+  SYSTEM_PROMPT="You are ${AGENT_ID}, an AI assistant. Answer questions accurately and concisely."
 fi
 
 # ---- Get credentials ----
@@ -83,6 +84,20 @@ PROJECT_ID="$(get_project)" || die "Failed to get project ID"
 [[ -n "$TOKEN" ]] || die "Empty access token"
 [[ -n "$PROJECT_ID" ]] || die "Empty project ID"
 
+# ---- Skill-first intent routing ----
+# Detect questions about the agent's own capabilities, tools, or fleet.
+# These should be answered from system prompt context, NOT web search.
+#
+# When grounding is enabled, Gemini prioritizes web results over the
+# system prompt — causing answers about "hiring agents" to return
+# generic staffing agency info instead of fleet agent types.
+USE_GROUNDING=true
+SKILL_PATTERNS="hire|fire|deploy|teardown|upgrade|verify|fleet|agents? type|what .* can you|who are you|your role|your capabilities|what do you|introduce yourself|spin up|tear down|shut down|list .* agent|agent factory|new agent|remove agent|check on|status of|ping|what kind|what sort|help me"
+QUESTION_LOWER="$(echo "$QUESTION" | tr '[:upper:]' '[:lower:]')"
+if echo "$QUESTION_LOWER" | grep -qEi "$SKILL_PATTERNS"; then
+  USE_GROUNDING=false
+fi
+
 # ---- Build API request ----
 API_URL="https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${GEMINI_MODEL}:generateContent"
 
@@ -91,7 +106,8 @@ REQUEST_BODY="$(python3 -c "
 import json, sys
 
 system_prompt = sys.stdin.read()
-question = '''$(printf '%s' "$QUESTION" | sed "s/'/'\\''/g")'''
+question = '''$(printf '%s' "$QUESTION" | sed "s/'/'\\\\''/g")'''
+use_grounding = '$USE_GROUNDING' == 'true'
 
 body = {
     'contents': [{
@@ -101,14 +117,17 @@ body = {
     'systemInstruction': {
         'parts': [{'text': system_prompt}]
     },
-    'tools': [{
-        'google_search': {}
-    }],
     'generationConfig': {
         'maxOutputTokens': $MAX_OUTPUT_TOKENS,
         'temperature': $TEMPERATURE
     }
 }
+
+# Only add Google Search grounding for general knowledge questions
+# Skill/self-knowledge questions use system prompt context only
+if use_grounding:
+    body['tools'] = [{'google_search': {}}]
+
 print(json.dumps(body))
 " <<< "$SYSTEM_PROMPT")" || die "Failed to build request body"
 
