@@ -1,0 +1,46 @@
+{
+  "types": [
+    {
+      "id": "devops",
+      "title": "DevOps Engineer",
+      "specialty": "Infrastructure, CI/CD, deployments, monitoring, cloud architecture",
+      "emailPattern": "devops-agent-{name}"
+    },
+    {
+      "id": "swe",
+      "title": "Software Engineer",
+      "specialty": "Full-stack development, code review, debugging, feature implementation",
+      "emailPattern": "swe-agent-{name}"
+    },
+    {
+      "id": "qa",
+      "title": "QA Engineer",
+      "specialty": "Testing, quality assurance, test automation, bug triage",
+      "emailPattern": "qa-agent-{name}"
+    },
+    {
+      "id": "pm",
+      "title": "Project Manager",
+      "specialty": "Project planning, task routing, status reporting, stakeholder communication",
+      "emailPattern": "pm-agent-{name}"
+    },
+    {
+      "id": "finance",
+      "title": "Finance Analyst",
+      "specialty": "Budget tracking, cost analysis, financial reporting, forecasting",
+      "emailPattern": "finance-agent-{name}"
+    },
+    {
+      "id": "data",
+      "title": "Data Engineer",
+      "specialty": "Data pipelines, analytics, ETL, database management, reporting",
+      "emailPattern": "data-agent-{name}"
+    },
+    {
+      "id": "security",
+      "title": "Security Engineer",
+      "specialty": "Security audits, vulnerability assessment, compliance, incident response",
+      "emailPattern": "security-agent-{name}"
+    }
+  ]
+}
