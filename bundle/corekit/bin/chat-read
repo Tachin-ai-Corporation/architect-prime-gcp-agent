@@ -127,40 +127,23 @@ if since_seconds > 0:
     messages = time_filtered
 
 # Filter for @-mentions of this user if requested
+# STRICT: only match on annotations[].userMention.user.email
+# No fuzzy text matching — prevents agent co-mingling
 filter_mentions = ${FILTER_MENTIONS_PY}
-agent_email = '${AGENT_USER_EMAIL}'
-agent_local = agent_email.split('@')[0].lower() if agent_email else ''
-# Normalize: replace both hyphens and spaces with a single canonical separator
-# so 'architect-agent prime', 'architect-agent-prime', 'architect agent prime' all match
-import re
-def normalize(s):
-    return re.sub(r'[-\s]+', ' ', s.strip().lower())
-agent_norm = normalize(agent_local)
+agent_email = '${AGENT_USER_EMAIL}'.lower()
 
-if filter_mentions and agent_norm:
+if filter_mentions and agent_email:
     filtered = []
     for msg in messages:
-        # Check annotations for USER_MENTION matching agent email or name
         annotations = msg.get('annotations', [])
         mentioned = False
         for ann in annotations:
             if ann.get('type') == 'USER_MENTION':
                 user_info = ann.get('userMention', {}).get('user', {})
-                # Check email (if present)
                 uemail = (user_info.get('email', '') or '').lower()
-                if uemail == agent_email.lower():
+                if uemail == agent_email:
                     mentioned = True
                     break
-                # Match normalized display name
-                uname = normalize(user_info.get('displayName', '') or '')
-                if agent_norm in uname or uname in agent_norm:
-                    mentioned = True
-                    break
-        # Fallback: check if normalized agent name appears in normalized text
-        if not mentioned:
-            text = normalize(msg.get('text', '') or msg.get('argumentText', '') or '')
-            if agent_norm in text:
-                mentioned = True
         if mentioned:
             filtered.append(msg)
     messages = filtered

@@ -34,6 +34,20 @@ TEMPERATURE="${TEMPERATURE:-0.7}"
 
 BUILD_PROMPT="${OC_HOST_ROOT}/.openclaw/bin/build-system-prompt"
 FLEET_BIN="${OC_HOST_ROOT}/.openclaw/bin"
+CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+
+# Resolve CHAT_SPACE_ID for async skill callbacks
+if [[ -z "${CHAT_SPACE_ID:-}" && -f "$CHAT_CONFIG" ]]; then
+  CHAT_SPACE_ID="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('spaceId', ''))
+except: pass
+" 2>/dev/null || true)"
+fi
+export CHAT_SPACE_ID
 
 # ---- Helpers ----
 die() { echo "[agent-ask] [ERROR] $*" >&2; exit 1; }
@@ -246,7 +260,13 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
   log "Function call: ${FUNC_NAME} args=${FUNC_ARGS}"
 
   FUNC_RESULT=""
+  SKILL_TASK_DIR="/tmp/skill-tasks"
+  mkdir -p "$SKILL_TASK_DIR"
+
   case "$FUNC_NAME" in
+    # ============================================================
+    # INSTANT SKILLS — execute inline, results returned to Gemini
+    # ============================================================
     list_agent_types)
       TYPES_FILE="${OC_HOST_ROOT}/.openclaw/corekit/agent-types.json"
       if [[ -f "$TYPES_FILE" ]]; then
@@ -268,28 +288,6 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
         FUNC_RESULT="No fleet registry found."
       fi
       ;;
-    fleet_deploy)
-      d_name="" d_specialty="" d_email=""
-      d_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-      d_specialty="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))" 2>/dev/null)"
-      d_email="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('agent_email',''))" 2>/dev/null)"
-      if [[ -n "$d_name" && -n "$d_specialty" && -n "$d_email" ]]; then
-        FUNC_RESULT="$("$FLEET_BIN/fleet-deploy" --name "$d_name" --specialty "$d_specialty" --agent-email "$d_email" 2>&1 | tail -30)" \
-          || FUNC_RESULT="fleet-deploy failed: ${FUNC_RESULT}"
-      else
-        FUNC_RESULT="Missing required args for fleet-deploy (need: name, specialty, agent_email)"
-      fi
-      ;;
-    fleet_teardown)
-      t_name=""
-      t_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-      if [[ -n "$t_name" ]]; then
-        FUNC_RESULT="$("$FLEET_BIN/fleet-teardown" --name "$t_name" 2>&1 | tail -20)" \
-          || FUNC_RESULT="fleet-teardown failed: ${FUNC_RESULT}"
-      else
-        FUNC_RESULT="Missing 'name' arg for fleet-teardown"
-      fi
-      ;;
     fleet_verify)
       v_name=""
       v_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
@@ -300,15 +298,119 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
         FUNC_RESULT="Missing 'name' arg for fleet-verify"
       fi
       ;;
+
+    # ============================================================
+    # ASYNC SKILLS — kick off in background, report back via chat-send
+    # ============================================================
+    fleet_deploy)
+      d_name="" d_specialty="" d_email=""
+      d_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
+      d_specialty="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))" 2>/dev/null)"
+      d_email="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('agent_email',''))" 2>/dev/null)"
+      if [[ -n "$d_name" && -n "$d_specialty" && -n "$d_email" ]]; then
+        TASK_ID="deploy-${d_name}-$(date +%s)"
+        TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
+        echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"running\",\"started\":\"$(date -Is)\"}" > "$TASK_FILE"
+        log "Starting async skill: fleet_deploy (task=${TASK_ID})"
+
+        # Run fleet-deploy in background — it calls chat-send on completion
+        nohup bash -c "
+          RESULT=\"\$('$FLEET_BIN/fleet-deploy' --name '$d_name' --specialty '$d_specialty' --agent-email '$d_email' 2>&1)\"
+          EXIT_CODE=\$?
+          # Extract key info from deploy output
+          SA_CLIENT_ID=\"\$(echo \"\$RESULT\" | grep -oP 'SA Client ID\\s*:\\s*\\K[0-9]+' || echo 'unknown')\"
+          DWD_SCOPES='https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly'
+
+          if [[ \$EXIT_CODE -eq 0 ]]; then
+            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"complete\",\"exit_code\":0}' > '$TASK_FILE'
+            # Report success via chat-send
+            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
+              '$CHAT_SEND' \"✅ *${d_name}* has been deployed!
+
+Here's what you need to do to activate ${d_name}:
+
+*Step 1: Create Workspace User*
+→ https://admin.google.com/ac/users
+Create: \`${d_email}\`
+
+*Step 2: Grant Domain-Wide Delegation*
+→ https://admin.google.com/ac/owl/domainwidedelegation
+Click 'Add new' and enter:
+• Client ID: \`\${SA_CLIENT_ID}\`
+• Scopes: \`\${DWD_SCOPES}\`
+
+*Step 3: Add to Chat Space*
+Add \`${d_email}\` to this Chat space.
+
+Once done, @-mention ${d_name} to verify they're online.\" 2>/dev/null || true
+          else
+            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"failed\",\"exit_code\":'"\$EXIT_CODE"'}' > '$TASK_FILE'
+            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
+              '$CHAT_SEND' \"❌ Deployment of *${d_name}* failed. Check logs for details.\" 2>/dev/null || true
+          fi
+        " >> "${SKILL_TASK_DIR}/${TASK_ID}.log" 2>&1 &
+
+        FUNC_RESULT="Task started: deploying agent '${d_name}' (task ID: ${TASK_ID}). This takes 3-5 minutes. I will send a follow-up message in this chat with the setup instructions when deployment is complete."
+      else
+        FUNC_RESULT="Missing required args for fleet-deploy (need: name, specialty, agent_email)"
+      fi
+      ;;
+    fleet_teardown)
+      t_name=""
+      t_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
+      if [[ -n "$t_name" ]]; then
+        TASK_ID="teardown-${t_name}-$(date +%s)"
+        TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
+        echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"running\",\"started\":\"$(date -Is)\"}" > "$TASK_FILE"
+        log "Starting async skill: fleet_teardown (task=${TASK_ID})"
+
+        nohup bash -c "
+          RESULT=\"\$('$FLEET_BIN/fleet-teardown' --name '$t_name' 2>&1)\"
+          EXIT_CODE=\$?
+          if [[ \$EXIT_CODE -eq 0 ]]; then
+            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"complete\"}' > '$TASK_FILE'
+            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
+              '$CHAT_SEND' \"✅ *${t_name}* has been decommissioned. The GCP project and VM have been deleted.\" 2>/dev/null || true
+          else
+            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"failed\"}' > '$TASK_FILE'
+            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
+              '$CHAT_SEND' \"❌ Teardown of *${t_name}* failed. Check logs.\" 2>/dev/null || true
+          fi
+        " >> "${SKILL_TASK_DIR}/${TASK_ID}.log" 2>&1 &
+
+        FUNC_RESULT="Task started: tearing down agent '${t_name}'. I'll confirm in this chat when it's done."
+      else
+        FUNC_RESULT="Missing 'name' arg for fleet-teardown"
+      fi
+      ;;
     fleet_upgrade)
       u_name="" u_ref=""
       u_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       u_ref="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref',''))" 2>/dev/null)"
       if [[ -n "$u_name" ]]; then
-        upgrade_args="--name $u_name"
-        [[ -n "$u_ref" ]] && upgrade_args="$upgrade_args --ref $u_ref"
-        FUNC_RESULT="$("$FLEET_BIN/fleet-upgrade" $upgrade_args 2>&1 | tail -20)" \
-          || FUNC_RESULT="fleet-upgrade failed: ${FUNC_RESULT}"
+        TASK_ID="upgrade-${u_name}-$(date +%s)"
+        TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
+        echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_upgrade\",\"name\":\"${u_name}\",\"status\":\"running\"}" > "$TASK_FILE"
+        log "Starting async skill: fleet_upgrade (task=${TASK_ID})"
+
+        upgrade_cmd="'$FLEET_BIN/fleet-upgrade' --name '$u_name'"
+        [[ -n "$u_ref" ]] && upgrade_cmd="$upgrade_cmd --ref '$u_ref'"
+
+        nohup bash -c "
+          RESULT=\"\$(${upgrade_cmd} 2>&1)\"
+          EXIT_CODE=\$?
+          if [[ \$EXIT_CODE -eq 0 ]]; then
+            echo '{\"task\":\"${TASK_ID}\",\"status\":\"complete\"}' > '$TASK_FILE'
+            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
+              '$CHAT_SEND' \"✅ *${u_name}* has been upgraded successfully.\" 2>/dev/null || true
+          else
+            echo '{\"task\":\"${TASK_ID}\",\"status\":\"failed\"}' > '$TASK_FILE'
+            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
+              '$CHAT_SEND' \"❌ Upgrade of *${u_name}* failed. Check logs.\" 2>/dev/null || true
+          fi
+        " >> "${SKILL_TASK_DIR}/${TASK_ID}.log" 2>&1 &
+
+        FUNC_RESULT="Task started: upgrading agent '${u_name}'. I'll confirm when it's done."
       else
         FUNC_RESULT="Missing 'name' arg for fleet-upgrade"
       fi

@@ -24,7 +24,7 @@ set -euo pipefail
 AGENT_ID="${AGENT_ID:-prime}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
-PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-120}"
+PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-300}"
 CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 CHAT_READ="${OC_HOST_ROOT}/.openclaw/bin/chat-read"
 PROCESSED_FILE="/tmp/inbox-daemon-processed.json"
@@ -46,7 +46,29 @@ if [[ ! -f "$PROCESSED_FILE" ]]; then
 fi
 
 log "Starting inbox-daemon for agent=${AGENT_ID} (DWD Chat polling mode)"
-log "Poll interval: ${POLL_INTERVAL}s"
+log "Poll interval: ${POLL_INTERVAL}s | Process timeout: ${PROCESS_TIMEOUT}s"
+
+# ---- DWD Healthcheck: verify token works before entering poll loop ----
+DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
+DWD_OK=false
+for attempt in 1 2 3 4 5; do
+  if [[ -x "$DWD_TOKEN_BIN" ]]; then
+    TEST_TOKEN="$($DWD_TOKEN_BIN --user "${AGENT_USER_EMAIL:-}" \
+      --scope "https://www.googleapis.com/auth/chat.messages.readonly" 2>/dev/null || true)"
+    if [[ -n "$TEST_TOKEN" ]]; then
+      log "DWD healthcheck PASSED (attempt ${attempt})"
+      DWD_OK=true
+      break
+    fi
+  fi
+  warn "DWD healthcheck FAILED (attempt ${attempt}/5) — dwd-token returned empty for ${AGENT_USER_EMAIL:-unset}"
+  warn "  Ensure DWD is granted in Admin Console for this SA's Client ID"
+  sleep $((attempt * 10))
+done
+if [[ "$DWD_OK" != "true" ]]; then
+  warn "DWD healthcheck failed after 5 attempts. Entering poll loop anyway (will retry each cycle)."
+  warn "  Fix: go to https://admin.google.com/ac/owl/domainwidedelegation"
+fi
 
 # ---- Helper: check if message was already processed ----
 is_processed() {
@@ -144,8 +166,8 @@ No fleet registry found."
       if [[ -x "$agent_ask" ]]; then
         log "Routing to agent-ask: ${clean_text:0:60}"
         response="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" \
-          timeout "$PROCESS_TIMEOUT" "$agent_ask" "$clean_text" 2>/dev/null)" \
-          || response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."
+          timeout "$PROCESS_TIMEOUT" "$agent_ask" "$clean_text" 2>&1)" \
+          || { warn "agent-ask failed or timed out"; response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."; }
       else
         response="❓ Unknown command: \`${cmd}\`
 Try \`help\` for available commands."
@@ -162,7 +184,7 @@ log "Entering polling loop (interval: ${POLL_INTERVAL}s)"
 
 while true; do
   # Read recent messages where this user was @-mentioned
-  MESSAGES="$("$CHAT_READ" --since "$((POLL_INTERVAL + 5))" --filter-mentions 2>/dev/null || echo '[]')"
+  MESSAGES="$("$CHAT_READ" --since "$((POLL_INTERVAL + 5))" --filter-mentions 2>&1)" || { warn "chat-read failed: ${MESSAGES:0:200}"; MESSAGES='[]'; }
 
   # Count messages
   MSG_COUNT="$(echo "$MESSAGES" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)"
