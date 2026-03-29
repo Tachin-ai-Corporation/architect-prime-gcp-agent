@@ -2,19 +2,29 @@
 # ============================================================
 # dwd-token — Get a user-scoped access token via Domain-Wide Delegation
 #
-# Uses the VM-attached service account + signJwt to impersonate
-# a Workspace user. NO JSON key files required.
+# Uses a service account + signJwt to impersonate a Workspace user.
+# NO JSON key files required.
+#
+# Architecture:
+#   By default, signs JWTs using the VM's own SA. For fleet agents,
+#   use --signer-sa to sign with a shared DWD-signer SA in Prime's
+#   project. This ensures the resulting token is tied to a project
+#   that has a Chat app configured (required by the Chat API).
+#
+#   The DWD-signer SA has ZERO IAM roles — it exists only for JWT
+#   signing. Fleet agents need serviceAccountTokenCreator on it.
 #
 # Flow:
-#   1. Get VM SA email from metadata server
+#   1. Get VM SA metadata token (for calling signJwt)
 #   2. Build JWT claim with sub=<user> and requested scopes
-#   3. Call iam.googleapis.com signJwt using VM metadata auth
+#   3. Call iam.googleapis.com signJwt on [signer-sa or self]
 #   4. Exchange signed JWT for access token via oauth2.googleapis.com
 #   5. Print access token to stdout
 #
 # Usage:
-#   dwd-token --user prime@domain.com --scope "https://www.googleapis.com/auth/chat.messages"
-#   dwd-token --user prime@domain.com   # uses default Chat scopes
+#   dwd-token --user prime@domain.com --scope "https://..."
+#   dwd-token --user agent@domain.com --signer-sa dwd-signer@project.iam...
+#   dwd-token  # reads user + signer-sa from chat-config.json
 #
 # Environment:
 #   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
@@ -24,6 +34,7 @@ set -euo pipefail
 # ---- Defaults ----
 USER_EMAIL=""
 SCOPES=""
+SIGNER_SA=""  # If set, sign JWTs with this remote SA instead of self
 DEFAULT_SCOPES="https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly"
 TOKEN_LIFETIME=3600  # seconds
 
@@ -33,10 +44,12 @@ die() { echo "[dwd-token] [ERROR] $*" >&2; exit 1; }
 # ---- Parse args ----
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --user)    USER_EMAIL="$2"; shift 2 ;;
-    --scope)   SCOPES="$2"; shift 2 ;;
+    --user)       USER_EMAIL="$2"; shift 2 ;;
+    --scope)      SCOPES="$2"; shift 2 ;;
+    --signer-sa)  SIGNER_SA="$2"; shift 2 ;;
     --help|-h)
-      echo "Usage: dwd-token --user <email> [--scope <space-separated-scopes>]"
+      echo "Usage: dwd-token --user <email> [--scope <scopes>] [--signer-sa <sa-email>]"
+      echo "  --signer-sa  Sign JWT with a remote SA (for fleet agents using shared DWD)"
       echo "Prints an access token on stdout."
       exit 0
       ;;
@@ -44,16 +57,25 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# If no user specified, try reading from chat-config.json
-if [[ -z "$USER_EMAIL" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-  CONFIG_FILE="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
-  if [[ -f "$CONFIG_FILE" ]]; then
+# If no user/signer specified, try reading from chat-config.json
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+CONFIG_FILE="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+if [[ -f "$CONFIG_FILE" ]]; then
+  if [[ -z "$USER_EMAIL" ]]; then
     USER_EMAIL="$(python3 -c "
-import json, sys
+import json
 try:
     cfg = json.load(open('$CONFIG_FILE'))
     print(cfg.get('agentUserEmail', ''))
+except: pass
+" 2>/dev/null)"
+  fi
+  if [[ -z "$SIGNER_SA" ]]; then
+    SIGNER_SA="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CONFIG_FILE'))
+    print(cfg.get('dwdSignerSa', ''))
 except: pass
 " 2>/dev/null)"
   fi
@@ -64,30 +86,35 @@ fi
 # Use default scopes if none specified
 [[ -n "$SCOPES" ]] || SCOPES="$DEFAULT_SCOPES"
 
-# ---- Step 1: Get VM SA email from metadata ----
+# ---- Step 1: Get VM SA metadata token (for calling signJwt API) ----
 META="http://metadata.google.internal/computeMetadata/v1"
-SA_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' \
+VM_SA_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' \
   "${META}/instance/service-accounts/default/email" 2>/dev/null)" \
   || die "Cannot read SA email from metadata server. Is this running on a GCE VM?"
-[[ -n "$SA_EMAIL" ]] || die "Empty SA email from metadata"
+[[ -n "$VM_SA_EMAIL" ]] || die "Empty SA email from metadata"
 
-# Get a metadata-based access token for calling signJwt
 META_TOKEN="$(curl -sf -H 'Metadata-Flavor: Google' \
   "${META}/instance/service-accounts/default/token" 2>/dev/null \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" \
   || die "Failed to get metadata access token"
 
+# ---- Determine which SA signs the JWT ----
+# If signer-sa is set, use that (fleet agents sign with shared DWD SA).
+# Otherwise, sign with the VM's own SA (Prime's default).
+SIGN_SA="${SIGNER_SA:-$VM_SA_EMAIL}"
+
 # ---- Step 2: Build JWT claim ----
+# iss = the SA that signs (determines project context for Chat API)
+# sub = the Workspace user to impersonate
 NOW="$(date +%s)"
 EXP="$((NOW + TOKEN_LIFETIME))"
 
-# Convert space-separated scopes to comma-separated for JWT
 JWT_SCOPES="$(echo "$SCOPES" | tr ' ' ',')"
 
 JWT_CLAIM="$(python3 -c "
 import json
 claim = {
-    'iss': '$SA_EMAIL',
+    'iss': '$SIGN_SA',
     'sub': '$USER_EMAIL',
     'scope': '$JWT_SCOPES'.replace(',', ' '),
     'aud': 'https://oauth2.googleapis.com/token',
@@ -98,14 +125,15 @@ print(json.dumps(claim))
 ")" || die "Failed to build JWT claim"
 
 # ---- Step 3: Sign JWT via IAM signJwt API ----
-SIGN_URL="https://iam.googleapis.com/v1/projects/-/serviceAccounts/${SA_EMAIL}:signJwt"
+# Call signJwt on SIGN_SA (may be a remote SA in a different project)
+SIGN_URL="https://iam.googleapis.com/v1/projects/-/serviceAccounts/${SIGN_SA}:signJwt"
 
 SIGN_RESPONSE="$(curl -sf -X POST \
   -H "Authorization: Bearer ${META_TOKEN}" \
   -H "Content-Type: application/json" \
   "$SIGN_URL" \
   -d "{\"payload\": $(python3 -c "import json; print(json.dumps('$JWT_CLAIM'))" 2>/dev/null || echo "\"$JWT_CLAIM\"")}" \
-  2>/dev/null)" || die "signJwt API call failed. Ensure SA has roles/iam.serviceAccountTokenCreator on itself."
+  2>/dev/null)" || die "signJwt failed for ${SIGN_SA}. Ensure this VM's SA has roles/iam.serviceAccountTokenCreator on ${SIGN_SA}."
 
 SIGNED_JWT="$(echo "$SIGN_RESPONSE" | python3 -c "
 import json, sys

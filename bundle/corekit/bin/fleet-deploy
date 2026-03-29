@@ -116,6 +116,19 @@ if [[ -z "$ADMIN_EMAIL" ]]; then
     'http://metadata.google.internal/computeMetadata/v1/instance/attributes/admin_email' 2>/dev/null || true)"
 fi
 
+# DWD Signer SA — shared SA in Prime's project for Chat API token signing
+# Fleet agents sign JWTs with this SA so the Chat API recognizes the project
+# (which has a configured Chat app). The signer SA has ZERO IAM roles.
+DWD_SIGNER_SA="${DWD_SIGNER_SA:-}"
+if [[ -z "$DWD_SIGNER_SA" ]]; then
+  DWD_SIGNER_SA="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/dwd_signer_sa' 2>/dev/null || true)"
+fi
+# Fallback: construct from Prime project
+if [[ -z "$DWD_SIGNER_SA" ]]; then
+  DWD_SIGNER_SA="dwd-signer@${PRIME_PROJECT}.iam.gserviceaccount.com"
+fi
+
 # Resolve CoreKit ref from STATE.json
 CORE_REF="main"
 STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
@@ -208,10 +221,14 @@ for role in roles/compute.admin roles/aiplatform.user roles/iam.serviceAccountTo
     --quiet > /dev/null 2>&1 || true
 done
 
-# Look up the SA's unique Client ID (needed for DWD Admin Console setup)
-FLEET_SA_CLIENT_ID="$(gcloud iam service-accounts describe "$FLEET_SA_EMAIL" \
-  --project="$FLEET_PROJECT" --format='value(uniqueId)' 2>/dev/null || echo 'unknown')"
-log "SA Client ID: ${FLEET_SA_CLIENT_ID}"
+# Grant serviceAccountTokenCreator on the shared DWD-signer SA
+# This lets the fleet SA call signJwt on the signer (for Chat DWD tokens)
+log "Granting serviceAccountTokenCreator on DWD-signer SA"
+gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
+  --project="$PRIME_PROJECT" \
+  --member="serviceAccount:${FLEET_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --quiet > /dev/null 2>&1 || log "DWD-signer IAM grant may already exist"
 
 # ============================================================
 # 5. Build and create VM (with DWD inbox-daemon)
@@ -258,7 +275,8 @@ if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   "spaceId": "${CHAT_SPACE_ID}",
   "agentUserEmail": "${AGENT_USER_EMAIL}",
   "agentDisplayName": "${AGENT_DISPLAY_NAME}",
-  "projectId": "${PROJECT_ID}"
+  "projectId": "${PROJECT_ID}",
+  "dwdSignerSa": "${DWD_SIGNER_SA}"
 }
 CHATCFG
 fi
@@ -298,7 +316,7 @@ gcloud compute instances create "$FLEET_VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME}" \
+  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},dwd_signer_sa=${DWD_SIGNER_SA}" \
   --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
 
@@ -345,10 +363,8 @@ jq --arg name "$AGENT_NAME" \
   "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
 
 # ============================================================
-# 7. Print results + DWD setup instructions
+# 7. Print results + admin setup instructions
 # ============================================================
-DWD_SCOPES="https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly"
-
 echo
 echo "============================================================"
 echo "  FLEET AGENT DEPLOYED: ${AGENT_NAME}"
@@ -357,7 +373,7 @@ echo
 echo "  Project        : ${FLEET_PROJECT}"
 echo "  VM             : ${FLEET_VM} (${FLEET_IP})"
 echo "  SA             : ${FLEET_SA_EMAIL}"
-echo "  SA Client ID   : ${FLEET_SA_CLIENT_ID}"
+echo "  DWD Signer     : ${DWD_SIGNER_SA}"
 echo "  Zone           : ${ZONE}"
 echo "  Agent Email    : ${AGENT_USER_EMAIL}"
 echo "  Display Name   : ${AGENT_DISPLAY_NAME}"
@@ -366,31 +382,25 @@ echo "  Specialty      : ${SPECIALTY}"
 echo "  CoreRef        : ${CORE_REF}"
 echo
 echo "============================================================"
-echo "  ADMIN SETUP REQUIRED (3 steps)"
+echo "  ADMIN SETUP REQUIRED (2 steps)"
 echo "============================================================"
 echo
 echo "  Step 1: Create Workspace User (if not already done)"
 echo "    → https://admin.google.com/ac/users"
 echo "    Create: ${AGENT_USER_EMAIL}"
 echo
-echo "  Step 2: Grant Domain-Wide Delegation"
-echo "    → https://admin.google.com/ac/owl/domainwidedelegation"
-echo "    Click 'Add new' and enter:"
-echo "      Client ID: ${FLEET_SA_CLIENT_ID}"
-echo "      Scopes:    ${DWD_SCOPES}"
-echo "    Click 'Authorize' (may take up to 24h to propagate)"
-echo
-echo "  Step 3: Add to Chat Space"
+echo "  Step 2: Add to Chat Space"
 echo "    Open your Chat space → Add people → ${AGENT_USER_EMAIL}"
 echo
-echo "  After setup, verify with:"
-echo "    fleet-verify --name ${AGENT_NAME}"
-echo "    Or @-mention '${AGENT_DISPLAY_NAME}' in Chat"
+echo "  No per-agent DWD setup needed — fleet agents use the shared"
+echo "  DWD-signer SA (${DWD_SIGNER_SA})."
+echo
+echo "  After setup, verify by @-mentioning '${AGENT_DISPLAY_NAME}'"
+echo "  in Chat."
 echo
 echo "============================================================"
 
-# Notify via Prime's Chat — structured output for Gemini to relay
-# This output goes back through agent-ask's functionResponse
+# Structured output for agent-ask async skill callback
 echo
 echo "DEPLOY_RESULT_JSON_START"
 echo "{"
@@ -399,13 +409,11 @@ echo "  \"agent_name\": \"${AGENT_NAME}\","
 echo "  \"project\": \"${FLEET_PROJECT}\","
 echo "  \"vm_ip\": \"${FLEET_IP}\","
 echo "  \"sa_email\": \"${FLEET_SA_EMAIL}\","
-echo "  \"sa_client_id\": \"${FLEET_SA_CLIENT_ID}\","
+echo "  \"dwd_signer_sa\": \"${DWD_SIGNER_SA}\","
 echo "  \"agent_email\": \"${AGENT_USER_EMAIL}\","
 echo "  \"specialty\": \"${SPECIALTY}\","
-echo "  \"dwd_scopes\": \"${DWD_SCOPES}\","
 echo "  \"admin_steps\": ["
 echo "    \"Create Workspace user: ${AGENT_USER_EMAIL} at https://admin.google.com/ac/users\","
-echo "    \"Grant DWD: go to https://admin.google.com/ac/owl/domainwidedelegation — add Client ID ${FLEET_SA_CLIENT_ID} with scopes: ${DWD_SCOPES}\","
 echo "    \"Add ${AGENT_USER_EMAIL} to the Chat space\""
 echo "  ]"
 echo "}"
