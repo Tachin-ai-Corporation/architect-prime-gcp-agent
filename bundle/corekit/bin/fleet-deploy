@@ -265,6 +265,7 @@ PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.inter
 CHAT_SPACE_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id || true)"
 AGENT_USER_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_user_email || true)"
 AGENT_DISPLAY_NAME="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_display_name || echo "$AGENT_ID")"
+DWD_SIGNER_SA="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/dwd_signer_sa || true)"
 GEMINI_PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/gemini_project || true)"
 
 echo "Agent: ${AGENT_ID} | Email: ${AGENT_USER_EMAIL} | CoreRef: ${CORE_REF}"
