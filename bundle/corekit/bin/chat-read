@@ -146,16 +146,20 @@ if filter_mentions and agent_norm:
         for ann in annotations:
             if ann.get('type') == 'USER_MENTION':
                 user_info = ann.get('userMention', {}).get('user', {})
-                # Check email (if present)
+                # Check email (if present in annotation)
                 uemail = (user_info.get('email', '') or '').lower()
-                if uemail == agent_email.lower():
+                if uemail and uemail == agent_email.lower():
                     mentioned = True
                     break
-                # Match normalized display name
-                uname = normalize(user_info.get('displayName', '') or '')
-                if agent_norm in uname or uname in agent_norm:
-                    mentioned = True
-                    break
+                # Extract the actual @mention text from the message using annotation offsets
+                start = ann.get('startIndex', 0)
+                length = ann.get('length', 0)
+                if length > 0:
+                    msg_text = msg.get('text', '') or msg.get('argumentText', '') or ''
+                    mention_text = normalize(msg_text[start:start+length])
+                    if agent_norm and (agent_norm in mention_text or mention_text in agent_norm):
+                        mentioned = True
+                        break
         # Fallback: check if normalized agent name appears in normalized text
         if not mentioned:
             text = normalize(msg.get('text', '') or msg.get('argumentText', '') or '')

@@ -104,8 +104,21 @@ PROJECT_ID="$(get_project)" || die "Failed to get project ID"
 [[ -n "$TOKEN" ]] || die "Empty access token"
 [[ -n "$PROJECT_ID" ]] || die "Empty project ID"
 
+# Fleet agents may need to use a different project for Gemini (publisher models)
+GEMINI_PROJECT="${PROJECT_ID}"
+if [[ -f "$CHAT_CONFIG" ]]; then
+  GP="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('geminiProject', ''))
+except: pass
+" 2>/dev/null || true)"
+  [[ -n "$GP" ]] && GEMINI_PROJECT="$GP"
+fi
+
 # ---- Build API request with function declarations ----
-API_URL="https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${GEMINI_MODEL}:generateContent"
+API_URL="https://${REGION}-aiplatform.googleapis.com/v1/projects/${GEMINI_PROJECT}/locations/${REGION}/publishers/google/models/${GEMINI_MODEL}:generateContent"
 
 # Build function declarations (only for Prime)
 FUNC_DECLS="[]"
