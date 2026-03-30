@@ -24,7 +24,7 @@ set -euo pipefail
 AGENT_ID="${AGENT_ID:-prime}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
-PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-300}"
+PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-120}"
 CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 CHAT_READ="${OC_HOST_ROOT}/.openclaw/bin/chat-read"
 PROCESSED_FILE="/tmp/inbox-daemon-processed.json"
@@ -48,27 +48,19 @@ fi
 log "Starting inbox-daemon for agent=${AGENT_ID} (DWD Chat polling mode)"
 log "Poll interval: ${POLL_INTERVAL}s | Process timeout: ${PROCESS_TIMEOUT}s"
 
-# ---- DWD Healthcheck: verify token works before entering poll loop ----
+# ---- DWD Healthcheck ----
 DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
-DWD_OK=false
-for attempt in 1 2 3 4 5; do
-  if [[ -x "$DWD_TOKEN_BIN" ]]; then
-    TEST_TOKEN="$($DWD_TOKEN_BIN --user "${AGENT_USER_EMAIL:-}" \
-      --scope "https://www.googleapis.com/auth/chat.messages.readonly" 2>/dev/null || true)"
-    if [[ -n "$TEST_TOKEN" ]]; then
-      log "DWD healthcheck PASSED (attempt ${attempt})"
-      DWD_OK=true
-      break
-    fi
+MAX_HEALTHCHECK=10
+for attempt in $(seq 1 $MAX_HEALTHCHECK); do
+  if "$DWD_TOKEN_BIN" --user "${AGENT_USER_EMAIL:-}" >/dev/null 2>&1; then
+    log "DWD healthcheck PASSED (attempt $attempt)"
+    break
   fi
-  warn "DWD healthcheck FAILED (attempt ${attempt}/5) — dwd-token returned empty for ${AGENT_USER_EMAIL:-unset}"
-  warn "  Ensure DWD is granted in Admin Console for this SA's Client ID"
-  sleep $((attempt * 10))
+  if [[ $attempt -eq $MAX_HEALTHCHECK ]]; then
+    die "DWD healthcheck FAILED after $MAX_HEALTHCHECK attempts"
+  fi
+  sleep $((attempt * 5))
 done
-if [[ "$DWD_OK" != "true" ]]; then
-  warn "DWD healthcheck failed after 5 attempts. Entering poll loop anyway (will retry each cycle)."
-  warn "  Fix: go to https://admin.google.com/ac/owl/domainwidedelegation"
-fi
 
 # ---- Helper: check if message was already processed ----
 is_processed() {
@@ -113,13 +105,7 @@ process_message() {
   local response=""
   case "$cmd" in
     help|/help)
-      response="👋 Hello! I'm **${AGENT_ID}**. Commands: \`help\`, \`status\`, \`whoami\`, \`fleet\`, \`ping\`"
-      ;;
-    ping|/ping)
-      local ping_args="${clean_text#* }"
-      local uptime_str
-      uptime_str="$(uptime -p 2>/dev/null || echo 'unknown')"
-      response="pong — ${AGENT_ID} alive, uptime: ${uptime_str} ${ping_args}"
+      response="👋 Hello! I'm **${AGENT_ID}**. Commands: \`help\`, \`status\`, \`whoami\`, \`fleet\`"
       ;;
     status|/status)
       local core_ref="unknown"
@@ -161,13 +147,13 @@ No fleet registry found."
       fi
       ;;
     *)
-      # Route to AI — agent-ask handles function calling internally
+      # Route to AI — answer the question
       local agent_ask="${OC_HOST_ROOT}/.openclaw/bin/agent-ask"
       if [[ -x "$agent_ask" ]]; then
         log "Routing to agent-ask: ${clean_text:0:60}"
         response="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" \
-          timeout "$PROCESS_TIMEOUT" "$agent_ask" "$clean_text" 2>&1)" \
-          || { warn "agent-ask failed or timed out"; response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."; }
+          timeout "$PROCESS_TIMEOUT" "$agent_ask" "$clean_text" 2>/dev/null)" \
+          || response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."
       else
         response="❓ Unknown command: \`${cmd}\`
 Try \`help\` for available commands."
@@ -184,7 +170,7 @@ log "Entering polling loop (interval: ${POLL_INTERVAL}s)"
 
 while true; do
   # Read recent messages where this user was @-mentioned
-  MESSAGES="$("$CHAT_READ" --since "$((POLL_INTERVAL + 5))" --filter-mentions 2>&1)" || { warn "chat-read failed: ${MESSAGES:0:200}"; MESSAGES='[]'; }
+  MESSAGES="$("$CHAT_READ" --since "$((POLL_INTERVAL + 5))" --filter-mentions 2>/dev/null || echo '[]')"
 
   # Count messages
   MSG_COUNT="$(echo "$MESSAGES" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)"
