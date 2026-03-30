@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # ============================================================
-# fleet-teardown — Remove a fleet agent (deletes entire project)
+# fleet-teardown — Decommission a fleet agent (cost → $0)
 #
 # Usage: fleet-teardown --name <agent-name>
 #
-# Deletes the fleet agent's GCP project (removes everything:
-# VM, SA, DWD config) and updates Prime's registry.
+# Deletes the fleet agent's VM and unlinks billing, but
+# preserves the GCP project shell and SA for re-hiring.
+#
+# Cost items removed:
+#   - Compute VM (e2-small ~$13/mo)
+#   - Boot disk (20GB ~$0.80/mo)
+#
+# Cost items preserved (free):
+#   - Empty GCP project, SA, IAM bindings, enabled APIs
 # ============================================================
 set -euo pipefail
 
@@ -18,7 +25,13 @@ AGENT_NAME=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --name) AGENT_NAME="$2"; shift 2 ;;
-    --help|-h) echo "Usage: fleet-teardown --name <agent-name>"; exit 0 ;;
+    --help|-h)
+      echo "Usage: fleet-teardown --name <agent-name>"
+      echo ""
+      echo "Deletes the agent's VM and unlinks billing."
+      echo "The GCP project shell is preserved for re-hiring."
+      exit 0
+      ;;
     *) die "Unknown arg: $1" ;;
   esac
 done
@@ -29,28 +42,61 @@ OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
 CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 FLEET_PROJECT="fleet-${AGENT_NAME}"
+VM_NAME="fleet-${AGENT_NAME}"
+
+# Resolve zone from registry or default
+ZONE="us-central1-a"
+if [[ -f "$REGISTRY_FILE" ]]; then
+  REG_ZONE="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].zone // ""' "$REGISTRY_FILE" 2>/dev/null || true)"
+  [[ -n "$REG_ZONE" ]] && ZONE="$REG_ZONE"
+fi
 
 CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
   'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
 
 log "Tearing down fleet agent: ${AGENT_NAME}"
-log "  Deleting project: ${FLEET_PROJECT}"
+log "  Project: ${FLEET_PROJECT}"
+log "  VM:      ${VM_NAME}"
+log "  Zone:    ${ZONE}"
 
-# ---- 1. Delete entire GCP project ----
-gcloud projects delete "$FLEET_PROJECT" --quiet 2>/dev/null || warn "Project '${FLEET_PROJECT}' not found or already deleted"
+# ---- 1. Verify project exists ----
+if ! gcloud projects describe "$FLEET_PROJECT" &>/dev/null; then
+  die "Project '${FLEET_PROJECT}' not found"
+fi
 
-# ---- 2. Update registry ----
+# ---- 2. Delete VM (and its boot disk) ----
+if gcloud compute instances describe "$VM_NAME" \
+     --project="$FLEET_PROJECT" --zone="$ZONE" &>/dev/null; then
+  log "Deleting VM: ${VM_NAME}"
+  gcloud compute instances delete "$VM_NAME" \
+    --project="$FLEET_PROJECT" \
+    --zone="$ZONE" \
+    --delete-disks=all \
+    --quiet 2>/dev/null
+  log "VM deleted"
+else
+  log "No VM found (already deleted or never created)"
+fi
+
+# ---- 3. Unlink billing (prevents any future charges) ----
+log "Unlinking billing"
+gcloud billing projects unlink "$FLEET_PROJECT" \
+  --quiet 2>/dev/null || log "Billing already unlinked or not linked"
+
+# ---- 4. Update registry ----
 if [[ -f "$REGISTRY_FILE" ]]; then
-  log "Removing from fleet registry"
+  log "Updating fleet registry (status → decommissioned)"
   jq --arg name "$AGENT_NAME" \
-     'del(.agents[$name]) | .lastUpdated = (now | todate)' \
+     '.agents[$name].status = "decommissioned" | .agents[$name].decommissionedAt = (now | todate) | .lastUpdated = (now | todate)' \
     "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
 fi
 
-# ---- 3. Notify via Chat ----
+# ---- 5. Notify via Chat ----
 if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
   export CHAT_SPACE_ID OC_HOST_ROOT
-  "$CHAT_SEND" "🔥 Fleet agent *${AGENT_NAME}* decommissioned. Project \`${FLEET_PROJECT}\` deleted." || true
+  "$CHAT_SEND" "🔥 Fleet agent *${AGENT_NAME}* decommissioned. VM deleted, billing unlinked. Project \`${FLEET_PROJECT}\` preserved (re-hirable)." || true
 fi
 
-log "Fleet agent '${AGENT_NAME}' torn down (project deleted)"
+log "Done. Agent '${AGENT_NAME}' decommissioned (cost → \$0)"
+log "  Project preserved: ${FLEET_PROJECT}"
+log "  To re-hire: fleet-deploy --name ${AGENT_NAME} --specialty <desc> --agent-email <email>"

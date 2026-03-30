@@ -160,7 +160,13 @@ log "  Org ID:         ${GCP_ORG_ID}"
 # ============================================================
 log "Creating GCP project: ${FLEET_PROJECT}"
 if gcloud projects describe "$FLEET_PROJECT" &>/dev/null; then
-  log "Project ${FLEET_PROJECT} already exists"
+  log "Project ${FLEET_PROJECT} already exists (re-hiring into existing shell)"
+  # Guard: refuse to deploy if VM already exists (fire first)
+  VM_NAME="fleet-${AGENT_NAME}"
+  if gcloud compute instances describe "$VM_NAME" \
+       --project="$FLEET_PROJECT" --zone="${ZONE:-us-central1-a}" &>/dev/null 2>&1; then
+    die "VM '${VM_NAME}' already exists in project '${FLEET_PROJECT}'. Run fleet-teardown --name ${AGENT_NAME} first."
+  fi
 else
   gcloud projects create "$FLEET_PROJECT" \
     --name="Fleet Agent ${AGENT_NAME}" \
