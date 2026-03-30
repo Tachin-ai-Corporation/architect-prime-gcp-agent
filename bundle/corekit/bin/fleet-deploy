@@ -230,6 +230,13 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --quiet > /dev/null 2>&1 || log "DWD-signer IAM grant may already exist"
 
+# Grant aiplatform.user on Prime's project for Gemini publisher models
+log "Granting aiplatform.user on Prime's project for Gemini access"
+gcloud projects add-iam-policy-binding "$PRIME_PROJECT" \
+  --member="serviceAccount:${FLEET_SA_EMAIL}" \
+  --role="roles/aiplatform.user" \
+  --quiet > /dev/null 2>&1 || log "Gemini cross-project grant may already exist"
+
 # ============================================================
 # 5. Build and create VM (with DWD inbox-daemon)
 # ============================================================
@@ -252,6 +259,7 @@ PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.inter
 CHAT_SPACE_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id || true)"
 AGENT_USER_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_user_email || true)"
 AGENT_DISPLAY_NAME="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_display_name || echo "$AGENT_ID")"
+GEMINI_PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/gemini_project || true)"
 
 echo "Agent: ${AGENT_ID} | Email: ${AGENT_USER_EMAIL} | CoreRef: ${CORE_REF}"
 
@@ -276,7 +284,8 @@ if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   "agentUserEmail": "${AGENT_USER_EMAIL}",
   "agentDisplayName": "${AGENT_DISPLAY_NAME}",
   "projectId": "${PROJECT_ID}",
-  "dwdSignerSa": "${DWD_SIGNER_SA}"
+  "dwdSignerSa": "${DWD_SIGNER_SA}",
+  "geminiProject": "${GEMINI_PROJECT}"
 }
 CHATCFG
 fi
@@ -316,7 +325,7 @@ gcloud compute instances create "$FLEET_VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},dwd_signer_sa=${DWD_SIGNER_SA}" \
+  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT}" \
   --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
 
