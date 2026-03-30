@@ -143,18 +143,27 @@ try:
     cfg_path = os.path.join('${OC_HOST_ROOT}', '.openclaw', 'corekit', 'chat-config.json')
     agent_display = json.load(open(cfg_path)).get('agentDisplayName', '').lower()
 except: pass
-# Also derive from email local part: architect-agent-prime@... → architect-agent prime
-agent_local = agent_email.split('@')[0].replace('-', ' ').lower() if agent_email else ''
+def normalize(s):
+    '''Normalize for comparison: lowercase, hyphens→spaces, collapse whitespace'''
+    return ' '.join(s.lower().replace('-', ' ').split())
+
+# Also derive from email local part: architect-agent-prime@... → architect agent prime
+agent_local = normalize(agent_email.split('@')[0]) if agent_email else ''
+agent_display_norm = normalize(agent_display) if agent_display else ''
 
 def name_matches(text, ann):
     '''Check if the @-mention substring matches this agent's display name'''
     start = ann.get('startIndex', 0)
     length = ann.get('length', 0)
     if length > 0:
-        mention_text = text[start:start+length].lstrip('@').strip().lower()
-        if agent_display and mention_text == agent_display:
+        mention_text = normalize(text[start:start+length].lstrip('@').strip())
+        if agent_display_norm and mention_text == agent_display_norm:
             return True
         if agent_local and mention_text == agent_local:
+            return True
+        # Also check if display name is a substring of mention
+        # e.g. "Architect Prime" in "Architect-Agent Prime"
+        if agent_display_norm and agent_display_norm in mention_text:
             return True
     return False
 
