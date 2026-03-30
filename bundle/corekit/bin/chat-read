@@ -76,7 +76,6 @@ fi
 
 # ---- Get DWD access token ----
 TOKEN="$("$DWD_TOKEN" --user "$AGENT_USER_EMAIL" \
-  --scope "https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/chat.spaces.readonly" \
   2>/dev/null)" || die "dwd-token failed"
 [[ -n "$TOKEN" ]] || die "Empty access token"
 
