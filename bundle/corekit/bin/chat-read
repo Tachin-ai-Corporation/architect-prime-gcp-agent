@@ -127,12 +127,38 @@ if since_seconds > 0:
     messages = time_filtered
 
 # Filter for @-mentions of this user if requested
-# STRICT: only match on annotations[].userMention.user.email
-# No fuzzy text matching — prevents agent co-mingling
+# Strategy: Chat API annotations may not include email, only user ID.
+# 1. Match on annotation user.email if present
+# 2. Fallback: match the @-mention text from the annotation against
+#    the agent's display name (from chat-config). Only when a
+#    USER_MENTION annotation exists — prevents false positives.
 filter_mentions = ${FILTER_MENTIONS_PY}
 agent_email = '${AGENT_USER_EMAIL}'.lower()
 
-if filter_mentions and agent_email:
+# Read agent display name from config for annotation text matching
+import re
+agent_display = ''
+try:
+    import os
+    cfg_path = os.path.join('${OC_HOST_ROOT}', '.openclaw', 'corekit', 'chat-config.json')
+    agent_display = json.load(open(cfg_path)).get('agentDisplayName', '').lower()
+except: pass
+# Also derive from email local part: architect-agent-prime@... → architect-agent prime
+agent_local = agent_email.split('@')[0].replace('-', ' ').lower() if agent_email else ''
+
+def name_matches(text, ann):
+    '''Check if the @-mention substring matches this agent's display name'''
+    start = ann.get('startIndex', 0)
+    length = ann.get('length', 0)
+    if length > 0:
+        mention_text = text[start:start+length].lstrip('@').strip().lower()
+        if agent_display and mention_text == agent_display:
+            return True
+        if agent_local and mention_text == agent_local:
+            return True
+    return False
+
+if filter_mentions and (agent_email or agent_display):
     filtered = []
     for msg in messages:
         annotations = msg.get('annotations', [])
@@ -140,8 +166,14 @@ if filter_mentions and agent_email:
         for ann in annotations:
             if ann.get('type') == 'USER_MENTION':
                 user_info = ann.get('userMention', {}).get('user', {})
+                # Try email match first (if API includes it)
                 uemail = (user_info.get('email', '') or '').lower()
-                if uemail == agent_email:
+                if uemail and uemail == agent_email:
+                    mentioned = True
+                    break
+                # Fallback: match the @-mention text against display name
+                msg_text = msg.get('text', '') or msg.get('argumentText', '') or ''
+                if name_matches(msg_text, ann):
                     mentioned = True
                     break
         if mentioned:
