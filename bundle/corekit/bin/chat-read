@@ -131,7 +131,7 @@ if since_seconds > 0:
 # 1. Match on annotation user.email if present
 # 2. Fallback: match the @-mention text from the annotation against
 #    the agent's display name (from chat-config). Only when a
-#    USER_MENTION annotation exists — prevents false positives.
+#    USER_MENTION annotation exists -- prevents false positives.
 filter_mentions = ${FILTER_MENTIONS_PY}
 agent_email = '${AGENT_USER_EMAIL}'.lower()
 
@@ -144,10 +144,10 @@ try:
     agent_display = json.load(open(cfg_path)).get('agentDisplayName', '').lower()
 except: pass
 def normalize(s):
-    '''Normalize for comparison: lowercase, hyphens→spaces, collapse whitespace'''
+    '''Normalize for comparison: lowercase, hyphens to spaces, collapse whitespace'''
     return ' '.join(s.lower().replace('-', ' ').split())
 
-# Also derive from email local part: architect-agent-prime@... → architect agent prime
+# Also derive from email local part: architect-agent-prime@... -> architect agent prime
 agent_local = normalize(agent_email.split('@')[0]) if agent_email else ''
 agent_display_norm = normalize(agent_display) if agent_display else ''
 
