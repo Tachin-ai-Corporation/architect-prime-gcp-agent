@@ -253,7 +253,19 @@ PY
   warn "config.apply attempt ${attempt} failed (gateway may be restarting). Retrying in 15s..."
   sleep 15
 done
-[[ "$APPLY_OK" == "true" ]] || die "config.apply failed after 5 attempts"
+
+# config.apply triggers a gateway restart, which often kills the client connection
+# before the success response arrives. Check if config was actually written.
+if [[ "$APPLY_OK" != "true" ]]; then
+  info "All config.apply attempts returned errors. Checking if config was actually written..."
+  sleep 10  # Give gateway time to finish restart
+  if sudo docker exec openclaw-gateway test -f /home/node/.openclaw/openclaw.json 2>/dev/null; then
+    info "openclaw.json exists — config.apply likely succeeded despite connection errors."
+    APPLY_OK=true
+  else
+    die "config.apply failed after 5 attempts and openclaw.json not found"
+  fi
+fi
 
 info "Post-apply harden..."
 sudo docker exec -u 0 openclaw-gateway bash -lc '
