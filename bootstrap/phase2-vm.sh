@@ -215,7 +215,10 @@ out_path.write_text(tmpl, encoding="utf-8")
 print("Wrote", out_path)
 PY
 
-info "Reading baseHash from gateway config.get (already verified ready)..."
+info "Waiting for gateway to fully settle before config operations..."
+sleep 5
+
+info "Reading baseHash from gateway config.get..."
 CONFIG_GET_RAW="$(sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>&1)" \
   || die "config.get failed unexpectedly after readiness check"
 
@@ -240,8 +243,17 @@ print(json.dumps({"raw": raw, "baseHash": "${BASE_HASH}", "note": "bootstrap"}))
 PY
 )"
 
-info "Applying config via RPC (config.apply)..."
-sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.apply --json --params "${PARAMS}"
+info "Applying config via RPC (config.apply) — with retry..."
+APPLY_OK=false
+for attempt in 1 2 3; do
+  if sudo docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.apply --json --params "${PARAMS}" 2>&1; then
+    APPLY_OK=true
+    break
+  fi
+  warn "config.apply attempt ${attempt} failed (gateway may be restarting). Retrying in 10s..."
+  sleep 10
+done
+[[ "$APPLY_OK" == "true" ]] || die "config.apply failed after 3 attempts"
 
 info "Post-apply harden..."
 sudo docker exec -u 0 openclaw-gateway bash -lc '
