@@ -149,7 +149,7 @@ if [[ "$AGENT_ID" == "prime" ]]; then
     },
     {
       "name": "fleet_teardown",
-      "description": "Decommission/fire a fleet agent. Deletes the VM and unlinks billing (cost to $0). The project shell is preserved for re-hiring. After teardown, instruct the user to suspend or delete the agent's Workspace email account.",
+      "description": "Decommission/fire a fleet agent. Deletes the VM and unlinks billing (cost to zero). The project shell is preserved for re-hiring. After teardown, instruct the user to suspend or delete the Workspace email account for this agent.",
       "parameters": {
         "type": "object",
         "properties": {
