@@ -312,7 +312,25 @@ sudo docker exec openclaw-gateway bash -lc '/home/node/.openclaw/bin/oc doctor -
 info "Running bootstrap_smoke..."
 sudo docker exec openclaw-gateway bash -lc "/home/node/.openclaw/bin/bootstrap_smoke.sh" || true
 
-# 10) Configure Chat + announce (best-effort, non-blocking)
+# 10) Create DWD-signer SA for fleet agents (idempotent)
+info "Creating DWD-signer SA (for fleet agent DWD signing)..."
+DWD_SIGNER_SA_NAME="dwd-signer"
+DWD_SIGNER_SA_EMAIL="${DWD_SIGNER_SA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+if ! gcloud iam service-accounts describe "$DWD_SIGNER_SA_EMAIL" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+  gcloud iam service-accounts create "$DWD_SIGNER_SA_NAME" \
+    --display-name="DWD Signer (shared, no roles)" \
+    --project="$GCP_PROJECT_ID" || warn "DWD-signer SA creation failed"
+else
+  echo "DWD-signer SA already exists: $DWD_SIGNER_SA_EMAIL"
+fi
+# Grant Prime's SA token-creator on dwd-signer (so Prime can sign JWTs for fleet)
+gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA_EMAIL" \
+  --project="$GCP_PROJECT_ID" \
+  --member="serviceAccount:${ATTACHED_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --quiet > /dev/null 2>&1 || warn "DWD-signer IAM grant may already exist"
+
+# 11) Configure Chat + announce (best-effort, non-blocking)
 info "Configuring Google Chat (DWD mode)..."
 CHAT_SPACE_ID="${CHAT_SPACE_ID:-}"
 AGENT_USER_EMAIL="${AGENT_USER_EMAIL:-}"
@@ -333,7 +351,8 @@ if [[ -n "$CHAT_SPACE_ID" ]]; then
   "spaceId": "${CHAT_SPACE_ID}",
   "agentUserEmail": "${AGENT_USER_EMAIL:-}",
   "agentDisplayName": "Architect Prime",
-  "projectId": "${GCP_PROJECT_ID}"
+  "projectId": "${GCP_PROJECT_ID}",
+  "dwdSignerSa": "${DWD_SIGNER_SA_EMAIL}"
 }
 CHATEOF
   chmod 644 "$chat_config"
@@ -355,7 +374,7 @@ else
   warn "No CHAT_SPACE_ID found — skipping Chat announce. See docs/CHAT_SETUP.md"
 fi
 
-# 11) Install and start inbox-daemon (best-effort)
+# 12) Install and start inbox-daemon (best-effort)
 info "Setting up inbox-daemon..."
 INBOX_DAEMON_SVC="${OC_HOST_DIR}/corekit/inbox-daemon.service"
 if [[ -f "$INBOX_DAEMON_SVC" ]]; then

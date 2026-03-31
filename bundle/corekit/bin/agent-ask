@@ -149,7 +149,7 @@ if [[ "$AGENT_ID" == "prime" ]]; then
     },
     {
       "name": "fleet_teardown",
-      "description": "Remove/fire a fleet agent. Confirm with the user before proceeding — this permanently deletes the agent project.",
+      "description": "Decommission/fire a fleet agent. Deletes the VM and unlinks billing (cost to $0). The project shell is preserved for re-hiring. After teardown, instruct the user to suspend or delete the agent's Workspace email account.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -383,7 +383,17 @@ Once done, @-mention ${d_name} to verify they're online.\" 2>/dev/null || true
           if [[ \$EXIT_CODE -eq 0 ]]; then
             echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"complete\"}' > '$TASK_FILE'
             CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
-              '$CHAT_SEND' \"✅ *${t_name}* has been decommissioned. The GCP project and VM have been deleted.\" 2>/dev/null || true
+              '$CHAT_SEND' "✅ *${t_name}* has been decommissioned.
+
+• VM deleted, billing unlinked — cost is now \$0
+• Project shell preserved for re-hiring
+
+📋 *Action needed — Workspace email:*
+• If you plan to re-hire ${t_name} later → *Suspend* the account:
+  https://admin.google.com/ac/users
+• If permanent → *Delete* the account
+
+To re-hire: \`@Architect-Agent Prime hire ${t_name}\`" 2>/dev/null || true
           else
             echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"failed\"}' > '$TASK_FILE'
             CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
