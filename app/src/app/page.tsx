@@ -54,6 +54,11 @@ export default function Home() {
   const [newPrimeName, setNewPrimeName] = useState("");
   const [newPrimeZone, setNewPrimeZone] = useState("us-central1-a");
   const [deploying, setDeploying] = useState(false);
+  const [showHire, setShowHire] = useState(false);
+  const [hireName, setHireName] = useState("");
+  const [hireSpecialty, setHireSpecialty] = useState("devops");
+  const [hireEmail, setHireEmail] = useState("");
+  const [hiring, setHiring] = useState(false);
   const [setup, setSetup] = useState<SetupState>({
     hasPrimes: false,
     dwdConfigured: false,
@@ -226,6 +231,60 @@ export default function Home() {
     setShowDeploy(false);
     setDeploying(false);
     setNewPrimeName("");
+  };
+
+  // ---- Hire Agent ----
+  const handleHire = async () => {
+    if (!hireName.trim() || !activePrime) return;
+    setHiring(true);
+
+    await api(`/api/primes/${activePrime}/fleet/hire`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: hireName.trim().toLowerCase().replace(/\s+/g, "-"),
+        specialty: hireSpecialty,
+        email: hireEmail.trim() || undefined,
+      }),
+    });
+
+    // Optimistic: add to fleet as deploying
+    setFleet((prev) => [
+      ...prev,
+      {
+        name: hireName.trim().toLowerCase().replace(/\s+/g, "-"),
+        status: "deploying" as const,
+        specialty: hireSpecialty,
+        email: hireEmail.trim() || "(pending)",
+      },
+    ]);
+
+    // Also switch to chat view to show the hire command flowing through
+    setView("chat");
+    setShowHire(false);
+    setHiring(false);
+    setHireName("");
+    setHireEmail("");
+  };
+
+  // ---- Fire Agent ----
+  const handleFire = async (agentName: string) => {
+    if (!activePrime) return;
+    if (!confirm(`Fire agent "${agentName}"? This will delete the agent VM.`)) return;
+
+    await api(`/api/primes/${activePrime}/fleet/fire`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: agentName }),
+    });
+
+    // Optimistic: mark as offline
+    setFleet((prev) =>
+      prev.map((a) => a.name === agentName ? { ...a, status: "offline" as const } : a)
+    );
+
+    // Switch to chat to see the fire command flowing
+    setView("chat");
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -445,11 +504,15 @@ export default function Home() {
                     </div>
                     <div style={{ marginTop: 12, display: "flex", gap: 6 }}>
                       <button className="btn btn-sm btn-ghost">Logs</button>
-                      <button className="btn btn-sm btn-danger">Fire</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleFire(agent.name)}>Fire</button>
                     </div>
                   </div>
                 ))}
-                <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 140, cursor: "pointer", borderStyle: "dashed", color: "var(--text-tertiary)", fontSize: 14 }}>
+                <div
+                  className="card"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 140, cursor: "pointer", borderStyle: "dashed", color: "var(--text-tertiary)", fontSize: 14 }}
+                  onClick={() => setShowHire(true)}
+                >
                   + Hire Agent
                 </div>
               </div>
@@ -517,6 +580,48 @@ export default function Home() {
               <button className="btn btn-ghost" onClick={() => setShowDeploy(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleDeploy} disabled={!newPrimeName.trim() || deploying}>
                 {deploying ? "Deploying..." : "Deploy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Hire Agent Modal ---- */}
+      {showHire && (
+        <div className={styles["modal-overlay"]} onClick={() => setShowHire(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles["modal-title"]}>Hire Fleet Agent</div>
+            <p style={{ color: "var(--text-secondary)", fontSize: 13, margin: "0 0 16px" }}>
+              Each agent gets its own VM, workspace, and specialist toolset. Prime manages the lifecycle.
+            </p>
+            <div className={styles["modal-field"]}>
+              <label className={styles["modal-label"]}>Agent Name</label>
+              <input className="input" placeholder="e.g. stan" autoFocus value={hireName}
+                onChange={(e) => setHireName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleHire(); }} />
+            </div>
+            <div className={styles["modal-field"]}>
+              <label className={styles["modal-label"]}>Specialty</label>
+              <select className="input" value={hireSpecialty} onChange={(e) => setHireSpecialty(e.target.value)}>
+                <option value="devops">DevOps — GCP, infra, CI/CD, reliability</option>
+                <option value="swe">SWE — Code, architecture, testing</option>
+                <option value="qa">QA — Testing, automation, quality</option>
+                <option value="pm">PM — Planning, tickets, coordination</option>
+                <option value="data">Data — Analytics, pipelines, BigQuery</option>
+                <option value="security">Security — IAM, compliance, audit</option>
+              </select>
+            </div>
+            <div className={styles["modal-field"]}>
+              <label className={styles["modal-label"]}>Workspace Email <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>(optional)</span></label>
+              <input className="input" placeholder="e.g. devops-stan@yourcompany.com" value={hireEmail}
+                onChange={(e) => setHireEmail(e.target.value)} />
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
+                If provided, the agent will use this email for Google Chat via DWD. Create the account in Google Admin first.
+              </div>
+            </div>
+            <div className={styles["modal-actions"]}>
+              <button className="btn btn-ghost" onClick={() => setShowHire(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleHire} disabled={!hireName.trim() || hiring}>
+                {hiring ? "Hiring..." : "Hire Agent"}
               </button>
             </div>
           </div>
