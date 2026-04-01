@@ -97,6 +97,18 @@ gcloud iam service-accounts create dwd-signer \
   --quiet 2>/dev/null \
   || info "DWD Signer SA already exists (OK)"
 
+# Get the DWD Signer SA's unique Client ID (needed for Workspace DWD config)
+info "Retrieving DWD Signer SA Client ID..."
+DWD_CLIENT_ID="$(gcloud iam service-accounts describe "$DWD_SIGNER_SA" \
+  --format='value(uniqueId)' 2>/dev/null || echo '')"
+info "DWD Client ID: ${DWD_CLIENT_ID:-UNKNOWN}"
+
+# Grant the control-plane SA permission to sign tokens as dwd-signer
+gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator" \
+  --quiet > /dev/null 2>&1 || warn "Failed to grant tokenCreator"
+
 # ---- Step 6: Deploy to Cloud Run ----
 info "Deploying Cloud Run service: ${SERVICE_NAME}..."
 gcloud run deploy "$SERVICE_NAME" \
@@ -105,7 +117,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
   --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production,DWD_CLIENT_ID=${DWD_CLIENT_ID}" \
   --memory=512Mi \
   --cpu=1 \
   --min-instances=0 \
@@ -113,7 +125,25 @@ gcloud run deploy "$SERVICE_NAME" \
   --port=8080 \
   --quiet
 
-# ---- Step 7: Get the URL ----
+# ---- Step 7: Seed Firestore with DWD config ----
+info "Seeding Firestore config..."
+ACCESS_TOKEN="$(gcloud auth print-access-token 2>/dev/null)"
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
+
+curl -s -X PATCH \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"fields\": {
+      \"clientId\": {\"stringValue\": \"${DWD_CLIENT_ID}\"},
+      \"signerSA\": {\"stringValue\": \"${DWD_SIGNER_SA}\"},
+      \"configured\": {\"booleanValue\": false}
+    }
+  }" \
+  "${FIRESTORE_URL}/config/dwd" > /dev/null 2>&1 \
+  || warn "Failed to seed Firestore (non-critical)"
+
+# ---- Step 8: Get the URL ----
 SERVICE_URL="$(gcloud run services describe "$SERVICE_NAME" \
   --platform=managed --region="$REGION" --format='value(status.url)')"
 
@@ -125,10 +155,12 @@ echo "║                                                ║"
 echo "║  Control Plane URL:                            ║"
 echo "║  ${SERVICE_URL}"
 echo "║                                                ║"
-echo "║  Open the URL above to:                        ║"
-echo "║  1. Sign in with your Workspace admin account  ║"
-echo "║  2. Deploy your first Prime instance           ║"
-echo "║  3. Start chatting with Prime                  ║"
+echo "║  Open the URL above to deploy your first       ║"
+echo "║  Prime instance and start chatting.             ║"
+echo "║                                                ║"
+echo "║  The setup wizard will guide you through        ║"
+echo "║  Domain-Wide Delegation configuration.          ║"
 echo "║                                                ║"
 echo "╚════════════════════════════════════════════════╝"
 echo
+
