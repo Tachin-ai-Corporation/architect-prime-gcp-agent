@@ -160,13 +160,16 @@ export default function Home() {
     return () => clearInterval(statusPoll);
   }, [primes.length]);
 
-  // ---- Load fleet ----
+  // ---- Load fleet (poll every 5s when on fleet tab) ----
   useEffect(() => {
     if (view !== "fleet" || !activePrime) return;
-    (async () => {
+    const loadFleet = async () => {
       const data = await api<{ fleet: FleetAgent[] }>(`/api/primes/${activePrime}/fleet`);
       if (data?.fleet) setFleet(data.fleet);
-    })();
+    };
+    loadFleet();
+    const fleetPoll = setInterval(loadFleet, 5000);
+    return () => clearInterval(fleetPoll);
   }, [view, activePrime]);
 
   // ---- Auto-scroll chat ----
