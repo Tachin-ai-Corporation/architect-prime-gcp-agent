@@ -78,6 +78,8 @@ export default function Home() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [agentDetail, setAgentDetail] = useState<AgentDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [versionInfo, setVersionInfo] = useState<{currentVersion: string; latestVersion: string; updateAvailable: boolean} | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
   const [setup, setSetup] = useState<SetupState>({
     hasPrimes: false,
     dwdConfigured: false,
@@ -106,6 +108,10 @@ export default function Home() {
         setActivePrime(primesData.primes[0].id);
       }
       setLoading(false);
+
+      // Load version info
+      const ver = await api<{currentVersion: string; latestVersion: string; updateAvailable: boolean}>("/api/upgrade");
+      if (ver) setVersionInfo(ver);
     })();
   }, []);
 
@@ -472,6 +478,13 @@ export default function Home() {
         </div>
 
         <div className={styles["sidebar-footer"]}>
+          {versionInfo && (
+            <div style={{ fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", marginBottom: 6 }}>
+              {versionInfo.currentVersion}{versionInfo.updateAvailable && (
+                <span style={{ color: "#f0883e", marginLeft: 4 }}>● update</span>
+              )}
+            </div>
+          )}
           <button className={`btn btn-ghost ${styles["sidebar-add-btn"]}`} onClick={() => setShowDeploy(true)}>
             + Deploy Prime
           </button>
@@ -720,6 +733,40 @@ export default function Home() {
                       <li>After creating, add the user to your Chat space</li>
                     </ol>
                   </div>
+                </div>
+
+                <div className={styles["settings-section"]}>
+                  <div className={styles["settings-section-title"]}>Version & Upgrade</div>
+                  {versionInfo ? (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div className={styles["settings-row"]}>
+                        <div className={styles["settings-label"]}>Current Version</div>
+                        <div className={styles["settings-value"]}><code className="mono">{versionInfo.currentVersion}</code></div>
+                      </div>
+                      <div className={styles["settings-row"]}>
+                        <div className={styles["settings-label"]}>Latest Version</div>
+                        <div className={styles["settings-value"]}>
+                          <code className="mono">{versionInfo.latestVersion}</code>
+                          {versionInfo.updateAvailable && (
+                            <span className="badge badge-deploying" style={{ marginLeft: 8, fontSize: 10 }}>update available</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        <button className="btn btn-primary" onClick={async () => {
+                          setUpgrading(true);
+                          const result = await api<{success: boolean; message?: string; error?: string}>("/api/upgrade", { method: "POST" });
+                          setUpgrading(false);
+                          if (result?.success) alert(result.message || "Upgrade initiated!");
+                          else alert(result?.error || "Upgrade failed");
+                        }} disabled={upgrading}>
+                          {upgrading ? "Upgrading..." : "Update to Latest"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading version info...</div>
+                  )}
                 </div>
 
                 <div className={styles["settings-section"]}>
