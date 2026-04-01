@@ -192,7 +192,10 @@ echo "Prime ID: $PRIME_ID | Agent: $AGENT_ID | CoreRef: $CORE_REF"
 # ---- Install packages ----
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq jq curl python3
+apt-get install -y -qq docker.io jq curl python3
+
+systemctl enable docker
+systemctl start docker
 
 # ---- Install CoreKit via manifest ----
 OC_HOST_ROOT="/opt/openclaw"
@@ -203,6 +206,11 @@ curl -sfL "$CORE_BASE/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
 CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\
   bash /tmp/install.sh
+
+# ---- Build OpenClaw container ----
+echo "===> Building OpenClaw container"
+cd "$OC_HOST_ROOT"
+docker build -t openclaw -f .openclaw/Dockerfile . 2>/dev/null || true
 
 # ---- Write prime-config.json ----
 cat > "$OC_HOST_ROOT/.openclaw/corekit/prime-config.json" <<PCFG
@@ -218,7 +226,7 @@ echo "===> Installing control-daemon systemd service"
 cat > /etc/systemd/system/control-daemon.service <<UNIT
 [Unit]
 Description=Architect Prime Control Daemon (Firestore Polling)
-After=network-online.target
+After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
