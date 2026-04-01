@@ -23,6 +23,19 @@ interface FleetAgent {
   specialty: string;
   email: string;
 }
+interface AgentDetail {
+  agent: string;
+  status: string;
+  specialty: string;
+  email: string;
+  vm: string;
+  zone: string;
+  deployedAt: string | null;
+  lastHeartbeat: string | null;
+  uptimeMinutes: number | null;
+  healthy: boolean;
+  activity: { id: string; type: string; summary: string; timestamp: string; sender: string }[];
+}
 interface SetupState {
   hasPrimes: boolean;
   dwdConfigured: boolean;
@@ -62,6 +75,9 @@ export default function Home() {
   const [dwdTestEmail, setDwdTestEmail] = useState("");
   const [dwdTesting, setDwdTesting] = useState(false);
   const [dwdTestResult, setDwdTestResult] = useState<{success: boolean; message?: string; error?: string; hint?: string} | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [agentDetail, setAgentDetail] = useState<AgentDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [setup, setSetup] = useState<SetupState>({
     hasPrimes: false,
     dwdConfigured: false,
@@ -313,6 +329,16 @@ export default function Home() {
     }
   };
 
+  // ---- Load Agent Detail ----
+  const loadAgentDetail = async (agentName: string) => {
+    if (!activePrime) return;
+    setSelectedAgent(agentName);
+    setLoadingDetail(true);
+    const data = await api<AgentDetail>(`/api/primes/${activePrime}/fleet/${agentName}/logs`);
+    setAgentDetail(data);
+    setLoadingDetail(false);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
@@ -515,25 +541,106 @@ export default function Home() {
 
             {/* ---- Fleet View ---- */}
             {view === "fleet" && (
-              <div className={styles["fleet-grid"]}>
-                {fleet.map((agent) => (
-                  <div key={agent.name} className="card">
-                    <div className="card-header">
-                      <div>
-                        <div className="card-title">{agent.name}</div>
-                        <div className="card-subtitle">{agent.specialty}</div>
+              <>
+                {/* Agent Detail Panel */}
+                {selectedAgent && (
+                  <div style={{
+                    marginBottom: 20, padding: 20, background: "var(--bg-secondary)",
+                    borderRadius: 12, border: "1px solid var(--border)",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ fontSize: 18, fontWeight: 600 }}>{selectedAgent}</div>
+                        {agentDetail && (
+                          <span className={`badge ${agentDetail.healthy ? "badge-online" : "badge-error"}`}>
+                            {agentDetail.healthy ? "healthy" : "unhealthy"}
+                          </span>
+                        )}
                       </div>
-                      <span className={`badge badge-${agent.status}`}>{agent.status}</span>
+                      <button className="btn btn-sm btn-ghost" onClick={() => { setSelectedAgent(null); setAgentDetail(null); }}>✕ Close</button>
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                      <code className="mono">{agent.email}</code>
-                    </div>
-                    <div style={{ marginTop: 12, display: "flex", gap: 6 }}>
-                      <button className="btn btn-sm btn-ghost">Logs</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleFire(agent.name)}>Fire</button>
-                    </div>
+
+                    {loadingDetail ? (
+                      <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading agent details...</div>
+                    ) : agentDetail ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                        {/* Left: Info */}
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Agent Info</div>
+                          <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>Specialty</span>
+                              <span>{agentDetail.specialty}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>VM</span>
+                              <code className="mono" style={{ fontSize: 11 }}>{agentDetail.vm || "—"}</code>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>Zone</span>
+                              <span>{agentDetail.zone || "—"}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>Email</span>
+                              <code className="mono" style={{ fontSize: 11 }}>{agentDetail.email || "—"}</code>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>Uptime</span>
+                              <span>{agentDetail.uptimeMinutes != null ? `${agentDetail.uptimeMinutes}m` : "—"}</span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "var(--text-secondary)" }}>Last Heartbeat</span>
+                              <span>{agentDetail.lastHeartbeat ? formatTime(agentDetail.lastHeartbeat) : "—"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Activity Log */}
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Recent Activity</div>
+                          {agentDetail.activity.length === 0 ? (
+                            <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>No activity recorded yet.</div>
+                          ) : (
+                            <div style={{ display: "grid", gap: 4, maxHeight: 200, overflowY: "auto" }}>
+                              {agentDetail.activity.map((a) => (
+                                <div key={a.id} style={{
+                                  padding: "6px 8px", background: "var(--bg-tertiary)", borderRadius: 6, fontSize: 12,
+                                  display: "flex", justifyContent: "space-between", gap: 8,
+                                }}>
+                                  <span style={{ color: "var(--text-secondary)" }}>{a.summary || a.type}</span>
+                                  <span style={{ color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{a.timestamp ? formatTime(a.timestamp) : ""}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Agent not found.</div>
+                    )}
                   </div>
-                ))}
+                )}
+
+                {/* Fleet Grid */}
+                <div className={styles["fleet-grid"]}>
+                  {fleet.map((agent) => (
+                    <div key={agent.name} className="card">
+                      <div className="card-header">
+                        <div>
+                          <div className="card-title">{agent.name}</div>
+                          <div className="card-subtitle">{agent.specialty}</div>
+                        </div>
+                        <span className={`badge badge-${agent.status}`}>{agent.status}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                        <code className="mono">{agent.email}</code>
+                      </div>
+                      <div style={{ marginTop: 12, display: "flex", gap: 6 }}>
+                        <button className="btn btn-sm btn-ghost" onClick={() => loadAgentDetail(agent.name)}>Logs</button>
+                        <button className="btn btn-sm btn-danger" onClick={() => handleFire(agent.name)}>Fire</button>
+                      </div>
+                    </div>
+                  ))}
                 <div
                   className="card"
                   style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 140, cursor: "pointer", borderStyle: "dashed", color: "var(--text-tertiary)", fontSize: 14 }}
@@ -542,6 +649,7 @@ export default function Home() {
                   + Hire Agent
                 </div>
               </div>
+              </>
             )}
 
             {/* ---- Setup/Settings View ---- */}
