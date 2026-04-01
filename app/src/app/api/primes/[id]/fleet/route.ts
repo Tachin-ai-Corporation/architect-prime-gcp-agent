@@ -11,7 +11,7 @@ interface RouteContext {
 export async function GET(_req: Request, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
-    const snap = await fleetCol(id).orderBy("createdAt", "desc").get();
+    const snap = await fleetCol(id).get();
 
     const fleet = snap.docs.map((doc) => ({
       name: doc.id,
