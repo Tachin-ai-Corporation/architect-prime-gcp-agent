@@ -102,6 +102,59 @@ export default function Home() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [activePrime, loadMessages]);
 
+  // ---- Poll primes status every 10s (detect online/offline transitions) ----
+  useEffect(() => {
+    if (primes.length === 0) return;
+    const statusPoll = setInterval(async () => {
+      const data = await api<{ primes: PrimeInstance[] }>("/api/primes");
+      if (!data?.primes) return;
+
+      setPrimes((prev) => {
+        const updated = prev.map((old) => {
+          const fresh = data.primes.find((p) => p.id === old.id);
+          if (!fresh) return old;
+
+          // Detect status transitions
+          if (old.status === "deploying" && fresh.status === "online") {
+            // Prime just came online — post a system message
+            setMessages((msgs) => [
+              ...msgs,
+              {
+                id: `sys-online-${Date.now()}`,
+                sender: "prime",
+                text: `✅ Prime "${old.name}" is online and ready!\n\nI can now process your messages. Try "what can you do?" or "hire a devops agent named stan".`,
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          } else if (old.status === "online" && fresh.status === "offline") {
+            setMessages((msgs) => [
+              ...msgs,
+              {
+                id: `sys-offline-${Date.now()}`,
+                sender: "prime",
+                text: `⚠️ Prime "${old.name}" went offline.`,
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          }
+
+          return { ...old, status: fresh.status, fleetCount: fresh.fleetCount };
+        });
+
+        // Also add any new primes created from other sessions
+        for (const fresh of data.primes) {
+          if (!updated.find((p) => p.id === fresh.id)) {
+            updated.push(fresh);
+          }
+        }
+
+        return updated;
+      });
+    }, 10000);
+
+    return () => clearInterval(statusPoll);
+  }, [primes.length]);
+
   // ---- Load fleet ----
   useEffect(() => {
     if (view !== "fleet" || !activePrime) return;
