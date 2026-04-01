@@ -1,185 +1,86 @@
-# Architect Prime — GCP Agent CoreKit
+﻿# Architect Prime
 
-This repository defines the **public, curlable bootstrap contract** for
-Architect Prime and its fleet of GCP VM agents.
+AI Agent Fleet Management for Google Workspace.
 
-It contains **no secrets** and is safe to be public.
-
-It is designed to be:
-- Installed via `install.sh` (fetches from raw.githubusercontent.com)
-- Pinned to versioned checkpoint tags (e.g., `v0.4.0`)
-- Self-upgradable by Architect Prime itself
-- Used as the pattern for deploying fleet agents within the same GCP project
+Deploy Prime into your own GCP project. Manage AI agent fleets through a web dashboard. Fleet agents collaborate with your team in Google Chat.
 
 ---
 
-# 1. Purpose
+## Quick Deploy
 
-This repo provides:
+Click below to deploy the Architect Prime control plane into your GCP project:
 
-- Core OpenClaw bootstrap configuration
-- Agent persona/workspace seed files
-- A manifest-driven file layout (`manifest.txt`)
-- A versioned checkpoint model (semver tags)
-- A pattern Prime reuses to deploy fleet agents
+[![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://console.cloud.google.com/cloudshell/open?git_repo=https://github.com/Tachin-ai-Corporation/architect-prime-gcp-agent&tutorial=deploy/tutorial.md)
 
-This repo **does not** contain: service account keys, tokens, project IDs,
-internal URLs, or any environment-specific values.
+Or manually:
 
----
-
-# 2. Versioning & Release Discipline
-
-## Checkpoint Tags (Semver)
-
-| Tag | Description |
-|---|---|
-| `v0.1.0` | CI foundation (forbid-secrets, shellcheck) |
-| `v0.2.0` | install.sh + STATE.json + test automation |
-| `v0.3.0` | Self-upgrade + drift detection |
-| `v0.4.0` | Google Chat integration (chat-send) |
-| `v0.5.1` | Chat command loop + inbox-daemon |
-| `v0.6.0` | Fleet agent template (multi-project) |
-| `v0.7.0` | Agent-ask: LLM + web search (fundamental skill) |
-
-Tags are created after `test-checkpoint.ps1` passes GCP verification checks.
-
-See [MISSION_PLAN.md](MISSION_PLAN.md) for the full roadmap to v1.0.
-
-## Rule for `main`
-
-`main` may move forward with commits, but only checkpoint tags are stable.
-Pin to a tag: `CORE_REF=v0.7.0`
+```
+git clone https://github.com/Tachin-ai-Corporation/architect-prime-gcp-agent
+cd architect-prime-gcp-agent
+export PROJECT_ID=your-project-id
+bash deploy/install.sh
+```
 
 ---
 
-# 3. Installation Model
+## Architecture
 
-`install.sh` fetches `manifest.txt` from GitHub, downloads files, and records
-hashes in `STATE.json`. Supports `--check` (drift detection) and
-`--upgrade <ref>` (self-upgrade).
+```
+Your GCP Project
++-- Cloud Run (control plane web app)
+|   +-- Dashboard UI
+|   +-- Chat with Prime instances
+|   +-- Fleet management API
++-- Firestore (state store)
++-- Prime VM(s) (OpenClaw + CoreKit)
+|   +-- control-daemon (Firestore polling)
+|   +-- agent-ask (Gemini LLM brain)
++-- Fleet Agent VMs (each with own OpenClaw)
+    +-- inbox-daemon (GChat polling via DWD)
+    +-- Unique personality, skills, specialty
+```
 
----
-
-## Manifest Contract
-
-`manifest.txt` defines file mappings.
-
-Format: `<repo_path> <destination_path>`
-
-Rules:
-- Destination paths are relative to `$HOME`
-- Installer creates directories if missing
-- Installs are idempotent (overwrite safely, repeatable)
-
----
-
-## Integrity Model
-
-`~/.openclaw/corekit/STATE.json` records coreRef, file hashes, and
-install timestamp. Prime can detect drift (`--check`), upgrade
-(`--upgrade v0.5.0`), and verify integrity.
+**Key points:**
+- Everything runs in YOUR GCP project (zero shared infrastructure)
+- Prime talks to you through the web dashboard
+- Fleet agents talk to your team through Google Chat
+- Each agent has its own VM, OpenClaw instance, and personality
+- Agents share DWD signer SA and LLM credentials
 
 ---
 
-# 4. Security Model
+## Repository Structure
 
-This repository is public. It must NEVER contain:
+```
+app/                          # Cloud Run control plane (Next.js)
++-- src/app/                  # Pages and API routes
++-- src/lib/                  # Firestore, auth
++-- Dockerfile                # Cloud Run container
 
-- Service account JSON keys or access tokens
-- Internal IPs, hostnames, or endpoints
-- GCP project IDs or organization IDs
-- Secret Manager references or .env files
-- API keys (Gemini, xAI, etc.)
+deploy/                       # Cloud Shell deployment
++-- install.sh                # One-shot deploy script
++-- tutorial.md               # Guided Cloud Shell tutorial
 
-If Prime attempts to commit any of the above, it must abort.
+bundle/corekit/bin/           # CoreKit tools (installed on VMs)
++-- agent-ask                 # LLM brain (Gemini + function calling)
++-- control-daemon            # Firestore poller (Prime VMs)
++-- inbox-daemon              # GChat poller (fleet agent VMs)
++-- fleet-deploy              # Hire an agent
++-- fleet-teardown            # Fire an agent
++-- chat-send, chat-read      # GChat DWD tools (fleet agents)
++-- dwd-token                 # DWD token generator
++-- build-system-prompt       # Agent personality builder
 
-## Runtime Secret Injection
-
-Secrets are injected at runtime via environment variables, managed in
-GCP Secret Manager, passed into Docker/VM environment, never stored in git.
-
----
-
-# 5. Repository Structure
-
-    bootstrap/                    # Phase 1 (GCP setup) + Phase 2 (VM startup)
-    bundle/corekit/bin/           # oc, chat-send, upgrade-corekit, inbox-daemon
-    bundle/corekit/config/        # OpenClaw + Chat config templates
-    bundle/workspaces/            # Agent personas (main, engineer, devops)
-    cloud-functions/chat-handler/ # Chat → GCS inbox relay
-    docs/                         # CHAT_SETUP.md
-    install.sh                    # Manifest installer + STATE.json
-    manifest.txt                  # File mapping (36+ files)
-    test-checkpoint.ps1           # GCP E2E test harness
+bootstrap/phase2-vm.sh        # VM startup script
+install.sh                    # CoreKit manifest installer
+```
 
 ---
 
-# 6. Self-Maintenance Governance
+## Design Principles
 
-Architect Prime is expected to:
-
-1. Clone this repo in its GCP VM
-2. Create feature branch
-3. Modify bundle files
-4. Run local validation
-5. Open PR
-6. Await human approval phrase
-7. Merge
-8. Create new checkpoint tag
-
-Prime must never push directly to main, modify tags retroactively, or
-commit secrets.
-
----
-
-# 7. Bootstrap Quickstart
-
-See [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md) for complete instructions.
-
-    export PROJECT_ID=your-gcp-project-id
-    export BILLING_ACCOUNT=your-billing-account-id   # for fleet-deploy
-    export GCP_ORG_ID=your-gcp-org-id                # for fleet-deploy
-    bash bootstrap/phase1-cloudshell.sh
-    # Phase 2 runs automatically on VM boot (~15-20 min)
-    # Phase 1 output prints Chat setup instructions
-
----
-
-# 8. Fleet Architecture (Multi-Project Model)
-
-Each fleet agent runs in its own GCP project with its own Chat app:
-
-    architect-prime-beta/          ← Prime's project
-    ├── architect-prime (VM)       ← Fleet orchestrator
-    ├── Cloud Function             ← Prime's Chat app
-    └── GCS Inbox Bucket           ← Prime's message queue
-
-    fleet-alpha/                   ← Fleet agent's own project
-    ├── fleet-alpha (VM)           ← Fleet agent
-    ├── Cloud Function             ← Fleet Alpha Chat app
-    └── GCS Inbox Bucket           ← Fleet Alpha message queue
-
-**Why multi-project:**
-- Direct @-mentions per agent in Chat (`@Fleet Alpha`)
-- Clean auth (each agent's SA owns its Chat app)
-- Simple teardown (delete project = delete everything)
-- Independent scaling and billing
-
-**Deploy/Teardown:**
-
-    # From Prime VM:
-    fleet-deploy --name myagent --specialty "billing expert"
-    fleet-teardown --name myagent   # deletes entire project
-
----
-
-# 9. Design Principles
-
-- Public, no secrets
-- Deterministic, idempotent installs
-- Self-upgradable (drift detection + upgrade)
-- Agent-maintainable (PR → approve → merge → tag)
-- Human-auditable (Chat relay, GCS audit trail)
-- Multi-project fleet (independent projects, direct Chat @-mentions)
-
+- **Self-hosted**: Customer owns all infrastructure and data
+- **No secrets in git**: Runtime injection via env vars and metadata
+- **Each agent is unique**: Own VM, OpenClaw, skills, personality
+- **Idempotent**: All installs and deploys are repeatable
+- **Observable**: All agent communication logged and auditable

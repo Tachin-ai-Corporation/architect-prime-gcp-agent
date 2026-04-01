@@ -1,0 +1,14 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - us-docker.pkg.dev/$PROJECT_ID/architect-prime/control-plane:$SHORT_SHA
+      - -t
+      - us-docker.pkg.dev/$PROJECT_ID/architect-prime/control-plane:latest
+      - .
+    dir: app
+images:
+  - us-docker.pkg.dev/$PROJECT_ID/architect-prime/control-plane:latest
+options:
+  logging: CLOUD_LOGGING_ONLY
