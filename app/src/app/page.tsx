@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import styles from "./page.module.css";
 
-/* ---- Mock data (will be replaced by Firestore) ---- */
+/* ---- Types ---- */
 interface PrimeInstance {
   id: string;
   name: string;
@@ -16,7 +16,7 @@ interface ChatMessage {
   id: string;
   sender: "admin" | "prime";
   text: string;
-  timestamp: Date;
+  timestamp: string;
 }
 
 interface FleetAgent {
@@ -26,16 +26,17 @@ interface FleetAgent {
   email: string;
 }
 
+/* ---- Mock fallback (local dev without Firestore) ---- */
 const MOCK_PRIMES: PrimeInstance[] = [
   { id: "alpha", name: "Alpha", status: "online", zone: "us-central1-a", fleetCount: 2 },
   { id: "bravo", name: "Bravo", status: "offline", zone: "us-east1-b", fleetCount: 0 },
 ];
 
 const MOCK_MESSAGES: ChatMessage[] = [
-  { id: "1", sender: "admin", text: "Hire a devops agent named stan", timestamp: new Date(Date.now() - 300000) },
-  { id: "2", sender: "prime", text: "Starting deployment of stan as a DevOps specialist.\n\nI'll create a VM, install CoreKit, and configure DWD access. This will take about 15 minutes.\n\nIn the meantime, please create a Workspace email: devops-agent-stan@yourdomain.com", timestamp: new Date(Date.now() - 280000) },
-  { id: "3", sender: "admin", text: "What's stan's status?", timestamp: new Date(Date.now() - 60000) },
-  { id: "4", sender: "prime", text: "✅ **stan** is online and responding to GChat messages.\n\nFleet status:\n• stan (DevOps) — Online\n• ana (QA) — Online", timestamp: new Date(Date.now() - 40000) },
+  { id: "1", sender: "admin", text: "Hire a devops agent named stan", timestamp: new Date(Date.now() - 300000).toISOString() },
+  { id: "2", sender: "prime", text: "Starting deployment of stan as a DevOps specialist.\n\nI'll create a VM, install CoreKit, and configure DWD access. This will take about 15 minutes.\n\nIn the meantime, please create a Workspace email: devops-agent-stan@yourdomain.com", timestamp: new Date(Date.now() - 280000).toISOString() },
+  { id: "3", sender: "admin", text: "What's stan's status?", timestamp: new Date(Date.now() - 60000).toISOString() },
+  { id: "4", sender: "prime", text: "✅ stan is online and responding to GChat messages.\n\nFleet status:\n• stan (DevOps) — Online\n• ana (QA) — Online", timestamp: new Date(Date.now() - 40000).toISOString() },
 ];
 
 const MOCK_FLEET: FleetAgent[] = [
@@ -43,46 +44,189 @@ const MOCK_FLEET: FleetAgent[] = [
   { name: "ana", status: "online", specialty: "QA Engineering", email: "qa-agent-ana@tachin.ai" },
 ];
 
+/* ---- API helpers ---- */
+async function fetchJSON<T>(url: string, opts?: RequestInit): Promise<T | null> {
+  try {
+    const res = await fetch(url, opts);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 /* ---- Component ---- */
 export default function Home() {
-  const [primes] = useState<PrimeInstance[]>(MOCK_PRIMES);
+  const [primes, setPrimes] = useState<PrimeInstance[]>(MOCK_PRIMES);
   const [activePrime, setActivePrime] = useState<string>("alpha");
   const [messages, setMessages] = useState<ChatMessage[]>(MOCK_MESSAGES);
-  const [fleet] = useState<FleetAgent[]>(MOCK_FLEET);
+  const [fleet, setFleet] = useState<FleetAgent[]>(MOCK_FLEET);
   const [input, setInput] = useState("");
   const [showDeploy, setShowDeploy] = useState(false);
   const [view, setView] = useState<"chat" | "fleet">("chat");
+  const [newPrimeName, setNewPrimeName] = useState("");
+  const [newPrimeZone, setNewPrimeZone] = useState("us-central1-a");
+  const [deploying, setDeploying] = useState(false);
+  const [useMock, setUseMock] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activePrimeData = primes.find((p) => p.id === activePrime);
 
+  // Try to load from API on mount
+  useEffect(() => {
+    (async () => {
+      const data = await fetchJSON<{ primes: PrimeInstance[] }>("/api/primes");
+      if (data && data.primes && data.primes.length > 0) {
+        setPrimes(data.primes);
+        setActivePrime(data.primes[0].id);
+        setUseMock(false);
+      }
+    })();
+  }, []);
+
+  // Load messages when activePrime changes (API mode)
+  const loadMessages = useCallback(async () => {
+    if (useMock) return;
+    const data = await fetchJSON<{ messages: ChatMessage[] }>(
+      `/api/primes/${activePrime}/messages`
+    );
+    if (data?.messages) {
+      setMessages(data.messages);
+    }
+  }, [activePrime, useMock]);
+
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  // Poll for new messages every 3 seconds (API mode)
+  useEffect(() => {
+    if (useMock) return;
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(loadMessages, 3000);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [useMock, loadMessages]);
+
+  // Load fleet when switching to fleet view
+  useEffect(() => {
+    if (view !== "fleet" || useMock) return;
+    (async () => {
+      const data = await fetchJSON<{ fleet: FleetAgent[] }>(
+        `/api/primes/${activePrime}/fleet`
+      );
+      if (data?.fleet) setFleet(data.fleet);
+    })();
+  }, [view, activePrime, useMock]);
+
+  // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = () => {
+  // Send message
+  const handleSend = async () => {
     if (!input.trim()) return;
-    const msg: ChatMessage = {
-      id: String(Date.now()),
-      sender: "admin",
-      text: input.trim(),
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, msg]);
+    const text = input.trim();
     setInput("");
 
-    // Simulate Prime response
-    setTimeout(() => {
+    if (useMock) {
+      // Mock mode: local state only
+      const msg: ChatMessage = {
+        id: String(Date.now()),
+        sender: "admin",
+        text,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, msg]);
+      setTimeout(() => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: String(Date.now()),
+            sender: "prime",
+            text: "I'm processing your request. This is a demo — connect to Firestore for real responses.",
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }, 1200);
+      return;
+    }
+
+    // API mode: write to Firestore via API
+    const result = await fetchJSON<{ id: string }>(
+      `/api/primes/${activePrime}/messages`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }
+    );
+
+    if (result) {
+      // Optimistically add to local state
       setMessages((prev) => [
         ...prev,
+        { id: result.id, sender: "admin", text, timestamp: new Date().toISOString() },
+      ]);
+    }
+  };
+
+  // Deploy new Prime
+  const handleDeploy = async () => {
+    if (!newPrimeName.trim()) return;
+    setDeploying(true);
+
+    if (useMock) {
+      const id = newPrimeName.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+      setPrimes((prev) => [
+        ...prev,
         {
-          id: String(Date.now()),
-          sender: "prime",
-          text: "I'm processing your request. This is a demo — the real Prime VM will respond via Firestore polling.",
-          timestamp: new Date(),
+          id,
+          name: newPrimeName,
+          status: "deploying",
+          zone: newPrimeZone,
+          fleetCount: 0,
         },
       ]);
-    }, 1200);
+      setActivePrime(id);
+      setMessages([]);
+      setFleet([]);
+      setShowDeploy(false);
+      setDeploying(false);
+      setNewPrimeName("");
+      return;
+    }
+
+    const result = await fetchJSON<{ id: string; name: string }>(
+      "/api/primes",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newPrimeName, zone: newPrimeZone }),
+      }
+    );
+
+    if (result) {
+      setPrimes((prev) => [
+        ...prev,
+        {
+          id: result.id,
+          name: result.name,
+          status: "deploying",
+          zone: newPrimeZone,
+          fleetCount: 0,
+        },
+      ]);
+      setActivePrime(result.id);
+      setMessages([]);
+    }
+
+    setShowDeploy(false);
+    setDeploying(false);
+    setNewPrimeName("");
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -92,8 +236,10 @@ export default function Home() {
     }
   };
 
-  const formatTime = (d: Date) =>
-    d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const formatTime = (ts: string) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
 
   return (
     <div className={styles.shell}>
@@ -110,7 +256,10 @@ export default function Home() {
             <div
               key={p.id}
               className={`${styles["sidebar-item"]} ${activePrime === p.id ? styles.active : ""}`}
-              onClick={() => setActivePrime(p.id)}
+              onClick={() => {
+                setActivePrime(p.id);
+                setView("chat");
+              }}
             >
               <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} />
               <span className={styles["sidebar-item-name"]}>{p.name}</span>
@@ -128,6 +277,11 @@ export default function Home() {
           >
             + Deploy Prime
           </button>
+          {useMock && (
+            <div style={{ marginTop: 8, textAlign: "center", fontSize: 10, color: "var(--text-tertiary)" }}>
+              Demo Mode (no Firestore)
+            </div>
+          )}
         </div>
       </aside>
 
@@ -135,7 +289,6 @@ export default function Home() {
       <main className={styles.main}>
         {activePrimeData ? (
           <>
-            {/* Header */}
             <header className={styles["main-header"]}>
               <div className={styles["main-header-left"]}>
                 <h1 className={styles["main-header-title"]}>
@@ -164,37 +317,43 @@ export default function Home() {
 
             {view === "chat" ? (
               <>
-                {/* Chat Messages */}
                 <div className={styles["chat-area"]}>
-                  {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`${styles["chat-message"]} ${
-                        styles[`from-${msg.sender}`]
-                      }`}
-                    >
-                      <div className={styles["chat-message-avatar"]}>
-                        {msg.sender === "prime" ? "P" : "Y"}
-                      </div>
-                      <div>
-                        <div className={styles["chat-message-content"]}>
-                          {msg.text.split("\n").map((line, i) => (
-                            <span key={i}>
-                              {line}
-                              {i < msg.text.split("\n").length - 1 && <br />}
-                            </span>
-                          ))}
-                        </div>
-                        <div className={styles["chat-message-meta"]}>
-                          {formatTime(msg.timestamp)}
-                        </div>
+                  {messages.length === 0 ? (
+                    <div className={styles["empty-state"]}>
+                      <div className={styles["empty-state-icon"]}>💬</div>
+                      <div className={styles["empty-state-title"]}>Start a conversation</div>
+                      <div className={styles["empty-state-desc"]}>
+                        Send a message to Prime {activePrimeData.name}. Try &quot;hire a devops agent named stan&quot; or &quot;what can you do?&quot;
                       </div>
                     </div>
-                  ))}
+                  ) : (
+                    messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`${styles["chat-message"]} ${styles[`from-${msg.sender}`]}`}
+                      >
+                        <div className={styles["chat-message-avatar"]}>
+                          {msg.sender === "prime" ? "P" : "Y"}
+                        </div>
+                        <div>
+                          <div className={styles["chat-message-content"]}>
+                            {msg.text.split("\n").map((line, i) => (
+                              <span key={i}>
+                                {line}
+                                {i < msg.text.split("\n").length - 1 && <br />}
+                              </span>
+                            ))}
+                          </div>
+                          <div className={styles["chat-message-meta"]}>
+                            {msg.timestamp ? formatTime(msg.timestamp) : ""}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                   <div ref={chatEndRef} />
                 </div>
 
-                {/* Chat Input */}
                 <div className={styles["chat-input-bar"]}>
                   <div className={styles["chat-input-row"]}>
                     <textarea
@@ -216,7 +375,6 @@ export default function Home() {
                 </div>
               </>
             ) : (
-              /* Fleet Grid */
               <div className={styles["fleet-grid"]}>
                 {fleet.map((agent) => (
                   <div key={agent.name} className="card">
@@ -269,33 +427,44 @@ export default function Home() {
 
       {/* ---- Deploy Modal ---- */}
       {showDeploy && (
-        <div
-          className={styles["modal-overlay"]}
-          onClick={() => setShowDeploy(false)}
-        >
+        <div className={styles["modal-overlay"]} onClick={() => setShowDeploy(false)}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles["modal-title"]}>Deploy New Prime</div>
             <div className={styles["modal-field"]}>
               <label className={styles["modal-label"]}>Instance Name</label>
-              <input className="input" placeholder="e.g. charlie" autoFocus />
+              <input
+                className="input"
+                placeholder="e.g. charlie"
+                autoFocus
+                value={newPrimeName}
+                onChange={(e) => setNewPrimeName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleDeploy(); }}
+              />
             </div>
             <div className={styles["modal-field"]}>
               <label className={styles["modal-label"]}>Zone</label>
-              <select className="input" defaultValue="us-central1-a">
-                <option>us-central1-a</option>
-                <option>us-east1-b</option>
-                <option>us-west1-a</option>
-                <option>europe-west1-b</option>
+              <select
+                className="input"
+                value={newPrimeZone}
+                onChange={(e) => setNewPrimeZone(e.target.value)}
+              >
+                <option value="us-central1-a">us-central1-a</option>
+                <option value="us-east1-b">us-east1-b</option>
+                <option value="us-west1-a">us-west1-a</option>
+                <option value="europe-west1-b">europe-west1-b</option>
               </select>
             </div>
             <div className={styles["modal-actions"]}>
-              <button
-                className="btn btn-ghost"
-                onClick={() => setShowDeploy(false)}
-              >
+              <button className="btn btn-ghost" onClick={() => setShowDeploy(false)}>
                 Cancel
               </button>
-              <button className="btn btn-primary">Deploy</button>
+              <button
+                className="btn btn-primary"
+                onClick={handleDeploy}
+                disabled={!newPrimeName.trim() || deploying}
+              >
+                {deploying ? "Deploying..." : "Deploy"}
+              </button>
             </div>
           </div>
         </div>
