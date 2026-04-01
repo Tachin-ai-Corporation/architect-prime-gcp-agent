@@ -47,28 +47,13 @@ poll_messages() {
   "structuredQuery": {
     "from": [{"collectionId": "messages"}],
     "where": {
-      "compositeFilter": {
-        "op": "AND",
-        "filters": [
-          {
-            "fieldFilter": {
-              "field": {"fieldPath": "sender"},
-              "op": "EQUAL",
-              "value": {"stringValue": "admin"}
-            }
-          },
-          {
-            "fieldFilter": {
-              "field": {"fieldPath": "processed"},
-              "op": "EQUAL",
-              "value": {"booleanValue": false}
-            }
-          }
-        ]
+      "fieldFilter": {
+        "field": {"fieldPath": "processed"},
+        "op": "EQUAL",
+        "value": {"booleanValue": false}
       }
     },
-    "orderBy": [{"field": {"fieldPath": "timestamp"}, "direction": "ASCENDING"}],
-    "limit": 10
+    "limit": 50
   }
 }
 QUERY
@@ -169,16 +154,26 @@ try:
     data = json.load(sys.stdin)
     if not isinstance(data, list):
         data = [data]
+        
+    valid_msgs = []
     for item in data:
         doc = item.get('document', {})
         if not doc:
             continue
         fields = doc.get('fields', {})
         text = fields.get('text', {}).get('stringValue', '')
+        sender = fields.get('sender', {}).get('stringValue', '')
+        timestamp = fields.get('timestamp', {}).get('timestampValue', '')
         name = doc.get('name', '')
-        if text and name:
-            print(json.dumps({'text': text, 'path': name}))
-except:
+        if text and name and sender == 'admin':
+            valid_msgs.append({'text': text, 'path': name, 'timestamp': timestamp})
+            
+    # Sort by timestamp
+    valid_msgs.sort(key=lambda x: x['timestamp'])
+    
+    for v in valid_msgs:
+        print(json.dumps({'text': v['text'], 'path': v['path']}))
+except Exception as e:
     pass
 " 2>/dev/null || true)"
 
