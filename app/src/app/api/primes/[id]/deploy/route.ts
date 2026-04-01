@@ -95,6 +95,15 @@ async function createVM(
   const machineType = `zones/${zone}/machineTypes/e2-small`;
   const sourceImage = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts";
 
+  // Get the project number for the default compute SA
+  const projRes = await fetch(
+    `https://cloudresourcemanager.googleapis.com/v1/projects/${projectId}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const projData = await projRes.json();
+  const projectNumber = projData.projectNumber;
+  const defaultSA = `${projectNumber}-compute@developer.gserviceaccount.com`;
+
   const body = {
     name: vmName,
     machineType,
@@ -128,6 +137,7 @@ async function createVM(
     tags: { items: ["architect-prime"] },
     serviceAccounts: [
       {
+        email: defaultSA,
         scopes: ["https://www.googleapis.com/auth/cloud-platform"],
       },
     ],
