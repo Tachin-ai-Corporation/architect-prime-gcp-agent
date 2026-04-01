@@ -122,8 +122,7 @@ mark_processed() {
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/json" \
     -d '{"fields":{"processed":{"booleanValue":true}}}' \
-    -G --data-urlencode "updateMask.fieldPaths=processed" \
-    "https://firestore.googleapis.com/v1/${doc_path}" > /dev/null
+    "https://firestore.googleapis.com/v1/${doc_path}?updateMask.fieldPaths=processed" > /dev/null
 }
 
 # ---- Update Prime status in Firestore ----
@@ -136,8 +135,7 @@ update_status() {
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/json" \
     -d "{\"fields\":{\"status\":{\"stringValue\":\"${status}\"}}}" \
-    -G --data-urlencode "updateMask.fieldPaths=status" \
-    "${FIRESTORE_URL}/primes/${PRIME_ID}" > /dev/null
+    "${FIRESTORE_URL}/primes/${PRIME_ID}?updateMask.fieldPaths=status" > /dev/null
 }
 
 # ---- Main loop ----
