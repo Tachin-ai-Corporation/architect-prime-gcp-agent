@@ -30,6 +30,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (!domain) return true; // No restriction if not set
       return profile?.hd === domain;
     },
+    async authorized({ auth: session, request }) {
+      const isLoggedIn = !!session?.user;
+      const isLoginPage = request.nextUrl.pathname.startsWith("/login");
+      const isAuthApi = request.nextUrl.pathname.startsWith("/api/auth");
+
+      // Always allow auth API
+      if (isAuthApi) return true;
+
+      // Redirect logged-in users away from login page
+      if (isLoginPage && isLoggedIn) {
+        return Response.redirect(new URL("/", request.nextUrl));
+      }
+
+      // Allow login page for unauthenticated users
+      if (isLoginPage) return true;
+
+      // Require auth for everything else
+      return isLoggedIn;
+    },
     async session({ session }) {
       return session;
     },

@@ -210,18 +210,54 @@ export default function Home() {
     );
 
     if (result) {
-      setPrimes((prev) => [
-        ...prev,
+      const newPrime: PrimeInstance = {
+        id: result.id,
+        name: result.name,
+        status: "deploying",
+        zone: newPrimeZone,
+        fleetCount: 0,
+      };
+      setPrimes((prev) => [...prev, newPrime]);
+      setActivePrime(result.id);
+      setFleet([]);
+      setMessages([
         {
-          id: result.id,
-          name: result.name,
-          status: "deploying",
-          zone: newPrimeZone,
-          fleetCount: 0,
+          id: "sys-deploy",
+          sender: "prime",
+          text: `🚀 Deploying Prime "${result.name}" in ${newPrimeZone}...\n\nThis will take about 10 minutes. I'll come online automatically when ready.`,
+          timestamp: new Date().toISOString(),
         },
       ]);
-      setActivePrime(result.id);
-      setMessages([]);
+
+      // Trigger VM provisioning
+      fetchJSON(`/api/primes/${result.id}/deploy`, { method: "POST" }).then(
+        (deployResult) => {
+          if (deployResult) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: "sys-deploy-ok",
+                sender: "prime",
+                text: "✅ VM creation started. Installing CoreKit and starting control-daemon...",
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+          } else {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: "sys-deploy-err",
+                sender: "prime",
+                text: "⚠️ VM creation failed. Check the Cloud Run logs for details.",
+                timestamp: new Date().toISOString(),
+              },
+            ]);
+            setPrimes((prev) =>
+              prev.map((p) => (p.id === result.id ? { ...p, status: "offline" } : p))
+            );
+          }
+        }
+      );
     }
 
     setShowDeploy(false);
