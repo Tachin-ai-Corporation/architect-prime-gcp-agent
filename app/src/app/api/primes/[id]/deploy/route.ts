@@ -10,6 +10,14 @@ interface RouteContext {
  *
  * Uses the Cloud Run SA's credentials to create a GCE VM
  * in the same project that runs the control plane.
+ *
+ * The VM startup script:
+ *   1. Reads all config from VM metadata attributes
+ *   2. Downloads install.sh (manifest-based CoreKit installer)
+ *   3. Installs CoreKit (agent-ask, control-daemon, etc.)
+ *   4. Writes prime-config.json with the Prime ID + project
+ *   5. Installs control-daemon as a systemd service
+ *   6. control-daemon starts → writes status:"online" to Firestore
  */
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
@@ -29,12 +37,9 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     // Update status to deploying
     await primesCol().doc(id).update({ status: "deploying" });
 
-    // Build the startup script that installs CoreKit + control-daemon
-    const startupScript = buildStartupScript(projectId, id, vmName);
-
     // Create the VM via Compute Engine REST API
     const token = await getAccessToken();
-    const vmResult = await createVM(token, projectId, zone, vmName, startupScript);
+    const vmResult = await createVM(token, projectId, zone, vmName, id);
 
     if (!vmResult.ok) {
       const err = await vmResult.text();
@@ -63,13 +68,11 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
  * Get access token from the metadata server (Cloud Run SA).
  */
 async function getAccessToken(): Promise<string> {
-  // On Cloud Run, use the metadata server
   const res = await fetch(
     "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
     { headers: { "Metadata-Flavor": "Google" } }
   );
   if (!res.ok) {
-    // Fallback: try gcloud for local dev
     throw new Error("Cannot get access token — not running on GCP");
   }
   const data = await res.json();
@@ -78,13 +81,16 @@ async function getAccessToken(): Promise<string> {
 
 /**
  * Create a GCE VM via the Compute Engine REST API.
+ *
+ * Follows the fleet-deploy pattern: all config passed as
+ * metadata attributes, startup script reads from metadata.
  */
 async function createVM(
   token: string,
   projectId: string,
   zone: string,
   vmName: string,
-  startupScript: string
+  primeId: string
 ): Promise<Response> {
   const machineType = `zones/${zone}/machineTypes/e2-small`;
   const sourceImage = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts";
@@ -110,17 +116,26 @@ async function createVM(
     ],
     metadata: {
       items: [
-        { key: "startup-script", value: startupScript },
+        { key: "startup-script", value: STARTUP_SCRIPT },
+        { key: "prime_id", value: primeId },
+        { key: "agent_id", value: "prime" },
+        { key: "core_ref", value: "main" },
+        { key: "gh_owner", value: "Tachin-ai-Corporation" },
+        { key: "gh_repo", value: "architect-prime-gcp-agent" },
+        { key: "gcp_project_id", value: projectId },
       ],
     },
     tags: { items: ["architect-prime"] },
     serviceAccounts: [
       {
-        scopes: [
-          "https://www.googleapis.com/auth/cloud-platform",
-        ],
+        scopes: ["https://www.googleapis.com/auth/cloud-platform"],
       },
     ],
+    labels: {
+      app: "architect-prime",
+      role: "prime",
+      "prime-id": primeId.substring(0, 63), // labels max 63 chars
+    },
   };
 
   return fetch(
@@ -137,57 +152,74 @@ async function createVM(
 }
 
 /**
- * Build the VM startup script that installs OpenClaw + CoreKit
- * and starts the control-daemon (Firestore polling).
+ * Startup script for Prime VMs.
+ *
+ * Follows the same pattern as fleet-deploy:
+ * - Reads ALL config from VM metadata attributes (no template vars)
+ * - Downloads install.sh from the repo
+ * - Installs CoreKit via manifest
+ * - Sets up control-daemon as a systemd service
  */
-function buildStartupScript(projectId: string, primeId: string, vmName: string): string {
-  const REPO = "https://github.com/Tachin-ai-Corporation/architect-prime-gcp-agent";
-  const CORE_REF = "main";
-
-  return `#!/usr/bin/env bash
+const STARTUP_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
-exec > /var/log/prime-setup.log 2>&1
+LOG_FILE="/var/log/prime-setup.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "==> Phase 2: Prime VM Setup"
-echo "Project: ${projectId}"
-echo "Prime ID: ${primeId}"
-echo "VM: ${vmName}"
+echo "===> Prime VM Phase 2: $(date -Is)"
 
-# ---- Install Docker ----
-echo "==> Installing Docker..."
+# ---- Read config from VM metadata ----
+META="http://metadata.google.internal/computeMetadata/v1"
+MH="Metadata-Flavor: Google"
+PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || echo 'unknown')"
+AGENT_ID="$(curl -sf -H "$MH" "$META/instance/attributes/agent_id" || echo 'prime')"
+CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo 'main')"
+GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo 'Tachin-ai-Corporation')"
+GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo 'architect-prime-gcp-agent')"
+GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
+
+echo "Prime ID: $PRIME_ID | Agent: $AGENT_ID | CoreRef: $CORE_REF"
+
+# ---- Install packages ----
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq docker.io curl python3 jq
-systemctl enable docker
-systemctl start docker
+apt-get install -y -qq jq curl python3
 
-# ---- Install CoreKit ----
-echo "==> Installing CoreKit..."
-export OC_HOST_ROOT=/opt/openclaw
-mkdir -p "\$OC_HOST_ROOT/.openclaw/bin"
-curl -fsSL "${REPO}/raw/${CORE_REF}/install.sh" | bash -s -- ${CORE_REF}
+# ---- Install CoreKit via manifest ----
+OC_HOST_ROOT="/opt/openclaw"
+mkdir -p "$OC_HOST_ROOT/.openclaw"
 
-# ---- Build OpenClaw container ----
-echo "==> Building OpenClaw container..."
-cd "\$OC_HOST_ROOT"
-docker build -t openclaw -f .openclaw/Dockerfile . 2>/dev/null || true
+CORE_BASE="https://raw.githubusercontent.com/$GH_OWNER/$GH_REPO/$CORE_REF"
+curl -sfL "$CORE_BASE/install.sh" -o /tmp/install.sh
+chmod +x /tmp/install.sh
+CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\
+  bash /tmp/install.sh
+
+# ---- Write prime-config.json ----
+cat > "$OC_HOST_ROOT/.openclaw/corekit/prime-config.json" <<PCFG
+{
+  "primeId": "$PRIME_ID",
+  "projectId": "$GCP_PROJECT_ID",
+  "role": "prime"
+}
+PCFG
 
 # ---- Install control-daemon as systemd service ----
-echo "==> Installing control-daemon..."
-cat > /etc/systemd/system/control-daemon.service << 'UNIT'
+echo "===> Installing control-daemon systemd service"
+cat > /etc/systemd/system/control-daemon.service <<UNIT
 [Unit]
 Description=Architect Prime Control Daemon (Firestore Polling)
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-Environment=OC_HOST_ROOT=/opt/openclaw
-Environment=AGENT_ID=prime
-Environment=GCP_PROJECT_ID=${projectId}
-Environment=PRIME_ID=${primeId}
+Environment=OC_HOST_ROOT=$OC_HOST_ROOT
+Environment=AGENT_ID=$AGENT_ID
+Environment=GCP_PROJECT_ID=$GCP_PROJECT_ID
+Environment=PRIME_ID=$PRIME_ID
 Environment=POLL_INTERVAL=5
-ExecStart=/opt/openclaw/.openclaw/bin/control-daemon
+ExecStart=$OC_HOST_ROOT/.openclaw/bin/control-daemon
 Restart=always
 RestartSec=10
 
@@ -199,6 +231,5 @@ systemctl daemon-reload
 systemctl enable control-daemon
 systemctl start control-daemon
 
-echo "==> DONE"
+echo "===> PRIME VM SETUP COMPLETE"
 `;
-}
