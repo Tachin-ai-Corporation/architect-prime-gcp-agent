@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# ============================================================
+# control-daemon — Firestore-polling message handler for Prime
+#
+# Replaces inbox-daemon for Prime VMs. Instead of polling GChat,
+# this polls the Firestore messages collection for unprocessed
+# admin messages and routes them to agent-ask.
+#
+# Requires:
+#   - gcloud CLI authenticated (VM SA)
+#   - PRIME_ID: the Prime instance ID in Firestore
+#   - GCP_PROJECT_ID: the Firestore project
+#   - OC_HOST_ROOT: OpenClaw root path
+#
+# Env from VM metadata:
+#   PRIME_ID, GCP_PROJECT_ID
+# ============================================================
+set -euo pipefail
+
+POLL_INTERVAL="${POLL_INTERVAL:-5}"
+AGENT_ASK="${OC_HOST_ROOT:?}/.openclaw/bin/agent-ask"
+CHAT_SEND="${OC_HOST_ROOT:?}/.openclaw/bin/chat-send"
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID:?}/databases/(default)/documents"
+PRIME_ID="${PRIME_ID:?}"
+AGENT_ID="${AGENT_ID:-prime}"
+
+export AGENT_ID
+
+log() { echo "[$(date -Iseconds)] [control-daemon] $*"; }
+
+# ---- Get access token from VM metadata ----
+get_token() {
+  curl -sH "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
+}
+
+# ---- Query unprocessed admin messages ----
+poll_messages() {
+  local token
+  token="$(get_token)"
+
+  # Firestore REST: structured query for unprocessed admin messages
+  local query_body
+  query_body=$(cat <<'QUERY'
+{
+  "structuredQuery": {
+    "from": [{"collectionId": "messages"}],
+    "where": {
+      "compositeFilter": {
+        "op": "AND",
+        "filters": [
+          {
+            "fieldFilter": {
+              "field": {"fieldPath": "sender"},
+              "op": "EQUAL",
+              "value": {"stringValue": "admin"}
+            }
+          },
+          {
+            "fieldFilter": {
+              "field": {"fieldPath": "processed"},
+              "op": "EQUAL",
+              "value": {"booleanValue": false}
+            }
+          }
+        ]
+      }
+    },
+    "orderBy": [{"field": {"fieldPath": "timestamp"}, "direction": "ASCENDING"}],
+    "limit": 10
+  }
+}
+QUERY
+)
+
+  curl -s -X POST \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d "$query_body" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery"
+}
+
+# ---- Write a response message to Firestore ----
+write_response() {
+  local text="$1"
+  local token
+  token="$(get_token)"
+
+  local msg_id
+  msg_id="msg-$(date +%s%N)"
+
+  local body
+  body=$(python3 -c "
+import json, sys
+text = sys.stdin.read()
+doc = {
+    'fields': {
+        'sender': {'stringValue': 'prime'},
+        'text': {'stringValue': text},
+        'timestamp': {'timestampValue': '$(date -u +%Y-%m-%dT%H:%M:%SZ)'},
+        'processed': {'booleanValue': True}
+    }
+}
+print(json.dumps(doc))
+" <<< "$text")
+
+  curl -s -X PATCH \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}/messages/${msg_id}" > /dev/null
+}
+
+# ---- Mark a message as processed ----
+mark_processed() {
+  local doc_path="$1"
+  local token
+  token="$(get_token)"
+
+  curl -s -X PATCH \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{"fields":{"processed":{"booleanValue":true}}}' \
+    -G --data-urlencode "updateMask.fieldPaths=processed" \
+    "https://firestore.googleapis.com/v1/${doc_path}" > /dev/null
+}
+
+# ---- Update Prime status in Firestore ----
+update_status() {
+  local status="$1"
+  local token
+  token="$(get_token)"
+
+  curl -s -X PATCH \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d "{\"fields\":{\"status\":{\"stringValue\":\"${status}\"}}}" \
+    -G --data-urlencode "updateMask.fieldPaths=status" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}" > /dev/null
+}
+
+# ---- Main loop ----
+log "Starting control-daemon for Prime: ${PRIME_ID}"
+log "Project: ${GCP_PROJECT_ID}"
+log "Poll interval: ${POLL_INTERVAL}s"
+
+# Report online
+update_status "online"
+log "Status: ONLINE"
+
+# Heartbeat: update status every 60s
+(
+  while true; do
+    sleep 60
+    update_status "online" 2>/dev/null || true
+  done
+) &
+HEARTBEAT_PID=$!
+trap "kill $HEARTBEAT_PID 2>/dev/null; update_status 'offline'; exit" INT TERM
+
+log "Entering polling loop..."
+
+while true; do
+  RESPONSE="$(poll_messages 2>/dev/null || echo '[]')"
+
+  # Parse messages from Firestore REST response
+  MESSAGES="$(echo "$RESPONSE" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    if not isinstance(data, list):
+        data = [data]
+    for item in data:
+        doc = item.get('document', {})
+        if not doc:
+            continue
+        fields = doc.get('fields', {})
+        text = fields.get('text', {}).get('stringValue', '')
+        name = doc.get('name', '')
+        if text and name:
+            print(json.dumps({'text': text, 'path': name}))
+except:
+    pass
+" 2>/dev/null || true)"
+
+  if [[ -n "$MESSAGES" ]]; then
+    while IFS= read -r msg_json; do
+      TEXT="$(echo "$msg_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['text'])")"
+      DOC_PATH="$(echo "$msg_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['path'])")"
+
+      log "Received: $TEXT"
+
+      # Route to agent-ask
+      REPLY="$($AGENT_ASK "$TEXT" 2>&1)" || REPLY="⚠ Error processing request."
+
+      log "Reply: $(echo "$REPLY" | head -1)..."
+
+      # Write response to Firestore
+      write_response "$REPLY"
+
+      # Mark original message as processed
+      mark_processed "$DOC_PATH"
+
+      log "Completed: $DOC_PATH"
+    done <<< "$MESSAGES"
+  fi
+
+  sleep "$POLL_INTERVAL"
+done
