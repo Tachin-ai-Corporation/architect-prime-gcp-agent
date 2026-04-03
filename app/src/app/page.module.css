@@ -106,13 +106,14 @@
 
 /* ---- Onboarding ---- */
 .onboarding {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 40px; overflow-y: auto;
+  flex: 1; display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px; overflow-y: auto; min-height: 0;
 }
 .onboarding-card {
   max-width: 600px; width: 100%; background: var(--bg-secondary);
   border: 1px solid var(--border-default); border-radius: var(--radius-lg);
-  padding: 48px 40px; animation: fadeIn 0.4s ease;
+  padding: 40px 32px; animation: fadeIn 0.4s ease;
+  margin: auto 0;
 }
 .onboarding-hero {
   text-align: center; margin-bottom: 40px;
