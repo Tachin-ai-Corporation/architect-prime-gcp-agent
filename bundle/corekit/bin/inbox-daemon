@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ============================================================
-# inbox-daemon — Chat message processor (DWD polling)
+# inbox-daemon — Multi-space Chat message processor (DWD)
 #
-# Polls Google Chat via chat-read for @-mentions of the agent's
-# Workspace user account and processes them one at a time.
+# Discovers ALL Google Chat spaces the agent's Workspace email
+# is a member of, then polls ALL of them for new messages.
 #
-# Replaces the old GCS-based inbox-daemon. No Cloud Function or
-# GCS inbox bucket required — uses DWD user impersonation.
+# Agents respond to EVERY message in EVERY space/DM they are
+# added to — no @-mention required.
 #
 # Runs as a systemd service. ONE instance per agent.
 # No parallel processing = no spawn explosion.
@@ -25,9 +25,13 @@ AGENT_ID="${AGENT_ID:-prime}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"
 PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-120}"
+CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+CHAT_API="https://chat.googleapis.com/v1"
+DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
 CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
-CHAT_READ="${OC_HOST_ROOT}/.openclaw/bin/chat-read"
 PROCESSED_FILE="/tmp/inbox-daemon-processed.json"
+SPACES_CACHE_FILE="/tmp/inbox-daemon-spaces.json"
+SPACE_REFRESH_INTERVAL=60  # Re-discover spaces every 60 seconds
 
 # ---- Logging ----
 log() { echo "[$(date -Is)] [inbox-daemon] $*"; }
@@ -37,22 +41,33 @@ die() { echo "[$(date -Is)] [inbox-daemon] [FATAL] $*" >&2; exit 1; }
 # ---- Verify deps ----
 command -v python3 >/dev/null 2>&1 || die "python3 not found"
 command -v jq >/dev/null 2>&1 || die "jq not found (apt install jq)"
-[[ -x "$CHAT_READ" ]] || die "chat-read not found at $CHAT_READ"
-[[ -x "$CHAT_SEND" ]] || warn "chat-send not found at $CHAT_SEND"
+[[ -x "$DWD_TOKEN_BIN" ]] || die "dwd-token not found"
+
+# ---- Resolve email from config ----
+if [[ -z "${AGENT_USER_EMAIL:-}" && -f "$CHAT_CONFIG" ]]; then
+  AGENT_USER_EMAIL="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('agentUserEmail', ''))
+except: pass
+" 2>/dev/null)"
+fi
+[[ -n "${AGENT_USER_EMAIL:-}" ]] || die "AGENT_USER_EMAIL is required"
 
 # ---- Initialize processed messages tracker ----
 if [[ ! -f "$PROCESSED_FILE" ]]; then
   echo '[]' > "$PROCESSED_FILE"
 fi
+echo '[]' > "$SPACES_CACHE_FILE"
 
-log "Starting inbox-daemon for agent=${AGENT_ID} (DWD Chat polling mode)"
-log "Poll interval: ${POLL_INTERVAL}s | Process timeout: ${PROCESS_TIMEOUT}s"
+log "Starting inbox-daemon for agent=${AGENT_ID} email=${AGENT_USER_EMAIL}"
+log "Mode: multi-space discovery | Poll: ${POLL_INTERVAL}s"
 
 # ---- DWD Healthcheck ----
-DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
 MAX_HEALTHCHECK=10
 for attempt in $(seq 1 $MAX_HEALTHCHECK); do
-  if "$DWD_TOKEN_BIN" --user "${AGENT_USER_EMAIL:-}" >/dev/null 2>&1; then
+  if "$DWD_TOKEN_BIN" --user "$AGENT_USER_EMAIL" >/dev/null 2>&1; then
     log "DWD healthcheck PASSED (attempt $attempt)"
     break
   fi
@@ -61,6 +76,59 @@ for attempt in $(seq 1 $MAX_HEALTHCHECK); do
   fi
   sleep $((attempt * 5))
 done
+
+# ---- Get DWD token ----
+get_token() {
+  "$DWD_TOKEN_BIN" --user "$AGENT_USER_EMAIL" \
+    --scope "https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly" \
+    2>/dev/null || { warn "Failed to get DWD token"; echo ""; }
+}
+
+# ---- Discover all spaces this user is in ----
+LAST_SPACE_REFRESH=0
+discover_spaces() {
+  local now
+  now="$(date +%s)"
+  # Only refresh periodically
+  local elapsed=$(( now - LAST_SPACE_REFRESH ))
+  if [[ $elapsed -lt $SPACE_REFRESH_INTERVAL && -s "$SPACES_CACHE_FILE" ]]; then
+    return 0
+  fi
+
+  local token
+  token="$(get_token)"
+  [[ -n "$token" ]] || return 1
+
+  log "Discovering Chat spaces..."
+  local response
+  response="$(curl -sf \
+    -H "Authorization: Bearer ${token}" \
+    "${CHAT_API}/spaces?pageSize=100&filter=spaceType%20%3D%20%22SPACE%22%20OR%20spaceType%20%3D%20%22DIRECT_MESSAGE%22%20OR%20spaceType%20%3D%20%22GROUP_CHAT%22" \
+    2>/dev/null)" || { warn "spaces.list API call failed"; return 1; }
+
+  python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    spaces = data.get('spaces', [])
+    result = []
+    for s in spaces:
+        result.append({
+            'name': s.get('name', ''),
+            'displayName': s.get('displayName', ''),
+            'type': s.get('spaceType', s.get('type', ''))
+        })
+    json.dump(result, open('$SPACES_CACHE_FILE', 'w'))
+    print(len(result))
+except Exception as e:
+    print(f'0', file=sys.stderr)
+    print('0')
+" <<< "$response" 2>/dev/null
+  local count
+  count="$(wc -l < <(cat "$SPACES_CACHE_FILE" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0))"
+  LAST_SPACE_REFRESH="$now"
+  log "Found spaces: $(python3 -c "import json; print(len(json.load(open('$SPACES_CACHE_FILE'))))" 2>/dev/null || echo 0)"
+}
 
 # ---- Helper: check if message was already processed ----
 is_processed() {
@@ -79,10 +147,22 @@ mark_processed() {
 import json
 processed = json.load(open('$PROCESSED_FILE'))
 processed.append('$msg_name')
-# Keep only last 500 to avoid unbounded growth
-processed = processed[-500:]
+# Keep only last 1000 to avoid unbounded growth
+processed = processed[-1000:]
 json.dump(processed, open('$PROCESSED_FILE', 'w'))
 " 2>/dev/null
+}
+
+# ---- Helper: read messages from a specific space ----
+read_space_messages() {
+  local space_name="$1"
+  local token="$2"
+  local limit=20
+
+  curl -sf \
+    -H "Authorization: Bearer ${token}" \
+    "${CHAT_API}/${space_name}/messages?pageSize=${limit}&orderBy=createTime%20desc" \
+    2>/dev/null || echo '{}'
 }
 
 # ---- Helper: process a single message ----
@@ -90,8 +170,9 @@ process_message() {
   local msg_text="$1"
   local sender_name="$2"
   local sender_email="$3"
+  local space_name="$4"
 
-  log "Processing: sender=${sender_name} text=${msg_text:0:80}"
+  log "Processing: space=${space_name} sender=${sender_name} text=${msg_text:0:80}"
 
   # Strip leading @-mention of self from text (Chat includes it)
   local clean_text
@@ -105,7 +186,7 @@ process_message() {
   local response=""
   case "$cmd" in
     help|/help)
-      response="👋 Hello! I'm **${AGENT_ID}**. Commands: \`help\`, \`status\`, \`whoami\`, \`fleet\`"
+      response="👋 Hello! I'm **${AGENT_ID}**. I'm here to help. Try asking me anything, or use: \`status\`, \`whoami\`"
       ;;
     status|/status)
       local core_ref="unknown"
@@ -115,39 +196,20 @@ process_message() {
       fi
       local uptime_str
       uptime_str="$(uptime -p 2>/dev/null || echo 'unknown')"
-
       response="📊 *Agent ${AGENT_ID} Status*
 • CoreKit: \`${core_ref}\`
 • Agent ID: \`${AGENT_ID}\`
 • Uptime: ${uptime_str}
-• Mode: DWD Chat polling"
+• Email: ${AGENT_USER_EMAIL}
+• Mode: Multi-space DWD polling"
       ;;
     whoami|/whoami)
       response="👤 *Your Info*
 • Name: ${sender_name}
 • Email: ${sender_email}"
       ;;
-    fleet|/fleet)
-      local registry="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
-      if [[ -f "$registry" ]]; then
-        local agent_count
-        agent_count="$(jq '.agents | length' "$registry" 2>/dev/null || echo 0)"
-        if [[ "$agent_count" -gt 0 ]]; then
-          local agent_list
-          agent_list="$(jq -r '.agents | to_entries[] | "• \(.key) — \(.value.specialty) (\(.value.status))"' "$registry" 2>/dev/null)"
-          response="🤖 *Fleet Status* (${agent_count} agents)
-${agent_list}"
-        else
-          response="🤖 *Fleet Status*
-No fleet agents deployed."
-        fi
-      else
-        response="🤖 *Fleet Status*
-No fleet registry found."
-      fi
-      ;;
     *)
-      # Route to AI — answer the question
+      # Route to AI
       local agent_ask="${OC_HOST_ROOT}/.openclaw/bin/agent-ask"
       if [[ -x "$agent_ask" ]]; then
         log "Routing to agent-ask: ${clean_text:0:60}"
@@ -155,66 +217,121 @@ No fleet registry found."
           timeout "$PROCESS_TIMEOUT" "$agent_ask" "$clean_text" 2>/dev/null)" \
           || response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."
       else
-        response="❓ Unknown command: \`${cmd}\`
-Try \`help\` for available commands."
+        response="❓ I received your message but my AI brain isn't available right now.
+Try \`help\` for built-in commands."
       fi
       ;;
   esac
 
-  # Send response via chat-send (DWD)
-  "$CHAT_SEND" "$response" || warn "chat-send failed"
+  # Send response to the SAME space the message came from
+  CHAT_SPACE_ID="$space_name" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
+    "$CHAT_SEND" "$response" || warn "chat-send failed for space $space_name"
 }
 
 # ---- Main loop ----
 log "Entering polling loop (interval: ${POLL_INTERVAL}s)"
+LOOP_COUNT=0
 
 while true; do
-  # Read recent messages where this user was @-mentioned
-  MESSAGES="$("$CHAT_READ" --since "$((POLL_INTERVAL + 5))" --filter-mentions 2>/dev/null || echo '[]')"
+  LOOP_COUNT=$((LOOP_COUNT + 1))
 
-  # Count messages
-  MSG_COUNT="$(echo "$MESSAGES" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)"
+  # Discover/refresh spaces
+  discover_spaces
 
-  if [[ "$MSG_COUNT" -gt 0 ]]; then
-    # Process each message (oldest first — reverse the list since chat-read returns newest first)
-    echo "$MESSAGES" | python3 -c "
+  # Get a fresh token for this polling cycle
+  TOKEN="$(get_token)"
+  if [[ -z "$TOKEN" ]]; then
+    warn "No token — skipping this cycle"
+    sleep "$POLL_INTERVAL"
+    continue
+  fi
+
+  # Read spaces from cache
+  SPACE_COUNT="$(python3 -c "import json; print(len(json.load(open('$SPACES_CACHE_FILE'))))" 2>/dev/null || echo 0)"
+
+  if [[ "$SPACE_COUNT" -eq 0 ]]; then
+    if [[ $((LOOP_COUNT % 6)) -eq 1 ]]; then
+      log "No spaces found — waiting to be added to a Chat space or DM"
+    fi
+    sleep "$POLL_INTERVAL"
+    continue
+  fi
+
+  # Poll each space for new messages
+  python3 -c "
+import json
+spaces = json.load(open('$SPACES_CACHE_FILE'))
+for s in spaces:
+    print(s['name'])
+" 2>/dev/null | while IFS= read -r space_name; do
+    [[ -n "$space_name" ]] || continue
+
+    # Fetch messages from this space
+    RAW="$(read_space_messages "$space_name" "$TOKEN")"
+
+    # Parse messages and filter to recent ones
+    echo "$RAW" | python3 -c "
 import json, sys
-msgs = json.load(sys.stdin)
-msgs.reverse()
-for msg in msgs:
-    print(json.dumps(msg))
+from datetime import datetime, timezone, timedelta
+
+raw = sys.stdin.read().strip()
+try:
+    data = json.loads(raw) if raw else {}
+except:
+    data = {}
+
+messages = data.get('messages', [])
+
+# Only process messages from the last POLL_INTERVAL + buffer
+cutoff = datetime.now(timezone.utc) - timedelta(seconds=${POLL_INTERVAL} + 5)
+for msg in reversed(messages):  # oldest first
+    ct = msg.get('createTime', '')
+    if ct:
+        try:
+            msg_time = datetime.fromisoformat(ct.replace('Z', '+00:00'))
+            if msg_time < cutoff:
+                continue
+        except:
+            pass
+    print(json.dumps({
+        'name': msg.get('name', ''),
+        'text': msg.get('text', '') or msg.get('argumentText', '') or '',
+        'senderEmail': msg.get('sender', {}).get('email', ''),
+        'senderDisplayName': msg.get('sender', {}).get('displayName', ''),
+        'space': msg.get('space', {}).get('name', ''),
+    }))
 " 2>/dev/null | while IFS= read -r msg_json; do
-      # Extract fields
       msg_name="$(echo "$msg_json" | jq -r '.name' 2>/dev/null)"
-      msg_text="$(echo "$msg_json" | jq -r '.text' 2>/dev/null)"
-      sender_name="$(echo "$msg_json" | jq -r '.senderDisplayName' 2>/dev/null)"
-      sender_email="$(echo "$msg_json" | jq -r '.senderEmail' 2>/dev/null)"
+      [[ -n "$msg_name" ]] || continue
 
       # Skip if already processed
       if is_processed "$msg_name"; then
         continue
       fi
 
-      # Skip messages from self (avoid infinite loops)
+      # Skip messages from self
+      sender_email="$(echo "$msg_json" | jq -r '.senderEmail' 2>/dev/null)"
       if [[ -n "${AGENT_USER_EMAIL:-}" && "$sender_email" == "$AGENT_USER_EMAIL" ]]; then
         mark_processed "$msg_name"
         continue
       fi
 
-      # Process
-      log "New message: ${msg_name}"
-      if process_message "$msg_text" "$sender_name" "$sender_email"; then
+      # Process the message
+      msg_text="$(echo "$msg_json" | jq -r '.text' 2>/dev/null)"
+      sender_name="$(echo "$msg_json" | jq -r '.senderDisplayName' 2>/dev/null)"
+      msg_space="$(echo "$msg_json" | jq -r '.space' 2>/dev/null)"
+
+      log "New message in ${msg_space}: ${msg_name}"
+      if process_message "$msg_text" "$sender_name" "$sender_email" "$msg_space"; then
         log "Completed: ${msg_name}"
       else
         warn "Error processing: ${msg_name}"
       fi
 
       mark_processed "$msg_name"
-
-      # Brief pause between messages
       sleep 1
     done
-  fi
+  done
 
   sleep "$POLL_INTERVAL"
 done

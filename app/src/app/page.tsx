@@ -509,6 +509,28 @@ export default function Home() {
               </div>
             </header>
 
+            {/* ---- DWD Warning Banner ---- */}
+            {setup && !setup.dwdConfigured && view !== "settings" && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "10px 24px", background: "rgba(234, 179, 8, 0.08)",
+                borderBottom: "1px solid rgba(234, 179, 8, 0.2)",
+                fontSize: 13, color: "#eab308",
+              }}>
+                <span style={{ fontSize: 18 }}>⚠️</span>
+                <span style={{ flex: 1 }}>
+                  <strong>Domain-Wide Delegation is not configured.</strong> Fleet agents cannot use Google Chat until DWD is set up.
+                </span>
+                <button
+                  className="btn btn-sm"
+                  style={{ borderColor: "rgba(234,179,8,0.3)", color: "#eab308", fontSize: 12 }}
+                  onClick={() => setView("settings")}
+                >
+                  Configure Now →
+                </button>
+              </div>
+            )}
+
             {/* ---- Chat View ---- */}
             {view === "chat" && (
               <>
