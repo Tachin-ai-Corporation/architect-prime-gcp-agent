@@ -34,7 +34,7 @@ PROJECT_ID="${PROJECT_ID:-}"
 REGION="${REGION:-us-central1}"
 SERVICE_NAME="${SERVICE_NAME:-architect-prime}"
 SA_NAME="${SA_NAME:-architect-prime-cp}"
-IMAGE_REPO="${IMAGE_REPO:-us-docker.pkg.dev/architect-prime-public/architect-prime}"
+IMAGE_REPO="${IMAGE_REPO:-us-docker.pkg.dev/${PROJECT_ID}/architect-prime}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 APP_VERSION="${APP_VERSION:-v1.0.0}"
 
@@ -70,6 +70,7 @@ APIS=(
   iamcredentials.googleapis.com
   aiplatform.googleapis.com
   artifactregistry.googleapis.com
+  cloudbuild.googleapis.com
 )
 for api in "${APIS[@]}"; do
   gcloud services enable "$api" --quiet 2>/dev/null && ok "$api" || warn "Failed to enable $api"
@@ -143,7 +144,23 @@ gcloud artifacts repositories create architect-prime \
   && ok "Artifact Registry created" \
   || ok "Artifact Registry already exists"
 
-# ---- Step 7: Deploy to Cloud Run ----
+# ---- Step 6b: Build the control-plane image if not present ----
+info "Checking for control-plane image..."
+if gcloud artifacts docker images describe "$IMAGE" --project="$PROJECT_ID" > /dev/null 2>&1; then
+  ok "Image already exists: $IMAGE"
+else
+  info "Image not found — building from source (this takes 2-3 minutes)..."
+  if [[ -d "app" ]]; then
+    gcloud builds submit app/ \
+      --tag="$IMAGE" \
+      --project="$PROJECT_ID" \
+      --quiet \
+      && ok "Image built and pushed: $IMAGE" \
+      || die "Failed to build image. Ensure Cloud Build API is enabled."
+  else
+    die "Image not found and 'app/' directory missing. Cannot build from source."
+  fi
+fi
 info "Deploying Cloud Run service: ${SERVICE_NAME}..."
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
