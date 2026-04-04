@@ -13,6 +13,7 @@ bundle/corekit/config/chat-config.json.tmpl .openclaw/corekit/chat-config.json.t
 bundle/corekit/bin/inbox-daemon .openclaw/bin/inbox-daemon
 bundle/corekit/bin/control-daemon .openclaw/bin/control-daemon
 bundle/corekit/config/inbox-daemon.service .openclaw/corekit/inbox-daemon.service
+bundle/corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.service
 bundle/corekit/bin/fleet-deploy .openclaw/bin/fleet-deploy
 bundle/corekit/bin/fleet-teardown .openclaw/bin/fleet-teardown
 bundle/corekit/bin/agent-ask .openclaw/bin/agent-ask

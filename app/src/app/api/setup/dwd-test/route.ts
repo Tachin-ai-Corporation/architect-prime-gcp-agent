@@ -105,7 +105,24 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Success! DWD is working
+    // Success! DWD is working — persist to Firestore
+    try {
+      const { Firestore } = await import("@google-cloud/firestore");
+      const db = new Firestore({
+        projectId: process.env.GCP_PROJECT_ID,
+        databaseId: process.env.FIRESTORE_DATABASE || "(default)",
+      });
+      await db.collection("config").doc("dwd").set({
+        configured: true,
+        lastVerified: new Date().toISOString(),
+        verifiedEmail: testEmail,
+        signerSA: dwdSignerSA,
+      }, { merge: true });
+    } catch (persistErr) {
+      console.warn("[api/setup/dwd-test] Failed to persist DWD state:", persistErr);
+      // Non-fatal: DWD test passed even if persistence fails
+    }
+
     return NextResponse.json({
       success: true,
       email: testEmail,

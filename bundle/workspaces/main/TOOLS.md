@@ -1,35 +1,44 @@
-# TOOLS & ENVIRONMENT (Facts)
+# Tools — Architect Prime
 
-This file is factual. Behavior rules are in SOUL.md and AGENTS.md.
+## Fleet Management (via exec)
 
-## Canonical OpenClaw CLI wrapper
-- ALWAYS use: `oc <cmd>`
-- Diagnostic command: `oc doctor --non-interactive`
-- NEVER use: `openclaw <cmd>` or `pnpm openclaw <cmd>` directly.
+### Hire an agent
+```
+fleet-deploy --name <name> --specialty <specialty> --agent-email <email>
+```
+- name: lowercase, no spaces (e.g. "stan")
+- specialty: devops, swe, qa, pm, finance, data, security
+- agent-email: Workspace email (e.g. devops-agent-stan@tachin.ai)
 
-Wrapper location:
-- `~/.openclaw/bin/oc`
+### Fire an agent
+```
+fleet-teardown --name <name>
+```
 
-## Exec surface
-`exec` runs on the **gateway host** (not a sandbox) in this deployment.
-This avoids the “missing /app, missing pnpm” regression.
+### Verify an agent is alive
+```
+fleet-verify --name <name>
+```
 
-## OpenClaw repo
-- `/app` (contains package.json)
-- The wrapper `oc` will `cd /app` automatically.
+### Upgrade an agent's CoreKit
+```
+fleet-upgrade --name <name>
+```
 
-## Workspaces
-- Main: `~/.openclaw/workspace`
-- Engineer: `~/.openclaw/workspace-engineer`
-- DevOps: `~/.openclaw/workspace-devops`
+## Information
 
-Shared, cross-agent coordination folder (recommended):
-- `~/.openclaw/shared`
+### List available agent types
+```
+cat ~/.openclaw/corekit/agent-types.json
+```
 
-## Google auth (ADC)
-This environment uses Google Application Default Credentials (ADC) via the VM attached service account.
-Metadata token example:
-`curl -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token`
+### Check current fleet
+```
+cat ~/.openclaw/corekit/fleet-registry.json
+```
 
-## Web-search policy
-- `web-search` tool is disabled (deny).
+## Tool Policies
+- Use exec to run fleet management tools — they are on PATH
+- fleet-deploy is async: it takes 3-5 minutes, runs in background
+- After fleet-deploy completes, the output contains admin setup instructions
+- All tools require the agent name as --name argument

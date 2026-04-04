@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # ============================================================
-# control-daemon — Firestore-polling message handler for Prime
+# control-daemon — Firestore-polling message bridge for Prime
 #
-# Replaces inbox-daemon for Prime VMs. Instead of polling GChat,
-# this polls the Firestore messages collection for unprocessed
-# admin messages and routes them to agent-ask.
+# Polls Firestore messages collection for unprocessed admin
+# messages and routes them to the OpenClaw gateway API.
+# OpenClaw handles conversation memory, tool execution, and
+# the full agent loop.
 #
 # Requires:
 #   - gcloud CLI authenticated (VM SA)
 #   - PRIME_ID: the Prime instance ID in Firestore
 #   - GCP_PROJECT_ID: the Firestore project
 #   - OC_HOST_ROOT: OpenClaw root path
+#   - OpenClaw gateway running on port 18789
 #
 # Env from VM metadata:
 #   PRIME_ID, GCP_PROJECT_ID
@@ -18,13 +20,11 @@
 set -euo pipefail
 
 POLL_INTERVAL="${POLL_INTERVAL:-5}"
-AGENT_ASK="${OC_HOST_ROOT:?}/.openclaw/bin/agent-ask"
-CHAT_SEND="${OC_HOST_ROOT:?}/.openclaw/bin/chat-send"
+OC_GATEWAY="http://localhost:18789"
+OC_TOKEN="$(cat /root/.openclaw/.gateway-token 2>/dev/null || echo 'no-token')"
 FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID:?}/databases/(default)/documents"
 PRIME_ID="${PRIME_ID:?}"
 AGENT_ID="${AGENT_ID:-prime}"
-
-export AGENT_ID
 
 log() { echo "[$(date -Iseconds)] [control-daemon] $*"; }
 
@@ -184,8 +184,31 @@ except Exception as e:
 
       log "Received: $TEXT"
 
-      # Route to agent-ask
-      REPLY="$($AGENT_ASK "$TEXT" 2>&1)" || REPLY="⚠ Error processing request."
+      # Route to OpenClaw gateway
+      OC_RESPONSE="$(curl -s --max-time 120 \
+        -X POST "${OC_GATEWAY}/api/message" \
+        -H "Authorization: Bearer ${OC_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "$(python3 -c "
+import json, sys
+text = sys.stdin.read()
+print(json.dumps({'message': text, 'channel': 'api'}))
+" <<< "$TEXT")" 2>/dev/null)" || OC_RESPONSE=''
+
+      # Parse response from OpenClaw
+      REPLY="$(python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    # Try common response formats
+    r = data.get('data', {}).get('response', '') or data.get('response', '') or data.get('message', '')
+    if r:
+        print(r)
+    else:
+        print(json.dumps(data, indent=2))
+except Exception as e:
+    print(f'Error parsing OpenClaw response: {e}')
+" <<< "$OC_RESPONSE" 2>/dev/null)" || REPLY="⚠ OpenClaw gateway unavailable."
 
       log "Reply: $(echo "$REPLY" | head -1)..."
 

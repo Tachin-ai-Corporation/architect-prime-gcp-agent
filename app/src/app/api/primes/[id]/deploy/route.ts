@@ -189,13 +189,16 @@ GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
 
 echo "Prime ID: $PRIME_ID | Agent: $AGENT_ID | CoreRef: $CORE_REF"
 
-# ---- Install packages ----
+# ---- Install system packages ----
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq docker.io jq curl python3
+apt-get install -y -qq jq curl python3 openssl
 
-systemctl enable docker
-systemctl start docker
+# ---- Install Node.js 22 + pnpm ----
+echo "===> Installing Node.js 22 + pnpm"
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt-get install -y -qq nodejs
+npm install -g pnpm
 
 # ---- Install CoreKit via manifest ----
 OC_HOST_ROOT="/opt/openclaw"
@@ -204,13 +207,38 @@ mkdir -p "$OC_HOST_ROOT/.openclaw"
 CORE_BASE="https://raw.githubusercontent.com/$GH_OWNER/$GH_REPO/$CORE_REF"
 curl -sfL "$CORE_BASE/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
-CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\
+CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\\\
   bash /tmp/install.sh
 
-# ---- Build OpenClaw container ----
-echo "===> Building OpenClaw container"
-cd "$OC_HOST_ROOT"
-docker build -t openclaw -f .openclaw/Dockerfile . 2>/dev/null || true
+# ---- Install OpenClaw ----
+echo "===> Installing OpenClaw"
+mkdir -p /app && cd /app
+pnpm init -y 2>/dev/null || true
+pnpm add openclaw
+
+# ---- Generate gateway auth token ----
+MY_TOKEN="$(openssl rand -hex 32)"
+mkdir -p /root/.openclaw
+echo "$MY_TOKEN" > /root/.openclaw/.gateway-token
+chmod 600 /root/.openclaw/.gateway-token
+
+# ---- Render OpenClaw bootstrap config ----
+echo "===> Rendering OpenClaw config"
+export MY_TOKEN GCP_PROJECT_ID
+python3 -c "
+import os, pathlib
+tmpl = pathlib.Path('$OC_HOST_ROOT/.openclaw/corekit/openclaw-bootstrap.json5.tmpl').read_text()
+for k in ['GCP_PROJECT_ID','MY_TOKEN']:
+    tmpl = tmpl.replace('\\$' + '{' + k + '}', os.environ.get(k,''))
+pathlib.Path('/root/.openclaw/config.json').write_text(tmpl)
+print('Rendered /root/.openclaw/config.json')
+"
+
+# ---- Apply OpenClaw config ----
+cd /app && pnpm openclaw config apply /root/.openclaw/config.json || echo "[WARN] Config apply failed"
+
+# ---- Symlink workspace to OpenClaw default location ----
+ln -sf "$OC_HOST_ROOT/.openclaw/workspace" /root/.openclaw/workspace 2>/dev/null || true
 
 # ---- Write prime-config.json ----
 cat > "$OC_HOST_ROOT/.openclaw/corekit/prime-config.json" <<PCFG
@@ -221,13 +249,25 @@ cat > "$OC_HOST_ROOT/.openclaw/corekit/prime-config.json" <<PCFG
 }
 PCFG
 
+# ---- Install OpenClaw gateway systemd service ----
+echo "===> Installing OpenClaw gateway service"
+OC_GW_SVC="$OC_HOST_ROOT/.openclaw/corekit/openclaw-gateway.service"
+if [ -f "$OC_GW_SVC" ]; then
+  cp "$OC_GW_SVC" /etc/systemd/system/openclaw-gateway.service
+  systemctl daemon-reload
+  systemctl enable openclaw-gateway
+  systemctl start openclaw-gateway || echo "[WARN] OpenClaw gateway start failed"
+  sleep 5
+  echo "OpenClaw gateway status: $(systemctl is-active openclaw-gateway)"
+fi
+
 # ---- Install control-daemon as systemd service ----
 echo "===> Installing control-daemon systemd service"
 cat > /etc/systemd/system/control-daemon.service <<UNIT
 [Unit]
 Description=Architect Prime Control Daemon (Firestore Polling)
-After=network-online.target docker.service
-Wants=network-online.target
+After=network-online.target openclaw-gateway.service
+Wants=network-online.target openclaw-gateway.service
 
 [Service]
 Type=simple
