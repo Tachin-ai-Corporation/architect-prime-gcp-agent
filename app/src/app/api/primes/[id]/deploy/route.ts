@@ -207,7 +207,7 @@ mkdir -p "$OC_HOST_ROOT/.openclaw"
 CORE_BASE="https://raw.githubusercontent.com/$GH_OWNER/$GH_REPO/$CORE_REF"
 curl -sfL "$CORE_BASE/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
-CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\\\
+CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\
   bash /tmp/install.sh
 
 # ---- Install OpenClaw ----
