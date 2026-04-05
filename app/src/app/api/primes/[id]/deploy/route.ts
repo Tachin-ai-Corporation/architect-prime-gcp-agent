@@ -240,7 +240,7 @@ GOOGLE_GENAI_USE_VERTEXAI=True
 GOOGLE_CLOUD_LOCATION=global
 ENVEOF
 
-docker build -t openclaw:local .
+DOCKER_BUILDKIT=1 docker build -t openclaw:local .
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
 
 echo "===> Starting OpenClaw container"
