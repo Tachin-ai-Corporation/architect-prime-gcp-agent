@@ -26,7 +26,7 @@ AGENT_NAME=""
 SPECIALTY=""
 AGENT_USER_EMAIL=""
 CHAT_SPACE_OVERRIDE=""
-MACHINE_TYPE="e2-small"
+MACHINE_TYPE="e2-medium"
 BOOT_DISK_SIZE="50GB"
 
 usage() {
@@ -219,78 +219,20 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
 # ============================================================
 # 4. Build and create VM (with DWD inbox-daemon)
 # ============================================================
-log "Building startup script"
+log "Building startup script (boot stub → fleet-bootstrap.sh)"
 STARTUP_TMPFILE="$(mktemp /tmp/fleet-startup-XXXXXX.sh)"
-cat > "$STARTUP_TMPFILE" <<'STARTUP_EOF'
+cat > "$STARTUP_TMPFILE" <<STARTUP_EOF
 #!/usr/bin/env bash
+# Boot stub for fleet agent — curls fleet-bootstrap.sh from GitHub
 set -euo pipefail
-LOG_FILE="/var/log/fleet-agent-phase2.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
-
-echo "===> Fleet Agent Phase 2: $(date -Is)"
-
-AGENT_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_id || echo 'unknown')"
-SPECIALTY="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/specialty || echo 'general')"
-CORE_REF="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/core_ref || echo 'main')"
-GH_OWNER="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/gh_owner || echo 'Tachin-ai-Corporation')"
-GH_REPO="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/gh_repo || echo 'architect-prime-gcp-agent')"
-PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/project/project-id)"
-CHAT_SPACE_ID="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id || true)"
-AGENT_USER_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_user_email || true)"
-AGENT_DISPLAY_NAME="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_display_name || echo "$AGENT_ID")"
-DWD_SIGNER_SA="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/dwd_signer_sa || true)"
-GEMINI_PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/attributes/gemini_project || true)"
-
-echo "Agent: ${AGENT_ID} | Email: ${AGENT_USER_EMAIL} | CoreRef: ${CORE_REF}"
-
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq jq curl python3
-
-OC_HOST_ROOT="/opt/openclaw"
-mkdir -p "${OC_HOST_ROOT}/.openclaw"
-
+LOG_FILE="/var/log/fleet-agent-setup.log"
+exec > >(tee -a "\$LOG_FILE") 2>&1
+echo "==> Fleet Agent Boot Stub: \$(date -Is)"
+echo "Downloading fleet-bootstrap.sh from GitHub..."
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
-curl -sfL "${CORE_BASE}/install.sh" -o /tmp/install.sh
-chmod +x /tmp/install.sh
-CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \
-  bash /tmp/install.sh
-
-# Write DWD-aware chat-config.json
-if [[ -n "${AGENT_USER_EMAIL}" ]]; then
-  cat > "${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json" <<CHATCFG
-{
-  "spaceId": "${CHAT_SPACE_ID}",
-  "agentUserEmail": "${AGENT_USER_EMAIL}",
-  "agentDisplayName": "${AGENT_DISPLAY_NAME}",
-  "projectId": "${PROJECT_ID}",
-  "dwdSignerSa": "${DWD_SIGNER_SA}",
-  "geminiProject": "${GEMINI_PROJECT}"
-}
-CHATCFG
-fi
-
-# Install inbox-daemon systemd service
-INBOX_DAEMON_SVC="${OC_HOST_ROOT}/.openclaw/corekit/inbox-daemon.service"
-if [[ -f "$INBOX_DAEMON_SVC" ]]; then
-  sed -i "s|Environment=AGENT_ID=prime|Environment=AGENT_ID=${AGENT_ID}|g" "$INBOX_DAEMON_SVC"
-  cp "$INBOX_DAEMON_SVC" /etc/systemd/system/inbox-daemon.service
-  systemctl daemon-reload
-  systemctl enable inbox-daemon.service
-  systemctl start inbox-daemon.service || echo "[WARN] inbox-daemon start failed"
-fi
-
-# Boot announce via DWD
-if [[ -n "${CHAT_SPACE_ID}" && -n "${AGENT_USER_EMAIL}" ]]; then
-  export CHAT_SPACE_ID OC_HOST_ROOT
-  "${OC_HOST_ROOT}/.openclaw/bin/chat-send" \
-    "🤖 Fleet agent *${AGENT_ID}* is online.
-Specialty: ${SPECIALTY}
-Project: \`${PROJECT_ID}\`
-CoreKit: \`${CORE_REF}\`" || echo "[WARN] Chat announce failed"
-fi
-
-echo "✅ FLEET AGENT PHASE 2 COMPLETE"
+curl -sfL "\${CORE_BASE}/bootstrap/fleet-bootstrap.sh" -o /tmp/fleet-bootstrap.sh
+chmod +x /tmp/fleet-bootstrap.sh
+bash /tmp/fleet-bootstrap.sh
 STARTUP_EOF
 
 log "Creating VM: ${FLEET_VM}"
@@ -305,7 +247,7 @@ gcloud compute instances create "$FLEET_VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT}" \
+  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-}" \
   --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
 

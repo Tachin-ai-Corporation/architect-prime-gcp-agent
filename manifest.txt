@@ -4,6 +4,7 @@
 
 bundle/corekit/README.md .openclaw/corekit/README.md
 bundle/corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
+bundle/corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl
 bundle/corekit/exec-approvals.json .openclaw/exec-approvals.json
 bundle/corekit/bin/oc .openclaw/bin/oc
 bundle/corekit/bin/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh

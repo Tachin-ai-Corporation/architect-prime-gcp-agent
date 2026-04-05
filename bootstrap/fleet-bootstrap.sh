@@ -1,26 +1,22 @@
 #!/usr/bin/env bash
 # ============================================================
-# prime-bootstrap.sh — Prime VM setup (Docker-based OpenClaw)
+# fleet-bootstrap.sh — Fleet Agent VM setup (Docker-based OpenClaw)
 #
-# Downloaded and executed by the deploy API's boot stub.
+# Downloaded and executed by fleet-deploy's boot stub.
 # All config is read from VM metadata attributes.
 #
-# Proven pattern from phase2-vm.sh:
-#   1. Install system packages + Docker CE
-#   2. Install CoreKit via manifest (install.sh)
-#   3. Clone OpenClaw repo, build Docker image
-#   4. Run OpenClaw container (--network host)
-#   5. Wait for gateway readiness
-#   6. Render + apply bootstrap config via RPC (retry/baseHash)
-#   7. Container hardening + Docker CLI injection
-#   8. Install control-daemon systemd service
+# Mirrors prime-bootstrap.sh but adapted for fleet agents:
+#   - Uses fleet workspace (specialty-specific SOUL/IDENTITY)
+#   - Installs inbox-daemon instead of control-daemon
+#   - Reads agent identity from VM metadata
+#   - Same proven OpenClaw + ADC fix pattern
 # ============================================================
 set -euo pipefail
 
 export HOME="${HOME:-/root}"
 export USER="${USER:-$(whoami)}"
 
-LOG_FILE="/var/log/prime-setup.log"
+LOG_FILE="/var/log/fleet-agent-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 trap 'echo; echo "[ERROR] Line $LINENO failed: $BASH_COMMAND"; echo "Log: $LOG_FILE"; exit 1' ERR
 
@@ -30,23 +26,31 @@ warn(){ echo -e "\n[WARN] $*\n"; }
 # ---- Read config from VM metadata ----
 META="http://metadata.google.internal/computeMetadata/v1"
 MH="Metadata-Flavor: Google"
-PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || echo 'unknown')"
-AGENT_ID="$(curl -sf -H "$MH" "$META/instance/attributes/agent_id" || echo 'prime')"
+AGENT_ID="$(curl -sf -H "$MH" "$META/instance/attributes/agent_id" || echo 'unknown')"
+SPECIALTY="$(curl -sf -H "$MH" "$META/instance/attributes/specialty" || echo 'general')"
 CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo 'main')"
 GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo 'Tachin-ai-Corporation')"
 GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo 'architect-prime-gcp-agent')"
 GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
+AGENT_USER_EMAIL="$(curl -sf -H "$MH" "$META/instance/attributes/agent_user_email" || true)"
+AGENT_DISPLAY_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_display_name" || echo "$AGENT_ID")"
+CHAT_SPACE_ID="$(curl -sf -H "$MH" "$META/instance/attributes/chat_space_id" || true)"
+DWD_SIGNER_SA="$(curl -sf -H "$MH" "$META/instance/attributes/dwd_signer_sa" || true)"
+PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || true)"
 
 MY_TOKEN="$(openssl rand -hex 16)"
 OC_HOST_ROOT="/opt/openclaw"
 OC_HOST_DIR="${OC_HOST_ROOT}/.openclaw"
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
 
-info "Prime VM Bootstrap: $(date -Is)"
-echo "Prime ID    : ${PRIME_ID}"
+info "Fleet Agent Bootstrap: $(date -Is)"
 echo "Agent       : ${AGENT_ID}"
+echo "Specialty   : ${SPECIALTY}"
+echo "Email       : ${AGENT_USER_EMAIL}"
+echo "Display     : ${AGENT_DISPLAY_NAME}"
 echo "CoreRef     : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Project     : ${GCP_PROJECT_ID}"
+echo "Prime ID    : ${PRIME_ID:-<not set>}"
 
 # ---- 1) Install system packages ----
 info "Installing system packages..."
@@ -54,7 +58,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
 
-# ---- 2) Install Docker CE (with BuildKit + buildx) ----
+# ---- 2) Install Docker CE ----
 info "Installing Docker CE..."
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
@@ -76,12 +80,52 @@ CORE_REF="${CORE_REF}" \
   OC_HOST_ROOT="${OC_HOST_ROOT}" \
   bash /tmp/install.sh
 
-# ---- 4) Save gateway token for control-daemon ----
+# ---- 4) Prepare workspace with fleet/specialty templates ----
+info "Preparing workspace..."
+mkdir -p "${OC_HOST_DIR}/workspace"
+
+# Use specialty workspace if it exists, otherwise fall back to fleet template
+WORKSPACE_SRC=""
+if [[ -d "${OC_HOST_DIR}/workspace-${SPECIALTY}" ]]; then
+  WORKSPACE_SRC="workspace-${SPECIALTY}"
+elif [[ -d "${OC_HOST_DIR}/workspace-fleet" ]]; then
+  WORKSPACE_SRC="workspace-fleet"
+fi
+
+if [[ -n "$WORKSPACE_SRC" ]]; then
+  for f in "${OC_HOST_DIR}/${WORKSPACE_SRC}"/*.md; do
+    [[ -f "$f" ]] || continue
+    BASENAME="$(basename "$f")"
+    # Template substitution
+    sed -e "s|{{AGENT_NAME}}|${AGENT_DISPLAY_NAME}|g" \
+        -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
+        -e "s|{{PROJECT_ID}}|${GCP_PROJECT_ID}|g" \
+        -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
+        "$f" > "${OC_HOST_DIR}/workspace/${BASENAME}"
+    echo "  Deployed: ${BASENAME} (from ${WORKSPACE_SRC})"
+  done
+fi
+
+# ---- 5) Write DWD chat config ----
+if [[ -n "${AGENT_USER_EMAIL}" ]]; then
+  cat > "${OC_HOST_DIR}/corekit/chat-config.json" <<CHATCFG
+{
+  "spaceId": "${CHAT_SPACE_ID}",
+  "agentUserEmail": "${AGENT_USER_EMAIL}",
+  "agentDisplayName": "${AGENT_DISPLAY_NAME}",
+  "projectId": "${GCP_PROJECT_ID}",
+  "dwdSignerSa": "${DWD_SIGNER_SA}",
+  "geminiProject": "${GCP_PROJECT_ID}"
+}
+CHATCFG
+fi
+
+# ---- 6) Save gateway token ----
 mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
 
-# ---- 5) Clone + build OpenClaw Docker image ----
+# ---- 7) Clone + build OpenClaw Docker image ----
 info "Cloning OpenClaw repo..."
 cd /root
 if [[ ! -d openclaw/.git ]]; then
@@ -89,8 +133,7 @@ if [[ ! -d openclaw/.git ]]; then
 fi
 cd openclaw
 git fetch --all --prune
-# Pin to a known-good commit — latest HEAD may include broken extensions
-# (e.g. WhatsApp extension crash: 'resolveWhatsAppGroupIntroHint' undefined)
+# Pin to same known-good commit as Prime
 OC_PIN="163c6f5e354be2a8e2ff5b11a237077beb9e70fe"
 STABLE_COMMIT="${OC_PIN}"
 git checkout "${STABLE_COMMIT}"
@@ -107,14 +150,14 @@ GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
 GCLOUD_PROJECT=${GCP_PROJECT_ID}
 CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
 GOOGLE_GENAI_USE_VERTEXAI=True
-GOOGLE_CLOUD_LOCATION=global
+GOOGLE_CLOUD_LOCATION=us-central1
 GCE_METADATA_HOST=metadata.google.internal
 EOF
 
 info "Building Docker image openclaw:local ..."
 DOCKER_BUILDKIT=1 docker build -t openclaw:local .
 
-# ---- 6) Run OpenClaw container ----
+# ---- 8) Run OpenClaw container ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
 
 info "Starting OpenClaw container..."
@@ -128,7 +171,7 @@ docker run -d \
   --group-add "${DOCKER_GID}" \
   openclaw:local
 
-# ---- 7) Wait for gateway readiness ----
+# ---- 9) Wait for gateway readiness ----
 info "Waiting for OpenClaw gateway..."
 READY=false
 MAX_WAIT=180
@@ -146,7 +189,7 @@ done
 [[ "$READY" == "true" ]] || { echo "[ERROR] Gateway did not become ready within ${MAX_WAIT}s"; exit 1; }
 info "Gateway is ready (took ~${WAITED}s)."
 
-# ---- 8) Harden container perms (pre-config) ----
+# ---- 10) Harden container perms ----
 info "Hardening container permissions..."
 docker exec -u 0 openclaw-gateway bash -lc '
 set -e
@@ -159,48 +202,43 @@ chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
 chown -R node:node /home/node/.openclaw
 '
 
-# ---- 9) Render config template ----
-info "Rendering bootstrap config..."
+# ---- 11) Render fleet config template ----
+info "Rendering fleet bootstrap config..."
+FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"
+if [[ ! -f "$FLEET_TMPL" ]]; then
+  # Fall back to prime template if fleet template not installed
+  FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl"
+  warn "Fleet config template not found, using prime template"
+fi
+
 python3 - <<PY
 import pathlib
-oc = pathlib.Path("${OC_HOST_DIR}")
-tmpl_path = oc / "corekit" / "openclaw-bootstrap.json5.tmpl"
+tmpl_path = pathlib.Path("${FLEET_TMPL}")
 out_path = pathlib.Path("/tmp/openclaw-bootstrap.json5")
 tmpl = tmpl_path.read_text(encoding="utf-8")
 tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
 tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
+tmpl = tmpl.replace("\${AGENT_ID}", "${AGENT_ID}")
+tmpl = tmpl.replace("\${AGENT_DISPLAY_NAME}", "${AGENT_DISPLAY_NAME}")
 out_path.write_text(tmpl, encoding="utf-8")
-print("Wrote", out_path)
 PY
 
-# ---- 10) Apply config via RPC (with retry + fresh baseHash) ----
-info "Applying config via RPC..."
+# ---- 12) Apply config via RPC ----
+info "Applying fleet config..."
 APPLY_OK=false
 for attempt in 1 2 3 4 5; do
-  CONFIG_GET_RAW="$(docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>&1)" || true
-  BASE_HASH="$(python3 -c '
-import json,sys,re
-raw=sys.stdin.read()
-m=re.search(r"\{.*\}", raw, re.S)
-raw_json=m.group(0) if m else raw
-try:
-  j=json.loads(raw_json)
-except Exception:
-  sys.exit(0)
-print(j.get("hash") or (j.get("payload") or {}).get("hash") or ((j.get("result") or {}).get("payload") or {}).get("hash") or "")
-' <<<"$CONFIG_GET_RAW")"
-
+  BASE_HASH="$(docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>/dev/null \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hash",""))' 2>/dev/null || true)"
   if [[ -z "$BASE_HASH" ]]; then
-    warn "config.get attempt ${attempt}: could not read baseHash. Retrying in 15s..."
+    warn "config.get returned no hash (attempt $attempt). Retrying in 15s..."
     sleep 15
     continue
   fi
-  echo "baseHash (attempt ${attempt}): ${BASE_HASH}"
 
   PARAMS="$(python3 - <<PYAPPLY
 import json
 raw=open("/tmp/openclaw-bootstrap.json5","r",encoding="utf-8").read()
-print(json.dumps({"raw": raw, "baseHash": "${BASE_HASH}", "note": "bootstrap"}))
+print(json.dumps({"raw": raw, "baseHash": "${BASE_HASH}", "note": "fleet-bootstrap"}))
 PYAPPLY
 )"
 
@@ -208,25 +246,23 @@ PYAPPLY
     APPLY_OK=true
     break
   fi
-  warn "config.apply attempt ${attempt} failed (gateway may be restarting). Retrying in 15s..."
+  warn "config.apply attempt ${attempt} failed. Retrying in 15s..."
   sleep 15
 done
 
-# config.apply triggers a gateway restart, which often kills the client connection
-# before the success response arrives. Check if config was actually written.
 if [[ "$APPLY_OK" != "true" ]]; then
-  info "All config.apply attempts returned errors. Checking if config was actually written..."
+  info "Checking if config was written despite errors..."
   sleep 10
   if docker exec openclaw-gateway test -f /home/node/.openclaw/openclaw.json 2>/dev/null; then
-    info "openclaw.json exists — config.apply likely succeeded despite connection errors."
+    info "openclaw.json exists — config.apply likely succeeded."
     APPLY_OK=true
   else
-    echo "[ERROR] config.apply failed after 5 attempts and openclaw.json not found"
+    echo "[ERROR] config.apply failed after 5 attempts"
     exit 1
   fi
 fi
 
-# ---- 11) Post-apply harden + inject host Docker CLI ----
+# ---- 13) Post-apply harden + inject Docker CLI ----
 info "Post-apply hardening..."
 docker exec -u 0 openclaw-gateway bash -lc '
 set -e
@@ -240,67 +276,33 @@ docker exec -u 0 openclaw-gateway chmod +x /usr/local/bin/docker || true
 docker exec -u 0 openclaw-gateway groupadd -g "${DOCKER_GID}" -o -r docker 2>/dev/null || true
 docker exec -u 0 openclaw-gateway chown -R node:node /home/node/.openclaw || true
 
-# ---- 11b) Install gcloud CLI + jq + PATH for fleet tools in container ----
-# fleet-deploy needs gcloud (SA, IAM, VM), jq, and CoreKit bin on PATH
-info "Installing gcloud CLI and fleet dependencies in container..."
+# ---- 14) Install gcloud CLI + jq + PATH in container ----
+info "Installing gcloud CLI and dependencies in container..."
 docker exec -u 0 openclaw-gateway bash -c '
 set -e
-
-# Install gcloud CLI (slim)
 if ! which gcloud >/dev/null 2>&1; then
   curl -sfL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz | tar xz -C /tmp
   /tmp/google-cloud-sdk/install.sh --quiet --path-update=true --usage-reporting=false 2>/dev/null
   ln -sf /tmp/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
-  ln -sf /tmp/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil 2>/dev/null || true
-  echo "  gcloud installed: $(gcloud --version 2>/dev/null | head -1)"
-else
-  echo "  gcloud already installed"
+  echo "  gcloud installed"
 fi
+which jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1; }
 
-# Install jq if missing
-which jq >/dev/null 2>&1 || {
-  apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1
-  echo "  jq installed"
-}
-
-# Add CoreKit bin to PATH for all shells (exec tool, bash, etc.)
 PROFILE="/home/node/.bashrc"
-if ! grep -q ".openclaw/bin" "$PROFILE" 2>/dev/null; then
-  echo "export PATH=\"/home/node/.openclaw/bin:\$PATH\"" >> "$PROFILE"
-fi
+grep -q ".openclaw/bin" "$PROFILE" 2>/dev/null || echo "export PATH=\"/home/node/.openclaw/bin:\$PATH\"" >> "$PROFILE"
 cat > /etc/profile.d/openclaw-path.sh << "PATHEOF"
 export PATH="/home/node/.openclaw/bin:$PATH"
 PATHEOF
 chmod +x /etc/profile.d/openclaw-path.sh
-
-# Update /etc/environment for non-login exec
 CURRENT_PATH=$(grep "^PATH=" /etc/environment 2>/dev/null | cut -d= -f2 || echo "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 echo "PATH=/home/node/.openclaw/bin:${CURRENT_PATH}" > /etc/environment
-
 chown node:node /home/node/.bashrc
-echo "  PATH configured: /home/node/.openclaw/bin added"
-' || warn "gcloud/PATH setup had non-fatal errors (continuing)"
+' || warn "gcloud/PATH setup had non-fatal errors"
 
-# ---- 12) Vertex AI ADC fix — GCE metadata-based authentication ----
-# On GCE, the google-vertex provider in pi-ai can use ADC auto-discovery
-# via GoogleGenAI({vertexai:true}), which uses google-auth-library to
-# detect the GCE metadata server and obtain real OAuth2 tokens.
-#
-# However, OpenClaw's model-auth-env layer calls getEnvApiKey("google-vertex")
-# which returns null when no ADC file exists — blocking the provider call entirely.
-#
-# The fix:
-#   1. Patch model-auth-env to return a placeholder sentinel "<gce-adc>"
-#      when getEnvApiKey returns null. The google-vertex provider's
-#      isPlaceholderApiKey(/^<[^>]+>$/) catches this and falls through
-#      to createClient(model, project, location) → GoogleGenAI({vertexai:true})
-#      → GCE metadata server → real OAuth2 tokens.
-#   2. Empty auth-profiles.json to prevent literal "adc" being sent as API key.
+# ---- 15) Vertex AI ADC fix (same as Prime) ----
 info "Applying Vertex AI ADC auth fix..."
 docker exec -u 0 openclaw-gateway bash -c '
 set -e
-
-# Step 1: Empty auth-profiles.json — prevents literal "adc" being sent as API key
 AP="/home/node/.openclaw/agents/main/agent/auth-profiles.json"
 if [ -f "$AP" ]; then
   echo "{\"version\":1,\"profiles\":{}}" > "$AP"
@@ -309,9 +311,6 @@ if [ -f "$AP" ]; then
   echo "  auth-profiles.json emptied"
 fi
 
-# Step 2: Patch model-auth-env — GCE ADC fallback for google-vertex
-# When getEnvApiKey returns null (no ADC file), return a placeholder sentinel
-# that the google-vertex provider recognizes and strips, falling through to ADC.
 AUTH_ENV_FILE=$(find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
 if [ -n "$AUTH_ENV_FILE" ]; then
   if grep -q "if (!envKey) return null;" "$AUTH_ENV_FILE" 2>/dev/null; then
@@ -319,36 +318,16 @@ if [ -n "$AUTH_ENV_FILE" ]; then
     echo "  Patched model-auth-env: GCE ADC fallback enabled"
   elif grep -q "gce-adc" "$AUTH_ENV_FILE" 2>/dev/null; then
     echo "  model-auth-env already patched"
-  else
-    echo "  [WARN] Could not find expected pattern in model-auth-env"
   fi
-else
-  echo "  [WARN] model-auth-env file not found in /app/dist"
 fi
-
-# Step 3: Remove any stale ADC files that might interfere with GCE metadata discovery
 rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
+' || warn "ADC fix had non-fatal errors"
 
-# Step 4: Verify metadata server is reachable from container
-TOKEN_CHECK=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
-  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email" 2>/dev/null || echo "UNREACHABLE")
-echo "  GCE metadata check: $TOKEN_CHECK"
-' || warn "ADC fix had non-fatal errors (continuing)"
-
-# ---- 13) Write prime-config.json ----
-cat > "${OC_HOST_DIR}/corekit/prime-config.json" <<PCFG
-{
-  "primeId": "${PRIME_ID}",
-  "projectId": "${GCP_PROJECT_ID}",
-  "role": "prime"
-}
-PCFG
-
-# ---- 13) Install control-daemon as systemd service ----
-info "Installing control-daemon systemd service..."
-cat > /etc/systemd/system/control-daemon.service <<UNIT
+# ---- 16) Install inbox-daemon systemd service ----
+info "Installing inbox-daemon systemd service..."
+cat > /etc/systemd/system/inbox-daemon.service <<UNIT
 [Unit]
-Description=Architect Prime Control Daemon (Firestore Polling)
+Description=Fleet Agent Inbox Daemon (DWD Chat Polling)
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -357,10 +336,11 @@ Type=simple
 User=root
 Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
 Environment=AGENT_ID=${AGENT_ID}
+Environment=AGENT_USER_EMAIL=${AGENT_USER_EMAIL}
+Environment=CHAT_SPACE_ID=${CHAT_SPACE_ID:-}
+Environment=DWD_SIGNER_SA=${DWD_SIGNER_SA:-}
 Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
-Environment=PRIME_ID=${PRIME_ID}
-Environment=POLL_INTERVAL=5
-ExecStart=${OC_HOST_DIR}/bin/control-daemon
+ExecStart=${OC_HOST_DIR}/bin/inbox-daemon
 Restart=always
 RestartSec=10
 
@@ -369,18 +349,49 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable control-daemon
-systemctl start control-daemon
+systemctl enable inbox-daemon
+# Only start if we have the required DWD config
+if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
+  systemctl start inbox-daemon || warn "inbox-daemon start failed (DWD may not be configured)"
+else
+  warn "inbox-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
+fi
+
+# ---- 17) Update Firestore status ----
+info "Updating Firestore status..."
+if [[ -n "${PRIME_ID}" ]]; then
+  FS_TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)"
+  if [[ -n "$FS_TOKEN" ]]; then
+    curl -s -X PATCH \
+      -H "Authorization: Bearer $FS_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"fields":{"status":{"stringValue":"online"}}}' \
+      "https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT_ID}?updateMask.fieldPaths=status" \
+      > /dev/null 2>&1 || true
+    echo "  Firestore: fleet/${AGENT_ID} → online"
+  fi
+fi
+
+# ---- 18) Boot announce via DWD ----
+if [[ -n "${CHAT_SPACE_ID}" && -n "${AGENT_USER_EMAIL}" ]]; then
+  export CHAT_SPACE_ID OC_HOST_ROOT
+  "${OC_HOST_DIR}/bin/chat-send" \
+    "🤖 Fleet agent *${AGENT_DISPLAY_NAME}* is online (OpenClaw).
+Specialty: ${SPECIALTY}
+Project: \`${GCP_PROJECT_ID}\`
+CoreKit: \`${CORE_REF}\`" || warn "Chat announce failed"
+fi
 
 # ---- Done ----
 echo
 echo "============================================"
-echo "  PRIME VM SETUP COMPLETE"
+echo "  FLEET AGENT SETUP COMPLETE"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"
 echo "  OpenClaw commit: ${STABLE_COMMIT}"
-echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
+echo "  Agent          : ${AGENT_DISPLAY_NAME} (${SPECIALTY})"
 echo "  Project        : ${GCP_PROJECT_ID}"
-echo "  Prime ID       : ${PRIME_ID}"
 echo "============================================"
