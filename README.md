@@ -1,8 +1,8 @@
 # Architect Prime
 
-**AI Agent Fleet Management for Google Workspace**
+**AI Agent Fleet Management for Google Cloud**
 
-Deploy autonomous AI agent teams into your own GCP project. Prime orchestrates specialist agents — each with its own VM, AI brain, and Google Chat identity — that collaborate with your team to get work done.
+Deploy autonomous AI agent teams into your own GCP project. Prime orchestrates specialist agents — each with its own VM, OpenClaw AI brain (powered by Vertex AI), and identity — that collaborate to get work done.
 
 ---
 
@@ -10,10 +10,10 @@ Deploy autonomous AI agent teams into your own GCP project. Prime orchestrates s
 
 | Capability | How It Works |
 |-----------|-------------|
-| **Deploy Prime** | One command installs the control plane (Cloud Run) into your GCP project |
+| **Deploy Prime** | Dashboard deploys a Prime VM with a full OpenClaw AI brain |
 | **Manage Fleet** | Web dashboard to hire/fire specialist agents (devops, swe, qa, pm, data, security) |
 | **Chat with Prime** | Talk to your orchestrator directly through the dashboard |
-| **Agent Communication** | Fleet agents communicate via Google Chat using their own Workspace emails (DWD) |
+| **Agent Communication** | Fleet agents communicate via Google Chat using DWD Workspace emails |
 | **Self-Hosted** | Everything runs in YOUR project — zero shared infrastructure |
 | **No API Keys** | Pure Service Account + Vertex AI authentication |
 
@@ -51,7 +51,7 @@ After install, open the printed URL to access the dashboard.
 
 Open the dashboard → Enter a name (e.g., "alpha") → Click **Deploy Prime**.
 
-Your Prime will be ready in ~90 seconds. It runs on a Compute Engine VM with an OpenClaw AI brain powered by Vertex AI.
+Your Prime will be ready in ~15 minutes. It runs on a Compute Engine VM (e2-medium) with a Docker-containerized OpenClaw AI brain powered by Vertex AI Gemini.
 
 ### 2. Configure Domain-Wide Delegation (Optional)
 
@@ -66,9 +66,8 @@ If you want fleet agents to communicate via Google Chat:
 ### 3. Hire Fleet Agents
 
 1. Create a Workspace email for the agent (e.g., `job-agent-stan@yourcompany.com`)
-2. Go to **Dashboard → Fleet tab → + Hire Agent**
-3. Enter name, specialty, and the Workspace email
-4. Prime will deploy a specialist VM and bring the agent online
+2. Go to **Dashboard → Chat tab → ask Prime to hire an agent**
+3. Prime will deploy a specialist VM and bring the agent online
 
 ### 4. Chat & Collaborate
 
@@ -82,35 +81,35 @@ If you want fleet agents to communicate via Google Chat:
 ```
 Your GCP Project
 ├── Cloud Run (control plane)
-│   ├── Dashboard UI (deploy, chat, fleet, setup)
-│   ├── REST API (primes, fleet, messages, upgrade)
+│   ├── Dashboard UI (chat, fleet, setup tabs)
+│   ├── REST API (primes, fleet, messages)
 │   └── Firestore client (state management)
 │
 ├── Firestore (state store)
-│   ├── /primes/{id}         → Prime instance records
-│   ├── /primes/{id}/msgs    → Chat messages
-│   ├── /primes/{id}/fleet   → Fleet agent records
-│   └── /config/dwd          → DWD configuration
+│   ├── /primes/{id}             → Prime instance records
+│   ├── /primes/{id}/messages    → Chat messages
+│   ├── /primes/{id}/fleet       → Fleet agent records
+│   └── /config/dwd              → DWD configuration
 │
-├── Prime VM(s) (Compute Engine)
-│   ├── control-daemon       → Firestore message polling
-│   ├── agent-ask            → Gemini LLM brain (Vertex AI)
-│   ├── fleet-deploy         → Hire specialist agents
-│   └── fleet-teardown       → Fire agents
+├── Prime VM (Compute Engine e2-medium)
+│   ├── openclaw-gateway (Docker) → Full AI agent runtime
+│   ├── control-daemon (systemd)  → Firestore message bridge
+│   ├── CoreKit tools             → fleet-deploy, fleet-teardown, etc.
+│   └── Workspace files           → SOUL.md, TOOLS.md, MEMORY.md
 │
 └── Fleet Agent VMs (Compute Engine, one per agent)
-    ├── inbox-daemon          → Google Chat polling (DWD)
-    ├── agent-ask             → Specialist LLM brain
-    ├── chat-send / chat-read → DWD Chat tools
+    ├── openclaw-gateway (Docker) → Specialist AI brain
+    ├── inbox-daemon (systemd)    → Google Chat polling (DWD)
+    ├── chat-send / chat-read     → DWD Chat tools
     └── Custom skills & personality
 ```
 
 ### Key Design Decisions
 
-- **Single Project**: All VMs share one GCP project — isolation at VM/SA level
-- **Per-Agent Identity**: Each agent has its own VM, Service Account, OpenClaw instance, and Workspace email
+- **Single Project**: All VMs share one GCP project — isolation at VM level
+- **OpenClaw Framework**: Each agent runs a full OpenClaw instance with conversation memory, tool execution, and context management — not a custom LLM wrapper
 - **Specialist Focus**: Agents perform better with fewer, verified tools — each has a curated skillset
-- **Peer-to-Peer**: Agents collaborate via Google Chat, not through Prime
+- **Docker-Containerized**: OpenClaw runs in Docker (`--network host`) for isolation and reproducibility
 
 ---
 
@@ -128,13 +127,12 @@ app/                              # Cloud Run control plane (Next.js)
 ├── src/lib/                      # Firestore, auth utilities
 └── Dockerfile                    # Cloud Run container
 
-deploy/                           # Installation scripts
-├── install.sh                    # One-command installer
-├── uninstall.sh                  # Clean teardown
-└── tutorial.md                   # Cloud Shell guided tutorial
+bootstrap/                        # VM startup scripts
+├── prime-bootstrap.sh            # Prime VM bootstrap (standalone bash)
+├── phase1-cloudshell.sh          # GCP project setup (manual flow)
+└── phase2-vm.sh                  # Legacy VM startup (reference)
 
 bundle/corekit/bin/               # CoreKit tools (installed on VMs)
-├── agent-ask                     # LLM brain (Gemini + function calling)
 ├── control-daemon                # Firestore poller (Prime VMs)
 ├── inbox-daemon                  # Google Chat poller (fleet agents)
 ├── fleet-deploy                  # Hire an agent
@@ -144,9 +142,39 @@ bundle/corekit/bin/               # CoreKit tools (installed on VMs)
 ├── upgrade-corekit               # Self-upgrade mechanism
 └── build-system-prompt           # Agent personality builder
 
-bootstrap/phase2-vm.sh            # VM startup script
+bundle/workspaces/                # Agent persona files
+├── main/                         # Prime agent (SOUL, TOOLS, MEMORY, etc.)
+├── engineer/                     # Engineer specialty workspace
+├── devops/                       # DevOps specialty workspace
+└── fleet/                        # Fleet agent template
+
+deploy/                           # Installation scripts
+├── install.sh                    # One-command installer
+├── uninstall.sh                  # Clean teardown
+└── tutorial.md                   # Cloud Shell guided tutorial
+
 install.sh                        # CoreKit manifest installer
+manifest.txt                      # Repo path → VM path mapping
 ```
+
+---
+
+## How Bootstrap Works
+
+The deploy API uses a **boot stub pattern**:
+
+1. Dashboard calls `POST /api/primes/{id}/deploy`
+2. Route creates a GCE VM with a ~10 line boot stub as the startup script
+3. Boot stub curls `bootstrap/prime-bootstrap.sh` from GitHub
+4. `prime-bootstrap.sh` handles everything:
+   - Installs Docker CE (via `get.docker.com`)
+   - Installs CoreKit via manifest (`install.sh`)
+   - Clones OpenClaw, builds Docker image
+   - Starts OpenClaw container (`--network host`)
+   - Applies bootstrap config via RPC (retry + baseHash)
+   - Installs `control-daemon` as systemd service
+
+**Key benefit**: Bootstrap changes only require a `git push` — no Cloud Run rebuild needed.
 
 ---
 
@@ -157,7 +185,7 @@ export PROJECT_ID="your-project-id"
 bash deploy/uninstall.sh
 ```
 
-This removes all VMs, service accounts, Cloud Run service, and Firestore data. You'll be prompted to confirm with `YES`.
+This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 
 ---
 
@@ -166,11 +194,12 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data. Y
 | Principle | Implementation |
 |-----------|---------------|
 | **Self-hosted** | Customer owns all infrastructure, data, and credentials |
-| **No secrets in git** | Runtime injection via env vars and GCE metadata |
-| **Agent isolation** | Each fleet agent: own VM, own SA, own OpenClaw, own personality |
-| **Specialist focus** | Less tools = better performance. Curated skillsets per specialty |
+| **No secrets in git** | Runtime injection via env vars, GCE metadata, and DWD signJwt |
+| **OpenClaw-native** | Full agent framework — not a custom LLM wrapper |
+| **Docker-containerized** | OpenClaw runs in Docker for isolation and reproducibility |
+| **Boot stub pattern** | Startup script is pure bash on GitHub — no JS template escaping |
 | **Idempotent** | All installs, deploys, and upgrades are repeatable |
-| **Observable** | All agent communication logged in Firestore and auditable |
+| **Observable** | All communication logged in Firestore and auditable |
 
 ---
 
@@ -187,7 +216,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data. Y
 | v0.9.1 | DWD setup wizard |
 | v0.9.2 | Fleet agent logs & monitoring |
 | v0.9.3 | Version display + upgrade button |
-| **v1.0** | **Production release** |
+| **v2.0** | **OpenClaw pivot — Docker-based agent brain, boot stub pattern** |
 
 ---
 

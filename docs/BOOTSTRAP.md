@@ -1,142 +1,107 @@
-# Bootstrap Guide — Architect Prime (v0.7.1+ DWD)
+# Bootstrap Guide — Architect Prime v2.0
 
-Complete instructions to launch Prime from an empty GCP project.
+How the Prime VM deploys and boots.
 
-## Prerequisites
+## How It Works
 
-| Requirement | How to get it |
-|---|---|
-| **GCP project** with billing enabled | [Create project](https://console.cloud.google.com/projectcreate) + [link billing](https://console.cloud.google.com/billing) |
-| **gcloud CLI** installed and authenticated | `gcloud auth login` |
-| **Project Owner** role for your user | Required for Phase 1 IAM bindings |
-| **Google Workspace domain** | Required for DWD (Chat agent user accounts) |
-| **Workspace Super Admin** access | Required for DWD grant (one-time) |
-| **Repo cloned** | `git clone https://github.com/Tachin-ai-Corporation/architect-prime-gcp-agent` |
-| **(Fleet only)** GCP Organization | `gcloud organizations list` |
+The dashboard deploy API creates a GCE VM with a tiny **boot stub** as the startup script. The boot stub:
 
-## Step 1: Set your environment
+1. Reads `core_ref`, `gh_owner`, `gh_repo` from VM metadata
+2. Downloads `bootstrap/prime-bootstrap.sh` from GitHub
+3. Runs it
 
-```bash
-# Required
-export PROJECT_ID="your-gcp-project-id"
+All complexity is in `prime-bootstrap.sh` — a standalone bash script with no JS escaping issues.
 
-# Required for DWD Chat
-export AGENT_USER_EMAIL="prime@yourdomain.com"  # Workspace user for Prime
-export CHAT_SPACE_ID="spaces/XXXXXXXXX"         # Chat space ID (get from Step 3a)
+## What prime-bootstrap.sh Does
 
-# Required for fleet agent deployment
-export BILLING_ACCOUNT="your-billing-account-id"   # gcloud billing accounts list
-export GCP_ORG_ID="your-gcp-org-id"                # gcloud organizations list
+| Step | Description | Duration |
+|------|-------------|----------|
+| 1 | Install system packages (curl, git, python3, jq) | ~30s |
+| 2 | Install Docker CE via `get.docker.com` | ~60s |
+| 3 | Install CoreKit via `install.sh` manifest | ~15s |
+| 4 | Clone OpenClaw repo, checkout stable commit | ~10s |
+| 5 | `DOCKER_BUILDKIT=1 docker build -t openclaw:local .` | ~8 min |
+| 6 | Start OpenClaw container (`--network host`) | ~5s |
+| 7 | Wait for gateway readiness (poll `config.get`) | ~5-120s |
+| 8 | Harden container permissions | ~2s |
+| 9 | Render bootstrap config template | ~1s |
+| 10 | Apply config via RPC (`config.apply` + baseHash retry) | ~15-60s |
+| 11 | Post-apply hardening + inject Docker CLI | ~5s |
+| 12 | Write `prime-config.json` | ~1s |
+| 13 | Install `control-daemon` as systemd service | ~2s |
 
-# Optional overrides (these have sensible defaults)
-export ZONE="us-central1-a"
-export VM="architect-prime"
-```
+**Total: ~12-15 minutes from VM creation to `PRIME VM SETUP COMPLETE`**
 
-## Step 2: Pre-bootstrap manual setup (~10 min)
+## VM Specifications
 
-These steps CANNOT be automated — they require Workspace admin console access.
+| Setting | Value |
+|---------|-------|
+| Machine type | e2-medium (2 vCPU, 4GB RAM) |
+| Image | Ubuntu 22.04 LTS |
+| Disk | 30GB pd-balanced |
+| Gateway port | 18789 (loopback only) |
+| Docker network | host |
+| OpenClaw config | `/opt/openclaw/.openclaw/openclaw.json` |
 
-### 2a. Create the agent Workspace user
-
-In [Google Admin Console](https://admin.google.com) → Users → Add new user:
-- Create `prime@yourdomain.com` (or your preferred agent email)
-- No special license needed, just a basic Workspace user
-
-### 2b. Create a Google Chat space
-
-1. Open Google Chat
-2. Create a new space (e.g., "Architect Prime Ops")
-3. Add `prime@yourdomain.com` to the space
-4. Get the space ID from the Chat URL (format: `spaces/XXXXXXXXX`)
-5. Set: `export CHAT_SPACE_ID=spaces/XXXXXXXXX`
-
-### 2c. Grant DWD (after Phase 1 completes)
-
-> **This step requires the SA Client ID from Phase 1 output.** Run Phase 1 first, then come back here.
-
-1. Admin Console → **Security** → **Access and data control** → **API Controls**
-2. Scroll to **Domain-Wide Delegation** → **Manage Domain Wide Delegation**
-3. Click **Add new**
-4. **Client ID:** the SA unique ID printed by Phase 1
-5. **Scopes:**
-   ```
-   https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly
-   ```
-6. Click **Authorize**
-7. May take up to 24 hours to propagate (usually minutes)
-
-## Step 3: Run Phase 1 (~5 min)
-
-From Cloud Shell or your local terminal:
+## Monitoring Boot Progress
 
 ```bash
-cd architect-prime-gcp-agent
-bash bootstrap/phase1-cloudshell.sh
+# Watch startup logs via serial port
+gcloud compute instances get-serial-port-output prime-<name> \
+  --zone=us-central1-a --project=<project>
+
+# Look for these milestones
+grep "startup-script:" ... | grep "==>"
+# ==> Prime VM Bootstrap: ...
+# ==> Installing system packages...
+# ==> Installing Docker CE...
+# ==> Installing CoreKit...
+# ==> Cloning OpenClaw repo...
+# ==> Building Docker image openclaw:local ...
+# ==> Starting OpenClaw container...
+# ==> Waiting for OpenClaw gateway...
+# ==> Gateway is ready
+# ==> Rendering bootstrap config...
+# ==> Applying config via RPC...
+# ==> Post-apply hardening...
+# ==> Installing control-daemon systemd service...
+#   PRIME VM SETUP COMPLETE
 ```
 
-Phase 1 automatically:
-- Enables GCP APIs (Compute, AI Platform, Chat, IAM, Storage)
-- Creates service account `architect-prime` with required roles
-- Grants `roles/iam.serviceAccountTokenCreator` (needed for DWD `signJwt`)
-- Creates firewall rule for HTTPS
-- Creates the VM with Phase 2 startup script
-- Passes all config to VM metadata
-- Prints the **SA Client ID** needed for Step 2c (DWD grant)
-- If `GCP_ORG_ID` is set, auto-grants org-level `projectCreator` + `billing.admin`
-
-**⚠️  After Phase 1 completes:** Go back and complete Step 2c (DWD grant) using the SA Client ID.
-
-## Step 4: Wait for Phase 2 (~15-20 min)
-
-Phase 2 runs automatically on the VM. No human action needed.
-
-It installs Docker, builds the OpenClaw container, downloads CoreKit files,
-and starts the inbox-daemon service (DWD Chat polling mode).
-
-Monitor progress:
-```bash
-gcloud compute instances get-serial-port-output $VM --zone $ZONE --project $PROJECT_ID
-```
-
-Look for: `✅ PHASE 2 COMPLETE`
-
-## Step 5: Test
-
-@-mention `prime@yourdomain.com` in the Chat space.
-
-Expected: The inbox-daemon detects the @-mention and responds.
-
-Try `@prime help` to see available commands, or `@prime status` for VM info.
-
-> **Note:** If DWD hasn't propagated yet (up to 24h), the inbox-daemon will log auth errors. It will start working once DWD is active.
-
-## Summary
-
-| Step | Duration | Human Action |
-|---|---|---|
-| Environment | ~1 min | Set env vars |
-| Create user + space | ~5 min | Admin Console + Chat UI |
-| Phase 1 | ~5 min | Run one script |
-| DWD grant | ~3 min | Admin Console (uses SA Client ID from Phase 1) |
-| Phase 2 | ~15-20 min | None (automatic) |
-| Test | ~30 sec | Chat message |
-
-**Total: ~30 minutes from empty project to Prime responding in Chat.**
-
-## Fleet Agents (optional)
-
-After Prime is running, deploy fleet agents from Prime's VM:
+## SSH into a Running Prime
 
 ```bash
-# SSH into Prime
-gcloud compute ssh $VM --zone $ZONE --project $PROJECT_ID
+gcloud compute ssh prime-<name> --zone=us-central1-a --project=<project>
 
-# Deploy a fleet agent (creates its own GCP project)
-sudo /opt/openclaw/.openclaw/bin/fleet-deploy --name alpha --specialty "billing expert"
+# Check OpenClaw container
+sudo docker ps
+sudo docker logs openclaw-gateway --tail 50
+
+# Check control-daemon
+sudo systemctl status control-daemon
+sudo journalctl -u control-daemon --since "1 hour ago"
+
+# Check CoreKit files
+ls -la /opt/openclaw/.openclaw/bin/
+cat /opt/openclaw/.openclaw/corekit/prime-config.json
 ```
 
-Each fleet agent needs:
-1. A Workspace user account (e.g., `fleet-alpha@yourdomain.com`)
-2. To be added to the shared Chat space
-3. The same DWD grant already covers all agents (one SA Client ID per project)
+## Iterating on the Bootstrap
+
+To modify the bootstrap:
+1. Edit `bootstrap/prime-bootstrap.sh`
+2. `git push origin main`
+3. Delete the existing VM and redeploy from the dashboard
+
+**No Cloud Run rebuild is needed.** The boot stub downloads the latest `prime-bootstrap.sh` from GitHub at boot time.
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `bootstrap/prime-bootstrap.sh` | Full VM setup script (standalone bash) |
+| `app/src/app/api/primes/[id]/deploy/route.ts` | Deploy API with boot stub |
+| `bundle/corekit/config/openclaw-bootstrap.json5.tmpl` | OpenClaw config template |
+| `bundle/corekit/bin/control-daemon` | Firestore → OpenClaw message bridge |
+| `install.sh` | CoreKit manifest installer |
+| `manifest.txt` | Repo path → VM path mapping |

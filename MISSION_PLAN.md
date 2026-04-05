@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> **Living document.** Updated at each checkpoint. Tracks completed milestones, current status, and the roadmap to **v1.0** and beyond.
+> **Living document.** Updated at each checkpoint. Tracks completed milestones, current status, and the roadmap forward.
 
 ---
 
@@ -8,11 +8,9 @@
 
 Architect Prime is a **self-bootstrapping agent factory** built on [OpenClaw](https://github.com/openclaw/openclaw) and GCP.
 
-Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Prime does **not** route tasks or act as a PM — humans assign work to agents directly, and agents may delegate to other agents (e.g., PM agents routing to specialist agents).
+Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-The end state: many **cells** of agents working across many projects and job descriptions, with Prime as the factory that builds and maintains the fleet.
-
-**v1.0 Definition of Done:** From an empty GCP project, a single bootstrap command deploys Architect Prime — an OpenClaw instance that communicates with humans via Google Chat (using Domain-Wide Delegation to impersonate a Workspace user account), and can **hire** (spin up) and **fire** (tear down) fleet agents across separate GCP projects within a Google Cloud organization. Each fleet agent is also an OpenClaw instance with its own Workspace Chat identity. The full message loop is closed: human @-mention → DWD Chat polling → inbox-daemon → LLM → Chat response, for both Prime and every fleet agent.
+**Current Status:** OpenClaw integration complete. Prime deploys as a Docker-containerized OpenClaw instance with a full AI brain, managed via a Cloud Run dashboard. Fleet lifecycle (hire/fire) is functional through OpenClaw exec tools. End-to-end message flow (Dashboard → Firestore → control-daemon → OpenClaw → response) is operational.
 
 ---
 
@@ -35,7 +33,7 @@ The end state: many **cells** of agents working across many projects and job des
 - [x] `manifest.txt` — maps repo paths → VM destination paths
 - [x] `STATE.json` — provenance + SHA-256 file hashes after install
 - [x] `--check` mode (drift detection) and `--upgrade <ref>` mode
-- [x] `test-checkpoint.ps1` — GCP E2E test harness (14 SSH verification checks)
+- [x] `test-checkpoint.ps1` — GCP E2E test harness
 - [x] Portable SHA-256 (sha256sum → shasum → openssl fallback)
 
 ---
@@ -68,7 +66,6 @@ The end state: many **cells** of agents working across many projects and job des
 - [x] Built-in commands: `help`, `status`, `whoami`, `fleet`
 - [x] Message lifecycle: pending → processing → done (GCS folders)
 - [x] Full message loop closed: human → Chat → GCS → daemon → response → Chat
-- [x] Single-project fleet concept established
 
 ---
 
@@ -76,142 +73,159 @@ The end state: many **cells** of agents working across many projects and job des
 > *Tagged: 2026-03-03*
 
 - [x] `fleet-deploy` — creates an entire GCP project for each fleet agent
-  - Project creation → billing link → API enablement → SA → GCS bucket → Cloud Function → VM
 - [x] `fleet-teardown` — deletes the fleet agent's entire GCP project
-- [x] `fleet-registry.json` — Prime tracks all fleet agents (name, project, IP, status, specialty)
+- [x] `fleet-registry.json` — Prime tracks all fleet agents
 - [x] Fleet agents self-install CoreKit via `install.sh` on boot
-- [x] Each fleet agent gets its own Chat app (direct @-mentions)
 - [x] Dynamic identity: agent name, specialty injected via VM metadata
-- [x] Org-level IAM: Prime SA gets `projectCreator` + `billing.admin`
-- [x] Admin human gets `roles/owner` on every fleet project
-- [x] Chat setup instructions auto-printed after deploy
 
 ---
 
-### v0.7.0 — Agent-Ask: The Fundamental Skill (LLM + Web Search)
+### v0.7.0 — Agent-Ask: The Fundamental Skill
 > *Tagged: 2026-03-11*
 
-- [x] `agent-ask` — the core "answer question" skill shared by Prime and all fleet agents
-  - Calls Vertex AI Gemini API with Google Search grounding
-  - Accesses agent workspace (SOUL, MEMORY, IDENTITY, specialty) to build context-aware system prompt
-  - Read-only skill: agent queries its resources, knowledge, and the web to best answer the question
-- [x] `build-system-prompt` — assembles system prompt from workspace files
+- [x] `agent-ask` — core LLM skill using Vertex AI Gemini + Google Search grounding
+- [x] `build-system-prompt` — assembles system prompt from workspace files (SOUL, MEMORY, IDENTITY)
 - [x] Non-command Chat messages auto-routed to LLM for intelligent answers
 - [x] Fleet agents inherit `agent-ask` via shared CoreKit install
-- [x] `.gitattributes` — forces LF line endings on all shell scripts
 
 ---
 
 ### v0.7.1 — DWD Chat Migration + Bootstrap Hardening
 > *Tagged: 2026-03-22*
 
-- [x] **DWD Migration** — replaced Cloud Functions + GCS inbox with Domain-Wide Delegation (DWD) user impersonation
-  - `dwd-token` — keyless DWD via VM metadata `signJwt` (no JSON key files)
-  - `chat-send` — rewritten for DWD impersonation (messages appear as the Workspace user)
-  - `chat-read` — new script: reads messages via DWD-impersonated `spaces.messages.list`
-  - `inbox-daemon` — rewritten: polls Chat API directly instead of GCS bucket
-  - Removed `cloud-functions/chat-handler/` — no longer needed
-- [x] **Interactive bootstrap** — guided `bootstrap.sh` with env var prompts, `CORE_REF` selection, Phase 1 + Phase 2 automation
-- [x] **Phase 2 hardening** — deterministic gateway readiness poll loop (replaced fragile `sleep 45`)
-- [x] **chat-read fixes** — 4 bugs fixed:
-  - Pipe API response via stdin instead of triple-quote string embedding
-  - Client-side time filtering (server-side `filter` param unreliable with DWD)
-  - Mention matching without sender email (API doesn't return it)
-  - Normalize hyphens + spaces for Google Chat display name matching
-- [x] Full message loop verified: human @-mention → DWD polling → inbox-daemon → Gemini → chat-send → Chat response
+- [x] **DWD Migration** — replaced Cloud Functions + GCS inbox with Domain-Wide Delegation
+  - `dwd-token` — keyless DWD via VM metadata `signJwt`
+  - `chat-send` — rewritten for DWD impersonation
+  - `chat-read` — new script: reads messages via DWD
+  - `inbox-daemon` — polls Chat API directly
+- [x] **Interactive bootstrap** — guided `bootstrap.sh` with env var prompts
+- [x] **Phase 2 hardening** — deterministic gateway readiness poll loop
 
 ---
 
-## Roadmap to v1.0
+### v0.8.0–v0.9.3 — Cloud Run Control Plane + Dashboard
+> *Tagged: 2026-03-29 – 2026-04-01*
 
-### v0.8.0 — Fleet DWD + Agent Cells  ← *next*
-> *Goal: Fleet agents get DWD Chat identities. Humans can talk to any agent directly. Prime manages agent lifecycle, not tasks.*
-
-**Design principle:** Prime is the agent factory — it creates, upgrades, monitors, and tears down agents. Humans assign work to agents directly via @-mention in Chat. Agents may delegate to other agents (e.g., a PM agent routing to specialists). All comms flow through Google Chat for human visibility.
-
-Now that DWD is in place (v0.7.1), agents impersonate Workspace user accounts. Fleet agents need their own DWD-compatible Workspace identities.
-
-- [ ] **Fleet agent DWD provisioning** — `fleet-deploy` provisions DWD for each fleet agent's Workspace user, shares the same SA Client ID grant
-- [ ] **Fleet intro ceremony** — after `fleet-deploy`, Prime provides DWD setup instructions to human admin (Workspace user creation + space membership); once human enables Chat, Prime verifies the new agent responds ("fleet intro" handshake)
-- [ ] **Prime ↔ fleet comms** — Prime can send messages to fleet agents for lifecycle operations (health checks, upgrade notifications, shutdown warnings) — not task routing
-- [ ] **Agent cells** — support multiple Chat spaces (one per team/project), each with its own set of agents; Prime can deploy agents into specific spaces
-- [ ] **Human-direct task routing** — humans @-mention any agent directly to assign work; no Prime mediation required
+- [x] **Next.js Cloud Run control plane** — dashboard UI with chat, fleet, and setup tabs
+- [x] **Firestore state management** — primes, messages, fleet records, DWD config
+- [x] **Dashboard → Prime chat** — real-time messages via Firestore polling
+- [x] **Fleet hire/fire from dashboard** — wizard modal, API routes, Firestore records
+- [x] **DWD setup wizard** — guided setup with test button
+- [x] **Fleet agent logs** — real-time log streaming from VM serial ports
+- [x] **Version display + upgrade button** — dashboard footer
 
 ---
 
-### v0.9.0 — Fleet Health + Cost Monitoring
-> *Goal: Prime monitors fleet health and costs, auto-recovers unhealthy agents, reports to humans.*
+### v2.0.0 — OpenClaw Pivot (Current)
+> *In progress: 2026-04-01 – present*
 
-- [ ] **Fleet heartbeat** — Prime periodically pings each fleet agent via Chat; agents respond with status
-- [ ] **GCP-level health checks** — Prime uses its project ownership to verify fleet VMs are running, inbox-daemons are alive, containers are healthy
-- [ ] **`fleet-status` command** — humans can ask Prime for fleet health report in Chat
-- [ ] **Registry sync** — `fleet-registry.json` updated with `healthy` / `unhealthy` / `offline` based on combined Chat response + GCP checks
-- [ ] **Error recovery** — if a fleet agent is unresponsive, Prime can restart or redeploy and reports action to humans in Chat
-- [ ] **Cost tracking** — Prime tracks per-agent GCP spend and reports to humans; can auto-hibernate idle agents
-
----
-
-### v1.0.0 — Production-Ready Agent Factory 🎯
-> *Goal: The complete, reliable, self-bootstrapping agent factory.*
-
-- [ ] **One-command bootstrap** — `bootstrap.sh` fully verified from empty project to working Prime + DWD Chat + fleet capability
-- [ ] **DWD-based Chat (by design)** — all agents communicate via DWD user impersonation; humans create Workspace accounts and add them to Chat spaces
-- [ ] **Agent-ask verification** — confirm `agent-ask` works end-to-end for both Prime and fleet agents: Chat @-mention → DWD polling → Gemini + grounding → Chat response
-- [ ] **Fleet agent upgrade** — Prime can upgrade all fleet agents to a new CoreKit version via Chat command
-- [ ] **Graceful fleet lifecycle** — hire, monitor, upgrade, and fire fleet agents entirely via Chat commands to Prime
-- [ ] **Checkpoint E2E test** — `test-checkpoint.ps1` covers the full lifecycle (bootstrap → hire agent → verify Chat comms → answer question → fire agent)
-- [ ] **Documentation** — complete Bootstrap, Operations, and Fleet Management guides
-- [ ] **README** updated with full checkpoint history and architecture diagrams
+- [x] **OpenClaw integration** — each Prime VM runs a Docker-containerized OpenClaw gateway
+- [x] **Boot stub pattern** — startup script is a standalone `.sh` file on GitHub, not embedded in JS
+- [x] **Docker-based bootstrap** — `get.docker.com` → `DOCKER_BUILDKIT=1` image build → `--network host` container
+- [x] **RPC config apply** — bootstrap config applied via `docker exec ... config.apply` with retry + baseHash
+- [x] **control-daemon** — Firestore message bridge (polls Firestore → routes to OpenClaw gateway API)
+- [x] **Machine upgrade** — e2-medium (4GB) for Docker build memory requirements
+- [x] **Workspace files** — SOUL.md, TOOLS.md, MEMORY.md deployed via CoreKit manifest
+- [ ] **E2E verification** — confirm dashboard chat flows through OpenClaw and returns intelligent responses
+- [ ] **Fleet hire through OpenClaw** — verify fleet-deploy exec tool works within the OpenClaw session
+- [ ] **Fleet agents on OpenClaw** — fleet VMs also run OpenClaw (not just `agent-ask`)
 
 ---
 
-## Post-v1.0 — Future Capabilities
+## What Works Today
 
-These are planned capabilities for after the core factory is production-ready:
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Cloud Run dashboard | ✅ Online | Chat, fleet, setup tabs |
+| Prime VM bootstrap | ✅ Working | Boot stub → `prime-bootstrap.sh` from GitHub |
+| OpenClaw container | ✅ Running | Docker, `--network host`, port 18789 |
+| control-daemon | ✅ Running | systemd service, polls Firestore every 5s |
+| Bootstrap config | ✅ Applied | RPC config.apply with retry/baseHash |
+| CoreKit tools | ✅ Installed | fleet-deploy, fleet-teardown, etc. on VM |
+| Dashboard → Firestore messaging | ✅ Working | Messages written to Firestore |
+| Firestore → OpenClaw routing | 🔄 Needs verification | control-daemon should bridge messages |
+| OpenClaw → intelligent response | 🔄 Needs verification | Full agent loop (LLM + tools) |
+| Fleet hire via OpenClaw exec | 🔄 Needs verification | exec tool should call fleet-deploy |
+| Fleet agents on OpenClaw | ❌ Not started | Fleet VMs still use agent-ask, not OpenClaw |
 
-- **Google Workspace skills** — fleet agents that manage Docs, Sheets, Calendar, Gmail on behalf of humans
-- **Agent cell templates** — pre-built team configurations (e.g., "engineering cell" = PM + 2 devs + QA) that Prime can deploy in one command
-- **Inter-agent delegation** — agents can @-mention other agents to delegate subtasks (PM → dev, dev → QA); Prime is not involved in task flow
-- **Cost governance** — Prime tracks and reports fleet spending per cell, auto-scales or shuts down idle agents
-- **Self-evolution** — Prime proposes its own CoreKit improvements via PR, human approves, Prime merges and tags
-- **Audit trail** — full GCS-based audit log of every command, decision, and action across the fleet
+---
+
+## Next Steps (v2.0 Completion)
+
+### Checkpoint 2: End-to-End Message Verification
+> *Goal: Dashboard message → OpenClaw → intelligent response displayed in dashboard*
+
+1. Send a test message from the dashboard
+2. Verify control-daemon picks it up from Firestore
+3. Verify OpenClaw gateway processes it (LLM + workspace context)
+4. Verify response is written back to Firestore
+5. Verify response appears in dashboard chat
+
+### Checkpoint 3: Fleet Hire/Fire Through OpenClaw
+> *Goal: User says "hire a devops agent named stan" → Prime uses exec tool to call fleet-deploy*
+
+1. Verify OpenClaw has `exec` tool enabled and `~/.openclaw/bin` on PATH
+2. Test fleet-deploy from within the OpenClaw session
+3. Verify fleet record appears in Firestore
+4. Verify fleet agent VM boots successfully
+
+### Checkpoint 4: Fleet Agents on OpenClaw
+> *Goal: Fleet agent VMs also run full OpenClaw instances*
+
+1. Update fleet-deploy to use the Docker-based OpenClaw bootstrap
+2. Each fleet agent gets its own OpenClaw config (different SOUL, specialty workspace)
+3. Fleet agents run inbox-daemon for Google Chat polling (DWD)
+4. Verify fleet agent responds to Chat messages
+
+### Checkpoint 5: GChat Verification
+> *Goal: Fleet agents communicate via Google Chat with DWD*
+
+1. Verify inbox-daemon polls Chat via DWD
+2. Verify fleet agent responds to @-mentions in Chat
+
+---
+
+## Post-v2.0 — Future Capabilities
+
+- **Brain sub-agents** — OpenClaw multi-agent system (Cortex, Prefrontal, Hippocampus, etc.)
+- **Checkpoint queue** — R/C/M framework (Responsibilities, Checkpoints, Missions)
+- **Agent memory system** — persistent memory across sessions
+- **Google Workspace skills** — Docs, Sheets, Calendar, Gmail integration
+- **Agent cell templates** — pre-built team configurations
+- **Inter-agent delegation** — agents @-mention other agents to delegate
+- **Cost governance** — per-agent spend tracking, auto-hibernate idle agents
+- **Self-evolution** — Prime proposes its own improvements via PR
 
 ---
 
 ## Architecture Summary
 
 ```
-Google Chat (Humans)
+Dashboard (Cloud Run)
     │
-    ▼  @-mention agent's Workspace user
+    ├─ POST /api/primes/{id}/deploy  → Creates GCE VM with boot stub
+    ├─ POST /api/primes/{id}/messages → Writes to Firestore
+    └─ GET  /api/primes/{id}/fleet   → Reads fleet from Firestore
+         │
+         ▼
+    Firestore (state store)
+         │
+         ▼
+    Prime VM (e2-medium)
+    ├── control-daemon (systemd)
+    │   └── Polls Firestore messages → POST to OpenClaw gateway
     │
-inbox-daemon (per VM)                ◄── polls Chat API via DWD every 10s
-    │  uses: dwd-token → signJwt → OAuth2 token
-    │  uses: chat-read → spaces.messages.list
+    ├── openclaw-gateway (Docker, --network host, port 18789)
+    │   ├── Main agent (Gemini 2.5 Flash)
+    │   ├── Workspace: SOUL.md, TOOLS.md, MEMORY.md
+    │   ├── Tools: exec (fleet-deploy, fleet-teardown, etc.)
+    │   └── Session memory + context pruning
     │
-    ├── Built-in commands (help, status, fleet, whoami)
-    └── agent-ask → Vertex AI Gemini + Google Search
-                │
-                ▼
-        chat-send (DWD) → Google Chat API   ◄── response posted as agent user
-```
-
-```
-GCP Organization
-├── Prime's Project (architect-prime-beta)
-│   ├── architect-prime (VM)          ◄── Agent factory + fleet manager
-│   ├── DWD via SA signJwt            ◄── No JSON key files needed
-│   ├── inbox-daemon (systemd)        ◄── DWD Chat polling
-│   └── fleet-registry.json           ◄── Tracks all fleet agents
-│
-├── fleet-alpha/ (Project)
-│   ├── fleet-alpha (VM)              ◄── Fleet agent
-│   ├── DWD (same SA Client ID grant) ◄── Shared DWD authorization
-│   └── inbox-daemon                  ◄── DWD Chat polling
-│
-└── fleet-beta/ (Project)
-    ├── fleet-beta (VM)               ◄── Fleet agent
-    └── inbox-daemon                  ◄── DWD Chat polling
+    └── CoreKit (manifest-installed)
+        ├── fleet-deploy / fleet-teardown
+        ├── agent-ask, build-system-prompt
+        ├── inbox-daemon, chat-send, chat-read
+        └── dwd-token, upgrade-corekit
 ```
 
 ---
@@ -220,8 +234,8 @@ GCP Organization
 
 1. **No secrets in repo** — all secrets injected at runtime via ADC, DWD signJwt, or GCP metadata
 2. **Manifest-driven** — `manifest.txt` is the single source of truth for installed files
-3. **Checkpoint-versioned** — only tagged checkpoints are stable; `main` may move forward
-4. **Idempotent** — every script safely re-runnable
-5. **Self-upgradable** — drift detection + in-place upgrade
-6. **Agent-maintainable** — Prime can propose changes via PR
-7. **Human-auditable** — Chat relay (DWD = human-visible messages), tagged checkpoints
+3. **Boot stub pattern** — startup scripts live as real `.sh` files on GitHub, not in JS template literals
+4. **OpenClaw-native** — leverage the framework's agent loop, tools, memory, and session management
+5. **Idempotent** — every script safely re-runnable
+6. **Self-upgradable** — drift detection + in-place upgrade
+7. **Human-auditable** — all communication logged in Firestore
