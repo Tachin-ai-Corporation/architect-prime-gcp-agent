@@ -199,7 +199,13 @@ echo "Prime ID: $PRIME_ID | Agent: $AGENT_ID | CoreRef: $CORE_REF"
 # ---- Install system packages ----
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl docker.io
+apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
+
+# ---- Install Docker CE (with BuildKit + buildx) ----
+if ! command -v docker >/dev/null 2>&1; then
+  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  sh /tmp/get-docker.sh
+fi
 systemctl enable docker
 systemctl start docker
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
