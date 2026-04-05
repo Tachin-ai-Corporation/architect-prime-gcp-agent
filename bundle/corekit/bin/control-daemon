@@ -184,18 +184,21 @@ except Exception as e:
 
       log "Received: $TEXT"
 
-      # Route to OpenClaw gateway (session message endpoint)
+      # Route to OpenClaw gateway (OpenAI-compatible endpoint)
       OC_RESPONSE="$(curl -s --max-time 120 \
-        -X POST "${OC_GATEWAY}/api/sessions/main/messages" \
+        -X POST "${OC_GATEWAY}/v1/chat/completions" \
         -H "Authorization: Bearer ${OC_TOKEN}" \
         -H "Content-Type: application/json" \
         -d "$(python3 -c "
 import json, sys
 text = sys.stdin.read().strip()
-print(json.dumps({'content': text}))
+print(json.dumps({
+    'model': 'gemini-2.5-flash',
+    'messages': [{'role': 'user', 'content': text}]
+}))
 " <<< "$TEXT")" 2>/dev/null)" || OC_RESPONSE=''
 
-      # Parse response from OpenClaw session API
+      # Parse response from OpenClaw (OpenAI chat completions format)
       REPLY="$(python3 -c "
 import json, sys
 raw = sys.stdin.read().strip()
@@ -204,23 +207,18 @@ if not raw:
     sys.exit(0)
 try:
     data = json.loads(raw)
-    # OpenClaw session message response formats:
-    # - {content: '...'} — direct content
-    # - {response: '...'} — response field
-    # - {data: {content: '...'}} — nested content
-    # - {messages: [{content: '...'}]} — message array
     r = ''
     if isinstance(data, dict):
-        r = (data.get('content', '')
-             or data.get('response', '')
-             or data.get('message', '')
-             or (data.get('data', {}) or {}).get('content', '')
-             or (data.get('data', {}) or {}).get('response', ''))
-        if not r and 'messages' in data:
-            msgs = data['messages']
-            if isinstance(msgs, list) and msgs:
-                last = msgs[-1] if isinstance(msgs[-1], dict) else {}
-                r = last.get('content', '') or last.get('text', '')
+        # OpenAI chat completions format: choices[0].message.content
+        choices = data.get('choices', [])
+        if choices and isinstance(choices, list):
+            msg = choices[0].get('message', {}) if isinstance(choices[0], dict) else {}
+            r = msg.get('content', '')
+        # Fallback formats
+        if not r:
+            r = (data.get('content', '')
+                 or data.get('response', '')
+                 or data.get('message', ''))
     if r:
         print(r)
     else:

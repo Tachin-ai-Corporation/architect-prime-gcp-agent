@@ -1,0 +1,46 @@
+=== 1. Services ===
+active
+NAMES              STATUS
+openclaw-gateway   Up 3 minutes (healthy)
+
+=== 2. Gateway Token ===
+Token: e9348c56...
+
+=== 3. OpenClaw Health Check ===
+GET / → HTTP 200
+
+=== 4. Test /api/message ===
+Response: Not Found
+
+=== 5. Test alternative endpoints ===
+POST /api/v1/message → HTTP 404
+POST /v1/message → HTTP 404
+POST /message → HTTP 404
+POST /api/chat → HTTP 404
+
+=== 6. Control-daemon logs (last 10 lines) ===
+2026-04-05T16:53:57+0000 prime-chucknorris control-daemon[8253]: [2026-04-05T16:53:54+00:00] [control-daemon] Starting control-daemon for Prime: chucknorris
+2026-04-05T16:53:57+0000 prime-chucknorris control-daemon[8253]: [2026-04-05T16:53:54+00:00] [control-daemon] Project: architect-prime-beta
+2026-04-05T16:53:57+0000 prime-chucknorris control-daemon[8253]: [2026-04-05T16:53:54+00:00] [control-daemon] Poll interval: 5s
+2026-04-05T16:53:57+0000 prime-chucknorris control-daemon[8253]: [2026-04-05T16:53:54+00:00] [control-daemon] Status: ONLINE
+2026-04-05T16:53:57+0000 prime-chucknorris control-daemon[8253]: [2026-04-05T16:53:54+00:00] [control-daemon] Entering polling loop...
+2026-04-05T16:53:54+0000 prime-chucknorris systemd[1]: Started Architect Prime Control Daemon (Firestore Polling).
+
+=== 7. OpenClaw gateway recent logs ===
+2026-04-05T16:55:25.915+00:00 [gateway] starting HTTP server...
+2026-04-05T16:55:25.920+00:00 [canvas] host mounted at http://127.0.0.1:18789/__openclaw__/canvas/ (root /home/node/.openclaw/canvas)
+2026-04-05T16:55:25.928+00:00 [gateway] MCP loopback server listening on http://127.0.0.1:35359/mcp
+2026-04-05T16:55:26.128+00:00 [heartbeat] started
+2026-04-05T16:55:26.131+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-04-05T16:55:26.155+00:00 [gateway] agent model: google-vertex/gemini-2.5-flash
+2026-04-05T16:55:26.157+00:00 [gateway] ready (5 plugins, 17.7s)
+2026-04-05T16:55:26.158+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-04-05.log
+2026-04-05T16:55:26.161+00:00 [gateway] starting channels and sidecars...
+2026-04-05T16:55:26.588+00:00 [hooks] loaded 4 internal hook handlers
+2026-04-05T16:55:39.633+00:00 [bonjour] watchdog detected non-announced service; attempting re-advertise (gateway fqdn=prime-chucknorris (OpenClaw)._openclaw-gw._tcp.local. host=openclaw.local. port=18789 state=probing)
+2026-04-05T16:55:44.888+00:00 [model-pricing] pricing bootstrap failed: TimeoutError: The operation was aborted due to timeout
+2026-04-05T16:55:44.908+00:00 [plugins] embedded acpx runtime backend registered (cwd: /home/node/.openclaw/workspace)
+2026-04-05T16:55:46.812+00:00 [browser] control listening on http://127.0.0.1:18791/ (auth=token)
+2026-04-05T16:55:49.609+00:00 [plugins] embedded acpx runtime backend ready
+
+=== DONE ===
