@@ -1,0 +1,8 @@
+﻿commit 392942ff1d3c687d71843ab951ab0fd5fe8556ab
+Author: Architect Prime <architect-prime@tachin.ai>
+Date:   Tue Mar 31 12:36:49 2026 -0500
+
+    fix(bootstrap): detect successful config.apply despite gateway restart connection errors
+
+ bootstrap/phase2-vm.sh | 14 +++++++++++++-
+ 1 file changed, 13 insertions(+), 1 deletion(-)

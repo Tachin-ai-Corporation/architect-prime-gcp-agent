@@ -1,0 +1,20 @@
+2026-04-05T18:49:29.760+00:00 [heartbeat] started
+2026-04-05T18:49:29.763+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-04-05T18:49:29.789+00:00 [gateway] agent model: google-vertex/gemini-2.5-flash
+2026-04-05T18:49:29.790+00:00 [gateway] ready (5 plugins, 17.8s)
+2026-04-05T18:49:29.791+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-04-05.log
+2026-04-05T18:49:29.794+00:00 [gateway] starting channels and sidecars...
+2026-04-05T18:49:30.089+00:00 [hooks] loaded 4 internal hook handlers
+2026-04-05T18:49:43.826+00:00 [bonjour] watchdog detected non-announced service; attempting re-advertise (gateway fqdn=prime-chucknorris (OpenClaw)._openclaw-gw._tcp.local. host=openclaw.local. port=18789 state=probing)
+2026-04-05T18:49:49.857+00:00 [model-pricing] pricing bootstrap failed: TimeoutError: The operation was aborted due to timeout
+2026-04-05T18:49:49.876+00:00 [plugins] embedded acpx runtime backend registered (cwd: /home/node/.openclaw/workspace)
+2026-04-05T18:49:51.789+00:00 [browser] control listening on http://127.0.0.1:18791/ (auth=token)
+2026-04-05T18:49:54.926+00:00 [plugins] embedded acpx runtime backend ready
+2026-04-05T19:19:32.284+00:00 [diagnostic] lane task error: lane=main durationMs=817 error="Error: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+2026-04-05T19:19:32.287+00:00 [diagnostic] lane task error: lane=session:agent:main:main durationMs=824 error="Error: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+2026-04-05T19:19:32.331+00:00 [model-fallback] model fallback decision: decision=candidate_failed requested=google-vertex/gemini-2.5-flash candidate=google-vertex/gemini-2.5-flash reason=auth next=none
+2026-04-05T19:19:32.338+00:00 Embedded agent failed before reply: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir.
+2026-04-05T19:41:39.048+00:00 [diagnostic] lane task error: lane=main durationMs=524 error="Error: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+2026-04-05T19:41:39.050+00:00 [diagnostic] lane task error: lane=session:agent:main:openai:3148a639-b936-4de5-9156-701a39cc4129 durationMs=527 error="Error: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+2026-04-05T19:41:39.056+00:00 [model-fallback] model fallback decision: decision=candidate_failed requested=google-vertex/gemini-2.5-flash candidate=google-vertex/gemini-2.5-flash reason=auth next=none
+2026-04-05T19:41:39.064+00:00 [openai-compat] chat completion failed: FailoverError: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir.
