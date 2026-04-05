@@ -184,30 +184,50 @@ except Exception as e:
 
       log "Received: $TEXT"
 
-      # Route to OpenClaw gateway
+      # Route to OpenClaw gateway (session message endpoint)
       OC_RESPONSE="$(curl -s --max-time 120 \
-        -X POST "${OC_GATEWAY}/api/message" \
+        -X POST "${OC_GATEWAY}/api/sessions/main/messages" \
         -H "Authorization: Bearer ${OC_TOKEN}" \
         -H "Content-Type: application/json" \
         -d "$(python3 -c "
 import json, sys
-text = sys.stdin.read()
-print(json.dumps({'message': text, 'channel': 'api'}))
+text = sys.stdin.read().strip()
+print(json.dumps({'content': text}))
 " <<< "$TEXT")" 2>/dev/null)" || OC_RESPONSE=''
 
-      # Parse response from OpenClaw
+      # Parse response from OpenClaw session API
       REPLY="$(python3 -c "
 import json, sys
+raw = sys.stdin.read().strip()
+if not raw:
+    print('⚠ Empty response from OpenClaw gateway.')
+    sys.exit(0)
 try:
-    data = json.loads(sys.stdin.read())
-    # Try common response formats
-    r = data.get('data', {}).get('response', '') or data.get('response', '') or data.get('message', '')
+    data = json.loads(raw)
+    # OpenClaw session message response formats:
+    # - {content: '...'} — direct content
+    # - {response: '...'} — response field
+    # - {data: {content: '...'}} — nested content
+    # - {messages: [{content: '...'}]} — message array
+    r = ''
+    if isinstance(data, dict):
+        r = (data.get('content', '')
+             or data.get('response', '')
+             or data.get('message', '')
+             or (data.get('data', {}) or {}).get('content', '')
+             or (data.get('data', {}) or {}).get('response', ''))
+        if not r and 'messages' in data:
+            msgs = data['messages']
+            if isinstance(msgs, list) and msgs:
+                last = msgs[-1] if isinstance(msgs[-1], dict) else {}
+                r = last.get('content', '') or last.get('text', '')
     if r:
         print(r)
     else:
-        print(json.dumps(data, indent=2))
+        # Fallback: dump the full response for debugging
+        print(json.dumps(data, indent=2)[:2000])
 except Exception as e:
-    print(f'Error parsing OpenClaw response: {e}')
+    print(f'Error parsing OpenClaw response: {e}. Raw: {raw[:200]}')
 " <<< "$OC_RESPONSE" 2>/dev/null)" || REPLY="⚠ OpenClaw gateway unavailable."
 
       log "Reply: $(echo "$REPLY" | head -1)..."
