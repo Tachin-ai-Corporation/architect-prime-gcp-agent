@@ -209,7 +209,7 @@ echo "===> Installing CoreKit"
 mkdir -p "$OC_HOST_DIR"
 curl -sfL "$CORE_BASE/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
-CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\\\
+CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\
   bash /tmp/install.sh
 
 # ---- Save gateway token for control-daemon ----
@@ -244,14 +244,14 @@ docker build -t openclaw:local .
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
 
 echo "===> Starting OpenClaw container"
-docker run -d \\\\
-  --name openclaw-gateway \\\\
-  --network host \\\\
-  --restart always \\\\
-  --env-file .env \\\\
-  -v "$OC_HOST_DIR:/home/node/.openclaw" \\\\
-  -v /var/run/docker.sock:/var/run/docker.sock \\\\
-  --group-add "$DOCKER_GID" \\\\
+docker run -d \\
+  --name openclaw-gateway \\
+  --network host \\
+  --restart always \\
+  --env-file .env \\
+  -v "$OC_HOST_DIR:/home/node/.openclaw" \\
+  -v /var/run/docker.sock:/var/run/docker.sock \\
+  --group-add "$DOCKER_GID" \\
   openclaw:local
 
 # ---- Wait for gateway readiness ----
@@ -291,8 +291,8 @@ oc = pathlib.Path("$OC_HOST_DIR")
 tmpl_path = oc / "corekit" / "openclaw-bootstrap.json5.tmpl"
 out_path = pathlib.Path("/tmp/openclaw-bootstrap.json5")
 tmpl = tmpl_path.read_text(encoding="utf-8")
-tmpl = tmpl.replace("\\\\$\{GCP_PROJECT_ID}", "$GCP_PROJECT_ID")
-tmpl = tmpl.replace("\\\\$\{MY_TOKEN}", "$MY_TOKEN")
+tmpl = tmpl.replace("\$\{GCP_PROJECT_ID}", "$GCP_PROJECT_ID")
+tmpl = tmpl.replace("\$\{MY_TOKEN}", "$MY_TOKEN")
 out_path.write_text(tmpl, encoding="utf-8")
 print("Wrote", out_path)
 PY
@@ -305,7 +305,7 @@ for attempt in 1 2 3 4 5; do
   BASE_HASH="$(python3 -c '
 import json,sys,re
 raw=sys.stdin.read()
-m=re.search(r"\\\\{.*\\\\}", raw, re.S)
+m=re.search(r"\\{.*\\}", raw, re.S)
 raw_json=m.group(0) if m else raw
 try:
   j=json.loads(raw_json)
