@@ -164,246 +164,31 @@ async function createVM(
 /**
  * Startup script for Prime VMs.
  *
- * Uses the proven Docker-based OpenClaw setup from phase2-vm.sh:
- * - Reads config from VM metadata
- * - Installs CoreKit via manifest
- * - Clones OpenClaw repo, builds Docker image, runs container
- * - Applies bootstrap config via docker exec RPC (with retry + baseHash)
- * - Starts control-daemon as systemd service (bridges Firestore → OpenClaw)
+ * This is a thin boot stub — it downloads the real bootstrap script
+ * from GitHub and executes it. All the heavy lifting (Docker build,
+ * OpenClaw config, control-daemon) is in bootstrap/prime-bootstrap.sh.
+ *
+ * Why: embedding 230 lines of bash inside a JS template literal
+ * caused 5 consecutive deploy failures due to escape conflicts
+ * (JS template → bash → python heredocs). Never again.
  */
-const STARTUP_SCRIPT = `#!/usr/bin/env bash
-set -euo pipefail
-LOG_FILE="/var/log/prime-setup.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
-trap 'echo "[ERROR] Line $LINENO failed: $BASH_COMMAND"; exit 1' ERR
+const STARTUP_SCRIPT = [
+  '#!/usr/bin/env bash',
+  'set -euo pipefail',
+  'exec > >(tee -a /var/log/prime-setup.log) 2>&1',
+  '',
+  '# Read repo coordinates from VM metadata',
+  'META="http://metadata.google.internal/computeMetadata/v1"',
+  'MH="Metadata-Flavor: Google"',
+  'CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo main)"',
+  'GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo Tachin-ai-Corporation)"',
+  'GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo architect-prime-gcp-agent)"',
+  '',
+  '# Download and run the real bootstrap',
+  'SCRIPT_URL="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}/bootstrap/prime-bootstrap.sh"',
+  'echo "==> Downloading bootstrap from: ${SCRIPT_URL}"',
+  'curl -fsSL "${SCRIPT_URL}" -o /tmp/prime-bootstrap.sh',
+  'chmod +x /tmp/prime-bootstrap.sh',
+  'exec bash /tmp/prime-bootstrap.sh',
+].join('\n');
 
-echo "===> Prime VM Phase 2: $(date -Is)"
-
-# ---- Read config from VM metadata ----
-META="http://metadata.google.internal/computeMetadata/v1"
-MH="Metadata-Flavor: Google"
-PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || echo 'unknown')"
-AGENT_ID="$(curl -sf -H "$MH" "$META/instance/attributes/agent_id" || echo 'prime')"
-CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo 'main')"
-GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo 'Tachin-ai-Corporation')"
-GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo 'architect-prime-gcp-agent')"
-GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
-
-MY_TOKEN="$(openssl rand -hex 16)"
-OC_HOST_ROOT="/opt/openclaw"
-OC_HOST_DIR="$OC_HOST_ROOT/.openclaw"
-CORE_BASE="https://raw.githubusercontent.com/$GH_OWNER/$GH_REPO/$CORE_REF"
-
-echo "Prime ID: $PRIME_ID | Agent: $AGENT_ID | CoreRef: $CORE_REF"
-
-# ---- Install system packages ----
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
-
-# ---- Install Docker CE (with BuildKit + buildx) ----
-if ! command -v docker >/dev/null 2>&1; then
-  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-  sh /tmp/get-docker.sh
-fi
-systemctl enable docker
-systemctl start docker
-DOCKER_GID="$(getent group docker | cut -d: -f3)"
-
-# ---- Install CoreKit via manifest ----
-echo "===> Installing CoreKit"
-mkdir -p "$OC_HOST_DIR"
-curl -sfL "$CORE_BASE/install.sh" -o /tmp/install.sh
-chmod +x /tmp/install.sh
-CORE_REF="$CORE_REF" GH_OWNER="$GH_OWNER" GH_REPO="$GH_REPO" OC_HOST_ROOT="$OC_HOST_ROOT" \\
-  bash /tmp/install.sh
-
-# ---- Save gateway token for control-daemon ----
-mkdir -p /root/.openclaw
-echo "$MY_TOKEN" > /root/.openclaw/.gateway-token
-chmod 600 /root/.openclaw/.gateway-token
-
-# ---- Clone + build OpenClaw Docker image ----
-echo "===> Building OpenClaw Docker image"
-cd /root
-git clone https://github.com/openclaw/openclaw.git
-cd openclaw
-STABLE_COMMIT="$(git rev-parse origin/main)"
-git checkout "$STABLE_COMMIT"
-echo "Using OpenClaw commit: $STABLE_COMMIT"
-
-cat > .env <<ENVEOF
-GATEWAY_BIND=loopback
-GATEWAY_PORT=18789
-OPENCLAW_GATEWAY_TOKEN=$MY_TOKEN
-OPENCLAW_CONFIG_DIR=/home/node/.openclaw
-OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
-OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json
-GOOGLE_CLOUD_PROJECT=$GCP_PROJECT_ID
-GCLOUD_PROJECT=$GCP_PROJECT_ID
-CLOUDSDK_CORE_PROJECT=$GCP_PROJECT_ID
-GOOGLE_GENAI_USE_VERTEXAI=True
-GOOGLE_CLOUD_LOCATION=global
-ENVEOF
-
-DOCKER_BUILDKIT=1 docker build -t openclaw:local .
-docker rm -f openclaw-gateway > /dev/null 2>&1 || true
-
-echo "===> Starting OpenClaw container"
-docker run -d \\
-  --name openclaw-gateway \\
-  --network host \\
-  --restart always \\
-  --env-file .env \\
-  -v "$OC_HOST_DIR:/home/node/.openclaw" \\
-  -v /var/run/docker.sock:/var/run/docker.sock \\
-  --group-add "$DOCKER_GID" \\
-  openclaw:local
-
-# ---- Wait for gateway readiness ----
-echo "===> Waiting for OpenClaw gateway"
-READY=false
-MAX_WAIT=180
-WAITED=0
-while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
-  if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' > /dev/null 2>&1; then
-    READY=true
-    break
-  fi
-  echo "  Gateway not ready yet (\${WAITED}s)..."
-  sleep 5
-  WAITED=$((WAITED + 5))
-done
-[[ "$READY" == "true" ]] || { echo "[ERROR] Gateway not ready after \${MAX_WAIT}s"; exit 1; }
-echo "Gateway ready (took ~\${WAITED}s)"
-
-# ---- Harden container perms ----
-docker exec -u 0 openclaw-gateway bash -lc '
-set -e
-mkdir -p /home/node/.openclaw/credentials
-chmod 700 /home/node/.openclaw
-chmod 700 /home/node/.openclaw/credentials
-chmod 700 /home/node/.openclaw/bin 2>/dev/null || true
-chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
-chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
-chown -R node:node /home/node/.openclaw
-'
-
-# ---- Render bootstrap config ----
-echo "===> Rendering OpenClaw config"
-python3 - <<PY
-import pathlib
-oc = pathlib.Path("$OC_HOST_DIR")
-tmpl_path = oc / "corekit" / "openclaw-bootstrap.json5.tmpl"
-out_path = pathlib.Path("/tmp/openclaw-bootstrap.json5")
-tmpl = tmpl_path.read_text(encoding="utf-8")
-tmpl = tmpl.replace("\$\{GCP_PROJECT_ID}", "$GCP_PROJECT_ID")
-tmpl = tmpl.replace("\$\{MY_TOKEN}", "$MY_TOKEN")
-out_path.write_text(tmpl, encoding="utf-8")
-print("Wrote", out_path)
-PY
-
-# ---- Apply config via RPC (with retry + fresh baseHash) ----
-echo "===> Applying config via RPC"
-APPLY_OK=false
-for attempt in 1 2 3 4 5; do
-  CONFIG_GET_RAW="$(docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>&1)" || true
-  BASE_HASH="$(python3 -c '
-import json,sys,re
-raw=sys.stdin.read()
-m=re.search(r"\\{.*\\}", raw, re.S)
-raw_json=m.group(0) if m else raw
-try:
-  j=json.loads(raw_json)
-except Exception:
-  sys.exit(0)
-print(j.get("hash") or (j.get("payload") or {}).get("hash") or ((j.get("result") or {}).get("payload") or {}).get("hash") or "")
-' <<<"$CONFIG_GET_RAW")"
-
-  if [[ -z "$BASE_HASH" ]]; then
-    echo "[WARN] config.get attempt $attempt: no baseHash. Retrying in 15s..."
-    sleep 15
-    continue
-  fi
-  echo "baseHash (attempt $attempt): $BASE_HASH"
-
-  PARAMS="$(python3 - <<PYAPPLY
-import json
-raw=open("/tmp/openclaw-bootstrap.json5","r",encoding="utf-8").read()
-print(json.dumps({"raw": raw, "baseHash": "$BASE_HASH", "note": "bootstrap"}))
-PYAPPLY
-)"
-
-  if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.apply --json --params "$PARAMS" 2>&1; then
-    APPLY_OK=true
-    break
-  fi
-  echo "[WARN] config.apply attempt $attempt failed. Retrying in 15s..."
-  sleep 15
-done
-
-if [[ "$APPLY_OK" != "true" ]]; then
-  echo "Checking if config was written despite errors..."
-  sleep 10
-  if docker exec openclaw-gateway test -f /home/node/.openclaw/openclaw.json 2>/dev/null; then
-    echo "openclaw.json exists — config.apply likely succeeded."
-    APPLY_OK=true
-  else
-    echo "[ERROR] config.apply failed after 5 attempts"
-    exit 1
-  fi
-fi
-
-# ---- Post-apply harden + inject Docker CLI ----
-docker exec -u 0 openclaw-gateway bash -lc '
-set -e
-chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
-chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
-chown -R node:node /home/node/.openclaw
-' || true
-docker cp "$(which docker)" openclaw-gateway:/usr/local/bin/docker || true
-docker exec -u 0 openclaw-gateway chmod +x /usr/local/bin/docker || true
-docker exec -u 0 openclaw-gateway groupadd -g "$DOCKER_GID" -o -r docker 2>/dev/null || true
-docker exec -u 0 openclaw-gateway chown -R node:node /home/node/.openclaw || true
-
-# ---- Write prime-config.json ----
-cat > "$OC_HOST_DIR/corekit/prime-config.json" <<PCFG
-{
-  "primeId": "$PRIME_ID",
-  "projectId": "$GCP_PROJECT_ID",
-  "role": "prime"
-}
-PCFG
-
-# ---- Install control-daemon as systemd service ----
-echo "===> Installing control-daemon"
-cat > /etc/systemd/system/control-daemon.service <<UNIT
-[Unit]
-Description=Architect Prime Control Daemon (Firestore Polling)
-After=network-online.target docker.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=root
-Environment=OC_HOST_ROOT=$OC_HOST_ROOT
-Environment=AGENT_ID=$AGENT_ID
-Environment=GCP_PROJECT_ID=$GCP_PROJECT_ID
-Environment=PRIME_ID=$PRIME_ID
-Environment=POLL_INTERVAL=5
-ExecStart=$OC_HOST_DIR/bin/control-daemon
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-systemctl daemon-reload
-systemctl enable control-daemon
-systemctl start control-daemon
-
-echo "===> PRIME VM SETUP COMPLETE"
-echo "Gateway token: $MY_TOKEN"
-echo "OpenClaw commit: $STABLE_COMMIT"
-`;
