@@ -1,0 +1,40 @@
+    at /app/extensions/whatsapp/src/channel.setup.ts:17:35
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)
+    at /app/node_modules/jiti/dist/jiti.cjs:1:157987
+    at /app/extensions/whatsapp/api.ts:2:21
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)
+[openclaw] Failed to start CLI: TypeError: Cannot read properties of undefined (reading 'resolveWhatsAppGroupIntroHint')
+    at Proxy.get (/app/extensions/whatsapp/api.ts:1:2283)
+    at Reflect.get (<anonymous>)
+    at Object.get (/app/node_modules/jiti/dist/jiti.cjs:1:147491)
+    at /app/extensions/whatsapp/src/channel.setup.ts:17:35
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)
+    at /app/node_modules/jiti/dist/jiti.cjs:1:157987
+    at /app/extensions/whatsapp/api.ts:2:21
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)
+[openclaw] Failed to start CLI: TypeError: Cannot read properties of undefined (reading 'resolveWhatsAppGroupIntroHint')
+    at Proxy.get (/app/extensions/whatsapp/api.ts:1:2283)
+    at Reflect.get (<anonymous>)
+    at Object.get (/app/node_modules/jiti/dist/jiti.cjs:1:147491)
+    at /app/extensions/whatsapp/src/channel.setup.ts:17:35
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)
+    at /app/node_modules/jiti/dist/jiti.cjs:1:157987
+    at /app/extensions/whatsapp/api.ts:2:21
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)
+[openclaw] Failed to start CLI: TypeError: Cannot read properties of undefined (reading 'resolveWhatsAppGroupIntroHint')
+    at Proxy.get (/app/extensions/whatsapp/api.ts:1:2283)
+    at Reflect.get (<anonymous>)
+    at Object.get (/app/node_modules/jiti/dist/jiti.cjs:1:147491)
+    at /app/extensions/whatsapp/src/channel.setup.ts:17:35
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)
+    at /app/node_modules/jiti/dist/jiti.cjs:1:157987
+    at /app/extensions/whatsapp/api.ts:2:21
+    at eval_evalModule (/app/node_modules/jiti/dist/jiti.cjs:1:155533)
+    at jitiRequire (/app/node_modules/jiti/dist/jiti.cjs:1:150967)

@@ -1,0 +1,2 @@
+CONTAINER ID   IMAGE            COMMAND                  CREATED          STATUS                             PORTS     NAMES
+c3ab3bbc6440   openclaw:local   "docker-entrypoint.s…"   26 minutes ago   Up 12 seconds (health: starting)             openclaw-gateway

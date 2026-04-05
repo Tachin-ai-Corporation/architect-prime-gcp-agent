@@ -89,9 +89,12 @@ if [[ ! -d openclaw/.git ]]; then
 fi
 cd openclaw
 git fetch --all --prune
-STABLE_COMMIT="$(git rev-parse origin/main)"
+# Pin to a known-good commit — latest HEAD may include broken extensions
+# (e.g. WhatsApp extension crash: 'resolveWhatsAppGroupIntroHint' undefined)
+OC_PIN="163c6f5e354be2a8e2ff5b11a237077beb9e70fe"
+STABLE_COMMIT="${OC_PIN}"
 git checkout "${STABLE_COMMIT}"
-info "Using OpenClaw commit: ${STABLE_COMMIT}"
+info "Using OpenClaw commit: ${STABLE_COMMIT} (pinned)"
 
 cat > .env <<EOF
 GATEWAY_BIND=loopback
@@ -104,7 +107,7 @@ GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
 GCLOUD_PROJECT=${GCP_PROJECT_ID}
 CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
 GOOGLE_GENAI_USE_VERTEXAI=True
-GOOGLE_CLOUD_LOCATION=global
+GOOGLE_CLOUD_LOCATION=us-central1
 EOF
 
 info "Building Docker image openclaw:local ..."
