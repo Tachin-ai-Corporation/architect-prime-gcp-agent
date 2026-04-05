@@ -1,9 +1,9 @@
-{
+﻿{
   "env": {
     "GOOGLE_CLOUD_PROJECT": "${GCP_PROJECT_ID}",
     "GOOGLE_CLOUD_LOCATION": "global",
     "CLOUDSDK_CORE_PROJECT": "${GCP_PROJECT_ID}",
-    "CLOUDSDK_ACTIVE_CONFIG_NAME": "openclaw"
+    "CLOUDSDK_ACTIVE_CONFIG_NAME": "openclaw-devops"
   },
   "agents": {
     "defaults": {
@@ -11,6 +11,9 @@
         "primary": "google-vertex/gemini-2.5-flash"
       },
       "models": {
+        "google-vertex/gemini-3.1-pro-preview": {
+          "alias": "Gemini 3.1 Pro Preview"
+        },
         "google-vertex/gemini-2.5-flash": {
           "alias": "Gemini 2.5 Flash"
         }
@@ -31,31 +34,69 @@
         "memoryFlush": {
           "enabled": true,
           "softThresholdTokens": 600000,
-          "systemPrompt": "CHECKPOINT REACHED for Architect Prime. Write durable state to workspace/MEMORY.md. Summarize fleet state, key decisions, and next actions. Then stop and wait for user direction."
+          "systemPrompt": "CHECKPOINT REACHED for Architect Prime. Write durable state to workspace/checkpoint/progress.json and workspace/STATE.md. Summarize infrastructure, deployments, costs, key decisions, and next actions. Then stop and wait for user direction."
         }
       },
-      "maxConcurrent": 1
+      "maxConcurrent": 2,
+      "subagents": {
+        "maxConcurrent": 2
+      }
     },
     "list": [
       {
         "id": "main",
         "default": true,
-        "name": "Architect Prime",
+        "name": "Main Orchestrator",
         "model": {
           "primary": "google-vertex/gemini-2.5-flash"
         },
         "workspace": "~/.openclaw/workspace",
+        "subagents": {
+          "allowAgents": [
+            "engineer",
+            "devops"
+          ]
+        },
         "sandbox": { "mode": "off" },
         "tools": {
           "allow": [
             "read",
+            "sessions_list",
+            "sessions_history",
+            "sessions_send",
+            "sessions_spawn",
             "write",
             "edit",
+            "session_status",
+            "apply_patch",
             "exec",
             "process",
+            "browser",
             "coding"
           ],
-          "deny": ["web-search", "browser"]
+          "deny": ["web-search"]
+        }
+      },
+      {
+        "id": "engineer",
+        "name": "General Engineer (full worker)",
+        "model": { "primary": "google-vertex/gemini-3.1-pro-preview" },
+        "workspace": "~/.openclaw/workspace-engineer",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["*"],
+          "deny": ["browser", "web-search"]
+        }
+      },
+      {
+        "id": "devops",
+        "name": "GCP DevOps Specialist (full worker)",
+        "model": { "primary": "google-vertex/gemini-3.1-pro-preview" },
+        "workspace": "~/.openclaw/workspace-devops",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["*"],
+          "deny": ["browser", "web-search"]
         }
       }
     ]
@@ -67,7 +108,9 @@
       "security": "full",
       "ask": "off",
       "pathPrepend": ["~/.openclaw/bin"]
-    }
+    },
+    "agentToAgent": { "allow": ["sessions_send"] },
+    "subagents": { "tools": { "deny": ["browser"] } }
   },
   "messages": {
     "queue": { "mode": "collect", "debounceMs": 1000, "cap": 20, "drop": "summarize" },
@@ -77,7 +120,7 @@
     "removeAckAfterReply": false
   },
   "commands": { "native": "auto", "nativeSkills": "auto" },
-  "cron": { "enabled": false },
+  "cron": { "enabled": true },
   "hooks": { "internal": { "entries": { "session-memory": { "enabled": true } } } },
   "gateway": {
     "port": 18789,
