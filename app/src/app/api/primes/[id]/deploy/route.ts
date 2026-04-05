@@ -92,7 +92,7 @@ async function createVM(
   vmName: string,
   primeId: string
 ): Promise<Response> {
-  const machineType = `zones/${zone}/machineTypes/e2-small`;
+  const machineType = `zones/${zone}/machineTypes/e2-medium`;
   const sourceImage = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts";
 
   // Get the project number for the default compute SA
