@@ -1,0 +1,20 @@
+=== Waiting 30s for gateway ===
+=== Checking gateway health ===
+openclaw-gateway Up 2 minutes (health: starting)
+
+=== Checking new gateway logs (post-restart) ===
+2026-04-05T20:42:36.126+00:00 [health-monitor] started (interval: 300s, startup-grace: 60s, channel-connect-grace: 120s)
+2026-04-05T20:42:36.168+00:00 [gateway] agent model: google-vertex/gemini-2.5-flash
+2026-04-05T20:42:36.171+00:00 [gateway] ready (5 plugins, 8.3s)
+2026-04-05T20:42:36.173+00:00 [gateway] log file: /tmp/openclaw/openclaw-2026-04-05.log
+2026-04-05T20:42:36.176+00:00 [gateway] starting channels and sidecars...
+2026-04-05T20:42:36.384+00:00 [hooks] loaded 4 internal hook handlers
+2026-04-05T20:42:42.773+00:00 [bonjour] watchdog detected non-announced service; attempting re-advertise (gateway fqdn=prime-chucknorris (OpenClaw)._openclaw-gw._tcp.local. host=openclaw.local. port=18789 state=probing)
+2026-04-05T20:42:45.781+00:00 [plugins] embedded acpx runtime backend registered (cwd: /home/node/.openclaw/workspace)
+2026-04-05T20:42:46.772+00:00 [browser] control listening on http://127.0.0.1:18791/ (auth=token)
+2026-04-05T20:42:49.121+00:00 [plugins] embedded acpx runtime backend ready
+
+=== Sending test message ===
+{"id":"chatcmpl_051ddc29-a21e-491d-bfd8-8e2fb9104d75","object":"chat.completion","created":1775421876,"model":"openclaw/main","choices":[{"index":0,"message":{"role":"assistant","content":"LLM error: {\n  \"error\": {\n    \"code\": 401,\n    \"message\": \"API keys are not supported by this API. Expected OAuth2 access token or other authentication credentials that assert a principal. See https://cloud.google.com/docs/authentication\",\n    \"status\": \"UNAUTHENTICATED\",\n    \"details\": [\n      {\n        \"@type\": \"type.googleapis.com/google.rpc.ErrorInfo\",\n        \"reason\": \"CREDENTIALS_MISSING\",\n        \"domain\": \"googleapis.com\",\n        \"metadata\": {\n          \"method\": \"google.cloud.aiplatform.v1.PredictionService.StreamGenerateContent\",\n          \"service\": \"aiplatform.googleapis.com\"\n        }\n      }\n    ]\n  }\n}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
+
+=== DONE ===

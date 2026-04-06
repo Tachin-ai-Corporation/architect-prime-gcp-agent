@@ -1,0 +1,16 @@
+=== 1. Removing google-vertex from auth-profiles.json ===
+=== 2. Also try gcloud ADC inside the container ===
+Metadata token response: {"access_token":"ya29.c.c0AZ4bNpYegcefg2ZGIayE4-wz...
+=== 3. Restarting gateway ===
+openclaw-gateway
+Waiting 30s...
+=== 4. New logs ===
+  }
+}
+2026-04-05T20:47:25.960+00:00 [gateway] signal SIGTERM received
+2026-04-05T20:47:25.963+00:00 [gateway] received SIGTERM; shutting down
+2026-04-05T20:47:25.983+00:00 [gmail-watcher] gmail watcher stopped
+=== 5. Test chat completions ===
+CURL_FAILED
+
+=== DONE ===

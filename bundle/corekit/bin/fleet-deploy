@@ -200,11 +200,15 @@ gcloud iam service-accounts create "$FLEET_SA_NAME" \
   --display-name="Fleet Agent ${AGENT_NAME} (${SPECIALTY})" \
   --project="$FLEET_PROJECT" 2>/dev/null || log "SA already exists"
 
+# Wait for SA propagation to prevent IAM race condition
+sleep 5
+
 for role in roles/aiplatform.user roles/iam.serviceAccountTokenCreator; do
+  log "Granting ${role} to ${FLEET_SA_EMAIL}"
   gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
     --member="serviceAccount:${FLEET_SA_EMAIL}" \
     --role="$role" \
-    --quiet > /dev/null 2>&1 || true
+    --quiet > /dev/null 2>&1 || warn "IAM grant failed for ${role}"
 done
 
 # Grant serviceAccountTokenCreator on the shared DWD-signer SA

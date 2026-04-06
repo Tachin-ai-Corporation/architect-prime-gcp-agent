@@ -1,0 +1,177 @@
+=== model-auth-env (env-based auth for google-vertex) ===
+import { i as normalizeProviderIdForAuth } from "./provider-id-CTnG-N4H.js";
+import { t as getShellEnvAppliedKeys } from "./shell-env-CeJEBHZw.js";
+import { r as resolvePluginSetupProvider } from "./setup-registry-DqgxnlFO.js";
+import { t as normalizeOptionalSecretInput } from "./normalize-secret-input-D1biLM-p.js";
+import { _ as resolveProviderEnvApiKeyCandidates } from "./model-auth-markers-B94hUwZa.js";
+import { getEnvApiKey } from "@mariozechner/pi-ai";
+//#region src/agents/model-auth-env.ts
+function resolveEnvApiKey(provider, env = process.env) {
+	const normalized = normalizeProviderIdForAuth(provider);
+	const applied = new Set(getShellEnvAppliedKeys());
+	const pick = (envVar) => {
+		const value = normalizeOptionalSecretInput(env[envVar]);
+		if (!value) return null;
+		return {
+			apiKey: value,
+			source: applied.has(envVar) ? `shell env: ${envVar}` : `env: ${envVar}`
+		};
+	};
+	const candidates = resolveProviderEnvApiKeyCandidates()[normalized];
+	if (candidates) for (const envVar of candidates) {
+		const resolved = pick(envVar);
+		if (resolved) return resolved;
+	}
+	if (normalized === "google-vertex") {
+		const envKey = getEnvApiKey(normalized);
+		if (!envKey) return null;
+		return {
+			apiKey: envKey,
+			source: "gcloud adc"
+		};
+	}
+	const setupProvider = resolvePluginSetupProvider({
+		provider: normalized,
+		env
+	});
+	if (setupProvider?.resolveConfigApiKey) {
+		const resolved = setupProvider.resolveConfigApiKey({
+			provider: normalized,
+			env
+		});
+		if (resolved?.trim()) return {
+			apiKey: resolved,
+			source: resolved === "gcp-vertex-credentials" ? "gcloud adc" : "env"
+		};
+	}
+	return null;
+}
+//#endregion
+export { resolveEnvApiKey as t };
+
+===   ===
+=== model-auth-D3JUg9SJ.js (where 'No API key found' error is thrown) ===
+import { i as coerceSecretRef } from "./types.secrets-BjvOFOXW.js";
+import { t as createSubsystemLogger } from "./subsystem-D4A0WQ50.js";
+import { d as resolveAuthStorePathForDisplay, n as ensureAuthProfileStore } from "./store-CqHZUaO7.js";
+import { t as resolveApiKeyForProfile } from "./auth-profiles-CBoY5CH_.js";
+import "./model-selection-Dd040ra9.js";
+import { r as normalizeProviderId } from "./provider-id-CTnG-N4H.js";
+import { t as getShellEnvAppliedKeys } from "./shell-env-CeJEBHZw.js";
+import { s as resolveOwningPluginIdsForProvider } from "./plugin-auto-enable-iGf7OC2j.js";
+import { F as resolveProviderSyntheticAuthWithPlugin, W as shouldDeferProviderSyntheticProfileAuthWithPlugin, s as buildProviderMissingAuthMessageWithPlugin } from "./provider-runtime-D_jdC04r.js";
+import { n as getRuntimeConfigSnapshot } from "./runtime-snapshot-BBTZbCEh.js";
+import "./config-C_ZEtNa-.js";
+import { n as resolveAuthProfileOrder } from "./order-DmXyDlSF.js";
+import { t as normalizeOptionalSecretInput } from "./normalize-secret-input-D1biLM-p.js";
+import { n as listProfilesForProvider } from "./profiles-BRyXcXQ5.js";
+import { t as formatCliCommand } from "./command-format-vm8jM8pn.js";
+import { i as NON_ENV_SECRETREF_MARKER, l as isKnownEnvApiKeyMarker, t as CUSTOM_LOCAL_AUTH_MARKER, u as isNonSecretApiKeyMarker } from "./model-auth-markers-B94hUwZa.js";
+import { t as resolveEnvApiKey } from "./model-auth-env-CMBuDNQq.js";
+import path from "node:path";
+//#region src/agents/model-auth.ts
+const log = createSubsystemLogger("model-auth");
+function resolveProviderConfig(cfg, provider) {
+	const providers = cfg?.models?.providers ?? {};
+	const direct = providers[provider];
+	if (direct) return direct;
+	const normalized = normalizeProviderId(provider);
+	if (normalized === provider) return Object.entries(providers).find(([key]) => normalizeProviderId(key) === normalized)?.[1];
+	return providers[normalized] ?? Object.entries(providers).find(([key]) => normalizeProviderId(key) === normalized)?.[1];
+}
+function getCustomProviderApiKey(cfg, provider) {
+	return normalizeOptionalSecretInput(resolveProviderConfig(cfg, provider)?.apiKey);
+}
+function resolveUsableCustomProviderApiKey(params) {
+	const customKey = getCustomProviderApiKey(params.cfg, params.provider);
+	if (!customKey) return null;
+	if (!isNonSecretApiKeyMarker(customKey)) return {
+		apiKey: customKey,
+		source: "models.json"
+	};
+	if (!isKnownEnvApiKeyMarker(customKey)) return null;
+	const envValue = normalizeOptionalSecretInput((params.env ?? process.env)[customKey]);
+	if (!envValue) return null;
+	return {
+		apiKey: envValue,
+		source: resolveEnvSourceLabel({
+			applied: new Set(getShellEnvAppliedKeys()),
+			envVars: [customKey],
+			label: `${customKey} (models.json marker)`
+		})
+	};
+}
+
+=== api-key-rotation (google-vertex section) ===
+import { r as formatErrorMessage } from "./errors-Bs2h5H8p.js";
+import "./model-selection-Dd040ra9.js";
+import { r as normalizeProviderId } from "./provider-id-CTnG-N4H.js";
+//#region src/agents/live-auth-keys.ts
+const KEY_SPLIT_RE = /[\s,;]+/g;
+const GOOGLE_LIVE_SINGLE_KEY = "OPENCLAW_LIVE_GEMINI_KEY";
+const PROVIDER_PREFIX_OVERRIDES = {
+	google: "GEMINI",
+	"google-vertex": "GEMINI"
+};
+const PROVIDER_API_KEY_CONFIG = {
+	anthropic: {
+		liveSingle: "OPENCLAW_LIVE_ANTHROPIC_KEY",
+		listVar: "OPENCLAW_LIVE_ANTHROPIC_KEYS",
+		primaryVar: "ANTHROPIC_API_KEY",
+		prefixedVar: "ANTHROPIC_API_KEY_"
+	},
+	google: {
+		liveSingle: GOOGLE_LIVE_SINGLE_KEY,
+		listVar: "GEMINI_API_KEYS",
+		primaryVar: "GEMINI_API_KEY",
+		prefixedVar: "GEMINI_API_KEY_"
+	},
+	"google-vertex": {
+		liveSingle: GOOGLE_LIVE_SINGLE_KEY,
+		listVar: "GEMINI_API_KEYS",
+		primaryVar: "GEMINI_API_KEY",
+		prefixedVar: "GEMINI_API_KEY_"
+	},
+	openai: {
+		liveSingle: "OPENCLAW_LIVE_OPENAI_KEY",
+		listVar: "OPENAI_API_KEYS",
+		primaryVar: "OPENAI_API_KEY",
+		prefixedVar: "OPENAI_API_KEY_"
+	}
+};
+function parseKeyList(raw) {
+	if (!raw) return [];
+	return raw.split(KEY_SPLIT_RE).map((value) => value.trim()).filter(Boolean);
+}
+function collectEnvPrefixedKeys(prefix) {
+	const keys = [];
+	for (const [name, value] of Object.entries(process.env)) {
+		if (!name.startsWith(prefix)) continue;
+		const trimmed = value?.trim();
+		if (!trimmed) continue;
+		keys.push(trimmed);
+	}
+	return keys;
+}
+function resolveProviderApiKeyConfig(provider) {
+	const normalized = normalizeProviderId(provider);
+	const custom = PROVIDER_API_KEY_CONFIG[normalized];
+	const base = PROVIDER_PREFIX_OVERRIDES[normalized] ?? normalized.toUpperCase().replace(/-/g, "_");
+	const liveSingle = custom?.liveSingle ?? `OPENCLAW_LIVE_${base}_KEY`;
+	const listVar = custom?.listVar ?? `${base}_API_KEYS`;
+	const primaryVar = custom?.primaryVar ?? `${base}_API_KEY`;
+	const prefixedVar = custom?.prefixedVar ?? `${base}_API_KEY_`;
+	if (normalized === "google" || normalized === "google-vertex") return {
+		liveSingle,
+		listVar,
+		primaryVar,
+		prefixedVar,
+		fallbackVars: ["GOOGLE_API_KEY"]
+	};
+	return {
+		liveSingle,
+		listVar,
+		primaryVar,
+		prefixedVar,
+
+=== DONE ===

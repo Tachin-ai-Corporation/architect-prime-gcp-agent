@@ -1,0 +1,37 @@
+=== 1. Restoring auth-profiles.json ===
+auth-profiles.json restored.
+
+=== 2. Restarting gateway container ===
+openclaw-gateway
+Container restarting...
+
+=== 3. Waiting 30s for gateway up ===
+
+=== 4. Gateway logs (last 10 lines) ===
+2026-04-05T19:50:45.494+00:00 [diagnostic] lane task error: lane=session:agent:main:openai:91d6db0d-6496-4572-8f58-4d9a56dd95f3 durationMs=608 error="Error: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+2026-04-05T19:50:45.523+00:00 [model-fallback] model fallback decision: decision=candidate_failed requested=google-vertex/gemini-2.5-flash candidate=google-vertex/gemini-2.5-flash reason=auth next=none
+2026-04-05T19:50:45.530+00:00 [openai-compat] chat completion failed: FailoverError: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir.
+2026-04-05T20:16:36.523+00:00 [diagnostic] lane task error: lane=main durationMs=532 error="Error: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+2026-04-05T20:16:36.525+00:00 [diagnostic] lane task error: lane=session:agent:main:main durationMs=535 error="Error: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+2026-04-05T20:16:36.528+00:00 [model-fallback] model fallback decision: decision=candidate_failed requested=google-vertex/gemini-2.5-flash candidate=google-vertex/gemini-2.5-flash reason=auth next=none
+2026-04-05T20:16:36.530+00:00 Embedded agent failed before reply: No API key found for provider "google-vertex". Auth store: /home/node/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /home/node/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir.
+2026-04-05T20:41:44.700+00:00 [gateway] signal SIGTERM received
+2026-04-05T20:41:44.702+00:00 [gateway] received SIGTERM; shutting down
+2026-04-05T20:41:44.717+00:00 [gmail-watcher] gmail watcher stopped
+
+=== 5. Checking auth-profiles.json inside container ===
+{
+  "version": 1,
+  "profiles": {
+    "google-vertex:default": {
+      "type": "api_key",
+      "provider": "google-vertex",
+      "key": "adc"
+    }
+  }
+}
+
+=== 6. Quick test — send a message via /v1/chat/completions ===
+CURL_FAILED
+
+=== DONE ===

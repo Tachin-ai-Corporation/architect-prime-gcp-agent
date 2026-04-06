@@ -1,0 +1,8 @@
+﻿
+OPENCLAW_PIN_SHA="${OPENCLAW_PIN_SHA:-}"
+if [[ -n "${OPENCLAW_PIN_SHA}" ]]; then
+  STABLE_COMMIT="${OPENCLAW_PIN_SHA}"
+  git cat-file -t "${STABLE_COMMIT}" >/dev/null 2>&1 || die 
+"OPENCLAW_PIN_SHA=${OPENCLAW_PIN_SHA} not found in repo"
+
+

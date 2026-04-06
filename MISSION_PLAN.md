@@ -126,9 +126,10 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 - [x] **control-daemon** — Firestore message bridge (polls Firestore → routes to OpenClaw gateway API)
 - [x] **Machine upgrade** — e2-medium (4GB) for Docker build memory requirements
 - [x] **Workspace files** — SOUL.md, TOOLS.md, MEMORY.md deployed via CoreKit manifest
-- [ ] **E2E verification** — confirm dashboard chat flows through OpenClaw and returns intelligent responses
-- [ ] **Fleet hire through OpenClaw** — verify fleet-deploy exec tool works within the OpenClaw session
-- [ ] **Fleet agents on OpenClaw** — fleet VMs also run OpenClaw (not just `agent-ask`)
+- [x] **Vertex AI ADC authentication** — GCE metadata-based ADC working via model-auth-env patch
+- [x] **E2E verification** — dashboard → Firestore → control-daemon → OpenClaw → Vertex AI → response displayed in dashboard
+- [x] **Fleet hire through OpenClaw** — "hire a devops agent named testbot" → exec fleet-deploy → VM created in GCP
+- [x] **Fleet agents on OpenClaw** — fleet-bootstrap.sh deploys full OpenClaw + ADC fix + inbox-daemon on fleet VMs
 
 ---
 
@@ -139,14 +140,16 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 | Cloud Run dashboard | ✅ Online | Chat, fleet, setup tabs |
 | Prime VM bootstrap | ✅ Working | Boot stub → `prime-bootstrap.sh` from GitHub |
 | OpenClaw container | ✅ Running | Docker, `--network host`, port 18789 |
+| Vertex AI ADC auth | ✅ Working | GCE metadata → OAuth2 tokens, patched model-auth-env |
 | control-daemon | ✅ Running | systemd service, polls Firestore every 5s |
 | Bootstrap config | ✅ Applied | RPC config.apply with retry/baseHash |
 | CoreKit tools | ✅ Installed | fleet-deploy, fleet-teardown, etc. on VM |
 | Dashboard → Firestore messaging | ✅ Working | Messages written to Firestore |
-| Firestore → OpenClaw routing | 🔄 Needs verification | control-daemon should bridge messages |
-| OpenClaw → intelligent response | 🔄 Needs verification | Full agent loop (LLM + tools) |
-| Fleet hire via OpenClaw exec | 🔄 Needs verification | exec tool should call fleet-deploy |
-| Fleet agents on OpenClaw | ❌ Not started | Fleet VMs still use agent-ask, not OpenClaw |
+| OpenClaw → Vertex AI (direct) | ✅ Working | Tested: "pong" response from gemini-2.5-flash |
+| Firestore → OpenClaw routing | ✅ Working | control-daemon bridges messages successfully |
+| Dashboard E2E chat | ✅ Working | Full round-trip verified: intelligent responses in dashboard |
+| Fleet hire via OpenClaw exec | ✅ Working | "hire testbot" → fleet-deploy → VM created + Firestore record |
+| Fleet agents on OpenClaw | ✅ Working | fleet-echo running OpenClaw: "pong" from Vertex AI |
 
 ---
 
