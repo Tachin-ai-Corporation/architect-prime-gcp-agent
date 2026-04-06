@@ -32,6 +32,8 @@ CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 PROCESSED_FILE="/tmp/inbox-daemon-processed.json"
 SPACES_CACHE_FILE="/tmp/inbox-daemon-spaces.json"
 SPACE_REFRESH_INTERVAL=60  # Re-discover spaces every 60 seconds
+OC_GATEWAY="http://localhost:18789"
+OC_TOKEN="$(cat /root/.openclaw/.gateway-token 2>/dev/null || echo 'no-token')"
 
 # ---- Logging ----
 log() { echo "[$(date -Is)] [inbox-daemon] $*"; }
@@ -209,17 +211,47 @@ process_message() {
 • Email: ${sender_email}"
       ;;
     *)
-      # Route to AI
-      local agent_ask="${OC_HOST_ROOT}/.openclaw/bin/agent-ask"
-      if [[ -x "$agent_ask" ]]; then
-        log "Routing to agent-ask: ${clean_text:0:60}"
-        response="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" \
-          timeout "$PROCESS_TIMEOUT" "$agent_ask" "$clean_text" 2>/dev/null)" \
-          || response="⚠️ AI unavailable right now. Try again later or use \`help\` for built-in commands."
-      else
-        response="❓ I received your message but my AI brain isn't available right now.
-Try \`help\` for built-in commands."
-      fi
+      # Route to OpenClaw gateway (OpenAI-compatible endpoint)
+      log "Routing to OpenClaw gateway: ${clean_text:0:80}"
+      local oc_response
+      oc_response="$(curl -s --max-time "$PROCESS_TIMEOUT" \
+        -X POST "${OC_GATEWAY}/v1/chat/completions" \
+        -H "Authorization: Bearer ${OC_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "$(python3 -c "
+import json, sys
+text = sys.stdin.read().strip()
+print(json.dumps({
+    'model': 'openclaw/main',
+    'messages': [{'role': 'user', 'content': text}]
+}))
+" <<< "$clean_text")" 2>/dev/null)" || oc_response=''
+
+      # Parse OpenAI chat completions response
+      response="$(python3 -c "
+import json, sys
+raw = sys.stdin.read().strip()
+if not raw:
+    print('⚠ Empty response from OpenClaw gateway.')
+    sys.exit(0)
+try:
+    data = json.loads(raw)
+    r = ''
+    if isinstance(data, dict):
+        choices = data.get('choices', [])
+        if choices and isinstance(choices, list):
+            msg = choices[0].get('message', {}) if isinstance(choices[0], dict) else {}
+            r = msg.get('content', '')
+        if not r:
+            r = data.get('content', '') or data.get('response', '') or data.get('message', '')
+    if r:
+        # Truncate for Chat (4096 char limit)
+        print(r[:4000])
+    else:
+        print('⚠ Unexpected response format from AI.')
+except Exception as e:
+    print(f'⚠ Error: {e}')
+" <<< "$oc_response" 2>/dev/null)" || response="⚠ AI unavailable right now. Try again later or use \`help\` for built-in commands."
       ;;
   esac
 
