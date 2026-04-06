@@ -129,6 +129,7 @@ app/                              # Cloud Run control plane (Next.js)
 
 bootstrap/                        # VM startup scripts
 ├── prime-bootstrap.sh            # Prime VM bootstrap (standalone bash)
+├── fleet-bootstrap.sh            # Fleet agent VM bootstrap (mirrors Prime)
 ├── phase1-cloudshell.sh          # GCP project setup (manual flow)
 └── phase2-vm.sh                  # Legacy VM startup (reference)
 
@@ -147,6 +148,10 @@ bundle/workspaces/                # Agent persona files
 ├── engineer/                     # Engineer specialty workspace
 ├── devops/                       # DevOps specialty workspace
 └── fleet/                        # Fleet agent template
+
+bundle/corekit/config/            # Config templates
+├── openclaw-bootstrap.json5.tmpl # Prime OpenClaw config
+└── openclaw-fleet-bootstrap.json5.tmpl # Fleet OpenClaw config
 
 deploy/                           # Installation scripts
 ├── install.sh                    # One-command installer
@@ -216,7 +221,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | v0.9.1 | DWD setup wizard |
 | v0.9.2 | Fleet agent logs & monitoring |
 | v0.9.3 | Version display + upgrade button |
-| **v2.0** | **OpenClaw pivot — Docker-based agent brain, boot stub pattern** |
+| **v2.0** | **OpenClaw pivot — Docker-based agent brain, boot stub pattern, fleet agents on OpenClaw** |
 
 ---
 

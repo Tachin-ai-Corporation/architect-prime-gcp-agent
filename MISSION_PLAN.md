@@ -10,7 +10,7 @@ Architect Prime is a **self-bootstrapping agent factory** built on [OpenClaw](ht
 
 Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-**Current Status:** OpenClaw integration complete. Prime deploys as a Docker-containerized OpenClaw instance with a full AI brain, managed via a Cloud Run dashboard. Fleet lifecycle (hire/fire) is functional through OpenClaw exec tools. End-to-end message flow (Dashboard → Firestore → control-daemon → OpenClaw → response) is operational.
+**Current Status:** v2.0 OpenClaw integration complete. All four v2.0 checkpoints done. Prime and fleet agents both deploy as Docker-containerized OpenClaw instances with full AI brains, managed via a Cloud Run dashboard. Fleet lifecycle (hire/fire), Vertex AI ADC authentication, and end-to-end message flow are operational. Next milestone: DWD Google Chat verification for fleet agents.
 
 ---
 
@@ -131,6 +131,11 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 - [x] **Fleet hire through OpenClaw** — "hire a devops agent named testbot" → exec fleet-deploy → VM created in GCP
 - [x] **Fleet agents on OpenClaw** — fleet-bootstrap.sh deploys full OpenClaw + ADC fix + inbox-daemon on fleet VMs
 
+> **Issues found & fixed:**
+> - IAM race condition: `roles/aiplatform.user` fails silently when applied immediately after SA creation → added 5s sleep
+> - ADC requires `GOOGLE_CLOUD_LOCATION=us-central1` (not `global`)
+> - Docker build needs 4GB RAM → upgraded fleet VMs to e2-medium
+
 ---
 
 ## What Works Today
@@ -153,51 +158,47 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 
 ---
 
-## Next Steps (v2.0 Completion)
+## Next Steps
 
-### Checkpoint 2: End-to-End Message Verification
-> *Goal: Dashboard message → OpenClaw → intelligent response displayed in dashboard*
+### Checkpoint 5: DWD Google Chat Verification
+> *Goal: Fleet agents communicate via Google Chat with DWD impersonation*
 
-1. Send a test message from the dashboard
-2. Verify control-daemon picks it up from Firestore
-3. Verify OpenClaw gateway processes it (LLM + workspace context)
-4. Verify response is written back to Firestore
-5. Verify response appears in dashboard chat
+1. Verify DWD configuration is complete (signer SA, Admin Console delegation)
+2. Verify inbox-daemon on fleet-echo is polling Google Chat via DWD
+3. Send a @-mention to the fleet agent in Google Chat
+4. Verify the agent reads and responds in Chat (not just dashboard)
+5. Verify chat-send works for fleet agent announcements
 
-### Checkpoint 3: Fleet Hire/Fire Through OpenClaw
-> *Goal: User says "hire a devops agent named stan" → Prime uses exec tool to call fleet-deploy*
+### Checkpoint 6: Fleet Agent E2E Verification
+> *Goal: Full integration test of fleet agent capabilities*
 
-1. Verify OpenClaw has `exec` tool enabled and `~/.openclaw/bin` on PATH
-2. Test fleet-deploy from within the OpenClaw session
-3. Verify fleet record appears in Firestore
-4. Verify fleet agent VM boots successfully
-
-### Checkpoint 4: Fleet Agents on OpenClaw
-> *Goal: Fleet agent VMs also run full OpenClaw instances*
-
-1. Update fleet-deploy to use the Docker-based OpenClaw bootstrap
-2. Each fleet agent gets its own OpenClaw config (different SOUL, specialty workspace)
-3. Fleet agents run inbox-daemon for Google Chat polling (DWD)
-4. Verify fleet agent responds to Chat messages
-
-### Checkpoint 5: GChat Verification
-> *Goal: Fleet agents communicate via Google Chat with DWD*
-
-1. Verify inbox-daemon polls Chat via DWD
-2. Verify fleet agent responds to @-mentions in Chat
+1. Deploy a fresh fleet agent via dashboard chat (hire command)
+2. Verify fleet agent responds in dashboard AND Google Chat
+3. Verify fleet-verify detects the agent as online
+4. Verify fleet-teardown cleanly removes the agent
+5. Verify fleet-upgrade updates an agent's CoreKit in-place
 
 ---
 
 ## Post-v2.0 — Future Capabilities
 
-- **Brain sub-agents** — OpenClaw multi-agent system (Cortex, Prefrontal, Hippocampus, etc.)
+### Near-term (v2.1)
+- **Richer specialty workspaces** — expanded SOUL.md, TOOLS.md, and MEMORY.md per specialty
+- **Fleet health monitoring** — Prime periodically checks fleet agent health via fleet-verify
+- **Auto-recovery** — detect and restart failed fleet agents
+- **Cost governance** — per-agent spend tracking, auto-hibernate idle agents
+
+### Mid-term (v3.0)
+- **Brain sub-agents** — OpenClaw multi-agent system (Cortex, Prefrontal, Hippocampus)
 - **Checkpoint queue** — R/C/M framework (Responsibilities, Checkpoints, Missions)
 - **Agent memory system** — persistent memory across sessions
+- **Inter-agent delegation** — agents @-mention other agents to delegate tasks
+
+### Long-term (v4.0+)
 - **Google Workspace skills** — Docs, Sheets, Calendar, Gmail integration
 - **Agent cell templates** — pre-built team configurations
-- **Inter-agent delegation** — agents @-mention other agents to delegate
-- **Cost governance** — per-agent spend tracking, auto-hibernate idle agents
 - **Self-evolution** — Prime proposes its own improvements via PR
+- **Multi-project federation** — fleet agents across different GCP projects
 
 ---
 
@@ -219,7 +220,7 @@ Dashboard (Cloud Run)
     │   └── Polls Firestore messages → POST to OpenClaw gateway
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
-    │   ├── Main agent (Gemini 2.5 Flash)
+    │   ├── Main agent (Gemini 2.5 Flash via ADC)
     │   ├── Workspace: SOUL.md, TOOLS.md, MEMORY.md
     │   ├── Tools: exec (fleet-deploy, fleet-teardown, etc.)
     │   └── Session memory + context pruning
@@ -229,6 +230,17 @@ Dashboard (Cloud Run)
         ├── agent-ask, build-system-prompt
         ├── inbox-daemon, chat-send, chat-read
         └── dwd-token, upgrade-corekit
+
+    Fleet Agent VMs (e2-medium, one per agent)
+    ├── openclaw-gateway (Docker, --network host, port 18789)
+    │   ├── Specialty agent (Gemini 2.5 Flash via ADC)
+    │   ├── Workspace: specialty SOUL.md, TOOLS.md
+    │   └── ADC fix (same model-auth-env patch as Prime)
+    │
+    ├── inbox-daemon (systemd)
+    │   └── Polls Google Chat via DWD → POST to OpenClaw gateway
+    │
+    └── CoreKit (manifest-installed from same repo)
 ```
 
 ---
