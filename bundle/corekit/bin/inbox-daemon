@@ -31,9 +31,10 @@ DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
 CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 PROCESSED_FILE="/tmp/inbox-daemon-processed.json"
 SPACES_CACHE_FILE="/tmp/inbox-daemon-spaces.json"
-SPACE_REFRESH_INTERVAL=60  # Re-discover spaces every 60 seconds
+SPACE_REFRESH_INTERVAL=300  # Re-discover spaces every 5 minutes
 OC_GATEWAY="http://localhost:18789"
 OC_TOKEN="$(cat /root/.openclaw/.gateway-token 2>/dev/null || echo 'no-token')"
+HIGH_WATER_FILE="/tmp/inbox-daemon-highwater"   # tracks latest seen msg timestamp
 
 # ---- Logging ----
 log() { echo "[$(date -Is)] [inbox-daemon] $*"; }
@@ -59,9 +60,13 @@ fi
 
 # ---- Initialize processed messages tracker ----
 if [[ ! -f "$PROCESSED_FILE" ]]; then
-  echo '[]' > "$PROCESSED_FILE"
+  echo '{}' > "$PROCESSED_FILE"
 fi
 echo '[]' > "$SPACES_CACHE_FILE"
+# Initialize high-water mark to NOW so we only process future messages
+if [[ ! -f "$HIGH_WATER_FILE" ]]; then
+  date -u +%Y-%m-%dT%H:%M:%S.000000Z > "$HIGH_WATER_FILE"
+fi
 
 log "Starting inbox-daemon for agent=${AGENT_ID} email=${AGENT_USER_EMAIL}"
 log "Mode: multi-space discovery | Poll: ${POLL_INTERVAL}s"
@@ -137,20 +142,34 @@ is_processed() {
   local msg_name="$1"
   python3 -c "
 import json, sys
-processed = json.load(open('$PROCESSED_FILE'))
-sys.exit(0 if '$msg_name' in processed else 1)
+try:
+    processed = json.load(open('$PROCESSED_FILE'))
+    # Support both dict (new) and list (old) format
+    if isinstance(processed, dict):
+        sys.exit(0 if '$msg_name' in processed else 1)
+    else:
+        sys.exit(0 if '$msg_name' in processed else 1)
+except:
+    sys.exit(1)
 " 2>/dev/null
 }
 
-# ---- Helper: mark message as processed ----
+# ---- Helper: mark message as processed (using dict for O(1) lookup) ----
 mark_processed() {
   local msg_name="$1"
   python3 -c "
-import json
-processed = json.load(open('$PROCESSED_FILE'))
-processed.append('$msg_name')
-# Keep only last 1000 to avoid unbounded growth
-processed = processed[-1000:]
+import json, time
+try:
+    processed = json.load(open('$PROCESSED_FILE'))
+    if isinstance(processed, list):
+        processed = {m: True for m in processed}  # migrate old format
+except:
+    processed = {}
+processed['$msg_name'] = True
+# Keep only last 500 entries to avoid unbounded growth
+if len(processed) > 500:
+    keys = list(processed.keys())
+    processed = {k: True for k in keys[-500:]}
 json.dump(processed, open('$PROCESSED_FILE', 'w'))
 " 2>/dev/null
 }
@@ -290,6 +309,12 @@ while true; do
   fi
 
   # Poll each space for new messages
+  MSGS_FILE="/tmp/inbox-daemon-msgs-$$.json"
+  : > "$MSGS_FILE"
+
+  # Get high-water mark
+  HW="$(cat "$HIGH_WATER_FILE" 2>/dev/null || echo '1970-01-01T00:00:00.000000Z')"
+
   python3 -c "
 import json
 spaces = json.load(open('$SPACES_CACHE_FILE'))
@@ -301,10 +326,10 @@ for s in spaces:
     # Fetch messages from this space
     RAW="$(read_space_messages "$space_name" "$TOKEN")"
 
-    # Parse messages and filter to recent ones
+    # Parse and collect messages newer than high-water mark
     echo "$RAW" | python3 -c "
 import json, sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 raw = sys.stdin.read().strip()
 try:
@@ -313,26 +338,26 @@ except:
     data = {}
 
 messages = data.get('messages', [])
+hw = '$HW'
 
-# Only process messages from the last POLL_INTERVAL + buffer
-cutoff = datetime.now(timezone.utc) - timedelta(seconds=${POLL_INTERVAL} + 5)
 for msg in reversed(messages):  # oldest first
     ct = msg.get('createTime', '')
-    if ct:
-        try:
-            msg_time = datetime.fromisoformat(ct.replace('Z', '+00:00'))
-            if msg_time < cutoff:
-                continue
-        except:
-            pass
+    if ct and ct <= hw:
+        continue
     print(json.dumps({
         'name': msg.get('name', ''),
         'text': msg.get('text', '') or msg.get('argumentText', '') or '',
         'senderEmail': msg.get('sender', {}).get('email', ''),
         'senderDisplayName': msg.get('sender', {}).get('displayName', ''),
         'space': msg.get('space', {}).get('name', ''),
+        'createTime': ct,
     }))
-" 2>/dev/null | while IFS= read -r msg_json; do
+" 2>/dev/null >> "$MSGS_FILE"
+  done
+
+  # Process collected messages (not in a pipe subshell)
+  if [[ -s "$MSGS_FILE" ]]; then
+    while IFS= read -r msg_json; do
       msg_name="$(echo "$msg_json" | jq -r '.name' 2>/dev/null)"
       [[ -n "$msg_name" ]] || continue
 
@@ -341,11 +366,20 @@ for msg in reversed(messages):  # oldest first
         continue
       fi
 
+      # Mark as processed IMMEDIATELY (before calling OpenClaw)
+      mark_processed "$msg_name"
+
       # Skip messages from self
       sender_email="$(echo "$msg_json" | jq -r '.senderEmail' 2>/dev/null)"
       if [[ -n "${AGENT_USER_EMAIL:-}" && "$sender_email" == "$AGENT_USER_EMAIL" ]]; then
-        mark_processed "$msg_name"
         continue
+      fi
+
+      # Update high-water mark
+      msg_time="$(echo "$msg_json" | jq -r '.createTime' 2>/dev/null)"
+      if [[ -n "$msg_time" && "$msg_time" > "$HW" ]]; then
+        HW="$msg_time"
+        echo "$HW" > "$HIGH_WATER_FILE"
       fi
 
       # Process the message
@@ -360,10 +394,10 @@ for msg in reversed(messages):  # oldest first
         warn "Error processing: ${msg_name}"
       fi
 
-      mark_processed "$msg_name"
       sleep 1
-    done
-  done
+    done < "$MSGS_FILE"
+  fi
 
+  rm -f "$MSGS_FILE"
   sleep "$POLL_INTERVAL"
 done
