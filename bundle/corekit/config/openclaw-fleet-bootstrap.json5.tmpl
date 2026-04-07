@@ -34,7 +34,10 @@
           "systemPrompt": "CHECKPOINT REACHED for fleet agent ${AGENT_ID}. Write durable state to workspace/MEMORY.md. Summarize key decisions that were made and next actions. Then stop and wait for user direction."
         }
       },
-      "maxConcurrent": 1
+      "maxConcurrent": 1,
+      "heartbeat": {
+        "every": "0m"
+      }
     },
     "list": [
       {
