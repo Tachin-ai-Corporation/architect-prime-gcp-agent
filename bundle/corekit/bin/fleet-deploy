@@ -330,21 +330,24 @@ echo "  Specialty      : ${SPECIALTY}"
 echo "  CoreRef        : ${CORE_REF}"
 echo
 echo "============================================================"
-echo "  ADMIN SETUP REQUIRED (2 steps)"
+echo "  ADMIN SETUP REQUIRED"
 echo "============================================================"
 echo
 echo "  Step 1: Create Workspace User (if not already done)"
 echo "    → https://admin.google.com/ac/users"
-echo "    Create: ${AGENT_USER_EMAIL}"
+echo "    First Name : ${AGENT_FIRST_NAME}"
+echo "    Last Name  : ${AGENT_LAST_NAME}"
+echo "    Email      : ${AGENT_USER_EMAIL}"
+echo "    ⚠️  Names MUST match exactly for @-mention filtering to work"
 echo
 echo "  Step 2: Add to Chat Space"
 echo "    Open your Chat space → Add people → ${AGENT_USER_EMAIL}"
 echo
+echo "  Step 3: Verify"
+echo "    In Chat, send: @${AGENT_MENTION} hello"
+echo
 echo "  No per-agent DWD setup needed — fleet agents use the shared"
 echo "  DWD-signer SA (${DWD_SIGNER_SA})."
-echo
-echo "  After setup, verify by @-mentioning '${AGENT_DISPLAY_NAME}'"
-echo "  in Chat."
 echo
 echo "============================================================"
 

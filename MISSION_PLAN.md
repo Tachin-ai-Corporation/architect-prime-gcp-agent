@@ -138,7 +138,7 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 
 ---
 
-### Checkpoint 5: DWD Google Chat Verification
+### Checkpoint 5: DWD Google Chat Verification — HARDENED
 > *Completed: 2026-04-07*
 
 - [x] **inbox-daemon rewrite** — complete from-scratch rewrite for robustness
@@ -150,20 +150,31 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
   - State in `/var/lib/inbox-daemon/` (survives reboots, not in /tmp)
   - Poll interval: 15s, space discovery: 5min cache
 - [x] **inbox-daemon → OpenClaw gateway** — routes Chat messages to `/v1/chat/completions` instead of legacy `agent-ask`
-- [x] **OpenClaw heartbeat disabled** — `"heartbeat": {"every": "0m"}` in both Prime and fleet configs; was spamming `HEARTBEAT_OK` to Chat every 10s
-- [x] **Fleet agent identity fix** — DevOps SOUL.md/IDENTITY.md with strong identity + template vars (`{{AGENT_NAME}}`, `{{SPECIALTY}}`); fleet-bootstrap.sh clears Prime workspace before overlaying specialty files
+- [x] **@-mention filtering** — deterministic message filtering using agent's Workspace First/Last name
+  - Chat API returns empty `sender.email` for all DWD-read messages — sender-based filtering impossible
+  - Solution: only process messages containing `@FirstName LastName` (e.g., `@Devops-Agent Stan`)
+  - Naming convention: email `devops-agent-stan@...` → First: `Devops-Agent`, Last: `Stan`
+  - `agentMention` stored in `chat-config.json`, fleet-deploy passes as VM metadata
+  - Strips full @-mention before sending to OpenClaw (was only stripping first word)
+  - Elegantly solves: self-reply loop, heartbeat spam, random noise — all in one filter
+- [x] **OpenClaw heartbeat disabled** — config + `openclaw system heartbeat disable` at process level
+- [x] **Fleet agent identity fix** — DevOps SOUL.md/IDENTITY.md with strong identity + template vars
+  - fleet-bootstrap.sh clears Prime workspace before overlaying specialty files
+  - upgrade-corekit now auto-restores fleet workspace after install (prevents identity regression)
 - [x] **Fleet agent `stan` deployed** — `devops-agent-stan@tachin.ai` on `fleet-stan` VM
-- [x] **DWD verified** — DWD token generation working, inbox-daemon discovers Chat spaces
-- [x] **E2E Chat verified** — @-mention in Google Chat → inbox-daemon → OpenClaw → response posted to Chat
-- [x] **IAM fix** — manually granted `roles/aiplatform.user` to fleet-stan SA (bootstrap race condition)
+- [x] **E2E Chat verified** — single response, correct DevOps identity, no spam, no self-replies
+- [x] **Admin setup instructions** — fleet-deploy outputs exact First Name, Last Name, Email
 
-> **Issues found & fixed:**
-> - OpenClaw heartbeat spams Chat with `HEARTBEAT_OK` every 10s → disabled via `agents.defaults.heartbeat.every: 0m`
-> - Old inbox-daemon sent 3 duplicate responses per message → rewrote with atomic dedup + high-water mark
-> - Fleet agents inherit Prime's identity (SOUL.md) → added workspace clearing + strong DevOps SOUL
-> - `fleet-deploy: command not found` when run via `sudo bash` → must use full path
-> - ADC patch survives gateway restart (already applied in fleet-bootstrap.sh step 15)
-> - inbox-daemon error messages sent to Chat ("No response from OpenClaw") → new daemon never sends errors
+> **Issues found & fixed (9 total):**
+> 1. OpenClaw heartbeat spams Chat every 10s → disabled via config + process-level disable
+> 2. Old inbox-daemon sent 3 duplicates per message → rewrote with atomic dedup + high-water mark
+> 3. Fleet agents inherit Prime's identity → workspace clearing + strong DevOps SOUL
+> 4. `fleet-deploy: command not found` → must use full path
+> 5. inbox-daemon error messages sent to Chat → new daemon never sends errors
+> 6. Self-reply feedback loop: DWD messages have empty sender.email → @-mention filter
+> 7. Heartbeat feedback loop: inbox-daemon processed own HEARTBEAT_OK → @-mention filter
+> 8. @-mention stripping only removed first word → strips full `@FirstName LastName`
+> 9. upgrade-corekit overwrites fleet workspace → auto-restores specialty workspace after install
 
 ---
 
@@ -174,20 +185,16 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 | Cloud Run dashboard | ✅ Online | Chat, fleet, setup tabs |
 | Prime VM bootstrap | ✅ Working | Boot stub → `prime-bootstrap.sh` from GitHub |
 | OpenClaw container | ✅ Running | Docker, `--network host`, port 18789 |
-| Vertex AI ADC auth | ✅ Working | GCE metadata → OAuth2 tokens, patched model-auth-env |
-| control-daemon | ✅ Running | systemd service, polls Firestore every 5s |
-| inbox-daemon (fleet) | ✅ Running | Rewritten: DWD poll → OpenClaw gateway → chat-send |
+| Vertex AI ADC auth | ✅ Working | GCE metadata → OAuth2, patched model-auth-env |
+| control-daemon | ✅ Running | systemd, polls Firestore every 5s |
+| inbox-daemon (fleet) | ✅ Hardened | @-mention filter, dedup, no heartbeat, correct identity |
 | Bootstrap config | ✅ Applied | RPC config.apply with retry/baseHash |
-| CoreKit tools | ✅ Installed | fleet-deploy, fleet-teardown, etc. on VM |
-| Dashboard → Firestore messaging | ✅ Working | Messages written to Firestore |
-| OpenClaw → Vertex AI (direct) | ✅ Working | Tested: "pong" response from gemini-2.5-flash |
-| Firestore → OpenClaw routing | ✅ Working | control-daemon bridges messages successfully |
-| Dashboard E2E chat | ✅ Working | Full round-trip verified: intelligent responses in dashboard |
-| Fleet hire via OpenClaw exec | ✅ Working | "hire stan" → fleet-deploy → VM created + Firestore record |
-| Fleet agents on OpenClaw | ✅ Working | fleet-stan running OpenClaw with DevOps identity |
-| Fleet DWD Chat | ✅ Working | @-mention → inbox-daemon → OpenClaw → Chat reply |
-| OpenClaw heartbeat | ✅ Disabled | `agents.defaults.heartbeat.every: 0m` |
-| Fleet agent identity | ✅ Correct | Strong DevOps SOUL/IDENTITY with template substitution |
+| CoreKit tools | ✅ Installed | fleet-deploy, fleet-teardown, upgrade-corekit |
+| Dashboard E2E chat | ✅ Working | Full round-trip verified |
+| Fleet hire via OpenClaw | ✅ Working | "hire stan" → fleet-deploy → VM + Firestore |
+| Fleet DWD Chat | ✅ Hardened | @-mention → inbox-daemon → OpenClaw → single reply |
+| Fleet agent identity | ✅ Correct | Strong DevOps SOUL, survives CoreKit upgrades |
+| Deterministic naming | ✅ Enforced | email → First/Last → @-mention → filter |
 
 ---
 
@@ -196,12 +203,13 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 ### Checkpoint 6: Fleet Agent E2E Lifecycle
 > *Goal: Full hire → chat → verify → teardown lifecycle test*
 
-1. Deploy a fresh fleet agent via dashboard chat (hire command)
-2. Verify fleet agent responds with correct identity in Google Chat
-3. Verify fleet-verify detects the agent as online
-4. Verify fleet-teardown cleanly removes the agent
-5. Verify fleet-upgrade updates an agent's CoreKit in-place
-6. Clean up stale Firestore records (echo, testbot from earlier tests)
+1. Deploy a **fresh** fleet agent via Prime Chat (validate deterministic naming end-to-end)
+2. Verify Workspace admin creates account with exact First/Last name from instructions
+3. Verify fleet agent responds correctly in Google Chat (single reply, correct identity)
+4. Verify fleet-verify detects the agent as online
+5. Verify fleet-teardown cleanly removes the agent
+6. Verify fleet-upgrade updates an agent's CoreKit without losing identity
+7. Clean up stale Firestore records (echo, testbot from earlier tests)
 
 ---
 
