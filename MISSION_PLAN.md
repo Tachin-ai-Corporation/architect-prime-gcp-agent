@@ -10,7 +10,7 @@ Architect Prime is a **self-bootstrapping agent factory** built on [OpenClaw](ht
 
 Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-**Current Status:** v2.0 OpenClaw integration complete. All four v2.0 checkpoints done. Prime and fleet agents both deploy as Docker-containerized OpenClaw instances with full AI brains, managed via a Cloud Run dashboard. Fleet lifecycle (hire/fire), Vertex AI ADC authentication, and end-to-end message flow are operational. Next milestone: DWD Google Chat verification for fleet agents.
+**Current Status:** v2.0 OpenClaw integration complete. Checkpoint 5 (DWD Google Chat for fleet agents) verified. Fleet agent `stan` communicates via Google Chat using DWD impersonation, routed through the rewritten inbox-daemon → OpenClaw gateway pipeline. All critical hotfixes applied (heartbeat spam, duplicate messages, identity leak). Next milestone: full fleet lifecycle E2E verification.
 
 ---
 
@@ -138,6 +138,35 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 
 ---
 
+### Checkpoint 5: DWD Google Chat Verification
+> *Completed: 2026-04-07*
+
+- [x] **inbox-daemon rewrite** — complete from-scratch rewrite for robustness
+  - High-water-mark dedup (monotonic timestamp, replaces fragile time-window cutoff)
+  - Atomic `check_and_mark` before processing (not after) — prevents duplicate responses
+  - Collects messages to file, iterates with `< file` (not pipe subshell) — no shell-level race
+  - Never sends error/empty responses to Chat — logs only
+  - Removed built-in commands (help/status/whoami) — OpenClaw handles everything
+  - State in `/var/lib/inbox-daemon/` (survives reboots, not in /tmp)
+  - Poll interval: 15s, space discovery: 5min cache
+- [x] **inbox-daemon → OpenClaw gateway** — routes Chat messages to `/v1/chat/completions` instead of legacy `agent-ask`
+- [x] **OpenClaw heartbeat disabled** — `"heartbeat": {"every": "0m"}` in both Prime and fleet configs; was spamming `HEARTBEAT_OK` to Chat every 10s
+- [x] **Fleet agent identity fix** — DevOps SOUL.md/IDENTITY.md with strong identity + template vars (`{{AGENT_NAME}}`, `{{SPECIALTY}}`); fleet-bootstrap.sh clears Prime workspace before overlaying specialty files
+- [x] **Fleet agent `stan` deployed** — `devops-agent-stan@tachin.ai` on `fleet-stan` VM
+- [x] **DWD verified** — DWD token generation working, inbox-daemon discovers Chat spaces
+- [x] **E2E Chat verified** — @-mention in Google Chat → inbox-daemon → OpenClaw → response posted to Chat
+- [x] **IAM fix** — manually granted `roles/aiplatform.user` to fleet-stan SA (bootstrap race condition)
+
+> **Issues found & fixed:**
+> - OpenClaw heartbeat spams Chat with `HEARTBEAT_OK` every 10s → disabled via `agents.defaults.heartbeat.every: 0m`
+> - Old inbox-daemon sent 3 duplicate responses per message → rewrote with atomic dedup + high-water mark
+> - Fleet agents inherit Prime's identity (SOUL.md) → added workspace clearing + strong DevOps SOUL
+> - `fleet-deploy: command not found` when run via `sudo bash` → must use full path
+> - ADC patch survives gateway restart (already applied in fleet-bootstrap.sh step 15)
+> - inbox-daemon error messages sent to Chat ("No response from OpenClaw") → new daemon never sends errors
+
+---
+
 ## What Works Today
 
 | Component | Status | Notes |
@@ -147,36 +176,32 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 | OpenClaw container | ✅ Running | Docker, `--network host`, port 18789 |
 | Vertex AI ADC auth | ✅ Working | GCE metadata → OAuth2 tokens, patched model-auth-env |
 | control-daemon | ✅ Running | systemd service, polls Firestore every 5s |
+| inbox-daemon (fleet) | ✅ Running | Rewritten: DWD poll → OpenClaw gateway → chat-send |
 | Bootstrap config | ✅ Applied | RPC config.apply with retry/baseHash |
 | CoreKit tools | ✅ Installed | fleet-deploy, fleet-teardown, etc. on VM |
 | Dashboard → Firestore messaging | ✅ Working | Messages written to Firestore |
 | OpenClaw → Vertex AI (direct) | ✅ Working | Tested: "pong" response from gemini-2.5-flash |
 | Firestore → OpenClaw routing | ✅ Working | control-daemon bridges messages successfully |
 | Dashboard E2E chat | ✅ Working | Full round-trip verified: intelligent responses in dashboard |
-| Fleet hire via OpenClaw exec | ✅ Working | "hire testbot" → fleet-deploy → VM created + Firestore record |
-| Fleet agents on OpenClaw | ✅ Working | fleet-echo running OpenClaw: "pong" from Vertex AI |
+| Fleet hire via OpenClaw exec | ✅ Working | "hire stan" → fleet-deploy → VM created + Firestore record |
+| Fleet agents on OpenClaw | ✅ Working | fleet-stan running OpenClaw with DevOps identity |
+| Fleet DWD Chat | ✅ Working | @-mention → inbox-daemon → OpenClaw → Chat reply |
+| OpenClaw heartbeat | ✅ Disabled | `agents.defaults.heartbeat.every: 0m` |
+| Fleet agent identity | ✅ Correct | Strong DevOps SOUL/IDENTITY with template substitution |
 
 ---
 
 ## Next Steps
 
-### Checkpoint 5: DWD Google Chat Verification
-> *Goal: Fleet agents communicate via Google Chat with DWD impersonation*
-
-1. Verify DWD configuration is complete (signer SA, Admin Console delegation)
-2. Verify inbox-daemon on fleet-echo is polling Google Chat via DWD
-3. Send a @-mention to the fleet agent in Google Chat
-4. Verify the agent reads and responds in Chat (not just dashboard)
-5. Verify chat-send works for fleet agent announcements
-
-### Checkpoint 6: Fleet Agent E2E Verification
-> *Goal: Full integration test of fleet agent capabilities*
+### Checkpoint 6: Fleet Agent E2E Lifecycle
+> *Goal: Full hire → chat → verify → teardown lifecycle test*
 
 1. Deploy a fresh fleet agent via dashboard chat (hire command)
-2. Verify fleet agent responds in dashboard AND Google Chat
+2. Verify fleet agent responds with correct identity in Google Chat
 3. Verify fleet-verify detects the agent as online
 4. Verify fleet-teardown cleanly removes the agent
 5. Verify fleet-upgrade updates an agent's CoreKit in-place
+6. Clean up stale Firestore records (echo, testbot from earlier tests)
 
 ---
 
