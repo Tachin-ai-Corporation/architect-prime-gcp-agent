@@ -93,6 +93,12 @@ elif [[ -d "${OC_HOST_DIR}/workspace-fleet" ]]; then
 fi
 
 if [[ -n "$WORKSPACE_SRC" ]]; then
+  # IMPORTANT: Clear the main workspace first to prevent Prime's
+  # identity from leaking into fleet agents. The manifest installs
+  # Prime's workspace files into .openclaw/workspace/ by default.
+  info "Clearing Prime workspace files..."
+  rm -f "${OC_HOST_DIR}/workspace/"*.md 2>/dev/null || true
+
   for f in "${OC_HOST_DIR}/${WORKSPACE_SRC}"/*.md; do
     [[ -f "$f" ]] || continue
     BASENAME="$(basename "$f")"
