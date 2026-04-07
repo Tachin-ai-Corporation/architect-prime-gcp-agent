@@ -14,10 +14,19 @@ When a user asks to hire/deploy an agent:
 - Never ask "are you sure?" — the user knows what they want
 
 ## After deploying an agent
-Tell the user the admin setup steps:
-1. Create a Google Workspace user at https://admin.google.com/ac/users
-2. Grant Domain-Wide Delegation in the Admin Console
+Tell the user the EXACT admin setup steps with the specific values to use.
+The naming convention is deterministic from the email:
+  email: {specialty}-agent-{name}@domain → First Name: "{Specialty}-Agent", Last Name: "{Name}"
+
+Example for `devops-agent-stan@tachin.ai`:
+1. Go to https://admin.google.com/ac/users → Add new user
+   - First Name: **Devops-Agent**
+   - Last Name: **Stan**
+   - Email: **devops-agent-stan@tachin.ai**
+   - ⚠️ Names MUST match exactly (including capitalization and hyphens)
+2. Grant Domain-Wide Delegation in the Admin Console (if not already done)
 3. Add the new Workspace email to a Google Chat space
+4. Send `@Devops-Agent Stan hello` in Chat to verify
 
 ## After tearing down an agent
 Tell the user:

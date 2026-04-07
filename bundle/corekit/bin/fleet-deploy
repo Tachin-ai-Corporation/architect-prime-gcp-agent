@@ -92,6 +92,16 @@ FLEET_VM="fleet-${AGENT_NAME}"
 # Derive display name from email local part (e.g. devops-agent-stan → Devops Agent Stan)
 AGENT_DISPLAY_NAME="$(echo "${AGENT_USER_EMAIL%%@*}" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')"
 
+# Derive deterministic first/last name for Google Workspace account setup
+# Convention: email local part split by last hyphen
+#   devops-agent-stan@... → First: "Devops-Agent", Last: "Stan"
+# This MUST match what the admin sets in Google Workspace for @-mention filtering to work
+EMAIL_LOCAL="${AGENT_USER_EMAIL%%@*}"
+AGENT_LAST_NAME="$(echo "$EMAIL_LOCAL" | awk -F- '{print $NF}' | sed 's/^./\u&/')"
+AGENT_FIRST_NAME="$(echo "$EMAIL_LOCAL" | sed "s/-${EMAIL_LOCAL##*-}$//" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g' | sed 's/ /-/g')"
+# The @-mention text in Chat is: "FirstName LastName" (e.g., "Devops-Agent Stan")
+AGENT_MENTION="${AGENT_FIRST_NAME} ${AGENT_LAST_NAME}"
+
 # Admin email — grant viewer on fleet SAs for human access
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 if [[ -z "$ADMIN_EMAIL" ]]; then
@@ -251,7 +261,7 @@ gcloud compute instances create "$FLEET_VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-}" \
+  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},agent_first_name=${AGENT_FIRST_NAME},agent_last_name=${AGENT_LAST_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-}" \
   --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
 

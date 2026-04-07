@@ -54,11 +54,22 @@ command -v python3 >/dev/null || die "python3 not found"
 command -v jq      >/dev/null || die "jq not found"
 [[ -x "$DWD_TOKEN_BIN" ]]    || die "dwd-token not found at $DWD_TOKEN_BIN"
 
-# ==== RESOLVE EMAIL ====
 if [[ -z "${AGENT_USER_EMAIL:-}" && -f "$CHAT_CONFIG" ]]; then
   AGENT_USER_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CONFIG" 2>/dev/null || true)"
 fi
 [[ -n "${AGENT_USER_EMAIL:-}" ]] || die "AGENT_USER_EMAIL is required"
+
+# Resolve @-mention text: the deterministic "FirstName LastName" from Workspace
+# Used to filter: only process messages that @-mention the agent
+AGENT_MENTION="${AGENT_MENTION:-}"
+if [[ -z "$AGENT_MENTION" && -f "$CHAT_CONFIG" ]]; then
+  AGENT_MENTION="$(jq -r '.agentMention // empty' "$CHAT_CONFIG" 2>/dev/null || true)"
+fi
+if [[ -z "$AGENT_MENTION" ]]; then
+  # Fallback: derive from display name
+  AGENT_MENTION="$(jq -r '.agentDisplayName // empty' "$CHAT_CONFIG" 2>/dev/null || true)"
+fi
+[[ -n "$AGENT_MENTION" ]] || die "AGENT_MENTION is required (set agentMention in chat-config.json)"
 
 # ==== INIT STATE ====
 [[ -f "$SEEN_FILE" ]]   || echo '{}' > "$SEEN_FILE"
@@ -66,7 +77,7 @@ fi
 # High-water starts at NOW so we only process future messages
 [[ -f "$HW_FILE" ]] || date -u +%Y-%m-%dT%H:%M:%S.000000Z > "$HW_FILE"
 
-log "Starting: agent=${AGENT_ID} email=${AGENT_USER_EMAIL} poll=${POLL_INTERVAL}s"
+log "Starting: agent=${AGENT_ID} email=${AGENT_USER_EMAIL} mention='${AGENT_MENTION}' poll=${POLL_INTERVAL}s"
 
 # ==== DWD HEALTHCHECK ====
 for i in $(seq 1 5); do
@@ -238,30 +249,22 @@ for msg in reversed(data.get('messages', [])):
         continue  # already processed
       fi
 
-      SENDER="$(echo "$line" | jq -r '.email')"
-      SENDER_TYPE="$(echo "$line" | jq -r '.senderType')"
-
-      # Skip own messages: match by email OR empty sender (DWD-sent messages have no email)
-      if [[ -z "$SENDER" || "$SENDER" == "null" || "$SENDER" == "$AGENT_USER_EMAIL" ]]; then
-        continue
-      fi
-
-      # Skip non-human senders (bots, apps, service accounts)
-      if [[ "$SENDER_TYPE" != "HUMAN" && -n "$SENDER_TYPE" && "$SENDER_TYPE" != "null" ]]; then
-        continue
-      fi
-
       TEXT="$(echo "$line" | jq -r '.text')"
       DISPLAY="$(echo "$line" | jq -r '.display')"
       SPACE="$(echo "$line" | jq -r '.space')"
       MSGTIME="$(echo "$line" | jq -r '.time')"
 
-      # Skip heartbeat text (defense-in-depth)
-      if [[ "$TEXT" == *"HEARTBEAT"* ]]; then
+      # ==== @-MENTION FILTER ====
+      # Only process messages that @-mention the agent by name.
+      # This elegantly solves:
+      #   - Self-reply loop (agent's own messages don't @-mention itself)
+      #   - Heartbeat spam (HEARTBEAT_OK doesn't contain @-mention)
+      #   - Random noise (messages not directed at this agent)
+      if [[ "$TEXT" != *"$AGENT_MENTION"* ]]; then
         continue
       fi
 
-      # Strip leading @-mention
+      # Strip leading @-mention to get the actual query
       CLEAN="$(echo "$TEXT" | sed -E 's/^@[^ ]+ *//' | xargs)"
       [[ -n "$CLEAN" ]] || CLEAN="$TEXT"
       [[ -n "$CLEAN" ]] || continue  # skip empty messages

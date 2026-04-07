@@ -34,9 +34,16 @@ GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo 'archit
 GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
 AGENT_USER_EMAIL="$(curl -sf -H "$MH" "$META/instance/attributes/agent_user_email" || true)"
 AGENT_DISPLAY_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_display_name" || echo "$AGENT_ID")"
+AGENT_FIRST_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_first_name" || true)"
+AGENT_LAST_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_last_name" || true)"
 CHAT_SPACE_ID="$(curl -sf -H "$MH" "$META/instance/attributes/chat_space_id" || true)"
 DWD_SIGNER_SA="$(curl -sf -H "$MH" "$META/instance/attributes/dwd_signer_sa" || true)"
 PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || true)"
+
+# Derive the @-mention text used by Google Chat (e.g., "Devops-Agent Stan")
+# This MUST match the Workspace account's First Name + Last Name exactly
+AGENT_MENTION="${AGENT_FIRST_NAME} ${AGENT_LAST_NAME}"
+AGENT_MENTION="$(echo "$AGENT_MENTION" | xargs)"  # trim
 
 MY_TOKEN="$(openssl rand -hex 16)"
 OC_HOST_ROOT="/opt/openclaw"
@@ -119,6 +126,9 @@ if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   "spaceId": "${CHAT_SPACE_ID}",
   "agentUserEmail": "${AGENT_USER_EMAIL}",
   "agentDisplayName": "${AGENT_DISPLAY_NAME}",
+  "agentFirstName": "${AGENT_FIRST_NAME}",
+  "agentLastName": "${AGENT_LAST_NAME}",
+  "agentMention": "${AGENT_MENTION}",
   "projectId": "${GCP_PROJECT_ID}",
   "dwdSignerSa": "${DWD_SIGNER_SA}",
   "geminiProject": "${GCP_PROJECT_ID}"
