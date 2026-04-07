@@ -54,6 +54,43 @@ case "${1:-}" in
       OC_HOST_ROOT="$OC_HOST_ROOT" \
       INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
       bash -s -- --upgrade "$ref"
+
+    # ---- Fleet agent workspace re-overlay ----
+    # install.sh always installs main workspace to .openclaw/workspace/.
+    # For fleet agents, re-apply the specialty workspace on top.
+    OC_DIR="${OC_HOST_ROOT}/.openclaw"
+    CHAT_CFG="${OC_DIR}/corekit/chat-config.json"
+    if [[ -f "$CHAT_CFG" ]]; then
+      # Read agent identity from chat-config (only fleet agents have this)
+      AGENT_NAME="$(jq -r '.agentDisplayName // empty' "$CHAT_CFG" 2>/dev/null || true)"
+      SPECIALTY_DIR=""
+      # Try to find a specialty workspace
+      for d in "${OC_DIR}"/workspace-*/; do
+        [[ -d "$d" ]] || continue
+        # Use first non-fleet specialty found
+        bn="$(basename "$d")"
+        [[ "$bn" == "workspace-fleet" ]] && continue
+        SPECIALTY_DIR="$d"
+        break
+      done
+      # Fallback to fleet template
+      [[ -n "$SPECIALTY_DIR" ]] || SPECIALTY_DIR="${OC_DIR}/workspace-fleet"
+      if [[ -d "$SPECIALTY_DIR" && -n "$AGENT_NAME" ]]; then
+        echo "==> Re-applying fleet workspace from ${SPECIALTY_DIR}"
+        rm -f "${OC_DIR}/workspace/"*.md 2>/dev/null || true
+        MENTION="$(jq -r '.agentMention // empty' "$CHAT_CFG" 2>/dev/null || true)"
+        PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null || true)"
+        for f in "${SPECIALTY_DIR}"/*.md; do
+          [[ -f "$f" ]] || continue
+          sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
+              -e "s|{{SPECIALTY}}|$(basename "$SPECIALTY_DIR" | sed 's/workspace-//')|g" \
+              -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
+              -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
+              "$f" > "${OC_DIR}/workspace/$(basename "$f")"
+        done
+        echo "  Fleet workspace restored for: ${AGENT_NAME}"
+      fi
+    fi
     ;;
   --status)
     if [[ ! -f "$STATE_FILE" ]]; then

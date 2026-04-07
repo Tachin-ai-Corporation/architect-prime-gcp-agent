@@ -264,8 +264,8 @@ for msg in reversed(data.get('messages', [])):
         continue
       fi
 
-      # Strip leading @-mention to get the actual query
-      CLEAN="$(echo "$TEXT" | sed -E 's/^@[^ ]+ *//' | xargs)"
+      # Strip the full @-mention (e.g., "@Devops-Agent Stan" → remove entirely)
+      CLEAN="$(echo "$TEXT" | sed "s/@${AGENT_MENTION}//g" | xargs)"
       [[ -n "$CLEAN" ]] || CLEAN="$TEXT"
       [[ -n "$CLEAN" ]] || continue  # skip empty messages
 
