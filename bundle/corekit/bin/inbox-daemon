@@ -214,11 +214,13 @@ for msg in reversed(data.get('messages', [])):
     if ct and ct <= hw:
         continue
     sender = msg.get('sender', {})
+    sender_type = sender.get('type', sender.get('domainId', ''))
     print(json.dumps({
         'name': msg.get('name',''),
         'text': msg.get('text','') or msg.get('argumentText','') or '',
         'email': sender.get('email',''),
         'display': sender.get('displayName',''),
+        'senderType': sender_type,
         'space': msg.get('space',{}).get('name',''),
         'time': ct
     }))
@@ -237,13 +239,27 @@ for msg in reversed(data.get('messages', [])):
       fi
 
       SENDER="$(echo "$line" | jq -r '.email')"
-      # Skip own messages
-      [[ "$SENDER" != "$AGENT_USER_EMAIL" ]] || continue
+      SENDER_TYPE="$(echo "$line" | jq -r '.senderType')"
+
+      # Skip own messages: match by email OR empty sender (DWD-sent messages have no email)
+      if [[ -z "$SENDER" || "$SENDER" == "null" || "$SENDER" == "$AGENT_USER_EMAIL" ]]; then
+        continue
+      fi
+
+      # Skip non-human senders (bots, apps, service accounts)
+      if [[ "$SENDER_TYPE" != "HUMAN" && -n "$SENDER_TYPE" && "$SENDER_TYPE" != "null" ]]; then
+        continue
+      fi
 
       TEXT="$(echo "$line" | jq -r '.text')"
       DISPLAY="$(echo "$line" | jq -r '.display')"
       SPACE="$(echo "$line" | jq -r '.space')"
       MSGTIME="$(echo "$line" | jq -r '.time')"
+
+      # Skip heartbeat text (defense-in-depth)
+      if [[ "$TEXT" == *"HEARTBEAT"* ]]; then
+        continue
+      fi
 
       # Strip leading @-mention
       CLEAN="$(echo "$TEXT" | sed -E 's/^@[^ ]+ *//' | xargs)"
