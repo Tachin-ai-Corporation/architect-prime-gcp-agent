@@ -265,7 +265,7 @@ for msg in reversed(data.get('messages', [])):
       fi
 
       # Strip the full @-mention (e.g., "@Devops-Agent Stan" → remove entirely)
-      CLEAN="$(echo "$TEXT" | sed "s/@${AGENT_MENTION}//g" | xargs)"
+      CLEAN="$(echo "$TEXT" | sed "s/@${AGENT_MENTION}//g" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
       [[ -n "$CLEAN" ]] || CLEAN="$TEXT"
       [[ -n "$CLEAN" ]] || continue  # skip empty messages
 
