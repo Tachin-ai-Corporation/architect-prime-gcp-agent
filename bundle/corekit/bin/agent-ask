@@ -136,15 +136,14 @@ if [[ "$AGENT_ID" == "prime" ]]; then
     },
     {
       "name": "fleet_deploy",
-      "description": "Deploy/hire a new fleet agent. Only call this after confirming the agent name, specialty, and Workspace email with the user. Walk the user through Workspace setup requirements first.",
+      "description": "Deploy/hire a new fleet agent. User only provides name and specialty — email is computed automatically as {specialty}-agent-{name}@tachin.ai. Deploy immediately once you have name and specialty.",
       "parameters": {
         "type": "object",
         "properties": {
-          "name": {"type": "string", "description": "Agent name (lowercase, e.g. stan)"},
-          "specialty": {"type": "string", "description": "Agent specialty (e.g. devops, qa, finance)"},
-          "agent_email": {"type": "string", "description": "Confirmed Workspace email (e.g. devops-agent-stan@tachin.ai)"}
+          "name": {"type": "string", "description": "Agent name (lowercase, e.g. stan, quinn, marco)"},
+          "specialty": {"type": "string", "description": "Agent specialty ID from agent-types (e.g. devops, swe, qa, pm, finance, data, security)"}
         },
-        "required": ["name", "specialty", "agent_email"]
+        "required": ["name", "specialty"]
       }
     },
     {
@@ -283,7 +282,7 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
     list_agent_types)
       TYPES_FILE="${OC_HOST_ROOT}/.openclaw/corekit/agent-types.json"
       if [[ -f "$TYPES_FILE" ]]; then
-        FUNC_RESULT="$(jq -r '.types[] | "\(.id): \(.title) — \(.specialty)"' "$TYPES_FILE" 2>/dev/null || echo "Error reading agent types")"
+        FUNC_RESULT="$(jq -r '.types[] | "**\(.title)** (\(.id))\n  \(.specialty)\n  Email pattern: \(.emailPattern)@tachin.ai\n"' "$TYPES_FILE" 2>/dev/null || echo "Error reading agent types")"
       else
         FUNC_RESULT="No agent types file found."
       fi
@@ -319,53 +318,45 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
       d_name="" d_specialty="" d_email=""
       d_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       d_specialty="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))" 2>/dev/null)"
-      d_email="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('agent_email',''))" 2>/dev/null)"
-      if [[ -n "$d_name" && -n "$d_specialty" && -n "$d_email" ]]; then
+      # Compute email deterministically: {specialty}-agent-{name}@tachin.ai
+      if [[ -n "$d_name" && -n "$d_specialty" ]]; then
+        d_email="${d_specialty}-agent-${d_name}@tachin.ai"
         TASK_ID="deploy-${d_name}-$(date +%s)"
         TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
         echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"running\",\"started\":\"$(date -Is)\"}" > "$TASK_FILE"
         log "Starting async skill: fleet_deploy (task=${TASK_ID})"
 
-        # Run fleet-deploy in background — it calls chat-send on completion
+        # Compute display name parts for Workspace setup instructions
+        # devops-agent-stan → First: Devops-Agent, Last: Stan
+        D_FIRST="$(echo "${d_specialty}-agent" | sed 's/^./\u&/' | sed 's/-\(.\)/-\u\1/g')"
+        D_LAST="$(echo "${d_name}" | sed 's/^./\u&/')"
+
         nohup bash -c "
           RESULT=\"\$('$FLEET_BIN/fleet-deploy' --name '$d_name' --specialty '$d_specialty' --agent-email '$d_email' 2>&1)\"
           EXIT_CODE=\$?
-          # Extract key info from deploy output
-          SA_CLIENT_ID=\"\$(echo \"\$RESULT\" | grep -oP 'SA Client ID\\s*:\\s*\\K[0-9]+' || echo 'unknown')\"
-          DWD_SCOPES='https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly'
 
           if [[ \$EXIT_CODE -eq 0 ]]; then
             echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"complete\",\"exit_code\":0}' > '$TASK_FILE'
-            # Report success via chat-send
-            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
-              '$CHAT_SEND' \"✅ *${d_name}* has been deployed!
-
-Here's what you need to do to activate ${d_name}:
-
-*Step 1: Create Workspace User*
-→ https://admin.google.com/ac/users
-Create: \`${d_email}\`
-
-*Step 2: Grant Domain-Wide Delegation*
-→ https://admin.google.com/ac/owl/domainwidedelegation
-Click 'Add new' and enter:
-• Client ID: \`\${SA_CLIENT_ID}\`
-• Scopes: \`\${DWD_SCOPES}\`
-
-*Step 3: Add to Chat Space*
-Add \`${d_email}\` to this Chat space.
-
-Once done, @-mention ${d_name} to verify they're online.\" 2>/dev/null || true
+            # Report success via chat-send (dashboard uses Firestore, not chat-send)
           else
-            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"failed\",\"exit_code\":'"\$EXIT_CODE"'}' > '$TASK_FILE'
-            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
-              '$CHAT_SEND' \"❌ Deployment of *${d_name}* failed. Check logs for details.\" 2>/dev/null || true
+            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"failed\",\"exit_code\":'\"\$EXIT_CODE\"'}' > '$TASK_FILE'
           fi
         " >> "${SKILL_TASK_DIR}/${TASK_ID}.log" 2>&1 &
 
-        FUNC_RESULT="Task started: deploying agent '${d_name}' (task ID: ${TASK_ID}). This takes 3-5 minutes. I will send a follow-up message in this chat with the setup instructions when deployment is complete."
+        FUNC_RESULT="Deploying agent '${d_name}' (specialty: ${d_specialty}). This takes 3-5 minutes.
+
+Once deployment finishes, create the Workspace account with EXACTLY these values:
+
+→ https://admin.google.com/ac/users → Add new user
+  First Name: ${D_FIRST}
+  Last Name: ${D_LAST}
+  Email: ${d_email}
+  ⚠️ Names MUST match exactly
+
+Then add ${d_email} to the Google Chat space.
+Verify by sending: @${D_FIRST} ${D_LAST} hello"
       else
-        FUNC_RESULT="Missing required args for fleet-deploy (need: name, specialty, agent_email)"
+        FUNC_RESULT="Missing required args for fleet-deploy (need: name, specialty)"
       fi
       ;;
     fleet_teardown)
