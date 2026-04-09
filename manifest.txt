@@ -22,7 +22,8 @@ bundle/corekit/bin/build-system-prompt .openclaw/bin/build-system-prompt
 bundle/corekit/bin/dwd-token .openclaw/bin/dwd-token
 bundle/corekit/bin/chat-read .openclaw/bin/chat-read
 bundle/corekit/bin/fleet-verify .openclaw/bin/fleet-verify
-bundle/corekit/bin/fleet-upgrade .openclaw/bin/fleet-upgrade
+bundle/corekit/bin/fleet-upgrade .openclaw/bin/fleet-upgrade\r
+bundle/corekit/bin/web-search .openclaw/bin/web-search
 bundle/corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json
 bundle/corekit/config/agent-types.json .openclaw/corekit/agent-types.json
 
@@ -64,3 +65,4 @@ bundle/workspaces/devops/MEMORY.md .openclaw/workspace-devops/MEMORY.md
 # FLEET workspace template (used by fleet-deploy)
 bundle/workspaces/fleet/SOUL.md .openclaw/workspace-fleet/SOUL.md
 bundle/workspaces/fleet/IDENTITY.md .openclaw/workspace-fleet/IDENTITY.md
+bundle/workspaces/fleet/TOOLS.md .openclaw/workspace-fleet/TOOLS.md

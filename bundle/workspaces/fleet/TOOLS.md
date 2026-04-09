@@ -1,6 +1,6 @@
-# TOOLS (DevOps)
+# TOOLS (Fleet Agent)
 
-- Workspace: `~/.openclaw/workspace-devops`
+- Workspace: `~/.openclaw/workspace`
 - Canonical CLI: `oc <cmd>` (never call `pnpm openclaw ...`)
 - ADC: metadata server tokens available on GCE
 
