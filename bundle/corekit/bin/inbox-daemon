@@ -143,36 +143,56 @@ sys.exit(1)  # new message
 " 2>/dev/null
 }
 
-# Call OpenClaw gateway and extract response text
+# Call OpenClaw gateway — ALL text handling in Python (no bash string expansion)
+# Input: raw user text on stdin
+# Output: response text on stdout
 call_openclaw() {
-  local user_text="$1"
-  local raw
-  raw="$(curl -s --max-time "$PROCESS_TIMEOUT" \
-    -X POST "${OC_GATEWAY}/v1/chat/completions" \
-    -H "Authorization: Bearer ${OC_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "$(python3 -c "
-import json, sys
-t = sys.stdin.read().strip()
-print(json.dumps({'model':'openclaw/main','messages':[{'role':'user','content':t}]}))
-" <<< "$user_text")" 2>/dev/null)" || { echo ""; return 1; }
+  OC_GW="$OC_GATEWAY" OC_TK="$OC_TOKEN" OC_TIMEOUT="$PROCESS_TIMEOUT" \
+  python3 << 'PYEOF'
+import json, sys, urllib.request, unicodedata, re, os
 
-  # Extract content from OpenAI response
-  python3 -c "
-import json, sys
-raw = sys.stdin.read().strip()
-if not raw:
+# Read raw text from stdin
+text = sys.stdin.read().strip()
+if not text:
     sys.exit(1)
-data = json.loads(raw)
-choices = data.get('choices', [])
-if choices:
-    content = choices[0].get('message', {}).get('content', '')
-    if content:
-        # Truncate for Chat API limit (4096 chars, leave margin)
-        print(content[:3800])
-        sys.exit(0)
+
+# Layer 2: Canonical normalization
+text = unicodedata.normalize('NFC', text)
+text = re.sub(r'\s+', ' ', text).strip()
+
+gw = os.environ.get('OC_GW', 'http://localhost:18789')
+token = os.environ.get('OC_TK', '')
+timeout = int(os.environ.get('OC_TIMEOUT', '120'))
+
+# Build request payload (safe — no shell interpolation)
+payload = json.dumps({
+    'model': 'openclaw/main',
+    'messages': [{'role': 'user', 'content': text}]
+})
+
+try:
+    req = urllib.request.Request(
+        f'{gw}/v1/chat/completions',
+        data=payload.encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        },
+        method='POST'
+    )
+    resp = urllib.request.urlopen(req, timeout=timeout)
+    data = json.loads(resp.read())
+    choices = data.get('choices', [])
+    if choices:
+        content = choices[0].get('message', {}).get('content', '')
+        if content:
+            print(content[:3800])
+            sys.exit(0)
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+
 sys.exit(1)
-" <<< "$raw" 2>/dev/null
+PYEOF
 }
 
 # ==== MAIN LOOP ====
@@ -249,30 +269,46 @@ for msg in reversed(data.get('messages', [])):
         continue  # already processed
       fi
 
-      TEXT="$(echo "$line" | jq -r '.text')"
-      DISPLAY="$(echo "$line" | jq -r '.display')"
-      SPACE="$(echo "$line" | jq -r '.space')"
-      MSGTIME="$(echo "$line" | jq -r '.time')"
+      # Extract fields and filter/clean in Python (safe for ALL characters)
+      MSGFILE="/tmp/inbox-msg-$$.json"
+      AGENT_MENTION_ENV="$AGENT_MENTION" python3 -c "
+import json, sys, os
+msg = json.loads(sys.stdin.read())
+mention = os.environ.get('AGENT_MENTION_ENV', '')
+text = msg.get('text', '') or ''
 
-      # ==== @-MENTION FILTER ====
-      # Only process messages that @-mention the agent by name.
-      # This elegantly solves:
-      #   - Self-reply loop (agent's own messages don't @-mention itself)
-      #   - Heartbeat spam (HEARTBEAT_OK doesn't contain @-mention)
-      #   - Random noise (messages not directed at this agent)
-      if [[ "$TEXT" != *"$AGENT_MENTION"* ]]; then
-        continue
-      fi
+# @-mention filter: skip messages not directed at this agent
+if mention not in text:
+    sys.exit(1)
 
-      # Strip the full @-mention (e.g., "@Devops-Agent Stan" → remove entirely)
-      CLEAN="$(echo "$TEXT" | sed "s/@${AGENT_MENTION}//g" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-      [[ -n "$CLEAN" ]] || CLEAN="$TEXT"
-      [[ -n "$CLEAN" ]] || continue  # skip empty messages
+# Strip @-mention and normalize whitespace
+clean = text.replace('@' + mention, '').strip()
+clean = ' '.join(clean.split())  # collapse whitespace
+if not clean:
+    clean = text
+
+json.dump({
+    'clean': clean,
+    'display': msg.get('display', ''),
+    'space': msg.get('space', ''),
+    'time': msg.get('time', '')
+}, open('$MSGFILE', 'w'))
+" <<< "$line" 2>/dev/null || { rm -f "$MSGFILE"; continue; }
+
+      # Read processed message
+      DISPLAY="$(jq -r '.display' "$MSGFILE")"
+      SPACE="$(jq -r '.space' "$MSGFILE")"
+      MSGTIME="$(jq -r '.time' "$MSGFILE")"
+      CLEAN="$(jq -r '.clean' "$MSGFILE")"
+      rm -f "$MSGFILE"
 
       log "MSG from=${DISPLAY} space=${SPACE} text=\"${CLEAN:0:60}\""
 
-      # Call OpenClaw
-      REPLY="$(call_openclaw "$CLEAN" 2>/dev/null)" || REPLY=""
+      # Call OpenClaw — pipe clean text via stdin (no bash expansion)
+      REPLY_FILE="/tmp/inbox-reply-$$.txt"
+      echo "$CLEAN" | call_openclaw > "$REPLY_FILE" 2>/dev/null
+      REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
+      rm -f "$REPLY_FILE"
 
       # Only send non-empty, real responses to Chat
       if [[ -n "$REPLY" && ${#REPLY} -gt 2 ]]; then
