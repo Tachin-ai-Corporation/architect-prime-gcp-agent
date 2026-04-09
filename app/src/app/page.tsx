@@ -80,6 +80,8 @@ export default function Home() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{currentVersion: string; latestVersion: string; updateAvailable: boolean} | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const [sidebarFleet, setSidebarFleet] = useState<Record<string, FleetAgent[]>>({});
+  const [expandedPrimes, setExpandedPrimes] = useState<Record<string, boolean>>({});
   const [setup, setSetup] = useState<SetupState>({
     hasPrimes: false,
     dwdConfigured: false,
@@ -185,7 +187,25 @@ export default function Home() {
     return () => clearInterval(statusPoll);
   }, [primes.length]);
 
-  // ---- Load fleet (poll every 5s when on fleet tab) ----
+  // ---- Load fleet for sidebar (always poll, not just fleet tab) ----
+  useEffect(() => {
+    if (primes.length === 0) return;
+    const loadAllFleet = async () => {
+      for (const p of primes) {
+        const data = await api<{ fleet: FleetAgent[] }>(`/api/primes/${p.id}/fleet`);
+        if (data?.fleet) {
+          setSidebarFleet(prev => ({ ...prev, [p.id]: data.fleet }));
+          // Also update main fleet state if this is the active prime
+          if (p.id === activePrime) setFleet(data.fleet);
+        }
+      }
+    };
+    loadAllFleet();
+    const fleetPoll = setInterval(loadAllFleet, 8000);
+    return () => clearInterval(fleetPoll);
+  }, [primes.length, activePrime]);
+
+  // ---- Also load fleet when switching to fleet tab ----
   useEffect(() => {
     if (view !== "fleet" || !activePrime) return;
     const loadFleet = async () => {
@@ -193,8 +213,6 @@ export default function Home() {
       if (data?.fleet) setFleet(data.fleet);
     };
     loadFleet();
-    const fleetPoll = setInterval(loadFleet, 5000);
-    return () => clearInterval(fleetPoll);
   }, [view, activePrime]);
 
   // ---- Auto-scroll chat ----
@@ -462,19 +480,54 @@ export default function Home() {
 
         <div className={styles["sidebar-section"]}>
           <div className={styles["sidebar-section-title"]}>Prime Instances</div>
-          {primes.map((p) => (
-            <div
-              key={p.id}
-              className={`${styles["sidebar-item"]} ${activePrime === p.id ? styles.active : ""}`}
-              onClick={() => { setActivePrime(p.id); setView("chat"); }}
-            >
-              <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} />
-              <span className={styles["sidebar-item-name"]}>{p.name}</span>
-              <span className={styles["sidebar-item-role"]}>
-                {p.fleetCount} agent{p.fleetCount !== 1 ? "s" : ""}
-              </span>
-            </div>
-          ))}
+          {primes.map((p) => {
+            const primeFleet = sidebarFleet[p.id] || [];
+            const isExpanded = expandedPrimes[p.id] ?? true;
+            return (
+              <div key={p.id}>
+                <div
+                  className={`${styles["sidebar-item"]} ${activePrime === p.id ? styles.active : ""}`}
+                  onClick={() => { setActivePrime(p.id); setView("chat"); }}
+                >
+                  <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} />
+                  <span className={styles["sidebar-item-name"]}>{p.name}</span>
+                  {primeFleet.length > 0 && (
+                    <button
+                      className={styles["sidebar-expand-btn"]}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedPrimes(prev => ({ ...prev, [p.id]: !isExpanded }));
+                      }}
+                      title={isExpanded ? "Collapse agents" : "Expand agents"}
+                    >
+                      {isExpanded ? "▾" : "▸"}
+                    </button>
+                  )}
+                  {primeFleet.length === 0 && (
+                    <span className={styles["sidebar-item-role"]}>
+                      0 agents
+                    </span>
+                  )}
+                </div>
+                {isExpanded && primeFleet.length > 0 && (
+                  <div className={styles["sidebar-fleet"]}>
+                    {primeFleet.map((agent) => (
+                      <div
+                        key={agent.name}
+                        className={styles["sidebar-fleet-item"]}
+                        onClick={() => { setActivePrime(p.id); setView("fleet"); loadAgentDetail(agent.name); }}
+                        title={`${agent.specialty} — ${agent.email}`}
+                      >
+                        <div className={`${styles["sidebar-fleet-dot"]} ${styles[agent.status]}`} />
+                        <span className={styles["sidebar-fleet-name"]}>{agent.name}</span>
+                        <span className={styles["sidebar-fleet-role"]}>{agent.specialty}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <div className={styles["sidebar-footer"]}>
