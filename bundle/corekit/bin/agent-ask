@@ -136,12 +136,12 @@ if [[ "$AGENT_ID" == "prime" ]]; then
     },
     {
       "name": "fleet_deploy",
-      "description": "Deploy/hire a new fleet agent. User only provides name and specialty — email is computed automatically as {specialty}-agent-{name}@tachin.ai. Deploy immediately once you have name and specialty.",
+      "description": "Deploy/hire a new fleet agent. User only provides name and specialty — email is computed automatically. Deploy IMMEDIATELY once you have name and specialty. Do NOT describe what you would do — CALL this function.",
       "parameters": {
         "type": "object",
         "properties": {
-          "name": {"type": "string", "description": "Agent name (lowercase, e.g. stan, quinn, marco)"},
-          "specialty": {"type": "string", "description": "Agent specialty ID from agent-types (e.g. devops, swe, qa, pm, finance, data, security)"}
+          "name": {"type": "string", "description": "Agent name (lowercase, no spaces, e.g. stan, quinn, marco)"},
+          "specialty": {"type": "string", "enum": ["devops", "swe", "qa", "pm", "finance", "data", "security"], "description": "Agent specialty type ID"}
         },
         "required": ["name", "specialty"]
       }
@@ -318,9 +318,51 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
       d_name="" d_specialty="" d_email=""
       d_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       d_specialty="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))" 2>/dev/null)"
-      # Compute email deterministically: {specialty}-agent-{name}@tachin.ai
+
+      # Normalize specialty: resolve aliases to IDs using agent-types.json
+      TYPES_FILE="${OC_HOST_ROOT}/.openclaw/corekit/agent-types.json"
+      if [[ -n "$d_specialty" && -f "$TYPES_FILE" ]]; then
+        RESOLVED="$(python3 -c "
+import json, sys
+spec = sys.argv[1].lower().strip()
+types = json.load(open(sys.argv[2]))['types']
+# Try exact ID match first
+for t in types:
+    if t['id'] == spec:
+        print(t['id']); sys.exit(0)
+# Try title match (case-insensitive)
+for t in types:
+    if t['title'].lower() == spec:
+        print(t['id']); sys.exit(0)
+# Try partial/fuzzy: title contains or starts with
+for t in types:
+    if spec in t['title'].lower() or t['title'].lower().startswith(spec):
+        print(t['id']); sys.exit(0)
+# No match — pass through
+print(spec)
+" "$d_specialty" "$TYPES_FILE" 2>/dev/null)"
+        d_specialty="$RESOLVED"
+      fi
+
+      # Compute email from agent-types emailPattern, fallback to {specialty}-agent-{name}
+      EMAIL_PATTERN=""
+      if [[ -f "$TYPES_FILE" ]]; then
+        EMAIL_PATTERN="$(python3 -c "
+import json, sys
+spec = sys.argv[1]
+types = json.load(open(sys.argv[2]))['types']
+for t in types:
+    if t['id'] == spec:
+        print(t.get('emailPattern', '')); sys.exit(0)
+" "$d_specialty" "$TYPES_FILE" 2>/dev/null)"
+      fi
+
       if [[ -n "$d_name" && -n "$d_specialty" ]]; then
-        d_email="${d_specialty}-agent-${d_name}@tachin.ai"
+        if [[ -n "$EMAIL_PATTERN" ]]; then
+          d_email="${EMAIL_PATTERN/\{name\}/$d_name}@tachin.ai"
+        else
+          d_email="${d_specialty}-agent-${d_name}@tachin.ai"
+        fi
         TASK_ID="deploy-${d_name}-$(date +%s)"
         TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
         echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"running\",\"started\":\"$(date -Is)\"}" > "$TASK_FILE"
