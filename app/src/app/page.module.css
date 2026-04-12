@@ -381,6 +381,7 @@
 .step-failed .deploy-step-label { color: var(--accent-danger); font-weight: 500; }
 .step-active .deploy-step-label { color: var(--accent-warning); font-weight: 500; }
 .step-skipped .deploy-step-label { color: var(--text-tertiary); font-style: italic; }
+.step-pending .deploy-step-label { color: var(--text-tertiary); opacity: 0.5; }
 
 /* ---- Action Required ---- */
 .action-required {

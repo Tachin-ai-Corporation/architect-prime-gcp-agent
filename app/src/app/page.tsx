@@ -669,28 +669,81 @@ export default function Home() {
                     ) : agentDetail ? (
                       <div>
                         {/* Deploy Timeline */}
-                        {agentDetail.deploySteps && agentDetail.deploySteps.length > 0 && (
-                          <div style={{ marginBottom: 20 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Deploy Progress</div>
-                            <div className={styles["deploy-timeline"]}>
-                              {agentDetail.deploySteps.map((step, i) => {
-                                const icon = { done: "✅", active: "⏳", failed: "❌", pending: "⬜", skipped: "⏭️" }[step.status] || "❓";
-                                return (
-                                  <div key={`${step.id}-${i}`} className={`${styles["deploy-step"]} ${styles[`step-${step.status}`]}`}>
-                                    <span className={styles["deploy-step-icon"]}>{icon}</span>
-                                    <span className={styles["deploy-step-label"]}>{step.label}</span>
-                                    {step.detail && <span className={styles["deploy-step-detail"]}>{step.detail}</span>}
-                                    {step.timestamp && (
-                                      <span className={styles["deploy-step-time"]}>
-                                        {new Date(step.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                        {(agentDetail.status === "deploying" || agentDetail.status === "needs_action" || (agentDetail.deploySteps && agentDetail.deploySteps.length > 0)) && (() => {
+                          const EXPECTED_STEPS = [
+                            { id: "deploy_started", label: "Deployment initiated" },
+                            { id: "sa_created", label: "Service account created" },
+                            { id: "iam_granted", label: "IAM roles granted" },
+                            { id: "vm_created", label: "VM created" },
+                            { id: "prime_setup_done", label: "Prime-side setup complete" },
+                            { id: "packages_installed", label: "System packages installed" },
+                            { id: "docker_installed", label: "Docker CE installed" },
+                            { id: "corekit_installed", label: "CoreKit installed" },
+                            { id: "openclaw_built", label: "OpenClaw Docker image built" },
+                            { id: "gateway_ready", label: "OpenClaw gateway started" },
+                            { id: "config_applied", label: "Agent config applied" },
+                            { id: "inbox_installed", label: "Inbox daemon started" },
+                            { id: "online", label: "Agent online" },
+                          ];
+                          const completedIds = new Set((agentDetail.deploySteps || []).map(s => s.id));
+                          const completedMap = new Map((agentDetail.deploySteps || []).map(s => [s.id, s]));
+                          let foundPending = false;
+
+                          return (
+                            <div style={{ marginBottom: 20 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Deploy Progress</div>
+                              <div className={styles["deploy-timeline"]}>
+                                {EXPECTED_STEPS.map((expected) => {
+                                  const actual = completedMap.get(expected.id);
+                                  let status: string;
+                                  let icon: string;
+                                  if (actual) {
+                                    status = actual.status;
+                                    icon = ({ done: "✅", active: "⏳", failed: "❌", skipped: "⏭️" } as Record<string, string>)[actual.status] || "✅";
+                                  } else if (agentDetail.status === "online") {
+                                    status = "done";
+                                    icon = "✅";
+                                  } else if (!foundPending && agentDetail.status === "deploying") {
+                                    foundPending = true;
+                                    status = "active";
+                                    icon = "⏳";
+                                  } else {
+                                    status = "pending";
+                                    icon = "⬜";
+                                  }
+                                  return (
+                                    <div key={expected.id} className={`${styles["deploy-step"]} ${styles[`step-${status}`]}`}>
+                                      <span className={styles["deploy-step-icon"]}>{icon}</span>
+                                      <span className={styles["deploy-step-label"]}>{actual?.label || expected.label}</span>
+                                      {actual?.detail && <span className={styles["deploy-step-detail"]}>{actual.detail}</span>}
+                                      {actual?.timestamp && (
+                                        <span className={styles["deploy-step-time"]}>
+                                          {new Date(actual.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                                {/* Show any extra steps not in EXPECTED (e.g. dwd_healthcheck) */}
+                                {(agentDetail.deploySteps || []).filter(s => !EXPECTED_STEPS.find(e => e.id === s.id)).map((step, i) => {
+                                  const icon = ({ done: "✅", active: "⏳", failed: "❌", skipped: "⏭️" } as Record<string, string>)[step.status] || "❓";
+                                  return (
+                                    <div key={`extra-${i}`} className={`${styles["deploy-step"]} ${styles[`step-${step.status}`]}`}>
+                                      <span className={styles["deploy-step-icon"]}>{icon}</span>
+                                      <span className={styles["deploy-step-label"]}>{step.label}</span>
+                                      {step.detail && <span className={styles["deploy-step-detail"]}>{step.detail}</span>}
+                                      {step.timestamp && (
+                                        <span className={styles["deploy-step-time"]}>
+                                          {new Date(step.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Action Required Callout */}
                         {agentDetail.actionRequired && (
@@ -779,7 +832,7 @@ export default function Home() {
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           {(agent.status === "deploying" || agent.status === "needs_action" || agent.status === "tearing_down") && agent.deploySteps && agent.deploySteps.length > 0 && (
                             <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-                              {agent.deploySteps.filter(s => s.status === "done").length}/{agent.deploySteps.length} steps
+                              {agent.deploySteps.filter(s => s.status === "done").length}/13 steps
                             </span>
                           )}
                           <span className={`badge badge-${agent.status === "needs_action" ? "warning" : agent.status}`}>{agent.status === "needs_action" ? "action needed" : agent.status === "tearing_down" ? "tearing down" : agent.status}</span>
