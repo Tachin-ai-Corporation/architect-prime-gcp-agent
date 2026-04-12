@@ -129,9 +129,10 @@ app/                              # Cloud Run control plane (Next.js)
 
 bootstrap/                        # VM startup scripts
 ├── prime-bootstrap.sh            # Prime VM bootstrap (standalone bash)
-├── fleet-bootstrap.sh            # Fleet agent VM bootstrap (mirrors Prime)
-├── phase1-cloudshell.sh          # GCP project setup (manual flow)
-└── phase2-vm.sh                  # Legacy VM startup (reference)
+├── fleet-bootstrap.sh            # Fleet agent VM bootstrap
+├── checks/                       # CI check scripts (shellcheck, forbid-secrets)
+├── README.md                     # Bootstrap documentation
+└── legacy/                       # Deprecated pre-v2.0 scripts (reference only)
 
 bundle/corekit/bin/               # CoreKit tools (installed on VMs)
 ├── control-daemon                # Firestore poller (Prime VMs)

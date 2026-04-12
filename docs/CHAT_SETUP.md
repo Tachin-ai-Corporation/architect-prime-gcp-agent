@@ -1,5 +1,7 @@
 # Google Chat Setup (DWD — Domain-Wide Delegation)
 
+> **Last updated:** 2026-04-11
+
 Architect Prime and fleet agents communicate through Google Chat using **Domain-Wide Delegation (DWD)**. Agents impersonate Workspace user accounts — no Chat apps or Cloud Functions needed.
 
 ## Prerequisites
@@ -15,7 +17,7 @@ Architect Prime and fleet agents communicate through Google Chat using **Domain-
 1. Go to [Admin Console](https://admin.google.com) → **Security** → **Access and data control** → **API Controls**
 2. Scroll to **Domain-Wide Delegation** → click **Manage Domain Wide Delegation**
 3. Click **Add new**
-4. **Client ID:** Enter Prime's SA Client ID (printed by `phase1-cloudshell.sh`)
+4. **Client ID:** Enter the DWD Signer SA Client ID (shown in the Dashboard → Setup tab)
 5. **OAuth Scopes:**
    ```
    https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly
@@ -71,11 +73,10 @@ inbox-daemon polls Chat API (spaces.messages.list)
     ▼
 Detects @-mention → processes message
     │
-    ├── Built-in commands: help, status, whoami, fleet, ping
-    └── Everything else → agent-ask (Vertex AI Gemini)
+    └── Routed to OpenClaw gateway (Vertex AI Gemini)
             │
             ├── Pure Q&A → conversational response
-            └── Lifecycle intent detected → action block → tool invocation
+            └── Tool invocation (if needed)
                     │
                     ▼
     chat-send (DWD) → posts response as the agent user
@@ -85,11 +86,11 @@ Detects @-mention → processes message
 
 When Prime hires a fleet agent (`fleet-deploy`):
 
-1. **Prime creates the fleet agent's GCP project + VM:**
+1. **Prime creates the fleet agent's VM** (single-project — all agents share Prime's GCP project):
    ```bash
-   fleet-deploy --name stan --specialty "devops" --agent-email devops-agent-stan@yourdomain.com
+   fleet-deploy --name stan --specialty devops --agent-email devops-agent-stan@yourdomain.com
    ```
-   Or tell Prime colloquially in Chat: _"Hey Prime, spin up a devops agent named stan"_
+   Or tell Prime colloquially via the dashboard: _"hire a devops agent named stan"_
 
 2. **You (admin) create a Workspace user** for the fleet agent:
    - Go to [Admin Console](https://admin.google.com) → **Users** → **Add new user**

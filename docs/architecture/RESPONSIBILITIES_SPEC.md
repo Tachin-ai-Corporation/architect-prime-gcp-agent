@@ -1,5 +1,10 @@
 # Responsibilities — Implementation Specification
 
+> **Status:** FUTURE — Design document, not yet implemented
+> **Written:** 2026-04-04
+> **Last reviewed:** 2026-04-11
+> **Depends on:** Brain Architecture v2 and the R/C/M framework
+
 ## Design Philosophy
 
 A Responsibility is a self-contained autonomous work package. Not a cron job with a prompt string — a portable, version-controllable bundle that includes everything the agent needs to wake up, do the work, and report back.

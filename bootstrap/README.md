@@ -1,4 +1,6 @@
-# Architect Prime Bootstrap (One-shot)
+# Architect Prime Bootstrap
+
+> **Last updated:** 2026-04-11
 
 This folder contains the **human-run** bootstrap that creates/refreshes the GCP VM and installs/runs Architect Prime inside it.
 

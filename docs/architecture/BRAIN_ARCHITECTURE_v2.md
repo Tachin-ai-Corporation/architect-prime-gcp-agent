@@ -1,5 +1,13 @@
 # OpenClaw Brain Architecture — Architect Prime v2
 
+> **Status:** FUTURE — Design document, not yet implemented
+> **Written:** 2026-04-04
+> **Last reviewed:** 2026-04-11
+> **Depends on:** v2.0 single-agent foundation being stable (see Checkpoint 6 in MISSION_PLAN.md)
+>
+> Currently each agent runs as a single OpenClaw instance with one model.
+> This document describes the planned multi-agent brain system for v3.0.
+
 ## The Metaphor
 
 A human brain doesn't have one monolithic processor. It has specialized regions that fire in parallel, share a common memory system, and produce a unified conscious experience. This architecture maps that model onto OpenClaw's multi-agent system.

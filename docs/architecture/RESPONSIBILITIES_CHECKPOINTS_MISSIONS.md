@@ -1,5 +1,10 @@
 # Responsibilities, Checkpoints & Missions — Implementation Plan
 
+> **Status:** FUTURE — Design document, not yet implemented
+> **Written:** 2026-04-04
+> **Last reviewed:** 2026-04-11
+> **Depends on:** Brain Architecture v2 (multi-agent system) being implemented first
+
 ## Overview
 
 Three operational layers that give every OpenClaw agent the ability to work autonomously, work in sequence, and work toward big-picture goals:
