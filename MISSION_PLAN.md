@@ -10,7 +10,7 @@ Architect Prime is a **self-bootstrapping agent factory** built on [OpenClaw](ht
 
 Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-**Current Status:** v2.0 OpenClaw integration complete. Checkpoint 5 (DWD Google Chat for fleet agents) verified. Fleet agent `stan` communicates via Google Chat using DWD impersonation, routed through the rewritten inbox-daemon → OpenClaw gateway pipeline. All critical hotfixes applied (heartbeat spam, duplicate messages, identity leak). Next milestone: full fleet lifecycle E2E verification.
+**Current Status:** v2.0 OpenClaw integration complete. Checkpoint 5.1 hotfix shipped (inbox-daemon heredoc stdin bug + crash resilience). Fleet agent `stan` fully operational — communicates via Google Chat using DWD impersonation, routed through inbox-daemon → OpenClaw gateway pipeline. Next milestone: Checkpoint 6 — full fleet lifecycle E2E verification.
 
 ---
 
@@ -178,6 +178,27 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 
 ---
 
+### Checkpoint 5.1: inbox-daemon Hotfix
+> *Completed: 2026-04-11*
+
+- [x] **Heredoc stdin bug** — `call_openclaw()` used `python3 << 'PYEOF'` which steals stdin from the pipe
+  - `sys.stdin.read()` always returned empty → `sys.exit(1)` → crash
+  - Root cause: bash heredocs redirect fd 0, so `echo "$text" | python3 << 'PYEOF'` loses the pipe
+  - Fix: pass message text via `OC_MSG_TEXT` environment variable instead of stdin
+- [x] **Crash resilience** — `set -eo pipefail` made `call_openclaw` failures fatal to the entire daemon
+  - Any non-zero exit killed the systemd service, triggering a restart loop
+  - Fix: wrap `call_openclaw` in `if` block, log warnings on failure instead of crashing
+- [x] **Error diagnostics** — added stderr capture for OpenClaw errors
+  - Empty content, no choices, and exception messages now logged with `warn`
+- [x] **Deployed to fleet-stan** — verified: message processed in ~17s, 1305 char reply sent via DWD
+- [x] **Committed & pushed** — `b390706b` on `main`, all future fleet agents inherit the fix
+
+> **Impact:** This bug meant `call_openclaw` had **never worked via the pipe path**. Previous Stan responses
+> (April 9th) likely succeeded through a different code path or race condition. The fix is now
+> the canonical path for all fleet agent message processing.
+
+---
+
 ## What Works Today
 
 | Component | Status | Notes |
@@ -187,7 +208,7 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 | OpenClaw container | ✅ Running | Docker, `--network host`, port 18789 |
 | Vertex AI ADC auth | ✅ Working | GCE metadata → OAuth2, patched model-auth-env |
 | control-daemon | ✅ Running | systemd, polls Firestore every 5s |
-| inbox-daemon (fleet) | ✅ Hardened | @-mention filter, dedup, no heartbeat, correct identity |
+| inbox-daemon (fleet) | ✅ Hardened | @-mention filter, dedup, env var text passing, crash resilience |
 | Bootstrap config | ✅ Applied | RPC config.apply with retry/baseHash |
 | CoreKit tools | ✅ Installed | fleet-deploy, fleet-teardown, upgrade-corekit |
 | Dashboard E2E chat | ✅ Working | Full round-trip verified |
