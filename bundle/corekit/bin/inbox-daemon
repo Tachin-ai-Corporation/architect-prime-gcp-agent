@@ -144,16 +144,19 @@ sys.exit(1)  # new message
 }
 
 # Call OpenClaw gateway — ALL text handling in Python (no bash string expansion)
-# Input: raw user text on stdin
+# Input: message text as $1 argument
 # Output: response text on stdout
 call_openclaw() {
+  local msg_text="$1"
   OC_GW="$OC_GATEWAY" OC_TK="$OC_TOKEN" OC_TIMEOUT="$PROCESS_TIMEOUT" \
+  OC_MSG_TEXT="$msg_text" \
   python3 << 'PYEOF'
 import json, sys, urllib.request, unicodedata, re, os
 
-# Read raw text from stdin
-text = sys.stdin.read().strip()
+# Read text from environment variable (not stdin — heredoc steals stdin)
+text = os.environ.get('OC_MSG_TEXT', '').strip()
 if not text:
+    print('Empty message text', file=sys.stderr)
     sys.exit(1)
 
 # Layer 2: Canonical normalization
@@ -188,6 +191,10 @@ try:
         if content:
             print(content[:3800])
             sys.exit(0)
+        else:
+            print(f'Empty content from OpenClaw', file=sys.stderr)
+    else:
+        print(f'No choices from OpenClaw', file=sys.stderr)
 except Exception as e:
     print(f'Error: {e}', file=sys.stderr)
 
@@ -304,11 +311,18 @@ json.dump({
 
       log "MSG from=${DISPLAY} space=${SPACE} text=\"${CLEAN:0:60}\""
 
-      # Call OpenClaw — pipe clean text via stdin (no bash expansion)
+      # Call OpenClaw — pass clean text as argument (no bash expansion via env var)
+      # IMPORTANT: must not let call_openclaw failure kill the daemon (set -e)
       REPLY_FILE="/tmp/inbox-reply-$$.txt"
-      echo "$CLEAN" | call_openclaw > "$REPLY_FILE" 2>/dev/null
-      REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
-      rm -f "$REPLY_FILE"
+      REPLY_ERR="/tmp/inbox-err-$$.txt"
+      if call_openclaw "$CLEAN" > "$REPLY_FILE" 2> "$REPLY_ERR"; then
+        REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
+      else
+        OC_ERR="$(cat "$REPLY_ERR" 2>/dev/null)"
+        warn "call_openclaw failed (exit $?): ${OC_ERR:0:200}"
+        REPLY=""
+      fi
+      rm -f "$REPLY_FILE" "$REPLY_ERR"
 
       # Only send non-empty, real responses to Chat
       if [[ -n "$REPLY" && ${#REPLY} -gt 2 ]]; then
