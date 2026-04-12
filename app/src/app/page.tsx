@@ -19,9 +19,23 @@ interface ChatMessage {
 }
 interface FleetAgent {
   name: string;
-  status: "online" | "offline" | "deploying" | "error";
+  status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "error";
   specialty: string;
   email: string;
+  deploySteps?: DeployStep[];
+  actionRequired?: ActionRequired | null;
+}
+interface DeployStep {
+  id: string;
+  label: string;
+  status: "done" | "active" | "pending" | "failed" | "skipped";
+  timestamp: string;
+  detail?: string;
+}
+interface ActionRequired {
+  type: string;
+  title: string;
+  instructions: string[];
 }
 interface AgentDetail {
   agent: string;
@@ -35,6 +49,8 @@ interface AgentDetail {
   uptimeMinutes: number | null;
   healthy: boolean;
   activity: { id: string; type: string; summary: string; timestamp: string; sender: string }[];
+  deploySteps?: DeployStep[];
+  actionRequired?: ActionRequired | null;
 }
 interface SetupState {
   hasPrimes: boolean;
@@ -651,56 +667,98 @@ export default function Home() {
                     {loadingDetail ? (
                       <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading agent details...</div>
                     ) : agentDetail ? (
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                        {/* Left: Info */}
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Agent Info</div>
-                          <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--text-secondary)" }}>Specialty</span>
-                              <span>{agentDetail.specialty}</span>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--text-secondary)" }}>VM</span>
-                              <code className="mono" style={{ fontSize: 11 }}>{agentDetail.vm || "—"}</code>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--text-secondary)" }}>Zone</span>
-                              <span>{agentDetail.zone || "—"}</span>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--text-secondary)" }}>Email</span>
-                              <code className="mono" style={{ fontSize: 11 }}>{agentDetail.email || "—"}</code>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--text-secondary)" }}>Uptime</span>
-                              <span>{agentDetail.uptimeMinutes != null ? `${agentDetail.uptimeMinutes}m` : "—"}</span>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ color: "var(--text-secondary)" }}>Last Heartbeat</span>
-                              <span>{agentDetail.lastHeartbeat ? formatTime(agentDetail.lastHeartbeat) : "—"}</span>
+                      <div>
+                        {/* Deploy Timeline */}
+                        {agentDetail.deploySteps && agentDetail.deploySteps.length > 0 && (
+                          <div style={{ marginBottom: 20 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Deploy Progress</div>
+                            <div className={styles["deploy-timeline"]}>
+                              {agentDetail.deploySteps.map((step, i) => {
+                                const icon = { done: "✅", active: "⏳", failed: "❌", pending: "⬜", skipped: "⏭️" }[step.status] || "❓";
+                                return (
+                                  <div key={`${step.id}-${i}`} className={`${styles["deploy-step"]} ${styles[`step-${step.status}`]}`}>
+                                    <span className={styles["deploy-step-icon"]}>{icon}</span>
+                                    <span className={styles["deploy-step-label"]}>{step.label}</span>
+                                    {step.detail && <span className={styles["deploy-step-detail"]}>{step.detail}</span>}
+                                    {step.timestamp && (
+                                      <span className={styles["deploy-step-time"]}>
+                                        {new Date(step.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
-                        </div>
+                        )}
 
-                        {/* Right: Activity Log */}
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Recent Activity</div>
-                          {agentDetail.activity.length === 0 ? (
-                            <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>No activity recorded yet.</div>
-                          ) : (
-                            <div style={{ display: "grid", gap: 4, maxHeight: 200, overflowY: "auto" }}>
-                              {agentDetail.activity.map((a) => (
-                                <div key={a.id} style={{
-                                  padding: "6px 8px", background: "var(--bg-tertiary)", borderRadius: 6, fontSize: 12,
-                                  display: "flex", justifyContent: "space-between", gap: 8,
-                                }}>
-                                  <span style={{ color: "var(--text-secondary)" }}>{a.summary || a.type}</span>
-                                  <span style={{ color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{a.timestamp ? formatTime(a.timestamp) : ""}</span>
-                                </div>
-                              ))}
+                        {/* Action Required Callout */}
+                        {agentDetail.actionRequired && (
+                          <div className={styles["action-required"]}>
+                            <div className={styles["action-required-header"]}>
+                              <span style={{ fontSize: 18 }}>⚠️</span>
+                              <span className={styles["action-required-title"]}>{agentDetail.actionRequired.title}</span>
                             </div>
-                          )}
+                            <ol className={styles["action-required-list"]}>
+                              {agentDetail.actionRequired.instructions.map((inst, i) => (
+                                <li key={i}>{inst}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+
+                        {/* Info + Activity Grid */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                          {/* Left: Info */}
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Agent Info</div>
+                            <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--text-secondary)" }}>Specialty</span>
+                                <span>{agentDetail.specialty}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--text-secondary)" }}>VM</span>
+                                <code className="mono" style={{ fontSize: 11 }}>{agentDetail.vm || "—"}</code>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--text-secondary)" }}>Zone</span>
+                                <span>{agentDetail.zone || "—"}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--text-secondary)" }}>Email</span>
+                                <code className="mono" style={{ fontSize: 11 }}>{agentDetail.email || "—"}</code>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--text-secondary)" }}>Uptime</span>
+                                <span>{agentDetail.uptimeMinutes != null ? `${agentDetail.uptimeMinutes}m` : "—"}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span style={{ color: "var(--text-secondary)" }}>Last Heartbeat</span>
+                                <span>{agentDetail.lastHeartbeat ? formatTime(agentDetail.lastHeartbeat) : "—"}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right: Activity Log */}
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Recent Activity</div>
+                            {agentDetail.activity.length === 0 ? (
+                              <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>No activity recorded yet.</div>
+                            ) : (
+                              <div style={{ display: "grid", gap: 4, maxHeight: 200, overflowY: "auto" }}>
+                                {agentDetail.activity.map((a) => (
+                                  <div key={a.id} style={{
+                                    padding: "6px 8px", background: "var(--bg-tertiary)", borderRadius: 6, fontSize: 12,
+                                    display: "flex", justifyContent: "space-between", gap: 8,
+                                  }}>
+                                    <span style={{ color: "var(--text-secondary)" }}>{a.summary || a.type}</span>
+                                    <span style={{ color: "var(--text-tertiary)", whiteSpace: "nowrap" }}>{a.timestamp ? formatTime(a.timestamp) : ""}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -718,7 +776,14 @@ export default function Home() {
                           <div className="card-title">{agent.name}</div>
                           <div className="card-subtitle">{agent.specialty}</div>
                         </div>
-                        <span className={`badge badge-${agent.status}`}>{agent.status}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {(agent.status === "deploying" || agent.status === "needs_action" || agent.status === "tearing_down") && agent.deploySteps && agent.deploySteps.length > 0 && (
+                            <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                              {agent.deploySteps.filter(s => s.status === "done").length}/{agent.deploySteps.length} steps
+                            </span>
+                          )}
+                          <span className={`badge badge-${agent.status === "needs_action" ? "warning" : agent.status}`}>{agent.status === "needs_action" ? "action needed" : agent.status === "tearing_down" ? "tearing down" : agent.status}</span>
+                        </div>
                       </div>
                       <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                         <code className="mono">{agent.email}</code>

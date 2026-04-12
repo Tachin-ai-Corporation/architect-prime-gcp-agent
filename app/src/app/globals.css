@@ -193,6 +193,46 @@ code, pre, .mono {
   animation: pulse 1s infinite;
 }
 
+.badge-warning,
+.badge-needs_action {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+.badge-warning::before,
+.badge-needs_action::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  animation: pulse 2s infinite;
+}
+
+.badge-tearing_down {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent-primary);
+}
+.badge-tearing_down::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  animation: pulse 1s infinite;
+}
+
+.badge-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--accent-danger);
+}
+.badge-error::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-danger);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

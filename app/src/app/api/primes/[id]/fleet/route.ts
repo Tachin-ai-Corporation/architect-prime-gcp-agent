@@ -17,6 +17,8 @@ export async function GET(_req: Request, ctx: RouteContext) {
       name: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
+      deploySteps: doc.data().deploySteps ?? [],
+      actionRequired: doc.data().actionRequired ?? null,
     }));
 
     return NextResponse.json({ fleet });

@@ -22,6 +22,7 @@ bundle/corekit/bin/build-system-prompt .openclaw/bin/build-system-prompt
 bundle/corekit/bin/dwd-token .openclaw/bin/dwd-token
 bundle/corekit/bin/chat-read .openclaw/bin/chat-read
 bundle/corekit/bin/fleet-verify .openclaw/bin/fleet-verify
+bundle/corekit/bin/fleet-status .openclaw/bin/fleet-status
 bundle/corekit/bin/fleet-upgrade .openclaw/bin/fleet-upgrade\r
 bundle/corekit/bin/web-search .openclaw/bin/web-search
 bundle/corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json

@@ -86,6 +86,8 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       uptimeMinutes,
       healthy,
       activity,
+      deploySteps: agentData.deploySteps ?? [],
+      actionRequired: agentData.actionRequired ?? null,
     });
   } catch (err) {
     console.error(`[api/fleet/${(await ctx.params).agent}/logs] Error:`, err);

@@ -162,40 +162,111 @@ if gcloud compute instances describe "$FLEET_VM" \
   die "VM '${FLEET_VM}' already exists. Run fleet-teardown --name ${AGENT_NAME} first."
 fi
 
-# ---- Write deploying status to Firestore ----
-write_fleet_status() {
-  local status="$1"
+# ---- Write deploy progress to Firestore ----
+# Writes status + appends to deploySteps[] array atomically.
+# Uses read-modify-write since Firestore REST API lacks arrayUnion.
+write_deploy_step() {
+  local step_id="$1"
+  local step_label="$2"
+  local step_status="${3:-done}"   # done | active | failed
+  local step_detail="${4:-}"
+  local new_status="${5:-}"
+  local action_json="${6:-}"
+
+  [[ -n "$PRIME_ID" ]] || return 0
+
   local token
   token="$(curl -sH 'Metadata-Flavor: Google' \
     'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")"
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || return 0
 
-  local body
-  body=$(python3 -c "
-import json, sys
-doc = {
-    'fields': {
-        'status': {'stringValue': '${status}'},
-        'specialty': {'stringValue': '${SPECIALTY}'},
-        'email': {'stringValue': '${AGENT_USER_EMAIL}'},
-        'vm': {'stringValue': '${FLEET_VM}'},
-        'zone': {'stringValue': '${ZONE}'},
-        'deployedAt': {'stringValue': '${DEPLOY_TS}'},
-        'name': {'stringValue': '${AGENT_NAME}'}
+  python3 - <<PYEOF "$token" "$step_id" "$step_label" "$step_status" "$step_detail" "$new_status" "$action_json"
+import sys, json, urllib.request, urllib.error
+from datetime import datetime, timezone
+
+token = sys.argv[1]
+step_id = sys.argv[2]
+step_label = sys.argv[3]
+step_status = sys.argv[4]
+step_detail = sys.argv[5]
+new_status = sys.argv[6]
+action_json = sys.argv[7]
+
+fs_url = "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}"
+now = datetime.now(timezone.utc).isoformat()
+
+# Read current doc
+try:
+    req = urllib.request.Request(fs_url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req) as resp:
+        doc = json.loads(resp.read())
+except:
+    doc = {}
+
+# Extract existing deploySteps
+existing_steps = []
+if "fields" in doc and "deploySteps" in doc["fields"]:
+    arr = doc["fields"]["deploySteps"].get("arrayValue", {}).get("values", [])
+    existing_steps = arr
+
+# Build new step
+new_step = {
+    "mapValue": {
+        "fields": {
+            "id": {"stringValue": step_id},
+            "label": {"stringValue": step_label},
+            "status": {"stringValue": step_status},
+            "timestamp": {"stringValue": now},
+        }
     }
 }
-print(json.dumps(doc))
-")
+if step_detail:
+    new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
 
-  if [[ -n "$PRIME_ID" ]]; then
-    curl -s -X PATCH \
-      -H "Authorization: Bearer $token" \
-      -H "Content-Type: application/json" \
-      -d "$body" \
-      "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}?updateMask.fieldPaths=status&updateMask.fieldPaths=specialty&updateMask.fieldPaths=email&updateMask.fieldPaths=vm&updateMask.fieldPaths=zone&updateMask.fieldPaths=deployedAt&updateMask.fieldPaths=name" > /dev/null 2>&1 || true
-  fi
+existing_steps.append(new_step)
+
+# Build update body
+fields = {
+    "status": {"stringValue": new_status if new_status else "${STATUS_OVERRIDE:-deploying}"},
+    "specialty": {"stringValue": "${SPECIALTY}"},
+    "email": {"stringValue": "${AGENT_USER_EMAIL}"},
+    "vm": {"stringValue": "${FLEET_VM}"},
+    "zone": {"stringValue": "${ZONE}"},
+    "deployedAt": {"stringValue": "${DEPLOY_TS}"},
+    "name": {"stringValue": "${AGENT_NAME}"},
+    "deploySteps": {"arrayValue": {"values": existing_steps}},
 }
-write_fleet_status "deploying"
+
+mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=specialty&updateMask.fieldPaths=email&updateMask.fieldPaths=vm&updateMask.fieldPaths=zone&updateMask.fieldPaths=deployedAt&updateMask.fieldPaths=name&updateMask.fieldPaths=deploySteps"
+
+# Add actionRequired if provided
+if action_json:
+    try:
+        ar = json.loads(action_json)
+        ar_fields = {}
+        for k, v in ar.items():
+            if isinstance(v, list):
+                ar_fields[k] = {"arrayValue": {"values": [{"stringValue": s} for s in v]}}
+            elif isinstance(v, str):
+                ar_fields[k] = {"stringValue": v}
+        fields["actionRequired"] = {"mapValue": {"fields": ar_fields}}
+        mask += "&updateMask.fieldPaths=actionRequired"
+    except:
+        pass
+
+body = json.dumps({"fields": fields}).encode()
+url = f"{fs_url}?{mask}"
+req = urllib.request.Request(url, data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f"[fleet-deploy] Firestore write failed: {e}", file=sys.stderr)
+PYEOF
+}
+
+# Write initial deploying status with empty steps
+write_deploy_step "deploy_started" "Deployment initiated" "done" "" "deploying"
 
 # ============================================================
 # 2. APIs already enabled on PRIME_PROJECT — skip
@@ -209,6 +280,8 @@ log "Creating service account: ${FLEET_SA_NAME}"
 gcloud iam service-accounts create "$FLEET_SA_NAME" \
   --display-name="Fleet Agent ${AGENT_NAME} (${SPECIALTY})" \
   --project="$FLEET_PROJECT" 2>/dev/null || log "SA already exists"
+
+write_deploy_step "sa_created" "Service account created" "done" "${FLEET_SA_EMAIL}"
 
 # Wait for SA propagation to prevent IAM race condition
 sleep 5
@@ -229,6 +302,8 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   --member="serviceAccount:${FLEET_SA_EMAIL}" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --quiet > /dev/null 2>&1 || log "DWD-signer IAM grant may already exist"
+
+write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + serviceAccountTokenCreator"
 
 # ============================================================
 # 4. Build and create VM (with DWD inbox-daemon)
@@ -271,6 +346,8 @@ sleep 5
 FLEET_IP="$(gcloud compute instances describe "$FLEET_VM" --zone="$ZONE" --project="$FLEET_PROJECT" \
   --format='value(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || echo 'pending')"
 
+write_deploy_step "vm_created" "VM created" "done" "${FLEET_VM} (${FLEET_IP})"
+
 # ============================================================
 # 5. Update fleet registry (local JSON + Firestore)
 # ============================================================
@@ -307,8 +384,21 @@ jq --arg name "$AGENT_NAME" \
     } | .lastUpdated = $ts' \
   "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
 
-# Write online status to Firestore
-write_fleet_status "online"
+# Write actionRequired with admin setup instructions
+# Status stays "deploying" — fleet-bootstrap.sh on the VM writes "online" when actually ready
+ACTION_JSON=$(python3 -c "
+import json
+print(json.dumps({
+    'type': 'workspace_user',
+    'title': 'Create Workspace user and add to Chat space',
+    'instructions': [
+        'Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME}, Last: ${AGENT_LAST_NAME}, Email: ${AGENT_USER_EMAIL}',
+        'Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space',
+        'The agent will come online automatically once the user exists'
+    ]
+}))
+")
+write_deploy_step "prime_setup_done" "Prime-side setup complete (VM bootstrapping)" "done" "VM is now installing Docker + OpenClaw (~10 min)" "deploying" "$ACTION_JSON"
 
 # ============================================================
 # 6. Print results + admin setup instructions

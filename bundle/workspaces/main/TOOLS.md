@@ -20,6 +20,17 @@ fleet-teardown --name <name>
 fleet-verify --name <name>
 ```
 
+### Check fleet status (detailed)
+```
+fleet-status                   # all agents summary
+fleet-status --name <name>     # single agent detailed view
+fleet-status --json            # machine-readable JSON output
+fleet-status --name <name> --json
+```
+- Shows deploy progress steps, current status, and any action required
+- Use this when users ask "how's X doing?" or "fleet status"
+- JSON mode is useful for structured analysis
+
 ### Upgrade an agent's CoreKit
 ```
 fleet-upgrade --name <name>
@@ -42,3 +53,5 @@ cat ~/.openclaw/corekit/fleet-registry.json
 - fleet-deploy is async: it takes 3-5 minutes, runs in background
 - After fleet-deploy completes, the output contains admin setup instructions
 - All tools require the agent name as --name argument
+- Use fleet-status to answer questions about agent health or deploy progress
+- fleet-status reads live data from Firestore — always gives current state

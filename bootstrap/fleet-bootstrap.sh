@@ -59,11 +59,96 @@ echo "CoreRef     : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Project     : ${GCP_PROJECT_ID}"
 echo "Prime ID    : ${PRIME_ID:-<not set>}"
 
+# ---- Firestore deploy step reporter ----
+# Appends a step to the deploySteps[] array in the fleet Firestore doc
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+
+write_deploy_step() {
+  local step_id="$1"
+  local step_label="$2"
+  local step_status="${3:-done}"
+  local step_detail="${4:-}"
+  local new_status="${5:-}"
+  local action_json="${6:-}"
+
+  [[ -n "${PRIME_ID}" ]] || return 0
+
+  local token
+  token="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || return 0
+
+  python3 - <<'PYEOF' "$token" "$step_id" "$step_label" "$step_status" "$step_detail" "$new_status" "$action_json" "${FIRESTORE_URL}" "${PRIME_ID}" "${AGENT_ID}"
+import sys, json, urllib.request
+from datetime import datetime, timezone
+
+token, step_id, step_label, step_status, step_detail, new_status, action_json, fs_url, prime_id, agent_id = sys.argv[1:11]
+
+url = f"{fs_url}/primes/{prime_id}/fleet/{agent_id}"
+now = datetime.now(timezone.utc).isoformat()
+
+# Read current doc
+try:
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req) as resp:
+        doc = json.loads(resp.read())
+except:
+    doc = {}
+
+existing_steps = []
+if "fields" in doc and "deploySteps" in doc["fields"]:
+    existing_steps = doc["fields"]["deploySteps"].get("arrayValue", {}).get("values", [])
+
+new_step = {"mapValue": {"fields": {
+    "id": {"stringValue": step_id},
+    "label": {"stringValue": step_label},
+    "status": {"stringValue": step_status},
+    "timestamp": {"stringValue": now},
+}}}
+if step_detail:
+    new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
+existing_steps.append(new_step)
+
+cur_status = "deploying"
+if "fields" in doc and "status" in doc["fields"]:
+    cur_status = doc["fields"]["status"].get("stringValue", "deploying")
+
+fields = {
+    "status": {"stringValue": new_status if new_status else cur_status},
+    "deploySteps": {"arrayValue": {"values": existing_steps}},
+}
+mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=deploySteps"
+
+if action_json:
+    try:
+        ar = json.loads(action_json)
+        ar_fields = {}
+        for k, v in ar.items():
+            if isinstance(v, list):
+                ar_fields[k] = {"arrayValue": {"values": [{"stringValue": s} for s in v]}}
+            elif isinstance(v, str):
+                ar_fields[k] = {"stringValue": v}
+        fields["actionRequired"] = {"mapValue": {"fields": ar_fields}}
+        mask += "&updateMask.fieldPaths=actionRequired"
+    except:
+        pass
+
+body = json.dumps({"fields": fields}).encode()
+req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f"[fleet-bootstrap] Firestore write failed: {e}", file=sys.stderr)
+PYEOF
+}
+
 # ---- 1) Install system packages ----
 info "Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
+write_deploy_step "packages_installed" "System packages installed"
 
 # ---- 2) Install Docker CE ----
 info "Installing Docker CE..."
@@ -75,6 +160,7 @@ systemctl enable docker
 systemctl start docker
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 [[ -n "${DOCKER_GID}" ]] || { echo "[ERROR] Could not determine docker group GID"; exit 1; }
+write_deploy_step "docker_installed" "Docker CE installed"
 
 # ---- 3) Install CoreKit via manifest ----
 info "Installing CoreKit..."
@@ -86,6 +172,7 @@ CORE_REF="${CORE_REF}" \
   GH_REPO="${GH_REPO}" \
   OC_HOST_ROOT="${OC_HOST_ROOT}" \
   bash /tmp/install.sh
+write_deploy_step "corekit_installed" "CoreKit installed"
 
 # ---- 4) Prepare workspace with fleet/specialty templates ----
 info "Preparing workspace..."
@@ -172,6 +259,7 @@ EOF
 
 info "Building Docker image openclaw:local ..."
 DOCKER_BUILDKIT=1 docker build -t openclaw:local .
+write_deploy_step "openclaw_built" "OpenClaw Docker image built"
 
 # ---- 8) Run OpenClaw container ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
@@ -204,6 +292,7 @@ while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
 done
 [[ "$READY" == "true" ]] || { echo "[ERROR] Gateway did not become ready within ${MAX_WAIT}s"; exit 1; }
 info "Gateway is ready (took ~${WAITED}s)."
+write_deploy_step "gateway_ready" "OpenClaw gateway started" "done" "Ready in ~${WAITED}s"
 
 # ---- 10) Harden container perms ----
 info "Hardening container permissions..."
@@ -277,6 +366,7 @@ if [[ "$APPLY_OK" != "true" ]]; then
     exit 1
   fi
 fi
+write_deploy_step "config_applied" "Agent config applied"
 
 # ---- 13) Post-apply harden + inject Docker CLI ----
 info "Post-apply hardening..."
@@ -369,29 +459,65 @@ systemctl enable inbox-daemon
 # Only start if we have the required DWD config
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
   systemctl start inbox-daemon || warn "inbox-daemon start failed (DWD may not be configured)"
+  write_deploy_step "inbox_installed" "Inbox daemon started"
 else
   warn "inbox-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
+  write_deploy_step "inbox_installed" "Inbox daemon skipped (no email/DWD config)" "skipped"
 fi
 
 # ---- 17) Update Firestore status ----
-info "Updating Firestore status..."
-if [[ -n "${PRIME_ID}" ]]; then
-  FS_TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)"
-  if [[ -n "$FS_TOKEN" ]]; then
-    curl -s -X PATCH \
-      -H "Authorization: Bearer $FS_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d '{"fields":{"status":{"stringValue":"online"}}}' \
-      "https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT_ID}?updateMask.fieldPaths=status" \
-      > /dev/null 2>&1 || true
-    echo "  Firestore: fleet/${AGENT_ID} → online"
+# Check if DWD healthcheck is working before declaring online
+info "Checking DWD healthcheck..."
+DWD_OK=false
+if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
+  # Quick DWD token test (same as inbox-daemon healthcheck)
+  DWD_TOKEN_CMD="${OC_HOST_DIR}/bin/dwd-token"
+  if [[ -x "$DWD_TOKEN_CMD" ]]; then
+    DWD_TEST="$(AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" DWD_SIGNER_SA="${DWD_SIGNER_SA}" \
+      GCP_PROJECT_ID="${GCP_PROJECT_ID}" "$DWD_TOKEN_CMD" 2>/dev/null || true)"
+    if [[ -n "$DWD_TEST" && "$DWD_TEST" != *"error"* ]]; then
+      DWD_OK=true
+    fi
   fi
 fi
 
+info "Updating Firestore status..."
+if [[ "$DWD_OK" == "true" ]]; then
+  # DWD works — agent is fully online
+  write_deploy_step "online" "Agent online" "done" "" "online"
+  # Clear actionRequired since everything is working
+  if [[ -n "${PRIME_ID}" ]]; then
+    FS_TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+      | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)"
+    if [[ -n "$FS_TOKEN" ]]; then
+      curl -s -X PATCH \
+        -H "Authorization: Bearer $FS_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"fields":{"actionRequired":{"nullValue":null}}}' \
+        "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_ID}?updateMask.fieldPaths=actionRequired" \
+        > /dev/null 2>&1 || true
+    fi
+  fi
+else
+  # DWD failed — agent infrastructure is ready but needs admin action
+  ACTION_JSON=$(python3 -c "
+import json
+print(json.dumps({
+    'type': 'workspace_user',
+    'title': 'Create Workspace user account for DWD authentication',
+    'instructions': [
+        'Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME:-Agent}, Last: ${AGENT_LAST_NAME:-${AGENT_ID}}, Email: ${AGENT_USER_EMAIL}',
+        'Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space',
+        'The agent will come online automatically once the user exists and DWD succeeds'
+    ]
+}))
+")
+  write_deploy_step "dwd_healthcheck" "DWD healthcheck failed — awaiting admin action" "failed" "Workspace user may not exist yet" "needs_action" "$ACTION_JSON"
+fi
+
 # ---- 18) Boot announce via DWD ----
-if [[ -n "${CHAT_SPACE_ID}" && -n "${AGENT_USER_EMAIL}" ]]; then
+if [[ "$DWD_OK" == "true" && -n "${CHAT_SPACE_ID}" && -n "${AGENT_USER_EMAIL}" ]]; then
   export CHAT_SPACE_ID OC_HOST_ROOT
   "${OC_HOST_DIR}/bin/chat-send" \
     "🤖 Fleet agent *${AGENT_DISPLAY_NAME}* is online (OpenClaw).
@@ -410,4 +536,9 @@ echo "  Gateway token  : ${MY_TOKEN}"
 echo "  OpenClaw commit: ${STABLE_COMMIT}"
 echo "  Agent          : ${AGENT_DISPLAY_NAME} (${SPECIALTY})"
 echo "  Project        : ${GCP_PROJECT_ID}"
+if [[ "$DWD_OK" != "true" ]]; then
+  echo "  DWD Status     : ⚠️  NEEDS ADMIN ACTION"
+  echo "  → Create Workspace user: ${AGENT_USER_EMAIL}"
+  echo "  → Add to Chat space"
+fi
 echo "============================================"

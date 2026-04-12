@@ -54,9 +54,25 @@ export interface MessageDoc {
 
 export interface FleetDoc {
   name: string;
-  status: "online" | "offline" | "deploying" | "error";
+  status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "error";
   specialty: string;
   email: string;
   vmName: string;
   createdAt: FirebaseFirestore.Timestamp;
+  deploySteps?: DeployStep[];
+  actionRequired?: ActionRequired | null;
+}
+
+export interface DeployStep {
+  id: string;
+  label: string;
+  status: "done" | "active" | "pending" | "failed" | "skipped";
+  timestamp: string;
+  detail?: string;
+}
+
+export interface ActionRequired {
+  type: string;
+  title: string;
+  instructions: string[];
 }
