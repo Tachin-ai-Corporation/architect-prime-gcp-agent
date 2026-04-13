@@ -286,7 +286,7 @@ write_deploy_step "sa_created" "Service account created" "done" "${FLEET_SA_EMAI
 # Wait for SA propagation to prevent IAM race condition
 sleep 5
 
-for role in roles/aiplatform.user roles/iam.serviceAccountTokenCreator; do
+for role in roles/aiplatform.user roles/iam.serviceAccountTokenCreator roles/datastore.user; do
   log "Granting ${role} to ${FLEET_SA_EMAIL}"
   gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
     --member="serviceAccount:${FLEET_SA_EMAIL}" \
