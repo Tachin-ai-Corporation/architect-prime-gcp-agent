@@ -26,6 +26,8 @@ bundle/corekit/bin/fleet-status .openclaw/bin/fleet-status
 bundle/corekit/bin/fleet-upgrade .openclaw/bin/fleet-upgrade\r
 bundle/corekit/bin/web-search .openclaw/bin/web-search
 bundle/corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json
+bundle/corekit/bin/command-runner .openclaw/bin/command-runner
+bundle/corekit/config/command-runner.service .openclaw/corekit/command-runner.service
 bundle/corekit/config/agent-types.json .openclaw/corekit/agent-types.json
 
 bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json

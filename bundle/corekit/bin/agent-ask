@@ -49,6 +49,36 @@ except: pass
 fi
 export CHAT_SPACE_ID
 
+# Resolve PRIME_ID for Firestore command writes
+PRIME_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+if [[ -z "${PRIME_ID:-}" && -f "$PRIME_CONFIG" ]]; then
+  PRIME_ID="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$PRIME_CONFIG'))
+    print(cfg.get('primeId', ''))
+except: pass
+" 2>/dev/null || true)"
+fi
+# Fallback: read from chat-config
+if [[ -z "${PRIME_ID:-}" && -f "$CHAT_CONFIG" ]]; then
+  PRIME_ID="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('primeId', ''))
+except: pass
+" 2>/dev/null || true)"
+fi
+PRIME_ID="${PRIME_ID:-unknown}"
+
+# Build Firestore URL (used by command queue writes)
+FIRESTORE_URL=""
+if [[ -n "${GCP_PROJECT_ID:-}" || -n "$(get_project 2>/dev/null)" ]]; then
+  _PROJECT="${GCP_PROJECT_ID:-$(get_project 2>/dev/null)}"
+  FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${_PROJECT}/databases/(default)/documents"
+fi
+
 # ---- Helpers ----
 die() { echo "[agent-ask] [ERROR] $*" >&2; exit 1; }
 log() { echo "[agent-ask] $*" >&2; }
@@ -288,16 +318,10 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
       fi
       ;;
     fleet_status)
-      REGISTRY="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
-      if [[ -f "$REGISTRY" ]]; then
-        FUNC_RESULT="$(jq -r '
-          if (.agents | length) > 0 then
-            (.agents | to_entries[] | "\(.key): \(.value.specialty) (\(.value.status // "unknown")) — \(.value.agentUserEmail // "no email")")
-          else
-            "No fleet agents currently deployed."
-          end' "$REGISTRY" 2>/dev/null || echo "Error reading registry")"
+      if [[ -x "${FLEET_BIN}/fleet-status" ]]; then
+        FUNC_RESULT="$("${FLEET_BIN}/fleet-status" 2>&1 | tail -40)" || FUNC_RESULT="fleet-status failed: ${FUNC_RESULT}"
       else
-        FUNC_RESULT="No fleet registry found."
+        FUNC_RESULT="fleet-status script not found."
       fi
       ;;
     fleet_verify)
@@ -326,25 +350,21 @@ if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
 import json, sys
 spec = sys.argv[1].lower().strip()
 types = json.load(open(sys.argv[2]))['types']
-# Try exact ID match first
 for t in types:
     if t['id'] == spec:
         print(t['id']); sys.exit(0)
-# Try title match (case-insensitive)
 for t in types:
     if t['title'].lower() == spec:
         print(t['id']); sys.exit(0)
-# Try partial/fuzzy: title contains or starts with
 for t in types:
     if spec in t['title'].lower() or t['title'].lower().startswith(spec):
         print(t['id']); sys.exit(0)
-# No match — pass through
 print(spec)
 " "$d_specialty" "$TYPES_FILE" 2>/dev/null)"
         d_specialty="$RESOLVED"
       fi
 
-      # Compute email from agent-types emailPattern, fallback to {specialty}-agent-{name}
+      # Compute email from agent-types emailPattern
       EMAIL_PATTERN=""
       if [[ -f "$TYPES_FILE" ]]; then
         EMAIL_PATTERN="$(python3 -c "
@@ -363,40 +383,48 @@ for t in types:
         else
           d_email="${d_specialty}-agent-${d_name}@tachin.ai"
         fi
-        TASK_ID="deploy-${d_name}-$(date +%s)"
-        TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
-        echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"running\",\"started\":\"$(date -Is)\"}" > "$TASK_FILE"
-        log "Starting async skill: fleet_deploy (task=${TASK_ID})"
 
-        # Compute display name parts for Workspace setup instructions
-        # devops-agent-stan → First: Devops-Agent, Last: Stan
         D_FIRST="$(echo "${d_specialty}-agent" | sed 's/^./\u&/' | sed 's/-\(.\)/-\u\1/g')"
         D_LAST="$(echo "${d_name}" | sed 's/^./\u&/')"
 
-        nohup bash -c "
-          RESULT=\"\$('$FLEET_BIN/fleet-deploy' --name '$d_name' --specialty '$d_specialty' --agent-email '$d_email' 2>&1)\"
-          EXIT_CODE=\$?
-
-          if [[ \$EXIT_CODE -eq 0 ]]; then
-            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"complete\",\"exit_code\":0}' > '$TASK_FILE'
-            # Report success via chat-send (dashboard uses Firestore, not chat-send)
-          else
-            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_deploy\",\"name\":\"${d_name}\",\"status\":\"failed\",\"exit_code\":'\"\$EXIT_CODE\"'}' > '$TASK_FILE'
-          fi
-        " >> "${SKILL_TASK_DIR}/${TASK_ID}.log" 2>&1 &
+        # Write command to Firestore queue (executed by command-runner on host)
+        log "Queuing fleet_deploy via command-runner: name=${d_name} specialty=${d_specialty}"
+        CMD_TOKEN="$(get_token)"
+        CMD_ID="cmd-deploy-${d_name}-$(date +%s%N)"
+        python3 -c "
+import json, urllib.request
+from datetime import datetime, timezone
+token = '$CMD_TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
+now = datetime.now(timezone.utc).isoformat()
+fields = {
+    'type': {'stringValue': 'fleet_deploy'},
+    'args': {'mapValue': {'fields': {
+        'name': {'stringValue': '$d_name'},
+        'specialty': {'stringValue': '$d_specialty'},
+        'email': {'stringValue': '$d_email'},
+    }}},
+    'status': {'stringValue': 'pending'},
+    'createdAt': {'stringValue': now},
+}
+body = json.dumps({'fields': fields}).encode()
+req = urllib.request.Request(url, data=body, method='PATCH',
+    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+urllib.request.urlopen(req)
+" 2>/dev/null || warn "Failed to write deploy command to Firestore"
 
         FUNC_RESULT="Deploying agent '${d_name}' (specialty: ${d_specialty}). This takes 3-5 minutes.
 
-Once deployment finishes, create the Workspace account with EXACTLY these values:
+I've queued the deployment. The command-runner on this VM will execute it.
 
+Once deployment finishes, create the Workspace account:
 → https://admin.google.com/ac/users → Add new user
   First Name: ${D_FIRST}
   Last Name: ${D_LAST}
   Email: ${d_email}
   ⚠️ Names MUST match exactly
 
-Then add ${d_email} to the Google Chat space.
-Verify by sending: @${D_FIRST} ${D_LAST} hello"
+Then add ${d_email} to the Google Chat space."
       else
         FUNC_RESULT="Missing required args for fleet-deploy (need: name, specialty)"
       fi
@@ -405,36 +433,35 @@ Verify by sending: @${D_FIRST} ${D_LAST} hello"
       t_name=""
       t_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
       if [[ -n "$t_name" ]]; then
-        TASK_ID="teardown-${t_name}-$(date +%s)"
-        TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
-        echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"running\",\"started\":\"$(date -Is)\"}" > "$TASK_FILE"
-        log "Starting async skill: fleet_teardown (task=${TASK_ID})"
+        # Write command to Firestore queue (executed by command-runner on host)
+        log "Queuing fleet_teardown via command-runner: name=${t_name}"
+        CMD_TOKEN="$(get_token)"
+        CMD_ID="cmd-teardown-${t_name}-$(date +%s%N)"
+        python3 -c "
+import json, urllib.request
+from datetime import datetime, timezone
+token = '$CMD_TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
+now = datetime.now(timezone.utc).isoformat()
+fields = {
+    'type': {'stringValue': 'fleet_teardown'},
+    'args': {'mapValue': {'fields': {
+        'name': {'stringValue': '$t_name'},
+    }}},
+    'status': {'stringValue': 'pending'},
+    'createdAt': {'stringValue': now},
+}
+body = json.dumps({'fields': fields}).encode()
+req = urllib.request.Request(url, data=body, method='PATCH',
+    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+urllib.request.urlopen(req)
+" 2>/dev/null || warn "Failed to write teardown command to Firestore"
 
-        nohup bash -c "
-          RESULT=\"\$('$FLEET_BIN/fleet-teardown' --name '$t_name' 2>&1)\"
-          EXIT_CODE=\$?
-          if [[ \$EXIT_CODE -eq 0 ]]; then
-            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"complete\"}' > '$TASK_FILE'
-            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
-              '$CHAT_SEND' "✅ *${t_name}* has been decommissioned.
+        FUNC_RESULT="Tearing down agent '${t_name}'. The command-runner will execute fleet-teardown on the host.
 
-• VM deleted, billing unlinked — cost is now \$0
-• Project shell preserved for re-hiring
-
-📋 *Action needed — Workspace email:*
-• If you plan to re-hire ${t_name} later → *Suspend* the account:
-  https://admin.google.com/ac/users
-• If permanent → *Delete* the account
-
-To re-hire: \`@Architect-Agent Prime hire ${t_name}\`" 2>/dev/null || true
-          else
-            echo '{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_teardown\",\"name\":\"${t_name}\",\"status\":\"failed\"}' > '$TASK_FILE'
-            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
-              '$CHAT_SEND' \"❌ Teardown of *${t_name}* failed. Check logs.\" 2>/dev/null || true
-          fi
-        " >> "${SKILL_TASK_DIR}/${TASK_ID}.log" 2>&1 &
-
-        FUNC_RESULT="Task started: tearing down agent '${t_name}'. I'll confirm in this chat when it's done."
+Once complete, you may want to:
+• Suspend the Workspace account at https://admin.google.com/ac/users
+• Or delete it if permanent"
       else
         FUNC_RESULT="Missing 'name' arg for fleet-teardown"
       fi
@@ -442,31 +469,33 @@ To re-hire: \`@Architect-Agent Prime hire ${t_name}\`" 2>/dev/null || true
     fleet_upgrade)
       u_name="" u_ref=""
       u_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-      u_ref="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref',''))" 2>/dev/null)"
+      u_ref="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref','main'))" 2>/dev/null)"
       if [[ -n "$u_name" ]]; then
-        TASK_ID="upgrade-${u_name}-$(date +%s)"
-        TASK_FILE="${SKILL_TASK_DIR}/${TASK_ID}.json"
-        echo "{\"task\":\"${TASK_ID}\",\"skill\":\"fleet_upgrade\",\"name\":\"${u_name}\",\"status\":\"running\"}" > "$TASK_FILE"
-        log "Starting async skill: fleet_upgrade (task=${TASK_ID})"
+        log "Queuing fleet_upgrade via command-runner: name=${u_name} ref=${u_ref}"
+        CMD_TOKEN="$(get_token)"
+        CMD_ID="cmd-upgrade-${u_name}-$(date +%s%N)"
+        python3 -c "
+import json, urllib.request
+from datetime import datetime, timezone
+token = '$CMD_TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
+now = datetime.now(timezone.utc).isoformat()
+fields = {
+    'type': {'stringValue': 'fleet_upgrade'},
+    'args': {'mapValue': {'fields': {
+        'name': {'stringValue': '$u_name'},
+        'ref': {'stringValue': '${u_ref:-main}'},
+    }}},
+    'status': {'stringValue': 'pending'},
+    'createdAt': {'stringValue': now},
+}
+body = json.dumps({'fields': fields}).encode()
+req = urllib.request.Request(url, data=body, method='PATCH',
+    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
+urllib.request.urlopen(req)
+" 2>/dev/null || warn "Failed to write upgrade command to Firestore"
 
-        upgrade_cmd="'$FLEET_BIN/fleet-upgrade' --name '$u_name'"
-        [[ -n "$u_ref" ]] && upgrade_cmd="$upgrade_cmd --ref '$u_ref'"
-
-        nohup bash -c "
-          RESULT=\"\$(${upgrade_cmd} 2>&1)\"
-          EXIT_CODE=\$?
-          if [[ \$EXIT_CODE -eq 0 ]]; then
-            echo '{\"task\":\"${TASK_ID}\",\"status\":\"complete\"}' > '$TASK_FILE'
-            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
-              '$CHAT_SEND' \"✅ *${u_name}* has been upgraded successfully.\" 2>/dev/null || true
-          else
-            echo '{\"task\":\"${TASK_ID}\",\"status\":\"failed\"}' > '$TASK_FILE'
-            CHAT_SPACE_ID='${CHAT_SPACE_ID:-}' OC_HOST_ROOT='$OC_HOST_ROOT' \
-              '$CHAT_SEND' \"❌ Upgrade of *${u_name}* failed. Check logs.\" 2>/dev/null || true
-          fi
-        " >> "${SKILL_TASK_DIR}/${TASK_ID}.log" 2>&1 &
-
-        FUNC_RESULT="Task started: upgrading agent '${u_name}'. I'll confirm when it's done."
+        FUNC_RESULT="Upgrading agent '${u_name}' to ref '${u_ref:-main}'. The command-runner will handle it."
       else
         FUNC_RESULT="Missing 'name' arg for fleet-upgrade"
       fi

@@ -372,6 +372,33 @@ systemctl daemon-reload
 systemctl enable control-daemon
 systemctl start control-daemon
 
+# ---- 14) Install command-runner as systemd service ----
+info "Installing command-runner systemd service..."
+cat > /etc/systemd/system/command-runner.service <<CRUNIT
+[Unit]
+Description=Architect Prime Command Runner (Deterministic Operations)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
+Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
+Environment=PRIME_ID=${PRIME_ID}
+Environment=POLL_INTERVAL=5
+ExecStart=${OC_HOST_DIR}/bin/command-runner
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+CRUNIT
+
+systemctl daemon-reload
+systemctl enable command-runner
+systemctl start command-runner
+
 # ---- Done ----
 echo
 echo "============================================"

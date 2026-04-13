@@ -157,15 +157,10 @@ gcloud iam service-accounts delete "$FLEET_SA_EMAIL" \
   --quiet 2>/dev/null || log "SA already deleted or not found"
 write_deploy_step "sa_deleted" "Service account deleted" "done" "${FLEET_SA_EMAIL}"
 
-# ---- 3. Delete from Firestore fleet collection ----
+# ---- 3. Mark as removed in Firestore (preserve doc for dashboard) ----
 if [[ -n "$PRIME_ID" ]]; then
-  log "Removing from Firestore: primes/${PRIME_ID}/fleet/${AGENT_NAME}"
-  local_token="$(curl -sH 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")"
-  curl -s -X DELETE \
-    -H "Authorization: Bearer $local_token" \
-    "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}" > /dev/null 2>&1 || true
+  log "Marking as removed in Firestore: primes/${PRIME_ID}/fleet/${AGENT_NAME}"
+  write_deploy_step "teardown_complete" "Teardown complete" "done" "VM + SA removed" "removed"
 fi
 
 # ---- 4. Update local registry ----

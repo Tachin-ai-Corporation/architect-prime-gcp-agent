@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# ============================================================
+# command-runner — Deterministic command execution daemon
+#
+# Polls Firestore primes/{id}/commands/ for pending commands
+# and executes them on the HOST OS (not inside the container).
+#
+# This is the single execution path for all fleet/upgrade
+# operations — both dashboard buttons and chat (via agent-ask)
+# write commands here.
+#
+# Supported commands:
+#   fleet_deploy     — Deploy a new fleet agent
+#   fleet_teardown   — Decommission a fleet agent
+#   fleet_upgrade    — Upgrade a fleet agent's CoreKit
+#   upgrade_corekit  — Upgrade Prime's CoreKit + restart gateway
+#   gateway_restart  — Restart the OpenClaw gateway container
+#
+# Runs as a systemd service on the Prime VM host.
+#
+# Environment (from VM metadata or systemd unit):
+#   GCP_PROJECT_ID  — Firestore project
+#   PRIME_ID        — Prime instance ID
+#   OC_HOST_ROOT    — OpenClaw host root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+# ---- CONFIG ----
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+GCP_PROJECT_ID="${GCP_PROJECT_ID:?GCP_PROJECT_ID required}"
+PRIME_ID="${PRIME_ID:?PRIME_ID required}"
+POLL_INTERVAL="${POLL_INTERVAL:-5}"
+FLEET_BIN="${OC_HOST_ROOT}/.openclaw/bin"
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+
+# ---- LOGGING ----
+log()  { echo "[$(date -Iseconds)] [command-runner] $*"; }
+warn() { echo "[$(date -Iseconds)] [command-runner] WARN: $*" >&2; }
+
+# ---- AUTH ----
+get_token() {
+  curl -sH "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
+}
+
+# ---- FIRESTORE HELPERS ----
+
+# Poll for pending commands
+poll_commands() {
+  local token="$1"
+  local query_body
+  query_body=$(cat <<'QUERY'
+{
+  "structuredQuery": {
+    "from": [{"collectionId": "commands"}],
+    "where": {
+      "fieldFilter": {
+        "field": {"fieldPath": "status"},
+        "op": "EQUAL",
+        "value": {"stringValue": "pending"}
+      }
+    },
+    "orderBy": [{"field": {"fieldPath": "createdAt"}, "direction": "ASCENDING"}],
+    "limit": 1
+  }
+}
+QUERY
+)
+  curl -s -X POST \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d "$query_body" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery" 2>/dev/null
+}
+
+# Update a command document
+update_command() {
+  local token="$1"
+  local cmd_path="$2"       # full Firestore document path
+  local status="$3"
+  local result="${4:-}"
+  local error="${5:-}"
+
+  local fields
+  fields="{\"status\":{\"stringValue\":\"${status}\"},\"updatedAt\":{\"stringValue\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}"
+
+  if [[ -n "$result" ]]; then
+    # Escape for JSON
+    local escaped_result
+    escaped_result=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))" <<< "$result")
+    fields="{\"status\":{\"stringValue\":\"${status}\"},\"updatedAt\":{\"stringValue\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"},\"result\":{\"stringValue\":${escaped_result}}}"
+  fi
+
+  if [[ -n "$error" ]]; then
+    local escaped_error
+    escaped_error=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))" <<< "$error")
+    fields="{\"status\":{\"stringValue\":\"${status}\"},\"updatedAt\":{\"stringValue\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"},\"error\":{\"stringValue\":${escaped_error}}}"
+  fi
+
+  local mask="updateMask.fieldPaths=status&updateMask.fieldPaths=updatedAt"
+  [[ -n "$result" ]] && mask="${mask}&updateMask.fieldPaths=result"
+  [[ -n "$error" ]] && mask="${mask}&updateMask.fieldPaths=error"
+
+  curl -s -X PATCH \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d "{\"fields\":${fields}}" \
+    "https://firestore.googleapis.com/v1/${cmd_path}?${mask}" > /dev/null 2>&1
+}
+
+# ---- COMMAND HANDLERS ----
+
+handle_fleet_deploy() {
+  local args_json="$1"
+  local name specialty email
+
+  name=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))")
+  specialty=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))")
+  email=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('email',''))")
+
+  if [[ -z "$name" || -z "$specialty" ]]; then
+    echo "ERROR: name and specialty are required"
+    return 1
+  fi
+
+  # Compute email if not provided
+  if [[ -z "$email" ]]; then
+    email="${specialty}-agent-${name}@tachin.ai"
+  fi
+
+  log "Executing: fleet-deploy --name ${name} --specialty ${specialty} --agent-email ${email}"
+  "${FLEET_BIN}/fleet-deploy" --name "$name" --specialty "$specialty" --agent-email "$email" 2>&1
+}
+
+handle_fleet_teardown() {
+  local args_json="$1"
+  local name
+
+  name=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))")
+
+  if [[ -z "$name" ]]; then
+    echo "ERROR: name is required"
+    return 1
+  fi
+
+  log "Executing: fleet-teardown --name ${name}"
+  "${FLEET_BIN}/fleet-teardown" --name "$name" 2>&1
+}
+
+handle_fleet_upgrade() {
+  local args_json="$1"
+  local name ref
+
+  name=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))")
+  ref=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref','main'))")
+
+  if [[ -z "$name" ]]; then
+    echo "ERROR: name is required"
+    return 1
+  fi
+
+  log "Executing: fleet-upgrade --name ${name} --ref ${ref}"
+  "${FLEET_BIN}/fleet-upgrade" --name "$name" --ref "$ref" 2>&1
+}
+
+handle_upgrade_corekit() {
+  local args_json="$1"
+  local ref
+
+  ref=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref','main'))")
+
+  log "Executing: upgrade-corekit --apply ${ref}"
+  OC_HOST_ROOT="$OC_HOST_ROOT" "${FLEET_BIN}/upgrade-corekit" --apply "$ref" 2>&1
+  local ck_exit=$?
+
+  if [[ $ck_exit -eq 0 ]]; then
+    log "CoreKit upgraded. Restarting gateway..."
+    docker restart openclaw-gateway 2>&1
+    log "Gateway restarted."
+  fi
+  return $ck_exit
+}
+
+handle_gateway_restart() {
+  log "Executing: docker restart openclaw-gateway"
+  docker restart openclaw-gateway 2>&1
+  log "Gateway restarted."
+}
+
+# ---- PARSE COMMAND FROM FIRESTORE RESPONSE ----
+
+parse_command() {
+  local response="$1"
+
+  python3 -c "
+import json, sys
+
+data = json.load(sys.stdin)
+if not isinstance(data, list):
+    data = [data]
+
+for item in data:
+    doc = item.get('document')
+    if not doc:
+        continue
+    fields = doc.get('fields', {})
+    status = fields.get('status', {}).get('stringValue', '')
+    if status != 'pending':
+        continue
+    cmd_type = fields.get('type', {}).get('stringValue', '')
+    args_raw = fields.get('args', {})
+
+    # Parse args — could be a mapValue or stringValue
+    args = {}
+    if 'mapValue' in args_raw:
+        for k, v in args_raw['mapValue'].get('fields', {}).items():
+            args[k] = v.get('stringValue', '')
+    elif 'stringValue' in args_raw:
+        try:
+            args = json.loads(args_raw['stringValue'])
+        except:
+            pass
+
+    doc_path = doc.get('name', '')
+    print(json.dumps({'type': cmd_type, 'args': args, 'path': doc_path}))
+    break  # Only process one command at a time
+" <<< "$response" 2>/dev/null
+}
+
+# ---- MAIN LOOP ----
+
+log "Starting command-runner for Prime: ${PRIME_ID}"
+log "Project: ${GCP_PROJECT_ID}"
+log "Fleet bin: ${FLEET_BIN}"
+log "Poll interval: ${POLL_INTERVAL}s"
+
+while true; do
+  TOKEN="$(get_token 2>/dev/null)" || { warn "Failed to get token"; sleep "$POLL_INTERVAL"; continue; }
+
+  RESPONSE="$(poll_commands "$TOKEN" 2>/dev/null)" || { sleep "$POLL_INTERVAL"; continue; }
+
+  CMD_JSON="$(parse_command "$RESPONSE")" || true
+
+  if [[ -z "$CMD_JSON" ]]; then
+    sleep "$POLL_INTERVAL"
+    continue
+  fi
+
+  CMD_TYPE=$(echo "$CMD_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['type'])")
+  CMD_ARGS=$(echo "$CMD_JSON" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['args']))")
+  CMD_PATH=$(echo "$CMD_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['path'])")
+
+  log "Picked up command: type=${CMD_TYPE} path=${CMD_PATH}"
+
+  # Mark as running
+  update_command "$TOKEN" "$CMD_PATH" "running"
+
+  # Execute
+  RESULT=""
+  CMD_EXIT=0
+  case "$CMD_TYPE" in
+    fleet_deploy)
+      RESULT="$(handle_fleet_deploy "$CMD_ARGS" 2>&1)" || CMD_EXIT=$?
+      ;;
+    fleet_teardown)
+      RESULT="$(handle_fleet_teardown "$CMD_ARGS" 2>&1)" || CMD_EXIT=$?
+      ;;
+    fleet_upgrade)
+      RESULT="$(handle_fleet_upgrade "$CMD_ARGS" 2>&1)" || CMD_EXIT=$?
+      ;;
+    upgrade_corekit)
+      RESULT="$(handle_upgrade_corekit "$CMD_ARGS" 2>&1)" || CMD_EXIT=$?
+      ;;
+    gateway_restart)
+      RESULT="$(handle_gateway_restart 2>&1)" || CMD_EXIT=$?
+      ;;
+    *)
+      RESULT="Unknown command type: ${CMD_TYPE}"
+      CMD_EXIT=1
+      ;;
+  esac
+
+  # Refresh token (command may have taken a while)
+  TOKEN="$(get_token 2>/dev/null)" || true
+
+  # Mark as complete or failed
+  if [[ $CMD_EXIT -eq 0 ]]; then
+    log "Command completed: ${CMD_TYPE}"
+    update_command "$TOKEN" "$CMD_PATH" "complete" "$RESULT"
+  else
+    log "Command failed: ${CMD_TYPE} (exit=${CMD_EXIT})"
+    update_command "$TOKEN" "$CMD_PATH" "failed" "" "$RESULT"
+  fi
+
+  # Small delay before next poll
+  sleep 2
+done

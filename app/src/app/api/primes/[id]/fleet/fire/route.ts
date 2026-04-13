@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { messagesCol } from "@/lib/firestore";
+import { commandsCol, fleetCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
 
 interface RouteContext {
@@ -9,9 +9,12 @@ interface RouteContext {
 /**
  * POST /api/primes/[id]/fleet/fire — Fire a fleet agent
  *
- * Sends a structured fire command to the Prime via Firestore messages.
- * The Prime's control-daemon picks this up, invokes agent-ask,
- * which runs fleet-teardown to delete the agent VM.
+ * Writes a fleet_teardown command to the commands collection.
+ * The command-runner daemon on the Prime VM host picks it up
+ * and runs fleet-teardown deterministically.
+ *
+ * Also immediately sets fleet doc status to "tearing_down"
+ * for instant dashboard feedback.
  *
  * Body: { name }
  */
@@ -25,18 +28,24 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
 
-    const fireCommand = `fire agent ${name}`;
+    // Update fleet doc status immediately for instant UI feedback
+    const fleetRef = fleetCol(id).doc(name);
+    const fleetDoc = await fleetRef.get();
+    if (fleetDoc.exists) {
+      await fleetRef.update({ status: "tearing_down" });
+    }
 
-    const msgRef = messagesCol(id).doc();
-    await msgRef.set({
-      sender: "admin",
-      text: fireCommand,
-      timestamp: FieldValue.serverTimestamp(),
-      processed: false,
+    // Write command to queue
+    const cmdRef = commandsCol(id).doc();
+    await cmdRef.set({
+      type: "fleet_teardown",
+      args: { name },
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
     });
 
     return NextResponse.json(
-      { id: msgRef.id, command: "fire", agent: name },
+      { id: cmdRef.id, command: "fleet_teardown", agent: name },
       { status: 201 }
     );
   } catch (err) {

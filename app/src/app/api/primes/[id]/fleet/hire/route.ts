@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { messagesCol } from "@/lib/firestore";
+import { commandsCol, fleetCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
 
 interface RouteContext {
@@ -9,11 +9,14 @@ interface RouteContext {
 /**
  * POST /api/primes/[id]/fleet/hire — Hire a fleet agent
  *
- * Sends a structured hire command to the Prime via Firestore messages.
- * The Prime's control-daemon picks this up, invokes agent-ask,
- * which runs fleet-deploy to create the agent VM.
+ * Writes a fleet_deploy command to the commands collection.
+ * The command-runner daemon on the Prime VM host picks it up
+ * and runs fleet-deploy deterministically.
  *
- * Body: { name, specialty, email }
+ * Also creates a fleet doc immediately with status "deploying"
+ * so the dashboard shows instant feedback.
+ *
+ * Body: { name, specialty, email? }
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
@@ -31,26 +34,40 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    // Build the hire command as a natural language message that Prime understands
-    const hireCommand = email
-      ? `hire a ${specialty} agent named ${name} with email ${email}`
-      : `hire a ${specialty} agent named ${name}`;
+    const agentEmail =
+      email || `${specialty}-agent-${name}@tachin.ai`;
 
-    const msgRef = messagesCol(id).doc();
-    await msgRef.set({
-      sender: "admin",
-      text: hireCommand,
-      timestamp: FieldValue.serverTimestamp(),
-      processed: false,
+    // Create fleet doc immediately for instant dashboard feedback
+    await fleetCol(id).doc(name).set(
+      {
+        name,
+        specialty,
+        email: agentEmail,
+        status: "deploying",
+        vm: `fleet-${name}`,
+        zone: "us-central1-a",
+        deploySteps: [],
+        deployedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    // Write command to queue
+    const cmdRef = commandsCol(id).doc();
+    await cmdRef.set({
+      type: "fleet_deploy",
+      args: { name, specialty, email: agentEmail },
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
     });
 
     return NextResponse.json(
       {
-        id: msgRef.id,
-        command: "hire",
+        id: cmdRef.id,
+        command: "fleet_deploy",
         agent: name,
         specialty,
-        email: email || null,
+        email: agentEmail,
       },
       { status: 201 }
     );

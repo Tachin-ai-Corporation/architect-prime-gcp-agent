@@ -19,7 +19,7 @@ interface ChatMessage {
 }
 interface FleetAgent {
   name: string;
-  status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "error";
+  status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "removed" | "error";
   specialty: string;
   email: string;
   deploySteps?: DeployStep[];
@@ -945,21 +945,56 @@ export default function Home() {
                           )}
                         </div>
                       </div>
-                      <div style={{ marginTop: 4 }}>
+                      <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button className="btn btn-primary" onClick={async () => {
                           setUpgrading(true);
                           const result = await api<{success: boolean; message?: string; error?: string}>("/api/upgrade", { method: "POST" });
                           setUpgrading(false);
-                          if (result?.success) alert(result.message || "Upgrade initiated!");
+                          if (result?.success) alert(result.message || "Dashboard upgrade initiated!");
                           else alert(result?.error || "Upgrade failed");
                         }} disabled={upgrading}>
-                          {upgrading ? "Upgrading..." : "Update to Latest"}
+                          {upgrading ? "Upgrading..." : "Upgrade Dashboard"}
                         </button>
                       </div>
                     </div>
                   ) : (
                     <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading version info...</div>
                   )}
+                </div>
+
+                <div className={styles["settings-section"]}>
+                  <div className={styles["settings-section-title"]}>Prime VM Operations</div>
+                  <div style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 12 }}>
+                    These operations execute on the Prime VM host via the command queue. They are deterministic and not affected by gateway restarts.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button className="btn btn-primary" onClick={async () => {
+                      if (!activePrime) return;
+                      if (!confirm("Upgrade CoreKit on the Prime VM? This will also restart the gateway.")) return;
+                      const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ type: "upgrade_corekit", args: { ref: "main" } }),
+                      });
+                      if (result?.id) alert(`CoreKit upgrade queued (command: ${result.id}). The command-runner will execute it.`);
+                      else alert("Failed to queue upgrade command.");
+                    }}>
+                      ⬆ Upgrade CoreKit
+                    </button>
+                    <button className="btn btn-ghost" style={{ borderColor: "var(--border)" }} onClick={async () => {
+                      if (!activePrime) return;
+                      if (!confirm("Restart the OpenClaw gateway on the Prime VM?")) return;
+                      const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ type: "gateway_restart", args: {} }),
+                      });
+                      if (result?.id) alert(`Gateway restart queued (command: ${result.id}).`);
+                      else alert("Failed to queue restart command.");
+                    }}>
+                      ↻ Restart Gateway
+                    </button>
+                  </div>
                 </div>
 
                 <div className={styles["settings-section"]}>

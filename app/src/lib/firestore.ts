@@ -54,7 +54,7 @@ export interface MessageDoc {
 
 export interface FleetDoc {
   name: string;
-  status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "error";
+  status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "removed" | "error";
   specialty: string;
   email: string;
   vmName: string;
@@ -76,3 +76,27 @@ export interface ActionRequired {
   title: string;
   instructions: string[];
 }
+
+/* ---- Commands ---- */
+
+export function commandsCol(primeId: string) {
+  return getDb().collection("primes").doc(primeId).collection("commands");
+}
+
+export type CommandType =
+  | "fleet_deploy"
+  | "fleet_teardown"
+  | "fleet_upgrade"
+  | "upgrade_corekit"
+  | "gateway_restart";
+
+export interface CommandDoc {
+  type: CommandType;
+  args: Record<string, string>;
+  status: "pending" | "running" | "complete" | "failed";
+  createdAt: FirebaseFirestore.Timestamp;
+  updatedAt?: FirebaseFirestore.Timestamp;
+  result?: string;
+  error?: string;
+}
+
