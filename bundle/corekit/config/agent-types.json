@@ -4,43 +4,57 @@
       "id": "devops",
       "title": "DevOps Engineer",
       "specialty": "Infrastructure, CI/CD, deployments, monitoring, cloud architecture",
-      "emailPattern": "devops-agent-{name}"
+      "emailPattern": "devops-agent-{name}",
+      "workspace": "devops",
+      "skills": ["agent-ask"]
     },
     {
       "id": "swe",
       "title": "Software Engineer",
       "specialty": "Full-stack development, code review, debugging, feature implementation",
-      "emailPattern": "swe-agent-{name}"
+      "emailPattern": "swe-agent-{name}",
+      "workspace": "engineer",
+      "skills": ["agent-ask"]
     },
     {
       "id": "qa",
       "title": "QA Engineer",
       "specialty": "Testing, quality assurance, test automation, bug triage",
-      "emailPattern": "qa-agent-{name}"
+      "emailPattern": "qa-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"]
     },
     {
       "id": "pm",
       "title": "Project Manager",
       "specialty": "Project planning, task routing, status reporting, stakeholder communication",
-      "emailPattern": "pm-agent-{name}"
+      "emailPattern": "pm-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"]
     },
     {
       "id": "finance",
       "title": "Finance Analyst",
       "specialty": "Budget tracking, cost analysis, financial reporting, forecasting",
-      "emailPattern": "finance-agent-{name}"
+      "emailPattern": "finance-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"]
     },
     {
       "id": "data",
       "title": "Data Engineer",
       "specialty": "Data pipelines, analytics, ETL, database management, reporting",
-      "emailPattern": "data-agent-{name}"
+      "emailPattern": "data-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"]
     },
     {
       "id": "security",
       "title": "Security Engineer",
       "specialty": "Security audits, vulnerability assessment, compliance, incident response",
-      "emailPattern": "security-agent-{name}"
+      "emailPattern": "security-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"]
     }
   ]
 }

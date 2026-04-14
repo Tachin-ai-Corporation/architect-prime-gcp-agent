@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================
-# agent-ask — Answer a question using Vertex AI Gemini
+# agent-ask — Conversational Q&A using Vertex AI Gemini
 #
-# Uses Gemini function calling for tool invocation:
-#   - System prompt built from agent workspace (SOUL, MEMORY, etc.)
-#   - Function declarations for lifecycle tools (fleet-deploy, etc.)
-#   - Google Search grounding for general knowledge
-#   - VM service account ADC for authentication
+# The fundamental agent skill. Every agent gets this.
+# Provides real-time conversational ability with Google Search
+# grounding for current information.
 #
-# When Gemini decides a tool is needed, it returns a functionCall.
-# This script executes the tool, then sends the result back to
-# Gemini for a final conversational response.
+# This skill is READ-ONLY — it answers questions, explains
+# concepts, and provides guidance. It does NOT perform
+# infrastructure operations or modify state.
+#
+# For fleet operations, use fleet-hire, fleet-fire, etc.
+# Those are separate skills invoked by OpenClaw via exec.
 #
 # Usage:
 #   agent-ask "What is the latest GKE pricing?"
@@ -32,67 +33,15 @@ REGION="${REGION:-us-central1}"
 MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-4096}"
 TEMPERATURE="${TEMPERATURE:-0.7}"
 
-# Determine the .openclaw base directory
-# On host: /opt/openclaw/.openclaw
-# In container: /home/node/.openclaw (bind mount)
 OC_DIR="${OC_HOST_ROOT}/.openclaw"
 if [[ ! -d "$OC_DIR" && -d "${HOME}/.openclaw" ]]; then
   OC_DIR="${HOME}/.openclaw"
 fi
 
 BUILD_PROMPT="${OC_DIR}/bin/build-system-prompt"
-FLEET_BIN="${OC_DIR}/bin"
-CHAT_SEND="${OC_DIR}/bin/chat-send"
 CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
 
-# Resolve CHAT_SPACE_ID for async skill callbacks
-if [[ -z "${CHAT_SPACE_ID:-}" && -f "$CHAT_CONFIG" ]]; then
-  CHAT_SPACE_ID="$(python3 -c "
-import json
-try:
-    cfg = json.load(open('$CHAT_CONFIG'))
-    print(cfg.get('spaceId', ''))
-except: pass
-" 2>/dev/null || true)"
-fi
-export CHAT_SPACE_ID
-
-# Resolve PRIME_ID for Firestore command writes
-PRIME_CONFIG="${OC_DIR}/corekit/prime-config.json"
-if [[ -z "${PRIME_ID:-}" && -f "$PRIME_CONFIG" ]]; then
-  PRIME_ID="$(python3 -c "
-import json
-try:
-    cfg = json.load(open('$PRIME_CONFIG'))
-    print(cfg.get('primeId', ''))
-except: pass
-" 2>/dev/null || true)"
-fi
-# Fallback: read from chat-config
-if [[ -z "${PRIME_ID:-}" && -f "$CHAT_CONFIG" ]]; then
-  PRIME_ID="$(python3 -c "
-import json
-try:
-    cfg = json.load(open('$CHAT_CONFIG'))
-    print(cfg.get('primeId', ''))
-except: pass
-" 2>/dev/null || true)"
-fi
-PRIME_ID="${PRIME_ID:-unknown}"
-
-# Build Firestore URL (used by command queue writes)
-# get_project defined below, so use metadata directly here
-FIRESTORE_URL=""
-_PROJECT="${GCP_PROJECT_ID:-}"
-if [[ -z "$_PROJECT" ]]; then
-  _PROJECT="$(curl -sf --max-time 3 -H 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
-fi
-if [[ -n "$_PROJECT" ]]; then
-  FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${_PROJECT}/databases/(default)/documents"
-fi
-
-# ---- Helpers ----
+# ---- HELPERS ----
 die() { echo "[agent-ask] [ERROR] $*" >&2; exit 1; }
 log() { echo "[agent-ask] $*" >&2; }
 
@@ -147,7 +96,7 @@ PROJECT_ID="$(get_project)" || die "Failed to get project ID"
 [[ -n "$TOKEN" ]] || die "Empty access token"
 [[ -n "$PROJECT_ID" ]] || die "Empty project ID"
 
-# Fleet agents may need to use a different project for Gemini (publisher models)
+# Fleet agents may use a different project for Gemini
 GEMINI_PROJECT="${PROJECT_ID}"
 if [[ -f "$CHAT_CONFIG" ]]; then
   GP="$(python3 -c "
@@ -160,80 +109,15 @@ except: pass
   [[ -n "$GP" ]] && GEMINI_PROJECT="$GP"
 fi
 
-# ---- Build API request with function declarations ----
+# ---- Build API request ----
 API_URL="https://${REGION}-aiplatform.googleapis.com/v1/projects/${GEMINI_PROJECT}/locations/${REGION}/publishers/google/models/${GEMINI_MODEL}:generateContent"
 
-# Build function declarations (only for Prime)
-FUNC_DECLS="[]"
-if [[ "$AGENT_ID" == "prime" ]]; then
-  FUNC_DECLS='[
-    {
-      "name": "list_agent_types",
-      "description": "List the available pre-defined agent types that can be hired. Call this when the user asks what kinds of agents are available.",
-      "parameters": {"type": "object", "properties": {}}
-    },
-    {
-      "name": "fleet_status",
-      "description": "Get the current status of all deployed fleet agents. Call this when the user asks about fleet status, active agents, or who is deployed.",
-      "parameters": {"type": "object", "properties": {}}
-    },
-    {
-      "name": "fleet_deploy",
-      "description": "Deploy/hire a new fleet agent. User only provides name and specialty — email is computed automatically. Deploy IMMEDIATELY once you have name and specialty. Do NOT describe what you would do — CALL this function.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "name": {"type": "string", "description": "Agent name (lowercase, no spaces, e.g. stan, quinn, marco)"},
-          "specialty": {"type": "string", "enum": ["devops", "swe", "qa", "pm", "finance", "data", "security"], "description": "Agent specialty type ID"}
-        },
-        "required": ["name", "specialty"]
-      }
-    },
-    {
-      "name": "fleet_teardown",
-      "description": "Decommission/fire a fleet agent. Deletes the VM and unlinks billing (cost to zero). The project shell is preserved for re-hiring. After teardown, instruct the user to suspend or delete the Workspace email account for this agent.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "name": {"type": "string", "description": "Agent name to remove"}
-        },
-        "required": ["name"]
-      }
-    },
-    {
-      "name": "fleet_verify",
-      "description": "Verify a fleet agent is alive and responding by sending a ping.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "name": {"type": "string", "description": "Agent name to verify"}
-        },
-        "required": ["name"]
-      }
-    },
-    {
-      "name": "fleet_upgrade",
-      "description": "Upgrade a fleet agent CoreKit to a new version.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "name": {"type": "string", "description": "Agent name to upgrade"},
-          "ref": {"type": "string", "description": "CoreKit ref/version to upgrade to (optional, defaults to current)"}
-        },
-        "required": ["name"]
-      }
-    }
-  ]'
-fi
-
-# Build request body with python3 for safe JSON encoding
+# Google Search grounding for current information
 REQUEST_BODY="$(python3 -c "
 import json, sys
 
 system_prompt = sys.stdin.read()
 question = '''$(printf '%s' "$QUESTION" | sed "s/'/'\\\\''/g")'''
-func_decls = json.loads('''$FUNC_DECLS''')
-is_prime = '$AGENT_ID' == 'prime'
 
 body = {
     'contents': [{
@@ -246,19 +130,9 @@ body = {
     'generationConfig': {
         'maxOutputTokens': $MAX_OUTPUT_TOKENS,
         'temperature': $TEMPERATURE
-    }
+    },
+    'tools': [{'google_search': {}}]
 }
-
-# Add tools: function declarations for Prime, Google Search for others
-# Vertex AI does not allow functionDeclarations and google_search together
-tools = []
-if is_prime and func_decls:
-    tools.append({'functionDeclarations': func_decls})
-else:
-    tools.append({'google_search': {}})
-if tools:
-    body['tools'] = tools
-
 print(json.dumps(body))
 " <<< "$SYSTEM_PROMPT")" || die "Failed to build request body"
 
@@ -270,298 +144,22 @@ call_gemini() {
     -X POST \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
-    "$API_URL" \
-    -d "$req_body")"
+    -d "$req_body" \
+    "$API_URL" 2>/dev/null)"
 
   local http_code body
   http_code="$(echo "$resp" | tail -1)"
   body="$(echo "$resp" | sed '$d')"
 
-  if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
-    log "Vertex AI API error (HTTP ${http_code})"
-    log "$body"
-    die "API call failed"
+  if [[ "$http_code" != "200" ]]; then
+    log "Vertex AI returned HTTP ${http_code}"
+    log "Response: ${body:0:500}"
+    die "Vertex AI API error (HTTP ${http_code})"
   fi
   echo "$body"
 }
 
 RESPONSE_BODY="$(call_gemini "$REQUEST_BODY")"
-
-# ---- Check for function call ----
-FUNC_CALL="$(echo "$RESPONSE_BODY" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    candidates = data.get('candidates', [])
-    if candidates:
-        parts = candidates[0].get('content', {}).get('parts', [])
-        for p in parts:
-            if 'functionCall' in p:
-                print(json.dumps(p['functionCall']))
-                break
-        else:
-            print('')
-    else:
-        print('')
-except:
-    print('')
-" 2>/dev/null || echo "")"
-
-if [[ -n "$FUNC_CALL" && "$FUNC_CALL" != "" ]]; then
-  # ---- Execute the function ----
-  FUNC_NAME="$(echo "$FUNC_CALL" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-  FUNC_ARGS="$(echo "$FUNC_CALL" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('args',{})))" 2>/dev/null)"
-
-  log "Function call: ${FUNC_NAME} args=${FUNC_ARGS}"
-
-  FUNC_RESULT=""
-  SKILL_TASK_DIR="/tmp/skill-tasks"
-  mkdir -p "$SKILL_TASK_DIR"
-
-  case "$FUNC_NAME" in
-    # ============================================================
-    # INSTANT SKILLS — execute inline, results returned to Gemini
-    # ============================================================
-    list_agent_types)
-      TYPES_FILE="${OC_HOST_ROOT}/.openclaw/corekit/agent-types.json"
-      if [[ -f "$TYPES_FILE" ]]; then
-        FUNC_RESULT="$(jq -r '.types[] | "**\(.title)** (\(.id))\n  \(.specialty)\n  Email pattern: \(.emailPattern)@tachin.ai\n"' "$TYPES_FILE" 2>/dev/null || echo "Error reading agent types")"
-      else
-        FUNC_RESULT="No agent types file found."
-      fi
-      ;;
-    fleet_status)
-      if [[ -x "${FLEET_BIN}/fleet-status" ]]; then
-        FUNC_RESULT="$("${FLEET_BIN}/fleet-status" 2>&1 | tail -40)" || FUNC_RESULT="fleet-status failed: ${FUNC_RESULT}"
-      else
-        FUNC_RESULT="fleet-status script not found."
-      fi
-      ;;
-    fleet_verify)
-      v_name=""
-      v_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-      if [[ -n "$v_name" ]]; then
-        FUNC_RESULT="$("$FLEET_BIN/fleet-verify" --name "$v_name" 2>&1 | tail -20)" \
-          || FUNC_RESULT="fleet-verify failed: ${FUNC_RESULT}"
-      else
-        FUNC_RESULT="Missing 'name' arg for fleet-verify"
-      fi
-      ;;
-
-    # ============================================================
-    # ASYNC SKILLS — kick off in background, report back via chat-send
-    # ============================================================
-    fleet_deploy)
-      d_name="" d_specialty="" d_email=""
-      d_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-      d_specialty="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('specialty',''))" 2>/dev/null)"
-
-      # Normalize specialty: resolve aliases to IDs using agent-types.json
-      TYPES_FILE="${OC_HOST_ROOT}/.openclaw/corekit/agent-types.json"
-      if [[ -n "$d_specialty" && -f "$TYPES_FILE" ]]; then
-        RESOLVED="$(python3 -c "
-import json, sys
-spec = sys.argv[1].lower().strip()
-types = json.load(open(sys.argv[2]))['types']
-for t in types:
-    if t['id'] == spec:
-        print(t['id']); sys.exit(0)
-for t in types:
-    if t['title'].lower() == spec:
-        print(t['id']); sys.exit(0)
-for t in types:
-    if spec in t['title'].lower() or t['title'].lower().startswith(spec):
-        print(t['id']); sys.exit(0)
-print(spec)
-" "$d_specialty" "$TYPES_FILE" 2>/dev/null)"
-        d_specialty="$RESOLVED"
-      fi
-
-      # Compute email from agent-types emailPattern
-      EMAIL_PATTERN=""
-      if [[ -f "$TYPES_FILE" ]]; then
-        EMAIL_PATTERN="$(python3 -c "
-import json, sys
-spec = sys.argv[1]
-types = json.load(open(sys.argv[2]))['types']
-for t in types:
-    if t['id'] == spec:
-        print(t.get('emailPattern', '')); sys.exit(0)
-" "$d_specialty" "$TYPES_FILE" 2>/dev/null)"
-      fi
-
-      if [[ -n "$d_name" && -n "$d_specialty" ]]; then
-        if [[ -n "$EMAIL_PATTERN" ]]; then
-          d_email="${EMAIL_PATTERN/\{name\}/$d_name}@tachin.ai"
-        else
-          d_email="${d_specialty}-agent-${d_name}@tachin.ai"
-        fi
-
-        D_FIRST="$(echo "${d_specialty}-agent" | sed 's/^./\u&/' | sed 's/-\(.\)/-\u\1/g')"
-        D_LAST="$(echo "${d_name}" | sed 's/^./\u&/')"
-
-        # Write command to Firestore queue (executed by command-runner on host)
-        log "Queuing fleet_deploy via command-runner: name=${d_name} specialty=${d_specialty}"
-        CMD_TOKEN="$(get_token)"
-        CMD_ID="cmd-deploy-${d_name}-$(date +%s%N)"
-        python3 -c "
-import json, urllib.request
-from datetime import datetime, timezone
-token = '$CMD_TOKEN'
-url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
-now = datetime.now(timezone.utc).isoformat()
-fields = {
-    'type': {'stringValue': 'fleet_deploy'},
-    'args': {'mapValue': {'fields': {
-        'name': {'stringValue': '$d_name'},
-        'specialty': {'stringValue': '$d_specialty'},
-        'email': {'stringValue': '$d_email'},
-    }}},
-    'status': {'stringValue': 'pending'},
-    'createdAt': {'stringValue': now},
-}
-body = json.dumps({'fields': fields}).encode()
-req = urllib.request.Request(url, data=body, method='PATCH',
-    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
-urllib.request.urlopen(req)
-" 2>/dev/null || warn "Failed to write deploy command to Firestore"
-
-        FUNC_RESULT="Deploying agent '${d_name}' (specialty: ${d_specialty}). This takes 3-5 minutes.
-
-I've queued the deployment. The command-runner on this VM will execute it.
-
-Once deployment finishes, create the Workspace account:
-→ https://admin.google.com/ac/users → Add new user
-  First Name: ${D_FIRST}
-  Last Name: ${D_LAST}
-  Email: ${d_email}
-  ⚠️ Names MUST match exactly
-
-Then add ${d_email} to the Google Chat space."
-      else
-        FUNC_RESULT="Missing required args for fleet-deploy (need: name, specialty)"
-      fi
-      ;;
-    fleet_teardown)
-      t_name=""
-      t_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-      if [[ -n "$t_name" ]]; then
-        # Write command to Firestore queue (executed by command-runner on host)
-        log "Queuing fleet_teardown via command-runner: name=${t_name}"
-        CMD_TOKEN="$(get_token)"
-        CMD_ID="cmd-teardown-${t_name}-$(date +%s%N)"
-        python3 -c "
-import json, urllib.request
-from datetime import datetime, timezone
-token = '$CMD_TOKEN'
-url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
-now = datetime.now(timezone.utc).isoformat()
-fields = {
-    'type': {'stringValue': 'fleet_teardown'},
-    'args': {'mapValue': {'fields': {
-        'name': {'stringValue': '$t_name'},
-    }}},
-    'status': {'stringValue': 'pending'},
-    'createdAt': {'stringValue': now},
-}
-body = json.dumps({'fields': fields}).encode()
-req = urllib.request.Request(url, data=body, method='PATCH',
-    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
-urllib.request.urlopen(req)
-" 2>/dev/null || warn "Failed to write teardown command to Firestore"
-
-        FUNC_RESULT="Tearing down agent '${t_name}'. The command-runner will execute fleet-teardown on the host.
-
-Once complete, you may want to:
-• Suspend the Workspace account at https://admin.google.com/ac/users
-• Or delete it if permanent"
-      else
-        FUNC_RESULT="Missing 'name' arg for fleet-teardown"
-      fi
-      ;;
-    fleet_upgrade)
-      u_name="" u_ref=""
-      u_name="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))" 2>/dev/null)"
-      u_ref="$(echo "$FUNC_ARGS" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref','main'))" 2>/dev/null)"
-      if [[ -n "$u_name" ]]; then
-        log "Queuing fleet_upgrade via command-runner: name=${u_name} ref=${u_ref}"
-        CMD_TOKEN="$(get_token)"
-        CMD_ID="cmd-upgrade-${u_name}-$(date +%s%N)"
-        python3 -c "
-import json, urllib.request
-from datetime import datetime, timezone
-token = '$CMD_TOKEN'
-url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
-now = datetime.now(timezone.utc).isoformat()
-fields = {
-    'type': {'stringValue': 'fleet_upgrade'},
-    'args': {'mapValue': {'fields': {
-        'name': {'stringValue': '$u_name'},
-        'ref': {'stringValue': '${u_ref:-main}'},
-    }}},
-    'status': {'stringValue': 'pending'},
-    'createdAt': {'stringValue': now},
-}
-body = json.dumps({'fields': fields}).encode()
-req = urllib.request.Request(url, data=body, method='PATCH',
-    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'})
-urllib.request.urlopen(req)
-" 2>/dev/null || warn "Failed to write upgrade command to Firestore"
-
-        FUNC_RESULT="Upgrading agent '${u_name}' to ref '${u_ref:-main}'. The command-runner will handle it."
-      else
-        FUNC_RESULT="Missing 'name' arg for fleet-upgrade"
-      fi
-      ;;
-    *)
-      FUNC_RESULT="Unknown function: ${FUNC_NAME}"
-      ;;
-  esac
-
-  log "Function result: ${FUNC_RESULT:0:200}"
-
-  # ---- Second API call: send function result back for conversational response ----
-  # Also extract any text parts from the first response (Gemini may have said something before calling the function)
-  FIRST_TEXT="$(echo "$RESPONSE_BODY" | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    parts = data.get('candidates', [{}])[0].get('content', {}).get('parts', [])
-    texts = [p['text'] for p in parts if 'text' in p]
-    print(' '.join(texts))
-except:
-    print('')
-" 2>/dev/null || echo "")"
-
-  FOLLOWUP_BODY="$(python3 -c "
-import json, sys
-
-system_prompt = sys.stdin.read()
-question = '''$(printf '%s' "$QUESTION" | sed "s/'/'\\\\''/g")'''
-func_name = '$FUNC_NAME'
-func_args = json.loads('''$(echo "$FUNC_ARGS" | sed "s/'/'\\\\''/g")''')
-func_result = '''$(printf '%s' "$FUNC_RESULT" | sed "s/'/'\\\\''/g")'''
-first_text = '''$(printf '%s' "$FIRST_TEXT" | sed "s/'/'\\\\''/g")'''
-
-body = {
-    'contents': [
-        {'role': 'user', 'parts': [{'text': question}]},
-        {'role': 'model', 'parts': [{'functionCall': {'name': func_name, 'args': func_args}}]},
-        {'role': 'function', 'parts': [{'functionResponse': {'name': func_name, 'response': {'content': func_result}}}]}
-    ],
-    'systemInstruction': {
-        'parts': [{'text': system_prompt}]
-    },
-    'generationConfig': {
-        'maxOutputTokens': $MAX_OUTPUT_TOKENS,
-        'temperature': $TEMPERATURE
-    }
-}
-print(json.dumps(body))
-" <<< "$SYSTEM_PROMPT")" || die "Failed to build followup request"
-
-  RESPONSE_BODY="$(call_gemini "$FOLLOWUP_BODY")"
-fi
 
 # ---- Extract answer text ----
 ANSWER="$(echo "$RESPONSE_BODY" | python3 -c "
