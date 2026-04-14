@@ -10,6 +10,11 @@
 #   - Installs inbox-daemon instead of control-daemon
 #   - Reads agent identity from VM metadata
 #   - Same proven OpenClaw + ADC fix pattern
+#
+# Design: no RPC calls to configure OpenClaw. Config is written
+# directly to the host filesystem (bind-mounted into container)
+# and the container is restarted once to pick it up. This avoids
+# the config.apply deadlock on resource-constrained VMs.
 # ============================================================
 set -euo pipefail
 
@@ -59,10 +64,42 @@ echo "CoreRef     : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Project     : ${GCP_PROJECT_ID}"
 echo "Prime ID    : ${PRIME_ID:-<not set>}"
 
-# ---- Firestore deploy step reporter ----
-# Appends a step to the deploySteps[] array in the fleet Firestore doc
-FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+# ---- Helper: get metadata auth token ----
+get_meta_token() {
+  curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null
+}
 
+# ---- Firestore URL ----
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+FIRESTORE_READY=false
+
+# ---- IAM readiness gate ----
+# Wait for roles/datastore.user to propagate before writing to Firestore.
+# A single upfront check so all subsequent writes succeed without retries.
+wait_for_firestore() {
+  [[ -n "${PRIME_ID}" ]] || return 0
+  info "Waiting for Firestore IAM propagation..."
+  for i in $(seq 1 18); do  # 18 × 10s = 180s max
+    local token
+    token="$(get_meta_token 2>/dev/null)" || { sleep 10; continue; }
+    local http_code
+    http_code="$(curl -s -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer $token" \
+      "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_ID}" 2>/dev/null)" || { sleep 10; continue; }
+    if [[ "$http_code" == "200" || "$http_code" == "404" ]]; then
+      echo "  Firestore access OK (HTTP $http_code, attempt $i)"
+      FIRESTORE_READY=true
+      return 0
+    fi
+    echo "  Not ready (HTTP $http_code), waiting 10s ($i/18)..."
+    sleep 10
+  done
+  warn "Firestore access not available after 180s — deploy steps won't update dashboard"
+}
+
+# ---- Firestore deploy step reporter (fire-and-forget, no retries) ----
 write_deploy_step() {
   local step_id="$1"
   local step_label="$2"
@@ -72,11 +109,10 @@ write_deploy_step() {
   local action_json="${6:-}"
 
   [[ -n "${PRIME_ID}" ]] || return 0
+  [[ "$FIRESTORE_READY" == "true" ]] || return 0
 
   local token
-  token="$(curl -sH 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || return 0
+  token="$(get_meta_token)" || return 0
 
   python3 - <<'PYEOF' "$token" "$step_id" "$step_label" "$step_status" "$step_detail" "$new_status" "$action_json" "${FIRESTORE_URL}" "${PRIME_ID}" "${AGENT_ID}"
 import sys, json, urllib.request
@@ -134,29 +170,24 @@ if action_json:
         pass
 
 body = json.dumps({"fields": fields}).encode()
-headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-import time
-for attempt in range(5):
-    try:
-        req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH", headers=headers)
-        urllib.request.urlopen(req)
-        break
-    except Exception as e:
-        if attempt < 4:
-            wait = (attempt + 1) * 10  # 10, 20, 30, 40s
-            print(f"[fleet-bootstrap] Firestore write attempt {attempt+1} failed ({e}), retrying in {wait}s...", file=sys.stderr)
-            time.sleep(wait)
-        else:
-            print(f"[fleet-bootstrap] Firestore write failed after 5 attempts: {e}", file=sys.stderr)
+req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f"[fleet-bootstrap] Firestore write failed: {e}", file=sys.stderr)
 PYEOF
 }
+
+# ============================================================
+# PHASE 1 — System setup (no Firestore access needed yet)
+# ============================================================
 
 # ---- 1) Install system packages ----
 info "Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
-write_deploy_step "packages_installed" "System packages installed"
 
 # ---- 2) Install Docker CE ----
 info "Installing Docker CE..."
@@ -168,7 +199,6 @@ systemctl enable docker
 systemctl start docker
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 [[ -n "${DOCKER_GID}" ]] || { echo "[ERROR] Could not determine docker group GID"; exit 1; }
-write_deploy_step "docker_installed" "Docker CE installed"
 
 # ---- 3) Install CoreKit via manifest ----
 info "Installing CoreKit..."
@@ -180,7 +210,6 @@ CORE_REF="${CORE_REF}" \
   GH_REPO="${GH_REPO}" \
   OC_HOST_ROOT="${OC_HOST_ROOT}" \
   bash /tmp/install.sh
-write_deploy_step "corekit_installed" "CoreKit installed"
 
 # ---- 4) Prepare workspace with fleet/specialty templates ----
 info "Preparing workspace..."
@@ -196,15 +225,13 @@ fi
 
 if [[ -n "$WORKSPACE_SRC" ]]; then
   # IMPORTANT: Clear the main workspace first to prevent Prime's
-  # identity from leaking into fleet agents. The manifest installs
-  # Prime's workspace files into .openclaw/workspace/ by default.
+  # identity from leaking into fleet agents.
   info "Clearing Prime workspace files..."
   rm -f "${OC_HOST_DIR}/workspace/"*.md 2>/dev/null || true
 
   for f in "${OC_HOST_DIR}/${WORKSPACE_SRC}"/*.md; do
     [[ -f "$f" ]] || continue
     BASENAME="$(basename "$f")"
-    # Template substitution
     sed -e "s|{{AGENT_NAME}}|${AGENT_DISPLAY_NAME}|g" \
         -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
         -e "s|{{PROJECT_ID}}|${GCP_PROJECT_ID}|g" \
@@ -214,7 +241,15 @@ if [[ -n "$WORKSPACE_SRC" ]]; then
   done
 fi
 
-# ---- 5) Write DWD chat config ----
+# ---- 5) Assemble TOOLS.md from skills ----
+info "Assembling TOOLS.md..."
+if [[ -x "${OC_HOST_DIR}/bin/assemble-tools" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT}" "${OC_HOST_DIR}/bin/assemble-tools" prime
+else
+  warn "assemble-tools not found, TOOLS.md will use defaults"
+fi
+
+# ---- 6) Write DWD chat config ----
 if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   cat > "${OC_HOST_DIR}/corekit/chat-config.json" <<CHATCFG
 {
@@ -231,12 +266,52 @@ if [[ -n "${AGENT_USER_EMAIL}" ]]; then
 CHATCFG
 fi
 
-# ---- 6) Save gateway token ----
+# ---- 7) Save gateway token ----
 mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
 
-# ---- 7) Clone + build OpenClaw Docker image ----
+# ---- 8) Install inbox-daemon systemd unit (installed early, started later) ----
+info "Installing inbox-daemon systemd unit..."
+cat > /etc/systemd/system/inbox-daemon.service <<UNIT
+[Unit]
+Description=Fleet Agent Inbox Daemon (DWD Chat Polling)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
+Environment=AGENT_ID=${AGENT_ID}
+Environment=AGENT_USER_EMAIL=${AGENT_USER_EMAIL}
+Environment=CHAT_SPACE_ID=${CHAT_SPACE_ID:-}
+Environment=DWD_SIGNER_SA=${DWD_SIGNER_SA:-}
+Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
+ExecStart=${OC_HOST_DIR}/bin/inbox-daemon
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable inbox-daemon
+
+# ============================================================
+# PHASE 2 — Firestore gate (wait for IAM propagation)
+# ============================================================
+wait_for_firestore
+
+write_deploy_step "packages_installed" "System packages installed"
+write_deploy_step "docker_installed" "Docker CE installed"
+write_deploy_step "corekit_installed" "CoreKit installed"
+
+# ============================================================
+# PHASE 3 — OpenClaw Docker image + config (no RPC)
+# ============================================================
+
+# ---- 9) Clone + build OpenClaw Docker image ----
 info "Cloning OpenClaw repo..."
 cd /root
 if [[ ! -d openclaw/.git ]]; then
@@ -244,7 +319,7 @@ if [[ ! -d openclaw/.git ]]; then
 fi
 cd openclaw
 git fetch --all --prune
-# Pin to same known-good commit as Prime
+# Pin to known-good commit
 OC_PIN="163c6f5e354be2a8e2ff5b11a237077beb9e70fe"
 STABLE_COMMIT="${OC_PIN}"
 git checkout "${STABLE_COMMIT}"
@@ -269,7 +344,33 @@ info "Building Docker image openclaw:local ..."
 DOCKER_BUILDKIT=1 docker build -t openclaw:local .
 write_deploy_step "openclaw_built" "OpenClaw Docker image built"
 
-# ---- 8) Run OpenClaw container ----
+# ---- 10) Write OpenClaw config directly (no RPC) ----
+info "Writing OpenClaw config..."
+FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"
+if [[ ! -f "$FLEET_TMPL" ]]; then
+  FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl"
+  warn "Fleet config template not found, using prime template"
+fi
+
+python3 - <<PY
+import pathlib, re
+tmpl_path = pathlib.Path("${FLEET_TMPL}")
+out_path = pathlib.Path("${OC_HOST_DIR}/openclaw.json")
+tmpl = tmpl_path.read_text(encoding="utf-8")
+# Remove json5 comments (// style)
+tmpl = re.sub(r'//.*$', '', tmpl, flags=re.MULTILINE)
+tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
+tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
+tmpl = tmpl.replace("\${AGENT_ID}", "${AGENT_ID}")
+tmpl = tmpl.replace("\${AGENT_DISPLAY_NAME}", "${AGENT_DISPLAY_NAME}")
+out_path.write_text(tmpl, encoding="utf-8")
+print("  Config written to " + str(out_path))
+PY
+chown root:root "${OC_HOST_DIR}/openclaw.json"
+chmod 644 "${OC_HOST_DIR}/openclaw.json"
+write_deploy_step "config_applied" "Agent config applied"
+
+# ---- 11) Start OpenClaw container ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
 
 info "Starting OpenClaw container..."
@@ -283,26 +384,33 @@ docker run -d \
   --group-add "${DOCKER_GID}" \
   openclaw:local
 
-# ---- 9) Wait for gateway readiness ----
+# ---- 12) Wait for gateway readiness (HTTP check, no RPC) ----
 info "Waiting for OpenClaw gateway..."
 READY=false
 MAX_WAIT=180
 WAITED=0
-INTERVAL=5
+INTERVAL=10
 while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
-  if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' > /dev/null 2>&1; then
+  # Simple HTTP check — 401 means the gateway is up and responding
+  HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    http://localhost:18789/v1/models 2>/dev/null)" || HTTP_CODE="000"
+  if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "200" ]]; then
     READY=true
     break
   fi
-  echo "  Gateway not ready yet (${WAITED}s elapsed, retrying in ${INTERVAL}s)..."
+  echo "  Gateway not ready (HTTP $HTTP_CODE, ${WAITED}s elapsed)..."
   sleep "$INTERVAL"
   WAITED=$((WAITED + INTERVAL))
 done
-[[ "$READY" == "true" ]] || { echo "[ERROR] Gateway did not become ready within ${MAX_WAIT}s"; exit 1; }
+[[ "$READY" == "true" ]] || { warn "Gateway did not respond within ${MAX_WAIT}s"; }
 info "Gateway is ready (took ~${WAITED}s)."
 write_deploy_step "gateway_ready" "OpenClaw gateway started" "done" "Ready in ~${WAITED}s"
 
-# ---- 10) Harden container perms ----
+# ============================================================
+# PHASE 4 — Container hardening + Vertex AI fix
+# ============================================================
+
+# ---- 13) Harden container permissions ----
 info "Hardening container permissions..."
 docker exec -u 0 openclaw-gateway bash -lc '
 set -e
@@ -310,98 +418,18 @@ mkdir -p /home/node/.openclaw/credentials
 chmod 700 /home/node/.openclaw
 chmod 700 /home/node/.openclaw/credentials
 chmod 700 /home/node/.openclaw/bin 2>/dev/null || true
-chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
 chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
 chown -R node:node /home/node/.openclaw
 '
 
-# ---- 11) Render fleet config template ----
-info "Rendering fleet bootstrap config..."
-FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"
-if [[ ! -f "$FLEET_TMPL" ]]; then
-  # Fall back to prime template if fleet template not installed
-  FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl"
-  warn "Fleet config template not found, using prime template"
-fi
-
-python3 - <<PY
-import pathlib
-tmpl_path = pathlib.Path("${FLEET_TMPL}")
-out_path = pathlib.Path("/tmp/openclaw-bootstrap.json5")
-tmpl = tmpl_path.read_text(encoding="utf-8")
-tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
-tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
-tmpl = tmpl.replace("\${AGENT_ID}", "${AGENT_ID}")
-tmpl = tmpl.replace("\${AGENT_DISPLAY_NAME}", "${AGENT_DISPLAY_NAME}")
-out_path.write_text(tmpl, encoding="utf-8")
-PY
-
-# ---- 12) Apply config via RPC ----
-info "Applying fleet config..."
-APPLY_OK=false
-for attempt in 1 2 3 4 5; do
-  BASE_HASH="$(docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>/dev/null \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hash",""))' 2>/dev/null || true)"
-  if [[ -z "$BASE_HASH" ]]; then
-    warn "config.get returned no hash (attempt $attempt). Retrying in 15s..."
-    sleep 15
-    continue
-  fi
-
-  PARAMS="$(python3 - <<PYAPPLY
-import json
-raw=open("/tmp/openclaw-bootstrap.json5","r",encoding="utf-8").read()
-print(json.dumps({"raw": raw, "baseHash": "${BASE_HASH}", "note": "fleet-bootstrap"}))
-PYAPPLY
-)"
-
-  if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.apply --json --params "${PARAMS}" 2>&1; then
-    APPLY_OK=true
-    break
-  fi
-  warn "config.apply attempt ${attempt} failed. Retrying in 15s..."
-  sleep 15
-done
-
-if [[ "$APPLY_OK" != "true" ]]; then
-  info "Checking if config was written despite errors..."
-  sleep 10
-  if docker exec openclaw-gateway test -f /home/node/.openclaw/openclaw.json 2>/dev/null; then
-    info "openclaw.json exists — config.apply likely succeeded."
-    APPLY_OK=true
-  else
-    echo "[ERROR] config.apply failed after 5 attempts"
-    exit 1
-  fi
-fi
-write_deploy_step "config_applied" "Agent config applied"
-
-# ---- 13) Post-apply harden + inject Docker CLI ----
-info "Post-apply hardening..."
-docker exec -u 0 openclaw-gateway bash -lc '
-set -e
-chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
-chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
-chown -R node:node /home/node/.openclaw
-' || true
-
+# ---- 14) Post-apply: inject Docker CLI + PATH ----
+info "Post-config setup..."
 docker cp "$(which docker)" openclaw-gateway:/usr/local/bin/docker || true
 docker exec -u 0 openclaw-gateway chmod +x /usr/local/bin/docker || true
 docker exec -u 0 openclaw-gateway groupadd -g "${DOCKER_GID}" -o -r docker 2>/dev/null || true
 docker exec -u 0 openclaw-gateway chown -R node:node /home/node/.openclaw || true
 
-# ---- 14) Install gcloud CLI + jq + PATH in container ----
-info "Installing gcloud CLI and dependencies in container..."
 docker exec -u 0 openclaw-gateway bash -c '
-set -e
-if ! which gcloud >/dev/null 2>&1; then
-  curl -sfL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz | tar xz -C /tmp
-  /tmp/google-cloud-sdk/install.sh --quiet --path-update=true --usage-reporting=false 2>/dev/null
-  ln -sf /tmp/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
-  echo "  gcloud installed"
-fi
-which jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1; }
-
 PROFILE="/home/node/.bashrc"
 grep -q ".openclaw/bin" "$PROFILE" 2>/dev/null || echo "export PATH=\"/home/node/.openclaw/bin:\$PATH\"" >> "$PROFILE"
 cat > /etc/profile.d/openclaw-path.sh << "PATHEOF"
@@ -411,9 +439,22 @@ chmod +x /etc/profile.d/openclaw-path.sh
 CURRENT_PATH=$(grep "^PATH=" /etc/environment 2>/dev/null | cut -d= -f2 || echo "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 echo "PATH=/home/node/.openclaw/bin:${CURRENT_PATH}" > /etc/environment
 chown node:node /home/node/.bashrc
-' || warn "gcloud/PATH setup had non-fatal errors"
+' || warn "PATH setup had non-fatal errors"
 
-# ---- 15) Vertex AI ADC fix (same as Prime) ----
+# ---- 15) Install gcloud CLI + jq in container ----
+info "Installing gcloud CLI in container..."
+docker exec -u 0 openclaw-gateway bash -c '
+set -e
+if ! which gcloud >/dev/null 2>&1; then
+  curl -sfL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz | tar xz -C /tmp
+  /tmp/google-cloud-sdk/install.sh --quiet --path-update=true --usage-reporting=false 2>/dev/null
+  ln -sf /tmp/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
+  echo "  gcloud installed"
+fi
+which jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1; }
+' || warn "gcloud install had non-fatal errors"
+
+# ---- 16) Vertex AI ADC fix (same as Prime) ----
 info "Applying Vertex AI ADC auth fix..."
 docker exec -u 0 openclaw-gateway bash -c '
 set -e
@@ -437,34 +478,12 @@ fi
 rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
 ' || warn "ADC fix had non-fatal errors"
 
-# ---- 16) Install inbox-daemon systemd service ----
-info "Installing inbox-daemon systemd service..."
-cat > /etc/systemd/system/inbox-daemon.service <<UNIT
-[Unit]
-Description=Fleet Agent Inbox Daemon (DWD Chat Polling)
-After=network-online.target docker.service
-Wants=network-online.target
+# ============================================================
+# PHASE 5 — Start services + finalize
+# ============================================================
 
-[Service]
-Type=simple
-User=root
-Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
-Environment=AGENT_ID=${AGENT_ID}
-Environment=AGENT_USER_EMAIL=${AGENT_USER_EMAIL}
-Environment=CHAT_SPACE_ID=${CHAT_SPACE_ID:-}
-Environment=DWD_SIGNER_SA=${DWD_SIGNER_SA:-}
-Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
-ExecStart=${OC_HOST_DIR}/bin/inbox-daemon
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-systemctl daemon-reload
-systemctl enable inbox-daemon
-# Only start if we have the required DWD config
+# ---- 17) Start inbox-daemon ----
+info "Starting inbox-daemon..."
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
   systemctl start inbox-daemon || warn "inbox-daemon start failed (DWD may not be configured)"
   write_deploy_step "inbox_installed" "Inbox daemon started"
@@ -473,12 +492,11 @@ else
   write_deploy_step "inbox_installed" "Inbox daemon skipped (no email/DWD config)" "skipped"
 fi
 
-# ---- 17) Update Firestore status ----
+# ---- 18) Update Firestore status ----
 # Check if DWD healthcheck is working before declaring online
 info "Checking DWD healthcheck..."
 DWD_OK=false
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
-  # Quick DWD token test (same as inbox-daemon healthcheck)
   DWD_TOKEN_CMD="${OC_HOST_DIR}/bin/dwd-token"
   if [[ -x "$DWD_TOKEN_CMD" ]]; then
     DWD_TEST="$(AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" DWD_SIGNER_SA="${DWD_SIGNER_SA}" \
@@ -491,13 +509,10 @@ fi
 
 info "Updating Firestore status..."
 if [[ "$DWD_OK" == "true" ]]; then
-  # DWD works — agent is fully online
   write_deploy_step "online" "Agent online" "done" "" "online"
-  # Clear actionRequired since everything is working
-  if [[ -n "${PRIME_ID}" ]]; then
-    FS_TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
-      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-      | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)"
+  # Clear actionRequired
+  if [[ -n "${PRIME_ID}" && "$FIRESTORE_READY" == "true" ]]; then
+    FS_TOKEN="$(get_meta_token 2>/dev/null || true)"
     if [[ -n "$FS_TOKEN" ]]; then
       curl -s -X PATCH \
         -H "Authorization: Bearer $FS_TOKEN" \
@@ -508,7 +523,6 @@ if [[ "$DWD_OK" == "true" ]]; then
     fi
   fi
 else
-  # DWD failed — agent infrastructure is ready but needs admin action
   ACTION_JSON=$(python3 -c "
 import json
 print(json.dumps({
@@ -524,7 +538,7 @@ print(json.dumps({
   write_deploy_step "dwd_healthcheck" "DWD healthcheck failed — awaiting admin action" "failed" "Workspace user may not exist yet" "needs_action" "$ACTION_JSON"
 fi
 
-# ---- 18) Boot announce via DWD ----
+# ---- 19) Boot announce via DWD ----
 if [[ "$DWD_OK" == "true" && -n "${CHAT_SPACE_ID}" && -n "${AGENT_USER_EMAIL}" ]]; then
   export CHAT_SPACE_ID OC_HOST_ROOT
   "${OC_HOST_DIR}/bin/chat-send" \

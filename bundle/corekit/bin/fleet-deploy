@@ -306,10 +306,7 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --quiet > /dev/null 2>&1 || log "DWD-signer IAM grant may already exist"
 
-# Wait for IAM role propagation before VM boots and tries to use them
-log "Waiting 10s for IAM role propagation..."
-sleep 10
-
+# IAM propagation is handled by fleet-bootstrap's Firestore readiness gate
 write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + serviceAccountTokenCreator + datastore.user"
 
 
