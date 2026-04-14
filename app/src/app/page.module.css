@@ -360,7 +360,18 @@
 .deploy-timeline {
   display: flex; flex-direction: column; gap: 2px;
   padding: 8px 0;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-tertiary) transparent;
 }
+.deploy-timeline::-webkit-scrollbar { width: 6px; }
+.deploy-timeline::-webkit-scrollbar-track { background: transparent; }
+.deploy-timeline::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary); border-radius: 3px;
+}
+.deploy-timeline::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
 .deploy-step {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px; border-radius: var(--radius-sm);
