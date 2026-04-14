@@ -94,6 +94,7 @@ export default function Home() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [agentDetail, setAgentDetail] = useState<AgentDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [deployCollapsed, setDeployCollapsed] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{currentVersion: string; latestVersion: string; updateAvailable: boolean} | null>(null);
   const [upgrading, setUpgrading] = useState(false);
   const [sidebarFleet, setSidebarFleet] = useState<Record<string, FleetAgent[]>>({});
@@ -530,7 +531,7 @@ export default function Home() {
                     {primeFleet.map((agent) => (
                       <div
                         key={agent.name}
-                        className={styles["sidebar-fleet-item"]}
+                        className={`${styles["sidebar-fleet-item"]} ${selectedAgent === agent.name ? styles.active : ""}`}
                         onClick={() => { setActivePrime(p.id); setView("fleet"); loadAgentDetail(agent.name); }}
                         title={`${agent.specialty} — ${agent.email}`}
                       >
@@ -648,6 +649,7 @@ export default function Home() {
               <>
                 {/* Agent Detail Panel */}
                 {selectedAgent && (
+                  <div className={styles["main-content"]}>
                   <div style={{
                     marginBottom: 20, padding: 20, background: "var(--bg-secondary)",
                     borderRadius: 12, border: "1px solid var(--border)",
@@ -691,7 +693,14 @@ export default function Home() {
 
                           return (
                             <div style={{ marginBottom: 20 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Deploy Progress</div>
+                              <div
+                                style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: deployCollapsed ? 0 : 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}
+                                onClick={() => setDeployCollapsed(!deployCollapsed)}
+                              >
+                                <span style={{ fontSize: 10, transition: "transform 0.2s", transform: deployCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▼</span>
+                                Deploy Progress
+                              </div>
+                              {!deployCollapsed && (
                               <div className={styles["deploy-timeline"]}>
                                 {EXPECTED_STEPS.map((expected) => {
                                   const actual = completedMap.get(expected.id);
@@ -741,6 +750,7 @@ export default function Home() {
                                   );
                                 })}
                               </div>
+                              )}
                             </div>
                           );
                         })()}
@@ -817,6 +827,7 @@ export default function Home() {
                     ) : (
                       <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Agent not found.</div>
                     )}
+                  </div>
                   </div>
                 )}
 
