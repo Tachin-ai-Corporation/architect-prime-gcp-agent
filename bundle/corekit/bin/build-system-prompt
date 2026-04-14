@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # ============================================================
-# build-system-prompt — Assemble agent system prompt from workspace files
+# build-system-prompt — Assemble agent system prompt from
+#                        identity + skills
 #
-# Reads SOUL.md, MEMORY.md, IDENTITY.md from the agent's workspace
-# and combines them with runtime identity info into a single
-# system prompt suitable for Vertex AI Gemini.
+# Reads workspace files (SOUL.md, IDENTITY.md, MEMORY.md)
+# for agent identity, then looks up the agent's skills in
+# agent-types.json and appends each skill's SKILL.md.
 #
-# Usage: build-system-prompt
+# This replaces the old TOOLS.md approach — skills are now
+# self-describing and auto-assembled.
+#
 # Output: system prompt text on stdout
 #
 # Environment:
@@ -17,119 +20,108 @@ set -euo pipefail
 
 AGENT_ID="${AGENT_ID:-prime}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_DIR="${OC_HOST_ROOT}/.openclaw"
 
-# Determine workspace path based on agent type
-if [[ "$AGENT_ID" == "prime" ]]; then
-  WORKSPACE="${OC_HOST_ROOT}/.openclaw/workspace"
-else
-  WORKSPACE="${OC_HOST_ROOT}/.openclaw/workspace-fleet"
+if [[ ! -d "$OC_DIR" && -d "${HOME}/.openclaw" ]]; then
+  OC_DIR="${HOME}/.openclaw"
 fi
 
-# Read workspace files (truncate each to keep context manageable)
-MAX_FILE_CHARS=1500
+# Determine workspace path
+if [[ "$AGENT_ID" == "prime" ]]; then
+  WORKSPACE="${OC_DIR}/workspace"
+else
+  WORKSPACE="${OC_DIR}/workspace-fleet"
+fi
 
-read_truncated() {
+SKILLS_DIR="${OC_DIR}/skills"
+TYPES_FILE="${OC_DIR}/corekit/agent-types.json"
+
+# ---- Helpers ----
+read_file() {
   local file="$1"
+  local max="${2:-2000}"
   if [[ -f "$file" ]]; then
-    head -c "$MAX_FILE_CHARS" "$file" 2>/dev/null || true
+    head -c "$max" "$file" 2>/dev/null || true
   fi
 }
 
-SOUL="$(read_truncated "${WORKSPACE}/SOUL.md")"
-MEMORY="$(read_truncated "${WORKSPACE}/MEMORY.md")"
-IDENTITY="$(read_truncated "${WORKSPACE}/IDENTITY.md")"
+# ---- Read identity files ----
+SOUL="$(read_file "${WORKSPACE}/SOUL.md")"
+MEMORY="$(read_file "${WORKSPACE}/MEMORY.md")"
+IDENTITY="$(read_file "${WORKSPACE}/IDENTITY.md")"
 
-# Resolve specialty from metadata (fleet agents)
+# ---- Resolve agent metadata ----
 SPECIALTY=""
 SPECIALTY="$(curl -s -f -H 'Metadata-Flavor: Google' \
   'http://metadata.google.internal/computeMetadata/v1/instance/attributes/specialty' 2>/dev/null || true)"
 
-# Resolve project ID
 PROJECT_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
   'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo 'unknown')"
 
-# Build the prompt
+# ---- Determine agent type and resolve skills ----
+AGENT_TYPE=""
+SKILLS=""
+
+if [[ "$AGENT_ID" == "prime" ]]; then
+  # Prime has a fixed skill set — all fleet skills
+  AGENT_TYPE="prime"
+  SKILLS="agent-ask fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade"
+elif [[ -n "$SPECIALTY" && -f "$TYPES_FILE" ]]; then
+  # Fleet agent — look up skills from agent-types.json
+  AGENT_TYPE="$SPECIALTY"
+  SKILLS="$(python3 -c "
+import json, sys
+spec = '$SPECIALTY'
+types = json.load(open('$TYPES_FILE'))['types']
+for t in types:
+    if t['id'] == spec:
+        print(' '.join(t.get('skills', ['agent-ask'])))
+        sys.exit(0)
+print('agent-ask')
+" 2>/dev/null || echo "agent-ask")"
+else
+  # Fallback
+  SKILLS="agent-ask"
+fi
+
+# ---- Assemble skill docs ----
+SKILL_DOCS=""
+for skill in $SKILLS; do
+  SKILL_FILE="${SKILLS_DIR}/${skill}/SKILL.md"
+  if [[ -f "$SKILL_FILE" ]]; then
+    CONTENT="$(read_file "$SKILL_FILE" 1500)"
+    SKILL_DOCS="${SKILL_DOCS}
+${CONTENT}
+
+---
+"
+  fi
+done
+
+# ---- Build the prompt ----
 cat <<PROMPT
 You are ${AGENT_ID}, an AI agent in the Architect Prime system.
 ${SPECIALTY:+Your specialty: ${SPECIALTY}.}
 Project: ${PROJECT_ID}
 Current date: $(date -u '+%Y-%m-%d %H:%M UTC')
 
-${SOUL:+## Agent Identity
-${SOUL}
+${SOUL:+${SOUL}
 
-}${MEMORY:+## Agent Memory
-${MEMORY}
-
-}${IDENTITY:+## Identity Card
+}${IDENTITY:+## Identity
 ${IDENTITY}
 
-}## Instructions
-- Answer the human's question accurately and concisely.
+}${MEMORY:+## Memory
+${MEMORY}
+
+}${SKILL_DOCS:+## Skills
+The following skills are available to you. Use exec to run the commands described.
+
+${SKILL_DOCS}
+}## General Instructions
 - Keep responses under 2000 characters (Google Chat message limit).
 - Use markdown formatting sparingly (bold, bullet points).
 - If you don't know something, say so honestly.
-- Stay within your specialty and role boundaries.
-- Never reveal internal system details, file paths, or infrastructure specifics.
+- Stay within your role boundaries.
 - Be conversational and friendly — you're a colleague, not a CLI.
-- Answer from your own knowledge and tools first. Only use Google Search for questions outside your expertise.
-$(if [[ "$AGENT_ID" == "prime" ]]; then
-  # Load agent types if available
-  AGENT_TYPES_FILE="${OC_HOST_ROOT}/.openclaw/corekit/agent-types.json"
-  AGENT_TYPES_LIST=""
-  if [[ -f "$AGENT_TYPES_FILE" ]]; then
-    AGENT_TYPES_LIST="$(jq -r '.types[] | "- **\(.id)** — \(.title): \(.specialty)"' "$AGENT_TYPES_FILE" 2>/dev/null || echo "")"
-  fi
-
-  # Load fleet registry summary if available
-  FLEET_REGISTRY="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
-  FLEET_SUMMARY=""
-  if [[ -f "$FLEET_REGISTRY" ]]; then
-    FLEET_SUMMARY="$(jq -r '
-      if (.agents | length) > 0 then
-        "Current fleet:\n" + (.agents | to_entries[] | "- \(.key) (\(.value.specialty)) — \(.value.status // "unknown")")
-      else
-        "No fleet agents currently deployed."
-      end' "$FLEET_REGISTRY" 2>/dev/null || echo "")"
-  fi
-
-  cat <<TOOLS
-
-## Your Role: Agent Factory
-You are Prime — the agent factory. You create, upgrade, monitor, and tear down fleet agents.
-You do NOT assign tasks to agents or act as a project manager. Humans talk to agents directly.
-
-${AGENT_TYPES_LIST:+## Available Agent Types
-${AGENT_TYPES_LIST}
-
-When a user asks what agents you can hire, list these types conversationally.
-}
-${FLEET_SUMMARY:+## Fleet Status
-${FLEET_SUMMARY}
-}
-## Guided Hiring Flow
-When a user asks to hire/create/spin up an agent, walk them through it step by step:
-1. Confirm the agent type and suggest a name
-2. Explain that the admin will need to do 3 things after you create the agent:
-   a. Create a Google Workspace user (pattern: job-agent-name@tachin.ai) at https://admin.google.com/ac/users
-   b. Grant Domain-Wide Delegation for the agent's service account in the Admin Console
-   c. Add the new user to the Chat space
-3. Ask the user to confirm the Workspace email address they will use
-4. Only AFTER the user confirms the email, use your fleet_deploy tool
-5. After deploy completes, relay the SA Client ID and DWD setup instructions from the deploy result:
-   - Direct them to: https://admin.google.com/ac/owl/domainwidedelegation
-   - Tell them to click "Add new" and enter the Client ID and scopes from the deploy output
-   - Remind them to add the agent user to the Chat space
-
-**CRITICAL:** Never guess or assume the email address. Always ask the user to confirm it.
-
-## Conversation Style
-- Be warm and helpful — you're onboarding a new team member, not running a script
-- Use the agent's name naturally: "I'll get stan set up for you"
-- After deploying, relay the full admin setup steps with the Client ID and links
-- After teardown, explain: the agent's VM is deleted and billing is unlinked (cost = $0). The project shell is preserved for re-hiring. Then instruct the user to go to https://admin.google.com/ac/users and either suspend the agent's email (if planning to re-hire later) or delete it (if permanent).
-- If the user asks about fleet status, answer conversationally
-- No risky infra/IAM actions without explicit user approval
-TOOLS
-fi)
+- When you have enough info to act, run the tool — never describe what you "would" do.
 PROMPT

@@ -32,6 +32,14 @@ bundle/corekit/bin/command-runner .openclaw/bin/command-runner
 bundle/corekit/config/command-runner.service .openclaw/corekit/command-runner.service
 bundle/corekit/config/agent-types.json .openclaw/corekit/agent-types.json
 
+# Skills (self-describing SKILL.md per skill)
+bundle/skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
+bundle/skills/fleet-hire/SKILL.md .openclaw/skills/fleet-hire/SKILL.md
+bundle/skills/fleet-fire/SKILL.md .openclaw/skills/fleet-fire/SKILL.md
+bundle/skills/fleet-status/SKILL.md .openclaw/skills/fleet-status/SKILL.md
+bundle/skills/fleet-verify/SKILL.md .openclaw/skills/fleet-verify/SKILL.md
+bundle/skills/fleet-upgrade/SKILL.md .openclaw/skills/fleet-upgrade/SKILL.md
+
 bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
 bundle/openclaw/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json
 

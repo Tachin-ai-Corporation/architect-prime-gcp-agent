@@ -7,30 +7,76 @@
 ## Core Concepts
 
 ### Skill
-A **skill** is a self-contained capability that an agent can use. Skills are implemented as executable scripts in `~/.openclaw/bin/` and invoked by the OpenClaw agent via the `exec` tool.
+A **skill** is a self-contained capability. Each skill lives in its own directory under `bundle/skills/<name>/` and contains:
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | **Self-describing manifest.** Tells the LLM what this skill does, when to use it, the exact command syntax, and any post-action instructions. This is concatenated into the system prompt automatically. |
+| `bin/<script>` | The executable script (installed to `~/.openclaw/bin/`) |
 
 A skill must be:
 - **Thin** — do one thing well
 - **Fast-returning** — async operations write to a command queue and return immediately
 - **Self-contained** — no inner LLM calls, no state management
-- **Documented** — described in the agent's `TOOLS.md` so the LLM knows when and how to use it
+- **Self-describing** — SKILL.md contains everything the agent needs to know
 
 ### Identity
 An **identity** is the combination of workspace files that define an agent's personality, knowledge, and behavioral constraints:
 
 | File | Purpose |
-|------|---------|
-| `SOUL.md` | Core personality, behavioral rules, decision-making style |
+|------|---------:|
+| `SOUL.md` | Core personality, behavioral rules, decision-making style. **No skill-specific instructions.** |
 | `IDENTITY.md` | Name, role, specialty description |
 | `MEMORY.md` | Persistent knowledge across sessions |
-| `TOOLS.md` | Available skills and how to invoke them |
 | `USER.md` | Who the agent serves |
+
+> **Design rule:** SOUL.md is about WHO the agent is. Skills are about WHAT the agent can do. Never mix them.
 
 ### CoreKit
 A **CoreKit** is the complete package for an agent type: **identity + skills**. Each agent type (Prime, DevOps, PM, etc.) has a distinct CoreKit that determines what the agent knows and what it can do.
 
 ```
-CoreKit = Identity (workspace files) + Skills (exec scripts)
+CoreKit = Identity (workspace files) + Skills (SKILL.md + scripts)
+```
+
+---
+
+## System Prompt Assembly
+
+`build-system-prompt` assembles the system prompt automatically:
+
+```
+1. Read SOUL.md          → "Who I am"
+2. Read IDENTITY.md      → "My name and role"
+3. Read MEMORY.md        → "What I remember"
+4. Look up agent type    → agent-types.json → skills list
+5. For each skill:
+   Read SKILL.md         → "What I can do and how"
+6. Append general        → Response style, boundaries
+   instructions
+```
+
+This replaces the old `TOOLS.md` approach. Skills are now self-describing — when you add a skill to an agent type, its documentation is automatically included in the system prompt.
+
+### Directory layout on VM
+
+```
+~/.openclaw/
+├── workspace/               # Identity files (SOUL.md, IDENTITY.md, etc.)
+├── skills/                  # Self-describing skill manifests
+│   ├── agent-ask/SKILL.md
+│   ├── fleet-hire/SKILL.md
+│   ├── fleet-fire/SKILL.md
+│   ├── fleet-status/SKILL.md
+│   ├── fleet-verify/SKILL.md
+│   └── fleet-upgrade/SKILL.md
+├── bin/                     # Executable scripts (on PATH via exec)
+│   ├── agent-ask
+│   ├── fleet-hire
+│   ├── fleet-fire
+│   └── ...
+└── corekit/
+    └── agent-types.json     # Maps agent types → skill lists
 ```
 
 ---
@@ -140,22 +186,24 @@ When agents need to interact with external APIs (Google Workspace, GitHub), skil
 
 ## Adding a New Skill
 
-1. **Create the script** in `bundle/corekit/bin/`
+1. **Create the skill directory:** `bundle/skills/<skill-name>/`
+2. **Write `SKILL.md`** — describe what the skill does, when to use it, command syntax, and post-action instructions
+3. **Create the script** in `bundle/corekit/bin/<script-name>`
    - Read-only? Return result to stdout
    - Async? Write to `primes/{id}/commands/` and return confirmation
-2. **Add to manifest.txt** — maps repo path to VM install path
-3. **Update TOOLS.md** for the agent type(s) that should use it
-4. **Test** — verify the OpenClaw agent calls it via exec when appropriate
-5. **Document** — add to this file's agent type skill table
+4. **Add to `manifest.txt`** — both the SKILL.md and the script
+5. **Add to `agent-types.json`** — add the skill name to the `skills` array for each agent type that should have it
+6. **Test** — verify the OpenClaw agent calls it via exec when appropriate
+7. **Document** — add to this file's agent type skill table
 
 ## Adding a New Agent Type
 
 1. **Create identity workspace** in `bundle/workspaces/<type>/`
-   - At minimum: SOUL.md, IDENTITY.md, TOOLS.md
-2. **Define CoreKit** — list skills in the type's TOOLS.md
-3. **Add to `agent-types.json`** — register the type with metadata
-4. **Update `fleet-deploy`** — ensure bootstrap overlays correct workspace
-5. **Document** — add to this file's Agent Types section
+   - At minimum: SOUL.md, IDENTITY.md
+   - SOUL.md is pure identity — no skill instructions
+2. **Register in `agent-types.json`** — add type with `skills` array
+3. **Update `fleet-deploy`** — ensure bootstrap overlays correct workspace
+4. **Document** — add to this file's Agent Types section
 
 ---
 
@@ -163,7 +211,9 @@ When agents need to interact with external APIs (Google Workspace, GitHub), skil
 
 1. **OpenClaw is the brain** — it decides which skill to use. Skills don't make decisions.
 2. **agent-ask is universal** — every agent can converse. No exceptions.
-3. **Skills are scripts** — simple, testable, deployable via manifest.
-4. **Heavy work goes to the queue** — agents never block on long operations.
-5. **Identity is in workspace files** — not in code. Easy to update, version, and customize.
-6. **Fleet agents are lean** — they get identity + agent-ask. Skills are added intentionally.
+3. **Skills are self-describing** — each skill carries its own SKILL.md with triggers, syntax, and post-action instructions.
+4. **SOUL.md is pure identity** — personality, boundaries, decision style. Never skill instructions.
+5. **Heavy work goes to the queue** — agents never block on long operations.
+6. **Identity is in workspace files** — not in code. Easy to update, version, and customize.
+7. **Fleet agents are lean** — they get identity + agent-ask. Skills are added intentionally.
+8. **System prompt is auto-assembled** — `build-system-prompt` reads identity + skill manifests. No manual TOOLS.md maintenance.
