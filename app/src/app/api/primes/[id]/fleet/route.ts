@@ -13,13 +13,15 @@ export async function GET(_req: Request, ctx: RouteContext) {
     const { id } = await ctx.params;
     const snap = await fleetCol(id).get();
 
-    const fleet = snap.docs.map((doc) => ({
-      name: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
-      deploySteps: doc.data().deploySteps ?? [],
-      actionRequired: doc.data().actionRequired ?? null,
-    }));
+    const fleet = snap.docs
+      .map((doc) => ({
+        name: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
+        deploySteps: doc.data().deploySteps ?? [],
+        actionRequired: doc.data().actionRequired ?? null,
+      }))
+      .filter((agent: Record<string, unknown>) => agent.status !== "removed");
 
     return NextResponse.json({ fleet });
   } catch (err) {
