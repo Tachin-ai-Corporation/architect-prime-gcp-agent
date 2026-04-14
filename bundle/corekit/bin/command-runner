@@ -61,7 +61,6 @@ poll_commands() {
         "value": {"stringValue": "pending"}
       }
     },
-    "orderBy": [{"field": {"fieldPath": "createdAt"}, "direction": "ASCENDING"}],
     "limit": 1
   }
 }
