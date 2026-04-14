@@ -284,7 +284,10 @@ gcloud iam service-accounts create "$FLEET_SA_NAME" \
 write_deploy_step "sa_created" "Service account created" "done" "${FLEET_SA_EMAIL}"
 
 # Wait for SA propagation to prevent IAM race condition
-sleep 5
+# GCP IAM can take 30-60s to propagate; 15s covers the SA creation delay,
+# and we add another 10s after grants for role propagation
+log "Waiting 15s for SA propagation..."
+sleep 15
 
 for role in roles/aiplatform.user roles/iam.serviceAccountTokenCreator roles/datastore.user; do
   log "Granting ${role} to ${FLEET_SA_EMAIL}"
@@ -303,7 +306,12 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --quiet > /dev/null 2>&1 || log "DWD-signer IAM grant may already exist"
 
-write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + serviceAccountTokenCreator"
+# Wait for IAM role propagation before VM boots and tries to use them
+log "Waiting 10s for IAM role propagation..."
+sleep 10
+
+write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + serviceAccountTokenCreator + datastore.user"
+
 
 # ============================================================
 # 4. Build and create VM (with DWD inbox-daemon)
