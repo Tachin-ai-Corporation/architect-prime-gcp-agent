@@ -32,10 +32,18 @@ REGION="${REGION:-us-central1}"
 MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-4096}"
 TEMPERATURE="${TEMPERATURE:-0.7}"
 
-BUILD_PROMPT="${OC_HOST_ROOT}/.openclaw/bin/build-system-prompt"
-FLEET_BIN="${OC_HOST_ROOT}/.openclaw/bin"
-CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
-CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+# Determine the .openclaw base directory
+# On host: /opt/openclaw/.openclaw
+# In container: /home/node/.openclaw (bind mount)
+OC_DIR="${OC_HOST_ROOT}/.openclaw"
+if [[ ! -d "$OC_DIR" && -d "${HOME}/.openclaw" ]]; then
+  OC_DIR="${HOME}/.openclaw"
+fi
+
+BUILD_PROMPT="${OC_DIR}/bin/build-system-prompt"
+FLEET_BIN="${OC_DIR}/bin"
+CHAT_SEND="${OC_DIR}/bin/chat-send"
+CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
 
 # Resolve CHAT_SPACE_ID for async skill callbacks
 if [[ -z "${CHAT_SPACE_ID:-}" && -f "$CHAT_CONFIG" ]]; then
@@ -50,7 +58,7 @@ fi
 export CHAT_SPACE_ID
 
 # Resolve PRIME_ID for Firestore command writes
-PRIME_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+PRIME_CONFIG="${OC_DIR}/corekit/prime-config.json"
 if [[ -z "${PRIME_ID:-}" && -f "$PRIME_CONFIG" ]]; then
   PRIME_ID="$(python3 -c "
 import json
@@ -73,9 +81,14 @@ fi
 PRIME_ID="${PRIME_ID:-unknown}"
 
 # Build Firestore URL (used by command queue writes)
+# get_project defined below, so use metadata directly here
 FIRESTORE_URL=""
-if [[ -n "${GCP_PROJECT_ID:-}" || -n "$(get_project 2>/dev/null)" ]]; then
-  _PROJECT="${GCP_PROJECT_ID:-$(get_project 2>/dev/null)}"
+_PROJECT="${GCP_PROJECT_ID:-}"
+if [[ -z "$_PROJECT" ]]; then
+  _PROJECT="$(curl -sf --max-time 3 -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+fi
+if [[ -n "$_PROJECT" ]]; then
   FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${_PROJECT}/databases/(default)/documents"
 fi
 
