@@ -134,12 +134,20 @@ if action_json:
         pass
 
 body = json.dumps({"fields": fields}).encode()
-req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
-    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-try:
-    urllib.request.urlopen(req)
-except Exception as e:
-    print(f"[fleet-bootstrap] Firestore write failed: {e}", file=sys.stderr)
+headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+import time
+for attempt in range(5):
+    try:
+        req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH", headers=headers)
+        urllib.request.urlopen(req)
+        break
+    except Exception as e:
+        if attempt < 4:
+            wait = (attempt + 1) * 10  # 10, 20, 30, 40s
+            print(f"[fleet-bootstrap] Firestore write attempt {attempt+1} failed ({e}), retrying in {wait}s...", file=sys.stderr)
+            time.sleep(wait)
+        else:
+            print(f"[fleet-bootstrap] Firestore write failed after 5 attempts: {e}", file=sys.stderr)
 PYEOF
 }
 
