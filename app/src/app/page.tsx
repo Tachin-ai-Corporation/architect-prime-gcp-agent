@@ -234,6 +234,17 @@ export default function Home() {
     loadFleet();
   }, [view, activePrime]);
 
+  // ---- Auto-refresh agent detail panel while selected ----
+  useEffect(() => {
+    if (!selectedAgent || !activePrime) return;
+    const refreshDetail = async () => {
+      const data = await api<AgentDetail>(`/api/primes/${activePrime}/fleet/${selectedAgent}/logs`);
+      if (data) setAgentDetail(data);
+    };
+    const detailPoll = setInterval(refreshDetail, 8000);
+    return () => clearInterval(detailPoll);
+  }, [selectedAgent, activePrime]);
+
   // ---- Auto-scroll chat ----
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
