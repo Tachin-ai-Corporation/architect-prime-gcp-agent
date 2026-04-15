@@ -20,8 +20,7 @@ export async function GET(_req: Request, ctx: RouteContext) {
         createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
         deploySteps: doc.data().deploySteps ?? [],
         actionRequired: doc.data().actionRequired ?? null,
-      }))
-      .filter((agent: Record<string, unknown>) => agent.status !== "removed");
+      }));
 
     return NextResponse.json({ fleet });
   } catch (err) {

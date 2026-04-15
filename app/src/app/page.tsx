@@ -94,7 +94,9 @@ export default function Home() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [agentDetail, setAgentDetail] = useState<AgentDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [deployCollapsed, setDeployCollapsed] = useState(false);
+  const [confirmingSetup, setConfirmingSetup] = useState(false);
+  const [confirmResult, setConfirmResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [dismissing, setDismissing] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{currentVersion: string; latestVersion: string; updateAvailable: boolean} | null>(null);
   const [upgrading, setUpgrading] = useState(false);
   const [sidebarFleet, setSidebarFleet] = useState<Record<string, FleetAgent[]>>({});
@@ -333,7 +335,7 @@ export default function Home() {
   // ---- Fire Agent ----
   const handleFire = async (agentName: string) => {
     if (!activePrime) return;
-    if (!confirm(`Fire agent "${agentName}"? This will delete the agent VM.`)) return;
+    if (!confirm(`Fire agent "${agentName}"? This will delete the agent VM and billing will stop.`)) return;
 
     await api(`/api/primes/${activePrime}/fleet/fire`, {
       method: "POST",
@@ -341,13 +343,56 @@ export default function Home() {
       body: JSON.stringify({ name: agentName }),
     });
 
-    // Optimistic: mark as offline
+    // Optimistic: mark as tearing_down (stay on fleet view to see progress)
     setFleet((prev) =>
-      prev.map((a) => a.name === agentName ? { ...a, status: "offline" as const } : a)
+      prev.map((a) => a.name === agentName ? { ...a, status: "tearing_down" as const } : a)
+    );
+    // Open the agent detail to show teardown progress
+    loadAgentDetail(agentName);
+  };
+
+  // ---- Confirm Workspace Setup ----
+  const handleConfirmSetup = async (agentName: string) => {
+    if (!activePrime) return;
+    setConfirmingSetup(true);
+    setConfirmResult(null);
+
+    const result = await api<{ success: boolean; status: string; error?: string }>(
+      `/api/primes/${activePrime}/fleet/confirm-setup`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: agentName }),
+      }
     );
 
-    // Switch to chat to see the fire command flowing
-    setView("chat");
+    if (result?.success) {
+      setConfirmResult({ ok: true, msg: "DWD healthcheck passed — agent is online!" });
+      // Refresh agent detail
+      setTimeout(() => loadAgentDetail(agentName), 1000);
+    } else {
+      setConfirmResult({ ok: false, msg: result?.error || "DWD healthcheck failed. Workspace user may not exist yet." });
+    }
+    setConfirmingSetup(false);
+  };
+
+  // ---- Dismiss / Remove Agent ----
+  const handleDismissAgent = async (agentName: string, skipConfirm = false) => {
+    if (!activePrime) return;
+    if (!skipConfirm && !confirm(`Remove "${agentName}" from the fleet list? This cannot be undone.`)) return;
+
+    setDismissing(true);
+    await api(`/api/primes/${activePrime}/fleet/dismiss`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: agentName }),
+    });
+
+    // Remove from local state
+    setFleet((prev) => prev.filter((a) => a.name !== agentName));
+    setSelectedAgent(null);
+    setAgentDetail(null);
+    setDismissing(false);
   };
 
   // ---- Test DWD ----
@@ -670,105 +715,198 @@ export default function Home() {
                       <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading agent details...</div>
                     ) : agentDetail ? (
                       <div>
-                        {/* Deploy Timeline */}
-                        {(agentDetail.status === "deploying" || agentDetail.status === "needs_action" || (agentDetail.deploySteps && agentDetail.deploySteps.length > 0)) && (() => {
-                          const EXPECTED_STEPS = [
-                            { id: "deploy_started", label: "Deployment initiated" },
-                            { id: "sa_created", label: "Service account created" },
-                            { id: "iam_granted", label: "IAM roles granted" },
-                            { id: "vm_created", label: "VM created" },
-                            { id: "prime_setup_done", label: "Prime-side setup complete" },
-                            { id: "packages_installed", label: "System packages installed" },
-                            { id: "docker_installed", label: "Docker CE installed" },
-                            { id: "corekit_installed", label: "CoreKit installed" },
-                            { id: "openclaw_built", label: "OpenClaw Docker image built" },
-                            { id: "gateway_ready", label: "OpenClaw gateway started" },
-                            { id: "config_applied", label: "Agent config applied" },
-                            { id: "inbox_installed", label: "Inbox daemon started" },
-                            { id: "online", label: "Agent online" },
-                          ];
-                          const completedIds = new Set((agentDetail.deploySteps || []).map(s => s.id));
-                          const completedMap = new Map((agentDetail.deploySteps || []).map(s => [s.id, s]));
-                          let foundPending = false;
+                        {/* ---- Phase Stepper (Deploy or Teardown) ---- */}
+                        {(() => {
+                          const steps = agentDetail.deploySteps || [];
+                          const stepIds = new Set(steps.map(s => s.id));
+                          const isTeardown = agentDetail.status === "tearing_down" || agentDetail.status === "removed" || stepIds.has("teardown_started");
 
-                          return (
-                            <div style={{ marginBottom: 20 }}>
-                              <div
-                                style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: deployCollapsed ? 0 : 10, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, userSelect: "none" }}
-                                onClick={() => setDeployCollapsed(!deployCollapsed)}
-                              >
-                                <span style={{ fontSize: 10, transition: "transform 0.2s", transform: deployCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▼</span>
-                                Deploy Progress
-                              </div>
-                              {!deployCollapsed && (
-                              <div className={styles["deploy-timeline"]}>
-                                {EXPECTED_STEPS.map((expected) => {
-                                  const actual = completedMap.get(expected.id);
-                                  let status: string;
-                                  let icon: string;
-                                  if (actual) {
-                                    status = actual.status;
-                                    icon = ({ done: "✅", active: "⏳", failed: "❌", skipped: "⏭️" } as Record<string, string>)[actual.status] || "✅";
-                                  } else if (agentDetail.status === "online") {
-                                    status = "done";
-                                    icon = "✅";
-                                  } else if (!foundPending && agentDetail.status === "deploying") {
-                                    foundPending = true;
-                                    status = "active";
-                                    icon = "⏳";
-                                  } else {
-                                    status = "pending";
-                                    icon = "⬜";
-                                  }
-                                  return (
-                                    <div key={expected.id} className={`${styles["deploy-step"]} ${styles[`step-${status}`]}`}>
-                                      <span className={styles["deploy-step-icon"]}>{icon}</span>
-                                      <span className={styles["deploy-step-label"]}>{actual?.label || expected.label}</span>
-                                      {actual?.detail && <span className={styles["deploy-step-detail"]}>{actual.detail}</span>}
-                                      {actual?.timestamp && (
-                                        <span className={styles["deploy-step-time"]}>
-                                          {new Date(actual.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                        </span>
-                                      )}
+                          if (isTeardown) {
+                            /* ---- TEARDOWN 2-phase stepper ---- */
+                            const infraDone = stepIds.has("vm_deleted") || stepIds.has("sa_deleted") || stepIds.has("teardown_complete");
+                            const fullyRemoved = agentDetail.status === "removed";
+
+                            const phase1State = infraDone ? "done" : (agentDetail.status === "tearing_down" ? "active" : "pending");
+                            const phase2State = fullyRemoved ? "warning" : "pending";
+
+                            return (
+                              <div style={{ marginBottom: 16 }}>
+                                <div className={styles["phase-stepper"]}>
+                                  {/* Phase 1: Infrastructure */}
+                                  <div className={styles["phase-item"]}>
+                                    <div className={`${styles["phase-circle"]} ${styles[`phase-circle-${phase1State}`]}`}>
+                                      {phase1State === "done" ? "✓" : phase1State === "active" ? "⏳" : "1"}
                                     </div>
-                                  );
-                                })}
-                                {/* Show any extra steps not in EXPECTED (e.g. dwd_healthcheck) */}
-                                {(agentDetail.deploySteps || []).filter(s => !EXPECTED_STEPS.find(e => e.id === s.id)).map((step, i) => {
-                                  const icon = ({ done: "✅", active: "⏳", failed: "❌", skipped: "⏭️" } as Record<string, string>)[step.status] || "❓";
-                                  return (
-                                    <div key={`extra-${i}`} className={`${styles["deploy-step"]} ${styles[`step-${step.status}`]}`}>
-                                      <span className={styles["deploy-step-icon"]}>{icon}</span>
-                                      <span className={styles["deploy-step-label"]}>{step.label}</span>
-                                      {step.detail && <span className={styles["deploy-step-detail"]}>{step.detail}</span>}
-                                      {step.timestamp && (
-                                        <span className={styles["deploy-step-time"]}>
-                                          {new Date(step.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                        </span>
-                                      )}
+                                    <div className={`${styles["phase-label"]} ${styles[`phase-label-${phase1State}`]}`}>Removing</div>
+                                    <div className={styles["phase-sub"]}>
+                                      {phase1State === "done" ? "VM + SA deleted" : phase1State === "active" ? "Deleting VM..." : ""}
                                     </div>
-                                  );
-                                })}
+                                    {/* Connector */}
+                                    <div className={`${styles["phase-connector"]} ${phase1State === "done" ? styles["phase-connector-done"] : ""}`} />
+                                  </div>
+
+                                  {/* Phase 2: Admin Cleanup */}
+                                  <div className={styles["phase-item"]}>
+                                    <div className={`${styles["phase-circle"]} ${fullyRemoved ? styles["phase-circle-warning"] : styles["phase-circle"]}`}>
+                                      {fullyRemoved ? "!" : "2"}
+                                    </div>
+                                    <div className={`${styles["phase-label"]} ${fullyRemoved ? styles["phase-label-warning"] : ""}`}>Cleanup</div>
+                                    <div className={styles["phase-sub"]}>
+                                      {fullyRemoved ? "Action needed" : "Waiting..."}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Cleanup action card */}
+                                {fullyRemoved && (
+                                  <div className={`${styles["action-card"]} ${styles["action-card-warning"]}`}>
+                                    <div className={styles["action-card-header"]}>
+                                      <span style={{ fontSize: 18 }}>🧹</span>
+                                      <span className={styles["action-card-title"]}>Cleanup Required</span>
+                                    </div>
+                                    <ol className={styles["action-card-list"]}>
+                                      <li>Go to <strong>admin.google.com → Users</strong></li>
+                                      <li>Suspend or delete: <code className="mono" style={{ fontSize: 11 }}>{agentDetail.email}</code></li>
+                                      <li>(Optional) Remove from Chat space</li>
+                                    </ol>
+                                    <div className={styles["action-card-actions"]}>
+                                      <button
+                                        className="btn btn-sm btn-primary"
+                                        style={{ background: "#2ea043", borderColor: "#2ea043" }}
+                                        onClick={() => handleDismissAgent(selectedAgent!, false)}
+                                        disabled={dismissing}
+                                      >
+                                        {dismissing ? "Removing..." : "I've cleaned up ✓"}
+                                      </button>
+                                      <button
+                                        className="btn btn-sm btn-ghost"
+                                        onClick={() => handleDismissAgent(selectedAgent!, false)}
+                                        disabled={dismissing}
+                                      >
+                                        Skip & Remove
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              )}
-                            </div>
-                          );
+                            );
+                          }
+
+                          /* ---- DEPLOY 3-phase stepper ---- */
+                          if (agentDetail.status === "deploying" || agentDetail.status === "needs_action" || agentDetail.status === "online" || agentDetail.status === "error" || steps.length > 0) {
+                            /* Phase determination */
+                            const provisionSteps = ["deploy_started", "sa_created", "iam_granted", "vm_created", "prime_setup_done"];
+                            const installSteps = ["packages_installing", "docker_installing", "corekit_installing", "openclaw_building", "gateway_ready", "bootstrap_complete"];
+                            const connectSteps = ["online", "needs_action"];
+
+                            const hasAny = (ids: string[]) => ids.some(id => stepIds.has(id));
+                            const provisionDone = hasAny(["vm_created", "prime_setup_done"]) || hasAny(installSteps);
+                            const installDone = hasAny(["gateway_ready", "bootstrap_complete"]) || hasAny(connectSteps);
+                            const isOnline = agentDetail.status === "online";
+                            const needsAction = agentDetail.status === "needs_action";
+                            const hasError = agentDetail.status === "error" || steps.some(s => s.status === "failed");
+
+                            let phase1State = "pending";
+                            if (provisionDone) phase1State = "done";
+                            else if (agentDetail.status === "deploying" && !hasAny(installSteps)) phase1State = "active";
+
+                            let phase2State = "pending";
+                            if (installDone) phase2State = "done";
+                            else if (hasAny(installSteps) || (provisionDone && !installDone && agentDetail.status === "deploying")) phase2State = "active";
+                            if (hasError && !installDone) phase2State = "error";
+
+                            let phase3State = "pending";
+                            if (isOnline) phase3State = "done";
+                            else if (needsAction) phase3State = "warning";
+                            else if (installDone && !isOnline && !needsAction) phase3State = "active";
+                            if (hasError && installDone) phase3State = "error";
+
+                            const phase1Sub = phase1State === "done" ? "VM ready" : phase1State === "active" ? "Creating VM..." : "";
+                            const phase2Sub = phase2State === "done" ? "All installed" : phase2State === "active" ? "Installing..." : phase2State === "error" ? "Failed" : "";
+                            const phase3Sub = isOnline ? "Healthy" : needsAction ? "Setup needed" : phase3State === "error" ? "Failed" : "";
+
+                            const conn1State = phase1State === "done" ? (phase2State === "active" ? "active" : "done") : "";
+                            const conn2State = phase2State === "done" ? (phase3State === "active" || phase3State === "warning" ? "active" : "done") : "";
+
+                            return (
+                              <div style={{ marginBottom: 16 }}>
+                                <div className={styles["phase-stepper"]}>
+                                  {/* Phase 1: Provisioning */}
+                                  <div className={styles["phase-item"]}>
+                                    <div className={`${styles["phase-circle"]} ${styles[`phase-circle-${phase1State}`] || ""}`}>
+                                      {phase1State === "done" ? "✓" : phase1State === "active" ? "⏳" : "1"}
+                                    </div>
+                                    <div className={`${styles["phase-label"]} ${styles[`phase-label-${phase1State}`] || ""}`}>Provisioning</div>
+                                    <div className={styles["phase-sub"]}>{phase1Sub}</div>
+                                    {/* Connector to phase 2 */}
+                                    <div className={`${styles["phase-connector"]} ${conn1State ? styles[`phase-connector-${conn1State}`] || "" : ""}`} />
+                                  </div>
+
+                                  {/* Phase 2: Installing */}
+                                  <div className={styles["phase-item"]}>
+                                    <div className={`${styles["phase-circle"]} ${styles[`phase-circle-${phase2State}`] || ""}`}>
+                                      {phase2State === "done" ? "✓" : phase2State === "active" ? "⏳" : phase2State === "error" ? "✕" : "2"}
+                                    </div>
+                                    <div className={`${styles["phase-label"]} ${styles[`phase-label-${phase2State}`] || ""}`}>Installing</div>
+                                    <div className={styles["phase-sub"]}>{phase2Sub}</div>
+                                    {/* Connector to phase 3 */}
+                                    <div className={`${styles["phase-connector"]} ${conn2State ? styles[`phase-connector-${conn2State}`] || "" : ""}`} />
+                                  </div>
+
+                                  {/* Phase 3: Connecting */}
+                                  <div className={styles["phase-item"]}>
+                                    <div className={`${styles["phase-circle"]} ${styles[`phase-circle-${phase3State}`] || ""}`}>
+                                      {isOnline ? "✓" : needsAction ? "!" : phase3State === "error" ? "✕" : "3"}
+                                    </div>
+                                    <div className={`${styles["phase-label"]} ${styles[`phase-label-${phase3State}`] || ""}`}>Connecting</div>
+                                    <div className={styles["phase-sub"]}>{phase3Sub}</div>
+                                  </div>
+                                </div>
+
+                                {/* Admin Setup Action Card */}
+                                {(needsAction || (agentDetail.actionRequired && agentDetail.status !== "online")) && (
+                                  <div className={`${styles["action-card"]} ${styles["action-card-warning"]}`}>
+                                    <div className={styles["action-card-header"]}>
+                                      <span style={{ fontSize: 18 }}>⚠️</span>
+                                      <span className={styles["action-card-title"]}>
+                                        {agentDetail.actionRequired?.title || "Admin Setup Required"}
+                                      </span>
+                                    </div>
+                                    {agentDetail.actionRequired?.instructions ? (
+                                      <ol className={styles["action-card-list"]}>
+                                        {agentDetail.actionRequired.instructions.map((inst, i) => (
+                                          <li key={i}>{inst}</li>
+                                        ))}
+                                      </ol>
+                                    ) : (
+                                      <ol className={styles["action-card-list"]}>
+                                        <li>Create Workspace user at <strong>admin.google.com</strong></li>
+                                        <li>Add <code className="mono" style={{ fontSize: 11 }}>{agentDetail.email}</code> to the Chat space</li>
+                                        <li>Verify by sending a test message</li>
+                                      </ol>
+                                    )}
+                                    <div className={styles["action-card-actions"]}>
+                                      <button
+                                        className="btn btn-sm btn-primary"
+                                        style={{ background: "#2ea043", borderColor: "#2ea043" }}
+                                        onClick={() => handleConfirmSetup(selectedAgent!)}
+                                        disabled={confirmingSetup}
+                                      >
+                                        {confirmingSetup ? "Checking..." : "I've completed these steps ✓"}
+                                      </button>
+                                    </div>
+                                    {confirmResult && (
+                                      <div className={`${styles["action-card-result"]} ${confirmResult.ok ? styles["action-card-result-success"] : styles["action-card-result-error"]}`}>
+                                        {confirmResult.ok ? "✅ " : "❌ "}{confirmResult.msg}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+                          return null;
                         })()}
-
-                        {/* Action Required Callout */}
-                        {agentDetail.actionRequired && (
-                          <div className={styles["action-required"]}>
-                            <div className={styles["action-required-header"]}>
-                              <span style={{ fontSize: 18 }}>⚠️</span>
-                              <span className={styles["action-required-title"]}>{agentDetail.actionRequired.title}</span>
-                            </div>
-                            <ol className={styles["action-required-list"]}>
-                              {agentDetail.actionRequired.instructions.map((inst, i) => (
-                                <li key={i}>{inst}</li>
-                              ))}
-                            </ol>
-                          </div>
-                        )}
 
                         {/* Info + Activity Grid */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
