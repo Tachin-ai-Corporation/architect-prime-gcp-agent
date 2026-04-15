@@ -263,10 +263,23 @@ for attempt in 1 2 3; do
 done
 
 if [[ "$DWD_OK" == "true" ]]; then
-  # Agent is fully online
+  # Agent is fully online — but keep actionRequired so user sees the setup card
   log "DWD healthcheck PASSED — agent is ONLINE"
-  write_step "online" "Agent online" "done" "" "online"
-  clear_action_required
+
+  ACTION_JSON=$(python3 -c "
+import json
+print(json.dumps({
+    'type': 'workspace_user',
+    'title': 'Create Workspace user and add to Chat space',
+    'instructions': [
+        'Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST:-Agent}, Last: ${AGENT_LAST:-${AGENT_NAME}}, Email: ${AGENT_EMAIL}',
+        'Add ${AGENT_EMAIL} to the AI Fleet Command Chat space',
+        'The agent will come online automatically once the user exists'
+    ]
+}))
+")
+
+  write_step "online" "Agent online" "done" "" "online" "$ACTION_JSON"
 else
   # DWD failed — Workspace user likely doesn't exist yet
   log "DWD healthcheck FAILED — needs admin action"

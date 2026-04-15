@@ -368,7 +368,7 @@ export default function Home() {
     setConfirmingSetup(true);
     setConfirmResult(null);
 
-    const result = await api<{ success: boolean; status: string; error?: string }>(
+    await api(
       `/api/primes/${activePrime}/fleet/confirm-setup`,
       {
         method: "POST",
@@ -377,13 +377,12 @@ export default function Home() {
       }
     );
 
-    if (result?.success) {
-      setConfirmResult({ ok: true, msg: "DWD healthcheck passed — agent is online!" });
-      // Refresh agent detail
-      setTimeout(() => loadAgentDetail(agentName), 1000);
-    } else {
-      setConfirmResult({ ok: false, msg: result?.error || "DWD healthcheck failed. Workspace user may not exist yet." });
-    }
+    setConfirmResult({ ok: true, msg: "Setup confirmed! Action card cleared." });
+    // Refresh agent detail to pick up cleared actionRequired
+    setTimeout(() => {
+      loadAgentDetail(agentName);
+      setConfirmResult(null);
+    }, 1500);
     setConfirmingSetup(false);
   };
 
@@ -874,8 +873,8 @@ export default function Home() {
                                   </div>
                                 </div>
 
-                                {/* Admin Setup Action Card */}
-                                {(needsAction || (agentDetail.actionRequired && agentDetail.status !== "online")) && (
+                                {/* Admin Setup Action Card — persists until user confirms */}
+                                {agentDetail.actionRequired && (
                                   <div className={`${styles["action-card"]} ${styles["action-card-warning"]}`}>
                                     <div className={styles["action-card-header"]}>
                                       <span style={{ fontSize: 18 }}>⚠️</span>
