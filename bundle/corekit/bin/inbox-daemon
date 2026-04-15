@@ -79,11 +79,21 @@ fi
 
 log "Starting: agent=${AGENT_ID} email=${AGENT_USER_EMAIL} mention='${AGENT_MENTION}' poll=${POLL_INTERVAL}s"
 
-# ==== DWD HEALTHCHECK ====
-for i in $(seq 1 5); do
+# ==== DWD HEALTHCHECK (exponential backoff) ====
+# The Workspace user may not exist yet during initial deploy.
+# Back off patiently instead of crash-looping:
+#   10s → 30s → 60s → 120s → 300s (total ~10 min over 10 attempts)
+DWD_MAX_ATTEMPTS=10
+DWD_BACKOFF=10
+for i in $(seq 1 $DWD_MAX_ATTEMPTS); do
   "$DWD_TOKEN_BIN" --user "$AGENT_USER_EMAIL" >/dev/null 2>&1 && break
-  [[ $i -eq 5 ]] && die "DWD healthcheck failed after 5 attempts"
-  sleep $((i * 3))
+  if [[ $i -eq $DWD_MAX_ATTEMPTS ]]; then
+    die "DWD healthcheck failed after ${DWD_MAX_ATTEMPTS} attempts (~10 min). Workspace user '${AGENT_USER_EMAIL}' may not exist."
+  fi
+  log "DWD attempt ${i}/${DWD_MAX_ATTEMPTS} failed, retrying in ${DWD_BACKOFF}s..."
+  sleep "$DWD_BACKOFF"
+  # Exponential backoff: 10 → 30 → 60 → 120 → 300 → 300 ...
+  DWD_BACKOFF=$(( DWD_BACKOFF < 300 ? DWD_BACKOFF * 2 : 300 ))
 done
 log "DWD healthcheck OK"
 

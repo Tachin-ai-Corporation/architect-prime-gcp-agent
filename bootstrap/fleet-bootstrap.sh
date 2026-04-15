@@ -11,6 +11,10 @@
 #   - Reads agent identity from VM metadata
 #   - Same proven OpenClaw + ADC fix pattern
 #
+# Status reporting: fleet-monitor on Prime polls this VM's serial
+# console for milestone markers. This script does NOT write to
+# Firestore — Prime handles all status updates.
+#
 # Design: no RPC calls to configure OpenClaw. Config is written
 # directly to the host filesystem (bind-mounted into container)
 # and the container is restarted once to pick it up. This avoids
@@ -43,12 +47,11 @@ AGENT_FIRST_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_first_nam
 AGENT_LAST_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_last_name" || true)"
 CHAT_SPACE_ID="$(curl -sf -H "$MH" "$META/instance/attributes/chat_space_id" || true)"
 DWD_SIGNER_SA="$(curl -sf -H "$MH" "$META/instance/attributes/dwd_signer_sa" || true)"
-PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || true)"
 
 # Derive the @-mention text used by Google Chat (e.g., "Devops-Agent Stan")
 # This MUST match the Workspace account's First Name + Last Name exactly
 AGENT_MENTION="${AGENT_FIRST_NAME} ${AGENT_LAST_NAME}"
-AGENT_MENTION="$(echo "$AGENT_MENTION" | xargs)"  # trim
+AGENT_MENTION="$(echo "$AGENT_MENTION" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 
 MY_TOKEN="$(openssl rand -hex 16)"
 OC_HOST_ROOT="/opt/openclaw"
@@ -62,125 +65,9 @@ echo "Email       : ${AGENT_USER_EMAIL}"
 echo "Display     : ${AGENT_DISPLAY_NAME}"
 echo "CoreRef     : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Project     : ${GCP_PROJECT_ID}"
-echo "Prime ID    : ${PRIME_ID:-<not set>}"
-
-# ---- Helper: get metadata auth token ----
-get_meta_token() {
-  curl -sH 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null
-}
-
-# ---- Firestore URL ----
-FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
-FIRESTORE_READY=false
-
-# ---- IAM readiness gate ----
-# Wait for roles/datastore.user to propagate before writing to Firestore.
-# A single upfront check so all subsequent writes succeed without retries.
-wait_for_firestore() {
-  [[ -n "${PRIME_ID}" ]] || return 0
-  info "Waiting for Firestore IAM propagation..."
-  for i in $(seq 1 18); do  # 18 × 10s = 180s max
-    local token
-    token="$(get_meta_token 2>/dev/null)" || { sleep 10; continue; }
-    local http_code
-    http_code="$(curl -s -o /dev/null -w '%{http_code}' \
-      -H "Authorization: Bearer $token" \
-      "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_ID}" 2>/dev/null)" || { sleep 10; continue; }
-    if [[ "$http_code" == "200" || "$http_code" == "404" ]]; then
-      echo "  Firestore access OK (HTTP $http_code, attempt $i)"
-      FIRESTORE_READY=true
-      return 0
-    fi
-    echo "  Not ready (HTTP $http_code), waiting 10s ($i/18)..."
-    sleep 10
-  done
-  warn "Firestore access not available after 180s — deploy steps won't update dashboard"
-}
-
-# ---- Firestore deploy step reporter (fire-and-forget, no retries) ----
-write_deploy_step() {
-  local step_id="$1"
-  local step_label="$2"
-  local step_status="${3:-done}"
-  local step_detail="${4:-}"
-  local new_status="${5:-}"
-  local action_json="${6:-}"
-
-  [[ -n "${PRIME_ID}" ]] || return 0
-  [[ "$FIRESTORE_READY" == "true" ]] || return 0
-
-  local token
-  token="$(get_meta_token)" || return 0
-
-  python3 - <<'PYEOF' "$token" "$step_id" "$step_label" "$step_status" "$step_detail" "$new_status" "$action_json" "${FIRESTORE_URL}" "${PRIME_ID}" "${AGENT_ID}"
-import sys, json, urllib.request
-from datetime import datetime, timezone
-
-token, step_id, step_label, step_status, step_detail, new_status, action_json, fs_url, prime_id, agent_id = sys.argv[1:11]
-
-url = f"{fs_url}/primes/{prime_id}/fleet/{agent_id}"
-now = datetime.now(timezone.utc).isoformat()
-
-# Read current doc
-try:
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(req) as resp:
-        doc = json.loads(resp.read())
-except:
-    doc = {}
-
-existing_steps = []
-if "fields" in doc and "deploySteps" in doc["fields"]:
-    existing_steps = doc["fields"]["deploySteps"].get("arrayValue", {}).get("values", [])
-
-new_step = {"mapValue": {"fields": {
-    "id": {"stringValue": step_id},
-    "label": {"stringValue": step_label},
-    "status": {"stringValue": step_status},
-    "timestamp": {"stringValue": now},
-}}}
-if step_detail:
-    new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
-existing_steps.append(new_step)
-
-cur_status = "deploying"
-if "fields" in doc and "status" in doc["fields"]:
-    cur_status = doc["fields"]["status"].get("stringValue", "deploying")
-
-fields = {
-    "status": {"stringValue": new_status if new_status else cur_status},
-    "deploySteps": {"arrayValue": {"values": existing_steps}},
-}
-mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=deploySteps"
-
-if action_json:
-    try:
-        ar = json.loads(action_json)
-        ar_fields = {}
-        for k, v in ar.items():
-            if isinstance(v, list):
-                ar_fields[k] = {"arrayValue": {"values": [{"stringValue": s} for s in v]}}
-            elif isinstance(v, str):
-                ar_fields[k] = {"stringValue": v}
-        fields["actionRequired"] = {"mapValue": {"fields": ar_fields}}
-        mask += "&updateMask.fieldPaths=actionRequired"
-    except:
-        pass
-
-body = json.dumps({"fields": fields}).encode()
-req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
-    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-try:
-    urllib.request.urlopen(req)
-except Exception as e:
-    print(f"[fleet-bootstrap] Firestore write failed: {e}", file=sys.stderr)
-PYEOF
-}
 
 # ============================================================
-# PHASE 1 — System setup (no Firestore access needed yet)
+# PHASE 1 — System setup
 # ============================================================
 
 # ---- 1) Install system packages ----
@@ -271,7 +158,7 @@ mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
 
-# ---- 8) Install inbox-daemon systemd unit (installed early, started later) ----
+# ---- 8) Install inbox-daemon systemd unit ----
 info "Installing inbox-daemon systemd unit..."
 cat > /etc/systemd/system/inbox-daemon.service <<UNIT
 [Unit]
@@ -299,16 +186,7 @@ systemctl daemon-reload
 systemctl enable inbox-daemon
 
 # ============================================================
-# PHASE 2 — Firestore gate (wait for IAM propagation)
-# ============================================================
-wait_for_firestore
-
-write_deploy_step "packages_installed" "System packages installed"
-write_deploy_step "docker_installed" "Docker CE installed"
-write_deploy_step "corekit_installed" "CoreKit installed"
-
-# ============================================================
-# PHASE 3 — OpenClaw Docker image + config (no RPC)
+# PHASE 2 — OpenClaw Docker image + config
 # ============================================================
 
 # ---- 9) Clone + build OpenClaw Docker image ----
@@ -342,7 +220,6 @@ EOF
 
 info "Building Docker image openclaw:local ..."
 DOCKER_BUILDKIT=1 docker build -t openclaw:local .
-write_deploy_step "openclaw_built" "OpenClaw Docker image built"
 
 # ---- 10) Write OpenClaw config directly (no RPC) ----
 info "Writing OpenClaw config..."
@@ -368,7 +245,6 @@ print("  Config written to " + str(out_path))
 PY
 chown root:root "${OC_HOST_DIR}/openclaw.json"
 chmod 644 "${OC_HOST_DIR}/openclaw.json"
-write_deploy_step "config_applied" "Agent config applied"
 
 # ---- 11) Start OpenClaw container ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
@@ -404,10 +280,9 @@ while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
 done
 [[ "$READY" == "true" ]] || { warn "Gateway did not respond within ${MAX_WAIT}s"; }
 info "Gateway is ready (took ~${WAITED}s)."
-write_deploy_step "gateway_ready" "OpenClaw gateway started" "done" "Ready in ~${WAITED}s"
 
 # ============================================================
-# PHASE 4 — Container hardening + Vertex AI fix
+# PHASE 3 — Container hardening + Vertex AI fix
 # ============================================================
 
 # ---- 13) Harden container permissions ----
@@ -479,76 +354,19 @@ rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null
 ' || warn "ADC fix had non-fatal errors"
 
 # ============================================================
-# PHASE 5 — Start services + finalize
+# PHASE 4 — Start services + finalize
 # ============================================================
 
 # ---- 17) Start inbox-daemon ----
 info "Starting inbox-daemon..."
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
   systemctl start inbox-daemon || warn "inbox-daemon start failed (DWD may not be configured)"
-  write_deploy_step "inbox_installed" "Inbox daemon started"
 else
   warn "inbox-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
-  write_deploy_step "inbox_installed" "Inbox daemon skipped (no email/DWD config)" "skipped"
-fi
-
-# ---- 18) Update Firestore status ----
-# Check if DWD healthcheck is working before declaring online
-info "Checking DWD healthcheck..."
-DWD_OK=false
-if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
-  DWD_TOKEN_CMD="${OC_HOST_DIR}/bin/dwd-token"
-  if [[ -x "$DWD_TOKEN_CMD" ]]; then
-    DWD_TEST="$(AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" DWD_SIGNER_SA="${DWD_SIGNER_SA}" \
-      GCP_PROJECT_ID="${GCP_PROJECT_ID}" "$DWD_TOKEN_CMD" 2>/dev/null || true)"
-    if [[ -n "$DWD_TEST" && "$DWD_TEST" != *"error"* ]]; then
-      DWD_OK=true
-    fi
-  fi
-fi
-
-info "Updating Firestore status..."
-if [[ "$DWD_OK" == "true" ]]; then
-  write_deploy_step "online" "Agent online" "done" "" "online"
-  # Clear actionRequired
-  if [[ -n "${PRIME_ID}" && "$FIRESTORE_READY" == "true" ]]; then
-    FS_TOKEN="$(get_meta_token 2>/dev/null || true)"
-    if [[ -n "$FS_TOKEN" ]]; then
-      curl -s -X PATCH \
-        -H "Authorization: Bearer $FS_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d '{"fields":{"actionRequired":{"nullValue":null}}}' \
-        "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_ID}?updateMask.fieldPaths=actionRequired" \
-        > /dev/null 2>&1 || true
-    fi
-  fi
-else
-  ACTION_JSON=$(python3 -c "
-import json
-print(json.dumps({
-    'type': 'workspace_user',
-    'title': 'Create Workspace user account for DWD authentication',
-    'instructions': [
-        'Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME:-Agent}, Last: ${AGENT_LAST_NAME:-${AGENT_ID}}, Email: ${AGENT_USER_EMAIL}',
-        'Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space',
-        'The agent will come online automatically once the user exists and DWD succeeds'
-    ]
-}))
-")
-  write_deploy_step "dwd_healthcheck" "DWD healthcheck failed — awaiting admin action" "failed" "Workspace user may not exist yet" "needs_action" "$ACTION_JSON"
-fi
-
-# ---- 19) Boot announce via DWD ----
-if [[ "$DWD_OK" == "true" && -n "${CHAT_SPACE_ID}" && -n "${AGENT_USER_EMAIL}" ]]; then
-  export CHAT_SPACE_ID OC_HOST_ROOT
-  "${OC_HOST_DIR}/bin/chat-send" \
-    "🤖 Fleet agent *${AGENT_DISPLAY_NAME}* is online (OpenClaw).
-Specialty: ${SPECIALTY}
-Project: \`${GCP_PROJECT_ID}\`
-CoreKit: \`${CORE_REF}\`" || warn "Chat announce failed"
 fi
 
 # ---- Done ----
+# fleet-monitor on Prime polls the serial console for this marker:
 echo
 echo "============================================"
 echo "  FLEET AGENT SETUP COMPLETE"
@@ -558,9 +376,4 @@ echo "  Gateway token  : ${MY_TOKEN}"
 echo "  OpenClaw commit: ${STABLE_COMMIT}"
 echo "  Agent          : ${AGENT_DISPLAY_NAME} (${SPECIALTY})"
 echo "  Project        : ${GCP_PROJECT_ID}"
-if [[ "$DWD_OK" != "true" ]]; then
-  echo "  DWD Status     : ⚠️  NEEDS ADMIN ACTION"
-  echo "  → Create Workspace user: ${AGENT_USER_EMAIL}"
-  echo "  → Add to Chat space"
-fi
 echo "============================================"

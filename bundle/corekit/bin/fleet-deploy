@@ -390,7 +390,6 @@ jq --arg name "$AGENT_NAME" \
   "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
 
 # Write actionRequired with admin setup instructions
-# Status stays "deploying" — fleet-bootstrap.sh on the VM writes "online" when actually ready
 ACTION_JSON=$(python3 -c "
 import json
 print(json.dumps({
@@ -406,7 +405,33 @@ print(json.dumps({
 write_deploy_step "prime_setup_done" "Prime-side setup complete (VM bootstrapping)" "done" "VM is now installing Docker + OpenClaw (~10 min)" "deploying" "$ACTION_JSON"
 
 # ============================================================
-# 6. Print results + admin setup instructions
+# 6. Launch fleet-monitor (Prime-side bootstrap poller)
+# ============================================================
+# fleet-monitor polls the VM's serial console for bootstrap
+# progress and runs a DWD healthcheck at the end. ALL Firestore
+# writes happen from Prime's credentials (no IAM propagation race).
+MONITOR_BIN="${OC_HOST_ROOT}/.openclaw/bin/fleet-monitor"
+MONITOR_LOG="/tmp/fleet-monitor-${AGENT_NAME}.log"
+
+if [[ -x "$MONITOR_BIN" ]]; then
+  log "Launching fleet-monitor (background)"
+  nohup "$MONITOR_BIN" \
+    --name "$AGENT_NAME" \
+    --vm "$FLEET_VM" \
+    --zone "$ZONE" \
+    --email "$AGENT_USER_EMAIL" \
+    --prime-id "$PRIME_ID" \
+    --first "$AGENT_FIRST_NAME" \
+    --last "$AGENT_LAST_NAME" \
+    --specialty "$SPECIALTY" \
+    > "$MONITOR_LOG" 2>&1 &
+  log "  Monitor PID: $! (log: $MONITOR_LOG)"
+else
+  warn "fleet-monitor not found at $MONITOR_BIN — bootstrap status tracking disabled"
+fi
+
+# ============================================================
+# 7. Print results + admin setup instructions
 # ============================================================
 echo
 echo "============================================================"
@@ -465,5 +490,5 @@ echo "  ]"
 echo "}"
 echo "DEPLOY_RESULT_JSON_END"
 
-log "Done. Phase 2 will complete on VM in ~1-2 minutes."
-log "Monitor: gcloud compute instances get-serial-port-output ${FLEET_VM} --zone ${ZONE} --project ${FLEET_PROJECT}"
+log "Done. fleet-monitor is tracking bootstrap progress in the background."
+

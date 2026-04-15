@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-monitor — Prime-side bootstrap progress poller
+#
+# Runs on Prime's VM as a nohup background process after
+# fleet-deploy creates the fleet agent VM.
+#
+# Polls the agent's serial console output for bootstrap
+# milestones, then SSH-checks DWD health. Updates Firestore
+# status from Prime's credentials (no IAM propagation race).
+#
+# Usage: fleet-monitor --name <name> --vm <vm> --zone <zone> \
+#          --email <email> --prime-id <prime_id> \
+#          --first <first_name> --last <last_name>
+#
+# Design:
+#   - Serial console API: no SSH needed for progress tracking
+#   - SSH only once at the end for DWD healthcheck
+#   - All Firestore writes use Prime's credentials
+#   - Self-terminating: exits after online/needs_action/timeout
+# ============================================================
+set -euo pipefail
+
+# ---- Logging ----
+log() { echo "[$(date -Is)] [fleet-monitor] $*"; }
+warn() { echo "[$(date -Is)] [fleet-monitor] [WARN] $*" >&2; }
+
+# ---- Parse args ----
+AGENT_NAME="" FLEET_VM="" ZONE="" AGENT_EMAIL="" PRIME_ID=""
+AGENT_FIRST="" AGENT_LAST="" SPECIALTY=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) AGENT_NAME="$2"; shift 2 ;;
+    --vm) FLEET_VM="$2"; shift 2 ;;
+    --zone) ZONE="$2"; shift 2 ;;
+    --email) AGENT_EMAIL="$2"; shift 2 ;;
+    --prime-id) PRIME_ID="$2"; shift 2 ;;
+    --first) AGENT_FIRST="$2"; shift 2 ;;
+    --last) AGENT_LAST="$2"; shift 2 ;;
+    --specialty) SPECIALTY="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+[[ -n "$AGENT_NAME" ]] || { echo "Missing --name"; exit 1; }
+[[ -n "$FLEET_VM" ]]   || { echo "Missing --vm"; exit 1; }
+[[ -n "$PRIME_ID" ]]   || { echo "Missing --prime-id"; exit 1; }
+
+# ---- Config ----
+PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id')"
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+
+POLL_INTERVAL=30       # seconds between serial console checks
+MAX_WAIT=900           # 15 minutes max
+SSH_TIMEOUT=15         # seconds for SSH commands
+
+# ---- Helpers ----
+get_token() {
+  curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null
+}
+
+# Append a deploy step + optionally update status in Firestore
+write_step() {
+  local step_id="$1" step_label="$2" step_status="${3:-done}"
+  local step_detail="${4:-}" new_status="${5:-}" action_json="${6:-}"
+
+  local token
+  token="$(get_token)" || { warn "Token fetch failed"; return; }
+
+  python3 - <<'PYEOF' "$token" "$step_id" "$step_label" "$step_status" "$step_detail" "$new_status" "$action_json" "$FIRESTORE_URL" "$PRIME_ID" "$AGENT_NAME"
+import sys, json, urllib.request
+from datetime import datetime, timezone
+
+token, step_id, step_label, step_status, step_detail, new_status, action_json, fs_url, prime_id, agent_name = sys.argv[1:11]
+url = f"{fs_url}/primes/{prime_id}/fleet/{agent_name}"
+now = datetime.now(timezone.utc).isoformat()
+
+# Read current doc
+try:
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req) as resp:
+        doc = json.loads(resp.read())
+except:
+    doc = {}
+
+existing_steps = []
+if "fields" in doc and "deploySteps" in doc["fields"]:
+    existing_steps = doc["fields"]["deploySteps"].get("arrayValue", {}).get("values", [])
+
+new_step = {"mapValue": {"fields": {
+    "id": {"stringValue": step_id},
+    "label": {"stringValue": step_label},
+    "status": {"stringValue": step_status},
+    "timestamp": {"stringValue": now},
+}}}
+if step_detail:
+    new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
+existing_steps.append(new_step)
+
+cur_status = "deploying"
+if "fields" in doc and "status" in doc["fields"]:
+    cur_status = doc["fields"]["status"].get("stringValue", "deploying")
+
+fields = {
+    "status": {"stringValue": new_status if new_status else cur_status},
+    "deploySteps": {"arrayValue": {"values": existing_steps}},
+}
+mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=deploySteps"
+
+if action_json:
+    try:
+        ar = json.loads(action_json)
+        ar_fields = {}
+        for k, v in ar.items():
+            if isinstance(v, list):
+                ar_fields[k] = {"arrayValue": {"values": [{"stringValue": s} for s in v]}}
+            elif isinstance(v, str):
+                ar_fields[k] = {"stringValue": v}
+        fields["actionRequired"] = {"mapValue": {"fields": ar_fields}}
+        mask += "&updateMask.fieldPaths=actionRequired"
+    except:
+        pass
+
+body = json.dumps({"fields": fields}).encode()
+req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f"[fleet-monitor] Firestore write failed: {e}", file=sys.stderr)
+PYEOF
+}
+
+# Clear actionRequired field
+clear_action_required() {
+  local token
+  token="$(get_token)" || return
+  local url="${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}"
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{"fields":{"actionRequired":{"nullValue":null}}}' \
+    "${url}?updateMask.fieldPaths=actionRequired" \
+    > /dev/null 2>&1 || true
+}
+
+# ---- Serial console milestone markers ----
+# These are printed by fleet-bootstrap.sh during setup
+declare -A MILESTONES=(
+  ["Installing system packages"]="packages_installing|System packages installing|active"
+  ["Installing Docker CE"]="docker_installing|Docker CE installing|active"
+  ["Installing CoreKit"]="corekit_installing|CoreKit installing|active"
+  ["Building Docker image"]="openclaw_building|OpenClaw Docker image building|active"
+  ["Gateway is ready"]="gateway_ready|OpenClaw gateway started|done"
+  ["FLEET AGENT SETUP COMPLETE"]="bootstrap_complete|Bootstrap complete|done"
+)
+declare -A SEEN_MILESTONES=()
+
+# ============================================================
+# MAIN POLLING LOOP
+# ============================================================
+log "Starting monitor: agent=${AGENT_NAME} vm=${FLEET_VM} max_wait=${MAX_WAIT}s"
+
+ELAPSED=0
+BOOTSTRAP_DONE=false
+
+while [[ $ELAPSED -lt $MAX_WAIT ]]; do
+  # Fetch serial console output (last 200KB)
+  SERIAL="$(gcloud compute instances get-serial-port-output "$FLEET_VM" \
+    --zone="$ZONE" --project="$PROJECT" --start=0 2>/dev/null || echo "")"
+
+  if [[ -n "$SERIAL" ]]; then
+    # Check for milestones
+    for marker in "${!MILESTONES[@]}"; do
+      if [[ -z "${SEEN_MILESTONES[$marker]:-}" ]] && echo "$SERIAL" | grep -q "$marker"; then
+        IFS='|' read -r step_id step_label step_status <<< "${MILESTONES[$marker]}"
+        log "Milestone: ${step_label}"
+        write_step "$step_id" "$step_label" "$step_status"
+        SEEN_MILESTONES["$marker"]=1
+      fi
+    done
+
+    # Check for completion
+    if echo "$SERIAL" | grep -q "FLEET AGENT SETUP COMPLETE"; then
+      BOOTSTRAP_DONE=true
+      break
+    fi
+
+    # Check for fatal errors
+    if echo "$SERIAL" | grep -q "\[ERROR\] Line .* failed"; then
+      log "Bootstrap FAILED — error detected in serial output"
+      write_step "bootstrap_failed" "Bootstrap failed" "failed" \
+        "Check serial console: gcloud compute instances get-serial-port-output ${FLEET_VM} --zone ${ZONE}" \
+        "error"
+      exit 1
+    fi
+  fi
+
+  sleep "$POLL_INTERVAL"
+  ELAPSED=$((ELAPSED + POLL_INTERVAL))
+  [[ $((ELAPSED % 120)) -eq 0 ]] && log "Still waiting... (${ELAPSED}s/${MAX_WAIT}s)"
+done
+
+if [[ "$BOOTSTRAP_DONE" != "true" ]]; then
+  log "TIMEOUT: Bootstrap did not complete within ${MAX_WAIT}s"
+  write_step "bootstrap_timeout" "Bootstrap timed out" "failed" \
+    "VM may still be bootstrapping — check serial console" "error"
+  exit 1
+fi
+
+# ============================================================
+# PHASE 2: SSH healthcheck (DWD + gateway)
+# ============================================================
+log "Bootstrap complete. Running SSH healthchecks..."
+sleep 5  # give services a moment
+
+# Check DWD healthcheck via SSH
+DWD_OK=false
+for attempt in 1 2 3; do
+  DWD_RESULT="$(gcloud compute ssh "$FLEET_VM" --zone="$ZONE" --project="$PROJECT" \
+    --command="sudo ${OC_HOST_ROOT}/.openclaw/bin/dwd-token --user ${AGENT_EMAIL} 2>&1 | head -1" \
+    --ssh-flag="-o ConnectTimeout=${SSH_TIMEOUT}" \
+    --ssh-flag="-o StrictHostKeyChecking=no" \
+    2>/dev/null || echo "SSH_FAILED")"
+
+  if [[ "$DWD_RESULT" != *"error"* && "$DWD_RESULT" != *"FAILED"* && "$DWD_RESULT" != *"SSH_FAILED"* && -n "$DWD_RESULT" ]]; then
+    DWD_OK=true
+    break
+  fi
+  log "DWD check attempt ${attempt}/3 failed, retrying in 10s..."
+  sleep 10
+done
+
+if [[ "$DWD_OK" == "true" ]]; then
+  # Agent is fully online
+  log "DWD healthcheck PASSED — agent is ONLINE"
+  write_step "online" "Agent online" "done" "" "online"
+  clear_action_required
+else
+  # DWD failed — Workspace user likely doesn't exist yet
+  log "DWD healthcheck FAILED — needs admin action"
+
+  ACTION_JSON=$(python3 -c "
+import json
+print(json.dumps({
+    'type': 'workspace_user',
+    'title': 'Create Workspace user and add to Chat space',
+    'instructions': [
+        'Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST:-Agent}, Last: ${AGENT_LAST:-${AGENT_NAME}}, Email: ${AGENT_EMAIL}',
+        'Add ${AGENT_EMAIL} to the AI Fleet Command Chat space',
+        'The agent will come online automatically once the user exists'
+    ]
+}))
+")
+
+  write_step "needs_action" "Awaiting admin action" "failed" \
+    "Workspace user ${AGENT_EMAIL} does not exist yet" \
+    "needs_action" "$ACTION_JSON"
+fi
+
+log "Monitor complete for ${AGENT_NAME}"
