@@ -201,6 +201,29 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
     fi
   fi
 
+  # ---- SSH fallback: if no milestones after 120s, check if
+  # bootstrap already completed (serial buffer may have rolled over)
+  if [[ $ELAPSED -ge 120 && ${#SEEN_MILESTONES[@]} -eq 0 ]]; then
+    log "No serial milestones after ${ELAPSED}s — SSH-checking gateway health..."
+    GW_STATUS="$(gcloud compute ssh "$FLEET_VM" --zone="$ZONE" --project="$PROJECT" \
+      --command="sudo docker inspect openclaw-gateway --format='{{.State.Status}}' 2>/dev/null || echo 'not_found'" \
+      --ssh-flag="-o ConnectTimeout=${SSH_TIMEOUT}" \
+      --ssh-flag="-o StrictHostKeyChecking=no" \
+      2>/dev/null || echo "SSH_FAILED")"
+    GW_STATUS="$(echo "$GW_STATUS" | tr -d '[:space:]')"
+
+    if [[ "$GW_STATUS" == "running" ]]; then
+      log "Gateway is already running — bootstrap completed earlier"
+      write_step "bootstrap_complete" "Bootstrap complete (detected via SSH)" "done"
+      BOOTSTRAP_DONE=true
+      break
+    elif [[ "$GW_STATUS" == "SSH_FAILED" ]]; then
+      log "SSH not yet available — VM may still be bootstrapping"
+    else
+      log "Gateway status: ${GW_STATUS} — continuing to poll"
+    fi
+  fi
+
   sleep "$POLL_INTERVAL"
   ELAPSED=$((ELAPSED + POLL_INTERVAL))
   [[ $((ELAPSED % 120)) -eq 0 ]] && log "Still waiting... (${ELAPSED}s/${MAX_WAIT}s)"
