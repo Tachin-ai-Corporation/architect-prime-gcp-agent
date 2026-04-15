@@ -54,8 +54,9 @@ FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PROJECT}/databases
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 
 POLL_INTERVAL=30       # seconds between serial console checks
-MAX_WAIT=900           # 15 minutes max
+MAX_WAIT=1200          # 20 minutes max (bootstrap takes ~15 min)
 SSH_TIMEOUT=15         # seconds for SSH commands
+SSH_FALLBACK_AT=300    # try SSH fallback after 5 min
 
 # ---- Helpers ----
 get_token() {
@@ -175,9 +176,9 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
     --zone="$ZONE" --project="$PROJECT" --start=0 2>/dev/null || echo "")"
 
   if [[ -n "$SERIAL" ]]; then
-    # Check for milestones
+    # Check for milestones (2>/dev/null suppresses Broken pipe from large serial output)
     for marker in "${!MILESTONES[@]}"; do
-      if [[ -z "${SEEN_MILESTONES[$marker]:-}" ]] && echo "$SERIAL" | grep -q "$marker"; then
+      if [[ -z "${SEEN_MILESTONES[$marker]:-}" ]] && echo "$SERIAL" 2>/dev/null | grep -q "$marker" 2>/dev/null; then
         IFS='|' read -r step_id step_label step_status <<< "${MILESTONES[$marker]}"
         log "Milestone: ${step_label}"
         write_step "$step_id" "$step_label" "$step_status"
@@ -186,13 +187,13 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
     done
 
     # Check for completion
-    if echo "$SERIAL" | grep -q "FLEET AGENT SETUP COMPLETE"; then
+    if echo "$SERIAL" 2>/dev/null | grep -q "FLEET AGENT SETUP COMPLETE" 2>/dev/null; then
       BOOTSTRAP_DONE=true
       break
     fi
 
     # Check for fatal errors
-    if echo "$SERIAL" | grep -q "\[ERROR\] Line .* failed"; then
+    if echo "$SERIAL" 2>/dev/null | grep -q "\[ERROR\] Line .* failed" 2>/dev/null; then
       log "Bootstrap FAILED — error detected in serial output"
       write_step "bootstrap_failed" "Bootstrap failed" "failed" \
         "Check serial console: gcloud compute instances get-serial-port-output ${FLEET_VM} --zone ${ZONE}" \
@@ -201,9 +202,11 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
     fi
   fi
 
-  # ---- SSH fallback: if no milestones after 120s, check if
-  # bootstrap already completed (serial buffer may have rolled over)
-  if [[ $ELAPSED -ge 120 && ${#SEEN_MILESTONES[@]} -eq 0 ]]; then
+  # ---- SSH fallback: after SSH_FALLBACK_AT seconds, check if the
+  # gateway container is already running. Triggers regardless of
+  # whether serial milestones were seen (handles long bootstraps
+  # where "SETUP COMPLETE" hasn't appeared yet in serial output).
+  if [[ $ELAPSED -ge $SSH_FALLBACK_AT ]]; then
     log "No serial milestones after ${ELAPSED}s — SSH-checking gateway health..."
     GW_STATUS="$(gcloud compute ssh "$FLEET_VM" --zone="$ZONE" --project="$PROJECT" \
       --command="sudo docker inspect openclaw-gateway --format='{{.State.Status}}' 2>/dev/null || echo 'not_found'" \
