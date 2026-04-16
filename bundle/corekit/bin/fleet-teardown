@@ -149,13 +149,10 @@ else
   write_deploy_step "vm_deleted" "VM already removed" "skipped"
 fi
 
-# ---- 2. Delete service account ----
+# ---- 2. Service account — KEEP (free, preserves IAM bindings for re-hire) ----
 FLEET_SA_EMAIL="fleet-${AGENT_NAME}@${FLEET_PROJECT}.iam.gserviceaccount.com"
-log "Deleting service account: ${FLEET_SA_EMAIL}"
-gcloud iam service-accounts delete "$FLEET_SA_EMAIL" \
-  --project="$FLEET_PROJECT" \
-  --quiet 2>/dev/null || log "SA already deleted or not found"
-write_deploy_step "sa_deleted" "Service account deleted" "done" "${FLEET_SA_EMAIL}"
+log "Keeping service account: ${FLEET_SA_EMAIL} (IAM bindings preserved for re-hire)"
+write_deploy_step "sa_kept" "Service account preserved" "done" "${FLEET_SA_EMAIL}"
 
 # ---- 3. Mark as removed in Firestore (preserve doc for dashboard) ----
 if [[ -n "$PRIME_ID" ]]; then

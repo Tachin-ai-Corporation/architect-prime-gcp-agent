@@ -277,28 +277,48 @@ log "APIs already enabled on ${FLEET_PROJECT} (single-project mode)"
 # 3. Create service account + grant roles
 # ============================================================
 log "Creating service account: ${FLEET_SA_NAME}"
-gcloud iam service-accounts create "$FLEET_SA_NAME" \
+
+# SA may already exist from a previous deploy (teardown preserves it)
+SA_CREATE_OUT="$(gcloud iam service-accounts create "$FLEET_SA_NAME" \
   --display-name="Fleet Agent ${AGENT_NAME} (${SPECIALTY})" \
-  --project="$FLEET_PROJECT" 2>/dev/null || log "SA already exists"
+  --project="$FLEET_PROJECT" 2>&1)" || {
+  if echo "$SA_CREATE_OUT" | grep -qi "already exists"; then
+    log "SA already exists (reusing from previous deploy)"
+  else
+    log "SA creation output: ${SA_CREATE_OUT}"
+    warn "SA creation may have failed — continuing anyway"
+  fi
+}
 
 write_deploy_step "sa_created" "Service account created" "done" "${FLEET_SA_EMAIL}"
 
-# Wait for SA propagation to prevent IAM race condition
-# GCP IAM can take 30-60s to propagate; 15s covers the SA creation delay,
-# and we add another 10s after grants for role propagation
-log "Waiting 15s for SA propagation..."
-sleep 15
+# Wait for SA to be fully queryable by IAM before granting roles
+log "Waiting 30s for SA propagation..."
+sleep 30
 
+# Verify SA exists before granting roles
+SA_CHECK="$(gcloud iam service-accounts describe "$FLEET_SA_EMAIL" \
+  --project="$FLEET_PROJECT" --format="value(uniqueId)" 2>&1)" || true
+if [[ -z "$SA_CHECK" || "$SA_CHECK" == *"NOT_FOUND"* ]]; then
+  warn "SA not yet visible after 30s — waiting 30s more"
+  sleep 30
+fi
+log "SA verified: uid=${SA_CHECK:-unknown}"
+
+# Grant roles — log errors instead of swallowing them
+IAM_OK=true
 for role in roles/aiplatform.user roles/iam.serviceAccountTokenCreator roles/datastore.user; do
   log "Granting ${role} to ${FLEET_SA_EMAIL}"
-  gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
+  GRANT_OUT="$(gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
     --member="serviceAccount:${FLEET_SA_EMAIL}" \
     --role="$role" \
-    --quiet > /dev/null 2>&1 || warn "IAM grant failed for ${role}"
+    --quiet 2>&1)" || {
+    warn "IAM grant FAILED for ${role}: ${GRANT_OUT}"
+    IAM_OK=false
+  }
 done
 
 # Grant serviceAccountTokenCreator on the shared DWD-signer SA
-# This lets the fleet SA call signJwt on the signer (for Chat DWD tokens)
 log "Granting serviceAccountTokenCreator on DWD-signer SA"
 gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   --project="$PRIME_PROJECT" \
@@ -306,11 +326,27 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --quiet > /dev/null 2>&1 || log "DWD-signer IAM grant may already exist"
 
-# IAM propagation wait — Vertex AI can take up to 7 min to propagate new role
-# bindings. The VM bootstrap takes ~12 min which usually covers this, but on
-# re-deploys (SA already exists) the bootstrap can finish faster than IAM.
-log "Waiting 30s for IAM propagation to Vertex AI..."
-sleep 30
+# Verify the critical aiplatform.user role actually landed
+log "Verifying aiplatform.user grant..."
+sleep 5
+VERIFY_OUT="$(gcloud projects get-iam-policy "$FLEET_PROJECT" \
+  --flatten='bindings[].members' \
+  --filter="bindings.role:roles/aiplatform.user AND bindings.members:serviceAccount:${FLEET_SA_EMAIL}" \
+  --format='value(bindings.members)' 2>&1)" || true
+
+if echo "$VERIFY_OUT" | grep -q "serviceAccount:${FLEET_SA_EMAIL}"; then
+  log "IAM verification PASSED: aiplatform.user bound to ${FLEET_SA_EMAIL}"
+elif [[ "$IAM_OK" == "false" ]]; then
+  warn "IAM grants failed — retrying after 30s..."
+  sleep 30
+  for role in roles/aiplatform.user roles/iam.serviceAccountTokenCreator roles/datastore.user; do
+    gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
+      --member="serviceAccount:${FLEET_SA_EMAIL}" \
+      --role="$role" --quiet 2>&1 || warn "RETRY failed for ${role}"
+  done
+else
+  warn "IAM verification could not confirm binding — may still be propagating"
+fi
 
 write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + serviceAccountTokenCreator + datastore.user"
 
