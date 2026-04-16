@@ -11,9 +11,9 @@
 #   - Reads agent identity from VM metadata
 #   - Same proven OpenClaw + ADC fix pattern
 #
-# Status reporting: fleet-monitor on Prime polls this VM's serial
-# console for milestone markers. This script does NOT write to
-# Firestore — Prime handles all status updates.
+# Status reporting:
+#   - fleet-monitor on Prime polls serial console for milestones
+#   - Step 18 self-reports completion to Firestore via Prime's API
 #
 # Design: no RPC calls to configure OpenClaw. Config is written
 # directly to the host filesystem (bind-mounted into container)
@@ -32,6 +32,27 @@ trap 'echo; echo "[ERROR] Line $LINENO failed: $BASH_COMMAND"; echo "Log: $LOG_F
 info(){ echo -e "\n==> $*\n"; }
 warn(){ echo -e "\n[WARN] $*\n"; }
 
+# ---- Shared: wait for gateway HTTP readiness ----
+wait_gateway() {
+  local label="${1:-Gateway}"
+  local max_wait="${2:-180}"
+  local waited=0
+  while [[ "$waited" -lt "$max_wait" ]]; do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+      http://localhost:18789/v1/models 2>/dev/null)" || code="000"
+    if [[ "$code" == "401" || "$code" == "200" ]]; then
+      info "${label} ready (took ~${waited}s)"
+      return 0
+    fi
+    echo "  ${label} not ready (HTTP ${code}, ${waited}s elapsed)..."
+    sleep 10
+    waited=$((waited + 10))
+  done
+  warn "${label} did not respond within ${max_wait}s"
+  return 1
+}
+
 # ---- Read config from VM metadata ----
 META="http://metadata.google.internal/computeMetadata/v1"
 MH="Metadata-Flavor: Google"
@@ -47,6 +68,8 @@ AGENT_FIRST_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_first_nam
 AGENT_LAST_NAME="$(curl -sf -H "$MH" "$META/instance/attributes/agent_last_name" || true)"
 CHAT_SPACE_ID="$(curl -sf -H "$MH" "$META/instance/attributes/chat_space_id" || true)"
 DWD_SIGNER_SA="$(curl -sf -H "$MH" "$META/instance/attributes/dwd_signer_sa" || true)"
+PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || true)"
+DASHBOARD_URL="$(curl -sf -H "$MH" "$META/instance/attributes/dashboard_url" || true)"
 
 # Derive the @-mention text used by Google Chat (e.g., "Devops-Agent Stan")
 # This MUST match the Workspace account's First Name + Last Name exactly
@@ -260,26 +283,8 @@ docker run -d \
   --group-add "${DOCKER_GID}" \
   openclaw:local
 
-# ---- 12) Wait for gateway readiness (HTTP check, no RPC) ----
-info "Waiting for OpenClaw gateway..."
-READY=false
-MAX_WAIT=180
-WAITED=0
-INTERVAL=10
-while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
-  # Simple HTTP check — 401 means the gateway is up and responding
-  HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-    http://localhost:18789/v1/models 2>/dev/null)" || HTTP_CODE="000"
-  if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "200" ]]; then
-    READY=true
-    break
-  fi
-  echo "  Gateway not ready (HTTP $HTTP_CODE, ${WAITED}s elapsed)..."
-  sleep "$INTERVAL"
-  WAITED=$((WAITED + INTERVAL))
-done
-[[ "$READY" == "true" ]] || { warn "Gateway did not respond within ${MAX_WAIT}s"; }
-info "Gateway is ready (took ~${WAITED}s)."
+# ---- 12) Wait for gateway readiness ----
+wait_gateway "Gateway (initial)" 180 || true
 
 # ============================================================
 # PHASE 3 — Container hardening + Vertex AI fix
@@ -353,50 +358,39 @@ fi
 rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
 ' || warn "ADC fix had non-fatal errors"
 
-# ---- 16b) Restart gateway to pick up ADC patch ----
+# ---- 17) Restart gateway to pick up ADC patch + smoke test ----
 info "Restarting gateway to activate ADC patch..."
 docker restart openclaw-gateway
-sleep 10
+wait_gateway "Gateway (post-ADC)" 120 || true
 
-# Wait for gateway readiness after restart
-READY=false
-MAX_WAIT=120
-WAITED=0
-while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
-  HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-    http://localhost:18789/v1/models 2>/dev/null)" || HTTP_CODE="000"
-  if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "200" ]]; then
-    READY=true
-    break
-  fi
-  sleep 5
-  WAITED=$((WAITED + 5))
-done
-[[ "$READY" == "true" ]] && info "Gateway ready after ADC patch restart" || warn "Gateway not ready after restart (HTTP $HTTP_CODE)"
+# Let gateway fully initialize (plugins, channels, LLM backend)
+info "Waiting 15s for gateway to settle..."
+sleep 15
 
-# ---- 16c) Vertex AI smoke test ----
+# Vertex AI smoke test — retry up to 3 times with backoff
 info "Running Vertex AI smoke test..."
-MY_TOKEN="$(grep -oP '"token"\s*:\s*"\K[^"]+' /opt/openclaw/.openclaw/openclaw.json 2>/dev/null || echo "")"
-if [[ -n "$MY_TOKEN" ]]; then
-  SMOKE_RESP="$(curl -sf -X POST http://localhost:18789/v1/chat/completions \
+SMOKE_OK=false
+for attempt in 1 2 3; do
+  SMOKE_RESP="$(curl -s --max-time 30 -X POST http://localhost:18789/v1/chat/completions \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${MY_TOKEN}" \
-    -d '{"model":"openclaw/main","messages":[{"role":"user","content":"respond with just the word pong"}]}' 2>&1 || echo "CURL_FAILED")"
+    -d '{"model":"openclaw/main","messages":[{"role":"user","content":"respond with just the word pong"}]}' 2>&1)" || SMOKE_RESP="CURL_ERROR"
+
   if echo "$SMOKE_RESP" | grep -q '"pong"'; then
-    info "Vertex AI smoke test PASSED"
-  else
-    warn "Vertex AI smoke test FAILED — IAM may still be propagating"
-    warn "Response: ${SMOKE_RESP:0:200}"
+    info "Vertex AI smoke test PASSED (attempt ${attempt})"
+    SMOKE_OK=true
+    break
   fi
-else
-  warn "Skipping smoke test — could not read gateway token"
-fi
+  warn "Smoke test attempt ${attempt}/3 failed: ${SMOKE_RESP:0:150}"
+  [[ $attempt -lt 3 ]] && sleep $((attempt * 15))
+done
+[[ "$SMOKE_OK" == "true" ]] || warn "Smoke test did not pass after 3 attempts — agent may still work once IAM propagates"
 
 # ============================================================
 # PHASE 4 — Start services + finalize
 # ============================================================
 
-# ---- 17) Start inbox-daemon ----
+# ---- 18) Start inbox-daemon ----
 info "Starting inbox-daemon..."
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
   systemctl start inbox-daemon || warn "inbox-daemon start failed (DWD may not be configured)"
@@ -404,68 +398,24 @@ else
   warn "inbox-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
 fi
 
-# ---- 18) Write final status to Firestore (self-reporting) ----
-# Don't rely solely on fleet-monitor to detect completion via serial console.
-# Write directly so the dashboard updates even if fleet-monitor times out.
-PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || true)"
-FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+# ---- 19) Report completion to Firestore via Prime's API ----
+# Uses Prime's Cloud Run endpoint (no fleet SA Datastore permission needed)
+if [[ -n "$DASHBOARD_URL" && -n "$PRIME_ID" ]]; then
+  info "Reporting completion to dashboard..."
+  STATUS_BODY="{\"agent\":\"${AGENT_ID}\",\"status\":\"online\",\"actionRequired\":{\"type\":\"workspace_user\",\"title\":\"Create Workspace user and add to Chat space\",\"instructions\":[\"Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME:-Agent}, Last: ${AGENT_LAST_NAME:-${AGENT_ID}}, Email: ${AGENT_USER_EMAIL}\",\"Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space\",\"The agent will come online automatically once the user exists\"]}}"
 
-if [[ -n "$PRIME_ID" ]]; then
-  info "Writing completion status to Firestore..."
-  FS_TOKEN="$(curl -sf -H "$MH" \
-    "$META/instance/service-accounts/default/token" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || true
+  STATUS_RESP="$(curl -s --max-time 15 -X POST \
+    "${DASHBOARD_URL}/api/primes/${PRIME_ID}/fleet/update-status" \
+    -H "Content-Type: application/json" \
+    -d "$STATUS_BODY" 2>&1)" || STATUS_RESP="CURL_ERROR"
 
-  if [[ -n "$FS_TOKEN" ]]; then
-    # Build action required JSON for workspace user setup
-    ACTION_JSON="{\"type\":\"workspace_user\",\"title\":\"Create Workspace user and add to Chat space\",\"instructions\":[\"Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME:-Agent}, Last: ${AGENT_LAST_NAME:-${AGENT_ID}}, Email: ${AGENT_USER_EMAIL}\",\"Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space\",\"The agent will come online automatically once the user exists\"]}"
-
-    python3 - <<PYEOF "$FS_TOKEN" "$ACTION_JSON"
-import sys, json, urllib.request
-from datetime import datetime, timezone
-
-token = sys.argv[1]
-action_json = sys.argv[2]
-url = "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_ID}"
-now = datetime.now(timezone.utc).isoformat()
-
-# Build action required fields
-try:
-    ar = json.loads(action_json)
-    ar_fields = {}
-    for k, v in ar.items():
-        if isinstance(v, list):
-            ar_fields[k] = {"arrayValue": {"values": [{"stringValue": s} for s in v]}}
-        elif isinstance(v, str):
-            ar_fields[k] = {"stringValue": v}
-    action_field = {"mapValue": {"fields": ar_fields}}
-except:
-    action_field = None
-
-fields = {
-    "status": {"stringValue": "online"},
-    "lastBootstrap": {"stringValue": now},
-}
-mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=lastBootstrap"
-
-if action_field:
-    fields["actionRequired"] = action_field
-    mask += "&updateMask.fieldPaths=actionRequired"
-
-body = json.dumps({"fields": fields}).encode()
-req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
-    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-try:
-    urllib.request.urlopen(req)
-    print("  Firestore updated: status=online")
-except Exception as e:
-    print(f"  [WARN] Firestore write failed: {e}")
-PYEOF
+  if echo "$STATUS_RESP" | grep -q '"success"'; then
+    info "Dashboard status updated: online"
   else
-    warn "Could not get access token for Firestore write"
+    warn "Dashboard status update failed: ${STATUS_RESP:0:200}"
   fi
 else
-  warn "PRIME_ID not set — skipping Firestore status write"
+  warn "Skipping dashboard status update (DASHBOARD_URL=${DASHBOARD_URL:-unset}, PRIME_ID=${PRIME_ID:-unset})"
 fi
 
 # ---- Done ----

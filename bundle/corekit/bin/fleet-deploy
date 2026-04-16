@@ -83,6 +83,12 @@ OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
 CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 
+# Resolve Cloud Run URL for fleet-bootstrap status relay
+DASHBOARD_URL="$(gcloud run services describe architect-prime \
+  --region="${REGION}" --project="${PRIME_PROJECT}" \
+  --format='value(status.url)' 2>/dev/null || true)"
+[[ -n "$DASHBOARD_URL" ]] || warn "Could not resolve Cloud Run URL — fleet self-report will be skipped"
+
 # ---- Fleet config (single-project: deploy into PRIME_PROJECT) ----
 FLEET_PROJECT="${PRIME_PROJECT}"  # Same project as Prime
 FLEET_SA_NAME="fleet-${AGENT_NAME}"
@@ -382,7 +388,7 @@ gcloud compute instances create "$FLEET_VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},agent_first_name=${AGENT_FIRST_NAME},agent_last_name=${AGENT_LAST_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-}" \
+  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},agent_first_name=${AGENT_FIRST_NAME},agent_last_name=${AGENT_LAST_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-},dashboard_url=${DASHBOARD_URL:-}" \
   --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
 
