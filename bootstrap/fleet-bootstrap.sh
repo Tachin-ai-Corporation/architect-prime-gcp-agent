@@ -353,6 +353,45 @@ fi
 rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
 ' || warn "ADC fix had non-fatal errors"
 
+# ---- 16b) Restart gateway to pick up ADC patch ----
+info "Restarting gateway to activate ADC patch..."
+docker restart openclaw-gateway
+sleep 10
+
+# Wait for gateway readiness after restart
+READY=false
+MAX_WAIT=120
+WAITED=0
+while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
+  HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    http://localhost:18789/v1/models 2>/dev/null)" || HTTP_CODE="000"
+  if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "200" ]]; then
+    READY=true
+    break
+  fi
+  sleep 5
+  WAITED=$((WAITED + 5))
+done
+[[ "$READY" == "true" ]] && info "Gateway ready after ADC patch restart" || warn "Gateway not ready after restart (HTTP $HTTP_CODE)"
+
+# ---- 16c) Vertex AI smoke test ----
+info "Running Vertex AI smoke test..."
+MY_TOKEN="$(grep -oP '"token"\s*:\s*"\K[^"]+' /opt/openclaw/.openclaw/openclaw.json 2>/dev/null || echo "")"
+if [[ -n "$MY_TOKEN" ]]; then
+  SMOKE_RESP="$(curl -sf -X POST http://localhost:18789/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${MY_TOKEN}" \
+    -d '{"model":"openclaw/main","messages":[{"role":"user","content":"respond with just the word pong"}]}' 2>&1 || echo "CURL_FAILED")"
+  if echo "$SMOKE_RESP" | grep -q '"pong"'; then
+    info "Vertex AI smoke test PASSED"
+  else
+    warn "Vertex AI smoke test FAILED — IAM may still be propagating"
+    warn "Response: ${SMOKE_RESP:0:200}"
+  fi
+else
+  warn "Skipping smoke test — could not read gateway token"
+fi
+
 # ============================================================
 # PHASE 4 — Start services + finalize
 # ============================================================

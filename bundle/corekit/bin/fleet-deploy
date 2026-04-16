@@ -306,7 +306,12 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   --role="roles/iam.serviceAccountTokenCreator" \
   --quiet > /dev/null 2>&1 || log "DWD-signer IAM grant may already exist"
 
-# IAM propagation is handled by fleet-bootstrap's Firestore readiness gate
+# IAM propagation wait — Vertex AI can take up to 7 min to propagate new role
+# bindings. The VM bootstrap takes ~12 min which usually covers this, but on
+# re-deploys (SA already exists) the bootstrap can finish faster than IAM.
+log "Waiting 30s for IAM propagation to Vertex AI..."
+sleep 30
+
 write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + serviceAccountTokenCreator + datastore.user"
 
 
