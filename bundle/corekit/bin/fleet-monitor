@@ -54,7 +54,7 @@ FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PROJECT}/databases
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 
 POLL_INTERVAL=30       # seconds between serial console checks
-MAX_WAIT=1200          # 20 minutes max (bootstrap takes ~15 min)
+MAX_WAIT=1800          # 30 minutes max (bootstrap takes ~20-25 min with IAM waits + smoke test)
 SSH_TIMEOUT=15         # seconds for SSH commands
 SSH_FALLBACK_AT=300    # try SSH fallback after 5 min
 
