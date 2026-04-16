@@ -404,6 +404,70 @@ else
   warn "inbox-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
 fi
 
+# ---- 18) Write final status to Firestore (self-reporting) ----
+# Don't rely solely on fleet-monitor to detect completion via serial console.
+# Write directly so the dashboard updates even if fleet-monitor times out.
+PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || true)"
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+
+if [[ -n "$PRIME_ID" ]]; then
+  info "Writing completion status to Firestore..."
+  FS_TOKEN="$(curl -sf -H "$MH" \
+    "$META/instance/service-accounts/default/token" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || true
+
+  if [[ -n "$FS_TOKEN" ]]; then
+    # Build action required JSON for workspace user setup
+    ACTION_JSON="{\"type\":\"workspace_user\",\"title\":\"Create Workspace user and add to Chat space\",\"instructions\":[\"Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME:-Agent}, Last: ${AGENT_LAST_NAME:-${AGENT_ID}}, Email: ${AGENT_USER_EMAIL}\",\"Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space\",\"The agent will come online automatically once the user exists\"]}"
+
+    python3 - <<PYEOF "$FS_TOKEN" "$ACTION_JSON"
+import sys, json, urllib.request
+from datetime import datetime, timezone
+
+token = sys.argv[1]
+action_json = sys.argv[2]
+url = "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_ID}"
+now = datetime.now(timezone.utc).isoformat()
+
+# Build action required fields
+try:
+    ar = json.loads(action_json)
+    ar_fields = {}
+    for k, v in ar.items():
+        if isinstance(v, list):
+            ar_fields[k] = {"arrayValue": {"values": [{"stringValue": s} for s in v]}}
+        elif isinstance(v, str):
+            ar_fields[k] = {"stringValue": v}
+    action_field = {"mapValue": {"fields": ar_fields}}
+except:
+    action_field = None
+
+fields = {
+    "status": {"stringValue": "online"},
+    "lastBootstrap": {"stringValue": now},
+}
+mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=lastBootstrap"
+
+if action_field:
+    fields["actionRequired"] = action_field
+    mask += "&updateMask.fieldPaths=actionRequired"
+
+body = json.dumps({"fields": fields}).encode()
+req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+    print("  Firestore updated: status=online")
+except Exception as e:
+    print(f"  [WARN] Firestore write failed: {e}")
+PYEOF
+  else
+    warn "Could not get access token for Firestore write"
+  fi
+else
+  warn "PRIME_ID not set — skipping Firestore status write"
+fi
+
 # ---- Done ----
 # fleet-monitor on Prime polls the serial console for this marker:
 echo
