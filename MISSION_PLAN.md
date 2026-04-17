@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v2.1.0`
+> - **Current version tag:** `v3.0.0`
 
 ---
 
@@ -42,16 +42,22 @@ Dashboard (Cloud Run — Next.js)
     │   └── Polls Firestore messages → POST to OpenClaw gateway
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
-    │   ├── Main agent (Gemini 2.5 Flash via Vertex AI ADC)
-    │   ├── Workspace: SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md
+    │   ├── Brain agents (5 OpenClaw agents, multi-agent routing)
+    │   │   ├── cortex (DEFAULT) — Gemini 2.5 Flash — router + synthesizer
+    │   │   ├── temporal — Gemini 2.5 Flash — memory + research (every turn)
+    │   │   ├── prefrontal — Gemini 2.5 Pro — strategic planning
+    │   │   ├── motor — Gemini 2.5 Pro — execution (code + commands)
+    │   │   └── cerebellum — Gemini 2.5 Flash — verification + QA
+    │   ├── Each agent has its own workspace: SOUL.md, IDENTITY.md, TOOLS.md
     │   ├── Tools: exec (fleet-deploy, fleet-teardown, fleet-hire, etc.)
-    │   └── Session memory + context pruning
+    │   └── Session memory + context pruning + hybrid search
     │
     └── CoreKit (manifest-installed from GitHub)
         ├── Fleet lifecycle: fleet-deploy, fleet-teardown, fleet-monitor
         ├── Fleet orchestration: fleet-hire, fleet-fire, fleet-status, fleet-verify, fleet-upgrade
         ├── Chat: inbox-daemon, chat-send, chat-read, dwd-token
         ├── Agent: agent-ask, build-system-prompt, web-search
+        ├── Memory: core-memory-read, core-memory-write (Firestore)
         ├── System: upgrade-corekit, command-runner, assemble-tools
         └── Config: agent-types.json, fleet-registry.json, exec-approvals.json
 
@@ -132,10 +138,35 @@ Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. Op
 
 Fleet agents impersonate their Workspace user (e.g., `devops-agent-stan@tachin.ai`) using DWD. The `dwd-token` script generates JWT tokens via the GCE metadata `signJwt` endpoint — no service account key files needed. The DWD signer SA is passed as VM metadata (`dwd_signer_sa`).
 
-### Workspace Identity
+### Brain Architecture (Prime)
 
-Each agent type has a workspace directory:
-- `bundle/workspaces/main/` → Prime agent (SOUL, IDENTITY, TOOLS, MEMORY, etc.)
+Prime uses 5 OpenClaw agents in a multi-agent configuration. Cortex is the default
+(user-facing) agent; the other 4 are sub-agents dispatched via `@agent` routing.
+
+| Agent | Model | Role | Workspace | Tools |
+|-------|-------|------|-----------|-------|
+| **cortex** | gemini-2.5-flash | Router + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec, coding |
+| **temporal** | gemini-2.5-flash | Memory + research (every turn) | `~/.openclaw/workspace-temporal` | read, exec |
+| **prefrontal** | gemini-2.5-pro | Strategic planning | `~/.openclaw/workspace-prefrontal` | read only |
+| **motor** | gemini-2.5-pro | Execution (code + commands) | `~/.openclaw/workspace-motor` | read, write, edit, exec, coding |
+| **cerebellum** | gemini-2.5-flash | Verification + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
+
+**Brain workflow (every message):**
+1. Cortex receives message → dispatches @temporal for context recall
+2. Simple questions → Cortex answers directly
+3. Fleet operations → Cortex runs exec command directly
+4. Complex tasks → @prefrontal plans → @motor executes each step → @cerebellum verifies
+
+**Brain workspace files** (in `bundle/workspaces/`):
+- `cortex/` → SOUL.md (routing rules), IDENTITY.md, TOOLS.md, MEMORY.md, USER.md, etc.
+- `temporal/` → SOUL.md (memory orchestration), IDENTITY.md, TOOLS.md
+- `prefrontal/` → SOUL.md (planning methodology), IDENTITY.md
+- `motor/` → SOUL.md (execution rules + immutable file protection), IDENTITY.md
+- `cerebellum/` → SOUL.md (verification criteria), IDENTITY.md
+
+### Fleet Agent Workspaces
+
+Each fleet agent type has a workspace directory:
 - `bundle/workspaces/devops/` → DevOps specialty
 - `bundle/workspaces/engineer/` → Engineer specialty
 - `bundle/workspaces/fleet/` → Generic fleet template (fallback)
@@ -195,14 +226,18 @@ architect-prime/
 ├── bundle/                           # Files installed on VM via manifest
 │   ├── corekit/                      # Core config + CLI tools
 │   │   ├── config/                   # Templates, agent-types, registry
-│   │   └── bin/                      # 21 CLI tools (see CoreKit Tools below)
+│   │   └── bin/                      # 23 CLI tools (see CoreKit Tools below)
 │   ├── openclaw/                     # Agent runtime files (auth profiles, sessions)
 │   ├── skills/                       # Self-describing SKILL.md per skill
 │   └── workspaces/                   # Agent persona files
-│       ├── main/                     # Prime agent workspace
-│       ├── devops/                   # DevOps specialty workspace
-│       ├── engineer/                 # Engineer specialty workspace
-│       └── fleet/                    # Generic fleet template (fallback)
+│       ├── cortex/                   # Prime brain: router + synthesizer (default)
+│       ├── temporal/                 # Prime brain: memory + research
+│       ├── prefrontal/               # Prime brain: strategic planning
+│       ├── motor/                    # Prime brain: execution
+│       ├── cerebellum/               # Prime brain: verification
+│       ├── devops/                   # Fleet: DevOps specialty
+│       ├── engineer/                 # Fleet: Engineer specialty
+│       └── fleet/                    # Fleet: Generic template (fallback)
 ├── bootstrap/                        # VM startup scripts (curled from GitHub)
 │   ├── prime-bootstrap.sh            # Prime VM setup
 │   └── fleet-bootstrap.sh            # Fleet agent VM setup
@@ -237,6 +272,8 @@ architect-prime/
 | `upgrade-corekit` | In-place CoreKit update from GitHub ref |
 | `command-runner` | Executes commands from Firestore, streams output |
 | `assemble-tools` | Builds TOOLS.md from skill definitions |
+| `core-memory-read` | Queries Firestore Core Memory by category/tags |
+| `core-memory-write` | Writes durable facts to Firestore Core Memory |
 | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
 
 ### Key Paths on VM
@@ -284,22 +321,29 @@ architect-prime/
 
 ## Roadmap
 
-### Next: Checkpoint 7 — Agent Specialties + Fleet Health
-> *Goal: Richer agent capabilities and automated fleet monitoring*
+### Next: Checkpoint 8 — Memory Consolidation + Fleet Health
+> *Goal: Hippocampus nightly reconciliation, Vertex AI Memory Bank, automated fleet monitoring*
 
-1. Richer specialty workspaces — expanded SOUL.md, TOOLS.md, and MEMORY.md per specialty
-2. Fleet health monitoring — Prime periodically checks fleet agent health
-3. Auto-recovery — detect and restart failed fleet agents
-4. Cost governance — per-agent spend tracking, auto-hibernate idle agents
-5. Fleet upgrade — update a running agent's CoreKit without rebuilding the VM
+1. Hippocampus nightly responsibility — consolidate daily notes → Core Memory → Memory Bank
+2. Vertex AI Memory Bank plugin — long-term semantic memory
+3. Fleet health monitoring — Prime periodically checks fleet agent health
+4. Auto-recovery — detect and restart failed fleet agents
+5. Cost governance — per-agent spend tracking, auto-hibernate idle agents
 
-### Future: v3.0 — Multi-Agent Coordination
-- Brain sub-agents — OpenClaw multi-agent system
-- R/C/M framework — Responsibilities, Checkpoints, Missions
-- Agent memory system — persistent memory across sessions
+### Future: v3.5 — R/C/M Framework
+- Responsibilities engine — cron + Firestore registry
+- Checkpoint queue — Firestore data model + queue-worker
+- Human review gates — dashboard integration
 - Inter-agent delegation — agents @-mention other agents to delegate tasks
 
-### Future: v4.0+ — Workspace Integration
+### Future: v4.0 — RSI Engine
+- Git-ops skill — branch, commit, push, PR
+- Code-write / code-test skills
+- Test harness: deploy from branch → validate → report
+- RSI mission template — plan → implement → test → promote
+- Two mandatory human gates (plan approval + merge approval)
+
+### Future: v5.0+ — Workspace Integration
 - Google Workspace skills — Docs, Sheets, Calendar, Gmail
 - Agent cell templates — pre-built team configurations
 - Self-evolution — Prime proposes its own improvements via PR
