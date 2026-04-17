@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# core-memory-write — write or update a Firestore Core Memory entry
+#
+# Usage:
+#   core-memory-write --fact "<fact text>" --category <category> [--tags "tag1,tag2"] \
+#                     [--confidence 0.9] [--source observation] [--supersedes <id>]
+#
+# Categories: architecture, operations, iam, decisions, patterns, errors
+#
+# Examples:
+#   core-memory-write --fact "Fleet bootstrap takes ~15min on e2-medium" --category operations --tags "fleet,bootstrap,timing"
+#   core-memory-write --fact "OpenClaw pinned to commit 163c6f5e" --category architecture --confidence 1.0
+
+set -euo pipefail
+
+# ── Parse arguments ──────────────────────────────────────────────
+FACT=""
+CATEGORY=""
+TAGS=""
+CONFIDENCE="0.9"
+SOURCE="observation"
+SOURCE_DETAIL=""
+SUPERSEDES=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --fact)          FACT="$2";          shift 2 ;;
+    --category)      CATEGORY="$2";      shift 2 ;;
+    --tags)          TAGS="$2";          shift 2 ;;
+    --confidence)    CONFIDENCE="$2";    shift 2 ;;
+    --source)        SOURCE="$2";        shift 2 ;;
+    --source-detail) SOURCE_DETAIL="$2"; shift 2 ;;
+    --supersedes)    SUPERSEDES="$2";    shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [[ -z "$FACT" || -z "$CATEGORY" ]]; then
+  echo "Usage: core-memory-write --fact \"<text>\" --category <category> [options]" >&2
+  echo "Categories: architecture, operations, iam, decisions, patterns, errors" >&2
+  exit 1
+fi
+
+# ── Resolve Prime ID ────────────────────────────────────────────
+PRIME_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//')
+fi
+
+PROJECT_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "architect-prime-beta")
+
+# ── Get access token ────────────────────────────────────────────
+TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# ── Generate entry ID ───────────────────────────────────────────
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+DATE_PART=$(date -u +"%Y%m%d")
+RANDOM_PART=$(head -c 4 /dev/urandom | od -An -tx4 | tr -d ' ')
+ENTRY_ID="mem-${DATE_PART}-${RANDOM_PART}"
+
+# ── Build tags array ────────────────────────────────────────────
+TAGS_JSON="[]"
+if [[ -n "$TAGS" ]]; then
+  TAGS_JSON=$(echo "$TAGS" | python3 -c "
+import sys, json
+tags = [t.strip() for t in sys.stdin.read().strip().split(',') if t.strip()]
+values = [{'stringValue': t} for t in tags]
+print(json.dumps(values))
+")
+fi
+
+# ── Build document ──────────────────────────────────────────────
+SUPERSEDES_FIELD=""
+if [[ -n "$SUPERSEDES" ]]; then
+  SUPERSEDES_FIELD="\"supersedes\": {\"stringValue\": \"${SUPERSEDES}\"},"
+fi
+
+SOURCE_DETAIL_FIELD=""
+if [[ -n "$SOURCE_DETAIL" ]]; then
+  SOURCE_DETAIL_FIELD="\"sourceDetail\": {\"stringValue\": $(python3 -c "import json; print(json.dumps('${SOURCE_DETAIL}'))")},"
+fi
+
+DOC_BODY=$(cat <<EOF
+{
+  "fields": {
+    "id": {"stringValue": "${ENTRY_ID}"},
+    "fact": {"stringValue": $(python3 -c "import json; print(json.dumps('''${FACT}'''))")},
+    "category": {"stringValue": "${CATEGORY}"},
+    "tags": {"arrayValue": {"values": ${TAGS_JSON}}},
+    "confidence": {"doubleValue": ${CONFIDENCE}},
+    "source": {"stringValue": "${SOURCE}"},
+    ${SOURCE_DETAIL_FIELD}
+    ${SUPERSEDES_FIELD}
+    "supersededBy": {"nullValue": null},
+    "createdAt": {"stringValue": "${TIMESTAMP}"},
+    "lastRecalledAt": {"stringValue": "${TIMESTAMP}"},
+    "recallCount": {"integerValue": "0"},
+    "status": {"stringValue": "active"}
+  }
+}
+EOF
+)
+
+# ── Write to Firestore ──────────────────────────────────────────
+COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+
+RESPONSE=$(curl -sf \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "https://firestore.googleapis.com/v1/${COLLECTION_PATH}?documentId=${ENTRY_ID}" \
+  -d "${DOC_BODY}" 2>&1)
+
+STATUS=$?
+if [[ $STATUS -eq 0 ]]; then
+  echo "✅ Core memory written: ${ENTRY_ID}"
+  echo "  Category: ${CATEGORY}"
+  echo "  Fact: ${FACT}"
+  echo "  Confidence: ${CONFIDENCE}"
+  echo "  Source: ${SOURCE}"
+else
+  echo "❌ Failed to write core memory" >&2
+  echo "$RESPONSE" >&2
+  exit 1
+fi
+
+# ── If superseding, update the old entry ────────────────────────
+if [[ -n "$SUPERSEDES" ]]; then
+  OLD_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core/${SUPERSEDES}"
+  curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -X PATCH "https://firestore.googleapis.com/v1/${OLD_PATH}?updateMask.fieldPaths=supersededBy&updateMask.fieldPaths=status" \
+    -d "{\"fields\":{\"supersededBy\":{\"stringValue\":\"${ENTRY_ID}\"},\"status\":{\"stringValue\":\"superseded\"}}}" \
+    > /dev/null 2>&1 && echo "  Superseded: ${SUPERSEDES}" || echo "  Warning: could not update superseded entry ${SUPERSEDES}" >&2
+fi

@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# core-memory-read — query Firestore Core Memory entries
+#
+# Usage:
+#   core-memory-read --category <category> [--query "<search terms>"] [--status active] [--limit 10]
+#
+# Categories: architecture, operations, iam, decisions, patterns, errors
+#
+# Examples:
+#   core-memory-read --category architecture
+#   core-memory-read --category operations --query "fleet bootstrap"
+#   core-memory-read --query "DWD"          # search all categories
+
+set -euo pipefail
+
+# ── Parse arguments ──────────────────────────────────────────────
+CATEGORY=""
+QUERY=""
+STATUS="active"
+LIMIT=10
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --category) CATEGORY="$2"; shift 2 ;;
+    --query)    QUERY="$2";    shift 2 ;;
+    --status)   STATUS="$2";   shift 2 ;;
+    --limit)    LIMIT="$2";    shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+# ── Resolve Prime ID ────────────────────────────────────────────
+PRIME_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//')
+fi
+
+PROJECT_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "architect-prime-beta")
+
+# ── Get access token ────────────────────────────────────────────
+TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# ── Build Firestore query ───────────────────────────────────────
+COLLECTION="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+
+# Build structured query
+FILTERS=()
+if [[ -n "$STATUS" ]]; then
+  FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"status\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${STATUS}\"}}}")
+fi
+if [[ -n "$CATEGORY" ]]; then
+  FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"category\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${CATEGORY}\"}}}")
+fi
+
+if [[ ${#FILTERS[@]} -eq 0 ]]; then
+  WHERE_CLAUSE=""
+elif [[ ${#FILTERS[@]} -eq 1 ]]; then
+  WHERE_CLAUSE="\"where\": ${FILTERS[0]},"
+else
+  JOINED=$(IFS=,; echo "${FILTERS[*]}")
+  WHERE_CLAUSE="\"where\": {\"compositeFilter\":{\"op\":\"AND\",\"filters\":[${JOINED}]}},"
+fi
+
+QUERY_BODY=$(cat <<EOF
+{
+  "structuredQuery": {
+    "from": [{"collectionId": "core"}],
+    ${WHERE_CLAUSE}
+    "orderBy": [{"field":{"fieldPath":"createdAt"},"direction":"DESCENDING"}],
+    "limit": ${LIMIT}
+  }
+}
+EOF
+)
+
+# ── Execute query ───────────────────────────────────────────────
+PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory"
+RESPONSE=$(curl -sf \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "https://firestore.googleapis.com/v1/${PARENT}:runQuery" \
+  -d "${QUERY_BODY}" 2>&1)
+
+# ── Format output ───────────────────────────────────────────────
+python3 <<'PYEOF'
+import json, sys
+
+try:
+    results = json.loads(sys.stdin.read())
+except:
+    print("No results found.")
+    sys.exit(0)
+
+if not isinstance(results, list):
+    results = [results]
+
+count = 0
+for entry in results:
+    doc = entry.get("document")
+    if not doc:
+        continue
+    fields = doc.get("fields", {})
+    fact = fields.get("fact", {}).get("stringValue", "?")
+    cat = fields.get("category", {}).get("stringValue", "?")
+    confidence = fields.get("confidence", {}).get("doubleValue", "?")
+    source = fields.get("source", {}).get("stringValue", "?")
+    created = fields.get("createdAt", {}).get("stringValue", "?")
+    status = fields.get("status", {}).get("stringValue", "?")
+
+    count += 1
+    print(f"[{cat}] {fact}")
+    print(f"  confidence: {confidence} | source: {source} | status: {status}")
+    print(f"  created: {created}")
+    print()
+
+if count == 0:
+    print("No core memory entries found.")
+else:
+    print(f"--- {count} entries ---")
+PYEOF
+echo "$RESPONSE" | python3 /dev/stdin 2>/dev/null || echo "No results found."

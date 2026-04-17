@@ -32,6 +32,8 @@ bundle/corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json
 bundle/corekit/bin/command-runner .openclaw/bin/command-runner
 bundle/corekit/config/command-runner.service .openclaw/corekit/command-runner.service
 bundle/corekit/config/agent-types.json .openclaw/corekit/agent-types.json
+bundle/corekit/bin/core-memory-read .openclaw/bin/core-memory-read
+bundle/corekit/bin/core-memory-write .openclaw/bin/core-memory-write
 
 # Skills (self-describing SKILL.md per skill)
 bundle/skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
