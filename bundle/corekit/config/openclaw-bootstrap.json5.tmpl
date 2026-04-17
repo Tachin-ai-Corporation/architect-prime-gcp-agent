@@ -8,16 +8,30 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "google-vertex/gemini-2.5-flash"
+        "primary": "google-vertex/gemini-3.1-flash"
       },
       "models": {
-        "google-vertex/gemini-2.5-flash": {
-          "alias": "Gemini 2.5 Flash"
+        "google-vertex/gemini-3.1-flash": {
+          "alias": "Gemini 3.1 Flash"
+        },
+        "google-vertex/gemini-3.1-pro": {
+          "alias": "Gemini 3.1 Pro"
         }
       },
-      "workspace": "~/.openclaw/workspace",
       "memorySearch": {
-        "enabled": true
+        "enabled": true,
+        "provider": "google",
+        "model": "text-embedding-005",
+        "query": {
+          "maxResults": 8,
+          "hybrid": {
+            "enabled": true,
+            "vectorWeight": 0.7,
+            "textWeight": 0.3,
+            "mmr": { "enabled": true, "lambda": 0.7 },
+            "temporalDecay": { "enabled": true, "halfLifeDays": 30 }
+          }
+        }
       },
       "contextPruning": {
         "mode": "cache-ttl",
@@ -41,11 +55,12 @@
     },
     "list": [
       {
-        "id": "main",
+        // Cortex — router + synthesizer. What the user talks to.
+        "id": "cortex",
         "default": true,
         "name": "Architect Prime",
         "model": {
-          "primary": "google-vertex/gemini-2.5-flash"
+          "primary": "google-vertex/gemini-3.1-flash"
         },
         "workspace": "~/.openclaw/workspace",
         "sandbox": { "mode": "off" },
@@ -59,6 +74,69 @@
             "coding"
           ],
           "deny": ["web-search", "browser"]
+        }
+      },
+      {
+        // Temporal — memory manager + researcher. Invoked every turn.
+        "id": "temporal",
+        "name": "Temporal (Memory + Research)",
+        "model": {
+          "primary": "google-vertex/gemini-3.1-flash"
+        },
+        "workspace": "~/.openclaw/workspace-temporal",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["read", "exec"],
+          "deny": ["write", "edit", "browser"]
+        }
+      },
+      {
+        // Prefrontal — strategic planner. Decomposes complex tasks.
+        "id": "prefrontal",
+        "name": "Prefrontal (Planning)",
+        "model": {
+          "primary": "google-vertex/gemini-3.1-pro"
+        },
+        "workspace": "~/.openclaw/workspace-prefrontal",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["read"],
+          "deny": ["write", "edit", "exec", "browser", "web-search"]
+        }
+      },
+      {
+        // Motor — executor. Writes code, runs commands, builds things.
+        "id": "motor",
+        "name": "Motor (Execution)",
+        "model": {
+          "primary": "google-vertex/gemini-3.1-pro"
+        },
+        "workspace": "~/.openclaw/workspace-motor",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": [
+            "read",
+            "write",
+            "edit",
+            "exec",
+            "process",
+            "coding"
+          ],
+          "deny": ["web-search", "browser"]
+        }
+      },
+      {
+        // Cerebellum — verifier. QA checks outputs before delivery.
+        "id": "cerebellum",
+        "name": "Cerebellum (Verification)",
+        "model": {
+          "primary": "google-vertex/gemini-3.1-flash"
+        },
+        "workspace": "~/.openclaw/workspace-cerebellum",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["read", "exec"],
+          "deny": ["write", "edit", "browser"]
         }
       }
     ]
@@ -80,7 +158,7 @@
     "removeAckAfterReply": false
   },
   "commands": { "native": "auto", "nativeSkills": "auto" },
-  "cron": { "enabled": false },
+  "cron": { "enabled": true },
   "hooks": { "internal": { "entries": { "session-memory": { "enabled": true } } } },
   "gateway": {
     "port": 18789,

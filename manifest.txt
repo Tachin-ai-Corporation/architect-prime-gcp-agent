@@ -44,17 +44,34 @@ bundle/skills/fleet-upgrade/SKILL.md .openclaw/skills/fleet-upgrade/SKILL.md
 bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
 bundle/openclaw/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json
 
-# MAIN workspace
-bundle/workspaces/main/AGENTS.md .openclaw/workspace/AGENTS.md
-bundle/workspaces/main/BOOTSTRAP.md .openclaw/workspace/BOOTSTRAP.md
-bundle/workspaces/main/HEARTBEAT.md .openclaw/workspace/HEARTBEAT.md
-bundle/workspaces/main/IDENTITY.md .openclaw/workspace/IDENTITY.md
-bundle/workspaces/main/SOUL.md .openclaw/workspace/SOUL.md
-bundle/workspaces/main/TOOLS.md .openclaw/workspace/TOOLS.md
-bundle/workspaces/main/USER.md .openclaw/workspace/USER.md
-bundle/workspaces/main/MEMORY.md .openclaw/workspace/MEMORY.md
-bundle/workspaces/main/STATE.md .openclaw/workspace/STATE.md
-bundle/workspaces/main/checkpoint/progress.json .openclaw/workspace/checkpoint/progress.json
+# CORTEX workspace (default agent — maps to ~/.openclaw/workspace)
+bundle/workspaces/cortex/AGENTS.md .openclaw/workspace/AGENTS.md
+bundle/workspaces/cortex/BOOTSTRAP.md .openclaw/workspace/BOOTSTRAP.md
+bundle/workspaces/cortex/HEARTBEAT.md .openclaw/workspace/HEARTBEAT.md
+bundle/workspaces/cortex/IDENTITY.md .openclaw/workspace/IDENTITY.md
+bundle/workspaces/cortex/SOUL.md .openclaw/workspace/SOUL.md
+bundle/workspaces/cortex/TOOLS.md .openclaw/workspace/TOOLS.md
+bundle/workspaces/cortex/USER.md .openclaw/workspace/USER.md
+bundle/workspaces/cortex/MEMORY.md .openclaw/workspace/MEMORY.md
+bundle/workspaces/cortex/STATE.md .openclaw/workspace/STATE.md
+bundle/workspaces/cortex/checkpoint/progress.json .openclaw/workspace/checkpoint/progress.json
+
+# TEMPORAL workspace (brain sub-agent)
+bundle/workspaces/temporal/SOUL.md .openclaw/workspace-temporal/SOUL.md
+bundle/workspaces/temporal/IDENTITY.md .openclaw/workspace-temporal/IDENTITY.md
+bundle/workspaces/temporal/TOOLS.md .openclaw/workspace-temporal/TOOLS.md
+
+# PREFRONTAL workspace (brain sub-agent)
+bundle/workspaces/prefrontal/SOUL.md .openclaw/workspace-prefrontal/SOUL.md
+bundle/workspaces/prefrontal/IDENTITY.md .openclaw/workspace-prefrontal/IDENTITY.md
+
+# MOTOR workspace (brain sub-agent)
+bundle/workspaces/motor/SOUL.md .openclaw/workspace-motor/SOUL.md
+bundle/workspaces/motor/IDENTITY.md .openclaw/workspace-motor/IDENTITY.md
+
+# CEREBELLUM workspace (brain sub-agent)
+bundle/workspaces/cerebellum/SOUL.md .openclaw/workspace-cerebellum/SOUL.md
+bundle/workspaces/cerebellum/IDENTITY.md .openclaw/workspace-cerebellum/IDENTITY.md
 
 # ENGINEER workspace
 bundle/workspaces/engineer/AGENTS.md .openclaw/workspace-engineer/AGENTS.md
