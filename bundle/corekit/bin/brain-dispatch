@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# ============================================================
+# brain-dispatch — Dispatch a message to a brain sub-agent
+#
+# Uses OpenClaw's native agent routing to invoke a sub-agent
+# and return its response. This is the mechanism Cortex uses
+# to delegate work to temporal, prefrontal, motor, cerebellum.
+#
+# Usage:
+#   brain-dispatch --agent temporal --message "Recall context about fleet bootstrap"
+#   brain-dispatch --agent prefrontal --message "Plan: add retry logic to fleet-deploy"
+#   brain-dispatch --agent motor --message "Execute step 1: edit fleet-deploy line 45"
+#   brain-dispatch --agent cerebellum --message "Verify: fleet-deploy changes are correct"
+#
+# Valid agents: temporal, prefrontal, motor, cerebellum
+# ============================================================
+set -euo pipefail
+
+AGENT=""
+MESSAGE=""
+TIMEOUT="${TIMEOUT:-120}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --agent|-a)  AGENT="$2";   shift 2 ;;
+    --message|-m) MESSAGE="$2"; shift 2 ;;
+    --timeout)   TIMEOUT="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [[ -z "$AGENT" || -z "$MESSAGE" ]]; then
+  echo "Usage: brain-dispatch --agent <name> --message \"<text>\"" >&2
+  echo "Agents: temporal, prefrontal, motor, cerebellum" >&2
+  exit 1
+fi
+
+# Validate agent name
+case "$AGENT" in
+  temporal|prefrontal|motor|cerebellum) ;;
+  *)
+    echo "[brain-dispatch] ERROR: Invalid agent '$AGENT'. Valid: temporal, prefrontal, motor, cerebellum" >&2
+    exit 1
+    ;;
+esac
+
+# Dispatch via OpenClaw's native agent routing
+# Uses the gateway's agent command which routes to the correct
+# agent's workspace, model, and tool configuration.
+RESPONSE=$(docker exec openclaw-gateway \
+  node /app/openclaw.mjs agent \
+    --agent "$AGENT" \
+    --message "$MESSAGE" \
+    --timeout "$TIMEOUT" \
+    --json \
+  2>/dev/null) || {
+    echo "[brain-dispatch] ERROR: Failed to dispatch to $AGENT" >&2
+    echo "$RESPONSE" >&2
+    exit 1
+  }
+
+# Extract the response text from JSON output
+REPLY=$(echo "$RESPONSE" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    # OpenClaw agent --json returns various formats
+    content = ""
+    if isinstance(data, dict):
+        # Try common response paths
+        content = (data.get("content", "")
+                  or data.get("response", "")
+                  or data.get("message", "")
+                  or data.get("text", ""))
+        if not content:
+            # Try choices format
+            choices = data.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "")
+        if not content:
+            # Try result.content
+            result = data.get("result", {})
+            content = result.get("content", "") or result.get("text", "")
+    if content:
+        print(content)
+    else:
+        # Fallback: dump raw
+        print(json.dumps(data, indent=2)[:4000])
+except Exception as e:
+    # Not JSON — return raw
+    print(sys.stdin.read() if hasattr(sys.stdin, "read") else str(data))
+' 2>/dev/null) || REPLY="$RESPONSE"
+
+echo "$REPLY"

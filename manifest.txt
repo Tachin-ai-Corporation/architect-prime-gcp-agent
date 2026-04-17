@@ -34,6 +34,7 @@ bundle/corekit/config/command-runner.service .openclaw/corekit/command-runner.se
 bundle/corekit/config/agent-types.json .openclaw/corekit/agent-types.json
 bundle/corekit/bin/core-memory-read .openclaw/bin/core-memory-read
 bundle/corekit/bin/core-memory-write .openclaw/bin/core-memory-write
+bundle/corekit/bin/brain-dispatch .openclaw/bin/brain-dispatch
 
 # Skills (self-describing SKILL.md per skill)
 bundle/skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md

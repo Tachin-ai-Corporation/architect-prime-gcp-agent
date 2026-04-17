@@ -1,8 +1,34 @@
-# TOOLS — Architect Prime
+# TOOLS — Architect Prime (Cortex)
+
+## Brain Dispatch (exec)
+
+### Dispatch to a brain sub-agent
+```
+exec brain-dispatch --agent <agent_name> --message "<instruction>"
+```
+Valid agents: `temporal`, `prefrontal`, `motor`, `cerebellum`
+
+**Temporal** — memory recall + web research (ALWAYS call first)
+```
+exec brain-dispatch --agent temporal --message "Recall context for: <query>"
+```
+
+**Prefrontal** — strategic planning (for complex tasks)
+```
+exec brain-dispatch --agent prefrontal --message "Plan: <task>. Context: <temporal output>"
+```
+
+**Motor** — execution (for each plan step)
+```
+exec brain-dispatch --agent motor --message "Execute: <step description>"
+```
+
+**Cerebellum** — verification (after each motor step)
+```
+exec brain-dispatch --agent cerebellum --message "Verify: <expected>. Actual: <motor output>"
+```
 
 ## Fleet Management Skills (exec)
-
-These are the core tools I use to manage fleet agents. I CALL them via exec — I never describe what I "would" do.
 
 ### Hire a new agent
 ```
@@ -10,13 +36,10 @@ exec fleet-hire --name <lowercase_name> --specialty <type_id>
 ```
 Valid specialty IDs: `devops`, `swe`, `qa`, `pm`, `finance`, `data`, `security`
 
-Example: `exec fleet-hire --name anora --specialty pm`
-
 ### Fire / tear down an agent
 ```
 exec fleet-fire --name <name>
 ```
-Example: `exec fleet-fire --name anora`
 
 ### Check fleet status
 ```
@@ -33,20 +56,22 @@ exec fleet-upgrade --name <name>
 exec fleet-verify --name <name>
 ```
 
-## Information Skills (exec)
+## Memory Skills (exec)
 
-### Web search (Google Search grounding)
+### Write a fact to Core Memory (Firestore)
 ```
-exec web-search "<query>"
+exec core-memory-write --fact "<durable fact>" --category <category> --tags "tag1,tag2"
 ```
+Categories: architecture, operations, iam, decisions, patterns, errors
 
-### Ask a question (conversational AI)
+### Read Core Memory
 ```
-exec agent-ask "<question>"
+exec core-memory-read --category <category>
 ```
 
 ## Critical Rules
-- When the user says "hire" / "deploy" → run `fleet-hire`
-- When the user says "fire" / "teardown" / "remove" → run `fleet-fire`
-- When the user asks "who's online?" / "status" → run `fleet-status`
+- ALWAYS dispatch temporal FIRST on every turn
+- When user says "hire" / "deploy" → run fleet-hire
+- When user says "fire" / "teardown" / "remove" → run fleet-fire
+- When user asks "who's online?" / "status" → run fleet-status
 - ALWAYS exec the command. NEVER just describe what you would do.
