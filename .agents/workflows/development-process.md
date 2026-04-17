@@ -82,7 +82,8 @@ architect-prime/
 │   ├── install.sh
 │   └── uninstall.sh
 ├── bootstrap/                    # VM startup scripts
-│   └── prime-bootstrap.sh       # Standalone bash (curled by boot stub)
+│   ├── prime-bootstrap.sh       # Standalone bash (curled by boot stub)
+│   └── fleet-bootstrap.sh      # Fleet agent bootstrap (curled by fleet-deploy boot stub)
 ├── docs/                         # Project documentation
 ├── manifest.txt                  # Source → destination file mapping
 └── README.md
