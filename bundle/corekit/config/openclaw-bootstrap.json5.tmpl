@@ -1,4 +1,4 @@
-{
+﻿{
   "env": {
     "GOOGLE_CLOUD_PROJECT": "${GCP_PROJECT_ID}",
     "GOOGLE_CLOUD_LOCATION": "us-central1",
@@ -8,14 +8,14 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "google-vertex/gemini-3.1-flash"
+        "primary": "google-vertex/gemini-2.5-flash"
       },
       "models": {
-        "google-vertex/gemini-3.1-flash": {
-          "alias": "Gemini 3.1 Flash"
+        "google-vertex/gemini-2.5-flash": {
+          "alias": "Gemini 2.5 Flash"
         },
-        "google-vertex/gemini-3.1-pro": {
-          "alias": "Gemini 3.1 Pro"
+        "google-vertex/gemini-2.5-pro": {
+          "alias": "Gemini 2.5 Pro"
         }
       },
       "memorySearch": {
@@ -55,12 +55,12 @@
     },
     "list": [
       {
-        // Cortex — router + synthesizer. What the user talks to.
+        // Cortex â€” router + synthesizer. What the user talks to.
         "id": "cortex",
         "default": true,
         "name": "Architect Prime",
         "model": {
-          "primary": "google-vertex/gemini-3.1-flash"
+          "primary": "google-vertex/gemini-2.5-flash"
         },
         "workspace": "~/.openclaw/workspace",
         "sandbox": { "mode": "off" },
@@ -77,11 +77,11 @@
         }
       },
       {
-        // Temporal — memory manager + researcher. Invoked every turn.
+        // Temporal â€” memory manager + researcher. Invoked every turn.
         "id": "temporal",
         "name": "Temporal (Memory + Research)",
         "model": {
-          "primary": "google-vertex/gemini-3.1-flash"
+          "primary": "google-vertex/gemini-2.5-flash"
         },
         "workspace": "~/.openclaw/workspace-temporal",
         "sandbox": { "mode": "off" },
@@ -91,11 +91,11 @@
         }
       },
       {
-        // Prefrontal — strategic planner. Decomposes complex tasks.
+        // Prefrontal â€” strategic planner. Decomposes complex tasks.
         "id": "prefrontal",
         "name": "Prefrontal (Planning)",
         "model": {
-          "primary": "google-vertex/gemini-3.1-pro"
+          "primary": "google-vertex/gemini-2.5-pro"
         },
         "workspace": "~/.openclaw/workspace-prefrontal",
         "sandbox": { "mode": "off" },
@@ -105,11 +105,11 @@
         }
       },
       {
-        // Motor — executor. Writes code, runs commands, builds things.
+        // Motor â€” executor. Writes code, runs commands, builds things.
         "id": "motor",
         "name": "Motor (Execution)",
         "model": {
-          "primary": "google-vertex/gemini-3.1-pro"
+          "primary": "google-vertex/gemini-2.5-pro"
         },
         "workspace": "~/.openclaw/workspace-motor",
         "sandbox": { "mode": "off" },
@@ -126,11 +126,11 @@
         }
       },
       {
-        // Cerebellum — verifier. QA checks outputs before delivery.
+        // Cerebellum â€” verifier. QA checks outputs before delivery.
         "id": "cerebellum",
         "name": "Cerebellum (Verification)",
         "model": {
-          "primary": "google-vertex/gemini-3.1-flash"
+          "primary": "google-vertex/gemini-2.5-flash"
         },
         "workspace": "~/.openclaw/workspace-cerebellum",
         "sandbox": { "mode": "off" },
