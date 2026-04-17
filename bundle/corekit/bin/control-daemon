@@ -193,7 +193,7 @@ except Exception as e:
 import json, sys
 text = sys.stdin.read().strip()
 print(json.dumps({
-    'model': 'openclaw/main',
+    'model': 'openclaw',
     'messages': [{'role': 'user', 'content': text}]
 }))
 " <<< "$TEXT")" 2>/dev/null)" || OC_RESPONSE=''
