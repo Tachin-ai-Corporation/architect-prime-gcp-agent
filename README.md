@@ -145,10 +145,15 @@ bundle/corekit/bin/               # CoreKit tools (installed on VMs)
 └── build-system-prompt           # Agent personality builder
 
 bundle/workspaces/                # Agent persona files
-├── main/                         # Prime agent (SOUL, TOOLS, MEMORY, etc.)
-├── engineer/                     # Engineer specialty workspace
-├── devops/                       # DevOps specialty workspace
-└── fleet/                        # Fleet agent template
+├── cortex/                       # Prime brain: orchestrator (default)
+├── temporal-research/            # Prime brain: web search
+├── temporal-memory/              # Prime brain: memory recall
+├── prefrontal/                   # Prime brain: planning
+├── motor/                        # Prime brain: execution
+├── cerebellum/                   # Prime brain: verification
+├── engineer/                     # Fleet: Engineer specialty
+├── devops/                       # Fleet: DevOps specialty
+└── fleet/                        # Fleet: generic template
 
 bundle/corekit/config/            # Config templates
 ├── openclaw-bootstrap.json5.tmpl # Prime OpenClaw config
@@ -223,6 +228,8 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | v0.9.2 | Fleet agent logs & monitoring |
 | v0.9.3 | Version display + upgrade button |
 | **v2.0** | **OpenClaw pivot — Docker-based agent brain, boot stub pattern, fleet agents on OpenClaw** |
+| **v3.0** | **Multi-agent brain — 5 brain agents (cortex, temporal, prefrontal, motor, cerebellum)** |
+| **v3.2** | **Async dispatch — 6 brain agents (temporal split), exec openclaw agent dispatch, Vertex AI grounding** |
 
 ---
 

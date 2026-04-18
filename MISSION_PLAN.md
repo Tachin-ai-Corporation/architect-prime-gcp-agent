@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v3.0.0`
+> - **Current version tag:** `v3.2.0`
 
 ---
 
@@ -42,24 +42,27 @@ Dashboard (Cloud Run — Next.js)
     │   └── Polls Firestore messages → POST to OpenClaw gateway
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
-    │   ├── Brain agents (5 OpenClaw agents, multi-agent routing)
-    │   │   ├── cortex (DEFAULT) — Gemini 2.5 Flash — router + synthesizer
-    │   │   ├── temporal — Gemini 2.5 Flash — memory + research (every turn)
-    │   │   ├── prefrontal — Gemini 2.5 Pro — strategic planning
-    │   │   ├── motor — Gemini 2.5 Pro — execution (code + commands)
+    │   ├── Brain agents (6 OpenClaw agents, multi-agent dispatch)
+    │   │   ├── cortex (DEFAULT) — Gemini 2.5 Flash — orchestrator + synthesizer
+    │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
+    │   │   ├── temporal-memory — Gemini 2.5 Flash — memory/context recall
+    │   │   ├── prefrontal — Gemini 2.5 Flash — strategic planning
+    │   │   ├── motor — Gemini 2.5 Flash — execution (code + commands)
     │   │   └── cerebellum — Gemini 2.5 Flash — verification + QA
-    │   ├── Each agent has its own workspace: SOUL.md, IDENTITY.md, TOOLS.md
-    │   ├── Tools: exec (fleet-deploy, fleet-teardown, fleet-hire, etc.)
+    │   ├── Cortex dispatches sub-agents via: exec openclaw agent --agent <id>
+    │   ├── Each agent has its own workspace: SOUL.md, IDENTITY.md
+    │   ├── Tools: exec (fleet-*, agent-ask, core-memory-*, dashboard-respond)
     │   └── Session memory + context pruning + hybrid search
     │
     └── CoreKit (manifest-installed from GitHub)
         ├── Fleet lifecycle: fleet-deploy, fleet-teardown, fleet-monitor
         ├── Fleet orchestration: fleet-hire, fleet-fire, fleet-status, fleet-verify, fleet-upgrade
         ├── Chat: inbox-daemon, chat-send, chat-read, dwd-token
-        ├── Agent: agent-ask, build-system-prompt, web-search
+        ├── Agent: agent-ask (Vertex AI grounding), build-system-prompt
         ├── Memory: core-memory-read, core-memory-write (Firestore)
-        ├── System: upgrade-corekit, command-runner, assemble-tools
-        └── Config: agent-types.json, fleet-registry.json, exec-approvals.json
+        ├── System: upgrade-corekit, command-runner, render-config, assemble-tools
+        ├── Async: dashboard-respond (Firestore push)
+        └── Config: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
     ├── openclaw-gateway (Docker, --network host, port 18789)
@@ -140,29 +143,47 @@ Fleet agents impersonate their Workspace user (e.g., `devops-agent-stan@tachin.a
 
 ### Brain Architecture (Prime)
 
-Prime uses 5 OpenClaw agents in a multi-agent configuration. Cortex is the default
-(user-facing) agent; the other 4 are sub-agents dispatched via `@agent` routing.
+Prime uses 6 OpenClaw agents in a multi-agent configuration. Cortex is the default
+(user-facing) agent; the other 5 are sub-agents dispatched synchronously via
+`exec openclaw agent --agent <id> -m "<task>"`. This runs the sub-agent in embedded
+mode, returns its output to Cortex, and Cortex synthesizes the final response.
 
 | Agent | Model | Role | Workspace | Tools |
 |-------|-------|------|-----------|-------|
-| **cortex** | gemini-2.5-flash | Router + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec, coding |
-| **temporal** | gemini-2.5-flash | Memory + research (every turn) | `~/.openclaw/workspace-temporal` | read, exec |
-| **prefrontal** | gemini-2.5-pro | Strategic planning | `~/.openclaw/workspace-prefrontal` | read only |
-| **motor** | gemini-2.5-pro | Execution (code + commands) | `~/.openclaw/workspace-motor` | read, write, edit, exec, coding |
+| **cortex** | gemini-2.5-flash | Orchestrator + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec |
+| **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `~/.openclaw/workspace-temporal-research` | exec (agent-ask only) |
+| **temporal-memory** | gemini-2.5-flash | Memory/context recall | `~/.openclaw/workspace-temporal-memory` | read, exec |
+| **prefrontal** | gemini-2.5-flash | Strategic planning | `~/.openclaw/workspace-prefrontal` | read only |
+| **motor** | gemini-2.5-flash | Execution (code + commands) | `~/.openclaw/workspace-motor` | read, write, edit, exec |
 | **cerebellum** | gemini-2.5-flash | Verification + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
 
+**Dispatch mechanism:** `exec openclaw agent --agent <id> -m "<task>" --timeout 60`
+- Synchronous — Cortex blocks until the sub-agent returns
+- The CLI falls back to embedded mode (bypasses gateway WebSocket auth)
+- Cortex MUST wait for results before responding to the user
+- All agents run on gemini-2.5-flash; Pro available via model override
+
 **Brain workflow (every message):**
-1. Cortex receives message → dispatches @temporal for context recall
-2. Simple questions → Cortex answers directly
-3. Fleet operations → Cortex runs exec command directly
-4. Complex tasks → @prefrontal plans → @motor executes each step → @cerebellum verifies
+1. Simple questions / identity → Cortex answers directly, no dispatch
+2. Fleet operations → Cortex runs fleet-* exec commands directly
+3. Web search needed → Cortex dispatches `temporal-research`
+4. Memory recall needed → Cortex dispatches `temporal-memory`
+5. Complex tasks → Cortex chains: research → prefrontal → motor → cerebellum
 
 **Brain workspace files** (in `bundle/workspaces/`):
-- `cortex/` → SOUL.md (routing rules), IDENTITY.md, TOOLS.md, MEMORY.md, USER.md, etc.
-- `temporal/` → SOUL.md (memory orchestration), IDENTITY.md, TOOLS.md
+- `cortex/` → SOUL.md (dispatch rules, decision tree), IDENTITY.md, TOOLS.md
+- `temporal-research/` → SOUL.md (web search via agent-ask), IDENTITY.md
+- `temporal-memory/` → SOUL.md (memory recall via core-memory-read), IDENTITY.md
 - `prefrontal/` → SOUL.md (planning methodology), IDENTITY.md
-- `motor/` → SOUL.md (execution rules + immutable file protection), IDENTITY.md
+- `motor/` → SOUL.md (execution rules), IDENTITY.md
 - `cerebellum/` → SOUL.md (verification criteria), IDENTITY.md
+
+**Locked-in design decisions:**
+- 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
+- 🔒 `temporal-research` is the ONLY agent capable of web search.
+- 🔒 All agents on gemini-2.5-flash. Pro via model override only.
+- 🔒 Dispatch via `exec openclaw agent`, NOT `sessions_spawn`.
+- 🔒 `brain-dispatch` script eliminated permanently.
 
 ### Fleet Agent Workspaces
 
@@ -230,8 +251,9 @@ architect-prime/
 │   ├── openclaw/                     # Agent runtime files (auth profiles, sessions)
 │   ├── skills/                       # Self-describing SKILL.md per skill
 │   └── workspaces/                   # Agent persona files
-│       ├── cortex/                   # Prime brain: router + synthesizer (default)
-│       ├── temporal/                 # Prime brain: memory + research
+│       ├── cortex/                   # Prime brain: orchestrator (default)
+│       ├── temporal-research/        # Prime brain: web search (Vertex AI)
+│       ├── temporal-memory/          # Prime brain: memory/context recall
 │       ├── prefrontal/               # Prime brain: strategic planning
 │       ├── motor/                    # Prime brain: execution
 │       ├── cerebellum/               # Prime brain: verification
@@ -266,7 +288,7 @@ architect-prime/
 | `chat-send` | Sends messages to Google Chat via DWD |
 | `chat-read` | Reads messages from Google Chat via DWD |
 | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt |
-| `agent-ask` | Core LLM query via Vertex AI (legacy, replaced by OpenClaw) |
+| `agent-ask` | Vertex AI grounding web search (used by temporal-research) |
 | `build-system-prompt` | Assembles system prompt from workspace files |
 | `web-search` | Google Search grounding for agent queries |
 | `upgrade-corekit` | In-place CoreKit update from GitHub ref |
@@ -274,6 +296,8 @@ architect-prime/
 | `assemble-tools` | Builds TOOLS.md from skill definitions |
 | `core-memory-read` | Queries Firestore Core Memory by category/tags |
 | `core-memory-write` | Writes durable facts to Firestore Core Memory |
+| `render-config` | Renders JSON5 config template with string-aware comment stripping |
+| `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
 | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
 
 ### Key Paths on VM
@@ -321,29 +345,35 @@ architect-prime/
 
 ## Roadmap
 
-### Next: Checkpoint 8 — Memory Consolidation + Fleet Health
-> *Goal: Hippocampus nightly reconciliation, Vertex AI Memory Bank, automated fleet monitoring*
+### Next: Checkpoint 8 — Brain Hardening + WebSocket Upgrade
+> *Goal: Robust multi-agent dispatch, control-daemon WebSocket, token management*
 
-1. Hippocampus nightly responsibility — consolidate daily notes → Core Memory → Memory Bank
-2. Vertex AI Memory Bank plugin — long-term semantic memory
-3. Fleet health monitoring — Prime periodically checks fleet agent health
-4. Auto-recovery — detect and restart failed fleet agents
-5. Cost governance — per-agent spend tracking, auto-hibernate idle agents
+1. **Control-daemon WebSocket upgrade** — switch from HTTP chat/completions to persistent WebSocket connection. Enables native `sessions_spawn` for true async dispatch with announce-back.
+2. **Gateway token management** — codify token auto-sync into bootstrap + upgrade scripts. The gateway auto-generates runtime tokens; `render-config` and `control-daemon` must handle this.
+3. **Multi-agent E2E hardening** — test all 5 sub-agent dispatch paths (research, memory, planning, execution, verification) with real workloads.
+4. **Error recovery** — Cortex gracefully handles sub-agent timeouts, fallback to direct response.
+5. **Brain observability** — log which sub-agents were dispatched per turn, latency, success/failure.
 
-### Future: v3.5 — R/C/M Framework
+### Future: v3.5 — Memory + Fleet Health
+- Hippocampus nightly responsibility — consolidate daily notes → Core Memory
+- Fleet health monitoring — Prime periodically checks fleet agent health
+- Auto-recovery — detect and restart failed fleet agents
+- Cost governance — per-agent spend tracking, auto-hibernate idle agents
+
+### Future: v4.0 — R/C/M Framework
 - Responsibilities engine — cron + Firestore registry
 - Checkpoint queue — Firestore data model + queue-worker
 - Human review gates — dashboard integration
 - Inter-agent delegation — agents @-mention other agents to delegate tasks
 
-### Future: v4.0 — RSI Engine
+### Future: v5.0 — RSI Engine
 - Git-ops skill — branch, commit, push, PR
 - Code-write / code-test skills
 - Test harness: deploy from branch → validate → report
 - RSI mission template — plan → implement → test → promote
 - Two mandatory human gates (plan approval + merge approval)
 
-### Future: v5.0+ — Workspace Integration
+### Future: v6.0+ — Workspace Integration
 - Google Workspace skills — Docs, Sheets, Calendar, Gmail
 - Agent cell templates — pre-built team configurations
 - Self-evolution — Prime proposes its own improvements via PR
