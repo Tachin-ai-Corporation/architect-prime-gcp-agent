@@ -146,7 +146,7 @@ async function updateStatus(status) {
   }).catch(() => {});
 }
 
-// ---- Gateway Communication ----
+// ---- Gateway Communication (SSE Streaming) ----
 async function routeMessage(text) {
   const t0 = Date.now();
 
@@ -169,17 +169,22 @@ async function routeMessage(text) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'openclaw',
-        messages: [...conversationHistory]
+        model: 'openclaw/cortex',
+        messages: [...conversationHistory],
+        stream: true
       }),
       signal: controller.signal
     });
 
-    const data = await res.json();
-    const content = data.choices?.[0]?.message?.content
-      || data.content
-      || data.response
-      || '';
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      log('Gateway HTTP error', { status: res.status, body: errText.slice(0, 200) });
+      conversationHistory.pop();
+      return `⚠ Gateway error (HTTP ${res.status})`;
+    }
+
+    // Parse SSE stream
+    const content = await readSSEStream(res, t0);
 
     if (content) {
       // Add assistant response to conversation history
@@ -195,7 +200,7 @@ async function routeMessage(text) {
       return content;
     }
 
-    log('Empty content from gateway', { raw: JSON.stringify(data).slice(0, 200) });
+    log('Empty content from gateway stream');
     return '⚠ Empty response from OpenClaw gateway.';
   } catch (err) {
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -205,12 +210,66 @@ async function routeMessage(text) {
     conversationHistory.pop();
 
     if (err.name === 'AbortError') {
-      return '⚠ Response timed out (300s). The query may have been too complex.';
+      return `⚠ Response timed out (${HTTP_TIMEOUT / 1000}s). The query may have been too complex.`;
     }
     return `⚠ Gateway error: ${err.message}`;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// Parse SSE (Server-Sent Events) stream from the gateway
+async function readSSEStream(res, t0) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let content = '';
+  let buffer = '';
+  let firstChunkLogged = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete SSE lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) continue; // Skip empty/comment lines
+
+        if (trimmed === 'data: [DONE]') {
+          return content;
+        }
+
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const chunk = JSON.parse(trimmed.slice(6));
+            const delta = chunk.choices?.[0]?.delta?.content;
+            if (delta) {
+              content += delta;
+
+              // Log first chunk to show we're streaming
+              if (!firstChunkLogged) {
+                const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                log('Streaming started', { first_chunk_s: parseFloat(elapsed) });
+                firstChunkLogged = true;
+              }
+            }
+          } catch {
+            // Skip malformed JSON chunks
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return content;
 }
 
 // ---- Heartbeat ----
