@@ -135,13 +135,17 @@ bootstrap/                        # VM startup scripts
 └── legacy/                       # Deprecated pre-v2.0 scripts (reference only)
 
 bundle/corekit/bin/               # CoreKit tools (installed on VMs)
-├── control-daemon                # Firestore poller (Prime VMs)
+├── control-daemon                # Bash wrapper → auto-delegates to .mjs
+├── control-daemon.mjs            # Node.js Firestore poller (conversation history)
+├── brain-exec                    # Sub-agent dispatch wrapper (strips warnings)
 ├── inbox-daemon                  # Google Chat poller (fleet agents)
 ├── fleet-deploy                  # Hire an agent
 ├── fleet-teardown                # Fire an agent
 ├── chat-send / chat-read         # Google Chat DWD tools
 ├── dwd-token                     # DWD token generator
-├── upgrade-corekit               # Self-upgrade mechanism
+├── upgrade-corekit               # Self-upgrade (auto token sync)
+├── render-config                 # JSON5 template → config renderer
+├── dashboard-respond             # Firestore push (async responses)
 └── build-system-prompt           # Agent personality builder
 
 bundle/workspaces/                # Agent persona files
@@ -230,6 +234,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2.0** | **OpenClaw pivot — Docker-based agent brain, boot stub pattern, fleet agents on OpenClaw** |
 | **v3.0** | **Multi-agent brain — 5 brain agents (cortex, temporal, prefrontal, motor, cerebellum)** |
 | **v3.2** | **Async dispatch — 6 brain agents (temporal split), exec openclaw agent dispatch, Vertex AI grounding** |
+| **v3.3** | **Node.js daemon — control-daemon.mjs with conversation history, brain-exec wrapper, gateway token sync, structured logging** |
 
 ---
 

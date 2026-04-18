@@ -77,6 +77,8 @@ CORE_REF="${CORE_REF}" \
   bash /tmp/install.sh
 
 # ---- 4) Save gateway token for control-daemon ----
+# render-config (step 9) will update this with the final token;
+# write it now so the old config path works if render-config fails.
 mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
@@ -159,9 +161,17 @@ chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
 chown -R node:node /home/node/.openclaw
 '
 
-# ---- 9) Render config template ----
+# ---- 9) Render config template via render-config ----
+# render-config handles JSON5→JSON conversion, token sync from container
+# env var, and writes the token file. Falls back to inline render if
+# render-config isn't available yet (shouldn't happen — CoreKit installs first).
 info "Rendering bootstrap config..."
-python3 - <<PY
+RENDER="${OC_HOST_DIR}/bin/render-config"
+if [[ -x "$RENDER" ]]; then
+  GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$RENDER"
+else
+  warn "render-config not found, using inline fallback..."
+  python3 - <<PY
 import pathlib
 oc = pathlib.Path("${OC_HOST_DIR}")
 tmpl_path = oc / "corekit" / "openclaw-bootstrap.json5.tmpl"
@@ -172,6 +182,7 @@ tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
 out_path.write_text(tmpl, encoding="utf-8")
 print("Wrote", out_path)
 PY
+fi
 
 # ---- 10) Apply config via RPC (with retry + fresh baseHash) ----
 info "Applying config via RPC..."
@@ -335,6 +346,16 @@ TOKEN_CHECK=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
 echo "  GCE metadata check: $TOKEN_CHECK"
 ' || warn "ADC fix had non-fatal errors (continuing)"
 
+# Restart gateway to pick up the model-auth-env patch
+info "Restarting gateway to apply ADC patch..."
+docker restart openclaw-gateway
+sleep 10
+if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' > /dev/null 2>&1; then
+  info "Gateway restarted successfully after ADC patch."
+else
+  warn "Gateway may not be ready yet after ADC patch restart. Continuing..."
+fi
+
 # ---- 13) Write prime-config.json ----
 cat > "${OC_HOST_DIR}/corekit/prime-config.json" <<PCFG
 {
@@ -402,7 +423,7 @@ systemctl start command-runner
 # ---- Done ----
 echo
 echo "============================================"
-echo "  PRIME VM SETUP COMPLETE"
+echo "  PRIME VM SETUP COMPLETE (v3.3.0)"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"
@@ -410,4 +431,6 @@ echo "  OpenClaw commit: ${STABLE_COMMIT}"
 echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"
+echo "  Daemon         : Node.js (control-daemon.mjs)"
+echo "  Dispatch       : brain-exec wrapper"
 echo "============================================"
