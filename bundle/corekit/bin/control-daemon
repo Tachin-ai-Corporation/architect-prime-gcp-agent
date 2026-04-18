@@ -2,29 +2,42 @@
 # ============================================================
 # control-daemon — Firestore-polling message bridge for Prime
 #
-# Polls Firestore messages collection for unprocessed admin
-# messages and routes them to the OpenClaw gateway API.
-# OpenClaw handles conversation memory, tool execution, and
-# the full agent loop.
+# Delegates to Node.js WebSocket version (control-daemon.mjs)
+# if available, otherwise falls back to bash HTTP implementation.
 #
-# Requires:
-#   - gcloud CLI authenticated (VM SA)
-#   - PRIME_ID: the Prime instance ID in Firestore
-#   - GCP_PROJECT_ID: the Firestore project
-#   - OC_HOST_ROOT: OpenClaw root path
-#   - OpenClaw gateway running on port 18789
+# Node.js version runs inside the Docker container (has ws module)
+# and connects to the gateway via WebSocket for session persistence.
 #
 # Env from VM metadata:
 #   PRIME_ID, GCP_PROJECT_ID
 # ============================================================
 set -euo pipefail
 
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_HOST_DIR="${OC_HOST_ROOT}/.openclaw"
+MJS="${OC_HOST_DIR}/bin/control-daemon.mjs"
+
+# ---- Try Node.js WebSocket version first ----
+if [[ -f "$MJS" ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q openclaw-gateway; then
+  echo "[$(date -Iseconds)] [control-daemon] Launching Node.js WebSocket version..."
+  exec docker exec \
+    -e GCP_PROJECT_ID="${GCP_PROJECT_ID:?}" \
+    -e PRIME_ID="${PRIME_ID:?}" \
+    -e POLL_INTERVAL="${POLL_INTERVAL:-5}" \
+    openclaw-gateway \
+    node /home/node/.openclaw/bin/control-daemon.mjs
+fi
+
+echo "[$(date -Iseconds)] [control-daemon] Node.js version unavailable, using bash HTTP fallback..."
+
+# === BASH HTTP FALLBACK (legacy) ================================
 POLL_INTERVAL="${POLL_INTERVAL:-5}"
 OC_GATEWAY="http://localhost:18789"
 OC_TOKEN="$(cat /root/.openclaw/.gateway-token 2>/dev/null || echo 'no-token')"
 FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID:?}/databases/(default)/documents"
 PRIME_ID="${PRIME_ID:?}"
 AGENT_ID="${AGENT_ID:-prime}"
+
 
 log() { echo "[$(date -Iseconds)] [control-daemon] $*"; }
 
