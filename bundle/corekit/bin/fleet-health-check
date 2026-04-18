@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-health-check — Check fleet agent gateway health via SSH
+#
+# Usage:
+#   fleet-health-check                  # check all online agents
+#   fleet-health-check --name <agent>   # check one agent
+#
+# For each online fleet agent:
+#   1. SSH into VM and curl the gateway health endpoint
+#   2. Write health data to Firestore
+#   3. If 3+ consecutive failures: auto-restart gateway
+#
+# Runs on Prime VM via systemd timer (every 15 minutes).
+# ============================================================
+set -euo pipefail
+
+log() { echo "[$(date -Is)] [fleet-health-check] $*"; }
+warn() { echo "[$(date -Is)] [fleet-health-check] [WARN] $*" >&2; }
+die() { echo "[$(date -Is)] [fleet-health-check] [FATAL] $*" >&2; exit 1; }
+
+AGENT_NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) AGENT_NAME="$2"; shift 2 ;;
+    --help|-h) echo "Usage: fleet-health-check [--name <agent>]"; exit 0 ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+# ---- Resolve project + prime ID ----
+PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PRIME_PROJECT" ]] || die "Cannot resolve project from metadata"
+
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || true)"
+fi
+[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
+
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PRIME_PROJECT}/databases/(default)/documents"
+
+# ---- Get auth token ----
+get_token() {
+  curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
+}
+
+TOKEN="$(get_token)"
+
+# ============================================================
+# Get list of agents to check
+# ============================================================
+if [[ -n "$AGENT_NAME" ]]; then
+  # Single agent mode
+  AGENTS_JSON="[{\"name\":\"${AGENT_NAME}\"}]"
+else
+  # All agents — read from Firestore
+  RESP="$(curl -s -H "Authorization: Bearer $TOKEN" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet" 2>/dev/null)"
+
+  AGENTS_JSON="$(echo "$RESP" | python3 -c "
+import json, sys
+resp = json.loads(sys.stdin.read())
+docs = resp.get('documents', [])
+agents = []
+for doc in docs:
+    name = doc.get('name', '').split('/')[-1]
+    fields = doc.get('fields', {})
+    status = ''
+    for k in ('stringValue',):
+        if k in (fields.get('status') or {}):
+            status = fields['status'][k]
+    vm = ''
+    for k in ('stringValue',):
+        if k in (fields.get('vm') or {}):
+            vm = fields['vm'][k]
+    zone = ''
+    for k in ('stringValue',):
+        if k in (fields.get('zone') or {}):
+            zone = fields['zone'][k]
+    if status == 'online':
+        agents.append({'name': name, 'vm': vm, 'zone': zone})
+print(json.dumps(agents))
+" 2>/dev/null || echo "[]")"
+fi
+
+AGENT_COUNT="$(echo "$AGENTS_JSON" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")"
+
+if [[ "$AGENT_COUNT" == "0" ]]; then
+  log "No online fleet agents to check."
+  exit 0
+fi
+
+log "Checking ${AGENT_COUNT} fleet agent(s)..."
+
+# ============================================================
+# Check each agent
+# ============================================================
+echo "$AGENTS_JSON" | python3 -c "
+import json, sys
+for a in json.load(sys.stdin):
+    print(f\"{a['name']}|{a.get('vm','')}|{a.get('zone','')}\")
+" | while IFS='|' read -r NAME VM ZONE; do
+  log "Checking: ${NAME} (VM: ${VM}, Zone: ${ZONE})"
+
+  # If single-agent mode and we don't have VM/zone, fetch from Firestore
+  if [[ -z "$VM" || -z "$ZONE" ]]; then
+    AGENT_DOC="$(curl -s -H "Authorization: Bearer $TOKEN" \
+      "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}" 2>/dev/null)"
+    VM="$(echo "$AGENT_DOC" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(d.get('fields',{}).get('vm',{}).get('stringValue',''))" 2>/dev/null || true)"
+    ZONE="$(echo "$AGENT_DOC" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(d.get('fields',{}).get('zone',{}).get('stringValue',''))" 2>/dev/null || true)"
+  fi
+
+  if [[ -z "$VM" || -z "$ZONE" ]]; then
+    warn "Cannot resolve VM/zone for ${NAME} — skipping"
+    continue
+  fi
+
+  # ---- SSH and check gateway health ----
+  HEALTH_STATUS="unhealthy"
+  LATENCY_MS=0
+  START_MS=$(date +%s%N)
+
+  HTTP_CODE="$(gcloud compute ssh "$VM" --zone="$ZONE" --quiet \
+    --command="curl -sf -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:18789/v1/models" \
+    2>/dev/null || echo "000")"
+
+  END_MS=$(date +%s%N)
+  LATENCY_MS=$(( (END_MS - START_MS) / 1000000 ))
+
+  if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "401" ]]; then
+    HEALTH_STATUS="healthy"
+  fi
+
+  log "  Result: ${HEALTH_STATUS} (HTTP ${HTTP_CODE}, ${LATENCY_MS}ms)"
+
+  # ---- Read current consecutive failures from Firestore ----
+  CURRENT_FAILURES="$(curl -s -H "Authorization: Bearer $TOKEN" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}" 2>/dev/null | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+health = d.get('fields',{}).get('health',{}).get('mapValue',{}).get('fields',{})
+cf = health.get('consecutiveFailures',{}).get('integerValue','0')
+print(cf)
+" 2>/dev/null || echo "0")"
+
+  # ---- Calculate new failure count ----
+  if [[ "$HEALTH_STATUS" == "healthy" ]]; then
+    NEW_FAILURES=0
+  else
+    NEW_FAILURES=$((CURRENT_FAILURES + 1))
+  fi
+
+  # ---- Write health data to Firestore ----
+  NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  TOKEN="$(get_token)"  # refresh token
+
+  HEALTH_PATCH="{
+    \"fields\": {
+      \"health\": {
+        \"mapValue\": {
+          \"fields\": {
+            \"lastCheck\": { \"stringValue\": \"${NOW}\" },
+            \"status\": { \"stringValue\": \"${HEALTH_STATUS}\" },
+            \"latencyMs\": { \"integerValue\": \"${LATENCY_MS}\" },
+            \"consecutiveFailures\": { \"integerValue\": \"${NEW_FAILURES}\" },
+            \"httpCode\": { \"stringValue\": \"${HTTP_CODE}\" }
+          }
+        }
+      }
+    }
+  }"
+
+  # Also update lastHeartbeat if healthy
+  if [[ "$HEALTH_STATUS" == "healthy" ]]; then
+    HEALTH_PATCH="{
+      \"fields\": {
+        \"health\": {
+          \"mapValue\": {
+            \"fields\": {
+              \"lastCheck\": { \"stringValue\": \"${NOW}\" },
+              \"status\": { \"stringValue\": \"${HEALTH_STATUS}\" },
+              \"latencyMs\": { \"integerValue\": \"${LATENCY_MS}\" },
+              \"consecutiveFailures\": { \"integerValue\": \"0\" },
+              \"httpCode\": { \"stringValue\": \"${HTTP_CODE}\" }
+            }
+          }
+        },
+        \"lastHeartbeat\": { \"stringValue\": \"${NOW}\" }
+      }
+    }"
+    MASK="updateMask.fieldPaths=health&updateMask.fieldPaths=lastHeartbeat"
+  else
+    MASK="updateMask.fieldPaths=health"
+  fi
+
+  curl -s -X PATCH \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$HEALTH_PATCH" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?${MASK}" \
+    >/dev/null 2>&1
+
+  # ---- Auto-recovery: restart gateway after 3+ consecutive failures ----
+  if [[ "$NEW_FAILURES" -ge 3 ]]; then
+    log "  ⚠️  ${NAME} has ${NEW_FAILURES} consecutive failures — attempting auto-recovery..."
+
+    RESTART_OK=false
+    if gcloud compute ssh "$VM" --zone="$ZONE" --quiet \
+        --command="docker restart openclaw-gateway 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
+      RESTART_OK=true
+    fi
+
+    if $RESTART_OK; then
+      log "  ✅ Gateway restarted for ${NAME}"
+    else
+      warn "  ❌ Failed to restart gateway for ${NAME}"
+    fi
+
+    # Record recovery attempt
+    RECOVERY_PATCH="{
+      \"fields\": {
+        \"health\": {
+          \"mapValue\": {
+            \"fields\": {
+              \"lastCheck\": { \"stringValue\": \"${NOW}\" },
+              \"status\": { \"stringValue\": \"${HEALTH_STATUS}\" },
+              \"latencyMs\": { \"integerValue\": \"${LATENCY_MS}\" },
+              \"consecutiveFailures\": { \"integerValue\": \"${NEW_FAILURES}\" },
+              \"httpCode\": { \"stringValue\": \"${HTTP_CODE}\" },
+              \"lastRecoveryAttempt\": { \"stringValue\": \"${NOW}\" },
+              \"lastRecoveryResult\": { \"stringValue\": \"$(${RESTART_OK} && echo success || echo failed)\" }
+            }
+          }
+        }
+      }
+    }"
+
+    TOKEN="$(get_token)"
+    curl -s -X PATCH \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "$RECOVERY_PATCH" \
+      "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?updateMask.fieldPaths=health" \
+      >/dev/null 2>&1
+  fi
+done
+
+log "Health check complete."

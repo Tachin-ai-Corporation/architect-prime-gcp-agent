@@ -420,10 +420,20 @@ systemctl daemon-reload
 systemctl enable command-runner
 systemctl start command-runner
 
+# ---- 15) Install fleet-health-check timer ----
+info "Installing fleet-health-check systemd timer..."
+cp "${OC_HOST_DIR}/corekit/fleet-health-check.service" /etc/systemd/system/fleet-health-check.service
+cp "${OC_HOST_DIR}/corekit/fleet-health-check.timer" /etc/systemd/system/fleet-health-check.timer
+chmod +x "${OC_HOST_DIR}/bin/fleet-health-check"
+chmod +x "${OC_HOST_DIR}/bin/update-deep-truths"
+systemctl daemon-reload
+systemctl enable fleet-health-check.timer
+systemctl start fleet-health-check.timer
+
 # ---- Done ----
 echo
 echo "============================================"
-echo "  PRIME VM SETUP COMPLETE (v3.4.0)"
+echo "  PRIME VM SETUP COMPLETE (v3.5.0)"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"
@@ -433,4 +443,7 @@ echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"
 echo "  Daemon         : Node.js (control-daemon.mjs)"
 echo "  Dispatch       : brain-exec wrapper + SSE streaming"
+echo "  Health check   : fleet-health-check.timer (every 15m)"
+echo "  Memory cron    : memory-consolidate (nightly 2 AM)"
 echo "============================================"
+

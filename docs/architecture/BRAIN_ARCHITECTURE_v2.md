@@ -1,12 +1,13 @@
-# OpenClaw Brain Architecture — Architect Prime v2
+# OpenClaw Brain Architecture — Architect Prime
 
-> **Status:** FUTURE — Design document, not yet implemented
+> **Status:** ACTIVE — Living design document
 > **Written:** 2026-04-04
-> **Last reviewed:** 2026-04-11
-> **Depends on:** v2.0 single-agent foundation being stable (see Checkpoint 6 in MISSION_PLAN.md)
+> **Last reviewed:** 2026-04-18 (CP10)
+> **Current version:** v3.4.0 (6 agents, SSE streaming, hybrid dispatch)
 >
-> Currently each agent runs as a single OpenClaw instance with one model.
-> This document describes the planned multi-agent brain system for v3.0.
+> This document describes the multi-agent brain system. Sections marked
+> **[IMPLEMENTED]** reflect live code. Sections marked **[PLANNED]** are
+> approved designs not yet built.
 
 ## The Metaphor
 
@@ -16,17 +17,19 @@ The user only ever talks to **one agent** — the Cortex. Behind it, six sub-age
 
 ---
 
-## Agent Inventory (7 Total)
+## Agent Inventory [IMPLEMENTED]
 
-| # | Agent | Brain Region | Role | Model |
-|---|-------|-------------|------|-------|
-| 0 | **Cortex** | Thalamus + prefrontal working memory | Primary chat agent — routes, synthesizes, responds | `gemini-2.5-flash` |
-| 1 | **Prefrontal** | Prefrontal cortex | Strategy, planning, decisions, governance | `gemini-2.5-pro` |
-| 2 | **Hippocampus** | Hippocampus | Memory orchestrator — recall, store, consolidate | `gemini-2.5-flash` |
-| 3 | **Temporal** | Temporal + parietal lobe | Research, comprehension, information synthesis | `gemini-2.5-flash` |
-| 4 | **Motor** | Motor cortex + basal ganglia | Code writing, infra ops, deployment | `gemini-2.5-pro` |
-| 5 | **Cerebellum** | Cerebellum | Verification, QA, error detection, refinement | `gemini-2.5-flash` |
-| 6 | **Specialist** | Domain-specific cortical area | Authority expertise per deployment specialty | `gemini-2.5-pro` |
+**Current (v3.4): 6 agents.** Hippocampus merged into temporal-memory. Specialist planned for v4.0.
+
+| # | Agent | Brain Region | Role | Model | Status |
+|---|-------|-------------|------|-------|--------|
+| 0 | **cortex** | Thalamus + working memory | Primary chat agent — routes, synthesizes, responds | `gemini-2.5-flash` | ✅ Live |
+| 1 | **temporal-research** | Temporal lobe | Web search via Vertex AI grounding (agent-ask) | `gemini-2.5-flash` | ✅ Live |
+| 2 | **temporal-memory** | Hippocampus | Memory recall + nightly Core Memory consolidation | `gemini-2.5-flash` | ✅ Live |
+| 3 | **prefrontal** | Prefrontal cortex | Strategy, planning, decisions | `gemini-2.5-flash` | ✅ Live |
+| 4 | **motor** | Motor cortex | Code writing, infra ops, deployment | `gemini-2.5-flash` | ✅ Live |
+| 5 | **cerebellum** | Cerebellum | Verification, QA, error detection | `gemini-2.5-flash` | ✅ Live |
+| — | **specialist** | Domain-specific | Authority expertise per specialty | `gemini-2.5-pro` | 🔮 Planned |
 
 ---
 
@@ -129,50 +132,64 @@ fi
 
 ---
 
-## Memory System — Clean & Scalable
+## Memory System [IMPLEMENTED + EVOLVING]
 
-### The problem with raw `.md` memory files
+### Two-Tier Memory Model (v3.4)
 
-The current system uses `MEMORY.md` and `STATE.md` as flat markdown files that agents read/write directly. This has three problems:
-
-1. **MEMORY.md bloats** — grows past the 20,000 char truncation limit, loses information silently
-2. **No semantic recall** — agents grep through files instead of searching by meaning
-3. **No cross-agent sharing** — each agent reads its own workspace; there's no shared memory bus
-
-### The solution: three-layer memory architecture
-
-Use OpenClaw's **native memory system** properly — `memory-core` plugin with Vertex AI embeddings — instead of fighting it with raw file reads. No third-party plugins, no external services. Everything runs on what's already in your GCP project.
+Memory operates on two tiers with distinct write patterns:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    LAYER 3: SEMANTIC INDEX                   │
+│              TIER 2: CORE MEMORY (Firestore)                 │
 │                                                             │
-│  memory_search (hybrid: vector + keyword)                   │
-│  Vertex AI text-embedding-005 via ADC (free, no extra key)  │
-│  SQLite store at ~/.openclaw/memory/{agentId}.sqlite        │
-│  Indexes all .md files in memory/ + MEMORY.md automatically │
-│  Agents search by meaning, not grep                         │
+│  Durable facts: architecture decisions, user preferences,   │
+│  error patterns, operational learnings                       │
+│  Written by: temporal-memory (nightly consolidation)         │
+│  Read by: temporal-memory (on recall dispatch from Cortex)   │
+│  Path: /primes/{id}/memory/core/{entryId}                   │
+│  Tools: core-memory-read, core-memory-write                 │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ indexes
+                           │ nightly promotion
 ┌──────────────────────────┴──────────────────────────────────┐
-│                    LAYER 2: DURABLE FILES                    │
+│              TIER 1: WORKING MEMORY (MEMORY.md)              │
 │                                                             │
-│  MEMORY.md           — curated long-term (sectioned, <5KB)  │
-│  memory/YYYY-MM-DD.md — daily logs (auto, append-only)      │
-│  Survives compaction, restarts, reboot                      │
-│  Auto-loaded: today + yesterday's daily logs at session     │
-│  memory_get reads any file on demand                        │
+│  Short-term context: current mission, current focus,         │
+│  active decisions, session notes                             │
+│  Written by: Cortex (during conversation turns)              │
+│  Read by: all agents (workspace file, auto-loaded)           │
+│  Max size: ~2KB, structured sections                         │
+│  Refreshed frequently — NOT an append-only log               │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ persists from
+                           │ session context
 ┌──────────────────────────┴──────────────────────────────────┐
-│                    LAYER 1: SESSION CONTEXT                  │
+│              SESSION CONTEXT (OpenClaw native)                │
 │                                                             │
-│  Active conversation in Gemini context window               │
-│  Pre-compaction flush saves important facts to Layer 2      │
-│  Pruning trims old tool results (lossless, temporary)       │
-│  Compaction summarizes history (last ~20K tokens preserved) │
+│  Active conversation in context window                       │
+│  Context pruning: cache-ttl 48h, keep last 12 assistants    │
+│  Compaction: safeguard mode, flush to MEMORY.md              │
+│  memory_search: hybrid vector+keyword via Vertex AI          │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### How memory flows
+
+**During conversation (real-time):**
+- Cortex updates `MEMORY.md` with working context after meaningful turns
+- MEMORY.md has structured sections: Current Mission, Current Focus, Active Decisions, Notes
+- Overwrite stale sections — not an append log
+
+**Nightly (2 AM, via OpenClaw cron → temporal-memory):**
+- temporal-memory reviews the day's conversation logs
+- Extracts durable facts worth remembering permanently
+- Writes to Core Memory via `exec core-memory-write`
+- Deduplicates against existing Core Memory entries
+- Updates the **Deep Truths** section at the end of Cortex's SOUL.md
+  (see SOUL.md Mutable Section below)
+
+**On recall (when Cortex dispatches temporal-memory):**
+- temporal-memory reads MEMORY.md (working context)
+- Queries Core Memory via `exec core-memory-read`
+- Returns synthesized context to Cortex
 
 ### Cross-agent shared memory via Firestore
 
@@ -235,52 +252,59 @@ User message arrives at Cortex
     }
 ```
 
-### How memory gets written
+### MEMORY.md structure (working memory) [IMPLEMENTED]
 
-Memory writes happen at two points:
-
-**During task execution** — Prefrontal writes plans to Firestore, Motor writes daily logs to `memory/`:
-```
-Prefrontal finishes planning
-    → Firestore: /brain/plans/{planId} = {plan document}
-    → Firestore: /brain/decisions = {decision + reasoning}
-
-Motor finishes building
-    → memory/YYYY-MM-DD.md: append what was done, what changed
-    → Firestore: /brain/plans/{planId}/status = "completed"
-
-Cerebellum finishes verifying
-    → Firestore: /brain/learnings = {what worked, what didn't}
-```
-
-**During compaction** — OpenClaw's pre-compaction flush automatically saves important session context to daily logs. This is on by default — no configuration needed.
-
-### Keeping MEMORY.md clean
-
-MEMORY.md is the **curated** long-term memory — not a dumping ground. Structure it with clear sections and keep it under 5,000 characters:
+MEMORY.md is **working memory** — refreshed frequently, not an append log.
+Max ~2KB. Cortex overwrites stale sections after meaningful turns.
 
 ```markdown
-# Long-Term Memory
+# Working Memory — Cortex
 
-## Identity
-- Project: {project-id}
-- Specialty: {specialty}
-- Deployed: {date}
+## Current Mission
+(Updated each session — what are we working on right now?)
 
-## Durable Decisions
-- [2026-04-01] CoreKit installed via manifest from GitHub
-- [2026-04-03] Fleet agents use single-project model
-- [2026-04-04] Adopted brain architecture v2
+## Current Focus
+(The immediate task or goal)
 
-## Patterns
-- User prefers minimal output, no verbose explanations
-- Infrastructure changes always need explicit approval
+## Active Decisions
+(Decisions made this session that may need follow-up)
 
-## Known Issues
-- DWD token refresh takes ~10s on first call after cold start
+## Notes
+(Temporary context — conversation summaries, reference info)
 ```
 
-**Promotion rule:** Items graduate from daily logs → MEMORY.md only when they're referenced 3+ times or flagged as a "durable decision." Hippocampus handles this during its periodic consolidation pass.
+Durable facts (architecture decisions, user preferences, error patterns) are
+NOT stored in MEMORY.md. They live in Core Memory (Firestore) and are promoted
+there by the nightly consolidation process.
+
+### SOUL.md mutable section (Deep Truths) [IMPLEMENTED]
+
+SOUL.md is mostly **immutable** — the core identity, decision tree, dispatch
+rules, and error recovery sections never change at runtime. However, the very
+end of SOUL.md has a mutable section called `## Deep Truths` that the nightly
+consolidation process can update.
+
+This section contains deep, unchanging truths that bubble up from Core Memory
+over time — user personality traits, fundamental architectural principles, and
+operational patterns that are so durable they belong in the agent's soul.
+
+**Strict rules for Deep Truths updates:**
+- ONLY the nightly consolidation process (temporal-memory) may write to this section
+- ONLY facts that appear in Core Memory with confidence ≥ 0.9 qualify
+- ONLY the `## Deep Truths` section at the END of SOUL.md is modified
+- Everything ABOVE `## Deep Truths` is IMMUTABLE and must never be changed
+- Max 10 items in Deep Truths — oldest items are archived if exceeded
+- Each item is a single-line bullet point (concise, no paragraphs)
+
+```markdown
+## Deep Truths
+<!-- This section is updated nightly by temporal-memory consolidation.
+     Everything above this section is IMMUTABLE. -->
+- User prefers concise responses under 2000 characters
+- Infrastructure changes always require explicit approval before execution
+- Fleet bootstrap takes ~15 minutes on e2-medium VMs
+- OpenClaw is pinned to commit 163c6f5e for stability
+```
 
 ### Memory configuration
 
@@ -327,40 +351,47 @@ MEMORY.md is the **curated** long-term memory — not a dumping ground. Structur
 
 ---
 
-## Processing Flow — The Neural Loop
+## Processing Flow — The Neural Loop [IMPLEMENTED]
 
-Every user message flows through a consistent cognitive loop:
+Every user message flows through a consistent cognitive loop.
+Dispatch is via `exec brain-exec <agent-id> "<task>"` (synchronous, blocking).
+Gateway communication uses hybrid SSE streaming with non-stream fallback.
 
 ```
-User message
+User message (via dashboard → Firestore → control-daemon.mjs)
     │
     ▼
 ┌─────────────────────────────────────────────────┐
-│  CORTEX (always active)                         │
+│  CORTEX (default agent)                         │
 │  1. Parse intent                                │
-│  2. Classify request type                       │
-│  3. Dispatch to sub-agents                      │
-│  4. Collect and synthesize results              │
-│  5. Respond to user in unified voice            │
+│  2. Classify: simple / fleet-op / research /    │
+│     memory / complex                            │
+│  3. Dispatch via exec brain-exec                │
+│  4. Wait for result (SYNCHRONOUS)               │
+│  5. Synthesize and respond                      │
+│  6. Optionally update MEMORY.md                 │
 └─────────────────────────────────────────────────┘
          │                    ▲
-    dispatch              results
+    brain-exec            stdout
+    (blocking)            (text)
          │                    │
     ┌────┴────────────────────┴────┐
     │     SUB-AGENT ACTIVATION     │
     │                              │
-    │  Phase 1 (always):           │
-    │    → Hippocampus (recall)    │
+    │  Simple / Fleet ops:         │
+    │    → No dispatch, act direct │
     │                              │
-    │  Phase 2 (conditional):      │
-    │    → Prefrontal (if plan)    │
-    │    → Temporal (if research)  │
-    │    → Specialist (if domain)  │
-    │    → Motor (if build/deploy) │
-    │    (can be parallel)         │
+    │  Research:                   │
+    │    → temporal-research       │
     │                              │
-    │  Phase 3 (always on output): │
-    │    → Cerebellum (verify)     │
+    │  Memory recall:              │
+    │    → temporal-memory         │
+    │                              │
+    │  Complex tasks:              │
+    │    → temporal-research       │
+    │    → prefrontal (plan)       │
+    │    → motor (execute)         │
+    │    → cerebellum (verify)     │
     └──────────────────────────────┘
 ```
 

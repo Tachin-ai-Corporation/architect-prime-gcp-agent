@@ -171,7 +171,18 @@
     "removeAckAfterReply": false
   },
   "commands": { "native": "auto", "nativeSkills": "auto" },
-  "cron": { "enabled": true },
+  "cron": {
+    "enabled": true,
+    "jobs": [
+      {
+        "name": "memory-consolidate",
+        "cron": "0 2 * * *",
+        "timezone": "America/Chicago",
+        "agent": "temporal-memory",
+        "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation. Read the skill at ~/.openclaw/skills/memory-consolidate/SKILL.md and follow its phases."
+      }
+    ]
+  },
   "hooks": { "internal": { "entries": { "session-memory": { "enabled": true } } } },
   "gateway": {
     "port": 18789,

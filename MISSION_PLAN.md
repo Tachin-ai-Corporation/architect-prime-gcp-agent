@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v3.4.0`
+> - **Current version tag:** `v3.5.0`
 
 ---
 
@@ -184,12 +184,24 @@ warnings, returns its output to Cortex, and Cortex synthesizes the final respons
 5. Complex tasks → Cortex chains: research → prefrontal → motor → cerebellum
 
 **Brain workspace files** (in `bundle/workspaces/`):
-- `cortex/` → SOUL.md (dispatch rules, decision tree), IDENTITY.md, TOOLS.md
+- `cortex/` → SOUL.md (dispatch + Deep Truths), IDENTITY.md, TOOLS.md, MEMORY.md (working memory)
 - `temporal-research/` → SOUL.md (web search via agent-ask), IDENTITY.md
-- `temporal-memory/` → SOUL.md (memory recall via core-memory-read), IDENTITY.md
+- `temporal-memory/` → SOUL.md (recall + nightly consolidation), IDENTITY.md
 - `prefrontal/` → SOUL.md (planning methodology), IDENTITY.md
 - `motor/` → SOUL.md (execution rules), IDENTITY.md
 - `cerebellum/` → SOUL.md (verification criteria), IDENTITY.md
+
+**Workspace efficiency:** Sub-agents are stateless. Only Cortex has MEMORY.md and TOOLS.md.
+Sub-agents get task context from `brain-exec` args, not workspace files.
+
+**Two-tier memory model:**
+- **Tier 1 (Working Memory):** `MEMORY.md` in Cortex workspace. Updated during turns.
+  Sections: Current Mission, Current Focus, Active Decisions, Notes. Max ~2KB.
+- **Tier 2 (Core Memory):** Firestore `/primes/{id}/memory/core/`. Durable facts.
+  Written by temporal-memory during nightly consolidation (2 AM cron via `memory-consolidate` skill).
+  Read by temporal-memory on recall dispatch from Cortex.
+- **Deep Truths:** End of Cortex SOUL.md has a mutable `## Deep Truths` section.
+  Updated nightly by temporal-memory via `exec update-deep-truths`. Everything above is immutable.
 
 **Locked-in design decisions:**
 - 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
@@ -197,6 +209,8 @@ warnings, returns its output to Cortex, and Cortex synthesizes the final respons
 - 🔒 All agents on gemini-2.5-flash. Pro via model override only.
 - 🔒 Dispatch via `exec brain-exec`, NOT `sessions_spawn` or raw `openclaw agent`.
 - 🔒 `brain-dispatch` script eliminated permanently.
+- 🔒 SOUL.md above `## Deep Truths` is IMMUTABLE. Only `update-deep-truths` script may modify Deep Truths.
+- 🔒 Core Memory writes happen via nightly consolidation, NOT during conversation turns.
 
 ### Fleet Agent Workspaces
 
@@ -309,6 +323,8 @@ architect-prime/
 | `assemble-tools` | Builds TOOLS.md from skill definitions |
 | `core-memory-read` | Queries Firestore Core Memory by category/tags |
 | `core-memory-write` | Writes durable facts to Firestore Core Memory |
+| `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
+| `fleet-health-check` | SSH-checks fleet agent gateway health, auto-recovers after 3 failures |
 | `render-config` | Renders JSON5 config template with string-aware comment stripping |
 | `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
 | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
@@ -358,23 +374,17 @@ architect-prime/
 
 ## Roadmap
 
-### Next: Checkpoint 10 — Memory + Fleet Health
-> *Goal: Persistent memory consolidation, fleet health monitoring, auto-recovery*
+### Next: Checkpoint 11 — Cost + Observability
+> *Goal: Per-agent spend tracking, idle agent hibernation, dispatch observability*
 
-1. **Core Memory journaling** — Cortex writes important decisions, patterns, and user preferences to Core Memory (Firestore) at the end of each conversation turn.
-2. **Memory consolidation** — temporal-memory periodically scans daily notes and conversation history, distilling key facts into durable Core Memory entries.
-3. **Fleet health monitoring** — Prime periodically (every 15m) checks each fleet agent's gateway health via SSH, writing status to Firestore.
-4. **Auto-recovery** — If a fleet agent's gateway is unhealthy for 3 consecutive checks, Prime auto-restarts the container.
+1. **Per-agent spend tracking** — Query Billing API to attribute costs to individual fleet agents.
+2. **Auto-hibernate idle agents** — Shut down VM after 24h of inactivity (no messages processed).
+3. **Brain dispatch dashboard** — Track which sub-agents are dispatched, latency per turn, on the dashboard.
+4. **Rate limiting** — Throttle expensive operations (web search, fleet deploy) to prevent runaway costs.
 5. **Dashboard health widget** — Show fleet agent health status (last-check, latency, uptime) on the Fleet tab.
 
-### Future: v3.5 — Cost + Observability
-- Per-agent spend tracking via Billing API
-- Auto-hibernate idle agents (shut down VM after 24h inactivity)
-- Brain dispatch dashboard (which sub-agents were used, latency per turn)
-- Rate limiting for expensive operations (web search, fleet deploy)
-
 ### Future: v4.0 — R/C/M Framework
-- Responsibilities engine — cron + Firestore registry
+- Responsibilities engine — RESPONSIBILITY.toml manifests + registration
 - Checkpoint queue — Firestore data model + queue-worker
 - Human review gates — dashboard integration
 - Inter-agent delegation — agents @-mention other agents to delegate tasks
