@@ -4,7 +4,7 @@
 
 ### Dispatch a brain sub-agent
 ```
-exec oc agent --agent <agent-id> -m "<instruction>" --timeout 60
+exec openclaw agent --agent <agent-id> -m "<instruction>" --timeout 60
 ```
 Runs the sub-agent synchronously. The sub-agent executes its task and
 returns the result as text output. I then synthesize and respond.

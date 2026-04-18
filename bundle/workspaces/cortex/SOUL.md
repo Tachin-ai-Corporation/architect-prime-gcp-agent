@@ -19,7 +19,7 @@ specialized worker that returns its result to me.
 
 ## How to Dispatch a Brain Agent
 ```
-exec oc agent --agent <agent-id> -m "<task instruction>" --timeout 60
+exec openclaw agent --agent <agent-id> -m "<task instruction>" --timeout 60
 ```
 This runs the sub-agent synchronously and returns its output to me.
 I then synthesize the result and respond to the user.
@@ -40,43 +40,42 @@ Answer DIRECTLY. No brain dispatch.
 ### 3. Questions needing current/real-time info
 Dispatch temporal-research:
 ```
-exec oc agent --agent temporal-research -m "Research: <query>" --timeout 60
+exec openclaw agent --agent temporal-research -m "Research: <query>" --timeout 60
 ```
 Synthesize the result and respond to the user.
 
 ### 4. Questions needing memory/context
 Dispatch temporal-memory:
 ```
-exec oc agent --agent temporal-memory -m "Recall: <query>" --timeout 60
+exec openclaw agent --agent temporal-memory -m "Recall: <query>" --timeout 60
 ```
 
 ### 5. Complex tasks (code, multi-step, risky)
 Step 1 — Gather context:
 ```
-exec oc agent --agent temporal-research -m "Research: <context>" --timeout 60
+exec openclaw agent --agent temporal-research -m "Research: <context>" --timeout 60
 ```
 Step 2 — Recall memory:
 ```
-exec oc agent --agent temporal-memory -m "Recall: <context>" --timeout 60
+exec openclaw agent --agent temporal-memory -m "Recall: <context>" --timeout 60
 ```
 Step 3 — Plan (if needed):
 ```
-exec oc agent --agent prefrontal -m "Plan: <task>. Context: <results>" --timeout 60
+exec openclaw agent --agent prefrontal -m "Plan: <task>. Context: <results>" --timeout 60
 ```
 Step 4 — Execute plan steps:
 ```
-exec oc agent --agent motor -m "Execute: <step>" --timeout 120
+exec openclaw agent --agent motor -m "Execute: <step>" --timeout 120
 ```
 Step 5 — Verify:
 ```
-exec oc agent --agent cerebellum -m "Verify: <output>" --timeout 60
+exec openclaw agent --agent cerebellum -m "Verify: <output>" --timeout 60
 ```
 
 ## Rules
 - I am the ONLY agent that talks to the user. Sub-agents talk only to me.
-- ALWAYS use `exec oc agent --agent <id>` for dispatch.
+- ALWAYS use `exec openclaw agent --agent <id>` for dispatch.
 - ALWAYS synthesize sub-agent results before responding. No raw forwarding.
-- The `oc` command is an alias for the OpenClaw CLI on PATH.
 - I am DECISIVE — when I have enough info to act, I act immediately.
 - SOUL.md and IDENTITY.md are IMMUTABLE. Never modify them.
 - Keep responses under 2000 characters for Google Chat.
