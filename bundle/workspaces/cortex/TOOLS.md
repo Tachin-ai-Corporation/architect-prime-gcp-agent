@@ -1,66 +1,70 @@
 # TOOLS — Architect Prime (Cortex)
 
-## Brain Dispatch (exec)
+## Brain Dispatch (sessions_spawn)
 
-### Dispatch to a brain sub-agent
+### Spawn a brain sub-agent (NON-BLOCKING)
 ```
-exec brain-dispatch --agent <agent_name> --message "<instruction>"
-```
-Valid agents: `temporal`, `prefrontal`, `motor`, `cerebellum`
-
-**Temporal** — memory recall + web research (ALWAYS call first)
-```
-exec brain-dispatch --agent temporal --message "Recall context for: <query>"
+sessions_spawn(task: "<instruction>", agentId: "<agent_id>")
 ```
 
-**Prefrontal** — strategic planning (for complex tasks)
+The sub-agent runs in the background. When it finishes, it announces its
+result back to my session. I then synthesize and deliver.
+
+### Available agents:
+| agentId | Job | When to use |
+|---|---|---|
+| `temporal-research` | Web search (agent-ask) | Current info, prices, news |
+| `temporal-memory` | Memory recall | Past decisions, context, history |
+| `prefrontal` | Strategic planning | Complex multi-step tasks |
+| `motor` | Execution (code, commands) | Implementing plan steps |
+| `cerebellum` | Verification (QA) | Checking motor's output |
+
+### Override model for heavy tasks:
 ```
-exec brain-dispatch --agent prefrontal --message "Plan: <task>. Context: <temporal output>"
+sessions_spawn(task: "...", agentId: "prefrontal", model: "google-vertex/gemini-2.5-pro")
 ```
 
-**Motor** — execution (for each plan step)
-```
-exec brain-dispatch --agent motor --message "Execute: <step description>"
-```
+## Async Response Delivery (exec)
 
-**Cerebellum** — verification (after each motor step)
+### Write a follow-up response to dashboard
 ```
-exec brain-dispatch --agent cerebellum --message "Verify: <expected>. Actual: <motor output>"
+exec dashboard-respond "Your synthesized response text"
 ```
+Used after sub-agent announces when the original request-response is complete.
 
-## Fleet Management Skills (exec)
+## Fleet Management (exec)
 
-### Hire a new agent
+### Hire
 ```
-exec fleet-hire --name <lowercase_name> --specialty <type_id>
+exec fleet-hire --name <name> --specialty <type_id>
 ```
-Valid specialty IDs: `devops`, `swe`, `qa`, `pm`, `finance`, `data`, `security`
+Specialties: `devops`, `swe`, `qa`, `pm`, `finance`, `data`, `security`
 
-### Fire / tear down an agent
+### Fire
 ```
 exec fleet-fire --name <name>
 ```
 
-### Check fleet status
+### Status
 ```
 exec fleet-status
 ```
 
-### Upgrade an agent to latest CoreKit
+### Upgrade
 ```
 exec fleet-upgrade --name <name>
 ```
 
-### Verify an agent is healthy
+### Verify
 ```
 exec fleet-verify --name <name>
 ```
 
-## Memory Skills (exec)
+## Memory (exec)
 
-### Write a fact to Core Memory (Firestore)
+### Write fact to Core Memory
 ```
-exec core-memory-write --fact "<durable fact>" --category <category> --tags "tag1,tag2"
+exec core-memory-write --fact "<fact>" --category <cat> --tags "t1,t2"
 ```
 Categories: architecture, operations, iam, decisions, patterns, errors
 
@@ -69,9 +73,7 @@ Categories: architecture, operations, iam, decisions, patterns, errors
 exec core-memory-read --category <category>
 ```
 
-## Critical Rules
-- ALWAYS dispatch temporal FIRST on every turn
-- When user says "hire" / "deploy" → run fleet-hire
-- When user says "fire" / "teardown" / "remove" → run fleet-fire
-- When user asks "who's online?" / "status" → run fleet-status
-- ALWAYS exec the command. NEVER just describe what you would do.
+## Rules
+- ALWAYS use `sessions_spawn` for brain dispatch. Never exec brain-dispatch.
+- ALWAYS use `exec dashboard-respond` for async follow-up delivery.
+- Fleet operations: exec directly. No brain dispatch needed.

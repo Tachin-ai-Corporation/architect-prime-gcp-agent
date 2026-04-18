@@ -34,7 +34,7 @@ bundle/corekit/config/command-runner.service .openclaw/corekit/command-runner.se
 bundle/corekit/config/agent-types.json .openclaw/corekit/agent-types.json
 bundle/corekit/bin/core-memory-read .openclaw/bin/core-memory-read
 bundle/corekit/bin/core-memory-write .openclaw/bin/core-memory-write
-bundle/corekit/bin/brain-dispatch .openclaw/bin/brain-dispatch
+bundle/corekit/bin/dashboard-respond .openclaw/bin/dashboard-respond
 
 # Skills (self-describing SKILL.md per skill)
 bundle/skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
@@ -59,10 +59,13 @@ bundle/workspaces/cortex/MEMORY.md .openclaw/workspace/MEMORY.md
 bundle/workspaces/cortex/STATE.md .openclaw/workspace/STATE.md
 bundle/workspaces/cortex/checkpoint/progress.json .openclaw/workspace/checkpoint/progress.json
 
-# TEMPORAL workspace (brain sub-agent)
-bundle/workspaces/temporal/SOUL.md .openclaw/workspace-temporal/SOUL.md
-bundle/workspaces/temporal/IDENTITY.md .openclaw/workspace-temporal/IDENTITY.md
-bundle/workspaces/temporal/TOOLS.md .openclaw/workspace-temporal/TOOLS.md
+# TEMPORAL-RESEARCH workspace (brain sub-agent — web search)
+bundle/workspaces/temporal-research/SOUL.md .openclaw/workspace-temporal-research/SOUL.md
+bundle/workspaces/temporal-research/IDENTITY.md .openclaw/workspace-temporal-research/IDENTITY.md
+
+# TEMPORAL-MEMORY workspace (brain sub-agent — memory recall)
+bundle/workspaces/temporal-memory/SOUL.md .openclaw/workspace-temporal-memory/SOUL.md
+bundle/workspaces/temporal-memory/IDENTITY.md .openclaw/workspace-temporal-memory/IDENTITY.md
 
 # PREFRONTAL workspace (brain sub-agent)
 bundle/workspaces/prefrontal/SOUL.md .openclaw/workspace-prefrontal/SOUL.md

@@ -1,4 +1,4 @@
-﻿{
+{
   "env": {
     "GOOGLE_CLOUD_PROJECT": "${GCP_PROJECT_ID}",
     "GOOGLE_CLOUD_LOCATION": "us-central1",
@@ -17,6 +17,13 @@
         "google-vertex/gemini-2.5-pro": {
           "alias": "Gemini 2.5 Pro"
         }
+      },
+      "subagents": {
+        "maxSpawnDepth": 1,
+        "maxChildrenPerAgent": 4,
+        "maxConcurrent": 4,
+        "runTimeoutSeconds": 120,
+        "archiveAfterMinutes": 30
       },
       "memorySearch": {
         "enabled": true,
@@ -55,15 +62,17 @@
     },
     "list": [
       {
-        // Cortex â€” router + synthesizer. What the user talks to.
+        // Cortex — orchestrator + synthesizer. The user-facing agent.
+        // Dispatches sub-agents via sessions_spawn. Only agent with dashboard chat.
         "id": "cortex",
         "default": true,
         "name": "Architect Prime",
-        "model": {
-          "primary": "google-vertex/gemini-2.5-flash"
-        },
         "workspace": "~/.openclaw/workspace",
         "sandbox": { "mode": "off" },
+        "subagents": {
+          "allowAgents": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"],
+          "requireAgentId": true
+        },
         "tools": {
           "allow": [
             "read",
@@ -71,32 +80,42 @@
             "edit",
             "exec",
             "process",
-            "coding"
+            "sessions_spawn",
+            "sessions_list",
+            "sessions_history",
+            "subagents"
           ],
           "deny": ["web-search", "browser"]
         }
       },
       {
-        // Temporal â€” memory manager + researcher. Invoked every turn.
-        "id": "temporal",
-        "name": "Temporal (Memory + Research)",
-        "model": {
-          "primary": "google-vertex/gemini-2.5-flash"
-        },
-        "workspace": "~/.openclaw/workspace-temporal",
+        // Temporal Research — web search via Vertex AI grounding.
+        // ONLY agent with web search capability. Uses exec agent-ask.
+        "id": "temporal-research",
+        "name": "Temporal (Web Research)",
+        "workspace": "~/.openclaw/workspace-temporal-research",
         "sandbox": { "mode": "off" },
         "tools": {
-          "allow": ["read", "exec"],
-          "deny": ["write", "edit", "browser"]
+          "allow": ["exec"],
+          "deny": ["read", "write", "edit", "browser", "web-search"]
         }
       },
       {
-        // Prefrontal â€” strategic planner. Decomposes complex tasks.
+        // Temporal Memory — context recall from workspace memory + Core Memory.
+        "id": "temporal-memory",
+        "name": "Temporal (Memory)",
+        "workspace": "~/.openclaw/workspace-temporal-memory",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["read", "exec"],
+          "deny": ["write", "edit", "browser", "web-search"]
+        }
+      },
+      {
+        // Prefrontal — strategic planner. Decomposes complex tasks.
+        // Read-only. No execution capability.
         "id": "prefrontal",
         "name": "Prefrontal (Planning)",
-        "model": {
-          "primary": "google-vertex/gemini-2.5-pro"
-        },
         "workspace": "~/.openclaw/workspace-prefrontal",
         "sandbox": { "mode": "off" },
         "tools": {
@@ -105,12 +124,10 @@
         }
       },
       {
-        // Motor â€” executor. Writes code, runs commands, builds things.
+        // Motor — executor. Writes code, runs commands, builds things.
+        // Full access. Only dispatched for approved plan steps.
         "id": "motor",
         "name": "Motor (Execution)",
-        "model": {
-          "primary": "google-vertex/gemini-2.5-pro"
-        },
         "workspace": "~/.openclaw/workspace-motor",
         "sandbox": { "mode": "off" },
         "tools": {
@@ -119,24 +136,20 @@
             "write",
             "edit",
             "exec",
-            "process",
-            "coding"
+            "process"
           ],
           "deny": ["web-search", "browser"]
         }
       },
       {
-        // Cerebellum â€” verifier. QA checks outputs before delivery.
+        // Cerebellum — verifier. QA checks outputs before delivery.
         "id": "cerebellum",
         "name": "Cerebellum (Verification)",
-        "model": {
-          "primary": "google-vertex/gemini-2.5-flash"
-        },
         "workspace": "~/.openclaw/workspace-cerebellum",
         "sandbox": { "mode": "off" },
         "tools": {
           "allow": ["read", "exec"],
-          "deny": ["write", "edit", "browser"]
+          "deny": ["write", "edit", "browser", "web-search"]
         }
       }
     ]
