@@ -149,8 +149,8 @@ Fleet agents impersonate their Workspace user (e.g., `devops-agent-stan@tachin.a
 
 Prime uses 6 OpenClaw agents in a multi-agent configuration. Cortex is the default
 (user-facing) agent; the other 5 are sub-agents dispatched synchronously via
-`exec openclaw agent --agent <id> -m "<task>"`. This runs the sub-agent in embedded
-mode, returns its output to Cortex, and Cortex synthesizes the final response.
+`exec brain-exec <agent-id> "<task>"`. This runs the sub-agent, strips infrastructure
+warnings, returns its output to Cortex, and Cortex synthesizes the final response.
 
 | Agent | Model | Role | Workspace | Tools |
 |-------|-------|------|-----------|-------|
@@ -352,20 +352,20 @@ architect-prime/
 
 ## Roadmap
 
-### Next: Checkpoint 8 — Brain Hardening + WebSocket Upgrade
-> *Goal: Robust multi-agent dispatch, control-daemon WebSocket, token management*
+### Next: Checkpoint 10 — Memory + Fleet Health
+> *Goal: Persistent memory consolidation, fleet health monitoring, auto-recovery*
 
-1. **Control-daemon WebSocket upgrade** — switch from HTTP chat/completions to persistent WebSocket connection. Enables native `sessions_spawn` for true async dispatch with announce-back.
-2. **Gateway token management** — codify token auto-sync into bootstrap + upgrade scripts. The gateway auto-generates runtime tokens; `render-config` and `control-daemon` must handle this.
-3. **Multi-agent E2E hardening** — test all 5 sub-agent dispatch paths (research, memory, planning, execution, verification) with real workloads.
-4. **Error recovery** — Cortex gracefully handles sub-agent timeouts, fallback to direct response.
-5. **Brain observability** — log which sub-agents were dispatched per turn, latency, success/failure.
+1. **Core Memory journaling** — Cortex writes important decisions, patterns, and user preferences to Core Memory (Firestore) at the end of each conversation turn.
+2. **Memory consolidation** — temporal-memory periodically scans daily notes and conversation history, distilling key facts into durable Core Memory entries.
+3. **Fleet health monitoring** — Prime periodically (every 15m) checks each fleet agent's gateway health via SSH, writing status to Firestore.
+4. **Auto-recovery** — If a fleet agent's gateway is unhealthy for 3 consecutive checks, Prime auto-restarts the container.
+5. **Dashboard health widget** — Show fleet agent health status (last-check, latency, uptime) on the Fleet tab.
 
-### Future: v3.5 — Memory + Fleet Health
-- Hippocampus nightly responsibility — consolidate daily notes → Core Memory
-- Fleet health monitoring — Prime periodically checks fleet agent health
-- Auto-recovery — detect and restart failed fleet agents
-- Cost governance — per-agent spend tracking, auto-hibernate idle agents
+### Future: v3.5 — Cost + Observability
+- Per-agent spend tracking via Billing API
+- Auto-hibernate idle agents (shut down VM after 24h inactivity)
+- Brain dispatch dashboard (which sub-agents were used, latency per turn)
+- Rate limiting for expensive operations (web search, fleet deploy)
 
 ### Future: v4.0 — R/C/M Framework
 - Responsibilities engine — cron + Firestore registry
