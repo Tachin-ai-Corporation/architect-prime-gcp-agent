@@ -1,14 +1,13 @@
 # TOOLS — Architect Prime (Cortex)
 
-## Brain Dispatch (sessions_spawn)
+## Brain Dispatch (exec)
 
-### Spawn a brain sub-agent (NON-BLOCKING)
+### Dispatch a brain sub-agent
 ```
-sessions_spawn(task: "<instruction>", agentId: "<agent_id>")
+exec oc agent --agent <agent-id> -m "<instruction>" --timeout 60
 ```
-
-The sub-agent runs in the background. When it finishes, it announces its
-result back to my session. I then synthesize and deliver.
+Runs the sub-agent synchronously. The sub-agent executes its task and
+returns the result as text output. I then synthesize and respond.
 
 ### Available agents:
 | agentId | Job | When to use |
@@ -19,18 +18,11 @@ result back to my session. I then synthesize and deliver.
 | `motor` | Execution (code, commands) | Implementing plan steps |
 | `cerebellum` | Verification (QA) | Checking motor's output |
 
-### Override model for heavy tasks:
-```
-sessions_spawn(task: "...", agentId: "prefrontal", model: "google-vertex/gemini-2.5-pro")
-```
-
-## Async Response Delivery (exec)
-
-### Write a follow-up response to dashboard
-```
-exec dashboard-respond "Your synthesized response text"
-```
-Used after sub-agent announces when the original request-response is complete.
+### Timeout guidelines:
+- Research/memory: `--timeout 60`
+- Planning: `--timeout 60`
+- Execution: `--timeout 120` (code changes take longer)
+- Verification: `--timeout 60`
 
 ## Fleet Management (exec)
 
@@ -74,6 +66,6 @@ exec core-memory-read --category <category>
 ```
 
 ## Rules
-- ALWAYS use `sessions_spawn` for brain dispatch. Never exec brain-dispatch.
-- ALWAYS use `exec dashboard-respond` for async follow-up delivery.
+- ALWAYS use `exec oc agent --agent <id>` for brain dispatch.
 - Fleet operations: exec directly. No brain dispatch needed.
+- The `oc` command is on PATH at `~/.openclaw/bin/oc`.
