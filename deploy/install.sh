@@ -114,19 +114,23 @@ for role in "${ROLES[@]}"; do
     --quiet > /dev/null 2>&1 && ok "$role" || warn "Failed to bind $role"
 done
 
-# Grant Cloud Build default SA ability to deploy to Cloud Run
-info "Granting Cloud Build SA permission to deploy..."
+# Grant Cloud Build / Compute SA ability to deploy to Cloud Run
+# Cloud Build steps run as the default compute SA, not the Cloud Build SA
+info "Granting build SAs permission to deploy..."
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null)
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${CLOUDBUILD_SA}" \
-  --role="roles/run.admin" \
-  --condition=None \
-  --quiet > /dev/null 2>&1 && ok "Cloud Build → run.admin" || warn "Failed to bind run.admin to Cloud Build SA"
-gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
-  --member="serviceAccount:${CLOUDBUILD_SA}" \
-  --role="roles/iam.serviceAccountUser" \
-  --quiet > /dev/null 2>&1 && ok "Cloud Build → SA user on ${SA_NAME}" || warn "Failed to bind SA user"
+for build_sa in "$COMPUTE_SA" "$CLOUDBUILD_SA"; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${build_sa}" \
+    --role="roles/run.admin" \
+    --condition=None \
+    --quiet > /dev/null 2>&1 && ok "${build_sa} → run.admin" || warn "Failed to bind run.admin to ${build_sa}"
+  gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
+    --member="serviceAccount:${build_sa}" \
+    --role="roles/iam.serviceAccountUser" \
+    --quiet > /dev/null 2>&1 && ok "${build_sa} → SA user" || warn "Failed to bind SA user for ${build_sa}"
+done
 
 # ---- Step 5: Create DWD Signer SA (shared) ----
 info "Creating shared DWD Signer SA..."
