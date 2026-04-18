@@ -76,20 +76,18 @@ async function getAccessToken() {
 // ---- Firestore Operations ----
 async function pollMessages() {
   const token = await getAccessToken();
+  // Match the proven bash query: single fieldFilter, no composite index needed
   const body = {
     structuredQuery: {
       from: [{ collectionId: 'messages' }],
       where: {
-        compositeFilter: {
-          op: 'AND',
-          filters: [
-            { fieldFilter: { field: { fieldPath: 'sender' }, op: 'EQUAL', value: { stringValue: 'admin' } } },
-            { fieldFilter: { field: { fieldPath: 'processed' }, op: 'EQUAL', value: { booleanValue: false } } }
-          ]
+        fieldFilter: {
+          field: { fieldPath: 'processed' },
+          op: 'EQUAL',
+          value: { booleanValue: false }
         }
       },
-      orderBy: [{ field: { fieldPath: 'timestamp' }, direction: 'ASCENDING' }],
-      limit: 5
+      limit: 50
     }
   };
 
@@ -102,12 +100,16 @@ async function pollMessages() {
   if (!Array.isArray(data)) return [];
 
   return data
-    .filter(d => d.document?.fields?.text?.stringValue)
+    .filter(d => {
+      const fields = d.document?.fields;
+      return fields?.text?.stringValue && fields?.sender?.stringValue === 'admin';
+    })
     .map(d => ({
       text: d.document.fields.text.stringValue,
       path: d.document.name,
       timestamp: d.document.fields.timestamp?.timestampValue || ''
-    }));
+    }))
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
 async function markProcessed(docPath) {
