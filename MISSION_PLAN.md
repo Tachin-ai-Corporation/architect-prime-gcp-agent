@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v3.3.0`
+> - **Current version tag:** `v3.4.0`
 
 ---
 
@@ -39,7 +39,10 @@ Dashboard (Cloud Run — Next.js)
          ▼
     Prime VM (e2-medium, Ubuntu 22.04)
     ├── control-daemon (systemd)
-    │   └── Polls Firestore messages → POST to OpenClaw gateway
+    │   └── Bash wrapper → docker exec Node.js daemon (control-daemon.mjs)
+    │       ├── Polls Firestore messages every 5s via GCE metadata tokens
+    │       ├── Hybrid gateway dispatch: SSE streaming → non-stream fallback
+    │       └── Conversation history (20 turns) + structured JSON logging
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
     │   ├── Brain agents (6 OpenClaw agents, multi-agent dispatch)
@@ -49,7 +52,7 @@ Dashboard (Cloud Run — Next.js)
     │   │   ├── prefrontal — Gemini 2.5 Flash — strategic planning
     │   │   ├── motor — Gemini 2.5 Flash — execution (code + commands)
     │   │   └── cerebellum — Gemini 2.5 Flash — verification + QA
-    │   ├── Cortex dispatches sub-agents via: exec openclaw agent --agent <id>
+    │   ├── Cortex dispatches sub-agents via: exec brain-exec <agent-id> "<task>"
     │   ├── Each agent has its own workspace: SOUL.md, IDENTITY.md
     │   ├── Tools: exec (fleet-*, agent-ask, core-memory-*, dashboard-respond)
     │   └── Session memory + context pruning + hybrid search
@@ -120,14 +123,17 @@ Dashboard (Cloud Run — Next.js)
 
 ### Chat Pipeline
 
-**Dashboard → Prime (control-daemon.mjs — Node.js):**
+**Dashboard → Prime (control-daemon.mjs — Node.js, hybrid SSE):**
 1. User types in dashboard → API writes to Firestore `messages` collection
 2. `control-daemon` bash wrapper detects `.mjs` → `docker exec` runs Node.js version inside container
 3. Node.js daemon polls Firestore every 5s with GCE metadata access token
-4. New message → POST to OpenClaw gateway `/v1/chat/completions` with conversation history (last 20 turns)
+4. New message → **Hybrid dispatch to gateway `/v1/chat/completions`:**
+   - **Step 1:** Try SSE streaming (`stream: true`). Keeps connection alive during long research dispatches (3-5 min).
+   - **Step 2:** If response ≤5 chars (thinking marker from exec tool), retry non-streaming. Non-streaming waits for the full turn including tool results.
 5. Response written back to Firestore → dashboard displays it
-6. HTTP timeout: 600s (research dispatches can chain sub-agents for 3-5 min)
-7. Structured JSON logging with dispatch latency tracking
+6. HTTP timeout: 600s hard ceiling
+7. Conversation history: last 20 turns for context
+8. Structured JSON logging with mode (streaming/non-streaming-fallback), latency, first-chunk timing
 
 **Google Chat → Fleet Agent (inbox-daemon):**
 1. `inbox-daemon` polls Google Chat API via DWD impersonation every 15s
@@ -189,7 +195,7 @@ warnings, returns its output to Cortex, and Cortex synthesizes the final respons
 - 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
 - 🔒 `temporal-research` is the ONLY agent capable of web search.
 - 🔒 All agents on gemini-2.5-flash. Pro via model override only.
-- 🔒 Dispatch via `exec openclaw agent`, NOT `sessions_spawn`.
+- 🔒 Dispatch via `exec brain-exec`, NOT `sessions_spawn` or raw `openclaw agent`.
 - 🔒 `brain-dispatch` script eliminated permanently.
 
 ### Fleet Agent Workspaces

@@ -2,15 +2,17 @@
 // ============================================================
 // control-daemon.mjs — Firestore-polling message bridge for Prime
 //
-// Node.js rewrite of the bash control-daemon. Uses HTTP chat
-// completions endpoint with conversation history for session
-// continuity. Runs inside the Docker container via docker exec.
+// Node.js daemon that polls Firestore for user messages and
+// routes them to the OpenClaw gateway via HTTP. Uses a hybrid
+// streaming approach for reliable long-running dispatches:
 //
-// Benefits over bash version:
-//   - Conversation history across turns (session persistence)
-//   - Structured JSON logging
-//   - Proper error handling (no string escaping issues)
-//   - Dispatch latency tracking
+//   1. Try SSE streaming (stream: true) — keeps connection
+//      alive during brain-exec research dispatches (3-5 min).
+//   2. If response ≤5 chars (thinking marker from exec tool),
+//      retry non-streaming — waits for full tool chain.
+//
+// Runs inside the Docker container via docker exec.
+// Conversation history (20 turns) enables session continuity.
 //
 // Run:
 //   docker exec -e GCP_PROJECT_ID=xxx -e PRIME_ID=xxx \

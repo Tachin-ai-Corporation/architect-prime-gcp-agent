@@ -4,10 +4,10 @@
 
 ### Dispatch a brain sub-agent
 ```
-exec openclaw agent --agent <agent-id> -m "<instruction>" --timeout 60
+exec brain-exec <agent-id> "<instruction>" [timeout]
 ```
-Runs the sub-agent synchronously. The sub-agent executes its task and
-returns the result as text output. I then synthesize and respond.
+Runs the sub-agent synchronously via `brain-exec` (wraps `openclaw agent`,
+strips infrastructure warnings). Returns clean text output to synthesize.
 
 ### Available agents:
 | agentId | Job | When to use |
@@ -19,10 +19,10 @@ returns the result as text output. I then synthesize and respond.
 | `cerebellum` | Verification (QA) | Checking motor's output |
 
 ### Timeout guidelines:
-- Research/memory: `--timeout 60`
-- Planning: `--timeout 60`
-- Execution: `--timeout 120` (code changes take longer)
-- Verification: `--timeout 60`
+- Research/memory: default (60s)
+- Planning: default (60s)
+- Execution: `120` (code changes take longer)
+- Verification: default (60s)
 
 ## Fleet Management (exec)
 
@@ -66,6 +66,6 @@ exec core-memory-read --category <category>
 ```
 
 ## Rules
-- ALWAYS use `exec oc agent --agent <id>` for brain dispatch.
+- ALWAYS use `exec brain-exec <agent-id> "<task>"` for brain dispatch.
 - Fleet operations: exec directly. No brain dispatch needed.
-- The `oc` command is on PATH at `~/.openclaw/bin/oc`.
+- The `brain-exec` wrapper is on PATH at `~/.openclaw/bin/brain-exec`.

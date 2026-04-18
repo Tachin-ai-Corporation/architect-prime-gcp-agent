@@ -423,7 +423,7 @@ systemctl start command-runner
 # ---- Done ----
 echo
 echo "============================================"
-echo "  PRIME VM SETUP COMPLETE (v3.3.0)"
+echo "  PRIME VM SETUP COMPLETE (v3.4.0)"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"
@@ -432,5 +432,5 @@ echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"
 echo "  Daemon         : Node.js (control-daemon.mjs)"
-echo "  Dispatch       : brain-exec wrapper"
+echo "  Dispatch       : brain-exec wrapper + SSE streaming"
 echo "============================================"
