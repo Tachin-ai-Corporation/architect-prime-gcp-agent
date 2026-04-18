@@ -146,7 +146,7 @@ async function updateStatus(status) {
   }).catch(() => {});
 }
 
-// ---- Gateway Communication (SSE Streaming) ----
+// ---- Gateway Communication (Hybrid: SSE Streaming + Non-Stream Fallback) ----
 async function routeMessage(text) {
   const t0 = Date.now();
 
@@ -158,6 +158,59 @@ async function routeMessage(text) {
     conversationHistory.shift();
   }
 
+  // Try streaming first (keeps connection alive for long dispatches)
+  const streamResult = await callGateway([...conversationHistory], true, t0);
+
+  if (streamResult.error) {
+    conversationHistory.pop();
+    return streamResult.error;
+  }
+
+  // If we got a real response (>5 chars), use it
+  if (streamResult.content && streamResult.content.trim().length > 5) {
+    conversationHistory.push({ role: 'assistant', content: streamResult.content });
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    log('Response received', {
+      elapsed_s: parseFloat(elapsed),
+      chars: streamResult.content.length,
+      history_depth: conversationHistory.length,
+      mode: 'streaming'
+    });
+    return streamResult.content;
+  }
+
+  // Got a thinking marker (<5 chars) — retry non-streaming
+  // Non-streaming waits for the full turn including tool results
+  log('Thinking marker detected, retrying non-streaming', {
+    raw: streamResult.content?.trim(),
+    elapsed_s: parseFloat(((Date.now() - t0) / 1000).toFixed(1))
+  });
+
+  const syncResult = await callGateway([...conversationHistory], false, t0);
+
+  if (syncResult.error) {
+    conversationHistory.pop();
+    return syncResult.error;
+  }
+
+  if (syncResult.content) {
+    conversationHistory.push({ role: 'assistant', content: syncResult.content });
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    log('Response received', {
+      elapsed_s: parseFloat(elapsed),
+      chars: syncResult.content.length,
+      history_depth: conversationHistory.length,
+      mode: 'non-streaming-fallback'
+    });
+    return syncResult.content;
+  }
+
+  conversationHistory.pop();
+  return 'No response from OpenClaw. The query may need to be rephrased.';
+}
+
+// Unified gateway call — streaming or non-streaming
+async function callGateway(messages, stream, t0) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
 
@@ -170,49 +223,35 @@ async function routeMessage(text) {
       },
       body: JSON.stringify({
         model: 'openclaw/cortex',
-        messages: [...conversationHistory],
-        stream: true
+        messages,
+        stream
       }),
       signal: controller.signal
     });
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      log('Gateway HTTP error', { status: res.status, body: errText.slice(0, 200) });
-      conversationHistory.pop();
-      return `⚠ Gateway error (HTTP ${res.status})`;
+      log('Gateway HTTP error', { status: res.status, body: errText.slice(0, 200), stream });
+      return { error: `⚠ Gateway error (HTTP ${res.status})` };
     }
 
-    // Parse SSE stream
-    const content = await readSSEStream(res, t0);
-
-    if (content) {
-      // Add assistant response to conversation history
-      conversationHistory.push({ role: 'assistant', content });
-
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-      log('Response received', {
-        elapsed_s: parseFloat(elapsed),
-        chars: content.length,
-        history_depth: conversationHistory.length
-      });
-
-      return content;
+    if (stream) {
+      const content = await readSSEStream(res, t0);
+      return { content };
+    } else {
+      const data = await res.json();
+      const content = data.choices?.[0]?.message?.content
+        || data.content || data.response || '';
+      return { content };
     }
-
-    log('Empty content from gateway stream');
-    return '⚠ Empty response from OpenClaw gateway.';
   } catch (err) {
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    log('Gateway error', { error: err.message, elapsed_s: parseFloat(elapsed) });
-
-    // Remove the failed user message from history
-    conversationHistory.pop();
+    log('Gateway error', { error: err.message, elapsed_s: parseFloat(elapsed), stream });
 
     if (err.name === 'AbortError') {
-      return `⚠ Response timed out (${HTTP_TIMEOUT / 1000}s). The query may have been too complex.`;
+      return { error: `⚠ Response timed out (${HTTP_TIMEOUT / 1000}s). The query may have been too complex.` };
     }
-    return `⚠ Gateway error: ${err.message}`;
+    return { error: `⚠ Gateway error: ${err.message}` };
   } finally {
     clearTimeout(timeout);
   }
