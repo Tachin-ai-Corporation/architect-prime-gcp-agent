@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
 
 /**
- * GET /api/upgrade — Check current and latest CoreKit version
+ * GET /api/upgrade — Check current and latest version
  *
- * Reads current from the installed manifest, latest from GitHub.
+ * Current: from APP_VERSION env var (set during Cloud Run deploy)
+ * Latest: from GitHub tags API
  */
 export async function GET() {
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
     const ghOwner = process.env.GH_OWNER || "Tachin-ai-Corporation";
     const ghRepo = process.env.GH_REPO || "architect-prime-gcp-agent";
-
-    // Current version: from the latest git tag we're running
-    // In Cloud Run, we bake this at build time via package.json or env
     const currentVersion = process.env.APP_VERSION || "dev";
 
-    // Latest version: check GitHub for latest tag
     let latestVersion = "unknown";
     let latestSha = "";
     try {
@@ -55,16 +52,27 @@ export async function GET() {
 }
 
 /**
- * POST /api/upgrade — Trigger CoreKit upgrade on Prime VM
+ * POST /api/upgrade — Full dashboard upgrade via Cloud Build
  *
- * Sends an upgrade command to the Prime via Firestore message.
- * Optionally triggers Cloud Run redeployment.
+ * Triggers Cloud Build to:
+ *   1. Clone the repo at the latest tag
+ *   2. Build the Docker image
+ *   3. Push to Artifact Registry
+ *   4. Deploy to Cloud Run with correct APP_VERSION
+ *
+ * Returns immediately — build runs async (~2-3 min).
  */
 export async function POST() {
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
+    const ghOwner = process.env.GH_OWNER || "Tachin-ai-Corporation";
+    const ghRepo = process.env.GH_REPO || "architect-prime-gcp-agent";
+    const region = process.env.REGION || "us-central1";
+    const serviceName = process.env.SERVICE_NAME || "architect-prime";
+    const image = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane:latest`;
+    const repoUrl = `https://github.com/${ghOwner}/${ghRepo}.git`;
 
-    // Get Cloud Run SA token
+    // Get SA token
     const tokenRes = await fetch(
       "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
       { headers: { "Metadata-Flavor": "Google" } }
@@ -79,15 +87,7 @@ export async function POST() {
 
     const { access_token: token } = await tokenRes.json();
 
-    // Trigger Cloud Run service update by deploying the latest image
-    // This forces Cloud Run to pull the latest :latest tag
-    const ghOwner = process.env.GH_OWNER || "Tachin-ai-Corporation";
-    const ghRepo = process.env.GH_REPO || "architect-prime-gcp-agent";
-    const region = process.env.REGION || "us-central1";
-    const serviceName = "architect-prime";
-    const image = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane:latest`;
-
-    // Get the latest version tag
+    // Get latest version tag
     let latestVersion = "dev";
     try {
       const tagRes = await fetch(
@@ -102,45 +102,96 @@ export async function POST() {
       // GitHub API may be unavailable
     }
 
-    // Update the Cloud Run service to use the latest image + correct version
-    const updateRes = await fetch(
-      `https://run.googleapis.com/v2/projects/${projectId}/locations/${region}/services/${serviceName}?updateMask=template.containers`,
+    if (latestVersion === "dev") {
+      return NextResponse.json({
+        success: false,
+        error: "Could not determine latest version from GitHub tags.",
+      });
+    }
+
+    // Preserve existing DWD_CLIENT_ID from current env
+    const dwdClientId = process.env.DWD_CLIENT_ID || "";
+
+    // Submit Cloud Build: clone → build → push → deploy
+    const buildConfig = {
+      steps: [
+        {
+          name: "gcr.io/cloud-builders/git",
+          args: [
+            "clone", "--depth=1", "--branch", latestVersion,
+            repoUrl, "/workspace/repo",
+          ],
+        },
+        {
+          name: "gcr.io/cloud-builders/docker",
+          args: ["build", "-t", image, "/workspace/repo/app"],
+        },
+        {
+          name: "gcr.io/cloud-builders/docker",
+          args: ["push", image],
+        },
+        {
+          name: "gcr.io/google.com/cloudsdktool/cloud-sdk",
+          entrypoint: "gcloud",
+          args: [
+            "run", "deploy", serviceName,
+            "--image", image,
+            "--region", region,
+            "--update-env-vars",
+            `APP_VERSION=${latestVersion},GCP_PROJECT_ID=${projectId},NODE_ENV=production${dwdClientId ? `,DWD_CLIENT_ID=${dwdClientId}` : ""}`,
+            "--quiet",
+          ],
+        },
+      ],
+      images: [image],
+      timeout: "600s",
+      options: {
+        logging: "CLOUD_LOGGING_ONLY",
+      },
+    };
+
+    const buildRes = await fetch(
+      `https://cloudbuild.googleapis.com/v1/projects/${projectId}/builds`,
       {
-        method: "PATCH",
+        method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          template: {
-            containers: [{
-              image,
-              env: [
-                { name: "APP_VERSION", value: latestVersion },
-                { name: "GCP_PROJECT_ID", value: projectId },
-                { name: "NODE_ENV", value: "production" },
-              ],
-            }],
-          },
-        }),
+        body: JSON.stringify(buildConfig),
       }
     );
 
-    if (!updateRes.ok) {
-      const err = await updateRes.text();
-      console.error(`[api/upgrade] Cloud Run update failed: ${err}`);
+    if (!buildRes.ok) {
+      const errText = await buildRes.text();
+      console.error(`[api/upgrade] Cloud Build submit failed (${buildRes.status}):`, errText);
+
+      // Provide actionable error messages
+      if (buildRes.status === 403) {
+        return NextResponse.json({
+          success: false,
+          error: "Permission denied. The Cloud Run service account needs roles/cloudbuild.builds.editor. " +
+                 "Run: gcloud projects add-iam-policy-binding PROJECT --member=serviceAccount:SA --role=roles/cloudbuild.builds.editor",
+        });
+      }
+
       return NextResponse.json({
         success: false,
-        error: "Cloud Run update failed",
-        details: err,
+        error: `Cloud Build failed (${buildRes.status})`,
+        details: errText.substring(0, 500),
       });
     }
 
+    const buildData = await buildRes.json();
+    const buildId = buildData?.metadata?.build?.id || buildData?.name || "unknown";
+
+    console.log(`[api/upgrade] Cloud Build submitted: ${buildId} → ${latestVersion}`);
+
     return NextResponse.json({
       success: true,
-      message: `Upgrade initiated. Cloud Run will pull the latest image (${image}). Prime VMs will upgrade via upgrade-corekit on next poll.`,
-      ghOwner,
-      ghRepo,
+      message: `Build triggered for ${latestVersion}. The dashboard will upgrade automatically in ~3 minutes.`,
+      buildId,
+      version: latestVersion,
     });
   } catch (err) {
     console.error("[api/upgrade] POST error:", err);

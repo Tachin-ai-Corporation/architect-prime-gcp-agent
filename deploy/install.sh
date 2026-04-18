@@ -103,6 +103,8 @@ ROLES=(
   roles/iam.serviceAccountTokenCreator  # Sign JWTs for DWD
   roles/serviceusage.serviceUsageConsumer  # Enable APIs
   roles/aiplatform.user             # Vertex AI access for agent LLM
+  roles/cloudbuild.builds.editor    # Trigger Cloud Build (dashboard self-upgrade)
+  roles/run.admin                   # Update Cloud Run service
 )
 for role in "${ROLES[@]}"; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
@@ -111,6 +113,20 @@ for role in "${ROLES[@]}"; do
     --condition=None \
     --quiet > /dev/null 2>&1 && ok "$role" || warn "Failed to bind $role"
 done
+
+# Grant Cloud Build default SA ability to deploy to Cloud Run
+info "Granting Cloud Build SA permission to deploy..."
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)' 2>/dev/null)
+CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${CLOUDBUILD_SA}" \
+  --role="roles/run.admin" \
+  --condition=None \
+  --quiet > /dev/null 2>&1 && ok "Cloud Build → run.admin" || warn "Failed to bind run.admin to Cloud Build SA"
+gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
+  --member="serviceAccount:${CLOUDBUILD_SA}" \
+  --role="roles/iam.serviceAccountUser" \
+  --quiet > /dev/null 2>&1 && ok "Cloud Build → SA user on ${SA_NAME}" || warn "Failed to bind SA user"
 
 # ---- Step 5: Create DWD Signer SA (shared) ----
 info "Creating shared DWD Signer SA..."
