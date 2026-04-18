@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# ============================================================
+# brain-exec — Wrapper for exec openclaw agent dispatch
+#
+# Strips gateway warning messages from the output so Cortex
+# only sees the actual sub-agent response. The gateway token
+# mismatch is expected (CLI falls back to embedded mode).
+#
+# Usage (from Cortex SOUL.md):
+#   exec brain-exec <agent-id> "<task instruction>"
+#
+# Example:
+#   exec brain-exec temporal-research "Research: latest AI news"
+# ============================================================
+
+AGENT_ID="${1:?Usage: brain-exec <agent-id> \"<task>\"}"
+TASK="${2:?Usage: brain-exec <agent-id> \"<task>\"}"
+TIMEOUT="${3:-120}"
+
+# Run openclaw agent and capture full output
+OUTPUT=$(openclaw agent --agent "$AGENT_ID" -m "$TASK" --timeout "$TIMEOUT" 2>&1) || true
+
+# Strip known gateway warning lines
+CLEAN=$(echo "$OUTPUT" | grep -v \
+  -e 'gateway connect failed' \
+  -e 'GatewayClientRequestError' \
+  -e 'Gateway agent failed' \
+  -e 'falling back to embedded' \
+  -e 'Gateway target:' \
+  -e 'Source: local' \
+  -e 'Config: /home' \
+  -e 'Bind: loopback' \
+  -e '^$' \
+  || true)
+
+# If nothing left after stripping, return original
+if [[ -z "$CLEAN" ]]; then
+  echo "$OUTPUT"
+else
+  echo "$CLEAN"
+fi

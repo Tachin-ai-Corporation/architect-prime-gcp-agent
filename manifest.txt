@@ -38,6 +38,7 @@ bundle/corekit/bin/dashboard-respond .openclaw/bin/dashboard-respond
 bundle/corekit/bin/render-config .openclaw/bin/render-config
 bundle/corekit/bin/control-daemon .openclaw/bin/control-daemon
 bundle/corekit/bin/control-daemon.mjs .openclaw/bin/control-daemon.mjs
+bundle/corekit/bin/brain-exec .openclaw/bin/brain-exec
 
 # Skills (self-describing SKILL.md per skill)
 bundle/skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
