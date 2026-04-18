@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v3.2.0`
+> - **Current version tag:** `v3.3.0`
 
 ---
 
@@ -58,9 +58,10 @@ Dashboard (Cloud Run — Next.js)
         ├── Fleet lifecycle: fleet-deploy, fleet-teardown, fleet-monitor
         ├── Fleet orchestration: fleet-hire, fleet-fire, fleet-status, fleet-verify, fleet-upgrade
         ├── Chat: inbox-daemon, chat-send, chat-read, dwd-token
-        ├── Agent: agent-ask (Vertex AI grounding), build-system-prompt
+        ├── Agent: agent-ask (Vertex AI grounding), brain-exec, build-system-prompt
         ├── Memory: core-memory-read, core-memory-write (Firestore)
         ├── System: upgrade-corekit, command-runner, render-config, assemble-tools
+        ├── Daemon: control-daemon (bash wrapper), control-daemon.mjs (Node.js)
         ├── Async: dashboard-respond (Firestore push)
         └── Config: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
@@ -119,11 +120,14 @@ Dashboard (Cloud Run — Next.js)
 
 ### Chat Pipeline
 
-**Dashboard → Prime (control-daemon):**
+**Dashboard → Prime (control-daemon.mjs — Node.js):**
 1. User types in dashboard → API writes to Firestore `messages` collection
-2. `control-daemon` (systemd) polls Firestore every 5s
-3. New message → POST to OpenClaw gateway `/v1/chat/completions`
-4. Response written back to Firestore → dashboard displays it
+2. `control-daemon` bash wrapper detects `.mjs` → `docker exec` runs Node.js version inside container
+3. Node.js daemon polls Firestore every 5s with GCE metadata access token
+4. New message → POST to OpenClaw gateway `/v1/chat/completions` with conversation history (last 20 turns)
+5. Response written back to Firestore → dashboard displays it
+6. HTTP timeout: 600s (research dispatches can chain sub-agents for 3-5 min)
+7. Structured JSON logging with dispatch latency tracking
 
 **Google Chat → Fleet Agent (inbox-daemon):**
 1. `inbox-daemon` polls Google Chat API via DWD impersonation every 15s
@@ -157,9 +161,12 @@ mode, returns its output to Cortex, and Cortex synthesizes the final response.
 | **motor** | gemini-2.5-flash | Execution (code + commands) | `~/.openclaw/workspace-motor` | read, write, edit, exec |
 | **cerebellum** | gemini-2.5-flash | Verification + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
 
-**Dispatch mechanism:** `exec openclaw agent --agent <id> -m "<task>" --timeout 60`
+**Dispatch mechanism:** `exec brain-exec <agent-id> "<task>" [timeout]`
+- `brain-exec` wraps `openclaw agent` and strips gateway infrastructure warnings
 - Synchronous — Cortex blocks until the sub-agent returns
-- The CLI falls back to embedded mode (bypasses gateway WebSocket auth)
+- The CLI connects via gateway WebSocket when tokens are synced, falls back to embedded mode otherwise
+- `render-config` ensures gateway token sync by reading `OPENCLAW_GATEWAY_TOKEN` env var
+- `upgrade-corekit` auto-calls `render-config` after every deployment
 - Cortex MUST wait for results before responding to the user
 - All agents run on gemini-2.5-flash; Pro available via model override
 
