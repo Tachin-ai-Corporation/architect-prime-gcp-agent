@@ -36,7 +36,7 @@ SERVICE_NAME="${SERVICE_NAME:-architect-prime}"
 SA_NAME="${SA_NAME:-architect-prime-cp}"
 IMAGE_REPO="${IMAGE_REPO:-us-docker.pkg.dev/${PROJECT_ID}/architect-prime}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
-APP_VERSION="${APP_VERSION:-v1.0.0}"
+APP_VERSION="${APP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')}"
 
 # Derived
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"

@@ -87,8 +87,22 @@ export async function POST() {
     const serviceName = "architect-prime";
     const image = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane:latest`;
 
-    // Update the Cloud Run service to use the latest image
-    // This is a PATCH to the Cloud Run v2 API
+    // Get the latest version tag
+    let latestVersion = "dev";
+    try {
+      const tagRes = await fetch(
+        `https://api.github.com/repos/${ghOwner}/${ghRepo}/tags?per_page=1`,
+        { headers: { Accept: "application/vnd.github.v3+json" } }
+      );
+      if (tagRes.ok) {
+        const tags = await tagRes.json();
+        if (tags.length > 0) latestVersion = tags[0].name;
+      }
+    } catch {
+      // GitHub API may be unavailable
+    }
+
+    // Update the Cloud Run service to use the latest image + correct version
     const updateRes = await fetch(
       `https://run.googleapis.com/v2/projects/${projectId}/locations/${region}/services/${serviceName}?updateMask=template.containers`,
       {
@@ -99,7 +113,14 @@ export async function POST() {
         },
         body: JSON.stringify({
           template: {
-            containers: [{ image }],
+            containers: [{
+              image,
+              env: [
+                { name: "APP_VERSION", value: latestVersion },
+                { name: "GCP_PROJECT_ID", value: projectId },
+                { name: "NODE_ENV", value: "production" },
+              ],
+            }],
           },
         }),
       }
