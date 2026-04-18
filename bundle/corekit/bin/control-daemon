@@ -185,7 +185,8 @@ except Exception as e:
       log "Received: $TEXT"
 
       # Route to OpenClaw gateway (OpenAI-compatible endpoint)
-      OC_RESPONSE="$(curl -s --max-time 120 \
+      # 300s timeout: brain dispatch chains can take 80-120s for full plan+execute+verify
+      OC_RESPONSE="$(curl -s --max-time 300 \
         -X POST "${OC_GATEWAY}/v1/chat/completions" \
         -H "Authorization: Bearer ${OC_TOKEN}" \
         -H "Content-Type: application/json" \
