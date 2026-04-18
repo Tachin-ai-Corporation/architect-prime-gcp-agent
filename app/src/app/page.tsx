@@ -37,6 +37,15 @@ interface ActionRequired {
   title: string;
   instructions: string[];
 }
+interface GatewayHealth {
+  status: string;
+  lastCheck: string | null;
+  latencyMs: number;
+  consecutiveFailures: number;
+  httpCode: string;
+  lastRecoveryAttempt: string | null;
+  lastRecoveryResult: string | null;
+}
 interface AgentDetail {
   agent: string;
   status: string;
@@ -51,6 +60,7 @@ interface AgentDetail {
   activity: { id: string; type: string; summary: string; timestamp: string; sender: string }[];
   deploySteps?: DeployStep[];
   actionRequired?: ActionRequired | null;
+  health?: GatewayHealth | null;
 }
 interface SetupState {
   hasPrimes: boolean;
@@ -919,7 +929,7 @@ export default function Home() {
                         })()}
 
                         {/* Info + Activity Grid */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
                           {/* Left: Info */}
                           <div>
                             <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Agent Info</div>
@@ -949,6 +959,54 @@ export default function Home() {
                                 <span>{agentDetail.lastHeartbeat ? formatTime(agentDetail.lastHeartbeat) : "—"}</span>
                               </div>
                             </div>
+                          </div>
+
+                          {/* Middle: Gateway Health */}
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Gateway Health</div>
+                            {agentDetail.health ? (
+                              <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ color: "var(--text-secondary)" }}>Status</span>
+                                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{
+                                      width: 8, height: 8, borderRadius: "50%",
+                                      background: agentDetail.health.status === "healthy" ? "#22c55e" : "#ef4444",
+                                      display: "inline-block",
+                                    }} />
+                                    {agentDetail.health.status}
+                                  </span>
+                                </div>
+                                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                  <span style={{ color: "var(--text-secondary)" }}>Latency</span>
+                                  <span>{agentDetail.health.latencyMs}ms</span>
+                                </div>
+                                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                  <span style={{ color: "var(--text-secondary)" }}>Last Check</span>
+                                  <span>{agentDetail.health.lastCheck ? formatTime(agentDetail.health.lastCheck) : "—"}</span>
+                                </div>
+                                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                  <span style={{ color: "var(--text-secondary)" }}>HTTP Code</span>
+                                  <code className="mono" style={{ fontSize: 11 }}>{agentDetail.health.httpCode || "—"}</code>
+                                </div>
+                                {agentDetail.health.consecutiveFailures > 0 && (
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                    <span style={{ color: "#ef4444" }}>Failures</span>
+                                    <span style={{ color: "#ef4444", fontWeight: 600 }}>{agentDetail.health.consecutiveFailures} consecutive</span>
+                                  </div>
+                                )}
+                                {agentDetail.health.lastRecoveryAttempt && (
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                    <span style={{ color: "var(--text-secondary)" }}>Recovery</span>
+                                    <span style={{ color: agentDetail.health.lastRecoveryResult === "success" ? "#22c55e" : "#ef4444" }}>
+                                      {agentDetail.health.lastRecoveryResult} ({formatTime(agentDetail.health.lastRecoveryAttempt)})
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>No health data yet. Waiting for fleet-health-check timer.</div>
+                            )}
                           </div>
 
                           {/* Right: Activity Log */}
@@ -1133,7 +1191,7 @@ export default function Home() {
                       const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ type: "upgrade_corekit", args: { ref: "main" } }),
+                        body: JSON.stringify({ type: "upgrade_corekit", args: { ref: versionInfo?.latestVersion || "main" } }),
                       });
                       if (result?.id) alert(`CoreKit upgrade queued (command: ${result.id}). The command-runner will execute it.`);
                       else alert("Failed to queue upgrade command.");

@@ -67,9 +67,12 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       uptimeMinutes = Math.floor((Date.now() - deployed.getTime()) / 60000);
     }
 
-    // Determine if agent is stale (no heartbeat in 2 minutes)
+    // Determine health from health check data (written by fleet-health-check)
+    const healthData = agentData.health || null;
     let healthy = agentData.status === "online";
-    if (lastHeartbeat) {
+    if (healthData?.status) {
+      healthy = healthData.status === "healthy";
+    } else if (lastHeartbeat) {
       const hbAge = Date.now() - new Date(lastHeartbeat).getTime();
       if (hbAge > 120000) healthy = false; // >2 min stale
     }
@@ -88,6 +91,15 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       activity,
       deploySteps: agentData.deploySteps ?? [],
       actionRequired: agentData.actionRequired ?? null,
+      health: healthData ? {
+        status: healthData.status || "unknown",
+        lastCheck: healthData.lastCheck || null,
+        latencyMs: parseInt(healthData.latencyMs || "0", 10),
+        consecutiveFailures: parseInt(healthData.consecutiveFailures || "0", 10),
+        httpCode: healthData.httpCode || "",
+        lastRecoveryAttempt: healthData.lastRecoveryAttempt || null,
+        lastRecoveryResult: healthData.lastRecoveryResult || null,
+      } : null,
     });
   } catch (err) {
     console.error(`[api/fleet/${(await ctx.params).agent}/logs] Error:`, err);
