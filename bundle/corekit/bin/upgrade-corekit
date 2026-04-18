@@ -55,6 +55,15 @@ case "${1:-}" in
       INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
       bash -s -- --upgrade "$ref"
 
+    # ---- Re-render config with correct gateway token ----
+    # upgrade-corekit installs new config template; re-render to sync
+    # auth.token with the container's OPENCLAW_GATEWAY_TOKEN env var
+    RENDER="${OC_HOST_ROOT}/.openclaw/bin/render-config"
+    if [[ -x "$RENDER" ]]; then
+      echo "==> Re-rendering config (token sync)..."
+      "$RENDER" || echo "  (render-config failed, config may have stale token)"
+    fi
+
     # ---- Fleet agent workspace re-overlay ----
     # install.sh always installs main workspace to .openclaw/workspace/.
     # For fleet agents, re-apply the specialty workspace on top.

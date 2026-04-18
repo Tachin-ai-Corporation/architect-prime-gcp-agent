@@ -44,19 +44,24 @@ if [[ -z "$PROJECT" ]]; then
 fi
 
 # ---- Resolve gateway token ----
-# Priority: running container → existing token file → existing config → generate
+# Priority: container env var → .env file → token file → existing config → generate
+# IMPORTANT: The gateway uses OPENCLAW_GATEWAY_TOKEN env var as the ACTUAL
+# runtime token. The config auth.token can go stale. Always prefer the env var.
 TOKEN=""
 
-# 1. Try extracting from running container
+# 1. Try the RUNTIME env var from running container (source of truth)
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q openclaw-gateway; then
-  TOKEN="$(docker exec openclaw-gateway node -e '
-    const fs=require("fs");
-    try {
-      const c=JSON.parse(fs.readFileSync("/home/node/.openclaw/openclaw.json"));
-      process.stdout.write(c.gateway.auth.token || "");
-    } catch(e) {}
-  ' 2>/dev/null || echo '')"
-  [[ -n "$TOKEN" ]] && log "Token from running container: ${TOKEN:0:8}..."
+  TOKEN="$(docker exec openclaw-gateway sh -c 'echo $OPENCLAW_GATEWAY_TOKEN' 2>/dev/null || echo '')"
+  [[ -n "$TOKEN" ]] && log "Token from container env: ${TOKEN:0:8}..."
+fi
+
+# 2. Try the .env file used by docker compose/run
+if [[ -z "$TOKEN" ]]; then
+  ENV_FILE="/root/openclaw/.env"
+  if [[ -f "$ENV_FILE" ]]; then
+    TOKEN="$(grep '^OPENCLAW_GATEWAY_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+    [[ -n "$TOKEN" ]] && log "Token from .env file: ${TOKEN:0:8}..."
+  fi
 fi
 
 # 2. Try token file
