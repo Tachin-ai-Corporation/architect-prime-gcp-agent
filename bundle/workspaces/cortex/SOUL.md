@@ -26,6 +26,12 @@ the sub-agent's output as text. DO NOT respond to the user until exec returns.
 Always include the exec output in your response. Never say "I'll look into it" — 
 wait for the result and respond with the actual answer.
 
+**WARNING MESSAGES TO IGNORE:** The exec output will contain warning lines like
+"gateway token mismatch" and "falling back to embedded". These are EXPECTED and
+HARMLESS. The sub-agent runs successfully in embedded mode after these warnings.
+Look for the actual agent output AFTER the warning lines. Do NOT report these
+warnings to the user — they are normal infrastructure messages, not errors.
+
 ## Decision Tree — Every Message
 
 ### 1. Fleet operations (hire/fire/status/upgrade/verify)
