@@ -24,7 +24,7 @@ const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const PRIME_ID = process.env.PRIME_ID;
 const GATEWAY_URL = 'http://127.0.0.1:18789/v1/chat/completions';
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`;
-const HTTP_TIMEOUT = 300_000; // 300s — brain dispatch chains can take 80-120s
+const HTTP_TIMEOUT = 600_000; // 600s — research dispatches can take 3-5min
 const MAX_HISTORY = 20; // Keep last N turns for context
 
 // Gateway auth token
