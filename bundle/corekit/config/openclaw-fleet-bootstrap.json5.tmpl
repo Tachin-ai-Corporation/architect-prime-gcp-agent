@@ -172,16 +172,16 @@
   },
   "commands": { "native": "auto", "nativeSkills": "auto" },
   "cron": {
-    "enabled": true,
-    "jobs": [
-      {
-        "name": "memory-consolidate",
-        "cron": "0 2 * * *",
-        "timezone": "America/Chicago",
-        "agent": "temporal-memory",
-        "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation. Read the skill at ~/.openclaw/skills/memory-consolidate/SKILL.md and follow its phases."
-      }
-    ]
+    "enabled": true
+    // NOTE: cron.jobs requires OpenClaw >= 2026.4.15. Currently on 2026.4.4.
+    // When upgraded, re-enable:
+    // "jobs": [{
+    //   "name": "memory-consolidate",
+    //   "cron": "0 2 * * *",
+    //   "timezone": "America/Chicago",
+    //   "agent": "temporal-memory",
+    //   "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation."
+    // }]
   },
   "hooks": { "internal": { "entries": { "session-memory": { "enabled": true } } } },
   "gateway": {
