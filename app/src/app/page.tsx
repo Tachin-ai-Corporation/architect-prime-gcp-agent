@@ -1247,14 +1247,30 @@ export default function Home() {
                         placeholder="e.g. tachin.ai"
                         value={setup.agentEmailDomain}
                         onChange={(e) => setSetup(prev => ({ ...prev, agentEmailDomain: e.target.value }))}
-                        onBlur={async () => {
-                          await api("/api/setup", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ agentEmailDomain: setup.agentEmailDomain.trim() }),
-                          });
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter") {
+                            await api("/api/setup", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ agentEmailDomain: setup.agentEmailDomain.trim() }),
+                            });
+                            setCopied("domain");
+                            setTimeout(() => setCopied(""), 2000);
+                          }
                         }}
                       />
+                      <button className="btn btn-sm btn-primary" onClick={async () => {
+                        await api("/api/setup", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ agentEmailDomain: setup.agentEmailDomain.trim() }),
+                        });
+                        setCopied("domain");
+                        setTimeout(() => setCopied(""), 2000);
+                      }}>Save</button>
+                      {copied === "domain" && (
+                        <span style={{ color: "#22c55e", fontSize: 12, fontWeight: 500 }}>✓ Saved</span>
+                      )}
                     </div>
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, paddingLeft: 2 }}>
