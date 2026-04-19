@@ -2,14 +2,19 @@
 # core-memory-read — query Firestore Core Memory entries
 #
 # Usage:
-#   core-memory-read --category <category> [--query "<search terms>"] [--status active] [--limit 10]
+#   core-memory-read --category <category> [--query "<search terms>"] [--status active] [--limit 10] [--agent <name>]
 #
 # Categories: architecture, operations, iam, decisions, patterns, errors
+#
+# Fleet agents auto-detect via AGENT_ID env var (set by fleet-bootstrap).
+# Memory path: primes/{primeId}/fleet/{agent}/memory/core
+# Prime path:  primes/{primeId}/memory/core
 #
 # Examples:
 #   core-memory-read --category architecture
 #   core-memory-read --category operations --query "fleet bootstrap"
 #   core-memory-read --query "DWD"          # search all categories
+#   core-memory-read --category decisions --agent stan  # read fleet agent memory
 
 set -euo pipefail
 
@@ -18,6 +23,7 @@ CATEGORY=""
 QUERY=""
 STATUS="active"
 LIMIT=10
+AGENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -25,9 +31,15 @@ while [[ $# -gt 0 ]]; do
     --query)    QUERY="$2";    shift 2 ;;
     --status)   STATUS="$2";   shift 2 ;;
     --limit)    LIMIT="$2";    shift 2 ;;
+    --agent)    AGENT="$2";    shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
+
+# Auto-detect fleet agent context
+if [[ -z "$AGENT" && -n "${AGENT_ID:-}" ]]; then
+  AGENT="$AGENT_ID"
+fi
 
 # ── Resolve Prime ID ────────────────────────────────────────────
 PRIME_ID=$(curl -sf -H "Metadata-Flavor: Google" \
@@ -45,7 +57,11 @@ TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 # ── Build Firestore query ───────────────────────────────────────
-COLLECTION="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+if [[ -n "$AGENT" ]]; then
+  COLLECTION="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}/memory/core"
+else
+  COLLECTION="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+fi
 
 # Build structured query
 FILTERS=()

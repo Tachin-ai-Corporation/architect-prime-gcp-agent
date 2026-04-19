@@ -13,11 +13,32 @@
       "models": {
         "google-vertex/gemini-2.5-flash": {
           "alias": "Gemini 2.5 Flash"
+        },
+        "google-vertex/gemini-2.5-pro": {
+          "alias": "Gemini 2.5 Pro"
         }
       },
-      "workspace": "~/.openclaw/workspace",
+      "subagents": {
+        "maxSpawnDepth": 1,
+        "maxChildrenPerAgent": 4,
+        "maxConcurrent": 4,
+        "runTimeoutSeconds": 120,
+        "archiveAfterMinutes": 30
+      },
       "memorySearch": {
-        "enabled": true
+        "enabled": true,
+        "provider": "google",
+        "model": "text-embedding-005",
+        "query": {
+          "maxResults": 8,
+          "hybrid": {
+            "enabled": true,
+            "vectorWeight": 0.7,
+            "textWeight": 0.3,
+            "mmr": { "enabled": true, "lambda": 0.7 },
+            "temporalDecay": { "enabled": true, "halfLifeDays": 30 }
+          }
+        }
       },
       "contextPruning": {
         "mode": "cache-ttl",
@@ -41,13 +62,73 @@
     },
     "list": [
       {
-        "id": "main",
+        // Cortex — the specialty agent's user-facing persona.
+        // Dispatches sub-agents via exec brain-exec.
+        "id": "cortex",
         "default": true,
         "name": "${AGENT_DISPLAY_NAME}",
-        "model": {
-          "primary": "google-vertex/gemini-2.5-flash"
-        },
         "workspace": "~/.openclaw/workspace",
+        "sandbox": { "mode": "off" },
+        "subagents": {
+          "allowAgents": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"],
+          "requireAgentId": true
+        },
+        "tools": {
+          "allow": [
+            "read",
+            "write",
+            "edit",
+            "exec",
+            "process",
+            "sessions_spawn",
+            "sessions_list",
+            "sessions_history",
+            "subagents"
+          ],
+          "deny": ["web-search", "browser"]
+        }
+      },
+      {
+        // Temporal Research — web search via Vertex AI grounding.
+        // ONLY agent with web search capability. Uses exec agent-ask.
+        "id": "temporal-research",
+        "name": "Temporal (Web Research)",
+        "workspace": "~/.openclaw/workspace-temporal-research",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["exec"],
+          "deny": ["read", "write", "edit", "browser", "web-search"]
+        }
+      },
+      {
+        // Temporal Memory — context recall from workspace memory + Core Memory.
+        "id": "temporal-memory",
+        "name": "Temporal (Memory)",
+        "workspace": "~/.openclaw/workspace-temporal-memory",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["read", "exec"],
+          "deny": ["write", "edit", "browser", "web-search"]
+        }
+      },
+      {
+        // Prefrontal — strategic planner. Decomposes complex tasks.
+        // Read-only. No execution capability.
+        "id": "prefrontal",
+        "name": "Prefrontal (Planning)",
+        "workspace": "~/.openclaw/workspace-prefrontal",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["read"],
+          "deny": ["write", "edit", "exec", "browser", "web-search"]
+        }
+      },
+      {
+        // Motor — executor. Writes code, runs commands, builds things.
+        // Full access. Only dispatched for approved plan steps.
+        "id": "motor",
+        "name": "Motor (Execution)",
+        "workspace": "~/.openclaw/workspace-motor",
         "sandbox": { "mode": "off" },
         "tools": {
           "allow": [
@@ -58,6 +139,17 @@
             "process"
           ],
           "deny": ["web-search", "browser"]
+        }
+      },
+      {
+        // Cerebellum — verifier. QA checks outputs before delivery.
+        "id": "cerebellum",
+        "name": "Cerebellum (Verification)",
+        "workspace": "~/.openclaw/workspace-cerebellum",
+        "sandbox": { "mode": "off" },
+        "tools": {
+          "allow": ["read", "exec"],
+          "deny": ["write", "edit", "browser", "web-search"]
         }
       }
     ]
@@ -79,12 +171,26 @@
     "removeAckAfterReply": false
   },
   "commands": { "native": "auto", "nativeSkills": "auto" },
-  "cron": { "enabled": false },
+  "cron": {
+    "enabled": true,
+    "jobs": [
+      {
+        "name": "memory-consolidate",
+        "cron": "0 2 * * *",
+        "timezone": "America/Chicago",
+        "agent": "temporal-memory",
+        "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation. Read the skill at ~/.openclaw/skills/memory-consolidate/SKILL.md and follow its phases."
+      }
+    ]
+  },
   "hooks": { "internal": { "entries": { "session-memory": { "enabled": true } } } },
   "gateway": {
     "port": 18789,
     "mode": "local",
     "bind": "loopback",
+    "remote": {
+      "token": "${MY_TOKEN}"
+    },
     "controlUi": { "enabled": true, "basePath": "/" },
     "http": {
       "endpoints": {

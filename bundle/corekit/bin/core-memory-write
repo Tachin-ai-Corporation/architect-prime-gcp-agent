@@ -3,9 +3,13 @@
 #
 # Usage:
 #   core-memory-write --fact "<fact text>" --category <category> [--tags "tag1,tag2"] \
-#                     [--confidence 0.9] [--source observation] [--supersedes <id>]
+#                     [--confidence 0.9] [--source observation] [--supersedes <id>] [--agent <name>]
 #
 # Categories: architecture, operations, iam, decisions, patterns, errors
+#
+# Fleet agents auto-detect via AGENT_ID env var (set by fleet-bootstrap).
+# Memory path: primes/{primeId}/fleet/{agent}/memory/core
+# Prime path:  primes/{primeId}/memory/core
 #
 # Examples:
 #   core-memory-write --fact "Fleet bootstrap takes ~15min on e2-medium" --category operations --tags "fleet,bootstrap,timing"
@@ -21,6 +25,7 @@ CONFIDENCE="0.9"
 SOURCE="observation"
 SOURCE_DETAIL=""
 SUPERSEDES=""
+AGENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,9 +36,15 @@ while [[ $# -gt 0 ]]; do
     --source)        SOURCE="$2";        shift 2 ;;
     --source-detail) SOURCE_DETAIL="$2"; shift 2 ;;
     --supersedes)    SUPERSEDES="$2";    shift 2 ;;
+    --agent)         AGENT="$2";         shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
+
+# Auto-detect fleet agent context
+if [[ -z "$AGENT" && -n "${AGENT_ID:-}" ]]; then
+  AGENT="$AGENT_ID"
+fi
 
 if [[ -z "$FACT" || -z "$CATEGORY" ]]; then
   echo "Usage: core-memory-write --fact \"<text>\" --category <category> [options]" >&2
@@ -105,8 +116,12 @@ DOC_BODY=$(cat <<EOF
 EOF
 )
 
-# ── Write to Firestore ──────────────────────────────────────────
-COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+# ── Write to Firestore ───────────────────────────────────────
+if [[ -n "$AGENT" ]]; then
+  COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}/memory/core"
+else
+  COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+fi
 
 RESPONSE=$(curl -sf \
   -H "Authorization: Bearer ${TOKEN}" \

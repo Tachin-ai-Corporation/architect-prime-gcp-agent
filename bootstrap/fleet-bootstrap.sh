@@ -151,6 +151,32 @@ if [[ -n "$WORKSPACE_SRC" ]]; then
   done
 fi
 
+# ---- 4b) Deploy shared brain sub-agent workspaces ----
+BRAIN_SRC="${OC_HOST_DIR}/workspace-_brain"
+if [[ -d "$BRAIN_SRC" ]]; then
+  info "Deploying brain sub-agent workspaces..."
+  for brain_dir in temporal-research temporal-memory prefrontal motor cerebellum; do
+    src="${BRAIN_SRC}/${brain_dir}"
+    dest="${OC_HOST_DIR}/workspace-${brain_dir}"
+    if [[ -d "$src" ]]; then
+      mkdir -p "$dest"
+      # Clear any existing Prime sub-agent files
+      rm -f "${dest}/"*.md 2>/dev/null || true
+      for f in "${src}"/*.md; do
+        [[ -f "$f" ]] || continue
+        sed -e "s|{{AGENT_NAME}}|${AGENT_DISPLAY_NAME}|g" \
+            -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
+            -e "s|{{PROJECT_ID}}|${GCP_PROJECT_ID}|g" \
+            -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
+            "$f" > "${dest}/$(basename "$f")"
+        echo "  Brain: $(basename "$f") → workspace-${brain_dir}/"
+      done
+    fi
+  done
+else
+  warn "No _brain/ workspaces found — fleet agent will run without sub-agents"
+fi
+
 # ---- 5) Assemble TOOLS.md from skills ----
 info "Assembling TOOLS.md..."
 if [[ -x "${OC_HOST_DIR}/bin/assemble-tools" ]]; then
@@ -239,6 +265,8 @@ CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
 GOOGLE_GENAI_USE_VERTEXAI=True
 GOOGLE_CLOUD_LOCATION=us-central1
 GCE_METADATA_HOST=metadata.google.internal
+AGENT_ID=${AGENT_ID}
+PRIME_ID=${PRIME_ID}
 EOF
 
 info "Building Docker image openclaw:local ..."
