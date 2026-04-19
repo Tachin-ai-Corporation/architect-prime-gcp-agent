@@ -68,6 +68,7 @@ interface SetupState {
   projectId: string;
   dwdSignerSA: string;
   dwdClientId: string;
+  agentEmailDomain: string;
 }
 
 /* ---- API helpers ---- */
@@ -117,6 +118,7 @@ export default function Home() {
     projectId: "",
     dwdSignerSA: "",
     dwdClientId: "",
+    agentEmailDomain: "",
   });
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<string>("");
@@ -1233,6 +1235,32 @@ export default function Home() {
                     <div className={styles["settings-value"]}>{fleet.length}</div>
                   </div>
                 </div>
+
+                <div className={styles["settings-section"]}>
+                  <div className={styles["settings-section-title"]}>Agent Defaults</div>
+                  <div className={styles["settings-row"]} style={{ alignItems: "center" }}>
+                    <div className={styles["settings-label"]}>Agent Email Domain</div>
+                    <div className={styles["settings-value"]} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        className="input"
+                        style={{ width: 260, fontSize: 13 }}
+                        placeholder="e.g. tachin.ai"
+                        value={setup.agentEmailDomain}
+                        onChange={(e) => setSetup(prev => ({ ...prev, agentEmailDomain: e.target.value }))}
+                        onBlur={async () => {
+                          await api("/api/setup", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ agentEmailDomain: setup.agentEmailDomain.trim() }),
+                          });
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, paddingLeft: 2 }}>
+                    When set, agent emails auto-fill as <code className="mono" style={{ fontSize: 10 }}>specialty-agent-name@domain</code> during hire.
+                  </div>
+                </div>
               </div>
             )}
           </>
@@ -1285,7 +1313,14 @@ export default function Home() {
             <div className={styles["modal-field"]}>
               <label className={styles["modal-label"]}>Agent Name</label>
               <input className="input" placeholder="e.g. stan" autoFocus value={hireName}
-                onChange={(e) => setHireName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleHire(); }} />
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setHireName(name);
+                  if (setup.agentEmailDomain && name.trim()) {
+                    const slug = name.trim().toLowerCase().replace(/\s+/g, "-");
+                    setHireEmail(`${hireSpecialty}-agent-${slug}@${setup.agentEmailDomain}`);
+                  }
+                }} onKeyDown={(e) => { if (e.key === "Enter") handleHire(); }} />
             </div>
             <div className={styles["modal-field"]}>
               <label className={styles["modal-label"]}>Specialty</label>
