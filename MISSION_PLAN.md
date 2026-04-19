@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v3.5.0`
+> - **Current version tag:** `v3.6.0`
 
 ---
 
@@ -333,8 +333,14 @@ architect-prime/
 │       ├── prefrontal/               # Prime brain: strategic planning
 │       ├── motor/                    # Prime brain: execution
 │       ├── cerebellum/               # Prime brain: verification
-│       ├── devops/                   # Fleet: DevOps specialty
-│       ├── engineer/                 # Fleet: Engineer specialty
+│       ├── _brain/                   # Fleet: Shared brain sub-agent workspaces
+│       │   ├── temporal-research/    # Web search (templated SOUL/IDENTITY)
+│       │   ├── temporal-memory/      # Memory recall (templated)
+│       │   ├── prefrontal/           # Planning (templated)
+│       │   ├── motor/                # Execution (templated)
+│       │   └── cerebellum/           # Verification (templated)
+│       ├── devops/                   # Fleet: DevOps specialty cortex
+│       ├── engineer/                 # Fleet: Engineer specialty cortex
 │       └── fleet/                    # Fleet: Generic template (fallback)
 ├── bootstrap/                        # VM startup scripts (curled from GitHub)
 │   ├── prime-bootstrap.sh            # Prime VM setup
@@ -403,8 +409,7 @@ architect-prime/
 
 | Agent | Specialty | VM | Email | Status |
 |-------|-----------|-----|-------|--------|
-| stan | devops | fleet-stan | devops-agent-stan@tachin.ai | Online |
-| anora | pm | fleet-anora | pm-agent-anora@tachin.ai | Online |
+| stan | devops | fleet-stan | devops-agent-stan@tachin.ag | Online |
 
 **Prime instance:** `chucknorris` — VM: `prime-chucknorris`, zone: `us-central1-a`, project: `architect-prime-beta`
 
@@ -426,13 +431,14 @@ architect-prime/
 
 ## Roadmap
 
-### Next: Checkpoint 12 — Cost + Observability
-> *Goal: Per-agent spend tracking, idle agent hibernation, dispatch observability*
+### Next: Checkpoint 12 — Fleet Brain Hardening + Observability
+> *Goal: Fix fleet SOUL loading, per-agent spend tracking, dispatch observability*
 
-1. **Per-agent spend tracking** — Query Billing API to attribute costs to individual fleet agents.
-2. **Auto-hibernate idle agents** — Shut down VM after 24h of inactivity (no messages processed).
-3. **Brain dispatch dashboard** — Track which sub-agents are dispatched, latency per turn, on the dashboard.
-4. **Rate limiting** — Throttle expensive operations (web search, fleet deploy) to prevent runaway costs.
+1. **Fleet SOUL loading** — Fleet agents don't load workspace SOUL.md on first Chat message. Fix the bootstrap or config so agents know their specialty from boot.
+2. **Fleet brain sub-agent deployment** — _brain/ workspaces aren't deployed to fleet VMs yet. fleet-bootstrap.sh was updated but needs verification with a fresh hire.
+3. **Per-agent spend tracking** — Query Billing API to attribute costs to individual fleet agents.
+4. **Brain dispatch dashboard** — Track which sub-agents are dispatched, latency per turn, on the dashboard.
+5. **Rate limiting** — Throttle expensive operations (web search, fleet deploy) to prevent runaway costs.
 
 ### Future: v4.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
