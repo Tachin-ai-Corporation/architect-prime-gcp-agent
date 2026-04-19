@@ -8,9 +8,14 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "google-vertex/gemini-2.5-flash"
+        "primary": "google-vertex/gemini-3.1-pro-preview",
+        "fallback": "google-vertex/gemini-2.5-flash"
       },
       "models": {
+        "google-vertex/gemini-3.1-pro-preview": {
+          "alias": "Gemini 3.1 Pro",
+          "thinkingBudget": 0
+        },
         "google-vertex/gemini-2.5-flash": {
           "alias": "Gemini 2.5 Flash"
         },

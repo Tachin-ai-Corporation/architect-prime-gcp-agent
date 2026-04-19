@@ -246,11 +246,11 @@ if [[ ! -d openclaw/.git ]]; then
 fi
 cd openclaw
 git fetch --all --prune
-# Pin to known-good commit
-OC_PIN="163c6f5e354be2a8e2ff5b11a237077beb9e70fe"
+# Pin to known-good release — v2026.4.15 (Apr 16, 2026)
+OC_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
 STABLE_COMMIT="${OC_PIN}"
 git checkout "${STABLE_COMMIT}"
-info "Using OpenClaw commit: ${STABLE_COMMIT} (pinned)"
+info "Using OpenClaw commit: ${STABLE_COMMIT} (pinned to v2026.4.15)"
 
 cat > .env <<EOF
 GATEWAY_BIND=loopback
@@ -280,17 +280,45 @@ if [[ ! -f "$FLEET_TMPL" ]]; then
   warn "Fleet config template not found, using prime template"
 fi
 
+# Read SOUL.md for system prompt injection (Phase A — fleet identity fix)
+SOUL_FILE="${OC_HOST_DIR}/workspace/SOUL.md"
+if [[ -f "$SOUL_FILE" ]]; then
+  info "Injecting SOUL.md into system prompt..."
+else
+  warn "SOUL.md not found at ${SOUL_FILE} — agent will use default personality"
+fi
+
 python3 - <<PY
-import pathlib, re
+import pathlib, re, json
+
 tmpl_path = pathlib.Path("${FLEET_TMPL}")
 out_path = pathlib.Path("${OC_HOST_DIR}/openclaw.json")
+soul_path = pathlib.Path("${SOUL_FILE}")
+
 tmpl = tmpl_path.read_text(encoding="utf-8")
+
 # Remove json5 comments (// style)
 tmpl = re.sub(r'//.*$', '', tmpl, flags=re.MULTILINE)
+
+# Read and JSON-escape SOUL.md content for systemPrompt injection
+soul_content = ""
+if soul_path.exists():
+    raw = soul_path.read_text(encoding="utf-8").strip()
+    # JSON-encode the string (handles newlines, quotes, special chars)
+    # json.dumps adds outer quotes, strip them since template already has quotes
+    soul_content = json.dumps(raw)[1:-1]
+    print(f"  SOUL.md: {len(raw)} chars injected into systemPrompt")
+else:
+    soul_content = "You are a helpful fleet agent."
+    print("  SOUL.md not found, using default")
+
+# Template substitutions
 tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
 tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
 tmpl = tmpl.replace("\${AGENT_ID}", "${AGENT_ID}")
 tmpl = tmpl.replace("\${AGENT_DISPLAY_NAME}", "${AGENT_DISPLAY_NAME}")
+tmpl = tmpl.replace("\${SOUL_CONTENT}", soul_content)
+
 out_path.write_text(tmpl, encoding="utf-8")
 print("  Config written to " + str(out_path))
 PY

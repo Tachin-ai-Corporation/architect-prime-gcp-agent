@@ -41,6 +41,7 @@ bundle/corekit/bin/control-daemon.mjs .openclaw/bin/control-daemon.mjs
 bundle/corekit/bin/brain-exec .openclaw/bin/brain-exec
 bundle/corekit/bin/update-deep-truths .openclaw/bin/update-deep-truths
 bundle/corekit/bin/fleet-health-check .openclaw/bin/fleet-health-check
+bundle/corekit/bin/upgrade-openclaw .openclaw/bin/upgrade-openclaw
 bundle/corekit/config/fleet-health-check.service .openclaw/corekit/fleet-health-check.service
 bundle/corekit/config/fleet-health-check.timer .openclaw/corekit/fleet-health-check.timer
 

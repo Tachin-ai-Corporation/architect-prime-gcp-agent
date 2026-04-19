@@ -91,12 +91,12 @@ if [[ ! -d openclaw/.git ]]; then
 fi
 cd openclaw
 git fetch --all --prune
-# Pin to a known-good commit — latest HEAD may include broken extensions
-# (e.g. WhatsApp extension crash: 'resolveWhatsAppGroupIntroHint' undefined)
-OC_PIN="163c6f5e354be2a8e2ff5b11a237077beb9e70fe"
+# Pin to known-good release — v2026.4.15 (Apr 16, 2026)
+# Changelog: subagent launch fixes, tool-loop guards, compaction fixes, Gemini 3.1 support
+OC_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
 STABLE_COMMIT="${OC_PIN}"
 git checkout "${STABLE_COMMIT}"
-info "Using OpenClaw commit: ${STABLE_COMMIT} (pinned)"
+info "Using OpenClaw commit: ${STABLE_COMMIT} (pinned to v2026.4.15)"
 
 cat > .env <<EOF
 GATEWAY_BIND=loopback
