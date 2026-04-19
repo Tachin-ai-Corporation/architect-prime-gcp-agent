@@ -73,24 +73,54 @@ print(spec)
   SPECIALTY="$RESOLVED"
 fi
 
+# ---- RESOLVE PRIME_ID ----
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" && -f "$PRIME_CONFIG" ]]; then
+  PRIME_ID="$(python3 -c "
+import json; print(json.load(open('$PRIME_CONFIG')).get('primeId',''))
+" 2>/dev/null)" || true
+fi
+if [[ -z "$PRIME_ID" ]]; then
+  CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
+  if [[ -f "$CHAT_CONFIG" ]]; then
+    PRIME_ID="$(python3 -c "
+import json; print(json.load(open('$CHAT_CONFIG')).get('primeId',''))
+" 2>/dev/null)" || true
+  fi
+fi
+[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
+
+# ---- RESOLVE PROJECT ----
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
+if [[ -z "$GCP_PROJECT_ID" ]]; then
+  GCP_PROJECT_ID="$(curl -sf --max-time 3 -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+fi
+[[ -n "$GCP_PROJECT_ID" ]] || die "Cannot resolve GCP_PROJECT_ID"
+
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+
+# ---- GET AUTH TOKEN (reused for domain lookup + command queue) ----
+get_token() {
+  curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])'
+}
+TOKEN="$(get_token)" || die "Failed to get auth token"
+
 # ---- RESOLVE EMAIL DOMAIN ----
 # Read from Firestore config/settings (set via Dashboard → Setup → Agent Defaults)
 EMAIL_DOMAIN=""
-if [[ -n "${GCP_PROJECT_ID:-}" ]]; then
-  _DOMAIN_TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])' 2>/dev/null)" || true
-  if [[ -n "$_DOMAIN_TOKEN" ]]; then
-    EMAIL_DOMAIN="$(curl -sf --max-time 5 \
-      -H "Authorization: Bearer ${_DOMAIN_TOKEN}" \
-      "https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents/config/settings" \
-      | python3 -c 'import sys,json; print(json.load(sys.stdin)["fields"]["agentEmailDomain"]["stringValue"])' 2>/dev/null)" || true
-  fi
-fi
+EMAIL_DOMAIN="$(curl -sf --max-time 5 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${FIRESTORE_URL}/config/settings" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["fields"]["agentEmailDomain"]["stringValue"])' 2>/dev/null)" || true
 # Fallback if Firestore read fails
 if [[ -z "$EMAIL_DOMAIN" ]]; then
   EMAIL_DOMAIN="tachin.ai"
   log "Warning: could not read email domain from Firestore, using fallback: ${EMAIL_DOMAIN}"
+else
+  log "Email domain from Firestore: ${EMAIL_DOMAIN}"
 fi
 
 # ---- RESOLVE EMAIL ----
@@ -111,42 +141,6 @@ fi
 if [[ -z "$EMAIL" ]]; then
   EMAIL="${SPECIALTY}-agent-${NAME}@${EMAIL_DOMAIN}"
 fi
-
-# ---- RESOLVE PRIME_ID ----
-PRIME_ID="${PRIME_ID:-}"
-if [[ -z "$PRIME_ID" && -f "$PRIME_CONFIG" ]]; then
-  PRIME_ID="$(python3 -c "
-import json; print(json.load(open('$PRIME_CONFIG')).get('primeId',''))
-" 2>/dev/null)" || true
-fi
-if [[ -z "$PRIME_ID" ]]; then
-  # Try chat-config.json
-  CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
-  if [[ -f "$CHAT_CONFIG" ]]; then
-    PRIME_ID="$(python3 -c "
-import json; print(json.load(open('$CHAT_CONFIG')).get('primeId',''))
-" 2>/dev/null)" || true
-  fi
-fi
-[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
-
-# ---- RESOLVE PROJECT ----
-GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
-if [[ -z "$GCP_PROJECT_ID" ]]; then
-  GCP_PROJECT_ID="$(curl -sf --max-time 3 -H 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
-fi
-[[ -n "$GCP_PROJECT_ID" ]] || die "Cannot resolve GCP_PROJECT_ID"
-
-FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
-
-# ---- GET AUTH TOKEN ----
-get_token() {
-  curl -sH 'Metadata-Flavor: Google' \
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])'
-}
-TOKEN="$(get_token)" || die "Failed to get auth token"
 
 # ---- COMPUTE DISPLAY NAMES ----
 D_FIRST="$(echo "${SPECIALTY}-agent" | sed 's/^./\u&/' | sed 's/-\(.\)/-\u\1/g')"
