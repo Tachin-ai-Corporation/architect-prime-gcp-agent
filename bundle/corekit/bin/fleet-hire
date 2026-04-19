@@ -73,6 +73,26 @@ print(spec)
   SPECIALTY="$RESOLVED"
 fi
 
+# ---- RESOLVE EMAIL DOMAIN ----
+# Read from Firestore config/settings (set via Dashboard → Setup → Agent Defaults)
+EMAIL_DOMAIN=""
+if [[ -n "${GCP_PROJECT_ID:-}" ]]; then
+  _DOMAIN_TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])' 2>/dev/null)" || true
+  if [[ -n "$_DOMAIN_TOKEN" ]]; then
+    EMAIL_DOMAIN="$(curl -sf --max-time 5 \
+      -H "Authorization: Bearer ${_DOMAIN_TOKEN}" \
+      "https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents/config/settings" \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin)["fields"]["agentEmailDomain"]["stringValue"])' 2>/dev/null)" || true
+  fi
+fi
+# Fallback if Firestore read fails
+if [[ -z "$EMAIL_DOMAIN" ]]; then
+  EMAIL_DOMAIN="tachin.ai"
+  log "Warning: could not read email domain from Firestore, using fallback: ${EMAIL_DOMAIN}"
+fi
+
 # ---- RESOLVE EMAIL ----
 EMAIL=""
 if [[ -f "$TYPES_FILE" ]]; then
@@ -85,11 +105,11 @@ for t in types:
         print(t.get('emailPattern', '')); sys.exit(0)
 " "$SPECIALTY" "$TYPES_FILE" 2>/dev/null)" || EMAIL_PATTERN=""
   if [[ -n "$EMAIL_PATTERN" ]]; then
-    EMAIL="${EMAIL_PATTERN/\{name\}/$NAME}@tachin.ai"
+    EMAIL="${EMAIL_PATTERN/\{name\}/$NAME}@${EMAIL_DOMAIN}"
   fi
 fi
 if [[ -z "$EMAIL" ]]; then
-  EMAIL="${SPECIALTY}-agent-${NAME}@tachin.ai"
+  EMAIL="${SPECIALTY}-agent-${NAME}@${EMAIL_DOMAIN}"
 fi
 
 # ---- RESOLVE PRIME_ID ----
