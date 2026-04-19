@@ -57,7 +57,7 @@ TOKEN="$(get_token)"
 # ============================================================
 if [[ -n "$AGENT_NAME" ]]; then
   # Single agent mode
-  AGENTS_JSON="[{\"name\":\"${AGENT_NAME}\"}]"
+  AGENTS_JSON="[{\"name\":\"${AGENT_NAME}\",\"vm\":\"fleet-${AGENT_NAME}\",\"zone\":\"us-central1-a\"}]"
 else
   # All agents — read from Firestore
   RESP="$(curl -s -H "Authorization: Bearer $TOKEN" \
@@ -132,9 +132,14 @@ print(d.get('fields',{}).get('zone',{}).get('stringValue',''))" 2>/dev/null || t
   LATENCY_MS=0
   START_MS=$(date +%s%N)
 
-  HTTP_CODE="$(gcloud compute ssh "$VM" --zone="$ZONE" --quiet \
-    --command="curl -sf -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:18789/v1/models" \
-    2>/dev/null || echo "000")"
+  HTTP_CODE="$(gcloud compute ssh "$VM" --zone="$ZONE" --project="$PRIME_PROJECT" --quiet \
+    --command="curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:18789/v1/models" \
+    2>/dev/null)" || true
+  # If SSH failed or returned empty, default to 000
+  HTTP_CODE="${HTTP_CODE:-000}"
+  # Strip any non-numeric chars (SSH banners, etc.)
+  HTTP_CODE="$(echo "$HTTP_CODE" | grep -oE '[0-9]+' | tail -1)"
+  [[ -n "$HTTP_CODE" ]] || HTTP_CODE="000"
 
   END_MS=$(date +%s%N)
   LATENCY_MS=$(( (END_MS - START_MS) / 1000000 ))
