@@ -3,7 +3,7 @@
 > **Status:** ACTIVE — Living design document
 > **Written:** 2026-04-04
 > **Last reviewed:** 2026-04-18 (CP10)
-> **Current version:** v3.4.0 (6 agents, SSE streaming, hybrid dispatch)
+> **Current version:** v3.5.0 (6 agents, SSE streaming, hybrid dispatch, two-tier memory, fleet health, self-upgrade)
 >
 > This document describes the multi-agent brain system. Sections marked
 > **[IMPLEMENTED]** reflect live code. Sections marked **[PLANNED]** are
@@ -19,7 +19,7 @@ The user only ever talks to **one agent** — the Cortex. Behind it, six sub-age
 
 ## Agent Inventory [IMPLEMENTED]
 
-**Current (v3.4): 6 agents.** Hippocampus merged into temporal-memory. Specialist planned for v4.0.
+**Current (v3.5): 6 agents.** Hippocampus merged into temporal-memory. Specialist planned for v4.0.
 
 | # | Agent | Brain Region | Role | Model | Status |
 |---|-------|-------------|------|-------|--------|

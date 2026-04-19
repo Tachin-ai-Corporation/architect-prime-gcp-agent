@@ -28,13 +28,19 @@ Dashboard (Cloud Run — Next.js)
     ├─ POST /api/primes/{id}/fleet/update-status → Fleet VM self-reports completion
     ├─ POST /api/primes/{id}/fleet/confirm-setup → Clears admin action card
     ├─ GET  /api/primes/{id}/fleet             → Reads fleet from Firestore
-    └─ GET  /api/primes/{id}/fleet/[agent]     → Agent detail + logs
+    ├─ GET  /api/primes/{id}/fleet/[agent]/logs → Agent detail + health + activity
+    ├─ GET  /api/setup                         → Project config (DWD, email domain)
+    ├─ POST /api/setup                         → Save settings (agent email domain)
+    ├─ GET  /api/upgrade                       → Current + latest version info
+    └─ POST /api/upgrade                       → Trigger Cloud Build self-upgrade
          │
          ▼
     Firestore (state store)
     ├── primes/{id}                   → Prime instance metadata
     ├── primes/{id}/messages/{msg}    → Dashboard ↔ Prime chat messages
-    └── primes/{id}/fleet/{agent}     → Fleet agent status, deploy steps
+    ├── primes/{id}/fleet/{agent}     → Fleet agent status, deploy steps, health
+    ├── config/settings               → Agent defaults (email domain)
+    └── config/dwd                    → DWD configuration
          │
          ▼
     Prime VM (e2-medium, Ubuntu 22.04)
@@ -212,6 +218,33 @@ Sub-agents get task context from `brain-exec` args, not workspace files.
 - 🔒 SOUL.md above `## Deep Truths` is IMMUTABLE. Only `update-deep-truths` script may modify Deep Truths.
 - 🔒 Core Memory writes happen via nightly consolidation, NOT during conversation turns.
 
+### Dashboard Self-Upgrade
+
+The dashboard can upgrade itself via Cloud Build. The pipeline:
+1. `POST /api/upgrade` triggers Cloud Build with 4 steps:
+   - `git clone --branch {latest-tag}` from GitHub (public repo)
+   - `docker build` the Next.js app
+   - `docker push` to Artifact Registry
+   - `gcloud run deploy` with `--update-env-vars APP_VERSION={tag}`
+2. Build runs async (~3 minutes). Dashboard shows latest/current version on Setup tab.
+3. First deploy was manual (bootstrap); after that the button is self-sustaining.
+4. `APP_VERSION` env var auto-detected from `git describe --tags` during install.
+
+### Agent Defaults
+
+The Setup tab stores configurable defaults in Firestore `config/settings`:
+- **Agent Email Domain** — when set (e.g., `tachin.ai`), the Hire modal auto-fills
+  agent email as `{specialty}-agent-{name}@{domain}`. Saves via `POST /api/setup`.
+
+### Fleet Health Monitoring
+
+`fleet-health-check` script (deployed via CoreKit, runs every 15 minutes via systemd timer):
+1. SSHs into each fleet agent VM and curls `localhost:18789/health`
+2. Records: status (healthy/unhealthy), latency, HTTP code, consecutive failures
+3. Writes health data to Firestore at `primes/{id}/fleet/{agent}.health`
+4. Auto-recovery: after 3 consecutive failures, restarts `openclaw-gateway` container
+5. Dashboard Fleet tab shows health data in a "Gateway Health" column per agent
+
 ### Fleet Agent Workspaces
 
 Each fleet agent type has a workspace directory:
@@ -239,9 +272,25 @@ At bootstrap, `fleet-bootstrap.sh`:
 
 ## GCP IAM Model
 
-**Prime VM compute SA** (`{project-number}-compute@developer.gserviceaccount.com`):
+**Control-plane SA** (`architect-prime-cp@{project}.iam.gserviceaccount.com`):
+- `roles/datastore.user` — Firestore read/write
+- `roles/compute.admin` — Create/delete VMs for Prime + fleet
+- `roles/iam.serviceAccountAdmin` — Create SAs for Prime + fleet
+- `roles/iam.serviceAccountUser` — Attach SAs to VMs
+- `roles/iam.serviceAccountTokenCreator` — Sign JWTs for DWD
+- `roles/serviceusage.serviceUsageConsumer` — Enable APIs
+- `roles/aiplatform.user` — Vertex AI access for agent LLM
+- `roles/cloudbuild.builds.editor` — Trigger Cloud Build (dashboard self-upgrade)
+- `roles/run.admin` — Update Cloud Run service
+
+**Compute SA** (`{project-number}-compute@developer.gserviceaccount.com`):
+- `roles/run.admin` — Cloud Build deploy step uses this SA
+- `roles/iam.serviceAccountUser` on control-plane SA — act as the Cloud Run service identity
 - `roles/resourcemanager.projectIamAdmin` — required for fleet-deploy to grant IAM roles to fleet SAs
-- Standard compute scopes (`cloud-platform`)
+
+**Cloud Build SA** (`{project-number}@cloudbuild.gserviceaccount.com`):
+- `roles/run.admin` — Deploy to Cloud Run
+- `roles/iam.serviceAccountUser` on control-plane SA — act as the Cloud Run service identity
 
 **Fleet agent SAs** (`fleet-{name}@{project}.iam.gserviceaccount.com`):
 - `roles/aiplatform.user` — Vertex AI model inference
@@ -298,7 +347,7 @@ architect-prime/
 └── README.md
 ```
 
-### CoreKit Tools (bundle/corekit/bin/)
+### CoreKit Tools (bundle/corekit/bin/) — 29 files
 
 | Tool | Purpose |
 |------|---------|
@@ -310,12 +359,15 @@ architect-prime/
 | `fleet-status` | Reports fleet agent health summary |
 | `fleet-verify` | SSH-checks a fleet agent's gateway + DWD health |
 | `fleet-upgrade` | Upgrades a running fleet agent's CoreKit |
+| `fleet-health-check` | SSH-checks fleet agent gateway health, auto-recovers after 3 failures |
 | `inbox-daemon` | Polls Google Chat via DWD, routes messages to OpenClaw |
-| `control-daemon` | Polls Firestore messages, routes to OpenClaw gateway |
+| `control-daemon` | Bash wrapper — starts `control-daemon.mjs` inside container |
+| `control-daemon.mjs` | Node.js daemon: Firestore polling, hybrid SSE dispatch, conversation history |
 | `chat-send` | Sends messages to Google Chat via DWD |
 | `chat-read` | Reads messages from Google Chat via DWD |
 | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt |
 | `agent-ask` | Vertex AI grounding web search (used by temporal-research) |
+| `brain-exec` | Dispatches sub-agents, strips gateway warnings, returns output |
 | `build-system-prompt` | Assembles system prompt from workspace files |
 | `web-search` | Google Search grounding for agent queries |
 | `upgrade-corekit` | In-place CoreKit update from GitHub ref |
@@ -324,9 +376,9 @@ architect-prime/
 | `core-memory-read` | Queries Firestore Core Memory by category/tags |
 | `core-memory-write` | Writes durable facts to Firestore Core Memory |
 | `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
-| `fleet-health-check` | SSH-checks fleet agent gateway health, auto-recovers after 3 failures |
 | `render-config` | Renders JSON5 config template with string-aware comment stripping |
 | `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
+| `bootstrap_smoke.sh` | Vertex AI smoke test (3 attempts with backoff) |
 | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
 
 ### Key Paths on VM
@@ -374,14 +426,13 @@ architect-prime/
 
 ## Roadmap
 
-### Next: Checkpoint 11 — Cost + Observability
+### Next: Checkpoint 12 — Cost + Observability
 > *Goal: Per-agent spend tracking, idle agent hibernation, dispatch observability*
 
 1. **Per-agent spend tracking** — Query Billing API to attribute costs to individual fleet agents.
 2. **Auto-hibernate idle agents** — Shut down VM after 24h of inactivity (no messages processed).
 3. **Brain dispatch dashboard** — Track which sub-agents are dispatched, latency per turn, on the dashboard.
 4. **Rate limiting** — Throttle expensive operations (web search, fleet deploy) to prevent runaway costs.
-5. **Dashboard health widget** — Show fleet agent health status (last-check, latency, uptime) on the Fleet tab.
 
 ### Future: v4.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
