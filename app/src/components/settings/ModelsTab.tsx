@@ -117,7 +117,7 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
       return;
     }
 
-    const maxAttempts = 30; // longer for 5 models
+    const maxAttempts = 60; // 60 × 2s = 120s — discovery probes 16+ models
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise(r => setTimeout(r, 2000));
       const cmd = await api<{ status: string; result?: string }>(`/api/primes/${activePrime}/commands/${result.commandId}`);
@@ -137,6 +137,8 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
       }
       if (cmd?.status === "failed") break;
     }
+    // Always re-fetch from Firestore to pick up newly discovered catalog
+    await loadModels();
     setScanning(false);
   };
 
