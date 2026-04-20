@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v3.6.0`
+> - **Current version tag:** `v3.7.0`
 
 ---
 
@@ -51,8 +51,9 @@ Dashboard (Cloud Run — Next.js)
     │       └── Conversation history (20 turns) + structured JSON logging
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
+    │   ├── GOOGLE_CLOUD_LOCATION=global (required for Gemini 3.1+ preview models)
     │   ├── Brain agents (6 OpenClaw agents, multi-agent dispatch)
-    │   │   ├── cortex (DEFAULT) — Gemini 2.5 Flash — orchestrator + synthesizer
+    │   │   ├── cortex (DEFAULT) — Gemini 3.1 Pro Preview — orchestrator + synthesizer
     │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
     │   │   ├── temporal-memory — Gemini 2.5 Flash — memory/context recall
     │   │   ├── prefrontal — Gemini 2.5 Flash — strategic planning
@@ -151,7 +152,41 @@ Dashboard (Cloud Run — Next.js)
 
 ### Vertex AI Authentication (ADC)
 
-Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. OpenClaw's `model-auth-env` module is patched at bootstrap time to fall back to `{ apiKey: "<gce-adc>", source: "gce metadata" }` when no explicit API key is configured. This patch is applied by `sed` inside the container, then the container is restarted.
+Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. OpenClaw's `model-auth-env` module is patched at bootstrap time to fall back to `{ apiKey: "<gce-adc>", source: "gce metadata" }` when no explicit API key is configured. This patch is applied by `sed` inside the container, then the container is restarted. The `upgrade-openclaw` script automatically re-applies this patch after every container recreation.
+
+### Vertex AI Location
+
+`GOOGLE_CLOUD_LOCATION` is set to `global` (not a specific region like `us-central1`). This is required because Gemini 3.1+ preview models only resolve via the global Vertex AI endpoint (`aiplatform.googleapis.com/locations/global`). GA models (Gemini 2.5, 2.0) also work via the global endpoint. The `@google/genai` SDK natively supports `location=global`.
+
+### Dynamic Model Discovery
+
+The model catalog is built at runtime by `discover-models`, replacing a static JSON file. The flow:
+
+1. **Dashboard** → user clicks "Scan for Models" → `POST /api/primes/{id}/models/scan`
+2. **API** writes `discover_models` command to Firestore commands collection
+3. **command-runner** picks up command, runs `discover-models --probe-only`, writes JSON to temp file
+4. **discover-models**:
+   - Queries `gcloud ai model-garden models list` (~600 models)
+   - Filters: MaaS-only, text generation, excludes image/video/TTS/embed
+   - Generates display names: `claude-opus-4-7` → `Claude Opus 4.7`
+   - Removes discontinued models (e.g., `gemini-3-pro-preview` — shut down March 2026)
+   - Probes each model: regional endpoint first, then **global fallback** for preview tier
+   - Returns JSON with `models[]`, `currentModel`, `bestAvailable`
+5. **command-runner** → Python transforms JSON to Firestore `mapValue`/`arrayValue` structures → PATCH to `primes/{id}/config/settings`
+6. **Dashboard** reads `modelCatalog` array from Firestore → renders model cards with status badges
+
+**Current catalog** (14 models, 6 available as of April 2026):
+
+| Model | Provider | Status |
+|-------|----------|--------|
+| Gemini 3.1 Pro Preview | Google | ✅ Available (global) |
+| Gemini 3.1 Flash Lite Preview | Google | ✅ Available (global) |
+| Gemini 2.5 Pro | Google | ✅ Available |
+| Gemini 2.5 Flash | Google | ✅ Available |
+| Gemini 2.0 Flash 001 | Google | ✅ Available |
+| Gemini 2.0 Flash Lite 001 | Google | ✅ Available |
+| Claude Opus/Sonnet/Haiku (6 models) | Anthropic | ❌ Needs MaaS enablement |
+| Chirp 2 | Google | ❌ Audio model (not text) |
 
 ### Domain-Wide Delegation (DWD)
 
@@ -166,7 +201,7 @@ warnings, returns its output to Cortex, and Cortex synthesizes the final respons
 
 | Agent | Model | Role | Workspace | Tools |
 |-------|-------|------|-----------|-------|
-| **cortex** | gemini-2.5-flash | Orchestrator + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec |
+| **cortex** | gemini-3.1-pro-preview | Orchestrator + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec |
 | **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `~/.openclaw/workspace-temporal-research` | exec (agent-ask only) |
 | **temporal-memory** | gemini-2.5-flash | Memory/context recall | `~/.openclaw/workspace-temporal-memory` | read, exec |
 | **prefrontal** | gemini-2.5-flash | Strategic planning | `~/.openclaw/workspace-prefrontal` | read only |
@@ -180,7 +215,7 @@ warnings, returns its output to Cortex, and Cortex synthesizes the final respons
 - `render-config` ensures gateway token sync by reading `OPENCLAW_GATEWAY_TOKEN` env var
 - `upgrade-corekit` auto-calls `render-config` after every deployment
 - Cortex MUST wait for results before responding to the user
-- All agents run on gemini-2.5-flash; Pro available via model override
+- Cortex runs on gemini-3.1-pro-preview; sub-agents on gemini-2.5-flash
 
 **Brain workflow (every message):**
 1. Simple questions / identity → Cortex answers directly, no dispatch
@@ -212,7 +247,7 @@ Sub-agents get task context from `brain-exec` args, not workspace files.
 **Locked-in design decisions:**
 - 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
 - 🔒 `temporal-research` is the ONLY agent capable of web search.
-- 🔒 All agents on gemini-2.5-flash. Pro via model override only.
+- 🔒 Cortex on gemini-3.1-pro-preview. Sub-agents on gemini-2.5-flash.
 - 🔒 Dispatch via `exec brain-exec`, NOT `sessions_spawn` or raw `openclaw agent`.
 - 🔒 `brain-dispatch` script eliminated permanently.
 - 🔒 SOUL.md above `## Deep Truths` is IMMUTABLE. Only `update-deep-truths` script may modify Deep Truths.
@@ -353,7 +388,7 @@ architect-prime/
 └── README.md
 ```
 
-### CoreKit Tools (bundle/corekit/bin/) — 29 files
+### CoreKit Tools (bundle/corekit/bin/) — 30 files
 
 | Tool | Purpose |
 |------|---------|
@@ -378,6 +413,7 @@ architect-prime/
 | `web-search` | Google Search grounding for agent queries |
 | `upgrade-corekit` | In-place CoreKit update from GitHub ref |
 | `command-runner` | Executes commands from Firestore, streams output |
+| `discover-models` | Queries Vertex AI Model Garden, probes availability, outputs JSON catalog |
 | `assemble-tools` | Builds TOOLS.md from skill definitions |
 | `core-memory-read` | Queries Firestore Core Memory by category/tags |
 | `core-memory-write` | Writes durable facts to Firestore Core Memory |

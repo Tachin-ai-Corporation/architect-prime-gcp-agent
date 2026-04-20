@@ -86,15 +86,49 @@ docker stop openclaw-gateway 2>/dev/null || true
 docker rm openclaw-gateway 2>/dev/null || true
 
 log "Starting new container..."
+
+# Read gateway token from rendered config
+OC_HOST_DIR="/opt/openclaw/.openclaw"
+GW_TOKEN="$(cat "${OC_HOST_DIR}/.gateway-token" 2>/dev/null || echo 'no-token')"
+GCP_PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null \
+  || gcloud config get project 2>/dev/null || echo 'unknown')"
+
 docker run -d \
   --name openclaw-gateway \
   --network host \
   --restart always \
-  --env-file "${OC_DIR}/.env" \
-  -v "/opt/openclaw/.openclaw:/home/node/.openclaw" \
+  -e "GATEWAY_BIND=loopback" \
+  -e "GATEWAY_PORT=18789" \
+  -e "OPENCLAW_GATEWAY_TOKEN=${GW_TOKEN}" \
+  -e "OPENCLAW_CONFIG_DIR=/home/node/.openclaw" \
+  -e "OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace" \
+  -e "OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json" \
+  -e "GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}" \
+  -e "GCLOUD_PROJECT=${GCP_PROJECT_ID}" \
+  -e "CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}" \
+  -e "GOOGLE_GENAI_USE_VERTEXAI=True" \
+  -e "GOOGLE_CLOUD_LOCATION=global" \
+  -v "${OC_HOST_DIR}:/home/node/.openclaw" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   --group-add "${DOCKER_GID}" \
   openclaw:local
+
+# ---- Apply ADC auth patch (required for GCE metadata auth) ----
+log "Applying ADC auth patch..."
+sleep 3  # wait for container to initialize
+AUTH_ENV_FILE="$(docker exec openclaw-gateway find /app/dist -name 'model-auth-env-*.js' -type f 2>/dev/null | head -1)"
+if [[ -n "$AUTH_ENV_FILE" ]]; then
+  docker exec openclaw-gateway sed -i \
+    's|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|' \
+    "$AUTH_ENV_FILE"
+  log "  Patched: $AUTH_ENV_FILE"
+  # Restart node process to pick up the patch
+  docker exec openclaw-gateway kill 1 2>/dev/null || true
+  sleep 5
+else
+  log "  ⚠️  Could not find model-auth-env file to patch"
+fi
 
 # ---- Wait for gateway readiness ----
 log "Waiting for gateway readiness..."
@@ -118,8 +152,10 @@ if $READY; then
   log "✅ Upgrade complete! Gateway ready in ~${WAITED}s"
   log "   Version: ${NEW_VERSION}"
   log "   Commit:  ${CURRENT_COMMIT}"
+  log "   Location: global (supports Gemini 3.1+ preview models)"
 else
   log "⚠️  Gateway did not become ready within ${MAX_WAIT}s"
   log "   Check logs: docker logs openclaw-gateway --tail 30"
   exit 1
 fi
+
