@@ -1,31 +1,28 @@
 #!/usr/bin/env bash
 # ============================================================
-# discover-models — Probe Vertex AI for the best available model
+# discover-models — Probe Vertex AI for available models
 #
 # Usage:
-#   discover-models                  # probe + print best model
-#   discover-models --apply          # probe + update config
-#   discover-models --check-only     # just print available models
-#   discover-models --probe-only     # output JSON (for dashboard)
-#   discover-models --set MODEL_ID --apply  # force a specific model
+#   discover-models                       # probe + print best model
+#   discover-models --apply               # probe + update config with best
+#   discover-models --check-only          # just print model availability
+#   discover-models --probe-only          # output JSON (for dashboard)
+#   discover-models --set MODEL --apply   # force a specific default model
+#   discover-models --set-config FILE     # apply full assignment map from JSON
 #
-# This tool probes Vertex AI publisher models via generateContent
-# to find the best available Gemini model for the current project.
-# It tests models in preference order and selects the first one
-# that responds successfully.
+# Probes Vertex AI publisher models to find available models.
+# Tests models across multiple endpoints (v1, v1beta1, global)
+# and supports both Google (generateContent) and Anthropic
+# (rawPredict) model families.
 #
-# Preference order (best → fallback):
-#   1. gemini-3.1-pro-preview
-#   2. gemini-2.5-pro
-#   3. gemini-2.5-flash
+# Model Catalog (tested in preference order):
+#   Google:    gemini-3.1-pro-preview, gemini-2.5-pro, gemini-2.5-flash
+#   Anthropic: claude-opus-4-7, claude-sonnet-4
 #
 # Prerequisites:
 #   - gcloud CLI installed and authenticated
-#   - Vertex AI API enabled: gcloud services enable aiplatform.googleapis.com
+#   - Vertex AI API enabled
 #   - IAM role: roles/aiplatform.user
-#
-# If a preferred model returns 404, this tool prints instructions
-# for enabling it via Model Garden.
 # ============================================================
 set -euo pipefail
 
@@ -46,7 +43,6 @@ LOCATION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
 
 # Get access token
 get_token() {
-  # Try GCE metadata first (VM), then gcloud CLI
   local token
   token="$(curl -sf -H 'Metadata-Flavor: Google' \
     "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" 2>/dev/null \
@@ -57,35 +53,102 @@ get_token() {
   echo "$token"
 }
 
-# ---- Model preference list (best → fallback) ----
-# Format: model_id|display_name|tier
+# ---- Model catalog ----
+# Format: model_id|display_name|tier|provider
+# provider: google = generateContent, anthropic = rawPredict
 MODELS=(
-  "gemini-3.1-pro-preview|Gemini 3.1 Pro (Preview)|preview"
-  "gemini-2.5-pro|Gemini 2.5 Pro|ga"
-  "gemini-2.5-flash|Gemini 2.5 Flash|ga"
+  "gemini-3.1-pro-preview|Gemini 3.1 Pro (Preview)|preview|google"
+  "gemini-2.5-pro|Gemini 2.5 Pro|ga|google"
+  "gemini-2.5-flash|Gemini 2.5 Flash|ga|google"
+  "claude-opus-4-7|Claude Opus 4.7|ga|anthropic"
+  "claude-sonnet-4|Claude Sonnet 4|ga|anthropic"
 )
 
-# ---- Probe a single model ----
-probe_model() {
+# OpenClaw model ID mapping
+oc_model_id() {
+  local model_id="$1" provider="$2"
+  case "$provider" in
+    google)    echo "google-vertex/${model_id}" ;;
+    anthropic) echo "vertex_ai/${model_id}" ;;
+    *)         echo "${model_id}" ;;
+  esac
+}
+
+# ---- Probe: Google model (generateContent) ----
+# Tries multiple endpoint combinations for maximum coverage
+probe_google() {
   local model_id="$1"
   local token="$2"
-  local url="https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model_id}:generateContent"
 
-  local http_code
-  http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+  local endpoints=(
+    "https://${LOCATION}-aiplatform.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model_id}:generateContent"
+    "https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model_id}:generateContent"
+  )
+
+  local body='{"contents":[{"role":"user","parts":[{"text":"respond with the single word pong"}]}],"generationConfig":{"maxOutputTokens":10}}'
+
+  for url in "${endpoints[@]}"; do
+    local code
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+      -X POST \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      "$url" \
+      -d "$body" \
+      2>/dev/null)" || code="000"
+
+    # Success or rate limited = available
+    if [[ "$code" == "200" || "$code" == "429" ]]; then
+      echo "$code"
+      return
+    fi
+  done
+
+  # Return the last code (likely 404) if none succeeded
+  echo "${code:-404}"
+}
+
+# ---- Probe: Anthropic model (rawPredict) ----
+probe_anthropic() {
+  local model_id="$1"
+  local token="$2"
+
+  local url="https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${LOCATION}/publishers/anthropic/models/${model_id}:rawPredict"
+  local body
+  body=$(cat <<ANTBODY
+{"anthropic_version":"vertex-2023-10-16","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}
+ANTBODY
+  )
+
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
     -X POST \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
     "$url" \
-    -d '{"contents":[{"role":"user","parts":[{"text":"respond with the single word pong"}]}],"generationConfig":{"maxOutputTokens":10}}' \
-    2>/dev/null)" || http_code="000"
+    -d "$body" \
+    2>/dev/null)" || code="000"
 
-  echo "$http_code"
+  echo "$code"
+}
+
+# ---- Probe dispatcher ----
+probe_model() {
+  local model_id="$1"
+  local token="$2"
+  local provider="$3"
+
+  case "$provider" in
+    google)    probe_google "$model_id" "$token" ;;
+    anthropic) probe_anthropic "$model_id" "$token" ;;
+    *)         echo "000" ;;
+  esac
 }
 
 # ---- Parse args ----
 MODE="discover"
 FORCE_MODEL=""
+CONFIG_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) MODE="apply"; shift ;;
@@ -97,17 +160,22 @@ while [[ $# -gt 0 ]]; do
       [[ -n "$FORCE_MODEL" ]] || die "--set requires a model ID argument"
       shift
       ;;
+    --set-config)
+      shift
+      CONFIG_FILE="${1:-}"
+      [[ -n "$CONFIG_FILE" ]] || die "--set-config requires a JSON file path"
+      MODE="apply-config"
+      shift
+      ;;
     --help|-h)
-      echo "Usage: discover-models [--apply] [--check-only] [--probe-only] [--set MODEL_ID]"
+      echo "Usage: discover-models [--apply] [--check-only] [--probe-only] [--set MODEL] [--set-config FILE]"
       echo ""
-      echo "Probes Vertex AI to find the best available Gemini model."
-      echo "  --apply       Update OpenClaw config with the best model"
-      echo "  --check-only  Just print model availability"
-      echo "  --probe-only  Output JSON (for dashboard/automation)"
-      echo "  --set MODEL   Force a specific model (use with --apply)"
-      echo ""
-      echo "Enable Vertex AI API:  gcloud services enable aiplatform.googleapis.com"
-      echo "Enable Model Garden:   Visit https://console.cloud.google.com/vertex-ai/model-garden"
+      echo "Probes Vertex AI to find available Gemini and Claude models."
+      echo "  --apply            Update OpenClaw config with the best model"
+      echo "  --check-only       Just print model availability"
+      echo "  --probe-only       Output JSON (for dashboard/automation)"
+      echo "  --set MODEL        Force a specific default model (use with --apply)"
+      echo "  --set-config FILE  Apply full assignment map from JSON file"
       exit 0
       ;;
     *) die "Unknown arg: $1" ;;
@@ -116,16 +184,15 @@ done
 
 # ---- Check prerequisites ----
 if [[ "$MODE" != "probe-only" ]]; then
-  log "Discovering available Gemini models..."
+  log "Discovering available models..."
   log "  Project:  ${GCP_PROJECT_ID}"
   log "  Location: ${LOCATION}"
 fi
 
-# Check Vertex AI API (skip interactive prompt in probe-only mode)
+# Check Vertex AI API
 API_ENABLED="$(gcloud services list --enabled --filter='name:aiplatform.googleapis.com' --format='value(name)' --project="${GCP_PROJECT_ID}" 2>/dev/null || echo '')"
 if [[ -z "$API_ENABLED" ]]; then
   if [[ "$MODE" == "probe-only" ]]; then
-    # In probe-only mode, just output error JSON
     echo '{"error":"Vertex AI API not enabled","models":[],"bestModel":"","currentModel":""}'
     exit 1
   fi
@@ -154,7 +221,7 @@ for tmpl in "${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl"; do
     CURRENT_MODEL="$(python3 -c "
 import re, pathlib
 t = pathlib.Path('${tmpl}').read_text()
-m = re.search(r'\"primary\":\s*\"google-vertex/([^\"]+)\"', t)
+m = re.search(r'\"primary\":\s*\"(?:google-vertex|vertex_ai)/([^\"]+)\"', t)
 print(m.group(1) if m else '')
 " 2>/dev/null)" || true
   fi
@@ -168,13 +235,13 @@ declare -A STATUSES
 
 if [[ "$MODE" != "probe-only" ]]; then
   echo ""
-  echo "  Model                        Status"
-  echo "  ─────────────────────────────────────"
+  printf "  %-30s %-10s %s\n" "Model" "Provider" "Status"
+  echo "  ─────────────────────────────────────────────────────"
 fi
 
 for entry in "${MODELS[@]}"; do
-  IFS='|' read -r model_id display_name tier <<< "$entry"
-  code="$(probe_model "$model_id" "$TOKEN")"
+  IFS='|' read -r model_id display_name tier provider <<< "$entry"
+  code="$(probe_model "$model_id" "$TOKEN" "$provider")"
 
   case "$code" in
     200)
@@ -190,11 +257,10 @@ for entry in "${MODELS[@]}"; do
       status_key="not_found"
       ;;
     401|403)
-      status_label="🔒 Auth denied (check IAM roles)"
+      status_label="🔒 Auth denied (check IAM / enable model)"
       status_key="auth_error"
       ;;
     429)
-      # Rate limited means the model IS available
       status_label="✅ Available (rate limited)"
       status_key="available"
       if [[ -z "$BEST_MODEL" ]]; then
@@ -213,7 +279,7 @@ for entry in "${MODELS[@]}"; do
   esac
 
   if [[ "$MODE" != "probe-only" ]]; then
-    printf "  %-30s %s\n" "$display_name" "$status_label"
+    printf "  %-30s %-10s %s\n" "$display_name" "$provider" "$status_label"
   fi
   RESULTS["$model_id"]="$code"
   STATUSES["$model_id"]="$status_key"
@@ -225,27 +291,32 @@ fi
 
 # ---- Probe-only mode: output JSON ----
 if [[ "$MODE" == "probe-only" ]]; then
-  python3 -c "
+  # Build JSON via python for reliability
+  python3 <<PYEOF
 import json
-models = []
-for entry in '''${MODELS[0]}
-${MODELS[1]}
-${MODELS[2]}'''.strip().split('\n'):
-    model_id, name, tier = entry.split('|')
-    status = '${STATUSES[${MODELS[0]%%|*}]:-unknown}'
-    models.append({'id': model_id, 'name': name, 'tier': tier, 'status': '', 'httpCode': 0})
 
-# Override with actual statuses
+catalog = """$(printf '%s\n' "${MODELS[@]}")""".strip().split('\n')
 status_map = {
 $(for entry in "${MODELS[@]}"; do
-  IFS='|' read -r mid _ _ <<< "$entry"
-  echo "    '${mid}': ('${STATUSES[$mid]:-unknown}', ${RESULTS[$mid]:-0}),"
+  IFS='|' read -r mid _ _ prov <<< "$entry"
+  echo "    '${mid}': ('${STATUSES[$mid]:-unknown}', ${RESULTS[$mid]:-0}, '${prov}'),"
 done)
 }
-for m in models:
-    if m['id'] in status_map:
-        m['status'] = status_map[m['id']][0]
-        m['httpCode'] = status_map[m['id']][1]
+
+models = []
+for line in catalog:
+    mid, name, tier, provider = line.split('|')
+    st, code, prov = status_map.get(mid, ('unknown', 0, provider))
+    oc_id = f"google-vertex/{mid}" if prov == 'google' else f"vertex_ai/{mid}"
+    models.append({
+        'id': mid,
+        'name': name,
+        'tier': tier,
+        'provider': prov,
+        'status': st,
+        'httpCode': code,
+        'openclawId': oc_id,
+    })
 
 print(json.dumps({
     'models': models,
@@ -253,62 +324,80 @@ print(json.dumps({
     'currentModel': '${CURRENT_MODEL}',
     'projectId': '${GCP_PROJECT_ID}',
 }))
-"
+PYEOF
   exit 0
 fi
 
-if [[ -z "$BEST_MODEL" ]]; then
-  die "No available Gemini models found. Enable models at: https://console.cloud.google.com/vertex-ai/model-garden?project=${GCP_PROJECT_ID}"
-fi
+# ---- apply-config mode: apply full assignment map ----
+if [[ "$MODE" == "apply-config" ]]; then
+  [[ -f "$CONFIG_FILE" ]] || die "Config file not found: $CONFIG_FILE"
+  log "Applying model config from: $CONFIG_FILE"
 
-# If --set was provided, use that model instead of the auto-detected best
-APPLY_MODEL="${FORCE_MODEL:-$BEST_MODEL}"
-if [[ -n "$FORCE_MODEL" ]]; then
-  # Verify the forced model is actually available
-  forced_status="${STATUSES[$FORCE_MODEL]:-unknown}"
-  if [[ "$forced_status" != "available" ]]; then
-    warn "Forced model '${FORCE_MODEL}' has status '${forced_status}' — it may not work"
-  fi
-  log "Using forced model: google-vertex/${FORCE_MODEL}"
-else
-  log "Best available model: google-vertex/${BEST_MODEL} (${BEST_NAME})"
-fi
+  python3 <<PYEOF
+import json, re, pathlib, sys
 
-# ---- Print enable instructions for any 404 models ----
-for entry in "${MODELS[@]}"; do
-  IFS='|' read -r model_id display_name tier <<< "$entry"
-  if [[ "${RESULTS[$model_id]}" == "404" ]]; then
-    echo ""
-    echo "  To enable ${display_name}:"
-    echo "    1. Go to: https://console.cloud.google.com/vertex-ai/model-garden?project=${GCP_PROJECT_ID}"
-    echo "    2. Search for '${model_id}'"
-    echo "    3. Click 'Enable' on the model card"
-    echo ""
-  fi
-done
+config = json.load(open('${CONFIG_FILE}'))
+default_model = config.get('default', '')
+overrides = config.get('overrides', {})
 
-# ---- Apply to config if requested ----
-if [[ "$MODE" == "apply" ]]; then
-  log "Updating config to use google-vertex/${APPLY_MODEL}..."
+if not default_model:
+    print('[discover-models] ERROR: no default model in config', file=sys.stderr)
+    sys.exit(1)
 
-  for tmpl in "${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl" \
-              "${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"; do
-    if [[ -f "$tmpl" ]]; then
-      # Replace the primary model in the template
-      python3 -c "
-import pathlib, re, sys
-p = pathlib.Path('${tmpl}')
-t = p.read_text()
-t = re.sub(
-    r'\"primary\":\s*\"google-vertex/gemini-[^\"]+\"',
-    '\"primary\": \"google-vertex/${APPLY_MODEL}\"',
-    t
-)
-p.write_text(t)
-print(f'  Updated: {p.name}')
-"
-    fi
-  done
+# Update both templates
+for tmpl_name in ['openclaw-bootstrap.json5.tmpl', 'openclaw-fleet-bootstrap.json5.tmpl']:
+    tmpl_path = pathlib.Path('${OC_HOST_DIR}/corekit') / tmpl_name
+    if not tmpl_path.exists():
+        continue
+
+    t = tmpl_path.read_text()
+
+    # 1. Update agents.defaults.model.primary
+    t = re.sub(
+        r'("defaults":\s*\{[^}]*"model":\s*\{[^}]*"primary":\s*)"[^"]+(")',
+        lambda m: m.group(1) + '"' + default_model + '"' + m.group(2) if 'defaults' in m.group(0) else m.group(0),
+        t
+    )
+    # Simpler: just replace the first "primary" in defaults
+    t = re.sub(
+        r'"primary":\s*"(?:google-vertex|vertex_ai)/[^"]+?"',
+        f'"primary": "{default_model}"',
+        t,
+        count=1  # only first occurrence (the default)
+    )
+
+    # 2. Add per-agent model overrides
+    for agent_id, model_id in overrides.items():
+        if not model_id:
+            # Remove override if empty (revert to default)
+            t = re.sub(
+                rf'("id":\s*"{agent_id}"[^}}]*?)\s*"model":\s*\{{[^}}]*\}},?\s*',
+                r'\1',
+                t
+            )
+        else:
+            # Check if agent already has a model override
+            pattern = rf'("id":\s*"{agent_id}"[^}}]*?)"model":\s*\{{[^}}]*\}}'
+            if re.search(pattern, t):
+                # Replace existing
+                t = re.sub(
+                    pattern,
+                    rf'\1"model": {{"primary": "{model_id}"}}',
+                    t
+                )
+            else:
+                # Inject after the "id" line
+                t = re.sub(
+                    rf'("id":\s*"{agent_id}",)',
+                    rf'\1\n        "model": {{"primary": "{model_id}"}},',
+                    t
+                )
+
+    tmpl_path.write_text(t)
+    print(f'  Updated: {tmpl_name}')
+
+print('Model assignments applied.')
+PYEOF
 
   # Re-render config
   RENDER="${OC_HOST_DIR}/bin/render-config"
@@ -317,13 +406,84 @@ print(f'  Updated: {p.name}')
     GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$RENDER"
   fi
 
-  log "Config updated to use google-vertex/${APPLY_MODEL}"
-  echo ""
+  log "Config updated. Restart gateway to apply."
+  exit 0
+fi
+
+if [[ -z "$BEST_MODEL" ]]; then
+  die "No available models found. Enable models at: https://console.cloud.google.com/vertex-ai/model-garden?project=${GCP_PROJECT_ID}"
+fi
+
+# If --set was provided, use that model instead
+APPLY_MODEL="${FORCE_MODEL:-$BEST_MODEL}"
+if [[ -n "$FORCE_MODEL" ]]; then
+  forced_status="${STATUSES[$FORCE_MODEL]:-unknown}"
+  if [[ "$forced_status" != "available" ]]; then
+    warn "Forced model '${FORCE_MODEL}' has status '${forced_status}' — it may not work"
+  fi
+  log "Using forced model: ${FORCE_MODEL}"
+else
+  log "Best available model: ${BEST_MODEL} (${BEST_NAME})"
+fi
+
+# ---- Print enable instructions for 404 models ----
+for entry in "${MODELS[@]}"; do
+  IFS='|' read -r model_id display_name tier provider <<< "$entry"
+  if [[ "${RESULTS[$model_id]}" == "404" ]]; then
+    echo ""
+    echo "  To enable ${display_name}:"
+    echo "    1. Go to: https://console.cloud.google.com/vertex-ai/model-garden?project=${GCP_PROJECT_ID}"
+    echo "    2. Search for '${model_id}'"
+    echo "    3. Click 'Enable' on the model card"
+  fi
+done
+echo ""
+
+# ---- Apply to config if requested ----
+if [[ "$MODE" == "apply" ]]; then
+  # Determine the OpenClaw model ID
+  local_provider=""
+  for entry in "${MODELS[@]}"; do
+    IFS='|' read -r mid _ _ prov <<< "$entry"
+    if [[ "$mid" == "$APPLY_MODEL" ]]; then
+      local_provider="$prov"
+      break
+    fi
+  done
+  OC_ID="$(oc_model_id "$APPLY_MODEL" "${local_provider:-google}")"
+
+  log "Updating config to use ${OC_ID}..."
+
+  for tmpl in "${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl" \
+              "${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"; do
+    if [[ -f "$tmpl" ]]; then
+      python3 -c "
+import pathlib, re
+p = pathlib.Path('${tmpl}')
+t = p.read_text()
+t = re.sub(
+    r'\"primary\":\s*\"(?:google-vertex|vertex_ai)/[^\"]+\"',
+    '\"primary\": \"${OC_ID}\"',
+    t,
+    count=1
+)
+p.write_text(t)
+print(f'  Updated: {p.name}')
+"
+    fi
+  done
+
+  RENDER="${OC_HOST_DIR}/bin/render-config"
+  if [[ -x "$RENDER" ]]; then
+    log "Re-rendering config..."
+    GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$RENDER"
+  fi
+
+  log "Config updated to use ${OC_ID}"
   echo "  Restart the gateway to apply: docker restart openclaw-gateway"
 fi
 
 # ---- Output for scripts ----
 if [[ "$MODE" == "discover" ]]; then
-  # Print just the model ID for script consumption
-  echo "BEST_MODEL=google-vertex/${APPLY_MODEL}"
+  echo "BEST_MODEL=$(oc_model_id "$APPLY_MODEL" "${local_provider:-google}")"
 fi

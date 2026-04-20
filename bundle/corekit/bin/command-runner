@@ -245,28 +245,37 @@ print(json.dumps({'fields': fields}))
 
 handle_set_model() {
   local args_json="$1"
-  local model_id
+  local model_id assignments
 
   model_id=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('modelId',''))")
+  assignments=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('assignments',''))")
 
   if [[ -z "$model_id" ]]; then
     echo "ERROR: modelId is required"
     return 1
   fi
 
-  log "Executing: discover-models --set ${model_id} --apply"
-  GCP_PROJECT_ID="$GCP_PROJECT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "${FLEET_BIN}/discover-models" --set "$model_id" --apply 2>&1
-  local dm_exit=$?
+  local dm_exit=0
+
+  if [[ -n "$assignments" && "$assignments" != "" ]]; then
+    # Full assignments mode — write to temp file, use --set-config
+    local config_file="/tmp/model-assignments.json"
+    echo "$assignments" > "$config_file"
+    log "Executing: discover-models --set-config ${config_file}"
+    GCP_PROJECT_ID="$GCP_PROJECT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "${FLEET_BIN}/discover-models" --set-config "$config_file" 2>&1
+    dm_exit=$?
+    rm -f "$config_file"
+  else
+    # Simple mode — just set default model
+    log "Executing: discover-models --set ${model_id} --apply"
+    GCP_PROJECT_ID="$GCP_PROJECT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "${FLEET_BIN}/discover-models" --set "$model_id" --apply 2>&1
+    dm_exit=$?
+  fi
 
   if [[ $dm_exit -eq 0 ]]; then
-    # Apply ADC fix before restart (needed for model-auth-env patch)
-    if [[ -x /tmp/fix-adc.sh ]]; then
-      bash /tmp/fix-adc.sh 2>&1 || true
-    else
-      log "Restarting gateway..."
-      docker restart openclaw-gateway 2>&1
-    fi
-    log "Model updated to ${model_id}. Gateway restarted."
+    log "Restarting gateway..."
+    docker restart openclaw-gateway 2>&1
+    log "Model updated. Gateway restarted."
   fi
   return $dm_exit
 }

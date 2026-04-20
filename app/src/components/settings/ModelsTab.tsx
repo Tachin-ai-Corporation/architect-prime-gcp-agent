@@ -18,8 +18,15 @@ interface ModelInfo {
   id: string;
   name: string;
   tier: "preview" | "ga";
+  provider: "google" | "anthropic";
   status: "available" | "not_found" | "auth_error" | "timeout" | "checking" | "unknown";
   httpCode?: number;
+  openclawId?: string;
+}
+
+interface ModelAssignments {
+  default: string;
+  overrides: Record<string, string>;
 }
 
 interface ModelsResponse {
@@ -27,6 +34,7 @@ interface ModelsResponse {
   currentModel: string;
   projectId: string;
   scannedAt: string | null;
+  assignments: ModelAssignments | null;
 }
 
 interface ModelsTabProps {
@@ -34,43 +42,81 @@ interface ModelsTabProps {
   projectId: string;
 }
 
+/* ---- Brain agent definitions ---- */
+const BRAIN_AGENTS = [
+  { id: "cortex", label: "Cortex", desc: "Orchestrator — user-facing", icon: "🧠", recommended: "pro" },
+  { id: "prefrontal", label: "Prefrontal", desc: "Strategic planning", icon: "📋", recommended: "pro" },
+  { id: "motor", label: "Motor", desc: "Code execution", icon: "⚡", recommended: "any" },
+  { id: "temporal-research", label: "Research", desc: "Web search", icon: "🔍", recommended: "flash" },
+  { id: "temporal-memory", label: "Memory", desc: "Context recall", icon: "💾", recommended: "flash" },
+  { id: "cerebellum", label: "Cerebellum", desc: "QA verification", icon: "✅", recommended: "flash" },
+];
+
 const MODEL_DESCRIPTIONS: Record<string, string> = {
-  "gemini-3.1-pro-preview": "Latest reasoning capabilities with extended context. Best for complex orchestration.",
-  "gemini-2.5-pro": "Strong reasoning with proven stability. Recommended for production workloads.",
-  "gemini-2.5-flash": "Fast and cost-effective. Good for high-volume fleet operations.",
+  "gemini-3.1-pro-preview": "Latest reasoning capabilities with extended context. Best for orchestration.",
+  "gemini-2.5-pro": "Strong reasoning with proven stability. Recommended for production.",
+  "gemini-2.5-flash": "Fast and cost-effective. Good for simple tasks.",
+  "claude-opus-4-7": "Most capable Anthropic model. Excellent for complex agentic tasks.",
+  "claude-sonnet-4": "Balanced Anthropic model. Good reasoning at lower cost.",
+};
+
+const COST_TIERS: Record<string, string> = {
+  "gemini-3.1-pro-preview": "$$$",
+  "gemini-2.5-pro": "$$",
+  "gemini-2.5-flash": "$",
+  "claude-opus-4-7": "$$$$",
+  "claude-sonnet-4": "$$",
+};
+
+const PROVIDER_BADGES: Record<string, { label: string; color: string }> = {
+  google: { label: "Google", color: "rgba(66,133,244,0.15)" },
+  anthropic: { label: "Anthropic", color: "rgba(217,119,87,0.15)" },
 };
 
 const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: string }> = {
   available: { icon: "✅", label: "Available", color: "#3fb950" },
   not_found: { icon: "❌", label: "Not Available", color: "#f85149" },
-  auth_error: { icon: "🔒", label: "Auth Error", color: "#f59e0b" },
+  auth_error: { icon: "🔒", label: "Needs Enablement", color: "#f59e0b" },
   timeout: { icon: "⚠️", label: "Timeout", color: "#f59e0b" },
   checking: { icon: "⏳", label: "Checking...", color: "#58a6ff" },
-  unknown: { icon: "❓", label: "Unknown", color: "var(--text-tertiary)" },
+  unknown: { icon: "❓", label: "Not Scanned", color: "var(--text-tertiary)" },
 };
 
+const DEFAULT_MODELS: ModelInfo[] = [
+  { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", tier: "preview", provider: "google", status: "unknown" },
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "ga", provider: "google", status: "unknown" },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tier: "ga", provider: "google", status: "unknown" },
+  { id: "claude-opus-4-7", name: "Claude Opus 4.7", tier: "ga", provider: "anthropic", status: "unknown" },
+  { id: "claude-sonnet-4", name: "Claude Sonnet 4", tier: "ga", provider: "anthropic", status: "unknown" },
+];
+
 export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
-  const [models, setModels] = useState<ModelInfo[]>([
-    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", tier: "preview", status: "unknown" },
-    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "ga", status: "unknown" },
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tier: "ga", status: "unknown" },
-  ]);
+  const [models, setModels] = useState<ModelInfo[]>(DEFAULT_MODELS);
   const [currentModel, setCurrentModel] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
   const [scanning, setScanning] = useState(false);
-  const [applying, setApplying] = useState(false);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
   const [applyResult, setApplyResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  // Load cached model info on mount
+  // Brain agent assignments
+  const [defaultModel, setDefaultModel] = useState("");
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [assignmentsDirty, setAssignmentsDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Load cached model info + assignments on mount
   const loadModels = useCallback(async () => {
     if (!activePrime) return;
     const data = await api<ModelsResponse>(`/api/primes/${activePrime}/models`);
     if (data) {
       if (data.models.length > 0) setModels(data.models);
       setCurrentModel(data.currentModel);
-      setSelectedModel(data.currentModel);
       setScannedAt(data.scannedAt);
+      if (data.assignments) {
+        setDefaultModel(data.assignments.default || data.currentModel);
+        setOverrides(data.assignments.overrides || {});
+      } else {
+        setDefaultModel(data.currentModel);
+      }
     }
   }, [activePrime]);
 
@@ -81,8 +127,6 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
     if (!activePrime) return;
     setScanning(true);
     setApplyResult(null);
-
-    // Set all models to "checking"
     setModels(prev => prev.map(m => ({ ...m, status: "checking" as const })));
 
     const result = await api<{ commandId: string }>(`/api/primes/${activePrime}/models/scan`, {
@@ -95,8 +139,7 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
       return;
     }
 
-    // Poll for result
-    const maxAttempts = 20;
+    const maxAttempts = 30; // longer for 5 models
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise(r => setTimeout(r, 2000));
       const cmd = await api<{ status: string; result?: string }>(`/api/primes/${activePrime}/commands/${result.commandId}`);
@@ -109,9 +152,9 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
           }
           if (scanResult.currentModel) {
             setCurrentModel(scanResult.currentModel);
-            if (!selectedModel) setSelectedModel(scanResult.currentModel);
+            if (!defaultModel) setDefaultModel(scanResult.currentModel);
           }
-        } catch { /* ignore parse errors */ }
+        } catch { /* ignore */ }
         break;
       }
       if (cmd?.status === "failed") break;
@@ -119,53 +162,77 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
     setScanning(false);
   };
 
-  // Apply model selection
-  const handleApply = async () => {
-    if (!activePrime || !selectedModel || selectedModel === currentModel) return;
-    setApplying(true);
+  // Save assignments
+  const handleSaveAssignments = async () => {
+    if (!activePrime) return;
+    setSaving(true);
     setApplyResult(null);
+
+    // Build the OpenClaw model ID for the default
+    const defaultInfo = models.find(m => m.id === defaultModel);
+    const ocDefault = defaultInfo?.openclawId ||
+      (defaultInfo?.provider === "anthropic" ? `vertex_ai/${defaultModel}` : `google-vertex/${defaultModel}`);
+
+    // Build overrides with OpenClaw IDs
+    const ocOverrides: Record<string, string> = {};
+    for (const [agentId, modelId] of Object.entries(overrides)) {
+      if (modelId && modelId !== "") {
+        const info = models.find(m => m.id === modelId);
+        ocOverrides[agentId] = info?.openclawId ||
+          (info?.provider === "anthropic" ? `vertex_ai/${modelId}` : `google-vertex/${modelId}`);
+      }
+    }
 
     const result = await api<{ success: boolean; commandId?: string; error?: string }>(
       `/api/primes/${activePrime}/models`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId: selectedModel }),
+        body: JSON.stringify({
+          defaultModel: ocDefault,
+          assignments: { default: ocDefault, overrides: ocOverrides },
+        }),
       }
     );
 
     if (result?.success && result.commandId) {
-      // Poll for completion
       const maxAttempts = 30;
       for (let i = 0; i < maxAttempts; i++) {
         await new Promise(r => setTimeout(r, 2000));
-        const cmd = await api<{ status: string; result?: string; error?: string }>(
+        const cmd = await api<{ status: string; error?: string }>(
           `/api/primes/${activePrime}/commands/${result.commandId}`
         );
         if (cmd?.status === "complete") {
-          setCurrentModel(selectedModel);
-          setApplyResult({ success: true, message: `Model updated to ${selectedModel}. Gateway restarting...` });
+          setCurrentModel(defaultModel);
+          setApplyResult({ success: true, message: "Model assignments saved. Gateway restarting..." });
+          setAssignmentsDirty(false);
           break;
         }
         if (cmd?.status === "failed") {
-          setApplyResult({ success: false, message: cmd.error || "Failed to apply model." });
+          setApplyResult({ success: false, message: cmd.error || "Failed to apply." });
           break;
         }
       }
     } else {
-      setApplyResult({ success: false, message: result?.error || "Failed to queue model change." });
+      setApplyResult({ success: false, message: result?.error || "Failed to save." });
     }
-    setApplying(false);
+    setSaving(false);
   };
 
-  const selectedModelAvailable = models.find(m => m.id === selectedModel)?.status === "available";
-  const hasChanges = selectedModel && selectedModel !== currentModel;
+  const availableModels = models.filter(m => m.status === "available" || m.status === "unknown");
+
+  // Helper to get display name from model id
+  const modelDisplayName = (modelId: string) => {
+    const m = models.find(x => x.id === modelId);
+    return m ? m.name : modelId;
+  };
 
   return (
     <>
+      {/* Model Discovery */}
       <div className={styles["settings-section"]}>
         <div className={styles["settings-section-title"]} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span>AI Models</span>
+          <span>Available Models</span>
           <button
             className="btn btn-sm btn-ghost"
             style={{ borderColor: "var(--border)" }}
@@ -176,14 +243,8 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
           </button>
         </div>
 
-        {currentModel && (
-          <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>
-            Currently running: <code className="mono" style={{ color: "var(--accent-primary-hover)", fontSize: 12 }}>google-vertex/{currentModel}</code>
-          </div>
-        )}
-
         {scannedAt && (
-          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginBottom: 12 }}>
             Last scanned: {new Date(scannedAt).toLocaleString()}
           </div>
         )}
@@ -192,32 +253,27 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
         <div className={styles["model-list"]}>
           {models.map((model) => {
             const statusInfo = STATUS_DISPLAY[model.status] || STATUS_DISPLAY.unknown;
-            const isSelected = selectedModel === model.id;
-            const isCurrent = currentModel === model.id;
-            const isDisabled = model.status !== "available" && model.status !== "unknown";
+            const providerBadge = PROVIDER_BADGES[model.provider] || PROVIDER_BADGES.google;
+            const cost = COST_TIERS[model.id] || "";
 
             return (
-              <div
-                key={model.id}
-                className={`${styles["model-card"]} ${isSelected ? styles["model-card-selected"] : ""} ${isDisabled ? styles["model-card-disabled"] : ""}`}
-                onClick={() => !isDisabled && setSelectedModel(model.id)}
-                role="button"
-                tabIndex={0}
-              >
+              <div key={model.id} className={styles["model-card"]} style={{ cursor: "default" }}>
                 <div className={styles["model-card-header"]}>
-                  <div className={styles["model-card-radio"]}>
-                    <div className={`${styles["model-radio"]} ${isSelected ? styles["model-radio-checked"] : ""}`}>
-                      {isSelected && <div className={styles["model-radio-dot"]} />}
-                    </div>
-                  </div>
                   <div className={styles["model-card-info"]}>
                     <div className={styles["model-card-name"]}>
                       {model.name}
                       {model.tier === "preview" && (
                         <span className={styles["model-tier-badge"]}>Preview</span>
                       )}
-                      {isCurrent && (
-                        <span className={styles["model-active-badge"]}>Active</span>
+                      <span style={{
+                        fontSize: 9, fontWeight: 600, padding: "2px 5px",
+                        borderRadius: 3, background: providerBadge.color,
+                        color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em",
+                      }}>
+                        {providerBadge.label}
+                      </span>
+                      {cost && (
+                        <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 500 }}>{cost}</span>
                       )}
                     </div>
                     <div className={styles["model-card-desc"]}>
@@ -230,54 +286,104 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
                   </div>
                 </div>
 
-                {/* Enable link for 404 models */}
-                {model.status === "not_found" && (
+                {(model.status === "not_found" || model.status === "auth_error") && (
                   <div className={styles["model-card-enable"]}>
                     <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                      Not available in this project.
+                      Enable in Google Cloud Console to use.
                     </span>
                     <a
-                      href={`https://console.cloud.google.com/vertex-ai/model-garden?project=${projectId}`}
+                      href={`https://console.cloud.google.com/vertex-ai/publishers/${model.provider === "anthropic" ? "anthropic" : "google"}/model-garden/${model.id}?project=${projectId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className={styles["model-enable-link"]}
-                      onClick={(e) => e.stopPropagation()}
                     >
-                      Enable in Model Garden →
+                      Open in Model Garden →
                     </a>
-                  </div>
-                )}
-
-                {model.status === "auth_error" && (
-                  <div className={styles["model-card-enable"]}>
-                    <span style={{ fontSize: 12, color: "#f59e0b" }}>
-                      Check IAM roles — need <code className="mono" style={{ fontSize: 10 }}>roles/aiplatform.user</code>
-                    </span>
                   </div>
                 )}
               </div>
             );
           })}
         </div>
+      </div>
 
-        {/* Apply button */}
-        <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 12 }}>
+      {/* Brain Agent Model Assignments */}
+      <div className={styles["settings-section"]}>
+        <div className={styles["settings-section-title"]}>Brain Agent Models</div>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16, lineHeight: 1.5 }}>
+          Tune which model each brain agent uses. Use powerful models for reasoning-heavy agents
+          and cost-effective models for simple tasks. Changes apply to both Prime and Fleet.
+        </p>
+
+        {/* Default model */}
+        <div className={styles["settings-row"]} style={{ alignItems: "center" }}>
+          <div className={styles["settings-label"]} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 16 }}>⚙️</span>
+            <div>
+              <div style={{ fontWeight: 600 }}>Default</div>
+              <div style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 400 }}>All agents unless overridden</div>
+            </div>
+          </div>
+          <div className={styles["settings-value"]}>
+            <select
+              className="input"
+              style={{ width: 280, fontSize: 13, padding: "6px 10px" }}
+              value={defaultModel}
+              onChange={(e) => { setDefaultModel(e.target.value); setAssignmentsDirty(true); }}
+            >
+              <option value="">— select —</option>
+              {availableModels.map(m => (
+                <option key={m.id} value={m.id}>{m.name} {COST_TIERS[m.id] || ""}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Per-agent overrides */}
+        <div style={{ borderTop: "1px solid var(--border-subtle)", marginTop: 8 }}>
+          {BRAIN_AGENTS.map((agent) => {
+            const override = overrides[agent.id] || "";
+            return (
+              <div key={agent.id} className={styles["settings-row"]} style={{ alignItems: "center", paddingTop: 8, paddingBottom: 8 }}>
+                <div className={styles["settings-label"]} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>{agent.icon}</span>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>{agent.label}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 400 }}>{agent.desc}</div>
+                  </div>
+                </div>
+                <div className={styles["settings-value"]}>
+                  <select
+                    className="input"
+                    style={{ width: 280, fontSize: 13, padding: "6px 10px", color: override ? "var(--text-primary)" : "var(--text-tertiary)" }}
+                    value={override}
+                    onChange={(e) => {
+                      setOverrides(prev => ({ ...prev, [agent.id]: e.target.value }));
+                      setAssignmentsDirty(true);
+                    }}
+                  >
+                    <option value="">Use default ({defaultModel ? modelDisplayName(defaultModel) : "—"})</option>
+                    {availableModels.map(m => (
+                      <option key={m.id} value={m.id}>{m.name} {COST_TIERS[m.id] || ""}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Save button */}
+        <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12 }}>
           <button
             className="btn btn-primary"
-            onClick={handleApply}
-            disabled={!hasChanges || !selectedModelAvailable || applying}
+            onClick={handleSaveAssignments}
+            disabled={!assignmentsDirty || !defaultModel || saving}
           >
-            {applying ? "Applying..." : "Apply as Default"}
+            {saving ? "Saving..." : "Save Assignments"}
           </button>
-          {hasChanges && selectedModelAvailable && (
-            <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-              Applies to Prime + all Fleet agents
-            </span>
-          )}
-          {hasChanges && !selectedModelAvailable && (
-            <span style={{ fontSize: 12, color: "#f59e0b" }}>
-              ⚠️ Selected model is not available — run &quot;Scan Models&quot; to refresh
-            </span>
+          {assignmentsDirty && (
+            <span style={{ fontSize: 12, color: "#f59e0b" }}>● Unsaved changes</span>
           )}
         </div>
 
@@ -294,8 +400,8 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
         )}
 
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 16, lineHeight: 1.6 }}>
-          ℹ️ Fleet agents will use the new model after their next restart or re-hire.
-          To update fleet agents immediately, use &quot;Upgrade Fleet&quot; from the Fleet tab.
+          ℹ️ Changes apply to both Prime and Fleet after gateway restart.
+          Fleet agents pick up new models on next hire or &quot;Upgrade Fleet.&quot;
         </div>
       </div>
     </>
