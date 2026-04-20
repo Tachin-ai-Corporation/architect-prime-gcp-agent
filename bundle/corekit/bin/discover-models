@@ -6,6 +6,8 @@
 #   discover-models                  # probe + print best model
 #   discover-models --apply          # probe + update config
 #   discover-models --check-only     # just print available models
+#   discover-models --probe-only     # output JSON (for dashboard)
+#   discover-models --set MODEL_ID --apply  # force a specific model
 #
 # This tool probes Vertex AI publisher models via generateContent
 # to find the best available Gemini model for the current project.
@@ -58,9 +60,9 @@ get_token() {
 # ---- Model preference list (best → fallback) ----
 # Format: model_id|display_name|tier
 MODELS=(
-  "gemini-3.1-pro-preview|Gemini 3.1 Pro (Preview)|tier1"
-  "gemini-2.5-pro|Gemini 2.5 Pro|tier2"
-  "gemini-2.5-flash|Gemini 2.5 Flash|tier3"
+  "gemini-3.1-pro-preview|Gemini 3.1 Pro (Preview)|preview"
+  "gemini-2.5-pro|Gemini 2.5 Pro|ga"
+  "gemini-2.5-flash|Gemini 2.5 Flash|ga"
 )
 
 # ---- Probe a single model ----
@@ -83,16 +85,26 @@ probe_model() {
 
 # ---- Parse args ----
 MODE="discover"
+FORCE_MODEL=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) MODE="apply"; shift ;;
     --check-only) MODE="check"; shift ;;
+    --probe-only) MODE="probe-only"; shift ;;
+    --set)
+      shift
+      FORCE_MODEL="${1:-}"
+      [[ -n "$FORCE_MODEL" ]] || die "--set requires a model ID argument"
+      shift
+      ;;
     --help|-h)
-      echo "Usage: discover-models [--apply] [--check-only]"
+      echo "Usage: discover-models [--apply] [--check-only] [--probe-only] [--set MODEL_ID]"
       echo ""
       echo "Probes Vertex AI to find the best available Gemini model."
       echo "  --apply       Update OpenClaw config with the best model"
       echo "  --check-only  Just print model availability"
+      echo "  --probe-only  Output JSON (for dashboard/automation)"
+      echo "  --set MODEL   Force a specific model (use with --apply)"
       echo ""
       echo "Enable Vertex AI API:  gcloud services enable aiplatform.googleapis.com"
       echo "Enable Model Garden:   Visit https://console.cloud.google.com/vertex-ai/model-garden"
@@ -103,13 +115,20 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---- Check prerequisites ----
-log "Discovering available Gemini models..."
-log "  Project:  ${GCP_PROJECT_ID}"
-log "  Location: ${LOCATION}"
+if [[ "$MODE" != "probe-only" ]]; then
+  log "Discovering available Gemini models..."
+  log "  Project:  ${GCP_PROJECT_ID}"
+  log "  Location: ${LOCATION}"
+fi
 
-# Check Vertex AI API
+# Check Vertex AI API (skip interactive prompt in probe-only mode)
 API_ENABLED="$(gcloud services list --enabled --filter='name:aiplatform.googleapis.com' --format='value(name)' --project="${GCP_PROJECT_ID}" 2>/dev/null || echo '')"
 if [[ -z "$API_ENABLED" ]]; then
+  if [[ "$MODE" == "probe-only" ]]; then
+    # In probe-only mode, just output error JSON
+    echo '{"error":"Vertex AI API not enabled","models":[],"bestModel":"","currentModel":""}'
+    exit 1
+  fi
   warn "Vertex AI API not enabled in project ${GCP_PROJECT_ID}"
   echo ""
   echo "  To enable it, run:"
@@ -128,14 +147,30 @@ fi
 TOKEN="$(get_token)"
 [[ -n "$TOKEN" ]] || die "Cannot obtain access token. Run: gcloud auth login"
 
+# ---- Detect current model from config ----
+CURRENT_MODEL=""
+for tmpl in "${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl"; do
+  if [[ -f "$tmpl" ]]; then
+    CURRENT_MODEL="$(python3 -c "
+import re, pathlib
+t = pathlib.Path('${tmpl}').read_text()
+m = re.search(r'\"primary\":\s*\"google-vertex/([^\"]+)\"', t)
+print(m.group(1) if m else '')
+" 2>/dev/null)" || true
+  fi
+done
+
 # ---- Probe each model ----
 BEST_MODEL=""
 BEST_NAME=""
 declare -A RESULTS
+declare -A STATUSES
 
-echo ""
-echo "  Model                        Status"
-echo "  ─────────────────────────────────────"
+if [[ "$MODE" != "probe-only" ]]; then
+  echo ""
+  echo "  Model                        Status"
+  echo "  ─────────────────────────────────────"
+fi
 
 for entry in "${MODELS[@]}"; do
   IFS='|' read -r model_id display_name tier <<< "$entry"
@@ -143,45 +178,101 @@ for entry in "${MODELS[@]}"; do
 
   case "$code" in
     200)
-      status="✅ Available"
+      status_label="✅ Available"
+      status_key="available"
       if [[ -z "$BEST_MODEL" ]]; then
         BEST_MODEL="$model_id"
         BEST_NAME="$display_name"
       fi
       ;;
     404)
-      status="❌ Not found (enable in Model Garden)"
+      status_label="❌ Not found (enable in Model Garden)"
+      status_key="not_found"
       ;;
     401|403)
-      status="🔒 Auth denied (check IAM roles)"
+      status_label="🔒 Auth denied (check IAM roles)"
+      status_key="auth_error"
       ;;
     429)
       # Rate limited means the model IS available
-      status="✅ Available (rate limited)"
+      status_label="✅ Available (rate limited)"
+      status_key="available"
       if [[ -z "$BEST_MODEL" ]]; then
         BEST_MODEL="$model_id"
         BEST_NAME="$display_name"
       fi
       ;;
     000)
-      status="⚠️  Timeout/unreachable"
+      status_label="⚠️  Timeout/unreachable"
+      status_key="timeout"
       ;;
     *)
-      status="⚠️  HTTP ${code}"
+      status_label="⚠️  HTTP ${code}"
+      status_key="unknown"
       ;;
   esac
 
-  printf "  %-30s %s\n" "$display_name" "$status"
+  if [[ "$MODE" != "probe-only" ]]; then
+    printf "  %-30s %s\n" "$display_name" "$status_label"
+  fi
   RESULTS["$model_id"]="$code"
+  STATUSES["$model_id"]="$status_key"
 done
 
-echo ""
+if [[ "$MODE" != "probe-only" ]]; then
+  echo ""
+fi
+
+# ---- Probe-only mode: output JSON ----
+if [[ "$MODE" == "probe-only" ]]; then
+  python3 -c "
+import json
+models = []
+for entry in '''${MODELS[0]}
+${MODELS[1]}
+${MODELS[2]}'''.strip().split('\n'):
+    model_id, name, tier = entry.split('|')
+    status = '${STATUSES[${MODELS[0]%%|*}]:-unknown}'
+    models.append({'id': model_id, 'name': name, 'tier': tier, 'status': '', 'httpCode': 0})
+
+# Override with actual statuses
+status_map = {
+$(for entry in "${MODELS[@]}"; do
+  IFS='|' read -r mid _ _ <<< "$entry"
+  echo "    '${mid}': ('${STATUSES[$mid]:-unknown}', ${RESULTS[$mid]:-0}),"
+done)
+}
+for m in models:
+    if m['id'] in status_map:
+        m['status'] = status_map[m['id']][0]
+        m['httpCode'] = status_map[m['id']][1]
+
+print(json.dumps({
+    'models': models,
+    'bestModel': '${BEST_MODEL}',
+    'currentModel': '${CURRENT_MODEL}',
+    'projectId': '${GCP_PROJECT_ID}',
+}))
+"
+  exit 0
+fi
 
 if [[ -z "$BEST_MODEL" ]]; then
   die "No available Gemini models found. Enable models at: https://console.cloud.google.com/vertex-ai/model-garden?project=${GCP_PROJECT_ID}"
 fi
 
-log "Best available model: google-vertex/${BEST_MODEL} (${BEST_NAME})"
+# If --set was provided, use that model instead of the auto-detected best
+APPLY_MODEL="${FORCE_MODEL:-$BEST_MODEL}"
+if [[ -n "$FORCE_MODEL" ]]; then
+  # Verify the forced model is actually available
+  forced_status="${STATUSES[$FORCE_MODEL]:-unknown}"
+  if [[ "$forced_status" != "available" ]]; then
+    warn "Forced model '${FORCE_MODEL}' has status '${forced_status}' — it may not work"
+  fi
+  log "Using forced model: google-vertex/${FORCE_MODEL}"
+else
+  log "Best available model: google-vertex/${BEST_MODEL} (${BEST_NAME})"
+fi
 
 # ---- Print enable instructions for any 404 models ----
 for entry in "${MODELS[@]}"; do
@@ -198,7 +289,7 @@ done
 
 # ---- Apply to config if requested ----
 if [[ "$MODE" == "apply" ]]; then
-  log "Updating config to use google-vertex/${BEST_MODEL}..."
+  log "Updating config to use google-vertex/${APPLY_MODEL}..."
 
   for tmpl in "${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl" \
               "${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"; do
@@ -210,7 +301,7 @@ p = pathlib.Path('${tmpl}')
 t = p.read_text()
 t = re.sub(
     r'\"primary\":\s*\"google-vertex/gemini-[^\"]+\"',
-    '\"primary\": \"google-vertex/${BEST_MODEL}\"',
+    '\"primary\": \"google-vertex/${APPLY_MODEL}\"',
     t
 )
 p.write_text(t)
@@ -226,7 +317,7 @@ print(f'  Updated: {p.name}')
     GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$RENDER"
   fi
 
-  log "Config updated to use google-vertex/${BEST_MODEL}"
+  log "Config updated to use google-vertex/${APPLY_MODEL}"
   echo ""
   echo "  Restart the gateway to apply: docker restart openclaw-gateway"
 fi
@@ -234,5 +325,5 @@ fi
 # ---- Output for scripts ----
 if [[ "$MODE" == "discover" ]]; then
   # Print just the model ID for script consumption
-  echo "BEST_MODEL=google-vertex/${BEST_MODEL}"
+  echo "BEST_MODEL=google-vertex/${APPLY_MODEL}"
 fi

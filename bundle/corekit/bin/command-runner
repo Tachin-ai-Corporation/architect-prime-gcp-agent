@@ -187,6 +187,90 @@ handle_gateway_restart() {
   log "Gateway restarted."
 }
 
+handle_discover_models() {
+  log "Executing: discover-models --probe-only"
+  local json_result
+  json_result="$(GCP_PROJECT_ID="$GCP_PROJECT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "${FLEET_BIN}/discover-models" --probe-only 2>/dev/null)" || true
+
+  if [[ -z "$json_result" ]]; then
+    echo "ERROR: discover-models returned no output"
+    return 1
+  fi
+
+  # Cache model statuses in Firestore for the dashboard
+  local token
+  token="$(get_token 2>/dev/null)" || true
+  if [[ -n "$token" ]]; then
+    # Extract statuses and save to per-prime config/settings
+    local settings_path="primes/${PRIME_ID}/config/settings"
+    local statuses current_model scanned_at
+    statuses=$(echo "$json_result" | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps({m['id']:m['status'] for m in d.get('models',[])}))" 2>/dev/null || echo '{}')
+    current_model=$(echo "$json_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('currentModel',''))" 2>/dev/null || echo '')
+    scanned_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Build Firestore fields for model cache
+    local status_fields
+    status_fields=$(echo "$statuses" | python3 -c "
+import json,sys
+statuses = json.load(sys.stdin)
+fields = {}
+for k,v in statuses.items():
+    fields[k] = {'stringValue': v}
+print(json.dumps(fields))
+" 2>/dev/null || echo '{}')
+
+    local update_body
+    update_body=$(python3 -c "
+import json
+fields = {
+  'modelStatuses': {'mapValue': {'fields': ${status_fields}}},
+  'modelScannedAt': {'stringValue': '${scanned_at}'},
+  'defaultModel': {'stringValue': '${current_model}'},
+}
+print(json.dumps({'fields': fields}))
+")
+
+    curl -s -X PATCH \
+      -H "Authorization: Bearer $token" \
+      -H "Content-Type: application/json" \
+      -d "$update_body" \
+      "${FIRESTORE_URL}/${settings_path}?updateMask.fieldPaths=modelStatuses&updateMask.fieldPaths=modelScannedAt&updateMask.fieldPaths=defaultModel" > /dev/null 2>&1 || true
+
+    log "Model statuses cached in Firestore"
+  fi
+
+  # Return the JSON result as the command result
+  echo "$json_result"
+}
+
+handle_set_model() {
+  local args_json="$1"
+  local model_id
+
+  model_id=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('modelId',''))")
+
+  if [[ -z "$model_id" ]]; then
+    echo "ERROR: modelId is required"
+    return 1
+  fi
+
+  log "Executing: discover-models --set ${model_id} --apply"
+  GCP_PROJECT_ID="$GCP_PROJECT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "${FLEET_BIN}/discover-models" --set "$model_id" --apply 2>&1
+  local dm_exit=$?
+
+  if [[ $dm_exit -eq 0 ]]; then
+    # Apply ADC fix before restart (needed for model-auth-env patch)
+    if [[ -x /tmp/fix-adc.sh ]]; then
+      bash /tmp/fix-adc.sh 2>&1 || true
+    else
+      log "Restarting gateway..."
+      docker restart openclaw-gateway 2>&1
+    fi
+    log "Model updated to ${model_id}. Gateway restarted."
+  fi
+  return $dm_exit
+}
+
 # ---- PARSE COMMAND FROM FIRESTORE RESPONSE ----
 
 parse_command() {
@@ -273,6 +357,12 @@ while true; do
       ;;
     gateway_restart)
       RESULT="$(handle_gateway_restart 2>&1)" || CMD_EXIT=$?
+      ;;
+    discover_models)
+      RESULT="$(handle_discover_models 2>&1)" || CMD_EXIT=$?
+      ;;
+    set_model)
+      RESULT="$(handle_set_model "$CMD_ARGS" 2>&1)" || CMD_EXIT=$?
       ;;
     *)
       RESULT="Unknown command type: ${CMD_TYPE}"
