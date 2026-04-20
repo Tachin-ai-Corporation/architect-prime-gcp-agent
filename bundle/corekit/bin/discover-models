@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# ============================================================
+# discover-models — Probe Vertex AI for the best available model
+#
+# Usage:
+#   discover-models                  # probe + print best model
+#   discover-models --apply          # probe + update config
+#   discover-models --check-only     # just print available models
+#
+# This tool probes Vertex AI publisher models via generateContent
+# to find the best available Gemini model for the current project.
+# It tests models in preference order and selects the first one
+# that responds successfully.
+#
+# Preference order (best → fallback):
+#   1. gemini-3.1-pro-preview
+#   2. gemini-2.5-pro
+#   3. gemini-2.5-flash
+#
+# Prerequisites:
+#   - gcloud CLI installed and authenticated
+#   - Vertex AI API enabled: gcloud services enable aiplatform.googleapis.com
+#   - IAM role: roles/aiplatform.user
+#
+# If a preferred model returns 404, this tool prints instructions
+# for enabling it via Model Garden.
+# ============================================================
+set -euo pipefail
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_HOST_DIR="${OC_HOST_ROOT}/.openclaw"
+
+log() { echo "[$(date -Is)] [discover-models] $*"; }
+warn() { echo "[$(date -Is)] [discover-models] [WARN] $*"; }
+die() { echo "[$(date -Is)] [discover-models] [FATAL] $*" >&2; exit 1; }
+
+# ---- Resolve GCP context ----
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(curl -sf -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null || echo '')}"
+[[ -n "$GCP_PROJECT_ID" ]] || GCP_PROJECT_ID="$(gcloud config get project 2>/dev/null || echo '')"
+[[ -n "$GCP_PROJECT_ID" ]] || die "Cannot determine GCP project ID"
+
+LOCATION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
+
+# Get access token
+get_token() {
+  # Try GCE metadata first (VM), then gcloud CLI
+  local token
+  token="$(curl -sf -H 'Metadata-Flavor: Google' \
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" 2>/dev/null \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])' 2>/dev/null)" || true
+  if [[ -z "$token" ]]; then
+    token="$(gcloud auth print-access-token 2>/dev/null)" || true
+  fi
+  echo "$token"
+}
+
+# ---- Model preference list (best → fallback) ----
+# Format: model_id|display_name|tier
+MODELS=(
+  "gemini-3.1-pro-preview|Gemini 3.1 Pro (Preview)|tier1"
+  "gemini-2.5-pro|Gemini 2.5 Pro|tier2"
+  "gemini-2.5-flash|Gemini 2.5 Flash|tier3"
+)
+
+# ---- Probe a single model ----
+probe_model() {
+  local model_id="$1"
+  local token="$2"
+  local url="https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${GCP_PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${model_id}:generateContent"
+
+  local http_code
+  http_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+    -X POST \
+    -H "Authorization: Bearer ${token}" \
+    -H "Content-Type: application/json" \
+    "$url" \
+    -d '{"contents":[{"role":"user","parts":[{"text":"respond with the single word pong"}]}],"generationConfig":{"maxOutputTokens":10}}' \
+    2>/dev/null)" || http_code="000"
+
+  echo "$http_code"
+}
+
+# ---- Parse args ----
+MODE="discover"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --apply) MODE="apply"; shift ;;
+    --check-only) MODE="check"; shift ;;
+    --help|-h)
+      echo "Usage: discover-models [--apply] [--check-only]"
+      echo ""
+      echo "Probes Vertex AI to find the best available Gemini model."
+      echo "  --apply       Update OpenClaw config with the best model"
+      echo "  --check-only  Just print model availability"
+      echo ""
+      echo "Enable Vertex AI API:  gcloud services enable aiplatform.googleapis.com"
+      echo "Enable Model Garden:   Visit https://console.cloud.google.com/vertex-ai/model-garden"
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+# ---- Check prerequisites ----
+log "Discovering available Gemini models..."
+log "  Project:  ${GCP_PROJECT_ID}"
+log "  Location: ${LOCATION}"
+
+# Check Vertex AI API
+API_ENABLED="$(gcloud services list --enabled --filter='name:aiplatform.googleapis.com' --format='value(name)' --project="${GCP_PROJECT_ID}" 2>/dev/null || echo '')"
+if [[ -z "$API_ENABLED" ]]; then
+  warn "Vertex AI API not enabled in project ${GCP_PROJECT_ID}"
+  echo ""
+  echo "  To enable it, run:"
+  echo "    gcloud services enable aiplatform.googleapis.com --project=${GCP_PROJECT_ID}"
+  echo ""
+  read -r -p "  Enable now? [y/N] " confirm
+  if [[ "$confirm" =~ ^[Yy] ]]; then
+    log "Enabling Vertex AI API..."
+    gcloud services enable aiplatform.googleapis.com --project="${GCP_PROJECT_ID}"
+    log "Vertex AI API enabled."
+  else
+    die "Vertex AI API required. Aborting."
+  fi
+fi
+
+TOKEN="$(get_token)"
+[[ -n "$TOKEN" ]] || die "Cannot obtain access token. Run: gcloud auth login"
+
+# ---- Probe each model ----
+BEST_MODEL=""
+BEST_NAME=""
+declare -A RESULTS
+
+echo ""
+echo "  Model                        Status"
+echo "  ─────────────────────────────────────"
+
+for entry in "${MODELS[@]}"; do
+  IFS='|' read -r model_id display_name tier <<< "$entry"
+  code="$(probe_model "$model_id" "$TOKEN")"
+
+  case "$code" in
+    200)
+      status="✅ Available"
+      if [[ -z "$BEST_MODEL" ]]; then
+        BEST_MODEL="$model_id"
+        BEST_NAME="$display_name"
+      fi
+      ;;
+    404)
+      status="❌ Not found (enable in Model Garden)"
+      ;;
+    401|403)
+      status="🔒 Auth denied (check IAM roles)"
+      ;;
+    429)
+      # Rate limited means the model IS available
+      status="✅ Available (rate limited)"
+      if [[ -z "$BEST_MODEL" ]]; then
+        BEST_MODEL="$model_id"
+        BEST_NAME="$display_name"
+      fi
+      ;;
+    000)
+      status="⚠️  Timeout/unreachable"
+      ;;
+    *)
+      status="⚠️  HTTP ${code}"
+      ;;
+  esac
+
+  printf "  %-30s %s\n" "$display_name" "$status"
+  RESULTS["$model_id"]="$code"
+done
+
+echo ""
+
+if [[ -z "$BEST_MODEL" ]]; then
+  die "No available Gemini models found. Enable models at: https://console.cloud.google.com/vertex-ai/model-garden?project=${GCP_PROJECT_ID}"
+fi
+
+log "Best available model: google-vertex/${BEST_MODEL} (${BEST_NAME})"
+
+# ---- Print enable instructions for any 404 models ----
+for entry in "${MODELS[@]}"; do
+  IFS='|' read -r model_id display_name tier <<< "$entry"
+  if [[ "${RESULTS[$model_id]}" == "404" ]]; then
+    echo ""
+    echo "  To enable ${display_name}:"
+    echo "    1. Go to: https://console.cloud.google.com/vertex-ai/model-garden?project=${GCP_PROJECT_ID}"
+    echo "    2. Search for '${model_id}'"
+    echo "    3. Click 'Enable' on the model card"
+    echo ""
+  fi
+done
+
+# ---- Apply to config if requested ----
+if [[ "$MODE" == "apply" ]]; then
+  log "Updating config to use google-vertex/${BEST_MODEL}..."
+
+  for tmpl in "${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl" \
+              "${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"; do
+    if [[ -f "$tmpl" ]]; then
+      # Replace the primary model in the template
+      python3 -c "
+import pathlib, re, sys
+p = pathlib.Path('${tmpl}')
+t = p.read_text()
+t = re.sub(
+    r'\"primary\":\s*\"google-vertex/gemini-[^\"]+\"',
+    '\"primary\": \"google-vertex/${BEST_MODEL}\"',
+    t
+)
+p.write_text(t)
+print(f'  Updated: {p.name}')
+"
+    fi
+  done
+
+  # Re-render config
+  RENDER="${OC_HOST_DIR}/bin/render-config"
+  if [[ -x "$RENDER" ]]; then
+    log "Re-rendering config..."
+    GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$RENDER"
+  fi
+
+  log "Config updated to use google-vertex/${BEST_MODEL}"
+  echo ""
+  echo "  Restart the gateway to apply: docker restart openclaw-gateway"
+fi
+
+# ---- Output for scripts ----
+if [[ "$MODE" == "discover" ]]; then
+  # Print just the model ID for script consumption
+  echo "BEST_MODEL=google-vertex/${BEST_MODEL}"
+fi

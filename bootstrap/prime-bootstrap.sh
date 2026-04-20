@@ -312,12 +312,22 @@ docker exec -u 0 openclaw-gateway bash -c '
 set -e
 
 # Step 1: Empty auth-profiles.json — prevents literal "adc" being sent as API key
+# v2026.4.15+ creates per-agent auth-profiles in agents/{id}/agent/
+for AP in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
+  if [ -f "$AP" ]; then
+    echo "{\"version\":1,\"profiles\":{}}" > "$AP"
+    chown node:node "$AP"
+    chmod 600 "$AP"
+    echo "  auth-profiles.json emptied: $AP"
+  fi
+done
+# Also handle legacy main agent path
 AP="/home/node/.openclaw/agents/main/agent/auth-profiles.json"
-if [ -f "$AP" ]; then
+if [ ! -f "$AP" ]; then
+  mkdir -p "$(dirname "$AP")"
   echo "{\"version\":1,\"profiles\":{}}" > "$AP"
-  chown node:node "$AP"
-  chmod 600 "$AP"
-  echo "  auth-profiles.json emptied"
+  chown -R node:node /home/node/.openclaw/agents
+  echo "  auth-profiles.json created: $AP"
 fi
 
 # Step 2: Patch model-auth-env — GCE ADC fallback for google-vertex
@@ -354,6 +364,18 @@ if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get -
   info "Gateway restarted successfully after ADC patch."
 else
   warn "Gateway may not be ready yet after ADC patch restart. Continuing..."
+fi
+
+# ---- 12b) Model discovery — find best available Gemini model ----
+# Probes Vertex AI to find the best model the project has access to.
+# Updates config template with the best model, re-renders, and restarts.
+DISCOVER="${OC_HOST_DIR}/bin/discover-models"
+if [[ -x "$DISCOVER" ]]; then
+  info "Discovering best available model..."
+  GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$DISCOVER" --apply || \
+    warn "Model discovery failed (non-fatal — keeping current model config)"
+else
+  warn "discover-models not found — skipping model discovery"
 fi
 
 # ---- 13) Write prime-config.json ----
