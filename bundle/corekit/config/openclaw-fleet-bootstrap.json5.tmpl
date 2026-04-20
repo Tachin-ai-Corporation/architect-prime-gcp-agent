@@ -59,6 +59,7 @@
         }
       },
       "maxConcurrent": 1,
+      "timeoutSeconds": 120,
       "heartbeat": {
         "every": "0m"
       }
@@ -67,11 +68,11 @@
       {
         // Cortex — the specialty agent's user-facing persona.
         // Dispatches sub-agents via exec brain-exec.
+        // SOUL.md is loaded automatically from the workspace directory.
         "id": "cortex",
         "default": true,
         "name": "${AGENT_DISPLAY_NAME}",
         "workspace": "~/.openclaw/workspace",
-        "systemPrompt": "${SOUL_CONTENT}",
         "sandbox": { "mode": "off" },
         "subagents": {
           "allowAgents": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"],

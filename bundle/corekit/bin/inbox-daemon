@@ -179,7 +179,7 @@ timeout = int(os.environ.get('OC_TIMEOUT', '120'))
 
 # Build request payload (safe — no shell interpolation)
 payload = json.dumps({
-    'model': 'openclaw/main',
+    'model': 'openclaw/cortex',
     'messages': [{'role': 'user', 'content': text}]
 })
 

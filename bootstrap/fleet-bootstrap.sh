@@ -263,7 +263,7 @@ GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
 GCLOUD_PROJECT=${GCP_PROJECT_ID}
 CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
 GOOGLE_GENAI_USE_VERTEXAI=True
-GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_CLOUD_LOCATION=global
 GCE_METADATA_HOST=metadata.google.internal
 AGENT_ID=${AGENT_ID}
 PRIME_ID=${PRIME_ID}
@@ -280,44 +280,25 @@ if [[ ! -f "$FLEET_TMPL" ]]; then
   warn "Fleet config template not found, using prime template"
 fi
 
-# Read SOUL.md for system prompt injection (Phase A — fleet identity fix)
-SOUL_FILE="${OC_HOST_DIR}/workspace/SOUL.md"
-if [[ -f "$SOUL_FILE" ]]; then
-  info "Injecting SOUL.md into system prompt..."
-else
-  warn "SOUL.md not found at ${SOUL_FILE} — agent will use default personality"
-fi
+# Note: SOUL.md is loaded automatically by OpenClaw from the workspace directory.
+# No systemPrompt injection needed — the workspace files (step 4) handle identity.
 
 python3 - <<PY
 import pathlib, re, json
 
 tmpl_path = pathlib.Path("${FLEET_TMPL}")
 out_path = pathlib.Path("${OC_HOST_DIR}/openclaw.json")
-soul_path = pathlib.Path("${SOUL_FILE}")
 
 tmpl = tmpl_path.read_text(encoding="utf-8")
 
 # Remove json5 comments (// style)
 tmpl = re.sub(r'//.*$', '', tmpl, flags=re.MULTILINE)
 
-# Read and JSON-escape SOUL.md content for systemPrompt injection
-soul_content = ""
-if soul_path.exists():
-    raw = soul_path.read_text(encoding="utf-8").strip()
-    # JSON-encode the string (handles newlines, quotes, special chars)
-    # json.dumps adds outer quotes, strip them since template already has quotes
-    soul_content = json.dumps(raw)[1:-1]
-    print(f"  SOUL.md: {len(raw)} chars injected into systemPrompt")
-else:
-    soul_content = "You are a helpful fleet agent."
-    print("  SOUL.md not found, using default")
-
 # Template substitutions
 tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
 tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
 tmpl = tmpl.replace("\${AGENT_ID}", "${AGENT_ID}")
 tmpl = tmpl.replace("\${AGENT_DISPLAY_NAME}", "${AGENT_DISPLAY_NAME}")
-tmpl = tmpl.replace("\${SOUL_CONTENT}", soul_content)
 
 out_path.write_text(tmpl, encoding="utf-8")
 print("  Config written to " + str(out_path))
@@ -394,14 +375,26 @@ which jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq jq >/
 info "Applying Vertex AI ADC auth fix..."
 docker exec -u 0 openclaw-gateway bash -c '
 set -e
-AP="/home/node/.openclaw/agents/main/agent/auth-profiles.json"
-if [ -f "$AP" ]; then
+
+# Step 1: Empty auth-profiles for ALL agents (cortex, temporal-research, etc.)
+for AP in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
+  if [ -f "$AP" ]; then
+    echo "{\"version\":1,\"profiles\":{}}" > "$AP"
+    chown node:node "$AP"
+    chmod 600 "$AP"
+    echo "  auth-profiles.json emptied: $AP"
+  fi
+done
+# Ensure cortex agent (default) has auth-profiles even if not yet created
+AP="/home/node/.openclaw/agents/cortex/agent/auth-profiles.json"
+if [ ! -f "$AP" ]; then
+  mkdir -p "$(dirname "$AP")"
   echo "{\"version\":1,\"profiles\":{}}" > "$AP"
-  chown node:node "$AP"
-  chmod 600 "$AP"
-  echo "  auth-profiles.json emptied"
+  chown -R node:node /home/node/.openclaw/agents
+  echo "  auth-profiles.json created: $AP"
 fi
 
+# Step 2: Patch model-auth-env — GCE ADC fallback for google-vertex
 AUTH_ENV_FILE=$(find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
 if [ -n "$AUTH_ENV_FILE" ]; then
   if grep -q "if (!envKey) return null;" "$AUTH_ENV_FILE" 2>/dev/null; then
@@ -411,6 +404,8 @@ if [ -n "$AUTH_ENV_FILE" ]; then
     echo "  model-auth-env already patched"
   fi
 fi
+
+# Step 3: Remove stale ADC files
 rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
 ' || warn "ADC fix had non-fatal errors"
 
