@@ -189,11 +189,23 @@ handle_gateway_restart() {
 
 handle_discover_models() {
   log "Executing: discover-models --probe-only"
-  local json_result
-  json_result="$(GCP_PROJECT_ID="$GCP_PROJECT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "${FLEET_BIN}/discover-models" --probe-only 2>/dev/null)" || true
+  local result_file="/tmp/discover-models-result.json"
+  local stderr_file="/tmp/discover-models-stderr.log"
 
-  if [[ -z "$json_result" ]]; then
+  # Run discovery, capture JSON to file (not bash variable — avoids corruption with large output)
+  GCP_PROJECT_ID="$GCP_PROJECT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" \
+    "${FLEET_BIN}/discover-models" --probe-only > "$result_file" 2>"$stderr_file" || true
+
+  if [[ ! -s "$result_file" ]]; then
+    log "ERROR: discover-models produced no output. stderr: $(cat "$stderr_file" 2>/dev/null)"
     echo "ERROR: discover-models returned no output"
+    return 1
+  fi
+
+  # Validate JSON
+  if ! python3 -c "import json; json.load(open('$result_file'))" 2>/dev/null; then
+    log "ERROR: discover-models produced invalid JSON"
+    echo "ERROR: invalid JSON from discover-models"
     return 1
   fi
 
@@ -205,12 +217,12 @@ handle_discover_models() {
     local scanned_at
     scanned_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Build Firestore update with full catalog as array
+    # Build Firestore update from the result file
     local update_body
-    update_body=$(echo "$json_result" | python3 -c "
+    update_body=$(python3 -c "
 import json, sys
 
-data = json.load(sys.stdin)
+data = json.load(open('$result_file'))
 models = data.get('models', [])
 current = data.get('currentModel', '')
 
@@ -225,7 +237,6 @@ for m in models:
         fields['httpCode'] = {'integerValue': str(m['httpCode'])}
     model_values.append({'mapValue': {'fields': fields}})
 
-# Also build legacy statusMap for backwards compat
 status_fields = {}
 for m in models:
     status_fields[m['id']] = {'stringValue': m.get('status', 'unknown')}
@@ -234,12 +245,12 @@ result = {
     'fields': {
         'modelCatalog': {'arrayValue': {'values': model_values}},
         'modelStatuses': {'mapValue': {'fields': status_fields}},
-        'modelScannedAt': {'stringValue': '${scanned_at}'},
+        'modelScannedAt': {'stringValue': '$scanned_at'},
         'defaultModel': {'stringValue': current},
     }
 }
 print(json.dumps(result))
-" 2>/dev/null)
+" 2>/dev/null) || true
 
     if [[ -n "$update_body" ]]; then
       curl -s -X PATCH \
@@ -247,12 +258,12 @@ print(json.dumps(result))
         -H "Content-Type: application/json" \
         -d "$update_body" \
         "${FIRESTORE_URL}/${settings_path}?updateMask.fieldPaths=modelCatalog&updateMask.fieldPaths=modelStatuses&updateMask.fieldPaths=modelScannedAt&updateMask.fieldPaths=defaultModel" > /dev/null 2>&1 || true
-      log "Model catalog cached in Firestore (${#models} models)"
+      log "Model catalog cached in Firestore ($(python3 -c "import json; print(len(json.load(open('$result_file')).get('models',[])))" 2>/dev/null || echo '?') models)"
     fi
   fi
 
-  # Return the JSON result as the command result
-  echo "$json_result"
+  # Return the JSON result as the command result (clean, no log noise)
+  cat "$result_file"
 }
 
 handle_set_model() {
