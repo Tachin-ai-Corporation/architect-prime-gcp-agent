@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "description": "Model catalog for Architect Prime. Edit this file to add/remove models without code changes.",
+  "models": [
+    {
+      "id": "gemini-3.1-pro-preview",
+      "name": "Gemini 3.1 Pro (Preview)",
+      "tier": "preview",
+      "provider": "google",
+      "description": "Latest reasoning capabilities with extended context. Best for orchestration.",
+      "cost": "$$$"
+    },
+    {
+      "id": "gemini-2.5-pro",
+      "name": "Gemini 2.5 Pro",
+      "tier": "ga",
+      "provider": "google",
+      "description": "Strong reasoning with proven stability. Recommended for production.",
+      "cost": "$$"
+    },
+    {
+      "id": "gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "tier": "ga",
+      "provider": "google",
+      "description": "Fast and cost-effective. Good for simple tasks.",
+      "cost": "$"
+    },
+    {
+      "id": "claude-opus-4-7",
+      "name": "Claude Opus 4.7",
+      "tier": "ga",
+      "provider": "anthropic",
+      "description": "Most capable Anthropic model. Excellent for complex agentic tasks.",
+      "cost": "$$$$"
+    },
+    {
+      "id": "claude-sonnet-4",
+      "name": "Claude Sonnet 4",
+      "tier": "ga",
+      "provider": "anthropic",
+      "description": "Balanced Anthropic model. Good reasoning at lower cost.",
+      "cost": "$$"
+    }
+  ]
+}

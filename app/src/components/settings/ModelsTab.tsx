@@ -17,11 +17,13 @@ async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
 interface ModelInfo {
   id: string;
   name: string;
-  tier: "preview" | "ga";
-  provider: "google" | "anthropic";
+  tier: string;
+  provider: string;
   status: "available" | "not_found" | "auth_error" | "timeout" | "checking" | "unknown";
   httpCode?: number;
   openclawId?: string;
+  description?: string;
+  cost?: string;
 }
 
 interface ModelAssignments {
@@ -52,25 +54,9 @@ const BRAIN_AGENTS = [
   { id: "cerebellum", label: "Cerebellum", desc: "QA verification", icon: "✅", recommended: "flash" },
 ];
 
-const MODEL_DESCRIPTIONS: Record<string, string> = {
-  "gemini-3.1-pro-preview": "Latest reasoning capabilities with extended context. Best for orchestration.",
-  "gemini-2.5-pro": "Strong reasoning with proven stability. Recommended for production.",
-  "gemini-2.5-flash": "Fast and cost-effective. Good for simple tasks.",
-  "claude-opus-4-7": "Most capable Anthropic model. Excellent for complex agentic tasks.",
-  "claude-sonnet-4": "Balanced Anthropic model. Good reasoning at lower cost.",
-};
-
-const COST_TIERS: Record<string, string> = {
-  "gemini-3.1-pro-preview": "$$$",
-  "gemini-2.5-pro": "$$",
-  "gemini-2.5-flash": "$",
-  "claude-opus-4-7": "$$$$",
-  "claude-sonnet-4": "$$",
-};
-
-const PROVIDER_BADGES: Record<string, { label: string; color: string }> = {
-  google: { label: "Google", color: "rgba(66,133,244,0.15)" },
-  anthropic: { label: "Anthropic", color: "rgba(217,119,87,0.15)" },
+const PROVIDER_COLORS: Record<string, string> = {
+  google: "rgba(66,133,244,0.15)",
+  anthropic: "rgba(217,119,87,0.15)",
 };
 
 const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: string }> = {
@@ -82,16 +68,8 @@ const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: strin
   unknown: { icon: "❓", label: "Not Scanned", color: "var(--text-tertiary)" },
 };
 
-const DEFAULT_MODELS: ModelInfo[] = [
-  { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", tier: "preview", provider: "google", status: "unknown" },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "ga", provider: "google", status: "unknown" },
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tier: "ga", provider: "google", status: "unknown" },
-  { id: "claude-opus-4-7", name: "Claude Opus 4.7", tier: "ga", provider: "anthropic", status: "unknown" },
-  { id: "claude-sonnet-4", name: "Claude Sonnet 4", tier: "ga", provider: "anthropic", status: "unknown" },
-];
-
 export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
-  const [models, setModels] = useState<ModelInfo[]>(DEFAULT_MODELS);
+  const [models, setModels] = useState<ModelInfo[]>([]);
   const [currentModel, setCurrentModel] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
@@ -249,12 +227,27 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
           </div>
         )}
 
+        {/* Empty state */}
+        {models.length === 0 && !scanning && (
+          <div style={{
+            padding: 24, textAlign: "center", borderRadius: 8,
+            border: "1px dashed var(--border)", color: "var(--text-tertiary)",
+            fontSize: 14, lineHeight: 1.8,
+          }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>🔍</div>
+            No models discovered yet.<br />
+            Click <strong>&quot;Scan Models&quot;</strong> to probe Vertex AI for available models.<br />
+            <span style={{ fontSize: 12 }}>
+              The model catalog is loaded from <code className="mono" style={{ fontSize: 11 }}>model-catalog.json</code> on the Prime VM.
+            </span>
+          </div>
+        )}
+
         {/* Model cards */}
         <div className={styles["model-list"]}>
           {models.map((model) => {
             const statusInfo = STATUS_DISPLAY[model.status] || STATUS_DISPLAY.unknown;
-            const providerBadge = PROVIDER_BADGES[model.provider] || PROVIDER_BADGES.google;
-            const cost = COST_TIERS[model.id] || "";
+            const providerColor = PROVIDER_COLORS[model.provider] || "rgba(128,128,128,0.15)";
 
             return (
               <div key={model.id} className={styles["model-card"]} style={{ cursor: "default" }}>
@@ -267,17 +260,17 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
                       )}
                       <span style={{
                         fontSize: 9, fontWeight: 600, padding: "2px 5px",
-                        borderRadius: 3, background: providerBadge.color,
+                        borderRadius: 3, background: providerColor,
                         color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em",
                       }}>
-                        {providerBadge.label}
+                        {model.provider}
                       </span>
-                      {cost && (
-                        <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 500 }}>{cost}</span>
+                      {model.cost && (
+                        <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 500 }}>{model.cost}</span>
                       )}
                     </div>
                     <div className={styles["model-card-desc"]}>
-                      {MODEL_DESCRIPTIONS[model.id] || ""}
+                      {model.description || ""}
                     </div>
                   </div>
                   <div className={styles["model-card-status"]} style={{ color: statusInfo.color }}>
@@ -333,7 +326,7 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
             >
               <option value="">— select —</option>
               {availableModels.map(m => (
-                <option key={m.id} value={m.id}>{m.name} {COST_TIERS[m.id] || ""}</option>
+                <option key={m.id} value={m.id}>{m.name} {m.cost || ""}</option>
               ))}
             </select>
           </div>
@@ -364,7 +357,7 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
                   >
                     <option value="">Use default ({defaultModel ? modelDisplayName(defaultModel) : "—"})</option>
                     {availableModels.map(m => (
-                      <option key={m.id} value={m.id}>{m.name} {COST_TIERS[m.id] || ""}</option>
+                      <option key={m.id} value={m.id}>{m.name} {m.cost || ""}</option>
                     ))}
                   </select>
                 </div>

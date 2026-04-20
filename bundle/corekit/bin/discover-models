@@ -55,14 +55,36 @@ get_token() {
 
 # ---- Model catalog ----
 # Format: model_id|display_name|tier|provider
-# provider: google = generateContent, anthropic = rawPredict
-MODELS=(
-  "gemini-3.1-pro-preview|Gemini 3.1 Pro (Preview)|preview|google"
-  "gemini-2.5-pro|Gemini 2.5 Pro|ga|google"
-  "gemini-2.5-flash|Gemini 2.5 Flash|ga|google"
-  "claude-opus-4-7|Claude Opus 4.7|ga|anthropic"
-  "claude-sonnet-4|Claude Sonnet 4|ga|anthropic"
-)
+# ---- Load model catalog dynamically ----
+# Reads from model-catalog.json — edit that file to add/remove models
+# without changing this script. Falls back to inline defaults.
+CATALOG_FILE="${OC_HOST_DIR}/corekit/model-catalog.json"
+
+load_catalog() {
+  if [[ -f "$CATALOG_FILE" ]]; then
+    python3 -c "
+import json
+catalog = json.load(open('${CATALOG_FILE}'))
+for m in catalog.get('models', []):
+    print(f\"{m['id']}|{m['name']}|{m.get('tier','ga')}|{m.get('provider','google')}\")
+" 2>/dev/null
+  else
+    # Inline fallback if catalog file doesn't exist
+    cat <<'FALLBACK'
+gemini-3.1-pro-preview|Gemini 3.1 Pro (Preview)|preview|google
+gemini-2.5-pro|Gemini 2.5 Pro|ga|google
+gemini-2.5-flash|Gemini 2.5 Flash|ga|google
+claude-opus-4-7|Claude Opus 4.7|ga|anthropic
+claude-sonnet-4|Claude Sonnet 4|ga|anthropic
+FALLBACK
+  fi
+}
+
+# Read catalog into array
+MODELS=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && MODELS+=("$line")
+done < <(load_catalog)
 
 # OpenClaw model ID mapping
 oc_model_id() {
@@ -291,11 +313,25 @@ fi
 
 # ---- Probe-only mode: output JSON ----
 if [[ "$MODE" == "probe-only" ]]; then
-  # Build JSON via python for reliability
+  # Build JSON via python, reading full metadata from catalog file
   python3 <<PYEOF
-import json
+import json, os
 
-catalog = """$(printf '%s\n' "${MODELS[@]}")""".strip().split('\n')
+# Load catalog for description/cost metadata
+catalog_meta = {}
+catalog_file = '${CATALOG_FILE}'
+if os.path.exists(catalog_file):
+    try:
+        cat = json.load(open(catalog_file))
+        for m in cat.get('models', []):
+            catalog_meta[m['id']] = {
+                'description': m.get('description', ''),
+                'cost': m.get('cost', ''),
+            }
+    except:
+        pass
+
+catalog_lines = """$(printf '%s\n' "${MODELS[@]}")""".strip().split('\n')
 status_map = {
 $(for entry in "${MODELS[@]}"; do
   IFS='|' read -r mid _ _ prov <<< "$entry"
@@ -304,10 +340,14 @@ done)
 }
 
 models = []
-for line in catalog:
-    mid, name, tier, provider = line.split('|')
+for line in catalog_lines:
+    parts = line.split('|')
+    if len(parts) < 4:
+        continue
+    mid, name, tier, provider = parts[0], parts[1], parts[2], parts[3]
     st, code, prov = status_map.get(mid, ('unknown', 0, provider))
     oc_id = f"google-vertex/{mid}" if prov == 'google' else f"vertex_ai/{mid}"
+    meta = catalog_meta.get(mid, {})
     models.append({
         'id': mid,
         'name': name,
@@ -316,6 +356,8 @@ for line in catalog:
         'status': st,
         'httpCode': code,
         'openclawId': oc_id,
+        'description': meta.get('description', ''),
+        'cost': meta.get('cost', ''),
     })
 
 print(json.dumps({

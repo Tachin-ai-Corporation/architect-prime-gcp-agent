@@ -197,46 +197,58 @@ handle_discover_models() {
     return 1
   fi
 
-  # Cache model statuses in Firestore for the dashboard
+  # Cache full model catalog in Firestore for the dashboard
   local token
   token="$(get_token 2>/dev/null)" || true
   if [[ -n "$token" ]]; then
-    # Extract statuses and save to per-prime config/settings
     local settings_path="primes/${PRIME_ID}/config/settings"
-    local statuses current_model scanned_at
-    statuses=$(echo "$json_result" | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps({m['id']:m['status'] for m in d.get('models',[])}))" 2>/dev/null || echo '{}')
-    current_model=$(echo "$json_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('currentModel',''))" 2>/dev/null || echo '')
+    local scanned_at
     scanned_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Build Firestore fields for model cache
-    local status_fields
-    status_fields=$(echo "$statuses" | python3 -c "
-import json,sys
-statuses = json.load(sys.stdin)
-fields = {}
-for k,v in statuses.items():
-    fields[k] = {'stringValue': v}
-print(json.dumps(fields))
-" 2>/dev/null || echo '{}')
-
+    # Build Firestore update with full catalog as array
     local update_body
-    update_body=$(python3 -c "
-import json
-fields = {
-  'modelStatuses': {'mapValue': {'fields': ${status_fields}}},
-  'modelScannedAt': {'stringValue': '${scanned_at}'},
-  'defaultModel': {'stringValue': '${current_model}'},
+    update_body=$(echo "$json_result" | python3 -c "
+import json, sys
+
+data = json.load(sys.stdin)
+models = data.get('models', [])
+current = data.get('currentModel', '')
+
+# Build Firestore arrayValue for modelCatalog
+model_values = []
+for m in models:
+    fields = {}
+    for k in ['id','name','tier','provider','status','openclawId','description','cost']:
+        if k in m and m[k] is not None:
+            fields[k] = {'stringValue': str(m[k])}
+    if 'httpCode' in m:
+        fields['httpCode'] = {'integerValue': str(m['httpCode'])}
+    model_values.append({'mapValue': {'fields': fields}})
+
+# Also build legacy statusMap for backwards compat
+status_fields = {}
+for m in models:
+    status_fields[m['id']] = {'stringValue': m.get('status', 'unknown')}
+
+result = {
+    'fields': {
+        'modelCatalog': {'arrayValue': {'values': model_values}},
+        'modelStatuses': {'mapValue': {'fields': status_fields}},
+        'modelScannedAt': {'stringValue': '${scanned_at}'},
+        'defaultModel': {'stringValue': current},
+    }
 }
-print(json.dumps({'fields': fields}))
-")
+print(json.dumps(result))
+" 2>/dev/null)
 
-    curl -s -X PATCH \
-      -H "Authorization: Bearer $token" \
-      -H "Content-Type: application/json" \
-      -d "$update_body" \
-      "${FIRESTORE_URL}/${settings_path}?updateMask.fieldPaths=modelStatuses&updateMask.fieldPaths=modelScannedAt&updateMask.fieldPaths=defaultModel" > /dev/null 2>&1 || true
-
-    log "Model statuses cached in Firestore"
+    if [[ -n "$update_body" ]]; then
+      curl -s -X PATCH \
+        -H "Authorization: Bearer $token" \
+        -H "Content-Type: application/json" \
+        -d "$update_body" \
+        "${FIRESTORE_URL}/${settings_path}?updateMask.fieldPaths=modelCatalog&updateMask.fieldPaths=modelStatuses&updateMask.fieldPaths=modelScannedAt&updateMask.fieldPaths=defaultModel" > /dev/null 2>&1 || true
+      log "Model catalog cached in Firestore (${#models} models)"
+    fi
   fi
 
   # Return the JSON result as the command result

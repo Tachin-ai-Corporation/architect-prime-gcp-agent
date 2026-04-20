@@ -2,17 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, commandsCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
 
-/* ---- Default model catalog (matches discover-models) ---- */
-const DEFAULT_MODELS = [
-  { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro (Preview)", tier: "preview", provider: "google", status: "unknown" },
-  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "ga", provider: "google", status: "unknown" },
-  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tier: "ga", provider: "google", status: "unknown" },
-  { id: "claude-opus-4-7", name: "Claude Opus 4.7", tier: "ga", provider: "anthropic", status: "unknown" },
-  { id: "claude-sonnet-4", name: "Claude Sonnet 4", tier: "ga", provider: "anthropic", status: "unknown" },
-];
-
 /**
- * GET /api/primes/[id]/models — Returns model info + assignments for this prime.
+ * GET /api/primes/[id]/models — Returns model catalog + assignments from Firestore.
+ *
+ * The catalog is populated dynamically by discover-models --probe-only
+ * running on the Prime VM. No models are hardcoded here — scan first
+ * to populate the list.
  */
 export async function GET(
   _req: NextRequest,
@@ -28,16 +23,11 @@ export async function GET(
 
     const settings = settingsDoc.exists ? settingsDoc.data() : null;
 
-    // Merge cached statuses into catalog
-    const cachedStatuses = settings?.modelStatuses || {};
-    const models = DEFAULT_MODELS.map(m => ({
-      ...m,
-      status: cachedStatuses[m.id] || "unknown",
-      openclawId: m.provider === "anthropic" ? `vertex_ai/${m.id}` : `google-vertex/${m.id}`,
-    }));
+    // Models come entirely from Firestore (populated by scan)
+    const cachedModels = settings?.modelCatalog || [];
 
     return NextResponse.json({
-      models,
+      models: cachedModels,
       currentModel: settings?.defaultModel || "",
       projectId: process.env.GCP_PROJECT_ID || "",
       scannedAt: settings?.modelScannedAt || null,
