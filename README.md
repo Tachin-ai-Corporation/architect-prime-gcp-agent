@@ -237,6 +237,9 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v3.3** | **Node.js daemon — control-daemon.mjs with conversation history, brain-exec wrapper, gateway token sync, structured logging** |
 | **v3.4** | **SSE streaming — hybrid stream/non-stream dispatch, Cortex error recovery, sub-agent E2E hardening** |
 | **v3.5** | **Memory + Health — two-tier memory (MEMORY.md working memory + nightly Core Memory consolidation), Deep Truths in SOUL.md, fleet-health-check with auto-recovery, workspace optimization** |
+| **v3.6** | **Fleet Brain — dynamic email domain, fleet brain sub-agent workspaces, fleet workspace deployment** |
+| **v3.7** | **Dynamic Model Discovery — Vertex AI Model Garden scanning, Gemini 3.1 Pro + global endpoint, model catalog dashboard** |
+| **v3.7.1** | **Fleet Bootstrap Fix — 4 bugs from Gemini 3.1 migration (global endpoint, ADC wildcard, systemPrompt removal, inbox-daemon cortex routing, timeout hardening)** |
 
 ---
 

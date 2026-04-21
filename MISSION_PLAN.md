@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v3.7.0`
+> - **Current version tag:** `v3.7.1`
 
 ---
 
@@ -77,12 +77,14 @@ Dashboard (Cloud Run — Next.js)
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
     ├── openclaw-gateway (Docker, --network host, port 18789)
-    │   ├── Specialty agent (Gemini 2.5 Flash via Vertex AI ADC)
-    │   ├── Workspace: specialty-specific SOUL.md, IDENTITY.md, TOOLS.md
+    │   ├── GOOGLE_CLOUD_LOCATION=global (same as Prime)
+    │   ├── Default agent: cortex (Gemini 3.1 Pro Preview via Vertex AI ADC)
+    │   ├── SOUL.md loaded automatically from workspace (no systemPrompt injection)
+    │   ├── timeoutSeconds: 120 (ADC cold-start tolerance)
     │   └── ADC fix: model-auth-env patched for GCE metadata fallback
     │
     ├── inbox-daemon (systemd)
-    │   └── Polls Google Chat via DWD → POST to local OpenClaw gateway
+    │   └── Polls Google Chat via DWD → POST to openclaw/cortex on local gateway
     │
     └── CoreKit (manifest-installed from same repo)
 ```
@@ -96,7 +98,7 @@ Dashboard (Cloud Run — Next.js)
 1. Dashboard creates a GCE VM with a **boot stub** startup script
 2. Boot stub curls `bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
 3. `prime-bootstrap.sh` installs Docker, CoreKit, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `control-daemon`
-4. The OpenClaw image is pinned to commit `163c6f5e` for stability
+4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.15) for stability
 
 ### Fleet Agent Lifecycle
 
@@ -112,13 +114,15 @@ Dashboard (Cloud Run — Next.js)
    - Passes all config (agent name, specialty, email, dashboard URL, prime ID) via VM metadata
 4. `fleet-monitor` runs on Prime in background: polls serial console for milestones, SSH-checks gateway health, writes deploy progress to Firestore
 5. `fleet-bootstrap.sh` on fleet VM:
-   - Installs Docker, CoreKit, builds OpenClaw image
-   - Deploys specialty workspace (clears Prime files first)
-   - Starts container, applies ADC patch, restarts gateway
-   - Runs Vertex AI smoke test (3 attempts with backoff)
-   - Starts `inbox-daemon`
-   - Self-reports `status: online` to Firestore via Prime's `update-status` API endpoint (not direct Firestore write — fleet SA doesn't need `datastore.user`)
-   - Prints `FLEET AGENT SETUP COMPLETE` marker for fleet-monitor
+    - Installs Docker, CoreKit, builds OpenClaw image
+    - Deploys specialty workspace (clears Prime files first)
+    - Renders fleet config from `openclaw-fleet-bootstrap.json5.tmpl` (strips JSON5 comments, substitutes template vars)
+    - SOUL.md is loaded automatically by OpenClaw from workspace — no `systemPrompt` injection
+    - Starts container with `GOOGLE_CLOUD_LOCATION=global`, applies ADC patch (wildcard across all agent dirs), restarts gateway
+    - Runs Vertex AI smoke test (3 attempts with backoff)
+    - Starts `inbox-daemon` (routes to `openclaw/cortex`)
+    - Self-reports `status: online` to Firestore via Prime's `update-status` API endpoint
+    - Prints `FLEET AGENT SETUP COMPLETE` marker for fleet-monitor
 
 **Fire flow:**
 1. User clicks "Fire" → API calls `fleet-fire` → `fleet-teardown`
@@ -467,29 +471,41 @@ architect-prime/
 
 ## Roadmap
 
-### Next: Checkpoint 12 — Fleet Brain Hardening + Observability
-> *Goal: Fix fleet SOUL loading, per-agent spend tracking, dispatch observability*
+### Next: v4.0 — Modularization + Brain Model Upgrade
+> *Goal: Decompose the monolith into isolated, independently iterable modules. Upgrade the brain model for reliability.*
 
-1. **Fleet SOUL loading** — Fleet agents don't load workspace SOUL.md on first Chat message. Fix the bootstrap or config so agents know their specialty from boot.
-2. **Fleet brain sub-agent deployment** — _brain/ workspaces aren't deployed to fleet VMs yet. fleet-bootstrap.sh was updated but needs verification with a fresh hire.
-3. **Per-agent spend tracking** — Query Billing API to attribute costs to individual fleet agents.
-4. **Brain dispatch dashboard** — Track which sub-agents are dispatched, latency per turn, on the dashboard.
-5. **Rate limiting** — Throttle expensive operations (web search, fleet deploy) to prevent runaway costs.
+**Modularization** — The project has grown organically and changes to one area (e.g., fleet bootstrap) can break others (e.g., fleet config, inbox-daemon, ADC auth). The codebase must be decomposed into self-contained modules with clear contracts:
 
-### Future: v4.0 — R/C/M Framework
+| Module | What it owns | Versioned how |
+|--------|-------------|---------------|
+| **Dashboard / UI** | Cloud Run app, API routes, Firestore schema, setup/deploy UX | `app/` — independent deploy via Cloud Build |
+| **Prime CoreKit** | Prime-specific tools (control-daemon, command-runner, fleet-*, brain-exec) | `bundle/corekit/` — manifest-installed, self-upgradable |
+| **Universal Agent Brain** | Multi-agent config, SOUL/IDENTITY templates, brain-exec dispatch, model selection | `bundle/workspaces/` + config templates — shared across Prime and fleet |
+| **Base Agent CoreKit** | Common tools every agent needs (inbox-daemon, chat-send, dwd-token, upgrade-corekit) | Subset of `bundle/corekit/bin/` — manifest filter |
+| **Job-type Skillsets** | Per-specialty workspace files + skills (devops/, engineer/, etc.) | `bundle/workspaces/{specialty}/` + `bundle/skills/` |
+| **Bootstrap Layer** | prime-bootstrap.sh, fleet-bootstrap.sh, install.sh, manifest.txt | `bootstrap/` — must be idempotent and independently testable |
+
+**Brain Model Upgrade** — The brain architecture (cortex + 5 sub-agents) is critical to all agents' intelligence and reliability. Current pain points:
+1. Cold-start timeout on ADC token acquisition (mitigated with timeoutSeconds: 120 but not solved)
+2. No structured output validation — Cortex dispatch instructions are natural language, can hallucinate agent IDs
+3. No dispatch telemetry — can't observe which brain agents ran, their latency, or failure modes
+4. Sub-agent model pinning — all sub-agents on gemini-2.5-flash, no per-agent model override
+5. Memory consolidation reliability — nightly cron is fragile, no retry mechanism
+
+### Future: v5.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
 - Checkpoint queue — Firestore data model + queue-worker
 - Human review gates — dashboard integration
 - Inter-agent delegation — agents @-mention other agents to delegate tasks
 
-### Future: v5.0 — RSI Engine
+### Future: v6.0 — RSI Engine
 - Git-ops skill — branch, commit, push, PR
 - Code-write / code-test skills
 - Test harness: deploy from branch → validate → report
 - RSI mission template — plan → implement → test → promote
 - Two mandatory human gates (plan approval + merge approval)
 
-### Future: v6.0+ — Workspace Integration
+### Future: v7.0+ — Workspace Integration
 - Google Workspace skills — Docs, Sheets, Calendar, Gmail
 - Agent cell templates — pre-built team configurations
 - Self-evolution — Prime proposes its own improvements via PR
