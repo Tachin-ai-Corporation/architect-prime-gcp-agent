@@ -148,6 +148,17 @@ case "${1:-}" in
         fi
       fi
     fi
+
+    # ---- Run contract validation ----
+    VALIDATE="${OC_HOST_ROOT}/.openclaw/bin/validate-contracts"
+    if [[ -x "$VALIDATE" ]]; then
+      echo "==> Running contract validation..."
+      if OC_HOST_ROOT="$OC_HOST_ROOT" "$VALIDATE" --runtime 2>&1; then
+        echo "  ✅ Contracts validated"
+      else
+        echo "  ⚠️  Contract validation found issues"
+      fi
+    fi
     ;;
   --status)
     if [[ ! -f "$STATE_FILE" ]]; then
@@ -158,10 +169,14 @@ case "${1:-}" in
     at="$(json_value "installedAt" "$STATE_FILE")"
     owner="$(json_value "owner" "$STATE_FILE")"
     repo="$(json_value "repo" "$STATE_FILE")"
+    role="$(json_value "role" "$STATE_FILE")"
+    job="$(json_value "job" "$STATE_FILE")"
     echo "CoreKit Status"
     echo "  Ref       : ${ref}"
     echo "  Installed : ${at}"
     echo "  Source    : ${owner}/${repo}"
+    echo "  Role      : ${role:-legacy}"
+    echo "  Job       : ${job:-none}"
     echo "  State     : ${STATE_FILE}"
     ;;
   *)

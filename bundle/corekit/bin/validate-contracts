@@ -1,0 +1,328 @@
+#!/usr/bin/env bash
+# ============================================================
+# validate-contracts — Pre-flight contract validation
+#
+# Checks that all cross-cutting values in the codebase are
+# consistent with contracts.json. Catches the class of bugs
+# that caused the stan crash-loop (Gemini 3.1 migration).
+#
+# Usage:
+#   validate-contracts                    # validate from repo root
+#   validate-contracts --runtime          # validate on a live VM
+#   validate-contracts --file <path>      # check a specific rendered config
+#
+# Exit codes:
+#   0 — All contracts satisfied
+#   1 — Contract violations found
+#
+# Runs:
+#   - At commit time (optional, manual)
+#   - At bootstrap time (mandatory, called by fleet/prime-bootstrap.sh)
+#   - At upgrade time (mandatory, called by upgrade-corekit)
+# ============================================================
+set -euo pipefail
+
+log()  { echo "[validate-contracts] $*"; }
+fail() { echo "[validate-contracts] ❌ FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
+pass() { echo "[validate-contracts]  ✅ $*"; }
+
+FAILURES=0
+MODE="repo"
+CONFIG_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --runtime) MODE="runtime"; shift ;;
+    --file) CONFIG_FILE="$2"; shift 2 ;;
+    --help|-h) echo "Usage: validate-contracts [--runtime] [--file <config.json>]"; exit 0 ;;
+    *) echo "Unknown arg: $1"; exit 1 ;;
+  esac
+done
+
+# ---- Locate contracts.json ----
+if [[ "$MODE" == "runtime" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+  CONTRACTS="${OC_HOST_ROOT}/.openclaw/corekit/contracts.json"
+  REPO_ROOT=""
+else
+  # Find repo root (walk up from script location)
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(cd "$SCRIPT_DIR" && while [[ ! -f contracts.json ]] && [[ "$PWD" != "/" ]]; do cd ..; done; pwd)"
+  CONTRACTS="${REPO_ROOT}/contracts.json"
+fi
+
+if [[ ! -f "$CONTRACTS" ]]; then
+  echo "[validate-contracts] contracts.json not found at: $CONTRACTS"
+  exit 1
+fi
+
+log "Mode: ${MODE}"
+log "Contracts: ${CONTRACTS}"
+
+# ---- Read contracts ----
+read_contract() {
+  python3 -c "
+import json, sys
+c = json.load(open('$CONTRACTS'))
+keys = '$1'.split('.')
+v = c
+for k in keys:
+    v = v[k]
+print(v)
+" 2>/dev/null
+}
+
+C_LOCATION="$(read_contract 'vertex.location')"
+C_PRIMARY_MODEL="$(read_contract 'vertex.primaryModel')"
+C_DEFAULT_AGENT="$(read_contract 'agents.defaultId')"
+C_GATEWAY_ROUTE="$(read_contract 'agents.gatewayRoute')"
+C_OC_PIN="$(read_contract 'openclaw.pin')"
+C_GATEWAY_PORT="$(read_contract 'gateway.port')"
+C_TIMEOUT="$(read_contract 'gateway.timeoutSeconds')"
+
+log "Contracts loaded: location=${C_LOCATION} model=${C_PRIMARY_MODEL} agent=${C_DEFAULT_AGENT} route=${C_GATEWAY_ROUTE}"
+
+# ============================================================
+# REPO MODE: Check source files for consistency
+# ============================================================
+if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
+  log "Checking repo files..."
+
+  # ---- Check 1: fleet-bootstrap.sh .env GOOGLE_CLOUD_LOCATION ----
+  FLEET_BS="${REPO_ROOT}/bootstrap/fleet-bootstrap.sh"
+  if [[ -f "$FLEET_BS" ]]; then
+    if grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$FLEET_BS"; then
+      pass "fleet-bootstrap.sh .env location = ${C_LOCATION}"
+    else
+      LOC="$(grep 'GOOGLE_CLOUD_LOCATION=' "$FLEET_BS" | head -1 | grep -oP '=\K.*' || echo 'NOT_FOUND')"
+      fail "fleet-bootstrap.sh .env location = '${LOC}' (expected '${C_LOCATION}')"
+    fi
+  fi
+
+  # ---- Check 2: prime-bootstrap.sh .env GOOGLE_CLOUD_LOCATION ----
+  PRIME_BS="${REPO_ROOT}/bootstrap/prime-bootstrap.sh"
+  if [[ -f "$PRIME_BS" ]]; then
+    if grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$PRIME_BS"; then
+      pass "prime-bootstrap.sh .env location = ${C_LOCATION}"
+    else
+      LOC="$(grep 'GOOGLE_CLOUD_LOCATION=' "$PRIME_BS" | head -1 | grep -oP '=\K.*' || echo 'NOT_FOUND')"
+      fail "prime-bootstrap.sh .env location = '${LOC}' (expected '${C_LOCATION}')"
+    fi
+  fi
+
+  # ---- Check 3: OpenClaw pin consistency ----
+  for BS_FILE in "$FLEET_BS" "$PRIME_BS"; do
+    [[ -f "$BS_FILE" ]] || continue
+    BS_NAME="$(basename "$BS_FILE")"
+    if grep -q "${C_OC_PIN}" "$BS_FILE"; then
+      pass "${BS_NAME} OpenClaw pin matches"
+    else
+      PIN="$(grep 'OC_PIN=' "$BS_FILE" | head -1 | grep -oP '"[^"]*"' | tr -d '"' || echo 'NOT_FOUND')"
+      fail "${BS_NAME} OpenClaw pin = '${PIN:0:12}...' (expected '${C_OC_PIN:0:12}...')"
+    fi
+  done
+
+  # ---- Check 4: fleet-bootstrap.sh smoke test model route ----
+  if [[ -f "$FLEET_BS" ]]; then
+    if grep -q "\"model\":\"${C_GATEWAY_ROUTE}\"" "$FLEET_BS"; then
+      pass "fleet-bootstrap.sh smoke test route = ${C_GATEWAY_ROUTE}"
+    else
+      ROUTE="$(grep -oP '"model":"[^"]*"' "$FLEET_BS" | head -1 || echo 'NOT_FOUND')"
+      fail "fleet-bootstrap.sh smoke test route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
+    fi
+  fi
+
+  # ---- Check 5: inbox-daemon model route ----
+  INBOX="${REPO_ROOT}/bundle/corekit/bin/inbox-daemon"
+  if [[ -f "$INBOX" ]]; then
+    if grep -q "'model': '${C_GATEWAY_ROUTE}'" "$INBOX"; then
+      pass "inbox-daemon route = ${C_GATEWAY_ROUTE}"
+    else
+      ROUTE="$(grep -oP "'model': '[^']*'" "$INBOX" | head -1 || echo 'NOT_FOUND')"
+      fail "inbox-daemon route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
+    fi
+  fi
+
+  # ---- Check 6: control-daemon.mjs model route ----
+  CTL="${REPO_ROOT}/bundle/corekit/bin/control-daemon.mjs"
+  if [[ -f "$CTL" ]]; then
+    if grep -q "model: '${C_GATEWAY_ROUTE}'" "$CTL"; then
+      pass "control-daemon.mjs route = ${C_GATEWAY_ROUTE}"
+    else
+      ROUTE="$(grep -oP "model: '[^']*'" "$CTL" | head -1 || echo 'NOT_FOUND')"
+      fail "control-daemon.mjs route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
+    fi
+  fi
+
+  # ---- Check 7: Config templates — no systemPrompt on agents ----
+  for TMPL in "${REPO_ROOT}"/bundle/corekit/config/openclaw-*bootstrap*.tmpl; do
+    [[ -f "$TMPL" ]] || continue
+    TMPL_NAME="$(basename "$TMPL")"
+    if grep -q '"systemPrompt"' "$TMPL"; then
+      fail "${TMPL_NAME} contains 'systemPrompt' (invalid OpenClaw config key)"
+    else
+      pass "${TMPL_NAME} — no systemPrompt"
+    fi
+  done
+
+  # ---- Check 8: Config templates — default agent ID matches ----
+  for TMPL in "${REPO_ROOT}"/bundle/corekit/config/openclaw-*bootstrap*.tmpl; do
+    [[ -f "$TMPL" ]] || continue
+    TMPL_NAME="$(basename "$TMPL")"
+    if grep -q "\"id\": \"${C_DEFAULT_AGENT}\"" "$TMPL" || grep -q "\"id\":\"${C_DEFAULT_AGENT}\"" "$TMPL"; then
+      pass "${TMPL_NAME} — default agent = ${C_DEFAULT_AGENT}"
+    else
+      fail "${TMPL_NAME} — default agent ID '${C_DEFAULT_AGENT}' not found"
+    fi
+  done
+
+  # ---- Check 9: Config templates — gateway port matches ----
+  for TMPL in "${REPO_ROOT}"/bundle/corekit/config/openclaw-*bootstrap*.tmpl; do
+    [[ -f "$TMPL" ]] || continue
+    TMPL_NAME="$(basename "$TMPL")"
+    if grep -q "\"port\": ${C_GATEWAY_PORT}" "$TMPL" || grep -q "\"port\":${C_GATEWAY_PORT}" "$TMPL"; then
+      pass "${TMPL_NAME} — gateway port = ${C_GATEWAY_PORT}"
+    else
+      fail "${TMPL_NAME} — gateway port ${C_GATEWAY_PORT} not found"
+    fi
+  done
+fi
+
+# ============================================================
+# RUNTIME MODE: Check live VM state
+# ============================================================
+if [[ "$MODE" == "runtime" ]]; then
+  log "Checking runtime state..."
+
+  # ---- Check 1: .env on disk ----
+  ENV_FILE="/root/openclaw/.env"
+  if [[ -f "$ENV_FILE" ]]; then
+    if grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$ENV_FILE"; then
+      pass ".env location = ${C_LOCATION}"
+    else
+      fail ".env location mismatch (expected ${C_LOCATION})"
+    fi
+  else
+    fail ".env not found at ${ENV_FILE}"
+  fi
+
+  # ---- Check 2: Container running ----
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'openclaw-gateway'; then
+    pass "openclaw-gateway container running"
+  else
+    fail "openclaw-gateway container not running"
+  fi
+
+  # ---- Check 3: Gateway health ----
+  HTTP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:${C_GATEWAY_PORT}/v1/models 2>/dev/null)" || HTTP="000"
+  if [[ "$HTTP" == "200" || "$HTTP" == "401" ]]; then
+    pass "Gateway healthy (HTTP ${HTTP})"
+  else
+    fail "Gateway unhealthy (HTTP ${HTTP})"
+  fi
+
+  # ---- Check 4: ADC patch applied ----
+  ADC_CHECK="$(docker exec openclaw-gateway bash -c 'find /app/dist -name "model-auth-env-*" -exec grep -l "gce-adc" {} \;' 2>/dev/null || echo '')"
+  if [[ -n "$ADC_CHECK" ]]; then
+    pass "ADC patch applied"
+  else
+    fail "ADC patch not found in model-auth-env"
+  fi
+
+  # ---- Check 5: Auth-profiles emptied for all agents ----
+  BAD_AP="$(docker exec openclaw-gateway bash -c '
+    for f in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
+      [ -f "$f" ] || continue
+      profiles=$(python3 -c "import json; print(len(json.load(open(\"$f\")).get(\"profiles\",{})))" 2>/dev/null || echo "ERR")
+      [ "$profiles" != "0" ] && echo "$f"
+    done
+  ' 2>/dev/null || echo '')"
+  if [[ -z "$BAD_AP" ]]; then
+    pass "Auth-profiles empty for all agents"
+  else
+    fail "Non-empty auth-profiles: ${BAD_AP}"
+  fi
+
+  # ---- Check 6: Rendered config — no systemPrompt ----
+  OC_JSON="${OC_HOST_ROOT}/.openclaw/openclaw.json"
+  if [[ -f "$OC_JSON" ]]; then
+    if python3 -c "
+import json, sys
+c = json.load(open('$OC_JSON'))
+for a in c.get('agents',{}).get('list',[]):
+    if 'systemPrompt' in a:
+        print(a.get('id','?'))
+        sys.exit(1)
+" 2>/dev/null; then
+      pass "No systemPrompt in rendered config"
+    else
+      fail "systemPrompt found in rendered openclaw.json"
+    fi
+  fi
+
+  # ---- Check 7: inbox-daemon model route ----
+  INBOX="${OC_HOST_ROOT}/.openclaw/bin/inbox-daemon"
+  if [[ -f "$INBOX" ]]; then
+    if grep -q "'model': '${C_GATEWAY_ROUTE}'" "$INBOX"; then
+      pass "inbox-daemon route = ${C_GATEWAY_ROUTE}"
+    else
+      fail "inbox-daemon route mismatch"
+    fi
+  fi
+fi
+
+# ============================================================
+# FILE MODE: Check a specific rendered config file
+# ============================================================
+if [[ -n "$CONFIG_FILE" ]]; then
+  log "Checking config file: ${CONFIG_FILE}"
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    fail "Config file not found: ${CONFIG_FILE}"
+  else
+    # Check for systemPrompt
+    if python3 -c "
+import json, sys
+c = json.load(open('$CONFIG_FILE'))
+for a in c.get('agents',{}).get('list',[]):
+    if 'systemPrompt' in a:
+        sys.exit(1)
+" 2>/dev/null; then
+      pass "No systemPrompt in config"
+    else
+      fail "systemPrompt found in config"
+    fi
+
+    # Check default agent ID
+    if python3 -c "
+import json, sys
+c = json.load(open('$CONFIG_FILE'))
+for a in c.get('agents',{}).get('list',[]):
+    if a.get('default') and a.get('id') == '${C_DEFAULT_AGENT}':
+        sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
+      pass "Default agent = ${C_DEFAULT_AGENT}"
+    else
+      fail "Default agent is not '${C_DEFAULT_AGENT}'"
+    fi
+
+    # Check valid JSON
+    if python3 -c "import json; json.load(open('$CONFIG_FILE'))" 2>/dev/null; then
+      pass "Valid JSON"
+    else
+      fail "Invalid JSON in config file"
+    fi
+  fi
+fi
+
+# ============================================================
+# Summary
+# ============================================================
+echo ""
+if [[ $FAILURES -eq 0 ]]; then
+  log "✅ All contracts satisfied."
+  exit 0
+else
+  log "❌ ${FAILURES} contract violation(s) found."
+  exit 1
+fi

@@ -110,16 +110,36 @@ systemctl start docker
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 [[ -n "${DOCKER_GID}" ]] || { echo "[ERROR] Could not determine docker group GID"; exit 1; }
 
-# ---- 3) Install CoreKit via manifest ----
+# ---- 3) Install CoreKit via manifest (base + fleet + job) ----
 info "Installing CoreKit..."
 mkdir -p "${OC_HOST_DIR}"
 curl -sfL "${CORE_BASE}/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
+INSTALL_ARGS="--role fleet"
+if [[ -n "${SPECIALTY}" ]]; then
+  INSTALL_ARGS+=" --job ${SPECIALTY}"
+fi
 CORE_REF="${CORE_REF}" \
   GH_OWNER="${GH_OWNER}" \
   GH_REPO="${GH_REPO}" \
   OC_HOST_ROOT="${OC_HOST_ROOT}" \
-  bash /tmp/install.sh
+  bash /tmp/install.sh ${INSTALL_ARGS}
+
+# ---- 3b) Read contracts.json for cross-cutting values ----
+CONTRACTS="${OC_HOST_DIR}/corekit/contracts.json"
+if [[ -f "$CONTRACTS" ]]; then
+  C_LOCATION="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['vertex']['location'])")"
+  C_OC_PIN="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['openclaw']['pin'])")"
+  C_GATEWAY_PORT="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['gateway']['port'])")"
+  C_GATEWAY_ROUTE="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['agents']['gatewayRoute'])")"
+  info "Contracts loaded: location=${C_LOCATION} port=${C_GATEWAY_PORT} route=${C_GATEWAY_ROUTE}"
+else
+  warn "contracts.json not found — using defaults"
+  C_LOCATION="global"
+  C_OC_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
+  C_GATEWAY_PORT="18789"
+  C_GATEWAY_ROUTE="openclaw/cortex"
+fi
 
 # ---- 4) Prepare workspace with fleet/specialty templates ----
 info "Preparing workspace..."
@@ -246,15 +266,14 @@ if [[ ! -d openclaw/.git ]]; then
 fi
 cd openclaw
 git fetch --all --prune
-# Pin to known-good release — v2026.4.15 (Apr 16, 2026)
-OC_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
-STABLE_COMMIT="${OC_PIN}"
+# Pin to known-good release — read from contracts.json
+STABLE_COMMIT="${C_OC_PIN}"
 git checkout "${STABLE_COMMIT}"
-info "Using OpenClaw commit: ${STABLE_COMMIT} (pinned to v2026.4.15)"
+info "Using OpenClaw commit: ${STABLE_COMMIT:0:12} (from contracts.json)"
 
 cat > .env <<EOF
 GATEWAY_BIND=loopback
-GATEWAY_PORT=18789
+GATEWAY_PORT=${C_GATEWAY_PORT}
 OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN}
 OPENCLAW_CONFIG_DIR=/home/node/.openclaw
 OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
@@ -263,7 +282,7 @@ GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
 GCLOUD_PROJECT=${GCP_PROJECT_ID}
 CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
 GOOGLE_GENAI_USE_VERTEXAI=True
-GOOGLE_CLOUD_LOCATION=global
+GOOGLE_CLOUD_LOCATION=${C_LOCATION}
 GCE_METADATA_HOST=metadata.google.internal
 AGENT_ID=${AGENT_ID}
 PRIME_ID=${PRIME_ID}
@@ -305,6 +324,17 @@ print("  Config written to " + str(out_path))
 PY
 chown root:root "${OC_HOST_DIR}/openclaw.json"
 chmod 644 "${OC_HOST_DIR}/openclaw.json"
+
+# ---- 10b) Validate config against contracts ----
+VALIDATE="${OC_HOST_DIR}/bin/validate-contracts"
+if [[ -x "$VALIDATE" ]]; then
+  info "Running contract validation on rendered config..."
+  if OC_HOST_ROOT="${OC_HOST_ROOT}" "$VALIDATE" --file "${OC_HOST_DIR}/openclaw.json" 2>&1; then
+    info "Config validation PASSED"
+  else
+    warn "Config validation found issues — check rendered openclaw.json"
+  fi
+fi
 
 # ---- 11) Start OpenClaw container ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
@@ -422,10 +452,10 @@ sleep 15
 info "Running Vertex AI smoke test..."
 SMOKE_OK=false
 for attempt in 1 2 3; do
-  SMOKE_RESP="$(curl -s --max-time 30 -X POST http://localhost:18789/v1/chat/completions \
+  SMOKE_RESP="$(curl -s --max-time 60 -X POST http://localhost:${C_GATEWAY_PORT}/v1/chat/completions \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${MY_TOKEN}" \
-    -d '{"model":"openclaw/main","messages":[{"role":"user","content":"respond with just the word pong"}]}' 2>&1)" || SMOKE_RESP="CURL_ERROR"
+    -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"respond with just the word pong"}]}' 2>&1)" || SMOKE_RESP="CURL_ERROR"
 
   if echo "$SMOKE_RESP" | grep -q '"pong"'; then
     info "Vertex AI smoke test PASSED (attempt ${attempt})"

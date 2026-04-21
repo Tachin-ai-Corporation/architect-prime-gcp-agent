@@ -3,14 +3,23 @@
 # ARCHITECT PRIME — MANIFEST INSTALLER (install.sh)
 #
 # Standalone, idempotent installer that:
-#   1. Fetches manifest.txt from the CoreKit repo at a pinned ref
-#   2. Downloads each file to the correct destination
-#   3. Writes STATE.json with provenance + file checksums
+#   1. Fetches manifest fragments from the CoreKit repo at a pinned ref
+#   2. Chains: base + role (prime|fleet) + job (devops|engineer|...)
+#   3. Downloads each file to the correct destination
+#   4. Writes STATE.json with provenance + file checksums
 #
 # Modes:
 #   install (default) — Full install from scratch or overwrite
 #   --check           — Compare installed files against STATE.json, report drift
 #   --upgrade <ref>   — Re-install from a new ref (preserves runtime state)
+#
+# Role/Job flags (chained installation):
+#   --role prime      — Install base + prime-specific tools + prime workspaces
+#   --role fleet      — Install base + fleet-specific tools
+#   --job devops      — Layer devops workspace on top (requires --role fleet)
+#   --job engineer    — Layer engineer workspace on top (requires --role fleet)
+#
+# If no --role is specified, falls back to flat manifest.txt (backward compat).
 #
 # Exit codes:
 #   0 — Success / up-to-date (check mode)
@@ -19,29 +28,46 @@
 #   3 — Drift detected (check mode, files modified locally)
 #
 # Usage:
-#   # Fresh install
-#   export CORE_REF="v0.3.0"
-#   curl -fsSL ".../install.sh" | bash
+#   # Fresh install (Prime)
+#   export CORE_REF="v3.7.1"
+#   curl -fsSL ".../install.sh" | bash -s -- --role prime
+#
+#   # Fresh install (Fleet devops agent)
+#   curl -fsSL ".../install.sh" | bash -s -- --role fleet --job devops
 #
 #   # Check for drift
 #   install.sh --check
 #
-#   # Upgrade to new ref
-#   install.sh --upgrade v0.3.0
+#   # Upgrade to new ref (non-destructive — overwrites manifest files only)
+#   install.sh --upgrade v4.0.0
 # ============================================================
 set -euo pipefail
 
 # ---- Parse args ----
 MODE="install"
 UPGRADE_REF=""
+ROLE=""
+JOB=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)   MODE="check"; shift ;;
-    --upgrade) MODE="upgrade"; UPGRADE_REF="${2:-}"; shift 2 || die "Missing ref for --upgrade" ;;
-    --help|-h) echo "Usage: install.sh [--check | --upgrade <ref>]"; exit 0 ;;
+    --upgrade) MODE="upgrade"; UPGRADE_REF="${2:-}"; shift 2 || { echo "[ERROR] Missing ref for --upgrade"; exit 1; } ;;
+    --role)    ROLE="${2:-}"; shift 2 || { echo "[ERROR] Missing value for --role"; exit 1; } ;;
+    --job)     JOB="${2:-}"; shift 2 || { echo "[ERROR] Missing value for --job"; exit 1; } ;;
+    --help|-h) echo "Usage: install.sh [--check | --upgrade <ref>] [--role prime|fleet] [--job devops|engineer]"; exit 0 ;;
     *) echo "[ERROR] Unknown argument: $1"; exit 1 ;;
   esac
 done
+
+# Validate role/job combinations
+if [[ -n "$JOB" && "$ROLE" != "fleet" ]]; then
+  echo "[ERROR] --job requires --role fleet"
+  exit 1
+fi
+if [[ -n "$ROLE" && "$ROLE" != "prime" && "$ROLE" != "fleet" ]]; then
+  echo "[ERROR] --role must be 'prime' or 'fleet'"
+  exit 1
+fi
 
 # ---- CONFIG (env-overridable) ----
 GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
@@ -114,7 +140,11 @@ if [[ "$MODE" == "check" ]]; then
   # Read installed ref from STATE.json
   installed_ref="$(json_value "coreRef" "$STATE_FILE")"
   installed_at="$(json_value "installedAt" "$STATE_FILE")"
+  installed_role="$(json_value "role" "$STATE_FILE")"
+  installed_job="$(json_value "job" "$STATE_FILE")"
   echo "Installed : ${installed_ref} (at ${installed_at})"
+  echo "Role      : ${installed_role:-legacy}"
+  echo "Job       : ${installed_job:-none}"
   echo "State     : ${STATE_FILE}"
 
   # Check for file drift
@@ -171,6 +201,15 @@ if [[ "$MODE" == "upgrade" ]]; then
   if [[ -f "$STATE_FILE" ]]; then
     old_ref="$(json_value "coreRef" "$STATE_FILE")"
     echo "Upgrading : ${old_ref} → ${CORE_REF}"
+    # On upgrade, read role/job from existing STATE.json if not specified
+    if [[ -z "$ROLE" ]]; then
+      ROLE="$(json_value "role" "$STATE_FILE")"
+    fi
+    if [[ -z "$JOB" ]]; then
+      JOB="$(json_value "job" "$STATE_FILE")"
+    fi
+    echo "Role      : ${ROLE:-legacy}"
+    echo "Job       : ${JOB:-none}"
   else
     echo "No previous install found, performing fresh install."
   fi
@@ -180,14 +219,40 @@ fi
 
 echo "CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Target  : ${OC_HOST_ROOT}"
+echo "Role    : ${ROLE:-all (legacy)}"
+echo "Job     : ${JOB:-none}"
 
-# ---- 1. Fetch manifest ----
-info "Fetching manifest.txt..."
+# ---- 1. Build manifest list ----
+info "Building manifest..."
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
-manifest="${tmpdir}/manifest.txt"
-curl -fsSL --retry 3 --retry-delay 2 "${CORE_BASE}/manifest.txt" -o "${manifest}"
+if [[ -n "$ROLE" ]]; then
+  # Fragment-based install: base + role + job
+  MANIFEST_URLS=("${CORE_BASE}/manifests/base.txt")
+
+  if [[ "$ROLE" == "prime" ]]; then
+    MANIFEST_URLS+=("${CORE_BASE}/manifests/role-prime.txt")
+  elif [[ "$ROLE" == "fleet" ]]; then
+    MANIFEST_URLS+=("${CORE_BASE}/manifests/role-fleet.txt")
+    if [[ -n "$JOB" ]]; then
+      MANIFEST_URLS+=("${CORE_BASE}/manifests/job-${JOB}.txt")
+    fi
+  fi
+
+  # Download and concatenate all fragments
+  manifest="${tmpdir}/manifest.txt"
+  > "$manifest"
+  for url in "${MANIFEST_URLS[@]}"; do
+    echo "  Fetching: ${url##*/}"
+    curl -fsSL --retry 3 --retry-delay 2 "$url" >> "$manifest"
+    echo "" >> "$manifest"  # ensure newline between fragments
+  done
+else
+  # Legacy mode: flat manifest.txt
+  manifest="${tmpdir}/manifest.txt"
+  curl -fsSL --retry 3 --retry-delay 2 "${CORE_BASE}/manifest.txt" -o "$manifest"
+fi
 
 # ---- 2. Parse manifest into pairs ----
 # Format: <repo_relative_path> <dest_relative_to_HOME>
@@ -202,7 +267,7 @@ while IFS= read -r line; do
 done < "${manifest}"
 
 if [[ ${#pairs[@]} -eq 0 ]]; then
-  die "No file pairs found in manifest.txt"
+  die "No file pairs found in manifest"
 fi
 
 # ---- 3. Download files ----
@@ -274,30 +339,50 @@ done
 hashes_json+="}"
 
 state_json="{
-  \"version\": 1,
+  \"version\": 2,
   \"coreRef\": \"${CORE_REF}\",
   \"owner\": \"${GH_OWNER}\",
   \"repo\": \"${GH_REPO}\",
+  \"role\": \"${ROLE}\",
+  \"job\": \"${JOB}\",
   \"installedAt\": \"$(date -Is)\",
   \"fileCount\": ${installed},
   \"fileHashes\": ${hashes_json}
 }"
 
-echo "$state_json" | run tee "${state_dir}/STATE.json" >/dev/null
+echo "$state_json" | run tee "${state_dir}/STATE.json" > /dev/null
 run chown 1000:1000 "${state_dir}/STATE.json" 2>/dev/null || true
 run chmod 644 "${state_dir}/STATE.json" 2>/dev/null || true
 
 # ---- 6. Verify critical files ----
 info "Verifying critical files..."
 for check_file in \
-  "${OC_HOST_ROOT}/.openclaw/agents/main/agent/auth-profiles.json" \
   "${OC_HOST_ROOT}/.openclaw/workspace/SOUL.md" \
+  "${OC_HOST_ROOT}/.openclaw/workspace/IDENTITY.md" \
   "${OC_HOST_ROOT}/.openclaw/bin/oc"; do
   if ! run test -f "$check_file"; then
-    die "Missing after install: $check_file"
+    # Not fatal for fleet — workspace files are deployed by bootstrap, not manifest
+    if [[ "$ROLE" == "fleet" ]]; then
+      warn "Missing (expected for fleet pre-bootstrap): $check_file"
+    else
+      die "Missing after install: $check_file"
+    fi
   fi
 done
-run test -x "${OC_HOST_ROOT}/.openclaw/bin/oc" || die "oc wrapper not executable after install"
+if run test -f "${OC_HOST_ROOT}/.openclaw/bin/oc"; then
+  run test -x "${OC_HOST_ROOT}/.openclaw/bin/oc" || die "oc wrapper not executable after install"
+fi
+
+# ---- 7. Run contract validation (if script is available) ----
+VALIDATE="${OC_HOST_ROOT}/.openclaw/bin/validate-contracts"
+if run test -x "$VALIDATE" 2>/dev/null; then
+  info "Running contract validation..."
+  if run "$VALIDATE" --runtime 2>&1; then
+    echo "  ✅ Contracts validated"
+  else
+    warn "Contract validation found issues (non-fatal during install — bootstrap may fix)"
+  fi
+fi
 
 if [[ "$MODE" == "upgrade" ]]; then
   info "Upgrade complete."
@@ -306,5 +391,7 @@ else
 fi
 echo "  CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Target  : ${OC_HOST_ROOT}"
+echo "  Role    : ${ROLE:-all (legacy)}"
+echo "  Job     : ${JOB:-none}"
 echo "  State   : ${state_dir}/STATE.json"
 echo "  Files   : ${installed}"

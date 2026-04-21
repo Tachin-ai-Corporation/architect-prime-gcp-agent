@@ -1,0 +1,42 @@
+# manifests/base.txt
+# Tools and config every agent needs (Prime and Fleet)
+# Installed by: install.sh (always, regardless of --role)
+
+# Contracts (single source of truth)
+contracts.json .openclaw/corekit/contracts.json
+
+# Core tools
+bundle/corekit/bin/oc .openclaw/bin/oc
+bundle/corekit/bin/upgrade-corekit .openclaw/bin/upgrade-corekit
+bundle/corekit/bin/render-config .openclaw/bin/render-config
+bundle/corekit/bin/validate-contracts .openclaw/bin/validate-contracts
+bundle/corekit/bin/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh
+bundle/corekit/bin/upgrade-openclaw .openclaw/bin/upgrade-openclaw
+
+# Chat tools (DWD)
+bundle/corekit/bin/dwd-token .openclaw/bin/dwd-token
+bundle/corekit/bin/chat-send .openclaw/bin/chat-send
+bundle/corekit/bin/chat-read .openclaw/bin/chat-read
+bundle/corekit/bin/inbox-daemon .openclaw/bin/inbox-daemon
+
+# Agent tools
+bundle/corekit/bin/agent-ask .openclaw/bin/agent-ask
+bundle/corekit/bin/web-search .openclaw/bin/web-search
+bundle/corekit/bin/brain-exec .openclaw/bin/brain-exec
+bundle/corekit/bin/build-system-prompt .openclaw/bin/build-system-prompt
+
+# Config
+bundle/corekit/README.md .openclaw/corekit/README.md
+bundle/corekit/exec-approvals.json .openclaw/exec-approvals.json
+bundle/corekit/config/agent-types.json .openclaw/corekit/agent-types.json
+bundle/corekit/config/chat-config.json.tmpl .openclaw/corekit/chat-config.json.tmpl
+bundle/corekit/config/inbox-daemon.service .openclaw/corekit/inbox-daemon.service
+bundle/corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.service
+
+# Config templates (both needed for render-config)
+bundle/corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
+bundle/corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl
+
+# Agent runtime skeleton
+bundle/openclaw/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
+bundle/openclaw/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json

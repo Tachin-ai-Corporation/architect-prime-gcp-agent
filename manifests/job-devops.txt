@@ -1,0 +1,12 @@
+# manifests/job-devops.txt
+# DevOps specialty workspace — layered on top of base + role-fleet
+# Installed by: install.sh --role fleet --job devops
+
+bundle/workspaces/devops/AGENTS.md .openclaw/workspace-devops/AGENTS.md
+bundle/workspaces/devops/BOOTSTRAP.md .openclaw/workspace-devops/BOOTSTRAP.md
+bundle/workspaces/devops/HEARTBEAT.md .openclaw/workspace-devops/HEARTBEAT.md
+bundle/workspaces/devops/IDENTITY.md .openclaw/workspace-devops/IDENTITY.md
+bundle/workspaces/devops/SOUL.md .openclaw/workspace-devops/SOUL.md
+bundle/workspaces/devops/TOOLS.md .openclaw/workspace-devops/TOOLS.md
+bundle/workspaces/devops/USER.md .openclaw/workspace-devops/USER.md
+bundle/workspaces/devops/MEMORY.md .openclaw/workspace-devops/MEMORY.md

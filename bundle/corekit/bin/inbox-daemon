@@ -177,9 +177,24 @@ gw = os.environ.get('OC_GW', 'http://localhost:18789')
 token = os.environ.get('OC_TK', '')
 timeout = int(os.environ.get('OC_TIMEOUT', '120'))
 
+# Read gateway route from contracts.json (single source of truth)
+gateway_route = 'openclaw/cortex'  # fallback
+contracts_paths = [
+    os.path.expanduser('~/.openclaw/corekit/contracts.json'),
+    '/opt/openclaw/.openclaw/corekit/contracts.json'
+]
+for cp in contracts_paths:
+    if os.path.isfile(cp):
+        try:
+            with open(cp) as f:
+                gateway_route = json.load(f)['agents']['gatewayRoute']
+            break
+        except (json.JSONDecodeError, KeyError):
+            pass
+
 # Build request payload (safe — no shell interpolation)
 payload = json.dumps({
-    'model': 'openclaw/cortex',
+    'model': gateway_route,
     'messages': [{'role': 'user', 'content': text}]
 })
 

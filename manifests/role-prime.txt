@@ -1,0 +1,64 @@
+# manifests/role-prime.txt
+# Prime-only tools — fleet management, dashboard bridge, memory
+# Installed by: install.sh --role prime
+
+# Fleet lifecycle
+bundle/corekit/bin/fleet-deploy .openclaw/bin/fleet-deploy
+bundle/corekit/bin/fleet-monitor .openclaw/bin/fleet-monitor
+bundle/corekit/bin/fleet-teardown .openclaw/bin/fleet-teardown
+bundle/corekit/bin/fleet-hire .openclaw/bin/fleet-hire
+bundle/corekit/bin/fleet-fire .openclaw/bin/fleet-fire
+bundle/corekit/bin/fleet-status .openclaw/bin/fleet-status
+bundle/corekit/bin/fleet-verify .openclaw/bin/fleet-verify
+bundle/corekit/bin/fleet-upgrade .openclaw/bin/fleet-upgrade
+bundle/corekit/bin/fleet-health-check .openclaw/bin/fleet-health-check
+
+# Dashboard bridge
+bundle/corekit/bin/control-daemon .openclaw/bin/control-daemon
+bundle/corekit/bin/control-daemon.mjs .openclaw/bin/control-daemon.mjs
+bundle/corekit/bin/command-runner .openclaw/bin/command-runner
+bundle/corekit/bin/dashboard-respond .openclaw/bin/dashboard-respond
+bundle/corekit/bin/discover-models .openclaw/bin/discover-models
+
+# Memory
+bundle/corekit/bin/core-memory-read .openclaw/bin/core-memory-read
+bundle/corekit/bin/core-memory-write .openclaw/bin/core-memory-write
+bundle/corekit/bin/update-deep-truths .openclaw/bin/update-deep-truths
+bundle/corekit/bin/assemble-tools .openclaw/bin/assemble-tools
+
+# Service files
+bundle/corekit/config/command-runner.service .openclaw/corekit/command-runner.service
+bundle/corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json
+bundle/corekit/config/fleet-health-check.service .openclaw/corekit/fleet-health-check.service
+bundle/corekit/config/fleet-health-check.timer .openclaw/corekit/fleet-health-check.timer
+
+# Skills (Prime-only skills)
+bundle/skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
+bundle/skills/fleet-hire/SKILL.md .openclaw/skills/fleet-hire/SKILL.md
+bundle/skills/fleet-fire/SKILL.md .openclaw/skills/fleet-fire/SKILL.md
+bundle/skills/fleet-status/SKILL.md .openclaw/skills/fleet-status/SKILL.md
+bundle/skills/fleet-verify/SKILL.md .openclaw/skills/fleet-verify/SKILL.md
+bundle/skills/fleet-upgrade/SKILL.md .openclaw/skills/fleet-upgrade/SKILL.md
+bundle/skills/memory-consolidate/SKILL.md .openclaw/skills/memory-consolidate/SKILL.md
+
+# Prime brain workspaces (cortex + 5 sub-agents)
+bundle/workspaces/cortex/IDENTITY.md .openclaw/workspace/IDENTITY.md
+bundle/workspaces/cortex/SOUL.md .openclaw/workspace/SOUL.md
+bundle/workspaces/cortex/TOOLS.md .openclaw/workspace/TOOLS.md
+bundle/workspaces/cortex/MEMORY.md .openclaw/workspace/MEMORY.md
+bundle/workspaces/cortex/checkpoint/progress.json .openclaw/workspace/checkpoint/progress.json
+
+bundle/workspaces/temporal-research/SOUL.md .openclaw/workspace-temporal-research/SOUL.md
+bundle/workspaces/temporal-research/IDENTITY.md .openclaw/workspace-temporal-research/IDENTITY.md
+
+bundle/workspaces/temporal-memory/SOUL.md .openclaw/workspace-temporal-memory/SOUL.md
+bundle/workspaces/temporal-memory/IDENTITY.md .openclaw/workspace-temporal-memory/IDENTITY.md
+
+bundle/workspaces/prefrontal/SOUL.md .openclaw/workspace-prefrontal/SOUL.md
+bundle/workspaces/prefrontal/IDENTITY.md .openclaw/workspace-prefrontal/IDENTITY.md
+
+bundle/workspaces/motor/SOUL.md .openclaw/workspace-motor/SOUL.md
+bundle/workspaces/motor/IDENTITY.md .openclaw/workspace-motor/IDENTITY.md
+
+bundle/workspaces/cerebellum/SOUL.md .openclaw/workspace-cerebellum/SOUL.md
+bundle/workspaces/cerebellum/IDENTITY.md .openclaw/workspace-cerebellum/IDENTITY.md
