@@ -240,6 +240,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v3.6** | **Fleet Brain — dynamic email domain, fleet brain sub-agent workspaces, fleet workspace deployment** |
 | **v3.7** | **Dynamic Model Discovery — Vertex AI Model Garden scanning, Gemini 3.1 Pro + global endpoint, model catalog dashboard** |
 | **v3.7.1** | **Fleet Bootstrap Fix — 4 bugs from Gemini 3.1 migration (global endpoint, ADC wildcard, systemPrompt removal, inbox-daemon cortex routing, timeout hardening)** |
+| **v4.0** | **Modularization + Contract Enforcement — contracts.json single source of truth, validate-contracts pre-flight checks, modular manifest fragments (base/role/job), install.sh --role/--job chained install, STATE.json v2 with role/job, bootstrap test harness, E2E verified** |
 
 ---
 
