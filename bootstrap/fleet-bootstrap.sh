@@ -471,6 +471,14 @@ done
 # PHASE 4 — Start services + finalize
 # ============================================================
 
+# ---- 17b) Final permissions sweep ----
+# install.sh sets permissions, but fleet-bootstrap creates additional dirs
+# (workspace, configs) AFTER install.sh runs. Root's umask (077) makes those
+# dirs owner-only (700), preventing the inbox-daemon service from accessing bin/.
+info "Final permissions sweep..."
+find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
+find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+
 # ---- 18) Start inbox-daemon ----
 info "Starting inbox-daemon..."
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
