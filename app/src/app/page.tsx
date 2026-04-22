@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import styles from "./page.module.css";
-import { SettingsView } from "@/components/settings/SettingsView";
+import { SettingsView, VersionInfo } from "@/components/settings/SettingsView";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
 
 /* ---- Types ---- */
@@ -110,7 +110,7 @@ export default function Home() {
   const [confirmingSetup, setConfirmingSetup] = useState(false);
   const [confirmResult, setConfirmResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [dismissing, setDismissing] = useState(false);
-  const [versionInfo, setVersionInfo] = useState<{currentVersion: string; latestVersion: string; updateAvailable: boolean} | null>(null);
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [upgrading, setUpgrading] = useState(false);
   const [sidebarFleet, setSidebarFleet] = useState<Record<string, FleetAgent[]>>({});
   const [expandedPrimes, setExpandedPrimes] = useState<Record<string, boolean>>({});
@@ -145,7 +145,7 @@ export default function Home() {
       setLoading(false);
 
       // Load version info
-      const ver = await api<{currentVersion: string; latestVersion: string; updateAvailable: boolean}>("/api/upgrade");
+      const ver = await api<VersionInfo>("/api/upgrade");
       if (ver) setVersionInfo(ver);
     })();
   }, []);

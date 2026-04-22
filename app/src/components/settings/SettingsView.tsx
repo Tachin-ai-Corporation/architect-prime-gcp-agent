@@ -20,6 +20,9 @@ export interface SetupState {
 export interface VersionInfo {
   currentVersion: string;
   latestVersion: string;
+  latestTag: string;
+  mainHeadSha: string;
+  deployedCommit: string;
   updateAvailable: boolean;
 }
 

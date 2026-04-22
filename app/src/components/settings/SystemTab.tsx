@@ -33,24 +33,45 @@ export function SystemTab({ activePrime, versionInfo, upgrading, setUpgrading }:
               <div className={styles["settings-value"]}><code className="mono">{versionInfo.currentVersion}</code></div>
             </div>
             <div className={styles["settings-row"]}>
-              <div className={styles["settings-label"]}>Latest Version</div>
+              <div className={styles["settings-label"]}>Latest Tag</div>
+              <div className={styles["settings-value"]}><code className="mono">{versionInfo.latestTag}</code></div>
+            </div>
+            <div className={styles["settings-row"]}>
+              <div className={styles["settings-label"]}>Main Branch</div>
               <div className={styles["settings-value"]}>
-                <code className="mono">{versionInfo.latestVersion}</code>
-                {versionInfo.updateAvailable && (
-                  <span className="badge badge-deploying" style={{ marginLeft: 8, fontSize: 10 }}>update available</span>
+                <code className="mono">{versionInfo.mainHeadSha || "unknown"}</code>
+                {versionInfo.deployedCommit && versionInfo.mainHeadSha &&
+                 versionInfo.deployedCommit !== versionInfo.mainHeadSha && (
+                  <span className="badge badge-deploying" style={{ marginLeft: 8, fontSize: 10 }}>new commits</span>
                 )}
               </div>
             </div>
-            <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {versionInfo.deployedCommit && (
+              <div className={styles["settings-row"]}>
+                <div className={styles["settings-label"]}>Deployed Commit</div>
+                <div className={styles["settings-value"]}><code className="mono">{versionInfo.deployedCommit}</code></div>
+              </div>
+            )}
+            <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <button className="btn btn-primary" onClick={async () => {
                 setUpgrading(true);
-                const result = await api<{success: boolean; message?: string; error?: string}>("/api/upgrade", { method: "POST" });
+                const result = await api<{success: boolean; message?: string; error?: string; version?: string}>("/api/upgrade", { method: "POST" });
                 setUpgrading(false);
                 if (result?.success) alert(result.message || "Dashboard upgrade initiated!");
                 else alert(result?.error || "Upgrade failed");
               }} disabled={upgrading}>
-                {upgrading ? "Upgrading..." : "Upgrade Dashboard"}
+                {upgrading ? "Upgrading..." : versionInfo.updateAvailable ? "⬆ Upgrade Dashboard" : "↻ Redeploy Dashboard"}
               </button>
+              {versionInfo.updateAvailable && (
+                <span style={{ fontSize: 12, color: "var(--accent-warning)" }}>
+                  Update available: {versionInfo.latestVersion}
+                </span>
+              )}
+              {!versionInfo.updateAvailable && (
+                <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                  Up to date — redeploy will rebuild from main
+                </span>
+              )}
             </div>
           </div>
         ) : (
@@ -71,7 +92,7 @@ export function SystemTab({ activePrime, versionInfo, upgrading, setUpgrading }:
             const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ type: "upgrade_corekit", args: { ref: versionInfo?.latestVersion || "main" } }),
+              body: JSON.stringify({ type: "upgrade_corekit", args: { ref: versionInfo?.latestTag || "main" } }),
             });
             if (result?.id) alert(`CoreKit upgrade queued (command: ${result.id}). The command-runner will execute it.`);
             else alert("Failed to queue upgrade command.");
