@@ -325,6 +325,18 @@ export default function Home() {
 
   // ---- Teardown Prime ----
   const handleTeardownPrime = async (primeId: string, primeName: string) => {
+    // Check for active fleet agents under this Prime
+    const primeFleet = sidebarFleet[primeId] || [];
+    const activeAgents = primeFleet.filter((a) => a.status !== "removed");
+    if (activeAgents.length > 0) {
+      alert(
+        `Cannot tear down Prime "${primeName}" while it has ${activeAgents.length} active fleet agent(s):\n\n` +
+        activeAgents.map((a) => `  • ${a.name} (${a.status})`).join("\n") +
+        `\n\nFire all fleet agents first, then try again.`
+      );
+      return;
+    }
+
     if (!confirm(
       `Tear down Prime "${primeName}"?\n\n` +
       `This will delete the VM and stop billing.\n` +
@@ -683,7 +695,7 @@ export default function Home() {
         <div className={styles["sidebar-footer"]}>
           {versionInfo && (
             <div style={{ fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", marginBottom: 6 }}>
-              {versionInfo.currentVersion}{versionInfo.updateAvailable && (
+              {versionInfo.latestTag || versionInfo.currentVersion}{versionInfo.updateAvailable && (
                 <span style={{ color: "#f0883e", marginLeft: 4 }}>● update</span>
               )}
             </div>
