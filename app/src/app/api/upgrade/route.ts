@@ -60,22 +60,26 @@ export async function GET() {
     }
 
     // Update is available if:
-    //   1. There's a newer tag than what's deployed, OR
-    //   2. main HEAD is different from the deployed commit
-    const tagDiffers = latestTag !== "unknown" &&
-                       currentVersion !== latestTag &&
-                       currentVersion !== "dev";
-    const commitDiffers = mainHeadSha !== "" &&
-                          deployedCommit !== "" &&
-                          mainHeadSha !== deployedCommit;
-    const updateAvailable = tagDiffers || commitDiffers ||
-                            (mainHeadSha !== "" && deployedCommit === "");
+    //   1. The latest tag points to a DIFFERENT commit than what's deployed, OR
+    //   2. main HEAD is ahead of the deployed commit
+    // We compare commit SHAs, not version strings, to avoid the cycle where
+    // main@aab7494 vs v4.0.1 both point to the same commit but string-differ.
+    const deployedMatchesTag = deployedCommit !== "" && latestTagSha !== "" &&
+                               deployedCommit === latestTagSha;
+    const deployedMatchesMain = deployedCommit !== "" && mainHeadSha !== "" &&
+                                deployedCommit === mainHeadSha;
 
-    // Show the latest version as the tag if it's newer, otherwise show main@sha
-    const latestVersion = tagDiffers ? latestTag :
-                          (mainHeadSha && mainHeadSha !== deployedCommit)
-                            ? `main@${mainHeadSha}`
-                            : latestTag;
+    const tagIsNewer = latestTag !== "unknown" &&
+                       !deployedMatchesTag &&
+                       currentVersion !== "dev";
+    const mainIsAhead = mainHeadSha !== "" &&
+                        !deployedMatchesMain;
+    const updateAvailable = tagIsNewer || mainIsAhead;
+
+    // Show the latest version label
+    const latestVersion = tagIsNewer ? latestTag :
+                          mainIsAhead ? `main@${mainHeadSha}` :
+                          latestTag;
 
     return NextResponse.json({
       currentVersion,
