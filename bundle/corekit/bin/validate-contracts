@@ -99,26 +99,33 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 2: prime-bootstrap.sh .env GOOGLE_CLOUD_LOCATION ----
+  # ---- Check 2: prime-bootstrap.sh reads location from contracts ----
   PRIME_BS="${REPO_ROOT}/bootstrap/prime-bootstrap.sh"
   if [[ -f "$PRIME_BS" ]]; then
-    if grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$PRIME_BS"; then
+    # Accept either the literal value OR the contract variable reference
+    if grep -q 'GOOGLE_CLOUD_LOCATION=${C_LOCATION}' "$PRIME_BS"; then
+      pass "prime-bootstrap.sh .env location = contract-driven"
+    elif grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$PRIME_BS"; then
       pass "prime-bootstrap.sh .env location = ${C_LOCATION}"
     else
       LOC="$(grep 'GOOGLE_CLOUD_LOCATION=' "$PRIME_BS" | head -1 | grep -oP '=\K.*' || echo 'NOT_FOUND')"
-      fail "prime-bootstrap.sh .env location = '${LOC}' (expected '${C_LOCATION}')"
+      fail "prime-bootstrap.sh .env location = '${LOC}' (expected contract-driven or '${C_LOCATION}')"
     fi
   fi
 
-  # ---- Check 3: OpenClaw pin consistency ----
+  # ---- Check 3: OpenClaw pin — no hardcoded 40-char hex in bootstraps ----
+  # Bootstraps should use ${C_OC_PIN} from contracts, not a hardcoded hash.
+  # We check that the pin value appears (either as a variable reference or literal fallback).
   for BS_FILE in "$FLEET_BS" "$PRIME_BS"; do
     [[ -f "$BS_FILE" ]] || continue
     BS_NAME="$(basename "$BS_FILE")"
-    if grep -q "${C_OC_PIN}" "$BS_FILE"; then
-      pass "${BS_NAME} OpenClaw pin matches"
+    if grep -q 'C_OC_PIN' "$BS_FILE"; then
+      pass "${BS_NAME} reads OpenClaw pin from contracts (C_OC_PIN)"
+    elif grep -q "${C_OC_PIN}" "$BS_FILE"; then
+      pass "${BS_NAME} OpenClaw pin matches (literal fallback)"
     else
       PIN="$(grep 'OC_PIN=' "$BS_FILE" | head -1 | grep -oP '"[^"]*"' | tr -d '"' || echo 'NOT_FOUND')"
-      fail "${BS_NAME} OpenClaw pin = '${PIN:0:12}...' (expected '${C_OC_PIN:0:12}...')"
+      fail "${BS_NAME} OpenClaw pin = '${PIN:0:12}...' (expected contract-driven or '${C_OC_PIN:0:12}...')"
     fi
   done
 
@@ -267,6 +274,17 @@ for a in c.get('agents',{}).get('list',[]):
       pass "inbox-daemon route = ${C_GATEWAY_ROUTE}"
     else
       fail "inbox-daemon route mismatch"
+    fi
+  fi
+
+  # ---- Check 8: Host permissions — bin dir must be 755 (not 700) ----
+  BIN_DIR="${OC_HOST_ROOT}/.openclaw/bin"
+  if [[ -d "$BIN_DIR" ]]; then
+    BIN_PERMS="$(stat -c '%a' "$BIN_DIR" 2>/dev/null || echo 'UNKNOWN')"
+    if [[ "$BIN_PERMS" == "755" ]]; then
+      pass "bin/ dir permissions = 755"
+    else
+      fail "bin/ dir permissions = ${BIN_PERMS} (expected 755 — root umask bug?)"
     fi
   fi
 fi

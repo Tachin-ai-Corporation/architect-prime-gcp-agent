@@ -84,6 +84,7 @@
 .sidebar-item-dot.deploying { background: var(--accent-warning); animation: pulse 1.5s infinite; }
 .sidebar-item-dot.needs_action { background: #f59e0b; animation: pulse-amber 2s infinite; }
 .sidebar-item-dot.tearing_down { background: #6366f1; animation: pulse 1.5s infinite; }
+.sidebar-item-dot.removed { background: var(--text-tertiary); opacity: 0.5; }
 .sidebar-item-dot.error { background: var(--accent-danger); }
 .sidebar-item-name { flex: 1; font-weight: 500; }
 .sidebar-item-role { font-size: 11px; color: var(--text-tertiary); }

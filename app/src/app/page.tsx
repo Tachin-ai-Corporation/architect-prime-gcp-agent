@@ -9,7 +9,7 @@ import { DWDGuide } from "@/components/settings/IntegrationTab";
 interface PrimeInstance {
   id: string;
   name: string;
-  status: "online" | "offline" | "deploying" | "error";
+  status: "online" | "offline" | "deploying" | "tearing_down" | "removed" | "error";
   zone: string;
   fleetCount: number;
 }
@@ -323,6 +323,41 @@ export default function Home() {
     setNewPrimeName("");
   };
 
+  // ---- Teardown Prime ----
+  const handleTeardownPrime = async (primeId: string, primeName: string) => {
+    if (!confirm(
+      `Tear down Prime "${primeName}"?\n\n` +
+      `This will delete the VM and stop billing.\n` +
+      `Chat history and fleet data are preserved.\n` +
+      `You can re-deploy later from the same Prime slot.`
+    )) return;
+
+    // Optimistic: mark as tearing_down
+    setPrimes((prev) =>
+      prev.map((p) => p.id === primeId ? { ...p, status: "tearing_down" as const } : p)
+    );
+
+    const result = await api<{ success: boolean; message?: string }>(
+      `/api/primes/${primeId}/teardown`,
+      { method: "POST" }
+    );
+
+    if (result?.success) {
+      setPrimes((prev) =>
+        prev.map((p) => p.id === primeId ? { ...p, status: "removed" as const } : p)
+      );
+      setMessages((prev) => [...prev, {
+        id: `sys-teardown-${Date.now()}`, sender: "prime" as const,
+        text: `🔥 Prime "${primeName}" has been torn down. VM deleted, billing stopped.\n\nChat history is preserved. Click "Deploy Prime" to re-deploy.`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } else {
+      setPrimes((prev) =>
+        prev.map((p) => p.id === primeId ? { ...p, status: "error" as const } : p)
+      );
+    }
+  };
+
   // ---- Hire Agent ----
   const handleHire = async () => {
     if (!hireName.trim() || !activePrime) return;
@@ -577,6 +612,35 @@ export default function Home() {
                 >
                   <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} />
                   <span className={styles["sidebar-item-name"]}>{p.name}</span>
+                  {/* Teardown button — only for non-deploying Primes */}
+                  {p.status !== "deploying" && p.status !== "tearing_down" && p.status !== "removed" && (
+                    <button
+                      className={styles["sidebar-expand-btn"]}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTeardownPrime(p.id, p.name);
+                      }}
+                      title="Tear down this Prime VM"
+                      style={{ color: "var(--text-tertiary)", fontSize: 11 }}
+                    >
+                      ×
+                    </button>
+                  )}
+                  {p.status === "removed" && (
+                    <button
+                      className={styles["sidebar-expand-btn"]}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Re-deploy: trigger the deploy API
+                        api(`/api/primes/${p.id}/deploy`, { method: "POST" });
+                        setPrimes((prev) => prev.map((pr) => pr.id === p.id ? { ...pr, status: "deploying" as const } : pr));
+                      }}
+                      title="Re-deploy this Prime"
+                      style={{ color: "#2ea043", fontSize: 11 }}
+                    >
+                      ↻
+                    </button>
+                  )}
                   {primeFleet.length > 0 && (
                     <button
                       className={styles["sidebar-expand-btn"]}

@@ -19,6 +19,17 @@
 # directly to the host filesystem (bind-mounted into container)
 # and the container is restarted once to pick it up. This avoids
 # the config.apply deadlock on resource-constrained VMs.
+#
+# CRITICAL INVARIANTS — do NOT violate these:
+#   1. contracts.json is the ONLY source for cross-cutting values
+#      (location, port, model, agent ID, OC pin). Never hardcode.
+#   2. install.sh MUST use --role fleet --job <specialty>.
+#      Omitting flags installs everything (wastes disk, wrong STATE.json).
+#   3. Final permissions sweep (step 17b) MUST run AFTER all mkdir/copy
+#      and BEFORE any service start. Root's umask is 077.
+#   4. Container /home/node/.openclaw permissions (700) are independent
+#      from host ${OC_HOST_DIR} permissions (755). Don't confuse them.
+#   5. HTTP 401 from gateway = HEALTHY (auth required but responding).
 # ============================================================
 set -euo pipefail
 
@@ -126,6 +137,11 @@ CORE_REF="${CORE_REF}" \
   bash /tmp/install.sh ${INSTALL_ARGS}
 
 # ---- 3b) Read contracts.json for cross-cutting values ----
+# ADR: contracts.json is the SINGLE SOURCE OF TRUTH for all values that appear
+# in multiple files (model names, agent IDs, endpoints, OpenClaw pin, ports).
+# The Gemini 3.1 migration broke stan because 5 values were hardcoded in 7 files
+# and 4 were missed. contracts.json prevents this class of bug entirely.
+# If contracts.json is missing, fallback defaults match the last known-good.
 CONTRACTS="${OC_HOST_DIR}/corekit/contracts.json"
 if [[ -f "$CONTRACTS" ]]; then
   C_LOCATION="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['vertex']['location'])")"
@@ -472,9 +488,14 @@ done
 # ============================================================
 
 # ---- 17b) Final permissions sweep ----
-# install.sh sets permissions, but fleet-bootstrap creates additional dirs
-# (workspace, configs) AFTER install.sh runs. Root's umask (077) makes those
-# dirs owner-only (700), preventing the inbox-daemon service from accessing bin/.
+# ADR: File Ownership Model
+# install.sh chowns everything to 1000:1000 (ubuntu). But fleet-bootstrap
+# runs as root, and root's umask is 077. Any mkdir/cp/sed AFTER install.sh
+# creates files/dirs with 700 permissions (root-only). The inbox-daemon
+# service needs to traverse dirs to reach dwd-token. This sweep MUST be
+# the LAST thing before services start.
+# Bug history: stan's inbox-daemon couldn't access dwd-token because /bin/
+# was 700 owned by ubuntu — root traversal was blocked. v4.0.0 regression.
 info "Final permissions sweep..."
 find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true

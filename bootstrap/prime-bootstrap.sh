@@ -48,6 +48,10 @@ echo "Agent       : ${AGENT_ID}"
 echo "CoreRef     : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Project     : ${GCP_PROJECT_ID}"
 
+# ============================================================
+# PHASE 1 — System setup
+# ============================================================
+
 # ---- 1) Install system packages ----
 info "Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
@@ -65,7 +69,7 @@ systemctl start docker
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 [[ -n "${DOCKER_GID}" ]] || { echo "[ERROR] Could not determine docker group GID"; exit 1; }
 
-# ---- 3) Install CoreKit via manifest ----
+# ---- 3) Install CoreKit via manifest (base + prime) ----
 info "Installing CoreKit..."
 mkdir -p "${OC_HOST_DIR}"
 curl -sfL "${CORE_BASE}/install.sh" -o /tmp/install.sh
@@ -74,7 +78,27 @@ CORE_REF="${CORE_REF}" \
   GH_OWNER="${GH_OWNER}" \
   GH_REPO="${GH_REPO}" \
   OC_HOST_ROOT="${OC_HOST_ROOT}" \
-  bash /tmp/install.sh
+  bash /tmp/install.sh --role prime
+
+# ---- 3b) Read contracts.json for cross-cutting values ----
+# ADR: contracts.json is the SINGLE SOURCE OF TRUTH for all values that appear
+# in multiple files (model names, agent IDs, endpoints, OpenClaw pin, ports).
+# Changing a value here propagates to .env, OC_PIN, smoke tests, etc.
+# If contracts.json is missing, fallback defaults match the last known-good.
+CONTRACTS="${OC_HOST_DIR}/corekit/contracts.json"
+if [[ -f "$CONTRACTS" ]]; then
+  C_LOCATION="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['vertex']['location'])")"
+  C_OC_PIN="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['openclaw']['pin'])")"
+  C_GATEWAY_PORT="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['gateway']['port'])")"
+  C_GATEWAY_ROUTE="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['agents']['gatewayRoute'])")"
+  info "Contracts loaded: location=${C_LOCATION} port=${C_GATEWAY_PORT} route=${C_GATEWAY_ROUTE}"
+else
+  warn "contracts.json not found — using defaults"
+  C_LOCATION="global"
+  C_OC_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
+  C_GATEWAY_PORT="18789"
+  C_GATEWAY_ROUTE="openclaw/cortex"
+fi
 
 # ---- 4) Save gateway token for control-daemon ----
 # render-config (step 9) will update this with the final token;
@@ -82,6 +106,10 @@ CORE_REF="${CORE_REF}" \
 mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
+
+# ============================================================
+# PHASE 2 — OpenClaw Docker image + config
+# ============================================================
 
 # ---- 5) Clone + build OpenClaw Docker image ----
 info "Cloning OpenClaw repo..."
@@ -91,16 +119,17 @@ if [[ ! -d openclaw/.git ]]; then
 fi
 cd openclaw
 git fetch --all --prune
-# Pin to known-good release — v2026.4.15 (Apr 16, 2026)
-# Changelog: subagent launch fixes, tool-loop guards, compaction fixes, Gemini 3.1 support
-OC_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
-STABLE_COMMIT="${OC_PIN}"
+# Pin to known-good release — read from contracts.json
+STABLE_COMMIT="${C_OC_PIN}"
 git checkout "${STABLE_COMMIT}"
-info "Using OpenClaw commit: ${STABLE_COMMIT} (pinned to v2026.4.15)"
+info "Using OpenClaw commit: ${STABLE_COMMIT:0:12} (from contracts.json)"
 
+# ADR: .env values MUST match contracts.json. Hardcoding port/location here
+# caused stan's crash-loop when the Gemini 3.1 migration changed location
+# to 'global' but fleet-bootstrap still had 'us-central1'. Read from contracts.
 cat > .env <<EOF
 GATEWAY_BIND=loopback
-GATEWAY_PORT=18789
+GATEWAY_PORT=${C_GATEWAY_PORT}
 OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN}
 OPENCLAW_CONFIG_DIR=/home/node/.openclaw
 OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
@@ -109,7 +138,7 @@ GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
 GCLOUD_PROJECT=${GCP_PROJECT_ID}
 CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
 GOOGLE_GENAI_USE_VERTEXAI=True
-GOOGLE_CLOUD_LOCATION=global
+GOOGLE_CLOUD_LOCATION=${C_LOCATION}
 GCE_METADATA_HOST=metadata.google.internal
 EOF
 
@@ -131,17 +160,21 @@ docker run -d \
   openclaw:local
 
 # ---- 7) Wait for gateway readiness ----
+# ADR: HTTP 401 from the gateway means "auth required but I'm alive" —
+# this IS a healthy response. The gateway requires a Bearer token.
 info "Waiting for OpenClaw gateway..."
 READY=false
 MAX_WAIT=180
 WAITED=0
 INTERVAL=5
 while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
-  if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' > /dev/null 2>&1; then
+  HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    http://localhost:${C_GATEWAY_PORT}/v1/models 2>/dev/null)" || HTTP_CODE="000"
+  if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "200" ]]; then
     READY=true
     break
   fi
-  echo "  Gateway not ready yet (${WAITED}s elapsed, retrying in ${INTERVAL}s)..."
+  echo "  Gateway not ready yet (HTTP ${HTTP_CODE}, ${WAITED}s elapsed)..."
   sleep "$INTERVAL"
   WAITED=$((WAITED + INTERVAL))
 done
@@ -149,6 +182,10 @@ done
 info "Gateway is ready (took ~${WAITED}s)."
 
 # ---- 8) Harden container perms (pre-config) ----
+# ADR: These permissions are INSIDE the Docker container (/home/node/.openclaw).
+# They are independent from the HOST permissions at ${OC_HOST_DIR}.
+# The container volume mount overlays host files into the container's filesystem.
+# 700 here restricts access within the container to the 'node' user only.
 info "Hardening container permissions..."
 docker exec -u 0 openclaw-gateway bash -lc '
 set -e
@@ -347,6 +384,10 @@ else
   echo "  [WARN] model-auth-env file not found in /app/dist"
 fi
 
+# ============================================================
+# PHASE 3 — Container hardening + Vertex AI fix
+# ============================================================
+
 # Step 3: Remove any stale ADC files that might interfere with GCE metadata discovery
 rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
 
@@ -378,6 +419,21 @@ else
   warn "discover-models not found — skipping model discovery"
 fi
 
+# ---- 12c) Validate config against contracts ----
+VALIDATE="${OC_HOST_DIR}/bin/validate-contracts"
+if [[ -x "$VALIDATE" ]]; then
+  info "Running contract validation..."
+  if OC_HOST_ROOT="${OC_HOST_ROOT}" "$VALIDATE" --runtime 2>&1; then
+    info "Contract validation PASSED"
+  else
+    warn "Contract validation found issues (non-fatal during bootstrap)"
+  fi
+fi
+
+# ============================================================
+# PHASE 4 — Start services + finalize
+# ============================================================
+
 # ---- 13) Write prime-config.json ----
 cat > "${OC_HOST_DIR}/corekit/prime-config.json" <<PCFG
 {
@@ -387,7 +443,18 @@ cat > "${OC_HOST_DIR}/corekit/prime-config.json" <<PCFG
 }
 PCFG
 
-# ---- 13) Install control-daemon as systemd service ----
+# ---- 13b) Final permissions sweep ----
+# ADR: File Ownership Model
+# install.sh chowns everything to 1000:1000 (ubuntu). But prime-bootstrap
+# runs as root, and root's umask is 077. Any mkdir/cp/sed AFTER install.sh
+# creates files/dirs with 700 permissions (root-only). Services that traverse
+# these dirs will fail with "Permission denied". The permissions sweep MUST
+# be the LAST thing before services start.
+info "Final permissions sweep..."
+find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
+find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+
+# ---- 14) Install control-daemon as systemd service ----
 info "Installing control-daemon systemd service..."
 cat > /etc/systemd/system/control-daemon.service <<UNIT
 [Unit]
@@ -455,17 +522,16 @@ systemctl start fleet-health-check.timer
 # ---- Done ----
 echo
 echo "============================================"
-echo "  PRIME VM SETUP COMPLETE (v3.5.0)"
+echo "  PRIME VM SETUP COMPLETE (v4.0.1)"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"
-echo "  OpenClaw commit: ${STABLE_COMMIT}"
+echo "  OpenClaw commit: ${STABLE_COMMIT:0:12}"
 echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"
 echo "  Daemon         : Node.js (control-daemon.mjs)"
 echo "  Dispatch       : brain-exec wrapper + SSE streaming"
 echo "  Health check   : fleet-health-check.timer (every 15m)"
-echo "  Memory cron    : memory-consolidate (nightly 2 AM)"
 echo "============================================"
 

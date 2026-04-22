@@ -233,6 +233,19 @@ code, pre, .mono {
   background: var(--accent-danger);
 }
 
+.badge-removed {
+  background: rgba(107, 107, 128, 0.1);
+  color: var(--text-tertiary);
+}
+.badge-removed::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  opacity: 0.5;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
