@@ -624,35 +624,6 @@ export default function Home() {
                 >
                   <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} />
                   <span className={styles["sidebar-item-name"]}>{p.name}</span>
-                  {/* Teardown button — only for non-deploying Primes */}
-                  {p.status !== "deploying" && p.status !== "tearing_down" && p.status !== "removed" && (
-                    <button
-                      className={styles["sidebar-expand-btn"]}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTeardownPrime(p.id, p.name);
-                      }}
-                      title="Tear down this Prime VM"
-                      style={{ color: "var(--text-tertiary)", fontSize: 11 }}
-                    >
-                      ×
-                    </button>
-                  )}
-                  {p.status === "removed" && (
-                    <button
-                      className={styles["sidebar-expand-btn"]}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Re-deploy: trigger the deploy API
-                        api(`/api/primes/${p.id}/deploy`, { method: "POST" });
-                        setPrimes((prev) => prev.map((pr) => pr.id === p.id ? { ...pr, status: "deploying" as const } : pr));
-                      }}
-                      title="Re-deploy this Prime"
-                      style={{ color: "#2ea043", fontSize: 11 }}
-                    >
-                      ↻
-                    </button>
-                  )}
                   {primeFleet.length > 0 && (
                     <button
                       className={styles["sidebar-expand-btn"]}
@@ -1163,6 +1134,13 @@ export default function Home() {
                 setSetup={setSetup}
                 primeCount={primes.length}
                 fleetCount={fleet.length}
+                primes={primes}
+                sidebarFleet={sidebarFleet}
+                onTeardownPrime={handleTeardownPrime}
+                onRedeployPrime={(primeId) => {
+                  api(`/api/primes/${primeId}/deploy`, { method: "POST" });
+                  setPrimes((prev) => prev.map((p) => p.id === primeId ? { ...p, status: "deploying" as const } : p));
+                }}
                 versionInfo={versionInfo}
                 upgrading={upgrading}
                 setUpgrading={setUpgrading}

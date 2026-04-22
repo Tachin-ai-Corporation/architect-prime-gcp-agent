@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "../../app/page.module.css";
-import type { SetupState } from "./SettingsView";
+import type { SetupState, PrimeInstance, FleetAgent } from "./SettingsView";
 
 async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
   try {
@@ -18,11 +18,15 @@ interface GeneralTabProps {
   setSetup: React.Dispatch<React.SetStateAction<SetupState>>;
   primeCount: number;
   fleetCount: number;
+  primes: PrimeInstance[];
+  sidebarFleet: Record<string, FleetAgent[]>;
+  onTeardownPrime: (primeId: string, primeName: string) => void;
+  onRedeployPrime: (primeId: string) => void;
   copied: string;
   setCopied: (v: string) => void;
 }
 
-export function GeneralTab({ setup, setSetup, primeCount, fleetCount, copied, setCopied }: GeneralTabProps) {
+export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, sidebarFleet, onTeardownPrime, onRedeployPrime, copied, setCopied }: GeneralTabProps) {
   return (
     <>
       {/* Agent Defaults */}
@@ -65,6 +69,59 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, copied, se
         </div>
         <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4, paddingLeft: 2 }}>
           When set, agent emails auto-fill as <code className="mono" style={{ fontSize: 10 }}>specialty-agent-name@domain</code> during hire.
+        </div>
+      </div>
+
+      {/* Prime Instances */}
+      <div className={styles["settings-section"]}>
+        <div className={styles["settings-section-title"]}>Prime Instances</div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {primes.map((p) => {
+            const primeFleet = sidebarFleet[p.id] || [];
+            const activeAgents = primeFleet.filter((a) => a.status !== "removed");
+            const isRemoved = p.status === "removed";
+            const isTearingDown = p.status === "tearing_down";
+
+            return (
+              <div
+                key={p.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 16px",
+                  background: "var(--bg-tertiary)",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border-subtle)",
+                }}
+              >
+                <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
+                    {p.zone} · {activeAgents.length} agent{activeAgents.length !== 1 ? "s" : ""} · {p.status}
+                  </div>
+                </div>
+                {isRemoved ? (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={() => onRedeployPrime(p.id)}
+                  >
+                    ↻ Re-deploy
+                  </button>
+                ) : isTearingDown ? (
+                  <span style={{ fontSize: 12, color: "var(--accent-primary)" }}>Tearing down...</span>
+                ) : (
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={() => onTeardownPrime(p.id, p.name)}
+                  >
+                    Decommission
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

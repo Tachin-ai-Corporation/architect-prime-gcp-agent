@@ -26,12 +26,29 @@ export interface VersionInfo {
   updateAvailable: boolean;
 }
 
+export interface PrimeInstance {
+  id: string;
+  name: string;
+  status: string;
+  zone: string;
+  fleetCount: number;
+}
+
+export interface FleetAgent {
+  name: string;
+  status: string;
+}
+
 export interface SettingsViewProps {
   activePrime: string;
   setup: SetupState;
   setSetup: React.Dispatch<React.SetStateAction<SetupState>>;
   primeCount: number;
   fleetCount: number;
+  primes: PrimeInstance[];
+  sidebarFleet: Record<string, FleetAgent[]>;
+  onTeardownPrime: (primeId: string, primeName: string) => void;
+  onRedeployPrime: (primeId: string) => void;
   versionInfo: VersionInfo | null;
   upgrading: boolean;
   setUpgrading: (v: boolean) => void;
@@ -81,6 +98,10 @@ export function SettingsView(props: SettingsViewProps) {
             setSetup={props.setSetup}
             primeCount={props.primeCount}
             fleetCount={props.fleetCount}
+            primes={props.primes}
+            sidebarFleet={props.sidebarFleet}
+            onTeardownPrime={props.onTeardownPrime}
+            onRedeployPrime={props.onRedeployPrime}
             copied={props.copied}
             setCopied={props.setCopied}
           />
