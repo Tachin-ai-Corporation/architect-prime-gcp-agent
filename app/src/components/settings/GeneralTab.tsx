@@ -1,7 +1,7 @@
 "use client";
 
 import styles from "../../app/page.module.css";
-import type { SetupState, PrimeInstance, FleetAgent } from "./SettingsView";
+import type { SetupState, PrimeInstance, FleetAgent, VersionInfo } from "./SettingsView";
 
 async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
   try {
@@ -22,11 +22,12 @@ interface GeneralTabProps {
   sidebarFleet: Record<string, FleetAgent[]>;
   onTeardownPrime: (primeId: string, primeName: string) => void;
   onRedeployPrime: (primeId: string) => void;
+  versionInfo: VersionInfo | null;
   copied: string;
   setCopied: (v: string) => void;
 }
 
-export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, sidebarFleet, onTeardownPrime, onRedeployPrime, copied, setCopied }: GeneralTabProps) {
+export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, sidebarFleet, onTeardownPrime, onRedeployPrime, versionInfo, copied, setCopied }: GeneralTabProps) {
   return (
     <>
       {/* Agent Defaults */}
@@ -75,50 +76,80 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
       {/* Prime Instances */}
       <div className={styles["settings-section"]}>
         <div className={styles["settings-section-title"]}>Prime Instances</div>
-        <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "grid", gap: 12 }}>
           {primes.map((p) => {
             const primeFleet = sidebarFleet[p.id] || [];
             const activeAgents = primeFleet.filter((a) => a.status !== "removed");
             const isRemoved = p.status === "removed";
             const isTearingDown = p.status === "tearing_down";
+            const isLive = !isRemoved && !isTearingDown;
 
             return (
               <div
                 key={p.id}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "12px 16px",
+                  padding: "14px 16px",
                   background: "var(--bg-tertiary)",
                   borderRadius: "var(--radius-sm)",
                   border: "1px solid var(--border-subtle)",
                 }}
               >
-                <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} style={{ flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
-                    {p.zone} · {activeAgents.length} agent{activeAgents.length !== 1 ? "s" : ""} · {p.status}
+                {/* Top row: name + status */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div className={`${styles["sidebar-item-dot"]} ${styles[p.status]}`} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</span>
+                    <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: 8 }}>
+                      {p.zone} · {activeAgents.length} agent{activeAgents.length !== 1 ? "s" : ""} · {p.status}
+                    </span>
                   </div>
                 </div>
-                {isRemoved ? (
-                  <button
-                    className="btn btn-sm btn-primary"
-                    onClick={() => onRedeployPrime(p.id)}
-                  >
-                    ↻ Re-deploy
-                  </button>
-                ) : isTearingDown ? (
-                  <span style={{ fontSize: 12, color: "var(--accent-primary)" }}>Tearing down...</span>
-                ) : (
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={() => onTeardownPrime(p.id, p.name)}
-                  >
-                    Decommission
-                  </button>
-                )}
+
+                {/* Action buttons row */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {isLive && (
+                    <>
+                      <button className="btn btn-sm btn-primary" onClick={async () => {
+                        if (!confirm(`Upgrade CoreKit on "${p.name}"? This will also restart the gateway.`)) return;
+                        const result = await api<{id: string}>(`/api/primes/${p.id}/commands`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ type: "upgrade_corekit", args: { ref: versionInfo?.latestTag || "main" } }),
+                        });
+                        if (result?.id) alert(`CoreKit upgrade queued (command: ${result.id}).`);
+                        else alert("Failed to queue upgrade command.");
+                      }}>
+                        ⬆ Upgrade CoreKit
+                      </button>
+                      <button className="btn btn-sm btn-ghost" style={{ borderColor: "var(--border)" }} onClick={async () => {
+                        if (!confirm(`Restart the OpenClaw gateway on "${p.name}"?`)) return;
+                        const result = await api<{id: string}>(`/api/primes/${p.id}/commands`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ type: "gateway_restart", args: {} }),
+                        });
+                        if (result?.id) alert(`Gateway restart queued (command: ${result.id}).`);
+                        else alert("Failed to queue restart command.");
+                      }}>
+                        ↻ Restart Gateway
+                      </button>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => onTeardownPrime(p.id, p.name)}
+                      >
+                        Decommission
+                      </button>
+                    </>
+                  )}
+                  {isRemoved && (
+                    <button className="btn btn-sm btn-primary" onClick={() => onRedeployPrime(p.id)}>
+                      ↻ Re-deploy
+                    </button>
+                  )}
+                  {isTearingDown && (
+                    <span style={{ fontSize: 12, color: "var(--accent-primary)", padding: "5px 0" }}>Tearing down...</span>
+                  )}
+                </div>
               </div>
             );
           })}

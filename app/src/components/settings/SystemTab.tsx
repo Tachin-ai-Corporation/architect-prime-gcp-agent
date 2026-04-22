@@ -14,13 +14,12 @@ async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
 }
 
 interface SystemTabProps {
-  activePrime: string;
   versionInfo: VersionInfo | null;
   upgrading: boolean;
   setUpgrading: (v: boolean) => void;
 }
 
-export function SystemTab({ activePrime, versionInfo, upgrading, setUpgrading }: SystemTabProps) {
+export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabProps) {
   return (
     <>
       {/* Version & Upgrade */}
@@ -77,42 +76,6 @@ export function SystemTab({ activePrime, versionInfo, upgrading, setUpgrading }:
         ) : (
           <div style={{ color: "var(--text-tertiary)", fontSize: 13 }}>Loading version info...</div>
         )}
-      </div>
-
-      {/* Prime VM Operations */}
-      <div className={styles["settings-section"]}>
-        <div className={styles["settings-section-title"]}>Prime VM Operations</div>
-        <div style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 12 }}>
-          These operations execute on the Prime VM host via the command queue. They are deterministic and not affected by gateway restarts.
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" onClick={async () => {
-            if (!activePrime) return;
-            if (!confirm("Upgrade CoreKit on the Prime VM? This will also restart the gateway.")) return;
-            const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ type: "upgrade_corekit", args: { ref: versionInfo?.latestTag || "main" } }),
-            });
-            if (result?.id) alert(`CoreKit upgrade queued (command: ${result.id}). The command-runner will execute it.`);
-            else alert("Failed to queue upgrade command.");
-          }}>
-            ⬆ Upgrade CoreKit
-          </button>
-          <button className="btn btn-ghost" style={{ borderColor: "var(--border)" }} onClick={async () => {
-            if (!activePrime) return;
-            if (!confirm("Restart the OpenClaw gateway on the Prime VM?")) return;
-            const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ type: "gateway_restart", args: {} }),
-            });
-            if (result?.id) alert(`Gateway restart queued (command: ${result.id}).`);
-            else alert("Failed to queue restart command.");
-          }}>
-            ↻ Restart Gateway
-          </button>
-        </div>
       </div>
     </>
   );

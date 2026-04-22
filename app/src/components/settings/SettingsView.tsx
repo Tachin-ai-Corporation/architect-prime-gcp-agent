@@ -102,6 +102,7 @@ export function SettingsView(props: SettingsViewProps) {
             sidebarFleet={props.sidebarFleet}
             onTeardownPrime={props.onTeardownPrime}
             onRedeployPrime={props.onRedeployPrime}
+            versionInfo={props.versionInfo}
             copied={props.copied}
             setCopied={props.setCopied}
           />
@@ -126,7 +127,6 @@ export function SettingsView(props: SettingsViewProps) {
         )}
         {activeTab === "system" && (
           <SystemTab
-            activePrime={props.activePrime}
             versionInfo={props.versionInfo}
             upgrading={props.upgrading}
             setUpgrading={props.setUpgrading}
