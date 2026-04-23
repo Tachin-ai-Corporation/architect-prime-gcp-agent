@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenClaw Agent Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/app
+Environment=HOME=/root
+ExecStart=/usr/bin/pnpm openclaw gateway start
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

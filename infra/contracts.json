@@ -1,0 +1,27 @@
+{
+  "_comment": "Single source of truth for all cross-cutting values. Read by validate-contracts, bootstraps, and runtime scripts. Edit THIS file — the manifest installs it to VMs.",
+  "version": 1,
+  "openclaw": {
+    "pin": "041266a6699cac3baef8ef39db41fa26f29f9db3",
+    "pinLabel": "v2026.4.15"
+  },
+  "vertex": {
+    "location": "global",
+    "primaryModel": "gemini-3.1-pro-preview",
+    "subagentModel": "gemini-2.5-flash"
+  },
+  "agents": {
+    "defaultId": "cortex",
+    "gatewayRoute": "openclaw/cortex",
+    "subagentIds": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"]
+  },
+  "gateway": {
+    "port": 18789,
+    "timeoutSeconds": 120,
+    "bind": "loopback"
+  },
+  "env": {
+    "GOOGLE_GENAI_USE_VERTEXAI": "True",
+    "GCE_METADATA_HOST": "metadata.google.internal"
+  }
+}

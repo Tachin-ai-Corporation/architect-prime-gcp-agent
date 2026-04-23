@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-teardown — Decommission a fleet agent (cost → $0)
+#
+# Usage: fleet-teardown --name <agent-name>
+#
+# Single-project mode: deletes the fleet agent's VM and SA
+# from Prime's project, and removes the Firestore fleet entry.
+#
+# Cost items removed:
+#   - Compute VM (e2-small ~$13/mo)
+#   - Boot disk (20GB ~$0.80/mo)
+# ============================================================
+set -euo pipefail
+
+log() { echo "[$(date -Is)] [fleet-teardown] $*"; }
+warn() { echo "[$(date -Is)] [fleet-teardown] [WARN] $*" >&2; }
+die() { echo "[$(date -Is)] [fleet-teardown] [FATAL] $*" >&2; exit 1; }
+
+AGENT_NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) AGENT_NAME="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: fleet-teardown --name <agent-name>"
+      echo ""
+      echo "Deletes the agent's VM and unlinks billing."
+      echo "The GCP project shell is preserved for re-hiring."
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$AGENT_NAME" ]] || die "Missing --name"
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
+CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+
+# Single-project mode: fleet VMs are in Prime's project
+PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PRIME_PROJECT" ]] || die "Cannot resolve PRIME_PROJECT from metadata"
+
+FLEET_PROJECT="${PRIME_PROJECT}"
+VM_NAME="fleet-${AGENT_NAME}"
+
+# Prime ID for Firestore operations
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || true)"
+fi
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PRIME_PROJECT}/databases/(default)/documents"
+
+# Resolve zone from registry or default
+ZONE="us-central1-a"
+if [[ -f "$REGISTRY_FILE" ]]; then
+  REG_ZONE="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].zone // ""' "$REGISTRY_FILE" 2>/dev/null || true)"
+  [[ -n "$REG_ZONE" ]] && ZONE="$REG_ZONE"
+fi
+
+CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
+
+log "Tearing down fleet agent: ${AGENT_NAME}"
+log "  Project: ${FLEET_PROJECT} (single-project mode)"
+log "  VM:      ${VM_NAME}"
+log "  Zone:    ${ZONE}"
+
+# ---- Write teardown progress to Firestore ----
+write_deploy_step() {
+  local step_id="$1"
+  local step_label="$2"
+  local step_status="${3:-done}"
+  local step_detail="${4:-}"
+  local new_status="${5:-tearing_down}"
+
+  [[ -n "$PRIME_ID" ]] || return 0
+
+  local token
+  token="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || return 0
+
+  python3 - <<PYEOF "$token" "$step_id" "$step_label" "$step_status" "$step_detail" "$new_status"
+import sys, json, urllib.request
+from datetime import datetime, timezone
+
+token, step_id, step_label, step_status, step_detail, new_status = sys.argv[1:7]
+url = "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}"
+now = datetime.now(timezone.utc).isoformat()
+
+try:
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req) as resp:
+        doc = json.loads(resp.read())
+except:
+    doc = {}
+
+existing_steps = []
+if "fields" in doc and "deploySteps" in doc["fields"]:
+    existing_steps = doc["fields"]["deploySteps"].get("arrayValue", {}).get("values", [])
+
+new_step = {"mapValue": {"fields": {
+    "id": {"stringValue": step_id},
+    "label": {"stringValue": step_label},
+    "status": {"stringValue": step_status},
+    "timestamp": {"stringValue": now},
+}}}
+if step_detail:
+    new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
+existing_steps.append(new_step)
+
+fields = {
+    "status": {"stringValue": new_status},
+    "deploySteps": {"arrayValue": {"values": existing_steps}},
+    "actionRequired": {"nullValue": None},
+}
+body = json.dumps({"fields": fields}).encode()
+mask = "updateMask.fieldPaths=status&updateMask.fieldPaths=deploySteps&updateMask.fieldPaths=actionRequired"
+req = urllib.request.Request(f"{url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except:
+    pass
+PYEOF
+}
+
+# Initialize teardown with fresh steps
+write_deploy_step "teardown_started" "Teardown initiated" "done" ""
+
+# ---- 1. Delete VM (and its boot disk) ----
+if gcloud compute instances describe "$VM_NAME" \
+     --project="$FLEET_PROJECT" --zone="$ZONE" &>/dev/null; then
+  log "Deleting VM: ${VM_NAME}"
+  gcloud compute instances delete "$VM_NAME" \
+    --project="$FLEET_PROJECT" \
+    --zone="$ZONE" \
+    --delete-disks=all \
+    --quiet 2>/dev/null
+  log "VM deleted"
+  write_deploy_step "vm_deleted" "VM deleted" "done" "${VM_NAME}"
+else
+  log "No VM found (already deleted or never created)"
+  write_deploy_step "vm_deleted" "VM already removed" "skipped"
+fi
+
+# ---- 2. Service account — KEEP (free, preserves IAM bindings for re-hire) ----
+FLEET_SA_EMAIL="fleet-${AGENT_NAME}@${FLEET_PROJECT}.iam.gserviceaccount.com"
+log "Keeping service account: ${FLEET_SA_EMAIL} (IAM bindings preserved for re-hire)"
+write_deploy_step "sa_kept" "Service account preserved" "done" "${FLEET_SA_EMAIL}"
+
+# ---- 3. Mark as removed in Firestore (preserve doc for dashboard) ----
+if [[ -n "$PRIME_ID" ]]; then
+  log "Marking as removed in Firestore: primes/${PRIME_ID}/fleet/${AGENT_NAME}"
+  write_deploy_step "teardown_complete" "Teardown complete" "done" "VM + SA removed" "removed"
+fi
+
+# ---- 4. Update local registry ----
+if [[ -f "$REGISTRY_FILE" ]]; then
+  log "Updating fleet registry (removing agent)"
+  jq --arg name "$AGENT_NAME" \
+     'del(.agents[$name]) | .lastUpdated = (now | todate)' \
+    "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
+fi
+
+# ---- 5. Notify via Chat ----
+if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
+  export CHAT_SPACE_ID OC_HOST_ROOT
+  "$CHAT_SEND" "🔥 Fleet agent *${AGENT_NAME}* decommissioned. VM and SA deleted." || true
+fi
+
+log "Done. Agent '${AGENT_NAME}' fully removed from project '${FLEET_PROJECT}'."
+log "  To re-hire: fleet-deploy --name ${AGENT_NAME} --specialty <desc> --agent-email <email>"

@@ -1,0 +1,18 @@
+[Unit]
+Description=Architect Prime Command Runner (Deterministic Operations)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=POLL_INTERVAL=5
+ExecStart=/opt/openclaw/.openclaw/bin/command-runner
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

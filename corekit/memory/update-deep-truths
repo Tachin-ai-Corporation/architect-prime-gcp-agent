@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# ============================================================
+# update-deep-truths — Safely update the Deep Truths section
+#                       of Cortex's SOUL.md
+#
+# This script enforces immutability: ONLY the content after
+# the "## Deep Truths" marker is modified. Everything above
+# that marker is never touched.
+#
+# Usage:
+#   update-deep-truths --add "Concise fact to remember"
+#   update-deep-truths --remove "Exact fact text to remove"
+#   update-deep-truths --list
+#
+# Environment:
+#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#
+# Safety constraints:
+#   - Max 10 items in Deep Truths
+#   - Each item must be a single line (no newlines)
+#   - Only single-line bullet points ("- ...")
+#   - If adding would exceed 10, oldest item is removed
+# ============================================================
+set -euo pipefail
+
+log() { echo "[$(date -Is)] [update-deep-truths] $*"; }
+die() { echo "[$(date -Is)] [update-deep-truths] [FATAL] $*" >&2; exit 1; }
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+SOUL_FILE="${OC_HOST_ROOT}/.openclaw/workspace/SOUL.md"
+
+# Fallback for dev environments
+if [[ ! -f "$SOUL_FILE" && -f "${HOME}/.openclaw/workspace/SOUL.md" ]]; then
+  SOUL_FILE="${HOME}/.openclaw/workspace/SOUL.md"
+fi
+
+[[ -f "$SOUL_FILE" ]] || die "SOUL.md not found: $SOUL_FILE"
+
+ACTION=""
+FACT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --add) ACTION="add"; FACT="$2"; shift 2 ;;
+    --remove) ACTION="remove"; FACT="$2"; shift 2 ;;
+    --list) ACTION="list"; shift ;;
+    --help|-h)
+      echo "Usage: update-deep-truths --add \"fact\" | --remove \"fact\" | --list"
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$ACTION" ]] || die "Missing action. Use --add, --remove, or --list"
+
+# ---- Find the Deep Truths marker ----
+MARKER="## Deep Truths"
+MARKER_LINE=$(grep -n "^${MARKER}$" "$SOUL_FILE" | head -1 | cut -d: -f1)
+
+if [[ -z "$MARKER_LINE" ]]; then
+  die "Cannot find '${MARKER}' section in SOUL.md — refusing to modify"
+fi
+
+# ---- Split file into immutable header + deep truths section ----
+TOTAL_LINES=$(wc -l < "$SOUL_FILE")
+
+# Header = everything up to and including the marker line
+HEADER=$(head -n "$MARKER_LINE" "$SOUL_FILE")
+
+# Deep truths section = everything after the marker line
+DEEP_TRUTHS_START=$((MARKER_LINE + 1))
+if [[ $DEEP_TRUTHS_START -le $TOTAL_LINES ]]; then
+  DEEP_TRUTHS=$(tail -n "+${DEEP_TRUTHS_START}" "$SOUL_FILE")
+else
+  DEEP_TRUTHS=""
+fi
+
+# ---- Extract the HTML comment (preserve it) ----
+COMMENT_LINE=""
+if echo "$DEEP_TRUTHS" | head -3 | grep -q '<!-- '; then
+  # Extract comment lines (may span 2 lines)
+  COMMENT_LINE=$(echo "$DEEP_TRUTHS" | grep -E '^\s*<!--' -A1 | head -2)
+fi
+
+# ---- Extract current facts (lines starting with "- ") ----
+CURRENT_FACTS=$(echo "$DEEP_TRUTHS" | grep '^- ' || true)
+
+# ---- Execute action ----
+case "$ACTION" in
+  list)
+    if [[ -z "$CURRENT_FACTS" ]]; then
+      echo "No deep truths found."
+    else
+      echo "Deep Truths ($(echo "$CURRENT_FACTS" | wc -l) items):"
+      echo "$CURRENT_FACTS"
+    fi
+    exit 0
+    ;;
+
+  add)
+    [[ -n "$FACT" ]] || die "Empty fact — nothing to add"
+
+    # Validate: single line, no newlines
+    if [[ "$FACT" == *$'\n'* ]]; then
+      die "Facts must be single-line. Got multi-line input."
+    fi
+
+    # Check for duplicate
+    FACT_BULLET="- ${FACT}"
+    if echo "$CURRENT_FACTS" | grep -qF "$FACT_BULLET"; then
+      log "Fact already exists in Deep Truths — skipping"
+      echo "Already exists: ${FACT}"
+      exit 0
+    fi
+
+    # Add the new fact
+    if [[ -n "$CURRENT_FACTS" ]]; then
+      NEW_FACTS="${CURRENT_FACTS}
+${FACT_BULLET}"
+    else
+      NEW_FACTS="$FACT_BULLET"
+    fi
+
+    # Enforce max 10 items — remove oldest (first) if exceeded
+    FACT_COUNT=$(echo "$NEW_FACTS" | wc -l)
+    if [[ $FACT_COUNT -gt 10 ]]; then
+      REMOVED=$(echo "$NEW_FACTS" | head -1)
+      NEW_FACTS=$(echo "$NEW_FACTS" | tail -n +2)
+      log "Exceeded 10 items — archived oldest: ${REMOVED}"
+    fi
+
+    log "Added deep truth: ${FACT}"
+    ;;
+
+  remove)
+    [[ -n "$FACT" ]] || die "Empty fact — nothing to remove"
+
+    FACT_BULLET="- ${FACT}"
+    if ! echo "$CURRENT_FACTS" | grep -qF "$FACT_BULLET"; then
+      log "Fact not found in Deep Truths"
+      echo "Not found: ${FACT}"
+      exit 0
+    fi
+
+    NEW_FACTS=$(echo "$CURRENT_FACTS" | grep -vF "$FACT_BULLET" || true)
+    log "Removed deep truth: ${FACT}"
+    ;;
+esac
+
+# ---- Reassemble SOUL.md ----
+{
+  echo "$HEADER"
+  if [[ -n "$COMMENT_LINE" ]]; then
+    echo "$COMMENT_LINE"
+  fi
+  if [[ -n "$NEW_FACTS" ]]; then
+    echo "$NEW_FACTS"
+  fi
+  echo ""
+} > "${SOUL_FILE}.tmp"
+
+# ---- Verify immutability: header must be identical ----
+ORIGINAL_HEADER=$(head -n "$MARKER_LINE" "$SOUL_FILE")
+REBUILT_HEADER=$(head -n "$MARKER_LINE" "${SOUL_FILE}.tmp")
+
+if [[ "$ORIGINAL_HEADER" != "$REBUILT_HEADER" ]]; then
+  rm -f "${SOUL_FILE}.tmp"
+  die "IMMUTABILITY VIOLATION — header changed during rebuild. Aborting."
+fi
+
+# ---- Atomic swap ----
+mv -f "${SOUL_FILE}.tmp" "$SOUL_FILE"
+echo "OK"

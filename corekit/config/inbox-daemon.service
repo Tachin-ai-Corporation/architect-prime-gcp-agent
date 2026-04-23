@@ -1,0 +1,19 @@
+[Unit]
+Description=Architect Prime Inbox Daemon (DWD Chat Polling)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=AGENT_ID=prime
+Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=POLL_INTERVAL=10
+ExecStart=/opt/openclaw/.openclaw/bin/inbox-daemon
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

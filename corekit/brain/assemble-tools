@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# ============================================================
+# assemble-tools — Build TOOLS.md from self-describing SKILL.md files
+#
+# Reads agent-types.json to determine which skills this agent
+# has, then concatenates their SKILL.md files into a single
+# TOOLS.md that OpenClaw reads as part of the workspace.
+#
+# Usage: assemble-tools [agent-type]
+#   agent-type defaults to "prime"
+#
+# Environment:
+#   OC_HOST_ROOT — OpenClaw root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+AGENT_TYPE="${1:-prime}"
+OC="${OC_HOST_ROOT:-/opt/openclaw}/.openclaw"
+SKILLS_DIR="${OC}/skills"
+TYPES_FILE="${OC}/corekit/agent-types.json"
+WORKSPACE="${OC}/workspace"
+OUT="${WORKSPACE}/TOOLS.md"
+
+# Determine skill list
+if [[ "$AGENT_TYPE" == "prime" ]]; then
+  SKILLS="agent-ask fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade"
+elif [[ -f "$TYPES_FILE" ]]; then
+  SKILLS="$(python3 -c "
+import json, sys
+spec = '$AGENT_TYPE'
+types = json.load(open('$TYPES_FILE'))['types']
+for t in types:
+    if t['id'] == spec:
+        print(' '.join(t.get('skills', ['agent-ask'])))
+        sys.exit(0)
+print('agent-ask')
+" 2>/dev/null || echo "agent-ask")"
+else
+  SKILLS="agent-ask"
+fi
+
+# Assemble TOOLS.md
+{
+  echo "# Tools — Architect Prime"
+  echo ""
+  echo "The following skills are available. Use exec to run the commands described."
+  echo ""
+  for skill in $SKILLS; do
+    SKILL_FILE="${SKILLS_DIR}/${skill}/SKILL.md"
+    if [[ -f "$SKILL_FILE" ]]; then
+      echo "---"
+      echo ""
+      cat "$SKILL_FILE"
+      echo ""
+    fi
+  done
+} > "$OUT"
+
+echo "Assembled $(echo $SKILLS | wc -w) skills into ${OUT}"

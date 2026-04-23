@@ -1,0 +1,44 @@
+# infra/manifests/base.txt
+# Tools and config every agent needs (Prime and Fleet)
+# Installed by: infra/install.sh (always, regardless of --role)
+
+# Contracts (single source of truth)
+infra/contracts.json .openclaw/corekit/contracts.json
+
+# Core tools — system utilities
+corekit/system/upgrade-corekit .openclaw/bin/upgrade-corekit
+corekit/system/validate-contracts .openclaw/bin/validate-contracts
+corekit/system/web-search .openclaw/bin/web-search
+
+# Core tools — gateway
+corekit/gateway/render-config .openclaw/bin/render-config
+corekit/gateway/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh
+corekit/gateway/upgrade-openclaw .openclaw/bin/upgrade-openclaw
+corekit/gateway/oc .openclaw/bin/oc
+
+# Chat tools (DWD)
+corekit/chat/dwd-token .openclaw/bin/dwd-token
+corekit/chat/chat-send .openclaw/bin/chat-send
+corekit/chat/chat-read .openclaw/bin/chat-read
+corekit/chat/inbox-daemon .openclaw/bin/inbox-daemon
+
+# Brain tools
+corekit/brain/agent-ask .openclaw/bin/agent-ask
+corekit/brain/brain-exec .openclaw/bin/brain-exec
+corekit/brain/build-system-prompt .openclaw/bin/build-system-prompt
+
+# Config
+corekit/README.md .openclaw/corekit/README.md
+corekit/exec-approvals.json .openclaw/exec-approvals.json
+corekit/config/agent-types.json .openclaw/corekit/agent-types.json
+corekit/config/chat-config.json.tmpl .openclaw/corekit/chat-config.json.tmpl
+corekit/config/inbox-daemon.service .openclaw/corekit/inbox-daemon.service
+corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.service
+
+# Config templates (both needed for render-config)
+corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
+corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl
+
+# Agent runtime skeleton
+brain/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
+brain/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json

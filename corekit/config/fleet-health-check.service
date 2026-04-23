@@ -1,0 +1,13 @@
+[Unit]
+Description=Fleet Health Check — monitor fleet agent gateways
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/openclaw/.openclaw/bin/fleet-health-check
+User=root
+Environment=OC_HOST_ROOT=/opt/openclaw
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=300

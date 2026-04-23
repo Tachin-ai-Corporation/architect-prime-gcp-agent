@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# ============================================================
+# dashboard-respond — Write a Prime response to Firestore
+#
+# Used by Cortex when sub-agent announces trigger a follow-up
+# response that can't go through control-daemon (async delivery).
+# Writes directly to /primes/{PRIME_ID}/messages/ in Firestore.
+#
+# Usage:
+#   dashboard-respond "Your synthesized response text here"
+#   echo "response text" | dashboard-respond --stdin
+#
+# Environment:
+#   PRIME_ID       — Prime instance ID (required)
+#   GCP_PROJECT_ID — Firestore project (required)
+# ============================================================
+set -euo pipefail
+
+PRIME_ID="${PRIME_ID:?PRIME_ID required}"
+GCP_PROJECT_ID="${GCP_PROJECT_ID:?GCP_PROJECT_ID required}"
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+
+log() { echo "[dashboard-respond] $*" >&2; }
+
+# ---- Get access token from VM metadata ----
+get_token() {
+  curl -sH "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])"
+}
+
+# ---- Parse input ----
+TEXT=""
+case "${1:-}" in
+  --stdin) TEXT="$(cat)" ;;
+  --help|-h)
+    echo "Usage: dashboard-respond \"<text>\""
+    echo "       echo \"text\" | dashboard-respond --stdin"
+    exit 0
+    ;;
+  "") echo "ERROR: No text provided" >&2; exit 1 ;;
+  *) TEXT="$1" ;;
+esac
+
+[[ -n "$TEXT" ]] || { echo "ERROR: Empty text" >&2; exit 1; }
+
+# ---- Write to Firestore ----
+TOKEN="$(get_token)"
+MSG_ID="msg-$(date +%s%N)"
+TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+BODY=$(python3 -c "
+import json, sys
+text = sys.stdin.read()
+doc = {
+    'fields': {
+        'sender': {'stringValue': 'prime'},
+        'text': {'stringValue': text},
+        'timestamp': {'timestampValue': '$TIMESTAMP'},
+        'processed': {'booleanValue': True}
+    }
+}
+print(json.dumps(doc))
+" <<< "$TEXT")
+
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X PATCH \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$BODY" \
+  "${FIRESTORE_URL}/primes/${PRIME_ID}/messages/${MSG_ID}")
+
+if [[ "$HTTP_CODE" == "200" ]]; then
+  log "Delivered to dashboard (${MSG_ID})"
+else
+  log "ERROR: Firestore write failed (HTTP ${HTTP_CODE})"
+  exit 1
+fi

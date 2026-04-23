@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+# ============================================================
+# inbox-daemon — Google Chat ↔ OpenClaw bridge (DWD)
+#
+# Simple, robust message loop:
+#   1. Poll Chat spaces for new messages (DWD impersonation)
+#   2. Route user messages to OpenClaw gateway API
+#   3. Reply in the same Chat space
+#
+# Design decisions:
+#   - High-water-mark dedup: track latest timestamp, skip older
+#   - Mark before process: prevent duplicate responses
+#   - Never send errors to Chat: log them, don't spam the user
+#   - No built-in commands: OpenClaw handles everything
+#   - Single-threaded: one message at a time, no race conditions
+#
+# Runs as a systemd service. ONE instance per agent.
+#
+# Environment:
+#   AGENT_ID          — Agent identifier (from VM metadata)
+#   AGENT_USER_EMAIL  — Workspace email (from chat-config.json)
+#   OC_HOST_ROOT      — OpenClaw host root (default: /opt/openclaw)
+#   POLL_INTERVAL     — Seconds between polls (default: 15)
+#   PROCESS_TIMEOUT   — Max seconds per OpenClaw call (default: 120)
+# ============================================================
+set -euo pipefail
+
+# ==== CONFIG ====
+AGENT_ID="${AGENT_ID:-agent}"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+POLL_INTERVAL="${POLL_INTERVAL:-15}"
+PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-120}"
+CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+CHAT_API="https://chat.googleapis.com/v1"
+DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
+CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+OC_GATEWAY="http://localhost:18789"
+OC_TOKEN="$(cat /root/.openclaw/.gateway-token 2>/dev/null || echo 'no-token')"
+
+# State files
+STATE_DIR="/var/lib/inbox-daemon"
+mkdir -p "$STATE_DIR"
+SEEN_FILE="${STATE_DIR}/seen.json"       # { "msg_name": true, ... }
+HW_FILE="${STATE_DIR}/highwater"          # latest seen createTime
+SPACES_FILE="${STATE_DIR}/spaces.json"    # cached space list
+
+# ==== LOGGING ====
+log()  { echo "[$(date -Iseconds)] [inbox] $*"; }
+warn() { echo "[$(date -Iseconds)] [inbox] WARN: $*" >&2; }
+die()  { echo "[$(date -Iseconds)] [inbox] FATAL: $*" >&2; exit 1; }
+
+# ==== DEPS CHECK ====
+command -v python3 >/dev/null || die "python3 not found"
+command -v jq      >/dev/null || die "jq not found"
+[[ -x "$DWD_TOKEN_BIN" ]]    || die "dwd-token not found at $DWD_TOKEN_BIN"
+
+if [[ -z "${AGENT_USER_EMAIL:-}" && -f "$CHAT_CONFIG" ]]; then
+  AGENT_USER_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CONFIG" 2>/dev/null || true)"
+fi
+[[ -n "${AGENT_USER_EMAIL:-}" ]] || die "AGENT_USER_EMAIL is required"
+
+# Resolve @-mention text: the deterministic "FirstName LastName" from Workspace
+# Used to filter: only process messages that @-mention the agent
+AGENT_MENTION="${AGENT_MENTION:-}"
+if [[ -z "$AGENT_MENTION" && -f "$CHAT_CONFIG" ]]; then
+  AGENT_MENTION="$(jq -r '.agentMention // empty' "$CHAT_CONFIG" 2>/dev/null || true)"
+fi
+if [[ -z "$AGENT_MENTION" ]]; then
+  # Fallback: derive from display name
+  AGENT_MENTION="$(jq -r '.agentDisplayName // empty' "$CHAT_CONFIG" 2>/dev/null || true)"
+fi
+[[ -n "$AGENT_MENTION" ]] || die "AGENT_MENTION is required (set agentMention in chat-config.json)"
+
+# ==== INIT STATE ====
+[[ -f "$SEEN_FILE" ]]   || echo '{}' > "$SEEN_FILE"
+[[ -f "$SPACES_FILE" ]] || echo '[]' > "$SPACES_FILE"
+# High-water starts at NOW so we only process future messages
+[[ -f "$HW_FILE" ]] || date -u +%Y-%m-%dT%H:%M:%S.000000Z > "$HW_FILE"
+
+log "Starting: agent=${AGENT_ID} email=${AGENT_USER_EMAIL} mention='${AGENT_MENTION}' poll=${POLL_INTERVAL}s"
+
+# ==== DWD HEALTHCHECK (exponential backoff) ====
+# The Workspace user may not exist yet during initial deploy.
+# Back off patiently instead of crash-looping:
+#   10s → 30s → 60s → 120s → 300s (total ~10 min over 10 attempts)
+DWD_MAX_ATTEMPTS=10
+DWD_BACKOFF=10
+for i in $(seq 1 $DWD_MAX_ATTEMPTS); do
+  "$DWD_TOKEN_BIN" --user "$AGENT_USER_EMAIL" >/dev/null 2>&1 && break
+  if [[ $i -eq $DWD_MAX_ATTEMPTS ]]; then
+    die "DWD healthcheck failed after ${DWD_MAX_ATTEMPTS} attempts (~10 min). Workspace user '${AGENT_USER_EMAIL}' may not exist."
+  fi
+  log "DWD attempt ${i}/${DWD_MAX_ATTEMPTS} failed, retrying in ${DWD_BACKOFF}s..."
+  sleep "$DWD_BACKOFF"
+  # Exponential backoff: 10 → 30 → 60 → 120 → 300 → 300 ...
+  DWD_BACKOFF=$(( DWD_BACKOFF < 300 ? DWD_BACKOFF * 2 : 300 ))
+done
+log "DWD healthcheck OK"
+
+# ==== HELPERS ====
+
+get_dwd_token() {
+  "$DWD_TOKEN_BIN" --user "$AGENT_USER_EMAIL" \
+    --scope "https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly" \
+    2>/dev/null
+}
+
+# Discover spaces — called infrequently
+LAST_SPACE_DISCOVERY=0
+discover_spaces() {
+  local now; now="$(date +%s)"
+  local elapsed=$(( now - LAST_SPACE_DISCOVERY ))
+  # Only re-discover every 5 minutes (or on first call)
+  [[ $elapsed -lt 300 && -s "$SPACES_FILE" ]] && return 0
+
+  local token; token="$(get_dwd_token)" || return 1
+  local resp
+  resp="$(curl -sf -H "Authorization: Bearer ${token}" \
+    "${CHAT_API}/spaces?pageSize=100" 2>/dev/null)" || {
+    warn "spaces.list failed"; return 1
+  }
+
+  # Extract space names to simple JSON array
+  echo "$resp" | python3 -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+names = [s['name'] for s in data.get('spaces', []) if s.get('name')]
+json.dump(names, open('$SPACES_FILE', 'w'))
+print(f'Discovered {len(names)} space(s)')
+" 2>/dev/null || warn "Failed to parse spaces"
+  LAST_SPACE_DISCOVERY="$now"
+}
+
+# Check + mark seen (atomic: returns 0 if already seen, 1 if new)
+check_and_mark() {
+  local msg_name="$1"
+  python3 -c "
+import json, sys
+f = '$SEEN_FILE'
+try:
+    seen = json.load(open(f))
+except:
+    seen = {}
+if '$msg_name' in seen:
+    sys.exit(0)  # already seen
+seen['$msg_name'] = True
+# Prune to last 200
+if len(seen) > 200:
+    keys = list(seen.keys())
+    seen = {k: True for k in keys[-200:]}
+json.dump(seen, open(f, 'w'))
+sys.exit(1)  # new message
+" 2>/dev/null
+}
+
+# Call OpenClaw gateway — ALL text handling in Python (no bash string expansion)
+# Input: message text as $1 argument
+# Output: response text on stdout
+call_openclaw() {
+  local msg_text="$1"
+  OC_GW="$OC_GATEWAY" OC_TK="$OC_TOKEN" OC_TIMEOUT="$PROCESS_TIMEOUT" \
+  OC_MSG_TEXT="$msg_text" \
+  python3 << 'PYEOF'
+import json, sys, urllib.request, unicodedata, re, os
+
+# Read text from environment variable (not stdin — heredoc steals stdin)
+text = os.environ.get('OC_MSG_TEXT', '').strip()
+if not text:
+    print('Empty message text', file=sys.stderr)
+    sys.exit(1)
+
+# Layer 2: Canonical normalization
+text = unicodedata.normalize('NFC', text)
+text = re.sub(r'\s+', ' ', text).strip()
+
+gw = os.environ.get('OC_GW', 'http://localhost:18789')
+token = os.environ.get('OC_TK', '')
+timeout = int(os.environ.get('OC_TIMEOUT', '120'))
+
+# Read gateway route from contracts.json (single source of truth)
+gateway_route = 'openclaw/cortex'  # fallback
+contracts_paths = [
+    os.path.expanduser('~/.openclaw/corekit/contracts.json'),
+    '/opt/openclaw/.openclaw/corekit/contracts.json'
+]
+for cp in contracts_paths:
+    if os.path.isfile(cp):
+        try:
+            with open(cp) as f:
+                gateway_route = json.load(f)['agents']['gatewayRoute']
+            break
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+# Build request payload (safe — no shell interpolation)
+payload = json.dumps({
+    'model': gateway_route,
+    'messages': [{'role': 'user', 'content': text}]
+})
+
+try:
+    req = urllib.request.Request(
+        f'{gw}/v1/chat/completions',
+        data=payload.encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        },
+        method='POST'
+    )
+    resp = urllib.request.urlopen(req, timeout=timeout)
+    data = json.loads(resp.read())
+    choices = data.get('choices', [])
+    if choices:
+        content = choices[0].get('message', {}).get('content', '')
+        if content:
+            print(content[:3800])
+            sys.exit(0)
+        else:
+            print(f'Empty content from OpenClaw', file=sys.stderr)
+    else:
+        print(f'No choices from OpenClaw', file=sys.stderr)
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+
+sys.exit(1)
+PYEOF
+}
+
+# ==== MAIN LOOP ====
+log "Entering poll loop"
+CYCLE=0
+
+while true; do
+  CYCLE=$((CYCLE + 1))
+
+  # Discover spaces (cached, refreshes every 5min)
+  discover_spaces 2>/dev/null || true
+
+  # Get token for this cycle
+  TOKEN="$(get_dwd_token 2>/dev/null)" || {
+    warn "DWD token failed, sleeping"
+    sleep "$POLL_INTERVAL"; continue
+  }
+
+  # Read space list
+  SPACE_LIST="$(cat "$SPACES_FILE" 2>/dev/null)"
+  SPACE_COUNT="$(echo "$SPACE_LIST" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)"
+
+  if [[ "$SPACE_COUNT" -eq 0 ]]; then
+    [[ $((CYCLE % 20)) -eq 1 ]] && log "No spaces — waiting to be added to a Chat space"
+    sleep "$POLL_INTERVAL"; continue
+  fi
+
+  # Read high-water mark
+  HW="$(cat "$HW_FILE" 2>/dev/null || echo '1970-01-01T00:00:00.000000Z')"
+
+  # Collect new messages across all spaces into temp file
+  BATCH="/tmp/inbox-batch-$$.jsonl"
+  : > "$BATCH"
+
+  echo "$SPACE_LIST" | python3 -c "
+import json, sys
+for name in json.load(sys.stdin):
+    print(name)
+" 2>/dev/null | while IFS= read -r space; do
+    [[ -n "$space" ]] || continue
+    RAW="$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+      "${CHAT_API}/${space}/messages?pageSize=10&orderBy=createTime%20desc" 2>/dev/null)" || continue
+
+    echo "$RAW" | python3 -c "
+import json, sys
+data = json.loads(sys.stdin.read())
+hw = '$HW'
+for msg in reversed(data.get('messages', [])):
+    ct = msg.get('createTime', '')
+    if ct and ct <= hw:
+        continue
+    sender = msg.get('sender', {})
+    sender_type = sender.get('type', sender.get('domainId', ''))
+    print(json.dumps({
+        'name': msg.get('name',''),
+        'text': msg.get('text','') or msg.get('argumentText','') or '',
+        'email': sender.get('email',''),
+        'display': sender.get('displayName',''),
+        'senderType': sender_type,
+        'space': msg.get('space',{}).get('name',''),
+        'time': ct
+    }))
+" 2>/dev/null >> "$BATCH"
+  done
+
+  # Process batch (read from file, NOT pipe — stays in main shell)
+  if [[ -s "$BATCH" ]]; then
+    while IFS= read -r line; do
+      NAME="$(echo "$line" | jq -r '.name')"
+      [[ -n "$NAME" && "$NAME" != "null" ]] || continue
+
+      # Atomic check-and-mark: skip if already seen
+      if check_and_mark "$NAME"; then
+        continue  # already processed
+      fi
+
+      # Extract fields and filter/clean in Python (safe for ALL characters)
+      MSGFILE="/tmp/inbox-msg-$$.json"
+      AGENT_MENTION_ENV="$AGENT_MENTION" python3 -c "
+import json, sys, os
+msg = json.loads(sys.stdin.read())
+mention = os.environ.get('AGENT_MENTION_ENV', '')
+text = msg.get('text', '') or ''
+
+# @-mention filter: skip messages not directed at this agent
+if mention not in text:
+    sys.exit(1)
+
+# Strip @-mention and normalize whitespace
+clean = text.replace('@' + mention, '').strip()
+clean = ' '.join(clean.split())  # collapse whitespace
+if not clean:
+    clean = text
+
+json.dump({
+    'clean': clean,
+    'display': msg.get('display', ''),
+    'space': msg.get('space', ''),
+    'time': msg.get('time', '')
+}, open('$MSGFILE', 'w'))
+" <<< "$line" 2>/dev/null || { rm -f "$MSGFILE"; continue; }
+
+      # Read processed message
+      DISPLAY="$(jq -r '.display' "$MSGFILE")"
+      SPACE="$(jq -r '.space' "$MSGFILE")"
+      MSGTIME="$(jq -r '.time' "$MSGFILE")"
+      CLEAN="$(jq -r '.clean' "$MSGFILE")"
+      rm -f "$MSGFILE"
+
+      log "MSG from=${DISPLAY} space=${SPACE} text=\"${CLEAN:0:60}\""
+
+      # Call OpenClaw — pass clean text as argument (no bash expansion via env var)
+      # IMPORTANT: must not let call_openclaw failure kill the daemon (set -e)
+      REPLY_FILE="/tmp/inbox-reply-$$.txt"
+      REPLY_ERR="/tmp/inbox-err-$$.txt"
+      if call_openclaw "$CLEAN" > "$REPLY_FILE" 2> "$REPLY_ERR"; then
+        REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
+      else
+        OC_ERR="$(cat "$REPLY_ERR" 2>/dev/null)"
+        warn "call_openclaw failed (exit $?): ${OC_ERR:0:200}"
+        REPLY=""
+      fi
+      rm -f "$REPLY_FILE" "$REPLY_ERR"
+
+      # Only send non-empty, real responses to Chat
+      if [[ -n "$REPLY" && ${#REPLY} -gt 2 ]]; then
+        CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
+          "$CHAT_SEND" "$REPLY" 2>/dev/null || warn "chat-send failed for ${SPACE}"
+        log "REPLY sent to ${SPACE} (${#REPLY} chars)"
+      else
+        warn "No usable response from OpenClaw for: ${CLEAN:0:60}"
+      fi
+
+      # Advance high-water mark
+      if [[ -n "$MSGTIME" && "$MSGTIME" > "$HW" ]]; then
+        HW="$MSGTIME"
+        echo "$HW" > "$HW_FILE"
+      fi
+
+      sleep 1
+    done < "$BATCH"
+  fi
+
+  rm -f "$BATCH"
+  sleep "$POLL_INTERVAL"
+done

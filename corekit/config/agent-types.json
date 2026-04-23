@@ -1,0 +1,95 @@
+{
+  "types": [
+    {
+      "id": "devops",
+      "title": "DevOps Engineer",
+      "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
+      "emailPattern": "devops-agent-{name}",
+      "workspace": "devops",
+      "skills": ["agent-ask"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec", "process"],
+        "deny": ["web-search", "browser"]
+      }
+    },
+    {
+      "id": "swe",
+      "title": "Software Engineer",
+      "specialty": "Full-stack development, code review, debugging, API design, architecture, testing",
+      "emailPattern": "swe-agent-{name}",
+      "workspace": "engineer",
+      "skills": ["agent-ask"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec", "process"],
+        "deny": ["web-search", "browser"]
+      }
+    },
+    {
+      "id": "qa",
+      "title": "QA Engineer",
+      "specialty": "Test planning, test automation, regression testing, performance testing, quality gates",
+      "emailPattern": "qa-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec", "process"],
+        "deny": ["web-search", "browser"]
+      }
+    },
+    {
+      "id": "pm",
+      "title": "Project Manager",
+      "specialty": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
+      "emailPattern": "pm-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec"],
+        "deny": ["web-search", "browser", "process"]
+      }
+    },
+    {
+      "id": "finance",
+      "title": "Finance Analyst",
+      "specialty": "Budget tracking, cost analysis, financial reporting, forecasting, vendor management",
+      "emailPattern": "finance-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec"],
+        "deny": ["web-search", "browser", "process"]
+      }
+    },
+    {
+      "id": "data",
+      "title": "Data Engineer",
+      "specialty": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
+      "emailPattern": "data-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec", "process"],
+        "deny": ["web-search", "browser"]
+      }
+    },
+    {
+      "id": "security",
+      "title": "Security Engineer",
+      "specialty": "IAM audit, compliance, vulnerability assessment, security architecture, incident response",
+      "emailPattern": "security-agent-{name}",
+      "workspace": "fleet",
+      "skills": ["agent-ask"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "exec"],
+        "deny": ["web-search", "browser", "write", "edit"]
+      }
+    }
+  ]
+}

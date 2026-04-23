@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# ============================================================
+# web-search — Vertex AI Google Search Grounding
+#
+# Performs a web search using Gemini with Google Search grounding.
+# Returns a grounded answer with source citations.
+#
+# Usage:
+#   web-search "what is the latest GKE version?"
+#   echo "query" | web-search --stdin
+#
+# This is an OpenClaw exec skill — agents call it via:
+#   exec web-search "your query here"
+#
+# Environment:
+#   GEMINI_MODEL — Model to use (default: gemini-2.0-flash)
+#   REGION       — GCP region (default: us-central1)
+# ============================================================
+set -euo pipefail
+
+GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.0-flash}"
+REGION="${REGION:-us-central1}"
+MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-4096}"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+
+die() { echo "[web-search] ERROR: $*" >&2; exit 1; }
+
+# ---- Get access token from GCE metadata ----
+get_token() {
+  curl -s -f \
+    -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | grep -o '"access_token":"[^"]*"' | sed 's/"access_token":"\([^"]*\)"/\1/'
+}
+
+# ---- Get project ID ----
+get_project() {
+  curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo ""
+}
+
+# ---- Parse query ----
+QUERY=""
+case "${1:-}" in
+  --stdin)
+    QUERY="$(cat)"
+    ;;
+  --help|-h)
+    echo "Usage: web-search <query>"
+    echo "       echo 'query' | web-search --stdin"
+    echo ""
+    echo "Searches the web using Vertex AI Google Search grounding."
+    echo "Returns a grounded answer with source citations."
+    exit 0
+    ;;
+  "")
+    die "No query provided. Usage: web-search <query>"
+    ;;
+  *)
+    # Join all args as the query
+    QUERY="$*"
+    ;;
+esac
+
+[[ -n "$QUERY" ]] || die "Empty query"
+
+# ---- Get credentials ----
+TOKEN="$(get_token)" || die "Failed to get access token"
+PROJECT_ID="$(get_project)" || die "Failed to get project ID"
+
+[[ -n "$TOKEN" ]] || die "Empty access token"
+[[ -n "$PROJECT_ID" ]] || die "Empty project ID"
+
+# Fleet agents may use a different project for Gemini
+GEMINI_PROJECT="${PROJECT_ID}"
+if [[ -f "$CHAT_CONFIG" ]]; then
+  GP="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('geminiProject', ''))
+except: pass
+" 2>/dev/null || true)"
+  [[ -n "$GP" ]] && GEMINI_PROJECT="$GP"
+fi
+
+# ---- Build API request with Google Search grounding ----
+API_URL="https://${REGION}-aiplatform.googleapis.com/v1/projects/${GEMINI_PROJECT}/locations/${REGION}/publishers/google/models/${GEMINI_MODEL}:generateContent"
+
+REQUEST_BODY="$(python3 -c "
+import json, sys
+
+query = sys.stdin.read().strip()
+
+body = {
+    'contents': [{
+        'role': 'user',
+        'parts': [{'text': query}]
+    }],
+    'systemInstruction': {
+        'parts': [{'text': 'You are a web search assistant. Answer the question using the Google Search results provided. Include specific facts, numbers, and dates. Always cite your sources with URLs when available. Be concise and factual.'}]
+    },
+    'tools': [{'google_search': {}}],
+    'generationConfig': {
+        'maxOutputTokens': $MAX_OUTPUT_TOKENS,
+        'temperature': 1.0
+    }
+}
+
+print(json.dumps(body))
+" <<< "$QUERY")" || die "Failed to build request body"
+
+# ---- Call Vertex AI ----
+RESPONSE="$(curl -s -w "\n%{http_code}" \
+  -X POST \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  "$API_URL" \
+  -d "$REQUEST_BODY")"
+
+HTTP_CODE="$(echo "$RESPONSE" | tail -1)"
+BODY="$(echo "$RESPONSE" | sed '$d')"
+
+if [[ "$HTTP_CODE" -lt 200 || "$HTTP_CODE" -ge 300 ]]; then
+  die "Vertex AI API error (HTTP ${HTTP_CODE}): $(echo "$BODY" | head -5)"
+fi
+
+# ---- Extract answer + grounding metadata ----
+python3 -c "
+import json, sys
+
+try:
+    data = json.load(sys.stdin)
+    candidates = data.get('candidates', [])
+    if not candidates:
+        print('No results found.')
+        sys.exit(0)
+
+    # Extract answer text
+    parts = candidates[0].get('content', {}).get('parts', [])
+    texts = [p['text'] for p in parts if 'text' in p]
+    answer = ''.join(texts)
+
+    # Extract grounding metadata (sources)
+    grounding = candidates[0].get('groundingMetadata', {})
+    chunks = grounding.get('groundingChunks', [])
+    queries = grounding.get('webSearchQueries', [])
+
+    # Print the answer
+    print(answer)
+
+    # Print sources if available
+    if chunks:
+        print()
+        print('--- Sources ---')
+        seen = set()
+        for chunk in chunks:
+            web = chunk.get('web', {})
+            title = web.get('title', '')
+            uri = web.get('uri', '')
+            if uri and uri not in seen:
+                seen.add(uri)
+                if title:
+                    print(f'  - {title}: {uri}')
+                else:
+                    print(f'  - {uri}')
+
+except Exception as e:
+    print(f'Error parsing response: {e}')
+    sys.exit(1)
+" <<< "$BODY"

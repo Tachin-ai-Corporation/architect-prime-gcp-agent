@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# ============================================================
+# render-config — Renders openclaw-bootstrap.json5.tmpl → openclaw.json
+#
+# JSON5 template rendering with:
+#   - String-aware comment stripping (preserves // inside strings)
+#   - Trailing comma removal
+#   - Template variable substitution
+#   - Token auto-sync from running gateway container
+#
+# Usage:
+#   render-config [--restart]
+#
+# Options:
+#   --restart   Restart the gateway after rendering
+#
+# Template variables:
+#   ${GCP_PROJECT_ID}   — from metadata or env
+#   ${MY_TOKEN}         — from running gateway, .gateway-token, or generates new
+#
+# Requires: python3
+# ============================================================
+set -euo pipefail
+
+OC_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_DIR="${OC_ROOT}/.openclaw"
+TMPL="${OC_DIR}/corekit/openclaw-bootstrap.json5.tmpl"
+DEST="${OC_DIR}/openclaw.json"
+TOKEN_FILE="/root/.openclaw/.gateway-token"
+DO_RESTART="${1:-}"
+
+log() { echo "[render-config] $*"; }
+err() { echo "[render-config] ERROR: $*" >&2; }
+
+# ---- Resolve project ID ----
+PROJECT="${GCP_PROJECT_ID:-}"
+if [[ -z "$PROJECT" ]]; then
+  PROJECT="$(curl -sH 'Metadata-Flavor: Google' \
+    http://metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null || echo '')"
+fi
+if [[ -z "$PROJECT" ]]; then
+  err "GCP_PROJECT_ID not set and metadata unavailable"
+  exit 1
+fi
+
+# ---- Resolve gateway token ----
+# Priority: container env var → .env file → token file → existing config → generate
+# IMPORTANT: The gateway uses OPENCLAW_GATEWAY_TOKEN env var as the ACTUAL
+# runtime token. The config auth.token can go stale. Always prefer the env var.
+TOKEN=""
+
+# 1. Try the RUNTIME env var from running container (source of truth)
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -q openclaw-gateway; then
+  TOKEN="$(docker exec openclaw-gateway sh -c 'echo $OPENCLAW_GATEWAY_TOKEN' 2>/dev/null || echo '')"
+  [[ -n "$TOKEN" ]] && log "Token from container env: ${TOKEN:0:8}..."
+fi
+
+# 2. Try the .env file used by docker compose/run
+if [[ -z "$TOKEN" ]]; then
+  ENV_FILE="/root/openclaw/.env"
+  if [[ -f "$ENV_FILE" ]]; then
+    TOKEN="$(grep '^OPENCLAW_GATEWAY_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+    [[ -n "$TOKEN" ]] && log "Token from .env file: ${TOKEN:0:8}..."
+  fi
+fi
+
+# 2. Try token file
+if [[ -z "$TOKEN" && -f "$TOKEN_FILE" ]]; then
+  TOKEN="$(cat "$TOKEN_FILE" | tr -d '[:space:]')"
+  [[ -n "$TOKEN" ]] && log "Token from token file: ${TOKEN:0:8}..."
+fi
+
+# 3. Try existing config
+if [[ -z "$TOKEN" && -f "$DEST" ]]; then
+  TOKEN="$(python3 -c "
+import json
+with open('$DEST') as f:
+    c=json.load(f)
+t=c.get('gateway',{}).get('auth',{}).get('token','')
+print(t)
+" 2>/dev/null || echo '')"
+  [[ -n "$TOKEN" ]] && log "Token from existing config: ${TOKEN:0:8}..."
+fi
+
+# 4. Generate new token
+if [[ -z "$TOKEN" ]]; then
+  TOKEN="$(python3 -c "import secrets; print(secrets.token_hex(16).upper())")"
+  log "Generated new token: ${TOKEN:0:8}..."
+fi
+
+# ---- Render template ----
+if [[ ! -f "$TMPL" ]]; then
+  err "Template not found: $TMPL"
+  exit 1
+fi
+
+log "Rendering: $TMPL → $DEST"
+log "  Project: $PROJECT"
+log "  Token: ${TOKEN:0:8}... (${#TOKEN} chars)"
+
+python3 << PYEOF
+import json, sys
+
+tmpl_path = "$TMPL"
+dest_path = "$DEST"
+token = "$TOKEN"
+project = "$PROJECT"
+
+with open(tmpl_path) as f:
+    raw = f.read()
+
+# Strip // comments — string-aware (preserves // inside quoted strings)
+lines = raw.split('\n')
+cleaned = []
+for line in lines:
+    in_string = False
+    escape = False
+    result = []
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if escape:
+            result.append(ch)
+            escape = False
+            i += 1
+            continue
+        if ch == '\\\\':
+            escape = True
+            result.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            i += 1
+            continue
+        if not in_string and ch == '/' and i + 1 < len(line) and line[i+1] == '/':
+            break  # rest of line is comment
+        result.append(ch)
+        i += 1
+    cleaned.append(''.join(result))
+raw = '\n'.join(cleaned)
+
+# Strip trailing commas before } or ]
+import re
+raw = re.sub(r',\s*([}\]])', r'\1', raw)
+
+# Substitute template variables
+raw = raw.replace('\${GCP_PROJECT_ID}', project)
+raw = raw.replace('\${MY_TOKEN}', token)
+
+# Parse and write
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError as e:
+    start = max(0, e.pos - 80)
+    end = min(len(raw), e.pos + 80)
+    print(f"JSON parse error at pos {e.pos}: {e.msg}", file=sys.stderr)
+    print(f"Context: {repr(raw[start:end])}", file=sys.stderr)
+    sys.exit(1)
+
+with open(dest_path, 'w') as f:
+    json.dump(data, f, indent=2)
+
+at = data.get('gateway',{}).get('auth',{}).get('token','?')
+rt = data.get('gateway',{}).get('remote',{}).get('token','?')
+agents = len(data.get('agents',{}).get('list',[]))
+print(f"  Config: {len(json.dumps(data))} bytes, {agents} agents")
+print(f"  gateway.auth.token:   {at[:8]}... ({len(at)} chars)")
+print(f"  gateway.remote.token: {rt[:8]}... ({len(rt)} chars)")
+print(f"  Match: {at == rt}")
+PYEOF
+
+if [[ $? -ne 0 ]]; then
+  err "Template rendering failed"
+  exit 1
+fi
+
+# ---- Write token file for control-daemon ----
+mkdir -p "$(dirname "$TOKEN_FILE")"
+echo "$TOKEN" > "$TOKEN_FILE"
+log "Token file updated: $TOKEN_FILE"
+
+# ---- Restart if requested ----
+if [[ "$DO_RESTART" == "--restart" ]]; then
+  log "Restarting gateway..."
+  docker restart openclaw-gateway 2>/dev/null || log "  (gateway not running)"
+  log "Waiting 60s for boot..."
+  sleep 60
+  log "Restarting control-daemon..."
+  systemctl restart control-daemon 2>/dev/null || log "  (control-daemon not available)"
+  log "Done."
+fi

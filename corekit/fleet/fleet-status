@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-status — Read and report fleet agent status from Firestore
+#
+# Usage:
+#   fleet-status                     # all agents
+#   fleet-status --name <name>       # single agent detail
+#   fleet-status --json              # machine-readable JSON output
+#
+# Reads from Firestore: primes/{primeId}/fleet/*
+# Designed to be called by Prime's OpenClaw exec tool so the agent
+# can answer questions like "how's anora doing?" with real data.
+#
+# Runs on Prime's VM. Uses GCE metadata token for Firestore access.
+# ============================================================
+set -euo pipefail
+
+# ---- Logging ----
+log() { echo "[$(date -Is)] [fleet-status] $*" >&2; }
+die() { echo "[$(date -Is)] [fleet-status] [FATAL] $*" >&2; exit 1; }
+
+# ---- Parse args ----
+AGENT_NAME=""
+JSON_MODE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) AGENT_NAME="$2"; shift 2 ;;
+    --json) JSON_MODE=true; shift ;;
+    --help|-h)
+      echo "Usage: fleet-status [--name <agent>] [--json]"
+      echo ""
+      echo "  --name    Show detailed status for a specific agent"
+      echo "  --json    Output machine-readable JSON"
+      echo ""
+      echo "Without --name, shows a summary of all fleet agents."
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+# ---- Resolve project + prime ID ----
+PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PRIME_PROJECT" ]] || die "Cannot resolve project from metadata"
+
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || true)"
+fi
+[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
+
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PRIME_PROJECT}/databases/(default)/documents"
+
+# ---- Get auth token ----
+TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")"
+
+# ============================================================
+# Single agent detail
+# ============================================================
+if [[ -n "$AGENT_NAME" ]]; then
+  RESP="$(curl -s -H "Authorization: Bearer $TOKEN" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}" 2>/dev/null)"
+
+  # Check for error (document not found)
+  if echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if 'fields' in d else 1)" 2>/dev/null; then
+    python3 - <<'PYEOF' "$RESP" "$JSON_MODE" "$AGENT_NAME"
+import sys, json
+from datetime import datetime, timezone
+
+resp = json.loads(sys.argv[1])
+json_mode = sys.argv[2] == "True"
+agent_name = sys.argv[3]
+fields = resp.get("fields", {})
+
+def fv(f):
+    """Extract value from Firestore field."""
+    if not f:
+        return ""
+    for vtype in ("stringValue", "booleanValue", "integerValue"):
+        if vtype in f:
+            return f[vtype]
+    if "arrayValue" in f:
+        vals = f["arrayValue"].get("values", [])
+        result = []
+        for v in vals:
+            if "mapValue" in v:
+                m = {}
+                for k2, v2 in v["mapValue"].get("fields", {}).items():
+                    m[k2] = fv(v2)
+                result.append(m)
+            else:
+                result.append(fv(v))
+        return result
+    if "mapValue" in f:
+        m = {}
+        for k2, v2 in f["mapValue"].get("fields", {}).items():
+            m[k2] = fv(v2)
+        return m
+    return ""
+
+status = fv(fields.get("status"))
+specialty = fv(fields.get("specialty"))
+email = fv(fields.get("email"))
+vm = fv(fields.get("vm"))
+zone = fv(fields.get("zone"))
+deployed_at = fv(fields.get("deployedAt"))
+deploy_steps = fv(fields.get("deploySteps")) or []
+action_required = fv(fields.get("actionRequired")) or None
+
+if json_mode:
+    print(json.dumps({
+        "agent": agent_name,
+        "status": status,
+        "specialty": specialty,
+        "email": email,
+        "vm": vm,
+        "zone": zone,
+        "deployedAt": deployed_at,
+        "deploySteps": deploy_steps,
+        "actionRequired": action_required,
+    }, indent=2))
+else:
+    print(f"\n{'='*50}")
+    print(f"  FLEET AGENT: {agent_name}")
+    print(f"{'='*50}")
+    print(f"  Status     : {status}")
+    print(f"  Specialty  : {specialty}")
+    print(f"  Email      : {email}")
+    print(f"  VM         : {vm}")
+    print(f"  Zone       : {zone}")
+    print(f"  Deployed   : {deployed_at}")
+
+    if deploy_steps:
+        print(f"\n  Deploy Progress:")
+        for step in deploy_steps:
+            if isinstance(step, dict):
+                sid = step.get("id", "?")
+                label = step.get("label", sid)
+                sstatus = step.get("status", "?")
+                ts = step.get("timestamp", "")
+                detail = step.get("detail", "")
+                icon = {"done": "✅", "active": "⏳", "failed": "❌", "pending": "⬜", "skipped": "⏭️"}.get(sstatus, "❓")
+                line = f"    {icon}  {label}"
+                if detail:
+                    line += f" — {detail}"
+                if ts:
+                    line += f"  ({ts})"
+                print(line)
+
+    if action_required and isinstance(action_required, dict):
+        title = action_required.get("title", "Action needed")
+        instructions = action_required.get("instructions", [])
+        print(f"\n  ⚠️  ACTION REQUIRED: {title}")
+        if isinstance(instructions, list):
+            for i, inst in enumerate(instructions, 1):
+                print(f"    {i}. {inst}")
+        elif isinstance(instructions, str):
+            print(f"    {instructions}")
+
+    print(f"{'='*50}\n")
+PYEOF
+  else
+    if $JSON_MODE; then
+      echo "{\"error\": \"Agent '${AGENT_NAME}' not found\"}"
+    else
+      echo "Agent '${AGENT_NAME}' not found in fleet registry."
+    fi
+    exit 1
+  fi
+  exit 0
+fi
+
+# ============================================================
+# All agents summary
+# ============================================================
+RESP="$(curl -s -H "Authorization: Bearer $TOKEN" \
+  "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet" 2>/dev/null)"
+
+python3 - <<'PYEOF' "$RESP" "$JSON_MODE"
+import sys, json
+
+resp = json.loads(sys.argv[1])
+json_mode = sys.argv[2] == "True"
+docs = resp.get("documents", [])
+
+def fv(f):
+    if not f:
+        return ""
+    for vtype in ("stringValue", "booleanValue", "integerValue"):
+        if vtype in f:
+            return f[vtype]
+    if "arrayValue" in f:
+        vals = f["arrayValue"].get("values", [])
+        result = []
+        for v in vals:
+            if "mapValue" in v:
+                m = {}
+                for k2, v2 in v["mapValue"].get("fields", {}).items():
+                    m[k2] = fv(v2)
+                result.append(m)
+            else:
+                result.append(fv(v))
+        return result
+    if "mapValue" in f:
+        m = {}
+        for k2, v2 in f["mapValue"].get("fields", {}).items():
+            m[k2] = fv(v2)
+        return m
+    return ""
+
+agents = []
+for doc in docs:
+    name = doc.get("name", "").split("/")[-1]
+    fields = doc.get("fields", {})
+    agents.append({
+        "name": name,
+        "status": fv(fields.get("status")),
+        "specialty": fv(fields.get("specialty")),
+        "email": fv(fields.get("email")),
+        "vm": fv(fields.get("vm")),
+        "zone": fv(fields.get("zone")),
+        "deployedAt": fv(fields.get("deployedAt")),
+        "deploySteps": fv(fields.get("deploySteps")) or [],
+        "actionRequired": fv(fields.get("actionRequired")) or None,
+    })
+
+if json_mode:
+    print(json.dumps({"agents": agents, "count": len(agents)}, indent=2))
+else:
+    if not agents:
+        print("\nNo fleet agents deployed.\n")
+    else:
+        print(f"\n{'='*60}")
+        print(f"  FLEET STATUS — {len(agents)} agent(s)")
+        print(f"{'='*60}")
+        for a in agents:
+            status_icon = {
+                "online": "🟢", "offline": "🔴", "deploying": "🟡",
+                "needs_action": "🟠", "tearing_down": "🔵", "error": "❌",
+            }.get(a["status"], "❓")
+            steps = a.get("deploySteps", [])
+            done_count = sum(1 for s in steps if isinstance(s, dict) and s.get("status") == "done")
+            total_count = len(steps)
+            progress = f"  [{done_count}/{total_count}]" if total_count > 0 and a["status"] in ("deploying", "needs_action") else ""
+
+            print(f"  {status_icon}  {a['name']:12s}  {a['specialty']:10s}  {a['status']}{progress}")
+
+            # Show action required if any
+            ar = a.get("actionRequired")
+            if ar and isinstance(ar, dict):
+                print(f"       ⚠️  {ar.get('title', 'Action needed')}")
+
+        print(f"{'='*60}\n")
+PYEOF

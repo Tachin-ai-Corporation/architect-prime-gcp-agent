@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# ============================================================
+# upgrade-corekit — Agent-facing CoreKit upgrade tool
+#
+# Usage:
+#   upgrade-corekit --check           # Check for drift
+#   upgrade-corekit --apply <ref>     # Upgrade to a new ref
+#   upgrade-corekit --status          # Show current install info
+#
+# This is a thin wrapper around install.sh.
+# ============================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+
+# Simple JSON value reader
+json_value() {
+  grep -o "\"${1}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$2" 2>/dev/null | head -1 | sed 's/.*: *"\([^"]*\)"/\1/'
+}
+
+case "${1:-}" in
+  --check)
+    # Delegate to install.sh --check
+    GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
+    GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
+    OC_HOST_ROOT="$OC_HOST_ROOT" \
+    INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
+    bash "${SCRIPT_DIR}/../../corekit/install-cached.sh" --check 2>/dev/null || {
+      # Fallback: run check inline if install-cached.sh not found
+      if [[ ! -f "$STATE_FILE" ]]; then
+        echo "No STATE.json found. CoreKit not installed."
+        exit 1
+      fi
+      ref="$(json_value "coreRef" "$STATE_FILE")"
+      at="$(json_value "installedAt" "$STATE_FILE")"
+      echo "Installed: ${ref} (at ${at})"
+      echo "Run 'install.sh --check' for full integrity check."
+    }
+    ;;
+  --apply)
+    ref="${2:-}"
+    if [[ -z "$ref" ]]; then
+      echo "Usage: upgrade-corekit --apply <ref>"
+      echo "  Example: upgrade-corekit --apply v0.3.0"
+      exit 1
+    fi
+    echo "==> Upgrading CoreKit to ${ref}..."
+    CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER:-Tachin-ai-Corporation}/${GH_REPO:-architect-prime-gcp-agent}/${ref}"
+    curl -fsSL "${CORE_BASE}/infra/install.sh" | \
+      GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
+      GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
+      OC_HOST_ROOT="$OC_HOST_ROOT" \
+      INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
+      bash -s -- --upgrade "$ref"
+
+    # ---- Re-render config with correct gateway token ----
+    # upgrade-corekit installs new config template; re-render to sync
+    # auth.token with the container's OPENCLAW_GATEWAY_TOKEN env var
+    RENDER="${OC_HOST_ROOT}/.openclaw/bin/render-config"
+    if [[ -x "$RENDER" ]]; then
+      echo "==> Re-rendering config (token sync)..."
+      "$RENDER" || echo "  (render-config failed, config may have stale token)"
+    fi
+
+    # ---- Install/update systemd units from corekit config ----
+    OC_DIR="${OC_HOST_ROOT}/.openclaw"
+    UNITS_CHANGED=0
+    for unit_file in "${OC_DIR}"/corekit/*.service "${OC_DIR}"/corekit/*.timer; do
+      [[ -f "$unit_file" ]] || continue
+      UNIT_NAME="$(basename "$unit_file")"
+      if ! diff -q "$unit_file" "/etc/systemd/system/${UNIT_NAME}" >/dev/null 2>&1; then
+        cp "$unit_file" "/etc/systemd/system/${UNIT_NAME}"
+        echo "  Installed: ${UNIT_NAME}"
+        UNITS_CHANGED=1
+      fi
+    done
+    if [[ "$UNITS_CHANGED" -eq 1 ]]; then
+      systemctl daemon-reload
+      # Enable and start any .timer units
+      for timer_file in "${OC_DIR}"/corekit/*.timer; do
+        [[ -f "$timer_file" ]] || continue
+        TIMER_NAME="$(basename "$timer_file")"
+        systemctl enable --now "$TIMER_NAME" 2>/dev/null || true
+        echo "  Enabled: ${TIMER_NAME}"
+      done
+    fi
+
+    # ---- Fleet agent workspace re-overlay ----
+    # install.sh always installs main workspace to .openclaw/workspace/.
+    # For fleet agents, re-apply the specialty workspace on top.
+    CHAT_CFG="${OC_DIR}/corekit/chat-config.json"
+    if [[ -f "$CHAT_CFG" ]]; then
+      # Read agent identity from chat-config (only fleet agents have this)
+      AGENT_NAME="$(jq -r '.agentDisplayName // empty' "$CHAT_CFG" 2>/dev/null || true)"
+      SPECIALTY_DIR=""
+      # Try to find a specialty workspace
+      for d in "${OC_DIR}"/workspace-*/; do
+        [[ -d "$d" ]] || continue
+        # Use first non-fleet, non-brain specialty found
+        bn="$(basename "$d")"
+        [[ "$bn" == "workspace-fleet" ]] && continue
+        [[ "$bn" == "workspace-_brain" ]] && continue
+        [[ "$bn" =~ ^workspace-(temporal|prefrontal|motor|cerebellum) ]] && continue
+        SPECIALTY_DIR="$d"
+        break
+      done
+      # Fallback to fleet template
+      [[ -n "$SPECIALTY_DIR" ]] || SPECIALTY_DIR="${OC_DIR}/workspace-fleet"
+      if [[ -d "$SPECIALTY_DIR" && -n "$AGENT_NAME" ]]; then
+        echo "==> Re-applying fleet workspace from ${SPECIALTY_DIR}"
+        rm -f "${OC_DIR}/workspace/"*.md 2>/dev/null || true
+        MENTION="$(jq -r '.agentMention // empty' "$CHAT_CFG" 2>/dev/null || true)"
+        PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null || true)"
+        SPECIALTY="$(basename "$SPECIALTY_DIR" | sed 's/workspace-//')"
+        for f in "${SPECIALTY_DIR}"/*.md; do
+          [[ -f "$f" ]] || continue
+          sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
+              -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
+              -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
+              -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
+              "$f" > "${OC_DIR}/workspace/$(basename "$f")"
+        done
+        echo "  Fleet workspace restored for: ${AGENT_NAME}"
+
+        # Also re-overlay brain sub-agent workspaces
+        BRAIN_SRC="${OC_DIR}/workspace-_brain"
+        if [[ -d "$BRAIN_SRC" ]]; then
+          echo "==> Re-applying brain sub-agent workspaces"
+          for brain_dir in temporal-research temporal-memory prefrontal motor cerebellum; do
+            src="${BRAIN_SRC}/${brain_dir}"
+            dest="${OC_DIR}/workspace-${brain_dir}"
+            if [[ -d "$src" ]]; then
+              mkdir -p "$dest"
+              rm -f "${dest}/"*.md 2>/dev/null || true
+              for f in "${src}"/*.md; do
+                [[ -f "$f" ]] || continue
+                sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
+                    -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
+                    -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
+                    -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
+                    "$f" > "${dest}/$(basename "$f")"
+              done
+            fi
+          done
+          echo "  Brain workspaces restored"
+        fi
+      fi
+    fi
+
+    # ---- Run contract validation ----
+    VALIDATE="${OC_HOST_ROOT}/.openclaw/bin/validate-contracts"
+    if [[ -x "$VALIDATE" ]]; then
+      echo "==> Running contract validation..."
+      if OC_HOST_ROOT="$OC_HOST_ROOT" "$VALIDATE" --runtime 2>&1; then
+        echo "  ✅ Contracts validated"
+      else
+        echo "  ⚠️  Contract validation found issues"
+      fi
+    fi
+    ;;
+  --status)
+    if [[ ! -f "$STATE_FILE" ]]; then
+      echo "CoreKit: NOT INSTALLED"
+      exit 1
+    fi
+    ref="$(json_value "coreRef" "$STATE_FILE")"
+    at="$(json_value "installedAt" "$STATE_FILE")"
+    owner="$(json_value "owner" "$STATE_FILE")"
+    repo="$(json_value "repo" "$STATE_FILE")"
+    role="$(json_value "role" "$STATE_FILE")"
+    job="$(json_value "job" "$STATE_FILE")"
+    echo "CoreKit Status"
+    echo "  Ref       : ${ref}"
+    echo "  Installed : ${at}"
+    echo "  Source    : ${owner}/${repo}"
+    echo "  Role      : ${role:-legacy}"
+    echo "  Job       : ${job:-none}"
+    echo "  State     : ${STATE_FILE}"
+    ;;
+  *)
+    echo "upgrade-corekit — Architect Prime CoreKit upgrade tool"
+    echo ""
+    echo "Usage:"
+    echo "  upgrade-corekit --check           Check for file drift"
+    echo "  upgrade-corekit --apply <ref>     Upgrade to a new checkpoint"
+    echo "  upgrade-corekit --status          Show current install info"
+    exit 0
+    ;;
+esac

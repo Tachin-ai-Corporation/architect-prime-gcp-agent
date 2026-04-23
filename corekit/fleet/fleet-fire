@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-fire — Queue a fleet agent teardown
+#
+# Thin wrapper that writes a fleet_teardown command to the
+# Firestore command queue. The command-runner daemon on the
+# host OS picks it up and runs the actual fleet-teardown script.
+#
+# Usage:
+#   fleet-fire --name anora
+#
+# Environment:
+#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+# ---- CONFIG ----
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_DIR="${OC_HOST_ROOT}/.openclaw"
+if [[ ! -d "$OC_DIR" && -d "${HOME}/.openclaw" ]]; then
+  OC_DIR="${HOME}/.openclaw"
+fi
+
+PRIME_CONFIG="${OC_DIR}/corekit/prime-config.json"
+
+# ---- HELPERS ----
+die()  { echo "ERROR: $*" >&2; exit 1; }
+log()  { echo "[fleet-fire] $*" >&2; }
+
+# ---- PARSE ARGS ----
+NAME=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) NAME="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+[[ -n "$NAME" ]] || die "Missing required: --name <name>"
+NAME="$(echo "$NAME" | tr '[:upper:]' '[:lower:]')"
+
+# ---- RESOLVE PRIME_ID ----
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" && -f "$PRIME_CONFIG" ]]; then
+  PRIME_ID="$(python3 -c "
+import json; print(json.load(open('$PRIME_CONFIG')).get('primeId',''))
+" 2>/dev/null)" || true
+fi
+if [[ -z "$PRIME_ID" ]]; then
+  CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
+  if [[ -f "$CHAT_CONFIG" ]]; then
+    PRIME_ID="$(python3 -c "
+import json; print(json.load(open('$CHAT_CONFIG')).get('primeId',''))
+" 2>/dev/null)" || true
+  fi
+fi
+[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
+
+# ---- RESOLVE PROJECT ----
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
+if [[ -z "$GCP_PROJECT_ID" ]]; then
+  GCP_PROJECT_ID="$(curl -sf --max-time 3 -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+fi
+[[ -n "$GCP_PROJECT_ID" ]] || die "Cannot resolve GCP_PROJECT_ID"
+
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+
+# ---- GET AUTH TOKEN ----
+get_token() {
+  curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])'
+}
+TOKEN="$(get_token)" || die "Failed to get auth token"
+
+# ---- UPDATE FLEET DOC STATUS ----
+log "Marking ${NAME} as removing"
+python3 -c "
+import json, urllib.request
+token = '$TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?updateMask.fieldPaths=status'
+fields = {'status': {'stringValue': 'removing'}}
+body = json.dumps({'fields': fields}).encode()
+req = urllib.request.Request(url, data=body, method='PATCH',
+    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+urllib.request.urlopen(req)
+" 2>/dev/null || log "Warning: could not update fleet doc"
+
+# ---- WRITE COMMAND TO QUEUE ----
+CMD_ID="cmd-teardown-${NAME}-$(date +%s)"
+log "Queuing fleet_teardown command: ${CMD_ID}"
+python3 -c "
+import json, urllib.request
+from datetime import datetime, timezone
+token = '$TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
+now = datetime.now(timezone.utc).isoformat()
+fields = {
+    'type': {'stringValue': 'fleet_teardown'},
+    'args': {'mapValue': {'fields': {
+        'name': {'stringValue': '$NAME'},
+    }}},
+    'status': {'stringValue': 'pending'},
+    'createdAt': {'stringValue': now},
+}
+body = json.dumps({'fields': fields}).encode()
+req = urllib.request.Request(url, data=body, method='PATCH',
+    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+urllib.request.urlopen(req)
+" || die "Failed to write teardown command to Firestore"
+
+# ---- PRINT RESULT ----
+cat <<RESULT
+Tearing down agent '${NAME}'. This takes 1-2 minutes.
+
+Command queued: ${CMD_ID}
+The command-runner daemon will execute fleet-teardown on this VM.
+
+After teardown completes:
+- VM deleted, billing stops immediately
+- Suspend or delete the Workspace email at https://admin.google.com/ac/users
+RESULT

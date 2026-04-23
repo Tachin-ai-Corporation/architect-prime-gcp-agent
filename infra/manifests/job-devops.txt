@@ -1,0 +1,12 @@
+# infra/manifests/job-devops.txt
+# DevOps specialty workspace — layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job devops
+
+specialties/devops/workspace/AGENTS.md .openclaw/workspace-devops/AGENTS.md
+specialties/devops/workspace/BOOTSTRAP.md .openclaw/workspace-devops/BOOTSTRAP.md
+specialties/devops/workspace/HEARTBEAT.md .openclaw/workspace-devops/HEARTBEAT.md
+specialties/devops/workspace/IDENTITY.md .openclaw/workspace-devops/IDENTITY.md
+specialties/devops/workspace/SOUL.md .openclaw/workspace-devops/SOUL.md
+specialties/devops/workspace/TOOLS.md .openclaw/workspace-devops/TOOLS.md
+specialties/devops/workspace/USER.md .openclaw/workspace-devops/USER.md
+specialties/devops/workspace/MEMORY.md .openclaw/workspace-devops/MEMORY.md

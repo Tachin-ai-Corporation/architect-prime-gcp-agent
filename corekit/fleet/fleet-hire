@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-hire — Queue a fleet agent deployment
+#
+# Thin wrapper that writes a fleet_deploy command to the
+# Firestore command queue. The command-runner daemon on the
+# host OS picks it up and runs the actual fleet-deploy script.
+#
+# This script returns in <5 seconds — it does NOT block on
+# the deployment itself.
+#
+# Usage:
+#   fleet-hire --name anora --specialty pm
+#
+# Environment:
+#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#   PRIME_ID     — resolved from prime-config.json or metadata
+#   GCP_PROJECT_ID — resolved from metadata
+# ============================================================
+set -euo pipefail
+
+# ---- CONFIG ----
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_DIR="${OC_HOST_ROOT}/.openclaw"
+if [[ ! -d "$OC_DIR" && -d "${HOME}/.openclaw" ]]; then
+  OC_DIR="${HOME}/.openclaw"
+fi
+
+TYPES_FILE="${OC_DIR}/corekit/agent-types.json"
+PRIME_CONFIG="${OC_DIR}/corekit/prime-config.json"
+
+# ---- HELPERS ----
+die()  { echo "ERROR: $*" >&2; exit 1; }
+log()  { echo "[fleet-hire] $*" >&2; }
+
+# ---- PARSE ARGS ----
+NAME="" SPECIALTY=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name)      NAME="$2"; shift 2 ;;
+    --specialty) SPECIALTY="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+[[ -n "$NAME" ]]      || die "Missing required: --name <name>"
+[[ -n "$SPECIALTY" ]]  || die "Missing required: --specialty <type>"
+
+# Normalize name to lowercase
+NAME="$(echo "$NAME" | tr '[:upper:]' '[:lower:]')"
+
+# ---- RESOLVE SPECIALTY ----
+# Map aliases (e.g. "project manager") to IDs (e.g. "pm")
+if [[ -f "$TYPES_FILE" ]]; then
+  RESOLVED="$(python3 -c "
+import json, sys
+spec = sys.argv[1].lower().strip()
+types = json.load(open(sys.argv[2]))['types']
+# Exact ID match
+for t in types:
+    if t['id'] == spec:
+        print(t['id']); sys.exit(0)
+# Title match
+for t in types:
+    if t['title'].lower() == spec:
+        print(t['id']); sys.exit(0)
+# Partial match
+for t in types:
+    if spec in t['title'].lower() or t['title'].lower().startswith(spec):
+        print(t['id']); sys.exit(0)
+print(spec)
+" "$SPECIALTY" "$TYPES_FILE" 2>/dev/null)" || RESOLVED="$SPECIALTY"
+  SPECIALTY="$RESOLVED"
+fi
+
+# ---- RESOLVE PRIME_ID ----
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" && -f "$PRIME_CONFIG" ]]; then
+  PRIME_ID="$(python3 -c "
+import json; print(json.load(open('$PRIME_CONFIG')).get('primeId',''))
+" 2>/dev/null)" || true
+fi
+if [[ -z "$PRIME_ID" ]]; then
+  CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
+  if [[ -f "$CHAT_CONFIG" ]]; then
+    PRIME_ID="$(python3 -c "
+import json; print(json.load(open('$CHAT_CONFIG')).get('primeId',''))
+" 2>/dev/null)" || true
+  fi
+fi
+[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
+
+# ---- RESOLVE PROJECT ----
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
+if [[ -z "$GCP_PROJECT_ID" ]]; then
+  GCP_PROJECT_ID="$(curl -sf --max-time 3 -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+fi
+[[ -n "$GCP_PROJECT_ID" ]] || die "Cannot resolve GCP_PROJECT_ID"
+
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+
+# ---- GET AUTH TOKEN (reused for domain lookup + command queue) ----
+get_token() {
+  curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])'
+}
+TOKEN="$(get_token)" || die "Failed to get auth token"
+
+# ---- RESOLVE EMAIL DOMAIN ----
+# Read from Firestore config/settings (set via Dashboard → Setup → Agent Defaults)
+EMAIL_DOMAIN=""
+EMAIL_DOMAIN="$(curl -sf --max-time 5 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${FIRESTORE_URL}/config/settings" \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["fields"]["agentEmailDomain"]["stringValue"])' 2>/dev/null)" || true
+# Fallback if Firestore read fails
+if [[ -z "$EMAIL_DOMAIN" ]]; then
+  EMAIL_DOMAIN="tachin.ai"
+  log "Warning: could not read email domain from Firestore, using fallback: ${EMAIL_DOMAIN}"
+else
+  log "Email domain from Firestore: ${EMAIL_DOMAIN}"
+fi
+
+# ---- RESOLVE EMAIL ----
+EMAIL=""
+if [[ -f "$TYPES_FILE" ]]; then
+  EMAIL_PATTERN="$(python3 -c "
+import json, sys
+spec = sys.argv[1]
+types = json.load(open(sys.argv[2]))['types']
+for t in types:
+    if t['id'] == spec:
+        print(t.get('emailPattern', '')); sys.exit(0)
+" "$SPECIALTY" "$TYPES_FILE" 2>/dev/null)" || EMAIL_PATTERN=""
+  if [[ -n "$EMAIL_PATTERN" ]]; then
+    EMAIL="${EMAIL_PATTERN/\{name\}/$NAME}@${EMAIL_DOMAIN}"
+  fi
+fi
+if [[ -z "$EMAIL" ]]; then
+  EMAIL="${SPECIALTY}-agent-${NAME}@${EMAIL_DOMAIN}"
+fi
+
+# ---- COMPUTE DISPLAY NAMES ----
+D_FIRST="$(echo "${SPECIALTY}-agent" | sed 's/^./\u&/' | sed 's/-\(.\)/-\u\1/g')"
+D_LAST="$(echo "${NAME}" | sed 's/^./\u&/')"
+
+# ---- CREATE FLEET DOC (instant dashboard feedback) ----
+log "Creating fleet doc: ${NAME} (${SPECIALTY})"
+python3 -c "
+import json, urllib.request
+from datetime import datetime, timezone
+token = '$TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}'
+now = datetime.now(timezone.utc).isoformat()
+fields = {
+    'name': {'stringValue': '$NAME'},
+    'specialty': {'stringValue': '$SPECIALTY'},
+    'email': {'stringValue': '$EMAIL'},
+    'status': {'stringValue': 'deploying'},
+    'vm': {'stringValue': 'fleet-$NAME'},
+    'zone': {'stringValue': 'us-central1-a'},
+    'deploySteps': {'arrayValue': {'values': []}},
+    'deployedAt': {'stringValue': now},
+}
+body = json.dumps({'fields': fields}).encode()
+req = urllib.request.Request(url, data=body, method='PATCH',
+    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+urllib.request.urlopen(req)
+" 2>/dev/null || log "Warning: could not create fleet doc"
+
+# ---- WRITE COMMAND TO QUEUE ----
+CMD_ID="cmd-deploy-${NAME}-$(date +%s)"
+log "Queuing fleet_deploy command: ${CMD_ID}"
+python3 -c "
+import json, urllib.request
+from datetime import datetime, timezone
+token = '$TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands/${CMD_ID}'
+now = datetime.now(timezone.utc).isoformat()
+fields = {
+    'type': {'stringValue': 'fleet_deploy'},
+    'args': {'mapValue': {'fields': {
+        'name': {'stringValue': '$NAME'},
+        'specialty': {'stringValue': '$SPECIALTY'},
+        'email': {'stringValue': '$EMAIL'},
+    }}},
+    'status': {'stringValue': 'pending'},
+    'createdAt': {'stringValue': now},
+}
+body = json.dumps({'fields': fields}).encode()
+req = urllib.request.Request(url, data=body, method='PATCH',
+    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+urllib.request.urlopen(req)
+" || die "Failed to write deploy command to Firestore"
+
+# ---- PRINT RESULT (returned to agent) ----
+cat <<RESULT
+Deploying agent '${NAME}' (specialty: ${SPECIALTY}). This takes 3-5 minutes.
+
+Command queued: ${CMD_ID}
+The command-runner daemon will execute fleet-deploy on this VM.
+
+Once deployment finishes, create the Workspace account:
+→ https://admin.google.com/ac/users → Add new user
+  First Name: ${D_FIRST}
+  Last Name: ${D_LAST}
+  Email: ${EMAIL}
+  ⚠️ Names MUST match exactly (including capitalization and hyphens)
+
+Then add ${EMAIL} to the Google Chat space.
+RESULT

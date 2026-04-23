@@ -1,0 +1,22 @@
+# infra/manifests/role-fleet.txt
+# Fleet agent base — shared brain sub-agent workspaces + fleet template
+# Installed by: infra/install.sh --role fleet
+# Then a job-specific manifest is layered on top.
+
+# Fleet workspace template (fallback if no job-specific workspace)
+brain/fleet/_base/SOUL.md .openclaw/workspace-fleet/SOUL.md
+brain/fleet/_base/IDENTITY.md .openclaw/workspace-fleet/IDENTITY.md
+brain/fleet/_base/TOOLS.md .openclaw/workspace-fleet/TOOLS.md
+
+# Shared brain sub-agent workspaces (used by ALL fleet agents)
+# fleet-bootstrap.sh copies these to workspace-{agent}/ with template substitution
+brain/fleet/_brain/temporal-research/SOUL.md .openclaw/workspace-_brain/temporal-research/SOUL.md
+brain/fleet/_brain/temporal-research/IDENTITY.md .openclaw/workspace-_brain/temporal-research/IDENTITY.md
+brain/fleet/_brain/temporal-memory/SOUL.md .openclaw/workspace-_brain/temporal-memory/SOUL.md
+brain/fleet/_brain/temporal-memory/IDENTITY.md .openclaw/workspace-_brain/temporal-memory/IDENTITY.md
+brain/fleet/_brain/prefrontal/SOUL.md .openclaw/workspace-_brain/prefrontal/SOUL.md
+brain/fleet/_brain/prefrontal/IDENTITY.md .openclaw/workspace-_brain/prefrontal/IDENTITY.md
+brain/fleet/_brain/motor/SOUL.md .openclaw/workspace-_brain/motor/SOUL.md
+brain/fleet/_brain/motor/IDENTITY.md .openclaw/workspace-_brain/motor/IDENTITY.md
+brain/fleet/_brain/cerebellum/SOUL.md .openclaw/workspace-_brain/cerebellum/SOUL.md
+brain/fleet/_brain/cerebellum/IDENTITY.md .openclaw/workspace-_brain/cerebellum/IDENTITY.md

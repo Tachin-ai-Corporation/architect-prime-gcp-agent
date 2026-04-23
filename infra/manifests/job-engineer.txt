@@ -1,0 +1,12 @@
+# infra/manifests/job-engineer.txt
+# Engineer specialty workspace — layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job engineer
+
+specialties/engineer/workspace/AGENTS.md .openclaw/workspace-engineer/AGENTS.md
+specialties/engineer/workspace/BOOTSTRAP.md .openclaw/workspace-engineer/BOOTSTRAP.md
+specialties/engineer/workspace/HEARTBEAT.md .openclaw/workspace-engineer/HEARTBEAT.md
+specialties/engineer/workspace/IDENTITY.md .openclaw/workspace-engineer/IDENTITY.md
+specialties/engineer/workspace/SOUL.md .openclaw/workspace-engineer/SOUL.md
+specialties/engineer/workspace/TOOLS.md .openclaw/workspace-engineer/TOOLS.md
+specialties/engineer/workspace/USER.md .openclaw/workspace-engineer/USER.md
+specialties/engineer/workspace/MEMORY.md .openclaw/workspace-engineer/MEMORY.md

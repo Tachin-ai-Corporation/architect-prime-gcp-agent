@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-upgrade — Upgrade a fleet agent's CoreKit to a new ref
+#
+# Usage: fleet-upgrade --name <agent-name> [--ref <core-ref>]
+#
+# SSHs into the fleet agent's VM and runs upgrade-corekit,
+# then restarts inbox-daemon. Reports result via Chat.
+# ============================================================
+set -euo pipefail
+
+log() { echo "[$(date -Is)] [fleet-upgrade] $*"; }
+warn() { echo "[$(date -Is)] [fleet-upgrade] [WARN] $*" >&2; }
+die() { echo "[$(date -Is)] [fleet-upgrade] [FATAL] $*" >&2; exit 1; }
+
+AGENT_NAME=""
+TARGET_REF=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name) AGENT_NAME="$2"; shift 2 ;;
+    --ref) TARGET_REF="$2"; shift 2 ;;
+    --help|-h) echo "Usage: fleet-upgrade --name <agent-name> [--ref <core-ref>]"; exit 0 ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$AGENT_NAME" ]] || die "Missing --name"
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
+CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+
+# ---- Read agent info from registry ----
+[[ -f "$REGISTRY_FILE" ]] || die "Fleet registry not found: $REGISTRY_FILE"
+
+FLEET_PROJECT="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].project // ""' "$REGISTRY_FILE")"
+FLEET_VM="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].vm // ""' "$REGISTRY_FILE")"
+FLEET_ZONE="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].zone // ""' "$REGISTRY_FILE")"
+CURRENT_REF="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].coreRef // "unknown"' "$REGISTRY_FILE")"
+
+[[ -n "$FLEET_PROJECT" ]] || die "Agent '${AGENT_NAME}' not found in registry"
+[[ -n "$FLEET_VM" ]] || die "No VM found for agent '${AGENT_NAME}'"
+[[ -n "$FLEET_ZONE" ]] || die "No zone found for agent '${AGENT_NAME}'"
+
+# Default to Prime's current ref if not specified
+if [[ -z "$TARGET_REF" ]]; then
+  STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+  if [[ -f "$STATE_FILE" ]]; then
+    TARGET_REF="$(jq -r '.coreRef // "main"' "$STATE_FILE" 2>/dev/null)"
+  fi
+  [[ -n "$TARGET_REF" ]] || TARGET_REF="main"
+fi
+
+log "Upgrading fleet agent: ${AGENT_NAME}"
+log "  Project:     ${FLEET_PROJECT}"
+log "  VM:          ${FLEET_VM}"
+log "  Zone:        ${FLEET_ZONE}"
+log "  Current ref: ${CURRENT_REF}"
+log "  Target ref:  ${TARGET_REF}"
+
+if [[ "$CURRENT_REF" == "$TARGET_REF" ]]; then
+  log "Agent is already on ref '${TARGET_REF}' — upgrade anyway"
+fi
+
+# ---- SSH and upgrade ----
+log "SSHing into ${FLEET_VM} to run upgrade..."
+UPGRADE_CMD="sudo CORE_REF='${TARGET_REF}' OC_HOST_ROOT=/opt/openclaw /opt/openclaw/.openclaw/bin/upgrade-corekit --apply '${TARGET_REF}' && sudo systemctl restart inbox-daemon && echo 'UPGRADE_SUCCESS'"
+
+RESULT="$(gcloud compute ssh "$FLEET_VM" \
+  --zone="$FLEET_ZONE" \
+  --project="$FLEET_PROJECT" \
+  --command="$UPGRADE_CMD" \
+  --quiet 2>&1)" || true
+
+if echo "$RESULT" | grep -q "UPGRADE_SUCCESS"; then
+  log "✅ Upgrade successful!"
+
+  # Update registry
+  jq --arg name "$AGENT_NAME" --arg ref "$TARGET_REF" --arg ts "$(date -Is)" \
+     '.agents[$name].coreRef = $ref | .agents[$name].upgradedAt = $ts | .lastUpdated = $ts' \
+    "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
+
+  echo
+  echo "============================================================"
+  echo "  ✅ UPGRADED: ${AGENT_NAME} → ${TARGET_REF}"
+  echo "============================================================"
+
+  # Notify via Chat
+  CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
+  if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
+    export CHAT_SPACE_ID OC_HOST_ROOT
+    "$CHAT_SEND" "✅ Fleet agent *${AGENT_NAME}* upgraded: \`${CURRENT_REF}\` → \`${TARGET_REF}\`" || true
+  fi
+else
+  warn "❌ Upgrade failed!"
+  echo "$RESULT"
+  echo
+  echo "============================================================"
+  echo "  ❌ UPGRADE FAILED: ${AGENT_NAME}"
+  echo "============================================================"
+  exit 1
+fi

@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# ============================================================
+# chat-read — Read messages from a Google Chat space
+#
+# Uses Domain-Wide Delegation (DWD) to read messages as an
+# impersonated Workspace user via spaces.messages.list.
+#
+# Usage:
+#   chat-read                           # last 50 messages
+#   chat-read --since 60                # messages from last 60 seconds
+#   chat-read --since 60 --filter-mentions  # only @-mentions of this user
+#   chat-read --limit 10               # last 10 messages
+#
+# Output:
+#   JSON array of message objects on stdout
+#
+# Environment:
+#   CHAT_SPACE_ID     — Google Chat space ID (spaces/XXXX)
+#   AGENT_USER_EMAIL  — Workspace user to impersonate
+#   OC_HOST_ROOT      — OpenClaw host root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+# ---- CONFIG ----
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+CHAT_API="https://chat.googleapis.com/v1"
+DWD_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
+
+SINCE_SECONDS=""
+LIMIT=50
+FILTER_MENTIONS=false
+
+# ---- Helpers ----
+die() { echo "[chat-read] [ERROR] $*" >&2; exit 1; }
+
+# ---- Parse args ----
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --since)          SINCE_SECONDS="$2"; shift 2 ;;
+    --limit)          LIMIT="$2"; shift 2 ;;
+    --filter-mentions) FILTER_MENTIONS=true; shift ;;
+    --help|-h)
+      echo "Usage: chat-read [--since <seconds>] [--limit <n>] [--filter-mentions]"
+      echo "Outputs JSON array of messages to stdout."
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+# ---- Resolve config ----
+if [[ -f "$CHAT_CONFIG" ]]; then
+  if [[ -z "${CHAT_SPACE_ID:-}" ]]; then
+    CHAT_SPACE_ID="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('spaceId', ''))
+except: pass
+" 2>/dev/null)"
+  fi
+  if [[ -z "${AGENT_USER_EMAIL:-}" ]]; then
+    AGENT_USER_EMAIL="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CHAT_CONFIG'))
+    print(cfg.get('agentUserEmail', ''))
+except: pass
+" 2>/dev/null)"
+  fi
+fi
+
+[[ -n "${CHAT_SPACE_ID:-}" ]] || die "No Chat space ID. Set CHAT_SPACE_ID or configure chat-config.json"
+[[ -n "${AGENT_USER_EMAIL:-}" ]] || die "No agent user email. Set AGENT_USER_EMAIL or configure chat-config.json"
+
+# ---- Get DWD access token ----
+TOKEN="$("$DWD_TOKEN" --user "$AGENT_USER_EMAIL" \
+  --scope "https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/chat.spaces.readonly" \
+  2>/dev/null)" || die "dwd-token failed"
+[[ -n "$TOKEN" ]] || die "Empty access token"
+
+# ---- Build API URL ----
+# spaces.messages.list endpoint
+# NOTE: The Chat API v1 filter parameter is unreliable with DWD auth,
+# so we always fetch recent messages and filter client-side.
+API_URL="${CHAT_API}/${CHAT_SPACE_ID}/messages?pageSize=${LIMIT}&orderBy=createTime%20desc"
+
+# ---- Call Chat API ----
+RESPONSE="$(curl -sf \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  "$API_URL" 2>/dev/null)" || die "Chat API call failed"
+
+# ---- Process and output ----
+FILTER_MENTIONS_PY="$([[ "$FILTER_MENTIONS" == "true" ]] && echo "True" || echo "False")"
+SINCE_SECONDS_PY="${SINCE_SECONDS:-0}"
+echo "$RESPONSE" | python3 -c "
+import json, sys
+from datetime import datetime, timezone, timedelta
+
+raw = sys.stdin.read().strip()
+try:
+    data = json.loads(raw) if raw else {}
+except Exception:
+    data = {}
+
+messages = data.get('messages', [])
+
+# Client-side time filter (since the API filter param is unreliable)
+since_seconds = ${SINCE_SECONDS_PY}
+if since_seconds > 0:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=since_seconds)
+    time_filtered = []
+    for msg in messages:
+        ct = msg.get('createTime', '')
+        if ct:
+            try:
+                # Parse RFC3339 timestamp
+                msg_time = datetime.fromisoformat(ct.replace('Z', '+00:00'))  
+                if msg_time >= cutoff:
+                    time_filtered.append(msg)
+            except Exception:
+                time_filtered.append(msg)  # include on parse failure
+        else:
+            time_filtered.append(msg)
+    messages = time_filtered
+
+# Filter for @-mentions of this user if requested
+filter_mentions = ${FILTER_MENTIONS_PY}
+agent_email = '${AGENT_USER_EMAIL}'
+agent_local = agent_email.split('@')[0].lower() if agent_email else ''
+# Normalize: replace both hyphens and spaces with a single canonical separator
+# so 'architect-agent prime', 'architect-agent-prime', 'architect agent prime' all match
+import re
+def normalize(s):
+    return re.sub(r'[-\s]+', ' ', s.strip().lower())
+agent_norm = normalize(agent_local)
+
+if filter_mentions and agent_norm:
+    filtered = []
+    for msg in messages:
+        # Check annotations for USER_MENTION matching agent email or name
+        annotations = msg.get('annotations', [])
+        mentioned = False
+        for ann in annotations:
+            if ann.get('type') == 'USER_MENTION':
+                user_info = ann.get('userMention', {}).get('user', {})
+                # Check email (if present in annotation)
+                uemail = (user_info.get('email', '') or '').lower()
+                if uemail and uemail == agent_email.lower():
+                    mentioned = True
+                    break
+                # Extract the actual @mention text from the message using annotation offsets
+                start = ann.get('startIndex', 0)
+                length = ann.get('length', 0)
+                if length > 0:
+                    msg_text = msg.get('text', '') or msg.get('argumentText', '') or ''
+                    mention_text = normalize(msg_text[start:start+length])
+                    if agent_norm and (agent_norm in mention_text or mention_text in agent_norm):
+                        mentioned = True
+                        break
+        # Fallback: check if normalized agent name appears in normalized text
+        if not mentioned:
+            text = normalize(msg.get('text', '') or msg.get('argumentText', '') or '')
+            if agent_norm in text:
+                mentioned = True
+        if mentioned:
+            filtered.append(msg)
+    messages = filtered
+
+# Output clean JSON
+output = []
+for msg in messages:
+    sender = msg.get('sender', {})
+    output.append({
+        'name': msg.get('name', ''),
+        'sender': sender.get('name', ''),
+        'senderEmail': sender.get('email', ''),
+        'senderDisplayName': sender.get('displayName', ''),
+        'text': msg.get('text', '') or msg.get('argumentText', ''),
+        'createTime': msg.get('createTime', ''),
+        'space': msg.get('space', {}).get('name', ''),
+        'thread': msg.get('thread', {}).get('name', ''),
+    })
+
+print(json.dumps(output, indent=2))
+" || die "Failed to parse Chat API response"
