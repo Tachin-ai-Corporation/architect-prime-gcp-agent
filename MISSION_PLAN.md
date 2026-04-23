@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v4.0.0`
+> - **Current version tag:** `v5.0.0`
 
 ---
 
@@ -64,18 +64,18 @@ Dashboard (Cloud Run — Next.js)
     │   ├── Tools: exec (fleet-*, agent-ask, core-memory-*, dashboard-respond)
     │   └── Session memory + context pruning + hybrid search
     │
-    └── CoreKit (manifest-installed from GitHub — modular fragments)
+    └── CoreKit (manifest-installed from GitHub — grouped by domain)
         ├── contracts.json           → Single source of truth for cross-cutting values
         ├── validate-contracts       → Pre-flight contract validation (repo/runtime/file)
-        ├── Fleet lifecycle: fleet-deploy, fleet-teardown, fleet-monitor
-        ├── Fleet orchestration: fleet-hire, fleet-fire, fleet-status, fleet-verify, fleet-upgrade
-        ├── Chat: inbox-daemon, chat-send, chat-read, dwd-token
-        ├── Agent: agent-ask (Vertex AI grounding), brain-exec, build-system-prompt
-        ├── Memory: core-memory-read, core-memory-write (Firestore)
-        ├── System: upgrade-corekit, command-runner, render-config, assemble-tools
-        ├── Daemon: control-daemon (bash wrapper), control-daemon.mjs (Node.js)
-        ├── Async: dashboard-respond (Firestore push)
-        └── Config: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
+        ├── fleet/: fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-status,
+        │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
+        ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
+        ├── chat/: inbox-daemon, chat-send, chat-read, dwd-token
+        ├── brain/: brain-exec, build-system-prompt, agent-ask, assemble-tools
+        ├── memory/: core-memory-read, core-memory-write, update-deep-truths
+        ├── dashboard/: control-daemon, control-daemon.mjs, command-runner, dashboard-respond
+        ├── system/: upgrade-corekit, validate-contracts, web-search
+        └── config/: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
     ├── openclaw-gateway (Docker, --network host, port 18789)
@@ -98,8 +98,8 @@ Dashboard (Cloud Run — Next.js)
 ### Prime VM Bootstrap
 
 1. Dashboard creates a GCE VM with a **boot stub** startup script
-2. Boot stub curls `bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
-3. `prime-bootstrap.sh` installs Docker, CoreKit, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `control-daemon`
+2. Boot stub curls `infra/bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
+3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `control-daemon`
 4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.15) for stability
 
 ### Fleet Agent Lifecycle
@@ -112,11 +112,11 @@ Dashboard (Cloud Run — Next.js)
    - Grants IAM roles: `aiplatform.user`, `serviceAccountTokenCreator`, `datastore.user`
    - Verifies IAM bindings are active (retry on failure)
    - Resolves Cloud Run URL for status relay
-   - Creates a GCE VM with boot stub → `fleet-bootstrap.sh`
+   - Creates a GCE VM with boot stub → `infra/bootstrap/fleet-bootstrap.sh`
    - Passes all config (agent name, specialty, email, dashboard URL, prime ID) via VM metadata
 4. `fleet-monitor` runs on Prime in background: polls serial console for milestones, SSH-checks gateway health, writes deploy progress to Firestore
 5. `fleet-bootstrap.sh` on fleet VM:
-    - Installs Docker, CoreKit via `install.sh --role fleet --job {specialty}` (base + fleet + job manifests)
+    - Installs Docker, CoreKit via `infra/install.sh --role fleet --job {specialty}` (base + fleet + job manifests)
     - Reads cross-cutting values from `contracts.json` (location, OpenClaw pin, gateway port/route)
     - Deploys specialty workspace (clears Prime files first)
     - Renders fleet config from `openclaw-fleet-bootstrap.json5.tmpl` (strips JSON5 comments, substitutes template vars)
@@ -168,7 +168,7 @@ Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. Op
 
 ### Contract Enforcement
 
-`contracts.json` at the repo root is the **single source of truth** for all cross-cutting values. It defines:
+`infra/contracts.json` is the **single source of truth** for all cross-cutting values. It defines:
 - **OpenClaw pin** — commit hash and label for the pinned OpenClaw version
 - **Vertex AI** — location (`global`), primary model (`gemini-3.1-pro-preview`), sub-agent model (`gemini-2.5-flash`)
 - **Agent IDs** — default agent (`cortex`), gateway route (`openclaw/cortex`), sub-agent list
@@ -191,27 +191,25 @@ The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contr
 
 ### Modular Manifest Install
 
-`install.sh` uses **chained manifest fragments** instead of a flat file:
+`infra/install.sh` uses **chained manifest fragments** instead of a flat file:
 
 ```
-install.sh --role prime               → base.txt + role-prime.txt
-install.sh --role fleet --job devops  → base.txt + role-fleet.txt + job-devops.txt
-install.sh --role fleet --job engineer → base.txt + role-fleet.txt + job-engineer.txt
+infra/install.sh --role prime               → base.txt + role-prime.txt
+infra/install.sh --role fleet --job devops  → base.txt + role-fleet.txt + job-devops.txt
+infra/install.sh --role fleet --job engineer → base.txt + role-fleet.txt + job-engineer.txt
 ```
 
 | Fragment | Contents | Scope |
 |----------|----------|-------|
-| `manifests/base.txt` | contracts.json, oc, upgrade-corekit, render-config, validate-contracts, inbox-daemon, chat-send/read, dwd-token, agent-ask, brain-exec, config templates | Every agent |
-| `manifests/role-prime.txt` | fleet-*, control-daemon*, command-runner, brain workspaces (cortex + 5 sub-agents), skills, memory tools | Prime only |
-| `manifests/role-fleet.txt` | _brain/ sub-agent workspaces, fleet template workspace | Fleet agents |
-| `manifests/job-devops.txt` | devops/ specialty workspace (8 files) | DevOps agents |
-| `manifests/job-engineer.txt` | engineer/ specialty workspace (8 files) | Engineer agents |
+| `infra/manifests/base.txt` | contracts, gateway tools, chat tools, brain tools, config templates, agent skeleton | Every agent |
+| `infra/manifests/role-prime.txt` | fleet lifecycle, dashboard bridge, memory, skills, brain workspaces (cortex + 5 sub-agents) | Prime only |
+| `infra/manifests/role-fleet.txt` | fleet brain sub-agent workspaces, fleet template workspace | Fleet agents |
+| `infra/manifests/job-devops.txt` | devops specialty workspace (8 files) | DevOps agents |
+| `infra/manifests/job-engineer.txt` | engineer specialty workspace (8 files) | Engineer agents |
 
 **STATE.json v2** records `role` and `job` alongside ref, file hashes, and timestamps. On upgrade (`install.sh --upgrade <ref>`), role/job are read from existing STATE.json so the correct fragments are re-installed automatically.
 
-**Backward compatibility:** `manifest.txt` remains as a flat stub containing the union of all fragments. Existing `upgrade-corekit` versions that don't understand fragments still work — they install everything.
-
-**Dry-run testing:** `bootstrap/test-fleet-bootstrap.sh` renders the fleet config template, validates the JSON, checks for systemPrompt, verifies agent ID against contracts, and runs `validate-contracts` in repo mode — all in ~2 seconds, no VM needed.
+**Manifest source paths** reference the modular repo structure: `corekit/fleet/fleet-deploy`, `brain/prime/cortex/SOUL.md`, `specialties/devops/workspace/SOUL.md`, etc. Destination paths on VMs are unchanged.
 
 ### Dynamic Model Discovery
 
@@ -279,13 +277,13 @@ warnings, returns its output to Cortex, and Cortex synthesizes the final respons
 4. Memory recall needed → Cortex dispatches `temporal-memory`
 5. Complex tasks → Cortex chains: research → prefrontal → motor → cerebellum
 
-**Brain workspace files** (in `bundle/workspaces/`):
-- `cortex/` → SOUL.md (dispatch + Deep Truths), IDENTITY.md, TOOLS.md, MEMORY.md (working memory)
-- `temporal-research/` → SOUL.md (web search via agent-ask), IDENTITY.md
-- `temporal-memory/` → SOUL.md (recall + nightly consolidation), IDENTITY.md
-- `prefrontal/` → SOUL.md (planning methodology), IDENTITY.md
-- `motor/` → SOUL.md (execution rules), IDENTITY.md
-- `cerebellum/` → SOUL.md (verification criteria), IDENTITY.md
+**Brain workspace files** (in `brain/prime/` for Prime, `brain/fleet/` for fleet):
+- `brain/prime/cortex/` → SOUL.md (dispatch + Deep Truths), IDENTITY.md, TOOLS.md, MEMORY.md (working memory)
+- `brain/prime/temporal-research/` → SOUL.md (web search via agent-ask), IDENTITY.md
+- `brain/prime/temporal-memory/` → SOUL.md (recall + nightly consolidation), IDENTITY.md
+- `brain/prime/prefrontal/` → SOUL.md (planning methodology), IDENTITY.md
+- `brain/prime/motor/` → SOUL.md (execution rules), IDENTITY.md
+- `brain/prime/cerebellum/` → SOUL.md (verification criteria), IDENTITY.md
 
 **Workspace efficiency:** Sub-agents are stateless. Only Cortex has MEMORY.md and TOOLS.md.
 Sub-agents get task context from `brain-exec` args, not workspace files.
@@ -337,10 +335,10 @@ The Setup tab stores configurable defaults in Firestore `config/settings`:
 
 ### Fleet Agent Workspaces
 
-Each fleet agent type has a workspace directory:
-- `bundle/workspaces/devops/` → DevOps specialty
-- `bundle/workspaces/engineer/` → Engineer specialty
-- `bundle/workspaces/fleet/` → Generic fleet template (fallback)
+Each fleet agent type has a workspace directory in `specialties/`:
+- `specialties/devops/workspace/` → DevOps specialty
+- `specialties/engineer/workspace/` → Engineer specialty
+- `brain/fleet/_base/` → Generic fleet template (fallback)
 
 At bootstrap, `fleet-bootstrap.sh`:
 1. Clears the workspace directory (removes any inherited Prime files)
@@ -395,7 +393,7 @@ At bootstrap, `fleet-bootstrap.sh`:
 
 ```
 architect-prime/
-├── app/                              # Cloud Run control plane (Next.js)
+├── app/                              # MODULE 1: Control Plane (Cloud Run, Next.js)
 │   ├── src/app/page.tsx              # Dashboard UI (single-page)
 │   ├── src/app/api/primes/[id]/      # REST API routes
 │   │   ├── messages/                 # Dashboard ↔ Prime chat
@@ -408,83 +406,97 @@ architect-prime/
 │   │       ├── confirm-setup/        # POST — clear admin action card
 │   │       ├── dismiss/              # POST — dismiss agent from dashboard
 │   │       └── [agent]/              # GET — agent detail + logs
+│   ├── src/components/settings/      # Settings tabs (General, Models, System)
 │   ├── src/lib/                      # Firestore, auth utilities
 │   └── Dockerfile
-├── contracts.json                    # Single source of truth (cross-cutting values)
-├── manifests/                        # Modular manifest fragments
-│   ├── base.txt                      # Tools every agent needs
-│   ├── role-prime.txt                # Prime-only tools + workspaces
-│   ├── role-fleet.txt                # Fleet workspaces + brain sub-agents
-│   ├── job-devops.txt                # DevOps specialty workspace
-│   └── job-engineer.txt              # Engineer specialty workspace
-├── bundle/                           # Files installed on VM via manifest
-│   ├── corekit/                      # Core config + CLI tools
-│   │   ├── config/                   # Templates, agent-types, registry
-│   │   └── bin/                      # 32 CLI tools (see CoreKit Tools below)
-│   ├── openclaw/                     # Agent runtime files (auth profiles, sessions)
-│   ├── skills/                       # Self-describing SKILL.md per skill
-│   └── workspaces/                   # Agent persona files
-│       ├── cortex/                   # Prime brain: orchestrator (default)
-│       ├── temporal-research/        # Prime brain: web search (Vertex AI)
-│       ├── temporal-memory/          # Prime brain: memory/context recall
-│       ├── prefrontal/               # Prime brain: strategic planning
-│       ├── motor/                    # Prime brain: execution
-│       ├── cerebellum/               # Prime brain: verification
-│       ├── _brain/                   # Fleet: Shared brain sub-agent workspaces
-│       │   ├── temporal-research/    # Web search (templated SOUL/IDENTITY)
-│       │   ├── temporal-memory/      # Memory recall (templated)
-│       │   ├── prefrontal/           # Planning (templated)
-│       │   ├── motor/                # Execution (templated)
-│       │   └── cerebellum/           # Verification (templated)
-│       ├── devops/                   # Fleet: DevOps specialty cortex
-│       ├── engineer/                 # Fleet: Engineer specialty cortex
-│       └── fleet/                    # Fleet: Generic template (fallback)
-├── bootstrap/                        # VM startup scripts (curled from GitHub)
-│   ├── prime-bootstrap.sh            # Prime VM setup
-│   ├── fleet-bootstrap.sh            # Fleet agent VM setup (contract-driven)
-│   └── test-fleet-bootstrap.sh       # Dry-run bootstrap validation (~2s, no VM)
-├── install.sh                        # Modular manifest-driven installer
-├── manifest.txt                      # Backward-compat stub (union of fragments)
+├── infra/                            # MODULE 2: Infrastructure
+│   ├── contracts.json                # Single source of truth (cross-cutting values)
+│   ├── install.sh                    # Modular manifest-driven installer
+│   ├── cloudbuild.yaml               # Dashboard Cloud Build config
+│   ├── bootstrap/                    # VM startup scripts (curled from GitHub)
+│   │   ├── prime-bootstrap.sh        # Prime VM setup
+│   │   └── fleet-bootstrap.sh        # Fleet agent VM setup (contract-driven)
+│   ├── manifests/                    # Modular manifest fragments
+│   │   ├── base.txt                  # Tools every agent needs
+│   │   ├── role-prime.txt            # Prime-only tools + workspaces
+│   │   ├── role-fleet.txt            # Fleet workspaces + brain sub-agents
+│   │   ├── job-devops.txt            # DevOps specialty workspace
+│   │   └── job-engineer.txt          # Engineer specialty workspace
+│   └── deploy/                       # Standalone install/uninstall scripts
+├── corekit/                          # MODULE 3: CoreKit Runtime (VM-side scripts)
+│   ├── fleet/                        # Fleet lifecycle (9 scripts)
+│   ├── gateway/                      # OpenClaw gateway management (5 scripts)
+│   ├── chat/                         # Google Chat / DWD integration (4 scripts)
+│   ├── brain/                        # Brain execution layer (4 scripts)
+│   ├── memory/                       # Memory subsystem (3 scripts)
+│   ├── dashboard/                    # Dashboard bridge (4 scripts)
+│   ├── system/                       # Cross-cutting utilities (3 scripts)
+│   └── config/                       # Templates, service files, agent-types
+├── brain/                            # MODULE 4: Agent Identity
+│   ├── agents/main/                  # OpenClaw agent skeleton (auth, sessions)
+│   ├── prime/                        # Prime brain workspaces
+│   │   ├── cortex/                   # Orchestrator (default): SOUL, IDENTITY, TOOLS, MEMORY
+│   │   ├── temporal-research/        # Web search: SOUL, IDENTITY
+│   │   ├── temporal-memory/          # Memory recall: SOUL, IDENTITY
+│   │   ├── prefrontal/               # Planning: SOUL, IDENTITY
+│   │   ├── motor/                    # Execution: SOUL, IDENTITY
+│   │   └── cerebellum/               # Verification: SOUL, IDENTITY
+│   └── fleet/                        # Fleet brain workspaces
+│       ├── _base/                    # Generic fleet template (fallback)
+│       └── _brain/                   # Shared sub-agent workspaces for all fleet agents
+├── specialties/                      # MODULE 5: Per-Agent-Type Bundles
+│   ├── devops/workspace/             # DevOps specialty (8 files)
+│   └── engineer/workspace/           # Engineer specialty (8 files)
+├── skills/                           # MODULE 6: Skill Packages
+│   ├── agent-ask/SKILL.md            # Vertex AI grounding web search
+│   ├── fleet-hire/SKILL.md           # Deploy a new fleet agent
+│   ├── fleet-fire/SKILL.md           # Remove a fleet agent
+│   ├── fleet-status/SKILL.md         # Query fleet status
+│   ├── fleet-verify/SKILL.md         # Verify agent health
+│   ├── fleet-upgrade/SKILL.md        # Upgrade agent CoreKit
+│   └── memory-consolidate/SKILL.md   # Nightly memory consolidation
+├── docs/                             # Architecture documentation
+│   └── architecture/                 # AGENT_DESIGN, BRAIN_ARCHITECTURE, R/C/M spec
 ├── MISSION_PLAN.md                   # This document
 └── README.md
 ```
 
-### CoreKit Tools (bundle/corekit/bin/) — 32 files
+### CoreKit Tools (32 scripts, grouped by domain)
 
-| Tool | Purpose |
-|------|---------|
-| `fleet-deploy` | Creates fleet agent VM + SA + IAM + boot stub |
-| `fleet-teardown` | Deletes fleet agent VM + disk (preserves SA) |
-| `fleet-monitor` | Polls serial console for bootstrap progress, writes to Firestore |
-| `fleet-hire` | Dashboard-facing wrapper: fleet-deploy + Firestore status |
-| `fleet-fire` | Dashboard-facing wrapper: fleet-teardown + Firestore status |
-| `fleet-status` | Reports fleet agent health summary |
-| `fleet-verify` | SSH-checks a fleet agent's gateway + DWD health |
-| `fleet-upgrade` | Upgrades a running fleet agent's CoreKit |
-| `fleet-health-check` | SSH-checks fleet agent gateway health, auto-recovers after 3 failures |
-| `inbox-daemon` | Polls Google Chat via DWD, reads gateway route from contracts.json |
-| `control-daemon` | Bash wrapper — starts `control-daemon.mjs` inside container |
-| `control-daemon.mjs` | Node.js daemon: Firestore polling, hybrid SSE dispatch, conversation history |
-| `chat-send` | Sends messages to Google Chat via DWD |
-| `chat-read` | Reads messages from Google Chat via DWD |
-| `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt |
-| `agent-ask` | Vertex AI grounding web search (used by temporal-research) |
-| `brain-exec` | Dispatches sub-agents, strips gateway warnings, returns output |
-| `build-system-prompt` | Assembles system prompt from workspace files |
-| `web-search` | Google Search grounding for agent queries |
-| `upgrade-corekit` | In-place CoreKit update from GitHub ref (validates contracts post-upgrade) |
-| `upgrade-openclaw` | Rebuilds OpenClaw container from pinned commit |
-| `command-runner` | Executes commands from Firestore, streams output |
-| `discover-models` | Queries Vertex AI Model Garden, probes availability, outputs JSON catalog |
-| `assemble-tools` | Builds TOOLS.md from skill definitions |
-| `core-memory-read` | Queries Firestore Core Memory by category/tags |
-| `core-memory-write` | Writes durable facts to Firestore Core Memory |
-| `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
-| `render-config` | Renders JSON5 config template with string-aware comment stripping |
-| `validate-contracts` | Pre-flight check: all cross-cutting values match contracts.json |
-| `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
-| `bootstrap_smoke.sh` | Vertex AI smoke test (3 attempts with backoff) |
-| `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
+| Domain | Tool | Purpose |
+|--------|------|---------|
+| **fleet/** | `fleet-deploy` | Creates fleet agent VM + SA + IAM + boot stub |
+| | `fleet-teardown` | Deletes fleet agent VM + disk (preserves SA) |
+| | `fleet-monitor` | Polls serial console for bootstrap progress, writes to Firestore |
+| | `fleet-hire` | Dashboard-facing wrapper: fleet-deploy + Firestore status |
+| | `fleet-fire` | Dashboard-facing wrapper: fleet-teardown + Firestore status |
+| | `fleet-status` | Reports fleet agent health summary |
+| | `fleet-verify` | SSH-checks a fleet agent's gateway + DWD health |
+| | `fleet-upgrade` | Upgrades a running fleet agent's CoreKit |
+| | `fleet-health-check` | SSH-checks fleet agent gateway health, auto-recovers after 3 failures |
+| **gateway/** | `render-config` | Renders JSON5 config template with string-aware comment stripping |
+| | `discover-models` | Queries Vertex AI Model Garden, probes availability, outputs JSON catalog |
+| | `upgrade-openclaw` | Rebuilds OpenClaw container from pinned commit |
+| | `bootstrap_smoke.sh` | Vertex AI smoke test (3 attempts with backoff) |
+| | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
+| **chat/** | `inbox-daemon` | Polls Google Chat via DWD, reads gateway route from contracts.json |
+| | `chat-send` | Sends messages to Google Chat via DWD |
+| | `chat-read` | Reads messages from Google Chat via DWD |
+| | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt |
+| **brain/** | `brain-exec` | Dispatches sub-agents, strips gateway warnings, returns output |
+| | `build-system-prompt` | Assembles system prompt from workspace files |
+| | `agent-ask` | Vertex AI grounding web search (used by temporal-research) |
+| | `assemble-tools` | Builds TOOLS.md from skill definitions |
+| **memory/** | `core-memory-read` | Queries Firestore Core Memory by category/tags |
+| | `core-memory-write` | Writes durable facts to Firestore Core Memory |
+| | `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
+| **dashboard/** | `control-daemon` | Bash wrapper — starts `control-daemon.mjs` inside container |
+| | `control-daemon.mjs` | Node.js daemon: Firestore polling, hybrid SSE dispatch, conversation history |
+| | `command-runner` | Executes commands from Firestore, streams output |
+| | `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
+| **system/** | `upgrade-corekit` | In-place CoreKit update from GitHub ref (validates contracts post-upgrade) |
+| | `validate-contracts` | Pre-flight check: all cross-cutting values match contracts.json |
+| | `web-search` | Google Search grounding for agent queries |
 
 ### Key Paths on VM
 
@@ -497,7 +509,7 @@ architect-prime/
 | `/opt/openclaw/.openclaw/workspace-{specialty}/` | Specialty workspace (fleet only) |
 | `/opt/openclaw/.openclaw/bin/` | CoreKit CLI tools |
 | `/opt/openclaw/.openclaw/corekit/` | Config files, templates, registry |
-| `/opt/openclaw/.openclaw/corekit/contracts.json` | Installed contracts (from repo root) |
+| `/opt/openclaw/.openclaw/corekit/contracts.json` | Installed contracts (from `infra/contracts.json`) |
 | `/opt/openclaw/.openclaw/corekit/STATE.json` | Install provenance: ref, role, job, file hashes |
 | `/opt/openclaw/.openclaw/skills/` | Skill definitions |
 | `/root/.openclaw/.gateway-token` | Gateway auth token |
@@ -528,12 +540,13 @@ architect-prime/
 8. **Fail fast at bootstrap, not runtime** — `validate-contracts` runs before container start; config schema violations caught in seconds, not as crash-loops
 9. **Preserve state across cycles** — service accounts and IAM bindings persist across fire/re-hire; STATE.json records role/job for idempotent upgrades
 10. **Human-auditable** — all communication logged in Firestore; structured JSON logging with mode, latency, first-chunk timing
+11. **Modular by module** — six top-level directories (`app/`, `infra/`, `corekit/`, `brain/`, `specialties/`, `skills/`) with minimal cross-dependencies; AI agents can focus on one module without understanding the whole repo
 
 ---
 
 ## Roadmap
 
-### Next: v4.1 — Brain Model Upgrade + Dispatch Telemetry
+### Next: v5.1 — Brain Model Upgrade + Dispatch Telemetry
 > *Goal: Upgrade the brain architecture for intelligence, reliability, and observability.*
 
 1. **Dispatch telemetry** — Log which sub-agents ran, their latency, token usage, and success/failure to Firestore. Brain debugging is currently blind.
@@ -542,21 +555,22 @@ architect-prime/
 4. **Warm-up probe** — After container start, fire a lightweight probe request to pre-warm ADC tokens before the first real user message hits.
 5. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation.
 
-### Future: v5.0 — R/C/M Framework
+### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
 - Checkpoint queue — Firestore data model + queue-worker
 - Human review gates — dashboard integration
 - Inter-agent delegation — agents @-mention other agents to delegate tasks
 
-### Future: v6.0 — RSI Engine
+### Future: v7.0 — RSI Engine
 - Git-ops skill — branch, commit, push, PR
 - Code-write / code-test skills
 - Test harness: deploy from branch → validate → report
 - RSI mission template — plan → implement → test → promote
 - Two mandatory human gates (plan approval + merge approval)
 
-### Future: v7.0+ — Workspace Integration
+### Future: v8.0+ — Workspace Integration
 - Google Workspace skills — Docs, Sheets, Calendar, Gmail
 - Agent cell templates — pre-built team configurations
 - Self-evolution — Prime proposes its own improvements via PR
 - Multi-project federation — fleet agents across different GCP projects
+
