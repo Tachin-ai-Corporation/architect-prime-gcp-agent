@@ -483,6 +483,17 @@ for attempt in 1 2 3; do
 done
 [[ "$SMOKE_OK" == "true" ]] || warn "Smoke test did not pass after 3 attempts — agent may still work once IAM propagates"
 
+# ---- 17c) Warm-up probe (pre-warm ADC tokens) ----
+# ADR: The smoke test uses a minimal prompt. This warm-up fires a request
+# through the full cortex route to ensure all model/ADC paths are cached
+# before the first real user message. Saves 10-20s on first interaction.
+info "Running warm-up probe..."
+curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${MY_TOKEN}" \
+  -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
+  > /dev/null 2>&1 || warn "Warm-up probe failed (non-fatal)"
+
 # ============================================================
 # PHASE 4 — Start services + finalize
 # ============================================================

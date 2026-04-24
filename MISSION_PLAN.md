@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v5.0.0`
+> - **Current version tag:** `v5.1.0`
 
 ---
 
@@ -262,13 +262,17 @@ warnings, returns its output to Cortex, and Cortex synthesizes the final respons
 | **cerebellum** | gemini-2.5-flash | Verification + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
 
 **Dispatch mechanism:** `exec brain-exec <agent-id> "<task>" [timeout]`
+- **Structured dispatch protocol:** `brain-exec` validates agent IDs against `contracts.json` `subagentIds` before launching `openclaw agent`. Unknown IDs are rejected with a clear error and a telemetry event.
 - `brain-exec` wraps `openclaw agent` and strips gateway infrastructure warnings
+- **Dispatch telemetry:** Every invocation records a telemetry event to Firestore (`/primes/{id}/brain/dispatch-log/{docId}`) via fire-and-forget backgrounded call to `brain-telemetry-write`. Events include: agent ID, task (truncated to 200 chars), start time, duration (ms), output bytes, exit code, success boolean, and error type.
 - Synchronous — Cortex blocks until the sub-agent returns
 - The CLI connects via gateway WebSocket when tokens are synced, falls back to embedded mode otherwise
 - `render-config` ensures gateway token sync by reading `OPENCLAW_GATEWAY_TOKEN` env var
 - `upgrade-corekit` auto-calls `render-config` after every deployment
 - Cortex MUST wait for results before responding to the user
 - Cortex runs on gemini-3.1-pro-preview; sub-agents on gemini-2.5-flash
+- **Warm-up probe:** Both bootstrap scripts fire a lightweight request through the full cortex route after ADC setup, pre-warming tokens before the first real user message. Saves 10-20s on first interaction.
+- **Telemetry retention:** 7-day rolling window. Old events are pruned by nightly memory consolidation.
 
 **Brain workflow (every message):**
 1. Simple questions / identity → Cortex answers directly, no dispatch
@@ -461,7 +465,7 @@ architect-prime/
 └── README.md
 ```
 
-### CoreKit Tools (32 scripts, grouped by domain)
+### CoreKit Tools (34 scripts, grouped by domain)
 
 | Domain | Tool | Purpose |
 |--------|------|---------|
@@ -483,7 +487,9 @@ architect-prime/
 | | `chat-send` | Sends messages to Google Chat via DWD |
 | | `chat-read` | Reads messages from Google Chat via DWD |
 | | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt |
-| **brain/** | `brain-exec` | Dispatches sub-agents, strips gateway warnings, returns output |
+| **brain/** | `brain-exec` | Dispatches sub-agents: validates agent ID → runs openclaw agent → strips warnings → writes telemetry → returns output |
+| | `brain-telemetry-write` | Writes dispatch telemetry event to Firestore (fire-and-forget, called by brain-exec) |
+| | `brain-telemetry-read` | Queries recent dispatch telemetry for debugging (table or JSON output) |
 | | `build-system-prompt` | Assembles system prompt from workspace files |
 | | `agent-ask` | Vertex AI grounding web search (used by temporal-research) |
 | | `assemble-tools` | Builds TOOLS.md from skill definitions |
@@ -546,14 +552,11 @@ architect-prime/
 
 ## Roadmap
 
-### Next: v5.1 — Brain Model Upgrade + Dispatch Telemetry
-> *Goal: Upgrade the brain architecture for intelligence, reliability, and observability.*
+### Next: v5.2 — Model Flexibility + Memory Consolidation
+> *Goal: Model optimization and memory reliability.*
 
-1. **Dispatch telemetry** — Log which sub-agents ran, their latency, token usage, and success/failure to Firestore. Brain debugging is currently blind.
-2. **Structured dispatch protocol** — Replace natural-language `exec brain-exec <id> "<task>"` with a JSON dispatch intent that validates agent IDs before execution.
-3. **Model flexibility** — Allow per-agent model override in the config template (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash).
-4. **Warm-up probe** — After container start, fire a lightweight probe request to pre-warm ADC tokens before the first real user message hits.
-5. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation.
+1. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
+2. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
 
 ### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration

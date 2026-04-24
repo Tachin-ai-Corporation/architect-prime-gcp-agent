@@ -2,12 +2,13 @@
 # ============================================================
 # brain-exec — Wrapper for exec openclaw agent dispatch
 #
-# Strips gateway warning messages from the output so Cortex
-# only sees the actual sub-agent response. The gateway token
-# mismatch is expected (CLI falls back to embedded mode).
+# 1. Validates agent ID against contracts.json (fail fast)
+# 2. Runs the sub-agent via openclaw agent
+# 3. Strips gateway warning messages from the output
+# 4. Writes dispatch telemetry to Firestore (fire-and-forget)
 #
 # Usage (from Cortex SOUL.md):
-#   exec brain-exec <agent-id> "<task instruction>"
+#   exec brain-exec <agent-id> "<task instruction>" [timeout]
 #
 # Example:
 #   exec brain-exec temporal-research "Research: latest AI news"
@@ -17,8 +18,43 @@ AGENT_ID="${1:?Usage: brain-exec <agent-id> \"<task>\"}"
 TASK="${2:?Usage: brain-exec <agent-id> \"<task>\"}"
 TIMEOUT="${3:-120}"
 
+# ── Locate contracts.json ──────────────────────────────────
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+CONTRACTS="${OC_HOST_ROOT}/.openclaw/corekit/contracts.json"
+
+# ── Validate agent ID against contracts ────────────────────
+# Structured dispatch protocol: reject unknown agent IDs before
+# launching openclaw agent. Prevents silent failures from typos.
+if [[ -f "$CONTRACTS" ]]; then
+  VALID=$(python3 -c "
+import json, sys
+try:
+    c = json.load(open('$CONTRACTS'))
+    ids = c.get('agents', {}).get('subagentIds', [])
+    if '$AGENT_ID' in ids:
+        sys.exit(0)
+    else:
+        print(' '.join(ids))
+        sys.exit(1)
+except Exception as e:
+    print(str(e), file=sys.stderr)
+    sys.exit(0)  # Don't block on contract read errors
+" 2>/dev/null) || {
+    echo "ERROR: Unknown agent '${AGENT_ID}'. Valid agents: ${VALID}"
+    # Telemetry: record the rejection (fire-and-forget)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    "${SCRIPT_DIR}/brain-telemetry-write" "$AGENT_ID" "$TASK" 0 0 0 1 "unknown_agent" &
+    exit 1
+  }
+fi
+
+# ── Dispatch ───────────────────────────────────────────────
+T_START=$(date +%s%N)
+
 # Run openclaw agent and capture full output
 OUTPUT=$(openclaw agent --agent "$AGENT_ID" -m "$TASK" --timeout "$TIMEOUT" 2>&1) || true
+
+T_END=$(date +%s%N)
 
 # Strip known gateway warning lines
 CLEAN=$(echo "$OUTPUT" | grep -v \
@@ -35,7 +71,25 @@ CLEAN=$(echo "$OUTPUT" | grep -v \
 
 # If nothing left after stripping, return original
 if [[ -z "$CLEAN" ]]; then
-  echo "$OUTPUT"
+  FINAL="$OUTPUT"
 else
-  echo "$CLEAN"
+  FINAL="$CLEAN"
 fi
+
+# ── Telemetry (fire-and-forget) ────────────────────────────
+OUTPUT_BYTES=$(echo "$FINAL" | wc -c)
+EXIT_CODE=0
+ERROR_TYPE=""
+
+# Detect failure conditions
+if [[ "$OUTPUT_BYTES" -le 1 ]]; then
+  ERROR_TYPE="empty_response"
+  EXIT_CODE=1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/brain-telemetry-write" \
+  "$AGENT_ID" "$TASK" "$T_START" "$T_END" "$OUTPUT_BYTES" "$EXIT_CODE" "$ERROR_TYPE" &
+
+# ── Return output ──────────────────────────────────────────
+echo "$FINAL"

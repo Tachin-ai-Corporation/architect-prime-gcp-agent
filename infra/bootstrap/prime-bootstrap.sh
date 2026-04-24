@@ -430,6 +430,18 @@ if [[ -x "$VALIDATE" ]]; then
   fi
 fi
 
+# ---- 12d) Warm-up probe (pre-warm ADC tokens) ----
+# ADR: After the ADC patch + model discovery + contract validation, fire a
+# lightweight request through the full cortex route to pre-warm ADC tokens.
+# This ensures the first real user message from control-daemon doesn't eat
+# 10-20s of token initialization.
+info "Running warm-up probe..."
+curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${MY_TOKEN}" \
+  -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
+  > /dev/null 2>&1 || warn "Warm-up probe failed (non-fatal)"
+
 # ============================================================
 # PHASE 4 — Start services + finalize
 # ============================================================

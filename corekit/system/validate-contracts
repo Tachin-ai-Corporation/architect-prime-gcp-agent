@@ -193,6 +193,21 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
       fail "${TMPL_NAME} — gateway port ${C_GATEWAY_PORT} not found"
     fi
   done
+
+  # ---- Check 10: brain-exec reads agent IDs from contracts.json ----
+  BRAIN_EXEC="${REPO_ROOT}/corekit/brain/brain-exec"
+  if [[ -f "$BRAIN_EXEC" ]]; then
+    if grep -q 'contracts.json' "$BRAIN_EXEC"; then
+      pass "brain-exec reads agent IDs from contracts.json"
+    else
+      fail "brain-exec does not reference contracts.json — agent IDs may be hardcoded"
+    fi
+    if grep -q 'subagentIds' "$BRAIN_EXEC"; then
+      pass "brain-exec validates against subagentIds"
+    else
+      fail "brain-exec does not validate agent IDs against subagentIds"
+    fi
+  fi
 fi
 
 # ============================================================

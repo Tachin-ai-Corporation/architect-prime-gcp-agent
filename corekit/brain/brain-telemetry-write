@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# ============================================================
+# brain-telemetry-write — Write a dispatch telemetry event to Firestore
+#
+# Called by brain-exec (fire-and-forget, backgrounded) to record
+# every sub-agent dispatch with timing, status, and error info.
+#
+# Usage (internal — called by brain-exec):
+#   brain-telemetry-write <agent_id> <task> <start_ns> <end_ns> <output_bytes> <exit_code> [error_type]
+#
+# Writes to: /primes/{primeId}/brain/dispatch-log/{auto-id}
+#
+# Telemetry events are retained for 7 days. The nightly memory
+# consolidation process is responsible for pruning old entries.
+#
+# Errors: This script NEVER fails fatally. If Firestore is
+# unreachable, it logs a warning to stderr and exits 0.
+# ============================================================
+# shellcheck disable=SC2015
+
+AGENT_ID="${1:-unknown}"
+TASK_RAW="${2:-}"
+START_NS="${3:-0}"
+END_NS="${4:-0}"
+OUTPUT_BYTES="${5:-0}"
+EXIT_CODE="${6:-1}"
+ERROR_TYPE="${7:-}"
+
+# ── Truncate task to 200 chars ──────────────────────────────
+TASK="${TASK_RAW:0:200}"
+
+# ── Calculate duration in milliseconds ──────────────────────
+if [[ "$START_NS" -gt 0 && "$END_NS" -gt 0 ]]; then
+  DURATION_MS=$(( (END_NS - START_NS) / 1000000 ))
+else
+  DURATION_MS=0
+fi
+
+# ── Determine success ──────────────────────────────────────
+SUCCESS="true"
+if [[ "$EXIT_CODE" -ne 0 || "$OUTPUT_BYTES" -le 0 ]]; then
+  SUCCESS="false"
+fi
+if [[ -n "$ERROR_TYPE" ]]; then
+  SUCCESS="false"
+fi
+
+# ── Resolve Prime ID and Project ───────────────────────────
+PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//' | sed 's/^fleet-//')
+fi
+
+PROJECT_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "")
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "[brain-telemetry-write] WARN: Could not resolve PROJECT_ID, skipping" >&2
+  exit 0
+fi
+
+# ── Get access token ───────────────────────────────────────
+TOKEN=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")
+if [[ -z "$TOKEN" ]]; then
+  echo "[brain-telemetry-write] WARN: Could not get access token, skipping" >&2
+  exit 0
+fi
+
+# ── Timestamps ─────────────────────────────────────────────
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+
+# ── Build error field ──────────────────────────────────────
+ERROR_FIELD='"nullValue": null'
+if [[ -n "$ERROR_TYPE" ]]; then
+  ERROR_FIELD="\"stringValue\": \"${ERROR_TYPE}\""
+fi
+
+# ── Escape task for JSON ───────────────────────────────────
+TASK_ESCAPED=$(python3 -c "import json; print(json.dumps('$TASK')[1:-1])" 2>/dev/null || echo "$TASK")
+
+# ── Build document ─────────────────────────────────────────
+DOC_BODY=$(cat <<EOF
+{
+  "fields": {
+    "agentId": {"stringValue": "${AGENT_ID}"},
+    "task": {"stringValue": "${TASK_ESCAPED}"},
+    "startedAt": {"stringValue": "${TIMESTAMP}"},
+    "durationMs": {"integerValue": "${DURATION_MS}"},
+    "outputBytes": {"integerValue": "${OUTPUT_BYTES}"},
+    "exitCode": {"integerValue": "${EXIT_CODE}"},
+    "success": {"booleanValue": ${SUCCESS}},
+    "error": {${ERROR_FIELD}},
+    "callerAgent": {"stringValue": "cortex"}
+  }
+}
+EOF
+)
+
+# ── Write to Firestore ─────────────────────────────────────
+COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/brain/dispatch-log"
+
+curl -sf --max-time 5 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "https://firestore.googleapis.com/v1/${COLLECTION_PATH}" \
+  -d "${DOC_BODY}" \
+  > /dev/null 2>&1 \
+  || echo "[brain-telemetry-write] WARN: Firestore write failed (non-fatal)" >&2
+
+exit 0

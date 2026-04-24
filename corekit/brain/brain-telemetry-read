@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# ============================================================
+# brain-telemetry-read — Query recent brain dispatch telemetry
+#
+# Reads dispatch telemetry from Firestore and displays it in a
+# human-readable table or JSON format. Useful for debugging
+# brain dispatch issues from the VM.
+#
+# Usage:
+#   brain-telemetry-read                     # Last 20 events
+#   brain-telemetry-read --last 50           # Last 50 events
+#   brain-telemetry-read --agent motor       # Filter by agent
+#   brain-telemetry-read --failures          # Only failures
+#   brain-telemetry-read --json              # JSON output
+#
+# Reads from: /primes/{primeId}/brain/dispatch-log/
+# ============================================================
+set -euo pipefail
+
+# ── Parse arguments ────────────────────────────────────────
+LIMIT=20
+AGENT_FILTER=""
+FAILURES_ONLY=false
+JSON_OUTPUT=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --last)      LIMIT="$2";           shift 2 ;;
+    --agent)     AGENT_FILTER="$2";    shift 2 ;;
+    --failures)  FAILURES_ONLY=true;   shift ;;
+    --json)      JSON_OUTPUT=true;     shift ;;
+    --help|-h)
+      echo "Usage: brain-telemetry-read [--last N] [--agent <id>] [--failures] [--json]"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+# ── Resolve Prime ID and Project ───────────────────────────
+PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//' | sed 's/^fleet-//')
+fi
+
+PROJECT_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "")
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "ERROR: Could not resolve PROJECT_ID" >&2
+  exit 1
+fi
+
+# ── Get access token ───────────────────────────────────────
+TOKEN=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# ── Build Firestore query ─────────────────────────────────
+FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
+PARENT_PATH="primes/${PRIME_ID}/brain"
+
+# Build structured query with filters
+FILTERS=""
+if [[ -n "$AGENT_FILTER" && "$FAILURES_ONLY" == "true" ]]; then
+  FILTERS=$(cat <<FILT
+"where": {
+  "compositeFilter": {
+    "op": "AND",
+    "filters": [
+      {"fieldFilter": {"field": {"fieldPath": "agentId"}, "op": "EQUAL", "value": {"stringValue": "${AGENT_FILTER}"}}},
+      {"fieldFilter": {"field": {"fieldPath": "success"}, "op": "EQUAL", "value": {"booleanValue": false}}}
+    ]
+  }
+},
+FILT
+)
+elif [[ -n "$AGENT_FILTER" ]]; then
+  FILTERS=$(cat <<FILT
+"where": {
+  "fieldFilter": {"field": {"fieldPath": "agentId"}, "op": "EQUAL", "value": {"stringValue": "${AGENT_FILTER}"}}
+},
+FILT
+)
+elif [[ "$FAILURES_ONLY" == "true" ]]; then
+  FILTERS=$(cat <<FILT
+"where": {
+  "fieldFilter": {"field": {"fieldPath": "success"}, "op": "EQUAL", "value": {"booleanValue": false}}
+},
+FILT
+)
+fi
+
+QUERY_BODY=$(cat <<EOF
+{
+  "structuredQuery": {
+    "from": [{"collectionId": "dispatch-log"}],
+    ${FILTERS}
+    "orderBy": [{"field": {"fieldPath": "startedAt"}, "direction": "DESCENDING"}],
+    "limit": ${LIMIT}
+  }
+}
+EOF
+)
+
+# ── Execute query ──────────────────────────────────────────
+RESPONSE=$(curl -sf --max-time 10 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "${FIRESTORE_BASE}/${PARENT_PATH}:runQuery" \
+  -d "${QUERY_BODY}" 2>&1)
+
+# ── Parse and display ──────────────────────────────────────
+python3 - <<'PYPARSE' "$RESPONSE" "$JSON_OUTPUT"
+import json, sys
+
+raw = sys.argv[1]
+json_mode = sys.argv[2] == "true"
+
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError:
+    print("ERROR: Could not parse Firestore response", file=sys.stderr)
+    print(raw[:500], file=sys.stderr)
+    sys.exit(1)
+
+if not isinstance(data, list):
+    data = [data]
+
+# Extract documents
+events = []
+for entry in data:
+    doc = entry.get("document")
+    if not doc:
+        continue
+    fields = doc.get("fields", {})
+    events.append({
+        "agentId": fields.get("agentId", {}).get("stringValue", "?"),
+        "task": fields.get("task", {}).get("stringValue", "?"),
+        "startedAt": fields.get("startedAt", {}).get("stringValue", "?"),
+        "durationMs": int(fields.get("durationMs", {}).get("integerValue", 0)),
+        "outputBytes": int(fields.get("outputBytes", {}).get("integerValue", 0)),
+        "exitCode": int(fields.get("exitCode", {}).get("integerValue", 0)),
+        "success": fields.get("success", {}).get("booleanValue", False),
+        "error": fields.get("error", {}).get("stringValue"),
+        "callerAgent": fields.get("callerAgent", {}).get("stringValue", "cortex"),
+    })
+
+if not events:
+    print("No dispatch events found.")
+    sys.exit(0)
+
+if json_mode:
+    print(json.dumps(events, indent=2))
+    sys.exit(0)
+
+# Table output
+print(f"{'TIMESTAMP':<24} {'AGENT':<20} {'DURATION':>10} {'STATUS':>8} {'OUTPUT':>12} {'ERROR'}")
+print("-" * 90)
+for e in events:
+    ts = e["startedAt"][:19].replace("T", " ") if e["startedAt"] != "?" else "?"
+    dur = f"{e['durationMs'] / 1000:.1f}s"
+    status = "✅ ok" if e["success"] else "❌ fail"
+    output = f"{e['outputBytes']} bytes"
+    error = e.get("error") or ""
+    agent = e["agentId"]
+    print(f"{ts:<24} {agent:<20} {dur:>10} {status:>8} {output:>12}  {error}")
+
+print(f"\n{len(events)} event(s) shown.")
+PYPARSE
