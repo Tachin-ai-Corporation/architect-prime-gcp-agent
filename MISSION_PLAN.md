@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version tag:** `v5.1.0`
+> - **Current version tag:** `v5.2.0`
 
 ---
 
@@ -59,8 +59,13 @@ Dashboard (Cloud Run — Next.js)
     │   │   ├── prefrontal — Gemini 2.5 Flash — strategic planning
     │   │   ├── motor — Gemini 2.5 Flash — execution (code + commands)
     │   │   └── cerebellum — Gemini 2.5 Flash — verification + QA
+    │   ├── Two-Phase Turn Protocol (v5.2):
+    │   │   ├── PreTurn hook injects BRAIN_CARD.md (agent table + classification rules)
+    │   │   ├── Phase 1: Cortex classifies + writes PLAN.md (mandatory before dispatch)
+    │   │   ├── Phase 2: Cortex executes dispatch plan via brain-exec
+    │   │   └── PostTurn hook validates compliance (PLAN.md vs actual dispatches)
     │   ├── Cortex dispatches sub-agents via: exec brain-exec <agent-id> "<task>"
-    │   ├── Each agent has its own workspace: SOUL.md, IDENTITY.md
+    │   ├── Each agent has its own workspace: SOUL.md, IDENTITY.md, BRAIN_CARD.md
     │   ├── Tools: exec (fleet-*, agent-ask, core-memory-*, dashboard-respond)
     │   └── Session memory + context pruning + hybrid search
     │
@@ -71,9 +76,11 @@ Dashboard (Cloud Run — Next.js)
         │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
         ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
         ├── chat/: inbox-daemon, chat-send, chat-read, dwd-token
-        ├── brain/: brain-exec, build-system-prompt, agent-ask, assemble-tools
+        ├── brain/: brain-exec, build-system-prompt, agent-ask, assemble-tools,
+        │          brain-telemetry-write, brain-telemetry-read, check-plan-compliance
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
-        ├── dashboard/: control-daemon, control-daemon.mjs, command-runner, dashboard-respond
+        ├── dashboard/: control-daemon, control-daemon.mjs (SSE ack + Task tracking),
+        │              command-runner, dashboard-respond
         ├── system/: upgrade-corekit, validate-contracts, web-search
         └── config/: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
@@ -552,11 +559,21 @@ architect-prime/
 
 ## Roadmap
 
-### Next: v5.2 — Model Flexibility + Memory Consolidation
+### Current: v5.2 — Deterministic Brain Dispatch + Telemetry
+> *Goal: Reliable sub-agent dispatch, observability, and immediate user feedback.*
+
+1. **Two-Phase Turn Protocol** — Cortex must classify requests and write `PLAN.md` before any brain dispatch. PreTurn hook injects brain architecture card every turn. PostTurn hook validates compliance.
+2. **Telemetry fix** — Fixed Firestore REST path bug (odd segment count → 400 errors). Dispatch telemetry now persists to `primes/{id}/dispatch-log`.
+3. **SSE ack forwarding** — Control-daemon sends the first short text chunk as an early acknowledgment while the full turn continues.
+4. **Task lifecycle** — Every message is tracked as a Firestore Task document (`primes/{id}/tasks/{taskId}`) with status, timing, and response preview.
+5. **OpenClaw pin upgrade** — v2026.4.15 → v2026.4.19 for cross-agent spawn routing fix.
+
+### Next: v5.3 — Model Flexibility + Memory Consolidation
 > *Goal: Model optimization and memory reliability.*
 
 1. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
 2. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
+3. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
 
 ### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration

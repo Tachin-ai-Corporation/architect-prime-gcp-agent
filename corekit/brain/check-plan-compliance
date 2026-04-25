@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# ============================================================
+# check-plan-compliance — PostTurn hook for dispatch compliance
+#
+# Checks if PLAN.md was written before brain-exec dispatches.
+# Called automatically by OpenClaw after every Cortex turn.
+#
+# Compliance logic:
+#   1. Check if brain-exec was called during this turn (via syslog)
+#   2. Check if workspace/PLAN.md exists and was recently modified
+#   3. If dispatches occurred without PLAN.md: log violation
+#   4. If PLAN.md exists with dispatches: log compliance
+#
+# Output: JSON compliance report (consumed by OpenClaw hook system)
+#
+# This script NEVER fails — violations are warnings, not errors.
+# ============================================================
+
+WORKSPACE="${HOME}/.openclaw/workspace"
+PLAN_FILE="${WORKSPACE}/PLAN.md"
+LOG_TAG="[plan-compliance]"
+
+# ── Check if PLAN.md exists and was modified in last 5 minutes ──
+PLAN_EXISTS=false
+PLAN_AGE=999999
+if [[ -f "$PLAN_FILE" ]]; then
+  PLAN_EXISTS=true
+  PLAN_AGE=$(( $(date +%s) - $(stat -c %Y "$PLAN_FILE" 2>/dev/null || echo 0) ))
+fi
+PLAN_RECENT=false
+if [[ "$PLAN_AGE" -lt 300 ]]; then
+  PLAN_RECENT=true
+fi
+
+# ── Check if brain-exec was called recently ──
+# Look for recent brain-exec invocations in the last 5 minutes
+DISPATCHES=0
+if command -v journalctl &>/dev/null; then
+  DISPATCHES=$(journalctl --since "5 min ago" --no-pager -o cat 2>/dev/null \
+    | grep -c "brain-exec" 2>/dev/null || echo 0)
+fi
+
+# ── Determine compliance ──
+if [[ "$DISPATCHES" -gt 0 && "$PLAN_RECENT" == "false" ]]; then
+  # Dispatches happened without a recent PLAN.md → violation
+  echo "${LOG_TAG} WARN: brain-exec dispatched ${DISPATCHES} time(s) without PLAN.md" >&2
+  # Write violation telemetry (fire-and-forget)
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -x "${SCRIPT_DIR}/brain-telemetry-write" ]]; then
+    "${SCRIPT_DIR}/brain-telemetry-write" "compliance" "plan-violation" 0 0 0 1 "no_plan_md" &
+  fi
+elif [[ "$DISPATCHES" -gt 0 && "$PLAN_RECENT" == "true" ]]; then
+  # Dispatches with PLAN.md → compliant
+  echo "${LOG_TAG} OK: ${DISPATCHES} dispatch(es) with PLAN.md" >&2
+elif [[ "$DISPATCHES" -eq 0 ]]; then
+  # No dispatches this turn — no compliance check needed
+  :
+fi
+
+exit 0

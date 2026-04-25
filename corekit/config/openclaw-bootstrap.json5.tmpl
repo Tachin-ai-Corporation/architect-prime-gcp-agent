@@ -176,8 +176,8 @@
   "commands": { "native": "auto", "nativeSkills": "auto" },
   "cron": {
     "enabled": true
-    // NOTE: cron.jobs requires OpenClaw >= 2026.4.15. Currently on 2026.4.4.
-    // When upgraded, re-enable:
+    // NOTE: cron.jobs available since OpenClaw 2026.4.15. Currently on 2026.4.19.
+    // Re-enable when memory consolidation skill is ready:
     // "jobs": [{
     //   "name": "memory-consolidate",
     //   "cron": "0 2 * * *",
@@ -186,7 +186,30 @@
     //   "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation."
     // }]
   },
-  "hooks": { "internal": { "entries": { "session-memory": { "enabled": true } } } },
+  "hooks": {
+    "internal": {
+      "entries": {
+        "session-memory": { "enabled": true },
+        // PreTurn: inject brain architecture reference card into every Cortex turn.
+        // Ensures the model always has the dispatch table and classification rules
+        // in its immediate context — prevents "forgetting" sub-agents exist.
+        "brain-card": {
+          "enabled": true,
+          "event": "PreTurn",
+          "type": "shell",
+          "command": "cat ~/.openclaw/workspace/BRAIN_CARD.md 2>/dev/null || true"
+        },
+        // PostTurn: compliance validation — checks if PLAN.md was written
+        // before brain-exec dispatches. Logs violations for telemetry.
+        "plan-compliance": {
+          "enabled": true,
+          "event": "PostTurn",
+          "type": "shell",
+          "command": "~/.openclaw/bin/check-plan-compliance"
+        }
+      }
+    }
+  },
   "gateway": {
     "port": 18789,
     "mode": "local",

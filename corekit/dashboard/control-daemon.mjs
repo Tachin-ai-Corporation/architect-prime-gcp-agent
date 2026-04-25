@@ -148,8 +148,32 @@ async function updateStatus(status) {
   }).catch(() => {});
 }
 
+// ---- Task Tracking (Firestore) ----
+async function writeTask(taskId, fields) {
+  const token = await getAccessToken();
+  const firestoreFields = {};
+  for (const [k, v] of Object.entries(fields)) {
+    if (typeof v === 'string') firestoreFields[k] = { stringValue: v };
+    else if (typeof v === 'number') firestoreFields[k] = { integerValue: String(v) };
+    else if (typeof v === 'boolean') firestoreFields[k] = { booleanValue: v };
+  }
+  await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/tasks?documentId=${taskId}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: firestoreFields })
+  }).catch(() => {
+    // Update existing doc if create fails (task already exists)
+    const paths = Object.keys(fields).map(k => `updateMask.fieldPaths=${k}`).join('&');
+    return fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/tasks/${taskId}?${paths}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: firestoreFields })
+    });
+  }).catch(() => {});
+}
+
 // ---- Gateway Communication (Hybrid: SSE Streaming + Non-Stream Fallback) ----
-async function routeMessage(text) {
+async function routeMessage(text, onAck) {
   const t0 = Date.now();
 
   // Add user message to conversation history
@@ -161,7 +185,7 @@ async function routeMessage(text) {
   }
 
   // Try streaming first (keeps connection alive for long dispatches)
-  const streamResult = await callGateway([...conversationHistory], true, t0);
+  const streamResult = await callGateway([...conversationHistory], true, t0, onAck);
 
   if (streamResult.error) {
     conversationHistory.pop();
@@ -212,7 +236,7 @@ async function routeMessage(text) {
 }
 
 // Unified gateway call — streaming or non-streaming
-async function callGateway(messages, stream, t0) {
+async function callGateway(messages, stream, t0, onAck) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
 
@@ -238,7 +262,7 @@ async function callGateway(messages, stream, t0) {
     }
 
     if (stream) {
-      const content = await readSSEStream(res, t0);
+      const content = await readSSEStream(res, t0, onAck);
       return { content };
     } else {
       const data = await res.json();
@@ -260,12 +284,16 @@ async function callGateway(messages, stream, t0) {
 }
 
 // Parse SSE (Server-Sent Events) stream from the gateway
-async function readSSEStream(res, t0) {
+// onAck: optional callback invoked with the first text chunk if it looks like
+//        an acknowledgment (< 200 chars, arrives before tool calls).
+async function readSSEStream(res, t0, onAck) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let content = '';
   let buffer = '';
   let firstChunkLogged = false;
+  let ackSent = false;
+  let toolCallSeen = false;
 
   try {
     while (true) {
@@ -289,9 +317,13 @@ async function readSSEStream(res, t0) {
         if (trimmed.startsWith('data: ')) {
           try {
             const chunk = JSON.parse(trimmed.slice(6));
-            const delta = chunk.choices?.[0]?.delta?.content;
-            if (delta) {
-              content += delta;
+            const delta = chunk.choices?.[0]?.delta;
+
+            // Detect tool calls — once we see one, ack window is closed
+            if (delta?.tool_calls) toolCallSeen = true;
+
+            if (delta?.content) {
+              content += delta.content;
 
               // Log first chunk to show we're streaming
               if (!firstChunkLogged) {
@@ -299,10 +331,30 @@ async function readSSEStream(res, t0) {
                 log('Streaming started', { first_chunk_s: parseFloat(elapsed) });
                 firstChunkLogged = true;
               }
+
+              // SSE ack forwarding: if the first text arrives before any tool
+              // calls and is short (< 200 chars), treat it as an acknowledgment
+              // and send it to the user immediately while we continue streaming.
+              if (!ackSent && !toolCallSeen && onAck && content.trim().length > 5 && content.trim().length < 200) {
+                // Wait a beat for more chunks — ack may arrive in multiple deltas
+                // We'll check again after accumulating a few more chunks
+              }
             }
           } catch {
             // Skip malformed JSON chunks
           }
+        }
+      }
+
+      // After processing a batch: check if we have an ack-sized content
+      // and no tool calls yet — fire the ack callback
+      if (!ackSent && !toolCallSeen && onAck && content.trim().length > 5 && content.trim().length < 200) {
+        const elapsed = Date.now() - t0;
+        // Only send ack if we've been streaming for >2s (rules out instant short answers)
+        if (elapsed > 2000) {
+          onAck(content.trim());
+          ackSent = true;
+          log('Ack forwarded', { chars: content.trim().length, elapsed_ms: elapsed });
         }
       }
     }
@@ -355,15 +407,43 @@ async function main() {
       const messages = await pollMessages();
 
       for (const msg of messages) {
-        log('Received', { text: msg.text.slice(0, 100) });
+        const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const t0 = Date.now();
+        log('Received', { text: msg.text.slice(0, 100), taskId });
 
-        const reply = await routeMessage(msg.text);
+        // Write initial Task document (fire-and-forget)
+        writeTask(taskId, {
+          userMessage: msg.text.slice(0, 500),
+          status: 'executing',
+          receivedAt: new Date().toISOString()
+        }).catch(() => {});
+        // SSE ack forwarding: send the first short text chunk as an early
+        // acknowledgment to the user while the full turn continues.
+        const onAck = (ackText) => {
+          writeResponse(`🔄 ${ackText}`).catch(() => {});
+          writeTask(taskId, {
+            status: 'acknowledged',
+            acknowledgment: ackText
+          }).catch(() => {});
+        };
 
-        log('Reply', { text: reply.split('\n')[0].slice(0, 80) });
+        const reply = await routeMessage(msg.text, onAck);
+
+        log('Reply', { text: reply.split('\n')[0].slice(0, 80), taskId });
 
         await writeResponse(reply);
         await markProcessed(msg.path);
-        log('Completed', { doc: msg.path.split('/').pop() });
+
+        // Update Task document with completion (fire-and-forget)
+        const elapsed = Date.now() - t0;
+        writeTask(taskId, {
+          status: 'complete',
+          completedAt: new Date().toISOString(),
+          totalMs: elapsed,
+          responsePreview: reply.slice(0, 200)
+        }).catch(() => {});
+
+        log('Completed', { doc: msg.path.split('/').pop(), taskId, elapsed_ms: elapsed });
       }
     } catch (err) {
       log('Poll error', { error: err.message });

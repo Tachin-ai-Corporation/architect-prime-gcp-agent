@@ -13,7 +13,7 @@
 #   brain-telemetry-read --failures          # Only failures
 #   brain-telemetry-read --json              # JSON output
 #
-# Reads from: /primes/{primeId}/brain/dispatch-log/
+# Reads from: /primes/{primeId}/dispatch-log/
 # ============================================================
 set -euo pipefail
 
@@ -58,7 +58,7 @@ TOKEN=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
 
 # ── Build Firestore query ─────────────────────────────────
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
-PARENT_PATH="primes/${PRIME_ID}/brain"
+PARENT_PATH="primes/${PRIME_ID}"
 
 # Build structured query with filters
 FILTERS=""

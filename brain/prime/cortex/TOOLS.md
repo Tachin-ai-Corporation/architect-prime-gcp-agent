@@ -12,7 +12,7 @@ strips infrastructure warnings). Returns clean text output to synthesize.
 ### Available agents:
 | agentId | Job | When to use |
 |---|---|---|
-| `temporal-research` | Web search (agent-ask) | Current info, prices, news |
+| `temporal-research` | Web search (agent-ask) | Current info, prices, news, URLs |
 | `temporal-memory` | Memory recall | Past decisions, context, history |
 | `prefrontal` | Strategic planning | Complex multi-step tasks |
 | `motor` | Execution (code, commands) | Implementing plan steps |
@@ -23,6 +23,24 @@ strips infrastructure warnings). Returns clean text output to synthesize.
 - Planning: default (60s)
 - Execution: `120` (code changes take longer)
 - Verification: default (60s)
+
+## Planning (write)
+
+### Write dispatch plan (MANDATORY before dispatch)
+```
+write workspace/PLAN.md
+```
+Content format:
+```
+TASK: [summary]
+CATEGORY: [classification]
+DISPATCHES:
+1. [agent-id] — [task]
+EXPECTED OUTCOME: [result description]
+```
+This file is checked by the PostTurn compliance hook. If you dispatch
+brain agents without writing PLAN.md first, a compliance violation
+is logged.
 
 ## Fleet Management (exec)
 
@@ -67,5 +85,6 @@ exec core-memory-read --category <category>
 
 ## Rules
 - ALWAYS use `exec brain-exec <agent-id> "<task>"` for brain dispatch.
-- Fleet operations: exec directly. No brain dispatch needed.
+- ALWAYS write PLAN.md before any brain dispatch.
+- Fleet operations: exec directly. No brain dispatch or PLAN.md needed.
 - The `brain-exec` wrapper is on PATH at `~/.openclaw/bin/brain-exec`.

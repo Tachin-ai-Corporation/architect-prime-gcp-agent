@@ -8,7 +8,7 @@
 # Usage (internal — called by brain-exec):
 #   brain-telemetry-write <agent_id> <task> <start_ns> <end_ns> <output_bytes> <exit_code> [error_type]
 #
-# Writes to: /primes/{primeId}/brain/dispatch-log/{auto-id}
+# Writes to: /primes/{primeId}/dispatch-log/{auto-id}
 #
 # Telemetry events are retained for 7 days. The nightly memory
 # consolidation process is responsible for pruning old entries.
@@ -99,7 +99,7 @@ EOF
 )
 
 # ── Write to Firestore ─────────────────────────────────────
-COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/brain/dispatch-log"
+COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/dispatch-log"
 
 curl -sf --max-time 5 \
   -H "Authorization: Bearer ${TOKEN}" \
