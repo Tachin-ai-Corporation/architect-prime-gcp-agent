@@ -78,8 +78,8 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
   /** Check if a Prime needs an upgrade */
   const needsUpgrade = (p: PrimeInstance): boolean => {
     if (!versionInfo?.latestTag) return false;
-    // If coreRef is missing or doesn't match latest tag, needs upgrade
-    if (!p.coreRef || p.coreRef === "main") return true; // Unknown version → show badge
+    if (!p.coreRef) return false; // No version info — don't show badge
+    if (p.coreRef === "main" || p.coreRef === "unknown") return false; // Ambiguous — skip
     return p.coreRef !== versionInfo.latestTag;
   };
 

@@ -685,7 +685,7 @@ function HomeInner() {
         <div className={styles["sidebar-footer"]}>
           {versionInfo && (
             <div style={{ fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", marginBottom: 6 }}>
-              {versionInfo.latestTag || versionInfo.currentVersion}{versionInfo.updateAvailable && (
+              {versionInfo.currentVersion}{versionInfo.updateAvailable && (
                 <span style={{ color: "#f0883e", marginLeft: 4 }}>● update</span>
               )}
             </div>
