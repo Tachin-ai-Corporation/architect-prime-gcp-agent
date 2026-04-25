@@ -31,6 +31,58 @@ interface GeneralTabProps {
 export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, sidebarFleet, onTeardownPrime, onRedeployPrime, versionInfo, copied, setCopied }: GeneralTabProps) {
   const dialog = useDialog();
 
+  /** Queue a command and track its progress */
+  const queueAndTrack = async (primeId: string, type: string, args: Record<string, string>, label: string) => {
+    const result = await api<{id: string}>(`/api/primes/${primeId}/commands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, args }),
+    });
+    if (result?.id) {
+      dialog.trackCommand(primeId, result.id, label);
+      return result.id;
+    } else {
+      dialog.toast({ message: `Failed to queue ${label}.`, variant: "error" });
+      return null;
+    }
+  };
+
+  /** Upgrade Prime CoreKit + cascade to all fleet agents */
+  const handleUpgradePrime = async (p: PrimeInstance) => {
+    const primeFleet = sidebarFleet[p.id] || [];
+    const activeAgents = primeFleet.filter((a) => a.status !== "removed" && a.status !== "tearing_down");
+    const agentCount = activeAgents.length;
+
+    const message = agentCount > 0
+      ? `This will upgrade CoreKit on ${p.name} and ${agentCount} fleet agent${agentCount !== 1 ? "s" : ""}.\nThe gateway and agents will restart during the upgrade.`
+      : "This will pull the latest CoreKit from GitHub and restart the gateway.\nThe agent will be briefly unavailable during the restart.";
+
+    const ok = await dialog.confirm({
+      title: `Upgrade ${p.name}${agentCount > 0 ? ` + ${agentCount} agent${agentCount !== 1 ? "s" : ""}` : ""}?`,
+      message,
+      confirmText: "Upgrade All",
+    });
+    if (!ok) return;
+
+    const ref = versionInfo?.latestTag || "main";
+
+    // Queue Prime upgrade
+    await queueAndTrack(p.id, "upgrade_corekit", { ref }, `Upgrade ${p.name} CoreKit`);
+
+    // Cascade: queue fleet_upgrade for each active agent
+    for (const agent of activeAgents) {
+      await queueAndTrack(p.id, "fleet_upgrade", { name: agent.name, ref }, `Upgrade ${agent.name}`);
+    }
+  };
+
+  /** Check if a Prime needs an upgrade */
+  const needsUpgrade = (p: PrimeInstance): boolean => {
+    if (!versionInfo?.latestTag) return false;
+    // If coreRef is missing or doesn't match latest tag, needs upgrade
+    if (!p.coreRef || p.coreRef === "main") return true; // Unknown version → show badge
+    return p.coreRef !== versionInfo.latestTag;
+  };
+
   return (
     <>
       {/* Agent Defaults */}
@@ -86,6 +138,8 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
             const isRemoved = p.status === "removed";
             const isTearingDown = p.status === "tearing_down";
             const isLive = !isRemoved && !isTearingDown;
+            const upgradeNeeded = needsUpgrade(p);
+            const coreRef = p.coreRef;
 
             return (
               <div
@@ -105,6 +159,16 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
                     <span style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: 8 }}>
                       {p.zone} · {activeAgents.length} agent{activeAgents.length !== 1 ? "s" : ""} · {p.status}
                     </span>
+                    {coreRef && (
+                      <span style={{ fontSize: 10, color: "var(--text-tertiary)", marginLeft: 6 }}>
+                        · <code className="mono" style={{ fontSize: 10 }}>{coreRef}</code>
+                      </span>
+                    )}
+                    {isLive && upgradeNeeded && (
+                      <span style={{ fontSize: 10, color: "#f59e0b", marginLeft: 6, fontWeight: 600 }}>
+                        ● needs upgrade
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -112,21 +176,7 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {isLive && (
                     <>
-                      <button className="btn btn-sm btn-primary" onClick={async () => {
-                        const ok = await dialog.confirm({
-                          title: `Upgrade CoreKit on ${p.name}?`,
-                          message: "This will pull the latest CoreKit from GitHub and restart the gateway.\nThe agent will be briefly unavailable during the restart.",
-                          confirmText: "Upgrade",
-                        });
-                        if (!ok) return;
-                        const result = await api<{id: string}>(`/api/primes/${p.id}/commands`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ type: "upgrade_corekit", args: { ref: versionInfo?.latestTag || "main" } }),
-                        });
-                        if (result?.id) dialog.toast({ message: `CoreKit upgrade queued (${result.id})`, variant: "success" });
-                        else dialog.toast({ message: "Failed to queue upgrade command.", variant: "error" });
-                      }}>
+                      <button className="btn btn-sm btn-primary" onClick={() => handleUpgradePrime(p)}>
                         ⬆ Upgrade CoreKit
                       </button>
                       <button className="btn btn-sm btn-ghost" style={{ borderColor: "var(--border)" }} onClick={async () => {
@@ -136,13 +186,7 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
                           confirmText: "Restart",
                         });
                         if (!ok) return;
-                        const result = await api<{id: string}>(`/api/primes/${p.id}/commands`, {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ type: "gateway_restart", args: {} }),
-                        });
-                        if (result?.id) dialog.toast({ message: `Gateway restart queued (${result.id})`, variant: "success" });
-                        else dialog.toast({ message: "Failed to queue restart command.", variant: "error" });
+                        await queueAndTrack(p.id, "gateway_restart", {}, `Restart ${p.name} gateway`);
                       }}>
                         ↻ Restart Gateway
                       </button>

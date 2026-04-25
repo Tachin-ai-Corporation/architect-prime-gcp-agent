@@ -13,6 +13,7 @@ interface PrimeInstance {
   status: "online" | "offline" | "deploying" | "tearing_down" | "removed" | "error";
   zone: string;
   fleetCount: number;
+  coreRef?: string;
 }
 interface ChatMessage {
   id: string;
@@ -25,6 +26,7 @@ interface FleetAgent {
   status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "removed" | "error";
   specialty: string;
   email: string;
+  coreRef?: string;
   deploySteps?: DeployStep[];
   actionRequired?: ActionRequired | null;
 }

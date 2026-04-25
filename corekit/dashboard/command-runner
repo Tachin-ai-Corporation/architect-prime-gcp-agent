@@ -177,6 +177,23 @@ handle_upgrade_corekit() {
     log "CoreKit upgraded. Restarting gateway..."
     docker restart openclaw-gateway 2>&1
     log "Gateway restarted."
+
+    # Update coreRef in Firestore immediately (don't wait for heartbeat)
+    local upd_token
+    upd_token="$(get_token 2>/dev/null)" || true
+    if [[ -n "$upd_token" ]]; then
+      local core_ref="$ref"
+      local state_file="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+      if [[ -f "$state_file" ]]; then
+        core_ref="$(python3 -c "import json; print(json.load(open('$state_file')).get('coreRef','$ref'))" 2>/dev/null || echo "$ref")"
+      fi
+      curl -s -X PATCH \
+        -H "Authorization: Bearer $upd_token" \
+        -H "Content-Type: application/json" \
+        -d "{\"fields\":{\"coreRef\":{\"stringValue\":\"${core_ref}\"}}}" \
+        "${FIRESTORE_URL}/primes/${PRIME_ID}?updateMask.fieldPaths=coreRef" > /dev/null 2>&1 || true
+      log "Updated coreRef in Firestore: ${core_ref}"
+    fi
   fi
   return $ck_exit
 }

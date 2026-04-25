@@ -129,11 +129,18 @@ update_status() {
   local token
   token="$(get_token)"
 
+  # Read coreRef from STATE.json if available
+  local core_ref="unknown"
+  local state_file="${OC_HOST_DIR}/corekit/STATE.json"
+  if [[ -f "$state_file" ]]; then
+    core_ref="$(python3 -c "import json; print(json.load(open('$state_file')).get('coreRef','unknown'))" 2>/dev/null || echo "unknown")"
+  fi
+
   curl -s -X PATCH \
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/json" \
-    -d "{\"fields\":{\"status\":{\"stringValue\":\"${status}\"}}}" \
-    "${FIRESTORE_URL}/primes/${PRIME_ID}?updateMask.fieldPaths=status" > /dev/null
+    -d "{\"fields\":{\"status\":{\"stringValue\":\"${status}\"},\"coreRef\":{\"stringValue\":\"${core_ref}\"}}}" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}?updateMask.fieldPaths=status&updateMask.fieldPaths=coreRef" > /dev/null
 }
 
 # ---- Main loop ----

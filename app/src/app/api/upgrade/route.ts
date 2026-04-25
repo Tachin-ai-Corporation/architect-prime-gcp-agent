@@ -142,12 +142,16 @@ export async function POST() {
 
     const { access_token: token } = await tokenRes.json();
 
-    // Determine deploy target: newer tag or main HEAD
-    let deployRef = "main";
+    // Determine deploy target: ALWAYS deploy from main HEAD.
+    // Tags are display-only labels — deploying a tag misses post-tag commits.
+    // Multiple installations may share the same repo, so we never write tags.
+    const deployRef = "main";
     let deployVersion = "main";
     let deployCommit = "";
+    let latestTag = "";
+    let latestTagSha = "";
 
-    // Check for newer tag
+    // Fetch latest tag (for display label only)
     try {
       const tagRes = await fetch(
         `https://api.github.com/repos/${ghOwner}/${ghRepo}/tags?per_page=1`,
@@ -155,25 +159,28 @@ export async function POST() {
       );
       if (tagRes.ok) {
         const tags = await tagRes.json();
-        if (tags.length > 0 && tags[0].name !== currentVersion) {
-          deployRef = tags[0].name;
-          deployVersion = tags[0].name;
+        if (tags.length > 0) {
+          latestTag = tags[0].name;
+          latestTagSha = tags[0].commit?.sha?.substring(0, 7) || "";
         }
       }
     } catch {
-      // fall through to main
+      // non-fatal
     }
 
-    // Get the commit SHA for the deploy ref (for APP_COMMIT tracking)
+    // Get the commit SHA for main HEAD
     try {
       const commitRes = await fetch(
-        `https://api.github.com/repos/${ghOwner}/${ghRepo}/commits/${deployRef}`,
+        `https://api.github.com/repos/${ghOwner}/${ghRepo}/commits/main`,
         { headers: { Accept: "application/vnd.github.v3+json" } }
       );
       if (commitRes.ok) {
         const commit = await commitRes.json();
         deployCommit = commit.sha?.substring(0, 7) || "";
-        if (deployRef === "main") {
+        // Use tag name as version label if main HEAD matches the tag commit
+        if (latestTag && latestTagSha === deployCommit) {
+          deployVersion = latestTag;
+        } else {
           deployVersion = `main@${deployCommit}`;
         }
       }

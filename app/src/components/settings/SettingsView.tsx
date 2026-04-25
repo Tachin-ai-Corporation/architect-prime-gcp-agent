@@ -32,11 +32,13 @@ export interface PrimeInstance {
   status: string;
   zone: string;
   fleetCount: number;
+  coreRef?: string;
 }
 
 export interface FleetAgent {
   name: string;
   status: string;
+  coreRef?: string;
 }
 
 export interface SettingsViewProps {

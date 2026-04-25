@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import styles from "../../app/page.module.css";
 import { useDialog } from "@/components/DialogProvider";
 import type { VersionInfo } from "./SettingsView";
@@ -22,6 +23,51 @@ interface SystemTabProps {
 
 export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabProps) {
   const dialog = useDialog();
+  const [buildStatus, setBuildStatus] = useState<string | null>(null);
+
+  const handleUpgradeDashboard = async () => {
+    setUpgrading(true);
+    setBuildStatus("Submitting build...");
+
+    const result = await api<{
+      success: boolean;
+      message?: string;
+      error?: string;
+      buildId?: string;
+      version?: string;
+      ref?: string;
+      commit?: string;
+    }>("/api/upgrade", { method: "POST" });
+
+    if (result?.success) {
+      const buildId = result.buildId || "unknown";
+      setBuildStatus(`Build ${buildId} submitted. Deploying ${result.version || "main"}...`);
+      dialog.toast({
+        message: result.message || "Dashboard upgrade initiated!",
+        variant: "success",
+        duration: 6000,
+      });
+
+      // Countdown timer — Cloud Build takes ~3 minutes
+      let remaining = 180;
+      const countdown = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(countdown);
+          setBuildStatus("Deploy should be complete. Refresh the page to see changes.");
+          setUpgrading(false);
+        } else {
+          const min = Math.floor(remaining / 60);
+          const sec = remaining % 60;
+          setBuildStatus(`Building & deploying... ~${min}:${sec.toString().padStart(2, "0")} remaining`);
+        }
+      }, 1000);
+    } else {
+      dialog.toast({ message: result?.error || "Upgrade failed", variant: "error" });
+      setBuildStatus(null);
+      setUpgrading(false);
+    }
+  };
 
   return (
     <>
@@ -54,25 +100,35 @@ export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabPro
                 <div className={styles["settings-value"]}><code className="mono">{versionInfo.deployedCommit}</code></div>
               </div>
             )}
+
+            {/* Build progress */}
+            {buildStatus && (
+              <div style={{
+                padding: "10px 14px",
+                background: "rgba(99, 102, 241, 0.06)",
+                border: "1px solid rgba(99, 102, 241, 0.2)",
+                borderRadius: "var(--radius-sm)",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}>
+                {upgrading && <span className="cmd-progress-spinner" />}
+                <span>{buildStatus}</span>
+              </div>
+            )}
+
             <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <button className="btn btn-primary" onClick={async () => {
-                setUpgrading(true);
-                const result = await api<{success: boolean; message?: string; error?: string; version?: string}>("/api/upgrade", { method: "POST" });
-                setUpgrading(false);
-                if (result?.success) {
-                  dialog.toast({ message: result.message || "Dashboard upgrade initiated!", variant: "success", duration: 6000 });
-                } else {
-                  dialog.toast({ message: result?.error || "Upgrade failed", variant: "error" });
-                }
-              }} disabled={upgrading}>
+              <button className="btn btn-primary" onClick={handleUpgradeDashboard} disabled={upgrading}>
                 {upgrading ? "Upgrading..." : versionInfo.updateAvailable ? "⬆ Upgrade Dashboard" : "↻ Redeploy Dashboard"}
               </button>
-              {versionInfo.updateAvailable && (
+              {versionInfo.updateAvailable && !upgrading && (
                 <span style={{ fontSize: 12, color: "var(--accent-warning)" }}>
                   Update available: {versionInfo.latestVersion}
                 </span>
               )}
-              {!versionInfo.updateAvailable && (
+              {!versionInfo.updateAvailable && !upgrading && (
                 <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
                   Up to date — redeploy will rebuild from main
                 </span>
