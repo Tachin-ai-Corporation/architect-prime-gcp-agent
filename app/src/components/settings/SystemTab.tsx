@@ -1,6 +1,7 @@
 "use client";
 
 import styles from "../../app/page.module.css";
+import { useDialog } from "@/components/DialogProvider";
 import type { VersionInfo } from "./SettingsView";
 
 async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
@@ -20,6 +21,8 @@ interface SystemTabProps {
 }
 
 export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabProps) {
+  const dialog = useDialog();
+
   return (
     <>
       {/* Version & Upgrade */}
@@ -56,8 +59,11 @@ export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabPro
                 setUpgrading(true);
                 const result = await api<{success: boolean; message?: string; error?: string; version?: string}>("/api/upgrade", { method: "POST" });
                 setUpgrading(false);
-                if (result?.success) alert(result.message || "Dashboard upgrade initiated!");
-                else alert(result?.error || "Upgrade failed");
+                if (result?.success) {
+                  dialog.toast({ message: result.message || "Dashboard upgrade initiated!", variant: "success", duration: 6000 });
+                } else {
+                  dialog.toast({ message: result?.error || "Upgrade failed", variant: "error" });
+                }
               }} disabled={upgrading}>
                 {upgrading ? "Upgrading..." : versionInfo.updateAvailable ? "⬆ Upgrade Dashboard" : "↻ Redeploy Dashboard"}
               </button>

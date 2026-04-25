@@ -1,6 +1,7 @@
 "use client";
 
 import styles from "../../app/page.module.css";
+import { useDialog } from "@/components/DialogProvider";
 import type { SetupState, PrimeInstance, FleetAgent, VersionInfo } from "./SettingsView";
 
 async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
@@ -28,6 +29,8 @@ interface GeneralTabProps {
 }
 
 export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, sidebarFleet, onTeardownPrime, onRedeployPrime, versionInfo, copied, setCopied }: GeneralTabProps) {
+  const dialog = useDialog();
+
   return (
     <>
       {/* Agent Defaults */}
@@ -110,26 +113,36 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
                   {isLive && (
                     <>
                       <button className="btn btn-sm btn-primary" onClick={async () => {
-                        if (!confirm(`Upgrade CoreKit on "${p.name}"? This will also restart the gateway.`)) return;
+                        const ok = await dialog.confirm({
+                          title: `Upgrade CoreKit on ${p.name}?`,
+                          message: "This will pull the latest CoreKit from GitHub and restart the gateway.\nThe agent will be briefly unavailable during the restart.",
+                          confirmText: "Upgrade",
+                        });
+                        if (!ok) return;
                         const result = await api<{id: string}>(`/api/primes/${p.id}/commands`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ type: "upgrade_corekit", args: { ref: versionInfo?.latestTag || "main" } }),
                         });
-                        if (result?.id) alert(`CoreKit upgrade queued (command: ${result.id}).`);
-                        else alert("Failed to queue upgrade command.");
+                        if (result?.id) dialog.toast({ message: `CoreKit upgrade queued (${result.id})`, variant: "success" });
+                        else dialog.toast({ message: "Failed to queue upgrade command.", variant: "error" });
                       }}>
                         ⬆ Upgrade CoreKit
                       </button>
                       <button className="btn btn-sm btn-ghost" style={{ borderColor: "var(--border)" }} onClick={async () => {
-                        if (!confirm(`Restart the OpenClaw gateway on "${p.name}"?`)) return;
+                        const ok = await dialog.confirm({
+                          title: `Restart gateway on ${p.name}?`,
+                          message: "The OpenClaw gateway will restart. The agent will be briefly unavailable.",
+                          confirmText: "Restart",
+                        });
+                        if (!ok) return;
                         const result = await api<{id: string}>(`/api/primes/${p.id}/commands`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ type: "gateway_restart", args: {} }),
                         });
-                        if (result?.id) alert(`Gateway restart queued (command: ${result.id}).`);
-                        else alert("Failed to queue restart command.");
+                        if (result?.id) dialog.toast({ message: `Gateway restart queued (${result.id})`, variant: "success" });
+                        else dialog.toast({ message: "Failed to queue restart command.", variant: "error" });
                       }}>
                         ↻ Restart Gateway
                       </button>

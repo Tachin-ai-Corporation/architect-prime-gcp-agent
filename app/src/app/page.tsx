@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import styles from "./page.module.css";
+import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { SettingsView, VersionInfo } from "@/components/settings/SettingsView";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
 
@@ -85,7 +86,8 @@ async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
 }
 
 /* ---- Component ---- */
-export default function Home() {
+function HomeInner() {
+  const dialog = useDialog();
   const [primes, setPrimes] = useState<PrimeInstance[]>([]);
   const [activePrime, setActivePrime] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -329,20 +331,21 @@ export default function Home() {
     const primeFleet = sidebarFleet[primeId] || [];
     const activeAgents = primeFleet.filter((a) => a.status !== "removed");
     if (activeAgents.length > 0) {
-      alert(
-        `Cannot tear down Prime "${primeName}" while it has ${activeAgents.length} active fleet agent(s):\n\n` +
-        activeAgents.map((a) => `  • ${a.name} (${a.status})`).join("\n") +
-        `\n\nFire all fleet agents first, then try again.`
-      );
+      dialog.toast({
+        message: `Cannot tear down "${primeName}" — ${activeAgents.length} active agent(s). Fire all agents first.`,
+        variant: "error",
+        duration: 6000,
+      });
       return;
     }
 
-    if (!confirm(
-      `Tear down Prime "${primeName}"?\n\n` +
-      `This will delete the VM and stop billing.\n` +
-      `Chat history and fleet data are preserved.\n` +
-      `You can re-deploy later from the same Prime slot.`
-    )) return;
+    const ok = await dialog.confirm({
+      title: `Tear down ${primeName}?`,
+      message: `This will delete the VM and stop billing.\nChat history and fleet data are preserved.\nYou can re-deploy later from the same Prime slot.`,
+      confirmText: "Tear Down",
+      variant: "danger",
+    });
+    if (!ok) return;
 
     // Optimistic: mark as tearing_down
     setPrimes((prev) =>
@@ -407,7 +410,13 @@ export default function Home() {
   // ---- Fire Agent ----
   const handleFire = async (agentName: string) => {
     if (!activePrime) return;
-    if (!confirm(`Fire agent "${agentName}"? This will delete the agent VM and billing will stop.`)) return;
+    const ok = await dialog.confirm({
+      title: `Fire ${agentName}?`,
+      message: "This will delete the agent VM and billing will stop.",
+      confirmText: "Fire Agent",
+      variant: "danger",
+    });
+    if (!ok) return;
 
     await api(`/api/primes/${activePrime}/fleet/fire`, {
       method: "POST",
@@ -450,7 +459,15 @@ export default function Home() {
   // ---- Dismiss / Remove Agent ----
   const handleDismissAgent = async (agentName: string, skipConfirm = false) => {
     if (!activePrime) return;
-    if (!skipConfirm && !confirm(`Remove "${agentName}" from the fleet list? This cannot be undone.`)) return;
+    if (!skipConfirm) {
+      const ok = await dialog.confirm({
+        title: `Remove ${agentName}?`,
+        message: "This will remove the agent from the fleet list. This cannot be undone.",
+        confirmText: "Remove",
+        variant: "danger",
+      });
+      if (!ok) return;
+    }
 
     setDismissing(true);
     await api(`/api/primes/${activePrime}/fleet/dismiss`, {
@@ -1245,3 +1262,10 @@ export default function Home() {
   );
 }
 
+export default function Home() {
+  return (
+    <DialogProvider>
+      <HomeInner />
+    </DialogProvider>
+  );
+}
