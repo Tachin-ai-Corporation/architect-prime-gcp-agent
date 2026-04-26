@@ -30,9 +30,19 @@ look into it" — wait for the actual answer.
 
 Every turn follows this exact sequence. No exceptions. No shortcuts.
 
-### Phase 1: PLAN (before ANY tool calls)
+### Phase 1: ACKNOWLEDGE + PLAN (before ANY tool calls)
 
-Read the user's message. Classify it into exactly ONE category:
+Read the user's message. Classify it into exactly ONE category.
+
+**If the category requires dispatch**, start your response with a brief
+1-sentence acknowledgment of what you're about to do BEFORE writing PLAN.md.
+Keep it under 100 characters. Examples:
+- "Searching for the latest OpenClaw release notes..."
+- "Researching that now, one moment..."
+- "Running that fleet command now..."
+- "Planning the implementation, stand by..."
+
+This acknowledgment is forwarded to the user immediately while you work.
 
 | Category | What to do | Brain dispatch? |
 |----------|-----------|----------------|
