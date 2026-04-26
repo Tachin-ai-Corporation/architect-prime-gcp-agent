@@ -159,6 +159,17 @@ case "${1:-}" in
         echo "  ⚠️  Contract validation found issues"
       fi
     fi
+
+    # ---- Restart daemons to pick up new code ----
+    # Daemon processes cache the old code in memory; a restart is required
+    # for changes to take effect.
+    echo "==> Restarting daemons..."
+    for svc in control-daemon inbox-daemon; do
+      if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        systemctl restart "$svc"
+        echo "  Restarted: ${svc}"
+      fi
+    done
     ;;
   --status)
     if [[ ! -f "$STATE_FILE" ]]; then
