@@ -4,12 +4,22 @@ const GH_OWNER = "Tachin-ai-Corporation";
 const GH_REPO = "architect-prime-gcp-agent";
 
 /**
- * GET /api/upgrade — Check current and latest version
+ * Extract version from commit message.
+ * Commit format: "v2026.04.26.1.0: description"
+ * Returns the version prefix or "unknown".
+ */
+function extractVersion(commitMessage: string): string {
+  const match = commitMessage.match(/^(v\d{4}\.\d{2}\.\d{2}\.\d+\.\d+)/);
+  return match ? match[1] : "unknown";
+}
+
+/**
+ * GET /api/upgrade — Check deployed and latest versions
  *
- * Version detection strategy:
- *   - currentVersion: APP_VERSION env var (set during Cloud Run deploy)
- *   - STABLE tag: the single moving tag marking verified-good commits
- *   - latestCommit: HEAD of main branch
+ * Returns:
+ *   - deployedVersion: human-friendly version from deployed commit message
+ *   - latestVersion: human-friendly version from main HEAD commit message
+ *   - deployedStable / latestStable: whether each commit is tagged STABLE
  *   - updateAvailable: true if main HEAD differs from deployed commit
  */
 export async function GET() {
@@ -17,14 +27,14 @@ export async function GET() {
     const projectId = process.env.GCP_PROJECT_ID || "";
     const ghOwner = process.env.GH_OWNER || GH_OWNER;
     const ghRepo = process.env.GH_REPO || GH_REPO;
-    const currentVersion = process.env.APP_VERSION || "dev";
     const deployedCommit = process.env.APP_COMMIT || "";
 
-    let latestTag = "unknown";
-    let latestTagSha = "";
+    let stableTagSha = "";
     let mainHeadSha = "";
+    let mainCommitMessage = "";
+    let deployedCommitMessage = "";
 
-    // Fetch STABLE tag
+    // Fetch STABLE tag SHA
     try {
       const res = await fetch(
         `https://api.github.com/repos/${ghOwner}/${ghRepo}/git/ref/tags/STABLE`,
@@ -32,14 +42,13 @@ export async function GET() {
       );
       if (res.ok) {
         const ref = await res.json();
-        latestTag = "STABLE";
-        latestTagSha = ref.object?.sha?.substring(0, 7) || "";
+        stableTagSha = ref.object?.sha?.substring(0, 7) || "";
       }
     } catch {
       // GitHub API may be unavailable
     }
 
-    // Fetch HEAD of main branch
+    // Fetch main HEAD commit (sha + message)
     try {
       const res = await fetch(
         `https://api.github.com/repos/${ghOwner}/${ghRepo}/commits/main`,
@@ -48,32 +57,48 @@ export async function GET() {
       if (res.ok) {
         const commit = await res.json();
         mainHeadSha = commit.sha?.substring(0, 7) || "";
+        mainCommitMessage = commit.commit?.message?.split("\n")[0] || "";
       }
     } catch {
       // GitHub API may be unavailable
     }
 
-    // Update is available ONLY when main HEAD differs from deployed commit.
-    // Since we always deploy from main HEAD (never from tags), the tag
-    // comparison is irrelevant. If deployed == main HEAD, we're up to date.
-    const updateAvailable = deployedCommit !== "" && mainHeadSha !== "" &&
-                            deployedCommit !== mainHeadSha;
+    // Fetch deployed commit message (if different from main HEAD)
+    if (deployedCommit && deployedCommit !== mainHeadSha) {
+      try {
+        const res = await fetch(
+          `https://api.github.com/repos/${ghOwner}/${ghRepo}/commits/${deployedCommit}`,
+          { headers: { Accept: "application/vnd.github.v3+json" }, next: { revalidate: 300 } }
+        );
+        if (res.ok) {
+          const commit = await res.json();
+          deployedCommitMessage = commit.commit?.message?.split("\n")[0] || "";
+        }
+      } catch {
+        // non-fatal
+      }
+    } else {
+      deployedCommitMessage = mainCommitMessage;
+    }
 
-    // Show version label: if main HEAD matches STABLE tag, show "STABLE", otherwise "unstable"
-    const isStable = latestTagSha !== "" && latestTagSha === mainHeadSha;
-    const latestVersion = updateAvailable
-      ? `main@${mainHeadSha}${isStable ? " (STABLE)" : ""}`
-      : currentVersion;
+    const deployedVersion = extractVersion(deployedCommitMessage) || process.env.APP_VERSION || "dev";
+    const latestVersion = extractVersion(mainCommitMessage);
+    const deployedStable = deployedCommit !== "" && stableTagSha !== "" && deployedCommit === stableTagSha;
+    const latestStable = mainHeadSha !== "" && stableTagSha !== "" && mainHeadSha === stableTagSha;
+    const updateAvailable = deployedCommit !== "" && mainHeadSha !== "" && deployedCommit !== mainHeadSha;
 
     return NextResponse.json({
-      currentVersion,
+      deployedVersion,
       latestVersion,
-      latestTag,
-      latestTagSha,
-      mainHeadSha,
+      deployedStable,
+      latestStable,
       deployedCommit,
+      mainHeadSha,
       updateAvailable,
       projectId,
+      // Legacy fields for backward compat
+      currentVersion: deployedVersion,
+      latestTag: stableTagSha ? "STABLE" : "unknown",
     });
   } catch (err) {
     console.error("[api/upgrade] GET error:", err);
@@ -87,18 +112,8 @@ export async function GET() {
 /**
  * POST /api/upgrade — Full dashboard upgrade via Cloud Build
  *
- * Deployment strategy:
- *   - If a tag is newer than current: deploy that tag
- *   - Otherwise: deploy HEAD of main
- *   - Sets APP_VERSION and APP_COMMIT env vars on the new revision
- *
- * Triggers Cloud Build to:
- *   1. Clone the repo at the target ref
- *   2. Build the Docker image
- *   3. Push to Artifact Registry
- *   4. Deploy to Cloud Run with correct APP_VERSION + APP_COMMIT
- *
- * Returns immediately — build runs async (~2-3 min).
+ * Always deploys from main HEAD. Sets APP_VERSION to the extracted
+ * version from the commit message and APP_COMMIT to the sha.
  */
 export async function POST() {
   try {
@@ -107,7 +122,6 @@ export async function POST() {
     const ghRepo = process.env.GH_REPO || GH_REPO;
     const region = process.env.REGION || "us-central1";
     const serviceName = process.env.SERVICE_NAME || "architect-prime";
-    const currentVersion = process.env.APP_VERSION || "dev";
     const image = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane:latest`;
     const repoUrl = `https://github.com/${ghOwner}/${ghRepo}.git`;
 
@@ -126,31 +140,12 @@ export async function POST() {
 
     const { access_token: token } = await tokenRes.json();
 
-    // Determine deploy target: ALWAYS deploy from main HEAD.
-    // Tags are display-only labels — deploying a tag misses post-tag commits.
-    // Multiple installations may share the same repo, so we never write tags.
+    // Always deploy from main HEAD
     const deployRef = "main";
     let deployVersion = "main";
     let deployCommit = "";
-    let latestTag = "";
-    let latestTagSha = "";
 
-    // Fetch STABLE tag (for display label only)
-    try {
-      const tagRes = await fetch(
-        `https://api.github.com/repos/${ghOwner}/${ghRepo}/git/ref/tags/STABLE`,
-        { headers: { Accept: "application/vnd.github.v3+json" } }
-      );
-      if (tagRes.ok) {
-        const ref = await tagRes.json();
-        latestTag = "STABLE";
-        latestTagSha = ref.object?.sha?.substring(0, 7) || "";
-      }
-    } catch {
-      // non-fatal
-    }
-
-    // Get the commit SHA for main HEAD
+    // Get main HEAD commit (sha + message for version label)
     try {
       const commitRes = await fetch(
         `https://api.github.com/repos/${ghOwner}/${ghRepo}/commits/main`,
@@ -159,12 +154,8 @@ export async function POST() {
       if (commitRes.ok) {
         const commit = await commitRes.json();
         deployCommit = commit.sha?.substring(0, 7) || "";
-        // Use STABLE label if main HEAD matches the STABLE tag commit
-        if (latestTag === "STABLE" && latestTagSha === deployCommit) {
-          deployVersion = `main@${deployCommit} (STABLE)`;
-        } else {
-          deployVersion = `main@${deployCommit}`;
-        }
+        const message = commit.commit?.message?.split("\n")[0] || "";
+        deployVersion = extractVersion(message) || `main@${deployCommit}`;
       }
     } catch {
       // non-fatal

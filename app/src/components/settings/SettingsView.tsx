@@ -18,12 +18,16 @@ export interface SetupState {
 }
 
 export interface VersionInfo {
-  currentVersion: string;
+  deployedVersion: string;
   latestVersion: string;
-  latestTag: string;
-  mainHeadSha: string;
+  deployedStable: boolean;
+  latestStable: boolean;
   deployedCommit: string;
+  mainHeadSha: string;
   updateAvailable: boolean;
+  // Legacy compat
+  currentVersion: string;
+  latestTag: string;
 }
 
 export interface PrimeInstance {

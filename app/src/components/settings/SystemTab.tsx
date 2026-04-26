@@ -77,29 +77,39 @@ export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabPro
         {versionInfo ? (
           <div style={{ display: "grid", gap: 10 }}>
             <div className={styles["settings-row"]}>
-              <div className={styles["settings-label"]}>Current Version</div>
-              <div className={styles["settings-value"]}><code className="mono">{versionInfo.currentVersion}</code></div>
-            </div>
-            <div className={styles["settings-row"]}>
-              <div className={styles["settings-label"]}>Latest Tag</div>
-              <div className={styles["settings-value"]}><code className="mono">{versionInfo.latestTag}</code></div>
-            </div>
-            <div className={styles["settings-row"]}>
-              <div className={styles["settings-label"]}>Main Branch</div>
-              <div className={styles["settings-value"]}>
-                <code className="mono">{versionInfo.mainHeadSha || "unknown"}</code>
-                {versionInfo.deployedCommit && versionInfo.mainHeadSha &&
-                 versionInfo.deployedCommit !== versionInfo.mainHeadSha && (
-                  <span className="badge badge-deploying" style={{ marginLeft: 8, fontSize: 10 }}>new commits</span>
-                )}
+              <div className={styles["settings-label"]}>Deployed Version</div>
+              <div className={styles["settings-value"]} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <code className="mono">{versionInfo.deployedVersion}</code>
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  background: versionInfo.deployedStable ? "rgba(34, 197, 94, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                  color: versionInfo.deployedStable ? "#22c55e" : "#f59e0b",
+                  letterSpacing: 0.5,
+                }}>
+                  {versionInfo.deployedStable ? "STABLE" : "UNSTABLE"}
+                </span>
               </div>
             </div>
-            {versionInfo.deployedCommit && (
-              <div className={styles["settings-row"]}>
-                <div className={styles["settings-label"]}>Deployed Commit</div>
-                <div className={styles["settings-value"]}><code className="mono">{versionInfo.deployedCommit}</code></div>
+            <div className={styles["settings-row"]}>
+              <div className={styles["settings-label"]}>Latest Version</div>
+              <div className={styles["settings-value"]} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <code className="mono">{versionInfo.latestVersion}</code>
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  background: versionInfo.latestStable ? "rgba(34, 197, 94, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                  color: versionInfo.latestStable ? "#22c55e" : "#f59e0b",
+                  letterSpacing: 0.5,
+                }}>
+                  {versionInfo.latestStable ? "STABLE" : "UNSTABLE"}
+                </span>
               </div>
-            )}
+            </div>
 
             {/* Build progress */}
             {buildStatus && (
