@@ -3,50 +3,64 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v1.0 → v2.0 migration)
+## Current Architecture (v5.2)
 
-### What's running now (v1.0)
-- Cloud Run control plane (Next.js dashboard + REST API)
-- Prime VM with custom bash pipeline: `control-daemon → agent-ask → raw Vertex AI API`
-- Fleet agent VMs with: `inbox-daemon → agent-ask → raw Vertex AI API`
-- OpenClaw is **installed but not activated** on VMs
+### System Stack
+- **Cloud Run** — Next.js dashboard + REST API (control plane)
+- **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, config
+- **Compute Engine VMs** — One per Prime + one per fleet agent
+- **OpenClaw** — AI brain on each VM (v2026.4.19, Gemini 3.1 Pro via Vertex AI ADC)
+- **Google Chat** — Agent-to-human communication via DWD
 
-### What we're building (v2.0)
-- Replace the custom bash pipeline with OpenClaw's native agent loop
-- Each VM runs an OpenClaw gateway with a **single main agent**
-- `control-daemon` and `inbox-daemon` become thin message bridges to the OpenClaw gateway API
-- OpenClaw handles: persistent sessions, conversation memory, context pruning, tool execution
-- Fleet management tools (`fleet-deploy`, `fleet-teardown`) run as `exec` tools on OpenClaw's PATH
+### Prime VM Architecture
+- **6-agent brain**: cortex (orchestrator) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
+- **Two-Phase Turn Protocol**: cortex must classify → write PLAN.md → dispatch via brain-exec
+- **PreTurn hook**: BRAIN_CARD.md injected every turn with agent table + classification rules
+- **PostTurn hook**: check-plan-compliance validates dispatch compliance
+- **control-daemon**: SSE streaming with ack forwarding + Firestore Task lifecycle tracking
 
-### Architecture: Single Main Agent (Phase 1)
-Each VM gets one OpenClaw agent. No sub-agents, no brain model yet.
-
-| VM | Agent | Message Source | Tools |
-|----|-------|---------------|-------|
-| **Prime VM** | `main` | Dashboard (Firestore) | `fleet-deploy`, `fleet-teardown`, `fleet-verify`, `fleet-upgrade` |
-| **Fleet VM** | `{agent-name}` | Google Chat (DWD) | Specialty-specific (TBD per type) |
-
-### Future: Brain Architecture (Phase 2+)
-The 7-agent brain model (Cortex + 6 sub-agents) is documented in `docs/architecture/BRAIN_ARCHITECTURE_v2.md` but is **not yet implemented**. It will be layered on top of the single-agent foundation after v2.0 is stable.
-
-## Key Infrastructure
-- Cloud Run (control plane + dashboard)
-- Firestore (state: primes, fleet, messages, config)
-- Compute Engine VMs (one per Prime + one per fleet agent)
-- OpenClaw (AI brain on each VM — being activated in v2.0)
-- Vertex AI Gemini (LLM via ADC, no API keys)
-- Google Chat via DWD (agent-to-human communication)
+### Fleet VM Architecture
+- Single OpenClaw agent per VM with specialty-specific workspace
+- inbox-daemon bridges Google Chat → OpenClaw gateway
+- CoreKit tools shared with Prime via manifest system
 
 ## Repository Structure
-- `app/` — Cloud Run control plane (Next.js dashboard + REST API)
-- `bundle/corekit/bin/` — CoreKit tools installed on VMs
-- `bundle/corekit/config/` — OpenClaw bootstrap, agent types, chat config
-- `bundle/workspaces/` — Agent workspace files (SOUL.md, IDENTITY.md, etc.)
-- `bundle/openclaw/` — OpenClaw agent bootstrap (auth profiles, sessions)
-- `bootstrap/` — VM startup scripts (phase1 Cloud Shell, phase2 on-VM)
-- `deploy/` — Installation scripts (install.sh, uninstall.sh)
-- `docs/architecture/` — Future architecture specs (brain model, R/C/M framework)
+```
+app/              Cloud Run dashboard (Next.js)
+infra/            Bootstrap scripts, manifests, contracts.json
+corekit/          Runtime tools installed on VMs (brain, fleet, gateway, chat, dashboard, memory)
+brain/            Agent workspace files (SOUL.md, TOOLS.md, BRAIN_CARD.md)
+specialties/      Fleet agent specialty configs
+skills/           OpenClaw skill manifests
+docs/             Architecture docs
+```
 
-## Reference Docs
-- `docs/architecture/BRAIN_ARCHITECTURE_v2.md` — Future brain agent specs (NOT YET IMPLEMENTED)
-- `docs/architecture/RESPONSIBILITIES_CHECKPOINTS_MISSIONS.md` — Future R/C/M framework (NOT YET IMPLEMENTED)
+## Development Discipline
+
+### Versioning
+- Every commit message: `vX.Y.Z: description` (version it's building toward)
+- Untagged commit = **unstable** (work in progress)
+- Tagged commit = **stable** (deployable checkpoint)
+- Dashboard always deploys from `main` HEAD; tags are stability labels
+- CoreKit upgrade (`upgrade-corekit --apply main`) always pulls latest `main`
+
+### Workflow
+1. Edit → update manifests if adding files → update contracts.json if cross-cutting
+2. `/update-git` — stage, commit (with version prefix), push
+3. Dashboard upgrade button — deploys to VM
+4. `/ssh-vm-access` — debug if needed
+5. `/firestore-query` — verify state
+6. Tag when stable: `git tag -a vX.Y.Z -m "summary"; git push origin --tags`
+
+### Key Paths on VM
+- OpenClaw root: `/opt/openclaw`
+- Config: `/opt/openclaw/.openclaw/openclaw.json`
+- CoreKit tools: `/opt/openclaw/.openclaw/bin/`
+- Workspace: `/opt/openclaw/.openclaw/workspace/`
+
+### Constraints
+- No secrets in repo — runtime injection via env vars or GCP metadata
+- Manifest-driven installs — `infra/manifests/` maps repo paths to VM destinations
+- contracts.json — single source of truth for cross-cutting values
+- Idempotent — every script safely re-runnable
+- Public repo — curl-installable from `raw.githubusercontent.com`
