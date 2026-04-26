@@ -89,7 +89,7 @@ Dashboard (Cloud Run — Next.js)
     │   ├── GOOGLE_CLOUD_LOCATION=global (same as Prime)
     │   ├── Default agent: cortex (Gemini 3.1 Pro Preview via Vertex AI ADC)
     │   ├── SOUL.md loaded automatically from workspace (no systemPrompt injection)
-    │   ├── timeoutSeconds: 120 (ADC cold-start tolerance)
+    │   ├── timeoutSeconds: 600 (safety ceiling; real timeout is heartbeat-based)
     │   └── ADC fix: model-auth-env patched for GCE metadata fallback
     │
     ├── inbox-daemon (systemd)
@@ -143,27 +143,41 @@ Dashboard (Cloud Run — Next.js)
 
 **Re-hire flow:** Same as hire, but `fleet-deploy` detects the existing SA, skips creation, and IAM bindings are already active. No propagation delay.
 
-### Chat Pipeline
+### Chat Pipeline (Async-First Execution Model)
 
-**Dashboard → Prime (control-daemon.mjs — Node.js, hybrid SSE):**
+Both Prime and Fleet agents use the same async-first pattern. The daemon submits work to the gateway, and the agent delivers its own response via `channel-respond`.
+
+**Dashboard → Prime (control-daemon.mjs — Node.js, async-first):**
 1. User types in dashboard → API writes to Firestore `messages` collection
 2. `control-daemon` bash wrapper detects `.mjs` → `docker exec` runs Node.js version inside container
 3. Node.js daemon polls Firestore every 5s with GCE metadata access token
-4. New message → **Hybrid dispatch to gateway `/v1/chat/completions`:**
-   - **Step 1:** Try SSE streaming (`stream: true`). Keeps connection alive during long research dispatches (3-5 min).
-   - **Step 2:** If response ≤5 chars (thinking marker from exec tool), retry non-streaming. Non-streaming waits for the full turn including tool results.
-5. Response written back to Firestore → dashboard displays it
-6. HTTP timeout: 600s hard ceiling
-7. Conversation history: last 20 turns for context
-8. Structured JSON logging with mode (streaming/non-streaming-fallback), latency, first-chunk timing
+4. New message → **Write TASK.json** to workspace (channel: `dashboard`, channelMeta with primeId/projectId)
+5. **15s observation window:**
+   - Stream SSE from gateway with 15s window
+   - If response completes within 15s → fast path, deliver directly (identity, fleet commands)
+   - If tool calls detected or window expires → async path
+6. **Fast path:** Response written to Firestore, message marked processed
+7. **Async path:**
+   - Immediately write "🔄 Working on it..." ack to Firestore
+   - Enter heartbeat monitor loop (checks Firestore task doc every 15s)
+   - Agent delivers results via `exec channel-respond` → `dashboard-respond` → Firestore
+   - Monitor exits when task status = `complete` or heartbeat stale >90s
+8. Conversation history: last 20 turns for context
+9. HTTP ceiling: 480s (but heartbeat stall detection at 90s is the real watchdog)
+10. Structured JSON logging with mode (fast/async), latency, heartbeat status
 
 **Google Chat → Fleet Agent (inbox-daemon):**
 1. `inbox-daemon` polls Google Chat API via DWD impersonation every 15s
 2. Only processes messages containing the agent's `@FirstName LastName` mention
-3. Strips @-mention, sends text to local OpenClaw gateway
-4. Response sent back to Google Chat via DWD `chat-send`
+3. Strips @-mention, writes TASK.json (channel: `gchat`, channelMeta with spaceId/agentEmail)
+4. **15s observation window** (same pattern as Prime):
+   - Submit to local OpenClaw gateway with 15s timeout
+   - If response completes → fast path, reply via `chat-send`
+   - If timeout (agent dispatching) → send "🔄 Working on it..." ack, agent delivers via `channel-respond`
 5. High-water-mark dedup prevents duplicate processing
 6. Space discovery cached for 5 minutes
+
+**Unified channel abstraction:** Both daemons write `TASK.json` with channel metadata. Agents use `exec channel-respond "text"` which reads TASK.json and routes to the correct backend (`dashboard-respond` for Firestore, `chat-send` for Google Chat). This makes Prime and Fleet brains architecturally identical.
 
 ### Vertex AI Authentication (ADC)
 

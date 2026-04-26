@@ -16,10 +16,11 @@ corekit/gateway/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh
 corekit/gateway/upgrade-openclaw .openclaw/bin/upgrade-openclaw
 corekit/gateway/oc .openclaw/bin/oc
 
-# Chat tools (DWD)
+# Chat tools (DWD + unified response delivery)
 corekit/chat/dwd-token .openclaw/bin/dwd-token
 corekit/chat/chat-send .openclaw/bin/chat-send
 corekit/chat/chat-read .openclaw/bin/chat-read
+corekit/chat/channel-respond .openclaw/bin/channel-respond
 corekit/chat/inbox-daemon .openclaw/bin/inbox-daemon
 
 # Brain tools

@@ -71,16 +71,35 @@ EXPECTED OUTCOME: [what the user should receive]
 ### Phase 2: EXECUTE (follow your plan)
 
 Execute each dispatch from PLAN.md in order:
-1. Run `exec brain-exec <agent-id> "<task>"` for each planned dispatch
+1. Run `exec brain-exec <agent-id> "<task>" <timeout>` for each planned dispatch
 2. Wait for each to complete before starting the next
 3. Pass output from each step as context to the next step's task instruction
 4. If a dispatch fails, follow error recovery — do NOT skip remaining steps
+
+**Dispatch Budgets** — ALWAYS include the timeout (3rd argument):
+
+| Agent | Timeout | Rationale |
+|-------|---------|-----------|
+| `temporal-research` | 150 | Web search + grounding can be slow |
+| `temporal-memory` | 60 | Local memory lookup, fast |
+| `prefrontal` | 90 | Planning, moderate |
+| `motor` | 150 | Code execution, variable |
+| `cerebellum` | 60 | Verification, fast |
 
 ### Phase 3: RESPOND
 
 Synthesize all results into one coherent response to the user.
 - Never forward raw sub-agent output — always add your own analysis
 - Keep responses under 2000 characters for Google Chat
+
+**For dispatch turns** (any turn that used brain-exec), deliver via:
+```
+exec channel-respond "Your complete response here"
+```
+This routes to the correct channel (Dashboard or Google Chat) automatically.
+
+**For non-dispatch turns** (identity, fleet commands), your streaming
+output is sufficient — do not call channel-respond.
 
 ## Classification Rules — When to Dispatch
 

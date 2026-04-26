@@ -18,11 +18,14 @@ strips infrastructure warnings). Returns clean text output to synthesize.
 | `motor` | Execution (code, commands) | Implementing plan steps |
 | `cerebellum` | Verification (QA) | Checking motor's output |
 
-### Timeout guidelines:
-- Research/memory: default (60s)
-- Planning: default (60s)
-- Execution: `120` (code changes take longer)
-- Verification: default (60s)
+### Timeout budgets (MANDATORY — always include):
+| agentId | Timeout |
+|---|---|
+| `temporal-research` | `150` |
+| `temporal-memory` | `60` |
+| `prefrontal` | `90` |
+| `motor` | `150` |
+| `cerebellum` | `60` |
 
 ## Planning (write)
 
@@ -83,8 +86,26 @@ Categories: architecture, operations, iam, decisions, patterns, errors
 exec core-memory-read --category <category>
 ```
 
+## Response Delivery (exec)
+
+### Deliver response to the user's channel
+```
+exec channel-respond "Your response text"
+```
+Routes automatically to Dashboard (Firestore) or Google Chat depending
+on which channel the message came from. **Use for all dispatch results.**
+Do NOT use for non-dispatch turns (identity, fleet commands).
+
+For intermediate progress updates during long work:
+```
+exec channel-respond "🔄 Research complete. Synthesizing..."
+```
+
 ## Rules
-- ALWAYS use `exec brain-exec <agent-id> "<task>"` for brain dispatch.
+- ALWAYS use `exec brain-exec <agent-id> "<task>" <timeout>` for brain dispatch.
 - ALWAYS write PLAN.md before any brain dispatch.
+- ALWAYS include the timeout argument from the dispatch budget table.
+- ALWAYS use `exec channel-respond` to deliver results after dispatch.
 - Fleet operations: exec directly. No brain dispatch or PLAN.md needed.
 - The `brain-exec` wrapper is on PATH at `~/.openclaw/bin/brain-exec`.
+- The `channel-respond` script is on PATH at `~/.openclaw/bin/channel-respond`.

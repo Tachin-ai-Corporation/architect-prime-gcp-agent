@@ -2,10 +2,11 @@
 # ============================================================
 # inbox-daemon — Google Chat ↔ OpenClaw bridge (DWD)
 #
-# Simple, robust message loop:
+# Async-first message loop:
 #   1. Poll Chat spaces for new messages (DWD impersonation)
-#   2. Route user messages to OpenClaw gateway API
-#   3. Reply in the same Chat space
+#   2. Submit to OpenClaw gateway with 15s observation window
+#   3. Fast path: if response completes in 15s, reply directly
+#   4. Async path: send ack, agent delivers via channel-respond
 #
 # Design decisions:
 #   - High-water-mark dedup: track latest timestamp, skip older
@@ -21,7 +22,7 @@
 #   AGENT_USER_EMAIL  — Workspace email (from chat-config.json)
 #   OC_HOST_ROOT      — OpenClaw host root (default: /opt/openclaw)
 #   POLL_INTERVAL     — Seconds between polls (default: 15)
-#   PROCESS_TIMEOUT   — Max seconds per OpenClaw call (default: 120)
+#   FAST_TIMEOUT      — Max seconds for fast path (default: 15)
 # ============================================================
 set -euo pipefail
 
@@ -29,7 +30,7 @@ set -euo pipefail
 AGENT_ID="${AGENT_ID:-agent}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 POLL_INTERVAL="${POLL_INTERVAL:-15}"
-PROCESS_TIMEOUT="${PROCESS_TIMEOUT:-120}"
+FAST_TIMEOUT="${FAST_TIMEOUT:-15}"
 CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
 CHAT_API="https://chat.googleapis.com/v1"
 DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
@@ -154,11 +155,12 @@ sys.exit(1)  # new message
 }
 
 # Call OpenClaw gateway — ALL text handling in Python (no bash string expansion)
-# Input: message text as $1 argument
-# Output: response text on stdout
+# Input: message text as $1 argument, optional timeout as $2
+# Output: response text on stdout (empty if async/timeout)
 call_openclaw() {
   local msg_text="$1"
-  OC_GW="$OC_GATEWAY" OC_TK="$OC_TOKEN" OC_TIMEOUT="$PROCESS_TIMEOUT" \
+  local timeout="${2:-$FAST_TIMEOUT}"
+  OC_GW="$OC_GATEWAY" OC_TK="$OC_TOKEN" OC_TIMEOUT="$timeout" \
   OC_MSG_TEXT="$msg_text" \
   python3 << 'PYEOF'
 import json, sys, urllib.request, unicodedata, re, os
@@ -175,7 +177,7 @@ text = re.sub(r'\s+', ' ', text).strip()
 
 gw = os.environ.get('OC_GW', 'http://localhost:18789')
 token = os.environ.get('OC_TK', '')
-timeout = int(os.environ.get('OC_TIMEOUT', '120'))
+timeout = int(os.environ.get('OC_TIMEOUT', '15'))
 
 # Read gateway route from contracts.json (single source of truth)
 gateway_route = 'openclaw/cortex'  # fallback
@@ -225,6 +227,28 @@ except Exception as e:
 
 sys.exit(1)
 PYEOF
+}
+
+# Write TASK.json to workspace with gchat channel metadata
+write_task_json() {
+  local space_id="$1"
+  local agent_email="$2"
+  local task_id="task-$(date +%s%N)"
+  local workspace="${OC_HOST_ROOT}/.openclaw/workspace"
+  cat > "${workspace}/TASK.json" 2>/dev/null << TASKEOF
+{
+  "taskId": "${task_id}",
+  "channel": "gchat",
+  "channelMeta": {
+    "spaceId": "${space_id}",
+    "agentEmail": "${agent_email}"
+  },
+  "status": "executing",
+  "heartbeat": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "receivedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+TASKEOF
+  echo "$task_id"
 }
 
 # ==== MAIN LOOP ====
@@ -336,26 +360,36 @@ json.dump({
 
       log "MSG from=${DISPLAY} space=${SPACE} text=\"${CLEAN:0:60}\""
 
-      # Call OpenClaw — pass clean text as argument (no bash expansion via env var)
-      # IMPORTANT: must not let call_openclaw failure kill the daemon (set -e)
+      # Write TASK.json with gchat channel metadata
+      TASK_ID="$(write_task_json "$SPACE" "$AGENT_USER_EMAIL")"
+
+      # Fast path: try with short timeout (15s)
       REPLY_FILE="/tmp/inbox-reply-$$.txt"
       REPLY_ERR="/tmp/inbox-err-$$.txt"
-      if call_openclaw "$CLEAN" > "$REPLY_FILE" 2> "$REPLY_ERR"; then
+      if call_openclaw "$CLEAN" "$FAST_TIMEOUT" > "$REPLY_FILE" 2> "$REPLY_ERR"; then
         REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
       else
         OC_ERR="$(cat "$REPLY_ERR" 2>/dev/null)"
-        warn "call_openclaw failed (exit $?): ${OC_ERR:0:200}"
-        REPLY=""
+        # Check if this is a timeout (async path) vs real error
+        if echo "$OC_ERR" | grep -qi "timed out\|timeout"; then
+          # Async path: agent is dispatching, send ack
+          log "Async path: agent dispatching (task=$TASK_ID)"
+          CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
+            "$CHAT_SEND" "🔄 Working on it..." 2>/dev/null || warn "ack failed for ${SPACE}"
+          REPLY=""
+          # Agent will deliver its own response via channel-respond → chat-send
+        else
+          warn "call_openclaw failed: ${OC_ERR:0:200}"
+          REPLY=""
+        fi
       fi
       rm -f "$REPLY_FILE" "$REPLY_ERR"
 
-      # Only send non-empty, real responses to Chat
+      # Only send non-empty, real responses to Chat (fast path)
       if [[ -n "$REPLY" && ${#REPLY} -gt 2 ]]; then
         CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
           "$CHAT_SEND" "$REPLY" 2>/dev/null || warn "chat-send failed for ${SPACE}"
         log "REPLY sent to ${SPACE} (${#REPLY} chars)"
-      else
-        warn "No usable response from OpenClaw for: ${CLEAN:0:60}"
       fi
 
       # Advance high-water mark

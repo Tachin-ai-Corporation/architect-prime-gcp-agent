@@ -16,7 +16,7 @@
 
 AGENT_ID="${1:?Usage: brain-exec <agent-id> \"<task>\"}"
 TASK="${2:?Usage: brain-exec <agent-id> \"<task>\"}"
-TIMEOUT="${3:-120}"
+TIMEOUT="${3:-150}"
 
 # ── Locate contracts.json ──────────────────────────────────
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
@@ -74,6 +74,24 @@ if [[ -z "$CLEAN" ]]; then
   FINAL="$OUTPUT"
 else
   FINAL="$CLEAN"
+fi
+
+# ── Heartbeat (update TASK.json so health monitor knows we're alive) ──
+TASK_FILE="${OC_HOST_ROOT}/.openclaw/workspace/TASK.json"
+if [[ -f "$TASK_FILE" ]]; then
+  python3 -c "
+import json, datetime
+try:
+    with open('$TASK_FILE', 'r+') as f:
+        task = json.load(f)
+        task['heartbeat'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        task['lastDispatch'] = '$AGENT_ID'
+        f.seek(0)
+        json.dump(task, f)
+        f.truncate()
+except:
+    pass
+" 2>/dev/null || true
 fi
 
 # ── Telemetry (fire-and-forget) ────────────────────────────

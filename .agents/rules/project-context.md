@@ -17,12 +17,22 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Two-Phase Turn Protocol**: cortex must classify → write PLAN.md → dispatch via brain-exec
 - **PreTurn hook**: BRAIN_CARD.md injected every turn with agent table + classification rules
 - **PostTurn hook**: check-plan-compliance validates dispatch compliance
-- **control-daemon**: SSE streaming with ack forwarding + Firestore Task lifecycle tracking
+- **Async-first execution**: control-daemon submits tasks with 15s observation window:
+  - Fast path: simple responses (≤15s) delivered directly
+  - Async path: ack sent immediately, agent delivers results via `channel-respond`
+  - Heartbeat monitor: polls TASK.json every 15s, detects stalls at 90s
 
 ### Fleet VM Architecture
 - Single OpenClaw agent per VM with specialty-specific workspace
-- inbox-daemon bridges Google Chat → OpenClaw gateway
+- inbox-daemon bridges Google Chat → OpenClaw gateway (same async model as Prime)
 - CoreKit tools shared with Prime via manifest system
+
+### Channel Abstraction
+- `channel-respond` — unified response delivery for both Prime (Dashboard) and Fleet (Google Chat)
+- Agent calls `exec channel-respond "text"` regardless of input channel
+- `TASK.json` in workspace carries channel metadata (set by daemon at submission)
+- Backends: `dashboard-respond` (Firestore) and `chat-send` (Google Chat DWD)
+- This makes Prime and Fleet brains architecturally identical
 
 ## Repository Structure
 ```
