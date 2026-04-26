@@ -71,6 +71,7 @@
         "default": true,
         "name": "Architect Prime",
         "workspace": "~/.openclaw/workspace",
+        "runTimeoutSeconds": 600,
         "sandbox": { "mode": "off" },
         "subagents": {
           "allowAgents": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"],
@@ -199,6 +200,13 @@
           "type": "shell",
           "command": "cat ~/.openclaw/workspace/BRAIN_CARD.md 2>/dev/null || true"
         },
+        // PreTurn: set agent status to classifying so daemons know work started.
+        "agent-status-preturn": {
+          "enabled": true,
+          "event": "PreTurn",
+          "type": "shell",
+          "command": "~/.openclaw/bin/agent-status set classifying '' '' 2>/dev/null || true"
+        },
         // PostTurn: compliance validation — checks if PLAN.md was written
         // before brain-exec dispatches. Logs violations for telemetry.
         "plan-compliance": {
@@ -206,6 +214,13 @@
           "event": "PostTurn",
           "type": "shell",
           "command": "~/.openclaw/bin/check-plan-compliance"
+        },
+        // PostTurn: reset status to idle as cleanup.
+        "agent-status-postturn": {
+          "enabled": true,
+          "event": "PostTurn",
+          "type": "shell",
+          "command": "~/.openclaw/bin/agent-status set idle '' '' 2>/dev/null || true"
         }
       }
     }

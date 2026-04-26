@@ -19,7 +19,7 @@
 //   docker exec -e GCP_PROJECT_ID=xxx -e PRIME_ID=xxx \
 //     openclaw-gateway node /home/node/.openclaw/bin/control-daemon.mjs
 // ============================================================
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 
 // ---- Config ----
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '5', 10) * 1000;
@@ -173,36 +173,42 @@ async function writeTask(taskId, fields) {
   }).catch(() => {});
 }
 
-// ---- Gateway Communication (Async: Fast Path + Monitor Loop) ----
-
 // Write TASK.json to workspace so agent + brain-exec can update heartbeat
-async function writeTaskFile(taskId) {
+const WORKSPACE_DIR = '/home/node/.openclaw/workspace';
+const TASK_JSON_PATH = `${WORKSPACE_DIR}/TASK.json`;
+const STATUS_JSON_PATH = `${WORKSPACE_DIR}/STATUS.json`;
+
+function writeTaskFile(taskId) {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    // Use gateway to write the task file via exec tool
-    await fetch(GATEWAY_URL.replace('/v1/chat/completions', '/v1/exec'), {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${GATEWAY_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        command: `cat > /home/node/.openclaw/workspace/TASK.json << 'EOF'\n${JSON.stringify({
-          taskId,
-          channel: 'dashboard',
-          channelMeta: { primeId: PRIME_ID, projectId: GCP_PROJECT },
-          status: 'executing',
-          heartbeat: new Date().toISOString(),
-          receivedAt: new Date().toISOString()
-        }, null, 2)}\nEOF`
-      }),
-      signal: controller.signal
-    }).catch(() => {});
-    clearTimeout(timeout);
+    writeFileSync(TASK_JSON_PATH, JSON.stringify({
+      taskId,
+      channel: 'dashboard',
+      channelMeta: { primeId: PRIME_ID, projectId: GCP_PROJECT },
+      status: 'executing',
+      heartbeat: new Date().toISOString(),
+      receivedAt: new Date().toISOString()
+    }));
   } catch {
     // Non-critical: agent can still respond without TASK.json
   }
+}
+
+// Read agent STATUS.json to check if agent is currently busy
+function readAgentStatus() {
+  try {
+    if (!existsSync(STATUS_JSON_PATH)) return null;
+    const raw = readFileSync(STATUS_JSON_PATH, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function timeSince(isoStr) {
+  const ms = Date.now() - new Date(isoStr).getTime();
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  return `${Math.round(ms / 3_600_000)}h`;
 }
 
 async function routeMessage(text) {
@@ -496,6 +502,21 @@ async function main() {
         const t0 = Date.now();
         log('Received', { text: msg.text.slice(0, 100), taskId });
 
+        // Check if agent is currently busy (status-aware response)
+        const agentStatus = readAgentStatus();
+        if (agentStatus && agentStatus.state && agentStatus.state !== 'idle' && agentStatus.state !== 'classifying') {
+          const since = agentStatus.since ? timeSince(agentStatus.since) : 'unknown';
+          const statusMsg = `🔄 Currently: ${agentStatus.state}` +
+            (agentStatus.detail ? ` (${agentStatus.detail})` : '') +
+            `\n   Task: ${agentStatus.task || 'working'}` +
+            `\n   Since: ${since} ago` +
+            `\n\nYour message has been queued and will be processed next.`;
+          log('Agent busy, status response', { state: agentStatus.state, detail: agentStatus.detail });
+          await writeResponse(statusMsg);
+          await markProcessed(msg.path);
+          continue;
+        }
+
         // Write initial Task document (fire-and-forget)
         writeTask(taskId, {
           userMessage: msg.text.slice(0, 500),
@@ -504,7 +525,7 @@ async function main() {
         }).catch(() => {});
 
         // Write TASK.json to workspace (for channel-respond + heartbeat)
-        await writeTaskFile(taskId);
+        writeTaskFile(taskId);
 
         // Route message with observation window
         const result = await routeMessage(msg.text);

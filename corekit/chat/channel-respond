@@ -85,6 +85,10 @@ fi
 # Fallback
 CHANNEL="${CHANNEL:-dashboard}"
 
+# ---- Status: responding ----
+STATUS_BIN="${BIN_DIR}/agent-status"
+[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set responding "" "" 2>/dev/null || true
+
 # ---- Deliver to channel ----
 case "$CHANNEL" in
   dashboard)
@@ -135,3 +139,6 @@ except:
     pass
 " 2>/dev/null || true
 fi
+
+# ---- Status: idle ----
+[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set idle "" "" 2>/dev/null || true

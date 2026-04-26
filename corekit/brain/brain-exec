@@ -48,6 +48,10 @@ except Exception as e:
   }
 fi
 
+# ── Status update (dispatching) ────────────────────────────
+STATUS_BIN="${OC_HOST_ROOT}/.openclaw/bin/agent-status"
+[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set dispatching "$AGENT_ID" "$TASK" 2>/dev/null || true
+
 # ── Dispatch ───────────────────────────────────────────────
 T_START=$(date +%s%N)
 
@@ -93,6 +97,9 @@ except:
     pass
 " 2>/dev/null || true
 fi
+
+# ── Status update (synthesizing — dispatch complete) ──
+[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set synthesizing "$AGENT_ID" "$TASK" 2>/dev/null || true
 
 # ── Telemetry (fire-and-forget) ────────────────────────────
 OUTPUT_BYTES=$(echo "$FINAL" | wc -c)

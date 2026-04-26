@@ -360,6 +360,45 @@ json.dump({
 
       log "MSG from=${DISPLAY} space=${SPACE} text=\"${CLEAN:0:60}\""
 
+      # Check if agent is currently busy (status-aware response)
+      STATUS_BIN="${OC_HOST_ROOT}/.openclaw/bin/agent-status"
+      STATUS_FILE="${OC_HOST_ROOT}/.openclaw/workspace/STATUS.json"
+      if [[ -x "$STATUS_BIN" && -f "$STATUS_FILE" ]]; then
+        AGENT_STATE="$(python3 -c "
+import json, datetime
+try:
+    s = json.load(open('$STATUS_FILE'))
+    state = s.get('state', 'idle')
+    if state not in ('idle', 'classifying', ''):
+        since = s.get('since', '')
+        detail = s.get('detail', '')
+        task = s.get('task', 'working')
+        if since:
+            dt = datetime.datetime.fromisoformat(since.replace('Z', '+00:00'))
+            delta = datetime.datetime.now(datetime.timezone.utc) - dt
+            mins = int(delta.total_seconds() / 60)
+            ago = f'{mins}m' if mins > 0 else f'{int(delta.total_seconds())}s'
+        else:
+            ago = 'unknown'
+        msg = f'🔄 Currently: {state}'
+        if detail:
+            msg += f' ({detail})'
+        msg += f'\n   Task: {task}\n   Since: {ago} ago'
+        msg += '\n\nYour message has been queued and will be processed next.'
+        print(msg)
+    else:
+        print('')
+except:
+    print('')
+" 2>/dev/null)"
+        if [[ -n "$AGENT_STATE" ]]; then
+          log "Agent busy, sending status response"
+          CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
+            "$CHAT_SEND" "$AGENT_STATE" 2>/dev/null || warn "status response failed for ${SPACE}"
+          continue
+        fi
+      fi
+
       # Write TASK.json with gchat channel metadata
       TASK_ID="$(write_task_json "$SPACE" "$AGENT_USER_EMAIL")"
 

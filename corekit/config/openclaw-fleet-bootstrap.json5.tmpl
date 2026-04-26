@@ -59,7 +59,6 @@
         }
       },
       "maxConcurrent": 1,
-      "timeoutSeconds": 120,
       "heartbeat": {
         "every": "0m"
       }
@@ -73,6 +72,7 @@
         "default": true,
         "name": "${AGENT_DISPLAY_NAME}",
         "workspace": "~/.openclaw/workspace",
+        "runTimeoutSeconds": 600,
         "sandbox": { "mode": "off" },
         "subagents": {
           "allowAgents": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"],
@@ -188,7 +188,25 @@
     //   "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation."
     // }]
   },
-  "hooks": { "internal": { "entries": { "session-memory": { "enabled": true } } } },
+  "hooks": {
+    "internal": {
+      "entries": {
+        "session-memory": { "enabled": true },
+        "agent-status-preturn": {
+          "enabled": true,
+          "event": "PreTurn",
+          "type": "shell",
+          "command": "~/.openclaw/bin/agent-status set classifying '' '' 2>/dev/null || true"
+        },
+        "agent-status-postturn": {
+          "enabled": true,
+          "event": "PostTurn",
+          "type": "shell",
+          "command": "~/.openclaw/bin/agent-status set idle '' '' 2>/dev/null || true"
+        }
+      }
+    }
+  },
   "gateway": {
     "port": 18789,
     "mode": "local",

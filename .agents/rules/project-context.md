@@ -34,6 +34,14 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - Backends: `dashboard-respond` (Firestore) and `chat-send` (Google Chat DWD)
 - This makes Prime and Fleet brains architecturally identical
 
+### Agent State System (STATUS.json)
+- `agent-status` tool reads/writes `workspace/STATUS.json` with current activity
+- States: `idle → classifying → planning → dispatching → synthesizing → responding → idle`
+- PreTurn hook sets `classifying`, PostTurn hook resets to `idle`
+- `brain-exec` sets `dispatching` (with sub-agent name), then `synthesizing` on return
+- `channel-respond` sets `responding` before delivery, `idle` after
+- **Status-aware responses**: when human pings while agent is busy, daemon reads STATUS.json and responds with current activity instead of queuing
+
 ## Repository Structure
 ```
 app/              Cloud Run dashboard (Next.js)

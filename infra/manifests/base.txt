@@ -25,6 +25,7 @@ corekit/chat/inbox-daemon .openclaw/bin/inbox-daemon
 
 # Brain tools
 corekit/brain/agent-ask .openclaw/bin/agent-ask
+corekit/brain/agent-status .openclaw/bin/agent-status
 corekit/brain/brain-exec .openclaw/bin/brain-exec
 corekit/brain/brain-telemetry-write .openclaw/bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read .openclaw/bin/brain-telemetry-read

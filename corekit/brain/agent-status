@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# ============================================================
+# agent-status — Read/write agent activity state
+#
+# Maintains workspace/STATUS.json so daemons and humans can
+# query what the agent is currently doing.
+#
+# Usage:
+#   agent-status set <state> [detail] [task]
+#   agent-status get
+#   agent-status get --field state
+#
+# States: idle, classifying, planning, dispatching,
+#         synthesizing, responding
+#
+# Examples:
+#   agent-status set dispatching "temporal-research" "Search for Bears news"
+#   agent-status set idle
+#   agent-status get
+# ============================================================
+set -euo pipefail
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+STATUS_FILE="${OC_HOST_ROOT}/.openclaw/workspace/STATUS.json"
+
+case "${1:-}" in
+  set)
+    STATE="${2:-idle}"
+    DETAIL="${3:-}"
+    TASK="${4:-}"
+    python3 -c "
+import json, datetime
+status = {
+    'state': '$STATE',
+    'since': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'detail': '$DETAIL',
+    'task': '''$TASK'''[:200]
+}
+with open('$STATUS_FILE', 'w') as f:
+    json.dump(status, f)
+" 2>/dev/null || echo '{"state":"'"$STATE"'","since":"unknown"}' > "$STATUS_FILE"
+    ;;
+
+  get)
+    if [[ ! -f "$STATUS_FILE" ]]; then
+      echo '{"state":"idle","since":"unknown","detail":"","task":""}'
+      exit 0
+    fi
+    FIELD="${2:-}"
+    if [[ "$FIELD" == "--field" && -n "${3:-}" ]]; then
+      python3 -c "
+import json
+try:
+    s = json.load(open('$STATUS_FILE'))
+    print(s.get('${3}', ''))
+except:
+    print('')
+" 2>/dev/null
+    else
+      cat "$STATUS_FILE"
+    fi
+    ;;
+
+  *)
+    echo "Usage: agent-status set <state> [detail] [task]"
+    echo "       agent-status get [--field <name>]"
+    echo ""
+    echo "States: idle, classifying, planning, dispatching, synthesizing, responding"
+    exit 0
+    ;;
+esac
