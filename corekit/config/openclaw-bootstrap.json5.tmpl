@@ -59,6 +59,7 @@
         }
       },
       "maxConcurrent": 1,
+      "timeoutSeconds": 600,
       "heartbeat": {
         "every": "0m"
       }
@@ -71,7 +72,6 @@
         "default": true,
         "name": "Architect Prime",
         "workspace": "~/.openclaw/workspace",
-        "runTimeoutSeconds": 600,
         "sandbox": { "mode": "off" },
         "subagents": {
           "allowAgents": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"],
