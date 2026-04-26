@@ -64,7 +64,7 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
     });
     if (!ok) return;
 
-    const ref = versionInfo?.latestTag || "main";
+    const ref = "main";
 
     // Queue Prime upgrade
     await queueAndTrack(p.id, "upgrade_corekit", { ref }, `Upgrade ${p.name} CoreKit`);
@@ -77,10 +77,14 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
 
   /** Check if a Prime needs an upgrade */
   const needsUpgrade = (p: PrimeInstance): boolean => {
-    if (!versionInfo?.latestTag) return false;
-    if (!p.coreRef) return false; // No version info — don't show badge
-    if (p.coreRef === "main" || p.coreRef === "unknown") return false; // Ambiguous — skip
-    return p.coreRef !== versionInfo.latestTag;
+    if (!versionInfo?.mainHeadSha) return false;
+    if (!p.coreRef) return false;
+    // If the VM's coreRef contains a commit hash, compare to main HEAD
+    // If it equals "main" it was deployed from main but we don't know the exact commit
+    if (p.coreRef === "main" || p.coreRef === "unknown") return false;
+    // coreRef could be "main@abc1234" or a tag like "v5.1.0" — either way, if it
+    // doesn't contain the current main HEAD sha, it's behind
+    return !p.coreRef.includes(versionInfo.mainHeadSha);
   };
 
   return (

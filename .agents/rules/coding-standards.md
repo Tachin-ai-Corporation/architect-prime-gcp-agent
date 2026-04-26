@@ -41,4 +41,4 @@
 - Prefer ADC + REST/SDK over `gcloud` CLI where possible
 - Least-privilege IAM — never grant more than needed
 - All installs, deploys, and upgrades must be idempotent
-- Commit messages: `vX.Y.Z: description` — always prefixed with target version
+- Commit messages: `v2026.04.28.1.0: description` — always prefixed with target date-version

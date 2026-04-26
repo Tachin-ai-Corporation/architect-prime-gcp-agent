@@ -38,11 +38,13 @@ docs/             Architecture docs
 ## Development Discipline
 
 ### Versioning
-- Every commit message: `vX.Y.Z: description` (version it's building toward)
+- Version format: `v{YYYY}.{MM}.{DD}.{index}.{subindex}` (e.g. `v2026.04.28.1.0`)
+- Every commit message: `v2026.04.28.1.0: description` (version it's building toward)
 - Untagged commit = **unstable** (work in progress)
-- Tagged commit = **stable** (deployable checkpoint)
-- Dashboard always deploys from `main` HEAD; tags are stability labels
+- `STABLE` tag = the single moving tag marking the last verified-good commit
+- Dashboard always deploys from `main` HEAD; `STABLE` tag is a safety checkpoint
 - CoreKit upgrade (`upgrade-corekit --apply main`) always pulls latest `main`
+- To mark stable: `git tag -f STABLE; git push origin STABLE -f`
 
 ### Workflow
 1. Edit → update manifests if adding files → update contracts.json if cross-cutting

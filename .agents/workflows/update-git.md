@@ -14,14 +14,14 @@ git add -A; git status
 
 ## Commit
 
-Commit message format: `vX.Y.Z: description`
+Version format: `v{YYYY}.{MM}.{DD}.{index}.{subindex}`
 
 - Every commit is named by the version it is building toward
-- Untagged commits are **unstable** (work in progress toward next version)
-- Tagged commits are **stable** (deployable checkpoints)
+- Untagged commits are **unstable** (work in progress)
+- The `STABLE` tag marks the last verified-good commit
 
 ```powershell
-git commit -m "vX.Y.Z: description of changes"
+git commit -m "v2026.04.28.1.0: description of changes"
 ```
 
 ## Push
@@ -30,15 +30,15 @@ git commit -m "vX.Y.Z: description of changes"
 git push origin main
 ```
 
-## Tag (when ready to mark stable)
+## Mark stable (after verification)
 
-Only tag when a version is complete and verified:
+Move the `STABLE` tag to the current commit:
 
 ```powershell
-git tag -a vX.Y.Z -m "vX.Y.Z: summary"; git push origin --tags
+git tag -f STABLE; git push origin STABLE -f
 ```
 
 ## After pushing
 
 Use the **dashboard upgrade button** on the target Prime/Fleet instance to deploy.
-The dashboard always deploys from `main` HEAD. Tags are display labels for stability.
+The dashboard always deploys from `main` HEAD.
