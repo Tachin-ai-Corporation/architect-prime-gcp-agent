@@ -244,14 +244,20 @@ async function routeMessage(text) {
     return { reply: fastResult.content, mode: 'fast' };
   }
 
-  // --- Async path: agent is doing dispatch work ---
-  // Agent will deliver its own response via channel-respond
-  log('Entering async monitor (agent dispatching)', {
+  // --- Async path: agent did dispatch work ---
+  // With fire-and-forget brain-exec, Cortex's turn should complete fast.
+  // If we're here, the observation window expired — deliver any partial content.
+  log('Async path (dispatch)', {
     elapsed_s: parseFloat(((Date.now() - t0) / 1000).toFixed(1)),
     partialChars: fastResult.content?.length || 0
   });
 
-  return { reply: null, mode: 'async' };
+  const partial = fastResult.content?.trim() || '';
+  if (partial.length > 5) {
+    conversationHistory.push({ role: 'assistant', content: partial });
+  }
+
+  return { reply: partial, mode: 'async' };
 }
 
 // Fast gateway call: streaming with observation window
@@ -546,14 +552,19 @@ async function main() {
           log('Completed (fast)', { taskId, elapsed_ms: elapsed });
 
         } else if (result.mode === 'async') {
-          // Async path: agent is dispatching, send ack + monitor
-          await writeResponse('🔄 Working on it...');
-          writeTask(taskId, { status: 'executing' }).catch(() => {});
-          log('Async path entered, monitoring', { taskId });
-
-          // Monitor the task — blocks until agent delivers or stall detected
-          await monitorTask(taskId, msg.path);
-          log('Async task monitoring complete', { taskId, elapsed_ms: Date.now() - t0 });
+          // Async path: brain-exec is fire-and-forget, so this only triggers
+          // if the stream didn't complete within the observation window.
+          // Cortex's response (dispatch confirmation) should have streamed out.
+          // Mark as processed — the worker will deliver results via channel-respond.
+          const partial = result.reply || '';
+          if (partial.length > 5) {
+            // We got partial content (Cortex's dispatch confirmation)
+            log('Reply (async partial)', { text: partial.split('\n')[0].slice(0, 80), taskId });
+            await writeResponse(partial);
+          }
+          await markProcessed(msg.path);
+          writeTask(taskId, { status: 'dispatched' }).catch(() => {});
+          log('Dispatched (async)', { taskId, elapsed_ms: Date.now() - t0 });
         }
       }
     } catch (err) {

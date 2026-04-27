@@ -1,30 +1,33 @@
 #!/usr/bin/env bash
 # ============================================================
-# brain-exec — Wrapper for exec openclaw agent dispatch
+# brain-exec — Fire-and-forget sub-agent dispatch
 #
-# 1. Validates agent ID against contracts.json (fail fast)
-# 2. Runs the sub-agent via openclaw agent
-# 3. Strips gateway warning messages from the output
-# 4. Writes dispatch telemetry to Firestore (fire-and-forget)
+# Validates the agent ID, spawns brain-exec-worker in the
+# background, and immediately returns a confirmation message.
+# The worker independently delivers results via channel-respond.
+#
+# This design eliminates the Vertex AI model API timeout that
+# occurred when Cortex blocked for 4+ minutes waiting for a
+# synchronous tool result.
 #
 # Usage (from Cortex SOUL.md):
 #   exec brain-exec <agent-id> "<task instruction>" [timeout]
 #
-# Example:
-#   exec brain-exec temporal-research "Research: latest AI news"
+# Returns immediately with:
+#   "✅ Dispatched <agent-id>: <task summary>"
 # ============================================================
 
 AGENT_ID="${1:?Usage: brain-exec <agent-id> \"<task>\"}"
 TASK="${2:?Usage: brain-exec <agent-id> \"<task>\"}"
 TIMEOUT="${3:-150}"
 
-# ── Locate contracts.json ──────────────────────────────────
+# ── Locate scripts ─────────────────────────────────────────
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 CONTRACTS="${OC_HOST_ROOT}/.openclaw/corekit/contracts.json"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKER="${SCRIPT_DIR}/brain-exec-worker"
 
 # ── Validate agent ID against contracts ────────────────────
-# Structured dispatch protocol: reject unknown agent IDs before
-# launching openclaw agent. Prevents silent failures from typos.
 if [[ -f "$CONTRACTS" ]]; then
   VALID=$(python3 -c "
 import json, sys
@@ -38,83 +41,32 @@ try:
         sys.exit(1)
 except Exception as e:
     print(str(e), file=sys.stderr)
-    sys.exit(0)  # Don't block on contract read errors
+    sys.exit(0)
 " 2>/dev/null) || {
     echo "ERROR: Unknown agent '${AGENT_ID}'. Valid agents: ${VALID}"
-    # Telemetry: record the rejection (fire-and-forget)
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     "${SCRIPT_DIR}/brain-telemetry-write" "$AGENT_ID" "$TASK" 0 0 0 1 "unknown_agent" &
     exit 1
   }
 fi
 
-# ── Status update (dispatching) ────────────────────────────
-STATUS_BIN="${OC_HOST_ROOT}/.openclaw/bin/agent-status"
-[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set dispatching "$AGENT_ID" "$TASK" 2>/dev/null || true
-
-# ── Dispatch ───────────────────────────────────────────────
-T_START=$(date +%s%N)
-
-# Run openclaw agent and capture full output
-OUTPUT=$(openclaw agent --agent "$AGENT_ID" -m "$TASK" --timeout "$TIMEOUT" 2>&1) || true
-
-T_END=$(date +%s%N)
-
-# Strip known gateway warning lines
-CLEAN=$(echo "$OUTPUT" | grep -v \
-  -e 'gateway connect failed' \
-  -e 'GatewayClientRequestError' \
-  -e 'Gateway agent failed' \
-  -e 'falling back to embedded' \
-  -e 'Gateway target:' \
-  -e 'Source: local' \
-  -e 'Config: /home' \
-  -e 'Bind: loopback' \
-  -e '^$' \
-  || true)
-
-# If nothing left after stripping, return original
-if [[ -z "$CLEAN" ]]; then
-  FINAL="$OUTPUT"
-else
-  FINAL="$CLEAN"
+# ── Validate worker exists ─────────────────────────────────
+if [[ ! -x "$WORKER" ]]; then
+  echo "ERROR: brain-exec-worker not found at ${WORKER}"
+  exit 1
 fi
 
-# ── Heartbeat (update TASK.json so health monitor knows we're alive) ──
-TASK_FILE="${OC_HOST_ROOT}/.openclaw/workspace/TASK.json"
-if [[ -f "$TASK_FILE" ]]; then
-  python3 -c "
-import json, datetime
-try:
-    with open('$TASK_FILE', 'r+') as f:
-        task = json.load(f)
-        task['heartbeat'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-        task['lastDispatch'] = '$AGENT_ID'
-        f.seek(0)
-        json.dump(task, f)
-        f.truncate()
-except:
-    pass
-" 2>/dev/null || true
-fi
+# ── Spawn worker in background ─────────────────────────────
+# nohup + disown ensures the worker survives even if this shell
+# (the tool call) is killed. Logs go to a rotating worker log.
+LOG_DIR="/tmp/brain-exec-logs"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+LOG_FILE="${LOG_DIR}/${AGENT_ID}-$(date +%s).log"
 
-# ── Status update (synthesizing — dispatch complete) ──
-[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set synthesizing "$AGENT_ID" "$TASK" 2>/dev/null || true
+nohup "$WORKER" "$AGENT_ID" "$TASK" "$TIMEOUT" > "$LOG_FILE" 2>&1 &
+disown
 
-# ── Telemetry (fire-and-forget) ────────────────────────────
-OUTPUT_BYTES=$(echo "$FINAL" | wc -c)
-EXIT_CODE=0
-ERROR_TYPE=""
-
-# Detect failure conditions
-if [[ "$OUTPUT_BYTES" -le 1 ]]; then
-  ERROR_TYPE="empty_response"
-  EXIT_CODE=1
-fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/brain-telemetry-write" \
-  "$AGENT_ID" "$TASK" "$T_START" "$T_END" "$OUTPUT_BYTES" "$EXIT_CODE" "$ERROR_TYPE" &
-
-# ── Return output ──────────────────────────────────────────
-echo "$FINAL"
+# ── Return immediately ─────────────────────────────────────
+# Cortex sees this response and tells the user what was dispatched.
+# The actual result will be delivered by channel-respond when ready.
+TASK_SHORT="${TASK:0:120}"
+echo "✅ Dispatched ${AGENT_ID}: ${TASK_SHORT}"

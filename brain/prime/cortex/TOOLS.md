@@ -6,8 +6,10 @@
 ```
 exec brain-exec <agent-id> "<instruction>" [timeout]
 ```
-Runs the sub-agent synchronously via `brain-exec` (wraps `openclaw agent`,
-strips infrastructure warnings). Returns clean text output to synthesize.
+Fire-and-forget dispatch via `brain-exec`. Returns immediately with
+a confirmation (`✅ Dispatched <agent-id>: <task>`). The sub-agent
+runs in the background and delivers results directly to the user
+via `channel-respond` when complete.
 
 ### Available agents:
 | agentId | Job | When to use |
@@ -93,8 +95,13 @@ exec core-memory-read --category <category>
 exec channel-respond "Your response text"
 ```
 Routes automatically to Dashboard (Firestore) or Google Chat depending
-on which channel the message came from. **Use for all dispatch results.**
-Do NOT use for non-dispatch turns (identity, fleet commands).
+on which channel the message came from.
+
+**On dispatch turns:** Do NOT call channel-respond yourself.
+The brain-exec-worker handles delivery autonomously.
+
+**On non-dispatch turns:** Your streaming output is the reply.
+No channel-respond needed.
 
 For intermediate progress updates during long work:
 ```
@@ -105,7 +112,8 @@ exec channel-respond "🔄 Research complete. Synthesizing..."
 - ALWAYS use `exec brain-exec <agent-id> "<task>" <timeout>` for brain dispatch.
 - ALWAYS write PLAN.md before any brain dispatch.
 - ALWAYS include the timeout argument from the dispatch budget table.
-- ALWAYS use `exec channel-respond` to deliver results after dispatch.
+- brain-exec is FIRE-AND-FORGET — do NOT read its output or wait for results.
+- After dispatching, tell the user what was dispatched and end your turn.
 - Fleet operations: exec directly. No brain dispatch or PLAN.md needed.
 - The `brain-exec` wrapper is on PATH at `~/.openclaw/bin/brain-exec`.
 - The `channel-respond` script is on PATH at `~/.openclaw/bin/channel-respond`.

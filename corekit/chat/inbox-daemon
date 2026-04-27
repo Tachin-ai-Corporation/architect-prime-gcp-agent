@@ -409,14 +409,18 @@ except:
         REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
       else
         OC_ERR="$(cat "$REPLY_ERR" 2>/dev/null)"
-        # Check if this is a timeout (async path) vs real error
+        # Check if this is a timeout vs real error
         if echo "$OC_ERR" | grep -qi "timed out\|timeout"; then
-          # Async path: agent is dispatching, send ack
-          log "Async path: agent dispatching (task=$TASK_ID)"
-          CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
-            "$CHAT_SEND" "🔄 Working on it..." 2>/dev/null || warn "ack failed for ${SPACE}"
-          REPLY=""
-          # Agent will deliver its own response via channel-respond → chat-send
+          # Async path: brain-exec is fire-and-forget, Cortex's dispatch
+          # confirmation may be in the output. Check reply file.
+          REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
+          if [[ -z "$REPLY" || ${#REPLY} -le 2 ]]; then
+            log "Async dispatch (no partial content, task=$TASK_ID)"
+            REPLY=""
+          else
+            log "Async dispatch with partial response (task=$TASK_ID, ${#REPLY} chars)"
+          fi
+          # Worker will deliver results via channel-respond → chat-send
         else
           warn "call_openclaw failed: ${OC_ERR:0:200}"
           REPLY=""

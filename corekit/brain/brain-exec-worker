@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# ============================================================
+# brain-exec-worker — Background worker for async agent dispatch
+#
+# Called by brain-exec in the background. Runs the actual
+# OpenClaw agent, captures output, delivers via channel-respond,
+# and writes telemetry.
+#
+# This script should NEVER be called directly by Cortex or the
+# user. It's an internal implementation detail of brain-exec.
+#
+# Usage (internal only):
+#   brain-exec-worker <agent-id> "<task>" <timeout>
+# ============================================================
+set -uo pipefail
+
+AGENT_ID="$1"
+TASK="$2"
+TIMEOUT="${3:-150}"
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+BIN_DIR="${OC_HOST_ROOT}/.openclaw/bin"
+STATUS_BIN="${BIN_DIR}/agent-status"
+RESPOND_BIN="${BIN_DIR}/channel-respond"
+TELEMETRY_BIN="${BIN_DIR}/brain-telemetry-write"
+
+log() { echo "[brain-exec-worker] $*" >&2; }
+
+# ── Status: dispatching ───────────────────────────────────
+[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set dispatching "$AGENT_ID" "$TASK" 2>/dev/null || true
+
+# ── Run the agent ─────────────────────────────────────────
+T_START=$(date +%s%N)
+
+log "Starting dispatch: agent=$AGENT_ID timeout=$TIMEOUT"
+OUTPUT=$(openclaw agent --agent "$AGENT_ID" -m "$TASK" --timeout "$TIMEOUT" 2>&1) || true
+
+T_END=$(date +%s%N)
+
+# Strip known gateway warning lines
+CLEAN=$(echo "$OUTPUT" | grep -v \
+  -e 'gateway connect failed' \
+  -e 'GatewayClientRequestError' \
+  -e 'Gateway agent failed' \
+  -e 'falling back to embedded' \
+  -e 'Gateway target:' \
+  -e 'Source: local' \
+  -e 'Config: /home' \
+  -e 'Bind: loopback' \
+  -e '^$' \
+  || true)
+
+if [[ -z "$CLEAN" ]]; then
+  FINAL="$OUTPUT"
+else
+  FINAL="$CLEAN"
+fi
+
+# ── Telemetry ─────────────────────────────────────────────
+OUTPUT_BYTES=$(echo "$FINAL" | wc -c)
+EXIT_CODE=0
+ERROR_TYPE=""
+
+if [[ "$OUTPUT_BYTES" -le 1 ]]; then
+  ERROR_TYPE="empty_response"
+  EXIT_CODE=1
+fi
+
+[[ -x "$TELEMETRY_BIN" ]] && "$TELEMETRY_BIN" \
+  "$AGENT_ID" "$TASK" "$T_START" "$T_END" "$OUTPUT_BYTES" "$EXIT_CODE" "$ERROR_TYPE" &
+
+# ── Deliver result ────────────────────────────────────────
+[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set responding "$AGENT_ID" "$TASK" 2>/dev/null || true
+
+if [[ "$EXIT_CODE" -eq 0 && -n "$FINAL" ]]; then
+  log "Delivering result: ${OUTPUT_BYTES} bytes"
+  if [[ -x "$RESPOND_BIN" ]]; then
+    "$RESPOND_BIN" "$FINAL" 2>/dev/null || log "channel-respond failed"
+  else
+    log "channel-respond not found, result lost"
+  fi
+else
+  log "Dispatch failed or empty: agent=$AGENT_ID error=$ERROR_TYPE"
+  if [[ -x "$RESPOND_BIN" ]]; then
+    "$RESPOND_BIN" "⚠ Research dispatch failed. The sub-agent returned empty or errored. Please retry." 2>/dev/null || true
+  fi
+fi
+
+# ── Status: idle ──────────────────────────────────────────
+[[ -x "$STATUS_BIN" ]] && "$STATUS_BIN" set idle "" "" 2>/dev/null || true
+
+log "Worker complete: agent=$AGENT_ID bytes=$OUTPUT_BYTES exit=$EXIT_CODE"
