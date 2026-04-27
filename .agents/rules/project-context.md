@@ -17,6 +17,10 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Two-Phase Turn Protocol**: cortex must classify → write PLAN.md → dispatch via brain-exec
 - **PreTurn hook**: BRAIN_CARD.md injected every turn with agent table + classification rules
 - **PostTurn hook**: check-plan-compliance validates dispatch compliance
+- **Minimal Context Dispatch (MCD)**: each layer gets exactly enough context, no more
+  - Cortex: ~3KB static context (lean SOUL.md + TOOLS.md + BRAIN_CARD.md + MEMORY.md)
+  - Sub-agents: focused SOUL.md (~1KB) + self-contained task instruction from Cortex
+  - Conversation history: 4 turns (8 messages) — classification doesn't need deep history
 - **Fire-and-forget dispatch**: brain-exec validates agent → spawns brain-exec-worker in background → returns immediately
   - Cortex tool call completes in <1s (eliminates Vertex AI model API timeout)
   - Worker runs agent independently, delivers results via `channel-respond`
@@ -24,6 +28,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Observation window**: control-daemon uses 15s window for fast path responses
   - Fast path: simple responses (≤15s) delivered directly
   - Async path: partial content delivered, worker handles result delivery
+  - Empty fallback: always sends ack if no content received
 
 ### Fleet VM Architecture
 - Single OpenClaw agent per VM with specialty-specific workspace

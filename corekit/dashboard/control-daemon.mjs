@@ -28,7 +28,7 @@ const PRIME_ID = process.env.PRIME_ID;
 const GATEWAY_URL = 'http://127.0.0.1:18789/v1/chat/completions';
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`;
 const HTTP_TIMEOUT = 600_000; // 600s — research dispatches can take 3-5min
-const MAX_HISTORY = 20; // Keep last N turns for context
+const MAX_HISTORY = 4;  // Keep last N turns — Cortex only needs recent context for classification
 
 // Gateway auth token
 let GATEWAY_TOKEN = 'no-token';
@@ -561,10 +561,20 @@ async function main() {
             // We got partial content (Cortex's dispatch confirmation)
             log('Reply (async partial)', { text: partial.split('\n')[0].slice(0, 80), taskId });
             await writeResponse(partial);
+          } else {
+            // No content from Cortex — send ack so user isn't left in the dark
+            log('Async with no partial — sending ack', { taskId });
+            await writeResponse('🔄 Processing your request...');
           }
           await markProcessed(msg.path);
           writeTask(taskId, { status: 'dispatched' }).catch(() => {});
           log('Dispatched (async)', { taskId, elapsed_ms: Date.now() - t0 });
+
+        } else if (result.mode === 'error' && !result.reply) {
+          // Gateway error with no content — never leave user in the dark
+          await writeResponse('⚠ I wasn\'t able to process that request. Please try again.');
+          await markProcessed(msg.path);
+          log('Error fallback sent', { taskId });
         }
       }
     } catch (err) {

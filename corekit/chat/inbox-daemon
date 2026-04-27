@@ -428,11 +428,16 @@ except:
       fi
       rm -f "$REPLY_FILE" "$REPLY_ERR"
 
-      # Only send non-empty, real responses to Chat (fast path)
+      # Send response to Chat
       if [[ -n "$REPLY" && ${#REPLY} -gt 2 ]]; then
         CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
           "$CHAT_SEND" "$REPLY" 2>/dev/null || warn "chat-send failed for ${SPACE}"
         log "REPLY sent to ${SPACE} (${#REPLY} chars)"
+      else
+        # No content from agent — send ack so user isn't left in the dark
+        CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
+          "$CHAT_SEND" "🔄 Processing your request..." 2>/dev/null || warn "ack failed for ${SPACE}"
+        log "Empty response, sent ack to ${SPACE}"
       fi
 
       # Advance high-water mark

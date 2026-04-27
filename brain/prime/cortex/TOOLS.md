@@ -1,119 +1,34 @@
 # TOOLS — Architect Prime (Cortex)
 
-## Brain Dispatch (exec)
-
-### Dispatch a brain sub-agent
+## Brain Dispatch
 ```
 exec brain-exec <agent-id> "<instruction>" [timeout]
 ```
-Fire-and-forget dispatch via `brain-exec`. Returns immediately with
-a confirmation (`✅ Dispatched <agent-id>: <task>`). The sub-agent
-runs in the background and delivers results directly to the user
-via `channel-respond` when complete.
+Fire-and-forget. Returns `✅ Dispatched`. Sub-agent delivers via `channel-respond`.
 
-### Available agents:
-| agentId | Job | When to use |
+| Agent | Job | Timeout |
 |---|---|---|
-| `temporal-research` | Web search (agent-ask) | Current info, prices, news, URLs |
-| `temporal-memory` | Memory recall | Past decisions, context, history |
-| `prefrontal` | Strategic planning | Complex multi-step tasks |
-| `motor` | Execution (code, commands) | Implementing plan steps |
-| `cerebellum` | Verification (QA) | Checking motor's output |
+| `temporal-research` | Web search (Vertex AI grounding) | `150` |
+| `temporal-memory` | Memory/context recall | `60` |
+| `prefrontal` | Strategic planning | `90` |
+| `motor` | Code execution, commands | `150` |
+| `cerebellum` | Verification, QA | `60` |
 
-### Timeout budgets (MANDATORY — always include):
-| agentId | Timeout |
-|---|---|
-| `temporal-research` | `150` |
-| `temporal-memory` | `60` |
-| `prefrontal` | `90` |
-| `motor` | `150` |
-| `cerebellum` | `60` |
+## Planning
+Write `workspace/PLAN.md` before any dispatch. Checked by PostTurn hook.
 
-## Planning (write)
-
-### Write dispatch plan (MANDATORY before dispatch)
+## Fleet
 ```
-write workspace/PLAN.md
-```
-Content format:
-```
-TASK: [summary]
-CATEGORY: [classification]
-DISPATCHES:
-1. [agent-id] — [task]
-EXPECTED OUTCOME: [result description]
-```
-This file is checked by the PostTurn compliance hook. If you dispatch
-brain agents without writing PLAN.md first, a compliance violation
-is logged.
-
-## Fleet Management (exec)
-
-### Hire
-```
-exec fleet-hire --name <name> --specialty <type_id>
+exec fleet-hire --name <n> --specialty <type>
+exec fleet-fire --name <n>
+exec fleet-status
+exec fleet-upgrade --name <n>
+exec fleet-verify --name <n>
 ```
 Specialties: `devops`, `swe`, `qa`, `pm`, `finance`, `data`, `security`
 
-### Fire
+## Response Delivery
 ```
-exec fleet-fire --name <name>
+exec channel-respond "text"
 ```
-
-### Status
-```
-exec fleet-status
-```
-
-### Upgrade
-```
-exec fleet-upgrade --name <name>
-```
-
-### Verify
-```
-exec fleet-verify --name <name>
-```
-
-## Memory (exec)
-
-### Write fact to Core Memory
-```
-exec core-memory-write --fact "<fact>" --category <cat> --tags "t1,t2"
-```
-Categories: architecture, operations, iam, decisions, patterns, errors
-
-### Read Core Memory
-```
-exec core-memory-read --category <category>
-```
-
-## Response Delivery (exec)
-
-### Deliver response to the user's channel
-```
-exec channel-respond "Your response text"
-```
-Routes automatically to Dashboard (Firestore) or Google Chat depending
-on which channel the message came from.
-
-**On dispatch turns:** Do NOT call channel-respond yourself.
-The brain-exec-worker handles delivery autonomously.
-
-**On non-dispatch turns:** Your streaming output is the reply.
-No channel-respond needed.
-
-For intermediate progress updates during long work:
-```
-exec channel-respond "🔄 Research complete. Synthesizing..."
-```
-
-## Rules
-- ALWAYS use `exec brain-exec <agent-id> "<task>" <timeout>` for brain dispatch.
-- ALWAYS write PLAN.md before any brain dispatch.
-- ALWAYS include the timeout argument from the dispatch budget table.
-- brain-exec is FIRE-AND-FORGET — do NOT read its output or wait for results.
-- After dispatching, tell the user what was dispatched and end your turn.
-- Fleet operations: exec directly. No brain dispatch or PLAN.md needed.
-- The `brain-exec` wrapper is on PATH at `~/.openclaw/bin/brain-exec`.
-- The `channel-respond` script is on PATH at `~/.openclaw/bin/channel-respond`.
+On dispatch turns: sub-agent handles this. Do NOT call it yourself.
