@@ -262,7 +262,7 @@ async function routeMessage(text) {
 
 // Fast gateway call: streaming with observation window
 // Returns { complete: true, content } if done, or { complete: false } if still working
-const OBSERVATION_WINDOW = 15_000; // 15s — enough for simple responses
+const OBSERVATION_WINDOW = 30_000; // 30s — model needs ~22s for first token with full system prompt
 async function callGatewayFast(messages, t0) {
   const controller = new AbortController();
   const hardTimeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
@@ -369,9 +369,10 @@ async function readSSEWithWindow(res, t0) {
   } catch (err) {
     log('SSE read error', { error: err.message });
   } finally {
-    // Release the reader — if stream is still active, this detaches cleanly
-    try { reader.cancel(); } catch {}
-    reader.releaseLock();
+    // Don't cancel the reader — that aborts the gateway's in-flight model call.
+    // Just release the lock so the gateway can finish processing in the background.
+    // The response will arrive via channel-respond (fire-and-forget architecture).
+    try { reader.releaseLock(); } catch {}
   }
 
   // Decide: fast path (complete) or async path (still working)
