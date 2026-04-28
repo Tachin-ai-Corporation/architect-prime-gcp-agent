@@ -244,12 +244,13 @@ async function routeMessage(text) {
     return { reply: fastResult.content, mode: 'fast' };
   }
 
-  // --- Async path: agent did dispatch work ---
-  // With fire-and-forget brain-exec, Cortex's turn should complete fast.
-  // If we're here, the observation window expired — deliver any partial content.
+  // --- Async path: observation window expired ---
+  // Model is still processing. Send an ack, then continue reading the stream
+  // in the background so we can deliver the real response when it arrives.
   log('Async path (dispatch)', {
     elapsed_s: parseFloat(((Date.now() - t0) / 1000).toFixed(1)),
-    partialChars: fastResult.content?.length || 0
+    partialChars: fastResult.content?.length || 0,
+    hasReader: !!fastResult.reader
   });
 
   const partial = fastResult.content?.trim() || '';
@@ -257,7 +258,7 @@ async function routeMessage(text) {
     conversationHistory.push({ role: 'assistant', content: partial });
   }
 
-  return { reply: partial, mode: 'async' };
+  return { reply: partial, mode: 'async', reader: fastResult.reader, decoder: fastResult.decoder, buffer: fastResult.buffer };
 }
 
 // Fast gateway call: streaming with observation window
@@ -307,7 +308,7 @@ async function callGatewayFast(messages, t0) {
 
 // Read SSE stream with observation window:
 // - If stream completes within OBSERVATION_WINDOW → return full content
-// - If stream has tool_calls (dispatch) → detach after window, let agent deliver via channel-respond
+// - If window expires → return reader handle for background continuation
 async function readSSEWithWindow(res, t0) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -368,29 +369,79 @@ async function readSSEWithWindow(res, t0) {
     }
   } catch (err) {
     log('SSE read error', { error: err.message });
-  } finally {
-    // Don't cancel the reader — that aborts the gateway's in-flight model call.
-    // Just release the lock so the gateway can finish processing in the background.
-    // The response will arrive via channel-respond (fire-and-forget architecture).
-    try { reader.releaseLock(); } catch {}
   }
 
   // Decide: fast path (complete) or async path (still working)
   if (streamDone && content.trim().length > 5) {
+    // Stream finished in window — release reader, return content
+    try { reader.releaseLock(); } catch {}
     return { complete: true, content };
   }
 
-  if (toolCallSeen || !streamDone) {
-    // Agent is dispatching brain-exec or still thinking — async path
+  if (streamDone) {
+    // Stream ended but empty — release reader
+    try { reader.releaseLock(); } catch {}
     return { complete: false, content };
   }
 
-  // Stream ended but content is very short (thinking marker or empty)
-  if (content.trim().length <= 5) {
-    return { complete: false, content };
+  // Window expired, stream still active — return reader for background continuation
+  return { complete: false, content, reader, decoder, buffer };
+}
+
+// Continue reading an SSE stream in the background after the observation window.
+// When the model responds, deliver the content to Firestore.
+async function continueStreamInBackground(reader, decoder, buffer, taskId) {
+  let content = '';
+  const bgTimeout = setTimeout(() => {
+    log('Background stream hard timeout', { taskId });
+    try { reader.cancel(); } catch {}
+  }, HTTP_TIMEOUT);
+
+  try {
+    let buf = buffer || '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      let streamDone = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) continue;
+        if (trimmed === 'data: [DONE]') { streamDone = true; break; }
+        if (trimmed.startsWith('data: ')) {
+          try {
+            const chunk = JSON.parse(trimmed.slice(6));
+            const delta = chunk.choices?.[0]?.delta;
+            if (delta?.content) content += delta.content;
+          } catch {}
+        }
+      }
+      if (streamDone) break;
+    }
+  } catch (err) {
+    log('Background stream error', { taskId, error: err.message });
+  } finally {
+    clearTimeout(bgTimeout);
+    try { reader.releaseLock(); } catch {}
   }
 
-  return { complete: true, content };
+  const text = content.trim();
+  if (text.length > 5) {
+    log('Background stream delivered', { taskId, chars: text.length });
+    conversationHistory.push({ role: 'assistant', content: text });
+    await writeResponse(text);
+    writeTask(taskId, {
+      status: 'complete',
+      completedAt: new Date().toISOString(),
+      responsePreview: text.slice(0, 200)
+    }).catch(() => {});
+  } else {
+    log('Background stream empty — no content to deliver', { taskId });
+  }
 }
 
 // ---- Async Task Monitor ----
@@ -553,23 +604,27 @@ async function main() {
           log('Completed (fast)', { taskId, elapsed_ms: elapsed });
 
         } else if (result.mode === 'async') {
-          // Async path: brain-exec is fire-and-forget, so this only triggers
-          // if the stream didn't complete within the observation window.
-          // Cortex's response (dispatch confirmation) should have streamed out.
-          // Mark as processed — the worker will deliver results via channel-respond.
+          // Async path: observation window expired before model responded.
+          // Send an ack immediately, then continue reading the stream in the
+          // background. When the model responds, deliver the real content.
           const partial = result.reply || '';
           if (partial.length > 5) {
-            // We got partial content (Cortex's dispatch confirmation)
             log('Reply (async partial)', { text: partial.split('\n')[0].slice(0, 80), taskId });
             await writeResponse(partial);
           } else {
-            // No content from Cortex — send ack so user isn't left in the dark
             log('Async with no partial — sending ack', { taskId });
             await writeResponse('🔄 Processing your request...');
           }
           await markProcessed(msg.path);
           writeTask(taskId, { status: 'dispatched' }).catch(() => {});
           log('Dispatched (async)', { taskId, elapsed_ms: Date.now() - t0 });
+
+          // Background continuation: keep reading the stream and deliver when ready
+          if (result.reader) {
+            log('Starting background stream continuation', { taskId });
+            continueStreamInBackground(result.reader, result.decoder, result.buffer, taskId)
+              .catch(err => log('Background continuation error', { taskId, error: err.message }));
+          }
 
         } else if (result.mode === 'error' && !result.reply) {
           // Gateway error with no content — never leave user in the dark
