@@ -318,8 +318,8 @@ async function routeMessage(text) {
 
   // Check if the response is a "no reply" / empty — this happens when Cortex
   // calls sessions_yield to wait for a sub-agent. The HTTP call returns immediately
-  // with no content, but the sub-agent is still running. We need to poll for
-  // the synthesis response that Cortex produces after the sub-agent completes.
+  // with no content, but the sub-agent is still running. We need to wait for
+  // the synthesis response that Cortex produces when the sub-agent completes.
   const isNoReply = !content || content.length === 0 ||
     content.toLowerCase().includes('no reply') ||
     content.toLowerCase().includes('no response');
@@ -329,43 +329,73 @@ async function routeMessage(text) {
     return { reply: content, mode: 'complete' };
   }
 
-  // --- Yield-wait loop: poll for the synthesis response ---
-  // Cortex yielded (waiting for sub-agent). Poll every 10s for up to 5 minutes.
-  const YIELD_POLL_INTERVAL = 10_000;
+  // --- Yield-wait: tail the OpenClaw log for Cortex's synthesis ---
+  // The sub-agent result is announced to Cortex internally. When Cortex
+  // synthesizes, the output appears in the OpenClaw log. We tail the log
+  // looking for the final assistant message.
+  const YIELD_POLL_INTERVAL = 5_000;
   const YIELD_POLL_MAX = 300_000; // 5 min
   const yieldStart = Date.now();
-  log('Yield detected — polling for synthesis response', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const logPath = `/tmp/openclaw/openclaw-${today}.log`;
+  const logMarkerTime = new Date().toISOString().slice(0, 19); // Ignore log lines before now
+  log('Yield detected — tailing log for synthesis', { logPath, elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
 
   while (Date.now() - yieldStart < YIELD_POLL_MAX) {
     await new Promise(r => setTimeout(r, YIELD_POLL_INTERVAL));
 
-    // Re-call gateway — Cortex should have the sub-agent's result by now
-    // and will synthesize a response on this turn
-    const followUp = await callGateway([
-      ...conversationHistory,
-      { role: 'assistant', content: '(waiting for sub-agent result)' },
-      { role: 'user', content: 'The sub-agent has completed. Please provide the synthesized result.' }
-    ], t0);
+    try {
+      // Read the last ~20KB of the log file
+      const stat = (await import('fs')).statSync(logPath);
+      const readSize = Math.min(stat.size, 20_000);
+      const buf = Buffer.alloc(readSize);
+      const fd = (await import('fs')).openSync(logPath, 'r');
+      (await import('fs')).readSync(fd, buf, 0, readSize, stat.size - readSize);
+      (await import('fs')).closeSync(fd);
+      const tail = buf.toString('utf8');
 
-    if (followUp.error) continue; // Retry on error
+      // Look for Cortex synthesis — appears after a subagent announcement.
+      // The announcement line contains "announce:v1:agent:" and signals
+      // that Cortex will produce synthesis on the next turn.
+      const lines = tail.split('\n');
+      let synthesisLines = [];
+      let foundAnnounce = false;
 
-    const followContent = stripThinking(followUp.content?.trim() || '');
-    const stillEmpty = !followContent || followContent.length === 0 ||
-      followContent.toLowerCase().includes('no reply') ||
-      followContent.toLowerCase().includes('no response');
+      for (const line of lines) {
+        // Look for the subagent announcement (any agent, not just temporal-research)
+        if (line.includes('announce:v1:agent:')) {
+          foundAnnounce = true;
+          synthesisLines = []; // Reset — synthesis follows the announcement
+          continue;
+        }
+        // After announcement, look for non-JSON, non-empty lines (Cortex synthesis)
+        if (foundAnnounce && line.trim() && !line.startsWith('{') && !line.startsWith('[') && !line.startsWith('2026-')) {
+          synthesisLines.push(line);
+        }
+        // Stop collecting if we hit a JSON log entry or timestamp after synthesis
+        if (foundAnnounce && synthesisLines.length > 0 && (line.startsWith('{') || line.match(/^\d{4}-\d{2}-\d{2}T/))) {
+          break;
+        }
+      }
 
-    if (!stillEmpty && followContent.length > 5) {
-      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-      log('Synthesis received', { elapsed_s: parseFloat(elapsed), chars: followContent.length });
-      conversationHistory.push({ role: 'assistant', content: followContent });
-      return { reply: followContent, mode: 'complete' };
+      if (synthesisLines.length > 0) {
+        const synthesis = stripThinking(synthesisLines.join('\n').trim());
+        if (synthesis.length > 10) {
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+          log('Synthesis captured from log', { elapsed_s: parseFloat(elapsed), chars: synthesis.length });
+          conversationHistory.push({ role: 'assistant', content: synthesis });
+          return { reply: synthesis, mode: 'complete' };
+        }
+      }
+    } catch (err) {
+      log('Log tail error', { error: err.message });
     }
 
-    log('Yield poll — still waiting', { elapsed_s: ((Date.now() - yieldStart) / 1000).toFixed(1) });
+    log('Yield wait — still waiting', { elapsed_s: ((Date.now() - yieldStart) / 1000).toFixed(1) });
   }
 
   // Timed out waiting for synthesis
-  log('Yield poll timeout', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
+  log('Yield wait timeout', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
   return { reply: '', mode: 'empty' };
 }
 
