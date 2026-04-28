@@ -1,22 +1,16 @@
 #!/bin/bash
-TOKEN=$(cat /home/node/.openclaw/openclaw.json | grep -o '"token":"[^"]*"' | head -1 | cut -d'"' -f4)
-echo "=== Testing gateway HTTP API (same path as control-daemon) ==="
-echo "Token: ${TOKEN:0:8}..."
+TOKEN="9568dbe5673ceaf031a5a1d7343faab4"
+echo "=== Non-streaming (stream:false) ==="
 START=$(date +%s%N)
-RESP=$(curl -s -m 60 -w '\nHTTP_CODE: %{http_code}' -X POST \
+RESP=$(timeout 60 curl -s -X POST \
   http://127.0.0.1:18789/v1/chat/completions \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"openclaw/cortex","messages":[{"role":"user","content":"say hi"}],"stream":false}')
+  -d '{"model":"openclaw/cortex","messages":[{"role":"user","content":"who are you?"}],"stream":false}')
 END=$(date +%s%N)
 ELAPSED=$(( (END - START) / 1000000 ))
-echo "Gateway HTTP: ${ELAPSED}ms"
-echo "$RESP" | tail -10
+echo "Time: ${ELAPSED}ms"
+echo "$RESP" | python3 -m json.tool 2>/dev/null | head -30
 echo ""
-echo "=== Testing embedded CLI (bypasses gateway HTTP) ==="
-START=$(date +%s%N)
-RESP=$(timeout 60 openclaw agent --agent cortex -m 'say hi' --json --timeout 45 2>&1)
-END=$(date +%s%N)
-ELAPSED=$(( (END - START) / 1000000 ))
-echo "Embedded CLI: ${ELAPSED}ms"
-echo "$RESP" | grep -E 'result|winnerModel|finalAssistantVisible|error' | head -5
+echo "=== Content extraction ==="
+echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('choices',[{}])[0].get('message',{}).get('content','NO CONTENT'))" 2>/dev/null

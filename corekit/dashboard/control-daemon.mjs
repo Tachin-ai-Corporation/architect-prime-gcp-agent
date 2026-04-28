@@ -3,17 +3,16 @@
 // control-daemon.mjs — Firestore-polling message bridge for Prime
 //
 // Node.js daemon that polls Firestore for user messages and
-// routes them to the OpenClaw gateway. Uses an async-first model:
+// routes them to the OpenClaw gateway using non-streaming calls.
 //
-//   1. Submit to gateway with 15s observation window (fast path).
-//   2. If response completes within window → deliver directly.
-//   3. If agent is dispatching (tool calls seen) → send ack,
-//      enter heartbeat monitor loop. Agent delivers its own
-//      response via channel-respond → dashboard-respond.
-//   4. Monitor heartbeat every 15s. If stale >90s → stall recovery.
+// Non-streaming mode: the /v1/chat/completions endpoint (stream:false)
+// waits for the full model turn — including tool execution — and
+// returns the final visible text in one JSON response. This avoids
+// the SSE streaming issues where tool-call responses are not
+// surfaced through the stream.
 //
 // Runs inside the Docker container via docker exec.
-// Conversation history (20 turns) enables session continuity.
+// Conversation history (4 turns) enables session continuity.
 //
 // Run:
 //   docker exec -e GCP_PROJECT_ID=xxx -e PRIME_ID=xxx \
@@ -211,60 +210,11 @@ function timeSince(isoStr) {
   return `${Math.round(ms / 3_600_000)}h`;
 }
 
-async function routeMessage(text) {
-  const t0 = Date.now();
-
-  // Add user message to conversation history
-  conversationHistory.push({ role: 'user', content: text });
-
-  // Trim history to prevent context overflow
-  while (conversationHistory.length > MAX_HISTORY * 2) {
-    conversationHistory.shift();
-  }
-
-  // --- Fast path: try streaming with 15s observation window ---
-  // If we get a complete response in 15s, use it directly (identity, fleet)
-  // If still processing after 15s, detach and enter async monitor
-  const fastResult = await callGatewayFast([...conversationHistory], t0);
-
-  if (fastResult.error) {
-    conversationHistory.pop();
-    return { reply: fastResult.error, mode: 'error' };
-  }
-
-  if (fastResult.complete) {
-    // Fast path: full response arrived within observation window
-    conversationHistory.push({ role: 'assistant', content: fastResult.content });
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    log('Response received (fast path)', {
-      elapsed_s: parseFloat(elapsed),
-      chars: fastResult.content.length,
-      history_depth: conversationHistory.length
-    });
-    return { reply: fastResult.content, mode: 'fast' };
-  }
-
-  // --- Async path: observation window expired ---
-  // Model is still processing. Send an ack, then continue reading the stream
-  // in the background so we can deliver the real response when it arrives.
-  log('Async path (dispatch)', {
-    elapsed_s: parseFloat(((Date.now() - t0) / 1000).toFixed(1)),
-    partialChars: fastResult.content?.length || 0,
-    hasReader: !!fastResult.reader
-  });
-
-  const partial = fastResult.content?.trim() || '';
-  if (partial.length > 5) {
-    conversationHistory.push({ role: 'assistant', content: partial });
-  }
-
-  return { reply: partial, mode: 'async', reader: fastResult.reader, decoder: fastResult.decoder, buffer: fastResult.buffer };
-}
-
-// Fast gateway call: streaming with observation window
-// Returns { complete: true, content } if done, or { complete: false } if still working
-const OBSERVATION_WINDOW = 45_000; // 45s — model needs ~32s for first token with full system prompt
-async function callGatewayFast(messages, t0) {
+// ---- Gateway Call (non-streaming) ----
+// POST to /v1/chat/completions with stream:false.
+// Waits for the full model turn including tool execution and returns
+// the final visible text in the JSON response.
+async function callGateway(messages, t0) {
   const controller = new AbortController();
   const hardTimeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
 
@@ -278,22 +228,28 @@ async function callGatewayFast(messages, t0) {
       body: JSON.stringify({
         model: 'openclaw/cortex',
         messages,
-        stream: true
+        stream: false
       }),
       signal: controller.signal
     });
 
+    clearTimeout(hardTimeout);
+
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       log('Gateway HTTP error', { status: res.status, body: errText.slice(0, 200) });
-      clearTimeout(hardTimeout);
       return { error: `⚠ Gateway error (HTTP ${res.status})` };
     }
 
-    // Read SSE stream with observation window
-    const result = await readSSEWithWindow(res, t0);
-    clearTimeout(hardTimeout);
-    return result;
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    log('Gateway response', {
+      elapsed_s: parseFloat(elapsed),
+      chars: content.length,
+      tokens: data.usage?.total_tokens
+    });
+    return { content };
   } catch (err) {
     clearTimeout(hardTimeout);
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -306,211 +262,34 @@ async function callGatewayFast(messages, t0) {
   }
 }
 
-// Read SSE stream with observation window:
-// - If stream completes within OBSERVATION_WINDOW → return full content
-// - If window expires → return reader handle for background continuation
-async function readSSEWithWindow(res, t0) {
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let content = '';
-  let buffer = '';
-  let firstChunkLogged = false;
-  let toolCallSeen = false;
-  let streamDone = false;
+// ---- Message Routing ----
+async function routeMessage(text) {
+  const t0 = Date.now();
 
-  const windowEnd = Date.now() + OBSERVATION_WINDOW;
+  // Add user message to conversation history
+  conversationHistory.push({ role: 'user', content: text });
 
-  try {
-    while (Date.now() < windowEnd) {
-      // Use a short read timeout so we can check the window
-      const readPromise = reader.read();
-      const timeoutPromise = new Promise(resolve =>
-        setTimeout(() => resolve({ done: false, value: null, timeout: true }), 2000)
-      );
-      const { done, value, timeout } = await Promise.race([readPromise, timeoutPromise]);
-
-      if (timeout) continue; // Check window again
-      if (done) { streamDone = true; break; }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(':')) continue;
-
-        if (trimmed === 'data: [DONE]') {
-          streamDone = true;
-          break;
-        }
-
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const chunk = JSON.parse(trimmed.slice(6));
-            const delta = chunk.choices?.[0]?.delta;
-
-            if (delta?.tool_calls) toolCallSeen = true;
-
-            if (delta?.content) {
-              content += delta.content;
-              if (!firstChunkLogged) {
-                const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                log('Streaming started', { first_chunk_s: parseFloat(elapsed) });
-                firstChunkLogged = true;
-              }
-            }
-          } catch {
-            // Skip malformed chunks
-          }
-        }
-      }
-      if (streamDone) break;
-    }
-  } catch (err) {
-    log('SSE read error', { error: err.message });
+  // Trim history to prevent context overflow
+  while (conversationHistory.length > MAX_HISTORY * 2) {
+    conversationHistory.shift();
   }
 
-  // Decide: fast path (complete) or async path (still working)
-  if (streamDone && content.trim().length > 5) {
-    // Stream finished in window — release reader, return content
-    try { reader.releaseLock(); } catch {}
-    return { complete: true, content };
+  // Call gateway (non-streaming) — waits for the full model turn
+  const result = await callGateway([...conversationHistory], t0);
+
+  if (result.error) {
+    conversationHistory.pop();
+    return { reply: result.error, mode: 'error' };
   }
 
-  if (streamDone) {
-    // Stream ended but empty — release reader
-    try { reader.releaseLock(); } catch {}
-    return { complete: false, content };
+  const content = result.content?.trim() || '';
+  if (content.length > 0) {
+    conversationHistory.push({ role: 'assistant', content });
+    return { reply: content, mode: 'complete' };
   }
 
-  // Window expired, stream still active — return reader for background continuation
-  return { complete: false, content, reader, decoder, buffer };
-}
-
-// Continue reading an SSE stream in the background after the observation window.
-// When the model responds, deliver the content to Firestore.
-async function continueStreamInBackground(reader, decoder, buffer, taskId) {
-  let content = '';
-  const bgTimeout = setTimeout(() => {
-    log('Background stream hard timeout', { taskId });
-    try { reader.cancel(); } catch {}
-  }, HTTP_TIMEOUT);
-
-  try {
-    let buf = buffer || '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop();
-
-      let streamDone = false;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(':')) continue;
-        if (trimmed === 'data: [DONE]') { streamDone = true; break; }
-        if (trimmed.startsWith('data: ')) {
-          try {
-            const chunk = JSON.parse(trimmed.slice(6));
-            const delta = chunk.choices?.[0]?.delta;
-            if (delta?.content) content += delta.content;
-          } catch {}
-        }
-      }
-      if (streamDone) break;
-    }
-  } catch (err) {
-    log('Background stream error', { taskId, error: err.message });
-  } finally {
-    clearTimeout(bgTimeout);
-    try { reader.releaseLock(); } catch {}
-  }
-
-  const text = content.trim();
-  if (text.length > 5) {
-    log('Background stream delivered', { taskId, chars: text.length });
-    conversationHistory.push({ role: 'assistant', content: text });
-    await writeResponse(text);
-    writeTask(taskId, {
-      status: 'complete',
-      completedAt: new Date().toISOString(),
-      responsePreview: text.slice(0, 200)
-    }).catch(() => {});
-  } else {
-    log('Background stream empty — no content to deliver', { taskId });
-  }
-}
-
-// ---- Async Task Monitor ----
-// After entering async path, poll for agent-delivered response
-const MONITOR_INTERVAL = 15_000;  // Check every 15s
-const MONITOR_STALE = 90_000;     // 90s no heartbeat = stalled
-const MONITOR_MAX = 480_000;      // 8 min absolute ceiling
-
-async function monitorTask(taskId, msgPath) {
-  const start = Date.now();
-  let lastSeen = start;
-
-  while (Date.now() - start < MONITOR_MAX) {
-    await new Promise(r => setTimeout(r, MONITOR_INTERVAL));
-
-    // Check Firestore for agent-delivered response (new message from 'prime')
-    // This is the primary signal — agent called channel-respond → dashboard-respond
-    const taskDoc = await readTaskDoc(taskId);
-
-    if (taskDoc?.status === 'complete') {
-      log('Task completed by agent', { taskId, elapsed_ms: Date.now() - start });
-      await markProcessed(msgPath);
-      return;
-    }
-
-    // Check heartbeat freshness
-    if (taskDoc?.heartbeat) {
-      const beatTime = new Date(taskDoc.heartbeat).getTime();
-      if (beatTime > lastSeen) lastSeen = beatTime;
-    }
-
-    const staleDuration = Date.now() - lastSeen;
-    if (staleDuration > MONITOR_STALE) {
-      log('Task stalled', { taskId, staleDuration, elapsed_ms: Date.now() - start });
-      await writeResponse('⚠ Request appears stalled. The agent may be processing — if no response arrives shortly, please retry.');
-      await markProcessed(msgPath);
-      writeTask(taskId, { status: 'stalled' }).catch(() => {});
-      return;
-    }
-
-    log('Monitor heartbeat OK', { taskId, staleDuration, elapsed_ms: Date.now() - start });
-  }
-
-  // Absolute ceiling reached
-  log('Task timeout (ceiling)', { taskId, elapsed_ms: Date.now() - start });
-  await writeResponse('⚠ Request exceeded maximum processing time. Please retry with a simpler request.');
-  await markProcessed(msgPath);
-  writeTask(taskId, { status: 'timeout' }).catch(() => {});
-}
-
-// Read task document from Firestore
-async function readTaskDoc(taskId) {
-  try {
-    const token = await getAccessToken();
-    const res = await fetch(
-      `${FIRESTORE_URL}/primes/${PRIME_ID}/tasks/${taskId}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) return null;
-    const doc = await res.json();
-    const fields = doc.fields || {};
-    return {
-      status: fields.status?.stringValue,
-      heartbeat: fields.heartbeat?.stringValue,
-      completedAt: fields.completedAt?.stringValue
-    };
-  } catch {
-    return null;
-  }
+  // Model returned no visible content (tool calls only, no text)
+  return { reply: '', mode: 'empty' };
 }
 
 // ---- Heartbeat ----
@@ -532,7 +311,7 @@ async function main() {
     poll_interval_s: POLL_INTERVAL / 1000,
     token: GATEWAY_TOKEN.slice(0, 8) + '...',
     max_history: MAX_HISTORY,
-    architecture: 'async-first v1'
+    architecture: 'non-streaming v2'
   });
 
   await updateStatus('online');
@@ -585,52 +364,41 @@ async function main() {
         // Write TASK.json to workspace (for channel-respond + heartbeat)
         writeTaskFile(taskId);
 
-        // Route message with observation window
+        // Route message — blocks until gateway returns full response
         const result = await routeMessage(msg.text);
 
-        if (result.mode === 'fast' || result.mode === 'error') {
-          // Fast path: got a complete response, write it directly
-          log('Reply (fast)', { text: result.reply.split('\n')[0].slice(0, 80), taskId });
+        const elapsed = Date.now() - t0;
+
+        if (result.mode === 'complete') {
+          // Got a full response from the model
+          log('Reply', { text: result.reply.split('\n')[0].slice(0, 80), taskId });
           await writeResponse(result.reply);
           await markProcessed(msg.path);
-
-          const elapsed = Date.now() - t0;
           writeTask(taskId, {
             status: 'complete',
             completedAt: new Date().toISOString(),
             totalMs: elapsed,
             responsePreview: result.reply.slice(0, 200)
           }).catch(() => {});
-          log('Completed (fast)', { taskId, elapsed_ms: elapsed });
+          log('Completed', { taskId, elapsed_ms: elapsed });
 
-        } else if (result.mode === 'async') {
-          // Async path: observation window expired before model responded.
-          // Send an ack immediately, then continue reading the stream in the
-          // background. When the model responds, deliver the real content.
-          const partial = result.reply || '';
-          if (partial.length > 5) {
-            log('Reply (async partial)', { text: partial.split('\n')[0].slice(0, 80), taskId });
-            await writeResponse(partial);
-          } else {
-            log('Async with no partial — sending ack', { taskId });
-            await writeResponse('🔄 Processing your request...');
-          }
+        } else if (result.mode === 'empty') {
+          // Model processed but returned no visible text — send ack
+          log('Empty response from model — sending ack', { taskId });
+          await writeResponse('🔄 Processing your request...');
           await markProcessed(msg.path);
           writeTask(taskId, { status: 'dispatched' }).catch(() => {});
-          log('Dispatched (async)', { taskId, elapsed_ms: Date.now() - t0 });
+          log('Dispatched (empty)', { taskId, elapsed_ms: elapsed });
 
-          // Background continuation: keep reading the stream and deliver when ready
-          if (result.reader) {
-            log('Starting background stream continuation', { taskId });
-            continueStreamInBackground(result.reader, result.decoder, result.buffer, taskId)
-              .catch(err => log('Background continuation error', { taskId, error: err.message }));
+        } else if (result.mode === 'error') {
+          // Gateway or model error
+          if (result.reply) {
+            await writeResponse(result.reply);
+          } else {
+            await writeResponse('⚠ I wasn\'t able to process that request. Please try again.');
           }
-
-        } else if (result.mode === 'error' && !result.reply) {
-          // Gateway error with no content — never leave user in the dark
-          await writeResponse('⚠ I wasn\'t able to process that request. Please try again.');
           await markProcessed(msg.path);
-          log('Error fallback sent', { taskId });
+          log('Error', { taskId, reply: result.reply?.slice(0, 80), elapsed_ms: elapsed });
         }
       }
     } catch (err) {
@@ -645,4 +413,3 @@ main().catch(err => {
   log('FATAL', { error: err.message, stack: err.stack });
   process.exit(1);
 });
-
