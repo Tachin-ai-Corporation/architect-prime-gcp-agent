@@ -262,7 +262,7 @@ async function routeMessage(text) {
 
 // Fast gateway call: streaming with observation window
 // Returns { complete: true, content } if done, or { complete: false } if still working
-const OBSERVATION_WINDOW = 30_000; // 30s — model needs ~22s for first token with full system prompt
+const OBSERVATION_WINDOW = 45_000; // 45s — model needs ~32s for first token with full system prompt
 async function callGatewayFast(messages, t0) {
   const controller = new AbortController();
   const hardTimeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
