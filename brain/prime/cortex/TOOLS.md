@@ -1,18 +1,24 @@
 # TOOLS — Architect Prime (Cortex)
 
-## Brain Dispatch
-```
-exec brain-exec <agent-id> "<instruction>" [timeout]
-```
-Fire-and-forget. Returns `✅ Dispatched`. Sub-agent delivers via `channel-respond`.
+## Sub-Agent Dispatch (Native)
+Use OpenClaw's built-in subagent system. Available sub-agents:
 
-| Agent | Job | Timeout |
+| Agent | Job | Notes |
 |---|---|---|
-| `temporal-research` | Web search (Vertex AI grounding) | `150` |
-| `temporal-memory` | Memory/context recall | `60` |
-| `prefrontal` | Strategic planning | `90` |
-| `motor` | Code execution, commands | `150` |
-| `cerebellum` | Verification, QA | `60` |
+| `temporal-research` | Web search (Vertex AI grounding) | Only agent with web search |
+| `temporal-memory` | Memory/context recall | Read-only access |
+| `prefrontal` | Strategic planning | Read-only access |
+| `motor` | Code execution, commands | Full exec access |
+| `cerebellum` | Verification, QA | Read-only + exec |
+
+### Dispatch pattern:
+```
+sessions_spawn  → agent: <agent-id>, task: "<instruction>"
+sessions_yield  → (ends your turn, waits for result)
+```
+
+When the sub-agent completes, its result is injected into your session.
+You then synthesize and respond to the user.
 
 ## Planning
 Write `workspace/PLAN.md` before any dispatch. Checked by PostTurn hook.
@@ -26,9 +32,3 @@ exec fleet-upgrade --name <n>
 exec fleet-verify --name <n>
 ```
 Specialties: `devops`, `swe`, `qa`, `pm`, `finance`, `data`, `security`
-
-## Response Delivery
-```
-exec channel-respond "text"
-```
-On dispatch turns: sub-agent handles this. Do NOT call it yourself.

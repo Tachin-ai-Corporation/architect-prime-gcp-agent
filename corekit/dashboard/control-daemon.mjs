@@ -396,16 +396,28 @@ async function main() {
         // Write TASK.json to workspace (for channel-respond + heartbeat)
         writeTaskFile(taskId);
 
-        // Route message — blocks until gateway returns full response
+        // Route message — blocks until gateway returns full response.
+        // If it takes > ACK_TIMEOUT, send an ack so the user isn't waiting in the dark.
+        const ACK_TIMEOUT = 15_000; // 15s — identity queries complete in ~10s, research takes 60-120s
+        let ackSent = false;
+        const ackTimer = setTimeout(async () => {
+          ackSent = true;
+          log('ACK timeout — sending processing notice', { taskId });
+          await writeResponse('🔄 Processing your request...');
+          await markProcessed(msg.path);
+          writeTask(taskId, { status: 'processing' }).catch(() => {});
+        }, ACK_TIMEOUT);
+
         const result = await routeMessage(msg.text);
+        clearTimeout(ackTimer);
 
         const elapsed = Date.now() - t0;
 
         if (result.mode === 'complete') {
           // Got a full response from the model
-          log('Reply', { text: result.reply.split('\n')[0].slice(0, 80), taskId });
+          log('Reply', { text: result.reply.split('\n')[0].slice(0, 80), taskId, ackSent });
           await writeResponse(result.reply);
-          await markProcessed(msg.path);
+          if (!ackSent) await markProcessed(msg.path);
           writeTask(taskId, {
             status: 'complete',
             completedAt: new Date().toISOString(),
@@ -415,10 +427,12 @@ async function main() {
           log('Completed', { taskId, elapsed_ms: elapsed });
 
         } else if (result.mode === 'empty') {
-          // Model processed but returned no visible text — send ack
-          log('Empty response from model — sending ack', { taskId });
-          await writeResponse('🔄 Processing your request...');
-          await markProcessed(msg.path);
+          // Model processed but returned no visible text
+          if (!ackSent) {
+            log('Empty response from model — sending ack', { taskId });
+            await writeResponse('🔄 Processing your request...');
+            await markProcessed(msg.path);
+          }
           writeTask(taskId, { status: 'dispatched' }).catch(() => {});
           log('Dispatched (empty)', { taskId, elapsed_ms: elapsed });
 
@@ -429,7 +443,7 @@ async function main() {
           } else {
             await writeResponse('⚠ I wasn\'t able to process that request. Please try again.');
           }
-          await markProcessed(msg.path);
+          if (!ackSent) await markProcessed(msg.path);
           log('Error', { taskId, reply: result.reply?.slice(0, 80), elapsed_ms: elapsed });
         }
       }
