@@ -315,12 +315,57 @@ async function routeMessage(text) {
 
   const rawContent = result.content?.trim() || '';
   const content = stripThinking(rawContent);
-  if (content.length > 0) {
+
+  // Check if the response is a "no reply" / empty — this happens when Cortex
+  // calls sessions_yield to wait for a sub-agent. The HTTP call returns immediately
+  // with no content, but the sub-agent is still running. We need to poll for
+  // the synthesis response that Cortex produces after the sub-agent completes.
+  const isNoReply = !content || content.length === 0 ||
+    content.toLowerCase().includes('no reply') ||
+    content.toLowerCase().includes('no response');
+
+  if (!isNoReply && content.length > 0) {
     conversationHistory.push({ role: 'assistant', content });
     return { reply: content, mode: 'complete' };
   }
 
-  // Model returned no visible content (tool calls only, no text)
+  // --- Yield-wait loop: poll for the synthesis response ---
+  // Cortex yielded (waiting for sub-agent). Poll every 10s for up to 5 minutes.
+  const YIELD_POLL_INTERVAL = 10_000;
+  const YIELD_POLL_MAX = 300_000; // 5 min
+  const yieldStart = Date.now();
+  log('Yield detected — polling for synthesis response', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
+
+  while (Date.now() - yieldStart < YIELD_POLL_MAX) {
+    await new Promise(r => setTimeout(r, YIELD_POLL_INTERVAL));
+
+    // Re-call gateway — Cortex should have the sub-agent's result by now
+    // and will synthesize a response on this turn
+    const followUp = await callGateway([
+      ...conversationHistory,
+      { role: 'assistant', content: '(waiting for sub-agent result)' },
+      { role: 'user', content: 'The sub-agent has completed. Please provide the synthesized result.' }
+    ], t0);
+
+    if (followUp.error) continue; // Retry on error
+
+    const followContent = stripThinking(followUp.content?.trim() || '');
+    const stillEmpty = !followContent || followContent.length === 0 ||
+      followContent.toLowerCase().includes('no reply') ||
+      followContent.toLowerCase().includes('no response');
+
+    if (!stillEmpty && followContent.length > 5) {
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      log('Synthesis received', { elapsed_s: parseFloat(elapsed), chars: followContent.length });
+      conversationHistory.push({ role: 'assistant', content: followContent });
+      return { reply: followContent, mode: 'complete' };
+    }
+
+    log('Yield poll — still waiting', { elapsed_s: ((Date.now() - yieldStart) / 1000).toFixed(1) });
+  }
+
+  // Timed out waiting for synthesis
+  log('Yield poll timeout', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
   return { reply: '', mode: 'empty' };
 }
 
