@@ -262,6 +262,37 @@ async function callGateway(messages, t0) {
   }
 }
 
+// ---- Thinking Block Stripping ----
+// Gemini 3.1 emits <think>...</think> reasoning blocks in the response.
+// OpenClaw strips the XML tags, leaving bare "think\n..." prefix with the
+// response text concatenated after it. We strip the thinking portion.
+function stripThinking(text) {
+  if (!text) return text;
+
+  // Pattern 1: <think>...</think> XML-style tags (if tags survive)
+  if (text.includes('<think>') && text.includes('</think>')) {
+    return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  }
+
+  // Pattern 2: bare "think\n..." prefix (OpenClaw stripped the XML tags)
+  if (text.startsWith('think\n') || text.startsWith('think\r\n')) {
+    const lines = text.split('\n');
+    let lastThinkLine = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i].trim();
+      if (l === '' || l === 'think' || /^Thinking/i.test(l) ||
+          /^\d+\.\s/.test(l) || /^\*\s/.test(l) || /^\*\*/.test(l) ||
+          /^\*\s+\*/.test(l)) {
+        lastThinkLine = i;
+      }
+    }
+    const response = lines.slice(lastThinkLine + 1).join('\n').trim();
+    if (response.length > 0) return response;
+  }
+
+  return text;
+}
+
 // ---- Message Routing ----
 async function routeMessage(text) {
   const t0 = Date.now();
@@ -282,7 +313,8 @@ async function routeMessage(text) {
     return { reply: result.error, mode: 'error' };
   }
 
-  const content = result.content?.trim() || '';
+  const rawContent = result.content?.trim() || '';
+  const content = stripThinking(rawContent);
   if (content.length > 0) {
     conversationHistory.push({ role: 'assistant', content });
     return { reply: content, mode: 'complete' };
