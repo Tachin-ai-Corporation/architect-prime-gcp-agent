@@ -20,9 +20,6 @@ sessions_yield  → (ends your turn, waits for result)
 When the sub-agent completes, its result is injected into your session.
 You then synthesize and respond to the user.
 
-## Planning
-Write `workspace/PLAN.md` before any dispatch. Checked by PostTurn hook.
-
 ## Fleet
 ```
 exec fleet-hire --name <n> --specialty <type>

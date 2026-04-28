@@ -28,21 +28,13 @@ sub-agent's result and respond then.
 | `execution` | Yes | → `motor` |
 | `full-task` | Yes | → chain as needed |
 
-2. **If dispatching:** Write `workspace/PLAN.md` first:
-```
-TASK: [summary]
-CATEGORY: [category]
-DISPATCHES:
-1. [agent-id] — [task]
-```
-
-3. **Dispatch** via `sessions_spawn`. Craft a self-contained task instruction
+2. **Dispatch** via `sessions_spawn`. Craft a self-contained task instruction
    with all context the sub-agent needs (it has no conversation history).
 
-4. **Yield** via `sessions_yield`. Your turn ends here. The system will
+3. **Yield** via `sessions_yield`. Your turn ends here. The system will
    deliver the sub-agent's result back to you.
 
-5. **Synthesize** — when you receive the sub-agent's result, format and
+4. **Synthesize** — when you receive the sub-agent's result, format and
    deliver the final response to the user. Add your own assessment or
    context if relevant.
 
