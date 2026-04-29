@@ -38,12 +38,17 @@ sub-agent's result and respond then.
    deliver the final response to the user. Add your own assessment or
    context if relevant.
 
-   **CRITICAL:** After synthesizing, you MUST deliver the response:
+   **CRITICAL — Delivery after yield:**
+   When you are synthesizing a sub-agent's result (after yield), you MUST
+   deliver the response explicitly:
    ```
    exec channel-respond "Your synthesized response here"
    ```
    This writes the response to Firestore so the user sees it in the dashboard.
    Without this step, the user will never see your synthesis.
+
+   **Do NOT** call `channel-respond` for direct responses (identity, fleet).
+   Those are delivered automatically by the daemon.
 
 ## Classification Rules
 - Current events, URLs, "search", "look up" → ALWAYS `temporal-research`
