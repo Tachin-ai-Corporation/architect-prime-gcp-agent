@@ -45,6 +45,17 @@ try {
 // Conversation history for session continuity
 const conversationHistory = [];
 
+// ---- Anti-spam state ----
+// Fix 1: Dedup incoming messages — same text within 60s is collapsed
+const recentMessages = new Map();  // text → timestamp
+const DEDUP_WINDOW = 60_000;       // 60s
+
+// Fix 2: Single-flight watchdog — only one active at a time
+let activeWatchdogTaskId = null;
+
+// Fix 3: Track consumed log offset — only scan new lines
+let lastLogOffset = 0;
+
 // ---- Logging ----
 function log(msg, meta = {}) {
   const entry = {
@@ -403,141 +414,144 @@ async function routeMessage(text) {
 // 1. Check Firestore for a sender:prime message (channel-respond worked)
 // 2. Parse OpenClaw log file for synthesis (LLM failed to call channel-respond)
 //
-// The daemon runs INSIDE the container, so it CAN read /tmp/openclaw/ logs.
-// Log format: JSON objects with "0" key containing text.
+// Anti-spam: only ONE watchdog runs at a time (single-flight), and the log
+// parser tracks a byte offset so it never re-reads already-consumed entries.
 async function watchdogCheck(taskId, dispatchedAt) {
-  const WATCHDOG_INTERVAL = 15_000;  // 15s — check more frequently
+  const WATCHDOG_INTERVAL = 15_000;  // 15s
   const WATCHDOG_MAX = 300_000;      // 5 min
   const start = Date.now();
 
   log('Watchdog started', { taskId, timeout_s: WATCHDOG_MAX / 1000 });
 
-  while (Date.now() - start < WATCHDOG_MAX) {
-    await new Promise(r => setTimeout(r, WATCHDOG_INTERVAL));
+  // Snapshot the current log offset — only scan lines AFTER this point
+  const logStartOffset = lastLogOffset;
 
-    // ---- Path 1: Check Firestore for agent delivery ----
-    try {
-      const token = await getAccessToken();
-      const body = {
-        structuredQuery: {
-          from: [{ collectionId: 'messages' }],
-          where: {
-            compositeFilter: {
-              op: 'AND',
-              filters: [
-                { fieldFilter: { field: { fieldPath: 'sender' }, op: 'EQUAL', value: { stringValue: 'prime' } } },
-                { fieldFilter: { field: { fieldPath: 'timestamp' }, op: 'GREATER_THAN', value: { timestampValue: dispatchedAt } } }
-              ]
-            }
-          },
-          orderBy: [{ field: { fieldPath: 'timestamp' }, direction: 'DESCENDING' }],
-          limit: 1
-        }
-      };
+  try {
+    while (Date.now() - start < WATCHDOG_MAX) {
+      await new Promise(r => setTimeout(r, WATCHDOG_INTERVAL));
 
-      const res = await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-
-      if (Array.isArray(data) && data.some(d => d.document?.fields?.sender?.stringValue === 'prime')) {
-        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-        log('Watchdog: agent delivered via channel-respond', { taskId, elapsed_s: parseFloat(elapsed) });
-        writeTask(taskId, {
-          status: 'complete',
-          completedAt: new Date().toISOString(),
-          deliveredBy: 'agent'
-        }).catch(() => {});
-        return; // Success
-      }
-    } catch (err) {
-      log('Watchdog Firestore poll error', { error: err.message });
-    }
-
-    // ---- Path 2: Parse OpenClaw log for synthesis ----
-    // The LLM puts its synthesis INSIDE think blocks — it never outputs clean
-    // assistant text after yield. We extract the user-facing response from
-    // within think entries by looking for formatted content after the last
-    // announcement that's newer than our dispatch.
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const logPath = `/tmp/openclaw/openclaw-${today}.log`;
-      const logContent = readFileSync(logPath, 'utf8');
-      const lines = logContent.split('\n').filter(l => l.trim());
-
-      // Find the LAST announcement + synthesis pair after dispatch
-      let synthesisEntries = [];
-      let foundAnnounce = false;
-      let announceTime = null;
-
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          const entryTime = entry._meta?.date || '';
-
-          // Combine all string values from the entry (could be in '0', '1', etc.)
-          const allText = Object.keys(entry)
-            .filter(k => k !== '_meta' && typeof entry[k] === 'string')
-            .map(k => entry[k])
-            .join(' ');
-
-          // Look for subagent announcement
-          if (allText.includes('announce:v1:agent:')) {
-            foundAnnounce = true;
-            announceTime = entryTime;
-            synthesisEntries = []; // Reset
-            continue;
+      // ---- Path 1: Check Firestore for agent delivery ----
+      try {
+        const token = await getAccessToken();
+        const body = {
+          structuredQuery: {
+            from: [{ collectionId: 'messages' }],
+            where: {
+              compositeFilter: {
+                op: 'AND',
+                filters: [
+                  { fieldFilter: { field: { fieldPath: 'sender' }, op: 'EQUAL', value: { stringValue: 'prime' } } },
+                  { fieldFilter: { field: { fieldPath: 'timestamp' }, op: 'GREATER_THAN', value: { timestampValue: dispatchedAt } } }
+                ]
+              }
+            },
+            orderBy: [{ field: { fieldPath: 'timestamp' }, direction: 'DESCENDING' }],
+            limit: 1
           }
+        };
 
-          // After announcement, collect text entries that appear after dispatch
-          // The synthesis is in the '0' key (think blocks)
-          const text = entry['0'] || '';
-          if (foundAnnounce && text.length > 50 && announceTime > dispatchedAt) {
-            synthesisEntries.push(text);
-          }
-        } catch {
-          // Skip non-JSON lines
-        }
-      }
+        const res = await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
 
-      // Try to extract user-facing content from the synthesis entries
-      if (synthesisEntries.length > 0) {
-        const synthesis = extractSynthesisFromThinking(synthesisEntries);
-        if (synthesis && synthesis.length > 30) {
+        if (Array.isArray(data) && data.some(d => d.document?.fields?.sender?.stringValue === 'prime')) {
           const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-          log('Watchdog: synthesis captured from log file', {
-            taskId, elapsed_s: parseFloat(elapsed), chars: synthesis.length
-          });
-          await writeResponse(synthesis);
-          conversationHistory.push({ role: 'assistant', content: synthesis });
+          log('Watchdog: agent delivered via channel-respond', { taskId, elapsed_s: parseFloat(elapsed) });
           writeTask(taskId, {
             status: 'complete',
             completedAt: new Date().toISOString(),
-            deliveredBy: 'watchdog-log'
+            deliveredBy: 'agent'
           }).catch(() => {});
-          return; // Success — delivered from log
+          return; // Success
+        }
+      } catch (err) {
+        log('Watchdog Firestore poll error', { error: err.message });
+      }
+
+      // ---- Path 2: Parse NEW OpenClaw log entries for synthesis ----
+      // Only scans bytes AFTER logStartOffset to avoid re-delivering old results.
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const logPath = `/tmp/openclaw/openclaw-${today}.log`;
+        const logContent = readFileSync(logPath, 'utf8');
+
+        // Only look at content added SINCE this watchdog started
+        const newContent = logContent.slice(logStartOffset);
+        const lines = newContent.split('\n').filter(l => l.trim());
+
+        // Find announcement + synthesis pair in the NEW portion
+        let synthesisEntries = [];
+        let foundAnnounce = false;
+
+        for (const line of lines) {
+          try {
+            const entry = JSON.parse(line);
+
+            // Combine all string values (announce can be in '0' or '1')
+            const allText = Object.keys(entry)
+              .filter(k => k !== '_meta' && typeof entry[k] === 'string')
+              .map(k => entry[k])
+              .join(' ');
+
+            if (allText.includes('announce:v1:agent:')) {
+              foundAnnounce = true;
+              synthesisEntries = [];
+              continue;
+            }
+
+            const text = entry['0'] || '';
+            if (foundAnnounce && text.length > 50) {
+              synthesisEntries.push(text);
+            }
+          } catch {
+            // Skip non-JSON lines
+          }
+        }
+
+        if (synthesisEntries.length > 0) {
+          const synthesis = extractSynthesisFromThinking(synthesisEntries);
+          if (synthesis && synthesis.length > 30) {
+            // Advance the global offset so no other watchdog re-reads these lines
+            lastLogOffset = logContent.length;
+
+            const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+            log('Watchdog: synthesis captured from log file', {
+              taskId, elapsed_s: parseFloat(elapsed), chars: synthesis.length
+            });
+            await writeResponse(synthesis);
+            conversationHistory.push({ role: 'assistant', content: synthesis });
+            writeTask(taskId, {
+              status: 'complete',
+              completedAt: new Date().toISOString(),
+              deliveredBy: 'watchdog-log'
+            }).catch(() => {});
+            return; // Success — delivered from log
+          }
+        }
+      } catch (err) {
+        if (err.code !== 'ENOENT') {
+          log('Watchdog log parse error', { error: err.message });
         }
       }
-    } catch (err) {
-      // Log file might not exist or be unreadable — non-fatal
-      if (err.code !== 'ENOENT') {
-        log('Watchdog log parse error', { error: err.message });
-      }
+
+      const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+      log('Watchdog: no delivery yet', { taskId, elapsed_s: parseFloat(elapsed) });
     }
 
-    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    log('Watchdog: no delivery yet', { taskId, elapsed_s: parseFloat(elapsed) });
+    // Timed out — write fallback error message
+    log('Watchdog timeout — writing fallback error', { taskId });
+    await writeResponse('⚠ I dispatched a sub-agent but wasn\'t able to deliver the result. Please try again.');
+    writeTask(taskId, {
+      status: 'watchdog-timeout',
+      completedAt: new Date().toISOString()
+    }).catch(() => {});
+  } finally {
+    // Release the single-flight guard
+    activeWatchdogTaskId = null;
   }
-
-  // Timed out — write fallback error message
-  log('Watchdog timeout — writing fallback error', { taskId });
-  await writeResponse('⚠ I dispatched a sub-agent but wasn\'t able to deliver the result. Please try again.');
-  writeTask(taskId, {
-    status: 'watchdog-timeout',
-    completedAt: new Date().toISOString()
-  }).catch(() => {});
 }
 
 // ---- Heartbeat ----
@@ -582,9 +596,25 @@ async function main() {
     try {
       const messages = await pollMessages();
 
+      // ---- Anti-spam: expire stale dedup entries ----
+      const now = Date.now();
+      for (const [key, ts] of recentMessages) {
+        if (now - ts > DEDUP_WINDOW) recentMessages.delete(key);
+      }
+
       for (const msg of messages) {
         const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const t0 = Date.now();
+
+        // ---- Fix 1: Deduplicate incoming messages ----
+        const dedupKey = msg.text.trim().toLowerCase();
+        if (recentMessages.has(dedupKey)) {
+          log('Dedup — skipping duplicate message', { text: msg.text.slice(0, 60) });
+          await markProcessed(msg.path);
+          continue;
+        }
+        recentMessages.set(dedupKey, Date.now());
+
         log('Received', { text: msg.text.slice(0, 100), taskId });
 
         // Check if agent is currently busy (status-aware response)
@@ -652,11 +682,17 @@ async function main() {
           writeTask(taskId, { status: 'dispatched-async' }).catch(() => {});
           log('Dispatched async — watchdog starting', { taskId, elapsed_ms: elapsed });
 
-          // Fire-and-forget watchdog — monitors for delivery, writes fallback on timeout
-          const dispatchedAt = new Date().toISOString();
-          watchdogCheck(taskId, dispatchedAt).catch(err => {
-            log('Watchdog error', { taskId, error: err.message });
-          });
+          // ---- Fix 2: Single-flight watchdog ----
+          if (activeWatchdogTaskId) {
+            log('Watchdog already active, skipping', { existing: activeWatchdogTaskId, skipped: taskId });
+          } else {
+            activeWatchdogTaskId = taskId;
+            const dispatchedAt = new Date().toISOString();
+            watchdogCheck(taskId, dispatchedAt).catch(err => {
+              log('Watchdog error', { taskId, error: err.message });
+              activeWatchdogTaskId = null;
+            });
+          }
 
         } else if (result.mode === 'error') {
           // Gateway or model error
