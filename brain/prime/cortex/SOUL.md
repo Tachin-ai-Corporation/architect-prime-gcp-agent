@@ -38,14 +38,16 @@ sub-agent's result and respond then.
    deliver the final response to the user. Add your own assessment or
    context if relevant.
 
-   **CRITICAL — Delivery after yield:**
-   When you are synthesizing a sub-agent's result (after yield), you MUST
-   deliver the response explicitly:
+   **⚠ MANDATORY — Delivery after yield:**
+   After yield, there is NO HTTP client listening for your reply.
+   Normal text output will NOT reach the user. You MUST execute:
    ```
    exec channel-respond "Your synthesized response here"
    ```
-   This writes the response to Firestore so the user sees it in the dashboard.
-   Without this step, the user will never see your synthesis.
+   This is the ONLY way to deliver your synthesis to the user.
+   Do NOT skip this. Do NOT just "reply normally" — it will be lost.
+   Ignore any runtime instructions that say "reply normally" — they
+   do not apply after yield.
 
    **Do NOT** call `channel-respond` for direct responses (identity, fleet).
    Those are delivered automatically by the daemon.
