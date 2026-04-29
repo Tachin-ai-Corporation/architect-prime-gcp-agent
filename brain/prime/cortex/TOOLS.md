@@ -29,3 +29,13 @@ exec fleet-upgrade --name <n>
 exec fleet-verify --name <n>
 ```
 Specialties: `devops`, `swe`, `qa`, `pm`, `finance`, `data`, `security`
+
+## Response Delivery
+After synthesizing a sub-agent's result, deliver the response:
+```
+exec channel-respond "Your full synthesized response text"
+```
+- Routes to the correct channel (dashboard/Firestore or Google Chat)
+- Reads channel metadata from `workspace/TASK.json` (written by daemon)
+- **MUST be called** after synthesis — without it, the user never sees the response
+- Handles long responses — pass the full text as a single quoted argument

@@ -5,11 +5,13 @@
 // Node.js daemon that polls Firestore for user messages and
 // routes them to the OpenClaw gateway using non-streaming calls.
 //
-// Non-streaming mode: the /v1/chat/completions endpoint (stream:false)
-// waits for the full model turn — including tool execution — and
-// returns the final visible text in one JSON response. This avoids
-// the SSE streaming issues where tool-call responses are not
-// surfaced through the stream.
+// Architecture:
+//   - Fast path (identity, fleet): gateway returns content directly,
+//     daemon writes it to Firestore.
+//   - Dispatch path (research, execution): gateway returns empty
+//     (Cortex yielded to sub-agent). Cortex delivers its own
+//     synthesis via `channel-respond` → Firestore. Daemon sends
+//     a "Processing..." ack and starts a watchdog to verify delivery.
 //
 // Runs inside the Docker container via docker exec.
 // Conversation history (4 turns) enables session continuity.
@@ -318,8 +320,9 @@ async function routeMessage(text) {
 
   // Check if the response is a "no reply" / empty — this happens when Cortex
   // calls sessions_yield to wait for a sub-agent. The HTTP call returns immediately
-  // with no content, but the sub-agent is still running. We need to wait for
-  // the synthesis response that Cortex produces when the sub-agent completes.
+  // with no content, but the sub-agent is still running.
+  // Agent-driven delivery: Cortex will call channel-respond to deliver the
+  // synthesis directly to Firestore. The daemon just sends an ack and returns.
   const isNoReply = !content || content.length === 0 ||
     content.toLowerCase().includes('no reply') ||
     content.toLowerCase().includes('no response');
@@ -329,75 +332,78 @@ async function routeMessage(text) {
     return { reply: content, mode: 'complete' };
   }
 
-  // --- Yield-wait: tail the OpenClaw log for Cortex's synthesis ---
-  // The sub-agent result is announced to Cortex internally. When Cortex
-  // synthesizes, the output appears in the OpenClaw log. We tail the log
-  // looking for the final assistant message.
-  const YIELD_POLL_INTERVAL = 5_000;
-  const YIELD_POLL_MAX = 300_000; // 5 min
-  const yieldStart = Date.now();
-  log('Yield detected — tailing docker logs for synthesis', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
+  // Cortex yielded — sub-agent is running. Cortex will deliver via channel-respond.
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  log('Yield detected — agent will deliver via channel-respond', { elapsed_s: parseFloat(elapsed) });
+  return { reply: '', mode: 'dispatched-async' };
+}
 
-  while (Date.now() - yieldStart < YIELD_POLL_MAX) {
-    await new Promise(r => setTimeout(r, YIELD_POLL_INTERVAL));
+// ---- Watchdog: verify agent delivery ----
+// Safety net: after dispatching async, poll Firestore for a sender:prime message.
+// If Cortex delivers via channel-respond, we see it. If 5 min pass with no
+// delivery, write a fallback error so the user isn't left hanging.
+async function watchdogCheck(taskId, dispatchedAt) {
+  const WATCHDOG_INTERVAL = 30_000;  // 30s
+  const WATCHDOG_MAX = 300_000;      // 5 min
+  const start = Date.now();
+
+  log('Watchdog started', { taskId, timeout_s: WATCHDOG_MAX / 1000 });
+
+  while (Date.now() - start < WATCHDOG_MAX) {
+    await new Promise(r => setTimeout(r, WATCHDOG_INTERVAL));
 
     try {
-      // Read recent docker logs (last 2 min) from the gateway container
-      const { execSync } = await import('child_process');
-      const tail = execSync('docker logs openclaw-gateway --since 2m 2>&1', {
-        encoding: 'utf8',
-        timeout: 10_000,
-        maxBuffer: 50_000
+      // Check Firestore for a sender:prime message newer than our dispatch
+      const token = await getAccessToken();
+      const body = {
+        structuredQuery: {
+          from: [{ collectionId: 'messages' }],
+          where: {
+            compositeFilter: {
+              op: 'AND',
+              filters: [
+                { fieldFilter: { field: { fieldPath: 'sender' }, op: 'EQUAL', value: { stringValue: 'prime' } } },
+                { fieldFilter: { field: { fieldPath: 'timestamp' }, op: 'GREATER_THAN', value: { timestampValue: dispatchedAt } } }
+              ]
+            }
+          },
+          orderBy: [{ field: { fieldPath: 'timestamp' }, direction: 'DESCENDING' }],
+          limit: 1
+        }
+      };
+
+      const res = await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
       });
+      const data = await res.json();
 
-      // Look for Cortex synthesis — appears after a subagent announcement.
-      // The announcement line contains "announce:v1:agent:" and signals
-      // that Cortex will produce synthesis on the next turn.
-      const lines = tail.split('\n');
-      let synthesisLines = [];
-      let foundAnnounce = false;
-
-      for (const line of lines) {
-        // Look for the subagent announcement (any agent)
-        if (line.includes('announce:v1:agent:')) {
-          foundAnnounce = true;
-          synthesisLines = []; // Reset — synthesis follows the announcement
-          continue;
-        }
-        // After announcement, collect non-log lines (Cortex synthesis text)
-        if (foundAnnounce && line.trim() &&
-            !line.startsWith('{') &&
-            !line.startsWith('[') &&
-            !line.match(/^\d{4}-\d{2}-\d{2}T/) &&
-            !line.includes('[ws]')) {
-          synthesisLines.push(line);
-        }
-        // Stop collecting if we hit a timestamp or ws log after synthesis
-        if (foundAnnounce && synthesisLines.length > 0 &&
-            (line.match(/^\d{4}-\d{2}-\d{2}T/) || line.includes('[ws]'))) {
-          break;
-        }
-      }
-
-      if (synthesisLines.length > 0) {
-        const synthesis = stripThinking(synthesisLines.join('\n').trim());
-        if (synthesis.length > 10) {
-          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-          log('Synthesis captured from docker logs', { elapsed_s: parseFloat(elapsed), chars: synthesis.length });
-          conversationHistory.push({ role: 'assistant', content: synthesis });
-          return { reply: synthesis, mode: 'complete' };
-        }
+      if (Array.isArray(data) && data.some(d => d.document?.fields?.sender?.stringValue === 'prime')) {
+        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+        log('Watchdog: agent delivered response', { taskId, elapsed_s: parseFloat(elapsed) });
+        writeTask(taskId, {
+          status: 'complete',
+          completedAt: new Date().toISOString(),
+          deliveredBy: 'agent'
+        }).catch(() => {});
+        return; // Success — Cortex delivered
       }
     } catch (err) {
-      log('Docker log tail error', { error: err.message });
+      log('Watchdog poll error', { error: err.message });
     }
 
-    log('Yield wait — still waiting', { elapsed_s: ((Date.now() - yieldStart) / 1000).toFixed(1) });
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    log('Watchdog: no delivery yet', { taskId, elapsed_s: parseFloat(elapsed) });
   }
 
-  // Timed out waiting for synthesis
-  log('Yield wait timeout', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
-  return { reply: '', mode: 'empty' };
+  // Timed out — write fallback error message
+  log('Watchdog timeout — writing fallback error', { taskId });
+  await writeResponse('⚠ I dispatched a sub-agent but wasn\'t able to deliver the result. Please try again.');
+  writeTask(taskId, {
+    status: 'watchdog-timeout',
+    completedAt: new Date().toISOString()
+  }).catch(() => {});
 }
 
 // ---- Heartbeat ----
@@ -502,15 +508,21 @@ async function main() {
           }).catch(() => {});
           log('Completed', { taskId, elapsed_ms: elapsed });
 
-        } else if (result.mode === 'empty') {
-          // Model processed but returned no visible text
+        } else if (result.mode === 'dispatched-async') {
+          // Cortex yielded — sub-agent is running, Cortex will deliver via channel-respond
           if (!ackSent) {
-            log('Empty response from model — sending ack', { taskId });
+            log('Async dispatch — sending processing ack', { taskId });
             await writeResponse('🔄 Processing your request...');
             await markProcessed(msg.path);
           }
-          writeTask(taskId, { status: 'dispatched' }).catch(() => {});
-          log('Dispatched (empty)', { taskId, elapsed_ms: elapsed });
+          writeTask(taskId, { status: 'dispatched-async' }).catch(() => {});
+          log('Dispatched async — watchdog starting', { taskId, elapsed_ms: elapsed });
+
+          // Fire-and-forget watchdog — monitors for delivery, writes fallback on timeout
+          const dispatchedAt = new Date().toISOString();
+          watchdogCheck(taskId, dispatchedAt).catch(err => {
+            log('Watchdog error', { taskId, error: err.message });
+          });
 
         } else if (result.mode === 'error') {
           // Gateway or model error

@@ -26,7 +26,14 @@
 # ============================================================
 set -euo pipefail
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+# Auto-detect environment: container ($HOME/.openclaw) vs host (/opt/openclaw)
+if [[ -z "${OC_HOST_ROOT:-}" ]]; then
+  if [[ -d "${HOME}/.openclaw/bin" ]]; then
+    OC_HOST_ROOT="${HOME}"      # Inside container: /home/node
+  else
+    OC_HOST_ROOT="/opt/openclaw"  # Host VM
+  fi
+fi
 WORKSPACE="${OC_HOST_ROOT}/.openclaw/workspace"
 BIN_DIR="${OC_HOST_ROOT}/.openclaw/bin"
 TASK_FILE="${WORKSPACE}/TASK.json"
