@@ -336,23 +336,19 @@ async function routeMessage(text) {
   const YIELD_POLL_INTERVAL = 5_000;
   const YIELD_POLL_MAX = 300_000; // 5 min
   const yieldStart = Date.now();
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const logPath = `/tmp/openclaw/openclaw-${today}.log`;
-  const logMarkerTime = new Date().toISOString().slice(0, 19); // Ignore log lines before now
-  log('Yield detected — tailing log for synthesis', { logPath, elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
+  log('Yield detected — tailing docker logs for synthesis', { elapsed_s: ((Date.now() - t0) / 1000).toFixed(1) });
 
   while (Date.now() - yieldStart < YIELD_POLL_MAX) {
     await new Promise(r => setTimeout(r, YIELD_POLL_INTERVAL));
 
     try {
-      // Read the last ~20KB of the log file
-      const stat = (await import('fs')).statSync(logPath);
-      const readSize = Math.min(stat.size, 20_000);
-      const buf = Buffer.alloc(readSize);
-      const fd = (await import('fs')).openSync(logPath, 'r');
-      (await import('fs')).readSync(fd, buf, 0, readSize, stat.size - readSize);
-      (await import('fs')).closeSync(fd);
-      const tail = buf.toString('utf8');
+      // Read recent docker logs (last 2 min) from the gateway container
+      const { execSync } = await import('child_process');
+      const tail = execSync('sudo docker logs openclaw-gateway --since 2m 2>&1', {
+        encoding: 'utf8',
+        timeout: 10_000,
+        maxBuffer: 50_000
+      });
 
       // Look for Cortex synthesis — appears after a subagent announcement.
       // The announcement line contains "announce:v1:agent:" and signals
@@ -362,18 +358,23 @@ async function routeMessage(text) {
       let foundAnnounce = false;
 
       for (const line of lines) {
-        // Look for the subagent announcement (any agent, not just temporal-research)
+        // Look for the subagent announcement (any agent)
         if (line.includes('announce:v1:agent:')) {
           foundAnnounce = true;
           synthesisLines = []; // Reset — synthesis follows the announcement
           continue;
         }
-        // After announcement, look for non-JSON, non-empty lines (Cortex synthesis)
-        if (foundAnnounce && line.trim() && !line.startsWith('{') && !line.startsWith('[') && !line.startsWith('2026-')) {
+        // After announcement, collect non-log lines (Cortex synthesis text)
+        if (foundAnnounce && line.trim() &&
+            !line.startsWith('{') &&
+            !line.startsWith('[') &&
+            !line.match(/^\d{4}-\d{2}-\d{2}T/) &&
+            !line.includes('[ws]')) {
           synthesisLines.push(line);
         }
-        // Stop collecting if we hit a JSON log entry or timestamp after synthesis
-        if (foundAnnounce && synthesisLines.length > 0 && (line.startsWith('{') || line.match(/^\d{4}-\d{2}-\d{2}T/))) {
+        // Stop collecting if we hit a timestamp or ws log after synthesis
+        if (foundAnnounce && synthesisLines.length > 0 &&
+            (line.match(/^\d{4}-\d{2}-\d{2}T/) || line.includes('[ws]'))) {
           break;
         }
       }
@@ -382,13 +383,13 @@ async function routeMessage(text) {
         const synthesis = stripThinking(synthesisLines.join('\n').trim());
         if (synthesis.length > 10) {
           const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-          log('Synthesis captured from log', { elapsed_s: parseFloat(elapsed), chars: synthesis.length });
+          log('Synthesis captured from docker logs', { elapsed_s: parseFloat(elapsed), chars: synthesis.length });
           conversationHistory.push({ role: 'assistant', content: synthesis });
           return { reply: synthesis, mode: 'complete' };
         }
       }
     } catch (err) {
-      log('Log tail error', { error: err.message });
+      log('Docker log tail error', { error: err.message });
     }
 
     log('Yield wait — still waiting', { elapsed_s: ((Date.now() - yieldStart) / 1000).toFixed(1) });
