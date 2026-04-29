@@ -339,11 +339,14 @@ async function routeMessage(text) {
 }
 
 // ---- Watchdog: verify agent delivery ----
-// Safety net: after dispatching async, poll Firestore for a sender:prime message.
-// If Cortex delivers via channel-respond, we see it. If 5 min pass with no
-// delivery, write a fallback error so the user isn't left hanging.
+// Two-path delivery verification:
+// 1. Check Firestore for a sender:prime message (channel-respond worked)
+// 2. Parse OpenClaw log file for synthesis (LLM failed to call channel-respond)
+//
+// The daemon runs INSIDE the container, so it CAN read /tmp/openclaw/ logs.
+// Log format: JSON objects with "0" key containing text.
 async function watchdogCheck(taskId, dispatchedAt) {
-  const WATCHDOG_INTERVAL = 30_000;  // 30s
+  const WATCHDOG_INTERVAL = 15_000;  // 15s — check more frequently
   const WATCHDOG_MAX = 300_000;      // 5 min
   const start = Date.now();
 
@@ -352,8 +355,8 @@ async function watchdogCheck(taskId, dispatchedAt) {
   while (Date.now() - start < WATCHDOG_MAX) {
     await new Promise(r => setTimeout(r, WATCHDOG_INTERVAL));
 
+    // ---- Path 1: Check Firestore for agent delivery ----
     try {
-      // Check Firestore for a sender:prime message newer than our dispatch
       const token = await getAccessToken();
       const body = {
         structuredQuery: {
@@ -381,16 +384,77 @@ async function watchdogCheck(taskId, dispatchedAt) {
 
       if (Array.isArray(data) && data.some(d => d.document?.fields?.sender?.stringValue === 'prime')) {
         const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-        log('Watchdog: agent delivered response', { taskId, elapsed_s: parseFloat(elapsed) });
+        log('Watchdog: agent delivered via channel-respond', { taskId, elapsed_s: parseFloat(elapsed) });
         writeTask(taskId, {
           status: 'complete',
           completedAt: new Date().toISOString(),
           deliveredBy: 'agent'
         }).catch(() => {});
-        return; // Success — Cortex delivered
+        return; // Success
       }
     } catch (err) {
-      log('Watchdog poll error', { error: err.message });
+      log('Watchdog Firestore poll error', { error: err.message });
+    }
+
+    // ---- Path 2: Parse OpenClaw log for synthesis ----
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const logPath = `/tmp/openclaw/openclaw-${today}.log`;
+      const logContent = readFileSync(logPath, 'utf8');
+      const lines = logContent.split('\n').filter(l => l.trim());
+
+      // Find the LAST announcement + synthesis pair
+      let lastSynthesis = '';
+      let foundAnnounce = false;
+      let announceTime = null;
+
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          const text = entry['0'] || '';
+          const entryTime = entry._meta?.date || '';
+
+          // Look for subagent announcement
+          if (text.includes('announce:v1:agent:')) {
+            foundAnnounce = true;
+            announceTime = entryTime;
+            lastSynthesis = ''; // Reset
+            continue;
+          }
+
+          // After announcement, collect synthesis text
+          // Must be after our dispatch time
+          if (foundAnnounce && text.length > 50 && announceTime > dispatchedAt) {
+            lastSynthesis = text;
+          }
+        } catch {
+          // Skip non-JSON lines
+        }
+      }
+
+      if (lastSynthesis.length > 50) {
+        // Strip thinking blocks from synthesis
+        const cleaned = stripThinking(lastSynthesis);
+        if (cleaned.length > 20) {
+          const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+          log('Watchdog: synthesis captured from log file', {
+            taskId, elapsed_s: parseFloat(elapsed), chars: cleaned.length
+          });
+          await writeResponse(cleaned);
+          conversationHistory.push({ role: 'assistant', content: cleaned });
+          writeTask(taskId, {
+            status: 'complete',
+            completedAt: new Date().toISOString(),
+            deliveredBy: 'watchdog-log'
+          }).catch(() => {});
+          return; // Success — delivered from log
+        }
+      }
+    } catch (err) {
+      // Log file might not exist or be unreadable — non-fatal
+      if (err.code !== 'ENOENT') {
+        log('Watchdog log parse error', { error: err.message });
+      }
     }
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
