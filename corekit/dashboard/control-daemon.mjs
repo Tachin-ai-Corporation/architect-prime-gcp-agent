@@ -475,11 +475,16 @@ async function watchdogCheck(taskId, dispatchedAt) {
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
-          const text = entry['0'] || '';
           const entryTime = entry._meta?.date || '';
 
+          // Combine all string values from the entry (could be in '0', '1', etc.)
+          const allText = Object.keys(entry)
+            .filter(k => k !== '_meta' && typeof entry[k] === 'string')
+            .map(k => entry[k])
+            .join(' ');
+
           // Look for subagent announcement
-          if (text.includes('announce:v1:agent:')) {
+          if (allText.includes('announce:v1:agent:')) {
             foundAnnounce = true;
             announceTime = entryTime;
             synthesisEntries = []; // Reset
@@ -487,6 +492,8 @@ async function watchdogCheck(taskId, dispatchedAt) {
           }
 
           // After announcement, collect text entries that appear after dispatch
+          // The synthesis is in the '0' key (think blocks)
+          const text = entry['0'] || '';
           if (foundAnnounce && text.length > 50 && announceTime > dispatchedAt) {
             synthesisEntries.push(text);
           }
