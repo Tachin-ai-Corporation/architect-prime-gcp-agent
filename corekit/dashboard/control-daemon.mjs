@@ -295,6 +295,66 @@ function stripThinking(text) {
   return text;
 }
 
+// ---- Extract synthesis from think blocks ----
+// The LLM embeds its user-facing response INSIDE think blocks after yield.
+// This function scans think entries for the formatted response content.
+//
+// Strategy:
+// 1. Look for entries that contain the response (markdown, structured text)
+// 2. Within those entries, find the user-facing portion (after "Here is/are",
+//    before "Let's run exec" or similar meta-text)
+// 3. Fall back to the longest entry's content if no clear boundary is found
+function extractSynthesisFromThinking(entries) {
+  // Process all entries — combine and look for the response
+  for (const entry of entries) {
+    const text = entry || '';
+
+    // Strip "think\n" prefix if present
+    let content = text;
+    if (content.startsWith('think\n')) {
+      content = content.slice(6);
+    }
+
+    // Look for user-facing response patterns within the think block
+    // Split by newlines and find the response start
+    const lines = content.split('\n');
+    let responseStart = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // User-facing response markers
+      if (/^Here (is|are|'s) (the |a |my )?/i.test(line) && !line.includes('execute') && !line.includes('`exec')) {
+        responseStart = i;
+        break;
+      }
+    }
+
+    if (responseStart >= 0) {
+      // Extract from response start to end of meaningful content
+      const responseLines = [];
+      for (let i = responseStart; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Stop at meta-text that signals end of response
+        if (/^Let'?s (run|execute|format|compose|send|deliver)/i.test(trimmed)) break;
+        if (/^I (will|should|need to|must) (now |)(run|execute|call|deliver|send)/i.test(trimmed)) break;
+        if (/^Wait,/i.test(trimmed)) break;
+        if (/^Since I/i.test(trimmed) && trimmed.includes('channel-respond')) break;
+        if (trimmed.startsWith('```') && trimmed.includes('channel-respond')) break;
+
+        responseLines.push(line);
+      }
+
+      const response = responseLines.join('\n').trim();
+      if (response.length > 30) return response;
+    }
+  }
+
+  return null;
+}
+
 // ---- Message Routing ----
 async function routeMessage(text) {
   const t0 = Date.now();
@@ -397,14 +457,18 @@ async function watchdogCheck(taskId, dispatchedAt) {
     }
 
     // ---- Path 2: Parse OpenClaw log for synthesis ----
+    // The LLM puts its synthesis INSIDE think blocks — it never outputs clean
+    // assistant text after yield. We extract the user-facing response from
+    // within think entries by looking for formatted content after the last
+    // announcement that's newer than our dispatch.
     try {
       const today = new Date().toISOString().split('T')[0];
       const logPath = `/tmp/openclaw/openclaw-${today}.log`;
       const logContent = readFileSync(logPath, 'utf8');
       const lines = logContent.split('\n').filter(l => l.trim());
 
-      // Find the LAST announcement + synthesis pair
-      let lastSynthesis = '';
+      // Find the LAST announcement + synthesis pair after dispatch
+      let synthesisEntries = [];
       let foundAnnounce = false;
       let announceTime = null;
 
@@ -418,30 +482,29 @@ async function watchdogCheck(taskId, dispatchedAt) {
           if (text.includes('announce:v1:agent:')) {
             foundAnnounce = true;
             announceTime = entryTime;
-            lastSynthesis = ''; // Reset
+            synthesisEntries = []; // Reset
             continue;
           }
 
-          // After announcement, collect synthesis text
-          // Must be after our dispatch time
+          // After announcement, collect text entries that appear after dispatch
           if (foundAnnounce && text.length > 50 && announceTime > dispatchedAt) {
-            lastSynthesis = text;
+            synthesisEntries.push(text);
           }
         } catch {
           // Skip non-JSON lines
         }
       }
 
-      if (lastSynthesis.length > 50) {
-        // Strip thinking blocks from synthesis
-        const cleaned = stripThinking(lastSynthesis);
-        if (cleaned.length > 20) {
+      // Try to extract user-facing content from the synthesis entries
+      if (synthesisEntries.length > 0) {
+        const synthesis = extractSynthesisFromThinking(synthesisEntries);
+        if (synthesis && synthesis.length > 30) {
           const elapsed = ((Date.now() - start) / 1000).toFixed(1);
           log('Watchdog: synthesis captured from log file', {
-            taskId, elapsed_s: parseFloat(elapsed), chars: cleaned.length
+            taskId, elapsed_s: parseFloat(elapsed), chars: synthesis.length
           });
-          await writeResponse(cleaned);
-          conversationHistory.push({ role: 'assistant', content: cleaned });
+          await writeResponse(synthesis);
+          conversationHistory.push({ role: 'assistant', content: synthesis });
           writeTask(taskId, {
             status: 'complete',
             completedAt: new Date().toISOString(),
