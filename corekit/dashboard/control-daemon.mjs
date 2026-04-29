@@ -344,7 +344,7 @@ async function routeMessage(text) {
     try {
       // Read recent docker logs (last 2 min) from the gateway container
       const { execSync } = await import('child_process');
-      const tail = execSync('sudo docker logs openclaw-gateway --since 2m 2>&1', {
+      const tail = execSync('docker logs openclaw-gateway --since 2m 2>&1', {
         encoding: 'utf8',
         timeout: 10_000,
         maxBuffer: 50_000
