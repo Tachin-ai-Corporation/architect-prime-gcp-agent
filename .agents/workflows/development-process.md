@@ -16,7 +16,7 @@ description: Working process for developing architect-prime-gcp-agent — checkp
 5. **Deploy** — Dashboard upgrade button on the target Prime/Fleet instance
 6. **Debug** — `/ssh-vm-access` if something breaks
 7. **Verify** — `/firestore-query` to check state
-8. **Tag** — When version is stable: `git tag -a vX.Y.Z -m "summary"; git push origin --tags`
+8. **Finalize** — When version is stable: `/finalize-checkpoint` (updates docs, tags, pushes)
 
 ## Cloud Run deploy (app/ changes only)
 

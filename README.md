@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v5.1.0`
+> **Current version:** `v5.2.0`
 
 ---
 
@@ -16,7 +16,7 @@ Prime handles **infrastructure, not orchestration**. Humans assign work to agent
 |-----------|-------------|
 | **Deploy Prime** | Dashboard deploys a Prime VM with a multi-agent brain (6 sub-agents) |
 | **Manage Fleet** | Hire/fire specialist agents from the dashboard — DevOps, Engineer, and more |
-| **Chat with Prime** | Talk to your orchestrator through the web dashboard (hybrid SSE streaming) |
+| **Chat with Prime** | Talk to your orchestrator through the web dashboard (non-streaming + async watchdog) |
 | **Agent Communication** | Fleet agents communicate via Google Chat using Domain-Wide Delegation |
 | **Dynamic Model Discovery** | Scan Vertex AI Model Garden — auto-detect available Gemini, Claude, and other models |
 | **Self-Upgrading** | Dashboard upgrades itself via Cloud Build; CoreKit upgrades cascade to fleet |
@@ -109,7 +109,7 @@ Your GCP Project
 │   │   ├── prefrontal      — Gemini 2.5 Flash — strategic planning
 │   │   ├── motor           — Gemini 2.5 Flash — execution (code + commands)
 │   │   └── cerebellum      — Gemini 2.5 Flash — verification + QA
-│   ├── control-daemon (systemd) → Firestore message bridge (Node.js, hybrid SSE)
+│   ├── control-daemon (systemd) → Firestore message bridge (Node.js, non-streaming + anti-spam)
 │   ├── CoreKit (34 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
@@ -235,7 +235,7 @@ The deploy API uses a **boot stub pattern**:
 4. `prime-bootstrap.sh` handles everything:
    - Installs Docker CE
    - Installs CoreKit via `infra/install.sh --role prime` (chains `base.txt` + `role-prime.txt`)
-   - Builds OpenClaw Docker image from pinned commit (`v2026.4.15`)
+   - Builds OpenClaw Docker image from pinned commit (`v2026.4.19`)
    - Renders gateway config from JSON5 template with contract values
    - Starts OpenClaw container (`--network host`, port 18789)
    - Applies ADC auth patch for GCE metadata fallback
@@ -313,6 +313,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v4.0** | Modularization + contract enforcement — `contracts.json`, `validate-contracts`, modular manifests |
 | **v5.0** | Clean-room migration to 6-module architecture (`app/`, `infra/`, `corekit/`, `brain/`, `specialties/`, `skills/`) |
 | **v5.1** | Real-time command progress monitoring, cascading CoreKit upgrades, upgrade observability |
+| **v5.2** | Async delivery stabilization — non-streaming gateway, anti-spam (dedup, single-flight watchdog, log offset tracking, immediate markProcessed), 1:1 message delivery |
 
 ---
 

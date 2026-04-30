@@ -70,7 +70,7 @@ docs/             Architecture docs
 - `STABLE` tag = the single moving tag marking the last verified-good commit
 - Dashboard always deploys from `main` HEAD; `STABLE` tag is a safety checkpoint
 - CoreKit upgrade (`upgrade-corekit --apply main`) always pulls latest `main`
-- To mark stable: `git tag -f STABLE; git push origin STABLE -f`
+- To finalize a checkpoint: `/finalize-checkpoint` (updates docs + tags)
 
 ### Workflow
 1. Edit → update manifests if adding files → update contracts.json if cross-cutting
@@ -78,7 +78,7 @@ docs/             Architecture docs
 3. Dashboard upgrade button — deploys to VM
 4. `/ssh-vm-access` — debug if needed
 5. `/firestore-query` — verify state
-6. Tag when stable: `git tag -f STABLE; git push origin STABLE -f`
+6. `/finalize-checkpoint` when stable — updates docs, tags, pushes
 
 ### Mandatory Workflow Reference
 
@@ -90,6 +90,7 @@ docs/             Architecture docs
 | Query Firestore | `/firestore-query` | Verifying daemon behavior, telemetry, task lifecycle, fleet status. Contains SSH-based credential path that works on GCE VMs. |
 | Commit & push | `/update-git` | Staging, committing with version prefix, pushing. Contains tagging instructions. |
 | Development flow | `/development-process` | Full checkpoint-driven dev cycle. Manifest-first, no-secrets discipline. |
+| Finalize checkpoint | `/finalize-checkpoint` | After verifying a stable checkpoint. Updates MISSION_PLAN.md, README.md, project-context.md, then tags and pushes. |
 
 ### Key Paths on VM
 - OpenClaw root: `/opt/openclaw`
