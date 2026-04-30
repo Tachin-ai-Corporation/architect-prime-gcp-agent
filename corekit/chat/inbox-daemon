@@ -2,11 +2,11 @@
 # ============================================================
 # inbox-daemon — Google Chat ↔ OpenClaw bridge (DWD)
 #
-# Async-first message loop:
+# Non-streaming message loop (mirrors Prime control-daemon pattern):
 #   1. Poll Chat spaces for new messages (DWD impersonation)
-#   2. Submit to OpenClaw gateway with 15s observation window
-#   3. Fast path: if response completes in 15s, reply directly
-#   4. Async path: send ack, agent delivers via channel-respond
+#   2. Submit to OpenClaw gateway with stream:false (blocks until complete)
+#   3. Background ACK timer: if gateway takes >15s, send processing ack
+#   4. When response arrives, send to Chat (fast or slow path)
 #
 # Design decisions:
 #   - High-water-mark dedup: track latest timestamp, skip older
@@ -30,7 +30,8 @@ set -euo pipefail
 AGENT_ID="${AGENT_ID:-agent}"
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 POLL_INTERVAL="${POLL_INTERVAL:-15}"
-FAST_TIMEOUT="${FAST_TIMEOUT:-15}"
+GATEWAY_TIMEOUT="${GATEWAY_TIMEOUT:-120}"
+ACK_DELAY="${ACK_DELAY:-15}"
 CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
 CHAT_API="https://chat.googleapis.com/v1"
 DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
@@ -159,7 +160,7 @@ sys.exit(1)  # new message
 # Output: response text on stdout (empty if async/timeout)
 call_openclaw() {
   local msg_text="$1"
-  local timeout="${2:-$FAST_TIMEOUT}"
+  local timeout="${2:-$GATEWAY_TIMEOUT}"
   OC_GW="$OC_GATEWAY" OC_TK="$OC_TOKEN" OC_TIMEOUT="$timeout" \
   OC_MSG_TEXT="$msg_text" \
   python3 << 'PYEOF'
@@ -195,8 +196,12 @@ for cp in contracts_paths:
             pass
 
 # Build request payload (safe — no shell interpolation)
+# stream: false — CRITICAL: without this, the gateway uses streaming mode
+# which has its own internal model timeout that kills research queries.
+# Non-streaming guarantees the full model turn completes before returning.
 payload = json.dumps({
     'model': gateway_route,
+    'stream': False,
     'messages': [{'role': 'user', 'content': text}]
 })
 
@@ -402,43 +407,59 @@ except:
       # Write TASK.json with gchat channel metadata
       TASK_ID="$(write_task_json "$SPACE" "$AGENT_USER_EMAIL")"
 
-      # Fast path: try with short timeout (15s)
+      # ---- Non-streaming gateway call with background ACK timer ----
+      # Mirrors the Prime control-daemon pattern:
+      #   1. Start background ACK timer (sends ack after ACK_DELAY seconds)
+      #   2. Call gateway with long timeout (blocks until model completes)
+      #   3. Kill ACK timer if response arrives before it fires
+      #   4. Send full response to Chat
       REPLY_FILE="/tmp/inbox-reply-$$.txt"
       REPLY_ERR="/tmp/inbox-err-$$.txt"
-      if call_openclaw "$CLEAN" "$FAST_TIMEOUT" > "$REPLY_FILE" 2> "$REPLY_ERR"; then
+      ACK_FLAG="/tmp/inbox-ack-$$.flag"
+      rm -f "$ACK_FLAG"
+
+      # Background ACK timer — sends ack after ACK_DELAY if gateway hasn't responded
+      (
+        sleep "$ACK_DELAY"
+        if [[ ! -f "${ACK_FLAG}.done" ]]; then
+          CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
+            "$CHAT_SEND" "🔄 Processing your request..." 2>/dev/null \
+            && touch "$ACK_FLAG" \
+            || true
+        fi
+      ) &
+      ACK_PID=$!
+
+      # Gateway call — blocks until model completes full turn (up to GATEWAY_TIMEOUT)
+      if call_openclaw "$CLEAN" "$GATEWAY_TIMEOUT" > "$REPLY_FILE" 2> "$REPLY_ERR"; then
         REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
       else
         OC_ERR="$(cat "$REPLY_ERR" 2>/dev/null)"
-        # Check if this is a timeout vs real error
-        if echo "$OC_ERR" | grep -qi "timed out\|timeout"; then
-          # Async path: brain-exec is fire-and-forget, Cortex's dispatch
-          # confirmation may be in the output. Check reply file.
-          REPLY="$(cat "$REPLY_FILE" 2>/dev/null)"
-          if [[ -z "$REPLY" || ${#REPLY} -le 2 ]]; then
-            log "Async dispatch (no partial content, task=$TASK_ID)"
-            REPLY=""
-          else
-            log "Async dispatch with partial response (task=$TASK_ID, ${#REPLY} chars)"
-          fi
-          # Worker will deliver results via channel-respond → chat-send
-        else
-          warn "call_openclaw failed: ${OC_ERR:0:200}"
-          REPLY=""
-        fi
+        warn "call_openclaw failed: ${OC_ERR:0:200}"
+        REPLY=""
       fi
-      rm -f "$REPLY_FILE" "$REPLY_ERR"
+
+      # Signal completion and clean up ACK timer
+      touch "${ACK_FLAG}.done"
+      kill $ACK_PID 2>/dev/null; wait $ACK_PID 2>/dev/null || true
+      ACK_SENT=false
+      [[ -f "$ACK_FLAG" ]] && ACK_SENT=true
+      rm -f "$ACK_FLAG" "${ACK_FLAG}.done"
 
       # Send response to Chat
       if [[ -n "$REPLY" && ${#REPLY} -gt 2 ]]; then
         CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
           "$CHAT_SEND" "$REPLY" 2>/dev/null || warn "chat-send failed for ${SPACE}"
-        log "REPLY sent to ${SPACE} (${#REPLY} chars)"
-      else
-        # No content from agent — send ack so user isn't left in the dark
+        log "REPLY sent to ${SPACE} (${#REPLY} chars, ack_sent=${ACK_SENT})"
+      elif [[ "$ACK_SENT" != "true" ]]; then
+        # No content and no ack sent — send ack so user isn't left in the dark
         CHAT_SPACE_ID="$SPACE" AGENT_USER_EMAIL="$AGENT_USER_EMAIL" \
           "$CHAT_SEND" "🔄 Processing your request..." 2>/dev/null || warn "ack failed for ${SPACE}"
         log "Empty response, sent ack to ${SPACE}"
+      else
+        log "Empty response (ack already sent to ${SPACE})"
       fi
+      rm -f "$REPLY_FILE" "$REPLY_ERR"
 
       # Advance high-water mark
       if [[ -n "$MSGTIME" && "$MSGTIME" > "$HW" ]]; then
