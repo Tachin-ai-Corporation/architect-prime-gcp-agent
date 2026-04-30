@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.04.26.2.0`
+> - **Current version:** `v5.2.0`
 
 ---
 
@@ -47,8 +47,10 @@ Dashboard (Cloud Run — Next.js)
     ├── control-daemon (systemd)
     │   └── Bash wrapper → docker exec Node.js daemon (control-daemon.mjs)
     │       ├── Polls Firestore messages every 5s via GCE metadata tokens
-    │       ├── Hybrid gateway dispatch: SSE streaming → non-stream fallback
-    │       └── Conversation history (20 turns) + structured JSON logging
+    │       ├── Non-streaming gateway dispatch (stream: false)
+    │       ├── Anti-spam: message dedup (60s), immediate markProcessed, single-flight watchdog
+    │       ├── Async path: 15s ACK timer → watchdog monitors for delivery
+    │       └── Conversation history (4 turns) + structured JSON logging
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
     │   ├── GOOGLE_CLOUD_LOCATION=global (required for Gemini 3.1+ preview models)
@@ -143,28 +145,34 @@ Dashboard (Cloud Run — Next.js)
 
 **Re-hire flow:** Same as hire, but `fleet-deploy` detects the existing SA, skips creation, and IAM bindings are already active. No propagation delay.
 
-### Chat Pipeline (Async-First Execution Model)
+### Chat Pipeline (Non-Streaming + Async Watchdog)
 
-Both Prime and Fleet agents use the same async-first pattern. The daemon submits work to the gateway, and the agent delivers its own response via `channel-respond`.
+Both Prime and Fleet agents use the same async-first pattern. The daemon submits work to the gateway via a non-streaming call and delivers results directly or monitors for async delivery.
 
-**Dashboard → Prime (control-daemon.mjs — Node.js, async-first):**
+**Dashboard → Prime (control-daemon.mjs — Node.js, non-streaming):**
 1. User types in dashboard → API writes to Firestore `messages` collection
 2. `control-daemon` bash wrapper detects `.mjs` → `docker exec` runs Node.js version inside container
 3. Node.js daemon polls Firestore every 5s with GCE metadata access token
-4. New message → **Write TASK.json** to workspace (channel: `dashboard`, channelMeta with primeId/projectId)
-5. **15s observation window:**
-   - Stream SSE from gateway with 15s window
-   - If response completes within 15s → fast path, deliver directly (identity, fleet commands)
-   - If tool calls detected or window expires → async path
-6. **Fast path:** Response written to Firestore, message marked processed
-7. **Async path:**
-   - Immediately write "🔄 Working on it..." ack to Firestore
-   - Enter heartbeat monitor loop (checks Firestore task doc every 15s)
-   - Agent delivers results via `exec channel-respond` → `dashboard-respond` → Firestore
-   - Monitor exits when task status = `complete` or heartbeat stale >90s
-8. Conversation history: last 20 turns for context
-9. HTTP ceiling: 480s (but heartbeat stall detection at 90s is the real watchdog)
-10. Structured JSON logging with mode (fast/async), latency, heartbeat status
+4. New message → **Immediate `markProcessed`** (prevents re-pickup on next poll cycle) → **Write TASK.json** to workspace
+5. **Anti-spam at intake:**
+   - Deduplication: same text within 60s is collapsed (one `recentMessages` Map entry per unique text)
+   - Immediate `markProcessed`: message flagged in Firestore before the gateway call blocks (10-60s)
+6. **Gateway dispatch (stream: false):** POST to local gateway, blocks until model completes full turn
+7. **15s ACK timer:** If gateway hasn't responded in 15s, write "🔄 Processing..." ack to Firestore
+8. **Response routing by mode:**
+   - `complete` → Model returned full response. Write to Firestore directly.
+   - `dispatched-async` → Yield detected (sub-agent running). Fire watchdog.
+   - `error` → Gateway/model error. Write error message to Firestore.
+9. **Watchdog (async path — single-flight):**
+   - Only ONE watchdog runs at a time (`activeWatchdogTaskId` guard)
+   - Path 1: Poll Firestore for `sender: 'prime'` messages after dispatch timestamp (channel-respond delivered)
+   - Path 2: Parse `/tmp/openclaw/openclaw-YYYY-MM-DD.log` for synthesis text in LLM think blocks
+   - Log offset tracking: `lastLogOffset` ensures only NEW log entries are scanned
+   - `extractSynthesisFromThinking()` navigates think blocks to extract user-facing response
+   - Timeout: 5 minutes → writes fallback error message
+10. Conversation history: last 4 turns for context (Cortex only needs recent context for classification)
+11. HTTP ceiling: 600s (research dispatches take 60-120s)
+12. Structured JSON logging with mode, taskId, elapsed_ms, delivery method (agent/watchdog-log)
 
 **Google Chat → Fleet Agent (inbox-daemon):**
 1. `inbox-daemon` polls Google Chat API via DWD impersonation every 15s
@@ -518,7 +526,7 @@ architect-prime/
 | | `core-memory-write` | Writes durable facts to Firestore Core Memory |
 | | `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
 | **dashboard/** | `control-daemon` | Bash wrapper — starts `control-daemon.mjs` inside container |
-| | `control-daemon.mjs` | Node.js daemon: Firestore polling, hybrid SSE dispatch, conversation history |
+| | `control-daemon.mjs` | Node.js daemon: Firestore polling, non-streaming dispatch, anti-spam, async watchdog |
 | | `command-runner` | Executes commands from Firestore, streams output |
 | | `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
 | **system/** | `upgrade-corekit` | In-place CoreKit update from GitHub ref (validates contracts post-upgrade) |
@@ -573,21 +581,24 @@ architect-prime/
 
 ## Roadmap
 
-### Current: v5.2 — Deterministic Brain Dispatch + Telemetry
-> *Goal: Reliable sub-agent dispatch, observability, and immediate user feedback.*
+### Completed: v5.2.0 — Async Delivery Stabilization + Anti-Spam
+> *Deterministic brain dispatch, non-streaming gateway, and spam elimination.*
 
-1. **Two-Phase Turn Protocol** — Cortex must classify requests and write `PLAN.md` before any brain dispatch. PreTurn hook injects brain architecture card every turn. PostTurn hook validates compliance.
-2. **Telemetry fix** — Fixed Firestore REST path bug (odd segment count → 400 errors). Dispatch telemetry now persists to `primes/{id}/dispatch-log`.
-3. **SSE ack forwarding** — Control-daemon sends the first short text chunk as an early acknowledgment while the full turn continues.
-4. **Task lifecycle** — Every message is tracked as a Firestore Task document (`primes/{id}/tasks/{taskId}`) with status, timing, and response preview.
-5. **OpenClaw pin upgrade** — v2026.4.15 → v2026.4.19 for cross-agent spawn routing fix.
+1. **Non-streaming gateway** — Replaced SSE/observation-window stack with `stream: false`. Model response guaranteed complete in a single HTTP round-trip.
+2. **Async watchdog** — Dual-path delivery verification: Firestore check (channel-respond) + log-file parsing (think-block extraction). Single-flight guard prevents parallel watchdogs.
+3. **Anti-spam** — Four fixes eliminated all message duplication: immediate `markProcessed` at intake, 60s text dedup window, single-flight watchdog, log offset tracking.
+4. **Two-Phase Turn Protocol** — Cortex classifies → writes PLAN.md → dispatches via brain-exec. PreTurn/PostTurn hooks enforce compliance.
+5. **Task lifecycle** — Every message tracked as Firestore Task document with status, timing, delivery method.
+6. **Dispatch telemetry** — Events written to `primes/{id}/dispatch-log` via fire-and-forget background calls.
+7. **Known issue:** Watchdog's Firestore Path 1 does not detect `channel-respond` delivery (likely missing composite index), causing a spurious 5-min timeout error even when the research result was already delivered.
 
-### Next: v5.3 — Model Flexibility + Memory Consolidation
-> *Goal: Model optimization and memory reliability.*
+### Current: v5.3 — Watchdog Reliability + Model Flexibility
+> *Goal: Eliminate false watchdog timeouts, enable per-agent model overrides.*
 
-1. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
-2. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
-3. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
+1. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
+2. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
+3. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
+4. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
 
 ### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
