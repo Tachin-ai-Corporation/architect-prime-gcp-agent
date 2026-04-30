@@ -615,6 +615,11 @@ async function main() {
         }
         recentMessages.set(dedupKey, Date.now());
 
+        // Mark processed IMMEDIATELY to prevent re-pickup in the next poll cycle.
+        // The gateway call can block for 10-60s; without this, the next poll at 5s
+        // would re-fetch and re-process the same message, causing N×duplicates.
+        await markProcessed(msg.path);
+
         log('Received', { text: msg.text.slice(0, 100), taskId });
 
         // Check if agent is currently busy (status-aware response)
@@ -628,7 +633,6 @@ async function main() {
             `\n\nYour message has been queued and will be processed next.`;
           log('Agent busy, status response', { state: agentStatus.state, detail: agentStatus.detail });
           await writeResponse(statusMsg);
-          await markProcessed(msg.path);
           continue;
         }
 
@@ -650,7 +654,6 @@ async function main() {
           ackSent = true;
           log('ACK timeout — sending processing notice', { taskId });
           await writeResponse('🔄 Processing your request...');
-          await markProcessed(msg.path);
           writeTask(taskId, { status: 'processing' }).catch(() => {});
         }, ACK_TIMEOUT);
 
@@ -663,7 +666,6 @@ async function main() {
           // Got a full response from the model
           log('Reply', { text: result.reply.split('\n')[0].slice(0, 80), taskId, ackSent });
           await writeResponse(result.reply);
-          if (!ackSent) await markProcessed(msg.path);
           writeTask(taskId, {
             status: 'complete',
             completedAt: new Date().toISOString(),
@@ -677,7 +679,6 @@ async function main() {
           if (!ackSent) {
             log('Async dispatch — sending processing ack', { taskId });
             await writeResponse('🔄 Processing your request...');
-            await markProcessed(msg.path);
           }
           writeTask(taskId, { status: 'dispatched-async' }).catch(() => {});
           log('Dispatched async — watchdog starting', { taskId, elapsed_ms: elapsed });
@@ -701,7 +702,6 @@ async function main() {
           } else {
             await writeResponse('⚠ I wasn\'t able to process that request. Please try again.');
           }
-          if (!ackSent) await markProcessed(msg.path);
           log('Error', { taskId, reply: result.reply?.slice(0, 80), elapsed_ms: elapsed });
         }
       }
