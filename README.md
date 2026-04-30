@@ -115,7 +115,7 @@ Your GCP Project
 │
 └── Fleet Agent VMs (Compute Engine e2-medium, one per agent)
     ├── openclaw-gateway (Docker) → Specialist AI brain (cortex on Gemini 3.1 Pro)
-    ├── inbox-daemon (systemd)    → Google Chat polling via DWD
+    ├── inbox-daemon (systemd)    → Google Chat polling via DWD (non-streaming + ACK timer)
     ├── CoreKit (role-specific)   → Manifest-installed tools
     └── Specialty workspace       → SOUL.md, IDENTITY.md, TOOLS.md (per agent type)
 ```
@@ -313,7 +313,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v4.0** | Modularization + contract enforcement — `contracts.json`, `validate-contracts`, modular manifests |
 | **v5.0** | Clean-room migration to 6-module architecture (`app/`, `infra/`, `corekit/`, `brain/`, `specialties/`, `skills/`) |
 | **v5.1** | Real-time command progress monitoring, cascading CoreKit upgrades, upgrade observability |
-| **v5.2** | Async delivery stabilization — non-streaming gateway, anti-spam (dedup, single-flight watchdog, log offset tracking, immediate markProcessed), 1:1 message delivery |
+| **v5.2** | Async delivery stabilization — non-streaming gateway (Prime + Fleet), anti-spam, fleet gateway token fix, background ACK timer, 1:1 message delivery |
 
 ---
 

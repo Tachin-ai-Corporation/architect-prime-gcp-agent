@@ -174,16 +174,20 @@ Both Prime and Fleet agents use the same async-first pattern. The daemon submits
 11. HTTP ceiling: 600s (research dispatches take 60-120s)
 12. Structured JSON logging with mode, taskId, elapsed_ms, delivery method (agent/watchdog-log)
 
-**Google Chat → Fleet Agent (inbox-daemon):**
-1. `inbox-daemon` polls Google Chat API via DWD impersonation every 15s
+**Google Chat → Fleet Agent (inbox-daemon — Bash+Python, non-streaming):**
+1. `inbox-daemon` polls Google Chat API via DWD impersonation every 10s
 2. Only processes messages containing the agent's `@FirstName LastName` mention
-3. Strips @-mention, writes TASK.json (channel: `gchat`, channelMeta with spaceId/agentEmail)
-4. **15s observation window** (same pattern as Prime):
-   - Submit to local OpenClaw gateway with 15s timeout
-   - If response completes → fast path, reply via `chat-send`
-   - If timeout (agent dispatching) → send "🔄 Working on it..." ack, agent delivers via `channel-respond`
-5. High-water-mark dedup prevents duplicate processing
-6. Space discovery cached for 5 minutes
+3. Strips @-mention → **Immediate high-water mark advance** (prevents re-pickup on crash/restart) → writes TASK.json
+4. **Anti-spam at intake:**
+   - High-water-mark: timestamp-based filter skips all messages older than last processed
+   - `check_and_mark` (seen.json): message-name-based dedup, prunes to last 200
+   - Immediate HW advance: mark consumed BEFORE the gateway call blocks
+5. **Gateway dispatch (`stream: false`, 120s timeout):** POST to local gateway, blocks until model completes full turn
+6. **Background ACK timer:** After 15s, if gateway hasn't responded, send "🔄 Processing..." via `chat-send` while connection stays alive
+7. When gateway returns → send full response via `chat-send`
+8. **Startup health checks:** DWD token (exponential backoff) + gateway token validation (prevents crash-loop on 401)
+9. **Gateway token resolution:** Host `.gateway-token` → host `openclaw.json` → Docker container fallback (daemon runs as `ubuntu` on host, not in Docker)
+10. Space discovery cached for 5 minutes
 
 **Unified channel abstraction:** Both daemons write `TASK.json` with channel metadata. Agents use `exec channel-respond "text"` which reads TASK.json and routes to the correct backend (`dashboard-respond` for Firestore, `chat-send` for Google Chat). This makes Prime and Fleet brains architecturally identical.
 
@@ -582,15 +586,17 @@ architect-prime/
 ## Roadmap
 
 ### Completed: v5.2.0 — Async Delivery Stabilization + Anti-Spam
-> *Deterministic brain dispatch, non-streaming gateway, and spam elimination.*
+> *Non-streaming gateway, spam elimination, fleet parity.*
 
-1. **Non-streaming gateway** — Replaced SSE/observation-window stack with `stream: false`. Model response guaranteed complete in a single HTTP round-trip.
-2. **Async watchdog** — Dual-path delivery verification: Firestore check (channel-respond) + log-file parsing (think-block extraction). Single-flight guard prevents parallel watchdogs.
-3. **Anti-spam** — Four fixes eliminated all message duplication: immediate `markProcessed` at intake, 60s text dedup window, single-flight watchdog, log offset tracking.
-4. **Two-Phase Turn Protocol** — Cortex classifies → writes PLAN.md → dispatches via brain-exec. PreTurn/PostTurn hooks enforce compliance.
-5. **Task lifecycle** — Every message tracked as Firestore Task document with status, timing, delivery method.
-6. **Dispatch telemetry** — Events written to `primes/{id}/dispatch-log` via fire-and-forget background calls.
-7. **Known issue:** Watchdog's Firestore Path 1 does not detect `channel-respond` delivery (likely missing composite index), causing a spurious 5-min timeout error even when the research result was already delivered.
+1. **Non-streaming gateway (Prime + Fleet)** — Replaced SSE/observation-window stack with `stream: false` on both `control-daemon.mjs` (Prime) and `inbox-daemon` (Fleet). Model response guaranteed complete in a single HTTP round-trip.
+2. **Background ACK timer (Prime + Fleet)** — 15s timer sends processing ack while the gateway connection stays alive. Replaces the old pattern of severing the connection at 15s.
+3. **Anti-spam (Prime)** — Four fixes: immediate `markProcessed` at intake, 60s text dedup window, single-flight watchdog, log offset tracking. Verified 1:1 message-to-response ratio.
+4. **Anti-spam (Fleet)** — Immediate high-water mark advance (mirrors `markProcessed`), gateway token health check at startup (prevents crash-loop on 401), state dir ownership fix (`ubuntu` user).
+5. **Fleet gateway token fix** — Multi-path resolution: host `.gateway-token` → host `openclaw.json` → Docker fallback. The old path (`/root/.openclaw/`) was only accessible inside the container.
+6. **Two-Phase Turn Protocol** — Cortex classifies → writes PLAN.md → dispatches via brain-exec. PreTurn/PostTurn hooks enforce compliance.
+7. **Task lifecycle** — Every message tracked as Firestore Task document with status, timing, delivery method.
+8. **Dispatch telemetry** — Events written to `primes/{id}/dispatch-log` via fire-and-forget background calls.
+9. **Known issue:** Prime watchdog's Firestore Path 1 does not detect `channel-respond` delivery (likely missing composite index), causing a spurious 5-min timeout error even when the research result was already delivered.
 
 ### Current: v5.3 — Watchdog Reliability + Model Flexibility
 > *Goal: Eliminate false watchdog timeouts, enable per-agent model overrides.*
