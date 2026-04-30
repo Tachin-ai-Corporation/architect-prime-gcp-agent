@@ -37,11 +37,29 @@ CHAT_API="https://chat.googleapis.com/v1"
 DWD_TOKEN_BIN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
 CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
 OC_GATEWAY="http://localhost:18789"
-OC_TOKEN="$(cat /root/.openclaw/.gateway-token 2>/dev/null || echo 'no-token')"
 
-# State files
+# Gateway auth token — read from host-side config (daemon runs as ubuntu on HOST, not in Docker).
+# The /root/.openclaw/.gateway-token path is ONLY accessible inside the container; we must
+# read from OC_HOST_ROOT which is the bind-mounted host directory.
+OC_TOKEN="no-token"
+# Try 1: standalone token file on host
+if [[ -r "${OC_HOST_ROOT}/.openclaw/.gateway-token" ]]; then
+  OC_TOKEN="$(cat "${OC_HOST_ROOT}/.openclaw/.gateway-token" 2>/dev/null)"
+fi
+# Try 2: extract from openclaw.json on host
+if [[ "$OC_TOKEN" == "no-token" && -r "${OC_HOST_ROOT}/.openclaw/openclaw.json" ]]; then
+  OC_TOKEN="$(python3 -c "import json; print(json.load(open('${OC_HOST_ROOT}/.openclaw/openclaw.json'))['gateway']['auth']['token'])" 2>/dev/null || echo 'no-token')"
+fi
+# Try 3: Docker container fallback (requires sudo)
+if [[ "$OC_TOKEN" == "no-token" ]]; then
+  OC_TOKEN="$(sudo docker exec openclaw-gateway cat /root/.openclaw/.gateway-token 2>/dev/null || echo 'no-token')"
+fi
+
+# State files — ensure writable by the daemon user (may run as ubuntu, not root)
 STATE_DIR="/var/lib/inbox-daemon"
-mkdir -p "$STATE_DIR"
+sudo mkdir -p "$STATE_DIR"
+sudo chown "$(whoami)" "$STATE_DIR"
+chmod 755 "$STATE_DIR"
 SEEN_FILE="${STATE_DIR}/seen.json"       # { "msg_name": true, ... }
 HW_FILE="${STATE_DIR}/highwater"          # latest seen createTime
 SPACES_FILE="${STATE_DIR}/spaces.json"    # cached space list
@@ -98,6 +116,21 @@ for i in $(seq 1 $DWD_MAX_ATTEMPTS); do
   DWD_BACKOFF=$(( DWD_BACKOFF < 300 ? DWD_BACKOFF * 2 : 300 ))
 done
 log "DWD healthcheck OK"
+
+# ==== GATEWAY TOKEN CHECK ====
+# Validate the token works before entering the poll loop.
+# This prevents crash-loop spam when token is wrong (e.g., after upgrade).
+if [[ "$OC_TOKEN" == "no-token" ]]; then
+  die "Gateway token not found. Check OC_HOST_ROOT=${OC_HOST_ROOT}/.openclaw/openclaw.json"
+fi
+GW_HEALTH="$(curl -sf -H "Authorization: Bearer ${OC_TOKEN}" "${OC_GATEWAY}/health" 2>/dev/null || echo 'fail')"
+if [[ "$GW_HEALTH" == "fail" ]]; then
+  warn "Gateway health check failed (token may be wrong), retrying..."
+  sleep 5
+  GW_HEALTH="$(curl -sf -H "Authorization: Bearer ${OC_TOKEN}" "${OC_GATEWAY}/health" 2>/dev/null || echo 'fail')"
+  [[ "$GW_HEALTH" == "fail" ]] && die "Gateway health check failed. Token: ${OC_TOKEN:0:8}..."
+fi
+log "Gateway healthcheck OK (token=${OC_TOKEN:0:8}...)"
 
 # ==== HELPERS ====
 
@@ -365,6 +398,14 @@ json.dump({
 
       log "MSG from=${DISPLAY} space=${SPACE} text=\"${CLEAN:0:60}\""
 
+      # ---- Anti-spam: advance high-water mark IMMEDIATELY ----
+      # Same pattern as Prime's markProcessed: mark this message as consumed
+      # BEFORE the gateway call blocks. Prevents re-pickup on crash/restart.
+      if [[ -n "$MSGTIME" && "$MSGTIME" > "$HW" ]]; then
+        HW="$MSGTIME"
+        echo "$HW" > "$HW_FILE" 2>/dev/null || warn "Failed to write highwater"
+      fi
+
       # Check if agent is currently busy (status-aware response)
       STATUS_BIN="${OC_HOST_ROOT}/.openclaw/bin/agent-status"
       STATUS_FILE="${OC_HOST_ROOT}/.openclaw/workspace/STATUS.json"
@@ -460,12 +501,6 @@ except:
         log "Empty response (ack already sent to ${SPACE})"
       fi
       rm -f "$REPLY_FILE" "$REPLY_ERR"
-
-      # Advance high-water mark
-      if [[ -n "$MSGTIME" && "$MSGTIME" > "$HW" ]]; then
-        HW="$MSGTIME"
-        echo "$HW" > "$HW_FILE"
-      fi
 
       sleep 1
     done < "$BATCH"
