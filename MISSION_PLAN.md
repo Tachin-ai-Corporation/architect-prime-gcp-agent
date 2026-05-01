@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v5.3.0`
+> - **Current version:** `v2026.05.01.1.0`
 
 ---
 
@@ -585,24 +585,24 @@ architect-prime/
 
 ## Roadmap
 
-### Completed: v5.3.0 — Unified Message Daemon
-> *Single daemon for both Prime and Fleet. Zero drift by construction.*
+### Completed: v2026.05.01.1.0 — Markdown Rendering + Dashboard Fixes
+> *Formatted messages in both channels. Version detection fixed. Canonical versioning restored.*
 
-1. **Unified `message-daemon.mjs`** — Replaced `control-daemon.mjs` (Prime, 720 lines) and `inbox-daemon` (Fleet, 513 lines Bash+Python) with a single 683-line Node.js daemon. Channel adapter pattern: `FirestoreChannel` (Prime) and `GChatChannel` (Fleet) are the only divergence.
-2. **Built-in DWD in Node.js** — Ported `dwd-token` bash script to native Node.js using IAM `signJwt` API. No key files, works inside Docker via `--network host`. Token cached for 58 minutes.
-3. **Fleet gains parity** — Fleet agents now have conversation history (4-turn window), think-block stripping, watchdog (log-parse path), and status-aware busy responses — all previously Prime-only.
-4. **Eliminated `set -euo pipefail` crash class** — The old `inbox-daemon` used bash `set -e` in a long-running concurrent daemon, causing repeated crashes on background process cleanup. Pure Node.js `try/catch` eliminates this entirely.
-5. **`start-message-daemon` wrapper** — Reads `chat-config.json` for values with spaces (AGENT_MENTION). Launches daemon inside Docker via `docker exec`.
-6. **`upgrade-corekit` migration** — Detects old services (control-daemon, inbox-daemon), stops/disables them, starts message-daemon.
-7. **Bootstrap scripts updated** — Both `fleet-bootstrap.sh` and `prime-bootstrap.sh` now install `message-daemon.service`.
+1. **Dashboard markdown rendering** — Added `react-markdown` + `remark-gfm` via `MarkdownMessage.tsx` component. Agent messages render bold, italic, code blocks, lists, tables, headings, blockquotes, and links. User messages stay plain text.
+2. **GChat markdown conversion** — `convertToGChatMarkdown()` in `GChatChannel.send()` converts `**bold**` → `*bold*` (GChat format). Preserves code blocks/inline code unchanged.
+3. **Version detection fix** — `extractVersion()` in upgrade API now supports both canonical `v{YYYY}.{MM}.{DD}.{index}.{subindex}` and back-compat `vX.Y.Z` formats. Fixes "Latest Version: unknown" on System tab.
+4. **CommandProgress staleness timeout** — Auto-dismisses upgrade banners stuck in pending/running for 5+ minutes.
+5. **Version format protection** — `contracts.json` → `versioning` section documents the canonical forever format. `finalize-checkpoint` workflow includes verification step.
+6. **Canonical versioning restored** — Returned to `v{YYYY}.{MM}.{DD}.{index}.{subindex}` as the forever format. The `vX.Y.Z` format (v5.0-v5.3) was a temporary deviation.
 
-### Current: v5.4 — Watchdog Reliability + Model Flexibility
-> *Goal: Eliminate false watchdog timeouts, enable per-agent model overrides.*
+### Current: v2026.05.01.2.0 — Watchdog Reliability + Fleet Upgrade UX
+> *Goal: Eliminate false watchdog timeouts, per-agent upgrade buttons.*
 
-1. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
-2. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
-3. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
-4. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
+1. **Per-fleet-agent upgrade buttons** — Each fleet agent gets its own "Upgrade CoreKit" button in the Fleet tab, replacing the fragile Prime-cascade approach.
+2. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
+3. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
+4. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
+5. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
 
 ### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
