@@ -310,7 +310,7 @@ while true; do
   SPACE_COUNT="$(echo "$SPACE_LIST" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)"
 
   if [[ "$SPACE_COUNT" -eq 0 ]]; then
-    [[ $((CYCLE % 20)) -eq 1 ]] && log "No spaces — waiting to be added to a Chat space"
+    [[ $((CYCLE % 20)) -eq 1 ]] && log "No spaces — waiting to be added to a Chat space" || true
     sleep "$POLL_INTERVAL"; continue
   fi
 
@@ -482,7 +482,8 @@ except:
 
       # Signal completion and clean up ACK timer
       touch "${ACK_FLAG}.done"
-      kill $ACK_PID 2>/dev/null; wait $ACK_PID 2>/dev/null || true
+      kill $ACK_PID 2>/dev/null || true
+      wait $ACK_PID 2>/dev/null || true
       ACK_SENT=false
       [[ -f "$ACK_FLAG" ]] && ACK_SENT=true || true
       rm -f "$ACK_FLAG" "${ACK_FLAG}.done"
