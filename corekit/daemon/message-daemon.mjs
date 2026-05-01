@@ -454,13 +454,10 @@ class FirestoreChannel {
 }
 
 // ---- GChat Markdown Conversion ----
-// Google Chat uses different formatting from standard markdown:
-//   Bold:   *text*  (single asterisk, NOT double)
-//   Italic: _text_  (underscore, NOT asterisk)
-//   Code:   `code`  (same)
-//   Block:  ```block``` (same)
-// Agent output uses standard markdown (**bold**, *italic*).
-// This function converts standard → GChat format.
+// Google Chat plain text supports: *bold*, _italic_, ~strike~, `code`, ```blocks```
+// It does NOT support: # headers, - bullets, > blockquotes, [links](url), tables
+// This function converts standard markdown → GChat-compatible plain text.
+// For richer formatting, GChat Cards v2 API exists (future enhancement).
 function convertToGChatMarkdown(text) {
   if (!text) return text;
 
@@ -470,11 +467,32 @@ function convertToGChatMarkdown(text) {
   return parts.map((part, i) => {
     // Odd indices are code blocks/inline code — leave untouched
     if (i % 2 === 1) return part;
+
+    let c = part;
+
+    // Headers → bold text (### Header → *Header*)
+    // Process multi-hash first (### before ## before #)
+    c = c.replace(/^####\s+(.+)$/gm, '▸ *$1*');
+    c = c.replace(/^###\s+(.+)$/gm, '▸ *$1*');
+    c = c.replace(/^##\s+(.+)$/gm, '═ *$1*');
+    c = c.replace(/^#\s+(.+)$/gm, '◆ *$1*');
+
     // Convert **bold** → *bold* (GChat bold)
-    let converted = part.replace(/\*\*([^*]+?)\*\*/g, '*$1*');
-    // Convert __text__ → _text_ (already GChat italic, but normalize)
-    converted = converted.replace(/__([^_]+?)__/g, '_$1_');
-    return converted;
+    c = c.replace(/\*\*([^*]+?)\*\*/g, '*$1*');
+
+    // Convert __text__ → _text_ (normalize to GChat italic)
+    c = c.replace(/__([^_]+?)__/g, '_$1_');
+
+    // Horizontal rules (---, ***, ___) → visual separator
+    c = c.replace(/^(?:---+|\*\*\*+|___+)\s*$/gm, '─────────────────────');
+
+    // Blockquotes (> text → ▎text)
+    c = c.replace(/^>\s?(.*)$/gm, '▎ $1');
+
+    // Markdown links [text](url) → text (url)
+    c = c.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
+
+    return c;
   }).join('');
 }
 
