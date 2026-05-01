@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.01.2.0`
+> **Current version:** `v2026.05.01.3.0`
 
 ---
 
@@ -317,6 +317,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v5.3** | Unified message-daemon — single Node.js daemon for both Prime and Fleet, built-in DWD, channel adapter pattern, fleet gains conversation history + think-block stripping + watchdog |
 | **v2026.05.01.1** | Markdown rendering (dashboard `react-markdown` + GChat format conversion), version detection fix, CommandProgress staleness timeout, canonical versioning restored |
 | **v2026.05.01.2** | Per-fleet-agent upgrade buttons, fleet-upgrade fix (message-daemon + docker restart), no-clobber manifest flag, enhanced GChat markdown (headers/blockquotes/links/HR) |
+| **v2026.05.01.3** | Tech debt cleanup — purged inbox-daemon + control-daemon (−1,613 lines), deployed message-daemon.service, fixed validate-contracts, aligned 25 files of documentation |
 
 ---
 

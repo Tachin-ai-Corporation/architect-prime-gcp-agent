@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.01.2.0`
+> - **Current version:** `v2026.05.01.3.0`
 
 ---
 
@@ -602,7 +602,16 @@ architect-prime/
 4. **Enhanced GChat markdown** — `convertToGChatMarkdown()` now converts headers (→ bold with ◆/═/▸ prefix), blockquotes (→ ▎ prefix), horizontal rules (→ ─── separator), and markdown links (→ inline text + URL). All conversions skip code blocks.
 5. **Agent coreRef visibility** — Fleet cards now show each agent's `coreRef` version badge.
 
-### Current: v2026.05.01.3.0 — Watchdog Reliability + Model Flexibility
+### Completed: v2026.05.01.3.0 — Tech Debt Cleanup + Unified Daemon Deployment
+> *Purged dead daemons, deployed message-daemon.service, fixed validate-contracts, aligned all documentation.*
+
+1. **Dead code purge** — Deleted `inbox-daemon` (script + service), `control-daemon` (wrapper + .mjs). Removed all manifest entries. −1,613 lines of dead code.
+2. **message-daemon.service deployed** — Created generic systemd service file in `corekit/config/`. `upgrade-corekit` now auto-installs, enables, and restarts the service on every upgrade.
+3. **start-message-daemon auto-detection** — Wrapper reads `GCP_PROJECT_ID`, `PRIME_ID`, and `AGENT_ID` from `prime-config.json` (Prime) or VM metadata (Fleet). No hardcoded Environment= lines needed.
+4. **validate-contracts fixed** — Repo mode checks `message-daemon.mjs` at correct path. Runtime mode checks daemon service is active. Removed ghost checks against nonexistent `bundle/` directory.
+5. **Documentation alignment** — Updated all references across MISSION_PLAN, README, BOOTSTRAP, CHAT_SETUP, BRAIN_ARCHITECTURE, RCM doc, fleet scripts, bootstrap scripts, app code (25 files total).
+
+### Current: v2026.05.01.4.0 — Watchdog Reliability + Model Flexibility
 > *Goal: Eliminate false watchdog timeouts, enable per-agent model overrides.*
 
 1. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
