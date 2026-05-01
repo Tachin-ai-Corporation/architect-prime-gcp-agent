@@ -435,6 +435,52 @@ function HomeInner() {
     loadAgentDetail(agentName);
   };
 
+  // ---- Upgrade Fleet Agent CoreKit ----
+  const handleFleetUpgrade = async (agentName: string) => {
+    if (!activePrime) return;
+    const ok = await dialog.confirm({
+      title: `Upgrade ${agentName} CoreKit?`,
+      message: "This will pull the latest CoreKit from GitHub and restart the agent's gateway.\nThe agent will be briefly unavailable during the restart.",
+      confirmText: "Upgrade",
+    });
+    if (!ok) return;
+
+    const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "fleet_upgrade", args: { name: agentName, ref: "main" } }),
+    });
+    if (result?.id) {
+      dialog.trackCommand(activePrime, result.id, `Upgrade ${agentName}`);
+    } else {
+      dialog.toast({ message: `Failed to queue upgrade for ${agentName}.`, variant: "error" });
+    }
+  };
+
+  const handleUpgradeAllFleet = async () => {
+    if (!activePrime) return;
+    const activeAgents = fleet.filter((a) => a.status !== "removed" && a.status !== "tearing_down");
+    if (activeAgents.length === 0) return;
+
+    const ok = await dialog.confirm({
+      title: `Upgrade all ${activeAgents.length} fleet agent${activeAgents.length !== 1 ? "s" : ""}?`,
+      message: `This will upgrade CoreKit on ${activeAgents.map(a => a.name).join(", ")}.\nEach agent's gateway will restart during the upgrade.`,
+      confirmText: "Upgrade All",
+    });
+    if (!ok) return;
+
+    for (const agent of activeAgents) {
+      const result = await api<{id: string}>(`/api/primes/${activePrime}/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "fleet_upgrade", args: { name: agent.name, ref: "main" } }),
+      });
+      if (result?.id) {
+        dialog.trackCommand(activePrime, result.id, `Upgrade ${agent.name}`);
+      }
+    }
+  };
+
   // ---- Confirm Workspace Setup ----
   const handleConfirmSetup = async (agentName: string) => {
     if (!activePrime) return;
@@ -1122,6 +1168,14 @@ function HomeInner() {
                 )}
 
                 {/* Fleet Grid */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 24px", marginBottom: 4 }}>
+                  <div />
+                  {fleet.filter(a => a.status !== "removed" && a.status !== "tearing_down").length > 0 && (
+                    <button className="btn btn-sm btn-primary" onClick={handleUpgradeAllFleet}>
+                      ⬆ Upgrade All Fleet
+                    </button>
+                  )}
+                </div>
                 <div className={styles["fleet-grid"]}>
                   {fleet.map((agent) => (
                     <div key={agent.name} className="card">
@@ -1139,11 +1193,19 @@ function HomeInner() {
                           <span className={`badge badge-${agent.status === "needs_action" ? "warning" : agent.status}`}>{agent.status === "needs_action" ? "action needed" : agent.status === "tearing_down" ? "tearing down" : agent.status}</span>
                         </div>
                       </div>
-                      <div style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                      <div style={{ fontSize: 12, color: "var(--text-tertiary)", display: "flex", alignItems: "center", gap: 8 }}>
                         <code className="mono">{agent.email}</code>
+                        {agent.coreRef && (
+                          <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>
+                            · <code className="mono" style={{ fontSize: 10 }}>{agent.coreRef}</code>
+                          </span>
+                        )}
                       </div>
                       <div style={{ marginTop: 12, display: "flex", gap: 6 }}>
                         <button className="btn btn-sm btn-ghost" onClick={() => loadAgentDetail(agent.name)}>Logs</button>
+                        {(agent.status === "online" || agent.status === "needs_action") && (
+                          <button className="btn btn-sm btn-primary" onClick={() => handleFleetUpgrade(agent.name)}>⬆ Upgrade</button>
+                        )}
                         <button className="btn btn-sm btn-danger" onClick={() => handleFire(agent.name)}>Fire</button>
                       </div>
                     </div>

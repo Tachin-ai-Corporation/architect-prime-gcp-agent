@@ -47,32 +47,17 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
     }
   };
 
-  /** Upgrade Prime CoreKit + cascade to all fleet agents */
+  /** Upgrade Prime CoreKit only (fleet agents upgraded from Fleet tab) */
   const handleUpgradePrime = async (p: PrimeInstance) => {
-    const primeFleet = sidebarFleet[p.id] || [];
-    const activeAgents = primeFleet.filter((a) => a.status !== "removed" && a.status !== "tearing_down");
-    const agentCount = activeAgents.length;
-
-    const message = agentCount > 0
-      ? `This will upgrade CoreKit on ${p.name} and ${agentCount} fleet agent${agentCount !== 1 ? "s" : ""}.\nThe gateway and agents will restart during the upgrade.`
-      : "This will pull the latest CoreKit from GitHub and restart the gateway.\nThe agent will be briefly unavailable during the restart.";
-
     const ok = await dialog.confirm({
-      title: `Upgrade ${p.name}${agentCount > 0 ? ` + ${agentCount} agent${agentCount !== 1 ? "s" : ""}` : ""}?`,
-      message,
-      confirmText: "Upgrade All",
+      title: `Upgrade ${p.name} CoreKit?`,
+      message: "This will pull the latest CoreKit from GitHub and restart the gateway.\nThe agent will be briefly unavailable during the restart.\n\nFleet agents can be upgraded individually from the Fleet tab.",
+      confirmText: "Upgrade",
     });
     if (!ok) return;
 
     const ref = "main";
-
-    // Queue Prime upgrade
     await queueAndTrack(p.id, "upgrade_corekit", { ref }, `Upgrade ${p.name} CoreKit`);
-
-    // Cascade: queue fleet_upgrade for each active agent
-    for (const agent of activeAgents) {
-      await queueAndTrack(p.id, "fleet_upgrade", { name: agent.name, ref }, `Upgrade ${agent.name}`);
-    }
   };
 
   /** Check if a Prime needs an upgrade */
