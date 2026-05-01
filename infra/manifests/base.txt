@@ -25,6 +25,7 @@ corekit/chat/inbox-daemon .openclaw/bin/inbox-daemon
 
 # Unified message daemon (replaces control-daemon + inbox-daemon)
 corekit/daemon/message-daemon.mjs .openclaw/bin/message-daemon.mjs
+corekit/daemon/start-message-daemon .openclaw/bin/start-message-daemon
 
 # Brain tools
 corekit/brain/agent-ask .openclaw/bin/agent-ask
