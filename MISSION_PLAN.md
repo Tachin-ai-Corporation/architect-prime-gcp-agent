@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.01.1.0`
+> - **Current version:** `v2026.05.01.2.0`
 
 ---
 
@@ -595,14 +595,23 @@ architect-prime/
 5. **Version format protection** — `contracts.json` → `versioning` section documents the canonical forever format. `finalize-checkpoint` workflow includes verification step.
 6. **Canonical versioning restored** — Returned to `v{YYYY}.{MM}.{DD}.{index}.{subindex}` as the forever format. The `vX.Y.Z` format (v5.0-v5.3) was a temporary deviation.
 
-### Current: v2026.05.01.2.0 — Watchdog Reliability + Fleet Upgrade UX
-> *Goal: Eliminate false watchdog timeouts, per-agent upgrade buttons.*
+### Completed: v2026.05.01.2.0 — Fleet Upgrade UX + Enhanced GChat Formatting
+> *Per-agent upgrade buttons, fleet-upgrade fixed, no-clobber manifest, rich GChat markdown.*
 
-1. **Per-fleet-agent upgrade buttons** — Each fleet agent gets its own "Upgrade CoreKit" button in the Fleet tab, replacing the fragile Prime-cascade approach.
-2. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
-3. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
-4. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
-5. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
+1. **Per-fleet-agent upgrade buttons** — Each fleet agent card in the Fleet tab has its own "⬆ Upgrade" button. "⬆ Upgrade All Fleet" button in fleet grid header for bulk upgrades. Prime upgrade no longer cascades to fleet.
+2. **Fleet-upgrade fixed** — `fleet-upgrade` script now restarts `message-daemon` + `docker restart openclaw-gateway` (was referencing defunct `inbox-daemon`). Fleet registry populated with agent data.
+3. **No-clobber manifest flag** — `install.sh` supports `?` suffix on manifest destinations: files marked with `?` are only installed if they don't already exist. Prevents `upgrade-corekit` from wiping live state files (e.g., `fleet-registry.json`).
+4. **Enhanced GChat markdown** — `convertToGChatMarkdown()` now converts headers (→ bold with ◆/═/▸ prefix), blockquotes (→ ▎ prefix), horizontal rules (→ ─── separator), and markdown links (→ inline text + URL). All conversions skip code blocks.
+5. **Agent coreRef visibility** — Fleet cards now show each agent's `coreRef` version badge.
+
+### Current: v2026.05.01.3.0 — Watchdog Reliability + Model Flexibility
+> *Goal: Eliminate false watchdog timeouts, enable per-agent model overrides.*
+
+1. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
+2. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
+3. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
+4. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
+5. **GChat Cards v2** — Explore structured card messages for richer formatting (headers, sections, icons, buttons) instead of plain text conversion.
 
 ### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
