@@ -484,7 +484,7 @@ except:
       touch "${ACK_FLAG}.done"
       kill $ACK_PID 2>/dev/null; wait $ACK_PID 2>/dev/null || true
       ACK_SENT=false
-      [[ -f "$ACK_FLAG" ]] && ACK_SENT=true
+      [[ -f "$ACK_FLAG" ]] && ACK_SENT=true || true
       rm -f "$ACK_FLAG" "${ACK_FLAG}.done"
 
       # Send response to Chat
