@@ -36,6 +36,13 @@ Review and update these files to reflect the new checkpoint reality.
 - `brain/` workspace files if agent instructions changed
 - `infra/contracts.json` if cross-cutting values changed
 
+### Version format verification
+Before committing, verify the commit message version prefix will be parseable by the dashboard:
+- **Current format**: `vX.Y.Z: description` (e.g., `v5.4.0: finalize checkpoint`)
+- **Regex in `app/src/app/api/upgrade/route.ts`** `extractVersion()` must match the format
+- **Contract**: `infra/contracts.json` → `versioning.commitFormat` documents the expected format
+- If the version format ever changes, update **both** `extractVersion()` and `contracts.json`
+
 ## 2. Stage and review
 
 ```powershell

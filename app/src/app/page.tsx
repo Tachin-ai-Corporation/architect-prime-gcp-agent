@@ -5,6 +5,7 @@ import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { SettingsView, VersionInfo } from "@/components/settings/SettingsView";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
+import { MarkdownMessage } from "@/components/MarkdownMessage";
 
 /* ---- Types ---- */
 interface PrimeInstance {
@@ -763,9 +764,13 @@ function HomeInner() {
                         <div className={styles["chat-message-avatar"]}>{msg.sender === "prime" ? "P" : "Y"}</div>
                         <div>
                           <div className={styles["chat-message-content"]}>
-                            {msg.text.split("\n").map((line, i) => (
-                              <span key={i}>{line}{i < msg.text.split("\n").length - 1 && <br />}</span>
-                            ))}
+                            {msg.sender === "prime" ? (
+                              <MarkdownMessage text={msg.text} />
+                            ) : (
+                              msg.text.split("\n").map((line, i) => (
+                                <span key={i}>{line}{i < msg.text.split("\n").length - 1 && <br />}</span>
+                              ))
+                            )}
                           </div>
                           <div className={styles["chat-message-meta"]}>{msg.timestamp ? formatTime(msg.timestamp) : ""}</div>
                         </div>

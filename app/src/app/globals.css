@@ -548,3 +548,110 @@ code, pre, .mono {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ---- Markdown in Chat Messages ---- */
+.md-heading {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.md-heading:first-child { margin-top: 0; }
+
+.md-link {
+  color: var(--text-link);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+.md-link:hover { text-decoration: underline; }
+
+.md-inline-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 4px;
+  color: var(--accent-primary-hover);
+}
+
+.md-code-block {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.md-code-block code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.md-list {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+.md-list li {
+  margin-bottom: 2px;
+  line-height: 1.6;
+}
+.md-list-ordered {
+  list-style-type: decimal;
+}
+
+.md-blockquote {
+  border-left: 3px solid var(--accent-primary);
+  padding: 4px 12px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+  background: rgba(99, 102, 241, 0.04);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.md-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.md-table th, .md-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+.md-table th {
+  background: var(--bg-primary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+.md-table td {
+  color: var(--text-primary);
+}
+.md-table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* react-markdown renders <p> tags — remove excess spacing in chat bubbles */
+.chat-message-content p {
+  margin: 0 0 6px;
+}
+.chat-message-content p:last-child {
+  margin-bottom: 0;
+}
+.chat-message-content > :first-child {
+  margin-top: 0;
+}
+.chat-message-content > :last-child {
+  margin-bottom: 0;
+}
+

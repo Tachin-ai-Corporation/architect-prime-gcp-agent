@@ -44,6 +44,7 @@ export function CommandProgress({ primeId, commandId, label, onDismiss }: Comman
     // Initial fetch
     poll();
 
+    const startTime = Date.now();
     // Poll every 3s until terminal state
     const interval = setInterval(async () => {
       const s = await poll();
@@ -51,6 +52,10 @@ export function CommandProgress({ primeId, commandId, label, onDismiss }: Comman
         clearInterval(interval);
         // Auto-dismiss after 10s
         setTimeout(onDismiss, 10000);
+      } else if (Date.now() - startTime > 5 * 60 * 1000) {
+        // Staleness guard: if stuck in pending/running for 5 minutes, auto-dismiss
+        clearInterval(interval);
+        setTimeout(onDismiss, 3000);
       }
     }, 3000);
 

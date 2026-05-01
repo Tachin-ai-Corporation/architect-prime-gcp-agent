@@ -23,5 +23,11 @@
   "env": {
     "GOOGLE_GENAI_USE_VERTEXAI": "True",
     "GCE_METADATA_HOST": "metadata.google.internal"
+  },
+  "versioning": {
+    "_comment": "Commit format and version extraction patterns. If version format changes, update BOTH patterns here AND in app/src/app/api/upgrade/route.ts extractVersion().",
+    "commitFormat": "vX.Y.Z: description",
+    "currentRegex": "^(v\\d+\\.\\d+\\.\\d+)",
+    "legacyRegex": "^(v\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d+\\.\\d+)"
   }
 }

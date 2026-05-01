@@ -5,12 +5,22 @@ const GH_REPO = "architect-prime-gcp-agent";
 
 /**
  * Extract version from commit message.
- * Commit format: "v2026.04.26.1.0: description"
+ * Supports two formats:
+ *   - Semver:  "v5.3.0: description"     → "v5.3.0"
+ *   - Legacy:  "v2026.04.26.1.0: desc"   → "v2026.04.26.1.0"
  * Returns the version prefix or "unknown".
+ *
+ * ADR: This regex MUST be kept in sync with the commit format.
+ * If the version format changes, update BOTH patterns.
+ * See also: contracts.json → versioning.commitFormat
  */
 function extractVersion(commitMessage: string): string {
-  const match = commitMessage.match(/^(v\d{4}\.\d{2}\.\d{2}\.\d+\.\d+)/);
-  return match ? match[1] : "unknown";
+  // Current format: vX.Y.Z (semver-style, e.g. v5.3.0)
+  const semver = commitMessage.match(/^(v\d+\.\d+\.\d+)/);
+  if (semver) return semver[1];
+  // Legacy format: v2026.04.26.1.0 (date-based)
+  const legacy = commitMessage.match(/^(v\d{4}\.\d{2}\.\d{2}\.\d+\.\d+)/);
+  return legacy ? legacy[1] : "unknown";
 }
 
 /**

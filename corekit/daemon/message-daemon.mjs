@@ -453,6 +453,31 @@ class FirestoreChannel {
   }
 }
 
+// ---- GChat Markdown Conversion ----
+// Google Chat uses different formatting from standard markdown:
+//   Bold:   *text*  (single asterisk, NOT double)
+//   Italic: _text_  (underscore, NOT asterisk)
+//   Code:   `code`  (same)
+//   Block:  ```block``` (same)
+// Agent output uses standard markdown (**bold**, *italic*).
+// This function converts standard → GChat format.
+function convertToGChatMarkdown(text) {
+  if (!text) return text;
+
+  // Split on code blocks/inline code to avoid converting inside them
+  const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/g);
+
+  return parts.map((part, i) => {
+    // Odd indices are code blocks/inline code — leave untouched
+    if (i % 2 === 1) return part;
+    // Convert **bold** → *bold* (GChat bold)
+    let converted = part.replace(/\*\*([^*]+?)\*\*/g, '*$1*');
+    // Convert __text__ → _text_ (already GChat italic, but normalize)
+    converted = converted.replace(/__([^_]+?)__/g, '_$1_');
+    return converted;
+  }).join('');
+}
+
 // ---- GChatChannel (Fleet/Google Chat) ----
 class GChatChannel {
   constructor() {
@@ -527,9 +552,10 @@ class GChatChannel {
     const token = await getDwdToken();
     const space = metadata?.space || this._spaces[0];
     if (!space) { log('No space to send to'); return; }
+    const formatted = convertToGChatMarkdown(text);
     const res = await fetch(`${CHAT_API}/${space}/messages`, {
       method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text: formatted })
     });
     if (!res.ok) {
       const err = await res.text().catch(() => '');
