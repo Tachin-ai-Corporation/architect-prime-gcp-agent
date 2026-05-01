@@ -255,8 +255,9 @@ else
 fi
 
 # ---- 2. Parse manifest into pairs ----
-# Format: <repo_relative_path> <dest_relative_to_HOME>
+# Format: <repo_relative_path> <dest_relative_to_HOME> [?]
 # Lines starting with # are comments; blank lines are ignored.
+# A trailing '?' means "install only if destination doesn't already exist" (no-clobber).
 pairs=()
 while IFS= read -r line; do
   # Strip comments and whitespace
@@ -283,6 +284,13 @@ for pair in "${pairs[@]}"; do
   dest="${dest#\~/}"
   dest="${dest#./}"
 
+  # Check for no-clobber flag (? suffix on dest)
+  noclobber=0
+  if [[ "$dest" == *\? ]]; then
+    noclobber=1
+    dest="${dest%?}"  # strip trailing ?
+  fi
+
   # Safety: refuse absolute destination paths
   if [[ "$dest" == /* ]]; then
     die "Refusing absolute destination path: $dest"
@@ -291,6 +299,19 @@ for pair in "${pairs[@]}"; do
   out_path="${OC_HOST_ROOT}/${dest}"
   out_dir="$(dirname "$out_path")"
   src_url="${CORE_BASE}/${rel}"
+
+  # No-clobber: skip if file already exists on disk
+  if [[ $noclobber -eq 1 ]] && run test -f "$out_path" 2>/dev/null; then
+    echo "  [skip] ${dest} (exists, no-clobber)"
+    # Still include in STATE.json with existing file's hash
+    tmpexist="$(mktemp)"
+    run cat "$out_path" > "$tmpexist"
+    hash="$(compute_sha256 "$tmpexist")"
+    rm -f "$tmpexist"
+    file_hashes["$dest"]="sha256:${hash}"
+    installed=$((installed + 1))
+    continue
+  fi
 
   # Create directory and download
   run mkdir -p "$out_dir"

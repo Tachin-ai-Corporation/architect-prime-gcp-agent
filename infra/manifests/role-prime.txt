@@ -28,7 +28,7 @@ corekit/brain/assemble-tools .openclaw/bin/assemble-tools
 
 # Service files
 corekit/config/command-runner.service .openclaw/corekit/command-runner.service
-corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json
+corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json?
 corekit/config/fleet-health-check.service .openclaw/corekit/fleet-health-check.service
 corekit/config/fleet-health-check.timer .openclaw/corekit/fleet-health-check.timer
 
