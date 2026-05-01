@@ -38,9 +38,9 @@ Review and update these files to reflect the new checkpoint reality.
 
 ### Version format verification
 Before committing, verify the commit message version prefix will be parseable by the dashboard:
-- **Current format**: `vX.Y.Z: description` (e.g., `v5.4.0: finalize checkpoint`)
+- **Canonical format (forever)**: `v{YYYY}.{MM}.{DD}.{index}.{subindex}: description` (e.g., `v2026.05.01.1.0: finalize checkpoint`)
 - **Regex in `app/src/app/api/upgrade/route.ts`** `extractVersion()` must match the format
-- **Contract**: `infra/contracts.json` → `versioning.commitFormat` documents the expected format
+- **Contract**: `infra/contracts.json` → `versioning` documents the canonical format
 - If the version format ever changes, update **both** `extractVersion()` and `contracts.json`
 
 ## 2. Stage and review

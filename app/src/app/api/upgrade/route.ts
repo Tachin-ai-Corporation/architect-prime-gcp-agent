@@ -6,21 +6,22 @@ const GH_REPO = "architect-prime-gcp-agent";
 /**
  * Extract version from commit message.
  * Supports two formats:
- *   - Semver:  "v5.3.0: description"     → "v5.3.0"
- *   - Legacy:  "v2026.04.26.1.0: desc"   → "v2026.04.26.1.0"
+ *   - Canonical (forever): "v2026.04.26.1.0: description" → "v2026.04.26.1.0"
+ *   - Back-compat (v5.0-v5.3 era): "v5.3.0: description" → "v5.3.0"
  * Returns the version prefix or "unknown".
  *
- * ADR: This regex MUST be kept in sync with the commit format.
- * If the version format changes, update BOTH patterns.
- * See also: contracts.json → versioning.commitFormat
+ * ADR: The canonical format is v{YYYY}.{MM}.{DD}.{index}.{subindex}.
+ * This is the FOREVER versioning schema. The vX.Y.Z format was a
+ * temporary deviation and is kept only for back-compat.
+ * See also: contracts.json → versioning
  */
 function extractVersion(commitMessage: string): string {
-  // Current format: vX.Y.Z (semver-style, e.g. v5.3.0)
+  // Canonical format: v2026.04.26.1.0 (date-based, forever format)
+  const canonical = commitMessage.match(/^(v\d{4}\.\d{2}\.\d{2}\.\d+\.\d+)/);
+  if (canonical) return canonical[1];
+  // Back-compat: vX.Y.Z (temporary format used during v5.0-v5.3)
   const semver = commitMessage.match(/^(v\d+\.\d+\.\d+)/);
-  if (semver) return semver[1];
-  // Legacy format: v2026.04.26.1.0 (date-based)
-  const legacy = commitMessage.match(/^(v\d{4}\.\d{2}\.\d{2}\.\d+\.\d+)/);
-  return legacy ? legacy[1] : "unknown";
+  return semver ? semver[1] : "unknown";
 }
 
 /**

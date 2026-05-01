@@ -25,9 +25,9 @@
     "GCE_METADATA_HOST": "metadata.google.internal"
   },
   "versioning": {
-    "_comment": "Commit format and version extraction patterns. If version format changes, update BOTH patterns here AND in app/src/app/api/upgrade/route.ts extractVersion().",
-    "commitFormat": "vX.Y.Z: description",
-    "currentRegex": "^(v\\d+\\.\\d+\\.\\d+)",
-    "legacyRegex": "^(v\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d+\\.\\d+)"
+    "_comment": "Canonical commit format: v{YYYY}.{MM}.{DD}.{index}.{subindex}: description. This is the FOREVER format. The extractVersion() regex in app/src/app/api/upgrade/route.ts MUST match this. A temporary vX.Y.Z format was used during v5.0-v5.3 and is supported for back-compat only.",
+    "commitFormat": "v{YYYY}.{MM}.{DD}.{index}.{subindex}: description",
+    "canonicalRegex": "^(v\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d+\\.\\d+)",
+    "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
   }
 }
