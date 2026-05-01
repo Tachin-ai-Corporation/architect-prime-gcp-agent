@@ -23,6 +23,9 @@ corekit/chat/chat-read .openclaw/bin/chat-read
 corekit/chat/channel-respond .openclaw/bin/channel-respond
 corekit/chat/inbox-daemon .openclaw/bin/inbox-daemon
 
+# Unified message daemon (replaces control-daemon + inbox-daemon)
+corekit/daemon/message-daemon.mjs .openclaw/bin/message-daemon.mjs
+
 # Brain tools
 corekit/brain/agent-ask .openclaw/bin/agent-ask
 corekit/brain/agent-status .openclaw/bin/agent-status
