@@ -7,16 +7,23 @@
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
 
-# Auto-detect CHANNEL if not explicitly set
-if [ -z "$CHANNEL" ]; then
-  PRIME_CFG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
-  if [ -f "$PRIME_CFG" ]; then
-    CHANNEL="dashboard"
-  elif [ -f "$CONFIG" ]; then
-    CHANNEL="gchat"
-  else
-    CHANNEL="dashboard"  # safe default
-  fi
+# Auto-detect CHANNEL and identity from role config if not set via env
+PRIME_CFG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+if [ -f "$PRIME_CFG" ]; then
+  [ -z "$CHANNEL" ] && CHANNEL="dashboard"
+  [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('projectId',''))" 2>/dev/null)"
+  [ -z "$PRIME_ID" ] && PRIME_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('primeId',''))" 2>/dev/null)"
+  [ -z "$AGENT_ID" ] && AGENT_ID="prime"
+elif [ -f "$CONFIG" ]; then
+  [ -z "$CHANNEL" ] && CHANNEL="gchat"
+else
+  [ -z "$CHANNEL" ] && CHANNEL="dashboard"  # safe default
+fi
+
+# Read GCP_PROJECT_ID from metadata if still missing
+if [ -z "$GCP_PROJECT_ID" ]; then
+  GCP_PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
 fi
 
 # Read config values

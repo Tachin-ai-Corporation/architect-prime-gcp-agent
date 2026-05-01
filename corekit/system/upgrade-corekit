@@ -163,14 +163,16 @@ case "${1:-}" in
     # ---- Restart daemons ----
     echo "==> Restarting daemons..."
 
-    # Install message-daemon.service if not yet installed (migration from old daemons)
+    # Install/update message-daemon.service from corekit
     MSG_SVC="/etc/systemd/system/message-daemon.service"
     MSG_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/message-daemon.service"
-    if [[ ! -f "$MSG_SVC" ]] && [[ -f "$MSG_SVC_SRC" ]]; then
-      echo "  Installing message-daemon.service (first-time migration)..."
+    if [[ -f "$MSG_SVC_SRC" ]]; then
       cp "$MSG_SVC_SRC" "$MSG_SVC"
       systemctl daemon-reload
-      systemctl enable message-daemon
+      if ! systemctl is-enabled --quiet message-daemon 2>/dev/null; then
+        echo "  Enabling message-daemon.service..."
+        systemctl enable message-daemon
+      fi
     fi
 
     # Stop and disable legacy daemons if still present
