@@ -139,25 +139,14 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 5: inbox-daemon model route ----
-  INBOX="${REPO_ROOT}/bundle/corekit/bin/inbox-daemon"
-  if [[ -f "$INBOX" ]]; then
-    if grep -q "'model': '${C_GATEWAY_ROUTE}'" "$INBOX"; then
-      pass "inbox-daemon route = ${C_GATEWAY_ROUTE}"
+  # ---- Check 5: message-daemon.mjs model route ----
+  MSG_DAEMON="${REPO_ROOT}/corekit/daemon/message-daemon.mjs"
+  if [[ -f "$MSG_DAEMON" ]]; then
+    if grep -q "'openclaw/cortex'" "$MSG_DAEMON"; then
+      pass "message-daemon.mjs route = ${C_GATEWAY_ROUTE}"
     else
-      ROUTE="$(grep -oP "'model': '[^']*'" "$INBOX" | head -1 || echo 'NOT_FOUND')"
-      fail "inbox-daemon route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
-    fi
-  fi
-
-  # ---- Check 6: control-daemon.mjs model route ----
-  CTL="${REPO_ROOT}/bundle/corekit/bin/control-daemon.mjs"
-  if [[ -f "$CTL" ]]; then
-    if grep -q "model: '${C_GATEWAY_ROUTE}'" "$CTL"; then
-      pass "control-daemon.mjs route = ${C_GATEWAY_ROUTE}"
-    else
-      ROUTE="$(grep -oP "model: '[^']*'" "$CTL" | head -1 || echo 'NOT_FOUND')"
-      fail "control-daemon.mjs route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
+      ROUTE="$(grep -oP "'[^']*cortex[^']*'" "$MSG_DAEMON" | head -1 || echo 'NOT_FOUND')"
+      fail "message-daemon.mjs route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
     fi
   fi
 
@@ -282,14 +271,21 @@ for a in c.get('agents',{}).get('list',[]):
     fi
   fi
 
-  # ---- Check 7: inbox-daemon model route ----
-  INBOX="${OC_HOST_ROOT}/.openclaw/bin/inbox-daemon"
-  if [[ -f "$INBOX" ]]; then
-    if grep -q "'model': '${C_GATEWAY_ROUTE}'" "$INBOX"; then
-      pass "inbox-daemon route = ${C_GATEWAY_ROUTE}"
+  # ---- Check 7: message-daemon.mjs model route ----
+  MSG_DAEMON="${OC_HOST_ROOT}/.openclaw/bin/message-daemon.mjs"
+  if [[ -f "$MSG_DAEMON" ]]; then
+    if grep -q "'openclaw/cortex'" "$MSG_DAEMON"; then
+      pass "message-daemon.mjs route = ${C_GATEWAY_ROUTE}"
     else
-      fail "inbox-daemon route mismatch"
+      fail "message-daemon.mjs route mismatch"
     fi
+  fi
+
+  # ---- Check 8: message-daemon systemd service active ----
+  if systemctl is-active --quiet message-daemon 2>/dev/null; then
+    pass "message-daemon service active"
+  else
+    fail "message-daemon service not active"
   fi
 
   # ---- Check 8: Host permissions — bin dir must be 755 (not 700) ----

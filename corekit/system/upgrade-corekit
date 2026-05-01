@@ -160,39 +160,34 @@ case "${1:-}" in
       fi
     fi
 
-    # ---- Restart daemons / migrate to unified message-daemon ----
+    # ---- Restart daemons ----
     echo "==> Restarting daemons..."
 
-    # Check if message-daemon is already installed
-    if systemctl is-active --quiet message-daemon 2>/dev/null; then
+    # Install message-daemon.service if not yet installed (migration from old daemons)
+    MSG_SVC="/etc/systemd/system/message-daemon.service"
+    MSG_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/message-daemon.service"
+    if [[ ! -f "$MSG_SVC" ]] && [[ -f "$MSG_SVC_SRC" ]]; then
+      echo "  Installing message-daemon.service (first-time migration)..."
+      cp "$MSG_SVC_SRC" "$MSG_SVC"
+      systemctl daemon-reload
+      systemctl enable message-daemon
+    fi
+
+    # Stop and disable legacy daemons if still present
+    for old_svc in control-daemon inbox-daemon; do
+      if systemctl is-enabled --quiet "$old_svc" 2>/dev/null; then
+        systemctl stop "$old_svc" 2>/dev/null || true
+        systemctl disable "$old_svc" 2>/dev/null || true
+        echo "  Retired: ${old_svc}"
+      fi
+    done
+
+    # Restart message-daemon
+    if systemctl is-enabled --quiet message-daemon 2>/dev/null; then
       systemctl restart message-daemon
       echo "  Restarted: message-daemon"
     else
-      # Migration: detect old daemon and switch to unified message-daemon
-      OLD_DAEMON=""
-      OLD_CHANNEL=""
-      if systemctl is-active --quiet control-daemon 2>/dev/null; then
-        OLD_DAEMON="control-daemon"
-        OLD_CHANNEL="dashboard"
-      elif systemctl is-active --quiet inbox-daemon 2>/dev/null; then
-        OLD_DAEMON="inbox-daemon"
-        OLD_CHANNEL="gchat"
-      fi
-
-      if [[ -n "$OLD_DAEMON" ]]; then
-        echo "  Migrating from ${OLD_DAEMON} to message-daemon..."
-        systemctl stop "$OLD_DAEMON" 2>/dev/null || true
-        systemctl disable "$OLD_DAEMON" 2>/dev/null || true
-        echo "  Stopped: ${OLD_DAEMON}"
-      fi
-
-      # Re-start whatever daemon is active (old ones may still be running if not migrated)
-      for svc in control-daemon inbox-daemon; do
-        if systemctl is-active --quiet "$svc" 2>/dev/null; then
-          systemctl restart "$svc"
-          echo "  Restarted: ${svc}"
-        fi
-      done
+      echo "  [WARN] message-daemon not installed — manual service setup needed"
     fi
     ;;
   --status)

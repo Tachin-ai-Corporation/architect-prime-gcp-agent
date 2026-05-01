@@ -7,7 +7,7 @@
 #
 # Mirrors prime-bootstrap.sh but adapted for fleet agents:
 #   - Uses fleet workspace (specialty-specific SOUL/IDENTITY)
-#   - Installs message-daemon (unified, replaces inbox-daemon)
+#   - Installs message-daemon (unified polling daemon)
 #   - Reads agent identity from VM metadata
 #   - Same proven OpenClaw + ADC fix pattern
 #

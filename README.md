@@ -109,13 +109,13 @@ Your GCP Project
 │   │   ├── prefrontal      — Gemini 2.5 Flash — strategic planning
 │   │   ├── motor           — Gemini 2.5 Flash — execution (code + commands)
 │   │   └── cerebellum      — Gemini 2.5 Flash — verification + QA
-│   ├── control-daemon (systemd) → Firestore message bridge (Node.js, non-streaming + anti-spam)
+│   ├── message-daemon (systemd) → Unified message bridge (Node.js, non-streaming + anti-spam)
 │   ├── CoreKit (34 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
 └── Fleet Agent VMs (Compute Engine e2-medium, one per agent)
     ├── openclaw-gateway (Docker) → Specialist AI brain (cortex on Gemini 3.1 Pro)
-    ├── inbox-daemon (systemd)    → Google Chat polling via DWD (non-streaming + ACK timer)
+    ├── message-daemon (systemd) → Google Chat polling via DWD (non-streaming + ACK timer)
     ├── CoreKit (role-specific)   → Manifest-installed tools
     └── Specialty workspace       → SOUL.md, IDENTITY.md, TOOLS.md (per agent type)
 ```
@@ -240,12 +240,12 @@ The deploy API uses a **boot stub pattern**:
    - Starts OpenClaw container (`--network host`, port 18789)
    - Applies ADC auth patch for GCE metadata fallback
    - Warm-up probe through cortex route
-   - Installs `control-daemon` as systemd service
+   - Installs `message-daemon` as systemd service
 
 **Fleet agents** follow the same pattern via `infra/bootstrap/fleet-bootstrap.sh`:
 - `infra/install.sh --role fleet --job {specialty}` (chains `base.txt` + `role-fleet.txt` + `job-{specialty}.txt`)
 - Deploys specialty workspace, validates rendered config via `validate-contracts --file`
-- Starts `inbox-daemon` for Google Chat polling
+- Starts `message-daemon` for Google Chat polling
 - Self-reports online status to Firestore
 
 **Key benefit**: Bootstrap changes only require a `git push` — no Cloud Run rebuild needed.

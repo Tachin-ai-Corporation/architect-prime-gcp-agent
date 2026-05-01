@@ -176,7 +176,7 @@ if [[ $? -ne 0 ]]; then
   exit 1
 fi
 
-# ---- Write token file for control-daemon ----
+# ---- Write token file for message-daemon ----
 mkdir -p "$(dirname "$TOKEN_FILE")"
 echo "$TOKEN" > "$TOKEN_FILE"
 log "Token file updated: $TOKEN_FILE"
@@ -187,7 +187,7 @@ if [[ "$DO_RESTART" == "--restart" ]]; then
   docker restart openclaw-gateway 2>/dev/null || log "  (gateway not running)"
   log "Waiting 60s for boot..."
   sleep 60
-  log "Restarting control-daemon..."
-  systemctl restart control-daemon 2>/dev/null || log "  (control-daemon not available)"
+  log "Restarting message-daemon..."
+  systemctl restart message-daemon 2>/dev/null || log "  (message-daemon not available)"
   log "Done."
 fi

@@ -3,7 +3,7 @@
 # dashboard-respond — Write a Prime response to Firestore
 #
 # Used by Cortex when sub-agent announces trigger a follow-up
-# response that can't go through control-daemon (async delivery).
+# response that can't go through message-daemon (async delivery).
 # Writes directly to /primes/{PRIME_ID}/messages/ in Firestore.
 #
 # Usage:

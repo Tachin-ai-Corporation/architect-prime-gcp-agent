@@ -118,8 +118,8 @@ else
   echo "     gcloud compute instances describe fleet-${AGENT_NAME} \\"
   echo "       --zone=\$(jq -r '.agents[\"${AGENT_NAME}\"].zone' ${REGISTRY_FILE}) \\"
   echo "       --project=fleet-${AGENT_NAME}"
-  echo "  5. Is inbox-daemon running on the VM?"
-  echo "     gcloud compute ssh fleet-${AGENT_NAME} --command='systemctl status inbox-daemon'"
+  echo "  5. Is message-daemon running on the VM?"
+  echo "     gcloud compute ssh fleet-${AGENT_NAME} --command='systemctl status message-daemon'"
   echo
   exit 1
 fi

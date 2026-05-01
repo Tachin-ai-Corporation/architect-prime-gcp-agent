@@ -59,7 +59,7 @@ export CHAT_SPACE_ID=spaces/YOUR_SPACE_ID
 
 ### Step 5: Test
 
-@-mention the agent user in the Chat space. The `inbox-daemon` detects the mention and responds.
+@-mention the agent user in the Chat space. The `message-daemon` detects the mention and responds.
 
 ## How It Works
 
@@ -67,7 +67,7 @@ export CHAT_SPACE_ID=spaces/YOUR_SPACE_ID
 Human @-mentions agent user in Chat
     │
     ▼
-inbox-daemon polls Chat API (spaces.messages.list)
+message-daemon polls Chat API (spaces.messages.list)
     │ uses DWD: SA impersonates agent user via signJwt
     │
     ▼

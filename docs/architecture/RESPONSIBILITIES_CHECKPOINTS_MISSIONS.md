@@ -305,7 +305,7 @@ Checkpoints can be created by:
 
 **1. Human via chat** — User says "Deploy the new auth service" in Google Chat or dashboard:
 ```
-inbox-daemon receives message
+message-daemon receives message
     → Cortex classifies as a task (not a question)
     → Cortex creates a checkpoint document in Firestore
     → Status: queued
@@ -318,7 +318,7 @@ inbox-daemon receives message
 ```
 PM OpenClaw creates checkpoint via chat-send to target Prime:
     "CHECKPOINT: Title: Build auth service | Description: ... | Priority: 1"
-    → Target Prime's inbox-daemon parses it
+    → Target Prime's message-daemon parses it
     → Creates checkpoint document
     → Queues it
 ```
@@ -548,14 +548,14 @@ PM Prime sends structured message via chat-send (DWD):
     Message: "CHECKPOINT-ASSIGN: {checkpoint JSON}"
     │
     ▼
-fleet-swe-stan's inbox-daemon picks up the message
+fleet-swe-stan's message-daemon picks up the message
     → Parses CHECKPOINT-ASSIGN command
     → Creates checkpoint document in fleet-swe-stan's Firestore
     → Queues it
     → Responds: "Checkpoint CP-003 accepted and queued"
 ```
 
-For human-assigned checkpoints, the PM posts a task notification to Google Chat with clear instructions and acceptance criteria. The human marks it done by responding in chat, which the PM's inbox-daemon picks up and processes.
+For human-assigned checkpoints, the PM posts a task notification to Google Chat with clear instructions and acceptance criteria. The human marks it done by responding in chat, which the PM's message-daemon picks up and processes.
 
 ---
 
@@ -883,7 +883,7 @@ The queue-worker uses a **persistent named session** (`session:queue-worker`). T
 ### Phase 3: Missions + Cross-Agent (Week 3)
 
 12. **Create mission-create, mission-status, mission-distribute scripts**
-13. **Add inbox-daemon command parsing**: Recognize CHECKPOINT-ASSIGN messages from other OpenClaws
+13. **Add message-daemon command parsing**: Recognize CHECKPOINT-ASSIGN messages from other OpenClaws
 14. **Implement dependency resolution**: When checkpoint completes, auto-queue dependent checkpoints
 15. **Add mission-review responsibility** with PM reporting
 16. **Test**: Create a mission with 3 checkpoints across 2 OpenClaws, verify sequential execution with dependency resolution
@@ -907,7 +907,7 @@ The queue-worker uses a **persistent named session** (`session:queue-worker`). T
 
 **What happens:**
 
-1. **inbox-daemon** picks up the message, routes to Cortex
+1. **message-daemon** picks up the message, routes to Cortex
 
 2. **Cortex** classifies: this is a mission, not a single task
    - Dispatches to **Hippocampus**: recalls billing service context, past discussions
@@ -941,6 +941,6 @@ The queue-worker uses a **persistent named session** (`session:queue-worker`). T
 10. When CP-004 completes, **Cortex notifies the DevOps team** in Chat:
     > "CP-005 is ready: Execute zero-downtime cutover. Here's the runbook from the Specialist..."
 
-11. DevOps team responds "Done" in Chat. **inbox-daemon** picks it up, marks CP-005 completed.
+11. DevOps team responds "Done" in Chat. **message-daemon** picks it up, marks CP-005 completed.
 
 12. **Mission marked complete.** PM generates final report. Sarah gets notified.

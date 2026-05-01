@@ -111,7 +111,7 @@ Dashboard (Cloud Run — Next.js)
 
 1. Dashboard creates a GCE VM with a **boot stub** startup script
 2. Boot stub curls `infra/bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
-3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `control-daemon`
+3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `message-daemon`
 4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.15) for stability
 
 ### Fleet Agent Lifecycle
@@ -136,7 +136,7 @@ Dashboard (Cloud Run — Next.js)
     - SOUL.md is loaded automatically by OpenClaw from workspace — no `systemPrompt` injection
     - Starts container with `GOOGLE_CLOUD_LOCATION` from contracts, applies ADC patch (wildcard across all agent dirs), restarts gateway
     - Runs Vertex AI smoke test (3 attempts with backoff, 60s timeout, contract-driven port/route)
-    - Starts `inbox-daemon` (reads gateway route from `contracts.json`)
+    - Starts `message-daemon` (reads gateway route from `contracts.json`)
     - Self-reports `status: online` to Firestore via Prime's `update-status` API endpoint
     - Prints `FLEET AGENT SETUP COMPLETE` marker for fleet-monitor
 
@@ -152,9 +152,9 @@ Dashboard (Cloud Run — Next.js)
 
 Both Prime and Fleet agents use the same async-first pattern. The daemon submits work to the gateway via a non-streaming call and delivers results directly or monitors for async delivery.
 
-**Dashboard → Prime (control-daemon.mjs — Node.js, non-streaming):**
+**Dashboard → Prime (message-daemon.mjs — Node.js, non-streaming):**
 1. User types in dashboard → API writes to Firestore `messages` collection
-2. `control-daemon` bash wrapper detects `.mjs` → `docker exec` runs Node.js version inside container
+2. `start-message-daemon` wrapper runs `message-daemon.mjs` inside Docker container (CHANNEL=dashboard auto-detected from `prime-config.json`)
 3. Node.js daemon polls Firestore every 5s with GCE metadata access token
 4. New message → **Immediate `markProcessed`** (prevents re-pickup on next poll cycle) → **Write TASK.json** to workspace
 5. **Anti-spam at intake:**
@@ -211,8 +211,8 @@ Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. Op
 The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contracts.json` on every VM. Scripts read from it at runtime instead of hardcoding values.
 
 **`validate-contracts`** is the enforcement tool. Three modes:
-- **Repo mode** (`validate-contracts`) — checks source files: both bootstraps, inbox-daemon, control-daemon.mjs, config templates. Verifies location, model route, agent ID, OpenClaw pin, no `systemPrompt` key.
-- **Runtime mode** (`validate-contracts --runtime`) — checks a live VM: .env on disk, container running, gateway healthy, ADC patch applied, auth-profiles emptied, inbox-daemon route.
+- **Repo mode** (`validate-contracts`) — checks source files: both bootstraps, message-daemon.mjs, config templates. Verifies location, model route, agent ID, OpenClaw pin, no `systemPrompt` key.
+- **Runtime mode** (`validate-contracts --runtime`) — checks a live VM: .env on disk, container running, gateway healthy, ADC patch applied, auth-profiles emptied, message-daemon route, message-daemon service active.
 - **File mode** (`validate-contracts --file <config.json>`) — checks a rendered config: valid JSON, no systemPrompt, correct default agent ID.
 
 **When it runs:**
@@ -516,7 +516,7 @@ architect-prime/
 | | `upgrade-openclaw` | Rebuilds OpenClaw container from pinned commit |
 | | `bootstrap_smoke.sh` | Vertex AI smoke test (3 attempts with backoff) |
 | | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
-| **chat/** | `inbox-daemon` | Polls Google Chat via DWD, reads gateway route from contracts.json |
+| **daemon/** | `message-daemon.mjs` | Unified Node.js daemon for both Prime (dashboard) and Fleet (gchat) |
 | | `chat-send` | Sends messages to Google Chat via DWD |
 | | `chat-read` | Reads messages from Google Chat via DWD |
 | | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt |
@@ -529,9 +529,7 @@ architect-prime/
 | **memory/** | `core-memory-read` | Queries Firestore Core Memory by category/tags |
 | | `core-memory-write` | Writes durable facts to Firestore Core Memory |
 | | `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
-| **dashboard/** | `control-daemon` | Bash wrapper — starts `control-daemon.mjs` inside container |
-| | `control-daemon.mjs` | Node.js daemon: Firestore polling, non-streaming dispatch, anti-spam, async watchdog |
-| | `command-runner` | Executes commands from Firestore, streams output |
+| **dashboard/** | `command-runner` | Executes commands from Firestore, streams output |
 | | `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
 | **system/** | `upgrade-corekit` | In-place CoreKit update from GitHub ref (validates contracts post-upgrade) |
 | | `validate-contracts` | Pre-flight check: all cross-cutting values match contracts.json |
@@ -553,7 +551,7 @@ architect-prime/
 | `/opt/openclaw/.openclaw/skills/` | Skill definitions |
 | `/root/.openclaw/.gateway-token` | Gateway auth token |
 | `/var/log/fleet-agent-setup.log` | Bootstrap log (fleet VMs) |
-| `/var/lib/inbox-daemon/` | inbox-daemon state (high-water mark) |
+| `/var/lib/message-daemon/` | message-daemon state (high-water mark) |
 
 ---
 

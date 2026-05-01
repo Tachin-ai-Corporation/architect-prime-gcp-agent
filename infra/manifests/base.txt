@@ -21,9 +21,8 @@ corekit/chat/dwd-token .openclaw/bin/dwd-token
 corekit/chat/chat-send .openclaw/bin/chat-send
 corekit/chat/chat-read .openclaw/bin/chat-read
 corekit/chat/channel-respond .openclaw/bin/channel-respond
-corekit/chat/inbox-daemon .openclaw/bin/inbox-daemon
 
-# Unified message daemon (replaces control-daemon + inbox-daemon)
+# Unified message daemon
 corekit/daemon/message-daemon.mjs .openclaw/bin/message-daemon.mjs
 corekit/daemon/start-message-daemon .openclaw/bin/start-message-daemon
 
@@ -41,7 +40,7 @@ corekit/README.md .openclaw/corekit/README.md
 corekit/exec-approvals.json .openclaw/exec-approvals.json
 corekit/config/agent-types.json .openclaw/corekit/agent-types.json
 corekit/config/chat-config.json.tmpl .openclaw/corekit/chat-config.json.tmpl
-corekit/config/inbox-daemon.service .openclaw/corekit/inbox-daemon.service
+corekit/config/message-daemon.service .openclaw/corekit/message-daemon.service
 corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.service
 
 # Config templates (both needed for render-config)

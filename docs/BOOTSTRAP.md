@@ -28,7 +28,7 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 | 10 | Apply config via RPC (`config.apply` + baseHash retry) | ~15-60s |
 | 11 | Post-apply hardening + inject Docker CLI | ~5s |
 | 12 | Write `prime-config.json` | ~1s |
-| 13 | Install `control-daemon` as systemd service | ~2s |
+| 13 | Install `message-daemon` as systemd service | ~2s |
 
 **Total: ~12-15 minutes from VM creation to `PRIME VM SETUP COMPLETE`**
 
@@ -64,7 +64,7 @@ grep "startup-script:" ... | grep "==>"
 # ==> Rendering bootstrap config...
 # ==> Applying config via RPC...
 # ==> Post-apply hardening...
-# ==> Installing control-daemon systemd service...
+# ==> Installing message-daemon systemd service...
 #   PRIME VM SETUP COMPLETE
 ```
 
@@ -77,9 +77,9 @@ gcloud compute ssh prime-<name> --zone=us-central1-a --project=<project>
 sudo docker ps
 sudo docker logs openclaw-gateway --tail 50
 
-# Check control-daemon
-sudo systemctl status control-daemon
-sudo journalctl -u control-daemon --since "1 hour ago"
+# Check message-daemon
+sudo systemctl status message-daemon
+sudo journalctl -u message-daemon --since "1 hour ago"
 
 # Check CoreKit files
 ls -la /opt/openclaw/.openclaw/bin/
@@ -97,11 +97,9 @@ To modify the bootstrap:
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `bootstrap/prime-bootstrap.sh` | Full VM setup script (standalone bash) |
+| `infra/bootstrap/prime-bootstrap.sh` | Full VM setup script (standalone bash) |
 | `app/src/app/api/primes/[id]/deploy/route.ts` | Deploy API with boot stub |
-| `bundle/corekit/config/openclaw-bootstrap.json5.tmpl` | OpenClaw config template |
-| `bundle/corekit/bin/control-daemon` | Firestore → OpenClaw message bridge |
-| `install.sh` | CoreKit manifest installer |
-| `manifest.txt` | Repo path → VM path mapping |
+| `corekit/config/openclaw-bootstrap.json5.tmpl` | OpenClaw config template |
+| `corekit/daemon/message-daemon.mjs` | Unified message daemon (dashboard + gchat) |
+| `infra/install.sh` | CoreKit manifest installer |
+| `infra/manifests/base.txt` | Repo path → VM path mapping |

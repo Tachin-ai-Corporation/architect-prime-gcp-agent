@@ -2,9 +2,22 @@
 # start-message-daemon — Wrapper to launch message-daemon.mjs inside Docker
 # Needed because systemd Environment= can't handle spaces in AGENT_MENTION.
 # Reads chat-config.json for agent-specific values.
+# Auto-detects CHANNEL from role config if not set via env.
 
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+
+# Auto-detect CHANNEL if not explicitly set
+if [ -z "$CHANNEL" ]; then
+  PRIME_CFG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+  if [ -f "$PRIME_CFG" ]; then
+    CHANNEL="dashboard"
+  elif [ -f "$CONFIG" ]; then
+    CHANNEL="gchat"
+  else
+    CHANNEL="dashboard"  # safe default
+  fi
+fi
 
 # Read config values
 if [ -f "$CONFIG" ]; then

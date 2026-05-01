@@ -316,7 +316,7 @@ function HomeInner() {
         setMessages((prev) => [...prev, {
           id: "sys-deploy-status", sender: "prime",
           text: r
-            ? "✅ VM creation started. Installing CoreKit + control-daemon..."
+            ? "✅ VM creation started. Installing CoreKit + message-daemon..."
             : "⚠️ VM creation failed. Check Cloud Run logs.",
           timestamp: new Date().toISOString(),
         }]);

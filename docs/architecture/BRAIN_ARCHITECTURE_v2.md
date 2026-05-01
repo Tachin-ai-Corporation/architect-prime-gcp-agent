@@ -358,7 +358,7 @@ Dispatch is via `exec brain-exec <agent-id> "<task>"` (synchronous, blocking).
 Gateway communication uses hybrid SSE streaming with non-stream fallback.
 
 ```
-User message (via dashboard → Firestore → control-daemon.mjs)
+User message (via dashboard → Firestore → message-daemon.mjs)
     │
     ▼
 ┌─────────────────────────────────────────────────┐

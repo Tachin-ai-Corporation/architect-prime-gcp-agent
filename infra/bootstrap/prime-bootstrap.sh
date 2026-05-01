@@ -100,7 +100,7 @@ else
   C_GATEWAY_ROUTE="openclaw/cortex"
 fi
 
-# ---- 4) Save gateway token for control-daemon ----
+# ---- 4) Save gateway token for message-daemon ----
 # render-config (step 9) will update this with the final token;
 # write it now so the old config path works if render-config fails.
 mkdir -p /root/.openclaw
@@ -433,7 +433,7 @@ fi
 # ---- 12d) Warm-up probe (pre-warm ADC tokens) ----
 # ADR: After the ADC patch + model discovery + contract validation, fire a
 # lightweight request through the full cortex route to pre-warm ADC tokens.
-# This ensures the first real user message from control-daemon doesn't eat
+# This ensures the first real user message from message-daemon doesn't eat
 # 10-20s of token initialization.
 info "Running warm-up probe..."
 curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \

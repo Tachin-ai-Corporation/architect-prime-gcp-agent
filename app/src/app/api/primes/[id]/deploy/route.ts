@@ -14,10 +14,10 @@ interface RouteContext {
  * The VM startup script:
  *   1. Reads all config from VM metadata attributes
  *   2. Downloads install.sh (manifest-based CoreKit installer)
- *   3. Installs CoreKit (agent-ask, control-daemon, etc.)
+ *   3. Installs CoreKit (agent-ask, message-daemon, etc.)
  *   4. Writes prime-config.json with the Prime ID + project
- *   5. Installs control-daemon as a systemd service
- *   6. control-daemon starts → writes status:"online" to Firestore
+ *   5. Installs message-daemon as a systemd service
+ *   6. message-daemon starts → writes status:"online" to Firestore
  */
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
@@ -166,7 +166,7 @@ async function createVM(
  *
  * This is a thin boot stub — it downloads the real bootstrap script
  * from GitHub and executes it. All the heavy lifting (Docker build,
- * OpenClaw config, control-daemon) is in infra/bootstrap/prime-bootstrap.sh.
+ * OpenClaw config, message-daemon) is in infra/bootstrap/prime-bootstrap.sh.
  *
  * Why: embedding 230 lines of bash inside a JS template literal
  * caused 5 consecutive deploy failures due to escape conflicts

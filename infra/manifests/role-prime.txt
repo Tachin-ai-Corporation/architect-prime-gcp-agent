@@ -14,8 +14,6 @@ corekit/fleet/fleet-upgrade .openclaw/bin/fleet-upgrade
 corekit/fleet/fleet-health-check .openclaw/bin/fleet-health-check
 
 # Dashboard bridge
-corekit/dashboard/control-daemon .openclaw/bin/control-daemon
-corekit/dashboard/control-daemon.mjs .openclaw/bin/control-daemon.mjs
 corekit/dashboard/command-runner .openclaw/bin/command-runner
 corekit/dashboard/dashboard-respond .openclaw/bin/dashboard-respond
 corekit/gateway/discover-models .openclaw/bin/discover-models
