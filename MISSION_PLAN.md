@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v5.2.0`
+> - **Current version:** `v5.3.0`
 
 ---
 
@@ -44,13 +44,14 @@ Dashboard (Cloud Run — Next.js)
          │
          ▼
     Prime VM (e2-medium, Ubuntu 22.04)
-    ├── control-daemon (systemd)
-    │   └── Bash wrapper → docker exec Node.js daemon (control-daemon.mjs)
+    ├── message-daemon (systemd)
+    │   └── start-message-daemon → docker exec Node.js (message-daemon.mjs, CHANNEL=dashboard)
     │       ├── Polls Firestore messages every 5s via GCE metadata tokens
     │       ├── Non-streaming gateway dispatch (stream: false)
     │       ├── Anti-spam: message dedup (60s), immediate markProcessed, single-flight watchdog
     │       ├── Async path: 15s ACK timer → watchdog monitors for delivery
-    │       └── Conversation history (4 turns) + structured JSON logging
+    │       ├── Conversation history (4 turns) + think-block stripping
+    │       └── Unified daemon — same code as Fleet (only channel adapter differs)
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
     │   ├── GOOGLE_CLOUD_LOCATION=global (required for Gemini 3.1+ preview models)
@@ -77,12 +78,12 @@ Dashboard (Cloud Run — Next.js)
         ├── fleet/: fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-status,
         │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
         ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
-        ├── chat/: inbox-daemon, chat-send, chat-read, dwd-token
+        ├── chat/: chat-send, chat-read, dwd-token, channel-respond
+        ├── daemon/: message-daemon.mjs (unified), start-message-daemon (wrapper)
         ├── brain/: brain-exec, build-system-prompt, agent-ask, assemble-tools,
         │          brain-telemetry-write, brain-telemetry-read, check-plan-compliance
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
-        ├── dashboard/: control-daemon, control-daemon.mjs (SSE ack + Task tracking),
-        │              command-runner, dashboard-respond
+        ├── dashboard/: command-runner, dashboard-respond
         ├── system/: upgrade-corekit, validate-contracts, web-search
         └── config/: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
@@ -90,12 +91,14 @@ Dashboard (Cloud Run — Next.js)
     ├── openclaw-gateway (Docker, --network host, port 18789)
     │   ├── GOOGLE_CLOUD_LOCATION=global (same as Prime)
     │   ├── Default agent: cortex (Gemini 3.1 Pro Preview via Vertex AI ADC)
+    │   ├── Brain sub-agents: same 6-agent architecture as Prime
     │   ├── SOUL.md loaded automatically from workspace (no systemPrompt injection)
     │   ├── timeoutSeconds: 600 (safety ceiling; real timeout is heartbeat-based)
     │   └── ADC fix: model-auth-env patched for GCE metadata fallback
     │
-    ├── inbox-daemon (systemd)
-    │   └── Polls Google Chat via DWD → POST to openclaw/cortex on local gateway
+    ├── message-daemon (systemd)
+    │   └── start-message-daemon → docker exec Node.js (message-daemon.mjs, CHANNEL=gchat)
+    │       └── Same code as Prime — built-in DWD, polls Chat API, delivers via Chat API
     │
     └── CoreKit (manifest-installed from same repo)
 ```
@@ -174,22 +177,19 @@ Both Prime and Fleet agents use the same async-first pattern. The daemon submits
 11. HTTP ceiling: 600s (research dispatches take 60-120s)
 12. Structured JSON logging with mode, taskId, elapsed_ms, delivery method (agent/watchdog-log)
 
-**Google Chat → Fleet Agent (inbox-daemon — Bash+Python, non-streaming):**
-1. `inbox-daemon` polls Google Chat API via DWD impersonation every 10s
+**Google Chat → Fleet Agent (GChatChannel adapter in message-daemon.mjs):**
+The fleet chat pipeline is identical to Prime's — same daemon, same code path, same features. The only difference is the channel adapter:
+1. `GChatChannel.poll()` queries Google Chat API via built-in DWD token (Node.js, no bash/python)
 2. Only processes messages containing the agent's `@FirstName LastName` mention
-3. Strips @-mention → **Immediate high-water mark advance** (prevents re-pickup on crash/restart) → writes TASK.json
-4. **Anti-spam at intake:**
-   - High-water-mark: timestamp-based filter skips all messages older than last processed
-   - `check_and_mark` (seen.json): message-name-based dedup, prunes to last 200
-   - Immediate HW advance: mark consumed BEFORE the gateway call blocks
-5. **Gateway dispatch (`stream: false`, 120s timeout):** POST to local gateway, blocks until model completes full turn
-6. **Background ACK timer:** After 15s, if gateway hasn't responded, send "🔄 Processing..." via `chat-send` while connection stays alive
-7. When gateway returns → send full response via `chat-send`
-8. **Startup health checks:** DWD token (exponential backoff) + gateway token validation (prevents crash-loop on 401)
-9. **Gateway token resolution:** Host `.gateway-token` → host `openclaw.json` → Docker container fallback (daemon runs as `ubuntu` on host, not in Docker)
-10. Space discovery cached for 5 minutes
+3. Strips @-mention → marks consumed (high-water mark + seen map) → writes TASK.json
+4. Steps 4-12 are identical to Prime (same `routeMessage()`, `watchdogCheck()`, ACK timer, dedup, history)
+5. Fleet watchdog uses Path 2 only (log parse) since fleet has no Firestore
+6. Space discovery cached for 5 minutes
+7. Built-in DWD: IAM `signJwt` API from inside Docker (no key files, `--network host`)
 
-**Unified channel abstraction:** Both daemons write `TASK.json` with channel metadata. Agents use `exec channel-respond "text"` which reads TASK.json and routes to the correct backend (`dashboard-respond` for Firestore, `chat-send` for Google Chat). This makes Prime and Fleet brains architecturally identical.
+**Unified daemon architecture (v5.3.0):** A single `message-daemon.mjs` (683 lines, Node.js) runs on both Prime and Fleet via `docker exec`. The `CHANNEL` env var (`dashboard` or `gchat`) selects the channel adapter — all shared logic (gateway client, ACK timer, dedup, conversation history, think-block stripping, watchdog, status check) is guaranteed identical. The `start-message-daemon` wrapper reads `chat-config.json` for agent-specific values and launches the daemon inside the Docker container.
+
+**Channel abstraction (agent side):** Both channel adapters write `TASK.json` with channel metadata. Agents use `exec channel-respond "text"` which reads TASK.json and routes to the correct backend (`dashboard-respond` for Firestore, `chat-send` for Google Chat). This makes Prime and Fleet brains architecturally identical.
 
 ### Vertex AI Authentication (ADC)
 
@@ -585,20 +585,18 @@ architect-prime/
 
 ## Roadmap
 
-### Completed: v5.2.0 — Async Delivery Stabilization + Anti-Spam
-> *Non-streaming gateway, spam elimination, fleet parity.*
+### Completed: v5.3.0 — Unified Message Daemon
+> *Single daemon for both Prime and Fleet. Zero drift by construction.*
 
-1. **Non-streaming gateway (Prime + Fleet)** — Replaced SSE/observation-window stack with `stream: false` on both `control-daemon.mjs` (Prime) and `inbox-daemon` (Fleet). Model response guaranteed complete in a single HTTP round-trip.
-2. **Background ACK timer (Prime + Fleet)** — 15s timer sends processing ack while the gateway connection stays alive. Replaces the old pattern of severing the connection at 15s.
-3. **Anti-spam (Prime)** — Four fixes: immediate `markProcessed` at intake, 60s text dedup window, single-flight watchdog, log offset tracking. Verified 1:1 message-to-response ratio.
-4. **Anti-spam (Fleet)** — Immediate high-water mark advance (mirrors `markProcessed`), gateway token health check at startup (prevents crash-loop on 401), state dir ownership fix (`ubuntu` user).
-5. **Fleet gateway token fix** — Multi-path resolution: host `.gateway-token` → host `openclaw.json` → Docker fallback. The old path (`/root/.openclaw/`) was only accessible inside the container.
-6. **Two-Phase Turn Protocol** — Cortex classifies → writes PLAN.md → dispatches via brain-exec. PreTurn/PostTurn hooks enforce compliance.
-7. **Task lifecycle** — Every message tracked as Firestore Task document with status, timing, delivery method.
-8. **Dispatch telemetry** — Events written to `primes/{id}/dispatch-log` via fire-and-forget background calls.
-9. **Known issue:** Prime watchdog's Firestore Path 1 does not detect `channel-respond` delivery (likely missing composite index), causing a spurious 5-min timeout error even when the research result was already delivered.
+1. **Unified `message-daemon.mjs`** — Replaced `control-daemon.mjs` (Prime, 720 lines) and `inbox-daemon` (Fleet, 513 lines Bash+Python) with a single 683-line Node.js daemon. Channel adapter pattern: `FirestoreChannel` (Prime) and `GChatChannel` (Fleet) are the only divergence.
+2. **Built-in DWD in Node.js** — Ported `dwd-token` bash script to native Node.js using IAM `signJwt` API. No key files, works inside Docker via `--network host`. Token cached for 58 minutes.
+3. **Fleet gains parity** — Fleet agents now have conversation history (4-turn window), think-block stripping, watchdog (log-parse path), and status-aware busy responses — all previously Prime-only.
+4. **Eliminated `set -euo pipefail` crash class** — The old `inbox-daemon` used bash `set -e` in a long-running concurrent daemon, causing repeated crashes on background process cleanup. Pure Node.js `try/catch` eliminates this entirely.
+5. **`start-message-daemon` wrapper** — Reads `chat-config.json` for values with spaces (AGENT_MENTION). Launches daemon inside Docker via `docker exec`.
+6. **`upgrade-corekit` migration** — Detects old services (control-daemon, inbox-daemon), stops/disables them, starts message-daemon.
+7. **Bootstrap scripts updated** — Both `fleet-bootstrap.sh` and `prime-bootstrap.sh` now install `message-daemon.service`.
 
-### Current: v5.3 — Watchdog Reliability + Model Flexibility
+### Current: v5.4 — Watchdog Reliability + Model Flexibility
 > *Goal: Eliminate false watchdog timeouts, enable per-agent model overrides.*
 
 1. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
