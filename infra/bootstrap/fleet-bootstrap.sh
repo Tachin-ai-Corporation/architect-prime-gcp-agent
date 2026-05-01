@@ -7,7 +7,7 @@
 #
 # Mirrors prime-bootstrap.sh but adapted for fleet agents:
 #   - Uses fleet workspace (specialty-specific SOUL/IDENTITY)
-#   - Installs inbox-daemon instead of control-daemon
+#   - Installs message-daemon (unified, replaces inbox-daemon)
 #   - Reads agent identity from VM metadata
 #   - Same proven OpenClaw + ADC fix pattern
 #
@@ -243,11 +243,11 @@ mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
 
-# ---- 8) Install inbox-daemon systemd unit ----
-info "Installing inbox-daemon systemd unit..."
-cat > /etc/systemd/system/inbox-daemon.service <<UNIT
+# ---- 8) Install message-daemon systemd unit ----
+info "Installing message-daemon systemd unit..."
+cat > /etc/systemd/system/message-daemon.service <<UNIT
 [Unit]
-Description=Fleet Agent Inbox Daemon (DWD Chat Polling)
+Description=Unified Message Daemon (GChat Channel)
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -255,12 +255,10 @@ Wants=network-online.target
 Type=simple
 User=root
 Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
-Environment=AGENT_ID=${AGENT_ID}
-Environment=AGENT_USER_EMAIL=${AGENT_USER_EMAIL}
-Environment=CHAT_SPACE_ID=${CHAT_SPACE_ID:-}
-Environment=DWD_SIGNER_SA=${DWD_SIGNER_SA:-}
+Environment=CHANNEL=gchat
 Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
-ExecStart=${OC_HOST_DIR}/bin/inbox-daemon
+Environment=AGENT_ID=${AGENT_ID}
+ExecStart=${OC_HOST_DIR}/bin/start-message-daemon
 Restart=always
 RestartSec=10
 
@@ -268,7 +266,7 @@ RestartSec=10
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
-systemctl enable inbox-daemon
+systemctl enable message-daemon
 
 # ============================================================
 # PHASE 2 — OpenClaw Docker image + config
@@ -502,21 +500,19 @@ curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/comple
 # ADR: File Ownership Model
 # install.sh chowns everything to 1000:1000 (ubuntu). But fleet-bootstrap
 # runs as root, and root's umask is 077. Any mkdir/cp/sed AFTER install.sh
-# creates files/dirs with 700 permissions (root-only). The inbox-daemon
-# service needs to traverse dirs to reach dwd-token. This sweep MUST be
-# the LAST thing before services start.
-# Bug history: stan's inbox-daemon couldn't access dwd-token because /bin/
-# was 700 owned by ubuntu — root traversal was blocked. v4.0.0 regression.
+# creates files/dirs with 700 permissions (root-only). The message-daemon
+# wrapper needs to traverse dirs. This sweep MUST be the LAST thing before
+# services start.
 info "Final permissions sweep..."
 find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 18) Start inbox-daemon ----
-info "Starting inbox-daemon..."
+# ---- 18) Start message-daemon ----
+info "Starting message-daemon..."
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
-  systemctl start inbox-daemon || warn "inbox-daemon start failed (DWD may not be configured)"
+  systemctl start message-daemon || warn "message-daemon start failed (DWD may not be configured)"
 else
-  warn "inbox-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
+  warn "message-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
 fi
 
 # ---- 19) Report completion to Firestore via Prime's API ----

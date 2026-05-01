@@ -13,7 +13,7 @@
 #   5. Wait for gateway readiness
 #   6. Render + apply bootstrap config via RPC (retry/baseHash)
 #   7. Container hardening + Docker CLI injection
-#   8. Install control-daemon systemd service
+#   8. Install message-daemon systemd service (unified daemon)
 # ============================================================
 set -euo pipefail
 
@@ -466,11 +466,11 @@ info "Final permissions sweep..."
 find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 14) Install control-daemon as systemd service ----
-info "Installing control-daemon systemd service..."
-cat > /etc/systemd/system/control-daemon.service <<UNIT
+# ---- 14) Install message-daemon as systemd service ----
+info "Installing message-daemon systemd service..."
+cat > /etc/systemd/system/message-daemon.service <<UNIT
 [Unit]
-Description=Architect Prime Control Daemon (Firestore Polling)
+Description=Unified Message Daemon (Dashboard Channel)
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -478,11 +478,12 @@ Wants=network-online.target
 Type=simple
 User=root
 Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
-Environment=AGENT_ID=${AGENT_ID}
+Environment=CHANNEL=dashboard
 Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
+Environment=AGENT_ID=${AGENT_ID}
 Environment=PRIME_ID=${PRIME_ID}
 Environment=POLL_INTERVAL=5
-ExecStart=${OC_HOST_DIR}/bin/control-daemon
+ExecStart=${OC_HOST_DIR}/bin/start-message-daemon
 Restart=always
 RestartSec=10
 
@@ -491,8 +492,8 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable control-daemon
-systemctl start control-daemon
+systemctl enable message-daemon
+systemctl start message-daemon
 
 # ---- 14) Install command-runner as systemd service ----
 info "Installing command-runner systemd service..."
@@ -542,7 +543,7 @@ echo "  OpenClaw commit: ${STABLE_COMMIT:0:12}"
 echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"
-echo "  Daemon         : Node.js (control-daemon.mjs)"
+echo "  Daemon         : Node.js (message-daemon.mjs)"
 echo "  Dispatch       : brain-exec wrapper + SSE streaming"
 echo "  Health check   : fleet-health-check.timer (every 15m)"
 echo "============================================"
