@@ -33,7 +33,7 @@ if [ -f "$CONFIG" ]; then
   [ -z "$DWD_SIGNER_SA" ] && DWD_SIGNER_SA="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('dwdSignerSa',''))" 2>/dev/null)"
 fi
 
-exec docker exec \
+exec stdbuf -oL docker exec \
   -e CHANNEL="${CHANNEL:-gchat}" \
   -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
   -e AGENT_ID="${AGENT_ID:-agent}" \
