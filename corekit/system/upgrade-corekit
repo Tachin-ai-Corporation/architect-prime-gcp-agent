@@ -196,6 +196,9 @@ case "${1:-}" in
       fi
     done
 
+    # Flush filesystem before restart — docker bind-mount may cache old file
+    sync
+    sleep 1
     # Restart message-daemon
     if systemctl is-enabled --quiet message-daemon 2>/dev/null; then
       systemctl restart message-daemon
