@@ -71,8 +71,9 @@ let activeWatchdogTaskId = null;
 let lastLogOffset = 0;
 
 // ---- Logging ----
+// Use stderr (unbuffered) instead of stdout (buffered in non-TTY docker exec)
 function log(msg, meta = {}) {
-  console.log(JSON.stringify({ ts: new Date().toISOString(), svc: 'message-daemon', ch: CHANNEL, msg, ...meta }));
+  process.stderr.write(JSON.stringify({ ts: new Date().toISOString(), svc: 'message-daemon', ch: CHANNEL, msg, ...meta }) + '\n');
 }
 
 // ---- GCE Metadata Access Token ----
