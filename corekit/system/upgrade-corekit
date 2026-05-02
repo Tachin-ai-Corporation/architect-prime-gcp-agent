@@ -199,10 +199,18 @@ case "${1:-}" in
     # Flush filesystem before restart — docker bind-mount may cache old file
     sync
     sleep 1
+
+    # Kill ALL orphaned message-daemon node processes inside the container.
+    # docker exec only kills the host-side process — the node process inside
+    # the container keeps running, causing duplicate message pickup and
+    # phantom watchdog timeouts from old daemon instances.
+    docker exec openclaw-gateway pkill -f 'message-daemon.mjs' 2>/dev/null || true
+    sleep 1
+
     # Restart message-daemon
     if systemctl is-enabled --quiet message-daemon 2>/dev/null; then
       systemctl restart message-daemon
-      echo "  Restarted: message-daemon"
+      echo "  Restarted: message-daemon (killed $(docker exec openclaw-gateway pgrep -fc 'message-daemon.mjs' 2>/dev/null || echo 0) orphans)"
     else
       echo "  [WARN] message-daemon not installed — manual service setup needed"
     fi
