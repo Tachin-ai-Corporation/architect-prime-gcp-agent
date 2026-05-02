@@ -21,7 +21,7 @@
 //     -e DWD_SIGNER_SA=xxx openclaw-gateway \
 //     node /home/node/.openclaw/bin/message-daemon.mjs
 // ============================================================
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -71,9 +71,13 @@ let activeWatchdogTaskId = null;
 let lastLogOffset = 0;
 
 // ---- Logging ----
-// Use stderr (unbuffered) instead of stdout (buffered in non-TTY docker exec)
+// Write to both stderr and a log file — docker exec doesn't reliably forward
+// stdout/stderr to systemd journal, so the file provides a guaranteed audit trail.
+const DAEMON_LOG = '/tmp/message-daemon.log';
 function log(msg, meta = {}) {
-  process.stderr.write(JSON.stringify({ ts: new Date().toISOString(), svc: 'message-daemon', ch: CHANNEL, msg, ...meta }) + '\n');
+  const line = JSON.stringify({ ts: new Date().toISOString(), svc: 'message-daemon', ch: CHANNEL, msg, ...meta }) + '\n';
+  process.stderr.write(line);
+  try { appendFileSync(DAEMON_LOG, line); } catch {}
 }
 
 // ---- GCE Metadata Access Token ----
