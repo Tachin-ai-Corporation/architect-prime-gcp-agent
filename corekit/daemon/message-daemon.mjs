@@ -257,14 +257,25 @@ async function routeMessage(text) {
 
 // ---- Watchdog ----
 async function watchdogCheck(channel, taskId, dispatchedAt) {
-  const WATCHDOG_INTERVAL = 15_000;
-  const WATCHDOG_MAX = 300_000;
+  const WATCHDOG_INTERVAL = 10_000;
+  const WATCHDOG_MAX = 180_000;
   const start = Date.now();
   log('Watchdog started', { taskId, timeout_s: WATCHDOG_MAX / 1000 });
   const logStartOffset = lastLogOffset;
   try {
     while (Date.now() - start < WATCHDOG_MAX) {
       await new Promise(r => setTimeout(r, WATCHDOG_INTERVAL));
+
+      // Path 0: TASK.json status check (fastest — channel-respond writes status: complete)
+      try {
+        if (existsSync(TASK_JSON_PATH)) {
+          const taskData = JSON.parse(readFileSync(TASK_JSON_PATH, 'utf8'));
+          if (taskData.status === 'complete') {
+            log('Watchdog: TASK.json shows complete — delivery confirmed', { taskId });
+            return;
+          }
+        }
+      } catch {}
 
       // Path 1: Firestore check (Prime only)
       if (CHANNEL === 'dashboard' && FIRESTORE_URL && PRIME_ID) {

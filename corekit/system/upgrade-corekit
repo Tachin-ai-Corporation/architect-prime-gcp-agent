@@ -152,7 +152,19 @@ case "${1:-}" in
     # ---- Run contract validation ----
     VALIDATE="${OC_HOST_ROOT}/.openclaw/bin/validate-contracts"
     if [[ -x "$VALIDATE" ]]; then
-      echo "==> Running contract validation..."
+    # ---- Fix .env for contract compliance ----
+    ENV_FILE="/root/openclaw/.env"
+    if [[ -f "$ENV_FILE" ]]; then
+      if ! grep -q "GOOGLE_CLOUD_LOCATION=" "$ENV_FILE"; then
+        echo "GOOGLE_CLOUD_LOCATION=global" >> "$ENV_FILE"
+        echo "  Fixed: added GOOGLE_CLOUD_LOCATION=global to .env"
+      elif ! grep -q "GOOGLE_CLOUD_LOCATION=global" "$ENV_FILE"; then
+        sed -i 's/^GOOGLE_CLOUD_LOCATION=.*/GOOGLE_CLOUD_LOCATION=global/' "$ENV_FILE"
+        echo "  Fixed: updated GOOGLE_CLOUD_LOCATION=global in .env"
+      fi
+    fi
+
+    echo "==> Running contract validation..."
       if OC_HOST_ROOT="$OC_HOST_ROOT" "$VALIDATE" --runtime 2>&1; then
         echo "  ✅ Contracts validated"
       else

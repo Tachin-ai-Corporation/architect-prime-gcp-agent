@@ -13,6 +13,7 @@ description: Working process for developing architect-prime-gcp-agent — checkp
 2. **Manifest** — If adding/removing installed files, update `infra/manifests/`
 3. **Contracts** — If changing cross-cutting values, update `contracts.json`
 4. **Push** — `/update-git` (commit with `vX.Y.Z:` prefix)
+   - ⚠️ **Every commit on main MUST start with `vYYYY.MM.DD.X.Y:`** — non-prefixed commits cause "update unknown" in the dashboard footer (`extractVersion()` in `app/src/app/api/upgrade/route.ts`)
 5. **Deploy** — Dashboard upgrade button on the target Prime/Fleet instance
 6. **Debug** — `/ssh-vm-access` if something breaks
 7. **Verify** — `/firestore-query` to check state
