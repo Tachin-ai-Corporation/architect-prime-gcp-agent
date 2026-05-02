@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.01.3.0`
+> - **Current version:** `v2026.05.01.4.0`
 
 ---
 
@@ -611,14 +611,24 @@ architect-prime/
 4. **validate-contracts fixed** — Repo mode checks `message-daemon.mjs` at correct path. Runtime mode checks daemon service is active. Removed ghost checks against nonexistent `bundle/` directory.
 5. **Documentation alignment** — Updated all references across MISSION_PLAN, README, BOOTSTRAP, CHAT_SETUP, BRAIN_ARCHITECTURE, RCM doc, fleet scripts, bootstrap scripts, app code (25 files total).
 
-### Current: v2026.05.01.4.0 — Watchdog Reliability + Model Flexibility
-> *Goal: Eliminate false watchdog timeouts, enable per-agent model overrides.*
+### Completed: v2026.05.01.4.0 — Watchdog & Delivery Reliability
+> *Eliminated phantom timeout messages, fixed orphaned daemon processes, achieved 0 contract violations.*
 
-1. **Watchdog Firestore detection** — Fix the composite query or timestamp comparison so the watchdog detects `channel-respond` delivery and exits cleanly.
-2. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of 2.5 Flash). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
-3. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
-4. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
-5. **GChat Cards v2** — Explore structured card messages for richer formatting (headers, sections, icons, buttons) instead of plain text conversion.
+1. **Root cause: orphaned daemon processes** — `docker exec` only kills the host-side process on `systemctl restart`; the Node.js process inside the container survives. Over multiple upgrades, 10+ orphaned daemons accumulated, each independently polling Firestore and running their own (outdated) watchdogs. `upgrade-corekit` now runs `pkill -f message-daemon.mjs` inside the container before restart.
+2. **Watchdog TASK.json detection (Path 0)** — Added fastest delivery detection: polls `TASK.json` for `status: complete` (set by `channel-respond`). Catches delivery before the slower Firestore query or log parser.
+3. **Faster watchdog timing** — Interval: 15s → 10s. Timeout: 5min → 3min.
+4. **File-based daemon logging** — `docker exec` doesn't reliably forward stdout/stderr to systemd journal. Daemon now writes to `/tmp/message-daemon.log` inside the container via `appendFileSync` for guaranteed audit trail.
+5. **`.env` location fix** — `upgrade-corekit` auto-adds `GOOGLE_CLOUD_LOCATION=global` to `/root/openclaw/.env` before validation. Eliminates the persistent 1-violation report.
+6. **Bind-mount cache race fix** — `sync` + `sleep 1` before daemon restart ensures Docker sees the updated file.
+7. **Version prefix discipline** — Development workflow documents that every commit on `main` must start with `vYYYY.MM.DD.X.Y:` to prevent "update unknown" in dashboard.
+
+### Current: v2026.05.01.5.0 — Model Flexibility + Memory Consolidation
+> *Goal: Per-agent model overrides, reliable memory consolidation, auto-generated brain cards.*
+
+1. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of Pro). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
+2. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
+3. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
+4. **GChat Cards v2** — Explore structured card messages for richer formatting (headers, sections, icons, buttons) instead of plain text conversion.
 
 ### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
