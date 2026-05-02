@@ -269,13 +269,17 @@ async function watchdogCheck(channel, taskId, dispatchedAt) {
       // Path 0: TASK.json status check (fastest — channel-respond writes status: complete)
       try {
         if (existsSync(TASK_JSON_PATH)) {
-          const taskData = JSON.parse(readFileSync(TASK_JSON_PATH, 'utf8'));
+          const taskRaw = readFileSync(TASK_JSON_PATH, 'utf8');
+          const taskData = JSON.parse(taskRaw);
+          log('Watchdog Path 0 check', { taskId, taskJsonTaskId: taskData.taskId, taskJsonStatus: taskData.status });
           if (taskData.status === 'complete') {
             log('Watchdog: TASK.json shows complete — delivery confirmed', { taskId });
             return;
           }
+        } else {
+          log('Watchdog Path 0: TASK.json not found', { path: TASK_JSON_PATH });
         }
-      } catch {}
+      } catch (err) { log('Watchdog Path 0 error', { error: err.message }); }
 
       // Path 1: Firestore check (Prime only)
       if (CHANNEL === 'dashboard' && FIRESTORE_URL && PRIME_ID) {
