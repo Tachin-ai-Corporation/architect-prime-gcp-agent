@@ -150,6 +150,14 @@ case "${1:-}" in
           echo "  Brain workspaces restored"
         fi
 
+        # Write identity lockfile if not present
+        IDENTITY_LOCK="${OC_DIR}/.identity-lock"
+        if [[ -n "$AGENT_EMAIL" && ! -f "$IDENTITY_LOCK" ]]; then
+          echo "$AGENT_EMAIL" > "$IDENTITY_LOCK"
+          chmod 444 "$IDENTITY_LOCK"
+          echo "  Identity lock written: ${AGENT_EMAIL}"
+        fi
+
         # Run assemble-tools to generate TOOLS.md for cortex, prefrontal, motor
         ASSEMBLE="${OC_HOST_ROOT}/.openclaw/bin/assemble-tools"
         if [[ -x "$ASSEMBLE" ]]; then
