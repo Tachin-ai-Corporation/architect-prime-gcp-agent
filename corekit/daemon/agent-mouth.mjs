@@ -16,7 +16,7 @@
 //   CHANNEL=gchat node agent-mouth.mjs
 //   CHANNEL=dashboard node agent-mouth.mjs
 // ============================================================
-import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync, statSync } from 'fs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -153,9 +153,19 @@ function readTaskJson() {
 }
 
 function getLatestGatewayOutput() {
-  const today = new Date().toISOString().split('T')[0];
-  const logPath = `/tmp/openclaw/openclaw-${today}.log`;
-  if (!existsSync(logPath)) return null;
+  // Find the most recently modified log file in /tmp/openclaw/
+  // The gateway doesn't rotate by calendar date — it keeps appending
+  // to the file from when it was first created.
+  const logDir = '/tmp/openclaw';
+  let logPath = null;
+  try {
+    const files = readdirSync(logDir)
+      .filter(f => f.startsWith('openclaw-') && f.endsWith('.log'))
+      .map(f => ({ name: f, mtime: statSync(`${logDir}/${f}`).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    if (files.length > 0) logPath = `${logDir}/${files[0].name}`;
+  } catch {}
+  if (!logPath || !existsSync(logPath)) return null;
 
   let logContent;
   try { logContent = readFileSync(logPath, 'utf8'); } catch { return null; }
