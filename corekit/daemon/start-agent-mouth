@@ -25,6 +25,12 @@ if [ -z "$GCP_PROJECT_ID" ]; then
     'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
 fi
 
+# Read PRIME_ID from metadata if still missing (fleet agents need this)
+if [ -z "$PRIME_ID" ]; then
+  PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null)" || true
+fi
+
 # Read config values
 if [ -f "$CONFIG" ]; then
   [ -z "$AGENT_USER_EMAIL" ] && AGENT_USER_EMAIL="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentUserEmail',''))" 2>/dev/null)"

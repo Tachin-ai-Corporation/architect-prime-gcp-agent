@@ -415,6 +415,24 @@ async function main() {
 
   log('Entering polling loop...');
 
+  // Initialize log offset to current file size — skip pre-existing output
+  // This prevents re-delivering old responses on every restart
+  try {
+    const logDir = '/tmp/openclaw';
+    const files = readdirSync(logDir)
+      .filter(f => f.startsWith('openclaw-') && f.endsWith('.log'))
+      .map(f => ({ name: f, mtime: statSync(`${logDir}/${f}`).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    if (files.length > 0) {
+      const initPath = `${logDir}/${files[0].name}`;
+      const initSize = statSync(initPath).size;
+      lastLogOffset = initSize;
+      log('Log offset initialized', { file: files[0].name, offset: initSize });
+    }
+  } catch (err) {
+    log('Log offset init skipped', { error: err.message });
+  }
+
   while (true) {
     try {
       // Check if there's a task executing
