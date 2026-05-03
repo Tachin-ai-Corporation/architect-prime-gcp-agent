@@ -42,8 +42,8 @@ sudo tail -20 /var/log/agent-ears.log
 # Agent mouth logs
 sudo tail -20 /var/log/agent-mouth.log
 
-# Manual brain dispatch
-sudo docker exec openclaw-gateway /home/node/.openclaw/bin/brain-exec temporal-research "test" 30
+# Manual brain dispatch (plan-exec mode)
+sudo docker exec openclaw-gateway /home/node/.openclaw/bin/brain-exec --plan-exec temporal-research "test" 30
 
 # Read telemetry
 sudo docker exec openclaw-gateway /home/node/.openclaw/bin/brain-telemetry-read --last 10

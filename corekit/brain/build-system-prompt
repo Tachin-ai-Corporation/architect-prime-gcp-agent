@@ -7,8 +7,9 @@
 # for agent identity, then looks up the agent's skills in
 # agent-types.json and appends each skill's SKILL.md.
 #
-# This replaces the old TOOLS.md approach — skills are now
-# self-describing and auto-assembled.
+# Used by: agent-ask (assembles the system instruction for
+# the standalone Vertex AI LLM call). Note: TOOLS.md is
+# generated separately by assemble-tools for OpenClaw agents.
 #
 # Output: system prompt text on stdout
 #

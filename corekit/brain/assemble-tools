@@ -23,7 +23,7 @@ OUT="${WORKSPACE}/TOOLS.md"
 
 # Determine skill list
 if [[ "$AGENT_TYPE" == "prime" ]]; then
-  SKILLS="agent-ask fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade"
+  SKILLS="agent-ask fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade memory-consolidate"
 elif [[ -f "$TYPES_FILE" ]]; then
   SKILLS="$(python3 -c "
 import json, sys

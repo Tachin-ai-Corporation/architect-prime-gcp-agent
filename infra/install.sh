@@ -29,7 +29,7 @@
 #
 # Usage:
 #   # Fresh install (Prime)
-#   export CORE_REF="v3.7.1"
+#   export CORE_REF="main"
 #   curl -fsSL ".../install.sh" | bash -s -- --role prime
 #
 #   # Fresh install (Fleet devops agent)
@@ -39,7 +39,7 @@
 #   install.sh --check
 #
 #   # Upgrade to new ref (non-destructive — overwrites manifest files only)
-#   install.sh --upgrade v4.0.0
+#   install.sh --upgrade main
 # ============================================================
 set -euo pipefail
 
