@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
     const agentData = agentDoc.data()!;
 
-    // Get recent activity log entries (stored by the agent's message-daemon)
+    // Get recent activity log entries (stored by the agent's task lifecycle)
     const activitySnap = await db
       .collection("primes")
       .doc(id)

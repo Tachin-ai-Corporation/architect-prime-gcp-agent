@@ -4,7 +4,7 @@
 #
 # Usage: fleet-deploy --name <name> --specialty <desc> --agent-email <email>
 #
-# Creates: SA → IAM (DWD) → VM (with DWD message-daemon) → Firestore entry
+# Creates: SA → IAM (DWD) → VM (with ears/mouth services) → Firestore entry
 #
 # Single-project model: all fleet agents run in the same project
 # as Prime. Isolation is enforced at the VM/SA level:
@@ -358,7 +358,7 @@ write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + se
 
 
 # ============================================================
-# 4. Build and create VM (with message-daemon)
+# 4. Build and create VM (with agent-ears + agent-mouth)
 # ============================================================
 log "Building startup script (boot stub → fleet-bootstrap.sh)"
 STARTUP_TMPFILE="$(mktemp /tmp/fleet-startup-XXXXXX.sh)"

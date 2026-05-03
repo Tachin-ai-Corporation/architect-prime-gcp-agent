@@ -536,7 +536,7 @@ systemctl start fleet-health-check.timer
 # ---- Done ----
 echo
 echo "============================================"
-echo "  PRIME VM SETUP COMPLETE (v4.0.1)"
+echo "  PRIME VM SETUP COMPLETE (v2026.05.03.9.0)"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"

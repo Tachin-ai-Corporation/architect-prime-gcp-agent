@@ -193,15 +193,15 @@
       "entries": {
         "session-memory": { "enabled": true },
         // PreTurn: inject brain architecture reference card into every Cortex turn.
-        // Ensures the model always has the dispatch table and classification rules
-        // in its immediate context — prevents "forgetting" sub-agents exist.
+        // Ensures the model always has the sub-agent list and "spawn prefrontal first"
+        // rule in its immediate context.
         "brain-card": {
           "enabled": true,
           "event": "PreTurn",
           "type": "shell",
           "command": "cat ~/.openclaw/workspace/BRAIN_CARD.md 2>/dev/null || true"
         },
-        // PreTurn: set agent status to classifying so daemons know work started.
+        // PreTurn: set agent status to classifying so monitoring knows work started.
         "agent-status-preturn": {
           "enabled": true,
           "event": "PreTurn",

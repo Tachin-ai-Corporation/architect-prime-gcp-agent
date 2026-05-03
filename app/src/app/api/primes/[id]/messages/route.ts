@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 /**
  * POST /api/primes/[id]/messages — Send a message to a Prime
  * Body: { text }
- * The message-daemon on the Prime VM polls for unprocessed admin messages.
+ * The agent-ears service on the Prime VM polls for unprocessed admin messages.
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
