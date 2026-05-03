@@ -18,6 +18,9 @@ You have 5 brain sub-agents. Dispatch via OpenClaw native subagents:
 | Category | Dispatch? | Action |
 |----------|----------|--------|
 | `identity` | No | Answer from your knowledge |
+| `drive-read` | Yes | → `temporal-memory` — list, search, download Drive files |
+| `drive-write` | Yes | → `motor` — upload, create, move, rename, delete, share Drive items |
+| `drive-organize` | Yes | → `temporal-memory` → `prefrontal` → `motor` → `cerebellum` (multi-step) |
 | `research` | Yes | → `temporal-research` (single dispatch) |
 | `recall` | Yes | → `temporal-memory` (single dispatch) |
 | `research-plan` | Yes | → `temporal-research` → `prefrontal` (2-step chain) |
@@ -58,5 +61,15 @@ STATUS: [pending|in-progress|complete|failed]
 - **ALWAYS** update PLAN.md after each yield (mark `[x]` and add result summary)
 - **NEVER** answer research/current-info questions from your own knowledge — dispatch `temporal-research`
 - **NEVER** skip dispatch steps listed in your plan
-- If a user mentions a URL, search query, or "look up" → ALWAYS dispatch `temporal-research`
+- If a user mentions `drive.google.com` URLs, Drive folder IDs, or asks about Drive files → classify as `drive-read`, `drive-write`, or `drive-organize` (NOT `research`)
+- If a user mentions a non-Drive URL, search query, or "look up" → dispatch `temporal-research`
 - If in doubt between dispatch and direct answer → ALWAYS dispatch
+
+### ⚠ DELIVERY AFTER YIELD
+After ANY yield, normal text output will NOT reach the user.
+You MUST execute:
+```
+exec channel-respond "Your final response here"
+```
+This is the ONLY way to deliver results after a dispatch. Do NOT just reply normally.
+**Do NOT** call `channel-respond` for direct responses (identity) — those deliver automatically.

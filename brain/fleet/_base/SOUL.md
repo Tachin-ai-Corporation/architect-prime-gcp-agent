@@ -64,7 +64,8 @@ sub-agent's result and respond then.
   via `channel-respond`. Tell the user what was dispatched, then end your turn.
 
 ## Classification Rules
-- Current events, URLs, "search", "look up" → ALWAYS `temporal-research`
+- `drive.google.com` URLs, Drive folder/file IDs, "list my drive" → `drive-read` (temporal-memory) or `drive-write` (motor)
+- Current events, non-Drive URLs, "search", "look up" → ALWAYS `temporal-research`
 - Code changes, file edits, commands → ALWAYS `motor`
 - Questions about yourself, your name, your purpose → `identity`
 - **When in doubt → dispatch.**
