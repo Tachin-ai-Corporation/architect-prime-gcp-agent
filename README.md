@@ -96,6 +96,8 @@ Your GCP Project
 │   ├── primes/{id}                   → Prime instance metadata
 │   ├── primes/{id}/messages/{msg}    → Dashboard ↔ Prime chat
 │   ├── primes/{id}/fleet/{agent}     → Fleet agent status + health
+│   ├── primes/{id}/tasks/{taskId}    → Prime task lifecycle log
+│   ├── primes/{id}/fleet/{agent}/tasks/{taskId} → Fleet task lifecycle log
 │   ├── primes/{id}/brain/            → Dispatch telemetry
 │   ├── primes/{id}/memory/core/      → Durable Core Memory
 │   ├── config/settings               → Agent defaults (email domain, model catalog)
@@ -111,7 +113,7 @@ Your GCP Project
 │   │   └── cerebellum      — Gemini 2.5 Flash — verification + QA
 │   ├── agent-ears (systemd)       → Deterministic input processing (fire-and-forget, zero LLM)
 │   ├── agent-mouth (systemd)      → Output classification + delivery (strict LLM filter)
-│   ├── CoreKit (34 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
+│   ├── CoreKit (41 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
 └── Fleet Agent VMs (Compute Engine e2-medium, one per agent)
@@ -180,13 +182,14 @@ architect-prime/
 │       ├── uninstall.sh              # Clean teardown
 │       └── tutorial.md               # Cloud Shell guided tutorial
 │
-├── corekit/                          # MODULE 3: CoreKit Runtime (34 VM-side scripts)
+├── corekit/                          # MODULE 3: CoreKit Runtime (41 VM-side scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
 │   ├── gateway/                      # OpenClaw gateway management (5 scripts)
-│   ├── chat/                         # Google Chat / DWD integration (4 scripts)
-│   ├── brain/                        # Brain execution layer (6 scripts)
+│   ├── chat/                         # Google Chat / DWD integration (3 scripts)
+│   ├── brain/                        # Brain execution layer (11 scripts)
 │   ├── memory/                       # Memory subsystem (3 scripts)
-│   ├── dashboard/                    # Dashboard bridge (4 scripts)
+│   ├── dashboard/                    # Dashboard bridge (1 script)
+│   ├── daemon/                       # Ears/Mouth I/O services (6 scripts)
 │   ├── system/                       # Cross-cutting utilities (3 scripts)
 │   └── config/                       # Templates, service files, agent-types
 │
@@ -242,12 +245,13 @@ The deploy API uses a **boot stub pattern**:
    - Starts OpenClaw container (`--network host`, port 18789)
    - Applies ADC auth patch for GCE metadata fallback
    - Warm-up probe through cortex route
-   - Installs `message-daemon` as systemd service
+   - Installs `agent-ears` + `agent-mouth` as systemd services
 
 **Fleet agents** follow the same pattern via `infra/bootstrap/fleet-bootstrap.sh`:
 - `infra/install.sh --role fleet --job {specialty}` (chains `base.txt` + `role-fleet.txt` + `job-{specialty}.txt`)
 - Deploys specialty workspace, validates rendered config via `validate-contracts --file`
-- Starts `message-daemon` for Google Chat polling
+- Writes `.identity-lock` (DWD impersonation guard)
+- Starts `agent-ears` + `agent-mouth` for Google Chat I/O
 - Self-reports online status to Firestore
 
 **Key benefit**: Bootstrap changes only require a `git push` — no Cloud Run rebuild needed.
@@ -260,7 +264,7 @@ The deploy API uses a **boot stub pattern**:
 
 ```json
 {
-  "openclaw":  { "pin": "041266a6...", "pinLabel": "v2026.4.15" },
+  "openclaw":  { "pin": "041266a6...", "pinLabel": "v2026.4.19" },
   "vertex":    { "location": "global", "primaryModel": "gemini-3.1-pro-preview", "subagentModel": "gemini-2.5-flash" },
   "agents":    { "defaultId": "cortex", "gatewayRoute": "openclaw/cortex", "subagentIds": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"] },
   "gateway":   { "port": 18789, "timeoutSeconds": 120, "bind": "loopback" }
@@ -293,7 +297,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **OpenClaw-native** | Full agent framework with memory, tools, and sessions |
 | **Docker-containerized** | OpenClaw runs in Docker (`--network host`) for isolation |
 | **Idempotent** | All installs, deploys, and upgrades are safely re-runnable |
-| **Self-upgradable** | Dashboard self-upgrades via Cloud Build; CoreKit cascades to fleet |
+| **Self-upgradable** | Dashboard self-upgrades via Cloud Build; fleet agents upgraded individually via dashboard |
 | **Fail fast** | `validate-contracts` runs before container start — catches config errors in seconds |
 | **Observable** | All communication logged in Firestore; structured JSON logging with telemetry |
 
@@ -321,7 +325,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.01.2** | Per-fleet-agent upgrade buttons, fleet-upgrade fix (message-daemon + docker restart), no-clobber manifest flag, enhanced GChat markdown (headers/blockquotes/links/HR) |
 | **v2026.05.01.3** | Tech debt cleanup — purged inbox-daemon + control-daemon (−1,613 lines), deployed message-daemon.service, fixed validate-contracts, aligned 25 files of documentation |
 | **v2026.05.01.4** | Watchdog reliability — fixed orphaned daemon processes (root cause of phantom timeouts), TASK.json delivery detection, file-based daemon logging, 0 contract violations |
-| **v2026.05.03.5** | Multi-step brain + Drive organization — 9 Drive tools via DWD, sessions_spawn dispatch, PLAN.md tracking, fleet brain parity |
+| **v2026.05.03.5** | Multi-step brain + Drive organization — 9 Drive tools via DWD, sessions_spawn/sessions_yield dispatch, PLAN.md tracking, fleet brain parity |
 | **v2026.05.03.6** | Brain Architecture v2 — Prefrontal-first gate (mandatory dispatch planner), ears/mouth decomposition, tool reassignment (motor owns all Workspace tools, temporal-memory = pure memory), dynamic skill awareness (TOOLS.md) |
 | **v2026.05.03.7** | Brain v2.1 Gate Enforcement — BRAIN_CARD stripped of routing hints, PLAN.md write gate (PLAN_VALID marker), validation rules (per-step criteria checked by cerebellum), two-mode prefrontal (simple + advisory), motor advisory mode, ws-token path fix, multi-step Drive organization validated end-to-end |
 | **v2026.05.03.8** | Ears/Mouth Activation — Decoupled I/O: fire-and-forget agent-ears (deterministic input), strict-LLM agent-mouth (classify+deliver). Deleted message-daemon (−1,028 lines) + channel-respond. Both Prime and Fleet validated end-to-end. |

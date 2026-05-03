@@ -126,7 +126,7 @@ Dashboard (Cloud Run — Next.js)
 1. Dashboard creates a GCE VM with a **boot stub** startup script
 2. Boot stub curls `infra/bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
 3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `agent-ears` + `agent-mouth`
-4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.15) for stability
+4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.19) for stability
 
 ### Fleet Agent Lifecycle
 
@@ -171,8 +171,7 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 2. Deduplicates (60s sliding window, same-text collapse)
 3. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info)
 4. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
-5. Sends immediate ACK to channel ("Processing your request...")
-6. Gateway call completes asynchronously — ears is already free to poll the next message
+5. Gateway call completes asynchronously — ears is already free to poll the next message
 
 **Agent Mouth — Output Classification + Delivery (`agent-mouth.mjs`):**
 1. Watches `TASK.json` for new tasks (written by ears)
@@ -355,21 +354,13 @@ context_summary: <one sentence>
 6. If pipeline non-empty → Cortex executes each agent in order via spawn/yield
 7. After each step → update PLAN.md: mark `[x]`, fill `→ RESULT:`
 8. After all agents complete → Cortex synthesizes final response
-9. PostTurn: check-plan-compliance validates PLAN_VALID, step counts, violation loggingfore planning.
+9. PostTurn: check-plan-compliance validates PLAN_VALID, step counts, violation logging
 
 **Dispatch mechanism:** `brain-exec --plan-exec <agent-id> "<task>" [timeout]`
 - Validates agent ID against `contracts.json` `subagentIds`
 - Rejects temporal-memory and prefrontal (they already ran in the gate)
 - Spawns `brain-exec-worker` in background for async delivery
 - Telemetry written to Firestore via fire-and-forget
-
-**Brain workflow (every message):**
-1. PreTurn injects BRAIN_CARD.md (dispatch protocol reference)
-2. Cortex receives message + BRAIN_CARD context
-3. Cortex spawns prefrontal → yields → receives DISPATCH_PLAN
-4. If `short_circuit: true` → Cortex answers directly
-5. If pipeline non-empty → Cortex executes each agent in order via spawn/yield
-6. After all agents complete → Cortex synthesizes final response
 
 **Two-tier memory model:**
 - **Tier 1 (Working Memory):** `MEMORY.md` in Cortex workspace. Updated during turns.
@@ -502,13 +493,14 @@ architect-prime/
 │   │   ├── job-devops.txt            # DevOps specialty workspace
 │   │   └── job-engineer.txt          # Engineer specialty workspace
 │   └── deploy/                       # Standalone install/uninstall scripts
-├── corekit/                          # MODULE 3: CoreKit Runtime (VM-side scripts)
+├── corekit/                          # MODULE 3: CoreKit Runtime (41 VM-side scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
 │   ├── gateway/                      # OpenClaw gateway management (5 scripts)
-│   ├── chat/                         # Google Chat / DWD integration (4 scripts)
-│   ├── brain/                        # Brain execution layer (4 scripts)
+│   ├── chat/                         # Google Chat / DWD integration (3 scripts)
+│   ├── brain/                        # Brain execution layer (11 scripts)
+│   ├── daemon/                       # Ears/Mouth I/O services (6 scripts)
 │   ├── memory/                       # Memory subsystem (3 scripts)
-│   ├── dashboard/                    # Dashboard bridge (4 scripts)
+│   ├── dashboard/                    # Dashboard bridge (1 script)
 │   ├── system/                       # Cross-cutting utilities (3 scripts)
 │   └── config/                       # Templates, service files, agent-types
 ├── brain/                            # MODULE 4: Agent Identity
@@ -540,7 +532,7 @@ architect-prime/
 └── README.md
 ```
 
-### CoreKit Tools (34 scripts, grouped by domain)
+### CoreKit Tools (41 scripts, grouped by domain)
 
 | Domain | Tool | Purpose |
 |--------|------|---------|
@@ -558,21 +550,30 @@ architect-prime/
 | | `upgrade-openclaw` | Rebuilds OpenClaw container from pinned commit |
 | | `bootstrap_smoke.sh` | Vertex AI smoke test (3 attempts with backoff) |
 | | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
-| **daemon/** | `message-daemon.mjs` | Unified Node.js daemon for both Prime (dashboard) and Fleet (gchat) |
-| | `chat-send` | Sends messages to Google Chat via DWD |
+| **chat/** | `chat-send` | Sends messages to Google Chat via DWD |
 | | `chat-read` | Reads messages from Google Chat via DWD |
-| | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt |
-| **brain/** | `brain-exec` | Dispatches sub-agents: validates agent ID → runs openclaw agent → strips warnings → writes telemetry → returns output |
-| | `brain-telemetry-write` | Writes dispatch telemetry event to Firestore (fire-and-forget, called by brain-exec) |
-| | `brain-telemetry-read` | Queries recent dispatch telemetry for debugging (table or JSON output) |
+| | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt (identity-locked) |
+| **daemon/** | `agent-ears.mjs` | Deterministic input processing (poll, dedup, rate-limit, fire-and-forget) |
+| | `agent-mouth.mjs` | Output classification + delivery + task lifecycle logging |
+| | `start-agent-ears` | Container bootstrap wrapper for ears |
+| | `start-agent-mouth` | Container bootstrap wrapper for mouth |
+| | `ears-health-check` | Ears service health check |
+| | `mouth-health-check` | Mouth service health check |
+| **brain/** | `brain-exec` | Dispatches sub-agents: `--plan-exec` (execute pipeline step) or `--validate-plan` (invariant checking) |
+| | `brain-exec-worker` | Background worker for async brain-exec delivery |
+| | `brain-telemetry-write` | Writes dispatch telemetry event to Firestore (fire-and-forget) |
+| | `brain-telemetry-read` | Queries recent dispatch telemetry for debugging (table or JSON) |
 | | `build-system-prompt` | Assembles system prompt from workspace files |
 | | `agent-ask` | Vertex AI grounding web search (used by temporal-research) |
+| | `agent-status` | Reads/writes agent STATUS.json (used by PreTurn/PostTurn hooks) |
 | | `assemble-tools` | Builds TOOLS.md from skill definitions |
+| | `check-plan-compliance` | PostTurn hook: validates PLAN_VALID marker, freshness, step counts |
+| | `task-log-write` | Writes structured task lifecycle record to Firestore |
+| | `task-log-read` | Queries recent task records from Firestore |
 | **memory/** | `core-memory-read` | Queries Firestore Core Memory by category/tags |
 | | `core-memory-write` | Writes durable facts to Firestore Core Memory |
 | | `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
 | **dashboard/** | `command-runner` | Executes commands from Firestore, streams output |
-| | `dashboard-respond` | Writes async responses to Firestore (for sub-agent results) |
 | **system/** | `upgrade-corekit` | In-place CoreKit update from GitHub ref (validates contracts post-upgrade) |
 | | `validate-contracts` | Pre-flight check: all cross-cutting values match contracts.json |
 | | `web-search` | Google Search grounding for agent queries |
@@ -593,15 +594,16 @@ architect-prime/
 | `/opt/openclaw/.openclaw/skills/` | Skill definitions |
 | `/root/.openclaw/.gateway-token` | Gateway auth token |
 | `/var/log/fleet-agent-setup.log` | Bootstrap log (fleet VMs) |
-| `/var/lib/message-daemon/` | message-daemon state (high-water mark) |
+| `/var/log/agent-ears.log` | Ears service log |
+| `/var/log/agent-mouth.log` | Mouth service log |
 
 ---
 
-## Current Fleet
+> **Note:** The fleet table below reflects the current operator deployment. Agents are operator-specific.
 
 | Agent | Specialty | VM | Email | Status |
 |-------|-----------|-----|-------|--------|
-| stan | devops | fleet-stan | devops-agent-stan@tachin.ag | Online |
+| stan | devops | fleet-stan | devops-agent-stan@tachin.ai | Online |
 
 **Prime instance:** `chucknorris` — VM: `prime-chucknorris`, zone: `us-central1-a`, project: `architect-prime-beta`
 
