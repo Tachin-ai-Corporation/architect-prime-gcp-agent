@@ -400,9 +400,6 @@ async function main() {
         fireGateway([...conversationHistory]);
         log('Dispatched to gateway (fire-and-forget)', { taskId });
 
-        // Send ACK immediately
-        await sendACK(msg.metadata);
-
         // Touch health check file
         try { writeFileSync('/var/run/agent-ears-last-poll', String(Date.now())); } catch {}
       }
