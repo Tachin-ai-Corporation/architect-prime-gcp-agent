@@ -34,8 +34,14 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const agentEmail =
-      email || `${specialty}-agent-${name}@tachin.ai`;
+    if (!email || typeof email !== "string") {
+      return NextResponse.json(
+        { error: "email is required (agent Workspace email address)" },
+        { status: 400 }
+      );
+    }
+
+    const agentEmail = email;
 
     // Create fleet doc immediately for instant dashboard feedback
     await fleetCol(id).doc(name).set(

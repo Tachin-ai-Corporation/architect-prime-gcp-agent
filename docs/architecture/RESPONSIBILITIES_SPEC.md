@@ -1,6 +1,6 @@
 # Responsibilities — Implementation Specification
 
-> **Status:** FUTURE — Design document, not yet implemented
+> **Status:** PLANNED — Design document, not yet implemented. Uses current `corekit/` path conventions.
 > **Written:** 2026-04-04
 > **Last reviewed:** 2026-04-11
 > **Depends on:** Brain Architecture v2 and the R/C/M framework
@@ -15,10 +15,10 @@ Inspired by the "Hands" packaging pattern: each Responsibility is a directory wi
 
 ## Directory Structure
 
-Each Responsibility lives in its own directory under `bundle/responsibilities/`:
+Each Responsibility lives in its own directory under `responsibilities/`:
 
 ```
-bundle/responsibilities/
+responsibilities/
 ├── queue-worker/
 │   ├── RESPONSIBILITY.toml       # Manifest (schedule, model, tools, metadata)
 │   ├── PLAYBOOK.md               # Multi-phase operational instructions
@@ -76,7 +76,7 @@ Custom (customer-defined) responsibilities go in a separate directory that persi
     └── ...
 ```
 
-At boot, the system loads both `bundle/responsibilities/` (built-in) and the custom directory (user-defined), merging them into a single registry. Built-in responsibilities cannot be deleted, only disabled. Custom responsibilities can be fully managed.
+At boot, the system loads both `responsibilities/` (built-in) and the custom directory (user-defined), merging them into a single registry. Built-in responsibilities cannot be deleted, only disabled. Custom responsibilities can be fully managed.
 
 ---
 
@@ -361,7 +361,7 @@ auto_respond_technical = true
 When Architect Prime boots (or when a new Responsibility is added), the registration system:
 
 ```
-1. Scan bundle/responsibilities/ and custom responsibility directories
+1. Scan responsibilities/ and custom responsibility directories
     │
     ▼
 2. For each directory, read RESPONSIBILITY.toml
@@ -624,7 +624,7 @@ Scans responsibility directories and registers all found bundles.
 # responsibility-register — Scan and register all responsibility bundles
 #
 # Reads RESPONSIBILITY.toml from each directory in:
-#   - bundle/responsibilities/ (built-in)
+#   - responsibilities/ (built-in)
 #   - $CUSTOM_RESP_DIR (user-defined)
 #
 # For each valid bundle:
@@ -1002,7 +1002,7 @@ The `execution.agent` field in the manifest determines the entry point. Cortex c
 
 ## Versioning and Upgrades
 
-Built-in responsibilities are version-controlled in git under `bundle/responsibilities/`. When a CoreKit upgrade deploys a new version:
+Built-in responsibilities are version-controlled in git under `responsibilities/`. When a CoreKit upgrade deploys a new version:
 
 1. `responsibility-register --force` re-reads all built-in manifests
 2. If `version` in RESPONSIBILITY.toml has changed, the Firestore doc is updated

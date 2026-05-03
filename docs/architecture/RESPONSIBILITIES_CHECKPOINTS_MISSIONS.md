@@ -564,7 +564,7 @@ For human-assigned checkpoints, the PM posts a task notification to Google Chat 
 ### New bin scripts
 
 ```
-bundle/corekit/bin/
+corekit/system/                          # PLANNED — will be added when R/C/M is implemented
 ├── responsibility-add        # Register a new responsibility
 ├── responsibility-list       # List all responsibilities
 ├── responsibility-disable    # Pause a responsibility
