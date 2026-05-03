@@ -151,7 +151,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   fi
 
   # ---- Check 7: Config templates — no systemPrompt on agents ----
-  for TMPL in "${REPO_ROOT}"/bundle/corekit/config/openclaw-*bootstrap*.tmpl; do
+  for TMPL in "${REPO_ROOT}"/corekit/config/openclaw-*bootstrap*.tmpl; do
     [[ -f "$TMPL" ]] || continue
     TMPL_NAME="$(basename "$TMPL")"
     if grep -q '"systemPrompt"' "$TMPL"; then
@@ -162,7 +162,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   done
 
   # ---- Check 8: Config templates — default agent ID matches ----
-  for TMPL in "${REPO_ROOT}"/bundle/corekit/config/openclaw-*bootstrap*.tmpl; do
+  for TMPL in "${REPO_ROOT}"/corekit/config/openclaw-*bootstrap*.tmpl; do
     [[ -f "$TMPL" ]] || continue
     TMPL_NAME="$(basename "$TMPL")"
     if grep -q "\"id\": \"${C_DEFAULT_AGENT}\"" "$TMPL" || grep -q "\"id\":\"${C_DEFAULT_AGENT}\"" "$TMPL"; then
@@ -173,7 +173,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   done
 
   # ---- Check 9: Config templates — gateway port matches ----
-  for TMPL in "${REPO_ROOT}"/bundle/corekit/config/openclaw-*bootstrap*.tmpl; do
+  for TMPL in "${REPO_ROOT}"/corekit/config/openclaw-*bootstrap*.tmpl; do
     [[ -f "$TMPL" ]] || continue
     TMPL_NAME="$(basename "$TMPL")"
     if grep -q "\"port\": ${C_GATEWAY_PORT}" "$TMPL" || grep -q "\"port\":${C_GATEWAY_PORT}" "$TMPL"; then
