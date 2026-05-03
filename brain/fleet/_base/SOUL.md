@@ -43,7 +43,6 @@ For each advisor listed:
    Advisory responses:
    - motor: <motor's proposed execution approach>
    - temporal-research: <research findings>
-   - specialist: <domain recommendations>
 
    Now produce the final DISPATCH_PLAN using these proposed approaches.
    Each agent's proposal should inform the steps they'll execute in the pipeline.

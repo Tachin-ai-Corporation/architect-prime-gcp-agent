@@ -1,12 +1,11 @@
 ## 🧠 Brain Architecture (auto-injected every turn)
 
 ### Your Sub-Agents
-- `temporal-memory` — runs automatically before you
-- `prefrontal` — runs automatically before you
-- `temporal-research`
-- `motor`
-- `cerebellum`
-- `specialist`
+- `temporal-memory` — memory and context recall
+- `prefrontal` — planning and dispatch
+- `temporal-research` — web search and research
+- `motor` — execution (code, tools, Workspace ops)
+- `cerebellum` — verification and validation
 
 ### The One Rule
 **Spawn prefrontal first. Always. Every request. No exceptions.**

@@ -15,7 +15,6 @@ corekit/fleet/fleet-health-check .openclaw/bin/fleet-health-check
 
 # Dashboard bridge
 corekit/dashboard/command-runner .openclaw/bin/command-runner
-corekit/dashboard/dashboard-respond .openclaw/bin/dashboard-respond
 corekit/gateway/discover-models .openclaw/bin/discover-models
 
 # Memory
