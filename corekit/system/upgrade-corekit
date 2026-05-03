@@ -146,6 +146,17 @@ case "${1:-}" in
           done
           echo "  Brain workspaces restored"
         fi
+
+        # Run assemble-tools to generate TOOLS.md for cortex, prefrontal, motor
+        ASSEMBLE="${OC_HOST_ROOT}/.openclaw/bin/assemble-tools"
+        if [[ -x "$ASSEMBLE" ]]; then
+          # Determine agent type from chat-config or STATE.json
+          AGENT_JOB="$(jq -r '.agentType // empty' "$CHAT_CFG" 2>/dev/null || true)"
+          [[ -n "$AGENT_JOB" ]] || AGENT_JOB="$(json_value "job" "$STATE_FILE" 2>/dev/null || true)"
+          [[ -n "$AGENT_JOB" ]] || AGENT_JOB="devops"
+          echo "==> Assembling TOOLS.md (agent type: ${AGENT_JOB})"
+          OC_HOST_ROOT="$OC_HOST_ROOT" "$ASSEMBLE" "$AGENT_JOB" 2>&1 || echo "  (assemble-tools failed)"
+        fi
       fi
     fi
 
