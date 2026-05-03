@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.01.4.0`
+> **Current version:** `v2026.05.03.6.0`
 
 ---
 
@@ -126,14 +126,14 @@ Prime's brain uses **multi-agent dispatch** — Cortex is the user-facing orches
 
 | Agent | Model | Role |
 |-------|-------|------|
-| **cortex** | gemini-3.1-pro-preview | Orchestrator + synthesizer (DEFAULT) |
+| **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) |
 | **temporal-research** | gemini-2.5-flash | Web search via Vertex AI grounding |
-| **temporal-memory** | gemini-2.5-flash | Memory recall + nightly consolidation |
-| **prefrontal** | gemini-2.5-flash | Strategic planning |
-| **motor** | gemini-2.5-flash | Code execution + commands |
+| **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) |
+| **prefrontal** | gemini-2.5-flash | Mandatory dispatch planner |
+| **motor** | gemini-2.5-flash | Execution + ALL Google Workspace tools |
 | **cerebellum** | gemini-2.5-flash | Verification + QA |
 
-Dispatch flow: `cortex` → `exec brain-exec <agent-id> "<task>"` → sub-agent runs → output returned to cortex → cortex synthesizes response.
+Dispatch flow: prefrontal produces `DISPATCH_PLAN:` → cortex executes pipeline via `sessions_spawn` / `sessions_yield` → motor runs tools → cerebellum verifies → cortex synthesizes response.
 
 ### Key Design Decisions
 
@@ -319,6 +319,8 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.01.2** | Per-fleet-agent upgrade buttons, fleet-upgrade fix (message-daemon + docker restart), no-clobber manifest flag, enhanced GChat markdown (headers/blockquotes/links/HR) |
 | **v2026.05.01.3** | Tech debt cleanup — purged inbox-daemon + control-daemon (−1,613 lines), deployed message-daemon.service, fixed validate-contracts, aligned 25 files of documentation |
 | **v2026.05.01.4** | Watchdog reliability — fixed orphaned daemon processes (root cause of phantom timeouts), TASK.json delivery detection, file-based daemon logging, 0 contract violations |
+| **v2026.05.03.5** | Multi-step brain + Drive organization — 9 Drive tools via DWD, sessions_spawn dispatch, PLAN.md tracking, fleet brain parity |
+| **v2026.05.03.6** | Brain Architecture v2 — Prefrontal-first gate (mandatory dispatch planner), ears/mouth decomposition, tool reassignment (motor owns all Workspace tools, temporal-memory = pure memory), dynamic skill awareness (TOOLS.md) |
 
 ---
 

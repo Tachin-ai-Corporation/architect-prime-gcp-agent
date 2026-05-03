@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.01.4.0)
+## Current Architecture (v2026.05.03.6.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -13,22 +13,23 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Google Chat** — Agent-to-human communication via DWD
 
 ### Prime VM Architecture
-- **6-agent brain**: cortex (orchestrator) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
-- **Two-Phase Turn Protocol**: cortex must classify → write PLAN.md → dispatch via brain-exec
-- **PreTurn hook**: BRAIN_CARD.md injected every turn with agent table + classification rules
-- **PostTurn hook**: check-plan-compliance validates dispatch compliance
-- **Minimal Context Dispatch (MCD)**: each layer gets exactly enough context, no more
-  - Cortex: ~3KB static context (lean SOUL.md + TOOLS.md + BRAIN_CARD.md + MEMORY.md)
-  - Sub-agents: focused SOUL.md (~1KB) + self-contained task instruction from Cortex
-  - Conversation history: 4 turns (8 messages) — classification doesn't need deep history
-- **Fire-and-forget dispatch**: brain-exec validates agent → spawns brain-exec-worker in background → returns immediately
-  - Cortex tool call completes in <1s (eliminates Vertex AI model API timeout)
-  - Worker runs agent independently, delivers results via `channel-respond`
-  - STATUS.json tracks lifecycle: idle → classifying → dispatching → responding → idle
-- **Observation window**: message-daemon uses 15s window for fast path responses
-  - Fast path: simple responses (≤15s) delivered directly
-  - Async path: partial content delivered, worker handles result delivery
-  - Empty fallback: always sends ack if no content received
+- **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
+- **Prefrontal-First Gate (Brain v2)**: prefrontal is the mandatory dispatch planner
+  - PreTurn hook: injects BRAIN_CARD.md (dispatch protocol reference)
+  - Prefrontal produces structured `DISPATCH_PLAN:` block (intent, pipeline, reasoning)
+  - Cortex executes pipeline mechanically via sessions_spawn/yield
+  - PostTurn hook: validates dispatch compliance
+- **Tool ownership boundaries:**
+  - Motor owns ALL Google Workspace tools (Drive, Gmail, Sheets, Docs, Calendar)
+  - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
+  - cerebellum has read-only verification tools
+- **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
+- **brain-exec v2**: `--plan-exec` (execute pipeline step), `--validate-plan` (invariant checking)
+  - Rejects temporal-memory and prefrontal in pipelines (already ran in gate)
+- **Input/Output decomposition** (code complete, not yet active):
+  - `agent-ears.mjs` — 100% deterministic input (poll, dedup, rate-limit, gateway POST)
+  - `agent-mouth.mjs` — 1 LLM call (classify+format) + deterministic delivery
+  - Legacy `message-daemon.mjs` still active during transition
 
 ### Fleet VM Architecture
 - Single OpenClaw agent per VM with specialty-specific workspace + brain sub-agents
