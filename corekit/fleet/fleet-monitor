@@ -157,7 +157,7 @@ declare -A MILESTONES=(
   ["Installing Docker CE"]="docker_installing|Docker CE installing|active"
   ["Installing CoreKit"]="corekit_installing|CoreKit installing|active"
   ["Building Docker image"]="openclaw_building|OpenClaw Docker image building|active"
-  ["Gateway is ready"]="gateway_ready|OpenClaw gateway started|done"
+  ["Gateway ready"]="gateway_ready|OpenClaw gateway started|done"
   ["FLEET AGENT SETUP COMPLETE"]="bootstrap_complete|Bootstrap complete|done"
 )
 declare -A SEEN_MILESTONES=()

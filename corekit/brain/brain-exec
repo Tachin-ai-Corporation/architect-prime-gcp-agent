@@ -2,17 +2,19 @@
 # ============================================================
 # brain-exec — Prefrontal-First Sub-Agent Dispatch
 #
-# Two modes:
+# Modes:
 #
-# 1. DEFAULT (prefrontal gate):
-#    brain-exec <message>
-#    Runs temporal-memory → prefrontal → validates plan → returns
-#    plan to Cortex. Cortex then calls --plan-exec for each step.
-#
-# 2. PLAN EXECUTION (skip gate):
+# 1. PLAN EXECUTION:
 #    brain-exec --plan-exec <agent-id> "<task>" [timeout]
 #    Executes a single agent from Prefrontal's plan. Used by
 #    Cortex to execute each pipeline step.
+#
+# 2. PLAN VALIDATION:
+#    brain-exec --validate-plan "<plan text>"
+#    Validates a dispatch plan against invariants.
+#
+# NOTE: The prefrontal gate (temporal-memory + prefrontal auto-dispatch)
+# is handled by gateway hooks, not by this script.
 #
 # This script is deterministic. All LLM calls happen inside
 # the sub-agents (OpenClaw sessions_spawn), not here.
@@ -89,7 +91,6 @@ elif [[ "${1:-}" == "--validate-plan" ]]; then
   INTENT=$(echo "$PLAN" | grep -oP '(?<=^intent: ).*' | head -1)
   PIPELINE=$(echo "$PLAN" | grep -oP '(?<=^pipeline: \[).*(?=\])' | head -1)
   SHORT_CIRCUIT=$(echo "$PLAN" | grep -oP '(?<=^short_circuit: ).*' | head -1)
-  APPROVAL=$(echo "$PLAN" | grep -oP '(?<=^approval_needed: ).*' | head -1)
   MOTOR_MODE=$(echo "$PLAN" | grep -oP '(?<=^motor_mode: ).*' | head -1)
 
   ERRORS=""
