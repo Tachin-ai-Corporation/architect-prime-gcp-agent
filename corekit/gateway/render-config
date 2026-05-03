@@ -176,7 +176,7 @@ if [[ $? -ne 0 ]]; then
   exit 1
 fi
 
-# ---- Write token file for message-daemon ----
+# ---- Write token file for agent-ears ----
 mkdir -p "$(dirname "$TOKEN_FILE")"
 echo "$TOKEN" > "$TOKEN_FILE"
 log "Token file updated: $TOKEN_FILE"
@@ -187,7 +187,7 @@ if [[ "$DO_RESTART" == "--restart" ]]; then
   docker restart openclaw-gateway 2>/dev/null || log "  (gateway not running)"
   log "Waiting 60s for boot..."
   sleep 60
-  log "Restarting message-daemon..."
-  systemctl restart message-daemon 2>/dev/null || log "  (message-daemon not available)"
+  log "Restarting agent-ears + agent-mouth..."
+  systemctl restart agent-ears agent-mouth 2>/dev/null || log "  (ears/mouth not available)"
   log "Done."
 fi

@@ -139,14 +139,14 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 5: message-daemon.mjs model route ----
-  MSG_DAEMON="${REPO_ROOT}/corekit/daemon/message-daemon.mjs"
-  if [[ -f "$MSG_DAEMON" ]]; then
-    if grep -q "'openclaw/cortex'" "$MSG_DAEMON"; then
-      pass "message-daemon.mjs route = ${C_GATEWAY_ROUTE}"
+  # ---- Check 5: agent-ears.mjs model route ----
+  EARS_SCRIPT="${REPO_ROOT}/corekit/daemon/agent-ears.mjs"
+  if [[ -f "$EARS_SCRIPT" ]]; then
+    if grep -q "'openclaw/cortex'" "$EARS_SCRIPT"; then
+      pass "agent-ears.mjs route = ${C_GATEWAY_ROUTE}"
     else
-      ROUTE="$(grep -oP "'[^']*cortex[^']*'" "$MSG_DAEMON" | head -1 || echo 'NOT_FOUND')"
-      fail "message-daemon.mjs route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
+      ROUTE="$(grep -oP "'[^']*cortex[^']*'" "$EARS_SCRIPT" | head -1 || echo 'NOT_FOUND')"
+      fail "agent-ears.mjs route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
     fi
   fi
 
@@ -271,21 +271,26 @@ for a in c.get('agents',{}).get('list',[]):
     fi
   fi
 
-  # ---- Check 7: message-daemon.mjs model route ----
-  MSG_DAEMON="${OC_HOST_ROOT}/.openclaw/bin/message-daemon.mjs"
-  if [[ -f "$MSG_DAEMON" ]]; then
-    if grep -q "'openclaw/cortex'" "$MSG_DAEMON"; then
-      pass "message-daemon.mjs route = ${C_GATEWAY_ROUTE}"
+  # ---- Check 7: agent-ears.mjs route ----
+  EARS_SCRIPT="${OC_HOST_ROOT}/.openclaw/bin/agent-ears.mjs"
+  if [[ -f "$EARS_SCRIPT" ]]; then
+    if grep -q "'openclaw/cortex'" "$EARS_SCRIPT"; then
+      pass "agent-ears.mjs route = ${C_GATEWAY_ROUTE}"
     else
-      fail "message-daemon.mjs route mismatch"
+      fail "agent-ears.mjs route mismatch"
     fi
   fi
 
-  # ---- Check 8: message-daemon systemd service active ----
-  if systemctl is-active --quiet message-daemon 2>/dev/null; then
-    pass "message-daemon service active"
+  # ---- Check 8: agent-ears + agent-mouth services active ----
+  if systemctl is-active --quiet agent-ears 2>/dev/null; then
+    pass "agent-ears service active"
   else
-    fail "message-daemon service not active"
+    fail "agent-ears service not active"
+  fi
+  if systemctl is-active --quiet agent-mouth 2>/dev/null; then
+    pass "agent-mouth service active"
+  else
+    fail "agent-mouth service not active"
   fi
 
   # ---- Check 8: Host permissions — bin dir must be 755 (not 700) ----
