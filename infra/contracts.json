@@ -29,5 +29,18 @@
     "commitFormat": "v{YYYY}.{MM}.{DD}.{index}.{subindex}: description",
     "canonicalRegex": "^(v\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d+\\.\\d+)",
     "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
+  },
+  "ears": {
+    "firestore_poll_ms": 3000,
+    "gchat_poll_ms": 5000,
+    "dedup_window_ms": 300000,
+    "cooldown_ms": 2000
+  },
+  "mouth": {
+    "llm_enabled": true,
+    "model": "gemini-2.5-flash",
+    "maxTokens": 2000,
+    "temperature": 0.1,
+    "fallback": "deliver_raw"
   }
 }

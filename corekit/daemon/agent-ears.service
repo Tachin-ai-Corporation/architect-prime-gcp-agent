@@ -1,0 +1,17 @@
+[Unit]
+Description=Agent Ears — Deterministic Input Processing
+After=network-online.target openclaw-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /opt/openclaw/.openclaw/bin/agent-ears.mjs
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/agent-ears.log
+StandardError=append:/var/log/agent-ears.log
+Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

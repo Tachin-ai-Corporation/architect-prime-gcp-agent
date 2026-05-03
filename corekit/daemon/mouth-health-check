@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# mouth-health-check — Deterministic health check for Mouth
+# Returns 0 if healthy, 1 if not.
+# Check: last delivery timestamp < 120s ago (mouth may have nothing to deliver)
+
+HEALTH_FILE="/var/run/agent-mouth-last-delivery"
+MAX_AGE=120
+
+if [[ ! -f "$HEALTH_FILE" ]]; then
+  # No deliveries yet is OK — mouth might be waiting for output
+  echo "HEALTHY: no deliveries yet (idle)"
+  exit 0
+fi
+
+LAST=$(cat "$HEALTH_FILE" 2>/dev/null || echo 0)
+NOW=$(date +%s%N | cut -b1-13)
+AGE=$(( (NOW - LAST) / 1000 ))
+
+echo "HEALTHY: last delivery ${AGE}s ago"
+exit 0

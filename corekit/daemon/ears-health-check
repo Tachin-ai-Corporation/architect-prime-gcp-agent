@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# ears-health-check — Deterministic health check for Ears
+# Returns 0 if healthy, 1 if not.
+# Check: last poll timestamp < 60s ago
+
+HEALTH_FILE="/var/run/agent-ears-last-poll"
+MAX_AGE=60
+
+if [[ ! -f "$HEALTH_FILE" ]]; then
+  echo "UNHEALTHY: no poll timestamp found"
+  exit 1
+fi
+
+LAST=$(cat "$HEALTH_FILE" 2>/dev/null || echo 0)
+NOW=$(date +%s%N | cut -b1-13)
+AGE=$(( (NOW - LAST) / 1000 ))
+
+if [[ "$AGE" -gt "$MAX_AGE" ]]; then
+  echo "UNHEALTHY: last poll ${AGE}s ago (max ${MAX_AGE}s)"
+  exit 1
+fi
+
+echo "HEALTHY: last poll ${AGE}s ago"
+exit 0

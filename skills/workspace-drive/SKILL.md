@@ -11,13 +11,15 @@ Workspace email by human users.
 - User shares a Drive link and wants you to work with it
 - Need to upload or download documents
 
-## Tools (READ — dispatched to temporal-memory)
+## Tools (ALL dispatched to motor)
+
+### Read
 - `drive-ls [--folder ID] [--max 20]` — list files in a folder
 - `drive-search --query "name contains 'report'"` — search files
 - `drive-search --query "sharedWithMe=true"` — list files shared with you
 - `drive-download --file ID [--output /path]` — download a file
 
-## Tools (WRITE — dispatched to motor)
+### Write
 - `drive-upload --file /path [--name "Name"] [--folder ID]` — upload a file
 - `drive-mkdir --name "Name" [--parent ID]` — create a folder
 - `drive-rename --file ID --name "New Name"` — rename a file
