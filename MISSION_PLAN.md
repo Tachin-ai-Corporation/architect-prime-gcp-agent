@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.03.7.0`
+> - **Current version:** `v2026.05.03.8.0`
 
 ---
 
@@ -44,19 +44,18 @@ Dashboard (Cloud Run — Next.js)
          │
          ▼
     Prime VM (e2-medium, Ubuntu 22.04)
-    ├── message-daemon (systemd) — LEGACY, being replaced by ears + mouth
-    │   └── start-message-daemon → docker exec Node.js (message-daemon.mjs)
-    │
-    ├── agent-ears (systemd) — NEW: Deterministic input processing
-    │   └── Polls channels, deduplicates, rate-limits, delivers to gateway
+    ├── agent-ears (systemd) — Deterministic input processing
+    │   └── Polls channels, deduplicates, rate-limits, fire-and-forget gateway POST
     │       ├── Zero LLM calls — 100% deterministic
     │       ├── Firestore poll (3s) or GChat poll (5s) via DWD
-    │       └── Cooldown + dedup window (configurable via contracts.json)
+    │       ├── Writes TASK.json for mouth lifecycle tracking
+    │       └── Cooldown + dedup window (configurable)
     │
-    ├── agent-mouth (systemd) — NEW: Output classification + delivery
-    │   └── Polls gateway output, classifies, delivers to channel
+    ├── agent-mouth (systemd) — Output classification + delivery
+    │   └── Polls gateway log files, classifies, delivers to channel
     │       ├── One LLM call per output (classify + format via Gemini Flash)
-    │       ├── Deterministic delivery to Firestore or GChat
+    │       ├── Strict internal/external classification (suppresses dispatch plans)
+    │       ├── Finds most recently modified log file (gateway doesn't rotate by calendar date)
     │       └── Never drops messages — unknown classification → deliver raw
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
@@ -88,9 +87,9 @@ Dashboard (Cloud Run — Next.js)
         ├── fleet/: fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-status,
         │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
         ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
-        ├── chat/: chat-send, chat-read, dwd-token, channel-respond, mouth-prompt.md
-        ├── daemon/: message-daemon.mjs (legacy), agent-ears.mjs, agent-mouth.mjs,
-        │           start-message-daemon, health checks (ears + mouth)
+        ├── chat/: chat-send, chat-read, dwd-token
+        ├── daemon/: agent-ears.mjs, agent-mouth.mjs, start-agent-ears, start-agent-mouth,
+        │           ears-health-check, mouth-health-check
         ├── brain/: brain-exec (--plan-exec, --validate-plan), build-system-prompt,
         │          agent-ask, assemble-tools, brain-telemetry-write/read, check-plan-compliance
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
@@ -107,9 +106,8 @@ Dashboard (Cloud Run — Next.js)
     │   ├── timeoutSeconds: 600 (safety ceiling; real timeout is heartbeat-based)
     │   └── ADC fix: model-auth-env patched for GCE metadata fallback
     │
-    ├── message-daemon (systemd)
-    │   └── start-message-daemon → docker exec Node.js (message-daemon.mjs, CHANNEL=gchat)
-    │       └── Same code as Prime — built-in DWD, polls Chat API, delivers via Chat API
+    ├── agent-ears (systemd) — GChat polling via DWD (deterministic, fire-and-forget)
+    ├── agent-mouth (systemd) — output classification + GChat delivery
     │
     └── CoreKit (manifest-installed from same repo)
 ```
@@ -122,7 +120,7 @@ Dashboard (Cloud Run — Next.js)
 
 1. Dashboard creates a GCE VM with a **boot stub** startup script
 2. Boot stub curls `infra/bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
-3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `message-daemon`
+3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `agent-ears` + `agent-mouth`
 4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.15) for stability
 
 ### Fleet Agent Lifecycle
@@ -147,7 +145,7 @@ Dashboard (Cloud Run — Next.js)
     - SOUL.md is loaded automatically by OpenClaw from workspace — no `systemPrompt` injection
     - Starts container with `GOOGLE_CLOUD_LOCATION` from contracts, applies ADC patch (wildcard across all agent dirs), restarts gateway
     - Runs Vertex AI smoke test (3 attempts with backoff, 60s timeout, contract-driven port/route)
-    - Starts `message-daemon` (reads gateway route from `contracts.json`)
+    - Starts `agent-ears` + `agent-mouth` (reads gateway route from `contracts.json`)
     - Self-reports `status: online` to Firestore via Prime's `update-status` API endpoint
     - Prints `FLEET AGENT SETUP COMPLETE` marker for fleet-monitor
 
@@ -159,48 +157,37 @@ Dashboard (Cloud Run — Next.js)
 
 **Re-hire flow:** Same as hire, but `fleet-deploy` detects the existing SA, skips creation, and IAM bindings are already active. No propagation delay.
 
-### Chat Pipeline (Non-Streaming + Async Watchdog)
+### I/O Pipeline (Ears + Mouth Architecture)
 
-Both Prime and Fleet agents use the same async-first pattern. The daemon submits work to the gateway via a non-streaming call and delivers results directly or monitors for async delivery.
+Both Prime and Fleet agents use independent, fire-and-forget input/output services. OpenClaw "just thinks" — it never worries about delivery.
 
-**Dashboard → Prime (message-daemon.mjs — Node.js, non-streaming):**
-1. User types in dashboard → API writes to Firestore `messages` collection
-2. `start-message-daemon` wrapper runs `message-daemon.mjs` inside Docker container (CHANNEL=dashboard auto-detected from `prime-config.json`)
-3. Node.js daemon polls Firestore every 5s with GCE metadata access token
-4. New message → **Immediate `markProcessed`** (prevents re-pickup on next poll cycle) → **Write TASK.json** to workspace
-5. **Anti-spam at intake:**
-   - Deduplication: same text within 60s is collapsed (one `recentMessages` Map entry per unique text)
-   - Immediate `markProcessed`: message flagged in Firestore before the gateway call blocks (10-60s)
-6. **Gateway dispatch (stream: false):** POST to local gateway, blocks until model completes full turn
-7. **15s ACK timer:** If gateway hasn't responded in 15s, write "🔄 Processing..." ack to Firestore
-8. **Response routing by mode:**
-   - `complete` → Model returned full response. Write to Firestore directly.
-   - `dispatched-async` → Yield detected (sub-agent running). Fire watchdog.
-   - `error` → Gateway/model error. Write error message to Firestore.
-9. **Watchdog (async path — single-flight):**
-   - Only ONE watchdog runs at a time (`activeWatchdogTaskId` guard)
-   - Path 1: Poll Firestore for `sender: 'prime'` messages after dispatch timestamp (channel-respond delivered)
-   - Path 2: Parse `/tmp/openclaw/openclaw-YYYY-MM-DD.log` for synthesis text in LLM think blocks
-   - Log offset tracking: `lastLogOffset` ensures only NEW log entries are scanned
-   - `extractSynthesisFromThinking()` navigates think blocks to extract user-facing response
-   - Timeout: 5 minutes → writes fallback error message
-10. Conversation history: last 4 turns for context (Cortex only needs recent context for classification)
-11. HTTP ceiling: 600s (research dispatches take 60-120s)
-12. Structured JSON logging with mode, taskId, elapsed_ms, delivery method (agent/watchdog-log)
+**Agent Ears — Deterministic Input Processing (`agent-ears.mjs`):**
+1. Polls input channel every N seconds (Firestore for Prime, GChat API for Fleet via DWD)
+2. Deduplicates (60s sliding window, same-text collapse)
+3. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info)
+4. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
+5. Sends immediate ACK to channel ("Processing your request...")
+6. Gateway call completes asynchronously — ears is already free to poll the next message
 
-**Google Chat → Fleet Agent (GChatChannel adapter in message-daemon.mjs):**
-The fleet chat pipeline is identical to Prime's — same daemon, same code path, same features. The only difference is the channel adapter:
-1. `GChatChannel.poll()` queries Google Chat API via built-in DWD token (Node.js, no bash/python)
-2. Only processes messages containing the agent's `@FirstName LastName` mention
-3. Strips @-mention → marks consumed (high-water mark + seen map) → writes TASK.json
-4. Steps 4-12 are identical to Prime (same `routeMessage()`, `watchdogCheck()`, ACK timer, dedup, history)
-5. Fleet watchdog uses Path 2 only (log parse) since fleet has no Firestore
-6. Space discovery cached for 5 minutes
-7. Built-in DWD: IAM `signJwt` API from inside Docker (no key files, `--network host`)
+**Agent Mouth — Output Classification + Delivery (`agent-mouth.mjs`):**
+1. Watches `TASK.json` for new tasks (written by ears)
+2. Polls gateway log files for new output (most recently modified `openclaw-*.log` in `/tmp/openclaw/`)
+3. When new output detected → strict LLM classification via Gemini Flash:
+   - **INTERNAL** → suppress (dispatch plans, motor reports, cerebellum validation output)
+   - **EXTERNAL** → reformat for human readability and deliver to originating channel
+4. Delivery: writes to Firestore (dashboard) or sends via GChat API (fleet)
+5. Tracks task lifecycle: marks `TASK.json` as `delivered` or `timed_out` (5m timeout)
+6. **Safety**: unknown classification → deliver raw (never drops user messages)
 
-**Unified daemon architecture (v5.3.0):** A single `message-daemon.mjs` (683 lines, Node.js) runs on both Prime and Fleet via `docker exec`. The `CHANNEL` env var (`dashboard` or `gchat`) selects the channel adapter — all shared logic (gateway client, ACK timer, dedup, conversation history, think-block stripping, watchdog, status check) is guaranteed identical. The `start-message-daemon` wrapper reads `chat-config.json` for agent-specific values and launches the daemon inside the Docker container.
+**LLM Classification Prompt (strict):**
+- Suppress: plans, dispatch instructions, step summaries, validation reports, internal tool output
+- Deliver: direct answers, research results, file listings, status updates, anything user-facing
+- Reformat: convert markdown headers to text-friendly equivalents, add emojis, clean up
 
-**Channel abstraction (agent side):** Both channel adapters write `TASK.json` with channel metadata. Agents use `exec channel-respond "text"` which reads TASK.json and routes to the correct backend (`dashboard-respond` for Firestore, `chat-send` for Google Chat). This makes Prime and Fleet brains architecturally identical.
+**Architecture properties:**
+- Ears and mouth are fully independent — crash/restart of one doesn't affect the other
+- Zero coupling to OpenClaw internals — they only interact through log files and TASK.json
+- `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
 
 ### Vertex AI Authentication (ADC)
 
@@ -222,8 +209,8 @@ Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. Op
 The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contracts.json` on every VM. Scripts read from it at runtime instead of hardcoding values.
 
 **`validate-contracts`** is the enforcement tool. Three modes:
-- **Repo mode** (`validate-contracts`) — checks source files: both bootstraps, message-daemon.mjs, config templates. Verifies location, model route, agent ID, OpenClaw pin, no `systemPrompt` key.
-- **Runtime mode** (`validate-contracts --runtime`) — checks a live VM: .env on disk, container running, gateway healthy, ADC patch applied, auth-profiles emptied, message-daemon route, message-daemon service active.
+- **Repo mode** (`validate-contracts`) — checks source files: both bootstraps, agent-ears.mjs, config templates. Verifies location, model route, agent ID, OpenClaw pin, no `systemPrompt` key.
+- **Runtime mode** (`validate-contracts --runtime`) — checks a live VM: .env on disk, container running, gateway healthy, ADC patch applied, auth-profiles emptied, agent-ears route, agent-ears + agent-mouth services active.
 - **File mode** (`validate-contracts --file <config.json>`) — checks a rendered config: valid JSON, no systemPrompt, correct default agent ID.
 
 **When it runs:**
@@ -706,22 +693,17 @@ architect-prime/
 8. **ws-token/dwd-token path fix** — All 10 Drive tools + ws-token + dwd-token now auto-detect container vs host paths. Fixed nested `OC_HOST_ROOT` resolution.
 9. **Validated end-to-end** — Multi-step Drive organization: list files → create 3 sub-folders → move 5 files → upload readme → cerebellum verification. All components worked: prefrontal gate, PLAN.md gate, motor execution, cerebellum validation.
 
-### Current: Ears/Mouth Activation + Task Lifecycle
-> *Goal: Activate deterministic input/output services. Implement structured task completion reporting.*
+### Current: v6.0 — R/C/M Framework + Task Lifecycle
+> *Goal: Structured task logging and agent self-reporting.*
 
-1. **Activate ears/mouth services** — Run alongside legacy message-daemon for comparison testing, then retire the monolith.
-2. **Task completion reporting** — Fleet agents need a structured report-back mechanism when tasks complete. Report goes to the requester (human or agent). Enforce a tasks log readable by dashboard/Prime and the agent itself.
-3. **Multi-step pipeline testing** — Validate complex pipelines with advisory rounds (research → plan → build → verify).
-4. **Required API management** — Centralized API manifest, dashboard API status page, skill-gated API enablement.
-
-### Future: v6.0 — R/C/M Framework + Task Lifecycle
-- **Task lifecycle logging** — Structured task log (Firestore) readable by dashboard, Prime, and the agent itself. Every task gets: start time, requester, plan, steps completed, result, duration.
-- **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
-- **Mission system** — Checkpoints roll up into missions. Mission log tracks high-level agent objectives.
-- **Responsibilities engine** — RESPONSIBILITY.toml manifests + registration. Responsibility log tracks ongoing duties. Tasks and checkpoints may roll up to responsibilities.
-- **Agent self-reporting** — Fleet agents report completed work to their own responsibilities GChat channel (or equivalent).
-- **Human review gates** — Dashboard integration for checkpoint approval.
-- **Inter-agent delegation** — Agents @-mention other agents to delegate tasks.
+1. **Task lifecycle logging** — Structured task log (Firestore) readable by dashboard, Prime, and the agent itself. Every task gets: start time, requester, plan, steps completed, result, duration.
+2. **Task completion reporting** — Fleet agents report back when tasks complete. Report goes to the requester (human or agent). Enforce a tasks log readable by dashboard/Prime and the agent itself.
+3. **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
+4. **Mission system** — Checkpoints roll up into missions. Mission log tracks high-level agent objectives.
+5. **Responsibilities engine** — RESPONSIBILITY.toml manifests + registration. Responsibility log tracks ongoing duties. Tasks and checkpoints may roll up to responsibilities.
+6. **Agent self-reporting** — Fleet agents report completed work to their own responsibilities GChat channel (or equivalent).
+7. **Human review gates** — Dashboard integration for checkpoint approval.
+8. **Inter-agent delegation** — Agents @-mention other agents to delegate tasks.
 
 ### Future: v7.0 — RSI Engine
 - Git-ops skill — branch, commit, push, PR

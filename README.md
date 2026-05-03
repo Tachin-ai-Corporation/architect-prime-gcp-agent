@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.03.7.0`
+> **Current version:** `v2026.05.03.8.0`
 
 ---
 
@@ -109,13 +109,15 @@ Your GCP Project
 │   │   ├── prefrontal      — Gemini 2.5 Flash — strategic planning
 │   │   ├── motor           — Gemini 2.5 Flash — execution (code + commands)
 │   │   └── cerebellum      — Gemini 2.5 Flash — verification + QA
-│   ├── message-daemon (systemd) → Unified message bridge (Node.js, non-streaming + anti-spam)
+│   ├── agent-ears (systemd)       → Deterministic input processing (fire-and-forget, zero LLM)
+│   ├── agent-mouth (systemd)      → Output classification + delivery (strict LLM filter)
 │   ├── CoreKit (34 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
 └── Fleet Agent VMs (Compute Engine e2-medium, one per agent)
     ├── openclaw-gateway (Docker) → Specialist AI brain (cortex on Gemini 3.1 Pro)
-    ├── message-daemon (systemd) → Google Chat polling via DWD (non-streaming + ACK timer)
+    ├── agent-ears (systemd)      → GChat polling via DWD (deterministic, fire-and-forget)
+    ├── agent-mouth (systemd)     → Output classification + GChat delivery
     ├── CoreKit (role-specific)   → Manifest-installed tools
     └── Specialty workspace       → SOUL.md, IDENTITY.md, TOOLS.md (per agent type)
 ```
@@ -322,6 +324,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.03.5** | Multi-step brain + Drive organization — 9 Drive tools via DWD, sessions_spawn dispatch, PLAN.md tracking, fleet brain parity |
 | **v2026.05.03.6** | Brain Architecture v2 — Prefrontal-first gate (mandatory dispatch planner), ears/mouth decomposition, tool reassignment (motor owns all Workspace tools, temporal-memory = pure memory), dynamic skill awareness (TOOLS.md) |
 | **v2026.05.03.7** | Brain v2.1 Gate Enforcement — BRAIN_CARD stripped of routing hints, PLAN.md write gate (PLAN_VALID marker), validation rules (per-step criteria checked by cerebellum), two-mode prefrontal (simple + advisory), motor advisory mode, ws-token path fix, multi-step Drive organization validated end-to-end |
+| **v2026.05.03.8** | Ears/Mouth Activation — Decoupled I/O: fire-and-forget agent-ears (deterministic input), strict-LLM agent-mouth (classify+deliver). Deleted message-daemon (−1,028 lines) + channel-respond. Both Prime and Fleet validated end-to-end. |
 
 ---
 

@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.03.7.0)
+## Current Architecture (v2026.05.03.8.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -28,22 +28,21 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
 - **brain-exec v2**: `--plan-exec` (execute pipeline step), `--validate-plan` (invariant checking)
   - Rejects temporal-memory and prefrontal in pipelines (already ran in gate)
-- **Input/Output decomposition** (code complete, not yet active):
-  - `agent-ears.mjs` — 100% deterministic input (poll, dedup, rate-limit, gateway POST)
+- **Input/Output architecture (ears + mouth)**:
+  - `agent-ears.mjs` — 100% deterministic input (poll, dedup, rate-limit, fire-and-forget gateway POST)
   - `agent-mouth.mjs` — 1 LLM call (classify+format) + deterministic delivery
-  - Legacy `message-daemon.mjs` still active during transition
+  - Legacy `message-daemon.mjs` and `channel-respond` have been deleted from codebase
 
 ### Fleet VM Architecture
 - Single OpenClaw agent per VM with specialty-specific workspace + brain sub-agents
-- Same `message-daemon.mjs` as Prime (CHANNEL=gchat) — built-in DWD, conversation history, think-block stripping, watchdog
+- Same `agent-ears.mjs` + `agent-mouth.mjs` as Prime (CHANNEL=gchat) — built-in DWD, fire-and-forget input, strict LLM output classification
 - CoreKit tools shared with Prime via manifest system
 
-### Channel Abstraction
-- `channel-respond` — unified response delivery for both Prime (Dashboard) and Fleet (Google Chat)
-- Agent calls `exec channel-respond "text"` regardless of input channel
-- `TASK.json` in workspace carries channel metadata (set by daemon at submission)
-- Backends: `dashboard-respond` (Firestore) and `chat-send` (Google Chat DWD)
-- This makes Prime and Fleet brains architecturally identical
+### I/O Architecture (Ears + Mouth)
+- Ears polls channel (Firestore or GChat), deduplicates, writes TASK.json, fires gateway POST (non-blocking), sends ACK
+- Mouth watches TASK.json for new tasks, polls gateway logs (most recently modified file), classifies output via strict LLM, delivers to channel
+- `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
+- Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
 
 ### Agent State System (STATUS.json)
 - `agent-status` tool reads/writes `workspace/STATUS.json` with current activity
