@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.01.4.0`
+> - **Current version:** `v2026.05.03.5.0`
 
 ---
 
@@ -622,13 +622,24 @@ architect-prime/
 6. **Bind-mount cache race fix** — `sync` + `sleep 1` before daemon restart ensures Docker sees the updated file.
 7. **Version prefix discipline** — Development workflow documents that every commit on `main` must start with `vYYYY.MM.DD.X.Y:` to prevent "update unknown" in dashboard.
 
-### Current: v2026.05.01.5.0 — Model Flexibility + Memory Consolidation
-> *Goal: Per-agent model overrides, reliable memory consolidation, auto-generated brain cards.*
+### Current: v2026.05.03.5.0 — Multi-Step Brain + Drive Organization
+> *Goal: Cortex plans and executes multi-step workflows using real Google Drive tools.*
 
-1. **Model flexibility** — Allow per-agent model override in `contracts.json` (some sub-agents may benefit from Gemini 3.1 Flash Lite instead of Pro). `brain-exec` and `openclaw-bootstrap.json5.tmpl` read override from contract.
-2. **Memory consolidation reliability** — Replace fragile nightly cron with retry-capable consolidation. Implement 7-day telemetry log pruning as part of the consolidation pass.
-3. **Auto-generated Brain Card** — Generate BRAIN_CARD.md from contracts.json + workspace SOUL.md files instead of manual authoring.
-4. **GChat Cards v2** — Explore structured card messages for richer formatting (headers, sections, icons, buttons) instead of plain text conversion.
+1. **Brain hardening** — Fixed BRAIN_CARD.md / SOUL.md dispatch contradiction. All agents (Prime + fleet) now use `sessions_spawn` / `sessions_yield` instead of legacy `brain-exec` for sub-agent dispatch.
+2. **Fleet brain parity** — Fleet agents now have BRAIN_CARD.md (PreTurn injection), plan-compliance (PostTurn validation), and `sessions_yield` in tool allow list.
+3. **Stateful PLAN.md** — Cortex writes and updates `workspace/PLAN.md` with tracked step markers (`[ ]` → `[x]`) and result summaries. Multi-step chaining with context passing between sequential dispatches.
+4. **Workspace-Drive skill** — 9 Drive tools (`ls`, `search`, `download`, `upload`, `mkdir`, `rename`, `delete`, `move`, `share`) deployed via `skills/workspace-drive/`. Auth via DWD with per-agent Workspace email isolation. 403 graceful handling returns actionable JSON.
+5. **ws-token bug fix** — `ws-token` now explicitly passes `--user` to `dwd-token`, preventing silent wrong-identity impersonation.
+6. **Watchdog timeout** — Bumped from 180s to 300s to accommodate multi-step dispatch chains.
+7. **Drive API enabled** — Added `drive.googleapis.com` and `chat.googleapis.com` to project bootstrap (`install.sh`).
+
+### Near-term: Required API Management
+> *Goal: Users see required APIs and can enable them from the dashboard during setup.*
+
+1. **Centralized API manifest** — Single source of truth (`infra/required-apis.json`) listing all GCP APIs needed by the platform and by each skill category. `install.sh` reads from this manifest instead of hardcoded array.
+2. **Dashboard API status page** — Setup tab shows which APIs are enabled/disabled. Users can click to enable missing APIs directly (via Cloud Resource Manager API).
+3. **Skill-gated APIs** — Each skill category (workspace-drive, workspace-gmail, etc.) declares its required APIs. Only enabled when an agent type uses that skill.
+4. **Bootstrap validation** — `validate-contracts` checks that all APIs required by deployed skills are enabled, warns on missing.
 
 ### Future: v6.0 — R/C/M Framework
 - Responsibilities engine — RESPONSIBILITY.toml manifests + registration
@@ -643,8 +654,8 @@ architect-prime/
 - RSI mission template — plan → implement → test → promote
 - Two mandatory human gates (plan approval + merge approval)
 
-### Future: v8.0+ — Workspace Integration
-- Google Workspace skills — Docs, Sheets, Calendar, Gmail
+### Future: v8.0+ — Full Workspace Integration
+- Additional Google Workspace skills — Gmail, Calendar, Docs, Sheets
 - Agent cell templates — pre-built team configurations
 - Self-evolution — Prime proposes its own improvements via PR
 - Multi-project federation — fleet agents across different GCP projects

@@ -71,6 +71,8 @@ APIS=(
   aiplatform.googleapis.com
   artifactregistry.googleapis.com
   cloudbuild.googleapis.com
+  drive.googleapis.com              # Google Drive — workspace-drive skills
+  chat.googleapis.com               # Google Chat — fleet agent channel
 )
 for api in "${APIS[@]}"; do
   gcloud services enable "$api" --quiet 2>/dev/null && ok "$api" || warn "Failed to enable $api"
