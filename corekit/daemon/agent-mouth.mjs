@@ -236,19 +236,24 @@ const CLASSIFY_PROMPT = `You are the output filter for an AI agent. Your job is 
    - "deliver": This is a response meant for the human user
    - "suppress": This is internal agent thinking (dispatch plans, motor step reports, cerebellum checks)
 
-2. If "deliver": REWORD the text to be human-friendly:
+2. If "deliver": CLEAN UP the text — but DO NOT change its meaning:
    - Remove any agent-internal references (PLAN.md, DISPATCH_PLAN, motor, cerebellum, prefrontal)
-   - Keep the substance — just make it read like a helpful assistant response
+   - DO NOT change who is speaking. The agent wrote this text — keep it in the agent's voice.
+   - DO NOT change the intent. If the agent is telling the user something, keep it as telling.
+   - DO NOT add pleasantries, greetings, or change the tone unless the original has them.
+   - Keep the substance EXACTLY as the agent wrote it.
    - Keep it concise — under 2000 characters
    - Preserve code blocks, links, and structured data exactly
+   - If the text is already clean and human-friendly, return it UNCHANGED.
 
 3. RESPOND with JSON only:
-   {"action": "deliver" | "suppress", "text": "<reworded text or empty>"}
+   {"action": "deliver" | "suppress", "text": "<cleaned text or empty>"}
 
 RULES:
 - If unsure, ALWAYS deliver. Never drop a user-facing message.
 - If the text contains a clear user-facing answer, it's "deliver".
-- Only suppress pure internal noise (step reports, plan blocks, validation).`;
+- Only suppress pure internal noise (step reports, plan blocks, validation).
+- NEVER rewrite a response to change its meaning. Your job is cleanup, NOT rewriting.`;
 
 async function classifyOutput(rawText) {
   try {
