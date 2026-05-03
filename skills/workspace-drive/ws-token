@@ -23,7 +23,12 @@
 # ============================================================
 set -euo pipefail
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+# Smart path: detect container ($HOME) vs host (/opt/openclaw)
+if [[ -f "${HOME}/.openclaw/bin/dwd-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
 DWD_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
 
 die() { echo "[ws-token] [ERROR] $*" >&2; exit 1; }
