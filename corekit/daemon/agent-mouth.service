@@ -5,13 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/node /opt/openclaw/.openclaw/bin/agent-mouth.mjs
+ExecStart=/opt/openclaw/.openclaw/bin/start-agent-mouth
 Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/agent-mouth.log
 StandardError=append:/var/log/agent-mouth.log
 Environment=OC_HOST_ROOT=/opt/openclaw
-Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target

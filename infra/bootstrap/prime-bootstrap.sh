@@ -13,7 +13,7 @@
 #   5. Wait for gateway readiness
 #   6. Render + apply bootstrap config via RPC (retry/baseHash)
 #   7. Container hardening + Docker CLI injection
-#   8. Install message-daemon systemd service (unified daemon)
+#   8. Install agent-ears + agent-mouth systemd services
 # ============================================================
 set -euo pipefail
 
@@ -100,7 +100,7 @@ else
   C_GATEWAY_ROUTE="openclaw/cortex"
 fi
 
-# ---- 4) Save gateway token for message-daemon ----
+# ---- 4) Save gateway token for ears/mouth ----
 # render-config (step 9) will update this with the final token;
 # write it now so the old config path works if render-config fails.
 mkdir -p /root/.openclaw
@@ -433,7 +433,7 @@ fi
 # ---- 12d) Warm-up probe (pre-warm ADC tokens) ----
 # ADR: After the ADC patch + model discovery + contract validation, fire a
 # lightweight request through the full cortex route to pre-warm ADC tokens.
-# This ensures the first real user message from message-daemon doesn't eat
+# This ensures the first real user message from agent-ears doesn't eat
 # 10-20s of token initialization.
 info "Running warm-up probe..."
 curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
@@ -466,34 +466,22 @@ info "Final permissions sweep..."
 find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 14) Install message-daemon as systemd service ----
-info "Installing message-daemon systemd service..."
-cat > /etc/systemd/system/message-daemon.service <<UNIT
-[Unit]
-Description=Unified Message Daemon (Dashboard Channel)
-After=network-online.target docker.service
-Wants=network-online.target
+# ---- 14) Install agent-ears + agent-mouth as systemd services ----
+info "Installing agent-ears + agent-mouth systemd services..."
 
-[Service]
-Type=simple
-User=root
-Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
-Environment=CHANNEL=dashboard
-Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
-Environment=AGENT_ID=${AGENT_ID}
-Environment=PRIME_ID=${PRIME_ID}
-Environment=POLL_INTERVAL=5
-ExecStart=${OC_HOST_DIR}/bin/start-message-daemon
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-UNIT
+# Copy service files from corekit (installed by manifest)
+EARS_SVC_SRC="${OC_HOST_DIR}/corekit/agent-ears.service"
+MOUTH_SVC_SRC="${OC_HOST_DIR}/corekit/agent-mouth.service"
+if [[ -f "$EARS_SVC_SRC" ]]; then
+  cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
+fi
+if [[ -f "$MOUTH_SVC_SRC" ]]; then
+  cp "$MOUTH_SVC_SRC" /etc/systemd/system/agent-mouth.service
+fi
 
 systemctl daemon-reload
-systemctl enable message-daemon
-systemctl start message-daemon
+systemctl enable agent-ears agent-mouth 2>/dev/null || true
+systemctl start agent-ears agent-mouth
 
 # ---- 14) Install command-runner as systemd service ----
 info "Installing command-runner systemd service..."
@@ -543,8 +531,8 @@ echo "  OpenClaw commit: ${STABLE_COMMIT:0:12}"
 echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"
-echo "  Daemon         : Node.js (message-daemon.mjs)"
-echo "  Dispatch       : brain-exec wrapper + SSE streaming"
+echo "  I/O Services   : agent-ears + agent-mouth"
+echo "  Dispatch       : prefrontal-first gate (Brain v2.1)"
 echo "  Health check   : fleet-health-check.timer (every 15m)"
 echo "============================================"
 

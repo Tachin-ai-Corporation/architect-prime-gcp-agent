@@ -3,7 +3,10 @@
 // agent-ears.mjs — Deterministic Input Processing Service
 //
 // 100% deterministic — ZERO LLM calls.
-// Polls channels for input, deduplicates, delivers to gateway.
+// Polls channels for input, deduplicates, writes TASK.json,
+// fires gateway call (non-blocking), sends ACK.
+//
+// The Mouth service handles ALL output delivery.
 //
 // Channels:
 //   - Firestore (Prime/Dashboard)
@@ -62,6 +65,9 @@ try {
   const contracts = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
   GATEWAY_ROUTE = contracts.agents?.gatewayRoute || GATEWAY_ROUTE;
 } catch {}
+
+// TASK.json path (for mouth tracking)
+const TASK_JSON = '/home/node/.openclaw/workspace/TASK.json';
 
 // ---- Shared state ----
 const recentMessages = new Map();            // dedup by content hash
@@ -131,32 +137,51 @@ async function getDwdToken() {
   return _dwdToken;
 }
 
-// ---- Gateway Call (non-streaming) ----
-async function callGateway(messages) {
+// ---- TASK.json (channel metadata for Mouth) ----
+function writeTaskJson(msg, taskId) {
+  const task = {
+    taskId,
+    channel: CHANNEL,
+    text: msg.text,
+    timestamp: new Date().toISOString(),
+    status: 'executing',
+    metadata: {
+      ...msg.metadata,
+      agentEmail: AGENT_USER_EMAIL,
+      primeId: PRIME_ID,
+      agentId: AGENT_ID,
+    }
+  };
+  try { writeFileSync(TASK_JSON, JSON.stringify(task, null, 2)); } catch (err) {
+    log('TASK.json write error', { error: err.message });
+  }
+}
+
+// ---- Gateway Call (FIRE AND FORGET) ----
+// We do NOT await the response. That's the Mouth's job.
+function fireGateway(messages) {
   const controller = new AbortController();
   const hardTimeout = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
-  try {
-    const res = await fetch(GATEWAY_URL, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${GATEWAY_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: GATEWAY_ROUTE, messages, stream: false }),
-      signal: controller.signal
-    });
+
+  fetch(GATEWAY_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${GATEWAY_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: GATEWAY_ROUTE, messages, stream: false }),
+    signal: controller.signal
+  })
+  .then(res => {
     clearTimeout(hardTimeout);
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      log('Gateway HTTP error', { status: res.status, body: errText.slice(0, 200) });
-      return { error: `Gateway error (HTTP ${res.status})` };
+      res.text().then(t => log('Gateway HTTP error', { status: res.status, body: t.slice(0, 200) })).catch(() => {});
+    } else {
+      log('Gateway call completed');
     }
-    // We don't process the response — that's the Mouth's job.
-    // We just need to know the gateway accepted it.
-    return { ok: true };
-  } catch (err) {
+  })
+  .catch(err => {
     clearTimeout(hardTimeout);
-    if (err.name === 'AbortError') return { error: `Gateway timeout (${HTTP_TIMEOUT / 1000}s)` };
-    log('Gateway error', { error: err.message });
-    return { error: err.message };
-  }
+    if (err.name === 'AbortError') log('Gateway timeout', { timeout_s: HTTP_TIMEOUT / 1000 });
+    else log('Gateway error', { error: err.message });
+  });
 }
 
 // ================================================================
@@ -253,27 +278,29 @@ function markGChatConsumed(msg) {
   } catch {}
 }
 
-// ---- GChat ACK (deterministic — just sends a text message) ----
-async function sendGChatAck(metadata) {
-  const token = await getDwdToken();
-  const space = metadata?.space || _gchatSpaces[0];
-  if (!space) return;
-  await fetch(`${CHAT_API}/${space}/messages`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: '🔄 Processing your request...' })
-  }).catch(err => log('ACK send error', { error: err.message }));
-}
-
-// ---- Firestore ACK ----
-async function sendFirestoreAck() {
-  const token = await getAccessToken();
-  await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/messages`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: {
-      text: { stringValue: '🔄 Processing your request...' }, sender: { stringValue: 'prime' },
-      timestamp: { timestampValue: new Date().toISOString() }, processed: { booleanValue: true }
-    } })
-  }).catch(err => log('ACK send error', { error: err.message }));
+// ---- ACK Messages (deterministic) ----
+async function sendACK(metadata) {
+  try {
+    if (CHANNEL === 'gchat') {
+      const token = await getDwdToken();
+      const space = metadata?.space || _gchatSpaces[0];
+      if (!space) return;
+      await fetch(`${CHAT_API}/${space}/messages`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: '🔄 Processing your request...' })
+      });
+    } else {
+      const token = await getAccessToken();
+      await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/messages`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {
+          text: { stringValue: '🔄 Processing your request...' }, sender: { stringValue: 'prime' },
+          timestamp: { timestampValue: new Date().toISOString() }, processed: { booleanValue: true }
+        } })
+      });
+    }
+    log('ACK sent');
+  } catch (err) { log('ACK send error', { error: err.message }); }
 }
 
 // ---- Firestore Heartbeat ----
@@ -321,7 +348,6 @@ async function main() {
   process.on('SIGINT', shutdown);
 
   log('Entering polling loop...');
-  const ACK_TIMEOUT = 15_000;
 
   while (true) {
     try {
@@ -358,41 +384,24 @@ async function main() {
 
         // Mark consumed IMMEDIATELY
         if (CHANNEL === 'gchat') markGChatConsumed(msg); else await markFirestoreConsumed(msg);
-        log('Received', { text: msg.text.slice(0, 100) });
 
-        // ACK timer — send "processing" after 15s if gateway hasn't responded
-        let ackSent = false;
-        const ackTimer = setTimeout(async () => {
-          ackSent = true;
-          if (CHANNEL === 'gchat') await sendGChatAck(msg.metadata);
-          else await sendFirestoreAck();
-          log('ACK sent (timeout)');
-        }, ACK_TIMEOUT);
+        const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        log('Received', { text: msg.text.slice(0, 100), taskId });
 
-        // Build conversation and send to gateway
+        // Write TASK.json (for Mouth to know which channel to deliver to)
+        writeTaskJson(msg, taskId);
+
+        // Build conversation
         conversationHistory.push({ role: 'user', content: msg.text });
         while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
 
-        const result = await callGateway([...conversationHistory]);
-        clearTimeout(ackTimer);
+        // FIRE AND FORGET — gateway call is non-blocking
+        // The Mouth service will poll for output and handle delivery.
+        fireGateway([...conversationHistory]);
+        log('Dispatched to gateway (fire-and-forget)', { taskId });
 
-        if (result.error) {
-          log('Gateway error', { error: result.error });
-          conversationHistory.pop();
-          // Still send ACK if not already sent
-          if (!ackSent) {
-            if (CHANNEL === 'gchat') await sendGChatAck(msg.metadata);
-            else await sendFirestoreAck();
-          }
-        } else {
-          log('Delivered to gateway');
-          // The Mouth will pick up the response from the gateway.
-          // We just need to send ACK if not already sent.
-          if (!ackSent) {
-            if (CHANNEL === 'gchat') await sendGChatAck(msg.metadata);
-            else await sendFirestoreAck();
-          }
-        }
+        // Send ACK immediately
+        await sendACK(msg.metadata);
 
         // Touch health check file
         try { writeFileSync('/var/run/agent-ears-last-poll', String(Date.now())); } catch {}

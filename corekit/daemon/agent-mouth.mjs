@@ -2,9 +2,15 @@
 // ============================================================
 // agent-mouth.mjs — Output Classification and Delivery Service
 //
-// 1 LLM call (classify + format) per output, everything else
-// deterministic. Polls gateway logs for new Cortex output,
-// classifies it, and delivers to the appropriate channel.
+// Sole delivery path for ALL agent output.
+// Polls gateway logs for Cortex synthesis output, classifies
+// with a strict LLM call (internal/external + reformat), and
+// delivers to the originating channel.
+//
+// LLM function is STRICT:
+//   1. Classify: internal (suppress) vs external (deliver)
+//   2. Reword for human friendliness
+//   3. Reformat for channel (GChat markdown, etc.)
 //
 // Run:
 //   CHANNEL=gchat node agent-mouth.mjs
@@ -21,12 +27,8 @@ const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
 const POLL_INTERVAL = 2000; // 2s
 
-// Mouth config from contracts
-let MOUTH_CONFIG = { llm_enabled: true, model: 'gemini-2.5-flash', maxTokens: 2000, temperature: 0.1, fallback: 'deliver_raw' };
-try {
-  const contracts = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
-  if (contracts.mouth) MOUTH_CONFIG = { ...MOUTH_CONFIG, ...contracts.mouth };
-} catch {}
+// Timeout: if no output after this long, send error message
+const DELIVERY_TIMEOUT = 300_000; // 5 minutes
 
 const VERTEX_PROJECT = process.env.GCP_PROJECT_ID;
 const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global';
@@ -36,11 +38,8 @@ const FIRESTORE_URL = GCP_PROJECT
   ? `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`
   : '';
 
-// Load mouth system prompt
-let MOUTH_PROMPT = '';
-try { MOUTH_PROMPT = readFileSync('/home/node/.openclaw/bin/mouth-prompt.md', 'utf8'); } catch {
-  try { MOUTH_PROMPT = readFileSync('/opt/openclaw/.openclaw/bin/mouth-prompt.md', 'utf8'); } catch {}
-}
+// TASK.json path (written by ears)
+const TASK_JSON = '/home/node/.openclaw/workspace/TASK.json';
 
 // ---- Logging ----
 const MOUTH_LOG = '/var/log/agent-mouth.log';
@@ -138,69 +137,66 @@ function convertToGChatMarkdown(text) {
 }
 
 // ================================================================
-// OUTPUT POLLING — Gateway Log File
+// OUTPUT DETECTION — Gateway Log File
 // ================================================================
 
 let lastLogOffset = 0;
+let lastTaskId = null;
+let taskStartTime = 0;
+
+// Read TASK.json to track what we're waiting for
+function readTaskJson() {
+  try {
+    const data = JSON.parse(readFileSync(TASK_JSON, 'utf8'));
+    return data;
+  } catch { return null; }
+}
 
 function getLatestGatewayOutput() {
-  // Read gateway log file and find new assistant output since last check
   const today = new Date().toISOString().split('T')[0];
   const logPath = `/tmp/openclaw/openclaw-${today}.log`;
   if (!existsSync(logPath)) return null;
 
-  const logContent = readFileSync(logPath, 'utf8');
+  let logContent;
+  try { logContent = readFileSync(logPath, 'utf8'); } catch { return null; }
   if (logContent.length <= lastLogOffset) return null;
 
   const newContent = logContent.slice(lastLogOffset);
   lastLogOffset = logContent.length;
 
-  // Parse log entries looking for assistant output after subagent announce
+  // Parse log entries — find the LAST substantial text block
+  // This is Cortex's final synthesis (the response to the user)
   const lines = newContent.split('\n').filter(l => l.trim());
-  let foundAnnounce = false;
-  let synthesisEntries = [];
+  const textEntries = [];
 
   for (const line of lines) {
     try {
       const entry = JSON.parse(line);
-      const allText = Object.keys(entry)
-        .filter(k => k !== '_meta' && typeof entry[k] === 'string')
-        .map(k => entry[k]).join(' ');
-
-      // Check for sub-agent announce completion
-      if (allText.includes('announce:v1:agent:')) {
-        foundAnnounce = true;
-        synthesisEntries = [];
-        continue;
-      }
-
-      // Capture synthesis text (text after announce, length > 50)
       const text = entry['0'] || '';
-      if (foundAnnounce && text.length > 50) {
-        synthesisEntries.push(text);
+
+      // Skip gateway/subsystem noise
+      if (text.includes('"subsystem"')) continue;
+      if (text.startsWith('{') && text.includes('_meta')) continue;
+      if (text === 'No reply from agent.') continue;
+
+      // Skip dispatch plan blocks (internal to cortex)
+      if (text.startsWith('DISPATCH_PLAN:') || text.startsWith('PLANNING_ROUND_REQUIRED:')) continue;
+      if (text.startsWith('PLAN_VALID')) continue;
+
+      // Skip motor execution reports (internal)
+      if (text.startsWith('## Step ') && text.includes('### Action Taken')) continue;
+
+      // Keep substantial text that looks like a user-facing response
+      if (text.length > 30) {
+        textEntries.push(text);
       }
     } catch {}
   }
 
-  // Also check for direct responses (no announce — identity/short-circuit)
-  if (!foundAnnounce && synthesisEntries.length === 0) {
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        const text = entry['0'] || '';
-        // Look for substantial text that looks like an agent response
-        if (text.length > 30 && !text.includes('[ws]') && !text.includes('gateway') &&
-            !text.includes('"subsystem"') && !text.startsWith('{')) {
-          synthesisEntries.push(text);
-        }
-      } catch {}
-    }
-  }
+  if (textEntries.length === 0) return null;
 
-  if (synthesisEntries.length === 0) return null;
-
-  // Extract the actual response from thinking blocks
-  const raw = synthesisEntries.join('\n');
+  // The LAST substantial entry is typically the final synthesis
+  const raw = textEntries[textEntries.length - 1];
   return stripThinking(raw);
 }
 
@@ -209,61 +205,71 @@ function stripThinking(text) {
   if (text.includes('<think>') && text.includes('</think>')) {
     return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   }
-  if (text.startsWith('think\n') || text.startsWith('think\r\n')) {
-    const lines = text.split('\n');
-    let lastThinkLine = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i].trim();
-      if (l === '' || l === 'think' || /^Thinking/i.test(l) ||
-          /^\d+\.\s/.test(l) || /^\*\s/.test(l) || /^\*\*/.test(l)) {
-        lastThinkLine = i;
-      }
-    }
-    const response = lines.slice(lastThinkLine + 1).join('\n').trim();
-    if (response.length > 0) return response;
-  }
   return text;
 }
 
 // ================================================================
-// LLM CLASSIFICATION (the ONE LLM call in the Mouth)
+// STRICT LLM CLASSIFICATION
+//
+// This is the ONE LLM call. It is STRICT:
+//   1. Is this internal (dispatch plan, motor output) or external (user response)?
+//   2. If external: reword for human friendliness
+//   3. Reformat for the channel
+//
+// NEVER drops messages — unknown → deliver raw.
 // ================================================================
 
-async function classifyAndFormat(rawText) {
-  if (!MOUTH_CONFIG.llm_enabled || !MOUTH_PROMPT) {
-    // Debug mode or no prompt — deliver raw
-    return { action: 'deliver', formatted_text: rawText };
-  }
+const CLASSIFY_PROMPT = `You are the output filter for an AI agent. Your job is STRICT and simple:
 
+1. CLASSIFY the output as "deliver" or "suppress":
+   - "deliver": This is a response meant for the human user
+   - "suppress": This is internal agent thinking (dispatch plans, motor step reports, cerebellum checks)
+
+2. If "deliver": REWORD the text to be human-friendly:
+   - Remove any agent-internal references (PLAN.md, DISPATCH_PLAN, motor, cerebellum, prefrontal)
+   - Keep the substance — just make it read like a helpful assistant response
+   - Keep it concise — under 2000 characters
+   - Preserve code blocks, links, and structured data exactly
+
+3. RESPOND with JSON only:
+   {"action": "deliver" | "suppress", "text": "<reworded text or empty>"}
+
+RULES:
+- If unsure, ALWAYS deliver. Never drop a user-facing message.
+- If the text contains a clear user-facing answer, it's "deliver".
+- Only suppress pure internal noise (step reports, plan blocks, validation).`;
+
+async function classifyOutput(rawText) {
   try {
     const token = await getAccessToken();
-    const url = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/${MOUTH_CONFIG.model}:generateContent`;
+    const url = `https://${VERTEX_LOCATION === 'global' ? '' : VERTEX_LOCATION + '-'}aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/gemini-2.5-flash:generateContent`;
 
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: MOUTH_PROMPT }] },
-        contents: [{ role: 'user', parts: [{ text: JSON.stringify({ raw_output: rawText, channel: CHANNEL }) }] }],
+        systemInstruction: { parts: [{ text: CLASSIFY_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: rawText }] }],
         generationConfig: {
-          temperature: MOUTH_CONFIG.temperature,
-          maxOutputTokens: MOUTH_CONFIG.maxTokens,
+          temperature: 0.0,
+          maxOutputTokens: 2048,
           responseMimeType: 'application/json'
         }
       })
     });
 
     if (!res.ok) {
-      log('Mouth LLM HTTP error', { status: res.status });
-      return { action: 'deliver', formatted_text: rawText }; // Fallback: deliver raw
+      log('Classify LLM HTTP error — delivering raw', { status: res.status });
+      return { action: 'deliver', text: rawText };
     }
 
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    return { action: parsed.action || 'deliver', text: parsed.text || rawText };
   } catch (err) {
-    log('Mouth LLM error — delivering raw', { error: err.message });
-    return { action: 'deliver', formatted_text: rawText }; // NEVER drop a message
+    log('Classify error — delivering raw', { error: err.message });
+    return { action: 'deliver', text: rawText }; // NEVER drop
   }
 }
 
@@ -302,38 +308,19 @@ async function deliver(text) {
   else await deliverToFirestore(text);
 }
 
-// ---- Deterministic: @-mention extraction ----
-function extractMentions(text) {
-  const mentions = [];
-  const pattern = /@([\w-]+(?:@[\w.-]+)?)/g;
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    mentions.push(match[1]);
-  }
-  return mentions;
-}
+// ================================================================
+// TASK LIFECYCLE — Update TASK.json status
+// ================================================================
 
-// ---- Deterministic: Escalation detection ----
-function hasEscalateMarker(text) {
-  return /\[ESCALATE\]/i.test(text);
-}
-
-// ---- Write escalation to Firestore ----
-async function writeEscalationFlag(reason) {
-  if (!FIRESTORE_URL) return;
+function markTaskComplete(taskId) {
   try {
-    const token = await getAccessToken();
-    const docId = `escalation-${Date.now()}`;
-    await fetch(`${FIRESTORE_URL}/escalations?documentId=${docId}`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: {
-        reason: { stringValue: reason },
-        channel: { stringValue: CHANNEL },
-        timestamp: { timestampValue: new Date().toISOString() },
-        acknowledged: { booleanValue: false }
-      } })
-    });
-  } catch (err) { log('Escalation write error', { error: err.message }); }
+    const task = readTaskJson();
+    if (task && task.taskId === taskId) {
+      task.status = 'complete';
+      task.completedAt = new Date().toISOString();
+      writeFileSync(TASK_JSON, JSON.stringify(task, null, 2));
+    }
+  } catch {}
 }
 
 // ================================================================
@@ -343,10 +330,7 @@ async function writeEscalationFlag(reason) {
 async function main() {
   if (!GCP_PROJECT) { console.error('GCP_PROJECT_ID required'); process.exit(1); }
 
-  log('Starting', {
-    channel: CHANNEL, llm_enabled: MOUTH_CONFIG.llm_enabled,
-    model: MOUTH_CONFIG.model, poll_interval_ms: POLL_INTERVAL
-  });
+  log('Starting', { channel: CHANNEL, poll_interval_ms: POLL_INTERVAL });
 
   // Graceful shutdown
   process.on('SIGTERM', () => { log('Shutting down...'); process.exit(0); });
@@ -356,69 +340,60 @@ async function main() {
 
   while (true) {
     try {
-      const rawOutput = getLatestGatewayOutput();
-      if (rawOutput && rawOutput.length > 10) {
-        log('Output detected', { chars: rawOutput.length });
+      // Check if there's a task executing
+      const task = readTaskJson();
+      const hasActiveTask = task && task.status === 'executing';
 
-        // ── DETERMINISTIC PRE-PROCESSING ──
-        const mentions = extractMentions(rawOutput);
-        const escalate = hasEscalateMarker(rawOutput);
-        const isAllInternal = /^\s*\[INTERNAL\]/.test(rawOutput);
-
-        let action, formattedText, escalationReason;
-
-        if (isAllInternal) {
-          // Entire output tagged internal → suppress
-          action = 'suppress';
-          formattedText = '';
-          log('Classified: suppress (all internal)');
-        } else if (!MOUTH_CONFIG.llm_enabled) {
-          // Debug mode: deliver raw
-          action = escalate ? 'escalate' : 'deliver';
-          formattedText = rawOutput;
-          escalationReason = escalate ? 'Explicit [ESCALATE] marker' : undefined;
-          log('Classified: deliver_raw (LLM disabled)');
-        } else {
-          // ── LLM CALL: classify + format ──
-          const classification = await classifyAndFormat(rawOutput);
-          action = classification.action || 'deliver';
-          formattedText = classification.formatted_text || rawOutput;
-          escalationReason = classification.escalation_reason;
-
-          // Deterministic override: explicit markers always win
-          if (escalate && action !== 'escalate') action = 'escalate';
-
-          log('Classified', { action, llmUsed: true });
+      if (hasActiveTask) {
+        // Track task for timeout
+        if (task.taskId !== lastTaskId) {
+          lastTaskId = task.taskId;
+          taskStartTime = Date.now();
+          log('Tracking task', { taskId: task.taskId });
         }
 
-        // ── DETERMINISTIC DELIVERY ──
-        switch (action) {
-          case 'deliver':
-            await deliver(formattedText);
-            log('Delivered', { channel: CHANNEL, chars: formattedText.length });
-            break;
-          case 'escalate':
-            await deliver(formattedText);
-            await writeEscalationFlag(escalationReason || 'Agent escalation');
-            log('Delivered + escalated', { reason: escalationReason });
-            break;
-          case 'suppress':
-            log('Suppressed', { reason: 'internal_thinking' });
-            break;
-          default:
-            // Unknown action — deliver raw (NEVER drop)
-            await deliver(rawOutput);
-            log('Delivered (unknown action fallback)', { action });
+        // Check for timeout
+        if (Date.now() - taskStartTime > DELIVERY_TIMEOUT) {
+          log('Task timeout — delivering error', { taskId: task.taskId, timeout_s: DELIVERY_TIMEOUT / 1000 });
+          await deliver('⚠ I\'m still working on this, but it\'s taking longer than expected. I\'ll keep trying.');
+          markTaskComplete(task.taskId);
+          lastTaskId = null;
+          continue;
         }
 
-        // ── DETERMINISTIC @-MENTION ROUTING ──
-        for (const mention of mentions) {
-          log('Routing @mention', { mention });
-          // Future: route to agent via DWD send
-        }
+        // Poll for gateway output
+        const rawOutput = getLatestGatewayOutput();
+        if (rawOutput && rawOutput.length > 10) {
+          log('Output detected', { chars: rawOutput.length, taskId: task.taskId });
 
-        // Touch health check
-        try { writeFileSync('/var/run/agent-mouth-last-delivery', String(Date.now())); } catch {}
+          // Strict LLM classify: internal/external + reformat
+          const result = await classifyOutput(rawOutput);
+
+          if (result.action === 'deliver') {
+            await deliver(result.text);
+            log('Delivered', { channel: CHANNEL, chars: result.text.length, taskId: task.taskId });
+            markTaskComplete(task.taskId);
+            lastTaskId = null;
+          } else {
+            log('Suppressed (internal)', { taskId: task.taskId, chars: rawOutput.length });
+            // Don't mark complete — keep polling for the real response
+          }
+
+          // Touch health check
+          try { writeFileSync('/var/run/agent-mouth-last-delivery', String(Date.now())); } catch {}
+        }
+      } else {
+        // No active task — still poll logs for stray output (safety net)
+        const rawOutput = getLatestGatewayOutput();
+        if (rawOutput && rawOutput.length > 50) {
+          log('Stray output detected (no active task)', { chars: rawOutput.length });
+          // Classify and deliver anyway — never lose output
+          const result = await classifyOutput(rawOutput);
+          if (result.action === 'deliver') {
+            await deliver(result.text);
+            log('Delivered stray output', { channel: CHANNEL, chars: result.text.length });
+          }
+        }
       }
     } catch (err) {
       log('Poll error', { error: err.message });

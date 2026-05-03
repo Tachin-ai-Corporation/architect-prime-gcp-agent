@@ -7,7 +7,7 @@
 #
 # Mirrors prime-bootstrap.sh but adapted for fleet agents:
 #   - Uses fleet workspace (specialty-specific SOUL/IDENTITY)
-#   - Installs message-daemon (unified polling daemon)
+#   - Installs agent-ears + agent-mouth services (deterministic I/O)
 #   - Reads agent identity from VM metadata
 #   - Same proven OpenClaw + ADC fix pattern
 #
@@ -243,30 +243,20 @@ mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
 
-# ---- 8) Install message-daemon systemd unit ----
-info "Installing message-daemon systemd unit..."
-cat > /etc/systemd/system/message-daemon.service <<UNIT
-[Unit]
-Description=Unified Message Daemon (GChat Channel)
-After=network-online.target docker.service
-Wants=network-online.target
+# ---- 8) Install agent-ears + agent-mouth systemd units ----
+info "Installing agent-ears + agent-mouth systemd units..."
 
-[Service]
-Type=simple
-User=root
-Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
-Environment=CHANNEL=gchat
-Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
-Environment=AGENT_ID=${AGENT_ID}
-ExecStart=${OC_HOST_DIR}/bin/start-message-daemon
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-UNIT
+# Copy service files from corekit (installed by manifest)
+EARS_SVC_SRC="${OC_HOST_DIR}/corekit/agent-ears.service"
+MOUTH_SVC_SRC="${OC_HOST_DIR}/corekit/agent-mouth.service"
+if [[ -f "$EARS_SVC_SRC" ]]; then
+  cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
+fi
+if [[ -f "$MOUTH_SVC_SRC" ]]; then
+  cp "$MOUTH_SVC_SRC" /etc/systemd/system/agent-mouth.service
+fi
 systemctl daemon-reload
-systemctl enable message-daemon
+systemctl enable agent-ears agent-mouth 2>/dev/null || true
 
 # ============================================================
 # PHASE 2 — OpenClaw Docker image + config
@@ -500,19 +490,19 @@ curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/comple
 # ADR: File Ownership Model
 # install.sh chowns everything to 1000:1000 (ubuntu). But fleet-bootstrap
 # runs as root, and root's umask is 077. Any mkdir/cp/sed AFTER install.sh
-# creates files/dirs with 700 permissions (root-only). The message-daemon
-# wrapper needs to traverse dirs. This sweep MUST be the LAST thing before
+# creates files/dirs with 700 permissions (root-only). The ears/mouth
+# wrappers need to traverse dirs. This sweep MUST be the LAST thing before
 # services start.
 info "Final permissions sweep..."
 find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 18) Start message-daemon ----
-info "Starting message-daemon..."
+# ---- 18) Start agent-ears + agent-mouth ----
+info "Starting agent-ears + agent-mouth..."
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
-  systemctl start message-daemon || warn "message-daemon start failed (DWD may not be configured)"
+  systemctl start agent-ears agent-mouth || warn "ears/mouth start failed (DWD may not be configured)"
 else
-  warn "message-daemon not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
+  warn "ears/mouth not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
 fi
 
 # ---- 19) Report completion to Firestore via Prime's API ----

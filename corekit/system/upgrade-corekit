@@ -183,23 +183,11 @@ case "${1:-}" in
       fi
     fi
 
-    # ---- Restart daemons ----
-    echo "==> Restarting daemons..."
+    # ---- Restart services ----
+    echo "==> Managing services..."
 
-    # Install/update message-daemon.service from corekit
-    MSG_SVC="/etc/systemd/system/message-daemon.service"
-    MSG_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/message-daemon.service"
-    if [[ -f "$MSG_SVC_SRC" ]]; then
-      cp "$MSG_SVC_SRC" "$MSG_SVC"
-      systemctl daemon-reload
-      if ! systemctl is-enabled --quiet message-daemon 2>/dev/null; then
-        echo "  Enabling message-daemon.service..."
-        systemctl enable message-daemon
-      fi
-    fi
-
-    # Stop and disable legacy daemons if still present
-    for old_svc in control-daemon inbox-daemon; do
+    # Stop and disable legacy daemons (replaced by ears + mouth)
+    for old_svc in message-daemon control-daemon inbox-daemon; do
       if systemctl is-enabled --quiet "$old_svc" 2>/dev/null; then
         systemctl stop "$old_svc" 2>/dev/null || true
         systemctl disable "$old_svc" 2>/dev/null || true
@@ -211,20 +199,29 @@ case "${1:-}" in
     sync
     sleep 1
 
-    # Kill ALL orphaned message-daemon node processes inside the container.
+    # Kill ALL orphaned daemon/ears/mouth node processes inside the container.
     # docker exec only kills the host-side process — the node process inside
-    # the container keeps running, causing duplicate message pickup and
-    # phantom watchdog timeouts from old daemon instances.
+    # the container keeps running after restart.
     docker exec openclaw-gateway pkill -f 'message-daemon.mjs' 2>/dev/null || true
+    docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
+    docker exec openclaw-gateway pkill -f 'agent-mouth.mjs' 2>/dev/null || true
     sleep 1
 
-    # Restart message-daemon
-    if systemctl is-enabled --quiet message-daemon 2>/dev/null; then
-      systemctl restart message-daemon
-      echo "  Restarted: message-daemon (killed $(docker exec openclaw-gateway pgrep -fc 'message-daemon.mjs' 2>/dev/null || echo 0) orphans)"
-    else
-      echo "  [WARN] message-daemon not installed — manual service setup needed"
+    # Install ears + mouth services
+    EARS_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/agent-ears.service"
+    MOUTH_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/agent-mouth.service"
+    if [[ -f "$EARS_SVC_SRC" ]]; then
+      cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
     fi
+    if [[ -f "$MOUTH_SVC_SRC" ]]; then
+      cp "$MOUTH_SVC_SRC" /etc/systemd/system/agent-mouth.service
+    fi
+    systemctl daemon-reload
+
+    # Enable and start ears + mouth
+    systemctl enable agent-ears agent-mouth 2>/dev/null || true
+    systemctl restart agent-ears agent-mouth
+    echo "  Started: agent-ears + agent-mouth"
     ;;
   --status)
     if [[ ! -f "$STATE_FILE" ]]; then
