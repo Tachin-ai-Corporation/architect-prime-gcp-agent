@@ -7,6 +7,7 @@
 brain/fleet/_base/SOUL.md .openclaw/workspace-fleet/SOUL.md
 brain/fleet/_base/IDENTITY.md .openclaw/workspace-fleet/IDENTITY.md
 brain/fleet/_base/TOOLS.md .openclaw/workspace-fleet/TOOLS.md
+brain/fleet/_base/BRAIN_CARD.md .openclaw/workspace-fleet/BRAIN_CARD.md
 
 # Shared brain sub-agent workspaces (used by ALL fleet agents)
 # fleet-bootstrap.sh copies these to workspace-{agent}/ with template substitution
@@ -20,3 +21,16 @@ brain/fleet/_brain/motor/SOUL.md .openclaw/workspace-_brain/motor/SOUL.md
 brain/fleet/_brain/motor/IDENTITY.md .openclaw/workspace-_brain/motor/IDENTITY.md
 brain/fleet/_brain/cerebellum/SOUL.md .openclaw/workspace-_brain/cerebellum/SOUL.md
 brain/fleet/_brain/cerebellum/IDENTITY.md .openclaw/workspace-_brain/cerebellum/IDENTITY.md
+
+# Workspace skills — Google Drive
+skills/workspace-drive/SKILL.md .openclaw/skills/workspace-drive/SKILL.md
+skills/workspace-drive/ws-token .openclaw/bin/ws-token
+skills/workspace-drive/drive-ls .openclaw/bin/drive-ls
+skills/workspace-drive/drive-search .openclaw/bin/drive-search
+skills/workspace-drive/drive-download .openclaw/bin/drive-download
+skills/workspace-drive/drive-upload .openclaw/bin/drive-upload
+skills/workspace-drive/drive-mkdir .openclaw/bin/drive-mkdir
+skills/workspace-drive/drive-rename .openclaw/bin/drive-rename
+skills/workspace-drive/drive-delete .openclaw/bin/drive-delete
+skills/workspace-drive/drive-move .openclaw/bin/drive-move
+skills/workspace-drive/drive-share .openclaw/bin/drive-share

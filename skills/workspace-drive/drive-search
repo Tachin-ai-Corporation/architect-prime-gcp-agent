@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# drive-search — Search files in Google Drive
+# Brain agent: temporal-memory (READ)
+# Usage: drive-search --query "name contains 'report'" [--max 20]
+#        drive-search --query "sharedWithMe=true" --max 10
+# Query reference: https://developers.google.com/drive/api/guides/search-files
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-search] [ERROR] $*" >&2; exit 1; }
+QUERY="" MAX=20
+while [[ $# -gt 0 ]]; do
+  case "$1" in --query) QUERY="$2"; shift 2 ;; --max) MAX="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$QUERY" ]] || die "Need --query"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY and trashed=false")
+HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${DRIVE_API}/files?q=${ENC_Q}&pageSize=${MAX}&fields=files(id,name,mimeType,modifiedTime,size,webViewLink)&orderBy=modifiedTime%20desc")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
+  echo "{\"status\":\"access_denied\",\"query\":\"${QUERY}\",\"message\":\"I don't have access to search these files. Please share them with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+if [[ "$HTTP_CODE" != "200" ]]; then
+  die "Drive API returned HTTP ${HTTP_CODE}"
+fi
+python3 -c "
+import json, sys; data = json.load(open('/tmp/drive-response.json'))
+files = [{'id':f['id'],'name':f['name'],'type':f.get('mimeType',''),'modified':f.get('modifiedTime',''),'link':f.get('webViewLink','')} for f in data.get('files',[])]
+print(json.dumps({'files':files,'count':len(files)}, indent=2))
+"

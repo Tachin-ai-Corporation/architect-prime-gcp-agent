@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# drive-rename — Rename a file or folder in Google Drive
+# Brain agent: motor (WRITE)
+# Usage: drive-rename --file FILE_ID --name "New Name"
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-rename] [ERROR] $*" >&2; exit 1; }
+FILE_ID="" NAME=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --file) FILE_ID="$2"; shift 2 ;; --name) NAME="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$FILE_ID" && -n "$NAME" ]] || die "Need --file and --name"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+  -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "{\"name\":\"${NAME}\"}" "${DRIVE_API}/files/${FILE_ID}?fields=id,name")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
+  echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"message\":\"I don't have access to rename this file. Please share it with ${AGENT_USER_EMAIL:-unknown} with editor access\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+if [[ "$HTTP_CODE" != "200" ]]; then
+  die "Drive API returned HTTP ${HTTP_CODE}"
+fi
+python3 -c "import json; f=json.load(open('/tmp/drive-response.json')); print(json.dumps({'status':'renamed','id':f.get('id',''),'name':f.get('name','')}, indent=2))"

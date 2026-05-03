@@ -1,0 +1,36 @@
+# Skill: Google Drive
+
+## What this skill does
+Interact with Google Drive — list, search, download, upload, create folders,
+rename, move, delete, and share files. Works with files shared with your
+Workspace email by human users.
+
+## When to use
+- User asks about files in their Drive or shared files
+- Task requires organizing, moving, or creating files
+- User shares a Drive link and wants you to work with it
+- Need to upload or download documents
+
+## Tools (READ — dispatched to temporal-memory)
+- `drive-ls [--folder ID] [--max 20]` — list files in a folder
+- `drive-search --query "name contains 'report'"` — search files
+- `drive-search --query "sharedWithMe=true"` — list files shared with you
+- `drive-download --file ID [--output /path]` — download a file
+
+## Tools (WRITE — dispatched to motor)
+- `drive-upload --file /path [--name "Name"] [--folder ID]` — upload a file
+- `drive-mkdir --name "Name" [--parent ID]` — create a folder
+- `drive-rename --file ID --name "New Name"` — rename a file
+- `drive-delete --file ID` — trash a file
+- `drive-move --file ID --to FOLDER_ID` — move a file
+- `drive-share --file ID --to anyone --role reader` — share a file
+
+## Access & Sharing
+- Files shared with your Workspace email are automatically visible.
+- If you get an access_denied error, ask the user to share the file
+  with your email address (shown in the error response).
+- Files you create are owned by you. Share them with users who need access.
+
+## Auth
+All tools authenticate via DWD (Domain-Wide Delegation) using the agent's
+Workspace email. No API keys or OAuth tokens needed.

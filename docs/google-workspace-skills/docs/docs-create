@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# docs-create — Create a new Google Doc
+# Brain agent: motor (WRITE)
+# Usage: docs-create --title "My Document" [--body "Initial text"] [--folder FOLDER_ID]
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-create] [ERROR] $*" >&2; exit 1; }
+TITLE="" BODY_TEXT="" FOLDER=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --title) TITLE="$2"; shift 2 ;; --body) BODY_TEXT="$2"; shift 2 ;; --folder) FOLDER="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$TITLE" ]] || die "Need --title"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+DOC=$(curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "{\"title\":\"${TITLE}\"}" "$DOCS_API") || die "Create failed"
+DOC_ID=$(echo "$DOC" | python3 -c "import json,sys; print(json.load(sys.stdin)['documentId'])")
+if [[ -n "$BODY_TEXT" ]]; then
+  BODY=$(python3 -c "import json,sys; print(json.dumps({'requests':[{'insertText':{'location':{'index':1},'text':sys.argv[1]}}]}))" "$BODY_TEXT")
+  curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+    -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate" > /dev/null
+fi
+if [[ -n "$FOLDER" ]]; then
+  curl -sf -X PATCH -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files/${DOC_ID}?addParents=${FOLDER}&removeParents=root" > /dev/null 2>&1
+fi
+echo "$DOC" | python3 -c "
+import json, sys; d = json.load(sys.stdin)
+print(json.dumps({'status':'created','docId':d['documentId'],'title':d['title'],'link':'https://docs.google.com/document/d/'+d['documentId']}, indent=2))
+"

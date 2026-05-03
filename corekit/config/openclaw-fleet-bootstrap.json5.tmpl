@@ -67,7 +67,7 @@
     "list": [
       {
         // Cortex — the specialty agent's user-facing persona.
-        // Dispatches sub-agents via exec brain-exec.
+        // Dispatches sub-agents via sessions_spawn + sessions_yield.
         // SOUL.md is loaded automatically from the workspace directory.
         "id": "cortex",
         "default": true,
@@ -86,6 +86,7 @@
             "exec",
             "process",
             "sessions_spawn",
+            "sessions_yield",
             "sessions_list",
             "sessions_history",
             "subagents"
@@ -192,11 +193,23 @@
     "internal": {
       "entries": {
         "session-memory": { "enabled": true },
+        "brain-card": {
+          "enabled": true,
+          "event": "PreTurn",
+          "type": "shell",
+          "command": "cat ~/.openclaw/workspace/BRAIN_CARD.md 2>/dev/null || true"
+        },
         "agent-status-preturn": {
           "enabled": true,
           "event": "PreTurn",
           "type": "shell",
           "command": "~/.openclaw/bin/agent-status set classifying '' '' 2>/dev/null || true"
+        },
+        "plan-compliance": {
+          "enabled": true,
+          "event": "PostTurn",
+          "type": "shell",
+          "command": "~/.openclaw/bin/check-plan-compliance"
         },
         "agent-status-postturn": {
           "enabled": true,

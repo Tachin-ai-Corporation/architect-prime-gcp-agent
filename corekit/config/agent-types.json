@@ -6,7 +6,7 @@
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
       "workspace": "devops",
-      "skills": ["agent-ask"],
+      "skills": ["agent-ask", "workspace-drive"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],
@@ -45,7 +45,7 @@
       "specialty": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
       "emailPattern": "pm-agent-{name}",
       "workspace": "fleet",
-      "skills": ["agent-ask"],
+      "skills": ["agent-ask", "workspace-drive"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec"],

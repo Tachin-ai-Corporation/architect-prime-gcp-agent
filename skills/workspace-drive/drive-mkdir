@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# drive-mkdir — Create a folder in Google Drive
+# Brain agent: motor (WRITE)
+# Usage: drive-mkdir --name "Project Files" [--parent FOLDER_ID]
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-mkdir] [ERROR] $*" >&2; exit 1; }
+NAME="" PARENT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --name) NAME="$2"; shift 2 ;; --parent) PARENT="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$NAME" ]] || die "Need --name"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\"}"
+[[ -n "$PARENT" ]] && BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
+HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${DRIVE_API}/files?fields=id,name,webViewLink")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
+  echo "{\"status\":\"access_denied\",\"parent\":\"${PARENT:-root}\",\"message\":\"I don't have access to create a folder here. Please share the parent folder with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+if [[ "$HTTP_CODE" != "200" ]]; then
+  die "Drive API returned HTTP ${HTTP_CODE}"
+fi
+python3 -c "
+import json; f = json.load(open('/tmp/drive-response.json'))
+print(json.dumps({'status':'created','id':f.get('id',''),'name':f.get('name',''),'link':f.get('webViewLink','')}, indent=2))
+"

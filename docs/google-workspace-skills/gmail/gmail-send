@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# ============================================================
+# gmail-send — Send an email via Gmail API
+#
+# Brain agent: motor (WRITE)
+#
+# Usage:
+#   gmail-send --to alice@example.com --subject "Hello" --body "Message"
+#   gmail-send --to alice@example.com --subject "Report" --body-html "<h1>Report</h1>"
+#   gmail-send --to alice@example.com --subject "Re: Thread" --body "Reply" --reply-to MSG_ID
+#   gmail-send --to "a@x.com,b@x.com" --cc c@x.com --subject "Team" --body "Hi all"
+#
+# Output: JSON with sent message ID
+# ============================================================
+set -euo pipefail
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
+
+die() { echo "[gmail-send] [ERROR] $*" >&2; exit 1; }
+
+# ---- Parse args ----
+TO="" SUBJECT="" BODY="" BODY_HTML="" CC="" BCC="" REPLY_TO=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --to)       TO="$2"; shift 2 ;;
+    --subject)  SUBJECT="$2"; shift 2 ;;
+    --body)     BODY="$2"; shift 2 ;;
+    --body-html) BODY_HTML="$2"; shift 2 ;;
+    --cc)       CC="$2"; shift 2 ;;
+    --bcc)      BCC="$2"; shift 2 ;;
+    --reply-to) REPLY_TO="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: gmail-send --to <addr> --subject <subj> --body <text>"
+      echo "  --body-html <html>   HTML body (overrides --body)"
+      echo "  --cc <addr>          CC recipients"
+      echo "  --bcc <addr>         BCC recipients"
+      echo "  --reply-to <msg_id>  Reply to a message"
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$TO" ]] || die "No recipient. Use --to <email>"
+[[ -n "$SUBJECT" ]] || die "No subject. Use --subject <text>"
+
+# ---- Auth ----
+TOKEN="$("$WS_TOKEN" --scope gmail)" || die "Failed to get Gmail token"
+
+# ---- Build RFC 2822 message ----
+MESSAGE="$(python3 -c "
+import base64, json, sys
+
+to = '$TO'
+subject = '$SUBJECT'
+body = '''$BODY'''
+body_html = '''$BODY_HTML'''
+cc = '$CC'
+bcc = '$BCC'
+
+headers = f'To: {to}\nSubject: {subject}\n'
+if cc: headers += f'Cc: {cc}\n'
+if bcc: headers += f'Bcc: {bcc}\n'
+
+if body_html:
+    headers += 'Content-Type: text/html; charset=utf-8\n'
+    raw = headers + '\n' + body_html
+else:
+    headers += 'Content-Type: text/plain; charset=utf-8\n'
+    raw = headers + '\n' + body
+
+# URL-safe base64
+encoded = base64.urlsafe_b64encode(raw.encode('utf-8')).decode('ascii')
+print(encoded)
+")" || die "Failed to encode message"
+
+# ---- Build request body ----
+if [[ -n "$REPLY_TO" ]]; then
+  # Get thread ID for reply
+  THREAD_ID="$(curl -sf \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "${GMAIL_API}/messages/${REPLY_TO}?format=minimal" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('threadId',''))" 2>/dev/null)"
+
+  REQUEST_BODY="{\"raw\":\"${MESSAGE}\",\"threadId\":\"${THREAD_ID}\"}"
+else
+  REQUEST_BODY="{\"raw\":\"${MESSAGE}\"}"
+fi
+
+# ---- Send ----
+RESPONSE="$(curl -sf \
+  -X POST \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "$REQUEST_BODY" \
+  "${GMAIL_API}/messages/send" 2>/dev/null)" \
+  || die "Gmail send failed"
+
+# ---- Output ----
+echo "$RESPONSE" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(json.dumps({
+    'status': 'sent',
+    'messageId': data.get('id', ''),
+    'threadId': data.get('threadId', ''),
+    'labelIds': data.get('labelIds', [])
+}, indent=2))
+"

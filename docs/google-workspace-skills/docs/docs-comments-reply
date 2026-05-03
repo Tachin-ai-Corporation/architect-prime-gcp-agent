@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# docs-comments-reply — Reply to a comment on a Google Doc
+# Brain agent: cerebellum (REVIEW)
+# Usage: docs-comments-reply --doc DOC_ID --comment COMMENT_ID --content "Agreed, fixing now"
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-comments-reply] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" COMMENT_ID="" CONTENT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;; --comment) COMMENT_ID="$2"; shift 2 ;;
+    --content) CONTENT="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$DOC_ID" && -n "$COMMENT_ID" && -n "$CONTENT" ]] || die "Need --doc, --comment, --content"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+BODY=$(python3 -c "import json,sys; print(json.dumps({'content':sys.argv[1]}))" "$CONTENT")
+curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${DRIVE_API}/files/${DOC_ID}/comments/${COMMENT_ID}/replies?fields=id,content,author,createdTime" \
+  | python3 -c "import json,sys; r=json.load(sys.stdin); print(json.dumps({'status':'replied','replyId':r.get('id',''),'content':r.get('content','')}, indent=2))"

@@ -26,20 +26,43 @@ sub-agent's result and respond then.
 | `research` | Yes | → `temporal-research` |
 | `recall` | Yes | → `temporal-memory` |
 | `execution` | Yes | → `motor` |
-| `full-task` | Yes | → chain as needed |
+| `research-plan` | Yes | → `temporal-research` → `prefrontal` |
+| `full-task` | Yes | → research/recall → plan → motor → cerebellum |
 
-2. **Dispatch** via `sessions_spawn`. Craft a self-contained task instruction
+2. **Write PLAN.md** — Before any dispatch, write `workspace/PLAN.md`:
+
+   ```
+   ## Plan: [Task Title]
+   CATEGORY: [category from above]
+   STATUS: in-progress
+
+   ### Steps
+   1. [ ] agent-name — description of what to do
+      → RESULT: (filled after yield)
+   2. [ ] agent-name — description
+      → RESULT: (filled after yield)
+
+   ### Verification
+   - [acceptance criteria]
+   ```
+
+   For single dispatches (research, recall), a one-step plan is fine.
+
+3. **Dispatch** via `sessions_spawn`. Craft a self-contained task instruction
    with all context the sub-agent needs (it has no conversation history).
 
-3. **Yield** via `sessions_yield`. Your turn ends here. The system will
+4. **Yield** via `sessions_yield`. Your turn ends here. The system will
    deliver the sub-agent's result back to you.
 
-4. **Synthesize** — when you receive the sub-agent's result, format and
-   deliver the final response to the user. Add your own assessment or
-   context if relevant.
+5. **Update PLAN.md** — After each yield, mark the step `[x]` and record a
+   result summary on the `→ RESULT:` line.
 
-   **⚠ MANDATORY — Delivery after yield:**
-   After yield, there is NO HTTP client listening for your reply.
+6. **Chain or Synthesize:**
+   - If more steps remain: spawn the next agent with context from all
+     previous results. Go to step 4.
+   - If all steps complete: update `STATUS: complete` and synthesize.
+
+7. **Deliver** — After yield, there is NO HTTP client listening for your reply.
    Normal text output will NOT reach the user. You MUST execute:
    ```
    exec channel-respond "Your synthesized response here"
@@ -51,6 +74,19 @@ sub-agent's result and respond then.
 
    **Do NOT** call `channel-respond` for direct responses (identity, fleet).
    Those are delivered automatically by the daemon.
+
+### Context Passing (Multi-Step)
+Each spawned sub-agent has NO history. When chaining, you MUST include all
+relevant context from previous steps in the spawn task instruction. Example:
+
+```
+sessions_spawn agent: motor, task: "Create three folders in Google Drive.
+The prefrontal planning step determined the following structure:
+- Documents (for: Q2 Budget.docx, Project Proposal.docx)
+- Spreadsheets (for: Expense Tracker.xlsx, Team Roster.xlsx)
+- Resources (for: logo.png, readme.txt)
+Use drive-mkdir to create each folder, then drive-move to move each file."
+```
 
 ## Classification Rules
 - Current events, URLs, "search", "look up" → ALWAYS `temporal-research`

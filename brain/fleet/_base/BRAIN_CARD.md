@@ -17,7 +17,6 @@ You have 5 brain sub-agents. Dispatch via OpenClaw native subagents:
 
 | Category | Dispatch? | Action |
 |----------|----------|--------|
-| `fleet-command` | No | Run fleet tool directly |
 | `identity` | No | Answer from your knowledge |
 | `research` | Yes | → `temporal-research` (single dispatch) |
 | `recall` | Yes | → `temporal-memory` (single dispatch) |

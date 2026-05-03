@@ -4,17 +4,19 @@
 - Canonical CLI: `oc <cmd>` (never call `pnpm openclaw ...`)
 - ADC: metadata server tokens available on GCE
 
-## Web Search (Google Search Grounding)
-When you need current, real-time information from the web, use the `web-search` tool:
+## Web Search (via temporal-research sub-agent)
+When you need current, real-time information from the web, dispatch to your
+`temporal-research` sub-agent. Do NOT call `web-search` directly — it is
+denied. All web search goes through Vertex AI grounding via the sub-agent.
 
-```
-web-search "your search query here"
-```
+## Workspace Skills
+Workspace skills are loaded per agent type. Check your BRAIN_CARD.md
+(injected every turn) for available tools and their brain-agent assignments.
 
-This tool uses Vertex AI with Google Search grounding to retrieve current information with source citations. Use it for:
-- Current software versions, pricing, release notes
-- Recent news and announcements
-- Live documentation and API references
-- Any question requiring up-to-date information
+### Drive Tools (if enabled)
+If your agent type includes `workspace-drive`, these tools are available:
+- READ tools (temporal-memory): `drive-ls`, `drive-search`, `drive-download`
+- WRITE tools (motor): `drive-upload`, `drive-mkdir`, `drive-rename`,
+  `drive-delete`, `drive-move`, `drive-share`
 
-**Always use web-search** when asked about current events, latest versions, or anything that could be stale in your training data.
+See `skills/workspace-drive/SKILL.md` for full usage.

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# drive-share — Share a file or folder
+# Brain agent: motor (WRITE)
+# Usage: drive-share --file FILE_ID --to anyone --role reader
+#        drive-share --file FILE_ID --to user:alice@example.com --role writer
+#        drive-share --file FILE_ID --to domain:example.com --role reader
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-share] [ERROR] $*" >&2; exit 1; }
+FILE_ID="" TARGET="" ROLE="reader"
+while [[ $# -gt 0 ]]; do
+  case "$1" in --file) FILE_ID="$2"; shift 2 ;; --to) TARGET="$2"; shift 2 ;; --role) ROLE="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$FILE_ID" && -n "$TARGET" ]] || die "Need --file and --to (anyone|user:email|domain:name)"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+BODY=$(python3 -c "
+import json, sys
+target = sys.argv[1]; role = sys.argv[2]
+if target == 'anyone':
+    print(json.dumps({'type':'anyone','role':role}))
+elif target.startswith('user:'):
+    print(json.dumps({'type':'user','role':role,'emailAddress':target[5:]}))
+elif target.startswith('domain:'):
+    print(json.dumps({'type':'domain','role':role,'domain':target[7:]}))
+else:
+    print(json.dumps({'type':'user','role':role,'emailAddress':target}))
+" "$TARGET" "$ROLE")
+curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${DRIVE_API}/files/${FILE_ID}/permissions?fields=id,type,role,emailAddress" \
+  | python3 -c "import json,sys; p=json.load(sys.stdin); print(json.dumps({'status':'shared','permissionId':p.get('id',''),'type':p.get('type',''),'role':p.get('role','')}, indent=2))"

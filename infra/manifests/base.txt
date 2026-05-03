@@ -34,6 +34,7 @@ corekit/brain/brain-exec-worker .openclaw/bin/brain-exec-worker
 corekit/brain/brain-telemetry-write .openclaw/bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read .openclaw/bin/brain-telemetry-read
 corekit/brain/build-system-prompt .openclaw/bin/build-system-prompt
+corekit/brain/check-plan-compliance .openclaw/bin/check-plan-compliance
 
 # Config
 corekit/README.md .openclaw/corekit/README.md

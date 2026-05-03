@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# ============================================================
+# ws-token — Get a Workspace-scoped DWD access token
+#
+# Thin wrapper around dwd-token that maps friendly scope names
+# to Google OAuth2 scope URLs. All workspace tools call this
+# instead of dwd-token directly.
+#
+# Usage:
+#   ws-token --scope gmail      → Gmail read + send scopes
+#   ws-token --scope calendar   → Calendar full access
+#   ws-token --scope drive      → Drive file access
+#   ws-token --scope docs       → Docs + Drive scopes
+#   ws-token --scope sheets     → Sheets + Drive scopes
+#   ws-token --scope contacts   → Contacts read-only
+#   ws-token --scope all        → All Workspace scopes
+#
+# Prints an access token to stdout.
+#
+# Environment:
+#   AGENT_USER_EMAIL — Workspace user to impersonate (REQUIRED)
+#   OC_HOST_ROOT     — OpenClaw host root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+DWD_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
+
+die() { echo "[ws-token] [ERROR] $*" >&2; exit 1; }
+
+# ---- Scope mapping ----
+SCOPE_GMAIL="https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.modify"
+SCOPE_CALENDAR="https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events"
+SCOPE_DRIVE="https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file"
+SCOPE_DOCS="https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/drive.file"
+SCOPE_SHEETS="https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"
+SCOPE_CONTACTS="https://www.googleapis.com/auth/contacts.readonly"
+SCOPE_ALL="$SCOPE_GMAIL $SCOPE_CALENDAR $SCOPE_DRIVE $SCOPE_DOCS $SCOPE_SHEETS $SCOPE_CONTACTS"
+
+# ---- Parse args ----
+SCOPE_NAME=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --scope)  SCOPE_NAME="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: ws-token --scope <gmail|calendar|drive|docs|sheets|contacts|all>"
+      echo "Prints an access token to stdout."
+      echo "Requires AGENT_USER_EMAIL to be set."
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$SCOPE_NAME" ]] || die "No scope specified. Use --scope <name>"
+
+# ---- Resolve scopes ----
+case "$SCOPE_NAME" in
+  gmail)    SCOPES="$SCOPE_GMAIL" ;;
+  calendar) SCOPES="$SCOPE_CALENDAR" ;;
+  drive)    SCOPES="$SCOPE_DRIVE" ;;
+  docs)     SCOPES="$SCOPE_DOCS" ;;
+  sheets)   SCOPES="$SCOPE_SHEETS" ;;
+  contacts) SCOPES="$SCOPE_CONTACTS" ;;
+  all)      SCOPES="$SCOPE_ALL" ;;
+  *) die "Unknown scope: $SCOPE_NAME. Use gmail|calendar|drive|docs|sheets|contacts|all" ;;
+esac
+
+# ---- Delegate to dwd-token ----
+[[ -x "$DWD_TOKEN" ]] || die "dwd-token not found at $DWD_TOKEN"
+
+# Explicitly pass --user to ensure correct identity. Fail loudly if not set.
+exec "$DWD_TOKEN" --user "${AGENT_USER_EMAIL:?AGENT_USER_EMAIL not set}" --scope "$SCOPES"

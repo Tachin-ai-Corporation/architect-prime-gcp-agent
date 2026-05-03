@@ -2,14 +2,14 @@
 # ============================================================
 # check-plan-compliance — PostTurn hook for dispatch compliance
 #
-# Checks if PLAN.md was written before brain-exec dispatches.
+# Checks if PLAN.md was written and maintained during dispatches.
 # Called automatically by OpenClaw after every Cortex turn.
 #
-# Compliance logic:
-#   1. Check if brain-exec was called during this turn (via syslog)
-#   2. Check if workspace/PLAN.md exists and was recently modified
-#   3. If dispatches occurred without PLAN.md: log violation
-#   4. If PLAN.md exists with dispatches: log compliance
+# Compliance checks:
+#   1. If PLAN.md exists and was recently modified
+#   2. If PLAN.md has STATUS: line
+#   3. If PLAN.md has step markers ([ ], [x], [/], [!])
+#   4. If dispatches occurred without PLAN.md: log violation
 #
 # Output: JSON compliance report (consumed by OpenClaw hook system)
 #
@@ -32,26 +32,56 @@ if [[ "$PLAN_AGE" -lt 300 ]]; then
   PLAN_RECENT=true
 fi
 
-# ── Check if brain-exec was called recently ──
-# Look for recent brain-exec invocations in the last 5 minutes
+# ── Check PLAN.md structure (stateful plan format) ──
+HAS_STATUS=false
+HAS_STEPS=false
+STEP_COUNT=0
+COMPLETED_STEPS=0
+IN_PROGRESS_STEPS=0
+PENDING_STEPS=0
+FAILED_STEPS=0
+
+if [[ "$PLAN_EXISTS" == "true" ]]; then
+  # Check for STATUS: line
+  if grep -qE '^STATUS:\s' "$PLAN_FILE" 2>/dev/null; then
+    HAS_STATUS=true
+  fi
+
+  # Count step markers
+  COMPLETED_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[x\]' "$PLAN_FILE" 2>/dev/null || echo 0)
+  IN_PROGRESS_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[/\]' "$PLAN_FILE" 2>/dev/null || echo 0)
+  PENDING_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[ \]' "$PLAN_FILE" 2>/dev/null || echo 0)
+  FAILED_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[!\]' "$PLAN_FILE" 2>/dev/null || echo 0)
+  STEP_COUNT=$((COMPLETED_STEPS + IN_PROGRESS_STEPS + PENDING_STEPS + FAILED_STEPS))
+
+  if [[ "$STEP_COUNT" -gt 0 ]]; then
+    HAS_STEPS=true
+  fi
+fi
+
+# ── Check if dispatches occurred (sessions_spawn or brain-exec) ──
+# Look for recent subagent activity in the gateway logs
 DISPATCHES=0
 if command -v journalctl &>/dev/null; then
   DISPATCHES=$(journalctl --since "5 min ago" --no-pager -o cat 2>/dev/null \
-    | grep -c "brain-exec" 2>/dev/null || echo 0)
+    | grep -cE "brain-exec|sessions_spawn|sessions_yield" 2>/dev/null || echo 0)
 fi
 
 # ── Determine compliance ──
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [[ "$DISPATCHES" -gt 0 && "$PLAN_RECENT" == "false" ]]; then
   # Dispatches happened without a recent PLAN.md → violation
-  echo "${LOG_TAG} WARN: brain-exec dispatched ${DISPATCHES} time(s) without PLAN.md" >&2
-  # Write violation telemetry (fire-and-forget)
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  echo "${LOG_TAG} WARN: dispatches occurred without PLAN.md" >&2
   if [[ -x "${SCRIPT_DIR}/brain-telemetry-write" ]]; then
     "${SCRIPT_DIR}/brain-telemetry-write" "compliance" "plan-violation" 0 0 0 1 "no_plan_md" &
   fi
-elif [[ "$DISPATCHES" -gt 0 && "$PLAN_RECENT" == "true" ]]; then
-  # Dispatches with PLAN.md → compliant
-  echo "${LOG_TAG} OK: ${DISPATCHES} dispatch(es) with PLAN.md" >&2
+elif [[ "$PLAN_RECENT" == "true" && "$HAS_STEPS" == "true" ]]; then
+  # Plan exists with step markers → compliant
+  echo "${LOG_TAG} OK: ${STEP_COUNT} steps (${COMPLETED_STEPS} done, ${IN_PROGRESS_STEPS} active, ${PENDING_STEPS} pending, ${FAILED_STEPS} failed)" >&2
+elif [[ "$PLAN_RECENT" == "true" && "$HAS_STEPS" == "false" ]]; then
+  # Plan exists but no step markers → warn (legacy format)
+  echo "${LOG_TAG} WARN: PLAN.md exists but has no step markers — using legacy format" >&2
 elif [[ "$DISPATCHES" -eq 0 ]]; then
   # No dispatches this turn — no compliance check needed
   :
