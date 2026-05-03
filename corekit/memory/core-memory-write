@@ -13,7 +13,7 @@
 #
 # Examples:
 #   core-memory-write --fact "Fleet bootstrap takes ~15min on e2-medium" --category operations --tags "fleet,bootstrap,timing"
-#   core-memory-write --fact "OpenClaw pinned to commit 163c6f5e" --category architecture --confidence 1.0
+#   core-memory-write --fact "Agent ears uses identity-lock for DWD enforcement" --category architecture --confidence 1.0
 
 set -euo pipefail
 

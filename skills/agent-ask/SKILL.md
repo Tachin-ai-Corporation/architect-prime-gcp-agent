@@ -1,20 +1,22 @@
 # Skill: agent-ask
 
 ## What this skill does
-Answers questions conversationally using real-time knowledge from Google Search.
+Answers questions using real-time knowledge from Google Search via Vertex AI grounding.
 This is a read-only skill — it does not modify any state or infrastructure.
 
 ## When to use
-- User asks a general question
-- User wants information, explanations, or advice
-- Any conversational interaction that doesn't require a specific tool
+Dispatch to the `temporal-research` sub-agent when you need current, real-time
+information from the web. This is the ONLY sanctioned web-search path.
 
 ## How it works
-This skill runs automatically through the OpenClaw gateway. You don't need to invoke it explicitly — it's your default conversational ability.
+Invoked via `exec agent-ask "<question>"` by the temporal-research sub-agent.
+Uses Vertex AI with Google Search grounding (model and region read from contracts.json).
+**Do NOT call agent-ask directly from Cortex** — route web research through
+the temporal-research pipeline step in your dispatch plan.
 
 ## Behavior
 - Answer accurately and concisely
 - Use markdown formatting sparingly (bold, bullet points)
-- Keep responses under 2000 characters for Google Chat compatibility
+- Keep responses under 3800 characters (truncated to fit Chat limit)
 - If you don't know something, say so honestly
-- Be conversational and friendly — you're a colleague, not a CLI
+- Include source citations when available from grounding

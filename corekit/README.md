@@ -1,50 +1,28 @@
-# Architect Prime — CoreKit (GitHub-hosted)
+# Architect Prime — CoreKit
 
-This repo is intended to be **public**, with **no-login curl access** (raw.githubusercontent.com).
+> Generated from: `Tachin-ai-Corporation/architect-prime-gcp-agent@main`
+> Last verified: v2026.05.03.9.0
 
 ## What this is
-A small, versionable “core kit” for Architect Prime that includes:
+A manifest-driven "core kit" for Architect Prime that includes:
 
-- OpenClaw config template (`openclaw-bootstrap.json5.tmpl`)
-- Main / Engineer / DevOps workspace core files (AGENTS/SOUL/TOOLS/etc.)
+- OpenClaw config templates (`corekit/config/openclaw-bootstrap.json5.tmpl`, `openclaw-fleet-bootstrap.json5.tmpl`)
+- Agent workspace files (`brain/prime/`, `brain/fleet/`, `specialties/`)
+- CoreKit scripts (`corekit/{brain,fleet,gateway,chat,daemon,memory,dashboard,system}/`)
 - Canonical CLI wrapper `oc` (so the agent never regresses into `pnpm openclaw ...`)
-- A repeatable smoke test script (`bootstrap_smoke.sh`)
-- `exec-approvals.json` (to keep exec non-interactive and repeatable)
+- Infrastructure contracts (`infra/contracts.json`)
 
-## How you use it (bootstrap pattern)
-1) Pin a release ref (tag or commit SHA):
-   - **Repeatable checkpoints:** use a tag like `cp004-ok`
-   - **Development only:** `main`
-
-2) Install via `manifest.txt` (your bootstrap owns the install loop).
+## How you use it (manifest installer)
+1. Install via `infra/install.sh --role prime` or `--role fleet --job devops`
+2. The installer reads manifest fragments from `infra/manifests/` and downloads each file
 
 ### Expected environment variables
-Your bootstrap should set:
+Set by the bootstrap script (not by the user):
 - `GCP_PROJECT_ID`
-- `MY_TOKEN`
+- `MY_TOKEN` (gateway auth token)
+- `AGENT_USER_EMAIL` (for fleet agents)
 
-Then render the config template to `/tmp/openclaw-bootstrap.json5`, e.g.:
+Config rendering uses `corekit/gateway/render-config` → produces `openclaw.json`.
 
-```bash
-export CORE_REF="cp004-ok"
-export CORE_BASE="https://raw.githubusercontent.com/<OWNER>/<REPO>/${CORE_REF}"
-
-curl -fsSL "${CORE_BASE}/bundle/corekit/config/openclaw-bootstrap.json5.tmpl" -o /tmp/openclaw-bootstrap.json5.tmpl
-python3 - <<'PY'
-import os, pathlib
-tmpl = pathlib.Path("/tmp/openclaw-bootstrap.json5.tmpl").read_text()
-for k in ["GCP_PROJECT_ID","MY_TOKEN"]:
-    tmpl = tmpl.replace("${"+k+"}", os.environ.get(k,""))
-pathlib.Path("/tmp/openclaw-bootstrap.json5").write_text(tmpl)
-print("Rendered /tmp/openclaw-bootstrap.json5")
-PY
-
-# Apply (from /app)
-cd /app && pnpm openclaw config apply /tmp/openclaw-bootstrap.json5
-```
-
-> Note: the agent should never call `pnpm openclaw ...` directly; it should always use `oc ...`.
-> Your bootstrap should put `~/.openclaw/bin` on PATH for exec via config `tools.exec.pathPrepend`.
-
-## Release date
-2026-03-01
+> Note: the agent should never call `pnpm openclaw ...` directly; always use `oc <cmd>`.
+> `~/.openclaw/bin` is added to PATH via the bootstrap's `tools.exec.pathPrepend` setting.

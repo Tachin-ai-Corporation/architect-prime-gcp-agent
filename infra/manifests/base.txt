@@ -8,7 +8,7 @@ infra/contracts.json .openclaw/corekit/contracts.json
 # Core tools — system utilities
 corekit/system/upgrade-corekit .openclaw/bin/upgrade-corekit
 corekit/system/validate-contracts .openclaw/bin/validate-contracts
-corekit/system/web-search .openclaw/bin/web-search
+
 
 # Core tools — gateway
 corekit/gateway/render-config .openclaw/bin/render-config

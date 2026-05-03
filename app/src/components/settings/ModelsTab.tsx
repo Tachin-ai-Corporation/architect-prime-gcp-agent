@@ -240,7 +240,7 @@ export function ModelsTab({ activePrime, projectId }: ModelsTabProps) {
             No models discovered yet.<br />
             Click <strong>&quot;Scan Models&quot;</strong> to probe Vertex AI for available models.<br />
             <span style={{ fontSize: 12 }}>
-              The model catalog is loaded from <code className="mono" style={{ fontSize: 11 }}>model-catalog.json</code> on the Prime VM.
+              Models are discovered dynamically via <code className="mono" style={{ fontSize: 11 }}>discover-models</code> on the Prime VM.
             </span>
           </div>
         )}
