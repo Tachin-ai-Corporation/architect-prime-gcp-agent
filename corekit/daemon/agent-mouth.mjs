@@ -167,12 +167,13 @@ function getLatestGatewayOutput() {
   } catch {}
   if (!logPath || !existsSync(logPath)) return null;
 
-  let logContent;
-  try { logContent = readFileSync(logPath, 'utf8'); } catch { return null; }
-  if (logContent.length <= lastLogOffset) return null;
+  // Read as Buffer to track BYTE offsets consistently with statSync().size
+  let buf;
+  try { buf = readFileSync(logPath); } catch { return null; }
+  if (buf.length <= lastLogOffset) return null;
 
-  const newContent = logContent.slice(lastLogOffset);
-  lastLogOffset = logContent.length;
+  const newContent = buf.slice(lastLogOffset).toString('utf8');
+  lastLogOffset = buf.length;
 
   // Parse log entries — find the LAST substantial text block
   // This is Cortex's final synthesis (the response to the user)
