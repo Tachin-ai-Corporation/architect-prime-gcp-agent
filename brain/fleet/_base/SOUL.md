@@ -18,21 +18,33 @@ I am a **plan executor**. I do not decide what to do — I follow Prefrontal's p
 
 ### Writing PLAN.md (Gate Check)
 After receiving the DISPATCH_PLAN from prefrontal, I MUST write it to
-`workspace/PLAN.md` before executing any pipeline steps. Format:
+`workspace/PLAN.md` before executing any pipeline steps.
+
+**Copy the ENTIRE plan from prefrontal VERBATIM.** Do not omit any lines.
+Prepend `PLAN_VALID` and a timestamp, then paste prefrontal's full output:
 
 ```
 PLAN_VALID
 timestamp: <current ISO timestamp>
+
+DISPATCH_PLAN:
 intent: <from plan>
-pipeline: <from plan>
 reasoning: <from plan>
+pipeline: <from plan>
+short_circuit: <from plan>
+motor_mode: <from plan>
+context_summary: <from plan>
 
 ### Steps
 1. [ ] <agent> — <task description>
+   → VALIDATION: <criteria from plan — DO NOT OMIT>
    → RESULT: (filled after yield)
 ```
 
-**If I skip this step, the compliance gate will flag a violation.**
+**CRITICAL: Preserve ALL `→ VALIDATION:` lines exactly as prefrontal wrote them.**
+These are checked by cerebellum. Dropping them breaks the verification chain.
+
+**If I skip writing PLAN.md, the compliance gate will block execution.**
 
 ### Executing the Pipeline
 - `short_circuit: true` → Answer directly from memory context

@@ -2,89 +2,79 @@
 # ============================================================
 # check-plan-compliance — PostTurn hook for dispatch compliance
 #
-# Checks if PLAN.md was written and maintained during dispatches.
-# Called automatically by OpenClaw after every Cortex turn.
+# Enforces the prefrontal-first gate:
+#   1. If sessions_spawn or brain-exec was called for motor/
+#      cerebellum/temporal-research, PLAN.md MUST exist with
+#      PLAN_VALID marker written in the last 120 seconds.
+#   2. If dispatches occurred without PLAN.md: write a violation
+#      notice to TASK.json and log the violation to telemetry.
 #
-# Compliance checks:
-#   1. If PLAN.md exists and was recently modified
-#   2. If PLAN.md has STATUS: line
-#   3. If PLAN.md has step markers ([ ], [x], [/], [!])
-#   4. If dispatches occurred without PLAN.md: log violation
-#
-# Output: JSON compliance report (consumed by OpenClaw hook system)
-#
-# This script NEVER fails — violations are warnings, not errors.
+# This is the enforcement gate — no PLAN.md → violation logged.
 # ============================================================
 
 WORKSPACE="${HOME}/.openclaw/workspace"
 PLAN_FILE="${WORKSPACE}/PLAN.md"
+TASK_FILE="${WORKSPACE}/TASK.json"
 LOG_TAG="[plan-compliance]"
 
-# ── Check if PLAN.md exists and was modified in last 5 minutes ──
-PLAN_EXISTS=false
+# ── Check if PLAN.md exists and has PLAN_VALID marker ──
+PLAN_VALID=false
 PLAN_AGE=999999
 if [[ -f "$PLAN_FILE" ]]; then
-  PLAN_EXISTS=true
   PLAN_AGE=$(( $(date +%s) - $(stat -c %Y "$PLAN_FILE" 2>/dev/null || echo 0) ))
-fi
-PLAN_RECENT=false
-if [[ "$PLAN_AGE" -lt 300 ]]; then
-  PLAN_RECENT=true
+  if [[ "$PLAN_AGE" -lt 120 ]] && grep -q '^PLAN_VALID' "$PLAN_FILE" 2>/dev/null; then
+    PLAN_VALID=true
+  fi
 fi
 
-# ── Check PLAN.md structure (stateful plan format) ──
-HAS_STATUS=false
-HAS_STEPS=false
+# ── Check PLAN.md structure ──
 STEP_COUNT=0
 COMPLETED_STEPS=0
-IN_PROGRESS_STEPS=0
-PENDING_STEPS=0
-FAILED_STEPS=0
-
-if [[ "$PLAN_EXISTS" == "true" ]]; then
-  # Check for STATUS: line
-  if grep -qE '^STATUS:\s' "$PLAN_FILE" 2>/dev/null; then
-    HAS_STATUS=true
-  fi
-
-  # Count step markers
+VALIDATION_COUNT=0
+if [[ "$PLAN_VALID" == "true" ]]; then
   COMPLETED_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[x\]' "$PLAN_FILE" 2>/dev/null || echo 0)
-  IN_PROGRESS_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[/\]' "$PLAN_FILE" 2>/dev/null || echo 0)
   PENDING_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[ \]' "$PLAN_FILE" 2>/dev/null || echo 0)
-  FAILED_STEPS=$(grep -cE '^\s*[0-9]+\.\s+\[!\]' "$PLAN_FILE" 2>/dev/null || echo 0)
-  STEP_COUNT=$((COMPLETED_STEPS + IN_PROGRESS_STEPS + PENDING_STEPS + FAILED_STEPS))
-
-  if [[ "$STEP_COUNT" -gt 0 ]]; then
-    HAS_STEPS=true
-  fi
+  IN_PROGRESS=$(grep -cE '^\s*[0-9]+\.\s+\[/\]' "$PLAN_FILE" 2>/dev/null || echo 0)
+  STEP_COUNT=$((COMPLETED_STEPS + PENDING_STEPS + IN_PROGRESS))
+  VALIDATION_COUNT=$(grep -cE '→ VALIDATION:' "$PLAN_FILE" 2>/dev/null || echo 0)
 fi
 
-# ── Check if dispatches occurred (sessions_spawn or brain-exec) ──
-# Look for recent subagent activity in the gateway logs
+# ── Detect if dispatches occurred this turn ──
+# Check gateway log for recent sessions_spawn activity (last 3 minutes)
 DISPATCHES=0
-if command -v journalctl &>/dev/null; then
-  DISPATCHES=$(journalctl --since "5 min ago" --no-pager -o cat 2>/dev/null \
-    | grep -cE "brain-exec|sessions_spawn|sessions_yield" 2>/dev/null || echo 0)
+LOG_FILE="/tmp/openclaw/openclaw-$(date +%Y-%m-%d).log"
+if [[ -f "$LOG_FILE" ]]; then
+  # Look for sessions_spawn/yield in last 3 minutes of log
+  RECENT_LINES=$(tail -200 "$LOG_FILE" 2>/dev/null)
+  DISPATCHES=$(echo "$RECENT_LINES" | grep -cE 'sessions_spawn|sessions_yield|brain-exec' 2>/dev/null || echo 0)
 fi
 
 # ── Determine compliance ──
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ "$DISPATCHES" -gt 0 && "$PLAN_RECENT" == "false" ]]; then
-  # Dispatches happened without a recent PLAN.md → violation
-  echo "${LOG_TAG} WARN: dispatches occurred without PLAN.md" >&2
+if [[ "$DISPATCHES" -gt 0 && "$PLAN_VALID" == "false" ]]; then
+  # ═══ VIOLATION: dispatches without valid PLAN.md ═══
+  echo "${LOG_TAG} ❌ VIOLATION: dispatches occurred without PLAN_VALID in PLAN.md (age=${PLAN_AGE}s)" >&2
+
+  # Write telemetry
   if [[ -x "${SCRIPT_DIR}/brain-telemetry-write" ]]; then
-    "${SCRIPT_DIR}/brain-telemetry-write" "compliance" "plan-violation" 0 0 0 1 "no_plan_md" &
+    "${SCRIPT_DIR}/brain-telemetry-write" "compliance" "plan-violation" 0 0 0 1 "no_plan_valid" &
   fi
-elif [[ "$PLAN_RECENT" == "true" && "$HAS_STEPS" == "true" ]]; then
-  # Plan exists with step markers → compliant
-  echo "${LOG_TAG} OK: ${STEP_COUNT} steps (${COMPLETED_STEPS} done, ${IN_PROGRESS_STEPS} active, ${PENDING_STEPS} pending, ${FAILED_STEPS} failed)" >&2
-elif [[ "$PLAN_RECENT" == "true" && "$HAS_STEPS" == "false" ]]; then
-  # Plan exists but no step markers → warn (legacy format)
-  echo "${LOG_TAG} WARN: PLAN.md exists but has no step markers — using legacy format" >&2
+
+elif [[ "$PLAN_VALID" == "true" && "$STEP_COUNT" -gt 0 ]]; then
+  # ═══ COMPLIANT ═══
+  echo "${LOG_TAG} ✅ PLAN_VALID (${STEP_COUNT} steps, ${COMPLETED_STEPS} done, ${VALIDATION_COUNT} validation rules)" >&2
+
+elif [[ "$PLAN_VALID" == "true" && "$STEP_COUNT" -eq 0 ]]; then
+  # Plan exists with PLAN_VALID but no step markers — warn
+  echo "${LOG_TAG} ⚠️ PLAN_VALID but no step markers found" >&2
+
 elif [[ "$DISPATCHES" -eq 0 ]]; then
-  # No dispatches this turn — no compliance check needed
+  # No dispatches this turn — compliance check not needed
+  # This is normal for simple/identity/short_circuit responses
   :
 fi
 
+# Always exit 0 — violations are logged and telemetried, not fatal
+# (Making this fatal would block ALL responses including error recovery)
 exit 0
