@@ -1,11 +1,13 @@
 # Agent Design Framework
 
-> **Status:** CURRENT — Actively in use for fleet agent design
+> **Status:** ASPIRATIONAL — Design framework for future multi-team fleet deployments
 > **Written:** 2026-03-22
-> **Last reviewed:** 2026-04-11
+> **Last verified:** v2026.05.03.9.0
 
-> **Reference document for developers building new fleet agent types.**
+> **Design reference for building new fleet agent types.**
 > Defines how to scope agent specialties, assign tools, and design delegation chains.
+> Note: The current system uses OpenClaw multi-agent dispatch (`sessions_spawn`/`sessions_yield`),
+> not MCP `--tools` flags. PM-led teams and Missions/Checkpoints/Tasks are planned, not yet implemented.
 
 ---
 
@@ -124,7 +126,7 @@ Sum all tools (MCP + CoreKit + custom). If the count is 8–20, proceed. If unde
 
 ### Step 4: Write the workspace files
 
-Create a new directory under `bundle/workspaces/<specialty>/` with:
+Create a new directory under `specialties/<specialty>/workspace/` with:
 
 | File | Purpose | Guidance |
 |------|---------|----------|

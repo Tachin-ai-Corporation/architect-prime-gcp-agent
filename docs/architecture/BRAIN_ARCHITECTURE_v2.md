@@ -17,8 +17,8 @@
 
 | # | Call | Model | When |
 |---|------|-------|------|
-| 1 | temporal-memory (recall) | gemini-2.5-flash | Every message (automatic) |
-| 2 | prefrontal (dispatch plan) | gemini-2.5-flash | Every message (automatic) |
+| 1 | prefrontal (dispatch plan) | gemini-2.5-flash | Every message (mandatory gate) |
+| 2 | temporal-memory (recall) | gemini-2.5-flash | When prefrontal includes in pipeline |
 | 3-6 | Sub-agents (0-4 calls) | gemini-2.5-flash/pro | Per prefrontal's plan |
 | 7 | Cortex (synthesis) | gemini-3.1-pro-preview | Every message |
 | 8 | Mouth (classify + format) | gemini-2.5-flash | Every output |
@@ -68,7 +68,7 @@
 |---|---|---|
 | temporal-memory | _(none)_ | Pure memory: memory_search, core-memory-read/write only |
 | motor | All workspace tools (27) | Motor has exec permission, handles all external action |
-| cerebellum | docs-comments-* (4) | Doc review IS verification |
+| cerebellum | _(read-only verification)_ | Verification does not require write tools |
 
 ## Prefrontal Dispatch Plan Format
 
@@ -77,9 +77,7 @@ DISPATCH_PLAN:
 intent: build
 reasoning: User wants a Terraform module. Requires execution with verification.
 pipeline: [motor, cerebellum]
-parallel: []
 short_circuit: false
-approval_needed: false
 motor_mode: build
 context_summary: User is working on deploy-api mission.
 ```

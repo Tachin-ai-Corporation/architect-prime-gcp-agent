@@ -13,12 +13,12 @@
 - SOUL.md = identity + turn protocol + decision rules
 - IDENTITY.md = who the agent is, 1-2 paragraphs
 - TOOLS.md = available tools and usage patterns
-- BRAIN_CARD.md = PreTurn injection card (agent table + classification rules)
+- BRAIN_CARD.md = PreTurn injection card (sub-agent list + "spawn prefrontal first" rule)
 - MEMORY.md = working memory, curated, < 2000 chars
 - Keep workspace files focused — no overlap between files
 
 ## Firestore conventions
-- Collection paths: `/primes/{id}/`, `/primes/{id}/messages/`, `/primes/{id}/fleet/`, `/primes/{id}/tasks/`, `/primes/{id}/dispatch-log/`
+- Collection paths: `/primes/{id}/`, `/primes/{id}/messages/`, `/primes/{id}/fleet/`, `/primes/{id}/tasks/`, `/primes/{id}/dispatch-log/`, `/primes/{id}/fleet/{agent}/tasks/`
 - Timestamps: ISO 8601 UTC (`2026-04-04T21:00:00Z`)
 - Status enums: lowercase (`online`, `offline`, `deploying`, `executing`, `complete`, `failed`)
 - IDs: lowercase, kebab-case
@@ -28,7 +28,7 @@
 - Bootstrap config: `corekit/config/openclaw-bootstrap.json5.tmpl` (JSON5 with `${VAR}` template vars)
 - Rendered by `render-config` → `openclaw.json`
 - Agent workspaces at `~/.openclaw/workspace` (cortex) or `~/.openclaw/workspace-{agent}` (sub-agents)
-- Gateway API: `POST http://localhost:18789/api/message` with Bearer token auth
+- Gateway API: `POST http://localhost:18789/v1/chat/completions` with Bearer token auth
 - Hooks: PreTurn (inject), PostTurn (validate) — configured in hooks.internal.entries
 
 ## PowerShell (local dev)

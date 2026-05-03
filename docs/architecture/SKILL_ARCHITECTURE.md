@@ -1,6 +1,14 @@
 # Skill Architecture — Architect Prime
 
-> **Living document.** Defines how agent skills are composed, packaged, and assigned to agent types.
+> **Status:** PARTIALLY STALE — Core concepts are valid but file paths reference the pre-v5.0 `bundle/` layout.
+> **Last verified:** v2026.05.03.9.0
+
+> **Key differences from this doc:**
+> - Skills live under `skills/<name>/SKILL.md` (not `bundle/skills/<name>/`)
+> - Workspaces live under `brain/prime/`, `brain/fleet/`, `specialties/` (not `bundle/workspaces/`)
+> - CoreKit scripts live under `corekit/{brain,fleet,...}/` (not `bundle/corekit/bin/`)
+> - `assemble-tools` generates TOOLS.md from `agent-types.json` skill lists
+> - Cortex model is `gemini-3.1-pro-preview` (not `gemini-2.5-flash`)
 
 ---
 
