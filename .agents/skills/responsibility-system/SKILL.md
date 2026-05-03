@@ -1,6 +1,6 @@
 ---
 name: responsibility-system
-description: "FUTURE — Use when implementing responsibilities. Not applicable until v2.0 single-agent foundation is stable."
+description: "PLANNED — Responsibility assignment and tracking. Not yet implemented as of v2026.05.03."
 ---
-# Responsibility System (FUTURE — NOT YET IMPLEMENTED)
+# Responsibility System (PLANNED — NOT YET IMPLEMENTED)
 Reference: `docs/architecture/RESPONSIBILITIES_CHECKPOINTS_MISSIONS.md` (Section 1)

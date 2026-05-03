@@ -1,8 +1,8 @@
 ---
 name: specialist-workspace
-description: "FUTURE — Use when creating Specialist workspace files. Not applicable until brain architecture sub-agents are implemented."
+description: "PLANNED — Creating Specialist workspace files for new agent types. Brain sub-agent architecture is live; specialist workspace authoring not yet formalized."
 ---
-# Specialist Workspace Authoring (FUTURE — NOT YET IMPLEMENTED)
-Reference: `docs/architecture/BRAIN_ARCHITECTURE_v2.md` (Specialist section)
-
-Will be implemented when the brain architecture sub-agent model is activated.
+# Specialist Workspace Authoring (PLANNED)
+Brain sub-agents are live (6 agents: cortex, temporal-research, temporal-memory, prefrontal, motor, cerebellum).
+Specialty workspaces exist for `devops` and `engineer` under `specialties/`.
+A formalized specialist workspace creation workflow is not yet defined.

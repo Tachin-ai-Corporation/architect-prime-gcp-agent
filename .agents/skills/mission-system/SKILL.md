@@ -1,6 +1,6 @@
 ---
 name: mission-system
-description: "FUTURE — Use when implementing missions. Not applicable until v2.0 single-agent foundation is stable."
+description: "PLANNED — Mission lifecycle management. Not yet implemented as of v2026.05.03."
 ---
-# Mission System (FUTURE — NOT YET IMPLEMENTED)
+# Mission System (PLANNED — NOT YET IMPLEMENTED)
 Reference: `docs/architecture/RESPONSIBILITIES_CHECKPOINTS_MISSIONS.md` (Section 3)
