@@ -263,7 +263,7 @@ async function routeMessage(text) {
 // ---- Watchdog ----
 async function watchdogCheck(channel, taskId, dispatchedAt) {
   const WATCHDOG_INTERVAL = 10_000;
-  const WATCHDOG_MAX = 180_000;
+  const WATCHDOG_MAX = 300_000;
   const start = Date.now();
   log('Watchdog started', { taskId, timeout_s: WATCHDOG_MAX / 1000 });
   const logStartOffset = lastLogOffset;
