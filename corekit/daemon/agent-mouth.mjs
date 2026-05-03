@@ -17,7 +17,6 @@
 //   CHANNEL=dashboard node agent-mouth.mjs
 // ============================================================
 import { readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync, statSync } from 'fs';
-import { execFile } from 'child_process';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -335,30 +334,69 @@ function markTaskComplete(taskId) {
 }
 
 // Fire-and-forget: write task lifecycle record to Firestore
-function writeTaskLog(task, status, outputChars, classified, errorMsg) {
-  if (!task) return;
-  const args = [
-    task.taskId || 'unknown',
-    task.metadata?.agentId || 'unknown',
-    task.channel || CHANNEL,
-    status,
-    task.timestamp || '',
-    String(Date.now() - taskStartTime),
-    String(outputChars || 0),
-    classified || 'unknown',
-    (task.text || '').slice(0, 500),
-    errorMsg || '',
-  ];
-  // Smart path: detect container ($HOME) vs host (/opt/openclaw)
-  const binDir = existsSync('/home/node/.openclaw/bin/task-log-write')
-    ? '/home/node/.openclaw/bin'
-    : '/opt/openclaw/.openclaw/bin';
+async function writeTaskLog(task, status, outputChars, classified, errorMsg) {
+  if (!task || !FIRESTORE_URL) return;
   try {
-    const child = execFile(`${binDir}/task-log-write`, args, { timeout: 15000 });
-    child.on('error', () => {}); // fire and forget
-    child.unref();
+    const token = await getAccessToken();
+    const agentId = process.env.AGENT_ID || 'unknown';
+
+    // Determine Firestore path:
+    // Fleet: /primes/{primeId}/fleet/{agentHostname}/tasks/{taskId}
+    // Prime: /primes/{primeId}/tasks/{taskId}
+    let agentHostname = '';
+    try {
+      const hn = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/name',
+        { headers: { 'Metadata-Flavor': 'Google' } }).then(r => r.text());
+      agentHostname = hn.replace(/^fleet-/, '').replace(/^prime-/, '');
+    } catch {}
+
+    const primeId = PRIME_ID || agentHostname;
+    const isPrime = CHANNEL === 'dashboard';
+    const taskId = task.taskId || `t-${Date.now()}`;
+
+    const docPath = isPrime
+      ? `${FIRESTORE_URL}/primes/${primeId}/tasks/${taskId}`
+      : `${FIRESTORE_URL}/primes/${primeId}/fleet/${agentHostname}/tasks/${taskId}`;
+
+    const durationMs = Date.now() - taskStartTime;
+    const body = {
+      fields: {
+        taskId: { stringValue: taskId },
+        agentId: { stringValue: agentId },
+        agentName: { stringValue: agentHostname },
+        agentEmail: { stringValue: AGENT_USER_EMAIL },
+        channel: { stringValue: task.channel || CHANNEL },
+        requester: { stringValue: 'human' },
+        text: { stringValue: (task.text || '').slice(0, 500) },
+        status: { stringValue: status },
+        classified: { stringValue: classified || 'unknown' },
+        startedAt: task.timestamp
+          ? { stringValue: task.timestamp }
+          : { nullValue: null },
+        deliveredAt: { stringValue: new Date().toISOString() },
+        durationMs: { integerValue: String(durationMs) },
+        outputChars: { integerValue: String(outputChars || 0) },
+        error: errorMsg
+          ? { stringValue: errorMsg }
+          : { nullValue: null },
+      }
+    };
+
+    const res = await fetch(docPath, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      log('task-log-write Firestore error', { status: res.status, taskId });
+    } else {
+      log('task-log-write OK', { taskId, status, durationMs });
+    }
   } catch (err) {
-    log('task-log-write spawn error', { error: err.message });
+    log('task-log-write error', { error: err.message });
   }
 }
 
@@ -395,7 +433,7 @@ async function main() {
         if (Date.now() - taskStartTime > DELIVERY_TIMEOUT) {
           log('Task timeout — delivering error', { taskId: task.taskId, timeout_s: DELIVERY_TIMEOUT / 1000 });
           await deliver('⚠ I\'m still working on this, but it\'s taking longer than expected. I\'ll keep trying.');
-          writeTaskLog(task, 'timed_out', 0, 'timeout', 'delivery timeout');
+          await writeTaskLog(task, 'timed_out', 0, 'timeout', 'delivery timeout');
           markTaskComplete(task.taskId);
           lastTaskId = null;
           continue;
@@ -412,7 +450,7 @@ async function main() {
           if (result.action === 'deliver') {
             await deliver(result.text);
             log('Delivered', { channel: CHANNEL, chars: result.text.length, taskId: task.taskId });
-            writeTaskLog(task, 'delivered', result.text.length, 'external');
+            await writeTaskLog(task, 'delivered', result.text.length, 'external');
             markTaskComplete(task.taskId);
             lastTaskId = null;
           } else {
