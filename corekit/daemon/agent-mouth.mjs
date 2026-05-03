@@ -27,6 +27,18 @@ const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
 const POLL_INTERVAL = 2000; // 2s
 
+// Identity lockdown: refuse to impersonate any email other than the locked one
+const IDENTITY_LOCK_PATH = '/home/node/.openclaw/.identity-lock';
+try {
+  const lockedEmail = readFileSync(IDENTITY_LOCK_PATH, 'utf8').trim();
+  if (lockedEmail && AGENT_USER_EMAIL && lockedEmail !== AGENT_USER_EMAIL) {
+    console.error(`[mouth] FATAL: AGENT_USER_EMAIL (${AGENT_USER_EMAIL}) does not match .identity-lock (${lockedEmail}). Refusing to start.`);
+    process.exit(99);
+  }
+} catch {
+  // No lock file yet — allowed during initial bootstrap
+}
+
 // Timeout: if no output after this long, send error message
 const DELIVERY_TIMEOUT = 300_000; // 5 minutes
 

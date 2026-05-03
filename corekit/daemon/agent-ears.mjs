@@ -4,7 +4,7 @@
 //
 // 100% deterministic — ZERO LLM calls.
 // Polls channels for input, deduplicates, writes TASK.json,
-// fires gateway call (non-blocking), sends ACK.
+// and fires gateway call (non-blocking).
 //
 // The Mouth service handles ALL output delivery.
 //
@@ -42,6 +42,18 @@ const AGENT_USER_EMAIL = process.env.AGENT_USER_EMAIL || '';
 const AGENT_MENTION = process.env.AGENT_MENTION || '';
 const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
+
+// Identity lockdown: refuse to impersonate any email other than the locked one
+const IDENTITY_LOCK_PATH = '/home/node/.openclaw/.identity-lock';
+try {
+  const lockedEmail = readFileSync(IDENTITY_LOCK_PATH, 'utf8').trim();
+  if (lockedEmail && AGENT_USER_EMAIL && lockedEmail !== AGENT_USER_EMAIL) {
+    console.error(`[ears] FATAL: AGENT_USER_EMAIL (${AGENT_USER_EMAIL}) does not match .identity-lock (${lockedEmail}). Refusing to start.`);
+    process.exit(99);
+  }
+} catch {
+  // No lock file yet — allowed during initial bootstrap
+}
 
 // Firestore URL (Prime)
 const FIRESTORE_URL = GCP_PROJECT

@@ -42,7 +42,7 @@ fi
 # ── Detect if dispatches occurred this turn ──
 # Check gateway log for recent sessions_spawn activity (last 3 minutes)
 DISPATCHES=0
-LOG_FILE="/tmp/openclaw/openclaw-$(date +%Y-%m-%d).log"
+LOG_FILE="$(ls -t /tmp/openclaw/openclaw-*.log 2>/dev/null | head -1)"
 if [[ -f "$LOG_FILE" ]]; then
   # Look for sessions_spawn/yield in last 3 minutes of log
   RECENT_LINES=$(tail -200 "$LOG_FILE" 2>/dev/null)
