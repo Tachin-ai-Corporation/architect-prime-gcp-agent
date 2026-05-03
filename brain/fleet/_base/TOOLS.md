@@ -15,8 +15,7 @@ Workspace skills are loaded per agent type. Check your BRAIN_CARD.md
 
 ### Drive Tools (if enabled)
 If your agent type includes `workspace-drive`, these tools are available:
-- READ tools (temporal-memory): `drive-ls`, `drive-search`, `drive-download`
-- WRITE tools (motor): `drive-upload`, `drive-mkdir`, `drive-rename`,
-  `drive-delete`, `drive-move`, `drive-share`
+- ALL Drive tools (motor): `drive-ls`, `drive-search`, `drive-download`,
+  `drive-upload`, `drive-mkdir`, `drive-rename`, `drive-delete`, `drive-move`, `drive-share`
 
 See `skills/workspace-drive/SKILL.md` for full usage.
