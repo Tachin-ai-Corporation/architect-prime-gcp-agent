@@ -1,6 +1,6 @@
-# Bootstrap Guide — Architect Prime v2.0
+# Bootstrap Guide — Architect Prime
 
-How the Prime VM deploys and boots.
+How Prime and Fleet VMs deploy and boot.
 
 ## How It Works
 
@@ -18,8 +18,8 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 |------|-------------|----------|
 | 1 | Install system packages (curl, git, python3, jq) | ~30s |
 | 2 | Install Docker CE via `get.docker.com` | ~60s |
-| 3 | Install CoreKit via `install.sh` manifest | ~15s |
-| 4 | Clone OpenClaw repo, checkout stable commit | ~10s |
+| 3 | Install CoreKit via `install.sh --role prime` | ~15s |
+| 4 | Clone OpenClaw repo, checkout stable commit (v2026.4.19) | ~10s |
 | 5 | `DOCKER_BUILDKIT=1 docker build -t openclaw:local .` | ~8 min |
 | 6 | Start OpenClaw container (`--network host`) | ~5s |
 | 7 | Wait for gateway readiness (poll `config.get`) | ~5-120s |
@@ -28,7 +28,7 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 | 10 | Apply config via RPC (`config.apply` + baseHash retry) | ~15-60s |
 | 11 | Post-apply hardening + inject Docker CLI | ~5s |
 | 12 | Write `prime-config.json` | ~1s |
-| 13 | Install `message-daemon` as systemd service | ~2s |
+| 13 | Install `agent-ears` + `agent-mouth` as systemd services | ~2s |
 
 **Total: ~12-15 minutes from VM creation to `PRIME VM SETUP COMPLETE`**
 
@@ -64,7 +64,7 @@ grep "startup-script:" ... | grep "==>"
 # ==> Rendering bootstrap config...
 # ==> Applying config via RPC...
 # ==> Post-apply hardening...
-# ==> Installing message-daemon systemd service...
+# ==> Starting agent-ears + agent-mouth...
 #   PRIME VM SETUP COMPLETE
 ```
 
@@ -77,9 +77,13 @@ gcloud compute ssh prime-<name> --zone=us-central1-a --project=<project>
 sudo docker ps
 sudo docker logs openclaw-gateway --tail 50
 
-# Check message-daemon
-sudo systemctl status message-daemon
-sudo journalctl -u message-daemon --since "1 hour ago"
+# Check agent-ears
+sudo systemctl status agent-ears
+sudo tail -20 /var/log/agent-ears.log
+
+# Check agent-mouth
+sudo systemctl status agent-mouth
+sudo tail -20 /var/log/agent-mouth.log
 
 # Check CoreKit files
 ls -la /opt/openclaw/.openclaw/bin/
@@ -97,9 +101,12 @@ To modify the bootstrap:
 
 ## Key Files
 
+| File | Purpose |
+|------|---------|
 | `infra/bootstrap/prime-bootstrap.sh` | Full VM setup script (standalone bash) |
 | `app/src/app/api/primes/[id]/deploy/route.ts` | Deploy API with boot stub |
 | `corekit/config/openclaw-bootstrap.json5.tmpl` | OpenClaw config template |
-| `corekit/daemon/message-daemon.mjs` | Unified message daemon (dashboard + gchat) |
+| `corekit/daemon/agent-ears.mjs` | Deterministic input processing |
+| `corekit/daemon/agent-mouth.mjs` | Output classification + delivery |
 | `infra/install.sh` | CoreKit manifest installer |
 | `infra/manifests/base.txt` | Repo path → VM path mapping |

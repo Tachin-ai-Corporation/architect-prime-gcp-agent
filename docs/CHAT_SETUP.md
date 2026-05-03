@@ -1,6 +1,6 @@
 # Google Chat Setup (DWD — Domain-Wide Delegation)
 
-> **Last updated:** 2026-04-11
+
 
 Architect Prime and fleet agents communicate through Google Chat using **Domain-Wide Delegation (DWD)**. Agents impersonate Workspace user accounts — no Chat apps or Cloud Functions needed.
 
@@ -59,7 +59,7 @@ export CHAT_SPACE_ID=spaces/YOUR_SPACE_ID
 
 ### Step 5: Test
 
-@-mention the agent user in the Chat space. The `message-daemon` detects the mention and responds.
+@-mention the agent user in the Chat space. The `agent-ears` service detects the mention and routes it to the OpenClaw gateway. `agent-mouth` delivers the response.
 
 ## How It Works
 
@@ -67,19 +67,21 @@ export CHAT_SPACE_ID=spaces/YOUR_SPACE_ID
 Human @-mentions agent user in Chat
     │
     ▼
-message-daemon polls Chat API (spaces.messages.list)
+agent-ears polls Chat API (spaces.messages.list)
     │ uses DWD: SA impersonates agent user via signJwt
     │
     ▼
-Detects @-mention → processes message
+Detects @-mention → fires gateway POST (non-blocking)
     │
-    └── Routed to OpenClaw gateway (Vertex AI Gemini)
+    └── OpenClaw gateway (Vertex AI Gemini)
             │
             ├── Pure Q&A → conversational response
             └── Tool invocation (if needed)
                     │
                     ▼
-    chat-send (DWD) → posts response as the agent user
+    agent-mouth polls gateway logs → classifies → delivers
+    │
+    └── chat-send (DWD) → posts response as the agent user
 ```
 
 ## Adding Fleet Agents

@@ -36,8 +36,11 @@ sudo docker exec openclaw-gateway openclaw status
 # Container logs
 sudo docker logs openclaw-gateway --tail 50
 
-# Control-daemon logs
-sudo journalctl -u control-daemon --since '10 min ago' --no-pager
+# Agent ears logs
+sudo tail -20 /var/log/agent-ears.log
+
+# Agent mouth logs
+sudo tail -20 /var/log/agent-mouth.log
 
 # Manual brain dispatch
 sudo docker exec openclaw-gateway /home/node/.openclaw/bin/brain-exec temporal-research "test" 30

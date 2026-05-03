@@ -48,13 +48,16 @@ echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=arc
 echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="TOKEN=$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import sys,json; print(json.load(sys.stdin)[\"access_token\"])'); curl -s -X POST -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '{\"structuredQuery\":{\"from\":[{\"collectionId\":\"commands\"}],\"orderBy\":[{\"field\":{\"fieldPath\":\"createdAt\"},\"direction\":\"DESCENDING\"}],\"limit\":5}}' 'https://firestore.googleapis.com/v1/projects/architect-prime-beta/databases/(default)/documents/primes/chucknorris:runQuery' | python3 -m json.tool"
 ```
 
-## Quick alternative: Container & daemon logs
+## Quick alternative: Service & container logs
 
 Often faster than Firestore queries for debugging recent activity:
 
 ```powershell
-# Control-daemon logs (message receipt + replies)
-echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u control-daemon --since '15 min ago' --no-pager -n 30"
+# Agent ears logs (input processing)
+echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -30 /var/log/agent-ears.log"
+
+# Agent mouth logs (output classification + delivery)
+echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -30 /var/log/agent-mouth.log"
 
 # OpenClaw container logs (hooks, model calls, agent dispatch)
 echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo docker logs openclaw-gateway --tail 50 2>&1 | tail -50"
