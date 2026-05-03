@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.03.9.0`
+> - **Current version:** `v2026.05.03.10.0`
 
 ---
 
@@ -97,8 +97,8 @@ Dashboard (Cloud Run — Next.js)
         │          agent-ask, assemble-tools, brain-telemetry-write/read, check-plan-compliance,
         │          task-log-write, task-log-read
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
-        ├── dashboard/: command-runner, dashboard-respond
-        ├── system/: upgrade-corekit, validate-contracts, web-search
+        ├── dashboard/: command-runner
+        ├── system/: upgrade-corekit, validate-contracts
         └── config/: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
@@ -711,6 +711,23 @@ architect-prime/
 6. **Byte-offset log fix** — Gateway log reading uses Buffer (byte offsets) instead of string (char offsets), fixing multi-byte UTF-8 character misalignment.
 7. **Stray re-delivery fix** — Log offset initialized to current file size on startup, preventing re-delivery of old output on service restart.
 8. **ACK removal** — Removed "Processing your request..." message from ears — mouth delivers fast enough.
+
+### Completed: v2026.05.03.10.0 — Repo Hardening Audit (3-pass, 69 items)
+> *Systematic audit fixing runtime bugs, dead code, stale docs, and architectural rot across the entire repository.*
+
+1. **Contract validation fixed** — `validate-contracts` glob pointed at nonexistent `bundle/` directory; silently passing. Now uses correct `corekit/config/` path.
+2. **agent-ask model/region fixed** — Was hardcoded to `gemini-2.0-flash` + `us-central1`. Now reads from `contracts.json` with global endpoint support.
+3. **Identity lockdown extended** — ears/mouth had inline DWD that bypassed `.identity-lock`. Both now check lockfile at startup and refuse to start on mismatch.
+4. **Calendar bug fixed** — `check-plan-compliance` PostTurn gate used date-based log path; silently disabled after midnight UTC. Now uses most-recent log file.
+5. **fleet-monitor milestone fixed** — `"Gateway is ready"` never matched fleet-bootstrap's `"Gateway ready"` output. Deploy progress now tracks gateway startup.
+6. **web-search bypass deleted** — CoreKit script provided exec side-channel around the `deny: ["web-search"]` policy. Removed script + manifest entry.
+7. **model-catalog.json deleted** — Dead static config not installed by any manifest, not read by any script. Dashboard claim corrected to reference `discover-models`.
+8. **brain-exec header fixed** — Documented nonexistent DEFAULT mode; removed dead `approval_needed` parser.
+9. **Stale docs purged** — Deleted 10 obsolete specialty workspace files, 6 phantom Google Workspace skills, broken CI workflow, drifting resource copies (~3,700 lines removed).
+10. **All agent-facing docs updated** — SKILL.md files for agent-ask, memory-consolidate, corekit-script, workspace-author, brain-architecture all rewritten to match production architecture.
+11. **corekit/README rewritten** — Removed bundle/, pnpm, cp004-ok, static date. Now reflects manifest installer workflow.
+12. **bundle/ sweep** — Replaced phantom `bundle/` paths in R/C/M spec, RESP_SPEC, AGENT_DESIGN, BRAIN_ARCH, coding-standards.
+13. **hire API hardened** — Removed hardcoded `tachin.ai` email fallback; email is now a required parameter.
 
 ### Current: v10.0 — R/C/M Roll-ups + Checkpoint System
 > *Goal: Tasks roll up to checkpoints, checkpoints to missions, missions to responsibilities.*

@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.03.9.0`
+> **Current version:** `v2026.05.03.10.0`
 
 ---
 
@@ -330,6 +330,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.03.7** | Brain v2.1 Gate Enforcement — BRAIN_CARD stripped of routing hints, PLAN.md write gate (PLAN_VALID marker), validation rules (per-step criteria checked by cerebellum), two-mode prefrontal (simple + advisory), motor advisory mode, ws-token path fix, multi-step Drive organization validated end-to-end |
 | **v2026.05.03.8** | Ears/Mouth Activation — Decoupled I/O: fire-and-forget agent-ears (deterministic input), strict-LLM agent-mouth (classify+deliver). Deleted message-daemon (−1,028 lines) + channel-respond. Both Prime and Fleet validated end-to-end. |
 | **v2026.05.03.9** | Identity Lockdown + Task Lifecycle — Deterministic agent email (`{{AGENT_USER_EMAIL}}`), `.identity-lock` DWD impersonation guard, structured Firestore task logging (`task-log-write`/`task-log-read`), mouth voice fix (speaks AS agent), byte-offset log fix, stray re-delivery fix, ACK removal. |
+| **v2026.05.03.10** | Repo Hardening Audit — 3-pass, 69-item audit: fixed contract validation paths, agent-ask model/region from contracts.json, identity-lock enforcement in ears/mouth, calendar bug in compliance gate, fleet-monitor milestone string, deleted web-search bypass + model-catalog.json, purged ~3,700 lines of dead code/stale docs, hardened hire API. |
 
 ---
 
