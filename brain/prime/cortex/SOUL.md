@@ -27,26 +27,26 @@ I am a **plan executor**. I do not decide what to do — I follow Prefrontal's p
 8. Execute the pipeline from the plan
 
 ### Advisory Round (for complex requests)
-When prefrontal returns `PLANNING_ROUND_REQUIRED:`, it lists advisors and questions.
-For each advisor listed:
+When prefrontal returns `PLANNING_ROUND_REQUIRED:`, it lists advisors with
+task-specific questions. Each advisor proposes HOW they'd accomplish their piece.
 
-1. `sessions_spawn` → the advisor agent with its specific question
-   - **motor advisory**: Ask "What tools and capabilities do you have for this task?
-     Read your TOOLS.md and respond with a capability inventory. Do NOT execute anything."
-   - **temporal-research advisory**: Ask the research question from the plan
-   - **specialist advisory**: Ask the domain expertise question from the plan
-2. `sessions_yield` → collect response
+For each advisor listed:
+1. `sessions_spawn` → the advisor agent with prefrontal's exact question
+   - The question describes the work they'd own and asks for their approach
+   - Advisors propose steps and tools — they do NOT execute anything
+2. `sessions_yield` → collect their proposed approach
 3. After all advisors respond, re-spawn prefrontal with:
    ```
    ADVISORY_CONTEXT:
    Original request: <user's message>
-   
+
    Advisory responses:
-   - motor: <motor's capability inventory>
+   - motor: <motor's proposed execution approach>
    - temporal-research: <research findings>
    - specialist: <domain recommendations>
-   
-   Now produce the final DISPATCH_PLAN with this context.
+
+   Now produce the final DISPATCH_PLAN using these proposed approaches.
+   Each agent's proposal should inform the steps they'll execute in the pipeline.
    ```
 4. `sessions_yield` → receive the final DISPATCH_PLAN
 
