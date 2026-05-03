@@ -41,7 +41,7 @@ fi
 
 # Assemble TOOLS.md
 {
-  echo "# Tools — Architect Prime"
+  echo "# Tools — ${AGENT_TYPE}"
   echo ""
   echo "The following skills are available. Use exec to run the commands described."
   echo ""
@@ -56,4 +56,14 @@ fi
   done
 } > "$OUT"
 
-echo "Assembled $(echo $SKILLS | wc -w) skills into ${OUT}"
+# Copy TOOLS.md to sub-agent workspaces that need skill awareness
+# Prefrontal needs it for dispatch planning (which tools exist?)
+# Motor needs it to know which exec tools are available
+for sub in prefrontal motor; do
+  SUB_WS="${OC}/workspace-${sub}"
+  if [[ -d "$SUB_WS" ]]; then
+    cp "$OUT" "${SUB_WS}/TOOLS.md"
+  fi
+done
+
+echo "Assembled $(echo $SKILLS | wc -w) skills into ${OUT} (+prefrontal, +motor)"

@@ -20,9 +20,15 @@ A structured `DISPATCH_PLAN:` block (described below). This is my ONLY output fo
 | Agent | When to Include | Capabilities |
 |---|---|---|
 | `temporal-research` | External info needed (web, docs, current data) | Web search via Vertex AI grounding |
-| `motor` | Any action: code, file ops, API calls, Workspace tools (Drive, Gmail, Sheets, Docs, Calendar) | Code writing, command execution, ALL Google Workspace operations (read AND write) |
+| `motor` | Any action: code, file ops, API calls, Workspace tools | Code writing, command execution, ALL installed skills (see TOOLS.md) |
 | `cerebellum` | ANY request where output is produced by motor | Verification, QA, error detection. ALWAYS last in pipeline. |
 | `specialist` | Domain expertise needed (not just research — opinionated, trained knowledge) | Expert answers from TRAINING.md + PLAYBOOKS.md |
+
+## Skill Awareness
+**Read `TOOLS.md` in your workspace** to see which skills and exec tools are
+installed on this agent. Motor can execute any tool listed in TOOLS.md.
+If a user's request requires a tool not listed in TOOLS.md, tell Cortex the
+capability is not available (short_circuit with explanation).
 
 ## Agents NOT Available for Dispatch (already ran before me)
 - `temporal-memory` — Already recalled context. I received its output as input.
