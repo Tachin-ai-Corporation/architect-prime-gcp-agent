@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# ============================================================
+# task-log-read — Read recent task records from Firestore
+#
+# Queries the task log for recent entries. Can be used by:
+# - Dashboard API (to display agent activity)
+# - Prime (to see what fleet agents have been doing)
+# - Agents themselves (to recall what they've done)
+#
+# Usage:
+#   task-log-read --last 5                    # Last 5 tasks
+#   task-log-read --last 10 --agent stan      # Last 10 from fleet-stan
+#   task-log-read --task t-1234567890-abc123  # Specific task
+#
+# Output: JSON array of task records on stdout.
+#
+# Errors: prints error to stderr, exits 1 on failure.
+# ============================================================
+set -euo pipefail
+
+LAST_N=5
+AGENT_FILTER=""
+TASK_ID=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --last)   LAST_N="$2"; shift 2 ;;
+    --agent)  AGENT_FILTER="$2"; shift 2 ;;
+    --task)   TASK_ID="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: task-log-read [--last N] [--agent name] [--task taskId]"
+      echo "  --last N       Show last N tasks (default: 5)"
+      echo "  --agent name   Filter by fleet agent name (e.g. 'stan')"
+      echo "  --task id      Get a specific task by ID"
+      echo "Output: JSON array of task records."
+      exit 0
+      ;;
+    *) echo "[task-log-read] ERROR: Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+# ── Resolve Prime ID and Project ───────────────────────────
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+PRIME_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+
+PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//' | sed 's/^fleet-//')
+fi
+
+PROJECT_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "")
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "[task-log-read] ERROR: Could not resolve PROJECT_ID" >&2
+  exit 1
+fi
+
+# ── Get access token ───────────────────────────────────────
+TOKEN=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")
+if [[ -z "$TOKEN" ]]; then
+  echo "[task-log-read] ERROR: Could not get access token" >&2
+  exit 1
+fi
+
+# ── Build Firestore query ──────────────────────────────────
+BASE_URL="https://firestore.googleapis.com/v1"
+
+if [[ -n "$TASK_ID" ]]; then
+  # Direct document lookup — try Prime path first, then fleet agents
+  IS_PRIME="false"
+  [[ -f "$PRIME_CONFIG" ]] && IS_PRIME="true"
+
+  if [[ "$IS_PRIME" == "true" ]]; then
+    DOC_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/tasks/${TASK_ID}"
+  else
+    AGENT_HOSTNAME=$(hostname | sed 's/^fleet-//' | sed 's/^prime-//')
+    DOC_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}/tasks/${TASK_ID}"
+  fi
+
+  RESPONSE=$(curl -sf --max-time 10 \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "${BASE_URL}/${DOC_PATH}" 2>/dev/null) || {
+    echo "[]"
+    exit 0
+  }
+
+  # Convert single doc to array
+  python3 -c "
+import json, sys
+try:
+    doc = json.loads('''${RESPONSE}''')
+    fields = doc.get('fields', {})
+    record = {}
+    for k, v in fields.items():
+        if 'stringValue' in v: record[k] = v['stringValue']
+        elif 'integerValue' in v: record[k] = int(v['integerValue'])
+        elif 'booleanValue' in v: record[k] = v['booleanValue']
+        elif 'nullValue' in v: record[k] = None
+    print(json.dumps([record], indent=2))
+except Exception as e:
+    print(f'[task-log-read] WARN: Parse error: {e}', file=sys.stderr)
+    print('[]')
+"
+  exit 0
+fi
+
+# ── List query (last N tasks) ──────────────────────────────
+# Determine collection path
+if [[ -n "$AGENT_FILTER" ]]; then
+  COLLECTION="primes/${PRIME_ID}/fleet/${AGENT_FILTER}/tasks"
+else
+  # Check if we're on a fleet agent or prime
+  IS_PRIME="false"
+  [[ -f "$PRIME_CONFIG" ]] && IS_PRIME="true"
+  if [[ "$IS_PRIME" == "true" ]]; then
+    COLLECTION="primes/${PRIME_ID}/tasks"
+  else
+    AGENT_HOSTNAME=$(hostname | sed 's/^fleet-//' | sed 's/^prime-//')
+    COLLECTION="primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}/tasks"
+  fi
+fi
+
+# Use structured query for ordering + limiting
+QUERY_BODY=$(cat <<EOF
+{
+  "structuredQuery": {
+    "from": [{"collectionId": "tasks"}],
+    "orderBy": [{"field": {"fieldPath": "deliveredAt"}, "direction": "DESCENDING"}],
+    "limit": ${LAST_N}
+  }
+}
+EOF
+)
+
+# Parent path for query
+if [[ -n "$AGENT_FILTER" ]]; then
+  PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT_FILTER}"
+elif [[ "$IS_PRIME" == "true" ]]; then
+  PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}"
+else
+  AGENT_HOSTNAME=$(hostname | sed 's/^fleet-//' | sed 's/^prime-//')
+  PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}"
+fi
+
+RESPONSE=$(curl -sf --max-time 10 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "${BASE_URL}/${PARENT}:runQuery" \
+  -d "${QUERY_BODY}" 2>/dev/null) || {
+  echo "[]"
+  exit 0
+}
+
+# Parse response — array of {document: {fields: ...}} objects
+python3 -c "
+import json, sys
+try:
+    results = json.loads('''${RESPONSE}''')
+    records = []
+    for item in results:
+        doc = item.get('document', {})
+        fields = doc.get('fields', {})
+        if not fields:
+            continue
+        record = {}
+        for k, v in fields.items():
+            if 'stringValue' in v: record[k] = v['stringValue']
+            elif 'integerValue' in v: record[k] = int(v['integerValue'])
+            elif 'booleanValue' in v: record[k] = v['booleanValue']
+            elif 'nullValue' in v: record[k] = None
+        records.append(record)
+    print(json.dumps(records, indent=2))
+except Exception as e:
+    print(f'[task-log-read] WARN: Parse error: {e}', file=sys.stderr)
+    print('[]')
+"

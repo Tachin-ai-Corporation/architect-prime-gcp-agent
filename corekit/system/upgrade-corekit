@@ -113,12 +113,14 @@ case "${1:-}" in
         rm -f "${OC_DIR}/workspace/"*.md 2>/dev/null || true
         MENTION="$(jq -r '.agentMention // empty' "$CHAT_CFG" 2>/dev/null || true)"
         PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null || true)"
+        AGENT_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null || true)"
         SPECIALTY="$(basename "$SPECIALTY_DIR" | sed 's/workspace-//')"
         for f in "${SPECIALTY_DIR}"/*.md; do
           [[ -f "$f" ]] || continue
           sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
               -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
               -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
+              -e "s|{{AGENT_USER_EMAIL}}|${AGENT_EMAIL}|g" \
               -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
               "$f" > "${OC_DIR}/workspace/$(basename "$f")"
         done
@@ -139,6 +141,7 @@ case "${1:-}" in
                 sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
                     -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
                     -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
+                    -e "s|{{AGENT_USER_EMAIL}}|${AGENT_EMAIL}|g" \
                     -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
                     "$f" > "${dest}/$(basename "$f")"
               done

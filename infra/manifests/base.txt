@@ -39,6 +39,8 @@ corekit/brain/brain-telemetry-read .openclaw/bin/brain-telemetry-read
 corekit/brain/build-system-prompt .openclaw/bin/build-system-prompt
 corekit/brain/check-plan-compliance .openclaw/bin/check-plan-compliance
 corekit/brain/assemble-tools .openclaw/bin/assemble-tools
+corekit/brain/task-log-write .openclaw/bin/task-log-write
+corekit/brain/task-log-read .openclaw/bin/task-log-read
 
 # Config
 corekit/README.md .openclaw/corekit/README.md

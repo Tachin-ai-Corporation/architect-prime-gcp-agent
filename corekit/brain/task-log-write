@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# ============================================================
+# task-log-write — Write a task lifecycle record to Firestore
+#
+# Called by agent-mouth (fire-and-forget, backgrounded) after
+# delivering output or on timeout. Records every task with
+# structured metadata for dashboard, Prime, and agent readback.
+#
+# Usage (internal — called by agent-mouth):
+#   task-log-write <taskId> <agentId> <channel> <status> \
+#     <startedAt> <durationMs> <outputChars> <classified> \
+#     [text] [error]
+#
+# Writes to: /primes/{primeId}/fleet/{agentName}/tasks/{taskId}
+#            or /primes/{primeId}/tasks/{taskId} for Prime
+#
+# Errors: NEVER fails fatally. Logs a warning and exits 0.
+# ============================================================
+# shellcheck disable=SC2015
+set -euo pipefail
+
+TASK_ID="${1:-unknown}"
+AGENT_ID="${2:-unknown}"
+CHANNEL="${3:-unknown}"
+STATUS="${4:-unknown}"        # delivered | timed_out | error
+STARTED_AT="${5:-}"
+DURATION_MS="${6:-0}"
+OUTPUT_CHARS="${7:-0}"
+CLASSIFIED="${8:-unknown}"    # external | internal | unknown
+TASK_TEXT="${9:-}"
+ERROR_MSG="${10:-}"
+
+# ── Truncate text to 500 chars ──────────────────────────────
+TASK_TEXT="${TASK_TEXT:0:500}"
+
+# ── Resolve identity ───────────────────────────────────────
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+CONFIG_FILE="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+PRIME_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+
+# Get agent email from chat-config or identity-lock
+AGENT_EMAIL=""
+IDENTITY_LOCK="${OC_HOST_ROOT}/.openclaw/.identity-lock"
+if [[ -f "$IDENTITY_LOCK" ]]; then
+  AGENT_EMAIL="$(cat "$IDENTITY_LOCK" 2>/dev/null | tr -d '[:space:]')"
+fi
+if [[ -z "$AGENT_EMAIL" && -f "$CONFIG_FILE" ]]; then
+  AGENT_EMAIL="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CONFIG_FILE'))
+    print(cfg.get('agentUserEmail', ''))
+except: pass
+" 2>/dev/null)"
+fi
+
+# Get agent display name
+AGENT_NAME=""
+if [[ -f "$CONFIG_FILE" ]]; then
+  AGENT_NAME="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CONFIG_FILE'))
+    print(cfg.get('agentDisplayName', ''))
+except: pass
+" 2>/dev/null)"
+fi
+
+# Determine role (prime or fleet)
+IS_PRIME="false"
+if [[ -f "$PRIME_CONFIG" ]]; then
+  IS_PRIME="true"
+fi
+
+# Resolve Prime ID
+PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//' | sed 's/^fleet-//')
+fi
+
+# Resolve project ID
+PROJECT_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "")
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "[task-log-write] WARN: Could not resolve PROJECT_ID, skipping" >&2
+  exit 0
+fi
+
+# ── Get access token ───────────────────────────────────────
+TOKEN=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")
+if [[ -z "$TOKEN" ]]; then
+  echo "[task-log-write] WARN: Could not get access token, skipping" >&2
+  exit 0
+fi
+
+# ── Delivered timestamp ────────────────────────────────────
+DELIVERED_AT=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+
+# ── Build Firestore path ──────────────────────────────────
+# Fleet agents: /primes/{primeId}/fleet/{agentName}/tasks/{taskId}
+# Prime:        /primes/{primeId}/tasks/{taskId}
+AGENT_HOSTNAME=$(hostname | sed 's/^fleet-//' | sed 's/^prime-//')
+if [[ "$IS_PRIME" == "true" ]]; then
+  DOC_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/tasks/${TASK_ID}"
+else
+  DOC_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}/tasks/${TASK_ID}"
+fi
+
+# ── Escape strings for JSON ────────────────────────────────
+TASK_TEXT_ESCAPED=$(python3 -c "import json; print(json.dumps('''${TASK_TEXT}''')[1:-1])" 2>/dev/null || echo "$TASK_TEXT")
+AGENT_EMAIL_ESCAPED=$(python3 -c "import json; print(json.dumps('${AGENT_EMAIL}')[1:-1])" 2>/dev/null || echo "$AGENT_EMAIL")
+AGENT_NAME_ESCAPED=$(python3 -c "import json; print(json.dumps('${AGENT_NAME}')[1:-1])" 2>/dev/null || echo "$AGENT_NAME")
+
+# ── Build error field ──────────────────────────────────────
+ERROR_FIELD='"nullValue": null'
+if [[ -n "$ERROR_MSG" ]]; then
+  ERROR_ESCAPED=$(python3 -c "import json; print(json.dumps('${ERROR_MSG}')[1:-1])" 2>/dev/null || echo "$ERROR_MSG")
+  ERROR_FIELD="\"stringValue\": \"${ERROR_ESCAPED}\""
+fi
+
+# ── Build started-at field ─────────────────────────────────
+STARTED_FIELD='"nullValue": null'
+if [[ -n "$STARTED_AT" ]]; then
+  STARTED_FIELD="\"stringValue\": \"${STARTED_AT}\""
+fi
+
+# ── Build document (PATCH with document ID in path) ────────
+DOC_BODY=$(cat <<EOF
+{
+  "fields": {
+    "taskId": {"stringValue": "${TASK_ID}"},
+    "agentId": {"stringValue": "${AGENT_ID}"},
+    "agentName": {"stringValue": "${AGENT_NAME_ESCAPED}"},
+    "agentEmail": {"stringValue": "${AGENT_EMAIL_ESCAPED}"},
+    "channel": {"stringValue": "${CHANNEL}"},
+    "requester": {"stringValue": "human"},
+    "text": {"stringValue": "${TASK_TEXT_ESCAPED}"},
+    "status": {"stringValue": "${STATUS}"},
+    "classified": {"stringValue": "${CLASSIFIED}"},
+    "startedAt": {${STARTED_FIELD}},
+    "deliveredAt": {"stringValue": "${DELIVERED_AT}"},
+    "durationMs": {"integerValue": "${DURATION_MS}"},
+    "outputChars": {"integerValue": "${OUTPUT_CHARS}"},
+    "error": {${ERROR_FIELD}}
+  }
+}
+EOF
+)
+
+# ── Write to Firestore (PATCH = create or overwrite) ───────
+curl -sf --max-time 5 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X PATCH "https://firestore.googleapis.com/v1/${DOC_PATH}" \
+  -d "${DOC_BODY}" \
+  > /dev/null 2>&1 \
+  || echo "[task-log-write] WARN: Firestore write failed (non-fatal)" >&2
+
+exit 0

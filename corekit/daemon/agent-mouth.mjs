@@ -17,6 +17,7 @@
 //   CHANNEL=dashboard node agent-mouth.mjs
 // ============================================================
 import { readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { execFile } from 'child_process';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -333,6 +334,34 @@ function markTaskComplete(taskId) {
   } catch {}
 }
 
+// Fire-and-forget: write task lifecycle record to Firestore
+function writeTaskLog(task, status, outputChars, classified, errorMsg) {
+  if (!task) return;
+  const args = [
+    task.taskId || 'unknown',
+    task.metadata?.agentId || 'unknown',
+    task.channel || CHANNEL,
+    status,
+    task.timestamp || '',
+    String(Date.now() - taskStartTime),
+    String(outputChars || 0),
+    classified || 'unknown',
+    (task.text || '').slice(0, 500),
+    errorMsg || '',
+  ];
+  // Smart path: detect container ($HOME) vs host (/opt/openclaw)
+  const binDir = existsSync('/home/node/.openclaw/bin/task-log-write')
+    ? '/home/node/.openclaw/bin'
+    : '/opt/openclaw/.openclaw/bin';
+  try {
+    const child = execFile(`${binDir}/task-log-write`, args, { timeout: 15000 });
+    child.on('error', () => {}); // fire and forget
+    child.unref();
+  } catch (err) {
+    log('task-log-write spawn error', { error: err.message });
+  }
+}
+
 // ================================================================
 // MAIN LOOP
 // ================================================================
@@ -366,6 +395,7 @@ async function main() {
         if (Date.now() - taskStartTime > DELIVERY_TIMEOUT) {
           log('Task timeout — delivering error', { taskId: task.taskId, timeout_s: DELIVERY_TIMEOUT / 1000 });
           await deliver('⚠ I\'m still working on this, but it\'s taking longer than expected. I\'ll keep trying.');
+          writeTaskLog(task, 'timed_out', 0, 'timeout', 'delivery timeout');
           markTaskComplete(task.taskId);
           lastTaskId = null;
           continue;
@@ -382,6 +412,7 @@ async function main() {
           if (result.action === 'deliver') {
             await deliver(result.text);
             log('Delivered', { channel: CHANNEL, chars: result.text.length, taskId: task.taskId });
+            writeTaskLog(task, 'delivered', result.text.length, 'external');
             markTaskComplete(task.taskId);
             lastTaskId = null;
           } else {

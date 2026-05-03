@@ -83,6 +83,18 @@ fi
 
 [[ -n "$USER_EMAIL" ]] || die "No user email. Use --user <email> or set agentUserEmail in chat-config.json"
 
+# ---- Identity Lockdown ----
+# If .identity-lock exists, refuse to impersonate any email other than the
+# locked identity. This prevents agents from impersonating arbitrary users.
+# Only bootstrap/upgrade-corekit can write this file (chmod 444).
+IDENTITY_LOCK="${OC_HOST_ROOT}/.openclaw/.identity-lock"
+if [[ -f "$IDENTITY_LOCK" ]]; then
+  LOCKED_EMAIL="$(cat "$IDENTITY_LOCK" 2>/dev/null | tr -d '[:space:]')"
+  if [[ -n "$LOCKED_EMAIL" && "$USER_EMAIL" != "$LOCKED_EMAIL" ]]; then
+    die "IDENTITY LOCKDOWN: cannot impersonate '${USER_EMAIL}', this agent's identity is '${LOCKED_EMAIL}'"
+  fi
+fi
+
 # Use default scopes if none specified
 [[ -n "$SCOPES" ]] || SCOPES="$DEFAULT_SCOPES"
 

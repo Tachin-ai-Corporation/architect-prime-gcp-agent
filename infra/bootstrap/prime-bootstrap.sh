@@ -455,6 +455,19 @@ cat > "${OC_HOST_DIR}/corekit/prime-config.json" <<PCFG
 }
 PCFG
 
+# ---- 13b) Write identity lockfile ----
+# Prime's identity is the prime itself (no Workspace user impersonation).
+# dwd-token reads this and refuses to impersonate any other email.
+# For Prime, AGENT_USER_EMAIL comes from Firestore setup (not VM metadata).
+# If not set, skip — Prime may not use DWD at all.
+PRIME_EMAIL=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_user_email" 2>/dev/null || true)
+if [[ -n "${PRIME_EMAIL}" ]]; then
+  echo "${PRIME_EMAIL}" > "${OC_HOST_DIR}/.identity-lock"
+  chmod 444 "${OC_HOST_DIR}/.identity-lock"
+  info "Identity lock: ${PRIME_EMAIL}"
+fi
+
 # ---- 13b) Final permissions sweep ----
 # ADR: File Ownership Model
 # install.sh chowns everything to 1000:1000 (ubuntu). But prime-bootstrap

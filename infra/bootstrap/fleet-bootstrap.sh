@@ -181,6 +181,7 @@ if [[ -n "$WORKSPACE_SRC" ]]; then
     sed -e "s|{{AGENT_NAME}}|${AGENT_DISPLAY_NAME}|g" \
         -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
         -e "s|{{PROJECT_ID}}|${GCP_PROJECT_ID}|g" \
+        -e "s|{{AGENT_USER_EMAIL}}|${AGENT_USER_EMAIL}|g" \
         -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
         "$f" > "${OC_HOST_DIR}/workspace/${BASENAME}"
     echo "  Deployed: ${BASENAME} (from ${WORKSPACE_SRC})"
@@ -203,6 +204,7 @@ if [[ -d "$BRAIN_SRC" ]]; then
         sed -e "s|{{AGENT_NAME}}|${AGENT_DISPLAY_NAME}|g" \
             -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
             -e "s|{{PROJECT_ID}}|${GCP_PROJECT_ID}|g" \
+            -e "s|{{AGENT_USER_EMAIL}}|${AGENT_USER_EMAIL}|g" \
             -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
             "$f" > "${dest}/$(basename "$f")"
         echo "  Brain: $(basename "$f") → workspace-${brain_dir}/"
@@ -236,6 +238,15 @@ if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   "geminiProject": "${GCP_PROJECT_ID}"
 }
 CHATCFG
+fi
+
+# ---- 6b) Write identity lockfile ----
+# This file is the single source of truth for the agent's Workspace identity.
+# dwd-token reads it and refuses to impersonate any other email.
+if [[ -n "${AGENT_USER_EMAIL}" ]]; then
+  echo "${AGENT_USER_EMAIL}" > "${OC_HOST_DIR}/.identity-lock"
+  chmod 444 "${OC_HOST_DIR}/.identity-lock"
+  info "Identity lock: ${AGENT_USER_EMAIL}"
 fi
 
 # ---- 7) Save gateway token ----
