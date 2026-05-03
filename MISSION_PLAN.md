@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.03.6.0`
+> - **Current version:** `v2026.05.03.7.0`
 
 ---
 
@@ -65,14 +65,17 @@ Dashboard (Cloud Run — Next.js)
     │   │   ├── cortex (DEFAULT) — Gemini 3.1 Pro Preview — plan executor + synthesizer
     │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
     │   │   ├── temporal-memory — Gemini 2.5 Flash — pure memory/context recall (NO external APIs)
-    │   │   ├── prefrontal — Gemini 2.5 Flash — mandatory dispatch planner (DISPATCH_PLAN format)
-    │   │   ├── motor — Gemini 2.5 Flash — execution + ALL Google Workspace tools (read+write)
-    │   │   └── cerebellum — Gemini 2.5 Flash — verification + QA
-    │   ├── Prefrontal-First Gate (Brain v2):
-    │   │   ├── PreTurn hook injects BRAIN_CARD.md (dispatch protocol reference)
-    │   │   ├── Prefrontal produces structured DISPATCH_PLAN (intent, pipeline, reasoning)
+    │   │   ├── prefrontal — Gemini 2.5 Flash — mandatory dispatch planner (two-mode: simple + advisory)
+    │   │   ├── motor — Gemini 2.5 Flash — execution + ALL Google Workspace tools (read+write) + advisory mode
+    │   │   └── cerebellum — Gemini 2.5 Flash — verification + validation-rule checking
+    │   ├── Prefrontal-First Gate (Brain v2.1):
+    │   │   ├── PreTurn hook injects BRAIN_CARD.md (stripped of routing hints — prefrontal-first only)
+    │   │   ├── Prefrontal produces DISPATCH_PLAN (simple) or PLANNING_ROUND_REQUIRED (complex)
+    │   │   ├── Advisory round: advisors propose execution approaches → prefrontal assembles final plan
+    │   │   ├── PLAN.md write gate: Cortex writes PLAN_VALID + full plan before any pipeline execution
+    │   │   ├── VALIDATION rules: per-step criteria checked by cerebellum
     │   │   ├── Cortex executes pipeline mechanically via sessions_spawn/yield
-    │   │   └── PostTurn hook validates compliance (PLAN.md vs actual dispatches)
+    │   │   └── PostTurn hook validates compliance (PLAN_VALID marker, freshness, validation rules)
     │   ├── brain-exec --plan-exec <agent-id> "<task>" (pipeline step execution)
     │   ├── brain-exec --validate-plan (deterministic invariant validation)
     │   ├── Each agent has its own workspace: SOUL.md, IDENTITY.md, TOOLS.md
@@ -282,11 +285,7 @@ The model catalog is built at runtime by `discover-models`, replacing a static J
 | Claude Opus/Sonnet/Haiku (6 models) | Anthropic | ❌ Needs MaaS enablement |
 | Chirp 2 | Google | ❌ Audio model (not text) |
 
-### Domain-Wide Delegation (DWD)
-
-Fleet agents impersonate their Workspace user (e.g., `devops-agent-stan@tachin.ai`) using DWD. The `dwd-token` script generates JWT tokens via the GCE metadata `signJwt` endpoint — no service account key files needed. The DWD signer SA is passed as VM metadata (`dwd_signer_sa`).
-
-### Brain Architecture v2 (Prefrontal-First Gate)
+**Brain Architecture v2.1 (Prefrontal-First Gate with Enforcement)**
 
 Prime and fleet use 6 OpenClaw agents in a multi-agent configuration. The core design
 principle: **LLMs think. Deterministic systems move data, enforce rules, and deliver output.**
@@ -296,25 +295,51 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 | **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec, sessions_spawn/yield |
 | **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `~/.openclaw/workspace-temporal-research` | exec (agent-ask only) |
 | **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) | `~/.openclaw/workspace-temporal-memory` | read, exec (core-memory-read only) |
-| **prefrontal** | gemini-2.5-flash | Mandatory dispatch planner | `~/.openclaw/workspace-prefrontal` | read only |
-| **motor** | gemini-2.5-flash | Execution + ALL Workspace tools | `~/.openclaw/workspace-motor` | read, write, edit, exec |
-| **cerebellum** | gemini-2.5-flash | Verification + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
+| **prefrontal** | gemini-2.5-flash | Two-mode dispatch planner (simple + advisory) | `~/.openclaw/workspace-prefrontal` | read only |
+| **motor** | gemini-2.5-flash | Execution + advisory mode + ALL Workspace tools | `~/.openclaw/workspace-motor` | read, write, edit, exec |
+| **cerebellum** | gemini-2.5-flash | Validation-rule checking + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
 
-**Prefrontal-First Gate:** Every request goes through a mandatory 2-step gate:
-1. temporal-memory recalls context (automatic PreTurn)
-2. prefrontal produces a structured `DISPATCH_PLAN:` block
-3. Cortex executes the plan mechanically via `sessions_spawn` / `sessions_yield`
+**Prefrontal-First Gate (enforced):** Every request goes through a mandatory gate:
+1. PreTurn injects BRAIN_CARD.md (stripped of all routing hints — only rule: "spawn prefrontal first")
+2. Cortex spawns prefrontal → yields → receives response
+3. **If `DISPATCH_PLAN:`** (simple) → write PLAN.md → execute pipeline
+4. **If `PLANNING_ROUND_REQUIRED:`** (complex) → run advisory round → re-invoke prefrontal → write PLAN.md → execute pipeline
+
+**PLAN.md Write Gate:** Before executing ANY pipeline step, Cortex MUST write `workspace/PLAN.md` with:
+- `PLAN_VALID` marker (checked by PostTurn compliance hook)
+- Full DISPATCH_PLAN copied verbatim from prefrontal (including `→ VALIDATION:` lines)
+- Timestamp for 120s freshness check
+
+**Two-Mode Prefrontal:**
+- **Mode 1 (Simple):** Clear, single-agent tasks → immediate `DISPATCH_PLAN:`
+- **Mode 2 (Complex):** Multi-step/ambiguous tasks → `PLANNING_ROUND_REQUIRED:` with task-specific advisory questions for each agent
+
+**Advisory Round (Mode 2):** Each advisor is asked "how would you accomplish [your piece]?"
+- Motor reads TOOLS.md, reasons about the task, proposes a step-by-step execution approach
+- temporal-research answers specific information questions
+- specialist provides domain recommendations
+- Prefrontal assembles all proposals into the final `DISPATCH_PLAN:`
 
 **DISPATCH_PLAN format** (produced by prefrontal):
 ```
-DISPLACH_PLAN:
+DISPATCH_PLAN:
 intent: <simple|research|build|read|write|research-build|organize|expertise>
 reasoning: <one sentence>
 pipeline: [<agent1>, <agent2>, ...]
 short_circuit: <true|false>
 motor_mode: <build|ops|read|none>
 context_summary: <one sentence>
+
+### Steps
+1. [ ] <agent> — <task description>
+   → VALIDATION: <specific, verifiable criteria>
+   → RESULT: (filled after yield)
 ```
+
+**Validation rules** (mandatory for every motor step):
+- Prefrontal writes `→ VALIDATION:` criteria for each step
+- Cerebellum reads PLAN.md and checks each validation rule against execution results
+- PostTurn hook (`check-plan-compliance`) verifies PLAN_VALID marker, freshness, step count
 
 **Invariant rules** (enforced by `brain-exec --validate-plan`):
 1. Pipeline does NOT contain temporal-memory or prefrontal (already ran)
@@ -328,6 +353,17 @@ context_summary: <one sentence>
 - cerebellum has read-only verification tools
 
 **Dynamic skill awareness:** `assemble-tools` generates `TOOLS.md` from the agent type's skill list (in `agent-types.json`) and copies it to cortex, prefrontal, and motor workspaces. Prefrontal reads TOOLS.md to know which tools are available before planning.
+
+**Brain workflow (every message):**
+1. PreTurn injects BRAIN_CARD.md (stripped — "spawn prefrontal first" only)
+2. Cortex spawns prefrontal → yields → receives DISPATCH_PLAN or PLANNING_ROUND_REQUIRED
+3. If PLANNING_ROUND_REQUIRED → spawn advisors → collect proposals → re-invoke prefrontal
+4. Write PLAN.md with PLAN_VALID marker (mandatory gate)
+5. If `short_circuit: true` → Cortex answers directly
+6. If pipeline non-empty → Cortex executes each agent in order via spawn/yield
+7. After each step → update PLAN.md: mark `[x]`, fill `→ RESULT:`
+8. After all agents complete → Cortex synthesizes final response
+9. PostTurn: check-plan-compliance validates PLAN_VALID, step counts, violation loggingfore planning.
 
 **Dispatch mechanism:** `brain-exec --plan-exec <agent-id> "<task>" [timeout]`
 - Validates agent ID against `contracts.json` `subagentIds`
@@ -647,30 +683,45 @@ architect-prime/
 6. **Watchdog timeout** — Bumped from 180s to 300s to accommodate multi-step dispatch chains.
 7. **Drive API enabled** — Added `drive.googleapis.com` and `chat.googleapis.com` to project bootstrap (`install.sh`).
 
-### Current: v2026.05.03.6.0 — Brain Architecture v2 (Prefrontal-First Gate)
-> *Goal: Decompose brain monolith into deterministic services. LLMs think; deterministic systems move data.*
+### Completed: v2026.05.03.6.0 — Brain Architecture v2 (Prefrontal-First Gate)
+> *Decomposed brain monolith into deterministic services. LLMs think; deterministic systems move data.*
 
 1. **Prefrontal-first gate** — Prefrontal is now the mandatory dispatch planner. Produces structured `DISPATCH_PLAN:` blocks with intent, pipeline, reasoning. Cortex stripped of ALL classification logic — executes plans mechanically.
 2. **Tool reassignment** — Motor owns ALL 27 Google Workspace tools (read + write). temporal-memory stripped to pure memory (core-memory-read/write only, zero external API calls).
-3. **Ears/Mouth decomposition** — `message-daemon.mjs` monolith decomposed into `agent-ears.mjs` (100% deterministic input) and `agent-mouth.mjs` (1 LLM classify call + deterministic delivery). Independent systemd services with health checks.
+3. **Ears/Mouth decomposition** — `message-daemon.mjs` monolith decomposed into `agent-ears.mjs` (100% deterministic input) and `agent-mouth.mjs` (1 LLM classify call + deterministic delivery). Independent systemd services with health checks. Code complete, not yet active.
 4. **Dynamic skill awareness** — `assemble-tools` now copies TOOLS.md to prefrontal and motor workspaces. Prefrontal reads TOOLS.md to know what skills are available before planning.
 5. **brain-exec v2** — Rewritten with `--plan-exec` (execute pipeline step) and `--validate-plan` (deterministic invariant checking). Rejects temporal-memory/prefrontal in pipelines.
 6. **Contracts extended** — Added `ears` and `mouth` config sections to contracts.json for service-level tuning.
-7. **Status:** Phase 1 (tool reassignment) ✅ validated. Phase 2 (prefrontal gate) partially validated — Cortex can bypass for simple dispatches. Phase 3 (ears/mouth) code complete, not yet active in production.
 
-### Near-term: Prefrontal Enforcement + Ears/Mouth Activation
-> *Goal: Enforce the prefrontal gate and activate ears/mouth services in production.*
+### Completed: v2026.05.03.7.0 — Brain v2.1 (Gate Enforcement + Advisory Planning)
+> *Enforced the prefrontal gate. PLAN.md write gate. Validation rules. Two-mode prefrontal. Multi-step Drive organization validated end-to-end.*
 
-1. **Enforce prefrontal gate** — Remove classification hints from BRAIN_CARD so Cortex MUST spawn prefrontal. Or add a gateway PreTurn hook that auto-dispatches the gate.
-2. **Activate ears/mouth services** — Run alongside legacy message-daemon for comparison testing, then retire the monolith.
-3. **Multi-step pipeline testing** — Validate complex pipelines (research → plan → build → verify).
+1. **BRAIN_CARD stripped** — Removed ALL routing intelligence, classification tables, and capability hints. BRAIN_CARD now contains only: agent names, spawn/yield syntax, and the mandatory rule "spawn prefrontal first, always."
+2. **PLAN.md write gate** — Cortex MUST write `workspace/PLAN.md` with `PLAN_VALID` marker before executing any pipeline. Plan is copied verbatim from prefrontal, preserving all `→ VALIDATION:` lines.
+3. **Validation rules** — Prefrontal produces `→ VALIDATION:` criteria for every motor step. Cerebellum reads PLAN.md and checks each rule against execution results.
+4. **PostTurn compliance** — `check-plan-compliance` hardened: checks PLAN_VALID marker, 120s freshness window, counts validation rules, logs violations to telemetry.
+5. **Two-mode prefrontal** — Mode 1 (Simple): immediate DISPATCH_PLAN for clear tasks. Mode 2 (Complex): returns PLANNING_ROUND_REQUIRED with task-specific advisory questions.
+6. **Advisory round** — Each advisor is asked "how would you accomplish [their piece]?" Motor proposes execution approach from TOOLS.md. Prefrontal assembles all proposals into the final plan.
+7. **Motor advisory mode** — Motor can now operate in advisory mode (propose approach, never execute) or execution mode (always execute, never describe).
+8. **ws-token/dwd-token path fix** — All 10 Drive tools + ws-token + dwd-token now auto-detect container vs host paths. Fixed nested `OC_HOST_ROOT` resolution.
+9. **Validated end-to-end** — Multi-step Drive organization: list files → create 3 sub-folders → move 5 files → upload readme → cerebellum verification. All components worked: prefrontal gate, PLAN.md gate, motor execution, cerebellum validation.
+
+### Current: Ears/Mouth Activation + Task Lifecycle
+> *Goal: Activate deterministic input/output services. Implement structured task completion reporting.*
+
+1. **Activate ears/mouth services** — Run alongside legacy message-daemon for comparison testing, then retire the monolith.
+2. **Task completion reporting** — Fleet agents need a structured report-back mechanism when tasks complete. Report goes to the requester (human or agent). Enforce a tasks log readable by dashboard/Prime and the agent itself.
+3. **Multi-step pipeline testing** — Validate complex pipelines with advisory rounds (research → plan → build → verify).
 4. **Required API management** — Centralized API manifest, dashboard API status page, skill-gated API enablement.
 
-### Future: v6.0 — R/C/M Framework
-- Responsibilities engine — RESPONSIBILITY.toml manifests + registration
-- Checkpoint queue — Firestore data model + queue-worker
-- Human review gates — dashboard integration
-- Inter-agent delegation — agents @-mention other agents to delegate tasks
+### Future: v6.0 — R/C/M Framework + Task Lifecycle
+- **Task lifecycle logging** — Structured task log (Firestore) readable by dashboard, Prime, and the agent itself. Every task gets: start time, requester, plan, steps completed, result, duration.
+- **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
+- **Mission system** — Checkpoints roll up into missions. Mission log tracks high-level agent objectives.
+- **Responsibilities engine** — RESPONSIBILITY.toml manifests + registration. Responsibility log tracks ongoing duties. Tasks and checkpoints may roll up to responsibilities.
+- **Agent self-reporting** — Fleet agents report completed work to their own responsibilities GChat channel (or equivalent).
+- **Human review gates** — Dashboard integration for checkpoint approval.
+- **Inter-agent delegation** — Agents @-mention other agents to delegate tasks.
 
 ### Future: v7.0 — RSI Engine
 - Git-ops skill — branch, commit, push, PR

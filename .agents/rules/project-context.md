@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.03.6.0)
+## Current Architecture (v2026.05.03.7.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -14,15 +14,17 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
-- **Prefrontal-First Gate (Brain v2)**: prefrontal is the mandatory dispatch planner
-  - PreTurn hook: injects BRAIN_CARD.md (dispatch protocol reference)
-  - Prefrontal produces structured `DISPATCH_PLAN:` block (intent, pipeline, reasoning)
-  - Cortex executes pipeline mechanically via sessions_spawn/yield
-  - PostTurn hook: validates dispatch compliance
+- **Prefrontal-First Gate (Brain v2.1 — enforced)**:
+  - BRAIN_CARD stripped of all routing hints — only rule: "spawn prefrontal first"
+  - Two-mode prefrontal: simple (immediate DISPATCH_PLAN) or complex (PLANNING_ROUND_REQUIRED + advisory round)
+  - Advisory round: each agent proposes "how would you accomplish [your piece]?" → prefrontal assembles final plan
+  - PLAN.md write gate: Cortex writes PLAN_VALID + full plan before any pipeline execution
+  - VALIDATION rules: per-step criteria produced by prefrontal, checked by cerebellum
+  - PostTurn hook: validates PLAN_VALID marker, 120s freshness, step counts, violation logging
 - **Tool ownership boundaries:**
-  - Motor owns ALL Google Workspace tools (Drive, Gmail, Sheets, Docs, Calendar)
+  - Motor owns ALL Google Workspace tools (Drive, Gmail, Sheets, Docs, Calendar) + advisory mode
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
-  - cerebellum has read-only verification tools
+  - cerebellum checks validation rules from PLAN.md
 - **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
 - **brain-exec v2**: `--plan-exec` (execute pipeline step), `--validate-plan` (invariant checking)
   - Rejects temporal-memory and prefrontal in pipelines (already ran in gate)

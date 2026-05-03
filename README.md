@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.03.6.0`
+> **Current version:** `v2026.05.03.7.0`
 
 ---
 
@@ -321,6 +321,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.01.4** | Watchdog reliability — fixed orphaned daemon processes (root cause of phantom timeouts), TASK.json delivery detection, file-based daemon logging, 0 contract violations |
 | **v2026.05.03.5** | Multi-step brain + Drive organization — 9 Drive tools via DWD, sessions_spawn dispatch, PLAN.md tracking, fleet brain parity |
 | **v2026.05.03.6** | Brain Architecture v2 — Prefrontal-first gate (mandatory dispatch planner), ears/mouth decomposition, tool reassignment (motor owns all Workspace tools, temporal-memory = pure memory), dynamic skill awareness (TOOLS.md) |
+| **v2026.05.03.7** | Brain v2.1 Gate Enforcement — BRAIN_CARD stripped of routing hints, PLAN.md write gate (PLAN_VALID marker), validation rules (per-step criteria checked by cerebellum), two-mode prefrontal (simple + advisory), motor advisory mode, ws-token path fix, multi-step Drive organization validated end-to-end |
 
 ---
 
