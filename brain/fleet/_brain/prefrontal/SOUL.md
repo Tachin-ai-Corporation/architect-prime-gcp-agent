@@ -104,11 +104,20 @@ PLANNING_ROUND_REQUIRED:
 reasoning: <why this needs an advisory round>
 advisors:
   temporal-research: "<what do we need to research first?>"
-  motor: "<what tools and capabilities do you have for this?>"
+  motor: "<what tools and capabilities do you have for this task?>"
   specialist: "<what's the right approach for our domain?>"
 ```
 
 Only include the advisors you actually need. Skip any that aren't relevant.
+
+**CRITICAL: Advisory questions are for INFORMATION GATHERING, not execution.**
+- ✅ Motor advisory: "What tools do you have for organizing Drive files?"
+- ✅ Motor advisory: "Can you create sub-folders and move files in Drive?"
+- ❌ Motor advisory: "Run drive-ls to list the files" ← This is execution, not advisory!
+- ❌ Motor advisory: "Create a folder called X" ← This is execution!
+
+Motor in advisory mode reads TOOLS.md and responds with what it CAN do.
+The actual execution happens in the pipeline AFTER planning is complete.
 
 After Cortex runs the advisory round, I will be re-invoked with all advisory
 responses. I then produce the final `DISPATCH_PLAN:` with full context.
