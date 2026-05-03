@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.03.8.0`
+> - **Current version:** `v2026.05.03.9.0`
 
 ---
 
@@ -39,6 +39,8 @@ Dashboard (Cloud Run — Next.js)
     ├── primes/{id}                   → Prime instance metadata
     ├── primes/{id}/messages/{msg}    → Dashboard ↔ Prime chat messages
     ├── primes/{id}/fleet/{agent}     → Fleet agent status, deploy steps, health
+    ├── primes/{id}/tasks/{taskId}    → Prime task lifecycle log
+    ├── primes/{id}/fleet/{agent}/tasks/{taskId} → Fleet task lifecycle log
     ├── config/settings               → Agent defaults (email domain)
     └── config/dwd                    → DWD configuration
          │
@@ -48,14 +50,15 @@ Dashboard (Cloud Run — Next.js)
     │   └── Polls channels, deduplicates, rate-limits, fire-and-forget gateway POST
     │       ├── Zero LLM calls — 100% deterministic
     │       ├── Firestore poll (3s) or GChat poll (5s) via DWD
-    │       ├── Writes TASK.json for mouth lifecycle tracking
     │       └── Cooldown + dedup window (configurable)
     │
     ├── agent-mouth (systemd) — Output classification + delivery
     │   └── Polls gateway log files, classifies, delivers to channel
     │       ├── One LLM call per output (classify + format via Gemini Flash)
+    │       ├── Speaks AS the agent (first person) — not a relay
     │       ├── Strict internal/external classification (suppresses dispatch plans)
-    │       ├── Finds most recently modified log file (gateway doesn't rotate by calendar date)
+    │       ├── Byte-offset log tracking (Buffer reads, consistent with statSync)
+    │       ├── Fire-and-forget task lifecycle write to Firestore on delivery/timeout
     │       └── Never drops messages — unknown classification → deliver raw
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
@@ -87,17 +90,19 @@ Dashboard (Cloud Run — Next.js)
         ├── fleet/: fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-status,
         │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
         ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
-        ├── chat/: chat-send, chat-read, dwd-token
+        ├── chat/: chat-send, chat-read, dwd-token (identity-locked)
         ├── daemon/: agent-ears.mjs, agent-mouth.mjs, start-agent-ears, start-agent-mouth,
         │           ears-health-check, mouth-health-check
         ├── brain/: brain-exec (--plan-exec, --validate-plan), build-system-prompt,
-        │          agent-ask, assemble-tools, brain-telemetry-write/read, check-plan-compliance
+        │          agent-ask, assemble-tools, brain-telemetry-write/read, check-plan-compliance,
+        │          task-log-write, task-log-read
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
         ├── dashboard/: command-runner, dashboard-respond
         ├── system/: upgrade-corekit, validate-contracts, web-search
         └── config/: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
+    ├── .identity-lock              → DWD impersonation guard (chmod 444)
     ├── openclaw-gateway (Docker, --network host, port 18789)
     │   ├── GOOGLE_CLOUD_LOCATION=global (same as Prime)
     │   ├── Default agent: cortex (Gemini 3.1 Pro Preview via Vertex AI ADC)
@@ -106,8 +111,8 @@ Dashboard (Cloud Run — Next.js)
     │   ├── timeoutSeconds: 600 (safety ceiling; real timeout is heartbeat-based)
     │   └── ADC fix: model-auth-env patched for GCE metadata fallback
     │
-    ├── agent-ears (systemd) — GChat polling via DWD (deterministic, fire-and-forget)
-    ├── agent-mouth (systemd) — output classification + GChat delivery
+    ├── agent-ears (systemd) — GChat polling via DWD (deterministic, no ACK)
+    ├── agent-mouth (systemd) — output classification + GChat delivery + task log
     │
     └── CoreKit (manifest-installed from same repo)
 ```
@@ -693,17 +698,27 @@ architect-prime/
 8. **ws-token/dwd-token path fix** — All 10 Drive tools + ws-token + dwd-token now auto-detect container vs host paths. Fixed nested `OC_HOST_ROOT` resolution.
 9. **Validated end-to-end** — Multi-step Drive organization: list files → create 3 sub-folders → move 5 files → upload readme → cerebellum verification. All components worked: prefrontal gate, PLAN.md gate, motor execution, cerebellum validation.
 
-### Current: v6.0 — R/C/M Framework + Task Lifecycle
-> *Goal: Structured task logging and agent self-reporting.*
+### Completed: v2026.05.03.9.0 — Identity Lockdown + Task Lifecycle
+> *Deterministic agent identity, DWD impersonation guard, structured task logging, mouth voice fix.*
 
-1. **Task lifecycle logging** — Structured task log (Firestore) readable by dashboard, Prime, and the agent itself. Every task gets: start time, requester, plan, steps completed, result, duration.
-2. **Task completion reporting** — Fleet agents report back when tasks complete. Report goes to the requester (human or agent). Enforce a tasks log readable by dashboard/Prime and the agent itself.
-3. **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
-4. **Mission system** — Checkpoints roll up into missions. Mission log tracks high-level agent objectives.
-5. **Responsibilities engine** — RESPONSIBILITY.toml manifests + registration. Responsibility log tracks ongoing duties. Tasks and checkpoints may roll up to responsibilities.
-6. **Agent self-reporting** — Fleet agents report completed work to their own responsibilities GChat channel (or equivalent).
-7. **Human review gates** — Dashboard integration for checkpoint approval.
-8. **Inter-agent delegation** — Agents @-mention other agents to delegate tasks.
+1. **Deterministic identity** — `{{AGENT_USER_EMAIL}}` injected into IDENTITY.md at bootstrap/upgrade. Agents know their own Workspace email.
+2. **Identity lockdown** — `.identity-lock` file (chmod 444) written at bootstrap/upgrade. `dwd-token` refuses to impersonate any email that doesn't match.
+3. **Task lifecycle logging** — `task-log-write` fires on every delivery/timeout. Structured records in Firestore (`primes/{primeId}/fleet/{agent}/tasks/{taskId}`).
+4. **Task log reader** — `task-log-read` queries recent tasks from Firestore (by agent, by count, or by task ID).
+5. **Mouth voice fix** — Classify prompt rewritten so mouth speaks AS the agent (first person), not as a relay.
+6. **Byte-offset log fix** — Gateway log reading uses Buffer (byte offsets) instead of string (char offsets), fixing multi-byte UTF-8 character misalignment.
+7. **Stray re-delivery fix** — Log offset initialized to current file size on startup, preventing re-delivery of old output on service restart.
+8. **ACK removal** — Removed "Processing your request..." message from ears — mouth delivers fast enough.
+
+### Current: v10.0 — R/C/M Roll-ups + Checkpoint System
+> *Goal: Tasks roll up to checkpoints, checkpoints to missions, missions to responsibilities.*
+
+1. **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
+2. **Mission system** — Checkpoints roll up into missions. Mission log tracks high-level agent objectives.
+3. **Responsibilities engine** — RESPONSIBILITY.toml manifests + registration. Responsibility log tracks ongoing duties. Tasks and checkpoints may roll up to responsibilities.
+4. **Agent self-reporting** — Fleet agents report completed work to their own responsibilities GChat channel (or equivalent).
+5. **Human review gates** — Dashboard integration for checkpoint approval.
+6. **Inter-agent delegation** — Agents @-mention other agents to delegate tasks.
 
 ### Future: v7.0 — RSI Engine
 - Git-ops skill — branch, commit, push, PR

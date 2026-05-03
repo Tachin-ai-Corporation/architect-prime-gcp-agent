@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.03.8.0)
+## Current Architecture (v2026.05.03.9.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -39,10 +39,16 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - CoreKit tools shared with Prime via manifest system
 
 ### I/O Architecture (Ears + Mouth)
-- Ears polls channel (Firestore or GChat), deduplicates, writes TASK.json, fires gateway POST (non-blocking), sends ACK
-- Mouth watches TASK.json for new tasks, polls gateway logs (most recently modified file), classifies output via strict LLM, delivers to channel
+- Ears polls channel (Firestore or GChat), deduplicates, writes TASK.json, fires gateway POST (non-blocking)
+- Mouth watches TASK.json for new tasks, polls gateway logs (byte-offset Buffer reads), classifies output via strict LLM (speaks AS the agent in first person), delivers to channel, writes task lifecycle record to Firestore
 - `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
+
+### Identity Lockdown
+- `.identity-lock` file (chmod 444) written at bootstrap/upgrade with the agent's Workspace email
+- `dwd-token` refuses to impersonate any email that doesn't match the lockfile
+- `{{AGENT_USER_EMAIL}}` injected into IDENTITY.md templates at bootstrap/upgrade
+- Task lifecycle records include agent email for full audit trail
 
 ### Agent State System (STATUS.json)
 - `agent-status` tool reads/writes `workspace/STATUS.json` with current activity
