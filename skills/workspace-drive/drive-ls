@@ -3,7 +3,12 @@
 # Brain agent: temporal-memory (READ)
 # Usage: drive-ls [--folder FOLDER_ID] [--max 20]
 set -euo pipefail
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+# Smart path: detect container ($HOME) vs host (/opt/openclaw)
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
 WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[drive-ls] [ERROR] $*" >&2; exit 1; }
