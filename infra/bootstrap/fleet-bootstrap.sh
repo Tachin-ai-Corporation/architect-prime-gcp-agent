@@ -418,10 +418,9 @@ which jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq jq >/
 
 # ---- 16) Vertex AI ADC fix (same as Prime) ----
 info "Applying Vertex AI ADC auth fix..."
-docker exec -u 0 openclaw-gateway bash -c '
-set -e
 
-# Step 1: Empty auth-profiles for ALL agents (cortex, temporal-research, etc.)
+# Step 1: Empty auth-profiles for ALL agents
+docker exec -u 0 openclaw-gateway bash -c '
 for AP in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
   if [ -f "$AP" ]; then
     echo "{\"version\":1,\"profiles\":{}}" > "$AP"
@@ -430,7 +429,6 @@ for AP in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
     echo "  auth-profiles.json emptied: $AP"
   fi
 done
-# Ensure cortex agent (default) has auth-profiles even if not yet created
 AP="/home/node/.openclaw/agents/cortex/agent/auth-profiles.json"
 if [ ! -f "$AP" ]; then
   mkdir -p "$(dirname "$AP")"
@@ -438,45 +436,39 @@ if [ ! -f "$AP" ]; then
   chown -R node:node /home/node/.openclaw/agents
   echo "  auth-profiles.json created: $AP"
 fi
+' || warn "auth-profiles step had non-fatal errors"
 
-# Step 2: Patch model-auth-env — GCE ADC fallback for google-vertex
-# v2026.4.x had a built-in google-vertex special case with a null sentinel.
-# v2026.5.x removed that special case; we inject it before the final return null.
-AUTH_ENV_FILE=$(find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
-if [ -n "$AUTH_ENV_FILE" ]; then
-  python3 -c "
+# Step 2: Patch model-auth-env — write patcher on host, copy into container
+cat > /tmp/patch-adc.py << 'PYEOF'
 import sys
-with open('$AUTH_ENV_FILE') as f: code = f.read()
-if 'gce metadata' in code or 'gce-adc' in code:
-    print('  model-auth-env already patched'); sys.exit(0)
-
+fpath = sys.argv[1]
+with open(fpath) as f: code = f.read()
+if "gce metadata" in code or "gce-adc" in code:
+    print("  model-auth-env already patched"); sys.exit(0)
 patched = False
-# v2026.4.x: patch the null return inside the google-vertex block
-if 'if (!envKey) return null;' in code:
-    code = code.replace(
-        'if (!envKey) return null;',
-        'if (!envKey) return { apiKey: \"<gce-adc>\", source: \"gce metadata\" };', 1)
-    patched = True
-    print('  Patched model-auth-env (v2026.4.x)')
-# v2026.5.x: inject google-vertex fallback before the final return null
-elif '\treturn null;\n}\n//#endregion' in code:
-    code = code.replace(
-        '\treturn null;\n}\n//#endregion',
-        '\tif (normalized === \"google-vertex\") return { apiKey: \"gcp-vertex-credentials\", source: \"gce metadata\" };\n\treturn null;\n}\n//#endregion', 1)
-    patched = True
-    print('  Patched model-auth-env (v2026.5.x)')
+if "if (!envKey) return null;" in code:
+    code = code.replace("if (!envKey) return null;",
+        'if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };', 1)
+    patched = True; print("  Patched model-auth-env (v2026.4.x)")
+elif "\treturn null;\n}\n//#endregion" in code:
+    code = code.replace("\treturn null;\n}\n//#endregion",
+        '\tif (normalized === "google-vertex") return { apiKey: "gcp-vertex-credentials", source: "gce metadata" };\n\treturn null;\n}\n//#endregion', 1)
+    patched = True; print("  Patched model-auth-env (v2026.5.x)")
 else:
-    print('  WARN: model-auth-env sentinel not found')
-    sys.exit(0)
-
+    print("  WARN: model-auth-env sentinel not found"); sys.exit(0)
 if patched:
-    with open('$AUTH_ENV_FILE', 'w') as f: f.write(code)
-" || echo "  WARN: patch script error"
+    with open(fpath, "w") as f: f.write(code)
+PYEOF
+
+AUTH_ENV_FILE=$(docker exec openclaw-gateway find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
+if [ -n "$AUTH_ENV_FILE" ]; then
+  docker cp /tmp/patch-adc.py openclaw-gateway:/tmp/patch-adc.py
+  docker exec -u 0 openclaw-gateway python3 /tmp/patch-adc.py "$AUTH_ENV_FILE" || warn "ADC patch script error"
 fi
+rm -f /tmp/patch-adc.py
 
 # Step 3: Remove stale ADC files
-rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
-' || warn "ADC fix had non-fatal errors"
+docker exec -u 0 openclaw-gateway rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
 
 # ---- 17) Restart gateway to pick up ADC patch + smoke test ----
 info "Restarting gateway to activate ADC patch..."
