@@ -442,6 +442,21 @@ curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/comple
   -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
   > /dev/null 2>&1 || warn "Warm-up probe failed (non-fatal)"
 
+# ---- 12e) Register cron jobs ----
+# ADR: OpenClaw cron jobs are managed via the `openclaw cron` CLI or
+# ~/.openclaw/cron/jobs.json — NOT via openclaw.json config (which only
+# supports cron.enabled). The cron.jobs config key does not exist and
+# causes a gateway crash-loop if present.
+info "Registering cron jobs..."
+docker exec openclaw-gateway node /app/openclaw.mjs cron add \
+  --name "memory-consolidate" \
+  --cron "0 2 * * *" \
+  --tz "America/Chicago" \
+  --agent "temporal-memory" \
+  --session isolated \
+  --message "[SKILL:memory-consolidate] Execute nightly memory consolidation." \
+  --json 2>&1 || warn "memory-consolidate cron registration failed (non-fatal)"
+
 # ============================================================
 # PHASE 4 — Start services + finalize
 # ============================================================
