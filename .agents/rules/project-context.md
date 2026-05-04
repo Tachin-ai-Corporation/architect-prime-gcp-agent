@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.03.10.0)
+## Current Architecture (v2026.05.03.11.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)

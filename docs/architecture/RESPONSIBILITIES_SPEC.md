@@ -92,7 +92,7 @@ id = "inbox-triage"
 name = "Email Inbox Triage"
 version = "1.0.0"
 description = "Check support inbox, categorize emails, respond to simple ones, escalate complex ones."
-author = "tachin-ai"
+author = "your-org"
 
 # Tags for filtering and dashboard grouping
 tags = ["email", "triage", "recurring", "customer-facing"]

@@ -7,7 +7,7 @@ How Prime and Fleet VMs deploy and boot.
 The dashboard deploy API creates a GCE VM with a tiny **boot stub** as the startup script. The boot stub:
 
 1. Reads `core_ref`, `gh_owner`, `gh_repo` from VM metadata
-2. Downloads `bootstrap/prime-bootstrap.sh` from GitHub
+2. Downloads `infra/bootstrap/prime-bootstrap.sh` from GitHub
 3. Runs it
 
 All complexity is in `prime-bootstrap.sh` — a standalone bash script with no JS escaping issues.
@@ -38,7 +38,7 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 |---------|-------|
 | Machine type | e2-medium (2 vCPU, 4GB RAM) |
 | Image | Ubuntu 22.04 LTS |
-| Disk | 30GB pd-balanced |
+| Disk | 50GB pd-balanced |
 | Gateway port | 18789 (loopback only) |
 | Docker network | host |
 | OpenClaw config | `/opt/openclaw/.openclaw/openclaw.json` |
@@ -93,7 +93,7 @@ cat /opt/openclaw/.openclaw/corekit/prime-config.json
 ## Iterating on the Bootstrap
 
 To modify the bootstrap:
-1. Edit `bootstrap/prime-bootstrap.sh`
+1. Edit `infra/bootstrap/prime-bootstrap.sh`
 2. `git push origin main`
 3. Delete the existing VM and redeploy from the dashboard
 

@@ -117,8 +117,7 @@ EMAIL_DOMAIN="$(curl -sf --max-time 5 \
   | python3 -c 'import sys,json; print(json.load(sys.stdin)["fields"]["agentEmailDomain"]["stringValue"])' 2>/dev/null)" || true
 # Fallback if Firestore read fails
 if [[ -z "$EMAIL_DOMAIN" ]]; then
-  EMAIL_DOMAIN="tachin.ai"
-  log "Warning: could not read email domain from Firestore, using fallback: ${EMAIL_DOMAIN}"
+  die "Email domain not configured. Set it in Dashboard → Setup → Agent Defaults."
 else
   log "Email domain from Firestore: ${EMAIL_DOMAIN}"
 fi

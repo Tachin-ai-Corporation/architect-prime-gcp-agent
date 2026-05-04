@@ -22,22 +22,15 @@ json_value() {
 
 case "${1:-}" in
   --check)
-    # Delegate to install.sh --check
-    GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
-    GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
-    OC_HOST_ROOT="$OC_HOST_ROOT" \
-    INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
-    bash "${SCRIPT_DIR}/../../corekit/install-cached.sh" --check 2>/dev/null || {
-      # Fallback: run check inline if install-cached.sh not found
-      if [[ ! -f "$STATE_FILE" ]]; then
-        echo "No STATE.json found. CoreKit not installed."
-        exit 1
-      fi
-      ref="$(json_value "coreRef" "$STATE_FILE")"
-      at="$(json_value "installedAt" "$STATE_FILE")"
-      echo "Installed: ${ref} (at ${at})"
-      echo "Run 'install.sh --check' for full integrity check."
-    }
+    # Check installed state
+    if [[ ! -f "$STATE_FILE" ]]; then
+      echo "No STATE.json found. CoreKit not installed."
+      exit 1
+    fi
+    ref="$(json_value "coreRef" "$STATE_FILE")"
+    at="$(json_value "installedAt" "$STATE_FILE")"
+    echo "Installed: ${ref} (at ${at})"
+    echo "Run 'install.sh --check' for full integrity check."
     ;;
   --apply)
     ref="${2:-}"

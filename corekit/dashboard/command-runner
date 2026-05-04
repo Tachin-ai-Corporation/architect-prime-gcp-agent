@@ -125,7 +125,8 @@ handle_fleet_deploy() {
 
   # Compute email if not provided
   if [[ -z "$email" ]]; then
-    email="${specialty}-agent-${name}@tachin.ai"
+    echo "ERROR: email is required (configure Agent Email Domain in Dashboard → Setup)"
+    return 1
   fi
 
   log "Executing: fleet-deploy --name ${name} --specialty ${specialty} --agent-email ${email}"

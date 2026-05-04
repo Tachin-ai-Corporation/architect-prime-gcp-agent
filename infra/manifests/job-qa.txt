@@ -1,0 +1,7 @@
+# infra/manifests/job-qa.txt
+# QA specialty workspace — layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job qa
+
+specialties/qa/workspace/IDENTITY.md .openclaw/workspace-qa/IDENTITY.md
+specialties/qa/workspace/SOUL.md .openclaw/workspace-qa/SOUL.md
+specialties/qa/workspace/MEMORY.md .openclaw/workspace-qa/MEMORY.md

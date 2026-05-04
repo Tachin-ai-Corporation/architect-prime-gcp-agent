@@ -1320,7 +1320,7 @@ function HomeInner() {
               </select>
             </div>
             <div className={styles["modal-field"]}>
-              <label className={styles["modal-label"]}>Workspace Email <span style={{ fontWeight: 400, color: "var(--text-tertiary)" }}>(optional)</span></label>
+              <label className={styles["modal-label"]}>Workspace Email</label>
               <input className="input" placeholder="e.g. devops-stan@yourcompany.com" value={hireEmail}
                 onChange={(e) => setHireEmail(e.target.value)} />
               <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 4 }}>
@@ -1329,7 +1329,7 @@ function HomeInner() {
             </div>
             <div className={styles["modal-actions"]}>
               <button className="btn btn-ghost" onClick={() => setShowHire(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleHire} disabled={!hireName.trim() || hiring}>
+              <button className="btn btn-primary" onClick={handleHire} disabled={!hireName.trim() || !hireEmail.trim() || hiring}>
                 {hiring ? "Hiring..." : "Hire Agent"}
               </button>
             </div>

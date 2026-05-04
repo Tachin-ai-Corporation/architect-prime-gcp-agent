@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.03.10.0`
+> - **Current version:** `v2026.05.03.11.0`
 
 ---
 
@@ -220,7 +220,6 @@ The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contr
 **When it runs:**
 - `fleet-bootstrap.sh` calls `--file` after config rendering, before container start
 - `upgrade-corekit --apply` calls `--runtime` after upgrade completes
-- `test-fleet-bootstrap.sh` calls repo mode as part of dry-run validation
 
 **Why this exists:** The Gemini 3.1 migration broke stan because 5 cross-cutting values were hardcoded in 7 different files. Changing one file required synchronized edits to 6 others, and 4 were missed. Contracts make it impossible to introduce this class of bug — change one value in `contracts.json`, and validation catches every stale reference.
 
@@ -339,7 +338,7 @@ context_summary: <one sentence>
 4. Cerebellum must be last if present
 
 **Tool ownership (strict boundaries):**
-- Motor owns ALL 27 Google Workspace tools (Drive, Gmail, Sheets, Docs, Calendar)
+- Motor owns ALL 9 Drive tools (drive-ls, drive-search, drive-download, drive-upload, drive-mkdir, drive-rename, drive-delete, drive-move, drive-share)
 - temporal-memory has ZERO external API tools — pure memory only
 - cerebellum has read-only verification tools
 
@@ -491,9 +490,15 @@ architect-prime/
 │   │   ├── role-prime.txt            # Prime-only tools + workspaces
 │   │   ├── role-fleet.txt            # Fleet workspaces + brain sub-agents
 │   │   ├── job-devops.txt            # DevOps specialty workspace
-│   │   └── job-engineer.txt          # Engineer specialty workspace
+│   │   ├── job-swe.txt               # SWE specialty (maps to engineer workspace)
+│   │   ├── job-engineer.txt          # Engineer specialty workspace
+│   │   ├── job-qa.txt                # QA specialty workspace
+│   │   ├── job-pm.txt                # PM specialty workspace
+│   │   ├── job-finance.txt           # Finance specialty workspace
+│   │   ├── job-data.txt              # Data specialty workspace
+│   │   └── job-security.txt          # Security specialty workspace
 │   └── deploy/                       # Standalone install/uninstall scripts
-├── corekit/                          # MODULE 3: CoreKit Runtime (41 VM-side scripts)
+├── corekit/                          # MODULE 3: CoreKit Runtime (40 VM-side scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
 │   ├── gateway/                      # OpenClaw gateway management (5 scripts)
 │   ├── chat/                         # Google Chat / DWD integration (3 scripts)
@@ -501,7 +506,7 @@ architect-prime/
 │   ├── daemon/                       # Ears/Mouth I/O services (6 scripts)
 │   ├── memory/                       # Memory subsystem (3 scripts)
 │   ├── dashboard/                    # Dashboard bridge (1 script)
-│   ├── system/                       # Cross-cutting utilities (3 scripts)
+│   ├── system/                       # Cross-cutting utilities (2 scripts)
 │   └── config/                       # Templates, service files, agent-types
 ├── brain/                            # MODULE 4: Agent Identity
 │   ├── agents/main/                  # OpenClaw agent skeleton (auth, sessions)
@@ -516,8 +521,13 @@ architect-prime/
 │       ├── _base/                    # Generic fleet template (fallback)
 │       └── _brain/                   # Shared sub-agent workspaces for all fleet agents
 ├── specialties/                      # MODULE 5: Per-Agent-Type Bundles
-│   ├── devops/workspace/             # DevOps specialty (8 files)
-│   └── engineer/workspace/           # Engineer specialty (8 files)
+│   ├── devops/workspace/             # DevOps specialty (3 files)
+│   ├── engineer/workspace/           # Engineer specialty (3 files)
+│   ├── qa/workspace/                 # QA specialty (3 files)
+│   ├── pm/workspace/                 # PM specialty (3 files)
+│   ├── finance/workspace/            # Finance specialty (3 files)
+│   ├── data/workspace/               # Data specialty (3 files)
+│   └── security/workspace/           # Security specialty (3 files)
 ├── skills/                           # MODULE 6: Skill Packages
 │   ├── agent-ask/SKILL.md            # Vertex AI grounding web search
 │   ├── fleet-hire/SKILL.md           # Deploy a new fleet agent
@@ -532,7 +542,7 @@ architect-prime/
 └── README.md
 ```
 
-### CoreKit Tools (41 scripts, grouped by domain)
+### CoreKit Tools (40 scripts, grouped by domain)
 
 | Domain | Tool | Purpose |
 |--------|------|---------|
@@ -576,7 +586,6 @@ architect-prime/
 | **dashboard/** | `command-runner` | Executes commands from Firestore, streams output |
 | **system/** | `upgrade-corekit` | In-place CoreKit update from GitHub ref (validates contracts post-upgrade) |
 | | `validate-contracts` | Pre-flight check: all cross-cutting values match contracts.json |
-| | `web-search` | Google Search grounding for agent queries |
 
 ### Key Paths on VM
 
@@ -681,7 +690,7 @@ architect-prime/
 > *Decomposed brain monolith into deterministic services. LLMs think; deterministic systems move data.*
 
 1. **Prefrontal-first gate** — Prefrontal is now the mandatory dispatch planner. Produces structured `DISPATCH_PLAN:` blocks with intent, pipeline, reasoning. Cortex stripped of ALL classification logic — executes plans mechanically.
-2. **Tool reassignment** — Motor owns ALL 27 Google Workspace tools (read + write). temporal-memory stripped to pure memory (core-memory-read/write only, zero external API calls).
+2. **Tool reassignment** — Motor owns ALL 9 Drive tools (read + write). temporal-memory stripped to pure memory (core-memory-read/write only, zero external API calls).
 3. **Ears/Mouth decomposition** — `message-daemon.mjs` monolith decomposed into `agent-ears.mjs` (100% deterministic input) and `agent-mouth.mjs` (1 LLM classify call + deterministic delivery). Independent systemd services with health checks. Code complete, not yet active.
 4. **Dynamic skill awareness** — `assemble-tools` now copies TOOLS.md to prefrontal and motor workspaces. Prefrontal reads TOOLS.md to know what skills are available before planning.
 5. **brain-exec v2** — Rewritten with `--plan-exec` (execute pipeline step) and `--validate-plan` (deterministic invariant checking). Rejects temporal-memory/prefrontal in pipelines.
@@ -729,7 +738,19 @@ architect-prime/
 12. **bundle/ sweep** — Replaced phantom `bundle/` paths in R/C/M spec, RESP_SPEC, AGENT_DESIGN, BRAIN_ARCH, coding-standards.
 13. **hire API hardened** — Removed hardcoded `tachin.ai` email fallback; email is now a required parameter.
 
-### Current: v10.0 — R/C/M Roll-ups + Checkpoint System
+### Completed: v2026.05.03.11.0 — Final Audit + Agent Job Kits
+> *Final audit pass + full agent fleet deployment readiness. All 7 agent types deployable.*
+
+1. **validate-contracts repo mode fixed** — Root detection changed from `contracts.json` walk to `.git` marker; paths corrected to `infra/contracts.json` and `infra/bootstrap/`.
+2. **7 agent types deployable** — Created 5 new specialty workspaces (qa, pm, finance, data, security) + 6 job manifests (swe, qa, pm, finance, data, security). All specialties use prefrontal-first brain pattern.
+3. **Unified brain pattern** — All specialty SOULs (including existing devops + engineer) updated to prefrontal-first dispatch. Prime and fleet share the same brain architecture.
+4. **Dashboard email field hardened** — Removed "(optional)" label; hire button disabled when email is empty.
+5. **tachin.ai fallbacks eliminated** — `fleet-hire` and `command-runner` now error on missing email domain instead of silently injecting `@tachin.ai`.
+6. **Dead code purged** — Removed `sendACK()` function (25 lines), phantom `web-search` from tools table, duplicate manifest entries, dead `install-cached.sh` reference.
+7. **Documentation synchronized** — Script counts (41→40), tool counts (27→9 Drive), disk sizes (30→50GB), specialty file counts (8→3), bootstrap paths, version strings all corrected.
+8. **SKILL_ARCHITECTURE.md deprecated** — Marked as historical reference; canonical architecture is in MISSION_PLAN.
+
+### Current: v11.0 — R/C/M Roll-ups + Checkpoint System
 > *Goal: Tasks roll up to checkpoints, checkpoints to missions, missions to responsibilities.*
 
 1. **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.

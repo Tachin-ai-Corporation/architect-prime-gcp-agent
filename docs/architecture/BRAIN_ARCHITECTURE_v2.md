@@ -67,7 +67,7 @@
 | Brain Agent | Workspace Tools | Rationale |
 |---|---|---|
 | temporal-memory | _(none)_ | Pure memory: memory_search, core-memory-read/write only |
-| motor | All workspace tools (27) | Motor has exec permission, handles all external action |
+| motor | All Drive tools (9) | Motor has exec permission, handles all external action |
 | cerebellum | _(read-only verification)_ | Verification does not require write tools |
 
 ## Prefrontal Dispatch Plan Format

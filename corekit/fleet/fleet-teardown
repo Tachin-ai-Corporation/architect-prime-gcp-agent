@@ -8,8 +8,8 @@
 # from Prime's project, and removes the Firestore fleet entry.
 #
 # Cost items removed:
-#   - Compute VM (e2-small ~$13/mo)
-#   - Boot disk (20GB ~$0.80/mo)
+#   - Compute VM (e2-medium ~$25/mo)
+#   - Boot disk (50GB ~$2/mo)
 # ============================================================
 set -euo pipefail
 

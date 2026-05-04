@@ -1,0 +1,7 @@
+# infra/manifests/job-pm.txt
+# PM specialty workspace — layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job pm
+
+specialties/pm/workspace/IDENTITY.md .openclaw/workspace-pm/IDENTITY.md
+specialties/pm/workspace/SOUL.md .openclaw/workspace-pm/SOUL.md
+specialties/pm/workspace/MEMORY.md .openclaw/workspace-pm/MEMORY.md

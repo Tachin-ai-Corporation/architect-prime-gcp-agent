@@ -33,6 +33,8 @@ Review and update these files to reflect the new checkpoint reality.
 
 ### Other docs (if applicable)
 - `docs/architecture/` files if brain or dispatch architecture changed
+- `docs/architecture/AGENT_DESIGN.md` — update `Last verified:` version
+- `.agents/skills/brain-architecture/SKILL.md` — update `Current State (vX.Y.Z)` header
 - `brain/` workspace files if agent instructions changed
 - `infra/contracts.json` if cross-cutting values changed
 

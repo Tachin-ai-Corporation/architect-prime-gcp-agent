@@ -45,10 +45,10 @@ if [[ "$MODE" == "runtime" ]]; then
   CONTRACTS="${OC_HOST_ROOT}/.openclaw/corekit/contracts.json"
   REPO_ROOT=""
 else
-  # Find repo root (walk up from script location)
+  # Find repo root (walk up from script location looking for .git)
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  REPO_ROOT="$(cd "$SCRIPT_DIR" && while [[ ! -f contracts.json ]] && [[ "$PWD" != "/" ]]; do cd ..; done; pwd)"
-  CONTRACTS="${REPO_ROOT}/contracts.json"
+  REPO_ROOT="$(cd "$SCRIPT_DIR" && while [[ ! -d .git ]] && [[ "$PWD" != "/" ]]; do cd ..; done; pwd)"
+  CONTRACTS="${REPO_ROOT}/infra/contracts.json"
 fi
 
 if [[ ! -f "$CONTRACTS" ]]; then
@@ -89,7 +89,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   log "Checking repo files..."
 
   # ---- Check 1: fleet-bootstrap.sh .env GOOGLE_CLOUD_LOCATION ----
-  FLEET_BS="${REPO_ROOT}/bootstrap/fleet-bootstrap.sh"
+  FLEET_BS="${REPO_ROOT}/infra/bootstrap/fleet-bootstrap.sh"
   if [[ -f "$FLEET_BS" ]]; then
     if grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$FLEET_BS"; then
       pass "fleet-bootstrap.sh .env location = ${C_LOCATION}"
@@ -100,7 +100,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   fi
 
   # ---- Check 2: prime-bootstrap.sh reads location from contracts ----
-  PRIME_BS="${REPO_ROOT}/bootstrap/prime-bootstrap.sh"
+  PRIME_BS="${REPO_ROOT}/infra/bootstrap/prime-bootstrap.sh"
   if [[ -f "$PRIME_BS" ]]; then
     # Accept either the literal value OR the contract variable reference
     if grep -q 'GOOGLE_CLOUD_LOCATION=${C_LOCATION}' "$PRIME_BS"; then

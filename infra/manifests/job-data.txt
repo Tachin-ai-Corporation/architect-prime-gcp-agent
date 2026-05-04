@@ -1,0 +1,7 @@
+# infra/manifests/job-data.txt
+# Data specialty workspace — layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job data
+
+specialties/data/workspace/IDENTITY.md .openclaw/workspace-data/IDENTITY.md
+specialties/data/workspace/SOUL.md .openclaw/workspace-data/SOUL.md
+specialties/data/workspace/MEMORY.md .openclaw/workspace-data/MEMORY.md

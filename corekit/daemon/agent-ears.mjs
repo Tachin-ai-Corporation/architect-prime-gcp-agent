@@ -290,31 +290,6 @@ function markGChatConsumed(msg) {
   } catch {}
 }
 
-// ---- ACK Messages (deterministic) ----
-async function sendACK(metadata) {
-  try {
-    if (CHANNEL === 'gchat') {
-      const token = await getDwdToken();
-      const space = metadata?.space || _gchatSpaces[0];
-      if (!space) return;
-      await fetch(`${CHAT_API}/${space}/messages`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: '🔄 Processing your request...' })
-      });
-    } else {
-      const token = await getAccessToken();
-      await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/messages`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: {
-          text: { stringValue: '🔄 Processing your request...' }, sender: { stringValue: 'prime' },
-          timestamp: { timestampValue: new Date().toISOString() }, processed: { booleanValue: true }
-        } })
-      });
-    }
-    log('ACK sent');
-  } catch (err) { log('ACK send error', { error: err.message }); }
-}
-
 // ---- Firestore Heartbeat ----
 async function updateFirestoreStatus(status) {
   if (CHANNEL !== 'dashboard') return;

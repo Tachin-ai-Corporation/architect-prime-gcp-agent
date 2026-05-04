@@ -1,0 +1,7 @@
+# infra/manifests/job-security.txt
+# Security specialty workspace — layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job security
+
+specialties/security/workspace/IDENTITY.md .openclaw/workspace-security/IDENTITY.md
+specialties/security/workspace/SOUL.md .openclaw/workspace-security/SOUL.md
+specialties/security/workspace/MEMORY.md .openclaw/workspace-security/MEMORY.md

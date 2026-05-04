@@ -1,0 +1,7 @@
+# infra/manifests/job-swe.txt
+# SWE specialty — maps to engineer workspace (agent-types.json workspace: "engineer")
+# Installed by: infra/install.sh --role fleet --job swe
+
+specialties/engineer/workspace/IDENTITY.md .openclaw/workspace-engineer/IDENTITY.md
+specialties/engineer/workspace/SOUL.md .openclaw/workspace-engineer/SOUL.md
+specialties/engineer/workspace/MEMORY.md .openclaw/workspace-engineer/MEMORY.md

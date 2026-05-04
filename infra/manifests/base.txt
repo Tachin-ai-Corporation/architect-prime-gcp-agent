@@ -52,7 +52,6 @@ corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.servi
 # Ears/Mouth systemd units
 corekit/daemon/agent-ears.service .openclaw/corekit/agent-ears.service
 corekit/daemon/agent-mouth.service .openclaw/corekit/agent-mouth.service
-corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.service
 
 # Config templates (both needed for render-config)
 corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
