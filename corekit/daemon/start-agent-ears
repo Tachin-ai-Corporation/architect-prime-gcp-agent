@@ -32,6 +32,11 @@ if [ -f "$CONFIG" ]; then
   [ -z "$DWD_SIGNER_SA" ] && DWD_SIGNER_SA="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('dwdSignerSa',''))" 2>/dev/null)"
 fi
 
+# Kill any orphan agent-ears processes inside the container.
+# Same pattern as agent-mouth — prevent duplicate poll loops after restarts.
+docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
+sleep 1
+
 exec stdbuf -oL docker exec \
   -e CHANNEL="${CHANNEL:-gchat}" \
   -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \

@@ -40,6 +40,13 @@ fi
 # Mouth needs GOOGLE_CLOUD_LOCATION for Vertex AI classify call
 GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-global}"
 
+# Kill any orphan agent-mouth processes inside the container.
+# When systemd restarts the service, the outer `docker exec` exits but
+# the inner node process can survive inside the container. This causes
+# two mouth instances polling the same log → double message delivery.
+docker exec openclaw-gateway pkill -f 'agent-mouth.mjs' 2>/dev/null || true
+sleep 1
+
 exec stdbuf -oL docker exec \
   -e CHANNEL="${CHANNEL:-gchat}" \
   -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
