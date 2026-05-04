@@ -177,14 +177,19 @@
   },
   "commands": { "native": "auto", "nativeSkills": "auto" },
   "cron": {
-    "enabled": true,
-    "jobs": [{
-      "name": "memory-consolidate",
-      "cron": "0 2 * * *",
-      "timezone": "America/Chicago",
-      "agent": "temporal-memory",
-      "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation."
-    }]
+    "enabled": true
+    // BLOCKED: OpenClaw v2026.4.19 rejects cron.jobs as "Unrecognized key".
+    // This caused a gateway crash-loop on chucknorris (2026-05-04).
+    // Re-enable ONLY after upgrading OpenClaw to a version that supports cron.jobs.
+    // When the Responsibilities Engine (v12.0) lands, responsibility-register
+    // will manage cron jobs via live config patching instead of templates.
+    // "jobs": [{
+    //   "name": "memory-consolidate",
+    //   "cron": "0 2 * * *",
+    //   "timezone": "America/Chicago",
+    //   "agent": "temporal-memory",
+    //   "message": "[SKILL:memory-consolidate] Execute nightly memory consolidation."
+    // }]
   },
   "hooks": {
     "internal": {
