@@ -749,8 +749,14 @@ architect-prime/
 6. **Dead code purged** — Removed `sendACK()` function (25 lines), phantom `web-search` from tools table, duplicate manifest entries, dead `install-cached.sh` reference.
 7. **Documentation synchronized** — Script counts (41→40), tool counts (27→9 Drive), disk sizes (30→50GB), specialty file counts (8→3), bootstrap paths, version strings all corrected.
 8. **SKILL_ARCHITECTURE.md deprecated** — Marked as historical reference; canonical architecture is in MISSION_PLAN.
+9. **Google Workspace skill suite** — 4 new skill packages: Gmail (5 tools), Calendar (5 tools), Docs (6 tools), Sheets (3 tools). 19 new CoreKit bash scripts, all following the DWD ws-token pattern with 403 error handling.
+10. **Assistant agent type** — New `assistant` specialty for scheduling, communications, admin. Full Workspace suite: Drive + Gmail + Calendar + Docs.
+11. **DWD scope expansion** — CHAT_SETUP.md OAuth scopes updated to include Gmail, Calendar, Drive, Docs, Sheets, Contacts.
+12. **Memory consolidation activated** — Uncommented nightly cron job in both Prime and fleet bootstrap configs (2am CT via temporal-memory).
+13. **Agent-types.json hardened** — Fixed workspace field for qa/pm/finance/data/security (was "fleet", now points to their actual specialty). Added Workspace skill assignments per agent role.
+14. **Motor SOUL expanded** — Both Prime and fleet motor SOULs now document all 28 Workspace tools (Drive 9, Gmail 5, Calendar 5, Docs 6, Sheets 3).
 
-### Current: v11.0 — R/C/M Roll-ups + Checkpoint System
+### Current: v12.0 — R/C/M Roll-ups + Checkpoint System
 > *Goal: Tasks roll up to checkpoints, checkpoints to missions, missions to responsibilities.*
 
 1. **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
@@ -760,15 +766,14 @@ architect-prime/
 5. **Human review gates** — Dashboard integration for checkpoint approval.
 6. **Inter-agent delegation** — Agents @-mention other agents to delegate tasks.
 
-### Future: v7.0 — RSI Engine
+### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR
 - Code-write / code-test skills
 - Test harness: deploy from branch → validate → report
 - RSI mission template — plan → implement → test → promote
 - Two mandatory human gates (plan approval + merge approval)
 
-### Future: v8.0+ — Full Workspace Integration
-- Additional Google Workspace skills — Gmail, Calendar, Docs, Sheets
+### Future: Fleet Templates + Self-Evolution
 - Agent cell templates — pre-built team configurations
 - Self-evolution — Prime proposes its own improvements via PR
 - Multi-project federation — fleet agents across different GCP projects

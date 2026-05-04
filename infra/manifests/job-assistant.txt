@@ -1,0 +1,7 @@
+# infra/manifests/job-assistant.txt
+# Assistant specialty workspace — layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job assistant
+
+specialties/assistant/workspace/IDENTITY.md .openclaw/workspace-assistant/IDENTITY.md
+specialties/assistant/workspace/SOUL.md .openclaw/workspace-assistant/SOUL.md
+specialties/assistant/workspace/MEMORY.md .openclaw/workspace-assistant/MEMORY.md

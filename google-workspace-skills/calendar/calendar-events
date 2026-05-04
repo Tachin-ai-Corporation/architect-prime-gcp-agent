@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# calendar-events — List events in a date range
+# Brain agent: temporal-memory (READ)
+# Usage: calendar-events --from 2026-04-20T00:00:00Z --to 2026-04-27T00:00:00Z [--calendar primary]
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+CAL_API="https://www.googleapis.com/calendar/v3"
+die() { echo "[calendar-events] [ERROR] $*" >&2; exit 1; }
+CAL_ID="primary" FROM="" TO=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from) FROM="$2"; shift 2 ;; --to) TO="$2"; shift 2 ;;
+    --calendar) CAL_ID="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$FROM" && -n "$TO" ]] || die "Need --from and --to (ISO 8601)"
+TOKEN="$("$WS_TOKEN" --scope calendar)" || die "Auth failed"
+ENC_FROM="$(python3 -c "import urllib.parse; print(urllib.parse.quote('$FROM'))")"
+ENC_TO="$(python3 -c "import urllib.parse; print(urllib.parse.quote('$TO'))")"
+curl -sf -H "Authorization: Bearer ${TOKEN}" \
+  "${CAL_API}/calendars/${CAL_ID}/events?timeMin=${ENC_FROM}&timeMax=${ENC_TO}&singleEvents=true&orderBy=startTime&maxResults=50" \
+  | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+events = [{'id':e.get('id',''),'summary':e.get('summary','(no title)'),'start':e.get('start',{}).get('dateTime',e.get('start',{}).get('date','')),'end':e.get('end',{}).get('dateTime',e.get('end',{}).get('date','')),'location':e.get('location','')} for e in data.get('items',[])]
+print(json.dumps({'events':events,'count':len(events)}, indent=2))
+"

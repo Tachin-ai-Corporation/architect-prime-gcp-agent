@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# calendar-search — Search calendar events by text query
+# Brain agent: temporal-memory (READ)
+# Usage: calendar-search --query "standup" [--from ISO] [--to ISO] [--calendar primary]
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+CAL_API="https://www.googleapis.com/calendar/v3"
+die() { echo "[calendar-search] [ERROR] $*" >&2; exit 1; }
+CAL_ID="primary" QUERY="" FROM="" TO=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --query) QUERY="$2"; shift 2 ;; --from) FROM="$2"; shift 2 ;;
+    --to) TO="$2"; shift 2 ;; --calendar) CAL_ID="$2"; shift 2 ;;
+    *) die "Unknown: $1" ;; esac
+done
+[[ -n "$QUERY" ]] || die "Need --query"
+TOKEN="$("$WS_TOKEN" --scope calendar)" || die "Auth failed"
+URL="${CAL_API}/calendars/${CAL_ID}/events?q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")&singleEvents=true&orderBy=startTime&maxResults=25"
+[[ -n "$FROM" ]] && URL="${URL}&timeMin=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$FROM")"
+[[ -n "$TO" ]] && URL="${URL}&timeMax=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$TO")"
+HTTP_CODE=$(curl -s -o /tmp/cal-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" "$URL")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Calendar access denied for ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Calendar API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json
+data = json.load(open('/tmp/cal-response.json'))
+events = [{'id':e.get('id',''),'summary':e.get('summary',''),'start':e.get('start',{}).get('dateTime',e.get('start',{}).get('date','')),'end':e.get('end',{}).get('dateTime',e.get('end',{}).get('date',''))} for e in data.get('items',[])]
+print(json.dumps({'events':events,'count':len(events),'query':'$QUERY'}, indent=2))
+"

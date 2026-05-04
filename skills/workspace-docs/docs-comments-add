@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# docs-comments-add — Add a review comment to a Google Doc
+# Brain agent: motor (WRITE)
+# Usage: docs-comments-add --doc DOC_ID --content "This needs revision"
+# NOTE: Google API does not support anchored comments. Comments appear as document-level.
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-comments-add] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" CONTENT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --doc) DOC_ID="$2"; shift 2 ;; --content) CONTENT="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$DOC_ID" && -n "$CONTENT" ]] || die "Need --doc and --content"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+BODY=$(python3 -c "import json,sys; print(json.dumps({'content':sys.argv[1]}))" "$CONTENT")
+HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${DRIVE_API}/files/${DOC_ID}/comments?fields=id,content,author,createdTime")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Comments access denied. Share doc with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Drive API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json; c = json.load(open('/tmp/docs-response.json'))
+print(json.dumps({'status':'added','commentId':c.get('id',''),'content':c.get('content','')}, indent=2))
+"

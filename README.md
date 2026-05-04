@@ -134,7 +134,7 @@ Prime's brain uses **multi-agent dispatch** — Cortex is the user-facing orches
 | **temporal-research** | gemini-2.5-flash | Web search via Vertex AI grounding |
 | **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) |
 | **prefrontal** | gemini-2.5-flash | Mandatory dispatch planner |
-| **motor** | gemini-2.5-flash | Execution + ALL 9 Drive tools |
+| **motor** | gemini-2.5-flash | Execution + 28 Workspace tools (Drive, Gmail, Calendar, Docs, Sheets) |
 | **cerebellum** | gemini-2.5-flash | Verification + QA |
 
 Dispatch flow: prefrontal produces `DISPATCH_PLAN:` → cortex executes pipeline via `sessions_spawn` / `sessions_yield` → motor runs tools → cerebellum verifies → cortex synthesizes response.
@@ -143,7 +143,7 @@ Dispatch flow: prefrontal produces `DISPATCH_PLAN:` → cortex executes pipeline
 
 - **Contract-driven** — `contracts.json` is the single source of truth for models, ports, agent IDs, and environment. `validate-contracts` enforces consistency at bootstrap and upgrade.
 - **Boot stub pattern** — VM startup scripts curl bash scripts from GitHub. Bootstrap changes only need `git push`, not a Cloud Run rebuild.
-- **Modular manifests** — `install.sh --role prime|fleet --job devops|swe|qa|pm|finance|data|security` chains base + role + job fragments. Each specialty is independently iterable.
+- **Modular manifests** — `install.sh --role prime|fleet --job devops|swe|qa|pm|finance|data|security|assistant` chains base + role + job fragments. Each specialty is independently iterable.
 - **ADC authentication** — Pure Application Default Credentials via GCE metadata. No API keys, no service account key files.
 - **OpenClaw-native** — Full agent framework with conversation memory, tool execution, and workspace files. Not a custom LLM wrapper.
 
@@ -182,13 +182,14 @@ architect-prime/
 │   │   ├── job-pm.txt                # PM specialty workspace
 │   │   ├── job-finance.txt           # Finance specialty workspace
 │   │   ├── job-data.txt              # Data specialty workspace
-│   │   └── job-security.txt          # Security specialty workspace
+│   │   ├── job-security.txt          # Security specialty workspace
+│   │   └── job-assistant.txt         # Assistant specialty workspace
 │   └── deploy/                       # Standalone install/uninstall scripts
 │       ├── install.sh                # One-command project installer
 │       ├── uninstall.sh              # Clean teardown
 │       └── tutorial.md               # Cloud Shell guided tutorial
 │
-├── corekit/                          # MODULE 3: CoreKit Runtime (40 VM-side scripts)
+├── corekit/                          # MODULE 3: CoreKit Runtime (59 VM-side scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
 │   ├── gateway/                      # OpenClaw gateway management (5 scripts)
 │   ├── chat/                         # Google Chat / DWD integration (3 scripts)
@@ -219,10 +220,16 @@ architect-prime/
 │   ├── pm/workspace/                 # PM specialty (3 files)
 │   ├── finance/workspace/            # Finance specialty (3 files)
 │   ├── data/workspace/               # Data specialty (3 files)
-│   └── security/workspace/           # Security specialty (3 files)
+│   ├── security/workspace/           # Security specialty (3 files)
+│   └── assistant/workspace/          # Assistant specialty (3 files)
 │
 ├── skills/                           # MODULE 6: Skill Packages
 │   ├── agent-ask/                    # Vertex AI grounding web search
+│   ├── workspace-drive/              # Google Drive (9 tools + ws-token)
+│   ├── workspace-gmail/              # Gmail (5 tools)
+│   ├── workspace-calendar/           # Calendar (5 tools)
+│   ├── workspace-docs/               # Docs (6 tools)
+│   ├── workspace-sheets/             # Sheets (3 tools)
 │   ├── fleet-hire/                   # Deploy a new fleet agent
 │   ├── fleet-fire/                   # Remove a fleet agent
 │   ├── fleet-status/                 # Query fleet status
@@ -342,7 +349,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.03.8** | Ears/Mouth Activation — Decoupled I/O: fire-and-forget agent-ears (deterministic input), strict-LLM agent-mouth (classify+deliver). Deleted message-daemon (−1,028 lines) + channel-respond. Both Prime and Fleet validated end-to-end. |
 | **v2026.05.03.9** | Identity Lockdown + Task Lifecycle — Deterministic agent email (`{{AGENT_USER_EMAIL}}`), `.identity-lock` DWD impersonation guard, structured Firestore task logging (`task-log-write`/`task-log-read`), mouth voice fix (speaks AS agent), byte-offset log fix, stray re-delivery fix, ACK removal. |
 | **v2026.05.03.10** | Repo Hardening Audit — 3-pass, 69-item audit: fixed contract validation paths, agent-ask model/region from contracts.json, identity-lock enforcement in ears/mouth, calendar bug in compliance gate, fleet-monitor milestone string, deleted web-search bypass + model-catalog.json, purged ~3,700 lines of dead code/stale docs, hardened hire API. |
-| **v2026.05.03.11** | Final Audit + Agent Job Kits — Fixed validate-contracts repo mode, created 5 new specialty workspaces + 6 job manifests (all 7 agent types deployable), unified prefrontal-first brain pattern across all agents, eliminated tachin.ai fallbacks, purged sendACK dead code, synchronized all doc counts and paths. |
+| **v2026.05.03.11** | Fleet Activation + Workspace Capability — Final audit (validate-contracts, tachin.ai, sendACK), 4 Workspace skill packages (Gmail 5, Calendar 5, Docs 6, Sheets 3 = 19 new tools), assistant agent type, 8 agent types with specialty manifests, memory consolidation cron activated, DWD scopes expanded. |
 
 ---
 

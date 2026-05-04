@@ -1,0 +1,114 @@
+{
+  "_comment": "Fleet Workspace Templates. Maps each agent specialty to tool groups. At deploy time, fleet-bootstrap.sh reads this to install only the needed tools and wire them to the correct brain agents via TOOLS.md.",
+  "version": 1,
+
+  "brain_assignments": {
+    "_comment": "Which brain agent owns each tool verb. This is universal — same for all templates.",
+    "READ":   "temporal-memory",
+    "WRITE":  "motor",
+    "REVIEW": "cerebellum"
+  },
+
+  "tool_groups": {
+    "gmail": {
+      "scopes": "gmail",
+      "tools": {
+        "gmail-search":       { "verb": "READ",  "description": "Search Gmail threads by query" },
+        "gmail-get":          { "verb": "READ",  "description": "Get a specific message by ID" },
+        "gmail-send":         { "verb": "WRITE", "description": "Send an email" },
+        "gmail-draft-create": { "verb": "WRITE", "description": "Create a Gmail draft" },
+        "gmail-draft-send":   { "verb": "WRITE", "description": "Send an existing draft" }
+      }
+    },
+    "calendar": {
+      "scopes": "calendar",
+      "tools": {
+        "calendar-events":  { "verb": "READ",  "description": "List events in a date range" },
+        "calendar-search":  { "verb": "READ",  "description": "Search events by text" },
+        "calendar-create":  { "verb": "WRITE", "description": "Create a calendar event" },
+        "calendar-update":  { "verb": "WRITE", "description": "Update an event" },
+        "calendar-delete":  { "verb": "WRITE", "description": "Delete an event" }
+      }
+    },
+    "drive": {
+      "scopes": "drive",
+      "tools": {
+        "drive-ls":       { "verb": "READ",  "description": "List files in a folder" },
+        "drive-search":   { "verb": "READ",  "description": "Search files by query" },
+        "drive-download":  { "verb": "READ",  "description": "Download a file" },
+        "drive-upload":    { "verb": "WRITE", "description": "Upload a file" },
+        "drive-mkdir":     { "verb": "WRITE", "description": "Create a folder" },
+        "drive-rename":    { "verb": "WRITE", "description": "Rename a file or folder" },
+        "drive-delete":    { "verb": "WRITE", "description": "Trash a file" },
+        "drive-move":      { "verb": "WRITE", "description": "Move a file to another folder" },
+        "drive-share":     { "verb": "WRITE", "description": "Share a file" }
+      }
+    },
+    "docs": {
+      "scopes": "docs",
+      "tools": {
+        "docs-cat":              { "verb": "READ",   "description": "Read a document's full text" },
+        "docs-create":           { "verb": "WRITE",  "description": "Create a new Google Doc" },
+        "docs-write":            { "verb": "WRITE",  "description": "Replace or append body text" },
+        "docs-find-replace":     { "verb": "WRITE",  "description": "Find and replace text in a doc" },
+        "docs-comments-list":    { "verb": "REVIEW", "description": "List comments on a doc" },
+        "docs-comments-add":     { "verb": "REVIEW", "description": "Add a review comment" },
+        "docs-comments-reply":   { "verb": "REVIEW", "description": "Reply to a comment" },
+        "docs-comments-resolve": { "verb": "REVIEW", "description": "Resolve a comment" }
+      }
+    },
+    "sheets": {
+      "scopes": "sheets",
+      "tools": {
+        "sheets-get":    { "verb": "READ",  "description": "Read a cell range" },
+        "sheets-update": { "verb": "WRITE", "description": "Write values to a range" },
+        "sheets-append": { "verb": "WRITE", "description": "Append rows" }
+      }
+    },
+    "contacts": {
+      "scopes": "contacts",
+      "tools": {
+        "contacts-list": { "verb": "READ", "description": "List contacts" }
+      }
+    }
+  },
+
+  "templates": {
+    "pm": {
+      "name": "Project Manager",
+      "groups": ["gmail", "calendar", "drive", "docs", "sheets", "contacts"],
+      "exclude_tools": ["docs-comments-list", "docs-comments-add", "docs-comments-reply", "docs-comments-resolve"],
+      "rationale": "Full Workspace access for coordination. No code review (comments)."
+    },
+    "swe": {
+      "name": "Software Engineer",
+      "groups": ["drive"],
+      "exclude_tools": [],
+      "rationale": "Works locally with .md and .csv files, delivers to Drive. Other agents handle formatting. Minimal surface = minimal fatigue."
+    },
+    "devops": {
+      "name": "DevOps Engineer",
+      "groups": ["drive"],
+      "exclude_tools": [],
+      "rationale": "Works locally with configs and scripts, delivers to Drive. Same principle as SWE — keep it lean."
+    },
+    "support": {
+      "name": "Support Agent",
+      "groups": ["gmail", "sheets", "contacts", "docs"],
+      "exclude_tools": [],
+      "rationale": "Inbox triage, ticket tracking, KB articles, contact lookup."
+    },
+    "legal": {
+      "name": "Legal Operations",
+      "groups": ["gmail", "drive", "docs"],
+      "exclude_tools": [],
+      "rationale": "Contract review, renewal tracking, compliance register. Coordinates with PM for calendar/deadlines."
+    },
+    "data": {
+      "name": "Data Analyst",
+      "groups": ["drive", "sheets"],
+      "exclude_tools": [],
+      "rationale": "Datasets and reports. Delivers raw data to Drive and Sheets. Other agents handle doc formatting."
+    }
+  }
+}

@@ -1315,8 +1315,10 @@ function HomeInner() {
                 <option value="swe">SWE — Code, architecture, testing</option>
                 <option value="qa">QA — Testing, automation, quality</option>
                 <option value="pm">PM — Planning, tickets, coordination</option>
+                <option value="finance">Finance — Budget, analysis, reporting</option>
                 <option value="data">Data — Analytics, pipelines, BigQuery</option>
                 <option value="security">Security — IAM, compliance, audit</option>
+                <option value="assistant">Assistant — Scheduling, comms, admin</option>
               </select>
             </div>
             <div className={styles["modal-field"]}>

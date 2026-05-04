@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# drive-download — Download a file from Google Drive
+# Brain agent: temporal-memory (READ)
+# Usage: drive-download --file FILE_ID [--output /path/to/save]
+# For Google Docs/Sheets/Slides, exports as PDF by default. Use --mime to override.
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-download] [ERROR] $*" >&2; exit 1; }
+FILE_ID="" OUTPUT="" EXPORT_MIME=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --file) FILE_ID="$2"; shift 2 ;; --output) OUTPUT="$2"; shift 2 ;;
+    --mime) EXPORT_MIME="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$FILE_ID" ]] || die "Need --file <file_id>"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+# Get file metadata to determine type
+META=$(curl -sf -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?fields=name,mimeType")
+NAME=$(echo "$META" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name','file'))")
+MIME=$(echo "$META" | python3 -c "import json,sys; print(json.load(sys.stdin).get('mimeType',''))")
+[[ -n "$OUTPUT" ]] || OUTPUT="/tmp/${NAME}"
+# Google Workspace types need export, regular files use direct download
+if echo "$MIME" | grep -q "google-apps"; then
+  [[ -n "$EXPORT_MIME" ]] || EXPORT_MIME="application/pdf"
+  ENC_MIME=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$EXPORT_MIME")
+  curl -sf -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files/${FILE_ID}/export?mimeType=${ENC_MIME}" -o "$OUTPUT"
+else
+  curl -sf -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files/${FILE_ID}?alt=media" -o "$OUTPUT"
+fi
+echo "{\"status\":\"downloaded\",\"path\":\"${OUTPUT}\",\"name\":\"${NAME}\",\"mimeType\":\"${MIME}\"}"

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# drive-ls — List files in Google Drive
+# Brain agent: temporal-memory (READ)
+# Usage: drive-ls [--folder FOLDER_ID] [--max 20]
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-ls] [ERROR] $*" >&2; exit 1; }
+FOLDER="" MAX=20
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --folder) FOLDER="$2"; shift 2 ;; --max) MAX="$2"; shift 2 ;;
+    *) die "Unknown: $1" ;; esac
+done
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+QUERY="trashed=false"
+[[ -n "$FOLDER" ]] && QUERY="'${FOLDER}' in parents and trashed=false"
+ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
+curl -sf -H "Authorization: Bearer ${TOKEN}" \
+  "${DRIVE_API}/files?q=${ENC_Q}&pageSize=${MAX}&fields=files(id,name,mimeType,modifiedTime,size,webViewLink)&orderBy=modifiedTime%20desc" \
+  | python3 -c "
+import json, sys; data = json.load(sys.stdin)
+files = [{'id':f['id'],'name':f['name'],'type':f.get('mimeType',''),'modified':f.get('modifiedTime',''),'link':f.get('webViewLink','')} for f in data.get('files',[])]
+print(json.dumps({'files':files,'count':len(files)}, indent=2))
+"

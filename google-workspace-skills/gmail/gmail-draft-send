@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# gmail-draft-send — Send an existing Gmail draft
+# Brain agent: motor (WRITE)
+# Usage: gmail-draft-send DRAFT_ID
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
+die() { echo "[gmail-draft-send] [ERROR] $*" >&2; exit 1; }
+DRAFT_ID="${1:-}"; [[ -n "$DRAFT_ID" ]] || die "Usage: gmail-draft-send <draft_id>"
+TOKEN="$("$WS_TOKEN" --scope gmail)" || die "Auth failed"
+curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "{\"id\":\"${DRAFT_ID}\"}" "${GMAIL_API}/drafts/send" \
+  | python3 -c "
+import json, sys; m = json.load(sys.stdin)
+print(json.dumps({'status':'sent','messageId':m.get('id',''),'threadId':m.get('threadId','')}, indent=2))
+"

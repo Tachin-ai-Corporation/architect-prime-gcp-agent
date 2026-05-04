@@ -6,7 +6,7 @@
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
       "workspace": "devops",
-      "skills": ["agent-ask", "workspace-drive"],
+      "skills": ["agent-ask", "workspace-drive", "workspace-gmail"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],
@@ -31,7 +31,7 @@
       "title": "QA Engineer",
       "specialty": "Test planning, test automation, regression testing, performance testing, quality gates",
       "emailPattern": "qa-agent-{name}",
-      "workspace": "fleet",
+      "workspace": "qa",
       "skills": ["agent-ask"],
       "brain": true,
       "capabilities": {
@@ -44,8 +44,8 @@
       "title": "Project Manager",
       "specialty": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
       "emailPattern": "pm-agent-{name}",
-      "workspace": "fleet",
-      "skills": ["agent-ask", "workspace-drive"],
+      "workspace": "pm",
+      "skills": ["agent-ask", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec"],
@@ -57,8 +57,8 @@
       "title": "Finance Analyst",
       "specialty": "Budget tracking, cost analysis, financial reporting, forecasting, vendor management",
       "emailPattern": "finance-agent-{name}",
-      "workspace": "fleet",
-      "skills": ["agent-ask"],
+      "workspace": "finance",
+      "skills": ["agent-ask", "workspace-gmail", "workspace-sheets"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec"],
@@ -70,8 +70,8 @@
       "title": "Data Engineer",
       "specialty": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
       "emailPattern": "data-agent-{name}",
-      "workspace": "fleet",
-      "skills": ["agent-ask"],
+      "workspace": "data",
+      "skills": ["agent-ask", "workspace-sheets"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],
@@ -83,12 +83,25 @@
       "title": "Security Engineer",
       "specialty": "IAM audit, compliance, vulnerability assessment, security architecture, incident response",
       "emailPattern": "security-agent-{name}",
-      "workspace": "fleet",
-      "skills": ["agent-ask"],
+      "workspace": "security",
+      "skills": ["agent-ask", "workspace-gmail"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "exec"],
         "deny": ["web-search", "browser", "write", "edit"]
+      }
+    },
+    {
+      "id": "assistant",
+      "title": "Executive Assistant",
+      "specialty": "Scheduling, communications, admin tasks, document drafting, information gathering",
+      "emailPattern": "assistant-agent-{name}",
+      "workspace": "assistant",
+      "skills": ["agent-ask", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec"],
+        "deny": ["web-search", "browser", "process"]
       }
     }
   ]

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# gmail-search — Search Gmail threads using query syntax
+# Brain agent: temporal-memory (READ)
+# Usage: gmail-search "<query>" [--max 10]
+#   gmail-search "newer_than:7d"
+#   gmail-search "from:alice@example.com is:unread" --max 20
+#   gmail-search "subject:invoice" --max 5
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
+die() { echo "[gmail-search] [ERROR] $*" >&2; exit 1; }
+QUERY="" MAX=10
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --max) MAX="$2"; shift 2 ;; --help|-h) echo "Usage: gmail-search <query> [--max N]"; exit 0 ;;
+    -*) die "Unknown flag: $1" ;; *) QUERY="$1"; shift ;;
+  esac
+done
+[[ -n "$QUERY" ]] || die "No search query. Usage: gmail-search <query>"
+TOKEN="$("$WS_TOKEN" --scope gmail)" || die "Auth failed"
+ENCODED_QUERY="$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")"
+HTTP_CODE=$(curl -s -o /tmp/gmail-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${GMAIL_API}/threads?q=${ENCODED_QUERY}&maxResults=${MAX}")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"query\":\"${QUERY}\",\"message\":\"Gmail access denied. Verify DWD scopes include Gmail for ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Gmail API returned HTTP ${HTTP_CODE}"
+# Extract thread IDs and fetch summaries
+python3 -c "
+import json, sys, subprocess
+data = json.load(open('/tmp/gmail-response.json'))
+threads = data.get('threads', [])
+if not threads:
+    print(json.dumps({'results': [], 'query': sys.argv[1], 'count': 0}))
+    sys.exit(0)
+token = sys.argv[2]
+api = sys.argv[3]
+results = []
+for t in threads[:int(sys.argv[4])]:
+    try:
+        r = subprocess.run(
+            ['curl', '-sf', '-H', f'Authorization: Bearer {token}',
+             f'{api}/threads/{t[\"id\"]}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date&metadataHeaders=To'],
+            capture_output=True, text=True, timeout=10)
+        if r.returncode != 0: continue
+        thread = json.loads(r.stdout)
+        msgs = thread.get('messages', [])
+        if not msgs: continue
+        headers = {}
+        for h in msgs[0].get('payload', {}).get('headers', []):
+            headers[h['name'].lower()] = h['value']
+        results.append({
+            'threadId': t['id'], 'messageCount': len(msgs),
+            'subject': headers.get('subject', '(no subject)'),
+            'from': headers.get('from', ''), 'date': headers.get('date', ''),
+            'snippet': msgs[0].get('snippet', '')[:200]
+        })
+    except Exception: continue
+print(json.dumps({'results': results, 'query': sys.argv[1], 'count': len(results)}, indent=2))
+" "$QUERY" "$TOKEN" "$GMAIL_API" "$MAX"

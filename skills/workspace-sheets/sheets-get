@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# sheets-get — Read a cell range from a Google Sheet
+# Brain agent: temporal-memory (READ)
+# Usage: sheets-get --sheet SHEET_ID --range "Sheet1!A1:D10"
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
+die() { echo "[sheets-get] [ERROR] $*" >&2; exit 1; }
+SHEET_ID="" RANGE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sheet) SHEET_ID="$2"; shift 2 ;; --range) RANGE="$2"; shift 2 ;;
+    *) die "Unknown: $1" ;; esac
+done
+[[ -n "$SHEET_ID" && -n "$RANGE" ]] || die "Need --sheet and --range"
+TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
+ENC_RANGE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$RANGE")
+HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${SHEETS_API}/${SHEET_ID}/values/${ENC_RANGE}")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"sheet\":\"${SHEET_ID}\",\"message\":\"Sheets access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json
+data = json.load(open('/tmp/sheets-response.json'))
+vals = data.get('values',[])
+print(json.dumps({'range':data.get('range',''),'rows':len(vals),'values':vals}, indent=2))
+"

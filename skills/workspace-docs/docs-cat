@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# docs-cat — Read a Google Doc's full text content
+# Brain agent: temporal-memory (READ)
+# Usage: docs-cat <doc_id>
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+die() { echo "[docs-cat] [ERROR] $*" >&2; exit 1; }
+DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id>"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json
+doc = json.load(open('/tmp/docs-response.json'))
+parts = []
+for elem in doc.get('body',{}).get('content',[]):
+    for run in elem.get('paragraph',{}).get('elements',[]):
+        tc = run.get('textRun',{}).get('content','')
+        if tc: parts.append(tc)
+text = ''.join(parts)
+print(json.dumps({'docId':doc.get('documentId',''),'title':doc.get('title',''),'text':text,'chars':len(text)}, indent=2))
+"

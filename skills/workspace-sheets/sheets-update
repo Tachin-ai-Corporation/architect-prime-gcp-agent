@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# sheets-update — Write values to a cell range in a Google Sheet
+# Brain agent: motor (WRITE)
+# Usage: sheets-update --sheet SHEET_ID --range "Sheet1!A1:B2" --values '[["Name","Score"],["Alice","95"]]'
+#        sheets-update --sheet SHEET_ID --range "Sheet1!A1" --values '[["Hello"]]' --raw
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
+die() { echo "[sheets-update] [ERROR] $*" >&2; exit 1; }
+SHEET_ID="" RANGE="" VALUES="" INPUT="USER_ENTERED"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sheet) SHEET_ID="$2"; shift 2 ;; --range) RANGE="$2"; shift 2 ;;
+    --values) VALUES="$2"; shift 2 ;; --raw) INPUT="RAW"; shift ;;
+    *) die "Unknown: $1" ;; esac
+done
+[[ -n "$SHEET_ID" && -n "$RANGE" && -n "$VALUES" ]] || die "Need --sheet, --range, --values (JSON array of arrays)"
+TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
+ENC_RANGE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$RANGE")
+HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
+  -X PUT -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "{\"values\":${VALUES}}" \
+  "${SHEETS_API}/${SHEET_ID}/values/${ENC_RANGE}?valueInputOption=${INPUT}")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"sheet\":\"${SHEET_ID}\",\"message\":\"Sheets access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json
+data = json.load(open('/tmp/sheets-response.json'))
+print(json.dumps({'status':'updated','range':data.get('updatedRange',''),'rows':data.get('updatedRows',0),'cols':data.get('updatedColumns',0),'cells':data.get('updatedCells',0)}, indent=2))
+"

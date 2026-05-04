@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# ============================================================
+# gmail-search — Search Gmail threads using query syntax
+#
+# Brain agent: temporal-memory (READ)
+#
+# Usage:
+#   gmail-search "newer_than:7d"
+#   gmail-search "from:alice@example.com is:unread" --max 20
+#   gmail-search "subject:invoice" --max 5
+#
+# Output: JSON array of thread summaries
+#
+# Query syntax reference (Gmail native):
+#   from:user@     to:user@       subject:text
+#   newer_than:7d  older_than:1m  after:2026/04/01
+#   is:unread      is:starred     has:attachment
+#   label:inbox    in:sent        filename:pdf
+# ============================================================
+set -euo pipefail
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
+
+die() { echo "[gmail-search] [ERROR] $*" >&2; exit 1; }
+
+# ---- Parse args ----
+QUERY=""
+MAX=10
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --max)  MAX="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: gmail-search <query> [--max N]"
+      echo "Search Gmail threads. Returns JSON."
+      exit 0
+      ;;
+    -*) die "Unknown flag: $1" ;;
+    *)  QUERY="$1"; shift ;;
+  esac
+done
+
+[[ -n "$QUERY" ]] || die "No search query. Usage: gmail-search <query>"
+
+# ---- Auth ----
+TOKEN="$("$WS_TOKEN" --scope gmail)" || die "Failed to get Gmail token"
+
+# ---- Search threads ----
+ENCODED_QUERY="$(python3 -c "import urllib.parse; print(urllib.parse.quote('$QUERY'))")"
+
+RESPONSE="$(curl -sf \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${GMAIL_API}/threads?q=${ENCODED_QUERY}&maxResults=${MAX}" 2>/dev/null)" \
+  || die "Gmail API request failed"
+
+# ---- Extract thread IDs ----
+THREAD_IDS="$(echo "$RESPONSE" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+threads = data.get('threads', [])
+if not threads:
+    print(json.dumps({'results': [], 'query': '$QUERY', 'count': 0}))
+    sys.exit(0)
+print(json.dumps([t['id'] for t in threads]))
+" 2>/dev/null)"
+
+# If no threads, output empty result
+if echo "$THREAD_IDS" | python3 -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,dict) else 1)" 2>/dev/null; then
+  echo "$THREAD_IDS"
+  exit 0
+fi
+
+# ---- Fetch thread summaries ----
+echo "$THREAD_IDS" | python3 -c "
+import json, sys, subprocess, os
+
+token = '$TOKEN'
+api = '$GMAIL_API'
+thread_ids = json.load(sys.stdin)
+results = []
+
+for tid in thread_ids[:$MAX]:
+    try:
+        r = subprocess.run(
+            ['curl', '-sf',
+             '-H', f'Authorization: Bearer {token}',
+             f'{api}/threads/{tid}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date&metadataHeaders=To'],
+            capture_output=True, text=True, timeout=10
+        )
+        if r.returncode != 0:
+            continue
+        thread = json.loads(r.stdout)
+        msgs = thread.get('messages', [])
+        if not msgs:
+            continue
+
+        # Extract headers from first message
+        headers = {}
+        for h in msgs[0].get('payload', {}).get('headers', []):
+            headers[h['name'].lower()] = h['value']
+
+        results.append({
+            'threadId': tid,
+            'messageCount': len(msgs),
+            'subject': headers.get('subject', '(no subject)'),
+            'from': headers.get('from', ''),
+            'date': headers.get('date', ''),
+            'snippet': msgs[0].get('snippet', '')[:200]
+        })
+    except Exception:
+        continue
+
+print(json.dumps({'results': results, 'query': '$QUERY', 'count': len(results)}, indent=2))
+"

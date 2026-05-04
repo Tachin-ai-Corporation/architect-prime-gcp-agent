@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# docs-comments-list — List comments on a Google Doc
+# Brain agent: temporal-memory (READ)
+# Usage: docs-comments-list --doc DOC_ID [--include-resolved]
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-comments-list] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" INCLUDE_RESOLVED=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in --doc) DOC_ID="$2"; shift 2 ;; --include-resolved) INCLUDE_RESOLVED=true; shift ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$DOC_ID" ]] || die "Need --doc"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${DRIVE_API}/files/${DOC_ID}/comments?fields=comments(id,content,author,createdTime,resolved,replies)&pageSize=100")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Comments access denied. Share doc with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Drive API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json, sys
+data = json.load(open('/tmp/docs-response.json'))
+include_resolved = sys.argv[1] == 'true'
+comments = []
+for c in data.get('comments',[]):
+    if not include_resolved and c.get('resolved'): continue
+    comments.append({
+        'id':c.get('id',''),'content':c.get('content',''),
+        'author':c.get('author',{}).get('displayName',''),
+        'created':c.get('createdTime',''),'resolved':c.get('resolved',False),
+        'replies':len(c.get('replies',[]))
+    })
+print(json.dumps({'comments':comments,'count':len(comments)}, indent=2))
+" "$INCLUDE_RESOLVED"

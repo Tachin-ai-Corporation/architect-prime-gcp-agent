@@ -34,3 +34,34 @@ skills/workspace-drive/drive-rename .openclaw/bin/drive-rename
 skills/workspace-drive/drive-delete .openclaw/bin/drive-delete
 skills/workspace-drive/drive-move .openclaw/bin/drive-move
 skills/workspace-drive/drive-share .openclaw/bin/drive-share
+
+# Workspace skills — Gmail
+skills/workspace-gmail/SKILL.md .openclaw/skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/gmail-search .openclaw/bin/gmail-search
+skills/workspace-gmail/gmail-get .openclaw/bin/gmail-get
+skills/workspace-gmail/gmail-send .openclaw/bin/gmail-send
+skills/workspace-gmail/gmail-draft-create .openclaw/bin/gmail-draft-create
+skills/workspace-gmail/gmail-draft-send .openclaw/bin/gmail-draft-send
+
+# Workspace skills — Calendar
+skills/workspace-calendar/SKILL.md .openclaw/skills/workspace-calendar/SKILL.md
+skills/workspace-calendar/calendar-events .openclaw/bin/calendar-events
+skills/workspace-calendar/calendar-search .openclaw/bin/calendar-search
+skills/workspace-calendar/calendar-create .openclaw/bin/calendar-create
+skills/workspace-calendar/calendar-update .openclaw/bin/calendar-update
+skills/workspace-calendar/calendar-delete .openclaw/bin/calendar-delete
+
+# Workspace skills — Docs
+skills/workspace-docs/SKILL.md .openclaw/skills/workspace-docs/SKILL.md
+skills/workspace-docs/docs-cat .openclaw/bin/docs-cat
+skills/workspace-docs/docs-create .openclaw/bin/docs-create
+skills/workspace-docs/docs-write .openclaw/bin/docs-write
+skills/workspace-docs/docs-find-replace .openclaw/bin/docs-find-replace
+skills/workspace-docs/docs-comments-list .openclaw/bin/docs-comments-list
+skills/workspace-docs/docs-comments-add .openclaw/bin/docs-comments-add
+
+# Workspace skills — Sheets
+skills/workspace-sheets/SKILL.md .openclaw/skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/sheets-get .openclaw/bin/sheets-get
+skills/workspace-sheets/sheets-append .openclaw/bin/sheets-append
+skills/workspace-sheets/sheets-update .openclaw/bin/sheets-update

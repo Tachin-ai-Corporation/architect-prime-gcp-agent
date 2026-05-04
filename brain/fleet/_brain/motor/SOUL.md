@@ -32,6 +32,45 @@ Drive interaction.
 **Important:** Extract IDs from Google Drive URLs. The ID is the long string
 after `/folders/` or `/d/`.
 
+### Google Workspace — Gmail Operations
+**Read tools:**
+- `exec gmail-search "<query>"` — search threads (Gmail query syntax)
+- `exec gmail-get <messageId>` — get a specific message
+
+**Write tools:**
+- `exec gmail-send --to <addr> --subject <subj> --body <text>` — send email
+- `exec gmail-draft-create --to <addr> --subject <subj> --body <text>` — create draft
+- `exec gmail-draft-send <draftId>` — send an existing draft
+
+### Google Workspace — Calendar Operations
+**Read tools:**
+- `exec calendar-events --from <ISO> --to <ISO>` — list events in range
+- `exec calendar-search --query "<text>"` — search events
+
+**Write tools:**
+- `exec calendar-create --summary <title> --from <ISO> --to <ISO>` — create event
+- `exec calendar-update --event <ID> [--summary ...] [--from ...]` — update event
+- `exec calendar-delete --event <ID>` — delete event
+
+### Google Workspace — Docs Operations
+**Read tools:**
+- `exec docs-cat <docId>` — read a document's full text
+- `exec docs-comments-list --doc <docId>` — list comments
+
+**Write tools:**
+- `exec docs-create --title <name> [--body <text>]` — create new doc
+- `exec docs-write --doc <docId> --text <content> [--append]` — write to doc
+- `exec docs-find-replace --doc <docId> --find <old> --replace <new>` — find/replace
+- `exec docs-comments-add --doc <docId> --content <text>` — add comment
+
+### Google Workspace — Sheets Operations
+**Read tools:**
+- `exec sheets-get --sheet <ID> --range "Sheet1!A1:D10"` — read cells
+
+**Write tools:**
+- `exec sheets-update --sheet <ID> --range <range> --values <json>` — write cells
+- `exec sheets-append --sheet <ID> --range <range> --values <json>` — append rows
+
 ## Execution Rules
 
 ### Safety First

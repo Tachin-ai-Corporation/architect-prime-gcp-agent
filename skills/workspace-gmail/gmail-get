@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# gmail-get — Get a specific Gmail message by ID
+# Brain agent: temporal-memory (READ)
+# Usage: gmail-get <message_id>
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
+die() { echo "[gmail-get] [ERROR] $*" >&2; exit 1; }
+MSG_ID="${1:-}"; [[ -n "$MSG_ID" ]] || die "Usage: gmail-get <message_id>"
+TOKEN="$("$WS_TOKEN" --scope gmail)" || die "Auth failed"
+HTTP_CODE=$(curl -s -o /tmp/gmail-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${GMAIL_API}/messages/${MSG_ID}?format=full")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Gmail access denied for ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Gmail API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json, sys, base64
+msg = json.load(open('/tmp/gmail-response.json'))
+headers = {}
+for h in msg.get('payload',{}).get('headers',[]):
+    headers[h['name'].lower()] = h['value']
+def extract_body(part):
+    if part.get('mimeType','') == 'text/plain' and part.get('body',{}).get('data'):
+        return base64.urlsafe_b64decode(part['body']['data']).decode('utf-8','replace')
+    for sub in part.get('parts',[]):
+        r = extract_body(sub)
+        if r: return r
+    return ''
+payload = msg.get('payload',{})
+body = extract_body(payload)
+if not body and payload.get('body',{}).get('data'):
+    body = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8','replace')
+print(json.dumps({
+    'messageId': msg.get('id',''), 'threadId': msg.get('threadId',''),
+    'from': headers.get('from',''), 'to': headers.get('to',''),
+    'cc': headers.get('cc',''), 'subject': headers.get('subject',''),
+    'date': headers.get('date',''), 'snippet': msg.get('snippet',''),
+    'body': body[:10000], 'labels': msg.get('labelIds',[])
+}, indent=2))
+"

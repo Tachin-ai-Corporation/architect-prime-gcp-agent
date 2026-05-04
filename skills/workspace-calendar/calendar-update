@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# calendar-update — Update an existing calendar event
+# Brain agent: motor (WRITE)
+# Usage: calendar-update --event EVENT_ID [--summary "New title"] [--from ISO] [--to ISO] [--description "..."] [--location "..."]
+set -euo pipefail
+if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
+  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
+else
+  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+fi
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+CAL_API="https://www.googleapis.com/calendar/v3"
+die() { echo "[calendar-update] [ERROR] $*" >&2; exit 1; }
+CAL_ID="primary" EVENT_ID="" SUMMARY="" FROM="" TO="" DESC="" LOC=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --event) EVENT_ID="$2"; shift 2 ;; --summary) SUMMARY="$2"; shift 2 ;;
+    --from) FROM="$2"; shift 2 ;; --to) TO="$2"; shift 2 ;;
+    --description) DESC="$2"; shift 2 ;; --location) LOC="$2"; shift 2 ;;
+    --calendar) CAL_ID="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$EVENT_ID" ]] || die "Need --event <event_id>"
+TOKEN="$("$WS_TOKEN" --scope calendar)" || die "Auth failed"
+BODY=$(python3 -c "
+import json, sys
+e = {}
+if sys.argv[1]: e['summary'] = sys.argv[1]
+if sys.argv[2]: e['start'] = {'dateTime': sys.argv[2]}
+if sys.argv[3]: e['end'] = {'dateTime': sys.argv[3]}
+if sys.argv[4]: e['description'] = sys.argv[4]
+if sys.argv[5]: e['location'] = sys.argv[5]
+print(json.dumps(e))
+" "$SUMMARY" "$FROM" "$TO" "$DESC" "$LOC")
+HTTP_CODE=$(curl -s -o /tmp/cal-response.json -w '%{http_code}' \
+  -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${CAL_API}/calendars/${CAL_ID}/events/${EVENT_ID}")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Calendar access denied for ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Calendar API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json; e = json.load(open('/tmp/cal-response.json'))
+print(json.dumps({'status':'updated','id':e.get('id',''),'summary':e.get('summary','')}, indent=2))
+"

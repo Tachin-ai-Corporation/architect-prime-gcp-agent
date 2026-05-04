@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# docs-comments-list — List comments on a Google Doc
+# Brain agent: cerebellum (REVIEW)
+# Usage: docs-comments-list --doc DOC_ID [--include-resolved]
+set -euo pipefail
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+WS_TOKEN="${OC_HOST_ROOT}/.openclaw/skills/workspace/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-comments-list] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" RESOLVED=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in --doc) DOC_ID="$2"; shift 2 ;; --include-resolved) RESOLVED=true; shift ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$DOC_ID" ]] || die "Need --doc"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+URL="${DRIVE_API}/files/${DOC_ID}/comments?fields=comments(id,content,author,createdTime,resolved,replies)&pageSize=100"
+[[ "$RESOLVED" == "true" ]] && URL="${URL}&includeDeleted=false" || URL="${URL}&includeDeleted=false"
+curl -sf -H "Authorization: Bearer ${TOKEN}" "$URL" \
+  | python3 -c "
+import json, sys; data = json.load(sys.stdin)
+comments = []
+for c in data.get('comments',[]):
+    if not $([[ "$RESOLVED" == "true" ]] && echo 'True' || echo 'False') and c.get('resolved'): continue
+    comments.append({
+        'id':c.get('id',''),'content':c.get('content',''),
+        'author':c.get('author',{}).get('displayName',''),
+        'created':c.get('createdTime',''),'resolved':c.get('resolved',False),
+        'replies':len(c.get('replies',[]))
+    })
+print(json.dumps({'comments':comments,'count':len(comments)}, indent=2))
+"
