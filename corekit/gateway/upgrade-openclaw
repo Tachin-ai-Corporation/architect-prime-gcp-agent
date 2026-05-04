@@ -26,7 +26,7 @@ log() { echo "[$(date -Is)] [upgrade-openclaw] $*"; }
 die() { echo "[$(date -Is)] [upgrade-openclaw] [FATAL] $*" >&2; exit 1; }
 
 # Default pin from current bootstrap
-DEFAULT_PIN="8b2a6e57fef6c582ec6d27b85150616f9e3a7ba4"
+DEFAULT_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
 
 TARGET=""
 MODE="pin"
