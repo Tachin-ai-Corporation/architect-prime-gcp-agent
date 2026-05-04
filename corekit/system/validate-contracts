@@ -233,7 +233,8 @@ if [[ "$MODE" == "runtime" ]]; then
   fi
 
   # ---- Check 4: ADC patch applied ----
-  ADC_CHECK="$(docker exec openclaw-gateway bash -c 'find /app/dist -name "model-auth-env-*" -exec grep -l "gce-adc" {} \;' 2>/dev/null || echo '')"
+  # v2026.4.x uses gce-adc marker; v2026.5.x uses false && Array.isArray fallthrough
+  ADC_CHECK="$(docker exec openclaw-gateway bash -c 'find /app/dist -name "model-auth-env-*" -exec grep -l -E "gce-adc|false.*Array.isArray" {} \;' 2>/dev/null || echo '')"
   if [[ -n "$ADC_CHECK" ]]; then
     pass "ADC patch applied"
   else

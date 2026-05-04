@@ -26,7 +26,7 @@ log() { echo "[$(date -Is)] [upgrade-openclaw] $*"; }
 die() { echo "[$(date -Is)] [upgrade-openclaw] [FATAL] $*" >&2; exit 1; }
 
 # Default pin from current bootstrap
-DEFAULT_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
+DEFAULT_PIN="8b2a6e57fef6c582ec6d27b85150616f9e3a7ba4"
 
 TARGET=""
 MODE="pin"
@@ -115,14 +115,33 @@ docker run -d \
   openclaw:local
 
 # ---- Apply ADC auth patch (required for GCE metadata auth) ----
+# Two code shapes:
+#   v2026.4.x: if (!envKey) return null;
+#   v2026.5.x: if (Array.isArray(candidates))\n\treturn null;
 log "Applying ADC auth patch..."
 sleep 3  # wait for container to initialize
 AUTH_ENV_FILE="$(docker exec openclaw-gateway find /app/dist -name 'model-auth-env-*.js' -type f 2>/dev/null | head -1)"
 if [[ -n "$AUTH_ENV_FILE" ]]; then
-  docker exec openclaw-gateway sed -i \
-    's|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|' \
-    "$AUTH_ENV_FILE"
-  log "  Patched: $AUTH_ENV_FILE"
+  if docker exec openclaw-gateway grep -q "gce-adc" "$AUTH_ENV_FILE" 2>/dev/null; then
+    log "  Already patched"
+  elif docker exec openclaw-gateway grep -q 'if (!envKey) return null;' "$AUTH_ENV_FILE" 2>/dev/null; then
+    # v2026.4.x sentinel
+    docker exec openclaw-gateway sed -i \
+      's|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|' \
+      "$AUTH_ENV_FILE"
+    log "  Patched (v2026.4.x): $AUTH_ENV_FILE"
+  elif docker exec openclaw-gateway grep -q 'Array.isArray(candidates)' "$AUTH_ENV_FILE" 2>/dev/null; then
+    # v2026.5.x — disable the candidates short-circuit to allow GCE ADC plugin fallthrough
+    docker exec openclaw-gateway sed -i \
+      's|if (Array.isArray(candidates)) {$|if (false \&\& Array.isArray(candidates)) { // patched: allow GCE ADC fallthrough|' \
+      "$AUTH_ENV_FILE"
+    docker exec openclaw-gateway sed -i \
+      's|if (Array.isArray(candidates))$|if (false) // patched: allow GCE ADC fallthrough|' \
+      "$AUTH_ENV_FILE"
+    log "  Patched (v2026.5.x): $AUTH_ENV_FILE"
+  else
+    log "  ⚠️  Could not find model-auth-env sentinel — auth may fail"
+  fi
   # Restart node process to pick up the patch
   docker exec openclaw-gateway kill 1 2>/dev/null || true
   sleep 5

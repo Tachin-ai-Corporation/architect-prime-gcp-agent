@@ -440,13 +440,27 @@ if [ ! -f "$AP" ]; then
 fi
 
 # Step 2: Patch model-auth-env — GCE ADC fallback for google-vertex
+# Two code shapes:
+#   v2026.4.x:  if (!envKey) return null;
+#   v2026.5.x:  if (Array.isArray(candidates))\n\treturn null;
+#               This short-circuits BEFORE the GCE ADC plugin path.
+#               Fix: comment out the short-circuit so it falls through to resolvePluginSetupProvider.
 AUTH_ENV_FILE=$(find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
 if [ -n "$AUTH_ENV_FILE" ]; then
-  if grep -q "if (!envKey) return null;" "$AUTH_ENV_FILE" 2>/dev/null; then
-    sed -i '\''s|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|'\'' "$AUTH_ENV_FILE"
-    echo "  Patched model-auth-env: GCE ADC fallback enabled"
-  elif grep -q "gce-adc" "$AUTH_ENV_FILE" 2>/dev/null; then
+  if grep -q "gce-adc" "$AUTH_ENV_FILE" 2>/dev/null; then
     echo "  model-auth-env already patched"
+  elif grep -q "if (!envKey) return null;" "$AUTH_ENV_FILE" 2>/dev/null; then
+    # v2026.4.x sentinel
+    sed -i '\''s|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|'\'' "$AUTH_ENV_FILE"
+    echo "  Patched model-auth-env (v2026.4.x): GCE ADC fallback enabled"
+  elif grep -q "Array.isArray(candidates)" "$AUTH_ENV_FILE" 2>/dev/null; then
+    # v2026.5.x — comment out the candidates short-circuit so GCE ADC plugin path is reached
+    sed -i '\''s|if (Array.isArray(candidates)) {$|if (false \&\& Array.isArray(candidates)) { \/\/ patched: allow GCE ADC fallthrough|'\'' "$AUTH_ENV_FILE"
+    # Also handle single-line variant
+    sed -i '\''s|if (Array.isArray(candidates))$|if (false) \/\/ patched: allow GCE ADC fallthrough \/\/ was: if (Array.isArray(candidates))|'\'' "$AUTH_ENV_FILE"
+    echo "  Patched model-auth-env (v2026.5.x): GCE ADC fallthrough enabled"
+  else
+    echo "  WARN: model-auth-env sentinel not found — auth may fail"
   fi
 fi
 
