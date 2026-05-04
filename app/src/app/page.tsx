@@ -378,7 +378,7 @@ function HomeInner() {
 
   // ---- Hire Agent ----
   const handleHire = async () => {
-    if (!hireName.trim() || !activePrime) return;
+    if (!hireName.trim() || !hireEmail.trim() || !activePrime) return;
     setHiring(true);
 
     await api(`/api/primes/${activePrime}/fleet/hire`, {

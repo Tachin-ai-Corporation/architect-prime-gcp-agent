@@ -1,5 +1,6 @@
 # Force LF line endings for all shell scripts and config
 *.sh text eol=lf
-bundle/corekit/bin/* text eol=lf
+corekit/*/* text eol=lf
+skills/*/* text eol=lf
 bootstrap/*.sh text eol=lf
 install.sh text eol=lf

@@ -228,18 +228,26 @@ The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contr
 `infra/install.sh` uses **chained manifest fragments** instead of a flat file:
 
 ```
-infra/install.sh --role prime               → base.txt + role-prime.txt
-infra/install.sh --role fleet --job devops  → base.txt + role-fleet.txt + job-devops.txt
-infra/install.sh --role fleet --job engineer → base.txt + role-fleet.txt + job-engineer.txt
+infra/install.sh --role prime                  → base.txt + role-prime.txt
+infra/install.sh --role fleet --job devops     → base.txt + role-fleet.txt + job-devops.txt
+infra/install.sh --role fleet --job assistant  → base.txt + role-fleet.txt + job-assistant.txt
+infra/install.sh --role fleet --job pm         → base.txt + role-fleet.txt + job-pm.txt
 ```
 
 | Fragment | Contents | Scope |
 |----------|----------|-------|
 | `infra/manifests/base.txt` | contracts, gateway tools, chat tools, brain tools, config templates, agent skeleton | Every agent |
 | `infra/manifests/role-prime.txt` | fleet lifecycle, dashboard bridge, memory, skills, brain workspaces (cortex + 5 sub-agents) | Prime only |
-| `infra/manifests/role-fleet.txt` | fleet brain sub-agent workspaces, fleet template workspace | Fleet agents |
-| `infra/manifests/job-devops.txt` | devops specialty workspace (8 files) | DevOps agents |
-| `infra/manifests/job-engineer.txt` | engineer specialty workspace (8 files) | Engineer agents |
+| `infra/manifests/role-fleet.txt` | fleet brain sub-agent workspaces, fleet template workspace, 5 Workspace skill packages (Drive 9, Gmail 5, Calendar 5, Docs 6, Sheets 3 = 28 tools) | Fleet agents |
+| `infra/manifests/job-devops.txt` | devops specialty workspace (3 files) | DevOps agents |
+| `infra/manifests/job-swe.txt` | SWE specialty — maps to engineer workspace (3 files) | SWE agents |
+| `infra/manifests/job-engineer.txt` | engineer specialty workspace (3 files) | Engineer agents |
+| `infra/manifests/job-qa.txt` | QA specialty workspace (3 files) | QA agents |
+| `infra/manifests/job-pm.txt` | PM specialty workspace (3 files) | PM agents |
+| `infra/manifests/job-finance.txt` | finance specialty workspace (3 files) | Finance agents |
+| `infra/manifests/job-data.txt` | data specialty workspace (3 files) | Data agents |
+| `infra/manifests/job-security.txt` | security specialty workspace (3 files) | Security agents |
+| `infra/manifests/job-assistant.txt` | assistant specialty workspace (3 files) | Assistant agents |
 
 **STATE.json v2** records `role` and `job` alongside ref, file hashes, and timestamps. On upgrade (`install.sh --upgrade <ref>`), role/job are read from existing STATE.json so the correct fragments are re-installed automatically.
 
@@ -338,7 +346,7 @@ context_summary: <one sentence>
 4. Cerebellum must be last if present
 
 **Tool ownership (strict boundaries):**
-- Motor owns ALL 9 Drive tools (drive-ls, drive-search, drive-download, drive-upload, drive-mkdir, drive-rename, drive-delete, drive-move, drive-share)
+- Motor owns ALL 28 Workspace tools: Drive (9), Gmail (5), Calendar (5), Docs (6), Sheets (3)
 - temporal-memory has ZERO external API tools — pure memory only
 - cerebellum has read-only verification tools
 
@@ -496,9 +504,10 @@ architect-prime/
 │   │   ├── job-pm.txt                # PM specialty workspace
 │   │   ├── job-finance.txt           # Finance specialty workspace
 │   │   ├── job-data.txt              # Data specialty workspace
-│   │   └── job-security.txt          # Security specialty workspace
+│   │   ├── job-security.txt          # Security specialty workspace
+│   │   └── job-assistant.txt         # Assistant specialty workspace
 │   └── deploy/                       # Standalone install/uninstall scripts
-├── corekit/                          # MODULE 3: CoreKit Runtime (40 VM-side scripts)
+├── corekit/                          # MODULE 3: CoreKit Runtime (59 VM-side scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
 │   ├── gateway/                      # OpenClaw gateway management (5 scripts)
 │   ├── chat/                         # Google Chat / DWD integration (3 scripts)
@@ -527,15 +536,21 @@ architect-prime/
 │   ├── pm/workspace/                 # PM specialty (3 files)
 │   ├── finance/workspace/            # Finance specialty (3 files)
 │   ├── data/workspace/               # Data specialty (3 files)
-│   └── security/workspace/           # Security specialty (3 files)
+│   ├── security/workspace/           # Security specialty (3 files)
+│   └── assistant/workspace/          # Assistant specialty (3 files)
 ├── skills/                           # MODULE 6: Skill Packages
-│   ├── agent-ask/SKILL.md            # Vertex AI grounding web search
-│   ├── fleet-hire/SKILL.md           # Deploy a new fleet agent
-│   ├── fleet-fire/SKILL.md           # Remove a fleet agent
-│   ├── fleet-status/SKILL.md         # Query fleet status
-│   ├── fleet-verify/SKILL.md         # Verify agent health
-│   ├── fleet-upgrade/SKILL.md        # Upgrade agent CoreKit
-│   └── memory-consolidate/SKILL.md   # Nightly memory consolidation
+│   ├── agent-ask/                    # Vertex AI grounding web search
+│   ├── workspace-drive/              # Google Drive (9 tools + ws-token)
+│   ├── workspace-gmail/              # Gmail (5 tools)
+│   ├── workspace-calendar/           # Calendar (5 tools)
+│   ├── workspace-docs/               # Docs (6 tools)
+│   ├── workspace-sheets/             # Sheets (3 tools)
+│   ├── fleet-hire/                   # Deploy a new fleet agent
+│   ├── fleet-fire/                   # Remove a fleet agent
+│   ├── fleet-status/                 # Query fleet status
+│   ├── fleet-verify/                 # Verify agent health
+│   ├── fleet-upgrade/                # Upgrade agent CoreKit
+│   └── memory-consolidate/           # Nightly memory consolidation
 ├── docs/                             # Architecture documentation
 │   └── architecture/                 # AGENT_DESIGN, BRAIN_ARCHITECTURE, R/C/M spec
 ├── MISSION_PLAN.md                   # This document
