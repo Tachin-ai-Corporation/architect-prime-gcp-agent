@@ -440,28 +440,38 @@ if [ ! -f "$AP" ]; then
 fi
 
 # Step 2: Patch model-auth-env — GCE ADC fallback for google-vertex
-# Two code shapes:
-#   v2026.4.x:  if (!envKey) return null;
-#   v2026.5.x:  if (Array.isArray(candidates))\n\treturn null;
-#               This short-circuits BEFORE the GCE ADC plugin path.
-#               Fix: comment out the short-circuit so it falls through to resolvePluginSetupProvider.
+# v2026.4.x had a built-in google-vertex special case with a null sentinel.
+# v2026.5.x removed that special case; we inject it before the final return null.
 AUTH_ENV_FILE=$(find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
 if [ -n "$AUTH_ENV_FILE" ]; then
-  if grep -q "gce-adc" "$AUTH_ENV_FILE" 2>/dev/null; then
-    echo "  model-auth-env already patched"
-  elif grep -q "if (!envKey) return null;" "$AUTH_ENV_FILE" 2>/dev/null; then
-    # v2026.4.x sentinel
-    sed -i '\''s|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|'\'' "$AUTH_ENV_FILE"
-    echo "  Patched model-auth-env (v2026.4.x): GCE ADC fallback enabled"
-  elif grep -q "Array.isArray(candidates)" "$AUTH_ENV_FILE" 2>/dev/null; then
-    # v2026.5.x — comment out the candidates short-circuit so GCE ADC plugin path is reached
-    sed -i '\''s|if (Array.isArray(candidates)) {$|if (false \&\& Array.isArray(candidates)) { \/\/ patched: allow GCE ADC fallthrough|'\'' "$AUTH_ENV_FILE"
-    # Also handle single-line variant
-    sed -i '\''s|if (Array.isArray(candidates))$|if (false) \/\/ patched: allow GCE ADC fallthrough \/\/ was: if (Array.isArray(candidates))|'\'' "$AUTH_ENV_FILE"
-    echo "  Patched model-auth-env (v2026.5.x): GCE ADC fallthrough enabled"
-  else
-    echo "  WARN: model-auth-env sentinel not found — auth may fail"
-  fi
+  python3 -c "
+import sys
+with open('$AUTH_ENV_FILE') as f: code = f.read()
+if 'gce metadata' in code or 'gce-adc' in code:
+    print('  model-auth-env already patched'); sys.exit(0)
+
+patched = False
+# v2026.4.x: patch the null return inside the google-vertex block
+if 'if (!envKey) return null;' in code:
+    code = code.replace(
+        'if (!envKey) return null;',
+        'if (!envKey) return { apiKey: \"<gce-adc>\", source: \"gce metadata\" };', 1)
+    patched = True
+    print('  Patched model-auth-env (v2026.4.x)')
+# v2026.5.x: inject google-vertex fallback before the final return null
+elif '\treturn null;\n}\n//#endregion' in code:
+    code = code.replace(
+        '\treturn null;\n}\n//#endregion',
+        '\tif (normalized === \"google-vertex\") return { apiKey: \"gcp-vertex-credentials\", source: \"gce metadata\" };\n\treturn null;\n}\n//#endregion', 1)
+    patched = True
+    print('  Patched model-auth-env (v2026.5.x)')
+else:
+    print('  WARN: model-auth-env sentinel not found')
+    sys.exit(0)
+
+if patched:
+    with open('$AUTH_ENV_FILE', 'w') as f: f.write(code)
+" || echo "  WARN: patch script error"
 fi
 
 # Step 3: Remove stale ADC files

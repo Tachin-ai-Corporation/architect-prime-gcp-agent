@@ -115,33 +115,34 @@ docker run -d \
   openclaw:local
 
 # ---- Apply ADC auth patch (required for GCE metadata auth) ----
-# Two code shapes:
-#   v2026.4.x: if (!envKey) return null;
-#   v2026.5.x: if (Array.isArray(candidates))\n\treturn null;
+# v2026.4.x had a built-in google-vertex special case; v2026.5.x removed it.
 log "Applying ADC auth patch..."
 sleep 3  # wait for container to initialize
 AUTH_ENV_FILE="$(docker exec openclaw-gateway find /app/dist -name 'model-auth-env-*.js' -type f 2>/dev/null | head -1)"
 if [[ -n "$AUTH_ENV_FILE" ]]; then
-  if docker exec openclaw-gateway grep -q "gce-adc" "$AUTH_ENV_FILE" 2>/dev/null; then
-    log "  Already patched"
-  elif docker exec openclaw-gateway grep -q 'if (!envKey) return null;' "$AUTH_ENV_FILE" 2>/dev/null; then
-    # v2026.4.x sentinel
-    docker exec openclaw-gateway sed -i \
-      's|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|' \
-      "$AUTH_ENV_FILE"
-    log "  Patched (v2026.4.x): $AUTH_ENV_FILE"
-  elif docker exec openclaw-gateway grep -q 'Array.isArray(candidates)' "$AUTH_ENV_FILE" 2>/dev/null; then
-    # v2026.5.x — disable the candidates short-circuit to allow GCE ADC plugin fallthrough
-    docker exec openclaw-gateway sed -i \
-      's|if (Array.isArray(candidates)) {$|if (false \&\& Array.isArray(candidates)) { // patched: allow GCE ADC fallthrough|' \
-      "$AUTH_ENV_FILE"
-    docker exec openclaw-gateway sed -i \
-      's|if (Array.isArray(candidates))$|if (false) // patched: allow GCE ADC fallthrough|' \
-      "$AUTH_ENV_FILE"
-    log "  Patched (v2026.5.x): $AUTH_ENV_FILE"
-  else
-    log "  ⚠️  Could not find model-auth-env sentinel — auth may fail"
-  fi
+  cat > /tmp/patch-adc.py << 'PYEOF'
+import sys
+fpath = sys.argv[1]
+with open(fpath) as f: code = f.read()
+if 'gce metadata' in code or 'gce-adc' in code:
+    print('  Already patched'); sys.exit(0)
+patched = False
+if 'if (!envKey) return null;' in code:
+    code = code.replace('if (!envKey) return null;',
+        'if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };', 1)
+    patched = True; print('  Patched (v2026.4.x)')
+elif '\treturn null;\n}\n//#endregion' in code:
+    code = code.replace('\treturn null;\n}\n//#endregion',
+        '\tif (normalized === "google-vertex") return { apiKey: "gcp-vertex-credentials", source: "gce metadata" };\n\treturn null;\n}\n//#endregion', 1)
+    patched = True; print('  Patched (v2026.5.x)')
+else:
+    print('  WARN: sentinel not found'); sys.exit(0)
+if patched:
+    with open(fpath, 'w') as f: f.write(code)
+PYEOF
+  docker cp /tmp/patch-adc.py openclaw-gateway:/tmp/patch-adc.py
+  docker exec -u 0 openclaw-gateway python3 /tmp/patch-adc.py "$AUTH_ENV_FILE"
+  rm -f /tmp/patch-adc.py
   # Restart node process to pick up the patch
   docker exec openclaw-gateway kill 1 2>/dev/null || true
   sleep 5
