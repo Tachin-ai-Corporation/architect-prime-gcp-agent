@@ -214,6 +214,22 @@ if [[ -d "$BRAIN_SRC" ]]; then
 else
   warn "No _brain/ workspaces found — fleet agent will run without sub-agents"
 fi
+# ---- 4c) Compose SOUL.md from specialty identity + shared protocol ----
+SOUL_PROTOCOL="${OC_HOST_DIR}/workspace-fleet/SOUL_PROTOCOL.md"
+SOUL_DEPLOYED="${OC_HOST_DIR}/workspace/SOUL.md"
+if [[ -f "$SOUL_DEPLOYED" && -f "$SOUL_PROTOCOL" ]]; then
+  info "Composing SOUL.md (specialty identity + shared protocol)..."
+  # Append shared protocol block to the specialty identity fragment
+  cat "$SOUL_PROTOCOL" >> "$SOUL_DEPLOYED"
+  echo "  Appended SOUL_PROTOCOL.md to SOUL.md"
+else
+  if [[ ! -f "$SOUL_DEPLOYED" ]]; then
+    warn "No SOUL.md found in workspace — composition skipped"
+  fi
+  if [[ ! -f "$SOUL_PROTOCOL" ]]; then
+    warn "SOUL_PROTOCOL.md not found — composition skipped"
+  fi
+fi
 
 # ---- 5) Assemble TOOLS.md from skills ----
 info "Assembling TOOLS.md..."
