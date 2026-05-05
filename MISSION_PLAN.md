@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.03.11.0`
+> - **Current version:** `v2026.05.05.12.0`
 
 ---
 
@@ -183,10 +183,12 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 5. Tracks task lifecycle: marks `TASK.json` as `delivered` or `timed_out` (5m timeout)
 6. **Safety**: unknown classification → deliver raw (never drops user messages)
 
-**LLM Classification Prompt (strict):**
+**LLM Classification Prompt (brain→mouth architecture):**
+- Mouth IS the agent's voice — the brain's raw output is treated as the agent's own thoughts, and mouth voices them naturally
+- Receives the human's original question as context (from TASK.json) alongside the brain output, so it understands what the brain was responding to
 - Suppress: plans, dispatch instructions, step summaries, validation reports, internal tool output
 - Deliver: direct answers, research results, file listings, status updates, anything user-facing
-- Reformat: convert markdown headers to text-friendly equivalents, add emojis, clean up
+- Reformat: convert markdown headers to text-friendly equivalents, clean up internal jargon
 
 **Architecture properties:**
 - Ears and mouth are fully independent — crash/restart of one doesn't affect the other
@@ -195,7 +197,9 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 
 ### Vertex AI Authentication (ADC)
 
-Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. OpenClaw's `model-auth-env` module is patched at bootstrap time to fall back to `{ apiKey: "<gce-adc>", source: "gce metadata" }` when no explicit API key is configured. This patch is applied by `sed` inside the container, then the container is restarted. The `upgrade-openclaw` script automatically re-applies this patch after every container recreation.
+Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. OpenClaw's `model-auth-env` module is patched at bootstrap time to fall back to `{ apiKey: "<gce-adc>", source: "gce metadata" }` when no explicit API key is configured. The patcher is a Python script written to the host via heredoc, then `docker cp`'d into the container to avoid shell-quoting issues with embedded Python inside `docker exec bash -c` blocks. The `upgrade-openclaw` script automatically re-applies this patch after every container recreation.
+
+> **Pin note:** OpenClaw is pinned to v2026.4.15. The v2026.5.x branch removed `google-auth-library` GCE metadata support, breaking service account ADC on GCE VMs. Do not upgrade until upstream restores GCE support.
 
 ### Vertex AI Location
 
@@ -771,15 +775,27 @@ architect-prime/
 13. **Agent-types.json hardened** — Fixed workspace field for qa/pm/finance/data/security (was "fleet", now points to their actual specialty). Added Workspace skill assignments per agent role.
 14. **Motor SOUL expanded** — Both Prime and fleet motor SOULs now document all 28 Workspace tools (Drive 9, Gmail 5, Calendar 5, Docs 6, Sheets 3).
 
-### Current: v12.0 — R/C/M Roll-ups + Checkpoint System
-> *Goal: Tasks roll up to checkpoints, checkpoints to missions, missions to responsibilities.*
+### Completed: v2026.05.05.12.0 — Fleet Auth Stabilization + Mouth Persona
+> *Reverted OpenClaw regression, fixed bootstrap quoting, redesigned mouth as agent's voice.*
 
-1. **Checkpoint system** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
-2. **Mission system** — Checkpoints roll up into missions. Mission log tracks high-level agent objectives.
-3. **Responsibilities engine** — RESPONSIBILITY.toml manifests + registration. Responsibility log tracks ongoing duties. Tasks and checkpoints may roll up to responsibilities.
-4. **Agent self-reporting** — Fleet agents report completed work to their own responsibilities GChat channel (or equivalent).
-5. **Human review gates** — Dashboard integration for checkpoint approval.
-6. **Inter-agent delegation** — Agents @-mention other agents to delegate tasks.
+1. **OpenClaw pin reverted to v2026.4.15** — v2026.5.2 removed `google-auth-library` GCE metadata support, breaking service account ADC on all fleet VMs. Reverted `contracts.json` and `upgrade-openclaw` DEFAULT_PIN.
+2. **fleet-bootstrap bash syntax fix** — Embedded Python ADC patcher caused `line 455: syntax error near unexpected token '('` due to nested quoting in `docker exec bash -c`. Restructured: auth-profiles in its own `docker exec` block, Python patcher written to host via `cat > /tmp/patch-adc.py << 'PYEOF'` heredoc, then `docker cp`'d into the container.
+3. **ADC patcher false-positive fix** — The "already patched" check was `'gce metadata' in code`, which false-positived when a v2026.5.x fallthrough injection existed alongside an unpatched v2026.4.x sentinel. Now checks specifically for `<gce-adc>` AND that the sentinel `if (!envKey) return null;` is absent.
+4. **Mouth brain→mouth architecture** — Redesigned classify prompt: mouth IS the agent's voice, raw brain output is the agent's own thoughts to be spoken naturally. Removed fact-injection approach (email, name stuffing). Agent name passed only for self-reference.
+5. **Mouth human question context** — Classify LLM now receives the human's original question (from TASK.json) alongside the brain output, preventing misinterpretation of response direction.
+6. **Mouth agent identity env vars** — `start-agent-mouth` reads `agentDisplayName` and `agentFirstName` from `chat-config.json`, passes as env vars to the mouth container.
+7. **Removed google-workspace-skills** — Deleted stale reference folder (34 files, 1,449 lines). All skills now live in `skills/`.
+
+
+### Current: v13.0 — Responsibilities Engine
+> *Goal: Agents work autonomously on recurring tasks via structured cron-driven responsibilities.*
+
+1. **RESPONSIBILITY.toml manifests** — Declarative responsibility definitions with schedule, scope, and reporting config.
+2. **Responsibility registration** — Fleet agents register responsibilities at boot from their specialty config.
+3. **Cron-driven execution** — OpenClaw cron triggers responsibility runs on schedule; agent executes and reports.
+4. **Agent self-reporting** — Fleet agents report completed work to their responsibilities GChat channel.
+5. **Checkpoint queue** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
+6. **Human review gates** — Dashboard integration for checkpoint approval.
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR
