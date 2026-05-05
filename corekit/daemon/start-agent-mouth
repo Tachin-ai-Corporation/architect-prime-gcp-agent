@@ -35,6 +35,8 @@ fi
 if [ -f "$CONFIG" ]; then
   [ -z "$AGENT_USER_EMAIL" ] && AGENT_USER_EMAIL="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentUserEmail',''))" 2>/dev/null)"
   [ -z "$DWD_SIGNER_SA" ] && DWD_SIGNER_SA="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('dwdSignerSa',''))" 2>/dev/null)"
+  [ -z "$AGENT_DISPLAY_NAME" ] && AGENT_DISPLAY_NAME="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentDisplayName',''))" 2>/dev/null)"
+  [ -z "$AGENT_FIRST_NAME" ] && AGENT_FIRST_NAME="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentFirstName',''))" 2>/dev/null)"
 fi
 
 # Mouth needs GOOGLE_CLOUD_LOCATION for Vertex AI classify call
@@ -52,6 +54,8 @@ exec stdbuf -oL docker exec \
   -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
   -e AGENT_ID="${AGENT_ID:-agent}" \
   -e AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" \
+  -e AGENT_DISPLAY_NAME="${AGENT_DISPLAY_NAME:-}" \
+  -e AGENT_FIRST_NAME="${AGENT_FIRST_NAME:-}" \
   -e DWD_SIGNER_SA="${DWD_SIGNER_SA}" \
   -e PRIME_ID="${PRIME_ID:-}" \
   -e GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION}" \

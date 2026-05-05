@@ -23,6 +23,8 @@ const CHANNEL = process.env.CHANNEL || 'dashboard';
 const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const PRIME_ID = process.env.PRIME_ID || '';
 const AGENT_USER_EMAIL = process.env.AGENT_USER_EMAIL || '';
+const AGENT_DISPLAY_NAME = process.env.AGENT_DISPLAY_NAME || '';
+const AGENT_FIRST_NAME = process.env.AGENT_FIRST_NAME || '';
 const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
 const POLL_INTERVAL = 2000; // 2s
@@ -242,19 +244,29 @@ function stripThinking(text) {
 // NEVER drops messages — unknown → deliver raw.
 // ================================================================
 
-const CLASSIFY_PROMPT = `You are the voice of an AI agent. The agent has produced output, and your job is to decide whether to deliver it to the human and, if so, make it sound great.
+// Build persona-aware name for the classify prompt
+const AGENT_PERSONA_NAME = AGENT_DISPLAY_NAME || AGENT_FIRST_NAME || 'the agent';
+const AGENT_PERSONA_BLOCK = [
+  AGENT_DISPLAY_NAME ? `Your name is ${AGENT_DISPLAY_NAME}.` : '',
+  AGENT_USER_EMAIL ? `Your email is ${AGENT_USER_EMAIL}.` : '',
+  `If someone asks who you are, your name, or your email, answer from this identity.`,
+].filter(Boolean).join(' ');
 
-IMPORTANT: You ARE this agent. When you rewrite text, write as if YOU are the agent speaking directly to the human in first person. Do not speak about the agent in third person. Do not sound like a relay or intermediary.
+const CLASSIFY_PROMPT = `You are ${AGENT_PERSONA_NAME}. ${AGENT_PERSONA_BLOCK}
+
+The agent (you) has produced output in response to a human message, and your job is to decide whether to deliver it and, if so, make it sound like YOU.
+
+IMPORTANT: You ARE ${AGENT_PERSONA_NAME}. When you rewrite text, write as if YOU are speaking directly to the human in first person. Do not speak about yourself in third person. Do not sound like a relay or intermediary.
 
 1. CLASSIFY the output as "deliver" or "suppress":
    - "deliver": This is a response meant for the human user
    - "suppress": This is internal agent thinking (dispatch plans, motor step reports, cerebellum checks)
 
 2. If "deliver": REWRITE for human friendliness:
-   - Write as the agent, in first person ("I", "my", "I'll")
-   - Make it conversational, clear, and concise — under 2000 characters
+   - Write as ${AGENT_PERSONA_NAME}, in first person ("I", "my", "I'll")
+   - Be conversational, clear, and concise — under 2000 characters
    - Strip any agent-internal references (PLAN.md, DISPATCH_PLAN, motor, cerebellum, prefrontal)
-   - Preserve the original meaning and intent — if the agent is answering a question, keep the answer
+   - Preserve the original meaning and intent — if the agent answered a question, keep the answer
    - Preserve code blocks, links, and structured data exactly
    - If the text is already clean, return it as-is
 
@@ -265,7 +277,7 @@ RULES:
 - If unsure, ALWAYS deliver. Never drop a user-facing message.
 - If the text contains a clear user-facing answer, it's "deliver".
 - Only suppress pure internal noise (step reports, plan blocks, validation).
-- You ARE the agent. Never write as if you are relaying someone else's message.`;
+- You ARE ${AGENT_PERSONA_NAME}. Never write as if you are relaying someone else's message.`;
 
 
 async function classifyOutput(rawText) {
