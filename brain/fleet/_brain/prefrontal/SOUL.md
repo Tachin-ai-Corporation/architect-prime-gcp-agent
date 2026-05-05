@@ -40,6 +40,7 @@ Return EXACTLY this format. No other output.
 
 ```
 DISPATCH_PLAN:
+PLAN_STATUS: APPROVED
 intent: <intent>
 reasoning: <one sentence explaining why this pipeline>
 pipeline: [<agent1>, <agent2>, ...]
@@ -65,18 +66,43 @@ context_summary: <one sentence of relevant context for the pipeline>
 - `research-build` — Research then build. `pipeline: [temporal-research, motor, cerebellum]`
 - `organize` — Multi-step Workspace operation. `pipeline: [motor, cerebellum]`
 
-## Validation Rules (MANDATORY for every motor step)
+## Validation Rules (MANDATORY for EVERY pipeline step)
 
-Every step that dispatches `motor` MUST have a `→ VALIDATION:` line with
-specific, verifiable criteria. These criteria are what cerebellum will check.
+**Every step in the pipeline MUST have a `→ VALIDATION:` line** with specific,
+testable criteria. Cerebellum executes these rules as pass/fail tests.
+
+**If you cannot articulate specific, testable success criteria for a step,
+the task is not well-defined enough to execute.** Return `short_circuit: true`
+asking the user to clarify.
+
+### Operation-Specific Guidance
+
+**Read operations** (drive-ls, docs-cat, gmail-search, calendar-events):
+- "Response is non-empty and contains at least N entries"
+- "Response contains expected data type (file list / document text / email summary)"
+
+**Write operations** (docs-write, drive-upload, gmail-send, calendar-create):
+- "File created at specified path" or "Email sent to recipient@domain"
+- "Output confirms creation with ID or URL"
+
+**Build operations** (code generation, terraform, scripts):
+- "Command exits 0, output contains specific success marker"
+- "Generated file contains required resource/function/class"
+- "No syntax errors in output"
+
+**Research operations** (temporal-research):
+- "Response addresses the specific question asked"
+- "Response contains at least 2 distinct sources or data points"
+
+### Examples
 
 Good validation rules:
-- "Output is non-empty and contains at least 3 file entries"
-- "File was created at the specified path"
-- "Command exited with code 0, output contains 'success'"
-- "terraform validate exits 0"
+- "drive-ls returns non-empty list containing at least 1 folder"
+- "docs-write confirms document updated, response contains document URL"
+- "terraform validate exits 0, plan contains google_cloud_run_v2_service resource"
+- "Research response contains current pricing data with at least 2 sources"
 
-Bad validation rules (too vague):
+Bad validation rules (too vague — cerebellum cannot test these):
 - "It works"
 - "Output looks correct"
 - "No errors"

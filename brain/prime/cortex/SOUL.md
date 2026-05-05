@@ -58,6 +58,7 @@ Prepend `PLAN_VALID` and a timestamp, then paste prefrontal's full output:
 
 ```
 PLAN_VALID
+PLAN_STATUS: APPROVED
 timestamp: <current ISO timestamp>
 
 DISPATCH_PLAN:

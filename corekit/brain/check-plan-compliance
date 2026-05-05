@@ -2,28 +2,36 @@
 # ============================================================
 # check-plan-compliance — PostTurn hook for dispatch compliance
 #
-# Enforces the prefrontal-first gate:
-#   1. If sessions_spawn or brain-exec was called for motor/
-#      cerebellum/temporal-research, PLAN.md MUST exist with
-#      PLAN_VALID marker written in the last 120 seconds.
-#   2. If dispatches occurred without PLAN.md: write a violation
-#      notice to TASK.json and log the violation to telemetry.
+# HARD GATE: Enforces the prefrontal-first planning requirement.
 #
-# This is the enforcement gate — no PLAN.md → violation logged.
+# If cortex dispatched motor/cerebellum/temporal-research this
+# turn, PLAN.md MUST exist with:
+#   1. PLAN_VALID marker
+#   2. PLAN_STATUS: APPROVED marker
+#   3. Modified within the last 60 seconds
+#
+# On violation: writes a structured PLAN_VIOLATION message to
+# STDOUT, which OpenClaw injects back into cortex's session
+# as feedback for the next turn.
+#
+# Always exits 0 — feedback is via stdout injection, not exit codes.
 # ============================================================
 
 WORKSPACE="${HOME}/.openclaw/workspace"
 PLAN_FILE="${WORKSPACE}/PLAN.md"
-TASK_FILE="${WORKSPACE}/TASK.json"
 LOG_TAG="[plan-compliance]"
 
-# ── Check if PLAN.md exists and has PLAN_VALID marker ──
+# ── Check if PLAN.md exists and has required markers ──
 PLAN_VALID=false
+PLAN_APPROVED=false
 PLAN_AGE=999999
 if [[ -f "$PLAN_FILE" ]]; then
   PLAN_AGE=$(( $(date +%s) - $(stat -c %Y "$PLAN_FILE" 2>/dev/null || echo 0) ))
-  if [[ "$PLAN_AGE" -lt 120 ]] && grep -q '^PLAN_VALID' "$PLAN_FILE" 2>/dev/null; then
+  if [[ "$PLAN_AGE" -lt 60 ]] && grep -q '^PLAN_VALID' "$PLAN_FILE" 2>/dev/null; then
     PLAN_VALID=true
+  fi
+  if grep -q '^PLAN_STATUS: APPROVED' "$PLAN_FILE" 2>/dev/null; then
+    PLAN_APPROVED=true
   fi
 fi
 
@@ -44,7 +52,6 @@ fi
 DISPATCHES=0
 LOG_FILE="$(ls -t /tmp/openclaw/openclaw-*.log 2>/dev/null | head -1)"
 if [[ -f "$LOG_FILE" ]]; then
-  # Look for sessions_spawn/yield in last 3 minutes of log
   RECENT_LINES=$(tail -200 "$LOG_FILE" 2>/dev/null)
   DISPATCHES=$(echo "$RECENT_LINES" | grep -cE 'sessions_spawn|sessions_yield|brain-exec' 2>/dev/null || echo 0)
 fi
@@ -54,16 +61,50 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$DISPATCHES" -gt 0 && "$PLAN_VALID" == "false" ]]; then
   # ═══ VIOLATION: dispatches without valid PLAN.md ═══
-  echo "${LOG_TAG} ❌ VIOLATION: dispatches occurred without PLAN_VALID in PLAN.md (age=${PLAN_AGE}s)" >&2
+  echo "${LOG_TAG} ❌ VIOLATION: dispatches without PLAN_VALID (age=${PLAN_AGE}s)" >&2
+
+  # Inject structured feedback into cortex's session via stdout
+  cat <<'VIOLATION'
+
+⚠️ PLAN_VIOLATION: You dispatched agents without a valid approved plan.
+
+Before dispatching any agents (motor, cerebellum, temporal-research), you MUST:
+1. Spawn prefrontal first to get a DISPATCH_PLAN
+2. Write the plan to workspace/PLAN.md with PLAN_VALID and PLAN_STATUS: APPROVED
+3. Only THEN spawn the agents listed in the plan
+
+The enforcement chain: prefrontal produces plan → you write PLAN.md → dispatches proceed.
+VIOLATION
 
   # Write telemetry
   if [[ -x "${SCRIPT_DIR}/brain-telemetry-write" ]]; then
     "${SCRIPT_DIR}/brain-telemetry-write" "compliance" "plan-violation" 0 0 0 1 "no_plan_valid" &
   fi
 
-elif [[ "$PLAN_VALID" == "true" && "$STEP_COUNT" -gt 0 ]]; then
+elif [[ "$DISPATCHES" -gt 0 && "$PLAN_VALID" == "true" && "$PLAN_APPROVED" == "false" ]]; then
+  # ═══ VIOLATION: plan exists but not approved ═══
+  echo "${LOG_TAG} ❌ VIOLATION: PLAN_VALID present but PLAN_STATUS: APPROVED missing" >&2
+
+  # Inject structured feedback
+  cat <<'VIOLATION'
+
+⚠️ PLAN_VIOLATION: Your PLAN.md exists but is missing PLAN_STATUS: APPROVED.
+
+After receiving the DISPATCH_PLAN from prefrontal, write it to PLAN.md with both markers:
+  PLAN_VALID
+  PLAN_STATUS: APPROVED
+  timestamp: <ISO timestamp>
+
+Then proceed with dispatches.
+VIOLATION
+
+  if [[ -x "${SCRIPT_DIR}/brain-telemetry-write" ]]; then
+    "${SCRIPT_DIR}/brain-telemetry-write" "compliance" "plan-violation" 0 0 0 1 "no_approved" &
+  fi
+
+elif [[ "$PLAN_VALID" == "true" && "$PLAN_APPROVED" == "true" && "$STEP_COUNT" -gt 0 ]]; then
   # ═══ COMPLIANT ═══
-  echo "${LOG_TAG} ✅ PLAN_VALID (${STEP_COUNT} steps, ${COMPLETED_STEPS} done, ${VALIDATION_COUNT} validation rules)" >&2
+  echo "${LOG_TAG} ✅ PLAN_VALID + APPROVED (${STEP_COUNT} steps, ${COMPLETED_STEPS} done, ${VALIDATION_COUNT} validation rules)" >&2
 
 elif [[ "$PLAN_VALID" == "true" && "$STEP_COUNT" -eq 0 ]]; then
   # Plan exists with PLAN_VALID but no step markers — warn
@@ -75,6 +116,5 @@ elif [[ "$DISPATCHES" -eq 0 ]]; then
   :
 fi
 
-# Always exit 0 — violations are logged and telemetried, not fatal
-# (Making this fatal would block ALL responses including error recovery)
+# Always exit 0 — violations are feedback-injected via stdout, never fatal
 exit 0
