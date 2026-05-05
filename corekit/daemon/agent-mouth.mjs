@@ -273,17 +273,24 @@ RULES:
 
 
 
-async function classifyOutput(rawText) {
+async function classifyOutput(rawText, humanQuestion) {
   try {
     const token = await getAccessToken();
     const url = `https://${VERTEX_LOCATION === 'global' ? '' : VERTEX_LOCATION + '-'}aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/gemini-2.5-flash:generateContent`;
+
+    // Build the input: include the human's question for context, then the brain output
+    const inputParts = [];
+    if (humanQuestion) {
+      inputParts.push({ text: `HUMAN SAID: ${humanQuestion}` });
+    }
+    inputParts.push({ text: `BRAIN OUTPUT:\n${rawText}` });
 
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: CLASSIFY_PROMPT }] },
-        contents: [{ role: 'user', parts: [{ text: rawText }] }],
+        contents: [{ role: 'user', parts: inputParts }],
         generationConfig: {
           temperature: 0.0,
           maxOutputTokens: 2048,
@@ -487,7 +494,7 @@ async function main() {
           log('Output detected', { chars: rawOutput.length, taskId: task.taskId });
 
           // Strict LLM classify: internal/external + reformat
-          const result = await classifyOutput(rawOutput);
+          const result = await classifyOutput(rawOutput, task.text || '');
 
           if (result.action === 'deliver') {
             await deliver(result.text);
@@ -509,7 +516,7 @@ async function main() {
         if (rawOutput && rawOutput.length > 50) {
           log('Stray output detected (no active task)', { chars: rawOutput.length });
           // Classify and deliver anyway — never lose output
-          const result = await classifyOutput(rawOutput);
+          const result = await classifyOutput(rawOutput, '');
           if (result.action === 'deliver') {
             await deliver(result.text);
             log('Delivered stray output', { channel: CHANNEL, chars: result.text.length });
