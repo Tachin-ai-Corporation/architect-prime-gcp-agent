@@ -443,7 +443,7 @@ cat > /tmp/patch-adc.py << 'PYEOF'
 import sys
 fpath = sys.argv[1]
 with open(fpath) as f: code = f.read()
-if "gce metadata" in code or "gce-adc" in code:
+if "<gce-adc>" in code and "if (!envKey) return null;" not in code:
     print("  model-auth-env already patched"); sys.exit(0)
 patched = False
 if "if (!envKey) return null;" in code:

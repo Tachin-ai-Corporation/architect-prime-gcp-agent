@@ -124,7 +124,7 @@ if [[ -n "$AUTH_ENV_FILE" ]]; then
 import sys
 fpath = sys.argv[1]
 with open(fpath) as f: code = f.read()
-if 'gce metadata' in code or 'gce-adc' in code:
+if '<gce-adc>' in code and 'if (!envKey) return null;' not in code:
     print('  Already patched'); sys.exit(0)
 patched = False
 if 'if (!envKey) return null;' in code:
