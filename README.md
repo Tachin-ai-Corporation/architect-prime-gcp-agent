@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.05.12.0`
+> **Current version:** `v2026.05.05.13.0`
 
 ---
 
@@ -351,6 +351,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.03.10** | Repo Hardening Audit — 3-pass, 69-item audit: fixed contract validation paths, agent-ask model/region from contracts.json, identity-lock enforcement in ears/mouth, calendar bug in compliance gate, fleet-monitor milestone string, deleted web-search bypass + model-catalog.json, purged ~3,700 lines of dead code/stale docs, hardened hire API. |
 | **v2026.05.03.11** | Fleet Activation + Workspace Capability — Final audit (validate-contracts, tachin.ai, sendACK), 4 Workspace skill packages (Gmail 5, Calendar 5, Docs 6, Sheets 3 = 19 new tools), assistant agent type, 8 agent types with specialty manifests, memory consolidation cron activated, DWD scopes expanded. |
 | **v2026.05.05.12** | Fleet Auth Stabilization — Reverted OpenClaw pin to v2026.4.15 (v2026.5.2 broke GCE metadata auth), fixed fleet-bootstrap bash syntax error (Python patcher moved to host-side heredoc), fixed ADC patcher false-positive detection, mouth persona (brain→mouth architecture: mouth IS the agent's voice, classify receives human question as context), removed stale google-workspace-skills reference folder. |
+| **v2026.05.05.13** | Prefrontal Hard Gate + Validation Architecture — BRAIN_CARD stripped to bare agent names (zero routing knowledge), dynamic SOUL.md composition (SOUL_PROTOCOL.md), PLAN_STATUS: APPROVED hard gate (check-plan-compliance injects PLAN_VIOLATION via stdout), validation mandatory for ALL pipeline steps, cerebellum converted to pure test runner (ALL_PASS/FAIL/NO_RULES verdicts). |
 
 ---
 

@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.05.12.0`
+> - **Current version:** `v2026.05.05.13.0`
 
 ---
 
@@ -302,15 +302,20 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 | **cerebellum** | gemini-2.5-flash | Validation-rule checking + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
 
 **Prefrontal-First Gate (enforced):** Every request goes through a mandatory gate:
-1. PreTurn injects BRAIN_CARD.md (stripped of all routing hints — only rule: "spawn prefrontal first")
+1. PreTurn injects BRAIN_CARD.md (stripped of all routing knowledge — bare agent names + "spawn prefrontal first")
 2. Cortex spawns prefrontal → yields → receives response
 3. **If `DISPATCH_PLAN:`** (simple) → write PLAN.md → execute pipeline
 4. **If `PLANNING_ROUND_REQUIRED:`** (complex) → run advisory round → re-invoke prefrontal → write PLAN.md → execute pipeline
 
-**PLAN.md Write Gate:** Before executing ANY pipeline step, Cortex MUST write `workspace/PLAN.md` with:
-- `PLAN_VALID` marker (checked by PostTurn compliance hook)
+**BRAIN_CARD gate design:** BRAIN_CARD contains zero agent role descriptions (no "motor = execution", no "temporal-research = web search"). Cortex cannot make routing decisions because it has no information about which agent handles what. Only prefrontal has that knowledge.
+
+**PLAN.md Write Gate (hard gate):** Before executing ANY pipeline step, Cortex MUST write `workspace/PLAN.md` with:
+- `PLAN_VALID` marker
+- `PLAN_STATUS: APPROVED` marker (produced by prefrontal in the plan)
 - Full DISPATCH_PLAN copied verbatim from prefrontal (including `→ VALIDATION:` lines)
-- Timestamp for 120s freshness check
+- Timestamp for 60s freshness check
+
+**PostTurn hard gate (`check-plan-compliance`):** If cortex dispatched agents without a valid, approved PLAN.md, the compliance hook writes a structured `PLAN_VIOLATION` error to stdout, which OpenClaw injects back into cortex's next turn as system feedback. This forces cortex to self-correct.
 
 **Two-Mode Prefrontal:**
 - **Mode 1 (Simple):** Clear, single-agent tasks → immediate `DISPATCH_PLAN:`
@@ -325,6 +330,7 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 **DISPATCH_PLAN format** (produced by prefrontal):
 ```
 DISPATCH_PLAN:
+PLAN_STATUS: APPROVED
 intent: <simple|research|build|read|write|research-build|organize|expertise>
 reasoning: <one sentence>
 pipeline: [<agent1>, <agent2>, ...]
@@ -338,10 +344,12 @@ context_summary: <one sentence>
    → RESULT: (filled after yield)
 ```
 
-**Validation rules** (mandatory for every motor step):
-- Prefrontal writes `→ VALIDATION:` criteria for each step
-- Cerebellum reads PLAN.md and checks each validation rule against execution results
-- PostTurn hook (`check-plan-compliance`) verifies PLAN_VALID marker, freshness, step count
+**Validation rules** (mandatory for EVERY pipeline step):
+- Prefrontal writes `→ VALIDATION:` criteria for every step (not just motor)
+- Operation-specific guidance: read ops, write ops, build ops, research ops each have expected criteria patterns
+- If prefrontal cannot articulate testable success criteria, the task is not well-defined enough to execute → `short_circuit: true` asking for clarification
+- Cerebellum is a **pure test runner**: runs each validation rule, reports PASS/FAIL with evidence, returns structured verdict (`ALL_PASS`, `FAIL (N of M)`, `NO_RULES`)
+- No subjective quality review — cerebellum only executes the rules from the plan
 
 **Invariant rules** (enforced by `brain-exec --validate-plan`):
 1. Pipeline does NOT contain temporal-memory or prefrontal (already ran)
@@ -357,15 +365,15 @@ context_summary: <one sentence>
 **Dynamic skill awareness:** `assemble-tools` generates `TOOLS.md` from the agent type's skill list (in `agent-types.json`) and copies it to cortex, prefrontal, and motor workspaces. Prefrontal reads TOOLS.md to know which tools are available before planning.
 
 **Brain workflow (every message):**
-1. PreTurn injects BRAIN_CARD.md (stripped — "spawn prefrontal first" only)
-2. Cortex spawns prefrontal → yields → receives DISPATCH_PLAN or PLANNING_ROUND_REQUIRED
+1. PreTurn injects BRAIN_CARD.md (stripped — bare agent names + "spawn prefrontal first" only)
+2. Cortex spawns prefrontal → yields → receives DISPATCH_PLAN (with PLAN_STATUS: APPROVED) or PLANNING_ROUND_REQUIRED
 3. If PLANNING_ROUND_REQUIRED → spawn advisors → collect proposals → re-invoke prefrontal
-4. Write PLAN.md with PLAN_VALID marker (mandatory gate)
+4. Write PLAN.md with PLAN_VALID + PLAN_STATUS: APPROVED (mandatory hard gate)
 5. If `short_circuit: true` → Cortex answers directly
 6. If pipeline non-empty → Cortex executes each agent in order via spawn/yield
 7. After each step → update PLAN.md: mark `[x]`, fill `→ RESULT:`
 8. After all agents complete → Cortex synthesizes final response
-9. PostTurn: check-plan-compliance validates PLAN_VALID, step counts, violation logging
+9. PostTurn: check-plan-compliance validates PLAN_VALID + PLAN_STATUS: APPROVED, 60s freshness, injects PLAN_VIOLATION via stdout if violated
 
 **Dispatch mechanism:** `brain-exec --plan-exec <agent-id> "<task>" [timeout]`
 - Validates agent ID against `contracts.json` `subagentIds`
@@ -417,14 +425,17 @@ The Setup tab stores configurable defaults in Firestore `config/settings`:
 ### Fleet Agent Workspaces
 
 Each fleet agent type has a workspace directory in `specialties/`:
-- `specialties/devops/workspace/` → DevOps specialty
-- `specialties/engineer/workspace/` → Engineer specialty
-- `brain/fleet/_base/` → Generic fleet template (fallback)
+- `specialties/devops/workspace/` → DevOps specialty (identity + boundaries only)
+- `specialties/engineer/workspace/` → Engineer specialty (identity + boundaries only)
+- `brain/fleet/_base/` → Generic fleet template (fallback) + shared protocol block
+
+**Dynamic SOUL.md composition:** Specialty SOULs contain only identity-specific content (Core Identity, What I Do, Boundaries). The shared "How I Work" protocol block lives in a single file: `brain/fleet/_base/SOUL_PROTOCOL.md`. At bootstrap, `fleet-bootstrap.sh` step 4c concatenates: specialty identity fragment + SOUL_PROTOCOL.md → final deployed SOUL.md.
 
 At bootstrap, `fleet-bootstrap.sh`:
 1. Clears the workspace directory (removes any inherited Prime files)
 2. Copies specialty files (e.g., `workspace-devops/`) if they exist, else falls back to `workspace-fleet/`
 3. Applies template variables: `{{AGENT_NAME}}`, `{{SPECIALTY}}`, `{{PROJECT_ID}}`, `{{DEPLOY_TIMESTAMP}}`
+4. **Composes SOUL.md** by appending SOUL_PROTOCOL.md to the specialty identity fragment
 
 `upgrade-corekit` also restores specialty workspace files after a CoreKit update to prevent identity regression.
 
@@ -787,7 +798,16 @@ architect-prime/
 7. **Removed google-workspace-skills** — Deleted stale reference folder (34 files, 1,449 lines). All skills now live in `skills/`.
 
 
-### Current: v13.0 — Responsibilities Engine
+### Completed: v2026.05.05.13.0 — Prefrontal Hard Gate + Validation Architecture
+> *Enforced prefrontal gate, dynamic SOUL composition, cerebellum as test runner.*
+
+1. **Prefrontal gate enforced** — BRAIN_CARD stripped to bare agent names + "spawn prefrontal first" (zero routing knowledge — no agent descriptions, no pipeline mechanics). SOUL.md teaches plan execution but not plan construction. Litmus test: cortex cannot route a Drive request without prefrontal.
+2. **Dynamic SOUL.md composition** — Specialty SOULs reduced to identity-only fragments (~25 lines). Shared protocol block (`SOUL_PROTOCOL.md`) lives in one place. `fleet-bootstrap.sh` step 4c concatenates specialty + protocol at deploy time.
+3. **PLAN_STATUS: APPROVED hard gate** — `check-plan-compliance` promoted from warning logger to hard gate. Violations write structured `PLAN_VIOLATION` to stdout → OpenClaw injects back into cortex's session. Checks: PLAN_VALID + PLAN_STATUS: APPROVED + 60s freshness.
+4. **Validation mandatory for ALL steps** — Prefrontal must produce `→ VALIDATION:` for every pipeline step (not just motor). Operation-specific guidance (read/write/build/research). If criteria can't be articulated, refuse to plan.
+5. **Cerebellum as test runner** — Converted from subjective reviewer to pure test runner. Structured verdicts: `ALL_PASS`, `FAIL (N of M)`, `NO_RULES`. No subjective quality review fallback.
+
+### Current: v14.0 — Responsibilities Engine
 > *Goal: Agents work autonomously on recurring tasks via structured cron-driven responsibilities.*
 
 1. **RESPONSIBILITY.toml manifests** — Declarative responsibility definitions with schedule, scope, and reporting config.

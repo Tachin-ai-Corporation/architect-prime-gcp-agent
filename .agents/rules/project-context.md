@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.05.12.0)
+## Current Architecture (v2026.05.05.13.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -15,16 +15,16 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
 - **Prefrontal-First Gate (Brain v2.1 — enforced)**:
-  - BRAIN_CARD stripped of all routing hints — only rule: "spawn prefrontal first"
+  - BRAIN_CARD stripped of all routing knowledge — bare agent names + "spawn prefrontal first" (zero descriptions, zero pipeline mechanics)
   - Two-mode prefrontal: simple (immediate DISPATCH_PLAN) or complex (PLANNING_ROUND_REQUIRED + advisory round)
   - Advisory round: each agent proposes "how would you accomplish [your piece]?" → prefrontal assembles final plan
-  - PLAN.md write gate: Cortex writes PLAN_VALID + full plan before any pipeline execution
-  - VALIDATION rules: per-step criteria produced by prefrontal, checked by cerebellum
-  - PostTurn hook: validates PLAN_VALID marker, 120s freshness, step counts, violation logging
+  - PLAN.md write gate: Cortex writes PLAN_VALID + PLAN_STATUS: APPROVED + full plan before any pipeline execution
+  - VALIDATION rules: per-step criteria produced by prefrontal for ALL steps (not just motor), checked by cerebellum as pure test runner
+  - PostTurn hard gate: `check-plan-compliance` injects PLAN_VIOLATION via stdout if cortex dispatches without valid approved plan (60s freshness)
 - **Tool ownership boundaries:**
   - Motor owns ALL Google Workspace tools (Drive, Gmail, Sheets, Docs, Calendar) + advisory mode
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
-  - cerebellum checks validation rules from PLAN.md
+  - cerebellum is a pure test runner: executes validation rules, reports PASS/FAIL with evidence, structured verdicts (ALL_PASS/FAIL/NO_RULES)
 - **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
 - **brain-exec v2**: `--plan-exec` (execute pipeline step), `--validate-plan` (invariant checking)
   - Rejects temporal-memory and prefrontal in pipelines (already ran in gate)
@@ -34,7 +34,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - Legacy `message-daemon.mjs` and `channel-respond` have been deleted from codebase
 
 ### Fleet VM Architecture
-- Single OpenClaw agent per VM with specialty-specific workspace + brain sub-agents
+- Single OpenClaw agent per VM with specialty-specific workspace (identity fragment + shared SOUL_PROTOCOL.md composed at bootstrap) + brain sub-agents
 - Same `agent-ears.mjs` + `agent-mouth.mjs` as Prime (CHANNEL=gchat) — built-in DWD, fire-and-forget input, strict LLM output classification
 - CoreKit tools shared with Prime via manifest system
 
