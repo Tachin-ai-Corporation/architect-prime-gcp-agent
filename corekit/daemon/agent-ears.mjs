@@ -36,6 +36,7 @@ try {
 const POLL_INTERVAL = CHANNEL === 'gchat' ? EARS_CONFIG.gchat_poll_ms : EARS_CONFIG.firestore_poll_ms;
 const DEDUP_WINDOW = EARS_CONFIG.dedup_window_ms;
 const COOLDOWN_MS = EARS_CONFIG.cooldown_ms;
+const CONTEXT_WINDOW = EARS_CONFIG.gchat_context_messages || 5;
 
 // GChat-specific config
 const AGENT_USER_EMAIL = process.env.AGENT_USER_EMAIL || '';
@@ -249,6 +250,47 @@ async function discoverSpaces() {
   } catch (err) { log('Space discovery error', { error: err.message }); }
 }
 
+function getSenderName(msg) {
+  const senderName = msg.sender?.displayName || '';
+  // Detect agent's own messages (sent via DWD as the agent user)
+  const agentDisplayName = process.env.AGENT_DISPLAY_NAME || '';
+  if (agentDisplayName && senderName === agentDisplayName) return 'You';
+  return senderName || 'Someone';
+}
+
+function cleanMentionText(text) {
+  if (!text) return text;
+  let clean = text;
+  if (AGENT_MENTION) {
+    clean = text.replace(new RegExp(`@?${AGENT_MENTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'), '').trim().replace(/\s+/g, ' ');
+  }
+  return clean || text;
+}
+
+function buildContextualMessage(targetMsg, priorMsgs) {
+  const cleanTarget = cleanMentionText(targetMsg.text || targetMsg.argumentText || '');
+
+  // Build context preamble from prior messages
+  const contextLines = [];
+  for (const m of priorMsgs) {
+    const text = m.text || m.argumentText || '';
+    if (!text.trim()) continue;
+    const sender = getSenderName(m);
+    contextLines.push(`${sender}: ${text}`);
+  }
+
+  let composite = '';
+  if (contextLines.length > 0) {
+    composite += '[Chat messages since your last reply - for context]\n';
+    composite += contextLines.join('\n');
+    composite += '\n\n';
+  }
+  composite += '[Current message - respond to this]\n';
+  composite += `User: ${cleanTarget}`;
+
+  return composite;
+}
+
 async function pollGChat() {
   await discoverSpaces();
   if (_gchatSpaces.length === 0) return [];
@@ -259,16 +301,22 @@ async function pollGChat() {
       const res = await fetch(`${CHAT_API}/${space}/messages?pageSize=10&orderBy=createTime%20desc`,
         { headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
-      for (const msg of (data.messages || []).reverse()) {
+      const allMsgs = (data.messages || []).reverse(); // chronological order
+
+      for (let i = 0; i < allMsgs.length; i++) {
+        const msg = allMsgs[i];
         const ct = msg.createTime || '';
         if (ct <= _gchatHighWater) continue;
         if (_gchatSeen.has(msg.name)) continue;
         const text = msg.text || msg.argumentText || '';
         if (!text || (AGENT_MENTION && !text.includes(AGENT_MENTION))) continue;
-        let clean = text;
-        if (AGENT_MENTION) clean = text.replace(new RegExp(`@?${AGENT_MENTION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'), '').trim().replace(/\s+/g, ' ');
-        if (!clean) clean = text;
-        messages.push({ text: clean, id: msg.name, timestamp: ct, metadata: { space, email: AGENT_USER_EMAIL } });
+
+        // Gather prior messages as context (up to CONTEXT_WINDOW)
+        const contextStart = Math.max(0, i - CONTEXT_WINDOW);
+        const priorMsgs = allMsgs.slice(contextStart, i);
+        const composite = buildContextualMessage(msg, priorMsgs);
+
+        messages.push({ text: composite, id: msg.name, timestamp: ct, metadata: { space, email: AGENT_USER_EMAIL } });
       }
     } catch (err) { log('Chat poll error', { space, error: err.message }); }
   }
