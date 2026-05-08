@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.05.13.0`
+> - **Current version:** `v2026.05.08.14.0`
 
 ---
 
@@ -52,12 +52,14 @@ Dashboard (Cloud Run — Next.js)
     │       ├── Firestore poll (3s) or GChat poll (5s) via DWD
     │       └── Cooldown + dedup window (configurable)
     │
-    ├── agent-mouth (systemd) — Output classification + delivery
-    │   └── Polls gateway log files, classifies, delivers to channel
-    │       ├── One LLM call per output (classify + format via Gemini Flash)
+    ├── agent-mouth (systemd) — JSONL-native output processing + delivery
+    │   └── Tails JSONL session transcript, classifies, delivers to channel
+    │       ├── JSONL tailer (byte-offset, session file resolution, seek-to-end on startup)
+    │       ├── Turn state machine (IDLE → WORKING → ACKED → UPDATED → DONE)
+    │       ├── Status updates (5s ack, 120s update) voiced by LLM with fallback
+    │       ├── One LLM call per output (classify + format via Gemini Flash, JSON mode)
     │       ├── Speaks AS the agent (first person) — not a relay
-    │       ├── Strict internal/external classification (suppresses dispatch plans)
-    │       ├── Byte-offset log tracking (Buffer reads, consistent with statSync)
+    │       ├── Prompts loaded from external .md files (no inline prose)
     │       ├── Fire-and-forget task lifecycle write to Firestore on delivery/timeout
     │       └── Never drops messages — unknown classification → deliver raw
     │
@@ -91,7 +93,8 @@ Dashboard (Cloud Run — Next.js)
         │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
         ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
         ├── chat/: chat-send, chat-read, dwd-token (identity-locked)
-        ├── daemon/: agent-ears.mjs, agent-mouth.mjs, start-agent-ears, start-agent-mouth,
+        ├── daemon/: agent-ears.mjs, agent-mouth.mjs, mouth-classify-prompt.md,
+        │           mouth-status-prompts.md, start-agent-ears, start-agent-mouth,
         │           ears-health-check, mouth-health-check
         ├── brain/: brain-exec (--plan-exec, --validate-plan), build-system-prompt,
         │          agent-ask, assemble-tools, brain-telemetry-write/read, check-plan-compliance,
@@ -169,30 +172,29 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 **Agent Ears — Deterministic Input Processing (`agent-ears.mjs`):**
 1. Polls input channel every N seconds (Firestore for Prime, GChat API for Fleet via DWD)
 2. Deduplicates (60s sliding window, same-text collapse)
-3. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info)
-4. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
-5. Gateway call completes asynchronously — ears is already free to poll the next message
+3. **GChat context window** — when an @mention is detected, ears includes the prior N messages from the space as context (configurable, default 5). Messages are formatted as `[Chat messages since your last reply - for context]` preamble with sender names, followed by `[Current message - respond to this]`.
+4. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info)
+5. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
+6. Gateway call completes asynchronously — ears is already free to poll the next message
 
-**Agent Mouth — Output Classification + Delivery (`agent-mouth.mjs`):**
-1. Watches `TASK.json` for new tasks (written by ears)
-2. Polls gateway log files for new output (most recently modified `openclaw-*.log` in `/tmp/openclaw/`)
-3. When new output detected → strict LLM classification via Gemini Flash:
-   - **INTERNAL** → suppress (dispatch plans, motor reports, cerebellum validation output)
-   - **EXTERNAL** → reformat for human readability and deliver to originating channel
-4. Delivery: writes to Firestore (dashboard) or sends via GChat API (fleet)
-5. Tracks task lifecycle: marks `TASK.json` as `delivered` or `timed_out` (5m timeout)
-6. **Safety**: unknown classification → deliver raw (never drops user messages)
+**Agent Mouth — JSONL-Native Output Processing (`agent-mouth.mjs` v2):**
+1. Tails the OpenClaw JSONL session transcript (`~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl`)
+2. **JSONL tailer**: resolves active session file from `sessions.json`, reads new bytes from byte offset, seeks to end on startup (prevents re-delivery of old output on restart)
+3. **Turn state machine** (IDLE → WORKING → ACKED → UPDATED → DONE): structurally detects user messages (turn start), tool calls (intermediate), and final assistant text (candidate response)
+4. **Status updates**: fires LLM-voiced ack at 5s, progress update at 120s (configurable via contracts). Deterministic fallback text if LLM fails.
+5. **Final response detection**: candidate is the last assistant text block not followed by a toolCall/toolResult within one poll cycle (2s)
+6. **LLM classify**: Gemini Flash in JSON mode — `{"action": "deliver"|"suppress", "text": "..."}`
+7. **Delivery**: writes to Firestore (dashboard) or sends via GChat API (fleet)
+8. **Safety**: unknown classification → deliver raw (never drops user messages). 10-minute timeout delivers warning.
 
-**LLM Classification Prompt (brain→mouth architecture):**
-- Mouth IS the agent's voice — the brain's raw output is treated as the agent's own thoughts, and mouth voices them naturally
-- Receives the human's original question as context (from TASK.json) alongside the brain output, so it understands what the brain was responding to
-- Suppress: plans, dispatch instructions, step summaries, validation reports, internal tool output
-- Deliver: direct answers, research results, file listings, status updates, anything user-facing
-- Reformat: convert markdown headers to text-friendly equivalents, clean up internal jargon
+**Prompt architecture (external files):**
+- `mouth-classify-prompt.md` — classify/voice prompt (brain→mouth: mouth IS the agent, voices thoughts naturally)
+- `mouth-status-prompts.md` — ack + two-minute update templates with `{variable}` placeholders
+- Loaded at startup via `readFileSync`, simple `string.replace()` for templating (no handlebars)
 
 **Architecture properties:**
 - Ears and mouth are fully independent — crash/restart of one doesn't affect the other
-- Zero coupling to OpenClaw internals — they only interact through log files and TASK.json
+- **JSONL-native** — mouth reads the authoritative session transcript, not log files. Structurally distinguishes final responses from intermediate tool output.
 - `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
 
 ### Vertex AI Authentication (ADC)
@@ -527,7 +529,7 @@ architect-prime/
 │   ├── gateway/                      # OpenClaw gateway management (5 scripts)
 │   ├── chat/                         # Google Chat / DWD integration (3 scripts)
 │   ├── brain/                        # Brain execution layer (11 scripts)
-│   ├── daemon/                       # Ears/Mouth I/O services (6 scripts)
+│   ├── daemon/                       # Ears/Mouth I/O services (8 files)
 │   ├── memory/                       # Memory subsystem (3 scripts)
 │   ├── dashboard/                    # Dashboard bridge (1 script)
 │   ├── system/                       # Cross-cutting utilities (2 scripts)
@@ -593,8 +595,10 @@ architect-prime/
 | **chat/** | `chat-send` | Sends messages to Google Chat via DWD |
 | | `chat-read` | Reads messages from Google Chat via DWD |
 | | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt (identity-locked) |
-| **daemon/** | `agent-ears.mjs` | Deterministic input processing (poll, dedup, rate-limit, fire-and-forget) |
-| | `agent-mouth.mjs` | Output classification + delivery + task lifecycle logging |
+| **daemon/** | `agent-ears.mjs` | Deterministic input processing (poll, dedup, rate-limit, context window, fire-and-forget) |
+| | `agent-mouth.mjs` | JSONL-native output processing (tailer, turn state machine, status updates, classify, deliver) |
+| | `mouth-classify-prompt.md` | LLM classify/voice prompt template (loaded at startup) |
+| | `mouth-status-prompts.md` | Status update prompt templates: ack (5s) + two-minute (120s) |
 | | `start-agent-ears` | Container bootstrap wrapper for ears |
 | | `start-agent-mouth` | Container bootstrap wrapper for mouth |
 | | `ears-health-check` | Ears service health check |
@@ -807,7 +811,18 @@ architect-prime/
 4. **Validation mandatory for ALL steps** — Prefrontal must produce `→ VALIDATION:` for every pipeline step (not just motor). Operation-specific guidance (read/write/build/research). If criteria can't be articulated, refuse to plan.
 5. **Cerebellum as test runner** — Converted from subjective reviewer to pure test runner. Structured verdicts: `ALL_PASS`, `FAIL (N of M)`, `NO_RULES`. No subjective quality review fallback.
 
-### Current: v14.0 — Responsibilities Engine
+### Completed: v2026.05.08.14.0 — Mouth v2 (JSONL-Native) + Ears Context Window
+> *Eliminated double deliveries. Structural output detection. Status updates. Ambient chat context.*
+
+1. **Mouth v2 — JSONL-native output processing** — Replaced fragile log-file scraping with deterministic tailing of OpenClaw's JSONL session transcripts. Structurally distinguishes final assistant responses from intermediate tool calls/results.
+2. **Turn state machine** — IDLE → WORKING → ACKED → UPDATED → DONE. Tracks dispatched agents, candidate finals, and structural confirmation (2s settling window).
+3. **Status updates** — LLM-voiced acknowledgment at 5s and progress update at 120s. Deterministic fallback text if LLM fails. Configurable via `contracts.json`.
+4. **Prompt externalization** — All mouth prompts moved from inline JS to external `.md` files (`mouth-classify-prompt.md`, `mouth-status-prompts.md`). Simple `{variable}` replacement, no handlebars.
+5. **LLM JSON mode** — Classify call uses `responseMimeType: 'application/json'` for reliable structured output.
+6. **Ears context window** — When an @mention is detected in GChat, ears includes the prior N messages (default 5) from the space as context. Format: `[Chat messages since your last reply - for context]` + sender names + `[Current message - respond to this]`. Agent's own messages labeled as "You".
+7. **Contracts extended** — Added `mouth.source: "jsonl"`, `mouth.status_updates` (enabled, ack_after_ms, update_after_ms), `ears.gchat_context_messages: 5`. `validate-contracts` updated to check mouth config fields.
+
+### Current: v15.0 — Responsibilities Engine
 > *Goal: Agents work autonomously on recurring tasks via structured cron-driven responsibilities.*
 
 1. **RESPONSIBILITY.toml manifests** — Declarative responsibility definitions with schedule, scope, and reporting config.

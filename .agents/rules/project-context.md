@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.05.13.0)
+## Current Architecture (v2026.05.08.14.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -40,7 +40,12 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ### I/O Architecture (Ears + Mouth)
 - Ears polls channel (Firestore or GChat), deduplicates, writes TASK.json, fires gateway POST (non-blocking)
-- Mouth watches TASK.json for new tasks, polls gateway logs (byte-offset Buffer reads), classifies output via strict LLM (brain→mouth architecture: treats raw output as agent's own thoughts, voices them naturally with human question context), delivers to channel, writes task lifecycle record to Firestore
+- **GChat context window**: when @mention detected, ears includes prior N messages (default 5) from the space as `[Chat messages since your last reply - for context]` preamble with sender names
+- Mouth v2 tails JSONL session transcript (`~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl`) — structurally detects final responses vs intermediate tool output
+- Turn state machine: IDLE → WORKING → ACKED → UPDATED → DONE
+- Status updates: LLM-voiced ack at 5s, progress at 120s (deterministic fallback if LLM fails)
+- LLM classify via Gemini Flash in JSON mode: `{"action": "deliver"|"suppress", "text": "..."}`
+- Prompts loaded from external `.md` files (`mouth-classify-prompt.md`, `mouth-status-prompts.md`)
 - `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
 
