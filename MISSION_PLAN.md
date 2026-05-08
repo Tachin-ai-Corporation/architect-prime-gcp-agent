@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.08.14.0`
+> - **Current version:** `v2026.05.08.15.0`
 
 ---
 
@@ -386,7 +386,8 @@ context_summary: <one sentence>
 **Two-tier memory model:**
 - **Tier 1 (Working Memory):** `MEMORY.md` in Cortex workspace. Updated during turns.
 - **Tier 2 (Core Memory):** Firestore `/primes/{id}/memory/core/`. Durable facts.
-- **Deep Truths:** End of Cortex SOUL.md, mutable section updated nightly.
+- **Deep Truths:** End of Cortex SOUL.md, mutable section managed by `update-deep-truths`. Promoted from Core Memory during nightly consolidation.
+- **Nightly consolidation:** `memory-consolidate` skill runs at 2am CT via `temporal-memory` cron. Max 5 Core Memory writes + 2 Deep Truths changes per run.
 
 **Locked-in design decisions:**
 - 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
@@ -396,6 +397,7 @@ context_summary: <one sentence>
 - 🔒 Cortex on gemini-3.1-pro-preview. Sub-agents on gemini-2.5-flash.
 - 🔒 SOUL.md above `## Deep Truths` is IMMUTABLE.
 - 🔒 Core Memory writes happen via nightly consolidation, NOT during conversation turns.
+- 🔒 Deep Truths: max 10 items, single-line bullets, immutability enforced above `## Deep Truths` marker.
 
 ### Dashboard Self-Upgrade
 

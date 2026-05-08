@@ -113,3 +113,6 @@ from previous steps in the spawn task instruction.
 ## Working Memory (MEMORY.md)
 After turns that change mission or focus, update MEMORY.md with current state.
 Keep it under 2000 characters — working context, not an archive.
+
+## Deep Truths
+<!-- Managed by update-deep-truths. Do not edit manually above this marker. -->

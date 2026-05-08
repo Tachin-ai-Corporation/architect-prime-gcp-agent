@@ -1,6 +1,6 @@
 ---
 name: memory-consolidate
-description: "PLANNED — Nightly consolidation of conversation activity into Core Memory and SOUL.md Deep Truths. Cron trigger is configured but not yet enabled."
+description: "Nightly consolidation of conversation activity into Core Memory and SOUL.md Deep Truths. Runs at 2am CT via temporal-memory cron."
 ---
 
 # Memory Consolidation — Nightly Skill
@@ -118,4 +118,4 @@ Nothing to consolidate: (if empty run)
 - NEVER write transient state to Core Memory
 - NEVER fabricate facts — only record what actually happened
 - If no new durable facts exist, report "Nothing to consolidate" and exit
-- This skill is designed for the `temporal-memory` agent via OpenClaw cron (currently commented out in config templates — enable when ready)
+- This skill runs as the `temporal-memory` agent via OpenClaw cron (registered at 2am CT America/Chicago in both Prime and fleet bootstraps)
