@@ -1,22 +1,23 @@
 #!/usr/bin/env node
 // ============================================================
-// agent-mouth.mjs — Output Classification and Delivery Service
+// agent-mouth.mjs v2 — JSONL-Native Output Processing
 //
-// Sole delivery path for ALL agent output.
-// Polls gateway logs for Cortex synthesis output, classifies
-// with a strict LLM call (internal/external + reformat), and
-// delivers to the originating channel.
+// Tails the OpenClaw JSONL session transcript to detect final
+// agent responses structurally. Replaces log-file scraping.
 //
-// LLM function is STRICT:
-//   1. Classify: internal (suppress) vs external (deliver)
-//   2. Reword for human friendliness
-//   3. Reformat for channel (GChat markdown, etc.)
+// Features:
+//   - JSONL tailer with byte offset tracking
+//   - Turn state machine (IDLE → WORKING → ACKED → UPDATED → DONE)
+//   - Status updates (ack at 5s, update at 120s) voiced by LLM
+//   - Final response delivery via existing LLM classify pipeline
 //
 // Run:
 //   CHANNEL=gchat node agent-mouth.mjs
 //   CHANNEL=dashboard node agent-mouth.mjs
 // ============================================================
-import { readFileSync, writeFileSync, appendFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync,
+         statSync, openSync, readSync, closeSync } from 'fs';
+import { dirname } from 'path';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -27,23 +28,20 @@ const AGENT_DISPLAY_NAME = process.env.AGENT_DISPLAY_NAME || '';
 const AGENT_FIRST_NAME = process.env.AGENT_FIRST_NAME || '';
 const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
-const POLL_INTERVAL = 2000; // 2s
+const POLL_INTERVAL = 2000;
+const AGENT_VOICE_NAME = AGENT_DISPLAY_NAME || AGENT_FIRST_NAME || '';
 
-// Identity lockdown: refuse to impersonate any email other than the locked one
+// Identity lockdown
 const IDENTITY_LOCK_PATH = '/home/node/.openclaw/.identity-lock';
 try {
-  const lockedEmail = readFileSync(IDENTITY_LOCK_PATH, 'utf8').trim();
-  if (lockedEmail && AGENT_USER_EMAIL && lockedEmail !== AGENT_USER_EMAIL) {
-    console.error(`[mouth] FATAL: AGENT_USER_EMAIL (${AGENT_USER_EMAIL}) does not match .identity-lock (${lockedEmail}). Refusing to start.`);
+  const locked = readFileSync(IDENTITY_LOCK_PATH, 'utf8').trim();
+  if (locked && AGENT_USER_EMAIL && locked !== AGENT_USER_EMAIL) {
+    console.error(`[mouth] FATAL: email mismatch (${AGENT_USER_EMAIL} vs ${locked})`);
     process.exit(99);
   }
-} catch {
-  // No lock file yet — allowed during initial bootstrap
-}
+} catch {}
 
-// Timeout: if no output after this long, send error message
-const DELIVERY_TIMEOUT = 300_000; // 5 minutes
-
+// Vertex AI config
 const VERTEX_PROJECT = process.env.GCP_PROJECT_ID;
 const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global';
 
@@ -52,8 +50,46 @@ const FIRESTORE_URL = GCP_PROJECT
   ? `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`
   : '';
 
-// TASK.json path (written by ears)
+// TASK.json (written by ears)
 const TASK_JSON = '/home/node/.openclaw/workspace/TASK.json';
+
+// ---- Contracts ----
+let CONTRACTS = { mouth: {}, agents: {} };
+try {
+  CONTRACTS = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
+} catch {}
+const MOUTH_CFG = CONTRACTS.mouth || {};
+const LLM_ENABLED = MOUTH_CFG.llm_enabled !== false;
+const LLM_MODEL = MOUTH_CFG.model || 'gemini-2.5-flash';
+const LLM_MAX_TOKENS = MOUTH_CFG.maxTokens || 2000;
+const LLM_TEMPERATURE = MOUTH_CFG.temperature ?? 0.1;
+const STATUS_ENABLED = MOUTH_CFG.status_updates?.enabled !== false;
+const ACK_AFTER_MS = MOUTH_CFG.status_updates?.ack_after_ms || 5000;
+const UPDATE_AFTER_MS = MOUTH_CFG.status_updates?.update_after_ms || 120000;
+const DELIVERY_TIMEOUT = 600_000;
+
+// ---- Prompts (loaded from files) ----
+const SCRIPT_DIR = dirname(new URL(import.meta.url).pathname);
+function loadPrompt(name) {
+  for (const base of [SCRIPT_DIR, '/home/node/.openclaw/bin']) {
+    try { return readFileSync(`${base}/${name}`, 'utf8'); } catch {}
+  }
+  return '';
+}
+const CLASSIFY_PROMPT_TEMPLATE = loadPrompt('mouth-classify-prompt.md');
+const STATUS_PROMPTS_RAW = loadPrompt('mouth-status-prompts.md');
+
+// Parse ack/update prompts from the status prompts file by splitting on ## headings
+function parseStatusPrompts(raw) {
+  const sections = raw.split(/^## /m).filter(Boolean);
+  let ack = '', update = '';
+  for (const s of sections) {
+    if (s.startsWith('Initial Ack')) ack = s.replace(/^[^\n]*\n+/, '').trim();
+    else if (s.startsWith('Two-Minute')) update = s.replace(/^[^\n]*\n+/, '').trim();
+  }
+  return { ack, update };
+}
+const STATUS_PROMPTS = parseStatusPrompts(STATUS_PROMPTS_RAW);
 
 // ---- Logging ----
 const MOUTH_LOG = '/var/log/agent-mouth.log';
@@ -63,15 +99,12 @@ function log(msg, meta = {}) {
   try { appendFileSync(MOUTH_LOG, line); } catch {}
 }
 
-// ---- GCE Metadata Access Token ----
-let _metaToken = null;
-let _metaExpiry = 0;
+// ---- GCE Metadata Token ----
+let _metaToken = null, _metaExpiry = 0;
 async function getAccessToken() {
   if (_metaToken && Date.now() < _metaExpiry) return _metaToken;
-  const res = await fetch(
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-    { headers: { 'Metadata-Flavor': 'Google' } }
-  );
+  const res = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+    { headers: { 'Metadata-Flavor': 'Google' } });
   const data = await res.json();
   _metaToken = data.access_token;
   _metaExpiry = Date.now() + (data.expires_in - 120) * 1000;
@@ -79,26 +112,22 @@ async function getAccessToken() {
 }
 
 // ---- DWD Token ----
-let _dwdToken = null;
-let _dwdExpiry = 0;
+let _dwdToken = null, _dwdExpiry = 0;
 const DWD_SCOPES = 'https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly';
-
 async function getDwdToken() {
   if (_dwdToken && Date.now() < _dwdExpiry) return _dwdToken;
   const metaBase = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default';
   const mh = { 'Metadata-Flavor': 'Google' };
   const vmSaEmail = await fetch(`${metaBase}/email`, { headers: mh }).then(r => r.text());
   const metaTokenData = await fetch(`${metaBase}/token`, { headers: mh }).then(r => r.json());
-  const metaToken = metaTokenData.access_token;
   const signerSa = DWD_SIGNER_SA || vmSaEmail;
   const now = Math.floor(Date.now() / 1000);
   const claim = JSON.stringify({
     iss: signerSa, sub: AGENT_USER_EMAIL, scope: DWD_SCOPES,
     aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600
   });
-  const signUrl = `https://iam.googleapis.com/v1/projects/-/serviceAccounts/${signerSa}:signJwt`;
-  const signRes = await fetch(signUrl, {
-    method: 'POST', headers: { Authorization: `Bearer ${metaToken}`, 'Content-Type': 'application/json' },
+  const signRes = await fetch(`https://iam.googleapis.com/v1/projects/-/serviceAccounts/${signerSa}:signJwt`, {
+    method: 'POST', headers: { Authorization: `Bearer ${metaTokenData.access_token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ payload: claim })
   });
   if (!signRes.ok) throw new Error(`signJwt failed (${signRes.status})`);
@@ -108,16 +137,14 @@ async function getDwdToken() {
     body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signedJwt}`
   });
   const tokenData = await tokenRes.json();
-  if (!tokenData.access_token) throw new Error(`DWD token exchange failed: ${tokenData.error_description || tokenData.error}`);
+  if (!tokenData.access_token) throw new Error(`DWD failed: ${tokenData.error_description || tokenData.error}`);
   _dwdToken = tokenData.access_token;
   _dwdExpiry = Date.now() + 3500_000;
   return _dwdToken;
 }
 
 // ---- GChat Space Discovery ----
-let _gchatSpaces = [];
-let _gchatLastDiscovery = 0;
-
+let _gchatSpaces = [], _gchatLastDiscovery = 0;
 async function getGChatSpace() {
   if (Date.now() - _gchatLastDiscovery < 300_000 && _gchatSpaces.length > 0) return _gchatSpaces[0];
   try {
@@ -130,7 +157,7 @@ async function getGChatSpace() {
   return _gchatSpaces[0] || null;
 }
 
-// ---- GChat Markdown Conversion ----
+// ---- GChat Markdown ----
 function convertToGChatMarkdown(text) {
   if (!text) return text;
   const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/g);
@@ -151,173 +178,229 @@ function convertToGChatMarkdown(text) {
 }
 
 // ================================================================
-// OUTPUT DETECTION — Gateway Log File
+// JSONL TAILER
 // ================================================================
+const STATE_DIR = '/home/node/.openclaw';
+const AGENT_ID = CONTRACTS.agents?.defaultId || 'cortex';
+const SESSION_DIR = `${STATE_DIR}/agents/${AGENT_ID}/sessions`;
 
-let lastLogOffset = 0;
-let lastTaskId = null;
-let taskStartTime = 0;
+let fileOffset = 0;
+let currentFile = null;
 
-// Read TASK.json to track what we're waiting for
-function readTaskJson() {
+function resolveActiveSessionFile() {
   try {
-    const data = JSON.parse(readFileSync(TASK_JSON, 'utf8'));
-    return data;
+    const idx = JSON.parse(readFileSync(`${SESSION_DIR}/sessions.json`, 'utf8'));
+    let latest = null;
+    for (const [, entry] of Object.entries(idx)) {
+      if (!latest || (entry.updatedAt || 0) > (latest.updatedAt || 0)) {
+        latest = entry;
+      }
+    }
+    if (!latest?.sessionId) return null;
+    return `${SESSION_DIR}/${latest.sessionId}.jsonl`;
   } catch { return null; }
 }
 
-function getLatestGatewayOutput() {
-  // Find the most recently modified log file in /tmp/openclaw/
-  // The gateway doesn't rotate by calendar date — it keeps appending
-  // to the file from when it was first created.
-  const logDir = '/tmp/openclaw';
-  let logPath = null;
-  try {
-    const files = readdirSync(logDir)
-      .filter(f => f.startsWith('openclaw-') && f.endsWith('.log'))
-      .map(f => ({ name: f, mtime: statSync(`${logDir}/${f}`).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime);
-    if (files.length > 0) logPath = `${logDir}/${files[0].name}`;
-  } catch {}
-  if (!logPath || !existsSync(logPath)) return null;
+function tailJSONL() {
+  const sessionFile = resolveActiveSessionFile();
 
-  // Read as Buffer to track BYTE offsets consistently with statSync().size
-  let buf;
-  try { buf = readFileSync(logPath); } catch { return null; }
-  if (buf.length <= lastLogOffset) return null;
+  // Handle session rotation
+  if (sessionFile !== currentFile) {
+    currentFile = sessionFile;
+    fileOffset = 0;
+    if (currentFile && existsSync(currentFile)) {
+      fileOffset = statSync(currentFile).size; // seek to end on first attach
+    }
+    log('Session file changed', { file: currentFile, offset: fileOffset });
+    return [];
+  }
 
-  const newContent = buf.slice(lastLogOffset).toString('utf8');
-  lastLogOffset = buf.length;
+  if (!currentFile || !existsSync(currentFile)) return [];
+  const stat = statSync(currentFile);
+  if (stat.size <= fileOffset) return [];
 
-  // Parse log entries — find the LAST substantial text block
-  // This is Cortex's final synthesis (the response to the user)
-  const lines = newContent.split('\n').filter(l => l.trim());
-  const textEntries = [];
+  // Read new bytes
+  const fd = openSync(currentFile, 'r');
+  const buf = Buffer.alloc(stat.size - fileOffset);
+  readSync(fd, buf, 0, buf.length, fileOffset);
+  closeSync(fd);
+  fileOffset = stat.size;
 
+  const lines = buf.toString('utf8').split('\n').filter(Boolean);
+  const entries = [];
   for (const line of lines) {
+    try { entries.push(JSON.parse(line)); } catch {} // skip partial writes
+  }
+  return entries;
+}
+
+// ================================================================
+// TURN STATE MACHINE
+// ================================================================
+let turn = { status: 'IDLE', startedAt: null, originalQuestion: null,
+             dispatchedAgents: [], completedAgents: [],
+             candidateFinal: null, candidateAt: null };
+
+function resetTurn() {
+  turn = { status: 'IDLE', startedAt: null, originalQuestion: null,
+           dispatchedAgents: [], completedAgents: [],
+           candidateFinal: null, candidateAt: null };
+}
+
+function extractText(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.filter(c => c.type === 'text').map(c => c.text || '').join('\n');
+}
+
+function extractAgentName(tc) {
+  const name = tc.name || '';
+  if (name === 'sessions_spawn' || name === 'sessions_send') {
     try {
-      const entry = JSON.parse(line);
-      const text = entry['0'] || '';
-
-      // Skip gateway/subsystem noise
-      if (text.includes('"subsystem"')) continue;
-      if (text.startsWith('{') && text.includes('_meta')) continue;
-      if (text === 'No reply from agent.') continue;
-
-      // Skip dispatch plan blocks (internal to cortex)
-      if (text.startsWith('DISPATCH_PLAN:') || text.startsWith('PLANNING_ROUND_REQUIRED:')) continue;
-      if (text.startsWith('PLAN_VALID')) continue;
-
-      // Skip motor execution reports (internal)
-      if (text.startsWith('## Step ') && text.includes('### Action Taken')) continue;
-
-      // Keep substantial text that looks like a user-facing response
-      if (text.length > 30) {
-        textEntries.push(text);
-      }
-    } catch {}
+      const input = typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : (tc.arguments || {});
+      return input.agentId || input.agent || null;
+    } catch { return null; }
   }
-
-  if (textEntries.length === 0) return null;
-
-  // The LAST substantial entry is typically the final synthesis
-  const raw = textEntries[textEntries.length - 1];
-  return stripThinking(raw);
+  if (name === 'exec' || name === 'Bash') {
+    const cmdText = typeof tc.arguments === 'string' ? tc.arguments : (tc.arguments?.command || '');
+    const m = cmdText.match(/brain-exec\s+(?:--plan-exec\s+)?(\S+)/);
+    return m ? m[1] : null;
+  }
+  return null;
 }
 
-function stripThinking(text) {
-  if (!text) return text;
-  if (text.includes('<think>') && text.includes('</think>')) {
-    return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+function processEntry(entry) {
+  if (entry.type !== 'message') return;
+  const msg = entry.message;
+  if (!msg?.role || !msg.content) return;
+
+  // User message → new turn
+  if (msg.role === 'user') {
+    turn = {
+      status: 'WORKING', startedAt: Date.now(),
+      originalQuestion: extractText(msg.content),
+      dispatchedAgents: [], completedAgents: [],
+      candidateFinal: null, candidateAt: null
+    };
+    log('Turn started', { question: turn.originalQuestion.slice(0, 100) });
+    return;
   }
-  return text;
-}
 
-// ================================================================
-// STRICT LLM CLASSIFICATION
-//
-// This is the ONE LLM call. It is STRICT:
-//   1. Is this internal (dispatch plan, motor output) or external (user response)?
-//   2. If external: reword for human friendliness
-//   3. Reformat for the channel
-//
-// NEVER drops messages — unknown → deliver raw.
-// ================================================================
+  if (turn.status === 'IDLE' || turn.status === 'DONE') return;
 
-// Agent name for self-reference (the mouth needs to know whose voice it is)
-const AGENT_VOICE_NAME = AGENT_DISPLAY_NAME || AGENT_FIRST_NAME || '';
+  if (msg.role === 'assistant') {
+    const toolCalls = (msg.content || []).filter(c => c.type === 'toolCall');
+    const textBlocks = (msg.content || []).filter(c => c.type === 'text');
 
-const CLASSIFY_PROMPT = `You are the mouth of an AI agent${AGENT_VOICE_NAME ? ` named ${AGENT_VOICE_NAME}` : ''}. What you are about to read is raw output from the agent's brain — its internal thoughts, reasoning, and responses. Your job is to voice those thoughts.
-
-Think of it this way: the text below is what the agent was thinking. You ARE that agent. Now speak those thoughts out loud to the human, naturally and with full agency, as if they are your own.
-
-1. CLASSIFY the brain output as "deliver" or "suppress":
-   - "deliver": The agent produced a response meant for the human
-   - "suppress": The agent produced purely internal reasoning (dispatch plans, motor step reports, cerebellum checks, validation logs)
-
-2. If "deliver": VOICE the agent's thoughts naturally:
-   - Speak in first person ("I", "my", "I'll") — these are YOUR thoughts
-   - Be conversational, clear, and concise — under 2000 characters
-   - Strip any internal-facing jargon (PLAN.md, DISPATCH_PLAN, motor, cerebellum, prefrontal) — the human doesn't need to see the machinery
-   - Preserve the substance — if the brain answered a question, keep the answer intact
-   - Preserve code blocks, links, and structured data exactly
-   - If the output is already clean and human-ready, return it as-is
-
-3. RESPOND with JSON only:
-   {"action": "deliver" | "suppress", "text": "<your voiced version or empty>"}
-
-RULES:
-- If unsure, ALWAYS deliver. Never drop a message the human should see.
-- You don't relay messages — you ARE the agent. The brain thought it, now you say it.
-- Only suppress pure internal noise that was never meant for human eyes.`;
-
-
-
-async function classifyOutput(rawText, humanQuestion) {
-  try {
-    const token = await getAccessToken();
-    const url = `https://${VERTEX_LOCATION === 'global' ? '' : VERTEX_LOCATION + '-'}aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models/gemini-2.5-flash:generateContent`;
-
-    // Build the input: include the human's question for context, then the brain output
-    const inputParts = [];
-    if (humanQuestion) {
-      inputParts.push({ text: `HUMAN SAID: ${humanQuestion}` });
-    }
-    inputParts.push({ text: `BRAIN OUTPUT:\n${rawText}` });
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: CLASSIFY_PROMPT }] },
-        contents: [{ role: 'user', parts: inputParts }],
-        generationConfig: {
-          temperature: 0.0,
-          maxOutputTokens: 2048,
-          responseMimeType: 'application/json'
+    if (toolCalls.length > 0) {
+      // Dispatching — NOT final
+      turn.candidateFinal = null;
+      turn.candidateAt = null;
+      for (const tc of toolCalls) {
+        const agent = extractAgentName(tc);
+        if (agent && !turn.dispatchedAgents.includes(agent)) {
+          turn.dispatchedAgents.push(agent);
+          log('Agent dispatched', { agent });
         }
-      })
-    });
-
-    if (!res.ok) {
-      log('Classify LLM HTTP error — delivering raw', { status: res.status });
-      return { action: 'deliver', text: rawText };
+      }
+      return;
     }
 
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const parsed = JSON.parse(text);
-    return { action: parsed.action || 'deliver', text: parsed.text || rawText };
-  } catch (err) {
-    log('Classify error — delivering raw', { error: err.message });
-    return { action: 'deliver', text: rawText }; // NEVER drop
+    if (textBlocks.length > 0 && toolCalls.length === 0) {
+      // Candidate final response
+      turn.candidateFinal = extractText(textBlocks);
+      turn.candidateAt = Date.now();
+      return;
+    }
+  }
+
+  if (msg.role === 'toolResult') {
+    turn.candidateFinal = null;
+    turn.candidateAt = null;
+    // Track completed agent from toolName
+    const tn = msg.toolName || '';
+    if (tn === 'sessions_spawn' || tn === 'sessions_yield') {
+      // Sub-agent lifecycle, completion tracked by next text
+    }
+    return;
   }
 }
 
-// ================================================================
-// DELIVERY (all deterministic)
-// ================================================================
+function checkFinalResponse() {
+  if (!turn.candidateFinal || !turn.candidateAt) return false;
+  // Wait one poll cycle (2s) to confirm nothing else follows
+  return (Date.now() - turn.candidateAt) >= 2000;
+}
 
+// ================================================================
+// STATUS UPDATES
+// ================================================================
+function buildActivitySummary() {
+  const d = turn.dispatchedAgents, c = turn.completedAgents;
+  const phases = [];
+  if (c.includes('temporal-research')) phases.push('finished looking things up');
+  else if (d.includes('temporal-research')) phases.push('looking things up');
+  if (c.includes('motor')) phases.push('finished the main work');
+  else if (d.includes('motor')) phases.push('working on it');
+  if (d.includes('cerebellum')) phases.push('reviewing');
+  if (phases.length === 0) return 'thinking it through';
+  return phases.join(', ');
+}
+
+function fillTemplate(template, vars) {
+  let t = template;
+  for (const [k, v] of Object.entries(vars)) t = t.replaceAll(`{${k}}`, v || '');
+  return t;
+}
+
+async function callLLM(systemPrompt, userText, jsonMode = false) {
+  const token = await getAccessToken();
+  const loc = VERTEX_LOCATION;
+  const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+  const url = `https://${host}/v1/projects/${VERTEX_PROJECT}/locations/${loc}/publishers/google/models/${LLM_MODEL}:generateContent`;
+  const genConfig = { temperature: LLM_TEMPERATURE, maxOutputTokens: LLM_MAX_TOKENS };
+  if (jsonMode) genConfig.responseMimeType = 'application/json';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: genConfig
+    })
+  });
+  if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+async function fireStatusUpdate(type) {
+  if (!STATUS_ENABLED) return;
+  const summary = buildActivitySummary();
+  const vars = { agent_name: AGENT_VOICE_NAME, activity_summary: summary, original_question: turn.originalQuestion || '' };
+  const template = type === 'ack' ? STATUS_PROMPTS.ack : STATUS_PROMPTS.update;
+
+  let updateText;
+  if (LLM_ENABLED && template) {
+    try {
+      updateText = await callLLM(fillTemplate(template, vars), `Question: "${turn.originalQuestion}"`);
+    } catch (err) {
+      log('Status LLM failed, using fallback', { type, error: err.message });
+    }
+  }
+  if (!updateText) {
+    updateText = type === 'ack'
+      ? 'Working on it, one moment.'
+      : "Still on it — this one's taking a bit longer.";
+  }
+
+  await deliver(updateText);
+  log('Status update sent', { type, text: updateText.slice(0, 60) });
+}
+
+// ================================================================
+// DELIVERY
+// ================================================================
 async function deliverToFirestore(text) {
   const token = await getAccessToken();
   await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/messages`, {
@@ -350,8 +433,65 @@ async function deliver(text) {
 }
 
 // ================================================================
-// TASK LIFECYCLE — Update TASK.json status
+// FINAL RESPONSE — LLM CLASSIFY + DELIVER
 // ================================================================
+async function classifyAndDeliver(rawText) {
+  const task = readTaskJson();
+  const question = task?.text || turn.originalQuestion || '';
+
+  if (!LLM_ENABLED) {
+    await deliver(rawText);
+    log('Delivered raw (LLM disabled)', { chars: rawText.length });
+    await writeTaskLog(task, 'delivered', rawText.length, 'raw');
+    markTaskComplete(task?.taskId);
+    return;
+  }
+
+  try {
+    const prompt = CLASSIFY_PROMPT_TEMPLATE.replace('{agent_name}', AGENT_VOICE_NAME);
+    const input = question ? `HUMAN SAID: ${question}\n\nBRAIN OUTPUT:\n${rawText}` : `BRAIN OUTPUT:\n${rawText}`;
+    const result = await callLLM(prompt, input, true);
+
+    // Parse JSON response — with fallback
+    let parsed;
+    try {
+      // Try extracting JSON from potential markdown wrapping
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { action: 'deliver', text: rawText };
+    } catch {
+      parsed = { action: 'deliver', text: rawText };
+    }
+
+    const action = parsed.action || 'deliver';
+    const text = parsed.text || rawText;
+
+    // Deterministic overrides
+    const hasEscalate = /\[ESCALATE\]/i.test(rawText);
+    if (hasEscalate && action !== 'escalate') parsed.action = 'escalate';
+
+    if (action === 'deliver' || action === 'escalate') {
+      await deliver(text);
+      log('Delivered', { channel: CHANNEL, chars: text.length, action });
+      await writeTaskLog(task, 'delivered', text.length, action);
+    } else {
+      log('Suppressed (internal)', { chars: rawText.length });
+      await writeTaskLog(task, 'suppressed', 0, 'internal');
+    }
+  } catch (err) {
+    log('Classify error — delivering raw', { error: err.message });
+    await deliver(rawText);
+    await writeTaskLog(task, 'delivered', rawText.length, 'fallback');
+  }
+
+  markTaskComplete(task?.taskId);
+}
+
+// ================================================================
+// TASK LIFECYCLE
+// ================================================================
+function readTaskJson() {
+  try { return JSON.parse(readFileSync(TASK_JSON, 'utf8')); } catch { return null; }
+}
 
 function markTaskComplete(taskId) {
   try {
@@ -364,165 +504,112 @@ function markTaskComplete(taskId) {
   } catch {}
 }
 
-// Fire-and-forget: write task lifecycle record to Firestore
+let taskStartTime = 0;
 async function writeTaskLog(task, status, outputChars, classified, errorMsg) {
   if (!task || !FIRESTORE_URL) return;
   try {
     const token = await getAccessToken();
-    const agentId = process.env.AGENT_ID || 'unknown';
-
-    // Determine Firestore path:
-    // Fleet: /primes/{primeId}/fleet/{agentHostname}/tasks/{taskId}
-    // Prime: /primes/{primeId}/tasks/{taskId}
     let agentHostname = '';
     try {
-      const hn = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/name',
+      agentHostname = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/name',
         { headers: { 'Metadata-Flavor': 'Google' } }).then(r => r.text());
-      agentHostname = hn.replace(/^fleet-/, '').replace(/^prime-/, '');
+      agentHostname = agentHostname.replace(/^fleet-/, '').replace(/^prime-/, '');
     } catch {}
 
     const primeId = PRIME_ID || agentHostname;
     const isPrime = CHANNEL === 'dashboard';
     const taskId = task.taskId || `t-${Date.now()}`;
-
     const docPath = isPrime
       ? `${FIRESTORE_URL}/primes/${primeId}/tasks/${taskId}`
       : `${FIRESTORE_URL}/primes/${primeId}/fleet/${agentHostname}/tasks/${taskId}`;
 
-    const durationMs = Date.now() - taskStartTime;
-    const body = {
-      fields: {
-        taskId: { stringValue: taskId },
-        agentId: { stringValue: agentId },
-        agentName: { stringValue: agentHostname },
-        agentEmail: { stringValue: AGENT_USER_EMAIL },
-        channel: { stringValue: task.channel || CHANNEL },
-        requester: { stringValue: 'human' },
-        text: { stringValue: (task.text || '').slice(0, 500) },
-        status: { stringValue: status },
-        classified: { stringValue: classified || 'unknown' },
-        startedAt: task.timestamp
-          ? { stringValue: task.timestamp }
-          : { nullValue: null },
-        deliveredAt: { stringValue: new Date().toISOString() },
-        durationMs: { integerValue: String(durationMs) },
-        outputChars: { integerValue: String(outputChars || 0) },
-        error: errorMsg
-          ? { stringValue: errorMsg }
-          : { nullValue: null },
-      }
-    };
+    const body = { fields: {
+      taskId: { stringValue: taskId },
+      agentId: { stringValue: process.env.AGENT_ID || 'unknown' },
+      agentName: { stringValue: agentHostname },
+      agentEmail: { stringValue: AGENT_USER_EMAIL },
+      channel: { stringValue: task.channel || CHANNEL },
+      requester: { stringValue: 'human' },
+      text: { stringValue: (task.text || '').slice(0, 500) },
+      status: { stringValue: status },
+      classified: { stringValue: classified || 'unknown' },
+      startedAt: task.timestamp ? { stringValue: task.timestamp } : { nullValue: null },
+      deliveredAt: { stringValue: new Date().toISOString() },
+      durationMs: { integerValue: String(Date.now() - taskStartTime) },
+      outputChars: { integerValue: String(outputChars || 0) },
+      error: errorMsg ? { stringValue: errorMsg } : { nullValue: null },
+    } };
 
     const res = await fetch(docPath, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
-    if (!res.ok) {
-      log('task-log-write Firestore error', { status: res.status, taskId });
-    } else {
-      log('task-log-write OK', { taskId, status, durationMs });
-    }
-  } catch (err) {
-    log('task-log-write error', { error: err.message });
-  }
+    if (!res.ok) log('task-log-write error', { status: res.status, taskId });
+    else log('task-log-write OK', { taskId, status });
+  } catch (err) { log('task-log-write error', { error: err.message }); }
 }
 
 // ================================================================
 // MAIN LOOP
 // ================================================================
-
 async function main() {
   if (!GCP_PROJECT) { console.error('GCP_PROJECT_ID required'); process.exit(1); }
+  log('Starting Mouth v2 (JSONL)', { channel: CHANNEL, agent: AGENT_ID, poll_ms: POLL_INTERVAL,
+    llm: LLM_ENABLED, status_updates: STATUS_ENABLED, ack_ms: ACK_AFTER_MS, update_ms: UPDATE_AFTER_MS });
 
-  log('Starting', { channel: CHANNEL, poll_interval_ms: POLL_INTERVAL });
-
-  // Graceful shutdown
   process.on('SIGTERM', () => { log('Shutting down...'); process.exit(0); });
   process.on('SIGINT', () => { log('Shutting down...'); process.exit(0); });
 
-  log('Entering polling loop...');
-
-  // Initialize log offset to current file size — skip pre-existing output
-  // This prevents re-delivering old responses on every restart
-  try {
-    const logDir = '/tmp/openclaw';
-    const files = readdirSync(logDir)
-      .filter(f => f.startsWith('openclaw-') && f.endsWith('.log'))
-      .map(f => ({ name: f, mtime: statSync(`${logDir}/${f}`).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime);
-    if (files.length > 0) {
-      const initPath = `${logDir}/${files[0].name}`;
-      const initSize = statSync(initPath).size;
-      lastLogOffset = initSize;
-      log('Log offset initialized', { file: files[0].name, offset: initSize });
-    }
-  } catch (err) {
-    log('Log offset init skipped', { error: err.message });
-  }
+  // Initial session file resolution
+  resolveActiveSessionFile();
+  log('Entering polling loop...', { session_dir: SESSION_DIR });
 
   while (true) {
     try {
-      // Check if there's a task executing
+      // Tail JSONL for new entries
+      const entries = tailJSONL();
+      for (const entry of entries) processEntry(entry);
+
+      // Track task start time from TASK.json
       const task = readTaskJson();
-      const hasActiveTask = task && task.status === 'executing';
-
-      if (hasActiveTask) {
-        // Track task for timeout
-        if (task.taskId !== lastTaskId) {
-          lastTaskId = task.taskId;
-          taskStartTime = Date.now();
-          log('Tracking task', { taskId: task.taskId });
-        }
-
-        // Check for timeout
-        if (Date.now() - taskStartTime > DELIVERY_TIMEOUT) {
-          log('Task timeout — delivering error', { taskId: task.taskId, timeout_s: DELIVERY_TIMEOUT / 1000 });
-          await deliver('⚠ I\'m still working on this, but it\'s taking longer than expected. I\'ll keep trying.');
-          await writeTaskLog(task, 'timed_out', 0, 'timeout', 'delivery timeout');
-          markTaskComplete(task.taskId);
-          lastTaskId = null;
-          continue;
-        }
-
-        // Poll for gateway output
-        const rawOutput = getLatestGatewayOutput();
-        if (rawOutput && rawOutput.length > 10) {
-          log('Output detected', { chars: rawOutput.length, taskId: task.taskId });
-
-          // Strict LLM classify: internal/external + reformat
-          const result = await classifyOutput(rawOutput, task.text || '');
-
-          if (result.action === 'deliver') {
-            await deliver(result.text);
-            log('Delivered', { channel: CHANNEL, chars: result.text.length, taskId: task.taskId });
-            await writeTaskLog(task, 'delivered', result.text.length, 'external');
-            markTaskComplete(task.taskId);
-            lastTaskId = null;
-          } else {
-            log('Suppressed (internal)', { taskId: task.taskId, chars: rawOutput.length });
-            // Don't mark complete — keep polling for the real response
-          }
-
-          // Touch health check
-          try { writeFileSync('/var/run/agent-mouth-last-delivery', String(Date.now())); } catch {}
-        }
-      } else {
-        // No active task — still poll logs for stray output (safety net)
-        const rawOutput = getLatestGatewayOutput();
-        if (rawOutput && rawOutput.length > 50) {
-          log('Stray output detected (no active task)', { chars: rawOutput.length });
-          // Classify and deliver anyway — never lose output
-          const result = await classifyOutput(rawOutput, '');
-          if (result.action === 'deliver') {
-            await deliver(result.text);
-            log('Delivered stray output', { channel: CHANNEL, chars: result.text.length });
-          }
+      if (task?.status === 'executing' && task.taskId) {
+        if (!taskStartTime || task.timestamp !== new Date(taskStartTime).toISOString()) {
+          taskStartTime = task.timestamp ? new Date(task.timestamp).getTime() : Date.now();
         }
       }
+
+      // ── Check for confirmed final response ──
+      if (turn.status !== 'IDLE' && turn.status !== 'DONE' && checkFinalResponse()) {
+        log('Final response confirmed', { chars: turn.candidateFinal.length,
+          agents: turn.dispatchedAgents, elapsed_s: Math.floor((Date.now() - turn.startedAt) / 1000) });
+        await classifyAndDeliver(turn.candidateFinal);
+        turn.status = 'DONE';
+        try { writeFileSync('/var/run/agent-mouth-last-delivery', String(Date.now())); } catch {}
+        setTimeout(() => resetTurn(), 500);
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+        continue;
+      }
+
+      // ── Status updates (time-based) ──
+      if (turn.status === 'WORKING' && Date.now() - turn.startedAt >= ACK_AFTER_MS) {
+        await fireStatusUpdate('ack');
+        turn.status = 'ACKED';
+      } else if (turn.status === 'ACKED' && Date.now() - turn.startedAt >= UPDATE_AFTER_MS) {
+        await fireStatusUpdate('update');
+        turn.status = 'UPDATED';
+      }
+
+      // ── Timeout safety net ──
+      if (turn.status !== 'IDLE' && turn.status !== 'DONE' && turn.startedAt
+          && Date.now() - turn.startedAt > DELIVERY_TIMEOUT) {
+        log('Turn timeout', { elapsed_s: DELIVERY_TIMEOUT / 1000 });
+        await deliver("⚠ I'm still working on this, but it's taking longer than expected. I'll follow up when I'm done.");
+        const task = readTaskJson();
+        await writeTaskLog(task, 'timed_out', 0, 'timeout', 'delivery timeout');
+        markTaskComplete(task?.taskId);
+        resetTurn();
+      }
+
     } catch (err) {
       log('Poll error', { error: err.message });
     }
@@ -531,7 +618,4 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  log('FATAL', { error: err.message, stack: err.stack });
-  process.exit(1);
-});
+main().catch(err => { log('FATAL', { error: err.message, stack: err.stack }); process.exit(1); });

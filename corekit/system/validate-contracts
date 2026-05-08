@@ -183,7 +183,27 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   done
 
-  # ---- Check 10: brain-exec reads agent IDs from contracts.json ----
+  # ---- Check 10: mouth config fields ----
+  C_MOUTH_SOURCE="$(read_contract 'mouth.source' 2>/dev/null || echo '')"
+  if [[ -n "$C_MOUTH_SOURCE" ]]; then
+    if [[ "$C_MOUTH_SOURCE" == "jsonl" || "$C_MOUTH_SOURCE" == "log" ]]; then
+      pass "mouth.source = ${C_MOUTH_SOURCE}"
+    else
+      fail "mouth.source = '${C_MOUTH_SOURCE}' (expected 'jsonl' or 'log')"
+    fi
+  fi
+
+  C_MOUTH_ACK="$(read_contract 'mouth.status_updates.ack_after_ms' 2>/dev/null || echo '')"
+  C_MOUTH_UPD="$(read_contract 'mouth.status_updates.update_after_ms' 2>/dev/null || echo '')"
+  if [[ -n "$C_MOUTH_ACK" && -n "$C_MOUTH_UPD" ]]; then
+    if [[ "$C_MOUTH_ACK" -lt "$C_MOUTH_UPD" ]]; then
+      pass "mouth.status_updates timing valid (ack=${C_MOUTH_ACK}ms < update=${C_MOUTH_UPD}ms)"
+    else
+      fail "mouth.status_updates: ack_after_ms (${C_MOUTH_ACK}) must be < update_after_ms (${C_MOUTH_UPD})"
+    fi
+  fi
+
+  # ---- Check 11: brain-exec reads agent IDs from contracts.json ----
   BRAIN_EXEC="${REPO_ROOT}/corekit/brain/brain-exec"
   if [[ -f "$BRAIN_EXEC" ]]; then
     if grep -q 'contracts.json' "$BRAIN_EXEC"; then

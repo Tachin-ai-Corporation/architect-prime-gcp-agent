@@ -42,6 +42,12 @@
     "model": "gemini-2.5-flash",
     "maxTokens": 2000,
     "temperature": 0.1,
-    "fallback": "deliver_raw"
+    "fallback": "deliver_raw",
+    "source": "jsonl",
+    "status_updates": {
+      "enabled": true,
+      "ack_after_ms": 5000,
+      "update_after_ms": 120000
+    }
   }
 }

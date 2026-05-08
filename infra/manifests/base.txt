@@ -24,6 +24,8 @@ corekit/chat/chat-read .openclaw/bin/chat-read
 # Agent Ears (deterministic input) + Agent Mouth (output classification + delivery)
 corekit/daemon/agent-ears.mjs .openclaw/bin/agent-ears.mjs
 corekit/daemon/agent-mouth.mjs .openclaw/bin/agent-mouth.mjs
+corekit/daemon/mouth-classify-prompt.md .openclaw/bin/mouth-classify-prompt.md
+corekit/daemon/mouth-status-prompts.md .openclaw/bin/mouth-status-prompts.md
 corekit/daemon/start-agent-ears .openclaw/bin/start-agent-ears
 corekit/daemon/start-agent-mouth .openclaw/bin/start-agent-mouth
 corekit/daemon/ears-health-check .openclaw/bin/ears-health-check
