@@ -454,6 +454,8 @@ docker exec openclaw-gateway node /app/openclaw.mjs cron add \
   --tz "America/Chicago" \
   --agent "temporal-memory" \
   --session isolated \
+  --no-deliver \
+  --timeout-seconds 120 \
   --message "[SKILL:memory-consolidate] Execute nightly memory consolidation." \
   --json 2>&1 || warn "memory-consolidate cron registration failed (non-fatal)"
 
