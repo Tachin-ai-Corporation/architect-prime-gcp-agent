@@ -20,7 +20,7 @@ done
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 # Get current parents
 HTTP_CODE=$(curl -s -o /tmp/drive-meta.json -w '%{http_code}' \
-  -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?fields=parents")
+  -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?supportsAllDrives=true&fields=parents")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"message\":\"I don't have access to this file. Please share it with ${AGENT_USER_EMAIL:-unknown} with editor access\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
@@ -28,7 +28,7 @@ fi
 PARENTS=$(python3 -c "import json; print(','.join(json.load(open('/tmp/drive-meta.json')).get('parents',[])))")
 HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
   -X PATCH -H "Authorization: Bearer ${TOKEN}" \
-  "${DRIVE_API}/files/${FILE_ID}?addParents=${DEST}&removeParents=${PARENTS}&fields=id,name,parents")
+  "${DRIVE_API}/files/${FILE_ID}?addParents=${DEST}&removeParents=${PARENTS}&supportsAllDrives=true&fields=id,name,parents")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"destination\":\"${DEST}\",\"message\":\"I don't have permission to move this file. Please share both the file and destination folder with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0

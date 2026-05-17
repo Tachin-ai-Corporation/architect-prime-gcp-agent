@@ -20,7 +20,7 @@ done
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
   -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d "{\"name\":\"${NAME}\"}" "${DRIVE_API}/files/${FILE_ID}?fields=id,name")
+  -d "{\"name\":\"${NAME}\"}" "${DRIVE_API}/files/${FILE_ID}?supportsAllDrives=true&fields=id,name")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"message\":\"I don't have access to rename this file. Please share it with ${AGENT_USER_EMAIL:-unknown} with editor access\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0

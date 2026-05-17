@@ -23,7 +23,7 @@ done
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 # Get file metadata to determine type
 HTTP_CODE=$(curl -s -o /tmp/drive-meta.json -w '%{http_code}' \
-  -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?fields=name,mimeType")
+  -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?supportsAllDrives=true&fields=name,mimeType")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"message\":\"I don't have access to this file. Please share it with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
@@ -39,9 +39,9 @@ if echo "$MIME" | grep -q "google-apps"; then
   [[ -n "$EXPORT_MIME" ]] || EXPORT_MIME="application/pdf"
   ENC_MIME=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$EXPORT_MIME")
   curl -sf -H "Authorization: Bearer ${TOKEN}" \
-    "${DRIVE_API}/files/${FILE_ID}/export?mimeType=${ENC_MIME}" -o "$OUTPUT"
+    "${DRIVE_API}/files/${FILE_ID}/export?mimeType=${ENC_MIME}&supportsAllDrives=true" -o "$OUTPUT"
 else
   curl -sf -H "Authorization: Bearer ${TOKEN}" \
-    "${DRIVE_API}/files/${FILE_ID}?alt=media" -o "$OUTPUT"
+    "${DRIVE_API}/files/${FILE_ID}?alt=media&supportsAllDrives=true" -o "$OUTPUT"
 fi
 echo "{\"status\":\"downloaded\",\"path\":\"${OUTPUT}\",\"name\":\"${NAME}\",\"mimeType\":\"${MIME}\"}"

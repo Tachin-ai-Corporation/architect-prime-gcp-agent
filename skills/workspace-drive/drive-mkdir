@@ -22,7 +22,7 @@ BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\"}
 [[ -n "$PARENT" ]] && BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
 HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d "$BODY" "${DRIVE_API}/files?fields=id,name,webViewLink")
+  -d "$BODY" "${DRIVE_API}/files?supportsAllDrives=true&fields=id,name,webViewLink")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"parent\":\"${PARENT:-root}\",\"message\":\"I don't have access to create a folder here. Please share the parent folder with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
