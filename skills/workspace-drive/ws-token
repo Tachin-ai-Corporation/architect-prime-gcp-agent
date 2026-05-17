@@ -71,8 +71,20 @@ case "$SCOPE_NAME" in
   *) die "Unknown scope: $SCOPE_NAME. Use gmail|calendar|drive|docs|sheets|contacts|all" ;;
 esac
 
+# ---- Resolve user email ----
+# Try env var first, then fall back to chat-config.json
+USER_EMAIL="${AGENT_USER_EMAIL:-}"
+if [[ -z "$USER_EMAIL" ]]; then
+  for cfg in "${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json" "/home/node/.openclaw/corekit/chat-config.json"; do
+    if [[ -f "$cfg" ]]; then
+      USER_EMAIL="$(python3 -c "import json; print(json.load(open('$cfg')).get('agentUserEmail',''))" 2>/dev/null)" || true
+      [[ -n "$USER_EMAIL" ]] && break
+    fi
+  done
+fi
+[[ -n "$USER_EMAIL" ]] || die "Cannot determine agent email. Set AGENT_USER_EMAIL or check chat-config.json"
+
 # ---- Delegate to dwd-token ----
 [[ -x "$DWD_TOKEN" ]] || die "dwd-token not found at $DWD_TOKEN"
 
-# Explicitly pass --user to ensure correct identity. Fail loudly if not set.
-exec "$DWD_TOKEN" --user "${AGENT_USER_EMAIL:?AGENT_USER_EMAIL not set}" --scope "$SCOPES"
+exec "$DWD_TOKEN" --user "$USER_EMAIL" --scope "$SCOPES"
