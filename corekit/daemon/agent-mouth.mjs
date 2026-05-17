@@ -64,8 +64,10 @@ const LLM_MODEL = MOUTH_CFG.model || 'gemini-2.5-flash';
 const LLM_MAX_TOKENS = MOUTH_CFG.maxTokens || 2000;
 const LLM_TEMPERATURE = MOUTH_CFG.temperature ?? 0.1;
 const STATUS_ENABLED = MOUTH_CFG.status_updates?.enabled !== false;
-const ACK_AFTER_MS = MOUTH_CFG.status_updates?.ack_after_ms || 5000;
-const UPDATE_AFTER_MS = MOUTH_CFG.status_updates?.update_after_ms || 120000;
+// Exponential backoff schedule: first ack fast, then progressively longer
+// Default: 10s, 5min, 10min, 30min, 2hr
+const STATUS_SCHEDULE = MOUTH_CFG.status_updates?.schedule_ms
+  || [10_000, 300_000, 600_000, 1_800_000, 7_200_000];
 const DELIVERY_TIMEOUT = 600_000;
 
 // ---- Prompts (loaded from files) ----
@@ -239,12 +241,14 @@ function tailJSONL() {
 // ================================================================
 let turn = { status: 'IDLE', startedAt: null, originalQuestion: null,
              dispatchedAgents: [], completedAgents: [],
-             candidateFinal: null, candidateAt: null };
+             candidateFinal: null, candidateAt: null,
+             statusIndex: 0, lastStatusAt: null };
 
 function resetTurn() {
   turn = { status: 'IDLE', startedAt: null, originalQuestion: null,
            dispatchedAgents: [], completedAgents: [],
-           candidateFinal: null, candidateAt: null };
+           candidateFinal: null, candidateAt: null,
+           statusIndex: 0, lastStatusAt: null };
 }
 
 function extractText(content) {
@@ -274,15 +278,19 @@ function processEntry(entry) {
   const msg = entry.message;
   if (!msg?.role || !msg.content) return;
 
-  // User message → new turn
+  // User message → new turn (only if we're idle or done)
   if (msg.role === 'user') {
-    turn = {
-      status: 'WORKING', startedAt: Date.now(),
-      originalQuestion: extractText(msg.content),
-      dispatchedAgents: [], completedAgents: [],
-      candidateFinal: null, candidateAt: null
-    };
-    log('Turn started', { question: turn.originalQuestion.slice(0, 100) });
+    if (turn.status === 'IDLE' || turn.status === 'DONE') {
+      turn = {
+        status: 'WORKING', startedAt: Date.now(),
+        originalQuestion: extractText(msg.content),
+        dispatchedAgents: [], completedAgents: [],
+        candidateFinal: null, candidateAt: null,
+        statusIndex: 0, lastStatusAt: null
+      };
+      log('Turn started', { question: turn.originalQuestion.slice(0, 100) });
+    }
+    // If already WORKING/ACKED — this is a sub-agent internal message, ignore
     return;
   }
 
@@ -590,13 +598,19 @@ async function main() {
         continue;
       }
 
-      // ── Status updates (time-based) ──
-      if (turn.status === 'WORKING' && Date.now() - turn.startedAt >= ACK_AFTER_MS) {
-        await fireStatusUpdate('ack');
-        turn.status = 'ACKED';
-      } else if (turn.status === 'ACKED' && Date.now() - turn.startedAt >= UPDATE_AFTER_MS) {
-        await fireStatusUpdate('update');
-        turn.status = 'UPDATED';
+      // ── Status updates (exponential backoff schedule) ──
+      if (turn.status !== 'IDLE' && turn.status !== 'DONE' && turn.startedAt
+          && turn.statusIndex < STATUS_SCHEDULE.length) {
+        const elapsed = Date.now() - turn.startedAt;
+        const nextThreshold = STATUS_SCHEDULE[turn.statusIndex];
+        if (elapsed >= nextThreshold) {
+          const type = turn.statusIndex === 0 ? 'ack' : 'update';
+          await fireStatusUpdate(type);
+          turn.statusIndex++;
+          turn.lastStatusAt = Date.now();
+          // Move to ACKED after first status, stay ACKED for subsequent
+          if (turn.status === 'WORKING') turn.status = 'ACKED';
+        }
       }
 
       // ── Timeout safety net ──

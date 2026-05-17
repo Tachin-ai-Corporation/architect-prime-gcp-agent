@@ -47,8 +47,7 @@
     "source": "jsonl",
     "status_updates": {
       "enabled": true,
-      "ack_after_ms": 5000,
-      "update_after_ms": 120000
+      "schedule_ms": [10000, 300000, 600000, 1800000, 7200000]
     }
   }
 }
