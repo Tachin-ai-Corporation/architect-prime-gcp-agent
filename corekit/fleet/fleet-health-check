@@ -260,6 +260,55 @@ print(cf)
       "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?updateMask.fieldPaths=health" \
       >/dev/null 2>&1
   fi
+
+  # ---- OU Compliance Check ----
+  # Check if agent is in the "AI Agents" OU (Drive sharing restricted)
+  OC_BIN="${OC_HOST_ROOT:-%/opt/openclaw}/.openclaw/bin"
+  if [[ -x "${OC_BIN}/agent-ou-manage" ]]; then
+    # Get agent email from Firestore doc
+    AGENT_EMAIL="$(curl -s -H "Authorization: Bearer $TOKEN" \
+      "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}" 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(d.get('fields',{}).get('email',{}).get('stringValue',''))" 2>/dev/null || true)"
+
+    if [[ -n "$AGENT_EMAIL" ]]; then
+      AGENT_OU="$(OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}" "${OC_BIN}/agent-ou-manage" --check "$AGENT_EMAIL" 2>/dev/null || echo "UNKNOWN")"
+      OU_COMPLIANT="false"
+      if [[ "$AGENT_OU" == "/AI Agents" ]]; then
+        OU_COMPLIANT="true"
+      elif [[ "$AGENT_OU" != "UNKNOWN" && "$AGENT_OU" != "NOT_FOUND" ]]; then
+        # Not in correct OU — attempt auto-move
+        log "  ⚠️  ${NAME} (${AGENT_EMAIL}) not in AI Agents OU (currently: ${AGENT_OU}) — attempting move..."
+        OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}" "${OC_BIN}/agent-ou-manage" --move "$AGENT_EMAIL" 2>/dev/null || true
+        # Re-check
+        AGENT_OU="$(OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}" "${OC_BIN}/agent-ou-manage" --check "$AGENT_EMAIL" 2>/dev/null || echo "UNKNOWN")"
+        [[ "$AGENT_OU" == "/AI Agents" ]] && OU_COMPLIANT="true"
+      fi
+
+      # Write OU compliance to Firestore
+      TOKEN="$(get_token)"
+      OU_PATCH="{
+        \"fields\": {
+          \"ouCompliant\": { \"booleanValue\": ${OU_COMPLIANT} },
+          \"ouPath\": { \"stringValue\": \"${AGENT_OU}\" },
+          \"ouCheckedAt\": { \"stringValue\": \"${NOW}\" }
+        }
+      }"
+      curl -s -X PATCH \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$OU_PATCH" \
+        "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?updateMask.fieldPaths=ouCompliant&updateMask.fieldPaths=ouPath&updateMask.fieldPaths=ouCheckedAt" \
+        >/dev/null 2>&1
+
+      if [[ "$OU_COMPLIANT" == "true" ]]; then
+        log "  OU: ${AGENT_EMAIL} → AI Agents ✓"
+      else
+        warn "  OU: ${AGENT_EMAIL} → ${AGENT_OU} — ⚠️ NOT COMPLIANT (can share externally)"
+      fi
+    fi
+  fi
 done
 
 log "Health check complete."

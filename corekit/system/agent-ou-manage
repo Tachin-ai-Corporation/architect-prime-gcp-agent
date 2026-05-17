@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+# ============================================================
+# agent-ou-manage — Manage the "AI Agents" Organizational Unit
+#
+# Creates/verifies the OU, moves agent users into it, and
+# checks OU compliance. Uses DWD to impersonate a Workspace
+# admin account.
+#
+# Usage:
+#   agent-ou-manage --ensure-ou              # Create "AI Agents" OU if missing
+#   agent-ou-manage --move <email>           # Move user into the AI Agents OU
+#   agent-ou-manage --check <email>          # Check user's current OU
+#   agent-ou-manage --check-policy           # Verify Drive sharing is restricted (read-only check)
+#
+# Environment:
+#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#
+# DWD scopes required (granted to dwd-signer SA):
+#   https://www.googleapis.com/auth/admin.directory.orgunit
+#   https://www.googleapis.com/auth/admin.directory.user
+# ============================================================
+set -euo pipefail
+
+OU_NAME="AI Agents"
+OU_PATH="/AI Agents"
+
+# ---- Helpers ----
+die()  { echo "[agent-ou-manage] [ERROR] $*" >&2; exit 1; }
+log()  { echo "[agent-ou-manage] $*" >&2; }
+warn() { echo "[agent-ou-manage] [WARN] $*" >&2; }
+
+# ---- Resolve config paths (host or container) ----
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+CONFIG_SEARCH=(
+  "${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+  "${OPENCLAW_CONFIG_DIR:-/dev/null}/corekit/chat-config.json"
+  "/home/node/.openclaw/corekit/chat-config.json"
+)
+CONFIG_FILE=""
+for p in "${CONFIG_SEARCH[@]}"; do
+  if [[ -f "$p" ]]; then CONFIG_FILE="$p"; break; fi
+done
+[[ -n "$CONFIG_FILE" ]] || die "Cannot find chat-config.json"
+
+# ---- Read admin email from config (chat-config.json → Firestore fallback) ----
+ADMIN_EMAIL="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CONFIG_FILE'))
+    print(cfg.get('adminEmail', ''))
+except: pass
+" 2>/dev/null)"
+
+# Fallback: read from Firestore config/settings (set by dashboard)
+if [[ -z "$ADMIN_EMAIL" ]]; then
+  GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
+  if [[ -z "$GCP_PROJECT_ID" ]]; then
+    GCP_PROJECT_ID="$(curl -sf --max-time 3 -H 'Metadata-Flavor: Google' \
+      'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+  fi
+  if [[ -n "$GCP_PROJECT_ID" ]]; then
+    META_TOKEN="$(curl -sf -H 'Metadata-Flavor: Google' \
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])' 2>/dev/null)" || true
+    if [[ -n "$META_TOKEN" ]]; then
+      ADMIN_EMAIL="$(curl -sf --max-time 5 \
+        -H "Authorization: Bearer $META_TOKEN" \
+        "https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents/config/settings" \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin)["fields"]["adminEmail"]["stringValue"])' \
+        2>/dev/null)" || true
+    fi
+  fi
+fi
+[[ -n "$ADMIN_EMAIL" ]] || die "adminEmail not configured. Set it in Dashboard → Settings."
+
+# ---- Resolve DWD signer SA ----
+SIGNER_SA="$(python3 -c "
+import json
+try:
+    cfg = json.load(open('$CONFIG_FILE'))
+    print(cfg.get('dwdSignerSa', ''))
+except: pass
+" 2>/dev/null)"
+
+# ---- Locate dwd-token ----
+DWD_TOKEN=""
+for d in "${OC_HOST_ROOT}/.openclaw/bin" "${OPENCLAW_CONFIG_DIR:-/dev/null}/../bin" "/home/node/.openclaw/bin"; do
+  if [[ -x "${d}/dwd-token" ]]; then DWD_TOKEN="${d}/dwd-token"; break; fi
+done
+[[ -n "$DWD_TOKEN" ]] || die "Cannot find dwd-token"
+
+# ---- Get admin token with required scopes ----
+get_admin_token() {
+  local scopes="https://www.googleapis.com/auth/admin.directory.orgunit https://www.googleapis.com/auth/admin.directory.user"
+  local args=(--user "$ADMIN_EMAIL" --scope "$scopes")
+  if [[ -n "$SIGNER_SA" ]]; then
+    args+=(--signer-sa "$SIGNER_SA")
+  fi
+  "$DWD_TOKEN" "${args[@]}" 2>/dev/null
+}
+
+# ---- Parse arguments ----
+ACTION=""
+TARGET_EMAIL=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ensure-ou)    ACTION="ensure-ou"; shift ;;
+    --move)         ACTION="move"; TARGET_EMAIL="$2"; shift 2 ;;
+    --check)        ACTION="check"; TARGET_EMAIL="$2"; shift 2 ;;
+    --check-policy) ACTION="check-policy"; shift ;;
+    --help|-h)
+      echo "Usage: agent-ou-manage --ensure-ou | --move <email> | --check <email> | --check-policy"
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+[[ -n "$ACTION" ]] || die "No action specified. Use --help for usage."
+
+# ============================================================
+# ACTION: ensure-ou — Create the AI Agents OU if it doesn't exist
+# ============================================================
+if [[ "$ACTION" == "ensure-ou" ]]; then
+  TOKEN="$(get_admin_token)" || die "Failed to get admin token"
+
+  # Check if OU already exists
+  EXISTING="$(curl -sf \
+    -H "Authorization: Bearer $TOKEN" \
+    "https://admin.googleapis.com/admin/directory/v1/customer/my_customer/orgunits?orgUnitPath=${OU_PATH// /%20}&type=all" \
+    2>/dev/null)" || true
+
+  if echo "$EXISTING" | python3 -c "
+import json,sys
+data = json.load(sys.stdin)
+units = data.get('organizationUnits', [])
+for u in units:
+    if u.get('name') == '$OU_NAME':
+        print('EXISTS')
+        sys.exit(0)
+sys.exit(1)
+" 2>/dev/null; then
+    log "OU '${OU_NAME}' already exists."
+    echo "EXISTS"
+    exit 0
+  fi
+
+  # Create the OU
+  CREATE_BODY="{
+    \"name\": \"${OU_NAME}\",
+    \"parentOrgUnitPath\": \"/\",
+    \"description\": \"Fleet AI agents — Drive sharing restricted. Managed by Architect Prime.\"
+  }"
+
+  RESULT="$(curl -sf -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$CREATE_BODY" \
+    "https://admin.googleapis.com/admin/directory/v1/customer/my_customer/orgunits" \
+    2>&1)" || die "Failed to create OU. Response: ${RESULT}"
+
+  log "Created OU '${OU_NAME}'."
+  echo "CREATED"
+  exit 0
+fi
+
+# ============================================================
+# ACTION: move — Move a user to the AI Agents OU
+# ============================================================
+if [[ "$ACTION" == "move" ]]; then
+  [[ -n "$TARGET_EMAIL" ]] || die "--move requires an email"
+  TOKEN="$(get_admin_token)" || die "Failed to get admin token"
+
+  RESULT="$(curl -sf -X PATCH \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"orgUnitPath\": \"${OU_PATH}\"}" \
+    "https://admin.googleapis.com/admin/directory/v1/users/${TARGET_EMAIL}" \
+    2>&1)" || {
+      # Check if user doesn't exist yet (404)
+      if echo "$RESULT" | grep -q "Resource Not Found"; then
+        warn "User ${TARGET_EMAIL} not found in Workspace — account may not exist yet."
+        echo "NOT_FOUND"
+        exit 0
+      fi
+      die "Failed to move user. Response: ${RESULT}"
+    }
+
+  log "Moved ${TARGET_EMAIL} to '${OU_PATH}'."
+  echo "MOVED"
+  exit 0
+fi
+
+# ============================================================
+# ACTION: check — Check a user's current OU
+# ============================================================
+if [[ "$ACTION" == "check" ]]; then
+  [[ -n "$TARGET_EMAIL" ]] || die "--check requires an email"
+  TOKEN="$(get_admin_token)" || die "Failed to get admin token"
+
+  RESULT="$(curl -sf \
+    -H "Authorization: Bearer $TOKEN" \
+    "https://admin.googleapis.com/admin/directory/v1/users/${TARGET_EMAIL}?fields=orgUnitPath" \
+    2>/dev/null)" || {
+      warn "Cannot check user ${TARGET_EMAIL} — may not exist."
+      echo "UNKNOWN"
+      exit 0
+    }
+
+  CURRENT_OU="$(echo "$RESULT" | python3 -c "
+import json,sys
+data = json.load(sys.stdin)
+print(data.get('orgUnitPath', '/'))
+" 2>/dev/null || echo "/")"
+
+  echo "$CURRENT_OU"
+  if [[ "$CURRENT_OU" == "$OU_PATH" ]]; then
+    log "${TARGET_EMAIL} is in '${OU_PATH}' ✓"
+  else
+    warn "${TARGET_EMAIL} is in '${CURRENT_OU}' — NOT in '${OU_PATH}'!"
+  fi
+  exit 0
+fi
+
+# ============================================================
+# ACTION: check-policy — Verify the OU has Drive sharing restricted
+# ============================================================
+if [[ "$ACTION" == "check-policy" ]]; then
+  log "Drive policy verification is manual. Check in Admin Console:"
+  log "  Apps → Google Workspace → Drive and Docs → Sharing settings"
+  log "  Select '${OU_NAME}' OU on left sidebar"
+  log "  Verify: 'Sharing outside of [org]' → OFF"
+  echo "MANUAL_CHECK_REQUIRED"
+  exit 0
+fi

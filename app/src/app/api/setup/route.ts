@@ -35,6 +35,7 @@ export async function GET() {
       dwdSignerSA,
       dwdClientId,
       agentEmailDomain: settings?.agentEmailDomain || "",
+      adminEmail: settings?.adminEmail || "",
     });
   } catch (err) {
     console.error("[api/setup] Error:", err);
@@ -51,7 +52,8 @@ export async function GET() {
 
 /**
  * POST /api/setup — Save setup settings.
- * Currently supports: agentEmailDomain
+ * Supports: agentEmailDomain, adminEmail
+ * Auto-captures admin email from IAP header if not explicitly provided.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -61,6 +63,23 @@ export async function POST(req: NextRequest) {
     const updates: Record<string, string> = {};
     if (typeof body.agentEmailDomain === "string") {
       updates.agentEmailDomain = body.agentEmailDomain.trim();
+    }
+    if (typeof body.adminEmail === "string") {
+      updates.adminEmail = body.adminEmail.trim();
+    }
+
+    // Auto-capture admin email from IAP if not already set
+    if (!updates.adminEmail) {
+      const settingsDoc = await db.collection("config").doc("settings").get();
+      const existing = settingsDoc.exists ? settingsDoc.data() : null;
+      if (!existing?.adminEmail) {
+        // IAP sets this header with the authenticated user's email
+        const iapEmail = req.headers.get("x-goog-authenticated-user-email");
+        if (iapEmail) {
+          // IAP prefixes with "accounts.google.com:" — strip it
+          updates.adminEmail = iapEmail.replace(/^accounts\.google\.com:/, "");
+        }
+      }
     }
 
     if (Object.keys(updates).length > 0) {

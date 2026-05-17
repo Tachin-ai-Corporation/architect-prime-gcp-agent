@@ -20,7 +20,7 @@ Architect Prime and fleet agents communicate through Google Chat using **Domain-
 4. **Client ID:** Enter the DWD Signer SA Client ID (shown in the Dashboard → Setup tab)
 5. **OAuth Scopes:**
    ```
-   https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.compose,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/contacts.readonly
+   https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.compose,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/contacts.readonly,https://www.googleapis.com/auth/admin.directory.orgunit,https://www.googleapis.com/auth/admin.directory.user
    ```
 6. Click **Authorize**
 7. Wait up to 24 hours for propagation (usually much faster)
@@ -98,10 +98,16 @@ When Prime hires a fleet agent (`fleet-deploy`):
    - Go to [Admin Console](https://admin.google.com) → **Users** → **Add new user**
    - Create: `devops-agent-stan@yourdomain.com`
 
-3. **Add the fleet user to the Chat space:**
+3. **Move the user to the AI Agents OU** (restricts external Drive sharing):
+   - Go to **Admin Console** → **Directory** → **Organizational Units**
+   - Move `devops-agent-stan@yourdomain.com` into the **AI Agents** OU
+   - This is checked automatically by `fleet-health-check` every 15 minutes.
+     If the agent isn't in the correct OU, the dashboard will show a warning.
+
+4. **Add the fleet user to the Chat space:**
    - Open your Chat space → **Add people** → `devops-agent-stan@yourdomain.com`
 
-4. **Verify comms:**
+5. **Verify comms:**
    ```bash
    fleet-verify --name stan
    ```
