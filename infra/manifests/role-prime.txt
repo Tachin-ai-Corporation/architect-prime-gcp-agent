@@ -21,6 +21,7 @@ corekit/gateway/discover-models .openclaw/bin/discover-models
 corekit/memory/core-memory-read .openclaw/bin/core-memory-read
 corekit/memory/core-memory-write .openclaw/bin/core-memory-write
 corekit/memory/update-deep-truths .openclaw/bin/update-deep-truths
+corekit/memory/session-summary .openclaw/bin/session-summary
 
 
 # Service files

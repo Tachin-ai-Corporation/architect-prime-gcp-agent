@@ -17,11 +17,11 @@ Read these sources in order:
    read ~/.openclaw/workspace/MEMORY.md
    ```
 
-2. **Daily conversation logs** — what happened today:
+2. **Recent conversations** — what happened in the last 24 hours:
    ```
-   read ~/.openclaw/workspace/memory/
+   exec session-summary --hours 24 --limit 20
    ```
-   Read the most recent `.md` file (today's date or yesterday's).
+   This extracts user questions and agent responses from cortex's session transcripts.
 
 3. **Current Core Memory** — what we already know:
    ```

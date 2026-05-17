@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# session-summary — Extract human-visible conversation summary from cortex sessions
+#
+# Produces a readable summary of recent cortex conversations by extracting
+# user questions and assistant final responses from JSONL session transcripts.
+#
+# Usage:
+#   session-summary [--hours 24] [--limit 20]
+#
+# Output: Plain text summary of recent conversations, suitable for memory consolidation.
+# Only includes user messages and final assistant text (no tool calls, no intermediate output).
+
+set -euo pipefail
+
+HOURS=24
+LIMIT=20
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hours) HOURS="$2"; shift 2 ;;
+    --limit) LIMIT="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+OC_DIR="${OC_HOST_ROOT:-/opt/openclaw}/.openclaw"
+# Inside container, resolve directly
+if [[ -d "/home/node/.openclaw/agents/cortex/sessions" ]]; then
+  SESSION_DIR="/home/node/.openclaw/agents/cortex/sessions"
+else
+  SESSION_DIR="${OC_DIR}/agents/cortex/sessions"
+fi
+
+# Find JSONL files modified within the time window
+CUTOFF=$(date -d "-${HOURS} hours" +%s 2>/dev/null || date -v-${HOURS}H +%s 2>/dev/null || echo "0")
+
+python3 - "$SESSION_DIR" "$CUTOFF" "$LIMIT" <<'PYEOF'
+import json, sys, os, glob
+
+session_dir = sys.argv[1]
+cutoff = int(sys.argv[2])
+limit = int(sys.argv[3])
+
+# Find recent JSONL files
+jsonl_files = sorted(glob.glob(os.path.join(session_dir, "*.jsonl")),
+                     key=os.path.getmtime, reverse=True)
+
+conversations = []
+for fpath in jsonl_files:
+    if os.path.getmtime(fpath) < cutoff:
+        continue
+    if fpath.endswith("sessions.json"):
+        continue
+
+    turns = []
+    with open(fpath) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except:
+                continue
+            if entry.get("type") != "message":
+                continue
+            msg = entry.get("message", {})
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+
+            # Extract text from content
+            text = ""
+            if isinstance(content, str):
+                text = content
+            elif isinstance(content, list):
+                text_parts = [c.get("text", "") for c in content
+                              if isinstance(c, dict) and c.get("type") == "text"]
+                text = "\n".join(t for t in text_parts if t)
+
+            if not text.strip():
+                continue
+
+            if role == "user":
+                turns.append(("User", text.strip()[:500]))
+            elif role == "assistant":
+                # Only keep if it's a text-only response (no tool calls in same content)
+                has_tools = False
+                if isinstance(content, list):
+                    has_tools = any(c.get("type") == "toolCall" for c in content if isinstance(c, dict))
+                if not has_tools:
+                    turns.append(("Agent", text.strip()[:500]))
+
+    if turns:
+        conversations.append((os.path.basename(fpath), turns))
+
+if not conversations:
+    print("No recent conversations found.")
+    sys.exit(0)
+
+# Output summary
+total_turns = 0
+for fname, turns in conversations:
+    print(f"--- Session: {fname} ---")
+    for role, text in turns[-limit:]:
+        print(f"{role}: {text}")
+        print()
+        total_turns += 1
+    if total_turns >= limit:
+        break
+
+print(f"--- {total_turns} turns from {len(conversations)} sessions ---")
+PYEOF
