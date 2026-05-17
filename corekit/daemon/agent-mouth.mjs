@@ -563,7 +563,7 @@ async function writeTaskLog(task, status, outputChars, classified, errorMsg) {
 async function main() {
   if (!GCP_PROJECT) { console.error('GCP_PROJECT_ID required'); process.exit(1); }
   log('Starting Mouth v2 (JSONL)', { channel: CHANNEL, agent: AGENT_ID, poll_ms: POLL_INTERVAL,
-    llm: LLM_ENABLED, status_updates: STATUS_ENABLED, ack_ms: ACK_AFTER_MS, update_ms: UPDATE_AFTER_MS });
+    llm: LLM_ENABLED, status_updates: STATUS_ENABLED, schedule: STATUS_SCHEDULE });
 
   process.on('SIGTERM', () => { log('Shutting down...'); process.exit(0); });
   process.on('SIGINT', () => { log('Shutting down...'); process.exit(0); });
