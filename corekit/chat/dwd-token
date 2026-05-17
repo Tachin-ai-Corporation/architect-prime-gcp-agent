@@ -58,9 +58,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 # If no user/signer specified, try reading from chat-config.json
+# Search multiple paths: OC_HOST_ROOT (host), OPENCLAW_CONFIG_DIR (container), /home/node (container default)
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-CONFIG_FILE="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
-if [[ -f "$CONFIG_FILE" ]]; then
+CONFIG_SEARCH_PATHS=(
+  "${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+  "${OPENCLAW_CONFIG_DIR:-/dev/null}/corekit/chat-config.json"
+  "/home/node/.openclaw/corekit/chat-config.json"
+)
+CONFIG_FILE=""
+for p in "${CONFIG_SEARCH_PATHS[@]}"; do
+  if [[ -f "$p" ]]; then CONFIG_FILE="$p"; break; fi
+done
+
+if [[ -n "$CONFIG_FILE" ]]; then
   if [[ -z "$USER_EMAIL" ]]; then
     USER_EMAIL="$(python3 -c "
 import json
@@ -87,8 +97,12 @@ fi
 # If .identity-lock exists, refuse to impersonate any email other than the
 # locked identity. This prevents agents from impersonating arbitrary users.
 # Only bootstrap/upgrade-corekit can write this file (chmod 444).
-IDENTITY_LOCK="${OC_HOST_ROOT}/.openclaw/.identity-lock"
-if [[ -f "$IDENTITY_LOCK" ]]; then
+# Search multiple paths matching config search order.
+IDENTITY_LOCK=""
+for base in "${OC_HOST_ROOT}/.openclaw" "${OPENCLAW_CONFIG_DIR:-/dev/null}" "/home/node/.openclaw"; do
+  if [[ -f "${base}/.identity-lock" ]]; then IDENTITY_LOCK="${base}/.identity-lock"; break; fi
+done
+if [[ -n "$IDENTITY_LOCK" ]]; then
   LOCKED_EMAIL="$(cat "$IDENTITY_LOCK" 2>/dev/null | tr -d '[:space:]')"
   if [[ -n "$LOCKED_EMAIL" && "$USER_EMAIL" != "$LOCKED_EMAIL" ]]; then
     die "IDENTITY LOCKDOWN: cannot impersonate '${USER_EMAIL}', this agent's identity is '${LOCKED_EMAIL}'"
