@@ -520,24 +520,47 @@ async function main() {
           });
         }
 
-        // Write TASK.json (for Mouth to know which channel to deliver to)
-        writeTaskJson({ ...msg, text: cleanedText }, taskId);
-
-        // Recency Anchoring: Wrap the final text in a structured prompt
-        const promptPayload = {
-          system_directive: "You are Cortex. You MUST use sessions_spawn to delegate work to prefrontal. You are not permitted to execute tasks directly.",
-          user_message: cleanedText
+        // ---- Brain v3: Write intake record to Firestore ----
+        // Brain service picks this up, classifies it, creates envelopes,
+        // and orchestrates the Cortex loop deterministically.
+        const intakeId = `i-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const intakeDoc = {
+          id: { stringValue: intakeId },
+          text: { stringValue: cleanedText },
+          source: { stringValue: CHANNEL },
+          source_meta: { mapValue: { fields: {
+            taskId: { stringValue: taskId },
+            agentEmail: { stringValue: AGENT_USER_EMAIL },
+            agentId: { stringValue: AGENT_ID },
+            primeId: { stringValue: PRIME_ID },
+            ...(msg.metadata?.spaceName ? { spaceName: { stringValue: msg.metadata.spaceName } } : {}),
+            ...(msg.metadata?.threadName ? { threadName: { stringValue: msg.metadata.threadName } } : {}),
+            ...(msg.metadata?.email ? { senderEmail: { stringValue: msg.metadata.email } } : {}),
+          } } },
+          status: { stringValue: 'pending' },
+          created_at: { timestampValue: new Date().toISOString() },
         };
-        const finalContent = JSON.stringify(promptPayload, null, 2);
 
-        // Build conversation
-        conversationHistory.push({ role: 'user', content: finalContent });
-        while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
+        try {
+          const token = await getAccessToken();
+          const intakeUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}/intake/${intakeId}`;
+          const resp = await fetch(intakeUrl, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: intakeDoc }),
+          });
+          if (!resp.ok) {
+            const errText = await resp.text();
+            log('Intake write failed', { status: resp.status, error: errText.slice(0, 200) });
+          } else {
+            log('Intake written', { intakeId, taskId });
+          }
+        } catch (err) {
+          log('Intake write error', { error: err.message, intakeId });
+        }
 
-        // FIRE AND FORGET — gateway call is non-blocking
-        // The Mouth service will poll for output and handle delivery.
-        fireGateway([...conversationHistory]);
-        log('Dispatched to gateway (fire-and-forget)', { taskId });
+        // Write TASK.json (for Mouth compatibility during transition)
+        writeTaskJson({ ...msg, text: cleanedText }, taskId);
 
         // Touch health check file
         try { writeFileSync('/var/run/agent-ears-last-poll', String(Date.now())); } catch {}

@@ -558,11 +558,103 @@ async function writeTaskLog(task, status, outputChars, classified, errorMsg) {
 }
 
 // ================================================================
+// BRAIN V3 — ENVELOPE POLLING
+// ================================================================
+const _deliveredEnvelopes = new Set();
+
+async function pollBrainV3Envelopes() {
+  if (!FIRESTORE_URL || !PRIME_ID) return;
+
+  try {
+    const token = await getAccessToken();
+    // Query for completed envelopes that haven't been delivered yet
+    const query = {
+      structuredQuery: {
+        from: [{ collectionId: 'work' }],
+        where: {
+          compositeFilter: {
+            op: 'AND',
+            filters: [
+              { fieldFilter: { field: { fieldPath: 'status' }, op: 'IN',
+                value: { arrayValue: { values: [
+                  { stringValue: 'complete' },
+                  { stringValue: 'needs_input' }
+                ] } } } },
+              { fieldFilter: { field: { fieldPath: 'type' }, op: 'IN',
+                value: { arrayValue: { values: [
+                  { stringValue: 'M' },
+                  { stringValue: 'T' }
+                ] } } } },
+            ]
+          }
+        },
+        orderBy: [{ field: { fieldPath: 'updated_at' }, direction: 'DESCENDING' }],
+        limit: 10,
+      },
+      parent: `${FIRESTORE_URL}/primes/${PRIME_ID}`,
+    };
+
+    const res = await fetch(`${FIRESTORE_URL}:runQuery`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(query),
+    });
+
+    if (!res.ok) return;
+    const results = await res.json();
+    if (!Array.isArray(results)) return;
+
+    for (const r of results) {
+      if (!r.document?.fields) continue;
+      const f = r.document.fields;
+      const envId = f.id?.stringValue;
+      const output = f.output?.stringValue;
+      const status = f.status?.stringValue;
+
+      if (!envId || !output || _deliveredEnvelopes.has(envId)) continue;
+
+      // Mark as delivered immediately to prevent duplicates
+      _deliveredEnvelopes.add(envId);
+
+      log('Brain v3 envelope ready', { envId, status, chars: output.length });
+
+      // Classify and deliver through the existing pipeline
+      try {
+        if (status === 'needs_input') {
+          // For needs_input, deliver the question directly
+          await deliver(output);
+          log('Delivered needs_input prompt', { envId });
+        } else {
+          // For complete, run through the full classify pipeline
+          await classifyAndDeliver(output);
+          log('Delivered envelope output', { envId });
+        }
+
+        // Mark envelope as delivered in Firestore
+        const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel`;
+        await fetch(docPath, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: {
+            delivered_at: { timestampValue: new Date().toISOString() },
+            delivered_channel: { stringValue: CHANNEL },
+          } }),
+        });
+      } catch (err) {
+        log('Envelope delivery error', { envId, error: err.message });
+      }
+    }
+  } catch (err) {
+    log('Brain v3 poll error', { error: err.message });
+  }
+}
+
+// ================================================================
 // MAIN LOOP
 // ================================================================
 async function main() {
   if (!GCP_PROJECT) { console.error('GCP_PROJECT_ID required'); process.exit(1); }
-  log('Starting Mouth v2 (JSONL)', { channel: CHANNEL, agent: AGENT_ID, poll_ms: POLL_INTERVAL,
+  log('Starting Mouth v3 (JSONL + Brain v3 envelopes)', { channel: CHANNEL, agent: AGENT_ID, poll_ms: POLL_INTERVAL,
     llm: LLM_ENABLED, status_updates: STATUS_ENABLED, schedule: STATUS_SCHEDULE });
 
   process.on('SIGTERM', () => { log('Shutting down...'); process.exit(0); });
@@ -574,7 +666,7 @@ async function main() {
 
   while (true) {
     try {
-      // Tail JSONL for new entries
+      // Tail JSONL for new entries (v2 path — still works for direct gateway calls)
       const entries = tailJSONL();
       for (const entry of entries) processEntry(entry);
 
@@ -586,7 +678,7 @@ async function main() {
         }
       }
 
-      // ── Check for confirmed final response ──
+      // ── Check for confirmed final response (v2 JSONL path) ──
       if (turn.status !== 'IDLE' && turn.status !== 'DONE' && checkFinalResponse()) {
         log('Final response confirmed', { chars: turn.candidateFinal.length,
           agents: turn.dispatchedAgents, elapsed_s: Math.floor((Date.now() - turn.startedAt) / 1000) });
@@ -597,6 +689,9 @@ async function main() {
         await new Promise(r => setTimeout(r, POLL_INTERVAL));
         continue;
       }
+
+      // ── Brain v3: Poll for completed envelopes ──
+      await pollBrainV3Envelopes();
 
       // ── Status updates (exponential backoff schedule) ──
       if (turn.status !== 'IDLE' && turn.status !== 'DONE' && turn.startedAt
