@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.18.15.0`
+> - **Current version:** `v2026.05.18.16.0`
 
 ---
 
@@ -833,7 +833,14 @@ architect-prime/
 4. **Agent Identity Fallback** — Updated `ws-token` to resolve the agent identity via `chat-config.json` when `AGENT_USER_EMAIL` is missing, solving systemic 401 authentication issues.
 5. **Prompt Management** — Added `ears-preprocess-prompt.md` to `corekit/daemon/` and updated `infra/manifests/base.txt` to deploy it.
 
-### Current: v16.0 — Responsibilities Engine
+### Completed: v2026.05.18.16.0 — Memory Pipeline Stabilization & Prefrontal Gate
+> *Repaired long-term memory sync and strictly enforced the prefrontal delegation boundary.*
+
+1. **Memory Pipeline Repaired** — Fixed Firestore pathing in `core-memory-write` and `core-memory-read` to properly target the `core_memory` collection. Handled Windows CRLF in `update-deep-truths` to successfully sync deep truths into `SOUL.md`.
+2. **Prefrontal Hard Gate Enforced** — Revoked root `exec` and `process` privileges from the `cortex` agent definition. Cortex is now strictly forced to delegate terminal commands to `motor` via `sessions_spawn`.
+3. **Ears Recency Anchoring** — `agent-ears` now dynamically wraps incoming GChat/Dashboard messages in a structured JSON payload, injecting a mandatory `system_directive` reinforcing delegation directly beside the user input.
+
+### Current: v17.0 — Responsibilities Engine
 > *Goal: Agents work autonomously on recurring tasks via structured cron-driven responsibilities.*
 
 1. **RESPONSIBILITY.toml manifests** — Declarative responsibility definitions with schedule, scope, and reporting config.

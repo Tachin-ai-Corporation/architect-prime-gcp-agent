@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.18.15.0`
+> **Current version:** `v2026.05.18.16.0`
 
 ---
 
@@ -354,6 +354,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.05.13** | Prefrontal Hard Gate + Validation Architecture — BRAIN_CARD stripped to bare agent names (zero routing knowledge), dynamic SOUL.md composition (SOUL_PROTOCOL.md), PLAN_STATUS: APPROVED hard gate (check-plan-compliance injects PLAN_VIOLATION via stdout), validation mandatory for ALL pipeline steps, cerebellum converted to pure test runner (ALL_PASS/FAIL/NO_RULES verdicts). |
 | **v2026.05.08.14** | Mouth v2 (JSONL-Native) + Ears Context Window — Replaced log scraping with JSONL session transcript tailing (structural final response detection, eliminates double delivery). Turn state machine (IDLE→WORKING→ACKED→UPDATED→DONE). LLM-voiced status updates (5s ack, 120s progress). Prompts externalized to .md files. Ears context window: prior N chat messages included with @mentions for ambient conversation awareness. |
 | **v2026.05.18.15** | Chat Input Hardening & LLM Preprocessor — Restored deterministic agent-to-drive communication by adding a Gemini 2.5 Flash preprocessing step in `agent-ears.mjs` to automatically repair Chat-mangled text (e.g., stripped underscores in folder IDs) before dispatch to the OpenClaw brain. Added detailed audit logging. Hardened Drive skills to resolve 404s and fallback identity for 401s. |
+| **v2026.05.18.16** | Memory Pipeline Stabilization & Prefrontal Gate — Fixed Firestore pathing in memory scripts to properly target the `core_memory` collection. Fixed regex in deep truths sync. Stripped root `exec` privileges from Cortex to strictly enforce the prefrontal/motor boundary. Added recency anchoring in `agent-ears.mjs` to dynamically wrap incoming GChat/Dashboard messages in a structured JSON payload with a `system_directive` reinforcing delegation. |
 
 ---
 

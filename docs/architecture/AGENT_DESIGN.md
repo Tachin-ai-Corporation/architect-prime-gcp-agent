@@ -2,7 +2,7 @@
 
 > **Status:** ASPIRATIONAL — Design framework for future multi-team fleet deployments
 > **Written:** 2026-03-22
-> **Last verified:** v2026.05.18.15.0
+> **Last verified:** v2026.05.18.16.0
 
 > **Design reference for building new fleet agent types.**
 > Defines how to scope agent specialties, assign tools, and design delegation chains.
