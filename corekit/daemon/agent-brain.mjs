@@ -251,8 +251,24 @@ async function callCortex(mode, payload) {
   }
 
   const data = await resp.json();
-  const content = data.choices?.[0]?.message?.content || '';
-  log('DEBUG', `Cortex raw response (${content.length} chars)`);
+
+  // Debug: log the response structure to understand the format
+  const msg = data.choices?.[0]?.message;
+  log('DEBUG', `Cortex response structure: role=${msg?.role}, content_type=${typeof msg?.content}, has_choices=${!!data.choices?.length}`);
+
+  // Extract content — handle both string and array-of-objects formats
+  let content = '';
+  if (typeof msg?.content === 'string') {
+    content = msg.content;
+  } else if (Array.isArray(msg?.content)) {
+    // OpenClaw may return content as [{type: "text", text: "..."}]
+    content = msg.content
+      .filter(c => c.type === 'text')
+      .map(c => c.text || '')
+      .join('\n');
+  }
+
+  log('DEBUG', `Cortex raw response (${content.length} chars): ${content.substring(0, 300)}`);
 
   return parseJsonResponse(content);
 }
