@@ -170,7 +170,8 @@ async function firestoreRead(collection, docId) {
 async function firestoreQuery(collection, filters) {
   const token = await getAuthToken();
   if (!token) return [];
-  const url = `${FIRESTORE_BASE}:runQuery`;
+  const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+  const url = `${parentPath}:runQuery`;
   const structuredQuery = {
     from: [{ collectionId: collection }],
     where: {
@@ -195,10 +196,7 @@ async function firestoreQuery(collection, filters) {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      structuredQuery,
-      parent: `${FIRESTORE_BASE}/primes/${PRIME_ID}`,
-    }),
+    body: JSON.stringify({ structuredQuery }),
   });
   if (!resp.ok) {
     const text = await resp.text();
