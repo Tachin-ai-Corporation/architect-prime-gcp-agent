@@ -54,7 +54,20 @@ try {
 } catch {
   try {
     GATEWAY_TOKEN = readFileSync('/home/node/.openclaw/.gateway-token', 'utf8').trim();
-  } catch { log('WARN', 'No gateway token found'); }
+  } catch {
+    // Fallback: read from openclaw.json config (same as agent-ears)
+    try {
+      const cfg = JSON.parse(readFileSync('/home/node/.openclaw/openclaw.json', 'utf8'));
+      GATEWAY_TOKEN = cfg.gateway?.auth?.token || 'no-token';
+    } catch {
+      // Fallback: read from container env
+      if (process.env.OPENCLAW_GATEWAY_TOKEN) {
+        GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN;
+      } else {
+        log('WARN', 'No gateway token found');
+      }
+    }
+  }
 }
 
 // ---- Agent registry ----
