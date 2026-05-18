@@ -17,6 +17,7 @@
 //   CHANNEL=dashboard node agent-ears.mjs
 // ============================================================
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -28,15 +29,27 @@ const HTTP_TIMEOUT = 600_000;
 
 // Ears-specific config (from contracts or env)
 let EARS_CONFIG = { firestore_poll_ms: 3000, gchat_poll_ms: 5000, dedup_window_ms: 300000, cooldown_ms: 2000 };
+let CONTRACTS = { ears: {}, vertex: {} };
 try {
-  const contracts = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
-  if (contracts.ears) EARS_CONFIG = { ...EARS_CONFIG, ...contracts.ears };
+  CONTRACTS = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
+  if (CONTRACTS.ears) EARS_CONFIG = { ...EARS_CONFIG, ...CONTRACTS.ears };
 } catch {}
 
 const POLL_INTERVAL = CHANNEL === 'gchat' ? EARS_CONFIG.gchat_poll_ms : EARS_CONFIG.firestore_poll_ms;
 const DEDUP_WINDOW = EARS_CONFIG.dedup_window_ms;
 const COOLDOWN_MS = EARS_CONFIG.cooldown_ms;
 const CONTEXT_WINDOW = EARS_CONFIG.gchat_context_messages || 5;
+
+// Preprocessing config (LLM-based message repair for gchat)
+const PREPROCESS_CFG = EARS_CONFIG.preprocess || {};
+const PREPROCESS_ENABLED = PREPROCESS_CFG.enabled === true && CHANNEL === 'gchat';
+const PREPROCESS_MODEL = PREPROCESS_CFG.model || 'gemini-2.5-flash';
+const PREPROCESS_MAX_TOKENS = PREPROCESS_CFG.maxTokens || 2000;
+const PREPROCESS_TEMPERATURE = PREPROCESS_CFG.temperature ?? 0.0;
+
+// Vertex AI config
+const VERTEX_PROJECT = process.env.GCP_PROJECT_ID;
+const VERTEX_LOCATION = CONTRACTS.vertex?.location || process.env.GOOGLE_CLOUD_LOCATION || 'global';
 
 // GChat-specific config
 const AGENT_USER_EMAIL = process.env.AGENT_USER_EMAIL || '';
@@ -90,10 +103,83 @@ const MAX_HISTORY = 4;
 
 // ---- Logging ----
 const EARS_LOG = '/var/log/agent-ears.log';
+const PREPROCESS_LOG = '/var/log/agent-ears-preprocess.log';
 function log(msg, meta = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), svc: 'agent-ears', ch: CHANNEL, msg, ...meta }) + '\n';
   process.stderr.write(line);
   try { appendFileSync(EARS_LOG, line); } catch {}
+}
+
+// ---- Preprocess Prompt ----
+const SCRIPT_DIR = dirname(new URL(import.meta.url).pathname);
+let PREPROCESS_PROMPT = '';
+if (PREPROCESS_ENABLED) {
+  for (const base of [SCRIPT_DIR, '/home/node/.openclaw/bin']) {
+    try { PREPROCESS_PROMPT = readFileSync(`${base}/ears-preprocess-prompt.md`, 'utf8'); break; } catch {}
+  }
+  if (!PREPROCESS_PROMPT) log('WARN: preprocess enabled but prompt file not found');
+}
+
+// ---- LLM Call (Vertex AI, same pattern as mouth) ----
+async function callLLM(systemPrompt, userText) {
+  const token = await getAccessToken();
+  const loc = VERTEX_LOCATION;
+  const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
+  const url = `https://${host}/v1/projects/${VERTEX_PROJECT}/locations/${loc}/publishers/google/models/${PREPROCESS_MODEL}:generateContent`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: {
+        temperature: PREPROCESS_TEMPERATURE,
+        maxOutputTokens: PREPROCESS_MAX_TOKENS,
+        responseMimeType: 'application/json'
+      }
+    })
+  });
+  if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// ---- Message Preprocessing ----
+async function preprocessMessage(text) {
+  if (!PREPROCESS_ENABLED || !PREPROCESS_PROMPT) return text;
+
+  try {
+    const start = Date.now();
+    const raw = await callLLM(PREPROCESS_PROMPT, text);
+    const result = JSON.parse(raw);
+    const elapsed = Date.now() - start;
+
+    // Audit log — always write what came in and what goes out
+    const audit = {
+      ts: new Date().toISOString(),
+      original: text.slice(0, 500),
+      cleaned: (result.cleaned || text).slice(0, 500),
+      repairs: result.repairs || [],
+      confidence: result.confidence || 'unknown',
+      elapsed_ms: elapsed
+    };
+    try { appendFileSync(PREPROCESS_LOG, JSON.stringify(audit) + '\n'); } catch {}
+
+    if (result.repairs && result.repairs.length > 0) {
+      log('Preprocess repaired message', {
+        repairs: result.repairs,
+        confidence: result.confidence,
+        elapsed_ms: elapsed
+      });
+      return result.cleaned || text;
+    }
+
+    // No repairs needed
+    return text;
+  } catch (err) {
+    log('Preprocess error (passing through raw)', { error: err.message });
+    return text; // Never block on preprocess failure
+  }
 }
 
 // ---- GCE Metadata Access Token ----
@@ -361,6 +447,7 @@ async function main() {
   log('Starting', {
     channel: CHANNEL, agent: AGENT_ID, project: GCP_PROJECT,
     poll_interval_ms: POLL_INTERVAL,
+    preprocess: PREPROCESS_ENABLED ? { model: PREPROCESS_MODEL, prompt_loaded: !!PREPROCESS_PROMPT } : false,
     ...(CHANNEL === 'gchat' ? { email: AGENT_USER_EMAIL, mention: AGENT_MENTION } : { primeId: PRIME_ID })
   });
 
@@ -423,11 +510,21 @@ async function main() {
         const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         log('Received', { text: msg.text.slice(0, 100), taskId });
 
+        // LLM Preprocess: repair Chat-mangled text (gchat channel only)
+        const cleanedText = await preprocessMessage(msg.text);
+        if (cleanedText !== msg.text) {
+          log('Preprocessed text changed', {
+            original: msg.text.slice(0, 100),
+            cleaned: cleanedText.slice(0, 100),
+            taskId
+          });
+        }
+
         // Write TASK.json (for Mouth to know which channel to deliver to)
-        writeTaskJson(msg, taskId);
+        writeTaskJson({ ...msg, text: cleanedText }, taskId);
 
         // Build conversation
-        conversationHistory.push({ role: 'user', content: msg.text });
+        conversationHistory.push({ role: 'user', content: cleanedText });
         while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
 
         // FIRE AND FORGET — gateway call is non-blocking
