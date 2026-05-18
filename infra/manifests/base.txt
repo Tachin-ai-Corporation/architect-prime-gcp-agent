@@ -57,6 +57,12 @@ corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.servi
 corekit/daemon/agent-ears.service .openclaw/corekit/agent-ears.service
 corekit/daemon/agent-mouth.service .openclaw/corekit/agent-mouth.service
 
+# Brain v3 — orchestration service
+corekit/daemon/agent-brain.mjs .openclaw/bin/agent-brain.mjs
+corekit/daemon/agent-brain.service .openclaw/corekit/agent-brain.service
+corekit/daemon/start-agent-brain .openclaw/bin/start-agent-brain
+corekit/config/agent-registry.json .openclaw/corekit/agent-registry.json
+
 # Config templates (both needed for render-config)
 corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
 corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl

@@ -1,0 +1,55 @@
+{
+  "version": "1.0",
+  "agent_id": "stan",
+  "job": "devops",
+  "agents": {
+    "cortex": {
+      "route": "openclaw/cortex",
+      "model": "gemini-3.1-pro-preview",
+      "intents": ["classify", "decide", "synthesize", "short_circuit"],
+      "tools": [],
+      "description": "Guiding intelligence. Classifies intake, decides actions, synthesizes results.",
+      "constraints": "Cannot execute tools. Decides only."
+    },
+    "temporal-memory": {
+      "route": "openclaw/temporal-memory",
+      "model": "gemini-2.5-flash",
+      "intents": ["recall", "write"],
+      "tools": ["memory_search", "core-memory-read", "core-memory-write"],
+      "description": "Memory recall and storage.",
+      "constraints": "Memory only. No external APIs."
+    },
+    "motor": {
+      "route": "openclaw/motor",
+      "model": "gemini-2.5-flash",
+      "intents": ["execute"],
+      "tools": ["drive-ls", "drive-upload", "drive-mkdir", "drive-mv", "drive-cat", "drive-find", "drive-meta", "drive-share", "drive-trash", "gmail-send", "gmail-search", "gmail-read", "gmail-reply", "gmail-drafts", "calendar-create", "calendar-events", "calendar-update", "calendar-delete", "calendar-search", "exec"],
+      "description": "Execution agent. Workspace tools + exec.",
+      "constraints": "Executes. Does not plan or verify."
+    },
+    "cerebellum": {
+      "route": "openclaw/cerebellum",
+      "model": "gemini-2.5-flash",
+      "intents": ["verify"],
+      "tools": [],
+      "description": "Verification. Returns pass/fail against accept_criteria.",
+      "constraints": "Read-only verification."
+    },
+    "temporal-research": {
+      "route": "openclaw/temporal-research",
+      "model": "gemini-2.5-flash",
+      "intents": ["research"],
+      "tools": ["vertex-grounding-search"],
+      "description": "Web search via Vertex AI grounding.",
+      "constraints": "Read-only research."
+    },
+    "prefrontal": {
+      "route": "openclaw/prefrontal",
+      "model": "gemini-2.5-flash",
+      "intents": ["plan"],
+      "tools": [],
+      "description": "Deep planning specialist.",
+      "constraints": "Plans only. Never executes."
+    }
+  }
+}
