@@ -6,8 +6,11 @@
 // Processes Firestore intake records through the Cortex loop
 // and manages envelopes (the R/C/M/T work hierarchy).
 //
-// Phase 1: intake → classify → short_circuit only
-// Phase 2+: dispatch, synthesize, plan, delegate, etc.
+// Phase 2: full Cortex loop — dispatch, synthesize, queue awareness
+//   - callAgent: HTTP dispatch to any agent via gateway
+//   - Queue awareness: pending intake count + queue passed to Cortex
+//   - status_update: Cortex can send "working on X" messages
+//   - Stale envelope cleanup at startup
 //
 // Design principles:
 //   - LLMs think. Deterministic systems orchestrate.
@@ -224,7 +227,7 @@ function now() {
 // ---- Gateway HTTP dispatch ----
 async function callCortex(mode, payload) {
   const systemPrompt = buildSystemPrompt(mode, payload);
-  const userPrompt = buildUserPrompt(mode, payload);
+  const userPrompt = `[BRAIN-ORCHESTRATED]\n${buildUserPrompt(mode, payload)}`;
 
   log('INFO', `Calling Cortex: mode=${mode}`);
 
@@ -301,23 +304,37 @@ function buildUserPrompt(mode, payload) {
       agent_registry: REGISTRY.agents,
       prior_results: payload.prior_results || [],
       iteration: payload.iteration || 1,
+      pending_intake_count: payload.pending_intake_count || 0,
+      pending_queue: payload.pending_queue || [],
     });
   }
   return JSON.stringify(payload);
 }
 
-// ---- Response parser ----
+// ---- Response parser (hardened for Phase 2) ----
 function parseJsonResponse(raw) {
   // Strip markdown fences
   let cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
 
-  // Try to extract JSON object
+  // Strip OpenClaw Action: blocks that may follow JSON
+  cleaned = cleaned.replace(/\nAction:.*$/s, '');
+
+  // Try bracket-balanced JSON extraction
+  const extracted = extractBalancedJson(cleaned);
+  if (extracted) {
+    try {
+      const parsed = JSON.parse(extracted);
+      if (parsed.action) return parsed;
+    } catch {}
+  }
+
+  // Try greedy regex match
   const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
       return JSON.parse(jsonMatch[0]);
     } catch (e) {
-      log('WARN', `JSON parse failed: ${e.message}`);
+      log('WARN', `JSON parse failed (greedy): ${e.message}`);
     }
   }
 
@@ -327,6 +344,181 @@ function parseJsonResponse(raw) {
   } catch (e) {
     log('ERROR', `Could not parse Cortex response: ${raw.substring(0, 300)}`);
     return { error: 'parse_failed', raw: raw.substring(0, 500) };
+  }
+}
+
+function extractBalancedJson(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        const candidate = text.substring(start, i + 1);
+        return candidate;
+      }
+    }
+  }
+  return null;
+}
+
+// ---- Gateway HTTP dispatch to agents ----
+async function callAgent(agentId, envelope) {
+  const agentInfo = REGISTRY.agents[agentId];
+  if (!agentInfo) {
+    return { success: false, output: null, error: `Unknown agent: ${agentId}`, durationMs: 0 };
+  }
+
+  // Pre-flight: check gateway liveness
+  const alive = await checkGatewayLiveness();
+  if (!alive) {
+    return { success: false, output: null, error: 'Gateway unreachable', durationMs: 0 };
+  }
+
+  const route = agentInfo.route || `openclaw/${agentId}`;
+  const instruction = envelope.instruction || envelope.task || '';
+  const context = envelope.context_summary || '';
+  const criteria = envelope.accept_criteria || '';
+
+  const userMessage = [
+    `[BRAIN-ORCHESTRATED]`,
+    instruction,
+    context ? `\nContext: ${context}` : '',
+    criteria ? `\nAcceptance criteria: ${criteria}` : '',
+  ].filter(Boolean).join('\n');
+
+  log('INFO', `Dispatching to ${agentId} via ${route}`);
+  const start = Date.now();
+
+  try {
+    const resp = await fetch(GATEWAY_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: route,
+        messages: [{ role: 'user', content: userMessage }],
+      }),
+      signal: AbortSignal.timeout(300_000),
+    });
+
+    const durationMs = Date.now() - start;
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      log('ERROR', `Agent ${agentId} HTTP error: ${resp.status} ${text.substring(0, 200)}`);
+      return { success: false, output: null, error: `HTTP ${resp.status}`, durationMs };
+    }
+
+    const data = await resp.json();
+    let content = '';
+    const msg = data.choices?.[0]?.message;
+    if (typeof msg?.content === 'string') {
+      content = msg.content;
+    } else if (Array.isArray(msg?.content)) {
+      content = msg.content.filter(c => c.type === 'text').map(c => c.text || '').join('\n');
+    }
+
+    log('INFO', `Agent ${agentId} responded (${content.length} chars, ${durationMs}ms)`);
+    return { success: true, output: content, error: null, durationMs };
+  } catch (e) {
+    const durationMs = Date.now() - start;
+    log('ERROR', `Agent ${agentId} dispatch error: ${e.message}`);
+    return { success: false, output: null, error: e.message, durationMs };
+  }
+}
+
+// ---- Gateway liveness check ----
+async function checkGatewayLiveness() {
+  try {
+    const resp = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/models`, {
+      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    return resp.ok;
+  } catch {
+    log('WARN', 'Gateway liveness check failed');
+    return false;
+  }
+}
+
+// ---- Queue awareness: pending intake with ordered details ----
+async function getPendingIntakeQueue() {
+  try {
+    const pending = await firestoreQuery('intake', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
+    ]);
+    return {
+      count: pending.length,
+      queue: pending.map((item, i) => ({
+        position: i + 1,
+        text: (item.text || '').substring(0, 120),
+        source: item.source || 'unknown',
+      })),
+    };
+  } catch {
+    return { count: 0, queue: [] };
+  }
+}
+
+// ---- Status update delivery (transient, for Mouth to pick up) ----
+async function deliverStatusUpdate(envelopeId, message) {
+  const statusId = generateId('status');
+  await firestoreWrite('work', statusId, {
+    id: statusId,
+    type: 'T',
+    parent_id: envelopeId,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: 'complete',
+    intent: 'status_update',
+    instruction: 'Status update',
+    output: message,
+    source_channel: 'system',
+    source_meta: {},
+    created_at: now(),
+    started_at: now(),
+    completed_at: now(),
+    updated_at: now(),
+    children: [],
+    accept_criteria: null,
+    context_summary: null,
+    context_forward: null,
+    error: null,
+    iteration: 0,
+  });
+  log('INFO', `Status update written: ${statusId} — ${message.substring(0, 80)}`);
+}
+
+// ---- Stale envelope cleanup ----
+async function cleanupStaleEnvelopes() {
+  log('INFO', 'Running stale envelope cleanup...');
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const stale = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'failed' } },
+    ]);
+    let cleaned = 0;
+    for (const env of stale) {
+      if (env.created_at && env.created_at < cutoff) {
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', updated_at: now() });
+        cleaned++;
+        log('INFO', `Archived stale envelope: ${env.id} (created ${env.created_at})`);
+      }
+    }
+    log('INFO', `Stale cleanup complete: ${cleaned} archived, ${stale.length - cleaned} recent failures kept`);
+  } catch (e) {
+    log('WARN', `Stale cleanup error: ${e.message}`);
   }
 }
 
@@ -396,7 +588,7 @@ async function processIntake(intake) {
   await processEnvelope(envelope);
 }
 
-// ---- Envelope processing (Phase 1: short_circuit only) ----
+// ---- Envelope processing (Phase 2: full Cortex loop) ----
 async function processEnvelope(envelope) {
   log('INFO', `Processing envelope: ${envelope.id} (type=${envelope.type}, status=${envelope.status})`);
 
@@ -415,6 +607,12 @@ async function processEnvelope(envelope) {
     iteration++;
     envelope.iteration = iteration;
 
+    // Queue awareness: check for pending intake
+    const queueInfo = await getPendingIntakeQueue();
+    if (queueInfo.count > 0) {
+      log('INFO', `Pending intake: ${queueInfo.count} queued`);
+    }
+
     const decision = await callCortex('decide', {
       envelope: {
         id: envelope.id,
@@ -426,9 +624,20 @@ async function processEnvelope(envelope) {
       memory: {}, // Phase 3
       prior_results: priorResults,
       iteration,
+      pending_intake_count: queueInfo.count,
+      pending_queue: queueInfo.queue,
     });
 
     if (decision.error) {
+      // Retry once: ask Cortex to respond with JSON only
+      if (decision.error === 'parse_failed' && iteration < MAX_ITERATIONS) {
+        log('WARN', `Parse failed, retrying with explicit JSON instruction`);
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] Your previous response could not be parsed as JSON. Respond with EXACTLY one JSON block, no markdown fences, no text before or after. Required field: "action".`,
+        });
+        continue;
+      }
       envelope.status = 'failed';
       envelope.error = `Cortex error: ${JSON.stringify(decision)}`;
       envelope.completed_at = now();
@@ -443,7 +652,6 @@ async function processEnvelope(envelope) {
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
 
     if (action === 'short_circuit') {
-      // Direct response — no agent dispatch needed
       envelope.output = decision.response;
       envelope.status = 'complete';
       envelope.completed_at = now();
@@ -455,7 +663,6 @@ async function processEnvelope(envelope) {
     }
 
     if (action === 'synthesize') {
-      // Synthesize final response from prior results
       envelope.output = decision.synthesis || decision.response;
       envelope.status = 'complete';
       envelope.completed_at = now();
@@ -467,13 +674,83 @@ async function processEnvelope(envelope) {
     }
 
     if (action === 'dispatch') {
-      // Phase 2+: dispatch to agent
-      // For Phase 1, treat as unsupported and fail gracefully
-      log('WARN', `Dispatch requested but not yet implemented (Phase 2). Asking Cortex to short_circuit.`);
+      const agentId = decision.agent;
+      const task = decision.task || decision.instruction || '';
+      const criteria = decision.accept_criteria || '';
+
+      if (!agentId) {
+        log('ERROR', `Dispatch missing agent field`);
+        priorResults.push({ agent: 'system', result: '[SYSTEM] Dispatch requires an "agent" field.' });
+        continue;
+      }
+
+      // Create child Task envelope
+      const childId = generateId('w');
+      const childEnvelope = {
+        id: childId,
+        type: 'T',
+        parent_id: envelope.id,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'active',
+        intent: decision.intent || 'execute',
+        instruction: task,
+        accept_criteria: criteria,
+        context_summary: envelope.context_summary || null,
+        output: null,
+        children: [],
+        context_forward: null,
+        error: null,
+        source_channel: 'brain',
+        source_meta: { dispatched_by: envelope.id },
+        created_at: now(),
+        started_at: now(),
+        completed_at: null,
+        updated_at: now(),
+        iteration: 0,
+      };
+
+      await firestoreWrite('work', childId, childEnvelope);
+      await writeHistory(childId, null, 'active', 'brain', `Dispatched to ${agentId}`);
+
+      // Track child on parent
+      envelope.children.push(childId);
+      envelope.updated_at = now();
+      await firestoreWrite('work', envelope.id, envelope);
+
+      log('INFO', `Dispatching child ${childId} to ${agentId}: ${task.substring(0, 100)}`);
+
+      // Call the agent
+      const result = await callAgent(agentId, childEnvelope);
+
+      // Update child envelope with result
+      childEnvelope.output = result.output || result.error;
+      childEnvelope.status = result.success ? 'complete' : 'failed';
+      childEnvelope.error = result.error;
+      childEnvelope.completed_at = now();
+      childEnvelope.updated_at = now();
+      await firestoreWrite('work', childId, childEnvelope);
+      await writeHistory(childId, 'active', childEnvelope.status, agentId,
+        result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
+
+      // Feed result back to Cortex
       priorResults.push({
-        agent: decision.agent,
-        result: `[SYSTEM] Dispatch to ${decision.agent} is not available in Phase 1. Please respond directly with short_circuit.`,
+        agent: agentId,
+        task: task.substring(0, 200),
+        result: result.success
+          ? (result.output || '').substring(0, 4000)
+          : `[FAILED] ${result.error}`,
+        success: result.success,
+        durationMs: result.durationMs,
       });
+
+      log('INFO', `Child ${childId} ${result.success ? 'completed' : 'failed'} (${result.durationMs}ms)`);
+      continue;
+    }
+
+    if (action === 'status_update') {
+      const message = decision.message || 'Working on it...';
+      await deliverStatusUpdate(envelope.id, message);
+      log('INFO', `Status update sent for envelope ${envelope.id}`);
       continue;
     }
 
@@ -539,7 +816,6 @@ function log(level, msg) {
 
 // ---- Intake poller ----
 // Uses Firestore REST query polling (real-time listeners require gRPC client).
-// Phase 1: poll every 3 seconds for pending intake records.
 let processing = false;
 
 async function pollIntake() {
@@ -582,6 +858,9 @@ async function main() {
   } catch (e) {
     log('WARN', `Gateway not reachable at startup: ${e.message}. Will retry on first intake.`);
   }
+
+  // Stale envelope cleanup
+  await cleanupStaleEnvelopes();
 
   // Start intake polling
   const POLL_MS = CONTRACTS.brain?.poll_interval_ms || 3000;

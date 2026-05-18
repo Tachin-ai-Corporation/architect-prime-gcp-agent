@@ -1,8 +1,8 @@
 # Brain v3 — Session Handoff
 
 > **Purpose:** Get a new session agent up to speed on the Brain v3 implementation.
-> **Last updated:** 2026-05-18T23:15:00Z
-> **Status:** Phase 1 COMPLETE. Ready to start Phase 2.
+> **Last updated:** 2026-05-18T23:35:00Z
+> **Status:** Phase 2 CODE COMPLETE. Pending deploy + test on Stan.
 
 ---
 
@@ -44,26 +44,38 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 
 ### What's Live
 - **Phase 1: Foundation** — COMPLETE ✅
+- **Phase 2: Cortex Loop** — CODE COMPLETE, pending deploy ✅
 - **Stan** is running Brain v3 in production (fleet-stan VM)
 - End-to-end pipeline verified: Ears → intake → Brain → Cortex classify/decide → envelope complete → Mouth delivery
 - All code is on `main` branch, deployed via `upgrade-corekit`
 
+### Phase 2 Changes
+- Cortex SOUL expanded with `dispatch`, `synthesize`, `status_update` actions
+- Full iterative Cortex loop: dispatch → feed result back → decide again
+- `callAgent()` dispatches to any agent via gateway HTTP (fresh sessions only)
+- Queue awareness: Cortex receives pending intake count + ordered queue details
+- `status_update` action delivers "working on X, queue: Y" messages via Mouth
+- Response parser hardened: balanced JSON extraction, Action: block stripping, retry on parse failure
+- Gateway liveness check before each dispatch
+- `[BRAIN-ORCHESTRATED]` marker prevents dual delivery through JSONL path
+- Automated stale envelope cleanup at startup (archives failed >24h)
+
 ### Key Infrastructure
 | Component | File | Status |
 |-----------|------|--------|
-| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Running as systemd service |
+| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 2 Cortex loop |
 | Brain launcher | `corekit/daemon/start-agent-brain` | ✅ Handles PRIME_ID/AGENT_ID discovery |
 | Brain systemd unit | `corekit/daemon/agent-brain.service` | ✅ Enabled, auto-restart |
 | Ears (rewired) | `corekit/daemon/agent-ears.mjs` | ✅ Writes Firestore intake |
-| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + envelope polling |
-| Cortex SOUL v3 | `brain/fleet/_base/SOUL.md` | ✅ Structured JSON mode |
+| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + envelope polling + Brain-skip |
+| Cortex SOUL v3 | `brain/fleet/_base/SOUL.md` | ✅ classify + decide (dispatch/synthesize/status_update) |
 | Agent registry | `corekit/config/agent-registry.json` | ✅ 6 agents registered |
 | Firestore index | `intake(status, created_at)` | ✅ Created manually |
 
-### Known Issues (carry-forward to Phase 2)
-1. **Dual delivery** — Responses flow through BOTH v2 JSONL path and v3 envelope path. The JSONL tailer picks up the Cortex session output from Brain's HTTP call. Need to suppress JSONL delivery for Brain-initiated sessions.
-2. **Classify field mapping** — Cortex returns `intent` not `classification` in classify responses. Cosmetic; doesn't affect behavior. Fix: read `decision.intent` instead of `decision.classification` in processIntake.
-3. **Stale envelopes** — 3 failed envelopes in `work/` from before deployment fixes. Need cleanup or TTL.
+### Known Issues (carry-forward to Phase 3)
+1. **Memory not wired** — Brain passes empty `memory: {}` to Cortex. Phase 3 will hardwire temporal-memory recall/write.
+2. **No active envelope scan** — Brain doesn't check for in-progress work before classify. Phase 3.
+3. **No attach handling** — Cortex can classify as `attach` but Brain doesn't handle it yet. Phase 3.
 
 ---
 
@@ -123,19 +135,17 @@ echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-
 
 ---
 
-## What's Next: Phase 2 — Cortex Loop
+## What's Next: Phase 3 — Memory + Discovery
 
-**Goal:** Single-step dispatch → synthesize cycle. Cortex decides which agent to call, Brain dispatches, then Cortex synthesizes the result.
+**Goal:** Hardwired memory recall/write, active envelope scan, follow-up detection.
 
-**Read:** `docs/brainV3/03-PHASE-2-CORTEX-LOOP.md` for the full design.
+**Read:** `docs/brainV3/04-PHASE-3-MEMORY-DISCOVERY.md` for the full design.
 
 Key work items:
-1. Update Cortex SOUL.md with `dispatch` + `synthesize` + `status_update` actions
-2. Implement the full iterative Cortex loop in `agent-brain.mjs`
-3. Implement gateway HTTP dispatch to sub-agents (`call_agent`)
-4. Harden the JSON response parser
-5. Suppress JSONL delivery for Brain-initiated sessions (fix dual delivery)
-6. Test: dispatch to temporal-research, synthesize result
+1. Integrate temporal-memory HTTP calls for recall (before classify) and write (on envelope completion)
+2. Active envelope scan before classify (Firestore query for in-progress work)
+3. Handle `attach` classification (follow-up to existing envelopes, status checks, needs_input resumption)
+4. Test: memory recall enriches Cortex decisions, follow-up detection works
 
 ---
 
@@ -147,3 +157,6 @@ Key work items:
 - `v2026.05.18.17.5` — Fix brain firestoreQuery URL for scoped queries
 - `v2026.05.18.17.6` — Add debug logging for cortex response format
 - `v2026.05.18.17.7` — Move brain log to /tmp/
+
+## Commit History (Phase 2)
+- (pending) — Phase 2: Cortex loop dispatch/synthesize + queue awareness + dual delivery fix

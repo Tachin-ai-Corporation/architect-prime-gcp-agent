@@ -37,18 +37,21 @@
 ---
 
 ## Phase 2 — Cortex Loop
-> Single-step dispatch → synthesize cycle
+> Single-step dispatch → synthesize cycle. Fresh sessions only (no named sessions).
 
-- `[ ]` Cortex SOUL.md: add `dispatch` + `synthesize` + `status_update` actions
-- `[ ]` Brain: full iterative Cortex loop (dispatch → feed back → decide again)
-- `[ ]` Brain: gateway HTTP dispatch function (`call_agent`)
-- `[ ]` Brain: response parser hardening (JSON extraction from LLM output)
-- `[ ]` Brain: gateway liveness polling (`/status` endpoint)
-- `[ ]` Brain: queue awareness (pending intake count → Cortex → status_update)
-- `[ ]` Fix: suppress JSONL delivery for Brain-initiated Cortex sessions
-- `[ ]` Fix: classify field mapping (`intent` → `classification`)
-- `[ ]` Cleanup: delete stale failed envelopes from Phase 1
+- `[x]` Cortex SOUL.md: add `dispatch` + `synthesize` + `status_update` actions
+- `[x]` Cortex SOUL.md: queue-aware status updates (current work + ordered queue in message)
+- `[x]` Brain: full iterative Cortex loop (dispatch → feed back → decide again)
+- `[x]` Brain: gateway HTTP dispatch function (`callAgent`) with fresh sessions
+- `[x]` Brain: response parser hardening (balanced JSON extraction, Action: block stripping, retry on parse failure)
+- `[x]` Brain: gateway liveness polling (`checkGatewayLiveness`) before each dispatch
+- `[x]` Brain: queue awareness (pending_intake_count + ordered queue → Cortex → status_update)
+- `[x]` Brain: `status_update` action handler (transient envelope for Mouth delivery)
+- `[x]` Brain: `[BRAIN-ORCHESTRATED]` marker on all Cortex/agent calls
+- `[x]` Fix: suppress JSONL delivery for Brain-initiated sessions (Mouth skips `[BRAIN-ORCHESTRATED]`)
+- `[x]` Brain: automated stale envelope cleanup at startup (archive failed envelopes >24h)
 - `[ ]` Deploy + test: dispatch to temporal-research, synthesize result
+
 
 ---
 

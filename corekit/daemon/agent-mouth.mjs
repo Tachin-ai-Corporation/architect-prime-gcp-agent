@@ -280,10 +280,18 @@ function processEntry(entry) {
 
   // User message → new turn (only if we're idle or done)
   if (msg.role === 'user') {
+    const text = extractText(msg.content);
+
+    // Skip Brain-orchestrated sessions — these are delivered via v3 envelope path
+    if (text.includes('[BRAIN-ORCHESTRATED]')) {
+      log('Skipping Brain-orchestrated session', { preview: text.slice(0, 80) });
+      return;
+    }
+
     if (turn.status === 'IDLE' || turn.status === 'DONE') {
       turn = {
         status: 'WORKING', startedAt: Date.now(),
-        originalQuestion: extractText(msg.content),
+        originalQuestion: text,
         dispatchedAgents: [], completedAgents: [],
         candidateFinal: null, candidateAt: null,
         statusIndex: 0, lastStatusAt: null
