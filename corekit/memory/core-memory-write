@@ -118,9 +118,9 @@ EOF
 
 # ── Write to Firestore ───────────────────────────────────────
 if [[ -n "$AGENT" ]]; then
-  COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}/memory/core"
+  COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}/core_memory"
 else
-  COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+  COLLECTION_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/core_memory"
 fi
 
 RESPONSE=$(curl -sf \
@@ -144,7 +144,11 @@ fi
 
 # ── If superseding, update the old entry ────────────────────────
 if [[ -n "$SUPERSEDES" ]]; then
-  OLD_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core/${SUPERSEDES}"
+  if [[ -n "$AGENT" ]]; then
+    OLD_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}/core_memory/${SUPERSEDES}"
+  else
+    OLD_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/core_memory/${SUPERSEDES}"
+  fi
   curl -sf \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \

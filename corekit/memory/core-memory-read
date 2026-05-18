@@ -56,11 +56,11 @@ TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-# ── Build Firestore query ───────────────────────────────────────
+# ── Determine PARENT path ───────────────────────────────────────
 if [[ -n "$AGENT" ]]; then
-  COLLECTION="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}/memory/core"
+  PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}"
 else
-  COLLECTION="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory/core"
+  PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}"
 fi
 
 # Build structured query
@@ -84,7 +84,7 @@ fi
 QUERY_BODY=$(cat <<EOF
 {
   "structuredQuery": {
-    "from": [{"collectionId": "core"}],
+    "from": [{"collectionId": "core_memory"}],
     ${WHERE_CLAUSE}
     "orderBy": [{"field":{"fieldPath":"createdAt"},"direction":"DESCENDING"}],
     "limit": ${LIMIT}
@@ -94,7 +94,6 @@ EOF
 )
 
 # ── Execute query ───────────────────────────────────────────────
-PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/memory"
 RESPONSE=$(curl -sf \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \

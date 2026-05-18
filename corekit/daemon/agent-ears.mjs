@@ -523,8 +523,15 @@ async function main() {
         // Write TASK.json (for Mouth to know which channel to deliver to)
         writeTaskJson({ ...msg, text: cleanedText }, taskId);
 
+        // Recency Anchoring: Wrap the final text in a structured prompt
+        const promptPayload = {
+          system_directive: "You are Cortex. You MUST use sessions_spawn to delegate work to prefrontal. You are not permitted to execute tasks directly.",
+          user_message: cleanedText
+        };
+        const finalContent = JSON.stringify(promptPayload, null, 2);
+
         // Build conversation
-        conversationHistory.push({ role: 'user', content: cleanedText });
+        conversationHistory.push({ role: 'user', content: finalContent });
         while (conversationHistory.length > MAX_HISTORY * 2) conversationHistory.shift();
 
         // FIRE AND FORGET — gateway call is non-blocking

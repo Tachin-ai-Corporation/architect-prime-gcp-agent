@@ -56,7 +56,7 @@ done
 
 # ---- Find the Deep Truths marker ----
 MARKER="## Deep Truths"
-MARKER_LINE=$(grep -n "^${MARKER}$" "$SOUL_FILE" | head -1 | cut -d: -f1)
+MARKER_LINE=$(grep -n "^${MARKER}" "$SOUL_FILE" | head -1 | cut -d: -f1)
 
 if [[ -z "$MARKER_LINE" ]]; then
   die "Cannot find '${MARKER}' section in SOUL.md — refusing to modify"
