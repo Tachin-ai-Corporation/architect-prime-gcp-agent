@@ -32,6 +32,19 @@ if [ -f "$CONFIG" ]; then
   [ -z "$DWD_SIGNER_SA" ] && DWD_SIGNER_SA="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('dwdSignerSa',''))" 2>/dev/null)"
 fi
 
+# Fallback: read PRIME_ID from Docker container env (fleet-bootstrap sets it)
+if [ -z "$PRIME_ID" ]; then
+  PRIME_ID="$(docker exec openclaw-gateway printenv PRIME_ID 2>/dev/null)" || true
+fi
+
+# Fallback: derive AGENT_ID from VM hostname (fleet-stan → stan)
+if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "agent" ]; then
+  VM_NAME="$(hostname 2>/dev/null)"
+  if [[ "$VM_NAME" == fleet-* ]]; then
+    AGENT_ID="${VM_NAME#fleet-}"
+  fi
+fi
+
 # Kill any orphan agent-ears processes inside the container.
 # Same pattern as agent-mouth — prevent duplicate poll loops after restarts.
 docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
