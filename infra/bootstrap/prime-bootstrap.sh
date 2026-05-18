@@ -485,7 +485,20 @@ if [[ -n "${PRIME_EMAIL}" ]]; then
   info "Identity lock: ${PRIME_EMAIL}"
 fi
 
-# ---- 13b) Final permissions sweep ----
+# ---- 13c) Shared workspace architecture ----
+# ADR: Agents have isolated workspaces to load distinct SOUL/TOOLS.
+# We create a central shared directory and symlink it into every workspace
+# so agents can read/write collaborative files (sandbox mode must be off).
+info "Setting up shared workspace architecture..."
+SHARED_DIR="${OC_HOST_ROOT}/.openclaw/shared"
+mkdir -p "$SHARED_DIR"
+for dir in "${OC_HOST_ROOT}/.openclaw"/workspace*; do
+  if [[ -d "$dir" ]]; then
+    ln -snf "$SHARED_DIR" "$dir/shared"
+  fi
+done
+
+# ---- 13d) Final permissions sweep ----
 # ADR: File Ownership Model
 # install.sh chowns everything to 1000:1000 (ubuntu). But prime-bootstrap
 # runs as root, and root's umask is 077. Any mkdir/cp/sed AFTER install.sh

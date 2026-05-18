@@ -164,6 +164,19 @@ case "${1:-}" in
       fi
     fi
 
+    # ---- Shared workspace architecture ----
+    # ADR: Agents have isolated workspaces to load distinct SOUL/TOOLS.
+    # We create a central shared directory and symlink it into every workspace
+    # so agents can read/write collaborative files (sandbox mode must be off).
+    echo "==> Setting up shared workspace architecture..."
+    SHARED_DIR="${OC_DIR}/shared"
+    mkdir -p "$SHARED_DIR"
+    for dir in "${OC_DIR}"/workspace*; do
+      if [[ -d "$dir" ]]; then
+        ln -snf "$SHARED_DIR" "$dir/shared"
+      fi
+    done
+
     # ---- Run contract validation ----
     VALIDATE="${OC_HOST_ROOT}/.openclaw/bin/validate-contracts"
     if [[ -x "$VALIDATE" ]]; then

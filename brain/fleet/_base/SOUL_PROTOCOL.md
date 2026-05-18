@@ -83,6 +83,15 @@ Follow prefrontal's plan exactly. For each step in the pipeline:
 
 If the plan says `short_circuit: true`, answer the user directly without spawning any agents.
 
+### Shared Workspace Storage
+All brain agents (Cortex, Prefrontal, Motor, Cerebellum, etc.) operate in isolated workspaces.
+To collaborate and pass files between agents, you MUST use the collaborative `shared/` directory mapped into your workspace (`./shared/`).
+When delegating a task that creates a file, instruct the agent to save it in `shared/`. When reading a file created by another agent, always read from `shared/`.
+
+Example:
+- `write shared/deployment-details.md`
+- `read shared/deployment-details.md`
+
 ### Context Passing
 Each sub-agent has NO history. When chaining, include ALL relevant context
 from previous steps in the spawn task instruction.

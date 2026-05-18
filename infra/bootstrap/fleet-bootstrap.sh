@@ -544,7 +544,20 @@ docker exec openclaw-gateway node /app/openclaw.mjs cron add \
 # PHASE 4 — Start services + finalize
 # ============================================================
 
-# ---- 17b) Final permissions sweep ----
+# ---- 17b) Shared workspace architecture ----
+# ADR: Agents have isolated workspaces to load distinct SOUL/TOOLS.
+# We create a central shared directory and symlink it into every workspace
+# so agents can read/write collaborative files (sandbox mode must be off).
+info "Setting up shared workspace architecture..."
+SHARED_DIR="${OC_HOST_ROOT}/.openclaw/shared"
+mkdir -p "$SHARED_DIR"
+for dir in "${OC_HOST_ROOT}/.openclaw"/workspace*; do
+  if [[ -d "$dir" ]]; then
+    ln -snf "$SHARED_DIR" "$dir/shared"
+  fi
+done
+
+# ---- 17c) Final permissions sweep ----
 # ADR: File Ownership Model
 # install.sh chowns everything to 1000:1000 (ubuntu). But fleet-bootstrap
 # runs as root, and root's umask is 077. Any mkdir/cp/sed AFTER install.sh
