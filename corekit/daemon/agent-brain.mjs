@@ -36,7 +36,7 @@ const AGENT_EMAIL = process.env.AGENT_USER_EMAIL || '';
 const GATEWAY_PORT = 18789;
 const GATEWAY_URL = `http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`;
 const MAX_ITERATIONS = 12;
-const LOG_FILE = '/var/log/agent-brain.log';
+const LOG_FILE = '/tmp/agent-brain.log';
 
 // ---- Contracts ----
 let CONTRACTS = {};
