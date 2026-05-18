@@ -8,6 +8,8 @@ import { primesCol, getDb } from "@/lib/firestore";
 export async function GET() {
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
+    // TODO: The setup flow should also check for and automatically create the Firestore 
+    // composite index on the `core_memory` collection group (status ASC, createdAt DESC).
 
     // Check if any Primes exist
     const primesSnap = await primesCol().limit(1).get();

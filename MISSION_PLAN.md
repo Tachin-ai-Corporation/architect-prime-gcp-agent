@@ -836,7 +836,7 @@ architect-prime/
 ### Completed: v2026.05.18.16.0 — Memory Pipeline Stabilization & Prefrontal Gate
 > *Repaired long-term memory sync and strictly enforced the prefrontal delegation boundary.*
 
-1. **Memory Pipeline Repaired** — Fixed Firestore pathing in `core-memory-write` and `core-memory-read` to properly target the `core_memory` collection. Handled Windows CRLF in `update-deep-truths` to successfully sync deep truths into `SOUL.md`.
+1. **Memory Pipeline Repaired** — Fixed Firestore pathing in `core-memory-write` and `core-memory-read` to properly target the `core_memory` collection. Handled Windows CRLF in `update-deep-truths` to successfully sync deep truths into `SOUL.md`. (Note: The required `core_memory` Firestore composite index should be automated in the Dashboard `/api/setup` bootstrap).
 2. **Prefrontal Hard Gate Enforced** — Revoked root `exec` and `process` privileges from the `cortex` agent definition. Cortex is now strictly forced to delegate terminal commands to `motor` via `sessions_spawn`.
 3. **Ears Recency Anchoring** — `agent-ears` now dynamically wraps incoming GChat/Dashboard messages in a structured JSON payload, injecting a mandatory `system_directive` reinforcing delegation directly beside the user input.
 
