@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.08.15.0`
+> - **Current version:** `v2026.05.18.15.0`
 
 ---
 
@@ -824,7 +824,16 @@ architect-prime/
 6. **Ears context window** — When an @mention is detected in GChat, ears includes the prior N messages (default 5) from the space as context. Format: `[Chat messages since your last reply - for context]` + sender names + `[Current message - respond to this]`. Agent's own messages labeled as "You".
 7. **Contracts extended** — Added `mouth.source: "jsonl"`, `mouth.status_updates` (enabled, ack_after_ms, update_after_ms), `ears.gchat_context_messages: 5`. `validate-contracts` updated to check mouth config fields.
 
-### Current: v15.0 — Responsibilities Engine
+### Completed: v2026.05.18.15.0 — Chat Input Hardening & LLM Preprocessor
+> *Restored deterministic agent-to-drive communication by intercepting and repairing Chat-mangled text.*
+
+1. **LLM Preprocessor in ears** — Added a Gemini 2.5 Flash preprocessing step in `agent-ears.mjs` to automatically repair markdown-mangled identifiers (like stripped underscores in Drive folder IDs) before dispatch to the OpenClaw brain.
+2. **Preprocess Logging** — Added detailed audit logging to `/var/log/agent-ears-preprocess.log` to record original text, cleaned text, repairs made, and LLM confidence.
+3. **Drive Skill Hardening** — Updated all workspace-drive tools (`upload`, `ls`, `search`, etc.) to include `supportsAllDrives=true` and `includeItemsFromAllDrives=true` to resolve 404s.
+4. **Agent Identity Fallback** — Updated `ws-token` to resolve the agent identity via `chat-config.json` when `AGENT_USER_EMAIL` is missing, solving systemic 401 authentication issues.
+5. **Prompt Management** — Added `ears-preprocess-prompt.md` to `corekit/daemon/` and updated `infra/manifests/base.txt` to deploy it.
+
+### Current: v16.0 — Responsibilities Engine
 > *Goal: Agents work autonomously on recurring tasks via structured cron-driven responsibilities.*
 
 1. **RESPONSIBILITY.toml manifests** — Declarative responsibility definitions with schedule, scope, and reporting config.
