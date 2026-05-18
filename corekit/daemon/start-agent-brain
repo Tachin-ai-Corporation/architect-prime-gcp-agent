@@ -1,6 +1,7 @@
 #!/bin/bash
 # start-agent-brain — Wrapper to launch agent-brain.mjs inside Docker
 # Reads chat-config.json for agent-specific values.
+# Falls back to Docker container env for PRIME_ID if not in config.
 
 OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
@@ -25,6 +26,19 @@ fi
 if [ -f "$CONFIG" ]; then
   [ -z "$AGENT_USER_EMAIL" ] && AGENT_USER_EMAIL="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentUserEmail',''))" 2>/dev/null)"
   [ -z "$PRIME_ID" ] && PRIME_ID="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('primeId',''))" 2>/dev/null)"
+fi
+
+# Fallback: read PRIME_ID from Docker container env (fleet-bootstrap sets it)
+if [ -z "$PRIME_ID" ]; then
+  PRIME_ID="$(docker exec openclaw-gateway printenv PRIME_ID 2>/dev/null)" || true
+fi
+
+# Fallback: derive AGENT_ID from VM hostname (fleet-stan → stan)
+if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "agent" ]; then
+  VM_NAME="$(hostname 2>/dev/null)"
+  if [[ "$VM_NAME" == fleet-* ]]; then
+    AGENT_ID="${VM_NAME#fleet-}"
+  fi
 fi
 
 # Feature gate — don't start if Brain v3 is not enabled
