@@ -1,8 +1,8 @@
 # Brain v3 — Session Handoff
 
 > **Purpose:** Get a new session agent up to speed on the Brain v3 implementation.
-> **Last updated:** 2026-05-19T19:05:00Z
-> **Status:** Phase 4 COMPLETE ✅ — Multi-step planning with Cerebellum verification live on Stan.
+> **Last updated:** 2026-05-19T23:42:00Z
+> **Status:** Phase 5 COMPLETE ✅ — Checkpoint nesting (M→C→T), Prefrontal planning, semantic failure detection live on Stan.
 
 ---
 
@@ -49,35 +49,37 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 - **Phase 2: Cortex Loop** — COMPLETE ✅
 - **Phase 3: Memory + Discovery** — COMPLETE ✅
 - **Phase 4: Multi-Step Planning** — COMPLETE ✅
+- **Phase 5: Planning Iteration + Checkpoint Nesting** — COMPLETE ✅
 - **Stan** is running Brain v3 in production (fleet-stan VM)
-- Full pipeline verified: intake → memory recall → classify → **plan (3 steps)** → sequential execution → Cerebellum verify → synthesize → memory write → GChat
+- Full pipeline verified: intake → memory → classify → **dispatch prefrontal** → **checkpoint_plan (3 CP, 6 tasks)** → M→C→T hierarchy → Cerebellum verify → synthesize → memory write → GChat
 
-### Phase 4 Accomplishments
-- Cortex SOUL: `plan` action with ordered `steps` array (agent, intent, task, accept_criteria per step)
-- Brain: `plan` action handler — sequential child envelope execution with context accumulation
-- Brain: retry-on-failure — 1 automatic retry with error context, then Cortex consult
-- Brain: auto-synthesize — after all plan steps complete, loops back to Cortex for final synthesis
-- Cerebellum SOUL: full rewrite for envelope-aware JSON verdicts (`ALL_PASS`/`FAIL` with checks array)
-- Verified: 3-step mission (motor → temporal-research → cerebellum) executed sequentially, all passed, Cortex synthesized with Drive link
+### Phase 5 Accomplishments
+- Cortex SOUL: `checkpoint_plan` action, dispatch-before-plan guidance, prefrontal delegation rules
+- Prefrontal SOUL: full rewrite from v2 markdown `DISPATCH_PLAN:` to v3 JSON (`task`/`checkpoint` plan types)
+- Brain: `checkpoint_plan` handler — creates C envelopes under M, T envelopes under C, sequential execution
+- Brain: shared workspace management (`initSharedWorkspace`/`cleanupSharedWorkspace` per envelope)
+- Brain: semantic failure detection — Cerebellum FAIL verdicts + Motor tool failure regex patterns → triggers retry
+- Verified: 3-checkpoint, 6-task mission (research → Drive docs → landing page → Firebase deploy → verify)
 
 ### Key Infrastructure
 | Component | File | Status |
 |-----------|------|--------|
-| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 4 multi-step planning (~1240 lines) |
+| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 5 checkpoint nesting (~1475 lines) |
 | Brain launcher | `corekit/daemon/start-agent-brain` | ✅ PRIME_ID/AGENT_ID/BRAIN_V3 discovery |
 | Brain systemd unit | `corekit/daemon/agent-brain.service` | ✅ Enabled, auto-restart |
 | Ears (rewired) | `corekit/daemon/agent-ears.mjs` | ✅ Writes Firestore intake |
 | Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + Brain v3 envelope polling + LLM classify |
-| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (dispatch/plan/synthesize/needs_input/status_update/short_circuit) |
+| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (all actions incl. checkpoint_plan) |
+| Prefrontal SOUL v3 | `brain/fleet/_brain/prefrontal/SOUL.md` | ✅ JSON task/checkpoint plan decomposition |
 | Cerebellum SOUL v3 | `brain/fleet/_brain/cerebellum/SOUL.md` | ✅ JSON verdict verification (ALL_PASS/FAIL) |
 | Temporal-memory | `brain/fleet/_brain/temporal-memory/SOUL.md` | ✅ Recall + write via Brain dispatch |
 | Agent registry | `corekit/config/agent-registry.json` | ✅ 6 agents registered |
 | Firestore indexes | `intake(status, created_at)`, `work(owner, status, created_at)` | ✅ Live |
 
-### Known Issues (carry-forward to Phase 5)
-1. **Memory recall cold start latency** — First temporal-memory call takes ~43s (cold start). Subsequent calls are faster. Acceptable but notable.
-2. **No quick ack** — Brain v3 doesn't send an immediate "got it" to the channel. The user sees nothing until the full response is ready (~30-120s). By design — `deliverStatusUpdate()` exists if needed later.
-3. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF in bash script. Doesn't affect function.
+### Known Issues (carry-forward to Phase 6)
+1. **Memory recall cold start latency** — First temporal-memory call takes ~43s (cold start). Subsequent calls are faster.
+2. **No quick ack** — Brain v3 doesn't send an immediate "got it" to the channel. By design — `deliverStatusUpdate()` exists if needed.
+3. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF. Doesn't affect function.
 
 ---
 
@@ -142,17 +144,17 @@ echo y | gcloud compute ssh fleet-stan ... --command="sudo curl -sfL \
 
 ---
 
-## What's Next: Phase 5 — Planning Iteration
+## What's Next: Phase 6 — Delegation + Dashboard
 
-**Goal:** Advisory rounds, iterative dispatch-before-plan, Prefrontal delegation, M → C → T nesting.
+**Goal:** Dashboard observability for the M→C→T hierarchy. Fleet-wide Brain v3 deployment.
 
-**Read:** `docs/brainV3/06-PHASE-5-PLANNING-ITERATION.md` for the full design.
+**Read:** `docs/brainV3/07-PHASE-6-DELEGATION.md` for the full design.
 
 Key work items:
-1. Cortex SOUL: iterative dispatch-before-plan pattern
-2. Prefrontal SOUL v3: envelope model, structured JSON plans, checkpoint decomposition
-3. Brain: Mission → Checkpoint → Task nesting (M → C → T hierarchy)
-4. Test: research → memory → prefrontal → plan → execute flow
+1. Dashboard: M→C→T tree visualization (Firestore → React)
+2. Dashboard: envelope status timeline, agent dispatch history
+3. Fleet-wide deployment: Brain v3 to all fleet agents (not just Stan)
+4. Prime Brain v3: orchestration for Prime itself
 
 ---
 
@@ -179,3 +181,7 @@ Key work items:
 
 ## Commit History (Phase 4)
 - `v2026.05.19.13.1` — Phase 4: multi-step plan action, sequential execution, retry, Cerebellum JSON verdicts
+
+## Commit History (Phase 5)
+- `v2026.05.19.17.1` — Phase 5: checkpoint nesting (M→C→T), workspace isolation, Prefrontal v3, iterative planning
+- `v2026.05.19.18.1` — Brain detects Cerebellum FAIL verdicts + Motor tool failures → triggers retry logic

@@ -97,13 +97,33 @@ User: "What are the deployed URLs for the tachin-website project?"
 
 ---
 
-## Phase 5 — Planning Iteration
-> Advisory rounds, iterative dispatch-before-plan, Prefrontal delegation
+## Phase 5 — Planning Iteration + Checkpoint Nesting ✅ COMPLETE
+> Iterative dispatch-before-plan, Prefrontal delegation, M→C→T nesting, semantic failure detection
 
-- `[ ]` Cortex SOUL.md: iterative dispatch-before-plan pattern
-- `[ ]` Prefrontal SOUL.md v3: envelope model, structured JSON plans, checkpoint decomposition
-- `[ ]` Brain: Mission → Checkpoint → Task nesting (M → C → T hierarchy)
-- `[ ]` Deploy + test: research → memory → prefrontal → plan → execute flow
+- `[x]` Cortex SOUL.md: `checkpoint_plan` action, dispatch-before-plan, prefrontal delegation rules
+- `[x]` Prefrontal SOUL.md: full rewrite v2 markdown → v3 JSON (task + checkpoint plans)
+- `[x]` Brain: `checkpoint_plan` action handler — M → C → T nesting
+- `[x]` Brain: workspace management (init + cleanup per envelope)
+- `[x]` Brain: semantic failure detection (Cerebellum FAIL verdicts + Motor tool failures)
+- `[x]` Deploy + test: 3-checkpoint, 6-task mission ✅
+
+### Phase 5 — End-to-End Verified Flow
+```
+23:17:02 ▸ Intake: complex tachin.ai/1health request
+23:17:30 ▸ Cortex classify → new_mission (type=M)
+23:17:39 ▸ Cortex decide → dispatch prefrontal (iterative planning!)
+23:18:12 ▸ Prefrontal → 2,798 chars structured checkpoint plan
+23:18:22 ▸ Cortex decide → checkpoint_plan (3 checkpoints)
+23:18:22 ▸ CP1 (Research + Drive docs): 3 tasks → ✅ (63s)
+23:19:25 ▸ CP2 (Landing page): 1 task → ✅ (31s)
+23:19:57 ▸ CP3 (Deploy + verify): 2 tasks → ✅ (133s)
+23:22:10 ▸ Checkpoint plan complete: 3 CP, 6 tasks
+23:22:27 ▸ Cortex → synthesize. Memory write OK ✅
+```
+
+### Post-Verification Fix: Semantic Failure Detection
+- Cerebellum FAIL verdicts were not triggering retry → fixed in callAgent()
+- Motor tool failures (DWD token, exit code) were reported as success → fixed with regex detection
 
 ---
 

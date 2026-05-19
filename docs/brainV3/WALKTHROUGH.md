@@ -1,7 +1,7 @@
 # Brain v3 — Implementation Walkthrough
 
 > Living document tracking what was built, tested, and learned across all phases.
-> Last updated: 2026-05-19 (Phase 4 complete)
+> Last updated: 2026-05-19 (Phase 5 complete)
 
 ---
 
@@ -310,3 +310,102 @@ Cortex → { action: "synthesize", synthesis: "..." }
 
 ### Commits
 - `v2026.05.19.13.1` — Phase 4: multi-step plan action, sequential execution, retry, Cerebellum JSON verdicts
+
+---
+
+## Phase 5 — Planning Iteration + Checkpoint Nesting (2026-05-19)
+
+### What Was Built
+
+Three capabilities:
+1. **Iterative pre-plan dispatch** — Cortex gathers context before committing to a plan
+2. **Prefrontal as planning delegate** — Cortex dispatches to Prefrontal for complex decomposition
+3. **Checkpoint nesting (M→C→T)** — Brain creates Checkpoint envelopes under Missions, Tasks under Checkpoints
+4. **Semantic failure detection** — Brain detects Cerebellum FAIL verdicts and Motor tool failures in callAgent()
+
+### Pipeline Architecture (Phase 5 — checkpoint_plan)
+
+```
+Cortex decide (iter 1) → dispatch prefrontal
+                            ↓
+Prefrontal → { plan_type: "checkpoint", checkpoints: [...] }
+                            ↓
+Cortex decide (iter 2) → { action: "checkpoint_plan", checkpoints: [...] }
+                            ↓
+Brain creates M → C → T hierarchy:
+    Checkpoint 1 (type=C, parent=Mission)
+        Task 1.1 (type=T, parent=CP1) → dispatch → result
+        Task 1.2 (type=T, parent=CP1) → dispatch → result
+        → CP1 marked complete
+    Checkpoint 2 (type=C, parent=Mission)
+        Task 2.1 → dispatch → result
+        → CP2 marked complete
+    Checkpoint 3 (type=C, parent=Mission)
+        Task 3.1 → dispatch → result
+        Task 3.2 (cerebellum) → verify → PASS/FAIL
+        → CP3 marked complete
+                            ↓
+All results → Cortex → synthesize
+```
+
+### Files Modified
+| File | Change |
+|------|---------|
+| `brain/fleet/_brain/cortex/SOUL.md` | Added `checkpoint_plan` action, dispatch-before-plan rules, prefrontal delegation |
+| `brain/fleet/_brain/prefrontal/SOUL.md` | Full rewrite: v2 markdown → v3 JSON (task/checkpoint plans) |
+| `corekit/daemon/agent-brain.mjs` | +200 lines: `checkpoint_plan` handler, workspace mgmt, semantic failure detection |
+
+### End-to-End Verified Flow
+
+**Test:** Complex tachin.ai/1health mission (2026-05-19 23:17 UTC)
+
+```
+23:17:02 ▸ Intake from gchat (complex multi-part request)
+23:17:28 ▸ Memory recall: 848 chars (21s)
+23:17:30 ▸ Cortex classify → new_mission (type=M)
+23:17:39 ▸ Cortex decide (iter 1) → dispatch prefrontal ← iterative planning!
+23:18:12 ▸ Prefrontal → 2,798 chars structured plan (32s)
+23:18:22 ▸ Cortex decide (iter 2) → checkpoint_plan (3 checkpoints) ← FIRST CHECKPOINT_PLAN!
+23:18:22 ▸ CP1: Research + Drive docs (3 tasks)
+         Task 1.1: temporal-research → ✅ (21s) 1,826 chars
+         Task 1.2: motor → ✅ (24s) design system uploaded
+         Task 1.3: motor → ✅ (17s) deployment doc updated
+23:19:25 ▸ CP1 complete
+23:19:25 ▸ CP2: Landing page (1 task)
+         Task 2.1: motor → ✅ (31s) tachin.ai front page coded
+23:19:57 ▸ CP2 complete
+23:19:57 ▸ CP3: Deploy + verify (2 tasks)
+         Task 3.1: motor → ✅ (109s) Firebase preview deploy
+         Task 3.2: cerebellum → ✅ (24s) verification verdict
+23:22:10 ▸ CP3 complete
+23:22:10 ▸ Checkpoint plan complete: 3 CP, 6 tasks. Consulting Cortex.
+23:22:27 ▸ Cortex synthesize → final response with status breakdown
+23:22:42 ▸ Memory write OK (15s). Delivered to GChat ✅
+```
+
+**Total time:** ~5.5 minutes for a 3-checkpoint, 6-task mission.
+
+### Post-Verification Fix: Semantic Failure Detection
+
+Investigation of Stan's output revealed two issues:
+1. **Cerebellum returned FAIL** but Brain treated it as success (HTTP 200 → `success: true`)
+2. **Motor reported DWD token failure** in its text output but returned success
+
+Fixed in `callAgent()` with post-processing:
+- Detect `"verdict"` + `"FAIL"` in response → override `success: false`
+- Regex patterns for common tool failures (auth errors, exit codes) → override `success: false`
+- Both trigger the existing retry logic in `plan`/`checkpoint_plan` handlers
+
+### Architecture Decisions
+
+1. **Checkpoint nesting is real** — C envelopes exist in Firestore with `parent_id` pointing to M. T envelopes point to C. Full M→C→T tree is queryable.
+
+2. **Workspace isolation** — Each envelope gets `shared/{envelope_id}/` scratch space. Cleaned up on completion/failure.
+
+3. **Failure detection in callAgent, not handlers** — By putting semantic failure detection in `callAgent()`, both `plan` and `checkpoint_plan` handlers benefit. No duplication.
+
+4. **Prefrontal as dispatch target, not special-cased** — Cortex dispatches to Prefrontal like any other agent. Prefrontal returns JSON. Cortex reads the result and issues `checkpoint_plan`. No special Brain logic for Prefrontal.
+
+### Commits
+- `v2026.05.19.17.1` — Phase 5: checkpoint nesting, workspace isolation, Prefrontal v3, iterative planning
+- `v2026.05.19.18.1` — Brain detects Cerebellum FAIL verdicts + Motor tool failures → triggers retry
