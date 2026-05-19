@@ -431,6 +431,28 @@ async function callAgent(agentId, envelope) {
     }
 
     log('INFO', `Agent ${agentId} responded (${content.length} chars, ${durationMs}ms)`);
+
+    // Phase 5: Detect semantic failures in agent responses
+    // Cerebellum FAIL verdict — agent returned successfully but the verification failed
+    if (content.includes('"verdict"') && content.includes('"FAIL"')) {
+      log('WARN', `Agent ${agentId} returned FAIL verdict — treating as failure`);
+      return { success: false, output: content, error: 'Verification FAIL verdict', durationMs };
+    }
+
+    // Motor tool failure — agent returned successfully but reports the command failed
+    const failurePatterns = [
+      /\berror\b.*\b(?:DWD|token|auth|permission|denied|unauthorized)\b/i,
+      /\bfailed\b.*\b(?:execute|command|operation)\b/i,
+      /\b(?:command|tool)\b.*\bfailed\b/i,
+      /exit(?:ed)?\s+(?:with\s+)?(?:code\s+)?[1-9]/i,
+    ];
+    for (const pattern of failurePatterns) {
+      if (pattern.test(content)) {
+        log('WARN', `Agent ${agentId} output contains failure pattern: ${pattern} — treating as failure`);
+        return { success: false, output: content, error: 'Agent reported tool failure', durationMs };
+      }
+    }
+
     return { success: true, output: content, error: null, durationMs };
   } catch (e) {
     const durationMs = Date.now() - start;
