@@ -575,7 +575,9 @@ async function pollBrainV3Envelopes() {
 
   try {
     const token = await getAccessToken();
-    // Query for completed envelopes that haven't been delivered yet
+    // Query for completed envelopes owned by this agent
+    // Simple query: owner + status (avoids composite index requirements)
+    const ownerEmail = AGENT_USER_EMAIL || process.env.AGENT_ID || '';
     const query = {
       structuredQuery: {
         from: [{ collectionId: 'work' }],
@@ -583,24 +585,14 @@ async function pollBrainV3Envelopes() {
           compositeFilter: {
             op: 'AND',
             filters: [
-              { fieldFilter: { field: { fieldPath: 'status' }, op: 'IN',
-                value: { arrayValue: { values: [
-                  { stringValue: 'complete' },
-                  { stringValue: 'needs_input' }
-                ] } } } },
-              { fieldFilter: { field: { fieldPath: 'type' }, op: 'IN',
-                value: { arrayValue: { values: [
-                  { stringValue: 'M' },
-                  { stringValue: 'T' }
-                ] } } } },
-              // Only pick up envelopes owned by this agent
               { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
-                value: { stringValue: AGENT_USER_EMAIL || process.env.AGENT_ID || '' } } },
+                value: { stringValue: ownerEmail } } },
+              { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
+                value: { stringValue: 'complete' } } },
             ]
           }
         },
-        orderBy: [{ field: { fieldPath: 'updated_at' }, direction: 'DESCENDING' }],
-        limit: 10,
+        limit: 20,
       },
     };
 
