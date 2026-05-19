@@ -6,7 +6,7 @@
 // Processes Firestore intake records through the Cortex loop
 // and manages envelopes (the R/C/M/T work hierarchy).
 //
-// Phase 4: multi-step planning, sequential execution, retry, Cerebellum verification
+// Phase 5: checkpoint nesting (M→C→T), workspace isolation, iterative planning
 //   - callAgent: HTTP dispatch to any agent via gateway
 //   - Queue awareness: pending intake count + queue passed to Cortex
 //   - status_update: Cortex can send "working on X" messages
@@ -777,6 +777,9 @@ async function processEnvelope(envelope, memoryContext) {
   // Use passed memory context, or recall fresh if not provided
   const memory = memoryContext || await recallMemory(envelope.instruction);
 
+  // Phase 5: Initialize shared workspace for this envelope
+  await initSharedWorkspace(envelope.id);
+
   // Mark active
   envelope.status = 'active';
   envelope.started_at = now();
@@ -855,6 +858,7 @@ async function processEnvelope(envelope, memoryContext) {
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Short-circuit response');
       log('INFO', `Envelope ${envelope.id} complete (short_circuit)`);
+      await cleanupSharedWorkspace(envelope.id);
       return;
     }
 
@@ -869,6 +873,7 @@ async function processEnvelope(envelope, memoryContext) {
 
       // Phase 3: Write completed work to memory (synthesize only, not short_circuit)
       await writeMemory(envelope);
+      await cleanupSharedWorkspace(envelope.id);
       return;
     }
 
@@ -1097,6 +1102,205 @@ async function processEnvelope(envelope, memoryContext) {
       continue; // Loop back to Cortex for synthesize decision
     }
 
+    if (action === 'checkpoint_plan') {
+      // Phase 5: Checkpoint nesting — M → C → T hierarchy
+      const checkpoints = decision.checkpoints;
+      if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
+        log('ERROR', `Checkpoint plan has no checkpoints`);
+        priorResults.push({ agent: 'system', result: '[SYSTEM] checkpoint_plan requires a non-empty "checkpoints" array.' });
+        continue;
+      }
+
+      log('INFO', `Checkpoint plan received: ${checkpoints.length} checkpoints`);
+
+      let allResults = []; // Accumulated results across all checkpoints
+      let planFailed = false;
+
+      for (let ci = 0; ci < checkpoints.length; ci++) {
+        const cp = checkpoints[ci];
+        const cpNum = ci + 1;
+        const cpInstruction = cp.instruction || `Checkpoint ${cpNum}`;
+        const cpCriteria = cp.accept_criteria || '';
+        const cpTasks = cp.tasks || [];
+
+        // Create Checkpoint envelope
+        const cpId = generateId('w');
+        const cpEnvelope = {
+          id: cpId,
+          type: 'C',
+          parent_id: envelope.id,
+          owner: AGENT_EMAIL || AGENT_ID,
+          status: 'active',
+          intent: 'checkpoint',
+          instruction: cpInstruction,
+          accept_criteria: cpCriteria,
+          context_summary: allResults.length > 0
+            ? `Prior checkpoints:\n${allResults.map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 200)}`).join('\n')}`
+            : envelope.context_summary || null,
+          output: null,
+          children: [],
+          context_forward: null,
+          error: null,
+          source_channel: 'brain',
+          source_meta: { dispatched_by: envelope.id, checkpoint: cpNum, checkpoint_total: checkpoints.length },
+          created_at: now(),
+          started_at: now(),
+          completed_at: null,
+          updated_at: now(),
+          iteration: 0,
+        };
+
+        await firestoreWrite('work', cpId, cpEnvelope);
+        await writeHistory(cpId, null, 'active', 'brain', `Checkpoint ${cpNum}/${checkpoints.length}: ${cpInstruction.substring(0, 60)}`);
+        await initSharedWorkspace(cpId);
+
+        // Track checkpoint on parent mission
+        envelope.children.push(cpId);
+        envelope.updated_at = now();
+        await firestoreWrite('work', envelope.id, envelope);
+
+        log('INFO', `Checkpoint ${cpNum}/${checkpoints.length}: ${cpInstruction.substring(0, 60)} (${cpTasks.length} tasks)`);
+
+        // Execute tasks within this checkpoint
+        let cpResults = [];
+        let cpFailed = false;
+
+        for (let ti = 0; ti < cpTasks.length; ti++) {
+          const task = cpTasks[ti];
+          const taskNum = ti + 1;
+          const taskAgent = task.agent;
+          const taskDesc = task.task || task.instruction || '';
+          const taskCriteria = task.accept_criteria || '';
+
+          if (!taskAgent) {
+            log('WARN', `Checkpoint ${cpNum} task ${taskNum} missing agent, skipping`);
+            cpResults.push({ step: `${cpNum}.${taskNum}`, agent: 'unknown', result: '[SKIPPED]', success: false });
+            continue;
+          }
+
+          // Create Task envelope under Checkpoint
+          const taskId = generateId('w');
+          const taskEnvelope = {
+            id: taskId,
+            type: 'T',
+            parent_id: cpId,
+            owner: AGENT_EMAIL || AGENT_ID,
+            status: 'active',
+            intent: task.intent || 'execute',
+            instruction: taskDesc,
+            accept_criteria: taskCriteria,
+            context_summary: [...allResults, ...cpResults].length > 0
+              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 300)}`).join('\n')
+              : null,
+            output: null,
+            children: [],
+            context_forward: null,
+            error: null,
+            source_channel: 'brain',
+            source_meta: { dispatched_by: cpId, checkpoint: cpNum, task_step: taskNum },
+            created_at: now(),
+            started_at: now(),
+            completed_at: null,
+            updated_at: now(),
+            iteration: 0,
+          };
+
+          await firestoreWrite('work', taskId, taskEnvelope);
+          await writeHistory(taskId, null, 'active', 'brain', `CP${cpNum} Task ${taskNum}: ${taskAgent}`);
+
+          cpEnvelope.children.push(taskId);
+          cpEnvelope.updated_at = now();
+          await firestoreWrite('work', cpId, cpEnvelope);
+
+          log('INFO', `CP${cpNum} Task ${taskNum}/${cpTasks.length}: ${taskAgent} — ${taskDesc.substring(0, 60)}`);
+
+          // Dispatch to agent
+          let result = await callAgent(taskAgent, {
+            instruction: taskDesc,
+            accept_criteria: taskCriteria,
+            context_summary: [...allResults, ...cpResults].length > 0
+              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 500)}`).join('\n')
+              : undefined,
+          });
+
+          // Retry once on failure
+          if (!result.success) {
+            log('WARN', `CP${cpNum} Task ${taskNum} failed (${taskAgent}): ${result.error}. Retrying...`);
+            result = await callAgent(taskAgent, {
+              instruction: `${taskDesc}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
+              accept_criteria: taskCriteria,
+            });
+          }
+
+          // Update task envelope
+          taskEnvelope.output = result.output || result.error;
+          taskEnvelope.status = result.success ? 'complete' : 'failed';
+          taskEnvelope.error = result.error;
+          taskEnvelope.completed_at = now();
+          taskEnvelope.updated_at = now();
+          await firestoreWrite('work', taskId, taskEnvelope);
+          await writeHistory(taskId, 'active', taskEnvelope.status, taskAgent,
+            result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
+
+          const stepResult = {
+            step: `${cpNum}.${taskNum}`,
+            agent: taskAgent,
+            task: taskDesc.substring(0, 200),
+            result: result.success ? (result.output || '').substring(0, 4000) : `[FAILED] ${result.error}`,
+            success: result.success,
+            durationMs: result.durationMs,
+          };
+          cpResults.push(stepResult);
+
+          log('INFO', `CP${cpNum} Task ${taskNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
+
+          if (!result.success) {
+            cpFailed = true;
+            break;
+          }
+        }
+
+        // Mark checkpoint complete or failed
+        cpEnvelope.status = cpFailed ? 'failed' : 'complete';
+        cpEnvelope.output = cpFailed ? `Checkpoint failed at task ${cpResults.length}/${cpTasks.length}` : `Checkpoint complete: ${cpResults.length} tasks`;
+        cpEnvelope.completed_at = now();
+        cpEnvelope.updated_at = now();
+        await firestoreWrite('work', cpId, cpEnvelope);
+        await writeHistory(cpId, 'active', cpEnvelope.status, 'brain',
+          cpFailed ? `Failed at task ${cpResults.length}` : `Complete (${cpResults.length} tasks)`);
+        await cleanupSharedWorkspace(cpId);
+
+        allResults.push(...cpResults);
+
+        log('INFO', `Checkpoint ${cpNum} ${cpFailed ? 'FAILED' : 'complete'} (${cpResults.length} tasks)`);
+
+        if (cpFailed) {
+          planFailed = true;
+          break;
+        }
+      }
+
+      // Feed all results back to Cortex for synthesis
+      priorResults.push(...allResults.map(r => ({
+        agent: r.agent,
+        task: r.task,
+        result: r.result,
+        success: r.success,
+        durationMs: r.durationMs,
+        checkpoint_step: r.step,
+      })));
+
+      if (planFailed) {
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] Checkpoint plan stopped at checkpoint ${allResults.filter(r => r.step.startsWith(String(checkpoints.length))).length > 0 ? checkpoints.length : Math.ceil(allResults.length / 2)}/${checkpoints.length} due to failure. You may: adjust and retry, synthesize with partial results, or escalate (needs_input).`,
+        });
+      }
+
+      log('INFO', `Checkpoint plan ${planFailed ? 'FAILED' : 'complete'}: ${checkpoints.length} checkpoints, ${allResults.length} total tasks. Consulting Cortex.`);
+      continue; // Loop back to Cortex for synthesize decision
+    }
+
     if (action === 'status_update') {
       const message = decision.message || 'Working on it...';
       await deliverStatusUpdate(envelope.id, message);
@@ -1133,6 +1337,26 @@ async function processEnvelope(envelope, memoryContext) {
   await firestoreWrite('work', envelope.id, envelope);
   await writeHistory(envelope.id, 'active', 'failed', 'brain', envelope.error);
   log('ERROR', `Envelope ${envelope.id} failed: max iterations`);
+  await cleanupSharedWorkspace(envelope.id);
+}
+
+// ---- Shared workspace management (Phase 5) ----
+async function initSharedWorkspace(envelopeId) {
+  try {
+    const { execSync } = await import('child_process');
+    execSync(`mkdir -p /home/node/.openclaw/shared/${envelopeId}`, { timeout: 3000 });
+  } catch (e) {
+    log('WARN', `Failed to init shared workspace for ${envelopeId}: ${e.message}`);
+  }
+}
+
+async function cleanupSharedWorkspace(envelopeId) {
+  try {
+    const { execSync } = await import('child_process');
+    execSync(`rm -rf /home/node/.openclaw/shared/${envelopeId}`, { timeout: 3000 });
+  } catch (e) {
+    log('WARN', `Failed to cleanup shared workspace for ${envelopeId}: ${e.message}`);
+  }
 }
 
 // ---- History ----
