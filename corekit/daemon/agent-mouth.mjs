@@ -451,9 +451,9 @@ async function deliver(text) {
 // ================================================================
 // FINAL RESPONSE — LLM CLASSIFY + DELIVER
 // ================================================================
-async function classifyAndDeliver(rawText) {
+async function classifyAndDeliver(rawText, overrideQuestion) {
   const task = readTaskJson();
-  const question = task?.text || turn.originalQuestion || '';
+  const question = overrideQuestion || task?.text || turn.originalQuestion || '';
 
   if (!LLM_ENABLED) {
     await deliver(rawText);
@@ -593,22 +593,30 @@ async function pollBrainV3Envelopes() {
                   { stringValue: 'M' },
                   { stringValue: 'T' }
                 ] } } } },
+              // Only pick up envelopes owned by this agent
+              { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
+                value: { stringValue: AGENT_USER_EMAIL || process.env.AGENT_ID || '' } } },
             ]
           }
         },
         orderBy: [{ field: { fieldPath: 'updated_at' }, direction: 'DESCENDING' }],
         limit: 10,
       },
-      parent: `${FIRESTORE_URL}/primes/${PRIME_ID}`,
     };
 
-    const res = await fetch(`${FIRESTORE_URL}:runQuery`, {
+    // runQuery URL must include parent path — queries the 'work' subcollection under primes/{PRIME_ID}
+    const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
+    const res = await fetch(queryUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(query),
     });
 
-    if (!res.ok) return;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      log('Brain v3 query error', { status: res.status, body: errText.slice(0, 200) });
+      return;
+    }
     const results = await res.json();
     if (!Array.isArray(results)) return;
 
@@ -618,8 +626,11 @@ async function pollBrainV3Envelopes() {
       const envId = f.id?.stringValue;
       const output = f.output?.stringValue;
       const status = f.status?.stringValue;
+      const deliveredAt = f.delivered_at?.timestampValue || f.delivered_at?.stringValue;
 
-      if (!envId || !output || _deliveredEnvelopes.has(envId)) continue;
+      // Skip: no output, already delivered (in-memory or Firestore flag), or child envelope
+      if (!envId || !output || _deliveredEnvelopes.has(envId) || deliveredAt) continue;
+      if (f.parent_id?.stringValue) continue; // Only deliver top-level envelopes
 
       // Mark as delivered immediately to prevent duplicates
       _deliveredEnvelopes.add(envId);
@@ -634,7 +645,8 @@ async function pollBrainV3Envelopes() {
           log('Delivered needs_input prompt', { envId });
         } else {
           // For complete, run through the full classify pipeline
-          await classifyAndDeliver(output);
+          const envQuestion = f.instruction?.stringValue || f.context_summary?.stringValue || '';
+          await classifyAndDeliver(output, envQuestion);
           log('Delivered envelope output', { envId });
         }
 
