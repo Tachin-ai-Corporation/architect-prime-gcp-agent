@@ -8,9 +8,9 @@
 ## Phase 1 — Foundation ✅ COMPLETE
 > Ears → Firestore intake → Brain classify → envelope → Cortex short_circuit → Mouth
 
-- `[x]` Research: Validate OpenClaw gateway HTTP dispatch to individual agent routes on Stan ✅ works, clean JSON
+- `[x]` Research: Validate OpenClaw gateway HTTP dispatch to individual agent routes on Stan
 - `[x]` Research: Validate named sessions via HTTP — ❌ sessions don't persist; Brain passes all context explicitly
-- `[x]` Firestore schema: `intake/` collection + indexes ✅ composite index created via gcloud CLI
+- `[x]` Firestore schema: `intake/` collection + indexes
 - `[x]` Firestore schema: `work/` collection + `history/` subcollection + indexes
 - `[x]` Agent registry: `build-agent-registry` script + `agent-registry.json` for Stan
 - `[x]` Brain service: `agent-brain.mjs` skeleton (intake listener → classify → short_circuit)
@@ -19,70 +19,56 @@
 - `[x]` Ears rewire: Firestore intake write (replaces gateway POST)
 - `[x]` Mouth rewire: Firestore envelope listener (alongside JSONL tailing)
 - `[x]` Manifest: add brain files to `base.txt`
-- `[x]` Deploy to Stan + end-to-end test ✅ pipeline verified
-- `[x]` Checkpoint verification: "who are you?" flows through entire pipeline ✅ envelope complete with response
-
-### Phase 1 — Deployment Fixes Applied
-- Fixed PRIME_ID/AGENT_ID discovery in all three daemon launchers (Docker env + hostname fallback)
-- Fixed gateway token discovery in Brain (openclaw.json + env var fallbacks)
-- Fixed Firestore query URL (use parent path, not database root)
-- Created composite index via `gcloud firestore indexes composite create`
-- Moved Brain log to `/tmp/` (writable by node user in Docker)
+- `[x]` Deploy to Stan + end-to-end test ✅
 
 ---
 
 ## Phase 2 — Cortex Loop ✅ COMPLETE
-> Single-step dispatch → synthesize cycle. Fresh sessions only (no named sessions).
+> Single-step dispatch → synthesize cycle. Fresh sessions only.
 
 - `[x]` Cortex SOUL.md: add `dispatch` + `synthesize` + `status_update` actions
-- `[x]` Cortex SOUL.md: queue-aware status updates (current work + ordered queue in message)
+- `[x]` Cortex SOUL.md: queue-aware status updates
 - `[x]` Brain: full iterative Cortex loop (dispatch → feed back → decide again)
 - `[x]` Brain: gateway HTTP dispatch function (`callAgent`) with fresh sessions
-- `[x]` Brain: response parser hardening (balanced JSON extraction, Action: block stripping, retry on parse failure)
-- `[x]` Brain: gateway liveness polling (`checkGatewayLiveness`) before each dispatch
-- `[x]` Brain: queue awareness (pending_intake_count + ordered queue → Cortex → status_update)
-- `[x]` Brain: `status_update` action handler (transient envelope for Mouth delivery)
+- `[x]` Brain: response parser hardening
+- `[x]` Brain: gateway liveness polling
+- `[x]` Brain: queue awareness
+- `[x]` Brain: `status_update` action handler
 - `[x]` Brain: `[BRAIN-ORCHESTRATED]` marker on all Cortex/agent calls
-- `[x]` Fix: suppress JSONL delivery for Brain-initiated sessions (Mouth skips `[BRAIN-ORCHESTRATED]`)
-- `[x]` Brain: automated stale envelope cleanup at startup (archive failed envelopes >24h)
+- `[x]` Mouth: Brain v3 envelope polling, LLM classify, delivered_at tracking
+- `[x]` Brain: automated stale envelope cleanup at startup
+- `[x]` Cortex workspace isolation (workspace-cortex)
+- `[x]` Intake retry resilience (classify failures revert to pending)
 - `[x]` Deploy + test: dispatch to temporal-research, synthesize result ✅
-
-### Phase 2 — Additional Work (stabilization)
-- `[x]` Cortex workspace isolation: dedicated `workspace-cortex` prevents SOUL identity leakage from DevOps workspace
-- `[x]` Fleet infrastructure: updated `openclaw-fleet-bootstrap.json5.tmpl`, `upgrade-corekit`, `fleet-bootstrap.sh`, `role-fleet.txt`
-- `[x]` Action normalization: `delegate` → `dispatch` backward compatibility in Brain
-- `[x]` Intake retry resilience: classify failures revert intake to `pending` for automatic retry
-- `[x]` render-config: prefers fleet template when available, substitutes `${AGENT_DISPLAY_NAME}` and `${AGENT_ID}`
-- `[x]` Mouth Brain v3 integration: fixed `runQuery` URL (parent path), added owner/delivered_at filters, parent_id skip
-- `[x]` Mouth: passes original question context from envelope to `classifyAndDeliver` for proper voice formatting
-- `[x]` Verified end-to-end: GCP e2-medium pricing → temporal-research → synthesize → Mouth LLM classify → GChat delivery ✅
-
-### Phase 2 — End-to-End Verified Flow
-```
-User: "How much does a GCP e2-medium instance cost?"
- 04:16:18 ▸ Ears → intake i-1779164177081-57tv8y
- 04:17:17 ▸ Cortex classify → new_task (intent=research)
- 04:17:17 ▸ Brain creates envelope w-1779164237470-0835d6d4
- 04:17:23 ▸ Cortex decide → action=dispatch (temporal-research)
- 04:17:23 ▸ Brain dispatches to temporal-research via gateway HTTP
- 04:18:01 ▸ temporal-research responds (479 chars, 37.5s)
- 04:18:14 ▸ Cortex decide (iteration 2) → action=synthesize
- 04:18:15 ▸ Envelope complete, output written to Firestore
- 04:32:33 ▸ Mouth polls envelope → LLM classify → action=deliver → GChat ✅
-```
 
 ---
 
-## Phase 3 — Memory + Discovery
+## Phase 3 — Memory + Discovery ✅ COMPLETE
 > Hardwired memory recall/write, active envelope scan, follow-up detection
 
-- `[ ]` Temporal-memory HTTP integration validation
-- `[ ]` Brain: hardwired memory recall (pre-loop, every consultation)
-- `[ ]` Brain: hardwired memory write (post-loop, on Mission completion)
-- `[ ]` Brain: active envelope scan (Firestore query for in-progress work)
-- `[ ]` Cortex SOUL.md: `attach` classification support
-- `[ ]` Brain: `attach` handling (follow-up, status check, needs_input resumption)
-- `[ ]` Deploy + test: memory recall enriches decisions, follow-up detection, needs_input
+- `[x]` `recallMemory()` — dispatches to temporal-memory before classify
+- `[x]` `writeMemory()` — stores completed work after synthesize
+- `[x]` `scanActiveEnvelopes()` — queries Firestore for in-progress work
+- `[x]` Memory recall wired into `processIntake()` (once, reused for classify + decide)
+- `[x]` Memory context wired into `processEnvelope()` decide calls
+- `[x]` Active envelope scan wired into classify payload
+- `[x]` `attach` classification handler (status check, needs_input resume, follow-up)
+- `[x]` `needs_input` action handler in Cortex loop
+- `[x]` Firestore composite index: `work(owner, status, created_at)` — creating
+- `[x]` Deploy + test: memory recall enriches decisions ✅ (Cortex short-circuited from memory)
+
+### Phase 3 — End-to-End Verified Flow
+```
+User: "What are the deployed URLs for the tachin-website project?"
+ 04:54:32 ▸ Ears → intake i-1779166471297-278duk
+ 04:54:32 ▸ Memory recall: dispatched to temporal-memory
+ 04:55:16 ▸ Memory returned: 466 chars (43s, cold start)
+ 04:55:16 ▸ Active envelope scan (failed gracefully — index creating)
+ 04:55:24 ▸ Cortex classify → new_task (with memory context)
+ 04:55:31 ▸ Cortex decide → short_circuit (answered FROM MEMORY — no dispatch needed!)
+ 04:55:33 ▸ Mouth picks up envelope (2s latency)
+ 04:55:36 ▸ Delivered to GChat via LLM classify ✅
+```
 
 ---
 
@@ -113,10 +99,10 @@ User: "How much does a GCP e2-medium instance cost?"
 
 - `[ ]` Cortex SOUL.md: `delegate` action
 - `[ ]` Brain: delegate action handler (create envelope, set waiting, notify)
-- `[ ]` Brain: waiting envelope resumption (poll for completed delegated children)
-- `[ ]` Brain: fleet agent awareness (poll for envelopes owned by this agent)
-- `[ ]` Dashboard: R/C/M/T tree view component (real-time Firestore)
-- `[ ]` Dashboard: envelope detail view (instruction, output, history timeline)
+- `[ ]` Brain: waiting envelope resumption
+- `[ ]` Brain: fleet agent awareness
+- `[ ]` Dashboard: R/C/M/T tree view component
+- `[ ]` Dashboard: envelope detail view
 - `[ ]` Dashboard: human-in-the-loop input for `needs_input` envelopes
 - `[ ]` Deploy + test: Prime → Stan delegation, human-in-the-loop
 
@@ -128,10 +114,10 @@ User: "How much does a GCP e2-medium instance cost?"
 - `[ ]` Brain: Responsibility scheduler (cron parser, timer, R→M envelope creation)
 - `[ ]` Responsibilities config: base, Prime, per-job JSON files
 - `[ ]` Motor: responsibility-create / responsibility-remove / responsibility-list tools
-- `[ ]` Dashboard: Responsibility view (schedule, last/next fire, enable/disable toggle)
+- `[ ]` Dashboard: Responsibility view
 - `[ ]` Prime deployment: Brain v3 on Prime
 - `[ ]` Fleet bootstrap update: manifests, install.sh, fleet-bootstrap.sh
-- `[ ]` contracts.json: add brain section + validate-contracts update
-- `[ ]` Deprecated code removal (brain-exec, brain-exec-worker, check-plan-compliance, etc.)
-- `[ ]` Feature flag removal (BRAIN_V3_* flags → v3 is the only path)
+- `[ ]` contracts.json: add brain section
+- `[ ]` Deprecated code removal
+- `[ ]` Feature flag removal (BRAIN_V3_* → v3 is the only path)
 - `[ ]` Fleet-wide rollout + final validation

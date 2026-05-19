@@ -1,7 +1,7 @@
 # Brain v3 — Implementation Walkthrough
 
 > Living document tracking what was built, tested, and learned across all phases.
-> Last updated: 2026-05-19 (Phase 2 complete)
+> Last updated: 2026-05-19 (Phase 3 complete)
 
 ---
 
@@ -166,3 +166,74 @@ Mouth → voice/format through Gemini Flash → deliver to GChat
 - `v2026.05.18.23.5` — Fix missing opening brace in fleet template cortex block
 - `v2026.05.18.23.6` — Fix Mouth Brain v3 integration (runQuery URL, owner/delivered filters, question context)
 - `v2026.05.18.23.7` — Simplify Mouth envelope query (avoid composite index requirement)
+
+---
+
+## Phase 3 — Memory + Discovery (2026-05-19)
+
+### What Was Built
+
+Hardwired memory recall and write via temporal-memory agent dispatch. Active envelope scan for follow-up detection. Attach classification handler with needs_input resumption.
+
+### Pipeline Architecture (Phase 3 — memory-enriched)
+
+```
+User → Ears → Firestore intake
+                ↓
+Brain polls → claims intake
+                ↓ memory recall
+Brain dispatches temporal-memory → returns recalled context (e.g. 466 chars)
+                ↓ active envelope scan
+Brain queries Firestore for in-progress work → passes to Cortex
+                ↓ classify (with memory + active envelopes)
+Cortex → { classification: "new_task" | "attach", ... }
+                ↓
+    ┌─ attach → status check / needs_input resume / follow-up
+    └─ new_task → create envelope → processEnvelope(envelope, memory)
+                    ↓ decide (with memory context)
+                    Cortex → dispatch / synthesize / short_circuit / needs_input
+                    ↓ on synthesize:
+                    Brain calls writeMemory() → temporal-memory stores work summary
+```
+
+### Functions Added
+| Function | Purpose |
+|----------|---------|
+| `recallMemory(query)` | Dispatches to temporal-memory agent, returns `{ recalled: "..." }` |
+| `writeMemory(envelope)` | Stores completed work (instruction + output + envelope ID) to temporal-memory |
+| `scanActiveEnvelopes()` | Queries Firestore `work(owner, status=active)`, returns top-level summaries |
+| `handleAttach(intake, decision, memory)` | Routes attach classification: needs_input resume, status check, follow-up |
+| `processIntakeAsNewTask(intake, decision, memory)` | Creates new task envelope when attach falls through |
+
+### End-to-End Verified Flow
+
+**Test:** User sends "What are the deployed URLs for the tachin-website project?" to Stan (2026-05-19 04:54 UTC)
+
+```
+04:54:32 ▸ Ears → intake i-1779166471297-278duk from gchat
+04:54:32 ▸ Memory recall: dispatched to temporal-memory
+04:55:16 ▸ Memory returned: 466 chars of Firebase hosting context (43s, cold start)
+04:55:16 ▸ Active envelope scan: failed gracefully (index creating)
+04:55:24 ▸ Cortex classify (with memory) → new_task
+04:55:31 ▸ Cortex decide (with memory) → short_circuit ← ANSWERED FROM MEMORY!
+04:55:31 ▸ Envelope w-1779166524821-dd0181e6 complete
+04:55:33 ▸ Mouth picks up envelope (2s latency)
+04:55:36 ▸ Delivered to GChat via LLM classify (185 chars) ✅
+```
+
+**Result:** Cortex used recalled Firebase hosting context to answer directly — no temporal-research dispatch needed. Memory eliminated an agent call.
+
+### Architecture Decisions
+
+1. **One recall per intake** — Memory is recalled once at intake time and reused for both classify and decide. This halves the latency overhead vs recalling separately for each.
+
+2. **Memory write on synthesize only** — Short-circuit responses don't get written to memory. Only synthesize completions (real work with agent dispatches) are worth storing.
+
+3. **Graceful degradation** — All memory/scan functions wrap in try/catch and return empty defaults on failure. Missing indexes, agent errors, or timeouts don't break the pipeline.
+
+4. **Attach handler is a router** — The `handleAttach` function examines the target envelope's status and routes to the appropriate action (resume, status check, or new task). Fallback to `processIntakeAsNewTask` when anything is unexpected.
+
+5. **context_forward for needs_input** — When a human responds to a needs_input envelope, their text is stored in `context_forward` and injected into `priorResults` as a `{ agent: 'human' }` entry.
+
+### Commits
+- `v2026.05.19.00.1` — Phase 3: memory recall/write, active envelope scan, attach handler, needs_input support

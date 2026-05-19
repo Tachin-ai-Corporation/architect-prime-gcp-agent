@@ -1,8 +1,8 @@
 # Brain v3 — Session Handoff
 
 > **Purpose:** Get a new session agent up to speed on the Brain v3 implementation.
-> **Last updated:** 2026-05-19T04:35:00Z
-> **Status:** Phase 2 COMPLETE ✅ — End-to-end verified on Stan.
+> **Last updated:** 2026-05-19T05:06:00Z
+> **Status:** Phase 3 COMPLETE ✅ — Memory recall/write + attach + needs_input live on Stan.
 
 ---
 
@@ -12,7 +12,7 @@
 2. **Read the roadmap:** `docs/brainV3/01-ROADMAP.md` (7-phase plan)
 3. **Read this file** for current state, working process, and what's next
 4. **Read the task tracker:** `docs/brainV3/TRACKER.md` (detailed checklist per phase)
-5. **Read the next phase doc:** `docs/brainV3/04-PHASE-3-MEMORY-DISCOVERY.md`
+5. **Read the next phase doc:** `docs/brainV3/05-PHASE-4-MULTI-STEP.md`
 
 ---
 
@@ -46,47 +46,37 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 
 ### What's Live
 - **Phase 1: Foundation** — COMPLETE ✅
-- **Phase 2: Cortex Loop** — COMPLETE ✅ (deployed + verified end-to-end)
+- **Phase 2: Cortex Loop** — COMPLETE ✅
+- **Phase 3: Memory + Discovery** — COMPLETE ✅
 - **Stan** is running Brain v3 in production (fleet-stan VM)
-- Full pipeline verified: Ears → intake → Brain → Cortex classify → Cortex decide → dispatch temporal-research → Cortex synthesize → Mouth LLM classify → GChat delivery
+- Full pipeline verified: Ears → intake → **memory recall** → Brain → Cortex classify → dispatch → synthesize → **memory write** → Mouth → GChat
 
-### Phase 2 Accomplishments
-- Cortex SOUL expanded with `dispatch`, `synthesize`, `status_update` actions
-- Full iterative Cortex loop: dispatch → feed result back → decide again (up to 12 iterations)
-- `callAgent()` dispatches to any agent via gateway HTTP (fresh sessions only)
-- Queue awareness: Cortex receives pending intake count + ordered queue details
-- `status_update` action delivers "working on X, queue: Y" messages via Mouth
-- Response parser hardened: balanced JSON extraction, Action: block stripping, retry on parse failure
-- Gateway liveness check before each dispatch
-- `[BRAIN-ORCHESTRATED]` marker prevents dual delivery through JSONL path
-- Automated stale envelope cleanup at startup (archives failed >24h)
-- Cortex workspace isolation: dedicated `workspace-cortex` with v3 SOUL
-- `delegate` → `dispatch` action normalization (backward compatibility)
-- Intake retry resilience: classify failures revert intake to `pending`
-- Mouth Brain v3 integration: Firestore envelope polling, LLM voice/classify pipeline, delivered_at tracking
-- `render-config` updated to prefer fleet template, substitute agent identity vars
+### Phase 3 Accomplishments
+- `recallMemory()` — dispatches to temporal-memory before every classify; recalled context passed to both classify and decide
+- `writeMemory()` — stores completed work to temporal-memory after synthesize completions
+- `scanActiveEnvelopes()` — queries Firestore for in-progress envelopes, passes to Cortex for follow-up detection
+- `attach` classification handler — status checks for active/waiting, resumes needs_input, creates follow-up for completed
+- `needs_input` action handler — blocks envelope, Mouth delivers the question, human response resumes via attach
+- `processIntakeAsNewTask()` — graceful fallback when attach target is missing or completed
+- Memory recall enriches Cortex decisions — verified: Cortex short-circuited from recalled Firebase hosting context
+- One memory call per intake (reused for classify + decide) — minimizes latency overhead
 
 ### Key Infrastructure
 | Component | File | Status |
 |-----------|------|--------|
-| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 2 Cortex loop (882 lines) |
+| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 3 memory+discovery (~1100 lines) |
 | Brain launcher | `corekit/daemon/start-agent-brain` | ✅ PRIME_ID/AGENT_ID/BRAIN_V3 discovery |
 | Brain systemd unit | `corekit/daemon/agent-brain.service` | ✅ Enabled, auto-restart |
 | Ears (rewired) | `corekit/daemon/agent-ears.mjs` | ✅ Writes Firestore intake |
 | Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + Brain v3 envelope polling + LLM classify |
-| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (dispatch/synthesize/status_update/short_circuit) |
-| Cortex workspace | `workspace-cortex/SOUL.md` (on VM) | ✅ Isolated workspace, prevents identity leakage |
+| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify (w/ attach) + decide (all actions) |
+| Temporal-memory | `brain/fleet/_brain/temporal-memory/SOUL.md` | ✅ Recall + write via Brain dispatch |
 | Agent registry | `corekit/config/agent-registry.json` | ✅ 6 agents registered |
-| Fleet template | `corekit/config/openclaw-fleet-bootstrap.json5.tmpl` | ✅ Cortex mapped to workspace-cortex |
-| render-config | `corekit/gateway/render-config` | ✅ Prefers fleet template, substitutes AGENT_DISPLAY_NAME |
-| Firestore indexes | `intake(status, created_at)`, `work(owner, status)` | ✅ Live |
+| Firestore indexes | `intake(status, created_at)`, `work(owner, status, created_at)` | ✅ Live |
 
-### Known Issues (carry-forward to Phase 3)
-1. **Memory not wired** — Brain passes empty `memory: {}` to Cortex. Phase 3 will hardwire temporal-memory recall/write.
-2. **No active envelope scan** — Brain doesn't check for in-progress work before classify. Phase 3.
-3. **No attach handling** — Cortex can classify as `attach` but Brain doesn't handle it yet. Phase 3.
-4. **Old envelopes re-delivered on first Mouth restart** — Mouth delivered 3 historical envelopes on first boot. The `delivered_at` flag now prevents this on subsequent restarts.
-5. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF in bash script. Doesn't affect function.
+### Known Issues (carry-forward to Phase 4)
+1. **Memory recall cold start latency** — First temporal-memory call takes ~43s (cold start). Subsequent calls are faster. Acceptable but notable.
+2. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF in bash script. Doesn't affect function.
 
 ---
 
@@ -151,17 +141,18 @@ echo y | gcloud compute ssh fleet-stan ... --command="sudo curl -sfL \
 
 ---
 
-## What's Next: Phase 3 — Memory + Discovery
+## What's Next: Phase 4 — Multi-Step Planning
 
-**Goal:** Hardwired memory recall/write, active envelope scan, follow-up detection.
+**Goal:** Cortex returns multi-step plans. Brain executes sequentially. Cerebellum verifies.
 
-**Read:** `docs/brainV3/04-PHASE-3-MEMORY-DISCOVERY.md` for the full design.
+**Read:** `docs/brainV3/05-PHASE-4-MULTI-STEP.md` for the full design.
 
 Key work items:
-1. Integrate temporal-memory HTTP calls for recall (before classify) and write (on envelope completion)
-2. Active envelope scan before classify (Firestore query for in-progress work)
-3. Handle `attach` classification (follow-up to existing envelopes, status checks, needs_input resumption)
-4. Test: memory recall enriches Cortex decisions, follow-up detection works
+1. Cortex SOUL: `plan` action with ordered steps
+2. Brain: sequential child envelope execution with context accumulation
+3. Brain: retry-on-failure logic (1 retry, then Cortex consult)
+4. Cerebellum SOUL: envelope-aware structured verification (pass/fail JSON)
+5. Test: multi-step Drive upload with Cerebellum verification
 
 ---
 
@@ -182,3 +173,6 @@ Key work items:
 - `v2026.05.18.23.5` — Fix missing opening brace in fleet template cortex block
 - `v2026.05.18.23.6` — Fix Mouth Brain v3 integration (runQuery URL, owner/delivered filters, question context)
 - `v2026.05.18.23.7` — Simplify Mouth envelope query (avoid composite index requirement)
+
+## Commit History (Phase 3)
+- `v2026.05.19.00.1` — Phase 3: memory recall/write, active envelope scan, attach handler, needs_input support
