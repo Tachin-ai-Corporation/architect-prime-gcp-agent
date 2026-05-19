@@ -6,7 +6,7 @@
 // Processes Firestore intake records through the Cortex loop
 // and manages envelopes (the R/C/M/T work hierarchy).
 //
-// Phase 2: full Cortex loop — dispatch, synthesize, queue awareness
+// Phase 3: memory recall/write, active envelope scan, attach handler
 //   - callAgent: HTTP dispatch to any agent via gateway
 //   - Queue awareness: pending intake count + queue passed to Cortex
 //   - status_update: Cortex can send "working on X" messages
@@ -472,6 +472,75 @@ async function getPendingIntakeQueue() {
   }
 }
 
+// ---- Memory: recall context via temporal-memory agent ----
+async function recallMemory(query) {
+  try {
+    log('INFO', `Memory recall: "${query.substring(0, 80)}"`);
+    const result = await callAgent('temporal-memory', {
+      instruction: `Recall all relevant context for: ${query}`,
+      accept_criteria: 'Return relevant memory context or "No relevant context found"',
+    });
+    if (result.success && result.output) {
+      const recalled = result.output.substring(0, 3000);
+      log('INFO', `Memory recalled: ${recalled.length} chars (${result.durationMs}ms)`);
+      return { recalled };
+    }
+    log('INFO', `Memory recall: no context (${result.durationMs}ms)`);
+    return {};
+  } catch (e) {
+    log('WARN', `Memory recall failed: ${e.message}`);
+    return {};
+  }
+}
+
+// ---- Memory: write completed work via temporal-memory agent ----
+async function writeMemory(envelope) {
+  try {
+    const summary = [
+      `Request: ${envelope.instruction}`,
+      `Type: ${envelope.type}`,
+      `Result: ${(envelope.output || '').substring(0, 1500)}`,
+      `Envelope: ${envelope.id}`,
+      `Completed: ${envelope.completed_at}`,
+    ].join('\n');
+
+    log('INFO', `Memory write: envelope ${envelope.id}`);
+    const result = await callAgent('temporal-memory', {
+      instruction: `Store this completed work in memory:\n${summary}`,
+      accept_criteria: 'Acknowledge storage',
+    });
+    log('INFO', `Memory write: ${result.success ? 'OK' : 'failed'} (${result.durationMs}ms)`);
+  } catch (e) {
+    log('WARN', `Memory write failed: ${e.message}`);
+  }
+}
+
+// ---- Active envelope scan: query for in-progress work ----
+async function scanActiveEnvelopes() {
+  try {
+    const active = await firestoreQuery('work', [
+      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
+    ]);
+    const summaries = active
+      .filter(env => !env.parent_id) // Only top-level envelopes
+      .map(env => ({
+        id: env.id,
+        type: env.type,
+        instruction: (env.instruction || '').substring(0, 120),
+        status: env.status,
+        updated_at: env.updated_at,
+      }));
+    if (summaries.length > 0) {
+      log('INFO', `Active envelopes: ${summaries.length} found`);
+    }
+    return summaries;
+  } catch (e) {
+    log('WARN', `Active envelope scan failed: ${e.message}`);
+    return [];
+  }
+}
+
 // ---- Status update delivery (transient, for Mouth to pick up) ----
 async function deliverStatusUpdate(envelopeId, message) {
   const statusId = generateId('status');
@@ -522,7 +591,7 @@ async function cleanupStaleEnvelopes() {
   }
 }
 
-// ---- Intake processing ----
+// ---- Intake processing (Phase 3: memory + active scan + attach) ----
 async function processIntake(intake) {
   log('INFO', `Processing intake: ${intake.id} from ${intake.source}`);
 
@@ -533,6 +602,12 @@ async function processIntake(intake) {
     claimed_at: now(),
   });
 
+  // Phase 3: Memory recall (once, reused for classify + decide)
+  const memoryContext = await recallMemory(intake.text);
+
+  // Phase 3: Active envelope scan (for follow-up detection)
+  const activeEnvelopes = await scanActiveEnvelopes();
+
   // Call Cortex in classify mode
   const decision = await callCortex('classify', {
     inbound: {
@@ -540,8 +615,8 @@ async function processIntake(intake) {
       source: intake.source,
       source_meta: intake.source_meta || {},
     },
-    memory: {}, // Phase 1: empty. Phase 3: hardwired recall.
-    active_envelopes: [], // Phase 1: empty. Phase 3: envelope scan.
+    memory: memoryContext,
+    active_envelopes: activeEnvelopes,
   });
 
   if (decision.error) {
@@ -556,6 +631,13 @@ async function processIntake(intake) {
 
   // Create envelope based on classification
   const classification = decision.classification || 'new_task';
+
+  // Phase 3: Handle attach classification (follow-up to existing work)
+  if (classification === 'attach') {
+    await handleAttach(intake, decision, memoryContext);
+    return;
+  }
+
   const envelopeId = generateId('w');
 
   const envelope = {
@@ -579,6 +661,7 @@ async function processIntake(intake) {
     completed_at: null,
     updated_at: now(),
     iteration: 0,
+    memory_context: memoryContext, // Phase 3: pass memory to processEnvelope
   };
 
   await firestoreWrite('work', envelopeId, envelope);
@@ -587,13 +670,112 @@ async function processIntake(intake) {
   // Write history entry
   await writeHistory(envelopeId, null, 'pending', 'brain', 'Created from intake ' + intake.id);
 
-  // Process the envelope
-  await processEnvelope(envelope);
+  // Process the envelope (pass memory context to avoid re-recall)
+  await processEnvelope(envelope, memoryContext);
 }
 
-// ---- Envelope processing (Phase 2: full Cortex loop) ----
-async function processEnvelope(envelope) {
+// ---- Attach handler: follow-up to existing work ----
+async function handleAttach(intake, decision, memoryContext) {
+  const targetId = decision.attach_to;
+  log('INFO', `Attach: intake ${intake.id} → target ${targetId}`);
+
+  if (!targetId) {
+    log('WARN', `Attach missing attach_to field, treating as new_task`);
+    return processIntakeAsNewTask(intake, decision, memoryContext);
+  }
+
+  const targetEnv = await firestoreRead('work', targetId);
+  if (!targetEnv) {
+    log('WARN', `Attach target ${targetId} not found, treating as new_task`);
+    return processIntakeAsNewTask(intake, decision, memoryContext);
+  }
+
+  if (targetEnv.status === 'needs_input') {
+    // Resume the blocked envelope with the human's response
+    log('INFO', `Resuming needs_input envelope ${targetId} with human response`);
+    targetEnv.status = 'active';
+    targetEnv.context_forward = intake.text;
+    targetEnv.updated_at = now();
+    await firestoreWrite('work', targetId, targetEnv);
+    await writeHistory(targetId, 'needs_input', 'active', 'brain', `Resumed with: ${intake.text.substring(0, 100)}`);
+    await processEnvelope(targetEnv, memoryContext);
+    return;
+  }
+
+  if (targetEnv.status === 'active' || targetEnv.status === 'waiting') {
+    // Status check — deliver current status
+    const statusMsg = `I'm still working on that. Current task: "${targetEnv.instruction}". Status: ${targetEnv.status}, iteration ${targetEnv.iteration || 0}.`;
+    const statusEnvId = generateId('w');
+    await firestoreWrite('work', statusEnvId, {
+      id: statusEnvId,
+      type: 'T',
+      parent_id: null,
+      owner: AGENT_EMAIL || AGENT_ID,
+      status: 'complete',
+      intent: 'status_check',
+      instruction: `Status check on ${targetId}`,
+      output: statusMsg,
+      source_channel: intake.source,
+      source_meta: intake.source_meta || {},
+      created_at: now(),
+      started_at: now(),
+      completed_at: now(),
+      updated_at: now(),
+      children: [],
+      accept_criteria: null,
+      context_summary: null,
+      context_forward: null,
+      error: null,
+      iteration: 0,
+    });
+    log('INFO', `Status check delivered for ${targetId}: ${statusEnvId}`);
+    return;
+  }
+
+  // For complete or other statuses, treat as a new follow-up task
+  log('INFO', `Attach target ${targetId} is ${targetEnv.status}, creating follow-up task`);
+  return processIntakeAsNewTask(intake, decision, memoryContext);
+}
+
+// ---- Helper: create new task from intake when attach falls through ----
+async function processIntakeAsNewTask(intake, decision, memoryContext) {
+  const envelopeId = generateId('w');
+  const envelope = {
+    id: envelopeId,
+    type: 'T',
+    parent_id: null,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: 'pending',
+    intent: decision.intent || 'decide',
+    instruction: decision.instruction || intake.text,
+    accept_criteria: decision.accept_criteria || null,
+    context_summary: decision.context_summary || null,
+    output: null,
+    children: [],
+    context_forward: null,
+    error: null,
+    source_channel: intake.source,
+    source_meta: intake.source_meta || {},
+    created_at: now(),
+    started_at: null,
+    completed_at: null,
+    updated_at: now(),
+    iteration: 0,
+    memory_context: memoryContext,
+  };
+
+  await firestoreWrite('work', envelopeId, envelope);
+  log('INFO', `Created envelope: ${envelopeId} (type=T, fallback from attach)`);
+  await writeHistory(envelopeId, null, 'pending', 'brain', 'Created from intake ' + intake.id);
+  await processEnvelope(envelope, memoryContext);
+}
+
+// ---- Envelope processing (Phase 3: memory-enriched Cortex loop) ----
+async function processEnvelope(envelope, memoryContext) {
   log('INFO', `Processing envelope: ${envelope.id} (type=${envelope.type}, status=${envelope.status})`);
+
+  // Use passed memory context, or recall fresh if not provided
+  const memory = memoryContext || await recallMemory(envelope.instruction);
 
   // Mark active
   envelope.status = 'active';
@@ -605,6 +787,16 @@ async function processEnvelope(envelope) {
   // Cortex loop
   let priorResults = [];
   let iteration = 0;
+
+  // If resuming from needs_input, inject the human's response
+  if (envelope.context_forward) {
+    priorResults.push({
+      agent: 'human',
+      result: envelope.context_forward,
+      success: true,
+    });
+    log('INFO', `Injected human response: ${envelope.context_forward.substring(0, 80)}`);
+  }
 
   while (iteration < MAX_ITERATIONS) {
     iteration++;
@@ -624,7 +816,7 @@ async function processEnvelope(envelope) {
         accept_criteria: envelope.accept_criteria,
         context_summary: envelope.context_summary,
       },
-      memory: {}, // Phase 3
+      memory,
       prior_results: priorResults,
       iteration,
       pending_intake_count: queueInfo.count,
@@ -674,6 +866,20 @@ async function processEnvelope(envelope) {
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Synthesized response');
       log('INFO', `Envelope ${envelope.id} complete (synthesize)`);
+
+      // Phase 3: Write completed work to memory (synthesize only, not short_circuit)
+      await writeMemory(envelope);
+      return;
+    }
+
+    if (action === 'needs_input') {
+      // Phase 3: Block envelope and ask the human for clarification
+      envelope.output = decision.question || decision.message || 'I need more information to proceed.';
+      envelope.status = 'needs_input';
+      envelope.updated_at = now();
+      await firestoreWrite('work', envelope.id, envelope);
+      await writeHistory(envelope.id, 'active', 'needs_input', 'brain', `Needs: ${decision.what_is_needed || 'clarification'}`);
+      log('INFO', `Envelope ${envelope.id} blocked (needs_input)`);
       return;
     }
 
