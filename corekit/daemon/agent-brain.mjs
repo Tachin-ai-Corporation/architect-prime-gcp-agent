@@ -546,6 +546,9 @@ async function processIntake(intake) {
 
   if (decision.error) {
     log('ERROR', `Classify failed for intake ${intake.id}: ${JSON.stringify(decision)}`);
+    // Revert to pending for retry on next poll
+    await firestoreWrite('intake', intake.id, { ...intake, status: 'pending', claimed_at: null });
+    log('INFO', `Intake ${intake.id} reverted to pending for retry`);
     return;
   }
 
