@@ -123,7 +123,7 @@ case "${1:-}" in
         BRAIN_SRC="${OC_DIR}/workspace-_brain"
         if [[ -d "$BRAIN_SRC" ]]; then
           echo "==> Re-applying brain sub-agent workspaces"
-          for brain_dir in temporal-research temporal-memory prefrontal motor cerebellum; do
+          for brain_dir in cortex temporal-research temporal-memory prefrontal motor cerebellum; do
             src="${BRAIN_SRC}/${brain_dir}"
             dest="${OC_DIR}/workspace-${brain_dir}"
             if [[ -d "$src" ]]; then

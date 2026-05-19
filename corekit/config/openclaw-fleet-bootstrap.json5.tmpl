@@ -65,14 +65,13 @@
       }
     },
     "list": [
-      {
-        // Cortex — the specialty agent's user-facing persona.
-        // Dispatches sub-agents via sessions_spawn + sessions_yield.
-        // SOUL.md is loaded automatically from the workspace directory.
+        // Cortex — the guiding intelligence.
+        // Brain v3 calls Cortex via HTTP for classify/decide.
+        // Cortex returns structured JSON decisions — no tool execution.
         "id": "cortex",
         "default": true,
         "name": "${AGENT_DISPLAY_NAME}",
-        "workspace": "~/.openclaw/workspace",
+        "workspace": "~/.openclaw/workspace-cortex",
         "sandbox": { "mode": "off" },
         "subagents": {
           "allowAgents": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"],

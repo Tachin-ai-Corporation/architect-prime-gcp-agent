@@ -192,7 +192,7 @@ fi
 BRAIN_SRC="${OC_HOST_DIR}/workspace-_brain"
 if [[ -d "$BRAIN_SRC" ]]; then
   info "Deploying brain sub-agent workspaces..."
-  for brain_dir in temporal-research temporal-memory prefrontal motor cerebellum; do
+  for brain_dir in cortex temporal-research temporal-memory prefrontal motor cerebellum; do
     src="${BRAIN_SRC}/${brain_dir}"
     dest="${OC_HOST_DIR}/workspace-${brain_dir}"
     if [[ -d "$src" ]]; then

@@ -648,7 +648,8 @@ async function processEnvelope(envelope) {
       return;
     }
 
-    const action = decision.action;
+    // Normalize: treat 'delegate' as 'dispatch' until Phase 6 formalizes delegation
+    const action = (decision.action === 'delegate') ? 'dispatch' : decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
 
     if (action === 'short_circuit') {

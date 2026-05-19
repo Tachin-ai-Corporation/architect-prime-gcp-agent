@@ -12,6 +12,7 @@ brain/fleet/_base/SOUL_PROTOCOL.md .openclaw/workspace-fleet/SOUL_PROTOCOL.md
 
 # Shared brain sub-agent workspaces (used by ALL fleet agents)
 # fleet-bootstrap.sh copies these to workspace-{agent}/ with template substitution
+brain/fleet/_brain/cortex/SOUL.md .openclaw/workspace-_brain/cortex/SOUL.md
 brain/fleet/_brain/temporal-research/SOUL.md .openclaw/workspace-_brain/temporal-research/SOUL.md
 brain/fleet/_brain/temporal-research/IDENTITY.md .openclaw/workspace-_brain/temporal-research/IDENTITY.md
 brain/fleet/_brain/temporal-memory/SOUL.md .openclaw/workspace-_brain/temporal-memory/SOUL.md
