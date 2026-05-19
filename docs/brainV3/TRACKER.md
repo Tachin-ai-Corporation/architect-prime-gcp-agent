@@ -29,14 +29,9 @@
 - Created composite index via `gcloud firestore indexes composite create`
 - Moved Brain log to `/tmp/` (writable by node user in Docker)
 
-### Phase 1 — Known Issues (carry-forward)
-1. **Dual delivery** — responses flow through BOTH v2 JSONL and v3 envelope paths
-2. **Classify field mapping** — Cortex returns `intent` not `classification` (cosmetic)
-3. **Stale envelopes** — 3 failed envelopes from pre-fix runs need cleanup
-
 ---
 
-## Phase 2 — Cortex Loop
+## Phase 2 — Cortex Loop ✅ COMPLETE
 > Single-step dispatch → synthesize cycle. Fresh sessions only (no named sessions).
 
 - `[x]` Cortex SOUL.md: add `dispatch` + `synthesize` + `status_update` actions
@@ -50,8 +45,31 @@
 - `[x]` Brain: `[BRAIN-ORCHESTRATED]` marker on all Cortex/agent calls
 - `[x]` Fix: suppress JSONL delivery for Brain-initiated sessions (Mouth skips `[BRAIN-ORCHESTRATED]`)
 - `[x]` Brain: automated stale envelope cleanup at startup (archive failed envelopes >24h)
-- `[ ]` Deploy + test: dispatch to temporal-research, synthesize result
+- `[x]` Deploy + test: dispatch to temporal-research, synthesize result ✅
 
+### Phase 2 — Additional Work (stabilization)
+- `[x]` Cortex workspace isolation: dedicated `workspace-cortex` prevents SOUL identity leakage from DevOps workspace
+- `[x]` Fleet infrastructure: updated `openclaw-fleet-bootstrap.json5.tmpl`, `upgrade-corekit`, `fleet-bootstrap.sh`, `role-fleet.txt`
+- `[x]` Action normalization: `delegate` → `dispatch` backward compatibility in Brain
+- `[x]` Intake retry resilience: classify failures revert intake to `pending` for automatic retry
+- `[x]` render-config: prefers fleet template when available, substitutes `${AGENT_DISPLAY_NAME}` and `${AGENT_ID}`
+- `[x]` Mouth Brain v3 integration: fixed `runQuery` URL (parent path), added owner/delivered_at filters, parent_id skip
+- `[x]` Mouth: passes original question context from envelope to `classifyAndDeliver` for proper voice formatting
+- `[x]` Verified end-to-end: GCP e2-medium pricing → temporal-research → synthesize → Mouth LLM classify → GChat delivery ✅
+
+### Phase 2 — End-to-End Verified Flow
+```
+User: "How much does a GCP e2-medium instance cost?"
+ 04:16:18 ▸ Ears → intake i-1779164177081-57tv8y
+ 04:17:17 ▸ Cortex classify → new_task (intent=research)
+ 04:17:17 ▸ Brain creates envelope w-1779164237470-0835d6d4
+ 04:17:23 ▸ Cortex decide → action=dispatch (temporal-research)
+ 04:17:23 ▸ Brain dispatches to temporal-research via gateway HTTP
+ 04:18:01 ▸ temporal-research responds (479 chars, 37.5s)
+ 04:18:14 ▸ Cortex decide (iteration 2) → action=synthesize
+ 04:18:15 ▸ Envelope complete, output written to Firestore
+ 04:32:33 ▸ Mouth polls envelope → LLM classify → action=deliver → GChat ✅
+```
 
 ---
 

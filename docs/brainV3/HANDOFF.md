@@ -1,8 +1,8 @@
 # Brain v3 — Session Handoff
 
 > **Purpose:** Get a new session agent up to speed on the Brain v3 implementation.
-> **Last updated:** 2026-05-18T23:35:00Z
-> **Status:** Phase 2 CODE COMPLETE. Pending deploy + test on Stan.
+> **Last updated:** 2026-05-19T04:35:00Z
+> **Status:** Phase 2 COMPLETE ✅ — End-to-end verified on Stan.
 
 ---
 
@@ -12,7 +12,7 @@
 2. **Read the roadmap:** `docs/brainV3/01-ROADMAP.md` (7-phase plan)
 3. **Read this file** for current state, working process, and what's next
 4. **Read the task tracker:** `docs/brainV3/TRACKER.md` (detailed checklist per phase)
-5. **Read the next phase doc:** `docs/brainV3/03-PHASE-2-CORTEX-LOOP.md`
+5. **Read the next phase doc:** `docs/brainV3/04-PHASE-3-MEMORY-DISCOVERY.md`
 
 ---
 
@@ -32,7 +32,9 @@ User → Ears → gateway POST → Cortex LLM session → Mouth tails JSONL → 
 ```
 User → Ears → Firestore intake → Brain polls → Cortex classify → Cortex decide
                                   Brain creates work envelope (R/C/M/T state machine)
-                                  Mouth polls completed envelopes → delivers
+                                  Brain dispatches to sub-agents → feeds results back to Cortex
+                                  Cortex synthesizes final response
+                                  Mouth polls completed envelopes → LLM voice/format → delivers to GChat
 ```
 - Deterministic: Brain is a state machine, Cortex only provides decisions
 - Observable: every state transition is in Firestore
@@ -40,18 +42,17 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 
 ---
 
-## Current State (as of 2026-05-18)
+## Current State (as of 2026-05-19)
 
 ### What's Live
 - **Phase 1: Foundation** — COMPLETE ✅
-- **Phase 2: Cortex Loop** — CODE COMPLETE, pending deploy ✅
+- **Phase 2: Cortex Loop** — COMPLETE ✅ (deployed + verified end-to-end)
 - **Stan** is running Brain v3 in production (fleet-stan VM)
-- End-to-end pipeline verified: Ears → intake → Brain → Cortex classify/decide → envelope complete → Mouth delivery
-- All code is on `main` branch, deployed via `upgrade-corekit`
+- Full pipeline verified: Ears → intake → Brain → Cortex classify → Cortex decide → dispatch temporal-research → Cortex synthesize → Mouth LLM classify → GChat delivery
 
-### Phase 2 Changes
+### Phase 2 Accomplishments
 - Cortex SOUL expanded with `dispatch`, `synthesize`, `status_update` actions
-- Full iterative Cortex loop: dispatch → feed result back → decide again
+- Full iterative Cortex loop: dispatch → feed result back → decide again (up to 12 iterations)
 - `callAgent()` dispatches to any agent via gateway HTTP (fresh sessions only)
 - Queue awareness: Cortex receives pending intake count + ordered queue details
 - `status_update` action delivers "working on X, queue: Y" messages via Mouth
@@ -59,23 +60,33 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 - Gateway liveness check before each dispatch
 - `[BRAIN-ORCHESTRATED]` marker prevents dual delivery through JSONL path
 - Automated stale envelope cleanup at startup (archives failed >24h)
+- Cortex workspace isolation: dedicated `workspace-cortex` with v3 SOUL
+- `delegate` → `dispatch` action normalization (backward compatibility)
+- Intake retry resilience: classify failures revert intake to `pending`
+- Mouth Brain v3 integration: Firestore envelope polling, LLM voice/classify pipeline, delivered_at tracking
+- `render-config` updated to prefer fleet template, substitute agent identity vars
 
 ### Key Infrastructure
 | Component | File | Status |
 |-----------|------|--------|
-| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 2 Cortex loop |
-| Brain launcher | `corekit/daemon/start-agent-brain` | ✅ Handles PRIME_ID/AGENT_ID discovery |
+| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 2 Cortex loop (882 lines) |
+| Brain launcher | `corekit/daemon/start-agent-brain` | ✅ PRIME_ID/AGENT_ID/BRAIN_V3 discovery |
 | Brain systemd unit | `corekit/daemon/agent-brain.service` | ✅ Enabled, auto-restart |
 | Ears (rewired) | `corekit/daemon/agent-ears.mjs` | ✅ Writes Firestore intake |
-| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + envelope polling + Brain-skip |
-| Cortex SOUL v3 | `brain/fleet/_base/SOUL.md` | ✅ classify + decide (dispatch/synthesize/status_update) |
+| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + Brain v3 envelope polling + LLM classify |
+| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (dispatch/synthesize/status_update/short_circuit) |
+| Cortex workspace | `workspace-cortex/SOUL.md` (on VM) | ✅ Isolated workspace, prevents identity leakage |
 | Agent registry | `corekit/config/agent-registry.json` | ✅ 6 agents registered |
-| Firestore index | `intake(status, created_at)` | ✅ Created manually |
+| Fleet template | `corekit/config/openclaw-fleet-bootstrap.json5.tmpl` | ✅ Cortex mapped to workspace-cortex |
+| render-config | `corekit/gateway/render-config` | ✅ Prefers fleet template, substitutes AGENT_DISPLAY_NAME |
+| Firestore indexes | `intake(status, created_at)`, `work(owner, status)` | ✅ Live |
 
 ### Known Issues (carry-forward to Phase 3)
 1. **Memory not wired** — Brain passes empty `memory: {}` to Cortex. Phase 3 will hardwire temporal-memory recall/write.
 2. **No active envelope scan** — Brain doesn't check for in-progress work before classify. Phase 3.
 3. **No attach handling** — Cortex can classify as `attach` but Brain doesn't handle it yet. Phase 3.
+4. **Old envelopes re-delivered on first Mouth restart** — Mouth delivered 3 historical envelopes on first boot. The `delivered_at` flag now prevents this on subsequent restarts.
+5. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF in bash script. Doesn't affect function.
 
 ---
 
@@ -101,11 +112,15 @@ echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-
   /opt/openclaw/.openclaw/bin/upgrade-corekit --apply 'main'"
 
 # 3. Check logs
-echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-prime-beta \
-  --tunnel-through-iap --command="sudo docker exec openclaw-gateway tail -30 /tmp/agent-brain.log"
+# Brain:
+echo y | gcloud compute ssh fleet-stan ... --command="sudo docker exec openclaw-gateway tail -30 /tmp/agent-brain.log"
+# Mouth:
+echo y | gcloud compute ssh fleet-stan ... --command="sudo tail -20 /var/log/agent-mouth.log"
 
-# 4. Check Firestore (intake + work envelopes)
-# Use the scratch scripts or dashboard
+# 4. Hot-deploy a single file (when upgrade-corekit CDN cache lags):
+echo y | gcloud compute ssh fleet-stan ... --command="sudo curl -sfL \
+  'https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/{COMMIT_SHA}/path/to/file' \
+  -o /opt/openclaw/.openclaw/bin/filename"
 ```
 
 ### SSH Access Pattern
@@ -113,7 +128,7 @@ echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-
 - **Always use IAP:** `--tunnel-through-iap`
 - **Commands run as root via sudo**
 - **Docker container:** `openclaw-gateway` — all services run inside this container
-- **SSH is flaky** with chained docker exec commands — keep commands simple
+- **PowerShell quoting:** Complex inline scripts break in PS. Use SCP + `bash /tmp/script.sh` pattern instead.
 
 ### Key Paths on Stan
 | Path | Description |
@@ -121,8 +136,9 @@ echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-
 | `/opt/openclaw/.openclaw/` | Host-side OpenClaw root |
 | `/home/node/.openclaw/` | Container-side OpenClaw root (mounted from host) |
 | `/tmp/agent-brain.log` | Brain debug log (inside container) |
+| `/var/log/agent-mouth.log` | Mouth log (host-side, via systemd) |
 | `/tmp/agent-ears-state/` | Ears state dir (highwater, seen.json) |
-| `/home/node/.openclaw/workspace/SOUL.md` | Active Cortex SOUL |
+| `/home/node/.openclaw/workspace-cortex/SOUL.md` | Active Cortex SOUL (isolated workspace) |
 | `/home/node/.openclaw/corekit/agent-registry.json` | Agent capability registry |
 | `/home/node/.openclaw/corekit/contracts.json` | Gateway contracts |
 
@@ -159,4 +175,10 @@ Key work items:
 - `v2026.05.18.17.7` — Move brain log to /tmp/
 
 ## Commit History (Phase 2)
-- (pending) — Phase 2: Cortex loop dispatch/synthesize + queue awareness + dual delivery fix
+- `v2026.05.18.23.1` — Phase 2: Cortex loop dispatch/synthesize + queue awareness + dual delivery fix
+- `v2026.05.18.23.2` — Cortex workspace isolation + manifest/bootstrap/upgrade + delegate→dispatch normalization
+- `v2026.05.18.23.3` — render-config prefers fleet template, substitutes agent display name
+- `v2026.05.18.23.4` — Revert intake to pending on classify failure (retry resilience)
+- `v2026.05.18.23.5` — Fix missing opening brace in fleet template cortex block
+- `v2026.05.18.23.6` — Fix Mouth Brain v3 integration (runQuery URL, owner/delivered filters, question context)
+- `v2026.05.18.23.7` — Simplify Mouth envelope query (avoid composite index requirement)
