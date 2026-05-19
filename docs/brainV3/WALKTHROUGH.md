@@ -1,7 +1,7 @@
 # Brain v3 — Implementation Walkthrough
 
 > Living document tracking what was built, tested, and learned across all phases.
-> Last updated: 2026-05-19 (Phase 3 complete)
+> Last updated: 2026-05-19 (Phase 4 complete)
 
 ---
 
@@ -237,3 +237,76 @@ Cortex → { classification: "new_task" | "attach", ... }
 
 ### Commits
 - `v2026.05.19.00.1` — Phase 3: memory recall/write, active envelope scan, attach handler, needs_input support
+
+---
+
+## Phase 4 — Multi-Step Planning (2026-05-19)
+
+### What Was Built
+
+Cortex can now return multi-step plans (`action: plan`). Brain executes steps sequentially, accumulates context, retries failures, and sends Cerebellum for verification. After all steps, Cortex synthesizes the final response.
+
+### Pipeline Architecture (Phase 4 — plan action)
+
+```
+Cortex decide → { action: "plan", steps: [...] }
+                    ↓
+Brain iterates steps sequentially:
+    Step 1: create child envelope → dispatch to agent → collect result
+             ↓ on failure: retry once with error context
+             ↓ on retry failure: break + consult Cortex
+    Step 2: dispatch with accumulated context from step 1
+    Step 3: dispatch with accumulated context from steps 1+2
+    ...
+    Step N (cerebellum): verify prior steps → ALL_PASS / FAIL JSON verdict
+                    ↓
+All plan results fed back to Cortex as prior_results
+                    ↓
+Cortex → { action: "synthesize", synthesis: "..." }
+```
+
+### Files Modified
+| File | Change |
+|------|---------|
+| `brain/fleet/_brain/cortex/SOUL.md` | Added `plan` action with steps array, updated decision rules |
+| `brain/fleet/_brain/cerebellum/SOUL.md` | Full rewrite for JSON verdict format (ALL_PASS/FAIL with checks array) |
+| `corekit/daemon/agent-brain.mjs` | Added `plan` action handler (~140 lines) |
+
+### End-to-End Verified Flow
+
+**Test:** User sends "document deployment workflow for tachin-website, upload to Drive, research design system" to Stan (2026-05-19 18:54 UTC)
+
+```
+18:54:03 ▸ Intake from gchat (multi-step request)
+18:54:03 ▸ Memory recall: 26 chars returned (33s, cold start)
+18:54:47 ▸ Cortex classify → new_mission (type=M) ← correctly identified as mission!
+18:55:00 ▸ Cortex decide → plan (3 steps) ← FIRST PLAN ACTION!
+18:55:00 ▸ Plan step 1/3: motor → Draft MD doc + upload to Drive
+18:55:37 ▸ Step 1 ✅ completed (37s) — Motor uploaded doc, returned Drive URL
+18:55:37 ▸ Plan step 2/3: temporal-research → Research tachin.ai + 1health.io styling
+18:56:08 ▸ Step 2 ✅ completed (31s) — 1,801 chars of design analysis
+18:56:08 ▸ Plan step 3/3: cerebellum → Verify upload + design quality
+18:56:32 ▸ Step 3 ✅ completed (24s) — 757 chars verdict
+18:56:32 ▸ Plan execution complete: 3/3 steps. Consulting Cortex.
+18:56:47 ▸ Cortex synthesize → final response with Drive link + design system
+18:56:47 ▸ Memory write: storing completed mission
+18:57:02 ▸ Memory write OK (14s)
+18:57:04 ▸ Mouth delivered to GChat ✅
+```
+
+**Total time:** ~3 minutes for a 3-step mission (classify + 3 plan steps + synthesize + memory write)
+
+### Architecture Decisions
+
+1. **Plan steps are child envelopes** — each plan step creates a child Task envelope linked to the parent via `parent_id`. Full Firestore observability.
+
+2. **Context accumulation** — each step sees all prior step results in its `context_summary`. Step 3 knows what steps 1 and 2 produced.
+
+3. **Retry then consult** — on failure, Brain retries the same step once with error context injected. If retry also fails, Brain breaks the plan loop and feeds all results (including the failure) back to Cortex, who can adjust, skip, or escalate.
+
+4. **Plan feeds back to Cortex loop** — after plan execution, all step results are added to `priorResults` and the Cortex decide loop `continue`s. Cortex sees all results and issues `synthesize`. This means plans compose with the existing loop — no special exit path needed.
+
+5. **Cerebellum as plan step** — Cerebellum is just another agent in the steps array, not special-cased. It receives the same context accumulation and returns structured JSON. Brain doesn't parse the verdict — it's passed through to Cortex for synthesis.
+
+### Commits
+- `v2026.05.19.13.1` — Phase 4: multi-step plan action, sequential execution, retry, Cerebellum JSON verdicts

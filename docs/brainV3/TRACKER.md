@@ -72,15 +72,28 @@ User: "What are the deployed URLs for the tachin-website project?"
 
 ---
 
-## Phase 4 — Multi-Step Planning
+## Phase 4 — Multi-Step Planning ✅ COMPLETE
 > Cortex returns multi-step plans, Brain executes sequentially, Cerebellum verifies
 
-- `[ ]` Cortex SOUL.md: `plan` action with ordered steps
-- `[ ]` Brain: sequential child envelope execution with context accumulation
-- `[ ]` Brain: retry-on-failure logic (1 retry, then Cortex consult)
-- `[ ]` Cerebellum SOUL.md: envelope-aware structured verification (pass/fail JSON)
-- `[ ]` Brain: plan-then-synthesize flow (auto-consult Cortex after last child)
-- `[ ]` Deploy + test: multi-step Drive upload with Cerebellum verification
+- `[x]` Cortex SOUL.md: `plan` action with ordered steps array
+- `[x]` Cerebellum SOUL.md: full rewrite for envelope-aware JSON verdicts (ALL_PASS/FAIL)
+- `[x]` Brain: `plan` action handler with sequential child envelope execution
+- `[x]` Brain: context accumulation across plan steps
+- `[x]` Brain: retry-on-failure (1 retry with error context, then Cortex consult)
+- `[x]` Brain: auto-synthesize (plan results fed back to Cortex loop)
+- `[x]` Deploy + test: 3-step mission (motor → research → cerebellum) ✅
+
+### Phase 4 — End-to-End Verified Flow
+```
+18:54:03 ▸ Intake: "document deployment, upload to Drive, research design system"
+18:54:47 ▸ Cortex classify → new_mission (type=M)
+18:55:00 ▸ Cortex decide → plan (3 steps)
+18:55:00 ▸ Step 1/3: motor → Draft + upload MD doc to Drive → ✅ (37s)
+18:55:37 ▸ Step 2/3: temporal-research → Research styling → ✅ (31s, 1801 chars)
+18:56:08 ▸ Step 3/3: cerebellum → Verify upload + design → ✅ (24s)
+18:56:32 ▸ Plan complete 3/3. Cortex → synthesize (Drive link + design system)
+18:56:47 ▸ Memory write OK. Mouth delivered to GChat ✅
+```
 
 ---
 

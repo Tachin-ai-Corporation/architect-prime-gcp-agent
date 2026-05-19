@@ -1,8 +1,8 @@
 # Brain v3 — Session Handoff
 
 > **Purpose:** Get a new session agent up to speed on the Brain v3 implementation.
-> **Last updated:** 2026-05-19T05:06:00Z
-> **Status:** Phase 3 COMPLETE ✅ — Memory recall/write + attach + needs_input live on Stan.
+> **Last updated:** 2026-05-19T19:05:00Z
+> **Status:** Phase 4 COMPLETE ✅ — Multi-step planning with Cerebellum verification live on Stan.
 
 ---
 
@@ -12,7 +12,7 @@
 2. **Read the roadmap:** `docs/brainV3/01-ROADMAP.md` (7-phase plan)
 3. **Read this file** for current state, working process, and what's next
 4. **Read the task tracker:** `docs/brainV3/TRACKER.md` (detailed checklist per phase)
-5. **Read the next phase doc:** `docs/brainV3/05-PHASE-4-MULTI-STEP.md`
+5. **Read the next phase doc:** `docs/brainV3/06-PHASE-5-PLANNING-ITERATION.md`
 
 ---
 
@@ -48,35 +48,36 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 - **Phase 1: Foundation** — COMPLETE ✅
 - **Phase 2: Cortex Loop** — COMPLETE ✅
 - **Phase 3: Memory + Discovery** — COMPLETE ✅
+- **Phase 4: Multi-Step Planning** — COMPLETE ✅
 - **Stan** is running Brain v3 in production (fleet-stan VM)
-- Full pipeline verified: Ears → intake → **memory recall** → Brain → Cortex classify → dispatch → synthesize → **memory write** → Mouth → GChat
+- Full pipeline verified: intake → memory recall → classify → **plan (3 steps)** → sequential execution → Cerebellum verify → synthesize → memory write → GChat
 
-### Phase 3 Accomplishments
-- `recallMemory()` — dispatches to temporal-memory before every classify; recalled context passed to both classify and decide
-- `writeMemory()` — stores completed work to temporal-memory after synthesize completions
-- `scanActiveEnvelopes()` — queries Firestore for in-progress envelopes, passes to Cortex for follow-up detection
-- `attach` classification handler — status checks for active/waiting, resumes needs_input, creates follow-up for completed
-- `needs_input` action handler — blocks envelope, Mouth delivers the question, human response resumes via attach
-- `processIntakeAsNewTask()` — graceful fallback when attach target is missing or completed
-- Memory recall enriches Cortex decisions — verified: Cortex short-circuited from recalled Firebase hosting context
-- One memory call per intake (reused for classify + decide) — minimizes latency overhead
+### Phase 4 Accomplishments
+- Cortex SOUL: `plan` action with ordered `steps` array (agent, intent, task, accept_criteria per step)
+- Brain: `plan` action handler — sequential child envelope execution with context accumulation
+- Brain: retry-on-failure — 1 automatic retry with error context, then Cortex consult
+- Brain: auto-synthesize — after all plan steps complete, loops back to Cortex for final synthesis
+- Cerebellum SOUL: full rewrite for envelope-aware JSON verdicts (`ALL_PASS`/`FAIL` with checks array)
+- Verified: 3-step mission (motor → temporal-research → cerebellum) executed sequentially, all passed, Cortex synthesized with Drive link
 
 ### Key Infrastructure
 | Component | File | Status |
 |-----------|------|--------|
-| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 3 memory+discovery (~1100 lines) |
+| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 4 multi-step planning (~1240 lines) |
 | Brain launcher | `corekit/daemon/start-agent-brain` | ✅ PRIME_ID/AGENT_ID/BRAIN_V3 discovery |
 | Brain systemd unit | `corekit/daemon/agent-brain.service` | ✅ Enabled, auto-restart |
 | Ears (rewired) | `corekit/daemon/agent-ears.mjs` | ✅ Writes Firestore intake |
 | Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + Brain v3 envelope polling + LLM classify |
-| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify (w/ attach) + decide (all actions) |
+| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (dispatch/plan/synthesize/needs_input/status_update/short_circuit) |
+| Cerebellum SOUL v3 | `brain/fleet/_brain/cerebellum/SOUL.md` | ✅ JSON verdict verification (ALL_PASS/FAIL) |
 | Temporal-memory | `brain/fleet/_brain/temporal-memory/SOUL.md` | ✅ Recall + write via Brain dispatch |
 | Agent registry | `corekit/config/agent-registry.json` | ✅ 6 agents registered |
 | Firestore indexes | `intake(status, created_at)`, `work(owner, status, created_at)` | ✅ Live |
 
-### Known Issues (carry-forward to Phase 4)
+### Known Issues (carry-forward to Phase 5)
 1. **Memory recall cold start latency** — First temporal-memory call takes ~43s (cold start). Subsequent calls are faster. Acceptable but notable.
-2. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF in bash script. Doesn't affect function.
+2. **No quick ack** — Brain v3 doesn't send an immediate "got it" to the channel. The user sees nothing until the full response is ready (~30-120s). By design — `deliverStatusUpdate()` exists if needed later.
+3. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF in bash script. Doesn't affect function.
 
 ---
 
@@ -141,18 +142,17 @@ echo y | gcloud compute ssh fleet-stan ... --command="sudo curl -sfL \
 
 ---
 
-## What's Next: Phase 4 — Multi-Step Planning
+## What's Next: Phase 5 — Planning Iteration
 
-**Goal:** Cortex returns multi-step plans. Brain executes sequentially. Cerebellum verifies.
+**Goal:** Advisory rounds, iterative dispatch-before-plan, Prefrontal delegation, M → C → T nesting.
 
-**Read:** `docs/brainV3/05-PHASE-4-MULTI-STEP.md` for the full design.
+**Read:** `docs/brainV3/06-PHASE-5-PLANNING-ITERATION.md` for the full design.
 
 Key work items:
-1. Cortex SOUL: `plan` action with ordered steps
-2. Brain: sequential child envelope execution with context accumulation
-3. Brain: retry-on-failure logic (1 retry, then Cortex consult)
-4. Cerebellum SOUL: envelope-aware structured verification (pass/fail JSON)
-5. Test: multi-step Drive upload with Cerebellum verification
+1. Cortex SOUL: iterative dispatch-before-plan pattern
+2. Prefrontal SOUL v3: envelope model, structured JSON plans, checkpoint decomposition
+3. Brain: Mission → Checkpoint → Task nesting (M → C → T hierarchy)
+4. Test: research → memory → prefrontal → plan → execute flow
 
 ---
 
@@ -176,3 +176,6 @@ Key work items:
 
 ## Commit History (Phase 3)
 - `v2026.05.19.00.1` — Phase 3: memory recall/write, active envelope scan, attach handler, needs_input support
+
+## Commit History (Phase 4)
+- `v2026.05.19.13.1` — Phase 4: multi-step plan action, sequential execution, retry, Cerebellum JSON verdicts
