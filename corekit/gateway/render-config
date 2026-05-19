@@ -24,7 +24,12 @@ set -euo pipefail
 
 OC_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
 OC_DIR="${OC_ROOT}/.openclaw"
-TMPL="${OC_DIR}/corekit/openclaw-bootstrap.json5.tmpl"
+# Prefer fleet template if available, fall back to prime template
+if [[ -f "${OC_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl" ]]; then
+  TMPL="${OC_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"
+else
+  TMPL="${OC_DIR}/corekit/openclaw-bootstrap.json5.tmpl"
+fi
 DEST="${OC_DIR}/openclaw.json"
 TOKEN_FILE="/root/.openclaw/.gateway-token"
 DO_RESTART="${1:-}"
@@ -148,6 +153,16 @@ raw = re.sub(r',\s*([}\]])', r'\1', raw)
 # Substitute template variables
 raw = raw.replace('\${GCP_PROJECT_ID}', project)
 raw = raw.replace('\${MY_TOKEN}', token)
+
+# Fleet-specific: substitute agent identity from chat-config.json
+import os
+chat_cfg_path = os.path.join('$OC_DIR', 'corekit', 'chat-config.json')
+if os.path.exists(chat_cfg_path):
+    with open(chat_cfg_path) as cf:
+        chat_cfg = json.load(cf)
+    agent_name = chat_cfg.get('agentDisplayName', 'Agent')
+    raw = raw.replace('\${AGENT_DISPLAY_NAME}', agent_name)
+    raw = raw.replace('\${AGENT_ID}', chat_cfg.get('agentId', 'agent'))
 
 # Parse and write
 try:
