@@ -6,7 +6,7 @@
 // Processes Firestore intake records through the Cortex loop
 // and manages envelopes (the R/C/M/T work hierarchy).
 //
-// Phase 3: memory recall/write, active envelope scan, attach handler
+// Phase 4: multi-step planning, sequential execution, retry, Cerebellum verification
 //   - callAgent: HTTP dispatch to any agent via gateway
 //   - Queue awareness: pending intake count + queue passed to Cortex
 //   - status_update: Cortex can send "working on X" messages
@@ -955,6 +955,146 @@ async function processEnvelope(envelope, memoryContext) {
 
       log('INFO', `Child ${childId} ${result.success ? 'completed' : 'failed'} (${result.durationMs}ms)`);
       continue;
+    }
+
+    if (action === 'plan') {
+      // Phase 4: Multi-step plan — execute steps sequentially with context accumulation
+      const steps = decision.steps;
+      if (!Array.isArray(steps) || steps.length === 0) {
+        log('ERROR', `Plan has no steps`);
+        priorResults.push({ agent: 'system', result: '[SYSTEM] Plan requires a non-empty "steps" array.' });
+        continue;
+      }
+
+      log('INFO', `Plan received: ${steps.length} steps`);
+
+      let planContext = []; // Accumulated results from plan steps
+      let planFailed = false;
+
+      for (let si = 0; si < steps.length; si++) {
+        const step = steps[si];
+        const stepNum = si + 1;
+        const stepAgent = step.agent;
+        const stepTask = step.task || step.instruction || '';
+        const stepCriteria = step.accept_criteria || '';
+
+        if (!stepAgent) {
+          log('WARN', `Plan step ${stepNum} missing agent, skipping`);
+          planContext.push({ step: stepNum, agent: 'unknown', result: '[SKIPPED] No agent specified', success: false });
+          continue;
+        }
+
+        // Create child Task envelope for this plan step
+        const stepChildId = generateId('w');
+        const stepChild = {
+          id: stepChildId,
+          type: 'T',
+          parent_id: envelope.id,
+          owner: AGENT_EMAIL || AGENT_ID,
+          status: 'active',
+          intent: step.intent || 'execute',
+          instruction: stepTask,
+          accept_criteria: stepCriteria,
+          context_summary: planContext.length > 0
+            ? `Prior plan steps:\n${planContext.map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 300)}`).join('\n')}`
+            : envelope.context_summary || null,
+          output: null,
+          children: [],
+          context_forward: null,
+          error: null,
+          source_channel: 'brain',
+          source_meta: { dispatched_by: envelope.id, plan_step: stepNum, plan_total: steps.length },
+          created_at: now(),
+          started_at: now(),
+          completed_at: null,
+          updated_at: now(),
+          iteration: 0,
+        };
+
+        await firestoreWrite('work', stepChildId, stepChild);
+        await writeHistory(stepChildId, null, 'active', 'brain', `Plan step ${stepNum}/${steps.length}: ${stepAgent}`);
+
+        // Track child on parent
+        envelope.children.push(stepChildId);
+        envelope.updated_at = now();
+        await firestoreWrite('work', envelope.id, envelope);
+
+        log('INFO', `Plan step ${stepNum}/${steps.length}: dispatching to ${stepAgent} — ${stepTask.substring(0, 80)}`);
+
+        // Build instruction with context for the agent
+        const contextForAgent = {
+          instruction: stepTask,
+          accept_criteria: stepCriteria,
+          context_summary: planContext.length > 0
+            ? planContext.map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 500)}`).join('\n')
+            : undefined,
+        };
+
+        // Dispatch to the agent
+        let result = await callAgent(stepAgent, contextForAgent);
+
+        // Retry once on failure
+        if (!result.success) {
+          log('WARN', `Plan step ${stepNum} failed (${stepAgent}): ${result.error}. Retrying...`);
+          const retryInstruction = {
+            instruction: `${stepTask}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
+            accept_criteria: stepCriteria,
+            context_summary: contextForAgent.context_summary,
+          };
+          result = await callAgent(stepAgent, retryInstruction);
+        }
+
+        // Update child envelope with result
+        stepChild.output = result.output || result.error;
+        stepChild.status = result.success ? 'complete' : 'failed';
+        stepChild.error = result.error;
+        stepChild.completed_at = now();
+        stepChild.updated_at = now();
+        await firestoreWrite('work', stepChildId, stepChild);
+        await writeHistory(stepChildId, 'active', stepChild.status, stepAgent,
+          result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
+
+        planContext.push({
+          step: stepNum,
+          agent: stepAgent,
+          task: stepTask.substring(0, 200),
+          result: result.success
+            ? (result.output || '').substring(0, 4000)
+            : `[FAILED] ${result.error}`,
+          success: result.success,
+          durationMs: result.durationMs,
+        });
+
+        log('INFO', `Plan step ${stepNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
+
+        if (!result.success) {
+          // Step failed even after retry — consult Cortex with failure context
+          log('WARN', `Plan step ${stepNum} failed after retry, consulting Cortex`);
+          planFailed = true;
+          break;
+        }
+      }
+
+      // Feed all plan results back to Cortex for synthesis (or failure handling)
+      priorResults.push(...planContext.map(r => ({
+        agent: r.agent,
+        task: r.task,
+        result: r.result,
+        success: r.success,
+        durationMs: r.durationMs,
+        plan_step: r.step,
+      })));
+
+      if (planFailed) {
+        // Add failure context so Cortex can decide: retry, skip, or escalate
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You may: adjust and retry (dispatch), synthesize with partial results, or escalate (needs_input).`,
+        });
+      }
+
+      log('INFO', `Plan execution ${planFailed ? 'FAILED' : 'complete'}: ${planContext.length}/${steps.length} steps. Consulting Cortex for synthesis.`);
+      continue; // Loop back to Cortex for synthesize decision
     }
 
     if (action === 'status_update') {
