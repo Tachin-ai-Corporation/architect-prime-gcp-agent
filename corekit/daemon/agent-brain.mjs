@@ -6,7 +6,7 @@
 // Processes Firestore intake records through the Cortex loop
 // and manages envelopes (the R/C/M/T work hierarchy).
 //
-// Phase 5: checkpoint nesting (M→C→T), workspace isolation, iterative planning
+// Phase 6: delegation, waiting resumption, dashboard observability
 //   - callAgent: HTTP dispatch to any agent via gateway
 //   - Queue awareness: pending intake count + queue passed to Cortex
 //   - status_update: Cortex can send "working on X" messages
@@ -1323,6 +1323,76 @@ async function processEnvelope(envelope, memoryContext) {
       continue; // Loop back to Cortex for synthesize decision
     }
 
+    if (action === 'delegate') {
+      // Phase 6: Inter-agent delegation — create Mission owned by delegate
+      const delegateTo = decision.delegate_to;
+      const delegationTask = decision.delegation_task || decision.task;
+      const delegationCriteria = decision.accept_criteria || '';
+
+      if (!delegateTo || !delegationTask) {
+        log('ERROR', `Delegate action missing delegate_to or delegation_task`);
+        priorResults.push({ agent: 'system', result: '[SYSTEM] delegate requires delegate_to and delegation_task fields.' });
+        continue;
+      }
+
+      log('INFO', `Delegating to ${delegateTo}: ${delegationTask.substring(0, 80)}`);
+
+      // Create delegated Mission envelope
+      const delegatedId = generateId('w');
+      const delegatedEnvelope = {
+        id: delegatedId,
+        type: 'M',
+        parent_id: envelope.id,
+        owner: delegateTo,
+        status: 'pending',
+        intent: 'delegated',
+        instruction: delegationTask,
+        accept_criteria: delegationCriteria,
+        context_summary: decision.context || envelope.context_summary || null,
+        output: null,
+        children: [],
+        context_forward: null,
+        error: null,
+        source_channel: 'brain',
+        source_meta: {
+          delegated_by: AGENT_EMAIL || AGENT_ID,
+          delegated_from: envelope.id,
+          reasoning: decision.reasoning || '',
+        },
+        created_at: now(),
+        started_at: null,
+        completed_at: null,
+        updated_at: now(),
+        iteration: 0,
+      };
+
+      await firestoreWrite('work', delegatedId, delegatedEnvelope);
+      await writeHistory(delegatedId, null, 'pending', 'brain',
+        `Delegated by ${AGENT_ID} to ${delegateTo}`);
+
+      // Track on parent
+      envelope.children.push(delegatedId);
+
+      // Mark current envelope as waiting
+      envelope.status = 'waiting';
+      envelope.updated_at = now();
+      await firestoreWrite('work', envelope.id, envelope);
+      await writeHistory(envelope.id, 'active', 'waiting', 'brain',
+        `Delegated to ${delegateTo}: ${delegationTask.substring(0, 60)}`);
+
+      log('INFO', `Envelope ${envelope.id} waiting on delegation ${delegatedId} to ${delegateTo}`);
+
+      // Courtesy notification (fire-and-forget)
+      try {
+        const { execSync } = await import('child_process');
+        execSync(`chat-send "📋 Delegated task to ${delegateTo}: ${delegationTask.substring(0, 80).replace(/"/g, "'")}"`, { timeout: 10000 });
+      } catch (e) {
+        log('WARN', `Delegation notification failed: ${e.message}`);
+      }
+
+      return; // Exit cortex loop — will resume when delegation completes
+    }
+
     if (action === 'status_update') {
       const message = decision.message || 'Working on it...';
       await deliverStatusUpdate(envelope.id, message);
@@ -1437,6 +1507,75 @@ async function pollIntake() {
   }
 }
 
+// ---- Waiting envelope resumption (Phase 6) ----
+let waitingCheckCount = 0;
+
+async function checkWaitingEnvelopes() {
+  waitingCheckCount++;
+  // Only check every 3rd poll cycle (~9s)
+  if (waitingCheckCount % 3 !== 0) return;
+
+  try {
+    const waitingEnvelopes = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'waiting' } },
+      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+    ]);
+
+    for (const waiting of waitingEnvelopes) {
+      // Check if any delegated children have completed or failed
+      const children = waiting.children || [];
+      if (children.length === 0) continue;
+
+      let allChildrenDone = true;
+      let childResults = [];
+
+      for (const childId of children) {
+        const child = await firestoreRead('work', childId);
+        if (!child) continue;
+
+        if (child.status === 'complete' || child.status === 'failed') {
+          childResults.push({
+            agent: child.owner,
+            task: child.instruction?.substring(0, 200) || '',
+            result: child.status === 'complete'
+              ? (child.output || '').substring(0, 4000)
+              : `[FAILED] ${child.error || 'unknown'}`,
+            success: child.status === 'complete',
+          });
+        } else {
+          allChildrenDone = false;
+        }
+      }
+
+      if (!allChildrenDone || childResults.length === 0) continue;
+
+      // All delegated children are done — resume the waiting envelope
+      log('INFO', `Resuming waiting envelope ${waiting.id}: ${childResults.length} delegation(s) complete`);
+
+      // Inject delegation results as context_forward
+      const delegationSummary = childResults.map((r, i) =>
+        `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${r.result.substring(0, 500)}`
+      ).join('\n\n');
+
+      waiting.status = 'active';
+      waiting.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
+      waiting.updated_at = now();
+      await firestoreWrite('work', waiting.id, waiting);
+      await writeHistory(waiting.id, 'waiting', 'active', 'brain', `Delegation(s) complete, resuming`);
+
+      // Resume cortex loop
+      try {
+        const memory = await recallMemory(waiting.instruction);
+        await processEnvelope(waiting, memory);
+      } catch (e) {
+        log('ERROR', `Failed to resume waiting envelope ${waiting.id}: ${e.message}`);
+      }
+    }
+  } catch (e) {
+    log('WARN', `Waiting envelope check error: ${e.message}`);
+  }
+}
+
 // ---- Main ----
 async function main() {
   log('INFO', '=== Brain v3 starting ===');
@@ -1461,7 +1600,10 @@ async function main() {
   // Start intake polling
   const POLL_MS = CONTRACTS.brain?.poll_interval_ms || 3000;
   log('INFO', `Starting intake poll (every ${POLL_MS}ms)`);
-  setInterval(pollIntake, POLL_MS);
+  setInterval(async () => {
+    await pollIntake();
+    await checkWaitingEnvelopes();
+  }, POLL_MS);
 
   // Initial poll
   await pollIntake();

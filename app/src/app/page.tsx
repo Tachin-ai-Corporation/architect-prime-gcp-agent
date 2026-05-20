@@ -1,92 +1,27 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { SettingsView, VersionInfo } from "@/components/settings/SettingsView";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
 import { MarkdownMessage } from "@/components/MarkdownMessage";
-
-/* ---- Types ---- */
-interface PrimeInstance {
-  id: string;
-  name: string;
-  status: "online" | "offline" | "deploying" | "tearing_down" | "removed" | "error";
-  zone: string;
-  fleetCount: number;
-  coreRef?: string;
-}
-interface ChatMessage {
-  id: string;
-  sender: "admin" | "prime";
-  text: string;
-  timestamp: string;
-}
-interface FleetAgent {
-  name: string;
-  status: "online" | "offline" | "deploying" | "needs_action" | "tearing_down" | "removed" | "error";
-  specialty: string;
-  email: string;
-  coreRef?: string;
-  deploySteps?: DeployStep[];
-  actionRequired?: ActionRequired | null;
-}
-interface DeployStep {
-  id: string;
-  label: string;
-  status: "done" | "active" | "pending" | "failed" | "skipped";
-  timestamp: string;
-  detail?: string;
-}
-interface ActionRequired {
-  type: string;
-  title: string;
-  instructions: string[];
-}
-interface GatewayHealth {
-  status: string;
-  lastCheck: string | null;
-  latencyMs: number;
-  consecutiveFailures: number;
-  httpCode: string;
-  lastRecoveryAttempt: string | null;
-  lastRecoveryResult: string | null;
-}
-interface AgentDetail {
-  agent: string;
-  status: string;
-  specialty: string;
-  email: string;
-  vm: string;
-  zone: string;
-  deployedAt: string | null;
-  lastHeartbeat: string | null;
-  uptimeMinutes: number | null;
-  healthy: boolean;
-  activity: { id: string; type: string; summary: string; timestamp: string; sender: string }[];
-  deploySteps?: DeployStep[];
-  actionRequired?: ActionRequired | null;
-  health?: GatewayHealth | null;
-}
-interface SetupState {
-  hasPrimes: boolean;
-  dwdConfigured: boolean;
-  projectId: string;
-  dwdSignerSA: string;
-  dwdClientId: string;
-  agentEmailDomain: string;
-}
-
-/* ---- API helpers ---- */
-async function api<T>(url: string, opts?: RequestInit): Promise<T | null> {
-  try {
-    const res = await fetch(url, opts);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
+import { WorkTree } from "@/components/work/WorkTree";
+import { WorkDetail } from "@/components/work/WorkDetail";
+import { WorkRespondForm } from "@/components/work/WorkRespondForm";
+import { useWorkEnvelopes } from "@/components/work/useWorkEnvelopes";
+import { api } from "@/lib/api";
+import type {
+  PrimeInstance,
+  ChatMessage,
+  FleetAgent,
+  DeployStep,
+  ActionRequired,
+  GatewayHealth,
+  AgentDetail,
+  SetupState,
+  WorkEnvelope,
+} from "@/lib/types";
 
 /* ---- Component ---- */
 function HomeInner() {
@@ -97,7 +32,8 @@ function HomeInner() {
   const [fleet, setFleet] = useState<FleetAgent[]>([]);
   const [input, setInput] = useState("");
   const [showDeploy, setShowDeploy] = useState(false);
-  const [view, setView] = useState<"chat" | "fleet" | "settings">("chat");
+  const [view, setView] = useState<"chat" | "fleet" | "settings" | "work">("chat");
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [newPrimeName, setNewPrimeName] = useState("");
   const [newPrimeZone, setNewPrimeZone] = useState("us-central1-a");
   const [deploying, setDeploying] = useState(false);
@@ -133,6 +69,13 @@ function HomeInner() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activePrimeData = primes.find((p) => p.id === activePrime);
+
+  // Work envelope data (real-time via Firestore)
+  const { envelopes: workEnvelopes } = useWorkEnvelopes(activePrime || null);
+  const selectedWorkEnvelope = useMemo(
+    () => workEnvelopes.find((e) => e.id === selectedWorkId) || null,
+    [workEnvelopes, selectedWorkId]
+  );
 
   // ---- Load initial state ----
   useEffect(() => {
@@ -762,9 +705,9 @@ function HomeInner() {
                 <span className={`badge badge-${activePrimeData.status}`}>{activePrimeData.status}</span>
               </div>
               <div className={styles["main-header-right"]}>
-                {(["chat", "fleet", "settings"] as const).map((v) => (
+                {(["chat", "fleet", "work", "settings"] as const).map((v) => (
                   <button key={v} className={`btn btn-sm ${view === v ? "btn-primary" : "btn-ghost"}`} onClick={() => setView(v)}>
-                    {v === "chat" ? "Chat" : v === "fleet" ? `Fleet (${fleet.length})` : "Setup"}
+                    {v === "chat" ? "Chat" : v === "fleet" ? `Fleet (${fleet.length})` : v === "work" ? "Work" : "Setup"}
                   </button>
                 ))}
               </div>
@@ -1219,6 +1162,30 @@ function HomeInner() {
                 </div>
               </div>
               </>
+            )}
+
+            {/* ---- Work View ---- */}
+            {view === "work" && (
+              <div className={styles["work-container"]}>
+                <WorkTree
+                  primeId={activePrime}
+                  onSelectEnvelope={setSelectedWorkId}
+                  selectedId={selectedWorkId}
+                />
+                <div style={{ display: "flex", flexDirection: "column", width: "40%" }}>
+                  <WorkDetail
+                    envelope={selectedWorkEnvelope}
+                    onNavigate={setSelectedWorkId}
+                  />
+                  {selectedWorkEnvelope?.status === "needs_input" && (
+                    <WorkRespondForm
+                      envelope={selectedWorkEnvelope}
+                      primeId={activePrime}
+                      onResponded={() => setSelectedWorkId(null)}
+                    />
+                  )}
+                </div>
+              </div>
             )}
 
             {/* ---- Setup/Settings View ---- */}

@@ -180,6 +180,18 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 }
 ```
 
+**delegate** — Hand off work to another fleet agent:
+```json
+{
+  "action": "delegate",
+  "delegate_to": "stan@tachin.ai",
+  "delegation_task": "Run the infrastructure audit on the staging environment",
+  "accept_criteria": "Audit report with findings written to shared Drive folder",
+  "reasoning": "Stan is the DevOps specialist with infrastructure access"
+}
+```
+Use this when the task belongs to a different agent's specialty. Brain will create a Mission envelope owned by the target agent, mark the current envelope as `waiting`, and resume automatically when the delegation completes.
+
 ## Decision Rules
 
 1. **Use `short_circuit` liberally.** Simple questions, greetings, status checks, and anything I can answer from my knowledge or memory — answer directly.
@@ -188,9 +200,10 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 4. **Use `plan` for multi-step single-phase work.** If the task requires 2-5 sequential steps within one phase, return a plan. Include a cerebellum verify step for important operations.
 5. **Use `checkpoint_plan` for multi-phase work.** If the task has 2+ distinct phases (e.g. research then implement, or setup then deploy), return a checkpoint_plan grouping tasks into phases.
 6. **Delegate to `prefrontal` for complex decomposition.** For tasks requiring deep planning (4+ steps, ambiguous scope, multi-phase), dispatch to prefrontal first. It returns a structured plan you can adopt as your `checkpoint_plan`.
-7. **Use `synthesize` after dispatches or plan completion.** When prior_results contain enough data to answer the human, synthesize a clear response.
-8. **Use `status_update` for queue awareness.** When `pending_intake_count` > 0, you MAY send a status update.
-9. **Use `needs_input` sparingly.** Only when genuinely ambiguous — prefer making a reasonable assumption over blocking.
+7. **Use `delegate` for cross-agent work.** If the task belongs to another agent's specialty and you know their email, delegate to them. Brain will handle the envelope handoff and resume when done.
+8. **Use `synthesize` after dispatches or plan completion.** When prior_results contain enough data to answer the human, synthesize a clear response.
+9. **Use `status_update` for queue awareness.** When `pending_intake_count` > 0, you MAY send a status update.
+10. **Use `needs_input` sparingly.** Only when genuinely ambiguous — prefer making a reasonable assumption over blocking.
 
 ## Output Format Rules
 
