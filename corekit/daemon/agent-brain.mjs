@@ -495,11 +495,17 @@ async function getPendingIntakeQueue() {
 }
 
 // ---- Memory: recall context via temporal-memory agent ----
-async function recallMemory(query) {
+async function recallMemory(query, context = {}) {
   try {
-    log('INFO', `Memory recall: "${query.substring(0, 80)}"`);
+    // Build enriched query from multiple sources
+    const queryParts = [query];
+    if (context.instruction) queryParts.push(`Task: ${context.instruction}`);
+    if (context.context_summary) queryParts.push(`Context: ${context.context_summary}`);
+    const enrichedQuery = queryParts.join('\n');
+
+    log('INFO', `Memory recall: "${enrichedQuery.substring(0, 120)}"`);
     const result = await callAgent('temporal-memory', {
-      instruction: `Recall all relevant context for: ${query}`,
+      instruction: `Recall all relevant context for:\n${enrichedQuery}`,
       accept_criteria: 'Return relevant memory context or "No relevant context found"',
     });
     if (result.success && result.output) {
@@ -624,22 +630,42 @@ async function processIntake(intake) {
     claimed_at: now(),
   });
 
-  // Phase 3: Memory recall (once, reused for classify + decide)
-  const memoryContext = await recallMemory(intake.text);
+  // Phase 3+: Dual memory recall
+  // First recall: ambient context from raw inbound text (helps classify)
+  const ambientMemory = await recallMemory(intake.text);
 
   // Phase 3: Active envelope scan (for follow-up detection)
   const activeEnvelopes = await scanActiveEnvelopes();
 
-  // Call Cortex in classify mode
+  // Call Cortex in classify mode (with ambient memory)
   const decision = await callCortex('classify', {
     inbound: {
       text: intake.text,
       source: intake.source,
       source_meta: intake.source_meta || {},
     },
-    memory: memoryContext,
+    memory: ambientMemory,
     active_envelopes: activeEnvelopes,
   });
+
+  // Second recall: enriched with classify results (instruction, context_summary)
+  // This gives processEnvelope much better memory context for the decide loop
+  let memoryContext = ambientMemory;
+  if (!decision.error && (decision.instruction || decision.context_summary)) {
+    const enrichedMemory = await recallMemory(intake.text, {
+      instruction: decision.instruction,
+      context_summary: decision.context_summary,
+    });
+    // Merge: prefer enriched recall if it found context
+    if (enrichedMemory.recalled && enrichedMemory.recalled !== ambientMemory.recalled) {
+      const combined = [
+        ambientMemory.recalled || '',
+        enrichedMemory.recalled || '',
+      ].filter(Boolean).join('\n\n---\n\n');
+      memoryContext = { recalled: combined.substring(0, 4000) };
+      log('INFO', `Enriched memory recall: ${memoryContext.recalled.length} chars (combined)`);
+    }
+  }
 
   if (decision.error) {
     log('ERROR', `Classify failed for intake ${intake.id}: ${JSON.stringify(decision)}`);
@@ -885,6 +911,17 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'synthesize') {
+      // Check for unresolved failures — block premature success synthesis
+      const hasUnresolvedFail = priorResults.some(r => r.success === false);
+      if (hasUnresolvedFail && iteration < MAX_ITERATIONS - 1) {
+        log('WARN', `Blocking premature synthesize — unresolved failures in prior_results (iteration ${iteration})`);
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] Synthesize blocked: there are unresolved failures in prior_results. You MUST either: (1) dispatch to investigate/fix the failure, or (2) use "synthesize_with_failure" action with explicit failure details. Plain "synthesize" is not allowed when tasks have failed.`,
+        });
+        continue;
+      }
+
       envelope.output = decision.synthesis || decision.response;
       envelope.status = 'complete';
       envelope.completed_at = now();
@@ -894,6 +931,22 @@ async function processEnvelope(envelope, memoryContext) {
       log('INFO', `Envelope ${envelope.id} complete (synthesize)`);
 
       // Phase 3: Write completed work to memory (synthesize only, not short_circuit)
+      await writeMemory(envelope);
+      await cleanupSharedWorkspace(envelope.id);
+      return;
+    }
+
+    if (action === 'synthesize_with_failure') {
+      // Explicit failure acknowledgment — Cortex admits something didn't work
+      envelope.output = decision.synthesis || decision.response;
+      envelope.status = 'complete';
+      envelope.completed_at = now();
+      envelope.updated_at = now();
+      await firestoreWrite('work', envelope.id, envelope);
+      await writeHistory(envelope.id, 'active', 'complete', 'brain',
+        `Synthesized with acknowledged failure: ${(decision.failure_summary || '').substring(0, 200)}`);
+      log('INFO', `Envelope ${envelope.id} complete (synthesize_with_failure: ${(decision.failure_summary || '').substring(0, 80)})`);
+
       await writeMemory(envelope);
       await cleanupSharedWorkspace(envelope.id);
       return;
@@ -979,6 +1032,14 @@ async function processEnvelope(envelope, memoryContext) {
         success: result.success,
         durationMs: result.durationMs,
       });
+
+      // Inject failure directive — force Cortex to investigate, not handwave
+      if (!result.success) {
+        priorResults.push({
+          agent: 'system',
+          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use "synthesize_with_failure" to honestly report what failed and why.`,
+        });
+      }
 
       log('INFO', `Child ${childId} ${result.success ? 'completed' : 'failed'} (${result.durationMs}ms)`);
       continue;
@@ -1113,10 +1174,10 @@ async function processEnvelope(envelope, memoryContext) {
       })));
 
       if (planFailed) {
-        // Add failure context so Cortex can decide: retry, skip, or escalate
+        // Add failure directive — force investigation, not handwaving
         priorResults.push({
           agent: 'system',
-          result: `[SYSTEM] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You may: adjust and retry (dispatch), synthesize with partial results, or escalate (needs_input).`,
+          result: `[FAILURE DIRECTIVE] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You MUST investigate the root cause — do NOT synthesize a speculative success response. Options: (1) dispatch motor to debug the specific failure, (2) retry the failed step with a corrected approach, (3) dispatch temporal-research for solutions. If you have exhausted all options, use \"synthesize_with_failure\" with honest failure details. Plain \"synthesize\" is blocked when failures are unresolved.`,
         });
       }
 
