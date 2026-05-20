@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.19.17.0`
+> - **Current version:** `v2026.05.19.18.0`
 
 ---
 
@@ -864,14 +864,26 @@ architect-prime/
 4. **Mouth v3 independent poll** — Envelope delivery poll moved from session loop dependency to dedicated 5s `setInterval`. Queries both `complete` and `needs_input` statuses.
 5. **Brain delegation** — `delegate` action creates child envelopes across agents. `checkWaitingEnvelopes()` resumes parent when children complete.
 
-### Current: v2026.05.19.18.0 — Brain v3 Phase 7 (Responsibilities + Rollout)
-> *Goal: Cron-driven autonomous responsibilities, fleet-wide Brain v3 deployment, deprecated code removal.*
+### Completed: v2026.05.19.18.0 — Brain v3 Phase 7A (Responsibilities + Context Assembly)
+> *Cron-driven autonomous responsibilities, R/M/C/T mental model, rich context assembly (500K tokens), per-agent generation parameters.*
 
-1. **Responsibility scheduler** — Cron parser, timer, R→M envelope creation in Brain.
-2. **Responsibilities config** — Base, Prime, per-job JSON responsibility definitions.
-3. **Brain v3 fleet rollout** — Deploy Brain v3 to all fleet agents (not just Stan).
-4. **Bootstrap update** — Manifests, install.sh, fleet-bootstrap.sh for Brain v3.
-5. **Deprecated code removal** — Remove Brain v2.1 prefrontal gate, brain-exec, check-plan-compliance.
+1. **Responsibility scheduler** — Cron parser with next-fire calculation, config hot-reload (file watcher), R→M envelope dispatching. Responsibilities fire autonomously and flow through normal Cortex decide loop.
+2. **Option C responsibility architecture** — Responsibility creation is a normal Mission (Cortex classifies → Prefrontal plans process → Motor writes config via `responsibility-manage` → Cerebellum verifies). No special Cortex action needed.
+3. **R/M/C/T mental model** — Cortex SOUL rewritten with Responsibility, Mission, Checkpoint, Task as core cognitive identity. Agents naturally classify work into the hierarchy.
+4. **`responsibility-manage` Motor tool** — CRUD for `responsibilities-job.json`. Validates required fields (process, purpose, success_criteria). Brain's file watcher auto-reloads.
+5. **Rich context assembly** — System prompt now loads SOUL.md + IDENTITY.md + MEMORY.md + full agent registry (~20K tokens). File read cache (60s TTL).
+6. **Envelope context accumulation** — Rolling context attached to envelopes: iteration blocks with timestamps, decisions, results. 400K token budget with oldest-first pruning (keep first 10% + last 90%).
+7. **Per-agent generation parameters** — agent-registry.json defines max_tokens, temperature, top_p per agent. Motor gets 65536 max_tokens for artifact production. Cortex/Prefrontal get 32768. Cerebellum/Memory get 8192.
+8. **Quick Ack** — External messages get immediate acknowledgment while Brain processes.
+9. **Gateway parameter validation** — Confirmed OpenClaw passes through max_tokens, temperature, top_p, top_k to Vertex AI.
+
+### Current: v2026.05.19.19.0 — Brain v3 Phase 7B-C (Fleet Rollout + Cleanup)
+> *Goal: Fleet-wide Brain v3 deployment, bootstrap updates, deprecated code removal, auto-envelope archiving.*
+
+1. **Brain v3 fleet rollout** — Deploy Brain v3 to all fleet agents (not just Stan).
+2. **Bootstrap update** — Manifests, install.sh, fleet-bootstrap.sh for Brain v3.
+3. **Deprecated code removal** — Remove Brain v2.1 prefrontal gate, brain-exec, check-plan-compliance.
+4. **Auto-envelope archiving** — Cleanup phase for old envelopes.
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR

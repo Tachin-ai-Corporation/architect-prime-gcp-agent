@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.19.17.0`
+> **Current version:** `v2026.05.19.18.0`
 
 ---
 
@@ -22,6 +22,7 @@ Prime handles **infrastructure, not orchestration**. Humans assign work to agent
 | **Self-Upgrading** | Dashboard upgrades itself via Cloud Build; CoreKit upgrades cascade to fleet |
 | **Contract Enforcement** | `contracts.json` is the single source of truth — validated at bootstrap and upgrade |
 | **Work Tree Dashboard** | Real-time M→C→T work hierarchy, human-in-the-loop for agent questions |
+| **Autonomous Responsibilities** | Agents self-program recurring duties with cron schedules — R/M/C/T hierarchy |
 | **Self-Hosted** | Everything runs in YOUR GCP project — zero shared infrastructure, no API keys |
 
 ---
@@ -362,6 +363,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.18.15** | Chat Input Hardening & LLM Preprocessor — Restored deterministic agent-to-drive communication by adding a Gemini 2.5 Flash preprocessing step in `agent-ears.mjs` to automatically repair Chat-mangled text (e.g., stripped underscores in folder IDs) before dispatch to the OpenClaw brain. Added detailed audit logging. Hardened Drive skills to resolve 404s and fallback identity for 401s. |
 | **v2026.05.18.16** | Memory Pipeline Stabilization & Prefrontal Gate — Fixed Firestore pathing in memory scripts to properly target the `core_memory` collection. Fixed regex in deep truths sync. Stripped root `exec` privileges from Cortex to strictly enforce the prefrontal/motor boundary. Added recency anchoring in `agent-ears.mjs` to dynamically wrap incoming GChat/Dashboard messages in a structured JSON payload with a `system_directive` reinforcing delegation. |
 | **v2026.05.19.17** | Brain v3 Phase 6 — Envelope-based orchestration (Phases 1-6: classify+decide, memory, planning, checkpoint nesting M→C→T, delegation), Dashboard Work tab (real-time tree, detail panel, human-in-the-loop respond), Mouth v3 independent envelope poll (5s interval, complete+needs_input), dashboard lib refactor (shared types/api/firebase), server-side work API. |
+| **v2026.05.19.18** | Brain v3 Phase 7A — Cron-driven autonomous responsibilities (R/M/C/T mental model, responsibility-manage Motor tool), rich context assembly (SOUL+IDENTITY+MEMORY in system prompt, 400K envelope context budget), per-agent generation parameters (max_tokens/temperature/top_p from agent-registry.json, Motor 65536 max output), quick ack, gateway param validation. |
 
 ---
 
