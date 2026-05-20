@@ -36,16 +36,13 @@ corekit/daemon/mouth-health-check .openclaw/bin/mouth-health-check
 # Brain tools
 corekit/brain/agent-ask .openclaw/bin/agent-ask
 corekit/brain/agent-status .openclaw/bin/agent-status
-corekit/brain/brain-exec .openclaw/bin/brain-exec
-corekit/brain/brain-exec-worker .openclaw/bin/brain-exec-worker
 corekit/brain/brain-telemetry-write .openclaw/bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read .openclaw/bin/brain-telemetry-read
-corekit/brain/build-system-prompt .openclaw/bin/build-system-prompt
-corekit/brain/check-plan-compliance .openclaw/bin/check-plan-compliance
 corekit/brain/assemble-tools .openclaw/bin/assemble-tools
 corekit/brain/task-log-write .openclaw/bin/task-log-write
 corekit/brain/task-log-read .openclaw/bin/task-log-read
 corekit/brain/responsibility-manage .openclaw/bin/responsibility-manage
+
 
 # Config
 corekit/README.md .openclaw/corekit/README.md

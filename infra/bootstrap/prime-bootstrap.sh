@@ -509,22 +509,27 @@ info "Final permissions sweep..."
 find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 14) Install agent-ears + agent-mouth as systemd services ----
-info "Installing agent-ears + agent-mouth systemd services..."
+# ---- 14) Install agent-ears, agent-mouth, and agent-brain as systemd services ----
+info "Installing agent-ears, agent-mouth, and agent-brain systemd services..."
 
 # Copy service files from corekit (installed by manifest)
 EARS_SVC_SRC="${OC_HOST_DIR}/corekit/agent-ears.service"
 MOUTH_SVC_SRC="${OC_HOST_DIR}/corekit/agent-mouth.service"
+BRAIN_SVC_SRC="${OC_HOST_DIR}/corekit/agent-brain.service"
 if [[ -f "$EARS_SVC_SRC" ]]; then
   cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
 fi
 if [[ -f "$MOUTH_SVC_SRC" ]]; then
   cp "$MOUTH_SVC_SRC" /etc/systemd/system/agent-mouth.service
 fi
+if [[ -f "$BRAIN_SVC_SRC" ]]; then
+  cp "$BRAIN_SVC_SRC" /etc/systemd/system/agent-brain.service
+fi
 
 systemctl daemon-reload
-systemctl enable agent-ears agent-mouth 2>/dev/null || true
-systemctl start agent-ears agent-mouth
+systemctl enable agent-ears agent-mouth agent-brain 2>/dev/null || true
+systemctl start agent-ears agent-mouth agent-brain
+
 
 # ---- 14) Install command-runner as systemd service ----
 info "Installing command-runner systemd service..."

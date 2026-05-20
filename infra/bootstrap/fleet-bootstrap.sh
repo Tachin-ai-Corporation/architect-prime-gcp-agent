@@ -234,10 +234,11 @@ fi
 # ---- 5) Assemble TOOLS.md from skills ----
 info "Assembling TOOLS.md..."
 if [[ -x "${OC_HOST_DIR}/bin/assemble-tools" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT}" "${OC_HOST_DIR}/bin/assemble-tools" prime
+  OC_HOST_ROOT="${OC_HOST_ROOT}" "${OC_HOST_DIR}/bin/assemble-tools" "${SPECIALTY}"
 else
   warn "assemble-tools not found, TOOLS.md will use defaults"
 fi
+
 
 # ---- 6) Write DWD chat config ----
 if [[ -n "${AGENT_USER_EMAIL}" ]]; then
@@ -270,20 +271,25 @@ mkdir -p /root/.openclaw
 echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
 chmod 600 /root/.openclaw/.gateway-token
 
-# ---- 8) Install agent-ears + agent-mouth systemd units ----
-info "Installing agent-ears + agent-mouth systemd units..."
+# ---- 8) Install agent-ears, agent-mouth, and agent-brain systemd units ----
+info "Installing agent-ears, agent-mouth, and agent-brain systemd units..."
 
 # Copy service files from corekit (installed by manifest)
 EARS_SVC_SRC="${OC_HOST_DIR}/corekit/agent-ears.service"
 MOUTH_SVC_SRC="${OC_HOST_DIR}/corekit/agent-mouth.service"
+BRAIN_SVC_SRC="${OC_HOST_DIR}/corekit/agent-brain.service"
 if [[ -f "$EARS_SVC_SRC" ]]; then
   cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
 fi
 if [[ -f "$MOUTH_SVC_SRC" ]]; then
   cp "$MOUTH_SVC_SRC" /etc/systemd/system/agent-mouth.service
 fi
+if [[ -f "$BRAIN_SVC_SRC" ]]; then
+  cp "$BRAIN_SVC_SRC" /etc/systemd/system/agent-brain.service
+fi
 systemctl daemon-reload
-systemctl enable agent-ears agent-mouth 2>/dev/null || true
+systemctl enable agent-ears agent-mouth agent-brain 2>/dev/null || true
+
 
 # ============================================================
 # PHASE 2 — OpenClaw Docker image + config
@@ -568,13 +574,16 @@ info "Final permissions sweep..."
 find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 18) Start agent-ears + agent-mouth ----
-info "Starting agent-ears + agent-mouth..."
+# ---- 18) Start agent-ears + agent-mouth + agent-brain ----
+info "Starting systemd services..."
+systemctl start agent-brain || warn "agent-brain start failed"
+
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
   systemctl start agent-ears agent-mouth || warn "ears/mouth start failed (DWD may not be configured)"
 else
   warn "ears/mouth not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
 fi
+
 
 # ---- 19) Report completion to Firestore via Prime's API ----
 # Uses Prime's Cloud Run endpoint (no fleet SA Datastore permission needed)

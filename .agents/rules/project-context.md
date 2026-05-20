@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.19.18.0)
+## Current Architecture (v2026.05.19.19.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -14,21 +14,12 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
-- **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Quick ack.
-- **Prefrontal-First Gate (Brain v2.1 — enforced)**:
-  - BRAIN_CARD stripped of all routing knowledge — bare agent names + "spawn prefrontal first" (zero descriptions, zero pipeline mechanics)
-  - Two-mode prefrontal: simple (immediate DISPATCH_PLAN) or complex (PLANNING_ROUND_REQUIRED + advisory round)
-  - Advisory round: each agent proposes "how would you accomplish [your piece]?" → prefrontal assembles final plan
-  - PLAN.md write gate: Cortex writes PLAN_VALID + PLAN_STATUS: APPROVED + full plan before any pipeline execution
-  - VALIDATION rules: per-step criteria produced by prefrontal for ALL steps (not just motor), checked by cerebellum as pure test runner
-  - PostTurn hard gate: `check-plan-compliance` injects PLAN_VIOLATION via stdout if cortex dispatches without valid approved plan (60s freshness)
+- **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Quick ack.
 - **Tool ownership boundaries:**
   - Motor owns ALL Google Workspace tools (Drive, Gmail, Sheets, Docs, Calendar) + advisory mode
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
   - cerebellum is a pure test runner: executes validation rules, reports PASS/FAIL with evidence, structured verdicts (ALL_PASS/FAIL/NO_RULES)
 - **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
-- **brain-exec v2**: `--plan-exec` (execute pipeline step), `--validate-plan` (invariant checking)
-  - Rejects temporal-memory and prefrontal in pipelines (already ran in gate)
 - **Responsibility self-management**: Agents create responsibilities through normal M→C→T pipeline. `responsibility-manage` Motor tool for CRUD on `responsibilities-job.json`. Cortex classifies responsibility requests as new_mission → Prefrontal designs process → Motor writes config → Cerebellum verifies. Brain scheduler fires responsibilities on cron schedules.
 - **Context assembly**: System prompt loads SOUL.md + IDENTITY.md + MEMORY.md + full agent registry (cached, 60s TTL). Per-agent generation params: Motor 65536 max_tokens, Cortex/Prefrontal 32768, Cerebellum/Memory 8192. Temperature tuned per role (0.1–0.6). Envelope context accumulation: rolling 400K token budget with oldest-first pruning.
 - **Input/Output architecture (ears + mouth)**:
@@ -62,9 +53,9 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ### Agent State System (STATUS.json)
 - `agent-status` tool reads/writes `workspace/STATUS.json` with current activity
-- States: `idle → classifying → idle` (primary lifecycle via hooks)
+- States: `idle → classifying → idle` (primary turn lifecycle via internal hooks)
 - PreTurn hook sets `classifying`, PostTurn hook resets to `idle`
-- `brain-exec` sets `dispatching` (with sub-agent name), then `synthesizing` on return
+- Full cognitive execution state (claimed, active, waiting, complete, failed, needs_input) is managed dynamically by the `agent-brain` orchestrator daemon inside the Firestore `work` envelopes collection.
 
 ## Repository Structure
 ```

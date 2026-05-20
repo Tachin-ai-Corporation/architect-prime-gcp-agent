@@ -1,13 +1,12 @@
 # Agent Design Framework
 
-> **Status:** ASPIRATIONAL — Design framework for future multi-team fleet deployments
+> **Status:** ACTIVE — Production design framework for multi-team fleet deployments
 > **Written:** 2026-03-22
-> **Last verified:** v2026.05.18.16.0
+> **Last verified:** v2026.05.19.19.0
 
 > **Design reference for building new fleet agent types.**
 > Defines how to scope agent specialties, assign tools, and design delegation chains.
-> Note: The current system uses OpenClaw multi-agent dispatch (`sessions_spawn`/`sessions_yield`),
-> not MCP `--tools` flags. PM-led teams and Missions/Checkpoints/Tasks are planned, not yet implemented.
+> Note: The system uses OpenClaw multi-agent dispatch (sessions_spawn/sessions_yield). PM-led teams and the R/M/C/T hierarchy are fully implemented.
 
 ---
 

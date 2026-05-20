@@ -4,14 +4,14 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.05.18.16.0)
-6 brain agents in OpenClaw multi-agent configuration. Prefrontal-first gate enforced.
+## Current State (v2026.05.19.19.0)
+6 brain agents in OpenClaw multi-agent configuration, coordinated by the `agent-brain.service` state machine.
 
 ### Agent Inventory
 
 | Agent | Model | Role | Workspace |
 |-------|-------|------|-----------|
-| **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) | `~/.openclaw/workspace` |
+| **cortex** | gemini-3.1-pro-preview | JSON Decide Loop — envelope coordinator (DEFAULT) | `~/.openclaw/workspace` |
 | **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `~/.openclaw/workspace-temporal-research` |
 | **temporal-memory** | gemini-2.5-flash | Pure memory/context recall (NO external APIs) | `~/.openclaw/workspace-temporal-memory` |
 | **prefrontal** | gemini-2.5-flash | Planning + dispatch (two-mode: simple + advisory) | `~/.openclaw/workspace-prefrontal` |
@@ -19,15 +19,15 @@ description: Use when working on the brain agent system — creating/editing age
 | **cerebellum** | gemini-2.5-flash | Verification + validation-rule checking | `~/.openclaw/workspace-cerebellum` |
 
 ### Dispatch Pattern
-- Prefrontal-first gate: every message → spawn prefrontal → receive DISPATCH_PLAN
-- Two modes: Simple (immediate plan) or Complex (PLANNING_ROUND_REQUIRED → advisory round)
-- PLAN.md write gate: Cortex writes PLAN_VALID marker before executing any pipeline
-- Validation rules: per-step criteria checked by cerebellum
+- **Brain v3 state machine (`agent-brain.mjs`)**: Manages deterministic, envelope-based coordination as a continuous service.
+- **Cortex JSON Decide Loop**: Cortex classifies inputs and makes structured decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`).
+- **R/M/C/T Hierarchy**: Work is managed as nested envelopes of Responsibilities (cron scheduled), Missions, Checkpoints, and Tasks.
+- **Sub-agent Dispatch**: Sub-agents are invoked dynamically by Cortex to execute planned steps.
 
 ### I/O Architecture
-- `agent-ears` — deterministic input (poll, dedup, fire-and-forget gateway POST)
-- `agent-mouth` — output classification + delivery (speaks AS the agent, first person)
-- OpenClaw agents never call delivery tools directly
+- `agent-ears` — deterministic input (poll, dedup, GChat preprocessor, fire-and-forget gateway POST)
+- `agent-mouth` — output classification + delivery (JSONL-native transcript tailer, turn state machine, LLM status updates)
+- OpenClaw agents never call delivery tools directly; `agent-mouth` polls for completed/needs_input envelopes
 
 ## Key Files
 - `corekit/config/openclaw-bootstrap.json5.tmpl` — Prime OpenClaw config (6 agents)

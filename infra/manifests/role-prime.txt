@@ -29,6 +29,9 @@ corekit/config/command-runner.service .openclaw/corekit/command-runner.service
 corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json?
 corekit/config/fleet-health-check.service .openclaw/corekit/fleet-health-check.service
 corekit/config/fleet-health-check.timer .openclaw/corekit/fleet-health-check.timer
+corekit/config/agent-registry-prime.json .openclaw/corekit/agent-registry.json
+corekit/config/responsibilities-prime.json .openclaw/corekit/responsibilities-job.json
+
 
 # Skills (Prime-only skills)
 skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md

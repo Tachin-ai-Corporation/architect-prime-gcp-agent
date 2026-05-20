@@ -334,8 +334,15 @@ function buildSystemPrompt(mode, payload) {
   const parts = [];
 
   // 1. Read SOUL.md — core decision-making guidance
-  const soulPath = '/home/node/.openclaw/workspace-cortex/SOUL.md';
-  const soulContent = cachedReadFile(soulPath);
+  const soulPaths = [
+    '/home/node/.openclaw/workspace-cortex/SOUL.md',
+    '/home/node/.openclaw/workspace/SOUL.md',
+  ];
+  let soulContent = null;
+  for (const p of soulPaths) {
+    soulContent = cachedReadFile(p);
+    if (soulContent) break;
+  }
   if (soulContent) {
     parts.push(`[SOUL — core decision-making guidance]\n${soulContent}`);
   }
@@ -344,6 +351,7 @@ function buildSystemPrompt(mode, payload) {
   const identityPaths = [
     `/home/node/.openclaw/workspace-${AGENT_ID}/IDENTITY.md`,
     '/home/node/.openclaw/workspace-devops/IDENTITY.md',
+    '/home/node/.openclaw/workspace/IDENTITY.md',
   ];
   let identityContent = null;
   for (const p of identityPaths) {
@@ -358,6 +366,7 @@ function buildSystemPrompt(mode, payload) {
   const memoryPaths = [
     `/home/node/.openclaw/workspace-${AGENT_ID}/MEMORY.md`,
     '/home/node/.openclaw/workspace-devops/MEMORY.md',
+    '/home/node/.openclaw/workspace/MEMORY.md',
   ];
   let memoryContent = null;
   for (const p of memoryPaths) {
@@ -367,6 +376,7 @@ function buildSystemPrompt(mode, payload) {
   if (memoryContent) {
     parts.push(`[MEMORY — baseline knowledge]\n${memoryContent}`);
   }
+
 
   // 4. Agent registry with tool descriptions
   parts.push(`[AGENT REGISTRY — available agents and their capabilities]\n${JSON.stringify(REGISTRY.agents, null, 2)}`);

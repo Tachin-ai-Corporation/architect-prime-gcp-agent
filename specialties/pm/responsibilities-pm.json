@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-project-status-sync",
+      "name": "Project Status & Milestone Synchronization",
+      "schedule": "0 8 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Synchronize project milestones, current task tracking records, and overall project status documents from Google Workspace (Drive, Docs, Sheets) into the agent's working memory. Identify any slipping deadlines or blocked tasks.",
+      "context": {
+        "purpose": "Ensure the agent has the latest and most accurate view of the project's milestones, task status, and dependencies, and proactively flag risks.",
+        "process": [
+          "Scan the project Google Drive folders to identify key status sheets and milestone documents",
+          "Read and parse the project tracking Sheets or Docs containing active milestones and task lists",
+          "Identify and highlight any milestones that have slipped past their target dates, or tasks marked as blocked/delayed",
+          "Compile a concise project health summary detailing milestone progress, active bottlenecks, and immediate priorities, and write it to working memory."
+        ],
+        "reference_files": [],
+        "success_criteria": "A synthesized project status report is compiled and saved to memory, capturing latest milestones, status, and blockers.",
+        "prior_learnings": "When checking milestones, always compare against actual current date. Do not modify source sheets or documents automatically during sync unless correcting formatting errors or explicitly requested."
+      }
+    }
+  ]
+}

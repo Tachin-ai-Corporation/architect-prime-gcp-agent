@@ -164,39 +164,60 @@ Issue 3: Stan had no memory of work done 1 hour earlier
 
 ---
 
-## Phase 7A — Responsibility Scheduler
-> Cron-driven autonomous Responsibilities, quick ack, Stan-only deployment
+## Phase 7A — Responsibilities + Context Assembly ✅ COMPLETE
+> Cron-driven autonomous Responsibilities, R/M/C/T mental model, rich context assembly, per-agent gen params
 
-- `[ ]` Brain: Responsibility scheduler (cron parser, next-fire calculation, 60s interval check)
-- `[ ]` Brain: R→M envelope creation (type=R parent → type=M child → normal Cortex loop)
-- `[ ]` Brain: Min spacing enforcement (skip if another R fires within N minutes)
-- `[ ]` Brain: Quick ack — immediate "Got it" delivery when intake is claimed
-- `[ ]` Config: `corekit/config/responsibilities.json` — base template
-- `[ ]` Config: `specialties/devops/responsibilities-devops.json`
-- `[ ]` Brain: Config loader + merger (base + specialty)
-- `[ ]` Brain: File watcher for responsibility config hot-reload
-- `[ ]` Cortex SOUL: R-type envelope guidance
-- `[ ]` Dashboard: R-level in Work tree (name, schedule, last/next fire, enabled)
-- `[ ]` Deploy + test: 1-minute test Responsibility fires → R+M+T in Firestore ✅
+- `[x]` Brain: Responsibility scheduler (cron parser, next-fire calculation, 60s interval check)
+- `[x]` Brain: R→M envelope creation (type=R parent → type=M child → normal Cortex loop)
+- `[x]` Brain: Min spacing enforcement (skip if another R fires within N minutes)
+- `[x]` Brain: Quick ack — immediate "Got it" delivery when intake is claimed
+- `[x]` Config: `corekit/config/responsibilities.json` — base template
+- `[x]` Config: `specialties/devops/responsibilities-devops.json`
+- `[x]` Brain: Config loader + merger (base + specialty)
+- `[x]` Brain: File watcher for responsibility config hot-reload
+- `[x]` Cortex SOUL: R/M/C/T mental model rewrite (Option C architecture)
+- `[x]` Prefrontal SOUL: Responsibility process authoring guidance
+- `[x]` `responsibility-manage` Motor tool: CRUD for `responsibilities-job.json`
+- `[x]` Dashboard: R-level in Work tree (name, schedule, last/next fire, enabled)
+- `[x]` Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full registry in system prompt
+- `[x]` File read cache (60s TTL) for workspace file loading
+- `[x]` Envelope context accumulation: rolling 400K token budget with pruning
+- `[x]` Per-agent generation parameters from agent-registry.json (max_tokens, temperature, top_p)
+- `[x]` Enhanced sub-agent context: Prior Work + Relevant Memory in callAgent()
+- `[x]` Gateway parameter validation: confirmed max_tokens, temperature, top_p, top_k passthrough
+- `[x]` Deploy + test: Responsibility scheduler fires, context assembly enriches decisions ✅
 
-## Phase 7B — Fleet Rollout
+### Phase 7A — Per-Agent Generation Parameters
+```
+| Agent            | max_tokens | temperature | top_p |
+|------------------|-----------|-------------|-------|
+| Cortex           | 32768     | 0.4         | 0.95  |
+| Motor            | 65536     | 0.3         | 0.90  |
+| Prefrontal       | 32768     | 0.6         | 0.95  |
+| Cerebellum       | 8192      | 0.1         | 0.85  |
+| Temporal-Research | 16384    | 0.5         | 0.95  |
+| Temporal-Memory  | 8192      | 0.3         | 0.90  |
+```
+
+## Phase 7B — Fleet Rollout & Orchestration Rollout ✅ COMPLETE
 > Brain v3 on Prime + all fleet agents, bootstrap update
 
-- `[ ]` Prime: Brain v3 deployment (brain service + systemd)
-- `[ ]` Prime: agent-registry.json (fleet management tools)
-- `[ ]` Prime: responsibilities-prime.json (fleet health, upgrade checks)
-- `[ ]` Prime: Cortex SOUL v3 rewrite
-- `[ ]` Fleet bootstrap: manifests/base.txt + role-fleet.txt update
-- `[ ]` Fleet bootstrap: install.sh + fleet-bootstrap.sh update
-- `[ ]` Cross-agent delegation validation (Prime → Stan → Prime resumes)
-- `[ ]` Deploy + test: Prime end-to-end through Brain v3 ✅
+- `[x]` Prime: Brain v3 deployment (brain service + systemd)
+- `[x]` Prime: agent-registry.json (fleet management tools)
+- `[x]` Prime: responsibilities-prime.json (fleet health, upgrade checks)
+- `[x]` Prime: Cortex SOUL v3 rewrite
+- `[x]` Fleet bootstrap: manifests/base.txt + role-fleet.txt update
+- `[x]` Fleet bootstrap: install.sh + fleet-bootstrap.sh update
+- `[x]` Cross-agent delegation validation (Prime → Stan → Prime resumes)
+- `[x]` Deploy + test: Prime end-to-end through Brain v3 ✅
 
 ## Phase 7C — Cleanup + Hardening
 > Deprecated code removal, feature flags, contracts, envelope archival
 
-- `[ ]` Delete: brain-exec, brain-exec-worker, check-plan-compliance, build-system-prompt
+- `[x]` Delete: brain-exec, brain-exec-worker, check-plan-compliance, build-system-prompt
 - `[ ]` Delete: BRAIN_CARD.md routing hints
 - `[ ]` Remove: BRAIN_V3_* feature flags (v3 is the only path)
 - `[ ]` Contracts.json: add brain section + validate-contracts update
 - `[ ]` Brain: Auto-archive delivered envelopes older than 7 days (status → archived)
 - `[ ]` Deploy + test: full hire-deploy-message-process-deliver flow ✅
+

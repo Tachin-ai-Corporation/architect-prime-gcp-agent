@@ -198,11 +198,12 @@
           "command": "~/.openclaw/bin/agent-status set classifying '' '' 2>/dev/null || true"
         },
         "plan-compliance": {
-          "enabled": true,
+          "enabled": false,
           "event": "PostTurn",
           "type": "shell",
           "command": "~/.openclaw/bin/check-plan-compliance"
         },
+
         "agent-status-postturn": {
           "enabled": true,
           "event": "PostTurn",
