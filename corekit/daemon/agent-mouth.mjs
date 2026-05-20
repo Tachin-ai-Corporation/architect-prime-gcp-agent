@@ -618,6 +618,15 @@ async function pollBrainV3Envelopes() {
       if (Array.isArray(results)) allResults.push(...results);
     }
 
+    // Diagnostic: log every Nth poll cycle to show the poll is alive
+    if (!pollBrainV3Envelopes._count) pollBrainV3Envelopes._count = 0;
+    pollBrainV3Envelopes._count++;
+    if (pollBrainV3Envelopes._count % 60 === 1) { // every ~5 minutes (60 * 5s)
+      log('Brain v3 poll heartbeat', { cycle: pollBrainV3Envelopes._count, owner: ownerEmail,
+        results: allResults.filter(r => r.document?.fields).length,
+        primeId: PRIME_ID, delivered_cache: _deliveredEnvelopes.size });
+    }
+
     let delivered = 0;
     for (const r of allResults) {
       if (!r.document?.fields) continue;
