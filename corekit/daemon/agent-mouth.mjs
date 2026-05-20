@@ -598,7 +598,7 @@ async function pollBrainV3Envelopes() {
               ]
             }
           },
-          limit: 20,
+          limit: 100,
         },
       };
 
@@ -628,6 +628,7 @@ async function pollBrainV3Envelopes() {
     }
 
     let delivered = 0;
+    let skippedDelivered = 0;
     for (const r of allResults) {
       if (!r.document?.fields) continue;
       const f = r.document.fields;
@@ -637,7 +638,8 @@ async function pollBrainV3Envelopes() {
       const deliveredAt = f.delivered_at?.timestampValue || f.delivered_at?.stringValue;
 
       // Skip: no output, already delivered (in-memory or Firestore flag), or child envelope
-      if (!envId || !output || _deliveredEnvelopes.has(envId) || deliveredAt) continue;
+      if (!envId || !output || _deliveredEnvelopes.has(envId)) continue;
+      if (deliveredAt) { skippedDelivered++; continue; }
       if (f.parent_id?.stringValue) continue; // Only deliver top-level envelopes
 
       // Mark as delivered immediately to prevent duplicates
@@ -675,8 +677,8 @@ async function pollBrainV3Envelopes() {
       }
     }
 
-    if (delivered > 0) {
-      log('Brain v3 poll delivered', { count: delivered });
+    if (delivered > 0 || skippedDelivered > 10) {
+      log('Brain v3 poll delivered', { count: delivered, skipped_delivered: skippedDelivered });
     }
   } catch (err) {
     log('Brain v3 poll error', { error: err.message });
