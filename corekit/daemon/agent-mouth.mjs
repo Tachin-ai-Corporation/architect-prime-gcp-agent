@@ -598,7 +598,8 @@ async function pollBrainV3Envelopes() {
               ]
             }
           },
-          limit: 100,
+          orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
+          limit: 20,
         },
       };
 
