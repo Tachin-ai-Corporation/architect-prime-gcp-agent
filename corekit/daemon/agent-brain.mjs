@@ -6,11 +6,10 @@
 // Processes Firestore intake records through the Cortex loop
 // and manages envelopes (the R/C/M/T work hierarchy).
 //
-// Phase 6: delegation, waiting resumption, dashboard observability
-//   - callAgent: HTTP dispatch to any agent via gateway
-//   - Queue awareness: pending intake count + queue passed to Cortex
-//   - status_update: Cortex can send "working on X" messages
-//   - Stale envelope cleanup at startup
+// Phase 7A: responsibilities, quick ack, cron scheduler
+//   - Responsibility scheduler: cron-triggered R→M envelope creation
+//   - Quick ack: immediate delivery when intake is claimed
+//   - Rich context injection: responsibilities carry full process docs
 //
 // Design principles:
 //   - LLMs think. Deterministic systems orchestrate.
@@ -22,7 +21,7 @@
 // Run:
 //   BRAIN_V3_ENABLED=true node agent-brain.mjs
 // ============================================================
-import { readFileSync, appendFileSync, existsSync } from 'fs';
+import { readFileSync, appendFileSync, existsSync, watchFile } from 'fs';
 import { randomBytes } from 'crypto';
 
 // ---- Feature gate ----
@@ -80,6 +79,33 @@ try {
 } catch {
   log('WARN', 'agent-registry.json not found');
 }
+
+// ---- Responsibility config ----
+let RESPONSIBILITIES = [];
+function loadResponsibilities() {
+  const files = [
+    '/home/node/.openclaw/corekit/responsibilities.json',
+    '/home/node/.openclaw/corekit/responsibilities-job.json',
+  ];
+  const merged = [];
+  const seen = new Set();
+  for (const f of files) {
+    try {
+      const data = JSON.parse(readFileSync(f, 'utf8'));
+      for (const r of (data.responsibilities || [])) {
+        if (!seen.has(r.id)) {
+          seen.add(r.id);
+          merged.push(r);
+        }
+      }
+    } catch { /* file may not exist */ }
+  }
+  RESPONSIBILITIES = merged;
+  if (merged.length > 0) {
+    log('INFO', `Responsibilities loaded: ${merged.map(r => r.id).join(', ')}`);
+  }
+}
+loadResponsibilities();
 
 // ---- Firestore REST helpers ----
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`;
@@ -629,6 +655,34 @@ async function processIntake(intake) {
     status: 'claimed',
     claimed_at: now(),
   });
+
+  // Phase 7A: Quick ack — immediately tell the user we received it
+  if (intake.source && intake.source !== 'brain' && intake.source !== 'system') {
+    const ackId = generateId('ack');
+    await firestoreWrite('work', ackId, {
+      id: ackId,
+      type: 'T',
+      parent_id: null,
+      owner: AGENT_EMAIL || AGENT_ID,
+      status: 'complete',
+      intent: 'ack',
+      instruction: 'Quick acknowledgment',
+      output: `✅ Got it — working on this now.`,
+      source_channel: intake.source,
+      source_meta: intake.source_meta || {},
+      created_at: now(),
+      started_at: now(),
+      completed_at: now(),
+      updated_at: now(),
+      children: [],
+      accept_criteria: null,
+      context_summary: null,
+      context_forward: null,
+      error: null,
+      iteration: 0,
+    });
+    log('INFO', `Quick ack sent: ${ackId}`);
+  }
 
   // Phase 3+: Dual memory recall
   // First recall: ambient context from raw inbound text (helps classify)
@@ -1666,8 +1720,232 @@ async function main() {
     await checkWaitingEnvelopes();
   }, POLL_MS);
 
+  // Phase 7A: Start Responsibility scheduler
+  startResponsibilityScheduler();
+
+  // Phase 7A: Watch responsibility config for hot-reload
+  for (const f of [
+    '/home/node/.openclaw/corekit/responsibilities.json',
+    '/home/node/.openclaw/corekit/responsibilities-job.json',
+  ]) {
+    if (existsSync(f)) {
+      watchFile(f, { interval: 10000 }, () => {
+        log('INFO', `Responsibility config changed: ${f}`);
+        loadResponsibilities();
+        // Recalculate next-fire times
+        _respNextFire = {};
+        for (const r of RESPONSIBILITIES) {
+          if (r.enabled) _respNextFire[r.id] = cronNextFire(r.schedule);
+        }
+      });
+    }
+  }
+
   // Initial poll
   await pollIntake();
+}
+
+// ---- Phase 7A: Cron expression parser ----
+function cronMatch(expression, date) {
+  const [minExpr, hourExpr, domExpr, monExpr, dowExpr] = expression.trim().split(/\s+/);
+  const min = date.getUTCMinutes();
+  const hour = date.getUTCHours();
+  const dom = date.getUTCDate();
+  const mon = date.getUTCMonth() + 1;
+  const dow = date.getUTCDay(); // 0=Sun
+
+  return fieldMatches(minExpr, min, 0, 59)
+    && fieldMatches(hourExpr, hour, 0, 23)
+    && fieldMatches(domExpr, dom, 1, 31)
+    && fieldMatches(monExpr, mon, 1, 12)
+    && fieldMatches(dowExpr, dow, 0, 6);
+}
+
+function fieldMatches(expr, value, rangeMin, rangeMax) {
+  if (expr === '*') return true;
+  // */N step
+  if (expr.startsWith('*/')) {
+    const step = parseInt(expr.slice(2), 10);
+    return value % step === 0;
+  }
+  // Comma-separated values: 1,5,10
+  const parts = expr.split(',');
+  for (const part of parts) {
+    // Range: 1-5
+    if (part.includes('-')) {
+      const [lo, hi] = part.split('-').map(Number);
+      if (value >= lo && value <= hi) return true;
+    } else {
+      if (parseInt(part, 10) === value) return true;
+    }
+  }
+  return false;
+}
+
+function cronNextFire(expression) {
+  // Calculate next fire time by scanning forward minute-by-minute (max 48h)
+  const now_ = new Date();
+  const check = new Date(now_);
+  check.setUTCSeconds(0, 0);
+  check.setUTCMinutes(check.getUTCMinutes() + 1); // start from next minute
+  const maxMs = 48 * 60 * 60 * 1000;
+  while (check.getTime() - now_.getTime() < maxMs) {
+    if (cronMatch(expression, check)) return check;
+    check.setUTCMinutes(check.getUTCMinutes() + 1);
+  }
+  return null; // no match within 48h
+}
+
+// ---- Phase 7A: Responsibility scheduler ----
+const _respLastFired = {}; // id → timestamp
+let _respNextFire = {};    // id → Date
+
+function startResponsibilityScheduler() {
+  if (RESPONSIBILITIES.length === 0) {
+    log('INFO', 'No responsibilities configured, scheduler idle');
+    return;
+  }
+
+  // Calculate initial next-fire times
+  for (const r of RESPONSIBILITIES) {
+    if (r.enabled) {
+      _respNextFire[r.id] = cronNextFire(r.schedule);
+      const nextStr = _respNextFire[r.id]
+        ? _respNextFire[r.id].toISOString()
+        : 'none (no match in 48h)';
+      log('INFO', `Responsibility ${r.id}: next fire ${nextStr}`);
+    }
+  }
+
+  // Check every 60 seconds
+  setInterval(async () => {
+    const now_ = new Date();
+    for (const r of RESPONSIBILITIES) {
+      if (!r.enabled) continue;
+      const nextFire = _respNextFire[r.id];
+      if (!nextFire || now_ < nextFire) continue;
+
+      // Min spacing check
+      const lastFired = _respLastFired[r.id];
+      const minSpacingMs = (r.min_spacing_minutes || 15) * 60 * 1000;
+      if (lastFired && (now_.getTime() - lastFired) < minSpacingMs) {
+        log('INFO', `Responsibility ${r.id} skipped (min spacing ${r.min_spacing_minutes}m)`);
+        _respNextFire[r.id] = cronNextFire(r.schedule);
+        continue;
+      }
+
+      // Fire!
+      log('INFO', `Responsibility ${r.id} firing: ${r.name}`);
+      _respLastFired[r.id] = now_.getTime();
+      _respNextFire[r.id] = cronNextFire(r.schedule);
+
+      try {
+        await fireResponsibility(r);
+      } catch (e) {
+        log('ERROR', `Responsibility ${r.id} fire failed: ${e.message}`);
+      }
+    }
+  }, 60_000);
+}
+
+async function fireResponsibility(resp) {
+  // Build rich context summary from the responsibility definition
+  const contextParts = [];
+  if (resp.context?.purpose) contextParts.push(`PURPOSE: ${resp.context.purpose}`);
+  if (resp.context?.process?.length) {
+    contextParts.push(`PROCESS:\n${resp.context.process.map((s, i) => `${i + 1}. ${s}`).join('\n')}`);
+  }
+  if (resp.context?.reference_files?.length) {
+    contextParts.push(`REFERENCE FILES: ${resp.context.reference_files.join(', ')}`);
+  }
+  if (resp.context?.success_criteria) {
+    contextParts.push(`SUCCESS CRITERIA: ${resp.context.success_criteria}`);
+  }
+  if (resp.context?.prior_learnings) {
+    contextParts.push(`PRIOR LEARNINGS: ${resp.context.prior_learnings}`);
+  }
+  const contextSummary = contextParts.join('\n\n');
+
+  // Create type=R Responsibility envelope
+  const respEnvId = generateId('w');
+  const respEnvelope = {
+    id: respEnvId,
+    type: 'R',
+    parent_id: null,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: 'complete', // R is just a container, mark complete immediately
+    intent: 'responsibility',
+    instruction: resp.instruction,
+    accept_criteria: resp.context?.success_criteria || null,
+    context_summary: contextSummary,
+    output: `Responsibility ${resp.id} fired at ${now()}`,
+    children: [],
+    context_forward: null,
+    error: null,
+    source_channel: 'scheduler',
+    source_meta: {
+      responsibility_id: resp.id,
+      responsibility_name: resp.name,
+      schedule: resp.schedule,
+    },
+    created_at: now(),
+    started_at: now(),
+    completed_at: now(),
+    updated_at: now(),
+    iteration: 0,
+  };
+
+  await firestoreWrite('work', respEnvId, respEnvelope);
+  await writeHistory(respEnvId, null, 'complete', 'scheduler', `Responsibility ${resp.id} fired`);
+
+  // Create type=M Mission child — this enters the normal Cortex loop
+  const missionId = generateId('w');
+  const missionEnvelope = {
+    id: missionId,
+    type: 'M',
+    parent_id: respEnvId,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: 'pending',
+    intent: 'execute',
+    instruction: resp.instruction,
+    accept_criteria: resp.context?.success_criteria || null,
+    context_summary: contextSummary,
+    output: null,
+    children: [],
+    context_forward: null,
+    error: null,
+    source_channel: 'scheduler',
+    source_meta: {
+      responsibility_id: resp.id,
+      responsibility_name: resp.name,
+      fired_at: now(),
+    },
+    created_at: now(),
+    started_at: null,
+    completed_at: null,
+    updated_at: now(),
+    iteration: 0,
+    memory_context: null, // Will be recalled during processEnvelope
+  };
+
+  // Track child on R envelope
+  respEnvelope.children.push(missionId);
+  await firestoreWrite('work', respEnvId, respEnvelope);
+
+  await firestoreWrite('work', missionId, missionEnvelope);
+  await writeHistory(missionId, null, 'pending', 'scheduler', `Mission from responsibility ${resp.id}`);
+  log('INFO', `Created R:${respEnvId} → M:${missionId} for responsibility ${resp.id}`);
+
+  // Recall memory with rich context, then process
+  const memory = await recallMemory(resp.instruction, {
+    instruction: resp.instruction,
+    context_summary: contextSummary.substring(0, 500),
+  });
+  missionEnvelope.memory_context = memory;
+  await firestoreWrite('work', missionId, missionEnvelope);
+
+  // Process the mission through the normal Cortex loop
+  await processEnvelope(missionEnvelope, memory);
 }
 
 main().catch(e => {

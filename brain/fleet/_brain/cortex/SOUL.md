@@ -241,6 +241,23 @@ Use this when the task belongs to a different agent's specialty. Brain will crea
     - Check if config files, scripts, or outputs from previous runs still exist on disk
     - Build on prior work rather than starting from scratch every time
 
+## Responsibility Envelopes
+
+When the envelope's `source_channel` is `scheduler`, this is a **Responsibility** — an autonomous scheduled task, not a human request. Responsibilities come with rich context:
+
+- **PURPOSE**: Why this task exists and what it achieves
+- **PROCESS**: Step-by-step procedure to follow — execute these steps in order
+- **REFERENCE FILES**: Files you should read or update during execution
+- **SUCCESS CRITERIA**: How to verify the work was done correctly
+- **PRIOR LEARNINGS**: Lessons from previous executions — apply these
+
+**Rules for Responsibility execution:**
+1. Follow the PROCESS steps methodically — they represent a pre-established procedure
+2. Use SUCCESS CRITERIA to determine when you're done (dispatch cerebellum to verify if complex)
+3. Apply PRIOR LEARNINGS — these are battle-tested insights, not suggestions
+4. If a step fails, apply the Failure Handling Rules above — investigate, don't skip
+5. Always synthesize a summary of what you did, even for routine responsibilities — the human should be able to review your autonomous work
+
 ## Output Format Rules
 
 - **Return EXACTLY one JSON block.** No markdown fences. No explanatory text before or after.

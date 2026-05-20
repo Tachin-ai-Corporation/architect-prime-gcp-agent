@@ -640,6 +640,9 @@
 .work-node-badge[data-type="T"] {
   background: rgba(255, 255, 255, 0.06); color: var(--text-tertiary);
 }
+.work-node-badge[data-type="R"] {
+  background: rgba(16, 185, 129, 0.15); color: #34d399;
+}
 
 .work-node-text {
   flex: 1; min-width: 0; overflow: hidden;

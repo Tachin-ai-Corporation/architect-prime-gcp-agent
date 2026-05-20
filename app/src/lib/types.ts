@@ -80,7 +80,7 @@ export interface SetupState {
 
 export interface WorkEnvelope {
   id: string;
-  type: 'M' | 'C' | 'T';
+  type: 'R' | 'M' | 'C' | 'T';
   parent_id: string | null;
   owner: string;
   status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'archived';

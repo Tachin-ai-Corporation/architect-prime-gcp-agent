@@ -21,6 +21,7 @@ const STATUS_ICONS: Record<string, string> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
+  R: "Responsibility",
   M: "Mission",
   C: "Checkpoint",
   T: "Task",

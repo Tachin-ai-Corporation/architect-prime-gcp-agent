@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-memory-consolidation",
+      "name": "Nightly Memory Consolidation",
+      "schedule": "0 8 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 30,
+      "instruction": "Run memory consolidation — compact working notes into durable core memory, prune stale entries, update deep truths if understanding has changed.",
+      "context": {
+        "purpose": "Keep working memory compact and useful. Over time, MEMORY.md accumulates transient details that should either be promoted to durable core memory (Firestore) or pruned. Deep truths should be updated when fundamental patterns emerge from accumulated experience.",
+        "process": [
+          "Read current MEMORY.md working notes from workspace",
+          "Identify facts, patterns, or learnings that should be durable (not just session-specific)",
+          "Write durable facts to core memory via temporal-memory agent",
+          "Prune stale, outdated, or session-specific entries from MEMORY.md",
+          "Review deep truths in SOUL.md — update if accumulated experience reveals new patterns",
+          "Keep MEMORY.md under 2000 characters after consolidation"
+        ],
+        "reference_files": [
+          "workspace/MEMORY.md",
+          "workspace-cortex/SOUL.md"
+        ],
+        "success_criteria": "MEMORY.md is compact (under 2000 chars), any durable learnings are written to core memory, deep truths reviewed and updated if warranted.",
+        "prior_learnings": "Memory consolidation should be conservative — only promote facts that have proven stable across multiple sessions. Transient debugging notes should be pruned, not promoted."
+      }
+    },
+    {
+      "id": "r-stale-envelope-review",
+      "name": "Weekly Stale Envelope Review",
+      "schedule": "0 14 * * 1",
+      "enabled": true,
+      "min_spacing_minutes": 60,
+      "instruction": "Review work envelopes stuck in active or waiting status for more than 48 hours. Investigate why they stalled and either complete, fail, or escalate them.",
+      "context": {
+        "purpose": "Prevent zombie envelopes from accumulating. Envelopes can get stuck due to agent crashes, timeout edge cases, or delegation failures. Regular review keeps the work queue healthy.",
+        "process": [
+          "Query Firestore for envelopes with status 'active' or 'waiting' older than 48 hours",
+          "For each stale envelope, check: is the parent still active? Is there a child that failed silently?",
+          "If the work was completed but status wasn't updated, mark it complete with available output",
+          "If the work is genuinely stuck, mark it failed with a clear error message",
+          "If the work is waiting on something resolvable, attempt to unblock it",
+          "Report summary: how many reviewed, how many resolved, how many escalated"
+        ],
+        "reference_files": [],
+        "success_criteria": "All envelopes older than 48h in active/waiting status are reviewed. Each is either resolved, failed with explanation, or escalated to operator.",
+        "prior_learnings": "Most stale envelopes are from delegation attempts where the child agent timed out. Check child envelope status first before investigating the parent."
+      }
+    }
+  ]
+}

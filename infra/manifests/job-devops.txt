@@ -5,3 +5,6 @@
 specialties/devops/workspace/IDENTITY.md .openclaw/workspace-devops/IDENTITY.md
 specialties/devops/workspace/SOUL.md .openclaw/workspace-devops/SOUL.md
 specialties/devops/workspace/MEMORY.md .openclaw/workspace-devops/MEMORY.md
+
+# DevOps responsibilities (merged with base by Brain scheduler)
+specialties/devops/responsibilities-devops.json .openclaw/corekit/responsibilities-job.json
