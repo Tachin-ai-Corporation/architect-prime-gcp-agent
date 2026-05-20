@@ -80,6 +80,25 @@ try {
   log('WARN', 'agent-registry.json not found');
 }
 
+// ---- File read cache (60s TTL) ----
+const _fileCache = new Map(); // path → { content, readAt }
+const FILE_CACHE_TTL_MS = 60_000;
+
+function cachedReadFile(filePath) {
+  const cached = _fileCache.get(filePath);
+  if (cached && (Date.now() - cached.readAt) < FILE_CACHE_TTL_MS) {
+    return cached.content;
+  }
+  try {
+    const content = readFileSync(filePath, 'utf8');
+    _fileCache.set(filePath, { content, readAt: Date.now() });
+    return content;
+  } catch {
+    _fileCache.set(filePath, { content: null, readAt: Date.now() });
+    return null;
+  }
+}
+
 // ---- Responsibility config ----
 let RESPONSIBILITIES = [];
 function loadResponsibilities() {
@@ -255,7 +274,13 @@ async function callCortex(mode, payload) {
   const systemPrompt = buildSystemPrompt(mode, payload);
   const userPrompt = `[BRAIN-ORCHESTRATED]\n${buildUserPrompt(mode, payload)}`;
 
-  log('INFO', `Calling Cortex: mode=${mode}`);
+  // Per-agent generation parameters from registry
+  const cortexConfig = REGISTRY.agents?.cortex || {};
+  const maxTokens = cortexConfig.max_tokens || 32768;
+  const temperature = cortexConfig.temperature ?? 0.4;
+  const topP = cortexConfig.top_p ?? 0.95;
+
+  log('INFO', `Calling Cortex: mode=${mode} (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
 
   const resp = await fetch(GATEWAY_URL, {
     method: 'POST',
@@ -269,8 +294,9 @@ async function callCortex(mode, payload) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: 16384,
-      temperature: 0.7,
+      max_tokens: maxTokens,
+      temperature: temperature,
+      top_p: topP,
     }),
     signal: AbortSignal.timeout(300_000), // 5 min
   });
@@ -305,14 +331,50 @@ async function callCortex(mode, payload) {
 }
 
 function buildSystemPrompt(mode, payload) {
-  return `You are Cortex, the guiding intelligence of agent "${AGENT_ID}".
-You operate in structured JSON mode. You MUST respond with exactly one JSON block and nothing else.
-Do not include markdown fences, explanatory text, or conversational preamble.
+  const parts = [];
 
-Mode: ${mode}
+  // 1. Read SOUL.md — core decision-making guidance
+  const soulPath = '/home/node/.openclaw/workspace-cortex/SOUL.md';
+  const soulContent = cachedReadFile(soulPath);
+  if (soulContent) {
+    parts.push(`[SOUL — core decision-making guidance]\n${soulContent}`);
+  }
 
-Agent registry (what agents you can dispatch to):
-${JSON.stringify(REGISTRY.agents, null, 2)}`;
+  // 2. Read IDENTITY.md — who you are
+  const identityPaths = [
+    `/home/node/.openclaw/workspace-${AGENT_ID}/IDENTITY.md`,
+    '/home/node/.openclaw/workspace-devops/IDENTITY.md',
+  ];
+  let identityContent = null;
+  for (const p of identityPaths) {
+    identityContent = cachedReadFile(p);
+    if (identityContent) break;
+  }
+  if (identityContent) {
+    parts.push(`[IDENTITY — who you are]\n${identityContent}`);
+  }
+
+  // 3. Read MEMORY.md — baseline knowledge
+  const memoryPaths = [
+    `/home/node/.openclaw/workspace-${AGENT_ID}/MEMORY.md`,
+    '/home/node/.openclaw/workspace-devops/MEMORY.md',
+  ];
+  let memoryContent = null;
+  for (const p of memoryPaths) {
+    memoryContent = cachedReadFile(p);
+    if (memoryContent) break;
+  }
+  if (memoryContent) {
+    parts.push(`[MEMORY — baseline knowledge]\n${memoryContent}`);
+  }
+
+  // 4. Agent registry with tool descriptions
+  parts.push(`[AGENT REGISTRY — available agents and their capabilities]\n${JSON.stringify(REGISTRY.agents, null, 2)}`);
+
+  // 5. Mode and JSON constraint
+  parts.push(`Mode: ${mode}\nYou MUST respond with exactly one JSON block and nothing else.`);
+
+  return parts.join('\n\n');
 }
 
 function buildUserPrompt(mode, payload) {
@@ -321,6 +383,7 @@ function buildUserPrompt(mode, payload) {
       mode: 'classify',
       inbound: payload.inbound,
       memory: payload.memory || {},
+      core_facts: payload.memory?.recalled || null,
       active_envelopes: payload.active_envelopes || [],
     });
   }
@@ -329,6 +392,7 @@ function buildUserPrompt(mode, payload) {
       mode: 'decide',
       envelope: payload.envelope,
       memory: payload.memory || {},
+      envelope_context: payload.envelope_context || null,
       agent_registry: REGISTRY.agents,
       prior_results: payload.prior_results || [],
       iteration: payload.iteration || 1,
@@ -420,11 +484,19 @@ async function callAgent(agentId, envelope) {
   const userMessage = [
     `[BRAIN-ORCHESTRATED]`,
     instruction,
-    context ? `\nContext: ${context}` : '',
-    criteria ? `\nAcceptance criteria: ${criteria}` : '',
+    context ? `\n## Context\n${context}` : '',
+    criteria ? `\n## Acceptance Criteria\n${criteria}` : '',
+    envelope.prior_results_context ? `\n## Prior Work\n${envelope.prior_results_context}` : '',
+    envelope.memory_context ? `\n## Relevant Memory\n${envelope.memory_context}` : '',
   ].filter(Boolean).join('\n');
 
-  log('INFO', `Dispatching to ${agentId} via ${route}`);
+  // Per-agent generation parameters from registry
+  const agentConfig = REGISTRY.agents?.[agentId] || {};
+  const maxTokens = agentConfig.max_tokens || 16384;
+  const temperature = agentConfig.temperature ?? 0.5;
+  const topP = agentConfig.top_p ?? 0.9;
+
+  log('INFO', `Dispatching to ${agentId} via ${route} (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
   const start = Date.now();
 
   try {
@@ -437,8 +509,9 @@ async function callAgent(agentId, envelope) {
       body: JSON.stringify({
         model: route,
         messages: [{ role: 'user', content: userMessage }],
-        max_tokens: 16384,
-        temperature: 0.5,
+        max_tokens: maxTokens,
+        temperature: temperature,
+        top_p: topP,
       }),
       signal: AbortSignal.timeout(300_000),
     });
@@ -917,6 +990,15 @@ async function processEnvelope(envelope, memoryContext) {
       log('INFO', `Pending intake: ${queueInfo.count} queued`);
     }
 
+    // Build accumulated envelope context
+    const envelopeContext = buildEnvelopeContext(
+      envelope,
+      priorResults,
+      memory
+    );
+    // Store accumulated context back on envelope
+    envelope._accumulated_context = envelopeContext;
+
     const decision = await callCortex('decide', {
       envelope: {
         id: envelope.id,
@@ -926,6 +1008,7 @@ async function processEnvelope(envelope, memoryContext) {
         context_summary: envelope.context_summary,
       },
       memory,
+      envelope_context: envelopeContext,
       prior_results: priorResults,
       iteration,
       pending_intake_count: queueInfo.count,
@@ -1550,6 +1633,69 @@ async function processEnvelope(envelope, memoryContext) {
   await writeHistory(envelope.id, 'active', 'failed', 'brain', envelope.error);
   log('ERROR', `Envelope ${envelope.id} failed: max iterations`);
   await cleanupSharedWorkspace(envelope.id);
+}
+
+// ---- Envelope context accumulation ----
+const CONTEXT_TOKEN_BUDGET = 400_000; // ~400K tokens
+const CHARS_PER_TOKEN = 4; // rough estimate
+const CONTEXT_CHAR_BUDGET = CONTEXT_TOKEN_BUDGET * CHARS_PER_TOKEN; // ~1.6M chars
+
+function buildEnvelopeContext(envelope, priorResults, memoryResults) {
+  // Start with any previously accumulated context from Firestore
+  let accumulated = envelope._accumulated_context || '';
+
+  // Build a new block for the latest iteration
+  const timestamp = now();
+  const iteration = envelope.iteration || 1;
+  const blockParts = [`--- Iteration ${iteration} (${timestamp}) ---`];
+
+  // Summarize the latest prior results (only the newest ones not yet captured)
+  if (priorResults && priorResults.length > 0) {
+    const latest = priorResults[priorResults.length - 1];
+    if (latest.agent && latest.agent !== 'system') {
+      blockParts.push(`Decision: dispatch to ${latest.agent}`);
+      if (latest.task) blockParts.push(`Task: ${latest.task}`);
+      const resultStr = typeof latest.result === 'string'
+        ? latest.result.substring(0, 2000)
+        : JSON.stringify(latest.result || '').substring(0, 2000);
+      blockParts.push(`Result: ${resultStr}`);
+    } else if (latest.agent === 'human') {
+      blockParts.push(`Human input: ${(latest.result || '').substring(0, 500)}`);
+    }
+  }
+
+  // Append memory context summary if available
+  if (memoryResults?.recalled && iteration === 1) {
+    blockParts.push(`Memory: ${memoryResults.recalled.substring(0, 1000)}`);
+  }
+
+  const newBlock = blockParts.join('\n');
+
+  // Only append if we have meaningful content beyond the header
+  if (blockParts.length > 1) {
+    accumulated = accumulated
+      ? `${accumulated}\n\n${newBlock}`
+      : newBlock;
+  }
+
+  // Budget enforcement: prune if over char budget
+  if (accumulated.length > CONTEXT_CHAR_BUDGET) {
+    const blocks = accumulated.split(/\n\n(?=--- Iteration )/);
+    if (blocks.length > 2) {
+      // Keep first 10% + last 90% of blocks
+      const keepFirst = Math.max(1, Math.floor(blocks.length * 0.1));
+      const keepLast = Math.max(1, Math.floor(blocks.length * 0.9));
+      const pruned = [
+        ...blocks.slice(0, keepFirst),
+        `\n--- [${blocks.length - keepFirst - keepLast} iterations pruned for context budget] ---\n`,
+        ...blocks.slice(blocks.length - keepLast),
+      ];
+      accumulated = pruned.join('\n\n');
+      log('INFO', `Envelope context pruned: ${blocks.length} blocks → ${pruned.length} blocks (${accumulated.length} chars)`);
+    }
+  }
+
+  return accumulated;
 }
 
 // ---- Shared workspace management (Phase 5) ----
