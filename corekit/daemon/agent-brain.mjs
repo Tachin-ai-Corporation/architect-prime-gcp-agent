@@ -269,6 +269,8 @@ async function callCortex(mode, payload) {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
+      max_tokens: 16384,
+      temperature: 0.7,
     }),
     signal: AbortSignal.timeout(300_000), // 5 min
   });
@@ -435,6 +437,8 @@ async function callAgent(agentId, envelope) {
       body: JSON.stringify({
         model: route,
         messages: [{ role: 'user', content: userMessage }],
+        max_tokens: 16384,
+        temperature: 0.5,
       }),
       signal: AbortSignal.timeout(300_000),
     });
@@ -1006,96 +1010,6 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
-    if (action === 'manage_responsibility') {
-      // Phase 7A: Cortex self-manages responsibilities
-      const op = decision.operation;
-      const respFile = '/home/node/.openclaw/corekit/responsibilities-job.json';
-      let config = { version: 1, responsibilities: [] };
-      try { config = JSON.parse(readFileSync(respFile, 'utf8')); } catch { /* new file */ }
-
-      let resultMsg = '';
-
-      if (op === 'create') {
-        const newResp = decision.responsibility;
-        if (!newResp || !newResp.id || !newResp.schedule || !newResp.instruction) {
-          priorResults.push({ agent: 'system', result: '[SYSTEM] manage_responsibility create requires responsibility with id, schedule, instruction, and context.' });
-          continue;
-        }
-        // Enforce min_spacing_minutes default
-        if (!newResp.min_spacing_minutes) newResp.min_spacing_minutes = 30;
-        // Ensure enabled
-        if (newResp.enabled === undefined) newResp.enabled = true;
-        // Deduplicate
-        config.responsibilities = config.responsibilities.filter(r => r.id !== newResp.id);
-        config.responsibilities.push(newResp);
-        resultMsg = `Responsibility "${newResp.name || newResp.id}" created with schedule "${newResp.schedule}". Next fire will be calculated on reload.`;
-        log('INFO', `Responsibility created: ${newResp.id} (${newResp.schedule})`);
-
-      } else if (op === 'update') {
-        const targetId = decision.responsibility_id;
-        const updates = decision.updates || {};
-        const idx = config.responsibilities.findIndex(r => r.id === targetId);
-        if (idx === -1) {
-          priorResults.push({ agent: 'system', result: `[SYSTEM] Responsibility "${targetId}" not found.` });
-          continue;
-        }
-        // Deep merge context if provided
-        if (updates.context) {
-          config.responsibilities[idx].context = { ...config.responsibilities[idx].context, ...updates.context };
-          delete updates.context;
-        }
-        Object.assign(config.responsibilities[idx], updates);
-        resultMsg = `Responsibility "${targetId}" updated.`;
-        log('INFO', `Responsibility updated: ${targetId}`);
-
-      } else if (op === 'remove') {
-        const targetId = decision.responsibility_id;
-        const before = config.responsibilities.length;
-        config.responsibilities = config.responsibilities.filter(r => r.id !== targetId);
-        if (config.responsibilities.length === before) {
-          priorResults.push({ agent: 'system', result: `[SYSTEM] Responsibility "${targetId}" not found.` });
-          continue;
-        }
-        resultMsg = `Responsibility "${targetId}" removed.`;
-        log('INFO', `Responsibility removed: ${targetId}`);
-
-      } else if (op === 'list') {
-        const list = config.responsibilities.map(r => ({
-          id: r.id,
-          name: r.name,
-          schedule: r.schedule,
-          enabled: r.enabled,
-          min_spacing_minutes: r.min_spacing_minutes,
-          instruction: (r.instruction || '').substring(0, 200),
-          has_process: !!(r.context?.process?.length),
-          next_fire: _respNextFire[r.id]?.toISOString() || 'not scheduled',
-        }));
-        resultMsg = list.length > 0
-          ? `Current responsibilities:\n${JSON.stringify(list, null, 2)}`
-          : 'No responsibilities configured.';
-
-      } else {
-        priorResults.push({ agent: 'system', result: `[SYSTEM] Unknown manage_responsibility operation: ${op}. Use create, update, remove, or list.` });
-        continue;
-      }
-
-      // Write config and reload scheduler
-      if (op !== 'list') {
-        const { writeFileSync } = await import('fs');
-        writeFileSync(respFile, JSON.stringify(config, null, 2), 'utf8');
-        loadResponsibilities();
-        // Recalculate all next-fire times
-        _respNextFire = {};
-        for (const r of RESPONSIBILITIES) {
-          if (r.enabled) _respNextFire[r.id] = cronNextFire(r.schedule);
-        }
-        log('INFO', `Responsibilities reloaded after ${op}: ${RESPONSIBILITIES.length} total`);
-      }
-
-      priorResults.push({ agent: 'system', result: resultMsg, success: true });
-      log('INFO', `manage_responsibility ${op}: ${resultMsg.substring(0, 100)}`);
-      continue;
-    }
 
     if (action === 'needs_input') {
       // Phase 3: Block envelope and ask the human for clarification

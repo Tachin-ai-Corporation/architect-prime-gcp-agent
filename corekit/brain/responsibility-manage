@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+# responsibility-manage — CRUD for agent responsibility configs
+# Motor tool: reads/writes responsibilities-job.json
+#
+# Usage:
+#   responsibility-manage list
+#   responsibility-manage create '<json>'
+#   responsibility-manage update '<id>' '<partial-json>'
+#   responsibility-manage remove '<id>'
+#
+# The JSON for create must include: id, name, schedule, instruction, context
+# The JSON for update is merged into the existing responsibility
+
+set -euo pipefail
+
+RESP_FILE="${RESP_FILE:-/home/node/.openclaw/corekit/responsibilities-job.json}"
+
+# Ensure file exists
+if [ ! -f "$RESP_FILE" ]; then
+  echo '{"version":1,"responsibilities":[]}' > "$RESP_FILE"
+fi
+
+CMD="${1:-help}"
+shift || true
+
+case "$CMD" in
+  list)
+    python3 -c "
+import json, sys
+with open('$RESP_FILE') as f:
+    data = json.load(f)
+resps = data.get('responsibilities', [])
+if not resps:
+    print('No responsibilities configured.')
+    sys.exit(0)
+for r in resps:
+    ctx = r.get('context', {})
+    process_count = len(ctx.get('process', []))
+    print(f\"  {r['id']}\")
+    print(f\"    Name:     {r.get('name', '—')}\")
+    print(f\"    Schedule: {r.get('schedule', '—')}\")
+    print(f\"    Enabled:  {r.get('enabled', True)}\")
+    print(f\"    Spacing:  {r.get('min_spacing_minutes', 30)}m min\")
+    print(f\"    Process:  {process_count} steps\")
+    print(f\"    Purpose:  {(ctx.get('purpose', '') or '')[:100]}\")
+    print()
+print(f'Total: {len(resps)} responsibilities')
+"
+    ;;
+
+  create)
+    NEW_JSON="${1:?'create requires a JSON string'}"
+    python3 -c "
+import json, sys
+
+new_resp = json.loads('''$NEW_JSON''')
+
+# Validate required fields
+required = ['id', 'name', 'schedule', 'instruction']
+missing = [f for f in required if f not in new_resp]
+if missing:
+    print(f'ERROR: Missing required fields: {missing}', file=sys.stderr)
+    sys.exit(1)
+
+# Validate context
+ctx = new_resp.get('context', {})
+if not ctx.get('process'):
+    print('ERROR: context.process is required — responsibilities must have process steps.', file=sys.stderr)
+    sys.exit(1)
+if not ctx.get('purpose'):
+    print('ERROR: context.purpose is required — explain why this responsibility exists.', file=sys.stderr)
+    sys.exit(1)
+if not ctx.get('success_criteria'):
+    print('ERROR: context.success_criteria is required — how do we know this succeeded?', file=sys.stderr)
+    sys.exit(1)
+
+# Enforce defaults
+new_resp.setdefault('enabled', True)
+new_resp.setdefault('min_spacing_minutes', 30)
+new_resp.setdefault('context', {}).setdefault('prior_learnings', '')
+new_resp.setdefault('context', {}).setdefault('reference_files', [])
+
+with open('$RESP_FILE') as f:
+    data = json.load(f)
+
+# Deduplicate
+data['responsibilities'] = [r for r in data['responsibilities'] if r['id'] != new_resp['id']]
+data['responsibilities'].append(new_resp)
+
+with open('$RESP_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+
+print(f\"Created responsibility '{new_resp['id']}' with schedule '{new_resp['schedule']}'\")
+print(f\"  Process: {len(ctx['process'])} steps\")
+print(f\"  Purpose: {ctx['purpose'][:120]}\")
+print(f\"  Success criteria: {ctx['success_criteria'][:120]}\")
+print('Brain scheduler will auto-reload within 10 seconds.')
+"
+    ;;
+
+  update)
+    TARGET_ID="${1:?'update requires a responsibility id'}"
+    UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
+    python3 -c "
+import json, sys
+
+target_id = '$TARGET_ID'
+updates = json.loads('''$UPDATE_JSON''')
+
+with open('$RESP_FILE') as f:
+    data = json.load(f)
+
+idx = next((i for i, r in enumerate(data['responsibilities']) if r['id'] == target_id), None)
+if idx is None:
+    print(f'ERROR: Responsibility \"{target_id}\" not found.', file=sys.stderr)
+    sys.exit(1)
+
+# Deep merge context
+if 'context' in updates:
+    existing_ctx = data['responsibilities'][idx].get('context', {})
+    for k, v in updates['context'].items():
+        existing_ctx[k] = v
+    data['responsibilities'][idx]['context'] = existing_ctx
+    del updates['context']
+
+# Shallow merge rest
+for k, v in updates.items():
+    data['responsibilities'][idx][k] = v
+
+with open('$RESP_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+
+print(f\"Updated responsibility '{target_id}'.\")
+print('Brain scheduler will auto-reload within 10 seconds.')
+"
+    ;;
+
+  remove)
+    TARGET_ID="${1:?'remove requires a responsibility id'}"
+    python3 -c "
+import json, sys
+
+target_id = '$TARGET_ID'
+
+with open('$RESP_FILE') as f:
+    data = json.load(f)
+
+before = len(data['responsibilities'])
+data['responsibilities'] = [r for r in data['responsibilities'] if r['id'] != target_id]
+after = len(data['responsibilities'])
+
+if before == after:
+    print(f'ERROR: Responsibility \"{target_id}\" not found.', file=sys.stderr)
+    sys.exit(1)
+
+with open('$RESP_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+
+print(f\"Removed responsibility '{target_id}'.\")
+print('Brain scheduler will auto-reload within 10 seconds.')
+"
+    ;;
+
+  help|*)
+    echo "Usage: responsibility-manage <list|create|update|remove> [args]"
+    echo ""
+    echo "Commands:"
+    echo "  list                        List all responsibilities"
+    echo "  create '<json>'             Create a new responsibility (full JSON)"
+    echo "  update '<id>' '<json>'      Update a responsibility (partial JSON merge)"
+    echo "  remove '<id>'               Remove a responsibility by ID"
+    echo ""
+    echo "The create JSON MUST include:"
+    echo "  id, name, schedule, instruction, context.purpose, context.process, context.success_criteria"
+    ;;
+esac
