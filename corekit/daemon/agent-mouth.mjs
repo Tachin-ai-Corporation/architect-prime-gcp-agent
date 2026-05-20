@@ -575,44 +575,51 @@ async function pollBrainV3Envelopes() {
 
   try {
     const token = await getAccessToken();
-    // Query for completed envelopes owned by this agent
-    // Simple query: owner + status (avoids composite index requirements)
     const ownerEmail = AGENT_USER_EMAIL || process.env.AGENT_ID || '';
-    const query = {
-      structuredQuery: {
-        from: [{ collectionId: 'work' }],
-        where: {
-          compositeFilter: {
-            op: 'AND',
-            filters: [
-              { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
-                value: { stringValue: ownerEmail } } },
-              { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
-                value: { stringValue: 'complete' } } },
-            ]
-          }
+
+    // Query for envelopes needing delivery: complete OR needs_input
+    // Firestore REST doesn't support IN operator on structuredQuery,
+    // so we run two parallel queries.
+    const statuses = ['complete', 'needs_input'];
+    const allResults = [];
+
+    for (const targetStatus of statuses) {
+      const query = {
+        structuredQuery: {
+          from: [{ collectionId: 'work' }],
+          where: {
+            compositeFilter: {
+              op: 'AND',
+              filters: [
+                { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
+                  value: { stringValue: ownerEmail } } },
+                { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
+                  value: { stringValue: targetStatus } } },
+              ]
+            }
+          },
+          limit: 20,
         },
-        limit: 20,
-      },
-    };
+      };
 
-    // runQuery URL must include parent path — queries the 'work' subcollection under primes/{PRIME_ID}
-    const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
-    const res = await fetch(queryUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(query),
-    });
+      const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
+      const res = await fetch(queryUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(query),
+      });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      log('Brain v3 query error', { status: res.status, body: errText.slice(0, 200) });
-      return;
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        log('Brain v3 query error', { status: res.status, targetStatus, body: errText.slice(0, 200) });
+        continue;
+      }
+      const results = await res.json();
+      if (Array.isArray(results)) allResults.push(...results);
     }
-    const results = await res.json();
-    if (!Array.isArray(results)) return;
 
-    for (const r of results) {
+    let delivered = 0;
+    for (const r of allResults) {
       if (!r.document?.fields) continue;
       const f = r.document.fields;
       const envId = f.id?.stringValue;
@@ -643,18 +650,24 @@ async function pollBrainV3Envelopes() {
         }
 
         // Mark envelope as delivered in Firestore
+        const token2 = await getAccessToken();
         const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel`;
         await fetch(docPath, {
           method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: { Authorization: `Bearer ${token2}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ fields: {
             delivered_at: { timestampValue: new Date().toISOString() },
             delivered_channel: { stringValue: CHANNEL },
           } }),
         });
+        delivered++;
       } catch (err) {
         log('Envelope delivery error', { envId, error: err.message });
       }
+    }
+
+    if (delivered > 0) {
+      log('Brain v3 poll delivered', { count: delivered });
     }
   } catch (err) {
     log('Brain v3 poll error', { error: err.message });
@@ -675,6 +688,24 @@ async function main() {
   // Initial session file resolution
   resolveActiveSessionFile();
   log('Entering polling loop...', { session_dir: SESSION_DIR });
+
+  // ── Dedicated Brain v3 envelope poll (independent of session loop) ──
+  const V3_POLL_MS = 5000;
+  let _v3Polling = false;
+  setInterval(async () => {
+    if (_v3Polling) return; // skip if previous poll still running
+    _v3Polling = true;
+    try {
+      await pollBrainV3Envelopes();
+    } catch (err) {
+      log('Brain v3 interval error', { error: err.message });
+    } finally {
+      _v3Polling = false;
+    }
+  }, V3_POLL_MS);
+
+  // Also fire one immediately
+  pollBrainV3Envelopes().catch(err => log('Brain v3 initial poll error', { error: err.message }));
 
   while (true) {
     try {
@@ -702,8 +733,7 @@ async function main() {
         continue;
       }
 
-      // ── Brain v3: Poll for completed envelopes ──
-      await pollBrainV3Envelopes();
+      // ── Brain v3: Now runs on dedicated interval (see below) ──
 
       // ── Status updates (exponential backoff schedule) ──
       if (turn.status !== 'IDLE' && turn.status !== 'DONE' && turn.startedAt
