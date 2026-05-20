@@ -1,8 +1,8 @@
 # Brain v3 — Session Handoff
 
 > **Purpose:** Get a new session agent up to speed on the Brain v3 implementation.
-> **Last updated:** 2026-05-20T00:45:00Z
-> **Status:** Phase 6 COMPLETE ✅ — Work tree dashboard, delegate handler, Mouth v3 independent poll, human-in-the-loop.
+> **Last updated:** 2026-05-20T01:56:00Z
+> **Status:** Phase 6.5 COMPLETE ✅ — Decision quality (dual memory recall, failure directives, synthesize_with_failure, Cortex SOUL failure rules). Next: Phase 7A (Responsibility scheduler).
 
 ---
 
@@ -51,32 +51,30 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 - **Phase 4: Multi-Step Planning** — COMPLETE ✅
 - **Phase 5: Planning Iteration + Checkpoint Nesting** — COMPLETE ✅
 - **Phase 6: Delegation + Dashboard** — COMPLETE ✅
+- **Phase 6.5: Decision Quality** — COMPLETE ✅
 - **Stan** is running Brain v3 in production (fleet-stan VM)
-- Full pipeline verified: intake → memory → classify → decide → dispatch → M→C→T hierarchy → delegation → synthesize → memory write → Mouth (independent 5s poll) → GChat
+- Full pipeline verified: intake → dual memory recall → classify → enriched recall → decide → dispatch → M→C→T hierarchy → delegation → synthesize (with failure gate) → memory write → Mouth (orderBy DESC poll) → GChat
 - Dashboard Work tab live: M→C→T tree view, envelope detail, human-in-the-loop respond
 
-### Phase 6 Accomplishments
-- Brain: `delegate` action handler (~70 lines) — creates delegated Mission envelopes, marks parent as `waiting`
-- Brain: `checkWaitingEnvelopes()` (~65 lines) — polls waiting envelopes, checks child completion, resumes Cortex loop
-- Cortex SOUL: `delegate` action documented with decision rule #7
-- Dashboard: Work tab with M→C→T hierarchy tree view, collapsible tree, status icons, type badges
-- Dashboard: Firebase client SDK (`npm install firebase`), shared lib modules (`types.ts`, `api.ts`, `firebase.ts`)
-- Dashboard: `useWorkEnvelopes` hook (polls server-side API every 5s), `WorkTree.tsx`, `WorkDetail.tsx`, `WorkRespondForm.tsx`
-- Dashboard: Human-in-the-loop — `/api/primes/[id]/work/[workId]/respond` API route for `needs_input` envelopes
-- Dashboard: `page.tsx` refactor — extracted types + API helper to shared `lib/`, added Work view tab
-- Dashboard: Server-side work API — `/api/primes/[id]/work` route using Admin SDK (fixes Firebase client permission error)
-- Mouth: independent v3 envelope poll — moved from main session loop to dedicated 5s `setInterval`, queries both `complete` AND `needs_input` statuses
-- 14+ files changed, ~2,000 lines added. Build clean (TypeScript, 0 errors).
+### Phase 6.5 Accomplishments
+- Brain: Dual memory recall — ambient recall before classify + enriched recall after classify (using classify instruction + context_summary)
+- Brain: Failure directive injection after failed dispatches and plan steps
+- Brain: `synthesize_with_failure` action handler (requires `failure_summary` field)
+- Brain: Synthesize gate — blocks plain `synthesize` when unresolved failures in `prior_results`
+- Cortex SOUL: `synthesize_with_failure` action documentation + 4 failure handling rules (12-15)
+- Mouth: `orderBy created_at DESC` query, heartbeat logging, skippedDelivered counter
+- Firestore: Composite index `(owner ASC, status ASC, created_at DESC)` created
+- Root causes fixed: Mouth delivery crowding, premature success synthesis, poor memory recall
 
 ### Key Infrastructure
 | Component | File | Status |
 |-----------|------|--------|
-| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 6 delegation + waiting (~1610 lines) |
+| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 6.5 decision quality (~1677 lines) |
 | Brain launcher | `corekit/daemon/start-agent-brain` | ✅ PRIME_ID/AGENT_ID/BRAIN_V3 discovery |
 | Brain systemd unit | `corekit/daemon/agent-brain.service` | ✅ Enabled, auto-restart |
 | Ears (rewired) | `corekit/daemon/agent-ears.mjs` | ✅ Writes Firestore intake |
-| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + independent 5s Brain v3 envelope poll (complete + needs_input) + LLM classify |
-| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (all actions incl. checkpoint_plan + delegate) |
+| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + Brain v3 envelope poll (orderBy created_at DESC, heartbeat, skippedDelivered) |
+| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (all actions incl. checkpoint_plan + delegate + synthesize_with_failure + failure rules 12-15) |
 | Prefrontal SOUL v3 | `brain/fleet/_brain/prefrontal/SOUL.md` | ✅ JSON task/checkpoint plan decomposition |
 | Cerebellum SOUL v3 | `brain/fleet/_brain/cerebellum/SOUL.md` | ✅ JSON verdict verification (ALL_PASS/FAIL) |
 | Temporal-memory | `brain/fleet/_brain/temporal-memory/SOUL.md` | ✅ Recall + write via Brain dispatch |
@@ -87,8 +85,9 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 
 ### Known Issues (carry-forward to Phase 7)
 1. **Memory recall cold start latency** — First temporal-memory call takes ~43s (cold start). Subsequent calls are faster.
-2. **No quick ack** — Brain v3 doesn't send an immediate "got it" to the channel. By design — `deliverStatusUpdate()` exists if needed.
-3. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF. Doesn't affect function.
+2. **No quick ack** — Brain v3 doesn't send an immediate "got it" to the channel. **Approved for Phase 7A.**
+3. **Envelope accumulation** — Old delivered envelopes accumulate in Firestore. orderBy DESC mitigates. **Auto-archive approved for Phase 7C.**
+4. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF. Doesn't affect function.
 
 ---
 
@@ -153,18 +152,22 @@ echo y | gcloud compute ssh fleet-stan ... --command="sudo curl -sfL \
 
 ---
 
-## What's Next: Phase 7 — Responsibilities + Rollout
+## What's Next: Phase 7A — Responsibility Scheduler
 
-**Goal:** Cron-driven autonomous responsibilities, fleet-wide Brain v3 deployment, deprecated code removal.
+**Goal:** Agents run scheduled work autonomously. Stan gets cron-driven Responsibilities. Quick ack on intake.
 
-**Read:** `docs/brainV3/08-PHASE-7-RESPONSIBILITIES.md` for the full design.
+**Read:** `docs/brainV3/08-PHASE-7-RESPONSIBILITIES-ROLLOUT.md` for the original design.
 
-Key work items:
-1. Responsibility scheduler — cron parser, timer, R→M envelope creation in Brain
-2. Responsibilities config — base, Prime, per-job JSON responsibility definitions
-3. Brain v3 fleet rollout — deploy Brain v3 to all fleet agents (not just Stan)
-4. Bootstrap update — manifests, install.sh, fleet-bootstrap.sh for Brain v3
-5. Deprecated code removal — remove Brain v2.1 prefrontal gate, brain-exec, check-plan-compliance
+Key work items (Phase 7A):
+1. Responsibility scheduler in Brain — cron parser, next-fire calculation, 60s interval, R→M envelope creation
+2. Responsibilities config — base + per-specialty JSON files, loader + merger
+3. Quick ack — immediate "Got it, working on this..." when Brain claims intake
+4. Dashboard — R-level in Work tree
+5. Deploy + test on Stan
+
+Followed by:
+- **Phase 7B**: Fleet rollout (Prime + all fleet agents + bootstrap update)
+- **Phase 7C**: Cleanup (deprecated code removal, feature flags, contracts, envelope archival)
 
 ---
 
@@ -196,7 +199,7 @@ Key work items:
 - `v2026.05.19.17.1` — Phase 5: checkpoint nesting (M→C→T), workspace isolation, Prefrontal v3, iterative planning
 - `v2026.05.19.18.1` — Brain detects Cerebellum FAIL verdicts + Motor tool failures → triggers retry logic
 
-## Commit History (Phase 6)
-- `v2026.05.19.19.1` — Phase 6: Work tree dashboard, Firebase real-time, delegate handler, human-in-the-loop, lib refactor
-- `fix: Switch work tree from client-side Firebase to server-side API polling — fixes permission error`
-- `fix: Mouth v3 envelope poll — independent 5s interval, query both complete+needs_input`
+## Commit History (Phase 6.5)
+- `fix: Mouth v3 poll limit 20->100, fix delivered envelope crowding out new envelopes`
+- `fix: Mouth v3 query orderBy created_at DESC — newest envelopes first`
+- `v2026.05.19.17.0: Brain decision quality — dual memory recall, synthesize_with_failure, failure directives, Cortex SOUL failure rules`

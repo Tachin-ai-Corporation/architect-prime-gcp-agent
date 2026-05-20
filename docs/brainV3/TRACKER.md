@@ -127,40 +127,76 @@ User: "What are the deployed URLs for the tachin-website project?"
 
 ---
 
-## Phase 6 — Delegation + Dashboard ✅ COMPLETE
-> Inter-agent envelope delegation, Work tree dashboard, human-in-the-loop, Mouth v3 independent poll
+## Phase 6.5 — Decision Quality ✅ COMPLETE
+> Dual memory recall, failure directives, synthesize_with_failure action, Cortex SOUL failure rules
 
-- `[x]` Cortex SOUL.md: `delegate` action (decision rule #7)
-- `[x]` Brain: `delegate` action handler (~70 lines — creates delegated Mission envelopes, marks parent as `waiting`)
-- `[x]` Brain: `checkWaitingEnvelopes()` (~65 lines — polls waiting envelopes, checks child completion, resumes Cortex loop)
-- `[x]` Dashboard: Firebase client SDK (`npm install firebase`, shared lib modules: `types.ts`, `api.ts`, `firebase.ts`)
-- `[x]` Dashboard: Work tab with M→C→T hierarchy tree view, collapsible tree, status icons, type badges
-- `[x]` Dashboard: Work detail view (`WorkDetail.tsx`)
-- `[x]` Dashboard: human-in-the-loop (`WorkRespondForm.tsx`, `/api/primes/[id]/work/[workId]/respond` API route for `needs_input` envelopes)
-- `[x]` Dashboard: Server-side work API (`/api/primes/[id]/work` route using Admin SDK — fixes Firebase client permission error)
-- `[x]` Dashboard: `page.tsx` refactor — extracted types + API helper to shared `lib/`, added Work view tab
-- `[x]` Mouth fix: independent v3 envelope poll (moved from main session loop to dedicated 5s `setInterval`, queries both `complete` AND `needs_input` statuses)
-- `[x]` Deploy + test: delegate handler, work tree, mouth fix deployed to Stan ✅
+- `[x]` Brain: `recallMemory()` accepts optional `context` param (instruction, context_summary)
+- `[x]` Brain: Dual memory recall in `processIntake()` — ambient before classify + enriched after classify
+- `[x]` Brain: Failure directive injection after failed dispatches and plan steps
+- `[x]` Brain: `synthesize_with_failure` action handler (explicit failure acknowledgment with `failure_summary`)
+- `[x]` Brain: Synthesize gate — blocks plain `synthesize` when unresolved failures in prior_results
+- `[x]` Cortex SOUL: `synthesize_with_failure` action documentation with example JSON
+- `[x]` Cortex SOUL: 4 failure handling rules (12-15): no success after fail, resourceful not repetitive, Cerebellum FAIL = mandatory investigation, check workspace for prior work
+- `[x]` Mouth: `orderBy created_at DESC` query — newest envelopes first
+- `[x]` Mouth: Poll heartbeat diagnostic logging (every ~5 min)
+- `[x]` Mouth: `skippedDelivered` counter for monitoring envelope accumulation
+- `[x]` Firestore: Composite index `(owner ASC, status ASC, created_at DESC)` created
+- `[x]` Deploy + verified: Stan delivers envelopes correctly, Brain starts clean ✅
 
-### Phase 6 — End-to-End Note
-- Brain `delegate` action creates child envelopes and marks parent as `waiting`
-- `checkWaitingEnvelopes()` resumes parent Cortex loop when children complete
-- Dashboard Work tab provides real-time M→C→T tree with 5s server-side API polling
-- Human-in-the-loop: respond form for `needs_input` envelopes via server-side API
-- Mouth v3 envelope poll is now independent of the main JSONL session loop (5s interval, queries complete + needs_input)
+### Phase 6.5 — Root Cause Analysis
+```
+Issue 1: Stan's GChat delivery failure
+  Root cause: Mouth query limit=20 returned old delivered envelopes,
+    pushing new undelivered envelope past the limit.
+  Fix: orderBy created_at DESC + heartbeat logging
+
+Issue 2: Stan claiming success after Cerebellum FAIL
+  Root cause: No enforcement in Brain or SOUL preventing Cortex from
+    synthesizing a hopeful response when tasks had failed.
+  Fix: Failure directives + synthesize gate + synthesize_with_failure
+
+Issue 3: Stan had no memory of work done 1 hour earlier
+  Root cause: recallMemory() only used raw chat text ("fix the website")
+    which had poor keyword overlap with stored memories about Firebase.
+  Fix: Dual recall — second recall enriched with classify instruction
+    + context_summary for much better semantic overlap.
+```
 
 ---
 
-## Phase 7 — Responsibilities + Rollout
-> Cron scheduler, self-management, fleet-wide deployment, deprecated code removal
+## Phase 7A — Responsibility Scheduler
+> Cron-driven autonomous Responsibilities, quick ack, Stan-only deployment
 
-- `[ ]` Brain: Responsibility scheduler (cron parser, timer, R→M envelope creation)
-- `[ ]` Responsibilities config: base, Prime, per-job JSON files
-- `[ ]` Motor: responsibility-create / responsibility-remove / responsibility-list tools
-- `[ ]` Dashboard: Responsibility view
-- `[ ]` Prime deployment: Brain v3 on Prime
-- `[ ]` Fleet bootstrap update: manifests, install.sh, fleet-bootstrap.sh
-- `[ ]` contracts.json: add brain section
-- `[ ]` Deprecated code removal
-- `[ ]` Feature flag removal (BRAIN_V3_* → v3 is the only path)
-- `[ ]` Fleet-wide rollout + final validation
+- `[ ]` Brain: Responsibility scheduler (cron parser, next-fire calculation, 60s interval check)
+- `[ ]` Brain: R→M envelope creation (type=R parent → type=M child → normal Cortex loop)
+- `[ ]` Brain: Min spacing enforcement (skip if another R fires within N minutes)
+- `[ ]` Brain: Quick ack — immediate "Got it" delivery when intake is claimed
+- `[ ]` Config: `corekit/config/responsibilities.json` — base template
+- `[ ]` Config: `specialties/devops/responsibilities-devops.json`
+- `[ ]` Brain: Config loader + merger (base + specialty)
+- `[ ]` Brain: File watcher for responsibility config hot-reload
+- `[ ]` Cortex SOUL: R-type envelope guidance
+- `[ ]` Dashboard: R-level in Work tree (name, schedule, last/next fire, enabled)
+- `[ ]` Deploy + test: 1-minute test Responsibility fires → R+M+T in Firestore ✅
+
+## Phase 7B — Fleet Rollout
+> Brain v3 on Prime + all fleet agents, bootstrap update
+
+- `[ ]` Prime: Brain v3 deployment (brain service + systemd)
+- `[ ]` Prime: agent-registry.json (fleet management tools)
+- `[ ]` Prime: responsibilities-prime.json (fleet health, upgrade checks)
+- `[ ]` Prime: Cortex SOUL v3 rewrite
+- `[ ]` Fleet bootstrap: manifests/base.txt + role-fleet.txt update
+- `[ ]` Fleet bootstrap: install.sh + fleet-bootstrap.sh update
+- `[ ]` Cross-agent delegation validation (Prime → Stan → Prime resumes)
+- `[ ]` Deploy + test: Prime end-to-end through Brain v3 ✅
+
+## Phase 7C — Cleanup + Hardening
+> Deprecated code removal, feature flags, contracts, envelope archival
+
+- `[ ]` Delete: brain-exec, brain-exec-worker, check-plan-compliance, build-system-prompt
+- `[ ]` Delete: BRAIN_CARD.md routing hints
+- `[ ]` Remove: BRAIN_V3_* feature flags (v3 is the only path)
+- `[ ]` Contracts.json: add brain section + validate-contracts update
+- `[ ]` Brain: Auto-archive delivered envelopes older than 7 days (status → archived)
+- `[ ]` Deploy + test: full hire-deploy-message-process-deliver flow ✅
