@@ -127,17 +127,27 @@ User: "What are the deployed URLs for the tachin-website project?"
 
 ---
 
-## Phase 6 — Delegation + Dashboard
-> Inter-agent envelope delegation, R/C/M/T dashboard, human-in-the-loop
+## Phase 6 — Delegation + Dashboard ✅ COMPLETE
+> Inter-agent envelope delegation, Work tree dashboard, human-in-the-loop, Mouth v3 independent poll
 
-- `[ ]` Cortex SOUL.md: `delegate` action
-- `[ ]` Brain: delegate action handler (create envelope, set waiting, notify)
-- `[ ]` Brain: waiting envelope resumption
-- `[ ]` Brain: fleet agent awareness
-- `[ ]` Dashboard: R/C/M/T tree view component
-- `[ ]` Dashboard: envelope detail view
-- `[ ]` Dashboard: human-in-the-loop input for `needs_input` envelopes
-- `[ ]` Deploy + test: Prime → Stan delegation, human-in-the-loop
+- `[x]` Cortex SOUL.md: `delegate` action (decision rule #7)
+- `[x]` Brain: `delegate` action handler (~70 lines — creates delegated Mission envelopes, marks parent as `waiting`)
+- `[x]` Brain: `checkWaitingEnvelopes()` (~65 lines — polls waiting envelopes, checks child completion, resumes Cortex loop)
+- `[x]` Dashboard: Firebase client SDK (`npm install firebase`, shared lib modules: `types.ts`, `api.ts`, `firebase.ts`)
+- `[x]` Dashboard: Work tab with M→C→T hierarchy tree view, collapsible tree, status icons, type badges
+- `[x]` Dashboard: Work detail view (`WorkDetail.tsx`)
+- `[x]` Dashboard: human-in-the-loop (`WorkRespondForm.tsx`, `/api/primes/[id]/work/[workId]/respond` API route for `needs_input` envelopes)
+- `[x]` Dashboard: Server-side work API (`/api/primes/[id]/work` route using Admin SDK — fixes Firebase client permission error)
+- `[x]` Dashboard: `page.tsx` refactor — extracted types + API helper to shared `lib/`, added Work view tab
+- `[x]` Mouth fix: independent v3 envelope poll (moved from main session loop to dedicated 5s `setInterval`, queries both `complete` AND `needs_input` statuses)
+- `[x]` Deploy + test: delegate handler, work tree, mouth fix deployed to Stan ✅
+
+### Phase 6 — End-to-End Note
+- Brain `delegate` action creates child envelopes and marks parent as `waiting`
+- `checkWaitingEnvelopes()` resumes parent Cortex loop when children complete
+- Dashboard Work tab provides real-time M→C→T tree with 5s server-side API polling
+- Human-in-the-loop: respond form for `needs_input` envelopes via server-side API
+- Mouth v3 envelope poll is now independent of the main JSONL session loop (5s interval, queries complete + needs_input)
 
 ---
 

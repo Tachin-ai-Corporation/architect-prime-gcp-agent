@@ -1,8 +1,8 @@
 # Brain v3 — Session Handoff
 
 > **Purpose:** Get a new session agent up to speed on the Brain v3 implementation.
-> **Last updated:** 2026-05-19T23:42:00Z
-> **Status:** Phase 5 COMPLETE ✅ — Checkpoint nesting (M→C→T), Prefrontal planning, semantic failure detection live on Stan.
+> **Last updated:** 2026-05-20T00:45:00Z
+> **Status:** Phase 6 COMPLETE ✅ — Work tree dashboard, delegate handler, Mouth v3 independent poll, human-in-the-loop.
 
 ---
 
@@ -12,7 +12,7 @@
 2. **Read the roadmap:** `docs/brainV3/01-ROADMAP.md` (7-phase plan)
 3. **Read this file** for current state, working process, and what's next
 4. **Read the task tracker:** `docs/brainV3/TRACKER.md` (detailed checklist per phase)
-5. **Read the next phase doc:** `docs/brainV3/06-PHASE-5-PLANNING-ITERATION.md`
+5. **Read the next phase doc:** `docs/brainV3/08-PHASE-7-RESPONSIBILITIES.md`
 
 ---
 
@@ -42,7 +42,7 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 
 ---
 
-## Current State (as of 2026-05-19)
+## Current State (as of 2026-05-20)
 
 ### What's Live
 - **Phase 1: Foundation** — COMPLETE ✅
@@ -50,33 +50,42 @@ User → Ears → Firestore intake → Brain polls → Cortex classify → Corte
 - **Phase 3: Memory + Discovery** — COMPLETE ✅
 - **Phase 4: Multi-Step Planning** — COMPLETE ✅
 - **Phase 5: Planning Iteration + Checkpoint Nesting** — COMPLETE ✅
+- **Phase 6: Delegation + Dashboard** — COMPLETE ✅
 - **Stan** is running Brain v3 in production (fleet-stan VM)
-- Full pipeline verified: intake → memory → classify → **dispatch prefrontal** → **checkpoint_plan (3 CP, 6 tasks)** → M→C→T hierarchy → Cerebellum verify → synthesize → memory write → GChat
+- Full pipeline verified: intake → memory → classify → decide → dispatch → M→C→T hierarchy → delegation → synthesize → memory write → Mouth (independent 5s poll) → GChat
+- Dashboard Work tab live: M→C→T tree view, envelope detail, human-in-the-loop respond
 
-### Phase 5 Accomplishments
-- Cortex SOUL: `checkpoint_plan` action, dispatch-before-plan guidance, prefrontal delegation rules
-- Prefrontal SOUL: full rewrite from v2 markdown `DISPATCH_PLAN:` to v3 JSON (`task`/`checkpoint` plan types)
-- Brain: `checkpoint_plan` handler — creates C envelopes under M, T envelopes under C, sequential execution
-- Brain: shared workspace management (`initSharedWorkspace`/`cleanupSharedWorkspace` per envelope)
-- Brain: semantic failure detection — Cerebellum FAIL verdicts + Motor tool failure regex patterns → triggers retry
-- Verified: 3-checkpoint, 6-task mission (research → Drive docs → landing page → Firebase deploy → verify)
+### Phase 6 Accomplishments
+- Brain: `delegate` action handler (~70 lines) — creates delegated Mission envelopes, marks parent as `waiting`
+- Brain: `checkWaitingEnvelopes()` (~65 lines) — polls waiting envelopes, checks child completion, resumes Cortex loop
+- Cortex SOUL: `delegate` action documented with decision rule #7
+- Dashboard: Work tab with M→C→T hierarchy tree view, collapsible tree, status icons, type badges
+- Dashboard: Firebase client SDK (`npm install firebase`), shared lib modules (`types.ts`, `api.ts`, `firebase.ts`)
+- Dashboard: `useWorkEnvelopes` hook (polls server-side API every 5s), `WorkTree.tsx`, `WorkDetail.tsx`, `WorkRespondForm.tsx`
+- Dashboard: Human-in-the-loop — `/api/primes/[id]/work/[workId]/respond` API route for `needs_input` envelopes
+- Dashboard: `page.tsx` refactor — extracted types + API helper to shared `lib/`, added Work view tab
+- Dashboard: Server-side work API — `/api/primes/[id]/work` route using Admin SDK (fixes Firebase client permission error)
+- Mouth: independent v3 envelope poll — moved from main session loop to dedicated 5s `setInterval`, queries both `complete` AND `needs_input` statuses
+- 14+ files changed, ~2,000 lines added. Build clean (TypeScript, 0 errors).
 
 ### Key Infrastructure
 | Component | File | Status |
 |-----------|------|--------|
-| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 5 checkpoint nesting (~1475 lines) |
+| Brain service | `corekit/daemon/agent-brain.mjs` | ✅ Phase 6 delegation + waiting (~1610 lines) |
 | Brain launcher | `corekit/daemon/start-agent-brain` | ✅ PRIME_ID/AGENT_ID/BRAIN_V3 discovery |
 | Brain systemd unit | `corekit/daemon/agent-brain.service` | ✅ Enabled, auto-restart |
 | Ears (rewired) | `corekit/daemon/agent-ears.mjs` | ✅ Writes Firestore intake |
-| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + Brain v3 envelope polling + LLM classify |
-| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (all actions incl. checkpoint_plan) |
+| Mouth (dual mode) | `corekit/daemon/agent-mouth.mjs` | ✅ JSONL tailing + independent 5s Brain v3 envelope poll (complete + needs_input) + LLM classify |
+| Cortex SOUL v3 | `brain/fleet/_brain/cortex/SOUL.md` | ✅ classify + decide (all actions incl. checkpoint_plan + delegate) |
 | Prefrontal SOUL v3 | `brain/fleet/_brain/prefrontal/SOUL.md` | ✅ JSON task/checkpoint plan decomposition |
 | Cerebellum SOUL v3 | `brain/fleet/_brain/cerebellum/SOUL.md` | ✅ JSON verdict verification (ALL_PASS/FAIL) |
 | Temporal-memory | `brain/fleet/_brain/temporal-memory/SOUL.md` | ✅ Recall + write via Brain dispatch |
 | Agent registry | `corekit/config/agent-registry.json` | ✅ 6 agents registered |
 | Firestore indexes | `intake(status, created_at)`, `work(owner, status, created_at)` | ✅ Live |
+| Dashboard Work tab | `app/src/app/page.tsx` + `app/src/lib/` | ✅ M→C→T tree, detail, respond form |
+| Dashboard Work API | `app/src/app/api/primes/[id]/work/` | ✅ Server-side Admin SDK (GET + POST respond) |
 
-### Known Issues (carry-forward to Phase 6)
+### Known Issues (carry-forward to Phase 7)
 1. **Memory recall cold start latency** — First temporal-memory call takes ~43s (cold start). Subsequent calls are faster.
 2. **No quick ack** — Brain v3 doesn't send an immediate "got it" to the channel. By design — `deliverStatusUpdate()` exists if needed.
 3. **upgrade-corekit CRLF warning** — Non-fatal syntax error from Windows CRLF. Doesn't affect function.
@@ -144,17 +153,18 @@ echo y | gcloud compute ssh fleet-stan ... --command="sudo curl -sfL \
 
 ---
 
-## What's Next: Phase 6 — Delegation + Dashboard
+## What's Next: Phase 7 — Responsibilities + Rollout
 
-**Goal:** Dashboard observability for the M→C→T hierarchy. Fleet-wide Brain v3 deployment.
+**Goal:** Cron-driven autonomous responsibilities, fleet-wide Brain v3 deployment, deprecated code removal.
 
-**Read:** `docs/brainV3/07-PHASE-6-DELEGATION.md` for the full design.
+**Read:** `docs/brainV3/08-PHASE-7-RESPONSIBILITIES.md` for the full design.
 
 Key work items:
-1. Dashboard: M→C→T tree visualization (Firestore → React)
-2. Dashboard: envelope status timeline, agent dispatch history
-3. Fleet-wide deployment: Brain v3 to all fleet agents (not just Stan)
-4. Prime Brain v3: orchestration for Prime itself
+1. Responsibility scheduler — cron parser, timer, R→M envelope creation in Brain
+2. Responsibilities config — base, Prime, per-job JSON responsibility definitions
+3. Brain v3 fleet rollout — deploy Brain v3 to all fleet agents (not just Stan)
+4. Bootstrap update — manifests, install.sh, fleet-bootstrap.sh for Brain v3
+5. Deprecated code removal — remove Brain v2.1 prefrontal gate, brain-exec, check-plan-compliance
 
 ---
 
@@ -185,3 +195,8 @@ Key work items:
 ## Commit History (Phase 5)
 - `v2026.05.19.17.1` — Phase 5: checkpoint nesting (M→C→T), workspace isolation, Prefrontal v3, iterative planning
 - `v2026.05.19.18.1` — Brain detects Cerebellum FAIL verdicts + Motor tool failures → triggers retry logic
+
+## Commit History (Phase 6)
+- `v2026.05.19.19.1` — Phase 6: Work tree dashboard, Firebase real-time, delegate handler, human-in-the-loop, lib refactor
+- `fix: Switch work tree from client-side Firebase to server-side API polling — fixes permission error`
+- `fix: Mouth v3 envelope poll — independent 5s interval, query both complete+needs_input`

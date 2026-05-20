@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.18.16.0`
+> **Current version:** `v2026.05.19.17.0`
 
 ---
 
@@ -21,6 +21,7 @@ Prime handles **infrastructure, not orchestration**. Humans assign work to agent
 | **Dynamic Model Discovery** | Scan Vertex AI Model Garden — auto-detect available Gemini, Claude, and other models |
 | **Self-Upgrading** | Dashboard upgrades itself via Cloud Build; CoreKit upgrades cascade to fleet |
 | **Contract Enforcement** | `contracts.json` is the single source of truth — validated at bootstrap and upgrade |
+| **Work Tree Dashboard** | Real-time M→C→T work hierarchy, human-in-the-loop for agent questions |
 | **Self-Hosted** | Everything runs in YOUR GCP project — zero shared infrastructure, no API keys |
 
 ---
@@ -100,6 +101,9 @@ Your GCP Project
 │   ├── primes/{id}/fleet/{agent}/tasks/{taskId} → Fleet task lifecycle log
 │   ├── primes/{id}/brain/            → Dispatch telemetry
 │   ├── primes/{id}/memory/core/      → Durable Core Memory
+│   ├── primes/{id}/work/{id}         → Work envelopes (R/C/M/T state machine)
+│   ├── primes/{id}/work/{id}/history/→ Status transition log
+│   ├── primes/{id}/intake/{id}       → Brain v3 intake queue
 │   ├── config/settings               → Agent defaults (email domain, model catalog)
 │   └── config/dwd                    → DWD configuration
 │
@@ -112,7 +116,9 @@ Your GCP Project
 │   │   ├── motor           — Gemini 2.5 Flash — execution (code + commands)
 │   │   └── cerebellum      — Gemini 2.5 Flash — verification + QA
 │   ├── agent-ears (systemd)       → Deterministic input processing (fire-and-forget, zero LLM)
+│   ├── agent-brain (systemd)      → Brain v3 state machine (intake → classify → decide → dispatch → synthesize)
 │   ├── agent-mouth (systemd)      → Output classification + delivery (strict LLM filter)
+│   ├── REST API: GET /api/primes/{id}/work, POST /api/primes/{id}/work/{workId}/respond
 │   ├── CoreKit (40 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
@@ -355,6 +361,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.08.14** | Mouth v2 (JSONL-Native) + Ears Context Window — Replaced log scraping with JSONL session transcript tailing (structural final response detection, eliminates double delivery). Turn state machine (IDLE→WORKING→ACKED→UPDATED→DONE). LLM-voiced status updates (5s ack, 120s progress). Prompts externalized to .md files. Ears context window: prior N chat messages included with @mentions for ambient conversation awareness. |
 | **v2026.05.18.15** | Chat Input Hardening & LLM Preprocessor — Restored deterministic agent-to-drive communication by adding a Gemini 2.5 Flash preprocessing step in `agent-ears.mjs` to automatically repair Chat-mangled text (e.g., stripped underscores in folder IDs) before dispatch to the OpenClaw brain. Added detailed audit logging. Hardened Drive skills to resolve 404s and fallback identity for 401s. |
 | **v2026.05.18.16** | Memory Pipeline Stabilization & Prefrontal Gate — Fixed Firestore pathing in memory scripts to properly target the `core_memory` collection. Fixed regex in deep truths sync. Stripped root `exec` privileges from Cortex to strictly enforce the prefrontal/motor boundary. Added recency anchoring in `agent-ears.mjs` to dynamically wrap incoming GChat/Dashboard messages in a structured JSON payload with a `system_directive` reinforcing delegation. |
+| **v2026.05.19.17** | Brain v3 Phase 6 — Envelope-based orchestration (Phases 1-6: classify+decide, memory, planning, checkpoint nesting M→C→T, delegation), Dashboard Work tab (real-time tree, detail panel, human-in-the-loop respond), Mouth v3 independent envelope poll (5s interval, complete+needs_input), dashboard lib refactor (shared types/api/firebase), server-side work API. |
 
 ---
 

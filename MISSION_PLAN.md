@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.18.16.0`
+> - **Current version:** `v2026.05.19.17.0`
 
 ---
 
@@ -33,6 +33,8 @@ Dashboard (Cloud Run — Next.js)
     ├─ POST /api/setup                         → Save settings (agent email domain)
     ├─ GET  /api/upgrade                       → Current + latest version info
     └─ POST /api/upgrade                       → Trigger Cloud Build self-upgrade
+    ├─ GET  /api/primes/{id}/work              → Work envelopes (last 7 days)
+    ├─ POST /api/primes/{id}/work/{workId}/respond → Human-in-the-loop response
          │
          ▼
     Firestore (state store)
@@ -42,6 +44,9 @@ Dashboard (Cloud Run — Next.js)
     ├── primes/{id}/tasks/{taskId}    → Prime task lifecycle log
     ├── primes/{id}/fleet/{agent}/tasks/{taskId} → Fleet task lifecycle log
     ├── config/settings               → Agent defaults (email domain)
+    ├── primes/{id}/work/{id}          → Work envelopes (R/C/M/T state machine)
+    ├── primes/{id}/work/{id}/history/ → Status transition log
+    ├── primes/{id}/intake/{id}        → Brain v3 intake queue
     └── config/dwd                    → DWD configuration
          │
          ▼
@@ -52,6 +57,15 @@ Dashboard (Cloud Run — Next.js)
     │       ├── Firestore poll (3s) or GChat poll (5s) via DWD
     │       └── Cooldown + dedup window (configurable)
     │
+    ├── agent-brain (systemd) — Brain v3 state machine orchestrator
+    │   └── Polls Firestore intake, creates work envelopes, dispatches sub-agents
+    │       ├── Cortex classify + decide loop (deterministic state machine)
+    │       ├── M→C→T envelope hierarchy (Missions, Checkpoints, Tasks)
+    │       ├── Memory recall + write via temporal-memory dispatch
+    │       ├── Multi-step plan execution with retry + Cerebellum verification
+    │       ├── Delegation handler (delegate action, waiting envelope resumption)
+    │       └── Semantic failure detection (Cerebellum FAIL + Motor tool failures)
+    │
     ├── agent-mouth (systemd) — JSONL-native output processing + delivery
     │   └── Tails JSONL session transcript, classifies, delivers to channel
     │       ├── JSONL tailer (byte-offset, session file resolution, seek-to-end on startup)
@@ -61,6 +75,7 @@ Dashboard (Cloud Run — Next.js)
     │       ├── Speaks AS the agent (first person) — not a relay
     │       ├── Prompts loaded from external .md files (no inline prose)
     │       ├── Fire-and-forget task lifecycle write to Firestore on delivery/timeout
+    │       ├── Brain v3 envelope polling (independent 5s interval, queries complete + needs_input)
     │       └── Never drops messages — unknown classification → deliver raw
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
@@ -840,15 +855,23 @@ architect-prime/
 2. **Prefrontal Hard Gate Enforced** — Revoked root `exec` and `process` privileges from the `cortex` agent definition. Cortex is now strictly forced to delegate terminal commands to `motor` via `sessions_spawn`.
 3. **Ears Recency Anchoring** — `agent-ears` now dynamically wraps incoming GChat/Dashboard messages in a structured JSON payload, injecting a mandatory `system_directive` reinforcing delegation directly beside the user input.
 
-### Current: v17.0 — Responsibilities Engine
-> *Goal: Agents work autonomously on recurring tasks via structured cron-driven responsibilities.*
+### Completed: v2026.05.19.17.0 — Brain v3 Phase 6 (Work Tree Dashboard + Delegation)
+> *Envelope-based Brain v3 orchestration live on Stan. Dashboard Work tab with M→C→T tree. Human-in-the-loop. Mouth v3 independent poll.*
 
-1. **RESPONSIBILITY.toml manifests** — Declarative responsibility definitions with schedule, scope, and reporting config.
-2. **Responsibility registration** — Fleet agents register responsibilities at boot from their specialty config.
-3. **Cron-driven execution** — OpenClaw cron triggers responsibility runs on schedule; agent executes and reports.
-4. **Agent self-reporting** — Fleet agents report completed work to their responsibilities GChat channel.
-5. **Checkpoint queue** — Tasks roll up into checkpoints. Checkpoint log tracks progress toward mission goals.
-6. **Human review gates** — Dashboard integration for checkpoint approval.
+1. **Brain v3 Phases 1-6** — Complete rip-and-replace of v2 conversational LLM loop with deterministic envelope-based Firestore pipeline. Cortex classify+decide, memory recall/write, multi-step planning, checkpoint nesting (M→C→T), semantic failure detection, inter-agent delegation.
+2. **Dashboard Work tab** — New view showing M→C→T work hierarchy with real-time polling (5s), collapsible tree, status icons, envelope detail panel, human-in-the-loop response form.
+3. **Dashboard refactor** — Extracted shared types, API helper, Firebase client to `lib/` modules. Server-side work API using Admin SDK.
+4. **Mouth v3 independent poll** — Envelope delivery poll moved from session loop dependency to dedicated 5s `setInterval`. Queries both `complete` and `needs_input` statuses.
+5. **Brain delegation** — `delegate` action creates child envelopes across agents. `checkWaitingEnvelopes()` resumes parent when children complete.
+
+### Current: v2026.05.19.18.0 — Brain v3 Phase 7 (Responsibilities + Rollout)
+> *Goal: Cron-driven autonomous responsibilities, fleet-wide Brain v3 deployment, deprecated code removal.*
+
+1. **Responsibility scheduler** — Cron parser, timer, R→M envelope creation in Brain.
+2. **Responsibilities config** — Base, Prime, per-job JSON responsibility definitions.
+3. **Brain v3 fleet rollout** — Deploy Brain v3 to all fleet agents (not just Stan).
+4. **Bootstrap update** — Manifests, install.sh, fleet-bootstrap.sh for Brain v3.
+5. **Deprecated code removal** — Remove Brain v2.1 prefrontal gate, brain-exec, check-plan-compliance.
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR
