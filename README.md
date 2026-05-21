@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.19.19.0`
+> **Current version:** `v2026.05.21.1.0`
 
 ---
 
@@ -365,6 +365,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.19.17** | Brain v3 Phase 6 — Envelope-based orchestration (Phases 1-6: classify+decide, memory, planning, checkpoint nesting M→C→T, delegation), Dashboard Work tab (real-time tree, detail panel, human-in-the-loop respond), Mouth v3 independent envelope poll (5s interval, complete+needs_input), dashboard lib refactor (shared types/api/firebase), server-side work API. |
 | **v2026.05.19.18** | Brain v3 Phase 7A — Cron-driven autonomous responsibilities (R/M/C/T mental model, responsibility-manage Motor tool), rich context assembly (SOUL+IDENTITY+MEMORY in system prompt, 400K envelope context budget), per-agent generation parameters (max_tokens/temperature/top_p from agent-registry.json, Motor 65536 max output), quick ack, gateway param validation. |
 | **v2026.05.19.19.0** | Brain v3 Phase 7B-C — Fleet-wide deployment of deterministic Cortex JSON orchestrator daemon (agent-brain.service) to Prime and Fleet VMs (including new PM specialty). Complete legacy cleanup: purged Prefrontal Gate, brain-exec, and check-plan-compliance from codebase and manifests. Disabled deprecated plan-compliance PostTurn hooks and updated validate-contracts. |
+| **v2026.05.21.1.0** | Memory Architecture Overhaul — Three-layer memory lifecycle (Working Memory, Core Memory, Deep Truths) with active long-term pruning via `core-memory-retire`, dual-pass recall (targeted archive + broad recent + context fill), enhanced `core-memory-read --since` time-windowed queries, 10-step consolidation responsibility, and formally governed Deep Truths lifecycle. Stripped all self-monitoring responsibilities. |
 
 ---
 

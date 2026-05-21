@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.19.19.0`
+> - **Current version:** `v2026.05.21.1.0`
 
 ---
 
@@ -333,11 +333,12 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 
 **Dynamic skill awareness:** `assemble-tools` generates `TOOLS.md` from the agent type's skill list (in `agent-types.json`) and copies it to cortex, prefrontal, and motor workspaces. Prefrontal reads TOOLS.md to know which tools are available before planning.
 
-**Two-tier memory model:**
-- **Tier 1 (Working Memory):** `MEMORY.md` in Cortex workspace. Updated during turns.
-- **Tier 2 (Core Memory):** Firestore `/primes/{id}/memory/core/`. Durable facts.
-- **Deep Truths:** End of Cortex SOUL.md, mutable section managed by `update-deep-truths`. Promoted from Core Memory during nightly consolidation.
-- **Nightly consolidation:** `memory-consolidate` skill runs at 2am CT via `temporal-memory` cron. Max 5 Core Memory writes + 2 Deep Truths changes per run.
+**Three-layer memory model:**
+- **Working Memory (`MEMORY.md`):** Loaded into every Cortex system prompt. Agent's RAM — accumulates freely during the day, pruned nightly to < 2,000 chars.
+- **Core Memory (Firestore):** `core_memory` collection. Long-term durable facts. Actively pruned: stale entries retired via `core-memory-retire`, contradicted entries superseded, new facts promoted. Queried via time-windowed `core-memory-read --since`.
+- **Deep Truths (`SOUL.md`):** Behavioral firmware in the `## Deep Truths` section. Changes only during nightly consolidation with evidence spanning 3+ sessions and 7+ day stability. Max 10 items, max 2 changes per run.
+- **Dual-pass recall:** `temporal-memory` performs targeted archive search (all time) + broad recent scan (30 days) + context fill (follow-up on old hits).
+- **Nightly consolidation:** 10-step responsibility-driven process (gather → triage → reconcile T2 → retire stale → promote → prune T1 → review Deep Truths → report). Max 5 T2 writes/retires + 2 Deep Truth changes per run.
 
 **Locked-in design decisions:**
 - 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
@@ -810,17 +811,17 @@ architect-prime/
 8. **Quick Ack** — External messages get immediate acknowledgment while Brain processes.
 9. **Gateway parameter validation** — Confirmed OpenClaw passes through max_tokens, temperature, top_p, top_k to Vertex AI.
 
-### Completed: v2026.05.19.19.0 — Brain v3 Phase 7B-C (Fleet Rollout + Cleanup)
-> *Fleet-wide Brain v3 deployment, PM team validation, legacy code purge, bootstrap updates.*
+### Completed: v2026.05.21.1.0 — Memory Architecture Overhaul
+> *Three-layer memory lifecycle with active long-term pruning, dual-pass recall, and formally governed Deep Truths.*
 
-1. **Brain v3 fleet rollout** — Successfully deployed the deterministic Cortex JSON orchestrator daemon (`agent-brain.service`) to all fleet agents, including the newly hired PM agent.
-2. **PM Team specialty** — Added `specialties/pm/responsibilities-pm.json` and registry configuration to `infra/manifests/job-pm.txt` and `role-prime.txt`.
-3. **Core Daemon Fallbacks** — Enhanced path resolvers in `agent-brain.mjs` to gracefully fall back to generic workspace paths on fleet VMs.
-4. **Bootstrap & Manifest updates** — Updated `fleet-bootstrap.sh` and `prime-bootstrap.sh` to copy, enable, and start `agent-brain.service`. Fixed the `assemble-tools` specialty bug in `fleet-bootstrap.sh`.
-5. **Legacy Code Purge** — Completely deleted legacy files (`brain-exec`, `brain-exec-worker`, `check-plan-compliance`, `build-system-prompt`) from `corekit/brain/` and purged them from manifests.
-6. **Hardening** — Aligned `validate-contracts` script to remove obsolete checks and disabled the deprecated `"plan-compliance"` PostTurn hooks.
+1. **Stripped self-monitoring responsibilities** — Removed all fleet agent responsibilities except memory consolidation. DevOps (infra-health-check, deployment-verification), PM (project-status-sync), Prime (fleet-status-check), and base (stale-envelope-review) all cleared. Dashboard/Prime handles monitoring, not the agents themselves.
+2. **Three-layer memory model** — Formalized Working Memory (MEMORY.md, agent RAM), Core Memory (Firestore, long-term archive), and Deep Truths (SOUL.md, behavioral firmware) as distinct tiers with explicit lifecycles.
+3. **Active T2 pruning** — Added `core-memory-retire` script for retiring stale long-term facts. Consolidation now reconciles recent work against archive, identifies contradictions/outdated entries, and retires them with justification.
+4. **Dual-pass recall** — Upgraded `temporal-memory` SOUL for multi-pass retrieval: targeted archive search (all time) + broad recent scan (30 days) + context fill (follow-up on old hits). Enhanced `core-memory-read` with `--since` time-window filter.
+5. **10-step consolidation** — Rewrote `r-memory-consolidation` as the single universal responsibility with a detailed 10-step process covering gather → triage → reconcile → retire → promote → prune → Deep Truths → report.
+6. **Deep Truths lifecycle** — Formal governance: evidence spanning 3+ sessions, 7+ day stability, 2+ Core Memory citations required. Max 2 changes per run, max 10 total.
 
-### Current: v2026.05.19.20.0 — Archiving & Phase 7C Finalizations
+### Current: v2026.05.21.2.0 — Archiving & Phase 7C Finalizations
 > *Goal: Complete the remaining Phase 7C hardening tasks including envelope archiving, BRAIN_CARD cleanup, and contracts integration.*
 
 1. **Auto-envelope archiving** — Implement automated cleanup of delivered envelopes older than 7 days (status → archived) in the brain daemon.
