@@ -31,6 +31,16 @@
     "canonicalRegex": "^(v\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d+\\.\\d+)",
     "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
   },
+  "brain": {
+    "poll_interval_ms": 3000,
+    "max_iterations": 12,
+    "gateway_timeout_ms": 300000,
+    "stale_cleanup_hours": 24,
+    "archive_age_days": 7,
+    "archive_interval_ms": 21600000,
+    "context_token_budget": 400000,
+    "needs_input_timeout_hours": 72
+  },
   "ears": {
     "firestore_poll_ms": 3000,
     "gchat_poll_ms": 5000,

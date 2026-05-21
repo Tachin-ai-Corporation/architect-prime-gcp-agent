@@ -48,7 +48,6 @@ brain/prime/cortex/IDENTITY.md .openclaw/workspace/IDENTITY.md
 brain/prime/cortex/SOUL.md .openclaw/workspace/SOUL.md
 brain/prime/cortex/TOOLS.md .openclaw/workspace/TOOLS.md
 brain/prime/cortex/MEMORY.md .openclaw/workspace/MEMORY.md
-brain/prime/cortex/BRAIN_CARD.md .openclaw/workspace/BRAIN_CARD.md
 brain/prime/cortex/checkpoint/progress.json .openclaw/workspace/checkpoint/progress.json
 
 

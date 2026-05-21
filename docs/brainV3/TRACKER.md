@@ -215,9 +215,9 @@ Issue 3: Stan had no memory of work done 1 hour earlier
 > Deprecated code removal, feature flags, contracts, envelope archival
 
 - `[x]` Delete: brain-exec, brain-exec-worker, check-plan-compliance, build-system-prompt
-- `[ ]` Delete: BRAIN_CARD.md routing hints
-- `[ ]` Remove: BRAIN_V3_* feature flags (v3 is the only path)
-- `[ ]` Contracts.json: add brain section + validate-contracts update
-- `[ ]` Brain: Auto-archive delivered envelopes older than 7 days (status → archived)
-- `[ ]` Deploy + test: full hire-deploy-message-process-deliver flow ✅
+- `[x]` Delete: BRAIN_CARD.md routing hints
+- `[x]` Remove: BRAIN_V3_* feature flags (v3 is the only path)
+- `[x]` Contracts.json: add brain section + validate-contracts update
+- `[x]` Brain: Auto-archive delivered envelopes older than 7 days (status → archived)
+- `[x]` Deploy + test: full hire-deploy-message-process-deliver flow ✅
 

@@ -11,6 +11,11 @@
 //   - Quick ack: immediate delivery when intake is claimed
 //   - Rich context injection: responsibilities carry full process docs
 //
+// Phase 8: production hardening
+//   - Periodic archival of complete/failed/stale needs_input envelopes
+//   - Contracts-driven configuration (no hardcoded values)
+//   - Removed BRAIN_V3_ENABLED feature gate + dead delegate handler
+//
 // Design principles:
 //   - LLMs think. Deterministic systems orchestrate.
 //   - One envelope format, all scales.
@@ -19,15 +24,17 @@
 //   - Agents are cognitive workers, not orchestrators.
 //
 // Run:
-//   BRAIN_V3_ENABLED=true node agent-brain.mjs
+//   node agent-brain.mjs
 // ============================================================
 import { readFileSync, appendFileSync, existsSync, watchFile } from 'fs';
 import { randomBytes } from 'crypto';
 
-// ---- Feature gate ----
-if (process.env.BRAIN_V3_ENABLED !== 'true') {
-  console.log('[brain] BRAIN_V3_ENABLED is not true. Exiting.');
-  process.exit(0);
+// ---- Contracts (loaded first — config depends on it) ----
+let CONTRACTS = {};
+try {
+  CONTRACTS = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
+} catch (e) {
+  console.log('[brain] WARN: contracts.json not found, using defaults');
 }
 
 // ---- Config ----
@@ -35,18 +42,15 @@ const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const PRIME_ID = process.env.PRIME_ID || '';
 const AGENT_ID = process.env.AGENT_ID || 'agent';
 const AGENT_EMAIL = process.env.AGENT_USER_EMAIL || '';
-const GATEWAY_PORT = 18789;
+const GATEWAY_PORT = CONTRACTS.gateway?.port || 18789;
 const GATEWAY_URL = `http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`;
-const MAX_ITERATIONS = 12;
+const MAX_ITERATIONS = CONTRACTS.brain?.max_iterations || 12;
+const GATEWAY_TIMEOUT_MS = CONTRACTS.brain?.gateway_timeout_ms || 300_000;
+const STALE_CLEANUP_HOURS = CONTRACTS.brain?.stale_cleanup_hours || 24;
+const ARCHIVE_AGE_DAYS = CONTRACTS.brain?.archive_age_days || 7;
+const ARCHIVE_INTERVAL_MS = CONTRACTS.brain?.archive_interval_ms || 6 * 60 * 60 * 1000; // 6h default
+const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 72;
 const LOG_FILE = '/tmp/agent-brain.log';
-
-// ---- Contracts ----
-let CONTRACTS = {};
-try {
-  CONTRACTS = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
-} catch (e) {
-  log('WARN', 'contracts.json not found, using defaults');
-}
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'openclaw/cortex';
 
 // ---- Gateway token ----
@@ -298,7 +302,7 @@ async function callCortex(mode, payload) {
       temperature: temperature,
       top_p: topP,
     }),
-    signal: AbortSignal.timeout(300_000), // 5 min
+    signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
   });
 
   if (!resp.ok) {
@@ -523,7 +527,7 @@ async function callAgent(agentId, envelope) {
         temperature: temperature,
         top_p: topP,
       }),
-      signal: AbortSignal.timeout(300_000),
+      signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
     });
 
     const durationMs = Date.now() - start;
@@ -714,25 +718,58 @@ async function deliverStatusUpdate(envelopeId, message) {
   log('INFO', `Status update written: ${statusId} — ${message.substring(0, 80)}`);
 }
 
-// ---- Stale envelope cleanup ----
-async function cleanupStaleEnvelopes() {
-  log('INFO', 'Running stale envelope cleanup...');
+// ---- Periodic envelope archival ----
+// Archives: failed (>STALE_CLEANUP_HOURS), complete (>ARCHIVE_AGE_DAYS), stale needs_input (>NEEDS_INPUT_TIMEOUT_HOURS)
+async function archiveEnvelopes() {
+  log('INFO', 'Running envelope archival sweep...');
+  let totalArchived = 0;
   try {
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const stale = await firestoreQuery('work', [
+    // 1. Failed envelopes older than STALE_CLEANUP_HOURS
+    const failedCutoff = new Date(Date.now() - STALE_CLEANUP_HOURS * 60 * 60 * 1000).toISOString();
+    const failed = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'failed' } },
     ]);
-    let cleaned = 0;
-    for (const env of stale) {
-      if (env.created_at && env.created_at < cutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', updated_at: now() });
-        cleaned++;
-        log('INFO', `Archived stale envelope: ${env.id} (created ${env.created_at})`);
+    let failedCount = 0;
+    for (const env of failed) {
+      if (env.created_at && env.created_at < failedCutoff) {
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'stale_failed', updated_at: now() });
+        failedCount++;
       }
     }
-    log('INFO', `Stale cleanup complete: ${cleaned} archived, ${stale.length - cleaned} recent failures kept`);
+    if (failedCount) log('INFO', `Archived ${failedCount} failed envelopes (>${STALE_CLEANUP_HOURS}h old)`);
+
+    // 2. Complete envelopes older than ARCHIVE_AGE_DAYS
+    const completeCutoff = new Date(Date.now() - ARCHIVE_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const complete = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'complete' } },
+    ]);
+    let completeCount = 0;
+    for (const env of complete) {
+      if (env.completed_at && env.completed_at < completeCutoff) {
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', updated_at: now() });
+        completeCount++;
+      }
+    }
+    if (completeCount) log('INFO', `Archived ${completeCount} complete envelopes (>${ARCHIVE_AGE_DAYS}d old)`);
+
+    // 3. Stale needs_input envelopes older than NEEDS_INPUT_TIMEOUT_HOURS
+    const needsInputCutoff = new Date(Date.now() - NEEDS_INPUT_TIMEOUT_HOURS * 60 * 60 * 1000).toISOString();
+    const needsInput = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'needs_input' } },
+    ]);
+    let needsInputCount = 0;
+    for (const env of needsInput) {
+      if (env.updated_at && env.updated_at < needsInputCutoff) {
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'unanswered', updated_at: now() });
+        needsInputCount++;
+        log('WARN', `Archived unanswered needs_input envelope: ${env.id} (last updated ${env.updated_at})`);
+      }
+    }
+
+    totalArchived = failedCount + completeCount + needsInputCount;
+    log('INFO', `Archival sweep complete: ${totalArchived} total archived (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered)`);
   } catch (e) {
-    log('WARN', `Stale cleanup error: ${e.message}`);
+    log('WARN', `Archival sweep error: ${e.message}`);
   }
 }
 
@@ -1049,8 +1086,7 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
-    // Normalize: treat 'delegate' as 'dispatch' until Phase 6 formalizes delegation
-    const action = (decision.action === 'delegate') ? 'dispatch' : decision.action;
+    const action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
 
     if (action === 'short_circuit') {
@@ -1540,76 +1576,6 @@ async function processEnvelope(envelope, memoryContext) {
       continue; // Loop back to Cortex for synthesize decision
     }
 
-    if (action === 'delegate') {
-      // Phase 6: Inter-agent delegation — create Mission owned by delegate
-      const delegateTo = decision.delegate_to;
-      const delegationTask = decision.delegation_task || decision.task;
-      const delegationCriteria = decision.accept_criteria || '';
-
-      if (!delegateTo || !delegationTask) {
-        log('ERROR', `Delegate action missing delegate_to or delegation_task`);
-        priorResults.push({ agent: 'system', result: '[SYSTEM] delegate requires delegate_to and delegation_task fields.' });
-        continue;
-      }
-
-      log('INFO', `Delegating to ${delegateTo}: ${delegationTask.substring(0, 80)}`);
-
-      // Create delegated Mission envelope
-      const delegatedId = generateId('w');
-      const delegatedEnvelope = {
-        id: delegatedId,
-        type: 'M',
-        parent_id: envelope.id,
-        owner: delegateTo,
-        status: 'pending',
-        intent: 'delegated',
-        instruction: delegationTask,
-        accept_criteria: delegationCriteria,
-        context_summary: decision.context || envelope.context_summary || null,
-        output: null,
-        children: [],
-        context_forward: null,
-        error: null,
-        source_channel: 'brain',
-        source_meta: {
-          delegated_by: AGENT_EMAIL || AGENT_ID,
-          delegated_from: envelope.id,
-          reasoning: decision.reasoning || '',
-        },
-        created_at: now(),
-        started_at: null,
-        completed_at: null,
-        updated_at: now(),
-        iteration: 0,
-      };
-
-      await firestoreWrite('work', delegatedId, delegatedEnvelope);
-      await writeHistory(delegatedId, null, 'pending', 'brain',
-        `Delegated by ${AGENT_ID} to ${delegateTo}`);
-
-      // Track on parent
-      envelope.children.push(delegatedId);
-
-      // Mark current envelope as waiting
-      envelope.status = 'waiting';
-      envelope.updated_at = now();
-      await firestoreWrite('work', envelope.id, envelope);
-      await writeHistory(envelope.id, 'active', 'waiting', 'brain',
-        `Delegated to ${delegateTo}: ${delegationTask.substring(0, 60)}`);
-
-      log('INFO', `Envelope ${envelope.id} waiting on delegation ${delegatedId} to ${delegateTo}`);
-
-      // Courtesy notification (fire-and-forget)
-      try {
-        const { execSync } = await import('child_process');
-        execSync(`chat-send "📋 Delegated task to ${delegateTo}: ${delegationTask.substring(0, 80).replace(/"/g, "'")}"`, { timeout: 10000 });
-      } catch (e) {
-        log('WARN', `Delegation notification failed: ${e.message}`);
-      }
-
-      return; // Exit cortex loop — will resume when delegation completes
-    }
-
     if (action === 'status_update') {
       const message = decision.message || 'Working on it...';
       await deliverStatusUpdate(envelope.id, message);
@@ -1650,9 +1616,9 @@ async function processEnvelope(envelope, memoryContext) {
 }
 
 // ---- Envelope context accumulation ----
-const CONTEXT_TOKEN_BUDGET = 400_000; // ~400K tokens
+const CONTEXT_TOKEN_BUDGET = CONTRACTS.brain?.context_token_budget || 400_000;
 const CHARS_PER_TOKEN = 4; // rough estimate
-const CONTEXT_CHAR_BUDGET = CONTEXT_TOKEN_BUDGET * CHARS_PER_TOKEN; // ~1.6M chars
+const CONTEXT_CHAR_BUDGET = CONTEXT_TOKEN_BUDGET * CHARS_PER_TOKEN;
 
 function buildEnvelopeContext(envelope, priorResults, memoryResults) {
   // Start with any previously accumulated context from Firestore
@@ -1732,11 +1698,14 @@ async function cleanupSharedWorkspace(envelopeId) {
 }
 
 // ---- History ----
-let historySeq = 0;
+let _historyCounter = 0; // intra-ms tiebreaker
+let _historyLastMs = 0;
 async function writeHistory(envelopeId, prevStatus, newStatus, agent, detail) {
-  historySeq++;
-  await firestoreWrite(`work/${envelopeId}/history`, String(historySeq), {
-    seq: historySeq,
+  const ms = Date.now();
+  if (ms === _historyLastMs) { _historyCounter++; } else { _historyCounter = 0; _historyLastMs = ms; }
+  const historyId = `${ms}-${_historyCounter}`;
+  await firestoreWrite(`work/${envelopeId}/history`, historyId, {
+    seq: ms,
     prev_status: prevStatus,
     new_status: newStatus,
     agent,
@@ -1885,8 +1854,10 @@ async function main() {
     log('WARN', `Gateway not reachable at startup: ${e.message}. Will retry on first intake.`);
   }
 
-  // Stale envelope cleanup
-  await cleanupStaleEnvelopes();
+  // Initial archival sweep + periodic timer
+  await archiveEnvelopes();
+  setInterval(() => archiveEnvelopes(), ARCHIVE_INTERVAL_MS);
+  log('INFO', `Archival sweep scheduled every ${Math.round(ARCHIVE_INTERVAL_MS / 3600000)}h`);
 
   // Start intake polling
   const POLL_MS = CONTRACTS.brain?.poll_interval_ms || 3000;

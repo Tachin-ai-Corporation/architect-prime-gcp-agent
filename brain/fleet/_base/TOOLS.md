@@ -10,8 +10,8 @@ When you need current, real-time information from the web, dispatch to your
 denied. All web search goes through Vertex AI grounding via the sub-agent.
 
 ## Workspace Skills
-Workspace skills are loaded per agent type. Check your BRAIN_CARD.md
-(injected every turn) for available tools and their brain-agent assignments.
+Workspace skills are loaded per agent type. Check your SOUL.md and IDENTITY.md
+for available tools and their brain-agent assignments.
 
 ### Drive Tools (if enabled)
 If your agent type includes `workspace-drive`, these tools are available:

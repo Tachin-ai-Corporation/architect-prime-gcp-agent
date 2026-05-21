@@ -41,15 +41,11 @@ if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "agent" ]; then
   fi
 fi
 
-# Feature gate — don't start if Brain v3 is not enabled
-BRAIN_V3_ENABLED="${BRAIN_V3_ENABLED:-true}"
-
 # Kill any orphan agent-brain processes inside the container
 docker exec openclaw-gateway pkill -f 'agent-brain.mjs' 2>/dev/null || true
 sleep 1
 
 exec stdbuf -oL docker exec \
-  -e BRAIN_V3_ENABLED="${BRAIN_V3_ENABLED}" \
   -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
   -e AGENT_ID="${AGENT_ID:-agent}" \
   -e AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" \
