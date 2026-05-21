@@ -773,6 +773,59 @@ async function archiveEnvelopes() {
   }
 }
 
+// ---- Quick ACK generation (lightweight LLM call) ----
+const ACK_FALLBACKS = [
+  '✅ Got it — working on this now.',
+  '👍 On it!',
+  '✅ Received — let me look into this.',
+  '🔛 Working on it.',
+];
+
+async function generateAck(intakeText) {
+  try {
+    // Read a personality snippet from IDENTITY.md (first 500 chars)
+    const identityPaths = [
+      `/home/node/.openclaw/workspace-${AGENT_ID}/IDENTITY.md`,
+      '/home/node/.openclaw/workspace/IDENTITY.md',
+    ];
+    let identity = '';
+    for (const p of identityPaths) {
+      const content = cachedReadFile(p);
+      if (content) { identity = content.substring(0, 500); break; }
+    }
+
+    const resp = await fetch(GATEWAY_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: CORTEX_ROUTE,
+        messages: [
+          { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 15 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can. Your personality:\n${identity || 'Helpful and professional.'}` },
+          { role: 'user', content: `Acknowledge this message briefly:\n"${intakeText.substring(0, 300)}"` },
+        ],
+        max_tokens: 60,
+        temperature: 0.9,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const content = data.choices?.[0]?.message?.content?.trim();
+      if (content && content.length > 2 && content.length < 200) {
+        return content;
+      }
+    }
+  } catch (e) {
+    log('DEBUG', `ACK generation failed (using fallback): ${e.message}`);
+  }
+  // Fallback: random generic ack
+  return ACK_FALLBACKS[Math.floor(Math.random() * ACK_FALLBACKS.length)];
+}
+
 // ---- Intake processing (Phase 3: memory + active scan + attach) ----
 async function processIntake(intake) {
   log('INFO', `Processing intake: ${intake.id} from ${intake.source}`);
@@ -786,6 +839,7 @@ async function processIntake(intake) {
 
   // Phase 7A: Quick ack — immediately tell the user we received it
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system') {
+    const ackText = await generateAck(intake.text || '');
     const ackId = generateId('ack');
     await firestoreWrite('work', ackId, {
       id: ackId,
@@ -795,7 +849,7 @@ async function processIntake(intake) {
       status: 'complete',
       intent: 'ack',
       instruction: 'Quick acknowledgment',
-      output: `✅ Got it — working on this now.`,
+      output: ackText,
       source_channel: intake.source,
       source_meta: intake.source_meta || {},
       created_at: now(),
@@ -809,7 +863,7 @@ async function processIntake(intake) {
       error: null,
       iteration: 0,
     });
-    log('INFO', `Quick ack sent: ${ackId}`);
+    log('INFO', `Quick ack sent: ${ackId} — "${ackText.substring(0, 60)}"`);
   }
 
   // Phase 3+: Dual memory recall
