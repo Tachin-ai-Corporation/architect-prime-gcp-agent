@@ -2,7 +2,7 @@
 # core-memory-read — query Firestore Core Memory entries
 #
 # Usage:
-#   core-memory-read --category <category> [--query "<search terms>"] [--status active] [--limit 10] [--agent <name>]
+#   core-memory-read --category <category> [--query "<search terms>"] [--status active] [--limit 10] [--agent <name>] [--since <duration>]
 #
 # Categories: architecture, operations, iam, decisions, patterns, errors
 #
@@ -10,10 +10,15 @@
 # Memory path: primes/{primeId}/fleet/{agent}/memory/core
 # Prime path:  primes/{primeId}/memory/core
 #
+# --since: Time window filter. Accepts durations like 7d, 30d, 90d.
+#          When specified, only returns entries created within that window.
+#          Useful for broad recent scans vs targeted all-time searches.
+#
 # Examples:
 #   core-memory-read --category architecture
 #   core-memory-read --category operations --query "fleet bootstrap"
 #   core-memory-read --query "DWD"          # search all categories
+#   core-memory-read --since 30d --limit 15  # broad recent scan
 #   core-memory-read --category decisions --agent stan  # read fleet agent memory
 
 set -euo pipefail
@@ -24,6 +29,7 @@ QUERY=""
 STATUS="active"
 LIMIT=10
 AGENT=""
+SINCE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --status)   STATUS="$2";   shift 2 ;;
     --limit)    LIMIT="$2";    shift 2 ;;
     --agent)    AGENT="$2";    shift 2 ;;
+    --since)    SINCE="$2";    shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -63,6 +70,20 @@ else
   PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}"
 fi
 
+# ── Compute --since cutoff timestamp ────────────────────────────
+SINCE_TIMESTAMP=""
+if [[ -n "$SINCE" ]]; then
+  # Parse duration: accept Nd (days) format
+  DAYS=$(echo "$SINCE" | sed -n 's/^\([0-9]*\)d$/\1/p')
+  if [[ -n "$DAYS" ]]; then
+    SINCE_TIMESTAMP=$(date -u -d "-${DAYS} days" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
+      || date -u -v-${DAYS}d +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
+  fi
+  if [[ -z "$SINCE_TIMESTAMP" ]]; then
+    echo "Warning: could not parse --since '${SINCE}', ignoring time filter" >&2
+  fi
+fi
+
 # Build structured query
 FILTERS=()
 if [[ -n "$STATUS" ]]; then
@@ -70,6 +91,9 @@ if [[ -n "$STATUS" ]]; then
 fi
 if [[ -n "$CATEGORY" ]]; then
   FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"category\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${CATEGORY}\"}}}")
+fi
+if [[ -n "$SINCE_TIMESTAMP" ]]; then
+  FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"createdAt\"},\"op\":\"GREATER_THAN_OR_EQUAL\",\"value\":{\"stringValue\":\"${SINCE_TIMESTAMP}\"}}}")
 fi
 
 if [[ ${#FILTERS[@]} -eq 0 ]]; then

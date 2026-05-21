@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# core-memory-retire — retire a Firestore Core Memory entry
+#
+# Marks an active Core Memory entry as "retired" without replacing it.
+# Use this when a fact is no longer accurate or relevant, but there is
+# no replacement fact (for replacements, use core-memory-write --supersedes).
+#
+# Usage:
+#   core-memory-retire --id <entry-id> --reason "Why this fact is being retired"
+#
+# Fleet agents auto-detect via AGENT_ID env var (set by fleet-bootstrap).
+# Memory path: primes/{primeId}/fleet/{agent}/core_memory/{id}
+# Prime path:  primes/{primeId}/core_memory/{id}
+#
+# Examples:
+#   core-memory-retire --id mem-20260515-a1b2c3d4 --reason "Architecture changed, no longer uses Firebase Hosting"
+#   core-memory-retire --id mem-20260510-deadbeef --reason "Superseded by new deployment workflow"
+
+set -euo pipefail
+
+# ── Parse arguments ──────────────────────────────────────────────
+ENTRY_ID=""
+REASON=""
+AGENT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --id)     ENTRY_ID="$2"; shift 2 ;;
+    --reason) REASON="$2";   shift 2 ;;
+    --agent)  AGENT="$2";    shift 2 ;;
+    --help|-h)
+      echo "Usage: core-memory-retire --id <entry-id> --reason \"<reason>\""
+      echo "Marks an active Core Memory entry as retired."
+      exit 0
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+# Auto-detect fleet agent context
+if [[ -z "$AGENT" && -n "${AGENT_ID:-}" ]]; then
+  AGENT="$AGENT_ID"
+fi
+
+if [[ -z "$ENTRY_ID" ]]; then
+  echo "Usage: core-memory-retire --id <entry-id> --reason \"<reason>\"" >&2
+  exit 1
+fi
+
+if [[ -z "$REASON" ]]; then
+  REASON="Retired during nightly consolidation"
+fi
+
+# ── Resolve Prime ID ────────────────────────────────────────────
+PRIME_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//')
+fi
+
+PROJECT_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "architect-prime-beta")
+
+# ── Get access token ────────────────────────────────────────────
+TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# ── Build document path ────────────────────────────────────────
+if [[ -n "$AGENT" ]]; then
+  DOC_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/fleet/${AGENT}/core_memory/${ENTRY_ID}"
+else
+  DOC_PATH="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}/core_memory/${ENTRY_ID}"
+fi
+
+# ── Build retirement timestamp ──────────────────────────────────
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# ── Verify the entry exists and is active ───────────────────────
+EXISTING=$(curl -sf \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "https://firestore.googleapis.com/v1/${DOC_PATH}" 2>&1) || {
+  echo "❌ Entry not found: ${ENTRY_ID}" >&2
+  exit 1
+}
+
+CURRENT_STATUS=$(echo "$EXISTING" | python3 -c "
+import sys, json
+try:
+    doc = json.load(sys.stdin)
+    print(doc.get('fields', {}).get('status', {}).get('stringValue', 'unknown'))
+except:
+    print('unknown')
+" 2>/dev/null)
+
+if [[ "$CURRENT_STATUS" == "retired" ]]; then
+  echo "Already retired: ${ENTRY_ID}"
+  exit 0
+fi
+
+if [[ "$CURRENT_STATUS" == "superseded" ]]; then
+  echo "Already superseded: ${ENTRY_ID} — skipping retirement"
+  exit 0
+fi
+
+# ── PATCH: set status=retired, retiredAt, retireReason ──────────
+REASON_ESCAPED=$(python3 -c "import json; print(json.dumps('${REASON}'))")
+
+RESPONSE=$(curl -sf \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X PATCH "https://firestore.googleapis.com/v1/${DOC_PATH}?updateMask.fieldPaths=status&updateMask.fieldPaths=retiredAt&updateMask.fieldPaths=retireReason" \
+  -d "{\"fields\":{\"status\":{\"stringValue\":\"retired\"},\"retiredAt\":{\"stringValue\":\"${TIMESTAMP}\"},\"retireReason\":{\"stringValue\":${REASON_ESCAPED}}}}" \
+  2>&1) || {
+  echo "❌ Failed to retire entry: ${ENTRY_ID}" >&2
+  echo "$RESPONSE" >&2
+  exit 1
+}
+
+echo "✅ Core memory retired: ${ENTRY_ID}"
+echo "  Reason: ${REASON}"
+echo "  Retired at: ${TIMESTAMP}"
+echo "  Previous status: ${CURRENT_STATUS}"

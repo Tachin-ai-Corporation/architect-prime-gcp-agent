@@ -6,46 +6,28 @@
       "name": "Nightly Memory Consolidation",
       "schedule": "0 8 * * *",
       "enabled": true,
-      "min_spacing_minutes": 30,
-      "instruction": "Run memory consolidation — compact working notes into durable core memory, prune stale entries, update deep truths if understanding has changed.",
+      "min_spacing_minutes": 720,
+      "instruction": "Execute the nightly memory consolidation cycle: prune working memory of completed and stale entries, reconcile long-term Core Memory by retiring outdated facts and promoting durable new ones, and review Deep Truths for behavioral updates.",
       "context": {
-        "purpose": "Keep working memory compact and useful. Over time, MEMORY.md accumulates transient details that should either be promoted to durable core memory (Firestore) or pruned. Deep truths should be updated when fundamental patterns emerge from accumulated experience.",
+        "purpose": "MEMORY.md is the agent's working scratchpad — loaded into every Cortex prompt as baseline knowledge. It accumulates freely during the day but must be pruned nightly to stay under 2,000 characters. Core Memory in Firestore is the long-term archive — facts that survive across days and weeks. It must also be actively pruned: stale entries retired, contradicted facts superseded, and only genuinely stable new facts promoted. Deep Truths in SOUL.md are behavioral constraints loaded into every prompt — they change rarely and only with strong multi-session evidence.",
         "process": [
-          "Read current MEMORY.md working notes from workspace",
-          "Identify facts, patterns, or learnings that should be durable (not just session-specific)",
-          "Write durable facts to core memory via temporal-memory agent",
-          "Prune stale, outdated, or session-specific entries from MEMORY.md",
-          "Review deep truths in SOUL.md — update if accumulated experience reveals new patterns",
-          "Keep MEMORY.md under 2000 characters after consolidation"
+          "STEP 1 — GATHER WORKING MEMORY: Read the current workspace/MEMORY.md to understand what has accumulated during the day.",
+          "STEP 2 — GATHER SESSIONS: Run `session-summary --hours 24 --limit 20` to extract a digest of recent conversations and completed work from the last 24 hours.",
+          "STEP 3 — GATHER RECENT CORE MEMORY: Run `core-memory-read --since 30d --limit 20` to pull broadly from recent long-term storage. This shows what the agent has been learning and storing over the past month.",
+          "STEP 4 — GATHER FULL ARCHIVE: Run `core-memory-read --category <cat>` for each category (architecture, operations, iam, decisions, patterns, errors) to see the full long-term knowledge base. Identify entries that may be outdated or contradicted by recent work.",
+          "STEP 5 — TRIAGE WORKING MEMORY: Classify every entry in MEMORY.md into one of four buckets: (a) ACTIVE — still relevant, keep in MEMORY.md, (b) COMPLETED — task finished or resolved, prune, (c) STALE — outdated information no longer accurate, prune, (d) PROMOTE — stable fact proven across multiple sessions, worthy of Core Memory.",
+          "STEP 6 — RECONCILE LONG-TERM MEMORY: Compare recent work (from Steps 1-2) against long-term Core Memory (from Steps 3-4). Identify: (a) CONTRADICTED entries — long-term facts that are no longer true based on recent evidence, (b) OUTDATED entries — facts about versions, endpoints, or configurations that have changed, (c) REDUNDANT entries — multiple entries saying the same thing that can be consolidated, (d) STALE entries — facts not recalled in weeks that are no longer operationally relevant.",
+          "STEP 7 — RETIRE STALE LONG-TERM ENTRIES: For each entry identified in Step 6, use `core-memory-retire --id <entry-id> --reason \"<specific reason>\"` to mark it retired. For entries that need updating rather than retiring, use `core-memory-write --fact \"<updated fact>\" --category <cat> --supersedes <old-id>`. Maximum 5 retirement/supersede operations per run.",
+          "STEP 8 — PROMOTE NEW FACTS: For each PROMOTE item from Step 5, write to Core Memory via `core-memory-write --fact \"<fact>\" --category <cat> --tags \"t1,t2\"`. Only promote facts that: appeared in multiple sessions, were confirmed by the operator, or represent stable architectural/operational patterns. Maximum 5 writes per run.",
+          "STEP 9 — PRUNE AND REWRITE WORKING MEMORY: Rewrite MEMORY.md keeping only ACTIVE items. Format as a clean, high-density note with sections: '## Current Focus' (what the agent is working on), '## Active Context' (operational state, environment notes, pending items), '## Open Items' (unresolved blockers or follow-ups). The result MUST be under 2,000 characters. Use the exec tool to write the file.",
+          "STEP 10 — DEEP TRUTHS REVIEW: Review if any promoted or long-standing Core Memory facts qualify as Deep Truths. RULES: (a) Only change during this nightly consolidation, never during regular work. (b) Evidence must span 3+ separate work sessions or days. (c) The relevant fact must have been stable in Core Memory for 7+ days. (d) Must cite at least 2 Core Memory entries as evidence. (e) Must be a single concise sentence, universally applicable. (f) Use `update-deep-truths --add \"<truth>\"` to add, `update-deep-truths --remove \"<text>\"` to remove. (g) Maximum 2 changes per run, maximum 10 Deep Truths total. (h) Every addition/removal MUST include justification and cited Core Memory IDs in the report. (i) If unsure whether something qualifies, it does NOT — wait for more evidence."
         ],
         "reference_files": [
           "workspace/MEMORY.md",
-          "workspace-cortex/SOUL.md"
+          "workspace/SOUL.md"
         ],
-        "success_criteria": "MEMORY.md is compact (under 2000 chars), any durable learnings are written to core memory, deep truths reviewed and updated if warranted.",
-        "prior_learnings": "Memory consolidation should be conservative — only promote facts that have proven stable across multiple sessions. Transient debugging notes should be pruned, not promoted."
-      }
-    },
-    {
-      "id": "r-stale-envelope-review",
-      "name": "Weekly Stale Envelope Review",
-      "schedule": "0 14 * * 1",
-      "enabled": true,
-      "min_spacing_minutes": 60,
-      "instruction": "Review work envelopes stuck in active or waiting status for more than 48 hours. Investigate why they stalled and either complete, fail, or escalate them.",
-      "context": {
-        "purpose": "Prevent zombie envelopes from accumulating. Envelopes can get stuck due to agent crashes, timeout edge cases, or delegation failures. Regular review keeps the work queue healthy.",
-        "process": [
-          "Query Firestore for envelopes with status 'active' or 'waiting' older than 48 hours",
-          "For each stale envelope, check: is the parent still active? Is there a child that failed silently?",
-          "If the work was completed but status wasn't updated, mark it complete with available output",
-          "If the work is genuinely stuck, mark it failed with a clear error message",
-          "If the work is waiting on something resolvable, attempt to unblock it",
-          "Report summary: how many reviewed, how many resolved, how many escalated"
-        ],
-        "reference_files": [],
-        "success_criteria": "All envelopes older than 48h in active/waiting status are reviewed. Each is either resolved, failed with explanation, or escalated to operator.",
-        "prior_learnings": "Most stale envelopes are from delegation attempts where the child agent timed out. Check child envelope status first before investigating the parent."
+        "success_criteria": "MEMORY.md is rewritten to contain only active context, under 2,000 characters. Core Memory is reconciled — stale entries retired, contradicted entries superseded, and genuinely new facts promoted. Deep Truths reviewed and updated only if warranted by strong multi-session evidence. A structured report is produced covering: items triaged, retirements, promotions, Deep Truth changes, and final MEMORY.md character count.",
+        "prior_learnings": "Be conservative with both promotions AND retirements — verify before acting. Only promote facts confirmed across multiple sessions. Only retire facts you have clear evidence are wrong or stale. Session-specific debugging notes, one-off error messages, and transient task status should be pruned from MEMORY.md, not promoted. An empty MEMORY.md (just the template header) is a valid and healthy outcome. When rewriting MEMORY.md, use the exec tool to write the file — the file_write tool may not be available in all contexts. When retiring Core Memory, always provide a specific reason — never bulk-retire without justification."
       }
     }
   ]
