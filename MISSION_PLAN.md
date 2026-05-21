@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.21.1.0`
+> - **Current version:** `v2026.05.21.2.0`
 
 ---
 
@@ -821,13 +821,21 @@ architect-prime/
 5. **10-step consolidation** — Rewrote `r-memory-consolidation` as the single universal responsibility with a detailed 10-step process covering gather → triage → reconcile → retire → promote → prune → Deep Truths → report.
 6. **Deep Truths lifecycle** — Formal governance: evidence spanning 3+ sessions, 7+ day stability, 2+ Core Memory citations required. Max 2 changes per run, max 10 total.
 
-### Current: v2026.05.21.2.0 — Archiving & Phase 7C Finalizations
-> *Goal: Complete the remaining Phase 7C hardening tasks including envelope archiving, BRAIN_CARD cleanup, and contracts integration.*
+### Completed: v2026.05.21.2.0 — Deployment Hardening
+> *Resilience fixes for brain daemon intake processing and gateway authentication on fleet deployments.*
 
-1. **Auto-envelope archiving** — Implement automated cleanup of delivered envelopes older than 7 days (status → archived) in the brain daemon.
-2. **BRAIN_CARD cleanup** — Prune obsolete BRAIN_CARD routing hints and transition entirely to the active agent registry.
-3. **Contracts integration** — Expand `contracts.json` with brain-specific parameters and integrate contract checks.
-4. **Remove feature flags** — Clean up deprecated `BRAIN_V3_*` environment variables now that Brain v3 is the sole production path.
+1. **Intake error resilience** — Added automatic revert-to-pending on intake processing exceptions in the brain daemon's poll loop. Prevents transient gateway failures from permanently locking intakes in `claimed` status.
+2. **ADC patcher fix** — Removed broken v2026.5.x branch from both `fleet-bootstrap.sh` and `upgrade-openclaw` that was injecting `"gcp-vertex-credentials"` (wrong literal key) instead of the `"<gce-adc>"` sentinel required by the Vertex AI provider's regex-based ADC fallback. The v2026.4.x branch correctly handles all known OpenClaw versions.
+3. **Cross-agent poll interaction fix** — Hardened the intake polling loop against concurrent access patterns.
+
+### Current: v2026.05.22.1.0 — Brain v3 Phase 8 (Production Hardening)
+> *Goal: Complete Phase 7C cleanup items and harden the brain daemon for long-running production use.*
+
+1. **Auto-envelope archiving** — Implement periodic cleanup of delivered envelopes older than 7 days (status → archived) in the brain daemon. Move from startup-only to interval-based.
+2. **BRAIN_CARD cleanup** — Delete BRAIN_CARD.md files, remove from manifests and bootstrap templates. Brain v3 uses agent registry exclusively.
+3. **Contracts integration** — Add `brain` section to `contracts.json` (poll_interval_ms, max_iterations, gateway_timeout_ms, stale_cleanup_hours, context_token_budget). Update validate-contracts.
+4. **Remove feature flags** — Delete `BRAIN_V3_ENABLED` gate from agent-brain.mjs and start-agent-brain.
+5. **Stale needs_input timeout** — Add timeout mechanism for `needs_input` envelopes that go unanswered.
 
 
 ### Future: RSI Engine

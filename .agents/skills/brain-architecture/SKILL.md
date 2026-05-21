@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.05.21.1.0)
+## Current State (v2026.05.21.2.0)
 6 brain agents in OpenClaw multi-agent configuration, coordinated by the `agent-brain.service` state machine.
 
 ### Agent Inventory
@@ -44,11 +44,14 @@ description: Use when working on the brain agent system — creating/editing age
 - `specialties/devops/` — Fleet: DevOps specialty workspace
 - `specialties/engineer/` — Fleet: Engineer specialty workspace
 
-## Memory System
-- **Tier 1**: Session context (ephemeral, in OpenClaw)
-- **Tier 2**: Working memory (MEMORY.md, updated during turns)
-- **Tier 3**: Core Memory (Firestore `/primes/{id}/memory/core/`)
-  - Scripts: `core-memory-read`, `core-memory-write`, `update-deep-truths`
+## Memory System (Three-Layer Lifecycle)
+- **Working Memory** (`MEMORY.md`): Agent RAM — accumulates during sessions, pruned nightly to <2,000 chars
+- **Core Memory** (Firestore `core_memory` collection): Long-term durable facts. Actively pruned via `core-memory-retire`
+  - Scripts: `core-memory-read` (supports `--since` time-windowed queries), `core-memory-write`, `core-memory-retire`
+- **Deep Truths** (`SOUL.md` `## Deep Truths` section): Behavioral firmware, max 10 items. Changes only during nightly consolidation (3+ sessions, 7+ day evidence)
+  - Script: `update-deep-truths`
+- **Dual-pass recall**: temporal-memory does targeted archive search (all time) + broad recent scan (30 days) + context fill
+- **Nightly consolidation**: 10-step `r-memory-consolidation` responsibility (gather → triage → reconcile → retire → promote → prune → Deep Truths → report)
 
 ## OpenClaw Integration Points
 - Gateway API: `POST http://localhost:18789/v1/chat/completions` with `model: "openclaw"` or `model: "openclaw/<agentId>"`
