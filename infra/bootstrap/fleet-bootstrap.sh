@@ -473,11 +473,7 @@ patched = False
 if "if (!envKey) return null;" in code:
     code = code.replace("if (!envKey) return null;",
         'if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };', 1)
-    patched = True; print("  Patched model-auth-env (v2026.4.x)")
-elif "\treturn null;\n}\n//#endregion" in code:
-    code = code.replace("\treturn null;\n}\n//#endregion",
-        '\tif (normalized === "google-vertex") return { apiKey: "gcp-vertex-credentials", source: "gce metadata" };\n\treturn null;\n}\n//#endregion', 1)
-    patched = True; print("  Patched model-auth-env (v2026.5.x)")
+    patched = True; print("  Patched model-auth-env (ADC fallback)")
 else:
     print("  WARN: model-auth-env sentinel not found"); sys.exit(0)
 if patched:
