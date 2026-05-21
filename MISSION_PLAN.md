@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.21.2.0`
+> - **Current version:** `v2026.05.22.1.0`
 
 ---
 
@@ -828,15 +828,22 @@ architect-prime/
 2. **ADC patcher fix** — Removed broken v2026.5.x branch from both `fleet-bootstrap.sh` and `upgrade-openclaw` that was injecting `"gcp-vertex-credentials"` (wrong literal key) instead of the `"<gce-adc>"` sentinel required by the Vertex AI provider's regex-based ADC fallback. The v2026.4.x branch correctly handles all known OpenClaw versions.
 3. **Cross-agent poll interaction fix** — Hardened the intake polling loop against concurrent access patterns.
 
-### Current: v2026.05.22.1.0 — Brain v3 Phase 8 (Production Hardening)
-> *Goal: Complete Phase 7C cleanup items and harden the brain daemon for long-running production use.*
+### Completed: v2026.05.22.1.0 — Brain v3 Phase 8 (Production Hardening)
+> *Complete Phase 7C cleanup and harden the brain daemon for long-running production use.*
 
-1. **Auto-envelope archiving** — Implement periodic cleanup of delivered envelopes older than 7 days (status → archived) in the brain daemon. Move from startup-only to interval-based.
-2. **BRAIN_CARD cleanup** — Delete BRAIN_CARD.md files, remove from manifests and bootstrap templates. Brain v3 uses agent registry exclusively.
-3. **Contracts integration** — Add `brain` section to `contracts.json` (poll_interval_ms, max_iterations, gateway_timeout_ms, stale_cleanup_hours, context_token_budget). Update validate-contracts.
-4. **Remove feature flags** — Delete `BRAIN_V3_ENABLED` gate from agent-brain.mjs and start-agent-brain.
-5. **Stale needs_input timeout** — Add timeout mechanism for `needs_input` envelopes that go unanswered.
+1. **Periodic envelope archival** — Replaced startup-only failed-envelope cleanup with interval-based archival sweep (every 6h, configurable). Archives `complete` envelopes older than 7 days, `failed` older than 24h, and `needs_input` older than 72h. Each archival sets `archived_reason` field (`stale_failed`, `delivered`, `unanswered`). Verified on fleet-stan and fleet-anora.
+2. **BRAIN_CARD removal** — Deleted `BRAIN_CARD.md` from both prime and fleet workspaces, removed from manifests (`role-prime.txt`, `role-fleet.txt`), stripped PreTurn `brain-card` hooks from both bootstrap templates, updated fleet TOOLS.md reference. Saves ~500 tokens per Cortex turn.
+3. **Contracts `brain` section** — Added 8-value `brain` section to `contracts.json` (`poll_interval_ms`, `max_iterations`, `gateway_timeout_ms`, `stale_cleanup_hours`, `archive_age_days`, `archive_interval_ms`, `context_token_budget`, `needs_input_timeout_hours`). All formerly hardcoded constants in `agent-brain.mjs` now read from contracts with fallback defaults. Restructured module init order (contracts loaded before config). Added Check 11 to `validate-contracts` with range validation.
+4. **Feature flag removal** — Deleted `BRAIN_V3_ENABLED` gate from `agent-brain.mjs` (the daemon starts unconditionally). Removed env var from `start-agent-brain` launcher.
+5. **Dead code cleanup** — Removed unreachable `delegate` action handler (~70 lines) that was masked by normalization to `dispatch`. Fixed `historySeq` process-global counter (reset on restart) with timestamp-based IDs to prevent history collisions.
 
+### Current: Next Phase — TBD
+> *Goal: To be determined based on fleet operational experience and user priorities.*
+
+Candidates:
+- RSI Engine (git-ops, code-write/test skills, human gates)
+- Fleet templates and self-evolution
+- Multi-project federation
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR
@@ -849,4 +856,3 @@ architect-prime/
 - Agent cell templates — pre-built team configurations
 - Self-evolution — Prime proposes its own improvements via PR
 - Multi-project federation — fleet agents across different GCP projects
-

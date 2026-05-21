@@ -2,7 +2,7 @@
 
 > **Status:** ACTIVE — Production design framework for multi-team fleet deployments
 > **Written:** 2026-03-22
-> **Last verified:** v2026.05.21.2.0
+> **Last verified:** v2026.05.22.1.0
 
 > **Design reference for building new fleet agent types.**
 > Defines how to scope agent specialties, assign tools, and design delegation chains.
