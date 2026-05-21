@@ -104,7 +104,7 @@ Your GCP Project
 │   ├── primes/{id}/memory/core/      → Durable Core Memory
 │   ├── primes/{id}/work/{id}         → Work envelopes (R/C/M/T state machine)
 │   ├── primes/{id}/work/{id}/history/→ Status transition log
-│   ├── primes/{id}/intake/{id}       → Brain v3 intake queue
+│   ├── primes/{id}/intake/{id}       → Brain intake queue
 │   ├── config/settings               → Agent defaults (email domain, model catalog)
 │   └── config/dwd                    → DWD configuration
 │
@@ -117,7 +117,7 @@ Your GCP Project
 │   │   ├── motor           — Gemini 2.5 Flash — execution (code + commands)
 │   │   └── cerebellum      — Gemini 2.5 Flash — verification + QA
 │   ├── agent-ears (systemd)       → Deterministic input processing (fire-and-forget, zero LLM)
-│   ├── agent-brain (systemd)      → Brain v3 state machine (intake → classify → decide → dispatch → synthesize)
+│   ├── agent-brain (systemd)      → Brain state machine (intake → classify → decide → dispatch → synthesize)
 │   ├── agent-mouth (systemd)      → Output classification + delivery (strict LLM filter)
 │   ├── REST API: GET /api/primes/{id}/work, POST /api/primes/{id}/work/{workId}/respond
 │   ├── CoreKit (40 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
@@ -144,7 +144,7 @@ Prime's brain uses **multi-agent dispatch** — Cortex is the user-facing orches
 | **motor** | gemini-2.5-flash | Execution + 28 Workspace tools (Drive, Gmail, Calendar, Docs, Sheets) |
 | **cerebellum** | gemini-2.5-flash | Verification + QA |
 
-Dispatch flow: prefrontal produces `DISPATCH_PLAN:` → cortex executes pipeline via `sessions_spawn` / `sessions_yield` → motor runs tools → cerebellum verifies → cortex synthesizes response.
+Dispatch flow: Cortex returns structured JSON decisions → `agent-brain` daemon dispatches to sub-agents via HTTP → motor runs tools → cerebellum verifies → Cortex synthesizes response.
 
 ### Key Design Decisions
 

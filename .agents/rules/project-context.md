@@ -62,7 +62,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 app/              Cloud Run dashboard (Next.js)
 infra/            Bootstrap scripts, manifests, contracts.json
 corekit/          Runtime tools installed on VMs (brain, fleet, gateway, chat, dashboard, memory)
-brain/            Agent workspace files (SOUL.md, TOOLS.md, BRAIN_CARD.md)
+brain/            Agent workspace files (SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md)
 specialties/      Fleet agent specialty configs
 skills/           OpenClaw skill manifests
 docs/             Architecture docs

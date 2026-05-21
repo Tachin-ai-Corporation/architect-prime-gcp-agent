@@ -46,7 +46,7 @@ Dashboard (Cloud Run — Next.js)
     ├── config/settings               → Agent defaults (email domain)
     ├── primes/{id}/work/{id}          → Work envelopes (R/C/M/T state machine)
     ├── primes/{id}/work/{id}/history/ → Status transition log
-    ├── primes/{id}/intake/{id}        → Brain v3 intake queue
+    ├── primes/{id}/intake/{id}        → Brain intake queue
     └── config/dwd                    → DWD configuration
          │
          ▼
@@ -57,7 +57,7 @@ Dashboard (Cloud Run — Next.js)
     │       ├── Firestore poll (3s) or GChat poll (5s) via DWD
     │       └── Cooldown + dedup window (configurable)
     │
-    ├── agent-brain (systemd) — Brain v3 state machine orchestrator
+    ├── agent-brain (systemd) — Brain state machine orchestrator
     │   └── Polls Firestore intake, creates work envelopes, dispatches sub-agents
     │       ├── Cortex classify + decide loop (deterministic state machine)
     │       ├── M→C→T envelope hierarchy (Missions, Checkpoints, Tasks)
@@ -75,19 +75,19 @@ Dashboard (Cloud Run — Next.js)
     │       ├── Speaks AS the agent (first person) — not a relay
     │       ├── Prompts loaded from external .md files (no inline prose)
     │       ├── Fire-and-forget task lifecycle write to Firestore on delivery/timeout
-    │       ├── Brain v3 envelope polling (independent 5s interval, queries complete + needs_input)
+    │       ├── Brain envelope polling (independent 5s interval, queries complete + needs_input)
     │       └── Never drops messages — unknown classification → deliver raw
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
     │   ├── GOOGLE_CLOUD_LOCATION=global (required for Gemini 3.1+ preview models)
-    │   ├── Brain agents (6 OpenClaw agents, prefrontal-first dispatch)
+    │   ├── Brain agents (6 OpenClaw agents, Cortex-first orchestration)
     │   │   ├── cortex (DEFAULT) — Gemini 3.1 Pro Preview — plan executor + synthesizer
     │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
     │   │   ├── temporal-memory — Gemini 2.5 Flash — pure memory/context recall (NO external APIs)
     │   │   ├── prefrontal — Gemini 2.5 Flash — mandatory dispatch planner (two-mode: simple + advisory)
     │   │   ├── motor — Gemini 2.5 Flash — execution + ALL Google Workspace tools (read+write) + advisory mode
     │   │   └── cerebellum — Gemini 2.5 Flash — verification + validation-rule checking
-    │   ├── Brain v3 State Machine (agent-brain.mjs):
+    │   ├── Brain State Machine (agent-brain.mjs):
     │   │   ├── Cortex JSON classify & decide loop (deterministic orchestrator)
     │   │   ├── R/M/C/T Cognitive Hierarchy (Responsibilities, Missions, Checkpoints, Tasks)
     │   │   ├── Dual-Recall Memory Integration (ambient + enriched)
@@ -112,7 +112,7 @@ Dashboard (Cloud Run — Next.js)
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
         ├── dashboard/: command-runner
         ├── system/: upgrade-corekit, validate-contracts
-        └── config/: agent-types.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
+        └── config/: agent-registry.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
     ├── .identity-lock              → DWD impersonation guard (chmod 444)
@@ -299,22 +299,22 @@ The model catalog is built at runtime by `discover-models`, replacing a static J
 | Claude Opus/Sonnet/Haiku (6 models) | Anthropic | ❌ Needs MaaS enablement |
 | Chirp 2 | Google | ❌ Audio model (not text) |
 
-### Brain Architecture v3 (Autonomous Multi-Agent Orchestrator)
+### Brain Architecture (Autonomous Multi-Agent Orchestrator)
 
 Prime and fleet use 6 OpenClaw agents in a multi-agent configuration. The core design
 principle: **LLMs think. Deterministic systems move data, enforce rules, and deliver output.**
 
 | Agent | Model | Role | Workspace | Tools |
 |-------|-------|------|-----------|-------|
-| **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec, sessions_spawn/yield |
+| **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec |
 | **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `~/.openclaw/workspace-temporal-research` | exec (agent-ask only) |
 | **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) | `~/.openclaw/workspace-temporal-memory` | read, exec (core-memory-read only) |
 | **prefrontal** | gemini-2.5-flash | Two-mode dispatch planner (simple + advisory) | `~/.openclaw/workspace-prefrontal` | read only |
 | **motor** | gemini-2.5-flash | Execution + advisory mode + ALL Workspace tools | `~/.openclaw/workspace-motor` | read, write, edit, exec |
 | **cerebellum** | gemini-2.5-flash | Validation-rule checking + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
 
-**Brain v3 State Machine (agent-brain.mjs):**
-The `agent-brain` daemon runs as a continuous systemd service on both Prime and all fleet VMs. It replaces the old linear hook-based execution with a fully robust, envelope-based pipeline.
+**Brain State Machine (agent-brain.mjs):**
+The `agent-brain` daemon runs as a continuous systemd service on both Prime and all fleet VMs. It implements a fully robust, envelope-based pipeline.
 1. **Intake Processing & Quick Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, writes an immediate quick acknowledgment to the output channel, and starts the Cortex decide loop.
 2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`).
 3. **R/M/C/T Cognitive Hierarchy:** 
@@ -331,7 +331,7 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 - temporal-memory has ZERO external API tools — pure memory only
 - cerebellum has read-only verification tools
 
-**Dynamic skill awareness:** `assemble-tools` generates `TOOLS.md` from the agent type's skill list (in `agent-types.json`) and copies it to cortex, prefrontal, and motor workspaces. Prefrontal reads TOOLS.md to know which tools are available before planning.
+**Dynamic skill awareness:** `assemble-tools` generates `TOOLS.md` from the agent type's skill list (in `agent-registry.json`) and copies it to cortex, prefrontal, and motor workspaces. Prefrontal reads TOOLS.md to know which tools are available before planning.
 
 **Three-layer memory model:**
 - **Working Memory (`MEMORY.md`):** Loaded into every Cortex system prompt. Agent's RAM — accumulates freely during the day, pruned nightly to < 2,000 chars.

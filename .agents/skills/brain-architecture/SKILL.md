@@ -1,6 +1,6 @@
 ---
 name: brain-architecture
-description: Use when working on the brain agent system — creating/editing agent workspace files, updating agent-types.json, modifying bootstrap config agent definitions, or OpenClaw gateway configuration. Also for agent routing and intent classification.
+description: Use when working on the brain agent system — creating/editing agent workspace files, updating agent-registry.json, modifying bootstrap config agent definitions, or OpenClaw gateway configuration. Also for agent routing and intent classification.
 ---
 # Brain Architecture Implementation
 
@@ -32,7 +32,8 @@ description: Use when working on the brain agent system — creating/editing age
 ## Key Files
 - `corekit/config/openclaw-bootstrap.json5.tmpl` — Prime OpenClaw config (6 agents)
 - `corekit/config/openclaw-fleet-bootstrap.json5.tmpl` — Fleet agent OpenClaw config
-- `corekit/config/agent-types.json` — Available agent specialties
+- `corekit/config/agent-registry.json` — Per-agent settings (routes, models, intents, tools)
+- `corekit/config/agent-types.json` — Available fleet agent specialties
 - `brain/prime/cortex/` — Prime brain: plan executor + synthesizer
 - `brain/prime/temporal-research/` — Prime brain: web search
 - `brain/prime/temporal-memory/` — Prime brain: memory recall
@@ -41,8 +42,7 @@ description: Use when working on the brain agent system — creating/editing age
 - `brain/prime/cerebellum/` — Prime brain: verification
 - `brain/fleet/_base/` — Fleet: generic template (fallback)
 - `brain/fleet/_brain/` — Fleet: shared sub-agent workspaces
-- `specialties/devops/` — Fleet: DevOps specialty workspace
-- `specialties/engineer/` — Fleet: Engineer specialty workspace
+- `specialties/<type>/workspace/` — Fleet specialty workspaces (assistant, data, devops, engineer, finance, pm, qa, security)
 
 ## Memory System (Three-Layer Lifecycle)
 - **Working Memory** (`MEMORY.md`): Agent RAM — accumulates during sessions, pruned nightly to <2,000 chars

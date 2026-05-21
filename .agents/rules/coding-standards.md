@@ -13,7 +13,6 @@
 - SOUL.md = identity + turn protocol + decision rules
 - IDENTITY.md = who the agent is, 1-2 paragraphs
 - TOOLS.md = available tools and usage patterns
-- BRAIN_CARD.md = PreTurn injection card (sub-agent list + "spawn prefrontal first" rule)
 - MEMORY.md = working memory, curated, < 2000 chars
 - Keep workspace files focused — no overlap between files
 

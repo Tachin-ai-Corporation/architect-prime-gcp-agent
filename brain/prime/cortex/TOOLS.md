@@ -12,13 +12,14 @@ Use OpenClaw's built-in subagent system. Available sub-agents:
 | `cerebellum` | Verification, QA | Read-only + exec |
 
 ### Dispatch pattern:
-```
-sessions_spawn  → agent: <agent-id>, task: "<instruction>"
-sessions_yield  → (ends your turn, waits for result)
+Cortex returns structured JSON decisions. The `agent-brain` daemon handles all dispatching via HTTP.
+
+```json
+{ "action": "dispatch", "agent": "motor", "intent": "execute", "task": "...", "accept_criteria": "..." }
 ```
 
-When the sub-agent completes, its result is injected into your session.
-You then synthesize and respond to the user.
+Brain dispatches to the sub-agent, collects the result, and calls Cortex again with the result in `prior_results`.
+Cortex then synthesizes the final response.
 
 ## Fleet
 ```

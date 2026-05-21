@@ -27,8 +27,9 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 | 9 | Render bootstrap config template | ~1s |
 | 10 | Apply config via RPC (`config.apply` + baseHash retry) | ~15-60s |
 | 11 | Post-apply hardening + inject Docker CLI | ~5s |
-| 12 | Write `prime-config.json` | ~1s |
-| 13 | Install `agent-ears` + `agent-mouth` as systemd services | ~2s |
+| 12 | Vertex AI ADC + model discovery + config validation | ~10s |
+| 13 | Write `prime-config.json` + identity lockfile | ~1s |
+| 14 | Install `agent-ears` + `agent-mouth` + `agent-brain` as systemd services | ~2s |
 
 **Total: ~12-15 minutes from VM creation to `PRIME VM SETUP COMPLETE`**
 
@@ -64,7 +65,7 @@ grep "startup-script:" ... | grep "==>"
 # ==> Rendering bootstrap config...
 # ==> Applying config via RPC...
 # ==> Post-apply hardening...
-# ==> Starting agent-ears + agent-mouth...
+# ==> Starting agent-ears + agent-mouth + agent-brain...
 #   PRIME VM SETUP COMPLETE
 ```
 
@@ -84,6 +85,10 @@ sudo tail -20 /var/log/agent-ears.log
 # Check agent-mouth
 sudo systemctl status agent-mouth
 sudo tail -20 /var/log/agent-mouth.log
+
+# Check agent-brain (Brain v3 orchestration daemon)
+sudo systemctl status agent-brain
+sudo journalctl -u agent-brain --no-pager -n 20
 
 # Check CoreKit files
 ls -la /opt/openclaw/.openclaw/bin/
@@ -108,5 +113,7 @@ To modify the bootstrap:
 | `corekit/config/openclaw-bootstrap.json5.tmpl` | OpenClaw config template |
 | `corekit/daemon/agent-ears.mjs` | Deterministic input processing |
 | `corekit/daemon/agent-mouth.mjs` | Output classification + delivery |
+| `corekit/daemon/agent-brain.mjs` | Brain v3 orchestration daemon |
+| `corekit/daemon/agent-brain.service` | Systemd unit for brain daemon |
 | `infra/install.sh` | CoreKit manifest installer |
 | `infra/manifests/base.txt` | Repo path → VM path mapping |

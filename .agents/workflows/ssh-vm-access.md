@@ -39,17 +39,17 @@ sudo docker logs openclaw-gateway --tail 50
 # Agent ears logs
 sudo tail -20 /var/log/agent-ears.log
 
-# Agent mouth logs
-sudo tail -20 /var/log/agent-mouth.log
+# Agent brain daemon logs
+sudo tail -20 /var/log/agent-brain.log
 
-# Manual brain dispatch (plan-exec mode)
-sudo docker exec openclaw-gateway /home/node/.openclaw/bin/brain-exec --plan-exec temporal-research "test" 30
+# Agent brain daemon status
+sudo systemctl status agent-brain
 
 # Read telemetry
 sudo docker exec openclaw-gateway /home/node/.openclaw/bin/brain-telemetry-read --last 10
 
-# Check PLAN.md
-sudo docker exec openclaw-gateway cat /home/node/.openclaw/workspace/PLAN.md
+# Check SOUL.md (Cortex decision framework)
+sudo docker exec openclaw-gateway cat /home/node/.openclaw/workspace-cortex/SOUL.md | head -30
 
 # Check rendered config hooks
 sudo docker exec openclaw-gateway grep -A 20 hooks /home/node/.openclaw/openclaw.json
