@@ -809,7 +809,7 @@ async function generateAck(intakeText) {
         max_tokens: 60,
         temperature: 0.9,
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (resp.ok) {
@@ -912,6 +912,35 @@ async function processIntake(intake) {
   }
 
   log('INFO', `Classify result: ${decision.classification || decision.action}`);
+
+  // Handle short_circuit from classify — respond immediately, no envelope needed
+  if (decision.action === 'short_circuit' && decision.response) {
+    const scId = generateId('w');
+    await firestoreWrite('work', scId, {
+      id: scId,
+      type: 'T',
+      parent_id: null,
+      owner: AGENT_EMAIL || AGENT_ID,
+      status: 'complete',
+      intent: 'short_circuit',
+      instruction: intake.text,
+      accept_criteria: null,
+      context_summary: null,
+      output: decision.response,
+      children: [],
+      context_forward: null,
+      error: null,
+      source_channel: intake.source,
+      source_meta: intake.source_meta || {},
+      created_at: now(),
+      started_at: now(),
+      completed_at: now(),
+      updated_at: now(),
+      iteration: 0,
+    });
+    log('INFO', `Classify short_circuit: ${scId} — responded directly`);
+    return;
+  }
 
   // Create envelope based on classification
   const classification = decision.classification || 'new_task';
@@ -1279,11 +1308,14 @@ async function processEnvelope(envelope, memoryContext) {
         durationMs: result.durationMs,
       });
 
-      // Inject failure directive — force Cortex to investigate, not handwave
+      // Inject failure directive — force Cortex to investigate or escalate
       if (!result.success) {
+        const sourceInfo = envelope.source_channel
+          ? `The task came from ${envelope.source_channel}${envelope.source_meta?.space_name ? ' (' + envelope.source_meta.space_name + ')' : ''} — that is where you should escalate.`
+          : '';
         priorResults.push({
           agent: 'system',
-          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use "synthesize_with_failure" to honestly report what failed and why.`,
+          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use "synthesize_with_failure" — but your response MUST be an escalation: state exactly what you need (permissions, access, information, resources) to get the job done, who can provide it, and what specific action they should take. Do NOT just report the problem — come back with what you need to unblock the work. ${sourceInfo}`,
         });
       }
 
@@ -1423,7 +1455,7 @@ async function processEnvelope(envelope, memoryContext) {
         // Add failure directive — force investigation, not handwaving
         priorResults.push({
           agent: 'system',
-          result: `[FAILURE DIRECTIVE] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You MUST investigate the root cause — do NOT synthesize a speculative success response. Options: (1) dispatch motor to debug the specific failure, (2) retry the failed step with a corrected approach, (3) dispatch temporal-research for solutions. If you have exhausted all options, use \"synthesize_with_failure\" with honest failure details. Plain \"synthesize\" is blocked when failures are unresolved.`,
+          result: `[FAILURE DIRECTIVE] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You MUST investigate the root cause — do NOT synthesize a speculative success response. Options: (1) dispatch motor to debug the specific failure, (2) retry the failed step with a corrected approach, (3) dispatch temporal-research for solutions. If you have exhausted all options, use "synthesize_with_failure" — but your response MUST be an escalation: state exactly what you need (permissions, access, information, resources) to get the job done, who can provide it, and what specific action they should take. Do NOT just report the problem — come back with what you need to unblock the work. Plain "synthesize" is blocked when failures are unresolved.`,
         });
       }
 

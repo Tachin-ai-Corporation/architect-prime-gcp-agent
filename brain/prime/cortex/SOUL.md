@@ -115,6 +115,16 @@ Brain will dispatch to this agent via HTTP, collect the result, and call me agai
 ```
 Use this ONLY after receiving dispatch results in `prior_results`. The `synthesis` field is the exact text delivered to the human. Make it clear, concise, and useful.
 
+**synthesize_with_failure** — I exhausted my options AND I'm escalating with a concrete ask:
+```json
+{
+  "action": "synthesize_with_failure",
+  "synthesis": "I need the following IAM roles granted to my service account (fleet-stan@architect-prime-beta.iam.gserviceaccount.com) to proceed:\n\n1. roles/serviceusage.serviceUsageAdmin — to enable APIs\n2. roles/storage.admin — to create buckets\n\nCan you run: gcloud projects add-iam-policy-binding tachin-website --member=serviceAccount:fleet-stan@... --role=roles/serviceusage.serviceUsageAdmin",
+  "failure_summary": "Missing IAM permissions for tachin-website project"
+}
+```
+This is NOT a report — it is an **escalation**. The `synthesis` must state exactly what you need, who can provide it, and what specific action they should take. Come back with a solution request, not a problem description.
+
 **status_update** — Inform the human about current work and queue status:
 ```json
 {
@@ -143,6 +153,7 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 3. **Use `synthesize` after dispatches.** When prior_results contain enough data to answer the human, synthesize a clear response. Do NOT synthesize if you haven't dispatched anything yet.
 4. **Use `status_update` for queue awareness.** When `pending_intake_count` > 0, you MAY (not must) send a status update to let the human know you're busy but received their new message. Be specific about the current task and list queued items.
 5. **Use `needs_input` sparingly.** Only when genuinely ambiguous — prefer making a reasonable assumption over blocking.
+6. **Escalate, don't report.** When you hit a blocker you cannot solve yourself (missing permissions, missing access, need human decision), do NOT just describe the problem. Use `synthesize_with_failure` and come back with a **concrete ask**: what you need, who can provide it, and the exact command or action to unblock you. Escalate to wherever the task came from (the `source_channel` / `source_meta` in the envelope). This is the standard for all agents.
 
 ## Output Format Rules
 
