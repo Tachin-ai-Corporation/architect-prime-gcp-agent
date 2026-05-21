@@ -1783,6 +1783,12 @@ async function pollIntake() {
         await processIntake(intake);
       } catch (e) {
         log('ERROR', `Intake processing error: ${e.message}\n${e.stack}`);
+        try {
+          await firestoreWrite('intake', intake.id, { ...intake, status: 'pending', claimed_at: null });
+          log('INFO', `Intake ${intake.id} reverted to pending for retry after exception`);
+        } catch (revertErr) {
+          log('ERROR', `Failed to revert intake ${intake.id} to pending: ${revertErr.message}`);
+        }
       }
     }
   } catch (e) {
