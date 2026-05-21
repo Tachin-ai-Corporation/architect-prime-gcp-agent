@@ -594,9 +594,13 @@ async function getPendingIntakeQueue() {
     const pending = await firestoreQuery('intake', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
     ]);
+    const filtered = pending.filter(item => {
+      const targetAgentId = item.source_meta?.agentId;
+      return !targetAgentId || targetAgentId === AGENT_ID;
+    });
     return {
-      count: pending.length,
-      queue: pending.map((item, i) => ({
+      count: filtered.length,
+      queue: filtered.map((item, i) => ({
         position: i + 1,
         text: (item.text || '').substring(0, 120),
         source: item.source || 'unknown',
@@ -1769,7 +1773,12 @@ async function pollIntake() {
       { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
     ]);
 
-    for (const intake of pending) {
+    const filtered = pending.filter(item => {
+      const targetAgentId = item.source_meta?.agentId;
+      return !targetAgentId || targetAgentId === AGENT_ID;
+    });
+
+    for (const intake of filtered) {
       try {
         await processIntake(intake);
       } catch (e) {

@@ -120,7 +120,7 @@ log "Applying ADC auth patch..."
 sleep 3  # wait for container to initialize
 AUTH_ENV_FILE="$(docker exec openclaw-gateway find /app/dist -name 'model-auth-env-*.js' -type f 2>/dev/null | head -1)"
 if [[ -n "$AUTH_ENV_FILE" ]]; then
-  cat > /tmp/patch-adc.py << 'PYEOF'
+  docker exec -i openclaw-gateway tee /tmp/patch-adc.py << 'PYEOF' >/dev/null
 import sys
 fpath = sys.argv[1]
 with open(fpath) as f: code = f.read()
@@ -140,9 +140,8 @@ else:
 if patched:
     with open(fpath, 'w') as f: f.write(code)
 PYEOF
-  docker cp /tmp/patch-adc.py openclaw-gateway:/tmp/patch-adc.py
   docker exec -u 0 openclaw-gateway python3 /tmp/patch-adc.py "$AUTH_ENV_FILE"
-  rm -f /tmp/patch-adc.py
+  docker exec -u 0 openclaw-gateway rm -f /tmp/patch-adc.py
   # Restart node process to pick up the patch
   docker exec openclaw-gateway kill 1 2>/dev/null || true
   sleep 5

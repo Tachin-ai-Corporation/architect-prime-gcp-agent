@@ -460,8 +460,10 @@ if [ ! -f "$AP" ]; then
 fi
 ' || warn "auth-profiles step had non-fatal errors"
 
-# Step 2: Patch model-auth-env — write patcher on host, copy into container
-cat > /tmp/patch-adc.py << 'PYEOF'
+# Step 2: Patch model-auth-env — write patcher directly inside container
+AUTH_ENV_FILE=$(docker exec openclaw-gateway find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
+if [ -n "$AUTH_ENV_FILE" ]; then
+  docker exec -i openclaw-gateway tee /tmp/patch-adc.py << 'PYEOF' >/dev/null
 import sys
 fpath = sys.argv[1]
 with open(fpath) as f: code = f.read()
@@ -481,13 +483,9 @@ else:
 if patched:
     with open(fpath, "w") as f: f.write(code)
 PYEOF
-
-AUTH_ENV_FILE=$(docker exec openclaw-gateway find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
-if [ -n "$AUTH_ENV_FILE" ]; then
-  docker cp /tmp/patch-adc.py openclaw-gateway:/tmp/patch-adc.py
   docker exec -u 0 openclaw-gateway python3 /tmp/patch-adc.py "$AUTH_ENV_FILE" || warn "ADC patch script error"
+  docker exec -u 0 openclaw-gateway rm -f /tmp/patch-adc.py
 fi
-rm -f /tmp/patch-adc.py
 
 # Step 3: Remove stale ADC files
 docker exec -u 0 openclaw-gateway rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
