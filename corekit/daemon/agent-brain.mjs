@@ -804,7 +804,7 @@ async function generateAck(intakeText) {
         model: CORTEX_ROUTE,
         messages: [
           { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 15 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can. Your personality:\n${identity || 'Helpful and professional.'}` },
-          { role: 'user', content: `Acknowledge this message briefly:\n"${intakeText.substring(0, 300)}"` },
+          { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${intakeText.substring(0, 300)}"` },
         ],
         max_tokens: 60,
         temperature: 0.9,
