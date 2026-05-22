@@ -83,7 +83,7 @@ export interface WorkEnvelope {
   type: 'R' | 'M' | 'C' | 'T';
   parent_id: string | null;
   owner: string;
-  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'archived';
+  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived';
   intent: string;
   instruction: string;
   accept_criteria: string;
@@ -98,6 +98,11 @@ export interface WorkEnvelope {
   completed_at: string | null;
   updated_at: string;
   iteration: number;
+  blocker?: string | null;
+  blocker_type?: string | null;
+  blocked_at?: string | null;
+  cancelled_at?: string | null;
+  cancelled_reason?: string | null;
 }
 
 export interface WorkHistoryEntry {

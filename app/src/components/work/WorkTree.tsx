@@ -16,6 +16,8 @@ const STATUS_ICONS: Record<string, string> = {
   active: "🔵",
   waiting: "🟡",
   needs_input: "🟡",
+  blocked: "🚫",
+  cancelled: "⚪",
   failed: "🔴",
   pending: "⚪",
   archived: "⚪",

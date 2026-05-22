@@ -577,10 +577,10 @@ async function pollBrainV3Envelopes() {
     const token = await getAccessToken();
     const ownerEmail = AGENT_USER_EMAIL || process.env.AGENT_ID || '';
 
-    // Query for envelopes needing delivery: complete OR needs_input
+    // Query for envelopes needing delivery: complete, needs_input, or blocked
     // Firestore REST doesn't support IN operator on structuredQuery,
-    // so we run two parallel queries.
-    const statuses = ['complete', 'needs_input'];
+    // so we run parallel queries per status.
+    const statuses = ['complete', 'needs_input', 'blocked'];
     const allResults = [];
 
     for (const targetStatus of statuses) {
@@ -650,10 +650,10 @@ async function pollBrainV3Envelopes() {
 
       // Classify and deliver through the existing pipeline
       try {
-        if (status === 'needs_input') {
-          // For needs_input, deliver the question directly
+        if (status === 'needs_input' || status === 'blocked') {
+          // For needs_input or blocked, deliver the message directly (escalation/question)
           await deliver(output);
-          log('Delivered needs_input prompt', { envId });
+          log(`Delivered ${status} message`, { envId });
         } else {
           // For complete, run through the full classify pipeline
           const envQuestion = f.instruction?.stringValue || f.context_summary?.stringValue || '';

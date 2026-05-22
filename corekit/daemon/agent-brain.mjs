@@ -45,7 +45,7 @@ const AGENT_EMAIL = process.env.AGENT_USER_EMAIL || '';
 const GATEWAY_PORT = CONTRACTS.gateway?.port || 18789;
 const GATEWAY_URL = `http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`;
 const MAX_ITERATIONS = CONTRACTS.brain?.max_iterations || 12;
-const GATEWAY_TIMEOUT_MS = CONTRACTS.brain?.gateway_timeout_ms || 300_000;
+const GATEWAY_TIMEOUT_MS = CONTRACTS.brain?.gateway_timeout_ms || 600_000;
 const STALE_CLEANUP_HOURS = CONTRACTS.brain?.stale_cleanup_hours || 24;
 const ARCHIVE_AGE_DAYS = CONTRACTS.brain?.archive_age_days || 7;
 const ARCHIVE_INTERVAL_MS = CONTRACTS.brain?.archive_interval_ms || 6 * 60 * 60 * 1000; // 6h default
@@ -674,21 +674,29 @@ async function writeMemory(envelope) {
 // ---- Active envelope scan: query for in-progress work ----
 async function scanActiveEnvelopes() {
   try {
-    const active = await firestoreQuery('work', [
-      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
-    ]);
-    const summaries = active
+    // Query all live statuses — active, waiting, needs_input, blocked
+    const statuses = ['active', 'waiting', 'needs_input', 'blocked'];
+    let allEnvelopes = [];
+    for (const status of statuses) {
+      const envs = await firestoreQuery('work', [
+        { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+        { field: 'status', op: 'EQUAL', value: { stringValue: status } },
+      ]);
+      allEnvelopes.push(...envs);
+    }
+    const summaries = allEnvelopes
       .filter(env => !env.parent_id) // Only top-level envelopes
       .map(env => ({
         id: env.id,
         type: env.type,
-        instruction: (env.instruction || '').substring(0, 120),
+        instruction: (env.instruction || '').substring(0, 200),
         status: env.status,
+        blocker: env.blocker || null,
+        blocker_type: env.blocker_type || null,
         updated_at: env.updated_at,
       }));
     if (summaries.length > 0) {
-      log('INFO', `Active envelopes: ${summaries.length} found`);
+      log('INFO', `Active/blocked envelopes: ${summaries.length} found (${summaries.map(s => s.status).join(', ')})`);
     }
     return summaries;
   } catch (e) {
@@ -726,7 +734,8 @@ async function deliverStatusUpdate(envelopeId, message) {
 }
 
 // ---- Periodic envelope archival ----
-// Archives: failed (>STALE_CLEANUP_HOURS), complete (>ARCHIVE_AGE_DAYS), stale needs_input (>NEEDS_INPUT_TIMEOUT_HOURS)
+// Archives: failed (>STALE_CLEANUP_HOURS), complete (>ARCHIVE_AGE_DAYS), stale needs_input (>NEEDS_INPUT_TIMEOUT_HOURS), cancelled (>STALE_CLEANUP_HOURS)
+// NOTE: blocked envelopes are NEVER archived — they stay alive indefinitely for resumption
 async function archiveEnvelopes() {
   log('INFO', 'Running envelope archival sweep...');
   let totalArchived = 0;
@@ -773,14 +782,29 @@ async function archiveEnvelopes() {
       }
     }
 
-    totalArchived = failedCount + completeCount + needsInputCount;
-    log('INFO', `Archival sweep complete: ${totalArchived} total archived (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered)`);
+    // 4. Cancelled envelopes older than STALE_CLEANUP_HOURS
+    const cancelled = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'cancelled' } },
+    ]);
+    let cancelledCount = 0;
+    for (const env of cancelled) {
+      if (env.cancelled_at && env.cancelled_at < failedCutoff) {
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'cancelled', updated_at: now() });
+        cancelledCount++;
+      }
+    }
+    if (cancelledCount) log('INFO', `Archived ${cancelledCount} cancelled envelopes (>${STALE_CLEANUP_HOURS}h old)`);
+
+    // NOTE: blocked envelopes are NOT archived — they persist indefinitely for resumption
+
+    totalArchived = failedCount + completeCount + needsInputCount + cancelledCount;
+    log('INFO', `Archival sweep complete: ${totalArchived} total archived (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled)`);
   } catch (e) {
     log('WARN', `Archival sweep error: ${e.message}`);
   }
 }
 
-// ---- Quick ACK generation (lightweight LLM call) ----
+// ---- Quick ACK generation (lightweight LLM call, mission-aware) ----
 const ACK_FALLBACKS = [
   '✅ Got it — working on this now.',
   '👍 On it!',
@@ -788,7 +812,7 @@ const ACK_FALLBACKS = [
   '🔛 Working on it.',
 ];
 
-async function generateAck(intakeText) {
+async function generateAck(intakeText, activeEnvelopes) {
   try {
     // Read a personality snippet from IDENTITY.md (first 500 chars)
     const identityPaths = [
@@ -801,6 +825,15 @@ async function generateAck(intakeText) {
       if (content) { identity = content.substring(0, 500); break; }
     }
 
+    // Build work context from active/blocked missions
+    let workContext = '';
+    if (activeEnvelopes && activeEnvelopes.length > 0) {
+      const summaries = activeEnvelopes.map(e =>
+        `${e.status === 'blocked' ? '🚫 BLOCKED' : '🔵 ACTIVE'}: "${(e.instruction || '').substring(0, 80)}"`
+      ).join('\n');
+      workContext = `\nYour current work:\n${summaries}\nBriefly mention what you're working on or blocked on if relevant (e.g. "I'll get to this after I finish...").`;
+    }
+
     const resp = await fetch(GATEWAY_URL, {
       method: 'POST',
       headers: {
@@ -810,7 +843,7 @@ async function generateAck(intakeText) {
       body: JSON.stringify({
         model: CORTEX_ROUTE,
         messages: [
-          { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 15 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can. Your personality:\n${identity || 'Helpful and professional.'}` },
+          { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.${workContext}\nYour personality:\n${identity || 'Helpful and professional.'}` },
           { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${intakeText.substring(0, 300)}"` },
         ],
         max_tokens: 60,
@@ -844,9 +877,12 @@ async function processIntake(intake) {
     claimed_at: now(),
   });
 
-  // Phase 7A: Quick ack — immediately tell the user we received it
+  // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)
+  const activeEnvelopes = await scanActiveEnvelopes();
+
+  // Phase 7A: Quick ack — immediately tell the user we received it (with mission context)
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system') {
-    const ackText = await generateAck(intake.text || '');
+    const ackText = await generateAck(intake.text || '', activeEnvelopes);
     const ackId = generateId('ack');
     await firestoreWrite('work', ackId, {
       id: ackId,
@@ -876,9 +912,6 @@ async function processIntake(intake) {
   // Phase 3+: Dual memory recall
   // First recall: ambient context from raw inbound text (helps classify)
   const ambientMemory = await recallMemory(intake.text);
-
-  // Phase 3: Active envelope scan (for follow-up detection)
-  const activeEnvelopes = await scanActiveEnvelopes();
 
   // Call Cortex in classify mode (with ambient memory)
   const decision = await callCortex('classify', {
@@ -955,6 +988,18 @@ async function processIntake(intake) {
   // Phase 3: Handle attach classification (follow-up to existing work)
   if (classification === 'attach') {
     await handleAttach(intake, decision, memoryContext);
+    return;
+  }
+
+  // Handle continue classification (resume a blocked mission)
+  if (classification === 'continue') {
+    await handleContinue(intake, decision, memoryContext);
+    return;
+  }
+
+  // Handle cancel classification (explicitly abandon work)
+  if (classification === 'cancel') {
+    await handleCancel(intake, decision);
     return;
   }
 
@@ -1090,6 +1135,86 @@ async function processIntakeAsNewTask(intake, decision, memoryContext) {
   await processEnvelope(envelope, memoryContext);
 }
 
+// ---- Continue handler: resume a blocked mission ----
+async function handleContinue(intake, decision, memoryContext) {
+  const targetId = decision.continue_mission;
+  log('INFO', `Continue: intake ${intake.id} → resuming blocked mission ${targetId}`);
+
+  if (!targetId) {
+    log('WARN', `Continue missing continue_mission field, treating as new_mission`);
+    return processIntakeAsNewTask(intake, decision, memoryContext);
+  }
+
+  const mission = await firestoreRead('work', targetId);
+  if (!mission) {
+    log('WARN', `Continue target ${targetId} not found, treating as new_mission`);
+    return processIntakeAsNewTask(intake, decision, memoryContext);
+  }
+
+  // Only reopen blocked or complete missions (not active — that's an attach/status check)
+  if (!['blocked', 'complete'].includes(mission.status)) {
+    log('WARN', `Continue target ${targetId} is ${mission.status}, treating as attach`);
+    return handleAttach(intake, decision, memoryContext);
+  }
+
+  const prevStatus = mission.status;
+
+  // Reopen the mission
+  mission.status = 'active';
+  mission.context_forward = [
+    mission.context_forward || '',
+    `[UNBLOCKED] ${intake.text}`,
+    `[REVISED INSTRUCTION] ${decision.instruction || intake.text}`,
+  ].filter(Boolean).join('\n\n');
+  mission.blocker = null;
+  mission.blocker_type = null;
+  mission._unblock_attempted = false; // Reset retry cap for new attempt
+  mission.updated_at = now();
+
+  await firestoreWrite('work', targetId, mission);
+  await writeHistory(targetId, prevStatus, 'active', 'brain',
+    `Resumed via continue: ${intake.text.substring(0, 100)}`);
+  log('INFO', `Mission ${targetId} reopened from ${prevStatus} → active`);
+
+  // Resume processing — Cortex will see the full mission context + new unblock info
+  await processEnvelope(mission, memoryContext);
+}
+
+// ---- Cancel handler: explicitly abandon work ----
+async function handleCancel(intake, decision) {
+  const targetId = decision.cancel_target;
+  log('INFO', `Cancel: intake ${intake.id} → cancelling ${targetId}`);
+
+  if (!targetId) {
+    log('WARN', `Cancel missing cancel_target field, ignoring`);
+    return;
+  }
+
+  const target = await firestoreRead('work', targetId);
+  if (!target) {
+    log('WARN', `Cancel target ${targetId} not found`);
+    return;
+  }
+
+  if (!['active', 'blocked', 'needs_input', 'waiting', 'pending'].includes(target.status)) {
+    log('INFO', `Cancel target ${targetId} already in terminal state: ${target.status}`);
+    return;
+  }
+
+  const prevStatus = target.status;
+  target.status = 'cancelled';
+  target.cancelled_at = now();
+  target.cancelled_reason = decision.reasoning || intake.text || 'User requested cancellation';
+  target.updated_at = now();
+  await firestoreWrite('work', targetId, target);
+  await writeHistory(targetId, prevStatus, 'cancelled', 'brain',
+    `Cancelled: ${(decision.reasoning || '').substring(0, 100)}`);
+  log('INFO', `Mission ${targetId} cancelled (was ${prevStatus})`);
+
+  // Deliver confirmation
+  await deliverStatusUpdate(targetId, `✅ Cancelled mission: "${target.instruction.substring(0, 100)}"`);
+}
+
 // ---- Envelope processing (Phase 3: memory-enriched Cortex loop) ----
 async function processEnvelope(envelope, memoryContext) {
   log('INFO', `Processing envelope: ${envelope.id} (type=${envelope.type}, status=${envelope.status})`);
@@ -1218,7 +1343,37 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'synthesize_with_failure') {
-      // Explicit failure acknowledgment — Cortex admits something didn't work
+      // Self-unblock attempt: before accepting failure, check if Cortex can find an alternative
+      if (!envelope._unblock_attempted && iteration < MAX_ITERATIONS - 2) {
+        log('INFO', `Self-unblock attempt for ${envelope.id} — asking Cortex for alternative approach`);
+        envelope._unblock_attempted = true;
+        await firestoreWrite('work', envelope.id, envelope);
+
+        priorResults.push({
+          agent: 'system',
+          result: `[SELF-UNBLOCK CHECK] Before accepting this failure, try to find an alternative approach. Can you resolve this yourself using a different method? If YES: use "dispatch" to try the alternative. If NO — this is a genuine external dependency you cannot work around — use "blocked" action with a concrete blocker description. Do NOT use synthesize_with_failure; use "blocked" instead.`,
+        });
+        continue;
+      }
+
+      // If we already tried self-unblock or we're at max iterations, mark as blocked (for missions) or complete (for tasks)
+      if (envelope.type === 'M') {
+        // Missions get blocked status — they stay alive for resumption
+        envelope.output = decision.synthesis || decision.response;
+        envelope.status = 'blocked';
+        envelope.blocker = decision.failure_summary || decision.synthesis || 'Unknown blocker';
+        envelope.blocker_type = decision.blocker_type || 'other';
+        envelope.blocked_at = now();
+        envelope.updated_at = now();
+        await firestoreWrite('work', envelope.id, envelope);
+        await writeHistory(envelope.id, 'active', 'blocked', 'brain',
+          `Blocked (self-unblock exhausted): ${(decision.failure_summary || '').substring(0, 200)}`);
+        log('INFO', `Envelope ${envelope.id} BLOCKED (synthesize_with_failure → blocked: ${(decision.failure_summary || '').substring(0, 80)})`);
+        await writeMemory(envelope);
+        return;
+      }
+
+      // Non-mission envelopes (tasks) still complete normally with failure
       envelope.output = decision.synthesis || decision.response;
       envelope.status = 'complete';
       envelope.completed_at = now();
@@ -1233,15 +1388,30 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
+    if (action === 'blocked') {
+      // Direct blocked action from Cortex — genuine external dependency confirmed
+      envelope.output = decision.escalation_message || decision.synthesis || decision.response || 'Blocked on external dependency.';
+      envelope.status = 'blocked';
+      envelope.blocker = decision.blocker || 'Unknown blocker';
+      envelope.blocker_type = decision.blocker_type || 'other';
+      envelope.blocked_at = now();
+      envelope.updated_at = now();
+      await firestoreWrite('work', envelope.id, envelope);
+      await writeHistory(envelope.id, 'active', 'blocked', 'brain',
+        `Blocked: ${(decision.blocker || '').substring(0, 200)}`);
+      log('INFO', `Envelope ${envelope.id} BLOCKED (${decision.blocker_type || 'other'}): ${(decision.blocker || '').substring(0, 80)}`);
+      await writeMemory(envelope);
+      return;
+    }
 
     if (action === 'needs_input') {
-      // Phase 3: Block envelope and ask the human for clarification
+      // Phase 3: Block envelope and ask the human for clarification (ambiguous — needs info)
       envelope.output = decision.question || decision.message || 'I need more information to proceed.';
       envelope.status = 'needs_input';
       envelope.updated_at = now();
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'needs_input', 'brain', `Needs: ${decision.what_is_needed || 'clarification'}`);
-      log('INFO', `Envelope ${envelope.id} blocked (needs_input)`);
+      log('INFO', `Envelope ${envelope.id} needs_input (ambiguous)`);
       return;
     }
 
@@ -1322,7 +1492,7 @@ async function processEnvelope(envelope, memoryContext) {
           : '';
         priorResults.push({
           agent: 'system',
-          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use "synthesize_with_failure" — but your response MUST be an escalation: state exactly what you need (permissions, access, information, resources) to get the job done, who can provide it, and what specific action they should take. Do NOT just report the problem — come back with what you need to unblock the work. ${sourceInfo}`,
+          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use the "blocked" action with a concrete blocker description (blocker, blocker_type, escalation_message) — your escalation MUST state exactly what you need (permissions, access, information, resources), who can provide it, and what specific action to take. Do NOT just report the problem — come back with what you need to unblock the work. ${sourceInfo}`,
         });
       }
 
@@ -1462,7 +1632,7 @@ async function processEnvelope(envelope, memoryContext) {
         // Add failure directive — force investigation, not handwaving
         priorResults.push({
           agent: 'system',
-          result: `[FAILURE DIRECTIVE] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You MUST investigate the root cause — do NOT synthesize a speculative success response. Options: (1) dispatch motor to debug the specific failure, (2) retry the failed step with a corrected approach, (3) dispatch temporal-research for solutions. If you have exhausted all options, use "synthesize_with_failure" — but your response MUST be an escalation: state exactly what you need (permissions, access, information, resources) to get the job done, who can provide it, and what specific action they should take. Do NOT just report the problem — come back with what you need to unblock the work. Plain "synthesize" is blocked when failures are unresolved.`,
+          result: `[FAILURE DIRECTIVE] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You MUST investigate the root cause — do NOT synthesize a speculative success response. Options: (1) dispatch motor to debug the specific failure, (2) retry the failed step with a corrected approach, (3) dispatch temporal-research for solutions. If you have exhausted all options, use the "blocked" action with a concrete blocker description (blocker, blocker_type, escalation_message) — your escalation MUST state exactly what you need (permissions, access, information, resources), who can provide it, and what specific action to take. Do NOT just report the problem — come back with what you need to unblock the work. Plain "synthesize" is blocked when failures are unresolved.`,
         });
       }
 

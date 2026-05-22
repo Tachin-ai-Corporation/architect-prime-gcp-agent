@@ -1184,6 +1184,17 @@ function HomeInner() {
                       onResponded={() => setSelectedWorkId(null)}
                     />
                   )}
+                  {selectedWorkEnvelope?.status === "blocked" && (
+                    <div style={{ padding: 16 }}>
+                      <div style={{
+                        padding: "10px 12px", background: "rgba(239, 68, 68, 0.08)",
+                        border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: 8, fontSize: 13,
+                      }}>
+                        <strong style={{ color: "#ef4444" }}>🚫 Blocked:</strong>{" "}
+                        <span style={{ color: "var(--text-secondary)" }}>{selectedWorkEnvelope.blocker || "Unknown blocker"}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

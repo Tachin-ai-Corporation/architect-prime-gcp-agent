@@ -15,6 +15,8 @@ const STATUS_ICONS: Record<string, string> = {
   active: "🔵",
   waiting: "🟡",
   needs_input: "🟡",
+  blocked: "🚫",
+  cancelled: "⚪",
   failed: "🔴",
   pending: "⚪",
   archived: "⚪",
@@ -96,6 +98,40 @@ export function WorkDetail({ envelope, onNavigate }: WorkDetailProps) {
           </span>
         )}
       </div>
+
+      {envelope.status === "blocked" && envelope.blocker && (
+        <div style={{
+          marginTop: 8, padding: "10px 12px", background: "rgba(239, 68, 68, 0.08)",
+          border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: 8, fontSize: 13,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <span style={{ fontSize: 14 }}>🚫</span>
+            <span style={{ fontWeight: 600, color: "#ef4444" }}>Blocked</span>
+            {envelope.blocker_type && (
+              <span style={{
+                fontSize: 10, padding: "2px 6px", borderRadius: 4,
+                background: "rgba(239, 68, 68, 0.15)", color: "#ef4444", fontWeight: 600,
+                textTransform: "uppercase",
+              }}>{envelope.blocker_type}</span>
+            )}
+          </div>
+          <div style={{ color: "var(--text-secondary)" }}>{envelope.blocker}</div>
+        </div>
+      )}
+      {envelope.status === "cancelled" && (
+        <div style={{
+          marginTop: 8, padding: "10px 12px", background: "rgba(107, 114, 128, 0.08)",
+          border: "1px solid rgba(107, 114, 128, 0.2)", borderRadius: 8, fontSize: 13,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <span style={{ fontSize: 14 }}>⚪</span>
+            <span style={{ fontWeight: 600, color: "var(--text-tertiary)" }}>Cancelled</span>
+          </div>
+          {envelope.cancelled_reason && (
+            <div style={{ color: "var(--text-secondary)" }}>{envelope.cancelled_reason}</div>
+          )}
+        </div>
+      )}
 
       {/* Instruction */}
       <div className={styles["work-detail-section"]}>
