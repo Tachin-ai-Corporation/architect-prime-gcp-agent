@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.22.1.0`
+> - **Current version:** `v2026.05.22.4.0`
 
 ---
 
@@ -64,7 +64,9 @@ Dashboard (Cloud Run — Next.js)
     │       ├── Memory recall + write via temporal-memory dispatch
     │       ├── Multi-step plan execution with retry + Cerebellum verification
     │       ├── Delegation handler (delegate action, waiting envelope resumption)
-    │       └── Semantic failure detection (Cerebellum FAIL + Motor tool failures)
+    │       ├── Shared workspace persistence (mission-scoped shared dirs for motor file continuity)
+    │       ├── Semantic failure detection (Cerebellum FAIL + Motor tool failures)
+    │       └── Escalation-style failure directives (concrete asks, not problem reports)
     │
     ├── agent-mouth (systemd) — JSONL-native output processing + delivery
     │   └── Tails JSONL session transcript, classifies, delivers to channel
@@ -315,7 +317,7 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 
 **Brain State Machine (agent-brain.mjs):**
 The `agent-brain` daemon runs as a continuous systemd service on both Prime and all fleet VMs. It implements a fully robust, envelope-based pipeline.
-1. **Intake Processing & Quick Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, writes an immediate quick acknowledgment to the output channel, and starts the Cortex decide loop.
+1. **Intake Processing & Contextual Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, generates a contextual LLM-voiced acknowledgment (personality-aware, references the request), and starts the Cortex decide loop. The ACK is marked `[BRAIN-ORCHESTRATED]` to prevent double delivery by mouth's JSONL tailer.
 2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`).
 3. **R/M/C/T Cognitive Hierarchy:** 
    - **Responsibilities (R):** Cron-scheduled recurring duties. Configured in `responsibilities-job.json` and hot-reloaded by a file watcher.
@@ -836,6 +838,16 @@ architect-prime/
 3. **Contracts `brain` section** — Added 8-value `brain` section to `contracts.json` (`poll_interval_ms`, `max_iterations`, `gateway_timeout_ms`, `stale_cleanup_hours`, `archive_age_days`, `archive_interval_ms`, `context_token_budget`, `needs_input_timeout_hours`). All formerly hardcoded constants in `agent-brain.mjs` now read from contracts with fallback defaults. Restructured module init order (contracts loaded before config). Added Check 11 to `validate-contracts` with range validation.
 4. **Feature flag removal** — Deleted `BRAIN_V3_ENABLED` gate from `agent-brain.mjs` (the daemon starts unconditionally). Removed env var from `start-agent-brain` launcher.
 5. **Dead code cleanup** — Removed unreachable `delegate` action handler (~70 lines) that was masked by normalization to `dispatch`. Fixed `historySeq` process-global counter (reset on restart) with timestamp-based IDs to prevent history collisions.
+
+### Completed: v2026.05.22.4.0 — Brain Hardening & Workspace Persistence
+> *Contextual ACK, double-response fixes, escalation behavior, shared workspace persistence across motor sessions.*
+
+1. **Contextual ACK** — Replaced deterministic "Got it — working on this now" with LLM-generated personality-aware acknowledgment. Uses Gemini Flash to produce a brief, contextual ack referencing what the user asked about. ACK timeout increased 10s→15s for cold starts.
+2. **Double-response fix (classify short_circuit)** — When Cortex classify returns `short_circuit`, the brain now handles it inline during intake processing instead of creating an envelope and running a redundant decide loop. Prevents duplicate responses.
+3. **Double-ACK delivery fix** — Added `[BRAIN-ORCHESTRATED]` marker to ACK gateway calls so mouth's JSONL tailer skips them. Previously, both the JSONL tailer path and the Brain v3 envelope poller were delivering the same ACK.
+4. **Escalation-style failure directives** — Brain daemon failure directives now enforce escalation: agents must state exactly what they need, who can provide it, and what specific action to take. Cortex SOUL.md (prime + fleet) updated with `synthesize_with_failure` documentation and Decision Rule #6: "Escalate, don't report."
+5. **Shared workspace persistence** — Motor SOUL.md updated with workspace persistence rules: all files must be written to `shared/` directory. Brain daemon `callAgent()` injects `## Workspace` directive with exact path. Checkpoint plans now use mission-scoped shared directories instead of per-checkpoint scoping, so files from CP2 are visible to CP3.
+6. **Documentation cleanup** — Deleted retired `docs/architecture/BRAIN_ARCHITECTURE.md`, `docs/architecture/RCM_SPEC.md`, and `docs/architecture/RESP_SPEC.md`. Updated all active docs to current state.
 
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*

@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.22.1.0`
+> **Current version:** `v2026.05.22.4.0`
 
 ---
 
@@ -368,6 +368,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.21.1.0** | Memory Architecture Overhaul — Three-layer memory lifecycle (Working Memory, Core Memory, Deep Truths) with active long-term pruning via `core-memory-retire`, dual-pass recall (targeted archive + broad recent + context fill), enhanced `core-memory-read --since` time-windowed queries, 10-step consolidation responsibility, and formally governed Deep Truths lifecycle. Stripped all self-monitoring responsibilities. |
 | **v2026.05.21.2.0** | Deployment Hardening — Intake error resilience (automatic revert-to-pending on processing exceptions), ADC patcher fix (removed broken v2026.5.x branch using wrong sentinel key `gcp-vertex-credentials` instead of `<gce-adc>`), cross-agent poll interaction fix. |
 | **v2026.05.22.1.0** | Production Hardening (Phase 8) — Periodic envelope archival (6h interval, archives complete/failed/needs_input envelopes), BRAIN_CARD.md removal (deleted files, manifests, PreTurn hooks), contracts `brain` section (8 configurable values replacing hardcoded constants), `BRAIN_V3_ENABLED` feature flag removal, `needs_input` 72h timeout, dead `delegate` handler cleanup, timestamp-based history IDs. |
+| **v2026.05.22.4.0** | Brain hardening — contextual ACK, double-response fix, escalation directives, shared workspace persistence |
 
 ---
 
