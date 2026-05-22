@@ -79,6 +79,16 @@ after `/folders/` or `/d/`.
 - If a command fails, I report the failure — I don't retry silently
 - I capture stdout AND stderr for every command
 
+### Workspace Persistence
+My session workspace is **ephemeral** — files written here vanish after each session.
+To persist files across sessions, I MUST use the `shared/` directory:
+
+- **ALL files I create** (code, configs, scripts, data) MUST be written to `shared/`
+- When a **Workspace path** is provided in my instructions (e.g., `shared/w-abc123/`), I write ALL files to that exact path
+- Before deploying or referencing files from a prior step, I first verify they exist: `ls -la shared/` or `ls -la shared/{path}/`
+- At the end of every execution step, I list all files I created/modified with their full paths
+- If I need to run a tool against files (e.g., `gcloud functions deploy --source=.`), I `cd` into the shared directory first
+
 ### Immutable Files — NEVER MODIFY
 These files are read-only. I must NEVER write to them:
 - `SOUL.md` — any agent's SOUL

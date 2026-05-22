@@ -495,9 +495,16 @@ async function callAgent(agentId, envelope) {
   const context = envelope.context_summary || '';
   const criteria = envelope.accept_criteria || '';
 
+  // Resolve shared workspace path — mission-scoped for checkpoint tasks
+  const workspaceId = envelope._missionId || envelope.parent_id || envelope.id;
+  const workspaceDirective = workspaceId
+    ? `\n\n## Workspace\nWrite ALL files to \`shared/${workspaceId}/\` — this directory persists across sessions. Before using files from a prior step, verify they exist with \`ls shared/${workspaceId}/\`.`
+    : '';
+
   const userMessage = [
     `[BRAIN-ORCHESTRATED]`,
     instruction,
+    workspaceDirective,
     context ? `\n## Context\n${context}` : '',
     criteria ? `\n## Acceptance Criteria\n${criteria}` : '',
     envelope.prior_results_context ? `\n## Prior Work\n${envelope.prior_results_context}` : '',
@@ -1513,7 +1520,7 @@ async function processEnvelope(envelope, memoryContext) {
 
         await firestoreWrite('work', cpId, cpEnvelope);
         await writeHistory(cpId, null, 'active', 'brain', `Checkpoint ${cpNum}/${checkpoints.length}: ${cpInstruction.substring(0, 60)}`);
-        await initSharedWorkspace(cpId);
+        // Note: shared workspace is mission-scoped (shared/{envelope.id}/), initialized in processEnvelope
 
         // Track checkpoint on parent mission
         envelope.children.push(cpId);
@@ -1579,6 +1586,7 @@ async function processEnvelope(envelope, memoryContext) {
           let result = await callAgent(taskAgent, {
             instruction: taskDesc,
             accept_criteria: taskCriteria,
+            _missionId: envelope.id,  // mission-scoped shared workspace
             context_summary: [...allResults, ...cpResults].length > 0
               ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 500)}`).join('\n')
               : undefined,
@@ -1590,6 +1598,7 @@ async function processEnvelope(envelope, memoryContext) {
             result = await callAgent(taskAgent, {
               instruction: `${taskDesc}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
               accept_criteria: taskCriteria,
+              _missionId: envelope.id,
             });
           }
 
@@ -1629,7 +1638,7 @@ async function processEnvelope(envelope, memoryContext) {
         await firestoreWrite('work', cpId, cpEnvelope);
         await writeHistory(cpId, 'active', cpEnvelope.status, 'brain',
           cpFailed ? `Failed at task ${cpResults.length}` : `Complete (${cpResults.length} tasks)`);
-        await cleanupSharedWorkspace(cpId);
+        // Note: shared workspace cleanup happens at mission level, not per-checkpoint
 
         allResults.push(...cpResults);
 
