@@ -47,3 +47,9 @@
   pointer-events: none;
   font-weight: 600;
 }
+
+.muted {
+  color: rgba(86, 99, 115, 0.7); /* Slate dimmed */
+  cursor: default;
+  pointer-events: none;
+}

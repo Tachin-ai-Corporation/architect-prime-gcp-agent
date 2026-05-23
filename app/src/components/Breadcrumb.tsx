@@ -16,11 +16,19 @@ const SEGMENT_LABELS: Record<string, string> = {
   chat: "Chat",
   deploy: "Deploy",
   setup: "Setup",
+  projects: "Projects",
+  models: "Models",
+  skills: "Skills",
+  brain: "Brain",
 };
+
+/* Segments that are structural labels only — not clickable */
+const NON_LINKABLE = new Set(["p", "a"]);
 
 interface Crumb {
   label: string;
   href: string;
+  linkable: boolean;
 }
 
 export function Breadcrumb() {
@@ -29,9 +37,9 @@ export function Breadcrumb() {
 
   const crumbs = useMemo<Crumb[]>(() => {
     const parts = pathname.split("/").filter(Boolean);
-    if (parts.length === 0) return [{ label: "Home", href: "/" }];
+    if (parts.length === 0) return [{ label: "Home", href: "/", linkable: true }];
 
-    const result: Crumb[] = [{ label: "Home", href: "/" }];
+    const result: Crumb[] = [{ label: "Home", href: "/", linkable: true }];
     let builtPath = "";
 
     for (let i = 0; i < parts.length; i++) {
@@ -41,18 +49,17 @@ export function Breadcrumb() {
       // Dynamic: /p/{id} → resolve Prime name
       if (parts[i - 1] === "p") {
         const prime = primes.find((p) => p.id === seg);
-        result.push({ label: prime?.name ?? seg, href: builtPath });
+        result.push({ label: prime?.name ?? seg, href: builtPath, linkable: true });
         continue;
       }
 
       // Dynamic: /a/{agent} → resolve agent name from fleet
       if (parts[i - 1] === "a") {
-        // Walk back to find the prime id (pattern: /p/{id}/.../a/{agent})
         const primeIdx = parts.indexOf("p");
         const primeId = primeIdx >= 0 ? parts[primeIdx + 1] : "";
         const fleet = sidebarFleet[primeId] ?? [];
         const agent = fleet.find((f) => f.name === seg);
-        result.push({ label: agent?.name ?? seg, href: builtPath });
+        result.push({ label: agent?.name ?? seg, href: builtPath, linkable: true });
         continue;
       }
 
@@ -60,6 +67,7 @@ export function Breadcrumb() {
       result.push({
         label: SEGMENT_LABELS[seg] ?? seg.charAt(0).toUpperCase() + seg.slice(1),
         href: builtPath,
+        linkable: !NON_LINKABLE.has(seg),
       });
     }
 
@@ -74,8 +82,8 @@ export function Breadcrumb() {
           return (
             <li key={crumb.href} style={{ display: "flex", alignItems: "center" }}>
               {i > 0 && <span className={styles.separator} aria-hidden>›</span>}
-              {isLast ? (
-                <span className={`${styles.segment} ${styles.current}`} aria-current="page">
+              {isLast || !crumb.linkable ? (
+                <span className={`${styles.segment} ${isLast ? styles.current : styles.muted}`}>
                   {crumb.label}
                 </span>
               ) : (
@@ -90,3 +98,4 @@ export function Breadcrumb() {
     </nav>
   );
 }
+
