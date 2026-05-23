@@ -1064,6 +1064,8 @@ async function handleAttach(intake, decision, memoryContext) {
     log('INFO', `Resuming needs_input envelope ${targetId} with human response`);
     targetEnv.status = 'active';
     targetEnv.context_forward = intake.text;
+    targetEnv.delivered_at = null;
+    targetEnv.delivered_channel = null;
     targetEnv.updated_at = now();
     await firestoreWrite('work', targetId, targetEnv);
     await writeHistory(targetId, 'needs_input', 'active', 'brain', `Resumed with: ${intake.text.substring(0, 100)}`);
@@ -1192,6 +1194,8 @@ async function handleContinue(intake, decision, memoryContext) {
   ].filter(Boolean).join('\n\n');
   mission.blocker = null;
   mission.blocker_type = null;
+  mission.delivered_at = null;
+  mission.delivered_channel = null;
   mission._unblock_attempted = false; // Reset retry cap for new attempt
   mission.updated_at = now();
 
