@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.22.4.0`
+> - **Current version:** `v2026.05.23.5.0`
 
 ---
 
@@ -848,6 +848,17 @@ architect-prime/
 4. **Escalation-style failure directives** — Brain daemon failure directives now enforce escalation: agents must state exactly what they need, who can provide it, and what specific action to take. Cortex SOUL.md (prime + fleet) updated with `synthesize_with_failure` documentation and Decision Rule #6: "Escalate, don't report."
 5. **Shared workspace persistence** — Motor SOUL.md updated with workspace persistence rules: all files must be written to `shared/` directory. Brain daemon `callAgent()` injects `## Workspace` directive with exact path. Checkpoint plans now use mission-scoped shared directories instead of per-checkpoint scoping, so files from CP2 are visible to CP3.
 6. **Documentation cleanup** — Deleted retired `docs/architecture/BRAIN_ARCHITECTURE.md`, `docs/architecture/RCM_SPEC.md`, and `docs/architecture/RESP_SPEC.md`. Updated all active docs to current state.
+
+### Completed: v2026.05.23.5.0 — Dashboard OAuth + Security Hardening
+> *Google Workspace OAuth for dashboard access control, defense-in-depth on all API routes, security hardening.*
+
+1. **Google Workspace OAuth** — Implemented `next-auth` v4 with Google provider, JWT sessions, and server-side domain restriction (`hd` claim). OAuth credentials stored in Secret Manager (never in env vars). Graceful degradation: dashboard runs in setup mode when unconfigured.
+2. **Security hardening** — Added `requireAuth()` defense-in-depth to 16 of 17 POST endpoints. Only `update-status` (fleet VM callback) is exempt. Setup/oauth endpoint requires existing auth to reconfigure when OAuth is active.
+3. **Auth middleware** — Primary gate on every request. Exempts auth flow, static assets, and fleet callbacks. Tightened bypass patterns (`endsWith` instead of `includes`).
+4. **Error sanitization** — Auth error page maps 11 known NextAuth error codes to safe messages instead of reflecting raw query params. OAuth setup API no longer leaks internal error details.
+5. **Custom sign-in page** — Branded sign-in with app icon, dynamic provider loading, `prompt: "select_account"` for Google account picker.
+6. **Bootstrap integration** — `install.sh` prompts for OAuth credentials, stores client secret in Secret Manager, grants `secretmanager.admin` to Cloud Run SA. `.env.example` documents all auth variables.
+7. **Dashboard documentation** — Replaced default create-next-app `app/README.md` with project-specific docs covering tech stack, auth, env vars, deployment, and project structure.
 
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*
