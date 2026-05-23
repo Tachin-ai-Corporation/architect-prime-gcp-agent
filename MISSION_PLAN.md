@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.23.6.0`
+> - **Current version:** `v2026.05.23.7.0`
 
 ---
 
@@ -445,20 +445,30 @@ At bootstrap, `fleet-bootstrap.sh`:
 ```
 architect-prime/
 ├── app/                              # MODULE 1: Control Plane (Cloud Run, Next.js)
-│   ├── src/app/page.tsx              # Dashboard UI (single-page)
-│   ├── src/app/api/primes/[id]/      # REST API routes
-│   │   ├── messages/                 # Dashboard ↔ Prime chat
-│   │   ├── commands/                 # Command execution bridge
-│   │   ├── deploy/                   # Prime VM creation
-│   │   └── fleet/                    # Fleet lifecycle
-│   │       ├── hire/                 # POST — trigger fleet-deploy
-│   │       ├── fire/                 # POST — trigger fleet-teardown
-│   │       ├── update-status/        # POST — fleet VM self-report (relay)
-│   │       ├── confirm-setup/        # POST — clear admin action card
-│   │       ├── dismiss/              # POST — dismiss agent from dashboard
-│   │       └── [agent]/              # GET — agent detail + logs
-│   ├── src/components/settings/      # Settings tabs (General, Models, System)
-│   ├── src/lib/                      # Firestore, auth utilities
+│   ├── src/app/page.tsx              # Home (Prime cards, deploy, onboarding)
+│   ├── src/app/p/[id]/               # Prime hub + sub-pages
+│   │   ├── page.tsx                  # Prime Hub (status strip + 6 nav cards)
+│   │   ├── chat/                     # Prime Chat (operator ↔ Prime conversation)
+│   │   ├── fleet/                    # Fleet (agent card wall, hire modal)
+│   │   ├── work/                     # Fleet Work (real-time mission tree)
+│   │   ├── projects/                 # Projects list + detail (real-time Firestore)
+│   │   ├── models/                   # Prime Models (provider-grouped LLM config)
+│   │   ├── settings/                 # Prime Settings (VM, upgrade, teardown)
+│   │   └── a/[agent]/                # Per-agent pages
+│   │       ├── page.tsx              # Agent Hub (status + 5 nav cards)
+│   │       ├── chat/                 # Agent Chat (activity timeline + DM)
+│   │       ├── work/                 # Agent Work (filtered timeline)
+│   │       ├── brain/                # Agent Brain (6-slot LLM picker)
+│   │       ├── skills/               # Agent Skills (installed kits)
+│   │       └── settings/             # Agent Settings (identity, fire, upgrade)
+│   ├── src/app/settings/             # Dashboard Settings (GCP, DWD, OAuth)
+│   ├── src/app/skills/               # Skill Kit Library (global registry)
+│   ├── src/app/api/primes/[id]/      # REST API routes (28 endpoints)
+│   ├── src/app/api/skills/           # Skill Kit registry API
+│   ├── src/components/               # Shell, Breadcrumb, NavCard, StatusStrip, AgentChip
+│   ├── src/contexts/                 # PrimeContext (shared state)
+│   ├── src/hooks/                    # useProjects (real-time Firestore)
+│   ├── src/lib/                      # Firestore, auth, types, API utilities
 │   └── Dockerfile
 ├── infra/                            # MODULE 2: Infrastructure
 │   ├── contracts.json                # Single source of truth (cross-cutting values)
@@ -870,6 +880,19 @@ architect-prime/
 5. **ACK context extraction** — ACK generator was fed `intakeText.substring(0,300)` which included the full chat context history dump. When context was long, the actual user message was truncated. Fixed by extracting the `[Current message - respond to this]` section before ACK generation.
 6. **Backfill completed** — All 365 existing work items backfilled with correct `delivery_status`. Composite Firestore index `(owner, delivery_status, created_at)` deployed.
 
+### Completed: v2026.05.23.7.0 — Dashboard v3 Redesign (1health Design System)
+> *Single-page monolith → 17-page breadcrumb-navigated hierarchy. 1health design system. Projects as first-class entity.*
+
+1. **1health design system** — Complete CSS rewrite (883 lines) with healthcare-grade design tokens: Graphite/Charcoal/Slate base, Trust Blue/Network Teal/Care Mint/Signal Aqua accent, Inter typography, 8px grid, premium easing, aqua glow effects.
+2. **Multi-page architecture** — Replaced 1355-line `page.tsx` monolith (67KB) with 17 focused page components (~150 lines avg). Every screen has a unique deep-linkable URL.
+3. **Breadcrumb navigation** — No sidebar. Global shell with breadcrumb bar auto-populated from URL path. NavCard pattern for forward navigation, breadcrumb for back navigation.
+4. **Shared components** — Shell, Breadcrumb, NavCard (4 variants), StatusStrip, AgentChip, PrimeContext (shared React context).
+5. **Projects feature** — First-class entity with Firestore collection (`primes/{id}/projects`), CRUD API, real-time listeners via `onSnapshot`, progress tracking, agent chips.
+6. **Per-agent pages** — Agent Hub, Chat (activity timeline + @agent DM), Work (filtered timeline), Brain (6-slot LLM picker), Skills (installed kits), Settings (identity, upgrade, fire).
+7. **Settings hierarchy** — Three scopes: Dashboard (GCP, DWD, OAuth), Prime (VM, upgrade, teardown), Agent (identity, fire).
+8. **Skill Kit Library** — Global registry API (11 kits: base, 2 roles, 8 jobs) + browsable UI with type filters.
+9. **Prime Models** — Provider-grouped model grid, per-brain-agent model assignment, scan + save.
+
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*
 
@@ -877,7 +900,6 @@ Candidates:
 - RSI Engine (git-ops, code-write/test skills, human gates)
 - Fleet templates and self-evolution
 - Multi-project federation
-- DevOps specialty kit enhancement (tools + workspace for GCP operations)
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR

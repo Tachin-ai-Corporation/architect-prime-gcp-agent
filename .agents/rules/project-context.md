@@ -3,10 +3,10 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.23.6.0)
+## Current Architecture (v2026.05.23.7.0)
 
 ### System Stack
-- **Cloud Run** — Next.js dashboard + REST API (control plane)
+- **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
 - **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, config
 - **Compute Engine VMs** — One per Prime + one per fleet agent
 - **OpenClaw** — AI brain on each VM (v2026.4.15, Gemini 3.1 Pro via Vertex AI ADC)
@@ -43,7 +43,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - Mouth also runs independent Brain v3 envelope poll (5s interval) — primary query on `delivery_status=pending`, fallback to 3-status query for migration
 - `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
-- **Dashboard Work tab**: Real-time M→C→T work tree (server-side API polling), envelope detail view, human-in-the-loop response form for needs_input envelopes
+- **Dashboard**: 17-page breadcrumb-navigated hierarchy (no sidebar). Home → Prime Hub → Chat/Fleet/Work/Projects/Models/Settings → Agent Hub → Chat/Work/Brain/Skills/Settings. Real-time M→C→T work tree, envelope detail view, human-in-the-loop response form for needs_input envelopes. Projects as first-class Firestore entity with real-time listeners. 1health design system (Graphite/Charcoal/Teal/Aqua). Skill Kit Library (11 kits).
 
 ### Identity Lockdown
 - `.identity-lock` file (chmod 444) written at bootstrap/upgrade with the agent's Workspace email
@@ -59,7 +59,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ## Repository Structure
 ```
-app/              Cloud Run dashboard (Next.js)
+app/              Cloud Run dashboard (Next.js, 17 pages, 1health design system)
 infra/            Bootstrap scripts, manifests, contracts.json
 corekit/          Runtime tools installed on VMs (brain, fleet, gateway, chat, dashboard, memory)
 brain/            Agent workspace files (SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md)
