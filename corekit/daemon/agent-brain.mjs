@@ -681,8 +681,9 @@ async function callAgent(agentId, envelope) {
     return { success: true, output: content, error: null, durationMs };
   } catch (e) {
     const durationMs = Date.now() - start;
-    log('ERROR', `Agent ${agentId} dispatch error: ${e.message}`);
-    return { success: false, output: null, error: e.message, durationMs };
+    const isTimeout = e.name === 'TimeoutError' || e.message?.includes('abort');
+    log(isTimeout ? 'WARN' : 'ERROR', `Agent ${agentId} ${isTimeout ? 'timed out' : 'dispatch error'}: ${e.message} (${durationMs}ms)`);
+    return { success: false, output: null, error: isTimeout ? `The operation timed out after ${Math.round(durationMs / 1000)}s` : e.message, durationMs, timedOut: isTimeout };
   }
 }
 
@@ -932,10 +933,21 @@ async function archiveEnvelopes() {
     }
     if (cancelledCount) log('INFO', `Archived ${cancelledCount} cancelled envelopes (>${STALE_CLEANUP_HOURS}h old)`);
 
+    // 5. Timed-out envelopes — always children, archive immediately (they are terminal)
+    const timedOut = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'timed_out' } },
+    ]);
+    let timedOutCount = 0;
+    for (const env of timedOut) {
+      await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'timed_out', updated_at: now() });
+      timedOutCount++;
+    }
+    if (timedOutCount) log('INFO', `Archived ${timedOutCount} timed_out envelopes`);
+
     // NOTE: blocked envelopes are NOT archived — they persist indefinitely for resumption
 
-    totalArchived = failedCount + completeCount + needsInputCount + cancelledCount;
-    log('INFO', `Archival sweep complete: ${totalArchived} total archived (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled)`);
+    totalArchived = failedCount + completeCount + needsInputCount + cancelledCount + timedOutCount;
+    log('INFO', `Archival sweep complete: ${totalArchived} total archived (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled, ${timedOutCount} timed_out)`);
   } catch (e) {
     log('WARN', `Archival sweep error: ${e.message}`);
   }
@@ -1494,11 +1506,12 @@ async function processEnvelope(envelope, memoryContext) {
 
     if (action === 'synthesize') {
       // Check for unresolved failures — block premature success synthesis
-      // Only count failures that haven't been superseded by a subsequent successful dispatch
+      // Only count HARD failures (not timeouts) that haven't been superseded by a subsequent success.
+      // Timeouts are soft — they indicate the work may have partially completed, not a real error.
       const lastSuccessIdx = priorResults.map((r, i) => r.success === true ? i : -1).filter(i => i >= 0).pop() ?? -1;
-      const hasUnresolvedFail = priorResults.some((r, i) => r.success === false && i > lastSuccessIdx);
+      const hasUnresolvedFail = priorResults.some((r, i) => r.success === false && !r.timedOut && i > lastSuccessIdx);
       if (hasUnresolvedFail && iteration < MAX_ITERATIONS - 1) {
-        log('WARN', `Blocking premature synthesize — unresolved failures in prior_results (iteration ${iteration})`);
+        log('WARN', `Blocking premature synthesize — unresolved hard failures in prior_results (iteration ${iteration})`);
         priorResults.push({
           agent: 'system',
           result: `[SYSTEM] Synthesize blocked: there are unresolved failures in prior_results. You MUST either: (1) dispatch to investigate/fix the failure, or (2) use "synthesize_with_failure" action with explicit failure details. Plain "synthesize" is not allowed when tasks have failed.`,
@@ -1615,7 +1628,29 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
-    if (action === 'dispatch') {
+    if (action === 'continue') {
+      // Continue a timed-out task — re-dispatch with continuation context
+      const lastTimedOut = [...priorResults].reverse().find(r => r.timedOut);
+      if (!lastTimedOut) {
+        priorResults.push({ agent: 'system', result: '[SYSTEM] No timed-out task to continue. Use "dispatch" instead.' });
+        continue;
+      }
+      const agentId = lastTimedOut.agent || 'motor';
+      const guidance = decision.guidance || '';
+      const continuationTask = [
+        `[CONTINUATION] A previous attempt at this task timed out. Before doing anything, CHECK what was already accomplished (files written, containers built, services deployed) so you don't redo completed work.`,
+        ``,
+        `Original task: ${lastTimedOut.task}`,
+        guidance ? `\nAdditional guidance: ${guidance}` : '',
+      ].filter(Boolean).join('\n');
+
+      // Rewrite decision to look like a dispatch and fall through
+      decision.agent = agentId;
+      decision.task = continuationTask;
+      // Fall through to dispatch handler below
+    }
+
+    if (action === 'dispatch' || action === 'continue') {
       const agentId = decision.agent;
       const task = decision.task || decision.instruction || '';
       const criteria = decision.accept_criteria || '';
@@ -1675,13 +1710,13 @@ async function processEnvelope(envelope, memoryContext) {
 
       // Update child envelope with result
       childEnvelope.output = result.output || result.error;
-      childEnvelope.status = result.success ? 'complete' : 'failed';
+      childEnvelope.status = result.success ? 'complete' : (result.timedOut ? 'timed_out' : 'failed');
       childEnvelope.error = result.error;
       childEnvelope.completed_at = now();
       childEnvelope.updated_at = now();
       await firestoreWrite('work', childId, childEnvelope);
       await writeHistory(childId, 'active', childEnvelope.status, agentId,
-        result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
+        result.success ? `Completed (${result.durationMs}ms)` : (result.timedOut ? `Timed out (${result.durationMs}ms)` : `Failed: ${result.error}`));
 
       // Feed result back to Cortex
       priorResults.push({
@@ -1689,13 +1724,27 @@ async function processEnvelope(envelope, memoryContext) {
         task: task.substring(0, 200),
         result: result.success
           ? smartTruncate(result.output || '', CTX_CORTEX_STEP)
-          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_DISPATCH_FAILURE)}`,
+          : result.timedOut
+            ? `[TIMED OUT after ${Math.round(result.durationMs / 1000)}s] ${result.error}`
+            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_DISPATCH_FAILURE)}`,
         success: result.success,
         durationMs: result.durationMs,
+        timedOut: result.timedOut || false,
       });
 
-      // Inject failure directive — force Cortex to investigate or escalate
-      if (!result.success) {
+      // Inject context — different for timeouts vs hard failures
+      if (result.timedOut) {
+        priorResults.push({
+          agent: 'system',
+          result: `[TIMEOUT] The dispatch to ${agentId} timed out after ${Math.round(result.durationMs / 1000)}s. ` +
+            `The work may have partially completed on the system. Options:\n` +
+            `(1) "continue" — re-dispatch to ${agentId} with instructions to CHECK what was already done and continue from where it left off\n` +
+            `(2) "dispatch" — try a DIFFERENT, simpler approach (break the task into smaller steps)\n` +
+            `(3) "synthesize_with_failure" — bail if this genuinely cannot be completed\n\n` +
+            `IMPORTANT: If you choose "continue", provide a "guidance" field with any hints about what to check first. ` +
+            `If you choose "dispatch", use a simpler instruction that avoids the timeout.`,
+        });
+      } else if (!result.success) {
         const sourceInfo = envelope.source_channel
           ? `The task came from ${envelope.source_channel}${envelope.source_meta?.space_name ? ' (' + envelope.source_meta.space_name + ')' : ''} — that is where you should escalate.`
           : '';
@@ -1705,7 +1754,7 @@ async function processEnvelope(envelope, memoryContext) {
         });
       }
 
-      log('INFO', `Child ${childId} ${result.success ? 'completed' : 'failed'} (${result.durationMs}ms)`);
+      log('INFO', `Child ${childId} ${result.success ? 'completed' : (result.timedOut ? 'timed out' : 'failed')} (${result.durationMs}ms)`);
       continue;
     }
 

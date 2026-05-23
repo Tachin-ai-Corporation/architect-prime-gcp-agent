@@ -134,6 +134,15 @@ I receive an envelope (a piece of work) and decide what to do next.
 Required fields: `agent` (must exist in agent_registry), `intent`, `task`, `accept_criteria`.
 Brain will dispatch to this agent via HTTP, collect the result, and call me again with the result in `prior_results`.
 
+**continue** — A previous dispatch timed out and may have partially completed. Re-dispatch to check and continue:
+```json
+{
+  "action": "continue",
+  "guidance": "The Docker build was likely in progress. Check if the image was built and if the Cloud Run service was updated."
+}
+```
+Use this when a `[TIMEOUT]` message appears in `prior_results`. Brain will re-dispatch to the same agent with instructions to CHECK what was already accomplished before redoing work. The `guidance` field (optional) tells the agent what to look for. This is better than `dispatch` with a fresh instruction because it preserves continuity and avoids redoing completed work.
+
 **plan** — The task requires multiple ordered steps:
 ```json
 {
