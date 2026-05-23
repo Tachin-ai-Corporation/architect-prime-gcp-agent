@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { messagesCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
+import { requireAuth } from "@/lib/require-auth";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -42,6 +43,9 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
+    const auth = await requireAuth();
+    if (!auth.authenticated) return auth.response;
+
     const body = await req.json();
     const { text } = body;
 

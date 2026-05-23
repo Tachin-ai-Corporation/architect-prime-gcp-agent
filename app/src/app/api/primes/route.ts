@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { primesCol, type PrimeDoc } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
+import { requireAuth } from "@/lib/require-auth";
 
 /**
  * GET /api/primes — List all Prime instances
@@ -27,6 +28,9 @@ export async function GET() {
  */
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth();
+    if (!auth.authenticated) return auth.response;
+
     const body = await req.json();
     const { name, zone } = body;
 

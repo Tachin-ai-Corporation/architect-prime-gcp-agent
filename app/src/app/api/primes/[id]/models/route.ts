@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, commandsCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
+import { requireAuth } from "@/lib/require-auth";
 
 /**
  * GET /api/primes/[id]/models — Returns model catalog + assignments from Firestore.
@@ -51,6 +52,9 @@ export async function POST(
 ) {
   const { id: primeId } = await params;
   try {
+    const auth = await requireAuth();
+    if (!auth.authenticated) return auth.response;
+
     const body = await req.json();
     const { defaultModel, assignments } = body;
 

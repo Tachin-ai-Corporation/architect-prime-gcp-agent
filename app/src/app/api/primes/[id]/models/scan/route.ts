@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { commandsCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
+import { requireAuth } from "@/lib/require-auth";
 
 /**
  * POST /api/primes/[id]/models/scan — Trigger model scan on Prime VM.
@@ -12,6 +13,9 @@ export async function POST(
 ) {
   const { id: primeId } = await params;
   try {
+    const auth = await requireAuth();
+    if (!auth.authenticated) return auth.response;
+
     const cmdRef = await commandsCol(primeId).add({
       type: "discover_models",
       args: {},

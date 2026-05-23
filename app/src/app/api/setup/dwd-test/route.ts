@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/require-auth";
 
 /**
  * POST /api/setup/dwd-test — Test DWD configuration
@@ -10,6 +11,9 @@ import { NextRequest, NextResponse } from "next/server";
  */
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth();
+    if (!auth.authenticated) return auth.response;
+
     const body = await req.json();
     const testEmail = body.email;
     const projectId = process.env.GCP_PROJECT_ID || "";

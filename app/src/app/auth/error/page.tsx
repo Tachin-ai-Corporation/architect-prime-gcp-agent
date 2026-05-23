@@ -3,9 +3,24 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
+const errorMessages: Record<string, string> = {
+  Configuration: "There is a problem with the server configuration.",
+  AccessDenied: "Access denied. Only authorized domain accounts can sign in.",
+  Verification: "The sign-in link is no longer valid.",
+  OAuthSignin: "Error connecting to Google. Please try again.",
+  OAuthCallback: "Error during sign-in callback. Please try again.",
+  OAuthCreateAccount: "Could not create account. Please try again.",
+  EmailCreateAccount: "Could not create account. Please try again.",
+  Callback: "Error during sign-in. Please try again.",
+  OAuthAccountNotLinked: "This email is already linked to another account.",
+  SessionRequired: "Please sign in to continue.",
+  Default: "An unexpected error occurred. Please try again.",
+};
+
 function ErrorContent() {
   const searchParams = useSearchParams();
-  const error = searchParams.get("error") || "Unknown error";
+  const error = searchParams.get("error") || "";
+  const message = errorMessages[error] || errorMessages.Default;
 
   return (
     <div
@@ -34,9 +49,7 @@ function ErrorContent() {
           Authentication Error
         </h1>
         <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.9rem", margin: "0 0 1.5rem" }}>
-          {error === "AccessDenied"
-            ? "Your account is not authorized to access this dashboard. Only users from the organization's Google Workspace domain can sign in."
-            : `An error occurred: ${error}`}
+          {message}
         </p>
         <a
           href="/auth/signin"

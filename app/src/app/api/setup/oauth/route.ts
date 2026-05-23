@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/require-auth";
+import { isAuthConfigured } from "@/lib/auth";
 
 /**
  * POST /api/setup/oauth — Configure Google OAuth credentials
@@ -11,6 +13,12 @@ import { NextResponse } from "next/server";
  */
 export async function POST(request: Request) {
   try {
+    // If OAuth is already configured, require auth to reconfigure
+    if (isAuthConfigured()) {
+      const auth = await requireAuth();
+      if (!auth.authenticated) return auth.response;
+    }
+
     const { clientId, clientSecret, domain } = await request.json();
 
     if (!clientId || !clientSecret) {
@@ -37,7 +45,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: false,
         error: "Cannot get SA token. Are you running on GCP?",
-      });
+      }, { status: 500 });
     }
     const { access_token: token } = await tokenRes.json();
 
@@ -194,7 +202,7 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error("[api/setup/oauth] Error:", err);
     return NextResponse.json(
-      { success: false, error: `Internal error: ${err}` },
+      { success: false, error: "Internal server error" },
       { status: 500 }
     );
   }
