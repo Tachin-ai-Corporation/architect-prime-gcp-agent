@@ -639,8 +639,13 @@ async function pollBrainV3Envelopes() {
       const deliveredAt = f.delivered_at?.timestampValue || f.delivered_at?.stringValue;
 
       // Skip: no output, already delivered (in-memory or Firestore flag), or child envelope
-      if (!envId || !output || _deliveredEnvelopes.has(envId)) continue;
-      if (deliveredAt) { skippedDelivered++; continue; }
+      if (!envId || !output) continue;
+      if (deliveredAt) { _deliveredEnvelopes.add(envId); skippedDelivered++; continue; }
+      // If brain cleared delivered_at (reopened envelope), evict from in-memory cache
+      if (!deliveredAt && _deliveredEnvelopes.has(envId)) {
+        _deliveredEnvelopes.delete(envId);
+        log('Envelope reopened (delivered_at cleared), re-eligible for delivery', { envId });
+      }
       if (f.parent_id?.stringValue) continue; // Only deliver top-level envelopes
 
       // Mark as delivered immediately to prevent duplicates
