@@ -399,6 +399,10 @@ function buildUserPrompt(mode, payload) {
       memory: payload.memory || {},
       core_facts: payload.memory?.recalled || null,
       active_envelopes: payload.active_envelopes || [],
+      classification_guidance: {
+        blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
+        attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
+      },
     });
   }
   if (mode === 'decide') {
@@ -843,7 +847,7 @@ async function generateAck(intakeText, activeEnvelopes) {
       body: JSON.stringify({
         model: CORTEX_ROUTE,
         messages: [
-          { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.${workContext}\nYour personality:\n${identity || 'Helpful and professional.'}` },
+          { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.${workContext}\nIMPORTANT: If the user's message relates to an existing blocked or in-progress mission listed above, acknowledge that you are RESUMING or CONTINUING that work, not starting something new. Say something like "On it — picking up where I left off" or "Continuing with the fix."\nYour personality:\n${identity || 'Helpful and professional.'}` },
           { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${intakeText.substring(0, 300)}"` },
         ],
         max_tokens: 60,
@@ -1068,33 +1072,53 @@ async function handleAttach(intake, decision, memoryContext) {
   }
 
   if (targetEnv.status === 'active' || targetEnv.status === 'waiting') {
-    // Status check — deliver current status
-    const statusMsg = `I'm still working on that. Current task: "${targetEnv.instruction}". Status: ${targetEnv.status}, iteration ${targetEnv.iteration || 0}.`;
-    const statusEnvId = generateId('w');
-    await firestoreWrite('work', statusEnvId, {
-      id: statusEnvId,
-      type: 'T',
-      parent_id: null,
-      owner: AGENT_EMAIL || AGENT_ID,
-      status: 'complete',
-      intent: 'status_check',
-      instruction: `Status check on ${targetId}`,
-      output: statusMsg,
-      source_channel: intake.source,
-      source_meta: intake.source_meta || {},
-      created_at: now(),
-      started_at: now(),
-      completed_at: now(),
-      updated_at: now(),
-      children: [],
-      accept_criteria: null,
-      context_summary: null,
-      context_forward: null,
-      error: null,
-      iteration: 0,
-    });
-    log('INFO', `Status check delivered for ${targetId}: ${statusEnvId}`);
-    return;
+    // Check if this is truly a status query or a new instruction to act on
+    const isStatusQuery = /\b(?:status|progress|update|how.{0,10}going|where.{0,10}at|what.{0,10}happening)\b/i.test(intake.text);
+    if (isStatusQuery) {
+      // Status check — deliver current status
+      const statusMsg = `I'm still working on that. Current task: "${targetEnv.instruction}". Status: ${targetEnv.status}, iteration ${targetEnv.iteration || 0}.`;
+      const statusEnvId = generateId('w');
+      await firestoreWrite('work', statusEnvId, {
+        id: statusEnvId,
+        type: 'T',
+        parent_id: null,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'complete',
+        intent: 'status_check',
+        instruction: `Status check on ${targetId}`,
+        output: statusMsg,
+        source_channel: intake.source,
+        source_meta: intake.source_meta || {},
+        created_at: now(),
+        started_at: now(),
+        completed_at: now(),
+        updated_at: now(),
+        children: [],
+        accept_criteria: null,
+        context_summary: null,
+        context_forward: null,
+        error: null,
+        iteration: 0,
+      });
+      log('INFO', `Status check delivered for ${targetId}: ${statusEnvId}`);
+      return;
+    }
+    // New instruction for active/waiting mission — create linked child task
+    log('INFO', `New instruction for ${targetEnv.status} mission ${targetId}, creating child task`);
+    return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
+  }
+
+  // For blocked envelopes, delegate to handleContinue (which knows how to reopen)
+  if (targetEnv.status === 'blocked') {
+    log('INFO', `Attach target ${targetId} is blocked — routing to handleContinue`);
+    decision.continue_mission = targetId;
+    return handleContinue(intake, decision, memoryContext);
+  }
+
+  // For failed missions, create a child task linked to the mission
+  if (targetEnv.status === 'failed') {
+    log('INFO', `Attach target ${targetId} is failed — creating linked follow-up task`);
+    return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
   }
 
   // For complete or other statuses, treat as a new follow-up task
@@ -1103,12 +1127,12 @@ async function handleAttach(intake, decision, memoryContext) {
 }
 
 // ---- Helper: create new task from intake when attach falls through ----
-async function processIntakeAsNewTask(intake, decision, memoryContext) {
+async function processIntakeAsNewTask(intake, decision, memoryContext, parentId = null) {
   const envelopeId = generateId('w');
   const envelope = {
     id: envelopeId,
     type: 'T',
-    parent_id: null,
+    parent_id: parentId || null,
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
     intent: decision.intent || 'decide',
