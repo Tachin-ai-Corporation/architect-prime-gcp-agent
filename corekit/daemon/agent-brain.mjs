@@ -48,7 +48,7 @@ const MAX_ITERATIONS = CONTRACTS.brain?.max_iterations || 12;
 const GATEWAY_TIMEOUT_MS = CONTRACTS.brain?.gateway_timeout_ms || 600_000;
 const STALE_CLEANUP_HOURS = CONTRACTS.brain?.stale_cleanup_hours || 24;
 const ARCHIVE_AGE_DAYS = CONTRACTS.brain?.archive_age_days || 7;
-const ARCHIVE_INTERVAL_MS = CONTRACTS.brain?.archive_interval_ms || 6 * 60 * 60 * 1000; // 6h default
+const ARCHIVE_INTERVAL_MS = CONTRACTS.brain?.archive_interval_ms || 1 * 60 * 60 * 1000; // 1h default
 const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 72;
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'openclaw/cortex';
@@ -831,7 +831,7 @@ async function deliverStatusUpdate(envelopeId, message) {
 }
 
 // ---- Periodic envelope archival ----
-// Archives: failed (>STALE_CLEANUP_HOURS), complete (>ARCHIVE_AGE_DAYS), stale needs_input (>NEEDS_INPUT_TIMEOUT_HOURS), cancelled (>STALE_CLEANUP_HOURS)
+// Archives: failed (>STALE_CLEANUP_HOURS), complete (>STALE_CLEANUP_HOURS or immediately if child), stale needs_input (>NEEDS_INPUT_TIMEOUT_HOURS), cancelled (>STALE_CLEANUP_HOURS)
 // NOTE: blocked envelopes are NEVER archived — they stay alive indefinitely for resumption
 async function archiveEnvelopes() {
   log('INFO', 'Running envelope archival sweep...');
@@ -851,19 +851,27 @@ async function archiveEnvelopes() {
     }
     if (failedCount) log('INFO', `Archived ${failedCount} failed envelopes (>${STALE_CLEANUP_HOURS}h old)`);
 
-    // 2. Complete envelopes older than ARCHIVE_AGE_DAYS
-    const completeCutoff = new Date(Date.now() - ARCHIVE_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    // 2. Complete envelopes: archive children immediately, top-level after STALE_CLEANUP_HOURS
+    const completeCutoff = new Date(Date.now() - STALE_CLEANUP_HOURS * 60 * 60 * 1000).toISOString();
     const complete = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'complete' } },
     ]);
     let completeCount = 0;
     for (const env of complete) {
-      if (env.completed_at && env.completed_at < completeCutoff) {
+      // Child envelopes (have parent_id) never need delivery — archive immediately
+      if (env.parent_id) {
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'child_complete', updated_at: now() });
+        completeCount++;
+        continue;
+      }
+      // Top-level envelopes: archive after STALE_CLEANUP_HOURS using completed_at or updated_at
+      const envAge = env.completed_at || env.updated_at || env.created_at;
+      if (envAge && envAge < completeCutoff) {
         await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', updated_at: now() });
         completeCount++;
       }
     }
-    if (completeCount) log('INFO', `Archived ${completeCount} complete envelopes (>${ARCHIVE_AGE_DAYS}d old)`);
+    if (completeCount) log('INFO', `Archived ${completeCount} complete envelopes (children + >${STALE_CLEANUP_HOURS}h old)`);
 
     // 3. Stale needs_input envelopes older than NEEDS_INPUT_TIMEOUT_HOURS
     const needsInputCutoff = new Date(Date.now() - NEEDS_INPUT_TIMEOUT_HOURS * 60 * 60 * 1000).toISOString();
