@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.23.5.0`
+> **Current version:** `v2026.05.23.6.0`
 
 ---
 
@@ -371,6 +371,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.22.1.0** | Production Hardening (Phase 8) — Periodic envelope archival (6h interval, archives complete/failed/needs_input envelopes), BRAIN_CARD.md removal (deleted files, manifests, PreTurn hooks), contracts `brain` section (8 configurable values replacing hardcoded constants), `BRAIN_V3_ENABLED` feature flag removal, `needs_input` 72h timeout, dead `delegate` handler cleanup, timestamp-based history IDs. |
 | **v2026.05.22.4.0** | Brain hardening — contextual ACK, double-response fix, escalation directives, shared workspace persistence |
 | **v2026.05.23.5.0** | Dashboard OAuth + Security Hardening — Google Workspace OAuth, requireAuth on 16/17 POST routes, error sanitization, branded sign-in page |
+| **v2026.05.23.6.0** | Delivery Pipeline Fix + Memory Reliability — `delivery_status` field (pending/delivered/internal), mouth query restructured to single efficient query, archival limit 10→300, memory_written false-positive fix (failure patterns scoped to motor/verifier), ACK context extraction, 365-item backfill |
 
 ---
 

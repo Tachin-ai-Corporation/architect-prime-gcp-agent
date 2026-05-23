@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.23.5.0`
+> - **Current version:** `v2026.05.23.6.0`
 
 ---
 
@@ -77,7 +77,7 @@ Dashboard (Cloud Run — Next.js)
     │       ├── Speaks AS the agent (first person) — not a relay
     │       ├── Prompts loaded from external .md files (no inline prose)
     │       ├── Fire-and-forget task lifecycle write to Firestore on delivery/timeout
-    │       ├── Brain envelope polling (independent 5s interval, queries complete + needs_input)
+    │       ├── Brain envelope polling (delivery_status=pending primary query, 3-status fallback)
     │       └── Never drops messages — unknown classification → deliver raw
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
@@ -317,7 +317,7 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 
 **Brain State Machine (agent-brain.mjs):**
 The `agent-brain` daemon runs as a continuous systemd service on both Prime and all fleet VMs. It implements a fully robust, envelope-based pipeline.
-1. **Intake Processing & Contextual Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, generates a contextual LLM-voiced acknowledgment (personality-aware, references the request), and starts the Cortex decide loop. The ACK is marked `[BRAIN-ORCHESTRATED]` to prevent double delivery by mouth's JSONL tailer.
+1. **Intake Processing & Contextual Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, extracts the current message from the composite intake (parsing past the context preamble), generates a contextual LLM-voiced acknowledgment (personality-aware, references what the user actually asked), and starts the Cortex decide loop. The ACK is marked `[BRAIN-ORCHESTRATED]` to prevent double delivery by mouth's JSONL tailer.
 2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`).
 3. **R/M/C/T Cognitive Hierarchy:** 
    - **Responsibilities (R):** Cron-scheduled recurring duties. Configured in `responsibilities-job.json` and hot-reloaded by a file watcher.
@@ -860,6 +860,16 @@ architect-prime/
 6. **Bootstrap integration** — `install.sh` prompts for OAuth credentials, stores client secret in Secret Manager, grants `secretmanager.admin` to Cloud Run SA. `.env.example` documents all auth variables.
 7. **Dashboard documentation** — Replaced default create-next-app `app/README.md` with project-specific docs covering tech stack, auth, env vars, deployment, and project structure.
 
+### Completed: v2026.05.23.6.0 — Delivery Pipeline Fix + Memory Reliability
+> *Eliminated 100% mouth query waste. Fixed memory_written false-positives. ACK context extraction. Archival throughput 30x.*
+
+1. **delivery_status field** — Added `delivery_status` (`pending`/`delivered`/`internal`) to all work envelopes. Brain sets `pending` at synthesis/completion, mouth sets `delivered` after delivery. Eliminates the need to scan all complete envelopes — mouth queries only `delivery_status=pending`.
+2. **Mouth query restructure** — Primary query: single `owner + delivery_status=pending` (returns only actionable items). Fallback: old 3-status query for migration. Reduces 6 Firestore queries per poll to 1. Composite index deployed.
+3. **Archival throughput fix** — `firestoreQuery` helper had hardcoded `limit: 10`, capping archival at 10 items per hour. Increased to 300. Archival can now keep pace with work creation.
+4. **memory_written false-positive fix** — `callAgent()` failure pattern detection (`/error.*permission/`, etc.) was applied to ALL agents including `temporal-memory`. When memory stored text containing error keywords from completed work, the call was falsely marked failed, preventing `memory_written` from being set (36/37 missions affected). Fixed by scoping failure patterns to `motor` and `verifier` only.
+5. **ACK context extraction** — ACK generator was fed `intakeText.substring(0,300)` which included the full chat context history dump. When context was long, the actual user message was truncated. Fixed by extracting the `[Current message - respond to this]` section before ACK generation.
+6. **Backfill completed** — All 365 existing work items backfilled with correct `delivery_status`. Composite Firestore index `(owner, delivery_status, created_at)` deployed.
+
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*
 
@@ -867,6 +877,7 @@ Candidates:
 - RSI Engine (git-ops, code-write/test skills, human gates)
 - Fleet templates and self-evolution
 - Multi-project federation
+- DevOps specialty kit enhancement (tools + workspace for GCP operations)
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR

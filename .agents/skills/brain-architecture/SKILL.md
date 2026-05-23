@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.05.22.4.0)
+## Current State (v2026.05.23.6.0)
 6 brain agents in OpenClaw multi-agent configuration, coordinated by the `agent-brain.service` state machine.
 
 ### Agent Inventory
@@ -27,7 +27,7 @@ description: Use when working on the brain agent system — creating/editing age
 ### I/O Architecture
 - `agent-ears` — deterministic input (poll, dedup, GChat preprocessor, fire-and-forget gateway POST)
 - `agent-mouth` — output classification + delivery (JSONL-native transcript tailer, turn state machine, LLM status updates)
-- OpenClaw agents never call delivery tools directly; `agent-mouth` polls for completed/needs_input envelopes
+- OpenClaw agents never call delivery tools directly; `agent-mouth` polls for `delivery_status=pending` envelopes (fallback to 3-status query)
 
 ## Key Files
 - `corekit/config/openclaw-bootstrap.json5.tmpl` — Prime OpenClaw config (6 agents)

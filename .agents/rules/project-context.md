@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.23.5.0)
+## Current Architecture (v2026.05.23.6.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard + REST API (control plane)
@@ -40,7 +40,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - Status updates: LLM-voiced ack at 5s, progress at 120s (deterministic fallback if LLM fails)
 - LLM classify via Gemini Flash in JSON mode: `{"action": "deliver"|"suppress", "text": "..."}`
 - Prompts loaded from external `.md` files (`mouth-classify-prompt.md`, `mouth-status-prompts.md`)
-- Mouth also runs independent Brain v3 envelope poll (5s interval) — queries Firestore for complete + needs_input envelopes, delivers to channel
+- Mouth also runs independent Brain v3 envelope poll (5s interval) — primary query on `delivery_status=pending`, fallback to 3-status query for migration
 - `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
 - **Dashboard Work tab**: Real-time M→C→T work tree (server-side API polling), envelope detail view, human-in-the-loop response form for needs_input envelopes
