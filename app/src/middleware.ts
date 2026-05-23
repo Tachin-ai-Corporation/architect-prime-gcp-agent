@@ -18,6 +18,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/auth") ||
     pathname === "/favicon.ico" ||
+    // Public static assets (images, icons)
+    /\.(png|jpg|jpeg|gif|svg|ico|webp)$/.test(pathname) ||
     // Fleet VMs call this during bootstrap — no user session
     pathname.includes("/fleet/update-status")
   ) {
