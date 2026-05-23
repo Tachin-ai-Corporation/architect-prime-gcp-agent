@@ -1,0 +1,406 @@
+#!/usr/bin/env bash
+# project-manage — CRUD for projects stored in Firestore
+# Motor tool: reads/writes primes/{PRIME_ID}/projects/{projectId}
+#
+# Usage:
+#   project-manage list                    # List all projects (id, name, status, description)
+#   project-manage get <id>                # Get full project details as JSON
+#   project-manage create '<json>'         # Create new project
+#   project-manage update '<id>' '<json>'  # Update project (deep merge on context)
+#   project-manage archive '<id>'          # Set status to 'archived'
+#
+# The JSON for create must include: id, name, description, context
+# The JSON for update does a deep merge on the context field and shallow merge on others
+# Automatically sets created_at and updated_at timestamps; defaults status to 'active'
+
+set -euo pipefail
+
+PRIME_ID="${PRIME_ID:?'PRIME_ID env var is required'}"
+GCP_PROJECT_ID="${GCP_PROJECT_ID:?'GCP_PROJECT_ID env var is required'}"
+
+FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+COLLECTION_PATH="primes/${PRIME_ID}/projects"
+
+get_token() {
+  gcloud auth print-access-token --quiet 2>/dev/null
+}
+
+CMD="${1:-help}"
+shift || true
+
+case "$CMD" in
+  list)
+    python3 -c "
+import json, sys, subprocess
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}'
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to list projects: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+docs = data.get('documents', [])
+
+if not docs:
+    print('No projects found.')
+    sys.exit(0)
+
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+for doc in docs:
+    fields = doc.get('fields', {})
+    pid = extract_value(fields.get('id', {'stringValue': '—'}))
+    name = extract_value(fields.get('name', {'stringValue': '—'}))
+    status = extract_value(fields.get('status', {'stringValue': '—'}))
+    desc = extract_value(fields.get('description', {'stringValue': ''}))
+    print(f'  {pid}')
+    print(f'    Name:        {name}')
+    print(f'    Status:      {status}')
+    print(f'    Description: {(desc or \"\")[:120]}')
+    print()
+
+print(f'Total: {len(docs)} projects')
+"
+    ;;
+
+  get)
+    TARGET_ID="${1:?'get requires a project id'}"
+    python3 -c "
+import json, sys, subprocess
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+target_id = '$TARGET_ID'
+url = f'{base}/{path}/{target_id}'
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+plain = {k: extract_value(v) for k, v in fields.items()}
+print(json.dumps(plain, indent=2))
+"
+    ;;
+
+  create)
+    NEW_JSON="${1:?'create requires a JSON string'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+new_project = json.loads('''$NEW_JSON''')
+
+# Validate required fields
+required = ['id', 'name', 'description', 'context']
+missing = [f for f in required if f not in new_project]
+if missing:
+    print(f'ERROR: Missing required fields: {missing}', file=sys.stderr)
+    sys.exit(1)
+
+if not isinstance(new_project.get('context'), dict):
+    print('ERROR: context must be a JSON object/map.', file=sys.stderr)
+    sys.exit(1)
+
+# Enforce defaults
+now = datetime.now(timezone.utc).isoformat()
+new_project.setdefault('status', 'active')
+new_project['created_at'] = now
+new_project['updated_at'] = now
+
+# Convert plain JSON → Firestore format
+def to_firestore(value):
+    if value is None:
+        return {'nullValue': None}
+    if isinstance(value, bool):
+        return {'booleanValue': value}
+    if isinstance(value, int):
+        return {'integerValue': str(value)}
+    if isinstance(value, float):
+        return {'doubleValue': value}
+    if isinstance(value, str):
+        return {'stringValue': value}
+    if isinstance(value, list):
+        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict):
+        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in new_project.items()}}
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+project_id = new_project['id']
+url = f'{base}/{path}/{project_id}'
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to create project: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f\"Created project '{project_id}'.\")
+print(f'  Name:        {new_project[\"name\"]}')
+print(f'  Status:      {new_project[\"status\"]}')
+print(f'  Description: {new_project[\"description\"][:120]}')
+"
+    ;;
+
+  update)
+    TARGET_ID="${1:?'update requires a project id'}"
+    UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+updates = json.loads('''$UPDATE_JSON''')
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+# Extract existing document to plain JSON
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Deep merge context
+if 'context' in updates:
+    existing_ctx = existing.get('context', {})
+    if not isinstance(existing_ctx, dict):
+        existing_ctx = {}
+    for k, v in updates['context'].items():
+        existing_ctx[k] = v
+    existing['context'] = existing_ctx
+    del updates['context']
+
+# Shallow merge rest
+for k, v in updates.items():
+    existing[k] = v
+
+# Update timestamp
+existing['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+# Convert back to Firestore format
+def to_firestore(value):
+    if value is None:
+        return {'nullValue': None}
+    if isinstance(value, bool):
+        return {'booleanValue': value}
+    if isinstance(value, int):
+        return {'integerValue': str(value)}
+    if isinstance(value, float):
+        return {'doubleValue': value}
+    if isinstance(value, str):
+        return {'stringValue': value}
+    if isinstance(value, list):
+        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict):
+        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update project: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f\"Updated project '{target_id}'.\")
+"
+    ;;
+
+  archive)
+    TARGET_ID="${1:?'archive requires a project id'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+# Extract existing document to plain JSON
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Set archived
+existing['status'] = 'archived'
+existing['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+# Convert back to Firestore format
+def to_firestore(value):
+    if value is None:
+        return {'nullValue': None}
+    if isinstance(value, bool):
+        return {'booleanValue': value}
+    if isinstance(value, int):
+        return {'integerValue': str(value)}
+    if isinstance(value, float):
+        return {'doubleValue': value}
+    if isinstance(value, str):
+        return {'stringValue': value}
+    if isinstance(value, list):
+        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict):
+        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to archive project: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f\"Archived project '{target_id}'.\")
+"
+    ;;
+
+  help|*)
+    echo "Usage: project-manage <list|get|create|update|archive> [args]"
+    echo ""
+    echo "Commands:"
+    echo "  list                        List all projects (id, name, status, description)"
+    echo "  get '<id>'                  Get full project details as JSON"
+    echo "  create '<json>'             Create a new project (full JSON)"
+    echo "  update '<id>' '<json>'      Update a project (partial JSON, deep merge on context)"
+    echo "  archive '<id>'              Set project status to 'archived'"
+    echo ""
+    echo "The create JSON MUST include:"
+    echo "  id, name, description, context"
+    ;;
+esac

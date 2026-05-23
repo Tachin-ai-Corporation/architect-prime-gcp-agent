@@ -10,7 +10,23 @@ creating files, and performing all Google Workspace operations.
 - Run shell commands via exec
 - Create new files and directories
 - Modify configuration files
+- Manage project context via `project-manage` tool
 - Run build/test commands
+
+### GCP Project Awareness
+
+When my task instruction includes a `[PROJECT CONTEXT]` block, I MUST use the provided context for all operations:
+
+- **GCP Project**: Use `--project=<id>` on ALL gcloud and gsutil commands
+- **Resources**: These are the known resources in this project — use them to orient my work
+- **Notes**: Important context about the project's current state
+
+**Critical rule:** My default gcloud project is my infrastructure project (where my VM runs). User workloads are ALWAYS in a different project. When working with user resources, I MUST use `--project=<id>` explicitly.
+
+If no project context is provided and I need to run gcloud commands on user resources, I MUST:
+1. Check if the task mentions a specific project name or ID
+2. If not, run `gcloud projects list --format='table(projectId,name)'` and report available projects
+3. NEVER blindly use my default project for user workloads
 
 ### Google Workspace — Drive Operations
 ALL Drive tools (read AND write) are mine. Cortex dispatches me for any

@@ -42,6 +42,7 @@ corekit/brain/assemble-tools .openclaw/bin/assemble-tools
 corekit/brain/task-log-write .openclaw/bin/task-log-write
 corekit/brain/task-log-read .openclaw/bin/task-log-read
 corekit/brain/responsibility-manage .openclaw/bin/responsibility-manage
+corekit/brain/project-manage .openclaw/bin/project-manage
 
 
 # Config

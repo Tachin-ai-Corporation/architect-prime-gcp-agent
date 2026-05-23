@@ -84,6 +84,60 @@ try {
   log('WARN', 'agent-registry.json not found');
 }
 
+// ---- Project registry (loaded from Firestore, refreshed periodically) ----
+let PROJECTS = {}; // keyed by project id
+let _projectsLoadedAt = 0;
+const PROJECTS_REFRESH_MS = 60_000;
+
+async function loadProjects() {
+  try {
+    const token = await getAuthToken();
+    if (!token) return;
+    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects`;
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const projects = {};
+    for (const doc of (data.documents || [])) {
+      const p = firestoreDecode(doc.fields || {});
+      if (p.id && p.status !== 'archived') {
+        projects[p.id] = p;
+      }
+    }
+    PROJECTS = projects;
+    _projectsLoadedAt = Date.now();
+    if (Object.keys(projects).length > 0) {
+      log('INFO', `Projects loaded: ${Object.keys(projects).join(', ')}`);
+    }
+  } catch (e) {
+    log('WARN', `Failed to load projects: ${e.message}`);
+  }
+}
+
+async function ensureProjectsLoaded() {
+  if (Date.now() - _projectsLoadedAt > PROJECTS_REFRESH_MS) {
+    await loadProjects();
+  }
+}
+
+function buildProjectContext(projectId) {
+  if (!projectId || !PROJECTS[projectId]) return null;
+  const p = PROJECTS[projectId];
+  const ctx = p.context || {};
+  const lines = [`Project: ${p.name || p.id}`];
+  if (p.description) lines.push(`Description: ${p.description}`);
+  if (ctx.gcp_project_id) lines.push(`GCP Project: ${ctx.gcp_project_id} (use --project=${ctx.gcp_project_id} for all gcloud commands)`);
+  if (ctx.gcp_region) lines.push(`Region: ${ctx.gcp_region}`);
+  if (ctx.resources) {
+    const res = Array.isArray(ctx.resources) ? ctx.resources.join(', ') : ctx.resources;
+    lines.push(`Resources: ${res}`);
+  }
+  if (ctx.notes) lines.push(`Notes: ${ctx.notes}`);
+  return lines.join('\n');
+}
+
 // ---- File read cache (60s TTL) ----
 const _fileCache = new Map(); // path → { content, readAt }
 const FILE_CACHE_TTL_MS = 60_000;
@@ -385,7 +439,16 @@ function buildSystemPrompt(mode, payload) {
   // 4. Agent registry with tool descriptions
   parts.push(`[AGENT REGISTRY — available agents and their capabilities]\n${JSON.stringify(REGISTRY.agents, null, 2)}`);
 
-  // 5. Mode and JSON constraint
+  // 5. Project registry (if any projects exist)
+  if (Object.keys(PROJECTS).length > 0) {
+    const projectSummary = Object.values(PROJECTS).map(p => ({
+      id: p.id, name: p.name, status: p.status, description: p.description,
+      context: p.context || {},
+    }));
+    parts.push(`[PROJECT REGISTRY — active work streams with context]\nEach project carries context that applies to all missions within it. When classifying or deciding, identify the relevant project and use its context.\n${JSON.stringify(projectSummary, null, 2)}`);
+  }
+
+  // 6. Mode and JSON constraint
   parts.push(`Mode: ${mode}\nYou MUST respond with exactly one JSON block and nothing else.`);
 
   return parts.join('\n\n');
@@ -393,7 +456,7 @@ function buildSystemPrompt(mode, payload) {
 
 function buildUserPrompt(mode, payload) {
   if (mode === 'classify') {
-    return JSON.stringify({
+    const classifyPayload = {
       mode: 'classify',
       inbound: payload.inbound,
       memory: payload.memory || {},
@@ -402,11 +465,19 @@ function buildUserPrompt(mode, payload) {
       classification_guidance: {
         blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
+        project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
       },
-    });
+    };
+    if (Object.keys(PROJECTS).length > 0) {
+      classifyPayload.project_registry = Object.values(PROJECTS).map(p => ({
+        id: p.id, name: p.name, description: p.description,
+        context_summary: JSON.stringify(p.context || {}),
+      }));
+    }
+    return JSON.stringify(classifyPayload);
   }
   if (mode === 'decide') {
-    return JSON.stringify({
+    const decidePayload = {
       mode: 'decide',
       envelope: payload.envelope,
       memory: payload.memory || {},
@@ -416,7 +487,13 @@ function buildUserPrompt(mode, payload) {
       iteration: payload.iteration || 1,
       pending_intake_count: payload.pending_intake_count || 0,
       pending_queue: payload.pending_queue || [],
-    });
+    };
+    // Inject project context if envelope is scoped to a project
+    const envProjectId = payload.envelope?.project_id;
+    if (envProjectId && PROJECTS[envProjectId]) {
+      decidePayload.project = PROJECTS[envProjectId];
+    }
+    return JSON.stringify(decidePayload);
   }
   return JSON.stringify(payload);
 }
@@ -872,6 +949,7 @@ async function generateAck(intakeText, activeEnvelopes) {
 
 // ---- Intake processing (Phase 3: memory + active scan + attach) ----
 async function processIntake(intake) {
+  await ensureProjectsLoaded();
   log('INFO', `Processing intake: ${intake.id} from ${intake.source}`);
 
   // Claim the intake
@@ -1147,6 +1225,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     error: null,
     source_channel: intake.source,
     source_meta: intake.source_meta || {},
+    project_id: decision.project_id || null,
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -1472,6 +1551,7 @@ async function processEnvelope(envelope, memoryContext) {
         error: null,
         source_channel: 'brain',
         source_meta: { dispatched_by: envelope.id },
+        project_id: envelope.project_id || null,
         created_at: now(),
         started_at: now(),
         completed_at: null,
@@ -1488,6 +1568,14 @@ async function processEnvelope(envelope, memoryContext) {
       await firestoreWrite('work', envelope.id, envelope);
 
       log('INFO', `Dispatching child ${childId} to ${agentId}: ${task.substring(0, 100)}`);
+
+      // Prepend project context for motor dispatches
+      if (agentId === 'motor' && envelope.project_id) {
+        const projCtx = buildProjectContext(envelope.project_id);
+        if (projCtx) {
+          childEnvelope.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${childEnvelope.instruction}`;
+        }
+      }
 
       // Call the agent
       const result = await callAgent(agentId, childEnvelope);
@@ -1575,6 +1663,7 @@ async function processEnvelope(envelope, memoryContext) {
           error: null,
           source_channel: 'brain',
           source_meta: { dispatched_by: envelope.id, plan_step: stepNum, plan_total: steps.length },
+          project_id: envelope.project_id || null,
           created_at: now(),
           started_at: now(),
           completed_at: null,
@@ -1591,6 +1680,15 @@ async function processEnvelope(envelope, memoryContext) {
         await firestoreWrite('work', envelope.id, envelope);
 
         log('INFO', `Plan step ${stepNum}/${steps.length}: dispatching to ${stepAgent} — ${stepTask.substring(0, 80)}`);
+
+        // Prepend project context for motor plan steps
+        if (stepAgent === 'motor' && envelope.project_id) {
+          const projCtx = buildProjectContext(envelope.project_id);
+          if (projCtx) {
+            stepChild.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${stepChild.instruction}`;
+          }
+        }
+
 
         // Build instruction with context for the agent
         const contextForAgent = {
@@ -1709,6 +1807,7 @@ async function processEnvelope(envelope, memoryContext) {
           error: null,
           source_channel: 'brain',
           source_meta: { dispatched_by: envelope.id, checkpoint: cpNum, checkpoint_total: checkpoints.length },
+          project_id: envelope.project_id || null,
           created_at: now(),
           started_at: now(),
           completed_at: null,
@@ -1764,6 +1863,7 @@ async function processEnvelope(envelope, memoryContext) {
             error: null,
             source_channel: 'brain',
             source_meta: { dispatched_by: cpId, checkpoint: cpNum, task_step: taskNum },
+            project_id: envelope.project_id || null,
             created_at: now(),
             started_at: now(),
             completed_at: null,
@@ -1779,6 +1879,14 @@ async function processEnvelope(envelope, memoryContext) {
           await firestoreWrite('work', cpId, cpEnvelope);
 
           log('INFO', `CP${cpNum} Task ${taskNum}/${cpTasks.length}: ${taskAgent} — ${taskDesc.substring(0, 60)}`);
+
+          // Prepend project context for motor checkpoint tasks
+          if (taskAgent === 'motor' && envelope.project_id) {
+            const projCtx = buildProjectContext(envelope.project_id);
+            if (projCtx) {
+              taskEnvelope.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${taskEnvelope.instruction}`;
+            }
+          }
 
           // Dispatch to agent
           let result = await callAgent(taskAgent, {
@@ -2135,6 +2243,10 @@ async function main() {
   log('INFO', `Agent: ${AGENT_ID} | Project: ${GCP_PROJECT} | Prime: ${PRIME_ID}`);
   log('INFO', `Gateway: ${GATEWAY_URL} | Route: ${CORTEX_ROUTE}`);
   log('INFO', `Registry agents: ${Object.keys(REGISTRY.agents).join(', ') || 'none loaded'}`);
+
+  // Load projects from Firestore
+  await loadProjects();
+  log('INFO', `Projects loaded: ${Object.keys(PROJECTS).length} active`);
 
   // Verify gateway is reachable
   try {
