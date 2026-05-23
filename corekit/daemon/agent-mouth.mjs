@@ -577,106 +577,94 @@ async function pollBrainV3Envelopes() {
     const token = await getAccessToken();
     const ownerEmail = AGENT_USER_EMAIL || process.env.AGENT_ID || '';
 
-    // Query for envelopes needing delivery: complete, needs_input, or blocked
-    // Firestore REST doesn't support IN operator on structuredQuery,
-    // so we run parallel queries per status.
-    const statuses = ['complete', 'needs_input', 'blocked'];
-    const allResults = [];
-
-    for (const targetStatus of statuses) {
-      const query = {
-        structuredQuery: {
-          from: [{ collectionId: 'work' }],
-          where: {
-            compositeFilter: {
-              op: 'AND',
-              filters: [
-                { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
-                  value: { stringValue: ownerEmail } } },
-                { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
-                  value: { stringValue: targetStatus } } },
-              ]
-            }
-          },
-          orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
-          limit: 200,
-        },
-      };
-
-      // Also run a second query excluding delivered envelopes.
-      // This catches envelopes that would be pushed out of the LIMIT 50 window
-      // by old already-delivered envelopes.
-      const undeliveredQuery = {
-        structuredQuery: {
-          from: [{ collectionId: 'work' }],
-          where: {
-            compositeFilter: {
-              op: 'AND',
-              filters: [
-                { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
-                  value: { stringValue: ownerEmail } } },
-                { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
-                  value: { stringValue: targetStatus } } },
-                { unaryFilter: { field: { fieldPath: 'delivered_at' }, op: 'IS_NULL' } },
-              ]
-            }
-          },
-          orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
-          limit: 20,
-        },
-      };
-
-      const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
-      const [res, res2] = await Promise.all([
-        fetch(queryUrl, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(query),
-        }),
-        fetch(queryUrl, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(undeliveredQuery),
-        }),
-      ]);
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
-        log('Brain v3 query error', { status: res.status, targetStatus, body: errText.slice(0, 200) });
-      } else {
-        const results = await res.json();
-        if (Array.isArray(results)) allResults.push(...results);
-      }
-
-      // Merge undelivered query results (may overlap with main query)
-      if (res2.ok) {
-        const results2 = await res2.json();
-        if (Array.isArray(results2)) {
-          // Deduplicate by document name
-          const seen = new Set(allResults.map(r => r.document?.name).filter(Boolean));
-          for (const r of results2) {
-            if (r.document?.name && !seen.has(r.document.name)) {
-              allResults.push(r);
-              seen.add(r.document.name);
-            }
+    // ── PRIMARY QUERY: delivery_status=pending (efficient: returns only actionable items) ──
+    const pendingQuery = {
+      structuredQuery: {
+        from: [{ collectionId: 'work' }],
+        where: {
+          compositeFilter: {
+            op: 'AND',
+            filters: [
+              { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
+                value: { stringValue: ownerEmail } } },
+              { fieldFilter: { field: { fieldPath: 'delivery_status' }, op: 'EQUAL',
+                value: { stringValue: 'pending' } } },
+            ]
           }
-        }
-      } else {
-        const errText2 = await res2.text().catch(() => '');
-        // Log once per restart (likely missing composite index)
-        if (!pollBrainV3Envelopes._undeliveredIndexWarned) {
-          log('Brain v3 undelivered query needs index', { status: res2.status, targetStatus, body: errText2.slice(0, 300) });
-          pollBrainV3Envelopes._undeliveredIndexWarned = true;
-        }
+        },
+        orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
+        limit: 50,
+      },
+    };
+
+    const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
+
+    // Run primary query
+    let primaryResults = [];
+    try {
+      const res = await fetch(queryUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(pendingQuery),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) primaryResults = data.filter(r => r.document?.fields);
+      } else if (!pollBrainV3Envelopes._pendingIndexWarned) {
+        const errText = await res.text().catch(() => '');
+        log('Brain v3 delivery_status query needs index', { status: res.status, body: errText.slice(0, 300) });
+        pollBrainV3Envelopes._pendingIndexWarned = true;
+      }
+    } catch (err) {
+      log('Brain v3 pending query error', { error: err.message });
+    }
+
+    // ── FALLBACK: old 3-status queries (migration: catches items without delivery_status field) ──
+    let fallbackResults = [];
+    if (primaryResults.length === 0) {
+      const statuses = ['complete', 'needs_input', 'blocked'];
+      for (const targetStatus of statuses) {
+        try {
+          const query = {
+            structuredQuery: {
+              from: [{ collectionId: 'work' }],
+              where: {
+                compositeFilter: {
+                  op: 'AND',
+                  filters: [
+                    { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
+                      value: { stringValue: ownerEmail } } },
+                    { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
+                      value: { stringValue: targetStatus } } },
+                  ]
+                }
+              },
+              orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
+              limit: 200,
+            },
+          };
+          const res = await fetch(queryUrl, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(query),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) fallbackResults.push(...data);
+          }
+        } catch {} // Non-critical — primary query is preferred
       }
     }
+
+    // Merge: prefer primary results, use fallback only when primary returns nothing
+    const allResults = primaryResults.length > 0 ? primaryResults : fallbackResults.filter(r => r.document?.fields);
 
     // Diagnostic: log every Nth poll cycle to show the poll is alive
     if (!pollBrainV3Envelopes._count) pollBrainV3Envelopes._count = 0;
     pollBrainV3Envelopes._count++;
     if (pollBrainV3Envelopes._count % 60 === 1) { // every ~5 minutes (60 * 5s)
       log('Brain v3 poll heartbeat', { cycle: pollBrainV3Envelopes._count, owner: ownerEmail,
-        results: allResults.filter(r => r.document?.fields).length,
+        primary: primaryResults.length, fallback: fallbackResults.length,
         primeId: PRIME_ID, delivered_cache: _deliveredEnvelopes.size });
     }
 
@@ -688,10 +676,12 @@ async function pollBrainV3Envelopes() {
       const envId = f.id?.stringValue;
       const output = f.output?.stringValue;
       const status = f.status?.stringValue;
+      const deliveryStatus = f.delivery_status?.stringValue;
       const deliveredAt = f.delivered_at?.timestampValue || f.delivered_at?.stringValue;
 
       // Skip: no output, already delivered (in-memory or Firestore flag), or child envelope
       if (!envId || !output) continue;
+      if (deliveryStatus === 'delivered') { skippedDelivered++; continue; }
       if (deliveredAt) { _deliveredEnvelopes.add(envId); skippedDelivered++; continue; }
       // If brain cleared delivered_at (reopened envelope), evict from in-memory cache
       if (!deliveredAt && _deliveredEnvelopes.has(envId)) {
@@ -718,15 +708,16 @@ async function pollBrainV3Envelopes() {
           log('Delivered envelope output', { envId });
         }
 
-        // Mark envelope as delivered in Firestore
+        // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)
         const token2 = await getAccessToken();
-        const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel`;
+        const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
         await fetch(docPath, {
           method: 'PATCH',
           headers: { Authorization: `Bearer ${token2}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ fields: {
             delivered_at: { timestampValue: new Date().toISOString() },
             delivered_channel: { stringValue: CHANNEL },
+            delivery_status: { stringValue: 'delivered' },
           } }),
         });
         delivered++;

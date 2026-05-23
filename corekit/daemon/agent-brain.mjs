@@ -309,7 +309,7 @@ async function firestoreQuery(collection, filters) {
       }
     },
     orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'ASCENDING' }],
-    limit: 10,
+    limit: 300,
   };
 
   const resp = await fetch(url, {
@@ -661,16 +661,20 @@ async function callAgent(agentId, envelope) {
     }
 
     // Motor tool failure — agent returned successfully but reports the command failed
-    const failurePatterns = [
-      /\berror\b.*\b(?:DWD|token|auth|permission|denied|unauthorized)\b/i,
-      /\bfailed\b.*\b(?:execute|command|operation)\b/i,
-      /\b(?:command|tool)\b.*\bfailed\b/i,
-      /exit(?:ed)?\s+(?:with\s+)?(?:code\s+)?[1-9]/i,
-    ];
-    for (const pattern of failurePatterns) {
-      if (pattern.test(content)) {
-        log('WARN', `Agent ${agentId} output contains failure pattern: ${pattern} — treating as failure`);
-        return { success: false, output: content, error: 'Agent reported tool failure', durationMs };
+    // Only apply to motor-class agents (not memory agents whose stored content may echo error keywords)
+    const FAILURE_PATTERN_AGENTS = ['motor', 'verifier'];
+    if (FAILURE_PATTERN_AGENTS.includes(agentId)) {
+      const failurePatterns = [
+        /\berror\b.*\b(?:DWD|token|auth|permission|denied|unauthorized)\b/i,
+        /\bfailed\b.*\b(?:execute|command|operation)\b/i,
+        /\b(?:command|tool)\b.*\bfailed\b/i,
+        /exit(?:ed)?\s+(?:with\s+)?(?:code\s+)?[1-9]/i,
+      ];
+      for (const pattern of failurePatterns) {
+        if (pattern.test(content)) {
+          log('WARN', `Agent ${agentId} output contains failure pattern: ${pattern} — treating as failure`);
+          return { success: false, output: content, error: 'Agent reported tool failure', durationMs };
+        }
       }
     }
 
@@ -770,12 +774,17 @@ async function writeMemory(envelope) {
       const token = await getAuthToken();
       if (token) {
         const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/work/${envelope.id}?updateMask.fieldPaths=memory_written`;
-        await fetch(url, {
+        const patchResp = await fetch(url, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ fields: { memory_written: { booleanValue: true } } }),
         });
+        if (!patchResp.ok) {
+          log('ERROR', `memory_written PATCH failed for ${envelope.id}: ${patchResp.status}`);
+        }
       }
+    } else {
+      log('WARN', `Memory write returned failure for ${envelope.id}: ${result.error || 'unknown'} — output preview: ${(result.output || '').substring(0, 150)}`);
     }
   } catch (e) {
     log('WARN', `Memory write failed: ${e.message}`);
@@ -1034,6 +1043,7 @@ async function processIntake(intake) {
       context_forward: null,
       error: null,
       iteration: 0,
+      delivery_status: 'pending',
     });
     log('INFO', `Quick ack sent: ${ackId} — "${ackText.substring(0, 60)}"`);
   }
@@ -1106,6 +1116,7 @@ async function processIntake(intake) {
       completed_at: now(),
       updated_at: now(),
       iteration: 0,
+      delivery_status: 'pending',
     });
     log('INFO', `Classify short_circuit: ${scId} — responded directly`);
     return;
@@ -1156,6 +1167,7 @@ async function processIntake(intake) {
     updated_at: now(),
     iteration: 0,
     memory_context: memoryContext, // Phase 3: pass memory to processEnvelope
+    delivery_status: 'internal', // Not deliverable until synthesized
   };
 
   await firestoreWrite('work', envelopeId, envelope);
@@ -1322,6 +1334,7 @@ async function handleContinue(intake, decision, memoryContext) {
   mission.blocker_type = null;
   mission.delivered_at = null;
   mission.delivered_channel = null;
+  mission.delivery_status = 'internal'; // Reset — will become 'pending' when re-completed
   mission._unblock_attempted = false; // Reset retry cap for new attempt
   mission.updated_at = now();
 
@@ -1486,6 +1499,7 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.status = 'complete';
       envelope.completed_at = now();
       envelope.updated_at = now();
+      if (!envelope.parent_id) envelope.delivery_status = 'pending';
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Synthesized response');
       log('INFO', `Envelope ${envelope.id} complete (synthesize)`);
@@ -1519,6 +1533,7 @@ async function processEnvelope(envelope, memoryContext) {
         envelope.blocker_type = decision.blocker_type || 'other';
         envelope.blocked_at = now();
         envelope.updated_at = now();
+        if (!envelope.parent_id) envelope.delivery_status = 'pending';
         await firestoreWrite('work', envelope.id, envelope);
         await writeHistory(envelope.id, 'active', 'blocked', 'brain',
           `Blocked (self-unblock exhausted): ${(decision.failure_summary || '').substring(0, 200)}`);
@@ -1532,6 +1547,7 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.status = 'complete';
       envelope.completed_at = now();
       envelope.updated_at = now();
+      if (!envelope.parent_id) envelope.delivery_status = 'pending';
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'complete', 'brain',
         `Synthesized with acknowledged failure: ${(decision.failure_summary || '').substring(0, 200)}`);
@@ -1550,6 +1566,7 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.blocker_type = decision.blocker_type || 'other';
       envelope.blocked_at = now();
       envelope.updated_at = now();
+      if (!envelope.parent_id) envelope.delivery_status = 'pending';
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'blocked', 'brain',
         `Blocked: ${(decision.blocker || '').substring(0, 200)}`);
@@ -1563,6 +1580,7 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.output = decision.question || decision.message || 'I need more information to proceed.';
       envelope.status = 'needs_input';
       envelope.updated_at = now();
+      if (!envelope.parent_id) envelope.delivery_status = 'pending';
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'needs_input', 'brain', `Needs: ${decision.what_is_needed || 'clarification'}`);
       log('INFO', `Envelope ${envelope.id} needs_input (ambiguous)`);
