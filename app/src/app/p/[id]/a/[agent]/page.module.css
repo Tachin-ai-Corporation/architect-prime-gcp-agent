@@ -1,0 +1,146 @@
+/* ============================================
+   Agent Hub — page.module.css
+   1health Design System
+   ============================================ */
+
+.shell {
+  min-height: 100vh;
+  padding: 32px 24px 48px;
+  background: var(--bg-primary);
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.loading,
+.empty {
+  padding: 48px;
+  text-align: center;
+  color: #AEB8C4;
+  font-size: 14px;
+}
+
+/* ---- Header ---- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1F9A9B, #5FC7B2);
+  color: white;
+  font-size: 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.meta {
+  flex: 1;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #E6EBF0;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.specialty {
+  font-size: 12px;
+  font-weight: 500;
+  color: #8FD8E6;
+  background: rgba(143, 216, 230, 0.1);
+  padding: 2px 10px;
+  border-radius: 9999px;
+}
+
+.email {
+  font-size: 12px;
+  color: #AEB8C4;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.online {
+  background: rgba(59, 170, 120, 0.12);
+  color: #3BAA78;
+}
+
+.offline {
+  background: rgba(174, 184, 196, 0.12);
+  color: #AEB8C4;
+}
+
+/* ---- Status Strip ---- */
+.strip {
+  margin-bottom: 28px;
+}
+
+/* ---- VM Info ---- */
+.vmInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(49, 59, 71, 0.5);
+  border: 1px solid rgba(86, 99, 115, 0.2);
+  border-radius: 10px;
+  margin-bottom: 24px;
+  font-size: 12px;
+}
+
+.vmLabel {
+  color: #AEB8C4;
+  font-weight: 500;
+}
+
+.vmValue {
+  color: #E6EBF0;
+  margin-right: 16px;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+/* ---- NavCard Grid ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 880px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

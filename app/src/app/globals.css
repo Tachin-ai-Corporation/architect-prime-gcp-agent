@@ -1,58 +1,116 @@
-/* ============================================
-   Architect Prime — Design System
-   ============================================ */
+/* ================================================================
+   1health Design System — Architect Prime Dashboard
+   ================================================================
+   Phase 1: Foundation tokens, resets, component library.
+   All colors, spacing, motion, and layout follow the 1health spec.
+   ================================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* ---- Google Fonts ---- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* ================================================================
+   1. CSS Custom Properties — Design Tokens
+   ================================================================ */
 :root {
-  /* Core palette */
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a26;
-  --bg-elevated: #22222f;
-  --bg-hover: #2a2a3a;
+  /* ---- Primary / Base ---- */
+  --graphite:  #202833;
+  --charcoal:  #313B47;
+  --slate:     #566373;
+  --mist:      #AEB8C4;
+  --cloud:     #E6EBF0;
 
-  /* Accent */
-  --accent-primary: #6366f1;
-  --accent-primary-hover: #818cf8;
-  --accent-secondary: #8b5cf6;
-  --accent-success: #22c55e;
-  --accent-warning: #f59e0b;
-  --accent-danger: #ef4444;
+  /* ---- Healthcare ---- */
+  --trust-blue:    #246B8F;
+  --network-teal:  #1F9A9B;
+  --care-mint:     #5FC7B2;
+  --signal-aqua:   #8FD8E6;
+  --clinical-ice:  #E8F7FA;
 
-  /* Text */
-  --text-primary: #f0f0f5;
-  --text-secondary: #a0a0b8;
-  --text-tertiary: #6b6b80;
-  --text-link: #818cf8;
+  /* ---- Action ---- */
+  --pulse:  #D84F45;
+  --coral:  #E8786F;
+  --blush:  #F2C8C3;
+  --amber:  #D6A83A;
+  --glow:   #F5E6B8;
 
-  /* Borders */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-accent: rgba(99, 102, 241, 0.4);
+  /* ---- Status ---- */
+  --status-success: #3BAA78;
+  --status-info:    #2F80A8;
+  --status-warning: #D6A83A;
+  --status-error:   #D84F45;
+  --status-neutral: #7A8696;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+  /* ---- Semantic backgrounds ---- */
+  --bg-primary:   var(--graphite);
+  --bg-secondary: var(--charcoal);
+  --bg-tertiary:  #283040;
+  --bg-elevated:  #394556;
+  --bg-hover:     rgba(86, 99, 115, 0.35);
 
-  /* Spacing */
-  --sidebar-width: 280px;
-  --header-height: 56px;
+  /* ---- Text ---- */
+  --text-primary:   var(--cloud);
+  --text-secondary: var(--mist);
+  --text-tertiary:  var(--slate);
+  --text-link:      var(--signal-aqua);
 
-  /* Radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  /* ---- Borders ---- */
+  --border-subtle:  rgba(86, 99, 115, 0.20);
+  --border-default: rgba(86, 99, 115, 0.35);
+  --border-accent:  rgba(143, 216, 230, 0.40);
+
+  /* ---- Spacing (8px grid) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 40px;
+  --space-8: 48px;
+  --space-9: 64px;
+
+  /* ---- Radii ---- */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
   --radius-full: 9999px;
 
-  /* Transitions */
-  --transition-fast: 150ms ease;
-  --transition-default: 250ms ease;
+  /* ---- Shadows ---- */
+  --shadow-1: 0 4px 16px rgba(0, 0, 0, 0.18);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.24);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.32);
+
+  /* Legacy aliases for components using old names */
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
+
+  /* ---- Glow ---- */
+  --glow-aqua: 0 0 0 1px rgba(143, 216, 230, 0.32), 0 0 24px rgba(143, 216, 230, 0.18);
+  --shadow-glow: var(--glow-aqua);
+
+  /* ---- Motion ---- */
+  --ease-premium:  cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-hover: 160ms;
+  --duration-panel: 220ms;
+  --duration-page:  300ms;
+
+  /* Legacy transition aliases */
+  --transition-fast:    var(--duration-hover) var(--ease-standard);
+  --transition-default: var(--duration-panel) var(--ease-premium);
+
+  /* ---- Layout ---- */
+  --header-height: 56px;
 }
 
-* {
+/* ================================================================
+   2. Reset & Base Styles
+   ================================================================ */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -60,7 +118,10 @@
 
 html, body {
   height: 100%;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
   background: var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -69,80 +130,141 @@ html, body {
 
 /* ---- Typography ---- */
 h1, h2, h3, h4 {
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: -0.02em;
+  color: var(--text-primary);
 }
+h1 { font-size: 28px; }
+h2 { font-size: 22px; }
+h3 { font-size: 18px; }
+h4 { font-size: 15px; font-weight: 600; }
 
 code, pre, .mono {
   font-family: 'JetBrains Mono', monospace;
 }
 
+a {
+  color: var(--text-link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-hover);
+  background: var(--slate);
   border-radius: var(--radius-full);
+  opacity: 0.5;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+  background: var(--mist);
 }
 
-/* ---- Buttons ---- */
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--slate) transparent;
+}
+
+/* ================================================================
+   3. Buttons
+   ================================================================ */
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-sm);
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   font-family: inherit;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  line-height: 1.4;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard),
+    transform var(--duration-hover) var(--ease-standard);
   text-decoration: none;
+  user-select: none;
+}
+.btn:active {
+  transform: scale(0.99);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 
+/* Primary — Trust Blue */
 .btn-primary {
-  background: var(--accent-primary);
-  color: white;
+  background: var(--trust-blue);
+  color: #ffffff;
+  border-color: var(--trust-blue);
 }
-.btn-primary:hover {
-  background: var(--accent-primary-hover);
-  box-shadow: var(--shadow-glow);
+.btn-primary:hover:not(:disabled) {
+  background: #2d7fa8;
+  border-color: #2d7fa8;
+  box-shadow: var(--glow-aqua);
 }
 
+/* Secondary — Charcoal with Slate border */
+.btn-secondary {
+  background: var(--charcoal);
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-accent);
+}
+
+/* Danger — Pulse Red */
+.btn-danger {
+  background: rgba(216, 79, 69, 0.10);
+  color: var(--pulse);
+  border-color: rgba(216, 79, 69, 0.25);
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(216, 79, 69, 0.20);
+  border-color: rgba(216, 79, 69, 0.40);
+}
+
+/* Ghost — transparent */
 .btn-ghost {
   background: transparent;
   color: var(--text-secondary);
-  border: 1px solid var(--border-default);
+  border-color: var(--border-default);
 }
-.btn-ghost:hover {
+.btn-ghost:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
   border-color: var(--border-accent);
 }
 
-.btn-danger {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--accent-danger);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-}
-.btn-danger:hover {
-  background: rgba(239, 68, 68, 0.2);
-}
-
+/* Small */
 .btn-sm {
-  padding: 5px 10px;
+  padding: var(--space-1) 10px;
   font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
 }
 
-/* ---- Status badges ---- */
+/* ================================================================
+   4. Status Badges
+   ================================================================ */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -155,48 +277,52 @@ code, pre, .mono {
   letter-spacing: 0.05em;
 }
 
+/* Online — Success green */
 .badge-online {
-  background: rgba(34, 197, 94, 0.1);
-  color: var(--accent-success);
+  background: rgba(59, 170, 120, 0.12);
+  color: var(--status-success);
 }
 .badge-online::before {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-success);
-  animation: pulse 2s infinite;
+  background: var(--status-success);
+  animation: badge-pulse 2s infinite;
 }
 
+/* Offline — Neutral */
 .badge-offline {
-  background: rgba(107, 107, 128, 0.15);
-  color: var(--text-tertiary);
+  background: rgba(122, 134, 150, 0.12);
+  color: var(--status-neutral);
 }
 .badge-offline::before {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text-tertiary);
+  background: var(--status-neutral);
 }
 
+/* Deploying — Amber warning */
 .badge-deploying {
-  background: rgba(245, 158, 11, 0.1);
-  color: var(--accent-warning);
+  background: rgba(214, 168, 58, 0.12);
+  color: var(--status-warning);
 }
 .badge-deploying::before {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-warning);
-  animation: pulse 1s infinite;
+  background: var(--status-warning);
+  animation: badge-pulse 1s infinite;
 }
 
+/* Warning / Needs Action — Amber */
 .badge-warning,
 .badge-needs_action {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
+  background: rgba(214, 168, 58, 0.12);
+  color: var(--status-warning);
 }
 .badge-warning::before,
 .badge-needs_action::before {
@@ -204,74 +330,133 @@ code, pre, .mono {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f59e0b;
-  animation: pulse 2s infinite;
+  background: var(--status-warning);
+  animation: badge-pulse 2s infinite;
 }
 
+/* Tearing Down — Info blue */
 .badge-tearing_down {
-  background: rgba(99, 102, 241, 0.1);
-  color: var(--accent-primary);
+  background: rgba(47, 128, 168, 0.12);
+  color: var(--status-info);
 }
 .badge-tearing_down::before {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-primary);
-  animation: pulse 1s infinite;
+  background: var(--status-info);
+  animation: badge-pulse 1s infinite;
 }
 
+/* Error — Pulse red */
 .badge-error {
-  background: rgba(239, 68, 68, 0.1);
-  color: var(--accent-danger);
+  background: rgba(216, 79, 69, 0.12);
+  color: var(--status-error);
 }
 .badge-error::before {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-danger);
+  background: var(--status-error);
 }
 
+/* Removed — Neutral faded */
 .badge-removed {
-  background: rgba(107, 107, 128, 0.1);
-  color: var(--text-tertiary);
+  background: rgba(122, 134, 150, 0.08);
+  color: var(--status-neutral);
 }
 .badge-removed::before {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text-tertiary);
+  background: var(--status-neutral);
   opacity: 0.5;
 }
 
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+/* Legacy alias */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50%      { opacity: 0.35; }
 }
 
-/* ---- Cards ---- */
+/* ================================================================
+   5. Status Chips
+   ================================================================ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.chip-success {
+  color: var(--status-success);
+  border-color: rgba(59, 170, 120, 0.35);
+  background: rgba(59, 170, 120, 0.08);
+}
+.chip-info {
+  color: var(--status-info);
+  border-color: rgba(47, 128, 168, 0.35);
+  background: rgba(47, 128, 168, 0.08);
+}
+.chip-warning {
+  color: var(--status-warning);
+  border-color: rgba(214, 168, 58, 0.35);
+  background: rgba(214, 168, 58, 0.08);
+}
+.chip-error {
+  color: var(--status-error);
+  border-color: rgba(216, 79, 69, 0.35);
+  background: rgba(216, 79, 69, 0.08);
+}
+.chip-neutral {
+  color: var(--status-neutral);
+  border-color: rgba(122, 134, 150, 0.30);
+  background: rgba(122, 134, 150, 0.08);
+}
+
+/* ================================================================
+   6. Cards
+   ================================================================ */
 .card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  transition: all var(--transition-default);
+  background: var(--charcoal);
+  border: 1px solid rgba(86, 99, 115, 0.25);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  transition:
+    transform var(--duration-hover) var(--ease-premium),
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
 }
 .card:hover {
+  transform: translateY(-2px);
   border-color: var(--border-accent);
-  box-shadow: var(--shadow-glow);
+  box-shadow: var(--glow-aqua), var(--shadow-2);
 }
+
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
 }
 .card-title {
   font-size: 15px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 .card-subtitle {
   font-size: 12px;
@@ -279,28 +464,106 @@ code, pre, .mono {
   margin-top: 2px;
 }
 
-/* ---- Input ---- */
+/* ================================================================
+   7. Inputs
+   ================================================================ */
 .input {
   width: 100%;
   padding: 10px 14px;
-  background: var(--bg-primary);
+  background: var(--graphite);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 14px;
   outline: none;
-  transition: border-color var(--transition-fast);
+  transition:
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
 }
 .input:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  border-color: var(--network-teal);
+  box-shadow: 0 0 0 3px rgba(31, 154, 155, 0.15), 0 0 16px rgba(143, 216, 230, 0.10);
 }
 .input::placeholder {
   color: var(--text-tertiary);
 }
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-/* ---- Dialog Overlay ---- */
+/* ================================================================
+   8. Progress Bars
+   ================================================================ */
+.prog-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.prog-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--duration-panel) var(--ease-premium);
+}
+
+/* Aqua (default) */
+.prog-fill,
+.prog-fill-aqua {
+  background: linear-gradient(90deg, var(--network-teal), var(--signal-aqua));
+}
+/* Mint */
+.prog-fill-mint {
+  background: linear-gradient(90deg, var(--network-teal), var(--care-mint));
+}
+/* Amber */
+.prog-fill-amber {
+  background: linear-gradient(90deg, var(--amber), var(--glow));
+}
+
+/* ================================================================
+   9. Agent Chips
+   ================================================================ */
+.agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition:
+    border-color var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.agent-chip:hover {
+  border-color: var(--border-accent);
+  color: var(--text-primary);
+}
+
+/* Active / working state with pulse dot */
+.agent-chip-working {
+  border-color: rgba(31, 154, 155, 0.35);
+  color: var(--care-mint);
+}
+.agent-chip-working::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--care-mint);
+  animation: badge-pulse 1.5s infinite;
+}
+
+/* ================================================================
+   10. Dialog System
+   ================================================================ */
 .dialog-overlay {
   position: fixed;
   inset: 0;
@@ -308,24 +571,24 @@ code, pre, .mono {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  animation: fadeIn 150ms ease;
+  background: rgba(32, 40, 51, 0.70);
+  backdrop-filter: blur(6px);
+  animation: fadeIn var(--duration-hover) var(--ease-standard);
 }
 
 .dialog-modal {
-  background: var(--bg-secondary);
+  background: var(--charcoal);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  box-shadow: var(--shadow-3), var(--glow-aqua);
   width: min(440px, calc(100vw - 40px));
   max-height: calc(100vh - 80px);
   overflow-y: auto;
-  animation: slideUp 200ms ease;
+  animation: slideUp var(--duration-panel) var(--ease-premium);
 }
 
 .dialog-header {
-  padding: 20px 24px 0;
+  padding: 20px var(--space-5) 0;
 }
 
 .dialog-title {
@@ -336,7 +599,7 @@ code, pre, .mono {
 }
 
 .dialog-body {
-  padding: 12px 24px 4px;
+  padding: var(--space-3) var(--space-5) var(--space-1);
 }
 
 .dialog-line {
@@ -345,27 +608,28 @@ code, pre, .mono {
   line-height: 1.6;
   margin-bottom: 4px;
 }
-
 .dialog-line:empty {
-  height: 8px;
+  height: var(--space-2);
 }
 
 .dialog-footer {
-  padding: 16px 24px 20px;
+  padding: var(--space-4) var(--space-5) 20px;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
-/* ---- Toast Notifications ---- */
+/* ================================================================
+   11. Toast System
+   ================================================================ */
 .toast-container {
   position: fixed;
-  top: 16px;
-  right: 16px;
+  top: var(--space-4);
+  right: var(--space-4);
   z-index: 10000;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   pointer-events: none;
 }
 
@@ -374,43 +638,39 @@ code, pre, .mono {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-2);
   font-size: 13px;
   color: var(--text-primary);
   min-width: 280px;
   max-width: 440px;
-  animation: slideInRight 250ms ease;
+  animation: slideInRight var(--duration-panel) var(--ease-premium);
 }
 
 .toast-success {
-  border-color: rgba(34, 197, 94, 0.3);
-  background: linear-gradient(135deg, var(--bg-elevated), rgba(34, 197, 94, 0.05));
+  border-color: rgba(59, 170, 120, 0.35);
+  background: linear-gradient(135deg, var(--bg-elevated), rgba(59, 170, 120, 0.06));
 }
-
 .toast-error {
-  border-color: rgba(239, 68, 68, 0.3);
-  background: linear-gradient(135deg, var(--bg-elevated), rgba(239, 68, 68, 0.05));
+  border-color: rgba(216, 79, 69, 0.35);
+  background: linear-gradient(135deg, var(--bg-elevated), rgba(216, 79, 69, 0.06));
 }
-
 .toast-info {
-  border-color: rgba(99, 102, 241, 0.3);
-  background: linear-gradient(135deg, var(--bg-elevated), rgba(99, 102, 241, 0.05));
+  border-color: rgba(47, 128, 168, 0.35);
+  background: linear-gradient(135deg, var(--bg-elevated), rgba(47, 128, 168, 0.06));
 }
 
 .toast-icon {
   font-size: 16px;
   flex-shrink: 0;
 }
-
 .toast-message {
   flex: 1;
   line-height: 1.4;
 }
-
 .toast-close {
   background: none;
   border: none;
@@ -422,78 +682,57 @@ code, pre, .mono {
   flex-shrink: 0;
   transition: color var(--transition-fast);
 }
-
 .toast-close:hover {
   color: var(--text-primary);
 }
 
-/* ---- Dialog Animations ---- */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(24px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-/* ---- Command Progress Tracker ---- */
+/* ================================================================
+   12. Command Progress
+   ================================================================ */
 .cmd-progress {
   pointer-events: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-2);
   min-width: 320px;
   max-width: 440px;
-  animation: slideInRight 250ms ease;
+  animation: slideInRight var(--duration-panel) var(--ease-premium);
   overflow: hidden;
 }
 
 .cmd-progress-active {
-  border-color: rgba(99, 102, 241, 0.4);
+  border-color: rgba(31, 154, 155, 0.40);
 }
-
 .cmd-progress-success {
-  border-color: rgba(34, 197, 94, 0.3);
+  border-color: rgba(59, 170, 120, 0.35);
 }
-
 .cmd-progress-error {
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: rgba(216, 79, 69, 0.35);
 }
 
 .cmd-progress-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   cursor: pointer;
 }
-
 .cmd-progress-icon {
   font-size: 16px;
   flex-shrink: 0;
 }
-
 .cmd-progress-info {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-
 .cmd-progress-label {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
 }
-
 .cmd-progress-status {
   font-size: 11px;
   color: var(--text-tertiary);
@@ -503,7 +742,7 @@ code, pre, .mono {
   width: 14px;
   height: 14px;
   border: 2px solid var(--border-default);
-  border-top-color: var(--accent-primary);
+  border-top-color: var(--network-teal);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   flex-shrink: 0;
@@ -521,18 +760,16 @@ code, pre, .mono {
   flex-shrink: 0;
   transition: color var(--transition-fast);
 }
-
 .cmd-progress-expand:hover,
 .cmd-progress-close:hover {
   color: var(--text-primary);
 }
 
 .cmd-progress-detail {
-  padding: 0 14px 12px;
+  padding: 0 14px var(--space-3);
   border-top: 1px solid var(--border-subtle);
   margin-top: 0;
 }
-
 .cmd-progress-detail pre {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
@@ -542,46 +779,49 @@ code, pre, .mono {
   word-break: break-word;
   max-height: 200px;
   overflow-y: auto;
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ---- Markdown in Chat Messages ---- */
+/* ================================================================
+   13. Markdown Styles
+   ================================================================ */
 .md-heading {
   font-size: 14px;
   font-weight: 600;
-  margin: 8px 0 4px;
+  margin: var(--space-2) 0 4px;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
-.md-heading:first-child { margin-top: 0; }
+.md-heading:first-child {
+  margin-top: 0;
+}
 
 .md-link {
-  color: var(--text-link);
+  color: var(--trust-blue);
   text-decoration: none;
   transition: color var(--transition-fast);
 }
-.md-link:hover { text-decoration: underline; }
+.md-link:hover {
+  color: var(--signal-aqua);
+  text-decoration: underline;
+}
 
 .md-inline-code {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   padding: 2px 6px;
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(99, 102, 241, 0.15);
+  background: rgba(31, 154, 155, 0.10);
+  border: 1px solid rgba(31, 154, 155, 0.18);
   border-radius: 4px;
-  color: var(--accent-primary-hover);
+  color: var(--signal-aqua);
 }
 
 .md-code-block {
-  background: var(--bg-primary);
+  background: var(--graphite);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
-  margin: 8px 0;
+  padding: var(--space-3) 14px;
+  margin: var(--space-2) 0;
   overflow-x: auto;
 }
 .md-code-block code {
@@ -604,30 +844,31 @@ code, pre, .mono {
 }
 
 .md-blockquote {
-  border-left: 3px solid var(--accent-primary);
-  padding: 4px 12px;
-  margin: 8px 0;
+  border-left: 3px solid var(--trust-blue);
+  padding: 4px var(--space-3);
+  margin: var(--space-2) 0;
   color: var(--text-secondary);
-  background: rgba(99, 102, 241, 0.04);
+  background: rgba(36, 107, 143, 0.06);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 .md-table-wrap {
   overflow-x: auto;
-  margin: 8px 0;
+  margin: var(--space-2) 0;
 }
 .md-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
-.md-table th, .md-table td {
+.md-table th,
+.md-table td {
   padding: 6px 10px;
   border: 1px solid var(--border-subtle);
   text-align: left;
 }
 .md-table th {
-  background: var(--bg-primary);
+  background: var(--graphite);
   font-weight: 600;
   font-size: 12px;
   text-transform: uppercase;
@@ -638,10 +879,10 @@ code, pre, .mono {
   color: var(--text-primary);
 }
 .md-table tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(86, 99, 115, 0.06);
 }
 
-/* react-markdown renders <p> tags — remove excess spacing in chat bubbles */
+/* Chat message content (react-markdown <p> fix) */
 .chat-message-content p {
   margin: 0 0 6px;
 }
@@ -655,3 +896,72 @@ code, pre, .mono {
   margin-bottom: 0;
 }
 
+/* ================================================================
+   14. Animations
+   ================================================================ */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ================================================================
+   15. Reduced Motion
+   ================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ================================================================
+   16. Responsive Breakpoint (≤ 880px)
+   ================================================================ */
+@media (max-width: 880px) {
+  :root {
+    --space-5: 16px;
+    --space-6: 24px;
+  }
+
+  .card {
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+  }
+
+  .dialog-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 40px);
+  }
+
+  .toast {
+    min-width: 240px;
+    max-width: calc(100vw - 32px);
+  }
+
+  .cmd-progress {
+    min-width: 260px;
+    max-width: calc(100vw - 32px);
+  }
+
+  h1 { font-size: 22px; }
+  h2 { font-size: 18px; }
+  h3 { font-size: 16px; }
+}

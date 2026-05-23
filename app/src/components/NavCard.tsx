@@ -1,0 +1,70 @@
+"use client";
+
+import Link from "next/link";
+import styles from "./NavCard.module.css";
+
+interface NavCardProps {
+  id?: string;
+  icon?: string;
+  iconColor?: string;
+  title: string;
+  description?: string;
+  href?: string;
+  onClick?: () => void;
+  variant?: "default" | "accent" | "action" | "warm";
+  badge?: string | number;
+  badgeVariant?: string;
+  progress?: number;
+}
+
+export function NavCard({
+  id: customId,
+  icon,
+  title,
+  description,
+  href,
+  onClick,
+  variant = "default",
+  badge,
+  progress,
+}: NavCardProps) {
+  const variantClass = variant !== "default" ? styles[variant] : "";
+  const className = `${styles.card} ${variantClass}`.trim();
+  const elementId = customId ?? `navcard-${title.toLowerCase().replace(/\s+/g, "-")}`;
+
+  const content = (
+    <>
+      {badge != null && <span className={styles.badge}>{badge}</span>}
+      {icon && <span className={styles.icon}>{icon}</span>}
+      <span className={styles.title}>{title}</span>
+      {description && <span className={styles.description}>{description}</span>}
+      {progress != null && (
+        <div className={styles.progressWrap}>
+          <div
+            className={styles.progressBar}
+            style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+          />
+        </div>
+      )}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={className} id={elementId}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={onClick}
+      id={elementId}
+    >
+      {content}
+    </button>
+  );
+}

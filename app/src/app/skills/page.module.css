@@ -1,0 +1,232 @@
+/* ============================================
+   Skill Kit Library — page.module.css
+   1health Design System
+   ============================================ */
+
+.skillsShell {
+  min-height: 100vh;
+  padding: 32px 24px 48px;
+  background: var(--bg-primary);
+}
+
+.skillsContainer {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+/* ---- Header ---- */
+.skillsHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.skillsHeaderIcon {
+  font-size: 28px;
+}
+
+.skillsTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #E6EBF0;
+  letter-spacing: -0.02em;
+}
+
+.skillsSubtitle {
+  font-size: 13px;
+  color: #AEB8C4;
+  margin-top: 2px;
+}
+
+.skillsBack {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px solid rgba(86, 99, 115, 0.35);
+  border-radius: 6px;
+  color: #AEB8C4;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  text-decoration: none;
+}
+
+.skillsBack:hover {
+  color: #E6EBF0;
+  border-color: rgba(143, 216, 230, 0.4);
+  background: rgba(86, 99, 115, 0.15);
+}
+
+/* ---- Type Filters ---- */
+.typeFilters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.typeFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(86, 99, 115, 0.3);
+  background: transparent;
+  color: #AEB8C4;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.typeFilter:hover {
+  border-color: rgba(143, 216, 230, 0.4);
+  color: #E6EBF0;
+}
+
+.typeFilterActive {
+  background: rgba(31, 154, 155, 0.15);
+  border-color: rgba(31, 154, 155, 0.4);
+  color: #1F9A9B;
+  font-weight: 600;
+}
+
+/* ---- Kit Grid ---- */
+.kitGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+/* ---- Kit Card ---- */
+.kitCard {
+  background: #313B47;
+  border: 1px solid rgba(86, 99, 115, 0.25);
+  border-radius: 16px;
+  padding: 24px;
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kitCard:hover {
+  border-color: rgba(143, 216, 230, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.kitCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kitIcon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.kitBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(59, 170, 120, 0.12);
+  color: #3BAA78;
+}
+
+.kitName {
+  font-size: 15px;
+  font-weight: 700;
+  color: #E6EBF0;
+  letter-spacing: -0.01em;
+}
+
+.kitDesc {
+  font-size: 13px;
+  color: #AEB8C4;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.kitMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(86, 99, 115, 0.15);
+}
+
+.kitType {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.kitTypeBase {
+  background: rgba(143, 216, 230, 0.12);
+  color: #8FD8E6;
+}
+
+.kitTypeRole {
+  background: rgba(36, 107, 143, 0.15);
+  color: #246B8F;
+}
+
+.kitTypeJob {
+  background: rgba(214, 168, 58, 0.12);
+  color: #D6A83A;
+}
+
+.kitToolCount {
+  font-size: 11px;
+  color: #566373;
+  font-weight: 500;
+}
+
+/* ---- Loading ---- */
+.skillsLoading {
+  text-align: center;
+  padding: 48px;
+  color: #AEB8C4;
+  font-size: 14px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1024px) {
+  .kitGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 880px) {
+  .kitGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .skillsContainer {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .kitGrid {
+    grid-template-columns: 1fr;
+  }
+}

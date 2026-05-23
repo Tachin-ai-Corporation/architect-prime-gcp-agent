@@ -1,0 +1,79 @@
+/* ============================================
+   Agent Skills — page.module.css
+   1health Design System
+   ============================================ */
+
+.shell {
+  min-height: 100vh;
+  padding: 32px 24px 48px;
+  background: var(--bg-primary);
+}
+
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* ---- Header ---- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #E6EBF0;
+  letter-spacing: -0.02em;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: #8FD8E6;
+  background: rgba(143, 216, 230, 0.1);
+  padding: 3px 10px;
+  border-radius: 9999px;
+}
+
+.intro {
+  font-size: 13px;
+  color: #AEB8C4;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+/* ---- Grid ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+/* ---- Note ---- */
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  background: rgba(47, 128, 168, 0.06);
+  border: 1px solid rgba(47, 128, 168, 0.15);
+  border-radius: 10px;
+  font-size: 12px;
+  color: #AEB8C4;
+  line-height: 1.5;
+}
+
+.noteIcon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+@media (max-width: 880px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,132 @@
+/* ---- NavCard ---- */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  background: #313B47; /* Charcoal */
+  border: 1px solid rgba(86, 99, 115, 0.25); /* Slate 25% */
+  border-radius: 16px;
+  cursor: pointer;
+  transition:
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  color: inherit;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(143, 216, 230, 0.45); /* Aqua glow border */
+  box-shadow:
+    0 0 0 1px rgba(143, 216, 230, 0.32),
+    0 0 24px rgba(143, 216, 230, 0.18),
+    0 8px 28px rgba(0, 0, 0, 0.24); /* Level 2 shadow */
+}
+
+.card:active {
+  transform: translateY(-1px);
+}
+
+/* ---- Variants ---- */
+
+.accent {
+  border-color: rgba(143, 216, 230, 0.3); /* Aqua */
+}
+.accent .title {
+  color: #8FD8E6; /* Signal Aqua */
+}
+
+.action {
+  border-style: dashed;
+  border-color: rgba(95, 199, 178, 0.35); /* Care Mint */
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.action .title {
+  color: #5FC7B2; /* Care Mint */
+}
+.action:hover {
+  border-color: rgba(95, 199, 178, 0.6);
+  box-shadow:
+    0 0 0 1px rgba(95, 199, 178, 0.25),
+    0 0 20px rgba(95, 199, 178, 0.12);
+}
+
+.warm {
+  border-color: rgba(214, 168, 58, 0.3); /* Amber */
+}
+.warm .title {
+  color: #D6A83A; /* Amber */
+}
+.warm:hover {
+  border-color: rgba(214, 168, 58, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(214, 168, 58, 0.25),
+    0 0 20px rgba(214, 168, 58, 0.12);
+}
+
+/* ---- Inner elements ---- */
+
+.icon {
+  font-size: 24px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #E6EBF0; /* Cloud */
+  letter-spacing: -0.01em;
+}
+
+.description {
+  font-size: 13px;
+  font-weight: 400;
+  color: #AEB8C4; /* Mist */
+  line-height: 1.5;
+}
+
+/* ---- Badge ---- */
+
+.badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 9999px;
+  background: rgba(214, 168, 58, 0.15); /* Amber tint */
+  color: #D6A83A; /* Amber */
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ---- Progress bar ---- */
+
+.progressWrap {
+  width: 100%;
+  height: 4px;
+  background: rgba(86, 99, 115, 0.25); /* Slate 25% */
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.progressBar {
+  height: 100%;
+  background: linear-gradient(90deg, #1F9A9B, #5FC7B2); /* Teal → Mint */
+  border-radius: 2px;
+  transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}

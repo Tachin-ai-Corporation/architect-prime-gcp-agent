@@ -103,6 +103,8 @@ export interface WorkEnvelope {
   blocked_at?: string | null;
   cancelled_at?: string | null;
   cancelled_reason?: string | null;
+  project_id?: string | null;
+  delivery_status?: string | null;
 }
 
 export interface WorkHistoryEntry {
@@ -111,4 +113,15 @@ export interface WorkHistoryEntry {
   agent: string;
   detail: string;
   timestamp: string;
+}
+
+/* ---- Project types ---- */
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
 }
