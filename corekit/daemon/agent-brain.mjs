@@ -763,6 +763,12 @@ async function writeMemory(envelope) {
       accept_criteria: 'Acknowledge storage',
     });
     log('INFO', `Memory write: ${result.success ? 'OK' : 'failed'} (${result.durationMs}ms)`);
+
+    // Mark envelope as memory-reconciled so archival knows it's safe to archive
+    if (result.success) {
+      envelope.memory_written = true;
+      await firestoreWrite('work', envelope.id, envelope);
+    }
   } catch (e) {
     log('WARN', `Memory write failed: ${e.message}`);
   }
@@ -853,6 +859,7 @@ async function archiveEnvelopes() {
 
     // 2. Complete envelopes: archive children immediately, top-level after STALE_CLEANUP_HOURS
     const completeCutoff = new Date(Date.now() - STALE_CLEANUP_HOURS * 60 * 60 * 1000).toISOString();
+    const forceArchiveCutoff = new Date(Date.now() - ARCHIVE_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
     const complete = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'complete' } },
     ]);
@@ -864,11 +871,19 @@ async function archiveEnvelopes() {
         completeCount++;
         continue;
       }
-      // Top-level envelopes: archive after STALE_CLEANUP_HOURS using completed_at or updated_at
+      // Top-level envelopes: require memory_written before archiving (safety gate)
       const envAge = env.completed_at || env.updated_at || env.created_at;
       if (envAge && envAge < completeCutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', updated_at: now() });
-        completeCount++;
+        if (env.memory_written) {
+          // Memory confirmed written — safe to archive
+          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', updated_at: now() });
+          completeCount++;
+        } else if (envAge < forceArchiveCutoff) {
+          // Force-archive very old envelopes even without memory flag (safety fallback)
+          log('WARN', `Force-archiving envelope without memory_written: ${env.id} (age > ${ARCHIVE_AGE_DAYS}d)`);
+          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered_no_memory', updated_at: now() });
+          completeCount++;
+        }
       }
     }
     if (completeCount) log('INFO', `Archived ${completeCount} complete envelopes (children + >${STALE_CLEANUP_HOURS}h old)`);
