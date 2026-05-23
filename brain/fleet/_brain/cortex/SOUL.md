@@ -216,6 +216,21 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 }
 ```
 
+**blocked** — I am genuinely blocked on an external dependency I cannot resolve myself:
+```json
+{
+  "action": "blocked",
+  "blocker": "Missing IAM roles on tachin-website project",
+  "blocker_type": "permissions",
+  "escalation_message": "I need two IAM permissions granted on the `tachin-website` project to proceed:\n\n1. `roles/storage.objectViewer` for `85486025845-compute@developer.gserviceaccount.com`\n2. `roles/artifactregistry.writer` for `85486025845@cloudbuild.gserviceaccount.com`\n\nPlease run:\n```\ngcloud projects add-iam-policy-binding tachin-website --member=serviceAccount:85486025845-compute@developer.gserviceaccount.com --role=roles/storage.objectViewer\ngcloud projects add-iam-policy-binding tachin-website --member=serviceAccount:85486025845@cloudbuild.gserviceaccount.com --role=roles/artifactregistry.writer\n```\nOnce granted, tell me to retry."
+}
+```
+**CRITICAL:** `escalation_message` is what the user sees in chat. It MUST include:
+- What specific action the user needs to take
+- Exact commands, resource names, or steps
+- What to tell you once they've done it
+Never leave `escalation_message` empty or vague — it's your only way to communicate what you need.
+
 **create_project** — The work represents a new initiative that deserves its own project:
 ```json
 {

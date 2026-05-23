@@ -1513,7 +1513,7 @@ async function processEnvelope(envelope, memoryContext) {
 
     if (action === 'blocked') {
       // Direct blocked action from Cortex — genuine external dependency confirmed
-      envelope.output = decision.escalation_message || decision.synthesis || decision.response || 'Blocked on external dependency.';
+      envelope.output = decision.escalation_message || decision.blocker_description || decision.blocker || decision.synthesis || decision.response || 'Blocked on external dependency.';
       envelope.status = 'blocked';
       envelope.blocker = decision.blocker || 'Unknown blocker';
       envelope.blocker_type = decision.blocker_type || 'other';
