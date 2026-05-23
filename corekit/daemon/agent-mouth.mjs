@@ -603,20 +603,65 @@ async function pollBrainV3Envelopes() {
         },
       };
 
+      // Also run a second query excluding delivered envelopes.
+      // This catches envelopes that would be pushed out of the LIMIT 50 window
+      // by old already-delivered envelopes.
+      const undeliveredQuery = {
+        structuredQuery: {
+          from: [{ collectionId: 'work' }],
+          where: {
+            compositeFilter: {
+              op: 'AND',
+              filters: [
+                { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
+                  value: { stringValue: ownerEmail } } },
+                { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
+                  value: { stringValue: targetStatus } } },
+                { unaryFilter: { field: { fieldPath: 'delivered_at' }, op: 'IS_NULL' } },
+              ]
+            }
+          },
+          orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
+          limit: 20,
+        },
+      };
+
       const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
-      const res = await fetch(queryUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(query),
-      });
+      const [res, res2] = await Promise.all([
+        fetch(queryUrl, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(query),
+        }),
+        fetch(queryUrl, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(undeliveredQuery),
+        }),
+      ]);
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
         log('Brain v3 query error', { status: res.status, targetStatus, body: errText.slice(0, 200) });
-        continue;
+      } else {
+        const results = await res.json();
+        if (Array.isArray(results)) allResults.push(...results);
       }
-      const results = await res.json();
-      if (Array.isArray(results)) allResults.push(...results);
+
+      // Merge undelivered query results (may overlap with main query)
+      if (res2.ok) {
+        const results2 = await res2.json();
+        if (Array.isArray(results2)) {
+          // Deduplicate by document name
+          const seen = new Set(allResults.map(r => r.document?.name).filter(Boolean));
+          for (const r of results2) {
+            if (r.document?.name && !seen.has(r.document.name)) {
+              allResults.push(r);
+              seen.add(r.document.name);
+            }
+          }
+        }
+      }
     }
 
     // Diagnostic: log every Nth poll cycle to show the poll is alive
