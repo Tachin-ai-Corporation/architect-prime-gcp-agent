@@ -6,7 +6,7 @@
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
       "workspace": "devops",
-      "skills": ["agent-ask", "workspace-drive", "workspace-gmail"],
+      "skills": ["agent-ask", "workspace-drive", "workspace-gmail", "gcp-devops"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],

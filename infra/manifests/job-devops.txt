@@ -8,3 +8,12 @@ specialties/devops/workspace/MEMORY.md .openclaw/workspace-devops/MEMORY.md
 
 # DevOps responsibilities (merged with base by Brain scheduler)
 specialties/devops/responsibilities-devops.json .openclaw/corekit/responsibilities-job.json
+
+# Specialty brain SOUL appends (used by assemble-tools phase 2)
+# Appended to sub-agent SOUL.md at install time for specialty-specific rules
+specialties/devops/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/cortex/SOUL_APPEND.md
+specialties/devops/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/motor/SOUL_APPEND.md
+
+# Specialty-specific skills (used by assemble-tools phase 1)
+# Assembled into TOOLS.md alongside standard skills
+specialties/devops/skills/gcp-devops/SKILL.md .openclaw/corekit/specialties/devops/skills/gcp-devops/SKILL.md

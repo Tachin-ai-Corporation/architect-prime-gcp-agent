@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
-# assemble-tools — Build TOOLS.md from self-describing SKILL.md files
+# assemble-tools — Build TOOLS.md + apply specialty SOUL appends
 #
 # Reads agent-types.json to determine which skills this agent
 # has, then concatenates their SKILL.md files into a single
 # TOOLS.md that OpenClaw reads as part of the workspace.
+#
+# Also appends specialty-specific SOUL sections to sub-agent
+# workspace SOUL.md files (e.g., devops cortex anti-hallucination
+# rules, motor operational procedures).
 #
 # Usage: assemble-tools [agent-type]
 #   agent-type defaults to "prime"
@@ -18,6 +22,7 @@ AGENT_TYPE="${1:-prime}"
 OC="${OC_HOST_ROOT:-/opt/openclaw}/.openclaw"
 SKILLS_DIR="${OC}/skills"
 TYPES_FILE="${OC}/corekit/agent-types.json"
+SPECIALTIES_DIR="${OC}/corekit/specialties"
 WORKSPACE="${OC}/workspace"
 OUT="${WORKSPACE}/TOOLS.md"
 
@@ -39,12 +44,14 @@ else
   SKILLS="agent-ask"
 fi
 
-# Assemble TOOLS.md
+# ---- Phase 1: Assemble TOOLS.md from skills ----
 {
   echo "# Tools — ${AGENT_TYPE}"
   echo ""
   echo "The following skills are available. Use exec to run the commands described."
   echo ""
+
+  # Standard skills from $SKILLS_DIR
   for skill in $SKILLS; do
     SKILL_FILE="${SKILLS_DIR}/${skill}/SKILL.md"
     if [[ -f "$SKILL_FILE" ]]; then
@@ -54,6 +61,20 @@ fi
       echo ""
     fi
   done
+
+  # Specialty-specific skills (from specialties/{type}/skills/)
+  SPEC_SKILLS_DIR="${SPECIALTIES_DIR}/${AGENT_TYPE}/skills"
+  if [[ -d "$SPEC_SKILLS_DIR" ]]; then
+    for skill_dir in "$SPEC_SKILLS_DIR"/*/; do
+      SKILL_FILE="${skill_dir}SKILL.md"
+      if [[ -f "$SKILL_FILE" ]]; then
+        echo "---"
+        echo ""
+        cat "$SKILL_FILE"
+        echo ""
+      fi
+    done
+  fi
 } > "$OUT"
 
 # Copy TOOLS.md to sub-agent workspaces that need skill awareness
@@ -66,4 +87,25 @@ for sub in prefrontal motor; do
   fi
 done
 
-echo "Assembled $(echo $SKILLS | wc -w) skills into ${OUT} (+prefrontal, +motor)"
+echo "Assembled TOOLS.md into ${OUT} (+prefrontal, +motor)"
+
+# ---- Phase 2: Append specialty SOUL sections to sub-agent workspaces ----
+SPEC_BRAIN_DIR="${SPECIALTIES_DIR}/${AGENT_TYPE}/brain"
+APPEND_COUNT=0
+
+if [[ -d "$SPEC_BRAIN_DIR" ]]; then
+  for sub in cortex motor prefrontal cerebellum temporal-memory temporal-research; do
+    APPEND_FILE="${SPEC_BRAIN_DIR}/${sub}/SOUL_APPEND.md"
+    SUB_SOUL="${OC}/workspace-${sub}/SOUL.md"
+    if [[ -f "$APPEND_FILE" && -f "$SUB_SOUL" ]]; then
+      echo "" >> "$SUB_SOUL"
+      echo "---" >> "$SUB_SOUL"
+      echo "" >> "$SUB_SOUL"
+      cat "$APPEND_FILE" >> "$SUB_SOUL"
+      APPEND_COUNT=$((APPEND_COUNT + 1))
+      echo "  Appended ${sub} specialty SOUL from ${APPEND_FILE}"
+    fi
+  done
+fi
+
+echo "Specialty SOUL appends: ${APPEND_COUNT} applied"
