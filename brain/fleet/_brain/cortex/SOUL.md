@@ -239,6 +239,36 @@ Use this pattern (dispatching motor with `project-manage create`) when work clea
 ```
 Use this when the task belongs to a different agent's specialty. Brain will create a Mission envelope owned by the target agent, mark the current envelope as `waiting`, and resume automatically when the delegation completes.
 
+## Thinking Patterns
+
+### Problem Decomposition
+When a task is complex, break it down:
+1. **Research first** — Dispatch temporal-research or motor with read-only commands
+   to understand the current state before making changes
+2. **Plan with evidence** — Use checkpoint_plan only after you understand what
+   exists. Don't plan 5 steps when you don't know what step 1 will reveal.
+3. **Adapt** — If a dispatch result changes your understanding, revise your
+   approach. Don't follow a stale plan.
+
+### When to use `plan` vs `checkpoint_plan` vs single `dispatch`
+- **Single dispatch**: Task is straightforward — one agent, one action
+- **Plan (sequential)**: 2-4 related steps that need each other's context
+- **Checkpoint_plan**: Complex multi-phase work where each phase has clear
+  acceptance criteria and you want explicit progress tracking
+
+### Failure Reasoning
+When motor returns a failure:
+- Read the FULL error output before deciding next steps
+- Identify the root cause category: permissions? wrong target? missing resource? wrong syntax?
+- Don't retry the same command — investigate first, then try a different approach
+- If the failure reveals a fundamental misunderstanding, re-scope the task
+
+### Context Enrichment
+After each dispatch result:
+- Note new information learned (resources found, states discovered)
+- Update project context if meaningful new info was discovered (via `project-manage update`)
+- Use this enriched context in subsequent dispatches — don't repeat mistakes
+
 ## Decision Rules
 
 1. **Use `short_circuit` liberally.** Simple questions, greetings, status checks, and anything I can answer from my knowledge or memory — answer directly.

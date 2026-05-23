@@ -53,6 +53,22 @@ const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'openclaw/cortex';
 
+// ---- Context forwarding budgets (chars per prior step) ----
+const CTX_DISPATCH_SUCCESS = CONTRACTS.brain?.ctx_dispatch_success || 4000;
+const CTX_DISPATCH_FAILURE = CONTRACTS.brain?.ctx_dispatch_failure || 3000;
+const CTX_AGENT_STEP = CONTRACTS.brain?.ctx_agent_step || 8000;
+const CTX_CORTEX_STEP = CONTRACTS.brain?.ctx_cortex_step || 4000;
+
+function smartTruncate(text, budget) {
+  if (!text || text.length <= budget) return text;
+  const headBudget = Math.floor(budget * 0.4);
+  const tailBudget = Math.floor(budget * 0.4);
+  const head = text.substring(0, headBudget);
+  const tail = text.substring(text.length - tailBudget);
+  const truncated = text.length - headBudget - tailBudget;
+  return `${head}\n[...${truncated} chars truncated...]\n${tail}`;
+}
+
 // ---- Gateway token ----
 let GATEWAY_TOKEN = 'no-token';
 try {
@@ -1595,8 +1611,8 @@ async function processEnvelope(envelope, memoryContext) {
         agent: agentId,
         task: task.substring(0, 200),
         result: result.success
-          ? (result.output || '').substring(0, 4000)
-          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${(result.output || '(no output)').substring(0, 3000)}`,
+          ? smartTruncate(result.output || '', CTX_CORTEX_STEP)
+          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_DISPATCH_FAILURE)}`,
         success: result.success,
         durationMs: result.durationMs,
       });
@@ -1695,7 +1711,10 @@ async function processEnvelope(envelope, memoryContext) {
           instruction: stepTask,
           accept_criteria: stepCriteria,
           context_summary: planContext.length > 0
-            ? planContext.map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 500)}`).join('\n')
+            ? planContext.map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
+            : undefined,
+          prior_results_context: planContext.length > 0
+            ? planContext.map(r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
             : undefined,
         };
 
@@ -1728,8 +1747,8 @@ async function processEnvelope(envelope, memoryContext) {
           agent: stepAgent,
           task: stepTask.substring(0, 200),
           result: result.success
-            ? (result.output || '').substring(0, 4000)
-            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${(result.output || '(no output)').substring(0, 3000)}`,
+            ? smartTruncate(result.output || '', CTX_AGENT_STEP)
+            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
           success: result.success,
           durationMs: result.durationMs,
         });
@@ -1894,7 +1913,10 @@ async function processEnvelope(envelope, memoryContext) {
             accept_criteria: taskCriteria,
             _missionId: envelope.id,  // mission-scoped shared workspace
             context_summary: [...allResults, ...cpResults].length > 0
-              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 500)}`).join('\n')
+              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
+              : undefined,
+            prior_results_context: [...allResults, ...cpResults].length > 0
+              ? [...allResults, ...cpResults].map(r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
               : undefined,
           });
 
@@ -1922,7 +1944,9 @@ async function processEnvelope(envelope, memoryContext) {
             step: `${cpNum}.${taskNum}`,
             agent: taskAgent,
             task: taskDesc.substring(0, 200),
-            result: result.success ? (result.output || '').substring(0, 4000) : `[FAILED] ${result.error}`,
+            result: result.success
+              ? smartTruncate(result.output || '', CTX_AGENT_STEP)
+              : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
             success: result.success,
             durationMs: result.durationMs,
           };
