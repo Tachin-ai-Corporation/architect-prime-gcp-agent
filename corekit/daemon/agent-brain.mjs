@@ -764,10 +764,18 @@ async function writeMemory(envelope) {
     });
     log('INFO', `Memory write: ${result.success ? 'OK' : 'failed'} (${result.durationMs}ms)`);
 
-    // Mark envelope as memory-reconciled so archival knows it's safe to archive
+    // Mark envelope as memory-reconciled so archival knows it's safe to archive.
+    // IMPORTANT: Use targeted updateMask to avoid overwriting delivered_at set by mouth.
     if (result.success) {
-      envelope.memory_written = true;
-      await firestoreWrite('work', envelope.id, envelope);
+      const token = await getAuthToken();
+      if (token) {
+        const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/work/${envelope.id}?updateMask.fieldPaths=memory_written`;
+        await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: { memory_written: { booleanValue: true } } }),
+        });
+      }
     }
   } catch (e) {
     log('WARN', `Memory write failed: ${e.message}`);
