@@ -1163,7 +1163,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
 
 // ---- Continue handler: resume a blocked mission ----
 async function handleContinue(intake, decision, memoryContext) {
-  const targetId = decision.continue_mission;
+  const targetId = decision.continue_mission || decision.continue_envelope;
   log('INFO', `Continue: intake ${intake.id} → resuming blocked mission ${targetId}`);
 
   if (!targetId) {
