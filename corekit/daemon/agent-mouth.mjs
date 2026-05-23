@@ -599,7 +599,7 @@ async function pollBrainV3Envelopes() {
             }
           },
           orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
-          limit: 50,
+          limit: 200,
         },
       };
 
@@ -660,6 +660,13 @@ async function pollBrainV3Envelopes() {
               seen.add(r.document.name);
             }
           }
+        }
+      } else {
+        const errText2 = await res2.text().catch(() => '');
+        // Log once per restart (likely missing composite index)
+        if (!pollBrainV3Envelopes._undeliveredIndexWarned) {
+          log('Brain v3 undelivered query needs index', { status: res2.status, targetStatus, body: errText2.slice(0, 300) });
+          pollBrainV3Envelopes._undeliveredIndexWarned = true;
         }
       }
     }
