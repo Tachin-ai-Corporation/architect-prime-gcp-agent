@@ -205,14 +205,14 @@ else
   ok "Secret created"
 fi
 
-# Grant Cloud Run SA access to read the secret
+# Grant Cloud Run SA access to manage secrets (create + read)
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${SA_EMAIL}" \
-  --role="roles/secretmanager.secretAccessor" \
+  --role="roles/secretmanager.admin" \
   --condition=None \
   --quiet > /dev/null 2>&1 \
-  && ok "Secret accessor binding" \
-  || warn "Failed to bind secretAccessor"
+  && ok "Secret Manager admin binding" \
+  || warn "Failed to bind secretmanager.admin"
 
 # ---- Step 6: Create Artifact Registry (for fleet container images) ----
 info "Creating Artifact Registry repository..."

@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     const smBase = "https://secretmanager.googleapis.com/v1";
 
     // Try to create the secret first
-    const createRes = await fetch(`${smBase}/projects/${projectId}/secrets`, {
+    const createRes = await fetch(`${smBase}/projects/${projectId}/secrets?secretId=dashboard-oauth-secret`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
