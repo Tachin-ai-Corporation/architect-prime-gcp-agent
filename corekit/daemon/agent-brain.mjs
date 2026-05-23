@@ -971,6 +971,15 @@ async function generateAck(intakeText, activeEnvelopes) {
       workContext = `\nYour current work:\n${summaries}\nBriefly mention what you're working on or blocked on if relevant (e.g. "I'll get to this after I finish...").`;
     }
 
+    // Extract the actual current message from the composite intake
+    // (ears format: "[Chat messages since...]\ncontext...\n[Current message - respond to this]\nUser: actual message")
+    let ackMessage = intakeText;
+    const currentMsgMarker = '[Current message - respond to this]';
+    const markerIdx = intakeText.indexOf(currentMsgMarker);
+    if (markerIdx !== -1) {
+      ackMessage = intakeText.substring(markerIdx + currentMsgMarker.length).trim();
+    }
+
     const resp = await fetch(GATEWAY_URL, {
       method: 'POST',
       headers: {
@@ -981,7 +990,7 @@ async function generateAck(intakeText, activeEnvelopes) {
         model: CORTEX_ROUTE,
         messages: [
           { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.${workContext}\nIMPORTANT: If the user's message relates to an existing blocked or in-progress mission listed above, acknowledge that you are RESUMING or CONTINUING that work, not starting something new. Say something like "On it — picking up where I left off" or "Continuing with the fix."\nYour personality:\n${identity || 'Helpful and professional.'}` },
-          { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${intakeText.substring(0, 300)}"` },
+          { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${ackMessage.substring(0, 300)}"` },
         ],
         max_tokens: 60,
         temperature: 0.9,
