@@ -1494,7 +1494,9 @@ async function processEnvelope(envelope, memoryContext) {
 
     if (action === 'synthesize') {
       // Check for unresolved failures — block premature success synthesis
-      const hasUnresolvedFail = priorResults.some(r => r.success === false);
+      // Only count failures that haven't been superseded by a subsequent successful dispatch
+      const lastSuccessIdx = priorResults.map((r, i) => r.success === true ? i : -1).filter(i => i >= 0).pop() ?? -1;
+      const hasUnresolvedFail = priorResults.some((r, i) => r.success === false && i > lastSuccessIdx);
       if (hasUnresolvedFail && iteration < MAX_ITERATIONS - 1) {
         log('WARN', `Blocking premature synthesize — unresolved failures in prior_results (iteration ${iteration})`);
         priorResults.push({
@@ -1533,7 +1535,24 @@ async function processEnvelope(envelope, memoryContext) {
         continue;
       }
 
-      // If we already tried self-unblock or we're at max iterations, mark as blocked (for missions) or complete (for tasks)
+      // If we already tried self-unblock or we're at max iterations, check if the work actually succeeded despite the failure label
+      // Cortex sometimes uses synthesize_with_failure out of habit even when the self-unblock resolved the issue
+      const lastSuccessAfterUnblock = priorResults.some((r, i) => r.success === true && i > priorResults.findIndex(x => x.agent === 'system' && x.result?.includes('[SELF-UNBLOCK CHECK]')));
+      if (lastSuccessAfterUnblock) {
+        log('INFO', `Self-unblock succeeded for ${envelope.id} — treating synthesize_with_failure as complete (successful dispatch found after unblock)`);
+        envelope.output = decision.synthesis || decision.response;
+        envelope.status = 'complete';
+        envelope.completed_at = now();
+        envelope.updated_at = now();
+        if (!envelope.parent_id) envelope.delivery_status = 'pending';
+        await firestoreWrite('work', envelope.id, envelope);
+        await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Completed (self-unblock resolved the failure)');
+        log('INFO', `Envelope ${envelope.id} complete (synthesize_with_failure → self-unblock succeeded)`);
+        await writeMemory(envelope);
+        await cleanupSharedWorkspace(envelope.id);
+        return;
+      }
+
       if (envelope.type === 'M') {
         // Missions get blocked status — they stay alive for resumption
         envelope.output = decision.synthesis || decision.response;
