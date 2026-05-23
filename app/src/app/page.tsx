@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useSession, signOut } from "next-auth/react";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { SettingsView, VersionInfo } from "@/components/settings/SettingsView";
@@ -26,6 +27,7 @@ import type {
 /* ---- Component ---- */
 function HomeInner() {
   const dialog = useDialog();
+  const { data: session } = useSession();
   const [primes, setPrimes] = useState<PrimeInstance[]>([]);
   const [activePrime, setActivePrime] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -693,6 +695,29 @@ function HomeInner() {
             + Deploy Prime
           </button>
         </div>
+
+        {/* User card */}
+        {session?.user && (
+          <div className={styles["sidebar-user"]}>
+            {session.user.image && (
+              <img
+                src={session.user.image}
+                alt=""
+                style={{ width: 28, height: 28, borderRadius: "50%" }}
+              />
+            )}
+            <span style={{ flex: 1, fontSize: "0.8rem", opacity: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {session.user.email}
+            </span>
+            <button
+              onClick={() => signOut()}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: "0.75rem", padding: "0.25rem" }}
+              title="Sign out"
+            >
+              ↪
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* ---- Main Panel ---- */}

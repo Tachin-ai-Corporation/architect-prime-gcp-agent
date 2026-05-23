@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { primesCol } from "@/lib/firestore";
+import { requireAuth } from "@/lib/require-auth";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -21,6 +22,10 @@ interface RouteContext {
  */
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
+
+  const auth = await requireAuth();
+  if (!auth.authenticated) return auth.response;
+
 
   try {
     // Get Prime config from Firestore

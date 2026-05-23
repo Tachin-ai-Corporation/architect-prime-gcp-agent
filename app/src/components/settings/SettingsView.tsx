@@ -6,6 +6,7 @@ import { GeneralTab } from "./GeneralTab";
 import { ModelsTab } from "./ModelsTab";
 import { IntegrationTab } from "./IntegrationTab";
 import { SystemTab } from "./SystemTab";
+import { SecurityTab } from "./SecurityTab";
 
 /* ---- Shared types (re-exported for child tabs) ---- */
 export interface SetupState {
@@ -68,12 +69,13 @@ export interface SettingsViewProps {
   handleDwdTest: () => void;
 }
 
-type SettingsTab = "general" | "models" | "integration" | "system";
+type SettingsTab = "general" | "models" | "integration" | "security" | "system";
 
 const TABS: { id: SettingsTab; label: string; icon: string }[] = [
   { id: "general", label: "General", icon: "⚙️" },
   { id: "models", label: "AI Models", icon: "🧠" },
   { id: "integration", label: "Integration", icon: "🔗" },
+  { id: "security", label: "Security", icon: "🔐" },
   { id: "system", label: "System", icon: "🖥️" },
 ];
 
@@ -129,6 +131,11 @@ export function SettingsView(props: SettingsViewProps) {
             dwdTesting={props.dwdTesting}
             dwdTestResult={props.dwdTestResult}
             handleDwdTest={props.handleDwdTest}
+          />
+        )}
+        {activeTab === "security" && (
+          <SecurityTab
+            projectId={props.setup.projectId}
           />
         )}
         {activeTab === "system" && (

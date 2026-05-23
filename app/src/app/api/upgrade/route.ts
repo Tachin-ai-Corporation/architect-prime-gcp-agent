@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/require-auth";
 
 const GH_OWNER = "Tachin-ai-Corporation";
 const GH_REPO = "architect-prime-gcp-agent";
@@ -127,6 +128,9 @@ export async function GET() {
  * version from the commit message and APP_COMMIT to the sha.
  */
 export async function POST() {
+  const auth = await requireAuth();
+  if (!auth.authenticated) return auth.response;
+
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
     const ghOwner = process.env.GH_OWNER || GH_OWNER;
@@ -172,8 +176,12 @@ export async function POST() {
       // non-fatal
     }
 
-    // Preserve existing DWD_CLIENT_ID from current env
+    // Preserve existing env vars from current deployment
     const dwdClientId = process.env.DWD_CLIENT_ID || "";
+    const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
+    const nextAuthSecret = process.env.NEXTAUTH_SECRET || "";
+    const allowedDomain = process.env.ALLOWED_DOMAIN || "";
+    const nextAuthUrl = process.env.NEXTAUTH_URL || "";
 
     // Build env vars string
     const envVars = [
@@ -182,6 +190,10 @@ export async function POST() {
       `GCP_PROJECT_ID=${projectId}`,
       `NODE_ENV=production`,
       ...(dwdClientId ? [`DWD_CLIENT_ID=${dwdClientId}`] : []),
+      ...(googleClientId ? [`GOOGLE_CLIENT_ID=${googleClientId}`] : []),
+      ...(nextAuthSecret ? [`NEXTAUTH_SECRET=${nextAuthSecret}`] : []),
+      ...(allowedDomain ? [`ALLOWED_DOMAIN=${allowedDomain}`] : []),
+      ...(nextAuthUrl ? [`NEXTAUTH_URL=${nextAuthUrl}`] : []),
     ].join(",");
 
     // Submit Cloud Build: clone → build → push → deploy

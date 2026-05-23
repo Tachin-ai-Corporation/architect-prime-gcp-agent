@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { primesCol, getDb } from "@/lib/firestore";
+import { requireAuth } from "@/lib/require-auth";
 
 /**
  * GET /api/setup — Returns the project's setup state.
@@ -58,6 +59,9 @@ export async function GET() {
  * Auto-captures admin email from IAP header if not explicitly provided.
  */
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth();
+  if (!auth.authenticated) return auth.response;
+
   try {
     const body = await req.json();
     const db = getDb();

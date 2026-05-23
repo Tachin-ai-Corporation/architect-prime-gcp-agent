@@ -156,6 +156,64 @@ gcloud iam service-accounts add-iam-policy-binding "$DWD_SIGNER_SA" \
   && ok "Token creator binding on DWD Signer SA" \
   || warn "Failed to grant tokenCreator on DWD Signer"
 
+# ---- Step 5b: Dashboard OAuth Setup ----
+info "Configuring dashboard authentication..."
+echo
+echo "╔════════════════════════════════════════════════════════╗"
+echo "║           Google OAuth Setup (required)                ║"
+echo "╠════════════════════════════════════════════════════════╣"
+echo "║                                                        ║"
+echo "║  The dashboard requires Google OAuth for login.        ║"
+echo "║  You need an OAuth Client ID from Cloud Console.       ║"
+echo "║                                                        ║"
+echo "║  If you haven't created one yet:                       ║"
+echo "║                                                        ║"
+echo "║  1. Go to APIs & Services > OAuth consent screen       ║"
+echo "║     Choose 'Internal' (restricts to your Workspace)    ║"
+echo "║     App name: Architect Prime                          ║"
+echo "║     Scopes: email, profile, openid                     ║"
+echo "║                                                        ║"
+echo "║  2. Go to APIs & Services > Credentials                ║"
+echo "║     Create Credentials > OAuth client ID                ║"
+echo "║     Type: Web application                              ║"
+echo "║     Name: Architect Prime Dashboard                    ║"
+echo "║     (Redirect URI will be shown after deployment)       ║"
+echo "║                                                        ║"
+echo "╚════════════════════════════════════════════════════════╝"
+echo
+read -rp "  Enter Google OAuth Client ID: " GOOGLE_CLIENT_ID
+[[ -n "$GOOGLE_CLIENT_ID" ]] || die "OAuth Client ID is required"
+read -rp "  Enter Google OAuth Client Secret: " GOOGLE_CLIENT_SECRET
+[[ -n "$GOOGLE_CLIENT_SECRET" ]] || die "OAuth Client Secret is required"
+read -rp "  Enter allowed domain (e.g., tachin.ag): " ALLOWED_DOMAIN
+ok "OAuth credentials captured"
+
+# Generate NextAuth secret
+NEXTAUTH_SECRET=$(openssl rand -base64 32)
+ok "NextAuth secret generated"
+
+# Store client secret in Secret Manager
+info "Storing OAuth client secret in Secret Manager..."
+gcloud services enable secretmanager.googleapis.com --quiet 2>/dev/null || true
+if gcloud secrets describe dashboard-oauth-secret --project="$PROJECT_ID" >/dev/null 2>&1; then
+  echo -n "$GOOGLE_CLIENT_SECRET" | gcloud secrets versions add dashboard-oauth-secret \
+    --data-file=- --project="$PROJECT_ID" --quiet
+  ok "Secret updated"
+else
+  echo -n "$GOOGLE_CLIENT_SECRET" | gcloud secrets create dashboard-oauth-secret \
+    --data-file=- --project="$PROJECT_ID" --quiet
+  ok "Secret created"
+fi
+
+# Grant Cloud Run SA access to read the secret
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor" \
+  --condition=None \
+  --quiet > /dev/null 2>&1 \
+  && ok "Secret accessor binding" \
+  || warn "Failed to bind secretAccessor"
+
 # ---- Step 6: Create Artifact Registry (for fleet container images) ----
 info "Creating Artifact Registry repository..."
 gcloud artifacts repositories create architect-prime \
@@ -190,7 +248,8 @@ gcloud run deploy "$SERVICE_NAME" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
   --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production,DWD_CLIENT_ID=${DWD_CLIENT_ID},APP_VERSION=${APP_VERSION}" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production,DWD_CLIENT_ID=${DWD_CLIENT_ID},APP_VERSION=${APP_VERSION},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},NEXTAUTH_SECRET=${NEXTAUTH_SECRET},ALLOWED_DOMAIN=${ALLOWED_DOMAIN},NEXTAUTH_URL=WILL_BE_SET_AFTER_DEPLOY" \
+  --set-secrets="GOOGLE_CLIENT_SECRET=dashboard-oauth-secret:latest" \
   --memory=512Mi \
   --cpu=1 \
   --min-instances=0 \
@@ -222,6 +281,14 @@ curl -s -X PATCH \
 SERVICE_URL="$(gcloud run services describe "$SERVICE_NAME" \
   --platform=managed --region="$REGION" --format='value(status.url)')"
 
+# Update NEXTAUTH_URL now that we know the service URL
+info "Setting NEXTAUTH_URL to ${SERVICE_URL}..."
+gcloud run services update "$SERVICE_NAME" \
+  --platform=managed --region="$REGION" \
+  --update-env-vars="NEXTAUTH_URL=${SERVICE_URL}" \
+  --quiet
+ok "NEXTAUTH_URL set"
+
 echo
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║              ✅ DEPLOYMENT COMPLETE                    ║"
@@ -231,10 +298,12 @@ echo "║  Control Plane URL:                                    ║"
 echo "║  ${SERVICE_URL}"
 echo "║                                                        ║"
 echo "║  Next steps:                                           ║"
-echo "║  1. Open the URL above                                 ║"
-echo "║  2. Deploy your first Prime instance                   ║"
-echo "║  3. Configure DWD in the Setup tab                     ║"
-echo "║  4. Hire your first fleet agent                        ║"
+echo "║  1. Add this redirect URI to your OAuth client:        ║"
+echo "║     ${SERVICE_URL}/api/auth/callback/google"
+echo "║  2. Open the URL above                                 ║"
+echo "║  3. Deploy your first Prime instance                   ║"
+echo "║  4. Configure DWD in the Setup tab                     ║"
+echo "║  5. Hire your first fleet agent                        ║"
 echo "║                                                        ║"
 echo "║  To uninstall:                                         ║"
 echo "║  bash deploy/uninstall.sh                              ║"
