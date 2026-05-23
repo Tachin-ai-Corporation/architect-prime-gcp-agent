@@ -1504,7 +1504,7 @@ async function processEnvelope(envelope, memoryContext) {
         task: task.substring(0, 200),
         result: result.success
           ? (result.output || '').substring(0, 4000)
-          : `[FAILED] ${result.error}`,
+          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${(result.output || '(no output)').substring(0, 3000)}`,
         success: result.success,
         durationMs: result.durationMs,
       });
@@ -1516,7 +1516,7 @@ async function processEnvelope(envelope, memoryContext) {
           : '';
         priorResults.push({
           agent: 'system',
-          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use the "blocked" action with a concrete blocker description (blocker, blocker_type, escalation_message) — your escalation MUST state exactly what you need (permissions, access, information, resources), who can provide it, and what specific action to take. Do NOT just report the problem — come back with what you need to unblock the work. ${sourceInfo}`,
+          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use the "blocked" action with a concrete blocker description (blocker, blocker_type, escalation_message) — your escalation MUST state exactly what you need (permissions, access, information, resources), who can provide it, and what specific action to take. Do NOT just report the problem — come back with what you need to unblock the work.\n\nPERMISSION ERRORS: If the failure is a GCP IAM permission denied error, your escalation_message MUST include: (a) the exact service account that needs the permission, (b) the specific IAM role(s) required, (c) the target GCP project, and (d) the exact gcloud command to grant it (e.g. "gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:SA@PROJECT.iam.gserviceaccount.com --role=roles/ROLE_NAME"). ${sourceInfo}`,
         });
       }
 
@@ -1627,7 +1627,7 @@ async function processEnvelope(envelope, memoryContext) {
           task: stepTask.substring(0, 200),
           result: result.success
             ? (result.output || '').substring(0, 4000)
-            : `[FAILED] ${result.error}`,
+            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${(result.output || '(no output)').substring(0, 3000)}`,
           success: result.success,
           durationMs: result.durationMs,
         });

@@ -40,7 +40,21 @@ case "${1:-}" in
       exit 1
     fi
     echo "==> Upgrading CoreKit to ${ref}..."
-    CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER:-Tachin-ai-Corporation}/${GH_REPO:-architect-prime-gcp-agent}/${ref}"
+
+    # Resolve branch name to commit SHA to bypass GitHub raw CDN cache
+    RESOLVED_REF="$ref"
+    if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+      RESOLVED_SHA=$(curl -fsSL -H "Accept: application/vnd.github.v3+json" \
+        "https://api.github.com/repos/${GH_OWNER:-Tachin-ai-Corporation}/${GH_REPO:-architect-prime-gcp-agent}/commits/${ref}" \
+        2>/dev/null | grep -o '"sha": "[^"]*"' | head -1 | cut -d'"' -f4)
+      if [[ -n "$RESOLVED_SHA" ]]; then
+        echo "  Resolved ${ref} -> ${RESOLVED_SHA:0:12}"
+        RESOLVED_REF="$RESOLVED_SHA"
+      else
+        echo "  Warning: could not resolve SHA for ${ref}, using branch name"
+      fi
+    fi
+    CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER:-Tachin-ai-Corporation}/${GH_REPO:-architect-prime-gcp-agent}/${RESOLVED_REF}"
 
     # Read role/job from existing STATE.json so install.sh uses correct manifests
     EXISTING_ROLE=""
@@ -48,6 +62,11 @@ case "${1:-}" in
     if [[ -f "$STATE_FILE" ]]; then
       EXISTING_ROLE="$(json_value "role" "$STATE_FILE")"
       EXISTING_JOB="$(json_value "job" "$STATE_FILE")"
+    fi
+    # Default job for fleet agents when job is missing from STATE.json
+    if [[ "$EXISTING_ROLE" == "fleet" && -z "$EXISTING_JOB" ]]; then
+      EXISTING_JOB="devops"
+      echo "  Defaulting job to 'devops' for fleet role"
     fi
     INSTALL_ARGS="--upgrade $ref"
     [[ -n "$EXISTING_ROLE" ]] && INSTALL_ARGS="$INSTALL_ARGS --role $EXISTING_ROLE"
