@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
@@ -57,7 +58,7 @@ function HomeInner() {
     return (
       <div className={styles.loading} id="home-loading">
         <div className={styles.loadingCard}>
-          <div className={styles.loadingLogo}>A</div>
+          <Image src="/architect-prime-logo.png" alt="Architect Prime" width={48} height={48} className={styles.loadingLogo} />
           <div className={styles.loadingText}>Loading<span className={styles.loadingDots} /></div>
         </div>
       </div>
@@ -70,7 +71,7 @@ function HomeInner() {
       <div className={styles.onboarding} id="home-onboarding">
         <div className={styles.onboardingCard}>
           <div className={styles.onboardingHero}>
-            <div className={styles.onboardingLogo}>A</div>
+            <Image src="/architect-prime-logo.png" alt="Architect Prime" width={64} height={64} className={styles.onboardingLogo} />
             <h1 className={styles.onboardingTitle}>Welcome to Architect Prime</h1>
             <p className={styles.onboardingSubtitle}>
               AI Agent Fleet Management for your organization.<br />
@@ -155,7 +156,7 @@ function HomeInner() {
   return (
     <div className={styles.homeShell} id="home-page">
       <header className={styles.homeHeader}>
-        <div className={styles.homeLogo}>A</div>
+        <Image src="/architect-prime-logo.png" alt="Architect Prime" width={44} height={44} className={styles.homeLogo} />
         <div>
           <h1 className={styles.homeTitle}>Architect Prime</h1>
           <div className={styles.homeSubtitle}>

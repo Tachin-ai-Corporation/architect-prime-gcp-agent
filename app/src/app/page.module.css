@@ -18,18 +18,11 @@
 }
 
 .loadingLogo {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #246B8F, #1F9A9B);
-  color: white;
-  font-size: 28px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
   margin: 0 auto 16px;
-  box-shadow: 0 0 24px rgba(143, 216, 230, 0.18);
+  object-fit: contain;
 }
 
 .loadingText {
@@ -77,18 +70,11 @@
 }
 
 .onboardingLogo {
-  width: 72px;
-  height: 72px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #246B8F, #1F9A9B);
-  color: white;
-  font-size: 32px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
   margin: 0 auto 20px;
-  box-shadow: 0 0 24px rgba(143, 216, 230, 0.18);
+  object-fit: contain;
 }
 
 .onboardingTitle {
@@ -179,16 +165,10 @@
 }
 
 .homeLogo {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #246B8F, #1F9A9B);
-  color: white;
-  font-size: 22px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: contain;
   flex-shrink: 0;
 }
 
