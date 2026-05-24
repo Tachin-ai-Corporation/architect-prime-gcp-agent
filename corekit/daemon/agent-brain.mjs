@@ -826,6 +826,31 @@ async function scanActiveEnvelopes() {
   }
 }
 
+// ---- Recent mission scan (for ack context) ----
+async function scanRecentMissions(limit = 5) {
+  try {
+    const recent = await firestoreQuery('work', [
+      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+      { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
+    ]);
+    // Sort by completed_at descending and take most recent completed/archived
+    return recent
+      .filter(e => e.completed_at || e.status === 'archived' || e.status === 'blocked')
+      .sort((a, b) => (b.completed_at || b.updated_at || '').localeCompare(a.completed_at || a.updated_at || ''))
+      .slice(0, limit)
+      .map(e => ({
+        instruction: (e.instruction || '').substring(0, 120),
+        output: (e.output || '').substring(0, 150),
+        status: e.status,
+        completed_at: e.completed_at || e.updated_at,
+        project_id: e.project_id || null,
+      }));
+  } catch (e) {
+    log('WARN', `Recent mission scan failed: ${e.message}`);
+    return [];
+  }
+}
+
 // ---- Status update delivery (transient, for Mouth to pick up) ----
 async function deliverStatusUpdate(envelopeId, message) {
   const statusId = generateId('status');
@@ -961,7 +986,7 @@ const ACK_FALLBACKS = [
   '🔛 Working on it.',
 ];
 
-async function generateAck(intakeText, activeEnvelopes) {
+async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
   try {
     // Read a personality snippet from IDENTITY.md (first 500 chars)
     const identityPaths = [
@@ -980,7 +1005,25 @@ async function generateAck(intakeText, activeEnvelopes) {
       const summaries = activeEnvelopes.map(e =>
         `${e.status === 'blocked' ? '🚫 BLOCKED' : '🔵 ACTIVE'}: "${(e.instruction || '').substring(0, 80)}"`
       ).join('\n');
-      workContext = `\nYour current work:\n${summaries}\nBriefly mention what you're working on or blocked on if relevant (e.g. "I'll get to this after I finish...").`;
+      workContext = `\nYour current work:\n${summaries}`;
+    }
+
+    // Build recent mission context
+    let recentContext = '';
+    if (recentMissions.length > 0) {
+      const summaries = recentMissions.map(m =>
+        `• "${m.instruction}" → ${m.status}${m.project_id ? ` [${m.project_id}]` : ''}`
+      ).join('\n');
+      recentContext = `\nYour recent work:\n${summaries}`;
+    }
+
+    // Build project context
+    let projectContext = '';
+    if (Object.keys(PROJECTS).length > 0) {
+      const projectNames = Object.values(PROJECTS)
+        .map(p => `• ${p.name || p.id}: ${(p.description || '').substring(0, 80)}`)
+        .join('\n');
+      projectContext = `\nProjects you work on:\n${projectNames}`;
     }
 
     // Extract the actual current message from the composite intake
@@ -992,6 +1035,15 @@ async function generateAck(intakeText, activeEnvelopes) {
       ackMessage = intakeText.substring(markerIdx + currentMsgMarker.length).trim();
     }
 
+    const systemPrompt = [
+      `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.`,
+      workContext,
+      recentContext,
+      projectContext,
+      `\nIMPORTANT: If the user's message relates to your recent or current work, acknowledge the CONTINUITY — say something like "Picking back up on the sync pipeline" or "Taking another look at this." Don't treat it as brand new if you recognize it from recent history.`,
+      `\nYour personality:\n${identity || 'Helpful and professional.'}`,
+    ].filter(Boolean).join('\n');
+
     const resp = await fetch(GATEWAY_URL, {
       method: 'POST',
       headers: {
@@ -1001,7 +1053,7 @@ async function generateAck(intakeText, activeEnvelopes) {
       body: JSON.stringify({
         model: CORTEX_ROUTE,
         messages: [
-          { role: 'system', content: `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.${workContext}\nIMPORTANT: If the user's message relates to an existing blocked or in-progress mission listed above, acknowledge that you are RESUMING or CONTINUING that work, not starting something new. Say something like "On it — picking up where I left off" or "Continuing with the fix."\nYour personality:\n${identity || 'Helpful and professional.'}` },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${ackMessage.substring(0, 300)}"` },
         ],
         max_tokens: 60,
@@ -1039,9 +1091,10 @@ async function processIntake(intake) {
   // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)
   const activeEnvelopes = await scanActiveEnvelopes();
 
-  // Phase 7A: Quick ack — immediately tell the user we received it (with mission context)
+  // Phase 7A: Quick ack — immediately tell the user we received it (with mission + recent context)
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system') {
-    const ackText = await generateAck(intake.text || '', activeEnvelopes);
+    const recentMissions = await scanRecentMissions(5);
+    const ackText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
     const ackId = generateId('ack');
     await firestoreWrite('work', ackId, {
       id: ackId,
