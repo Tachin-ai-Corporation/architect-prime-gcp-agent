@@ -6,8 +6,20 @@ import styles from "./page.module.css";
 import { api } from "@/lib/api";
 import { usePrime } from "@/contexts/PrimeContext";
 
+interface ModelInfo {
+  id: string;
+  name: string;
+  tier: string;
+  provider: string;
+  status: string;
+  httpCode?: number;
+  openclawId?: string;
+  description?: string;
+  cost?: string;
+}
+
 interface ModelsData {
-  models: string[];
+  models: ModelInfo[];
   currentModel: string;
   assignments: { default: string; overrides: Record<string, string> } | null;
   scannedAt: string | null;
@@ -22,11 +34,10 @@ const SLOTS = [
   { key: "cerebellum", label: "Cerebellum", desc: "Verifier", icon: "✅" },
 ] as const;
 
-function groupByProvider(models: string[]): Record<string, string[]> {
-  const groups: Record<string, string[]> = {};
+function groupByProvider(models: ModelInfo[]): Record<string, ModelInfo[]> {
+  const groups: Record<string, ModelInfo[]> = {};
   for (const m of models) {
-    const slash = m.indexOf("/");
-    const provider = slash > 0 ? m.slice(0, slash) : "other";
+    const provider = m.provider || "other";
     if (!groups[provider]) groups[provider] = [];
     groups[provider].push(m);
   }
@@ -287,16 +298,16 @@ function BrainPage() {
                   <div key={provider} className={styles.providerGroup}>
                     <div className={styles.providerLabel}>{provider}</div>
                     {models.map((m) => {
-                      const isCurrent = m === getSlotModel(pickerSlot);
+                      const isCurrent = m.id === getSlotModel(pickerSlot);
                       return (
                         <button
-                          key={m}
+                          key={m.id}
                           className={`${styles.modelOption} ${isCurrent ? styles.modelCurrent : ""}`}
-                          onClick={() => handleSelect(pickerSlot, m)}
+                          onClick={() => handleSelect(pickerSlot, m.id)}
                           disabled={saving}
-                          id={`model-opt-${m.replace(/[^a-z0-9]/gi, "-")}`}
+                          id={`model-opt-${m.id.replace(/[^a-z0-9]/gi, "-")}`}
                         >
-                          <span className={styles.modelName}>{m.split("/").pop()}</span>
+                          <span className={styles.modelName}>{m.name || m.id.split("/").pop()}</span>
                           {isCurrent && <span className={styles.currentBadge}>current</span>}
                         </button>
                       );
