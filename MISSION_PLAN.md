@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.17.7`
+> - **Current version:** `v2026.05.24.17.16`
 
 ---
 
@@ -702,7 +702,7 @@ architect-prime/
 > *Decomposed brain monolith into deterministic services. LLMs think; deterministic systems move data.*
 
 1. **Prefrontal-first gate** — Prefrontal is now the mandatory dispatch planner. Produces structured `DISPATCH_PLAN:` blocks with intent, pipeline, reasoning. Cortex stripped of ALL classification logic — executes plans mechanically.
-2. **Tool reassignment** — Motor owns ALL 9 Drive tools (read + write). temporal-memory stripped to pure memory (core-memory-read/write only, zero external API calls).
+2. **Tool reassignment** — Fleet Motor owns Workspace tools per job type (devops: Drive+Gmail, pm: Drive+Gmail+Docs+Sheets, etc.). Prime Motor has ZERO Workspace tools. temporal-memory stripped to pure memory (core-memory-read/write only, zero external API calls).
 3. **Ears/Mouth decomposition** — `message-daemon.mjs` monolith decomposed into `agent-ears.mjs` (100% deterministic input) and `agent-mouth.mjs` (1 LLM classify call + deterministic delivery). Independent systemd services with health checks. Code complete, not yet active.
 4. **Dynamic skill awareness** — `assemble-tools` now copies TOOLS.md to prefrontal and motor workspaces. Prefrontal reads TOOLS.md to know what skills are available before planning.
 5. **brain-exec v2** — Rewritten with `--plan-exec` (execute pipeline step) and `--validate-plan` (deterministic invariant checking). Rejects temporal-memory/prefrontal in pipelines.
@@ -950,13 +950,25 @@ architect-prime/
 6. **Prime chip clipping fix** — Added top padding to prime chip bar so hover `translateY(-2px)` animation doesn't clip against the header.
 7. **Manifest + upgrade integration** — `agent-introspect.mjs`, `.service`, and `start-agent-introspect` added to `base.txt` manifest. `upgrade-corekit` now installs, enables, and restarts the introspect daemon alongside ears/mouth/brain.
 
-### Current: Next Phase — Agent Introspection Live + Prime Skill Ops
-> *Goal: Deploy introspection to fleet, validate live data, build skill CRUD operations.*
+### Completed: v2026.05.24.17.16 -- Per-Job Workspace Skills + Body-Part Categorization
+> *Workspace tools installed per job type (not globally). Prime has zero Workspace skills. Skills dashboard reorganized by agent anatomy.*
+
+1. **Per-job workspace manifests** -- Moved all Google Workspace skills (Drive, Gmail, Calendar, Docs, Sheets) from global `role-fleet.txt` to individual `job-*.txt` manifests. Each agent type gets only the tools it needs: devops (Drive+Gmail), pm (Drive+Gmail+Docs+Sheets), assistant (Drive+Gmail+Calendar+Docs), data (Sheets), finance (Gmail+Sheets), security (Gmail). SWE/QA get none.
+2. **Prime is infrastructure-only** -- Stripped ALL Workspace skills from `role-prime.txt`. Prime has ZERO Google Workspace tools. Prime's Motor has fleet lifecycle tools only (deploy, hire, fire, status, upgrade, verify). Documented as a locked-in design decision.
+3. **Body-part skill categorization** -- Skills page reorganized from generic categories (Brain, Workspace, Daemons) to agent anatomy: Ears, Mouth, Brain, Cortex, Motor, Memory, Config, Custom. Auto-categorization by filename pattern in `agent-introspect.mjs`. Documented in project-context for maintainability.
+4. **upgrade-corekit syntax fix** -- Fixed corrupted UTF-8 em-dash that contained a literal quote character, causing bash syntax error on every upgrade.
+5. **Build progress UX** -- Improved dashboard build status display to show next step name when no step is actively WORKING.
+6. **CRLF hardening** -- Extended `.gitattributes` to enforce LF on `*.mjs`, `infra/manifests/*.txt`, `infra/deploy/*`.
+7. **agent-ask SKILL.md in fleet** -- Added to `role-fleet.txt` so `assemble-tools` can include it in fleet agents' TOOLS.md.
+8. **Fleet skill cleanup** -- Removed orphaned workspace skill files from stan/anora/tom left over from old global installs.
+
+### Current: Next Phase -- Prime Skills + Skill CRUD
+> *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
 
 Candidates:
-- Upgrade fleet agents to get introspect daemon running
-- Validate introspection data against VM reality
 - Build 5 skill operation types for Prime (install, uninstall, enable, disable, configure)
+- Prime-specific skills: fleet health monitoring, cost analysis, capacity planning
+- Dashboard skill CRUD -- manual install/uninstall/toggle from the Skills page
 - RSI Engine (git-ops, code-write/test skills, human gates)
 - Fleet templates and self-evolution
 - Multi-project federation
