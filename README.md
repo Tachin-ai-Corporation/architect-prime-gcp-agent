@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.24.21.32`
+> **Current version:** `v2026.05.24.21.48`
 
 ---
 
@@ -384,6 +384,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.24.19.51** | Dashboard UX Polish + Cloud Build Fix — Header version below title, specialty badge, text nav labels, hover underline removal, regional Cloud Build API, build status UX |
 | **v2026.05.24.20.48** | Top-Level Route Consolidation — Work/Brain/Skills promoted to `/work`, `/brain`, `/skills` with `?prime=X&agent=Y` URL params. Built-in prime selector + agent strip. 12 old nested routes deleted. |
 | **v2026.05.24.21.32** | Deployment & Scroll Fixes — Fixed `require('os')` ESM crash on Node v24 (silently broke fleet agent dashboard chat pickup), fixed Brain page crash due to ModelInfo object/string conversion, enabled vertical scrolling on Work/Brain/Skills/Settings pages (fixed viewport height shell constraints), real-time Cloud Build step-level progress estimation with elapsed time heuristics. |
+| **v2026.05.24.21.48** | Workspace Agent Work Filter Hotfix — Fixed matching short agent names (e.g. `stan`) to structured email address owners (e.g. `devops-agent-stan@domain.com`) in work envelopes, and cleaned up structured email addresses to display simple, high-fidelity names universally in AgentChip, WorkDetail, and WorkTree. |
 
 ---
 

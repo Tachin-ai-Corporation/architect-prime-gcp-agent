@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.21.32`
+> - **Current version:** `v2026.05.24.21.48`
 
 ---
 
@@ -1000,6 +1000,14 @@ architect-prime/
 2. **Brain Page Crash Fix** — Fixed a crash on the Brain page caused by the `/api/primes/[id]/models` endpoint returning structured `ModelInfo` objects rather than plain strings. Corrected string operations to read the object attributes safely.
 3. **Enable Vertical Scroll** — Re-enabled vertical scrolling for the Work, Brain, Skills, and Settings (Models) pages. Modified the global Shell layout by setting `overflow-y: auto` on content containers and removing obsolete viewport-locked `min-height: 100vh` overrides from individual page components.
 4. **Real-Time Step Progress Heuristic** — Hardened Cloud Build upgrade tracking by adding an elapsed-time heuristic in the status API. Since standard Cloud Build API does not report per-step sub-statuses in real time, the API now estimates step progress based on historical/typical step durations, ensuring smooth visual progress transitions.
+
+### Completed: v2026.05.24.21.48 — Workspace Agent Work Filter Hotfix
+> *Fixed matching short agent names to structured email address owners in work envelopes, polished AgentChip, WorkDetail, and WorkTree with clean display formatting.*
+
+1. **Robust Agent Matching** — Created and exported a segment-based `matchAgent` utility inside `useWorkEnvelopes.ts` that handles matching short VM agent names (e.g. `'stan'`) to structured Workspace email address owners (e.g. `'devops-agent-stan@domain.com'`).
+2. **Integrated Short Name Matching** — Integrated the robust `matchAgent` utility into both the `useWorkEnvelopes` custom React hook (which filters envelopes in the background) and the active task mapper in `page.tsx` (which updates the agent status/activity strip).
+3. **UI Name Extraction Formatting** — Added and exported a clean `formatAgentDisplayName` utility in `AgentChip.tsx` that cleans up long structured email addresses, displaying simple, high-fidelity names (like `"stan"`, `"anora"`, `"tom"`) while keeping the full email as tooltips/DOM IDs.
+4. **Unified UI Rollout** — Deployed `formatAgentDisplayName` inside both `WorkTree.tsx` and `WorkDetail.tsx` components to keep the main work timeline clean and visually consistent.
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
