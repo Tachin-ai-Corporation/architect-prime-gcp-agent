@@ -80,7 +80,15 @@ export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabPro
           }
 
           // Still running — show progress
-          const stepLabel = status.activeStep || `${status.doneSteps}/${status.totalSteps} steps`;
+          const stepNames = ["Clone repo", "Build Docker image", "Push image", "Deploy to Cloud Run"];
+          let stepLabel: string;
+          if (status.activeStep) {
+            stepLabel = status.activeStep;
+          } else if (status.doneSteps > 0 && status.doneSteps < status.totalSteps) {
+            stepLabel = `${stepNames[status.doneSteps] || `Step ${status.doneSteps + 1}`}...`;
+          } else {
+            stepLabel = `${status.doneSteps}/${status.totalSteps} steps`;
+          }
           setBuildStatus(`Building... ${status.progress}% — ${stepLabel}`);
 
           // Continue polling
