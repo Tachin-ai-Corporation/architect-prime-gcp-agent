@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.17.16`
+> - **Current version:** `v2026.05.24.19.09`
 
 ---
 
@@ -31,6 +31,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     ├─ POST /api/primes/{id}/fleet/confirm-setup → Clears admin action card
     ├─ GET  /api/primes/{id}/fleet             → Reads fleet from Firestore
     ├─ GET  /api/primes/{id}/fleet/[agent]/logs → Agent detail + health + activity
+    ├─ GET  /api/agent-types                   → Dynamic specialty list from repo (5m cache)
     ├─ GET  /api/setup                         → Project config (DWD, email domain)
     ├─ POST /api/setup                         → Save settings (agent email domain)
     ├─ GET  /api/upgrade                       → Current + latest version info
@@ -149,7 +150,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
 1. Dashboard creates a GCE VM with a **boot stub** startup script
 2. Boot stub curls `infra/bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
 3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `agent-ears` + `agent-mouth`
-4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.19) for stability
+4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.15) for stability
 
 ### Fleet Agent Lifecycle
 
@@ -972,6 +973,18 @@ Candidates:
 - RSI Engine (git-ops, code-write/test skills, human gates)
 - Fleet templates and self-evolution
 - Multi-project federation
+
+### Completed: Dashboard UX Overhaul (v2026.05.24.19.09)
+> *Goal: Unified Prime/Fleet navigation, Brain page for LLM slot management, floating chat overlay.*
+
+1. **Unified navigation** — Prime and Fleet share the same 3-icon nav (Work/Brain/Skills), replacing per-type configs.
+2. **Brain page (Prime + Fleet)** — 6-slot LLM grid (Cortex, Prefrontal, Research, Memory, Motor, Cerebellum) with click-to-swap model picker modal.
+3. **Model discovery → Settings** — Model scanning/discovery moved to global Settings → Models tab (not per-prime). `/p/{id}/models` redirects to `/settings?tab=models`.
+4. **+Hire card** — Dashed "+ Hire" card in fleet grid opens hire modal with dynamic specialty picker (fetches `agent-types.json` from GitHub, 5m cache).
+5. **Floating chat overlay** — Chat panel replaced from split-panel layout with glassmorphic slide-in overlay (280ms spring animation, left-edge resize 320-800px, X close button).
+6. **Home breadcrumb** — "Home" added as clickable breadcrumb after AP logo on all sub-pages.
+7. **Prime Hub** — Replaced Projects with Brain, Models with Skills.
+8. **Prime Skills page** — Shows 11 infrastructure-only tools.
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR
