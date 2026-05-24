@@ -245,7 +245,7 @@ export async function POST(req: NextRequest) {
     };
 
     const buildRes = await fetch(
-      `https://cloudbuild.googleapis.com/v1/projects/${projectId}/builds`,
+      `https://cloudbuild.googleapis.com/v1/projects/${projectId}/locations/${region}/builds`,
       {
         method: "POST",
         headers: {
@@ -301,6 +301,7 @@ export async function POST(req: NextRequest) {
       version: deployVersion,
       ref: deployRef,
       commit: deployCommit,
+      region,
     });
   } catch (err) {
     console.error("[api/upgrade] POST error:", err);

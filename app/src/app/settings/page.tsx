@@ -249,6 +249,7 @@ export default function DashboardSettingsPage() {
       error?: string;
       buildId?: string;
       version?: string;
+      region?: string;
     }>("/api/upgrade", { method: "POST" });
 
     if (result?.success && result.buildId) {
@@ -268,7 +269,7 @@ export default function DashboardSettingsPage() {
             totalSteps: number;
             steps?: Array<{ label: string; status: string; startTime?: string; endTime?: string }>;
             startTime?: string | null;
-          }>(`/api/upgrade/status?buildId=${result.buildId}`);
+          }>(`/api/upgrade/status?buildId=${result.buildId}${result.region ? `&region=${result.region}` : ""}`);
 
           if (!status) {
             setBuildStatus("Failed to check build status.");
