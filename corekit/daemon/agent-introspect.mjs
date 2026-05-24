@@ -148,7 +148,7 @@ function handleSkills() {
 
         // Read first 5 lines for description comment
         let description = '';
-        let category = 'tool';
+        let category = 'custom';
         try {
           const head = readFileSync(fullPath, 'utf8').split('\n').slice(0, 10);
           for (const line of head) {
@@ -186,9 +186,11 @@ function handleSkills() {
         //  memory  - Temporal-memory: long-term memory read/write/retire, deep truths
         //            Matches: core-memory-*, update-deep-truths, session-summary
         //
-        //  config  - System config & maintenance (gear icon catch-all)
+        //  config  - System config & base functions: OpenClaw/fleet infra tools
         //            Matches: upgrade-*, validate-contracts, render-config, oc, agent-ou-manage,
-        //                     *.md, *.json, *.tmpl, *.sh
+        //                     *.md, *.json, *.tmpl, *.sh, bootstrap_smoke.sh
+        //
+        //  custom  - Fallback for uncategorized tools (anything not matched above)
         //
         // Categorize by agent body part
         if (f.startsWith('agent-ears') || f.startsWith('start-agent-ears') || f.startsWith('ears-') || f === 'ears-health-check') category = 'ears';

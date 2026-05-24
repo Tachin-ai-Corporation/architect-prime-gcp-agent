@@ -59,7 +59,8 @@ The Skills page categorizes tools by agent "body part". The introspect daemon (`
 | **Cortex** | 🔮 | `agent-ask`, `agent-status` | Decision layer — reasoning tools the cortex agent uses |
 | **Motor** | ⚡ | `responsibility-manage`, `project-manage`, `task-log-*`, `fleet-*`, `drive-*`, `gmail-*`, `calendar-*`, `docs-*`, `sheets-*` | Execution layer — all tools Motor uses to DO things |
 | **Memory** | 💾 | `core-memory-*`, `update-deep-truths`, `session-summary` | Temporal-memory tools |
-| **Config** | ⚙️ | `upgrade-*`, `validate-contracts`, `render-config`, `oc`, `*.md`, `*.json`, `*.tmpl` | System config & maintenance (catch-all) |
+| **Config** | ⚙️ | `upgrade-*`, `validate-contracts`, `render-config`, `oc`, `*.md`, `*.json`, `*.tmpl` | System config & base functions: OpenClaw/fleet infra |
+| **Custom** | 🧩 | *(anything not matched above)* | Fallback for uncategorized / user-added tools |
 
 Source of truth: categorization logic in `corekit/daemon/agent-introspect.mjs`, labels in `app/src/app/p/[id]/a/[agent]/skills/page.tsx`.
 

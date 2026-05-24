@@ -34,6 +34,7 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: string; order: numb
   motor: { label: "Motor", icon: "⚡", order: 5 },
   memory: { label: "Memory", icon: "💾", order: 6 },
   config: { label: "Config", icon: "⚙️", order: 7 },
+  custom: { label: "Custom", icon: "🧩", order: 8 },
 };
 
 export default function AgentSkills() {
