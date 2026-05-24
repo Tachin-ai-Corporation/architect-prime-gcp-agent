@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.19.09`
+> - **Current version:** `v2026.05.24.19.51`
 
 ---
 
@@ -963,18 +963,7 @@ architect-prime/
 7. **agent-ask SKILL.md in fleet** -- Added to `role-fleet.txt` so `assemble-tools` can include it in fleet agents' TOOLS.md.
 8. **Fleet skill cleanup** -- Removed orphaned workspace skill files from stan/anora/tom left over from old global installs.
 
-### Current: Next Phase -- Prime Skills + Skill CRUD
-> *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
-
-Candidates:
-- Build 5 skill operation types for Prime (install, uninstall, enable, disable, configure)
-- Prime-specific skills: fleet health monitoring, cost analysis, capacity planning
-- Dashboard skill CRUD -- manual install/uninstall/toggle from the Skills page
-- RSI Engine (git-ops, code-write/test skills, human gates)
-- Fleet templates and self-evolution
-- Multi-project federation
-
-### Completed: Dashboard UX Overhaul (v2026.05.24.19.09)
+### Completed: v2026.05.24.19.09 — Dashboard UX Overhaul
 > *Goal: Unified Prime/Fleet navigation, Brain page for LLM slot management, floating chat overlay.*
 
 1. **Unified navigation** — Prime and Fleet share the same 3-icon nav (Work/Brain/Skills), replacing per-type configs.
@@ -985,6 +974,27 @@ Candidates:
 6. **Home breadcrumb** — "Home" added as clickable breadcrumb after AP logo on all sub-pages.
 7. **Prime Hub** — Replaced Projects with Brain, Models with Skills.
 8. **Prime Skills page** — Shows 11 infrastructure-only tools.
+
+### Completed: v2026.05.24.19.51 — Dashboard UX Polish + Cloud Build Fix
+> *Header restructure, specialty badges, text nav labels, regional Cloud Build API for real-time progress.*
+
+1. **Header version layout** — Version/stable tag moved below "Architect Prime" as a second line. Clicking the version navigates to Settings → System tab.
+2. **Specialty badge in chat** — "Fleet Agent" badge replaced with agent specialty type (DATA, PM, DEVOPS, etc.), moved inline next to the agent name.
+3. **Text nav labels** — Emoji icons (🌳🧠🔧) replaced with text labels "Work", "Brain", "Skills" on both prime chips and agent cards.
+4. **No hover underlines** — Removed all `text-decoration: underline` on hover globally (fixed duplicate `a` rule in globals.css, updated md-link).
+5. **Regional Cloud Build API** — Build submission and status polling switched from global to regional endpoint (`locations/{region}/builds`). Global endpoint only returned overall status; regional provides real-time step-level timing and progress.
+6. **Build status UX** — Distinguished QUEUED ("waiting for Cloud Build to start") from WORKING (shows active step + elapsed time).
+
+### Current: Next Phase — Prime Skills + Skill CRUD
+> *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
+
+Candidates:
+- Build 5 skill operation types for Prime (install, uninstall, enable, disable, configure)
+- Prime-specific skills: fleet health monitoring, cost analysis, capacity planning
+- Dashboard skill CRUD — manual install/uninstall/toggle from the Skills page
+- RSI Engine (git-ops, code-write/test skills, human gates)
+- Fleet templates and self-evolution
+- Multi-project federation
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR

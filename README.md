@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.24.19.09`
+> **Current version:** `v2026.05.24.19.51`
 
 ---
 
@@ -381,6 +381,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.24.17.7** | Real-Time Visibility + Agent Introspection + Dashboard Polish — Real-time Cloud Build status polling (replaced fake countdown), Firestore bus introspection daemon (`agent-introspect.mjs` reads real VM filesystem), live skills page showing actual installed tools per agent, Shell header redesign (logo+title+version left-aligned with breadcrumb), Deploy Prime as inline chip, prime chip clipping fix. |
 | **v2026.05.24.17.16** | Per-Job Workspace Skills + Body-Part Categorization -- Workspace tools installed per job type (devops: Drive+Gmail, pm: Drive+Gmail+Docs+Sheets, etc.), Prime stripped to infrastructure-only (zero Workspace skills), skills page reorganized by agent anatomy (Ears/Mouth/Brain/Cortex/Motor/Memory/Config/Custom), upgrade-corekit UTF-8 corruption fix, build progress UX improvements, CRLF hardening, fleet skill cleanup. |
 | **v2026.05.24.19.09** | Dashboard UX Overhaul — Unified Prime/Fleet navigation (Work/Brain/Skills), Prime Brain page (6-slot LLM grid with model picker), model discovery moved to Settings→Models tab, +Hire card with dynamic specialty picker (agent-types API), floating glassmorphic chat overlay (slide-in animation, resize handle, X close), Home breadcrumb restoration, Prime Hub nav updated (Brain/Skills replace Projects/Models). |
+| **v2026.05.24.19.51** | Dashboard UX Polish + Cloud Build Fix — Header version/stable tag moved below "Architect Prime" (clickable → Settings System tab), "Fleet Agent" badge replaced with agent specialty type inline next to name, emoji nav icons replaced with text labels (Work/Brain/Skills), all hover underlines removed globally, Cloud Build API switched from global to regional endpoint for real-time step-level progress during builds, build status UX improved (QUEUED vs WORKING states). |
 
 ---
 
