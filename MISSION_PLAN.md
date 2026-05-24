@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.21.48`
+> - **Current version:** `v2026.05.24.22.03`
 
 ---
 
@@ -1008,6 +1008,14 @@ architect-prime/
 2. **Integrated Short Name Matching** — Integrated the robust `matchAgent` utility into both the `useWorkEnvelopes` custom React hook (which filters envelopes in the background) and the active task mapper in `page.tsx` (which updates the agent status/activity strip).
 3. **UI Name Extraction Formatting** — Added and exported a clean `formatAgentDisplayName` utility in `AgentChip.tsx` that cleans up long structured email addresses, displaying simple, high-fidelity names (like `"stan"`, `"anora"`, `"tom"`) while keeping the full email as tooltips/DOM IDs.
 4. **Unified UI Rollout** — Deployed `formatAgentDisplayName` inside both `WorkTree.tsx` and `WorkDetail.tsx` components to keep the main work timeline clean and visually consistent.
+
+### Completed: v2026.05.24.22.03 — Quick ACK Loop Prevention + Index Optimization
+> *Prevented quick ACK spam loops during gateway downtime, optimized recent mission scan in memory to avoid new Firestore composite index errors.*
+
+1. **Quick ACK Loop Prevention** — Added a `quick_ack_sent` boolean flag to intake documents in Firestore to ensure quick ACKs are only sent once per intake. This prevents infinite message loops when `processIntake` throws fetch exceptions during gateway restarts or downtime.
+2. **Recent Mission Query Optimization** — Rewrote `scanRecentMissions` in `agent-brain.mjs` to query completed work envelopes (utilizing the existing composite index on owner + status + created_at) and filtered by `type === 'M'` in memory, avoiding the need for a new Firestore composite index on Compute Engine VMs.
+3. **Safety POST/PATCH Checks** — Added a strict `res.ok` validation block to the Firestore PATCH call inside `agent-mouth.mjs` to ensure payload delivery issues throw clear errors rather than failing silently.
+
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*

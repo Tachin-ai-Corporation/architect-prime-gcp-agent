@@ -6,7 +6,8 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.24.21.48`
+> **Current version:** `v2026.05.24.22.03`
+
 
 ---
 
@@ -385,6 +386,8 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.24.20.48** | Top-Level Route Consolidation — Work/Brain/Skills promoted to `/work`, `/brain`, `/skills` with `?prime=X&agent=Y` URL params. Built-in prime selector + agent strip. 12 old nested routes deleted. |
 | **v2026.05.24.21.32** | Deployment & Scroll Fixes — Fixed `require('os')` ESM crash on Node v24 (silently broke fleet agent dashboard chat pickup), fixed Brain page crash due to ModelInfo object/string conversion, enabled vertical scrolling on Work/Brain/Skills/Settings pages (fixed viewport height shell constraints), real-time Cloud Build step-level progress estimation with elapsed time heuristics. |
 | **v2026.05.24.21.48** | Workspace Agent Work Filter Hotfix — Fixed matching short agent names (e.g. `stan`) to structured email address owners (e.g. `devops-agent-stan@domain.com`) in work envelopes, and cleaned up structured email addresses to display simple, high-fidelity names universally in AgentChip, WorkDetail, and WorkTree. |
+| **v2026.05.24.22.03** | Quick ACK Loop Prevention + Index Optimization — Added `quick_ack_sent` flag in Firestore to prevent infinite quick ACK loops during gateway restarts, optimized recent mission scan in memory using existing composite indexes to avoid Firestore composite index errors on GCE VMs, and added strict response check to Firestore PATCH inside mouth. |
+
 
 ---
 
