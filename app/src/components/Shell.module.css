@@ -64,6 +64,18 @@
   flex-shrink: 0;
 }
 
+.homeCrumb {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-decoration: none;
+  transition: color 180ms ease;
+}
+
+.homeCrumb:hover {
+  color: var(--signal-aqua);
+}
+
 .topBarRight {
   display: flex;
   align-items: center;

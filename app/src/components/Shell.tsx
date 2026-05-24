@@ -53,6 +53,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {!isHome && (
             <>
               <span className={styles.breadcrumbSep}>›</span>
+              <Link href="/" className={styles.homeCrumb}>Home</Link>
+              <span className={styles.breadcrumbSep}>›</span>
               <Breadcrumb />
             </>
           )}

@@ -745,3 +745,52 @@
     gap: 10px;
   }
 }
+
+/* ============================================
+   Hire Card (dashed +Hire in agent grid)
+   ============================================ */
+
+.hireCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 100px;
+  padding: 16px;
+  background: rgba(95, 199, 178, 0.04);
+  backdrop-filter: blur(12px);
+  border: 1px dashed rgba(95, 199, 178, 0.25);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hireCard:hover {
+  border-color: rgba(95, 199, 178, 0.5);
+  background: rgba(95, 199, 178, 0.08);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(95, 199, 178, 0.12);
+}
+
+.hireCardIcon {
+  font-size: 24px;
+  font-weight: 300;
+  color: var(--care-mint);
+  line-height: 1;
+}
+
+.hireCardText {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--care-mint);
+  letter-spacing: 0.3px;
+}
+
+/* ---- Modal hint for specialty description ---- */
+.modalHint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  line-height: 1.4;
+}

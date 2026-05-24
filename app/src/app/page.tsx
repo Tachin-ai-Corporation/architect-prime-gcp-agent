@@ -11,6 +11,14 @@ import { usePrime } from "@/contexts/PrimeContext";
 import { api } from "@/lib/api";
 import type { PrimeInstance, SetupState, FleetAgent, DeployStep } from "@/lib/types";
 
+interface AgentType {
+  id: string;
+  title: string;
+  specialty: string;
+  emailPattern: string;
+  skills: string[];
+}
+
 /* ---- SVG connection line data ---- */
 interface ConnectionLine {
   x1: number;
@@ -43,6 +51,14 @@ function HomeInner() {
   const [lines, setLines] = useState<ConnectionLine[]>([]);
   const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
   const [leftWidth, setLeftWidth] = useState(60); // percentage
+
+  /* ---- Hire state ---- */
+  const [showHire, setShowHire] = useState(false);
+  const [agentTypes, setAgentTypes] = useState<AgentType[]>([]);
+  const [hireName, setHireName] = useState("");
+  const [hireType, setHireType] = useState("");
+  const [hireEmail, setHireEmail] = useState("");
+  const [hiring, setHiring] = useState(false);
 
   /* ---- Refs ---- */
   const containerRef = useRef<HTMLDivElement>(null);
@@ -184,6 +200,38 @@ function HomeInner() {
     setNewPrimeName("");
   };
 
+  /* ---- Hire agent ---- */
+  const openHireModal = async () => {
+    setShowHire(true);
+    if (agentTypes.length === 0) {
+      const res = await api<{ types: AgentType[] }>("/api/agent-types");
+      if (res?.types) {
+        setAgentTypes(res.types);
+        if (res.types.length > 0) setHireType(res.types[0].id);
+      }
+    }
+  };
+
+  const handleHire = async () => {
+    if (!hireName.trim() || !hireType || !hireEmail.trim() || !selectedPrimeId) return;
+    setHiring(true);
+    const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/fleet/hire`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: hireName, specialty: hireType, email: hireEmail }),
+    });
+    if (res?.id) {
+      dialog.trackCommand(selectedPrimeId, res.id, `Hire ${hireName}`);
+      refreshPrimes();
+    } else {
+      dialog.toast({ message: "Failed to hire agent.", variant: "error" });
+    }
+    setShowHire(false);
+    setHiring(false);
+    setHireName("");
+    setHireEmail("");
+  };
+
   /* ---- Status class helper ---- */
   const statusClass = (status: string) => {
     switch (status) {
@@ -306,16 +354,9 @@ function HomeInner() {
      Living Agent Graph — Split Panel Layout
      ================================================== */
 
-  /* Prime sub-page quick nav config (no chat — chat is the right panel) */
-  const primeNavItems = [
-    { icon: "📁", label: "Projects", path: "projects" },
+  /* Shared sub-page quick nav — same icons for Prime and Fleet */
+  const navItems = [
     { icon: "🌳", label: "Work", path: "work" },
-    { icon: "🧠", label: "Models", path: "models" },
-  ];
-
-  /* Agent sub-page quick nav config (no chat) */
-  const agentNavItems = [
-    { icon: "📋", label: "Work", path: "work" },
     { icon: "🧠", label: "Brain", path: "brain" },
     { icon: "🔧", label: "Skills", path: "skills" },
   ];
@@ -352,7 +393,7 @@ function HomeInner() {
                     {/* Inline nav icons for selected prime */}
                     {isSelected && (
                       <span className={styles.chipNavIcons}>
-                        {primeNavItems.map((item) => (
+                        {navItems.map((item) => (
                           <Link
                             key={item.path}
                             href={`/p/${p.id}/${item.path}`}
@@ -463,7 +504,7 @@ function HomeInner() {
 
                       {/* Nav icons */}
                       <div className={styles.agentIconRow}>
-                        {agentNavItems.map((item) => (
+                        {navItems.map((item) => (
                           <Link
                             key={item.path}
                             href={`/p/${selectedPrimeId}/a/${agent.name}/${item.path}`}
@@ -479,18 +520,15 @@ function HomeInner() {
                   );
                 })}
 
-                {activeFleet.length === 0 && (
-                  <div className={styles.emptyFleet}>
-                    <div className={styles.emptyFleetIcon}>🚀</div>
-                    <div className={styles.emptyFleetText}>No agents deployed yet</div>
-                    <Link
-                      href={`/p/${selectedPrimeId}/fleet`}
-                      className={styles.emptyFleetLink}
-                    >
-                      Hire your first agent →
-                    </Link>
-                  </div>
-                )}
+                {/* +Hire card — always last in the grid */}
+                <div
+                  className={styles.hireCard}
+                  onClick={openHireModal}
+                  id="hire-agent-btn"
+                >
+                  <span className={styles.hireCardIcon}>+</span>
+                  <span className={styles.hireCardText}>Hire</span>
+                </div>
               </div>
             )}
           </div>
@@ -558,6 +596,71 @@ function HomeInner() {
                 disabled={!newPrimeName.trim() || deploying}
               >
                 {deploying ? "Deploying…" : "Deploy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Hire Agent Modal ---- */}
+      {showHire && (
+        <div className={styles.modalOverlay} onClick={() => setShowHire(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>Hire New Agent</div>
+            <div className={styles.modalField}>
+              <label className={styles.modalLabel} htmlFor="hire-agent-name">Agent Name</label>
+              <input
+                id="hire-agent-name"
+                className="input"
+                placeholder="e.g. alice"
+                autoFocus
+                value={hireName}
+                onChange={(e) => setHireName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleHire(); }}
+              />
+            </div>
+            <div className={styles.modalField}>
+              <label className={styles.modalLabel} htmlFor="hire-agent-type">Specialty</label>
+              {agentTypes.length === 0 ? (
+                <div className={styles.modalHint}>Loading specialties…</div>
+              ) : (
+                <select
+                  id="hire-agent-type"
+                  className="input"
+                  value={hireType}
+                  onChange={(e) => setHireType(e.target.value)}
+                >
+                  {agentTypes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+              )}
+              {hireType && agentTypes.length > 0 && (
+                <div className={styles.modalHint}>
+                  {agentTypes.find((t) => t.id === hireType)?.specialty}
+                </div>
+              )}
+            </div>
+            <div className={styles.modalField}>
+              <label className={styles.modalLabel} htmlFor="hire-agent-email">Workspace Email</label>
+              <input
+                id="hire-agent-email"
+                className="input"
+                placeholder="agent@yourdomain.com"
+                value={hireEmail}
+                onChange={(e) => setHireEmail(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleHire(); }}
+              />
+            </div>
+            <div className={styles.modalActions}>
+              <button className="btn btn-ghost" onClick={() => setShowHire(false)}>Cancel</button>
+              <button
+                id="hire-agent-submit"
+                className="btn btn-primary"
+                onClick={handleHire}
+                disabled={!hireName.trim() || !hireType || !hireEmail.trim() || hiring}
+              >
+                {hiring ? "Hiring…" : "Hire"}
               </button>
             </div>
           </div>
