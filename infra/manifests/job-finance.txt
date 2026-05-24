@@ -5,3 +5,17 @@
 specialties/finance/workspace/IDENTITY.md .openclaw/workspace-finance/IDENTITY.md
 specialties/finance/workspace/SOUL.md .openclaw/workspace-finance/SOUL.md
 specialties/finance/workspace/MEMORY.md .openclaw/workspace-finance/MEMORY.md
+
+# Workspace skills — Gmail
+skills/workspace-gmail/SKILL.md .openclaw/skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/gmail-search .openclaw/bin/gmail-search
+skills/workspace-gmail/gmail-get .openclaw/bin/gmail-get
+skills/workspace-gmail/gmail-send .openclaw/bin/gmail-send
+skills/workspace-gmail/gmail-draft-create .openclaw/bin/gmail-draft-create
+skills/workspace-gmail/gmail-draft-send .openclaw/bin/gmail-draft-send
+
+# Workspace skills — Sheets
+skills/workspace-sheets/SKILL.md .openclaw/skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/sheets-get .openclaw/bin/sheets-get
+skills/workspace-sheets/sheets-append .openclaw/bin/sheets-append
+skills/workspace-sheets/sheets-update .openclaw/bin/sheets-update

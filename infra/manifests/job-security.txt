@@ -5,3 +5,11 @@
 specialties/security/workspace/IDENTITY.md .openclaw/workspace-security/IDENTITY.md
 specialties/security/workspace/SOUL.md .openclaw/workspace-security/SOUL.md
 specialties/security/workspace/MEMORY.md .openclaw/workspace-security/MEMORY.md
+
+# Workspace skills — Gmail
+skills/workspace-gmail/SKILL.md .openclaw/skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/gmail-search .openclaw/bin/gmail-search
+skills/workspace-gmail/gmail-get .openclaw/bin/gmail-get
+skills/workspace-gmail/gmail-send .openclaw/bin/gmail-send
+skills/workspace-gmail/gmail-draft-create .openclaw/bin/gmail-draft-create
+skills/workspace-gmail/gmail-draft-send .openclaw/bin/gmail-draft-send

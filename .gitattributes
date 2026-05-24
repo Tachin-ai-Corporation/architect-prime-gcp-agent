@@ -1,6 +1,9 @@
 # Force LF line endings for all shell scripts and config
 *.sh text eol=lf
+*.mjs text eol=lf
 corekit/*/* text eol=lf
 skills/*/* text eol=lf
+infra/manifests/*.txt text eol=lf
+infra/deploy/* text eol=lf
 bootstrap/*.sh text eol=lf
 install.sh text eol=lf
