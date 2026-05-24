@@ -1,160 +1,336 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import styles from "./page.module.css";
 import { usePrime } from "@/contexts/PrimeContext";
-import { AgentChip } from "@/components/AgentChip";
+import { useWorkEnvelopes } from "@/components/work/useWorkEnvelopes";
 import { WorkTree } from "@/components/work/WorkTree";
 import { WorkDetail } from "@/components/work/WorkDetail";
-import { WorkRespondForm } from "@/components/work/WorkRespondForm";
-import { useWorkEnvelopes } from "@/components/work/useWorkEnvelopes";
-import type { WorkEnvelope } from "@/lib/types";
 
-type FilterMode = "all" | "active" | "needs_input" | "completed" | "responsibilities";
+/* ---- Tab types ---- */
+type TabId = "current" | "queue" | "previous";
+
+const PAGE_SIZE = 10;
 
 export default function WorkPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { primes, sidebarFleet } = usePrime();
   const prime = primes.find((p) => p.id === id);
   const fleet = sidebarFleet[id] || [];
 
-  const { envelopes, loading } = useWorkEnvelopes(id);
-  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterMode>("all");
+  /* ---- Agent filter ---- */
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
-  /* ---- Computed values ---- */
-  const needsInputCount = useMemo(
-    () => envelopes.filter((e) => e.status === "needs_input").length,
-    [envelopes]
+  /* ---- Data hook ---- */
+  const { current, queue, previous, allEnvelopes, loading } = useWorkEnvelopes(
+    id,
+    selectedAgent
   );
 
-  const activeCount = useMemo(
-    () => envelopes.filter((e) => e.status === "active" || e.status === "waiting").length,
-    [envelopes]
+  /* ---- UI state ---- */
+  const [activeTab, setActiveTab] = useState<TabId>("current");
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
+  const [prevPage, setPrevPage] = useState(0);
+  const [primeDropdownOpen, setPrimeDropdownOpen] = useState(false);
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  /* ---- Close prime dropdown on outside click ---- */
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setPrimeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  /* ---- Computed ---- */
+  const needsInputCount = useMemo(
+    () => allEnvelopes.filter((e) => e.status === "needs_input" || e.status === "waiting").length,
+    [allEnvelopes]
   );
 
   const selectedEnvelope = useMemo(
-    () => envelopes.find((e) => e.id === selectedWorkId) || null,
-    [envelopes, selectedWorkId]
+    () => allEnvelopes.find((e) => e.id === selectedWorkId) ?? null,
+    [allEnvelopes, selectedWorkId]
   );
 
-  /* ---- Agent focus data ---- */
-  const agentTasks = useMemo(() => {
-    const map = new Map<string, WorkEnvelope | null>();
-    for (const agent of fleet) {
-      if (agent.status === "removed") continue;
-      const activeTask = envelopes.find(
-        (e) => e.owner === agent.name && (e.status === "active" || e.status === "waiting")
+  /* ---- Agent strip data ---- */
+  const agentInfo = useMemo(() => {
+    const agents = fleet.filter((a) => a.status !== "removed");
+    return agents.map((agent) => {
+      const activeTask = allEnvelopes.find(
+        (e) =>
+          e.owner === agent.name &&
+          (e.status === "active" || e.status === "waiting")
       );
-      map.set(agent.name, activeTask || null);
-    }
-    return map;
-  }, [fleet, envelopes]);
+      return {
+        name: agent.name,
+        working: agent.status === "online" && !!activeTask,
+        doing: activeTask
+          ? truncate(activeTask.intent || activeTask.instruction, 30)
+          : `Idle`,
+        status: agent.status,
+      };
+    });
+  }, [fleet, allEnvelopes]);
 
-  /* ---- Filter descriptions for the filter bar ---- */
-  const filters: { mode: FilterMode; label: string; count?: number; badgeClass?: string }[] = [
-    { mode: "all", label: "All" },
-    { mode: "active", label: "Active", count: activeCount, badgeClass: styles.filterBadgeMint },
-    { mode: "needs_input", label: "Needs Input", count: needsInputCount, badgeClass: styles.filterBadgeAmber },
-    { mode: "completed", label: "Completed" },
-    { mode: "responsibilities", label: "Responsibilities" },
-  ];
+  /* ---- Previous work pagination ---- */
+  const totalPrevPages = Math.ceil(previous.length / PAGE_SIZE);
+  const prevSlice = previous.slice(prevPage * PAGE_SIZE, (prevPage + 1) * PAGE_SIZE);
+
+  /* ---- Handlers ---- */
+  const handleSelectAgent = useCallback(
+    (name: string) => {
+      setSelectedAgent((prev) => (prev === name ? null : name));
+      setActiveTab("current");
+      setPrevPage(0);
+    },
+    []
+  );
+
+  const handleSelectTab = useCallback((tab: TabId) => {
+    setActiveTab(tab);
+    if (tab !== "previous") setPrevPage(0);
+  }, []);
+
+  const handleSelectNode = useCallback((nodeId: string) => {
+    setSelectedWorkId(nodeId);
+  }, []);
+
+  const handleCloseDetail = useCallback(() => {
+    setSelectedWorkId(null);
+  }, []);
+
+  const handleSwitchPrime = useCallback(
+    (primeId: string) => {
+      setPrimeDropdownOpen(false);
+      if (primeId !== id) {
+        router.push(`/p/${primeId}/work`);
+      }
+    },
+    [id, router]
+  );
+
+  /* ---- Loading state ---- */
+  if (loading) {
+    return (
+      <div className={styles.shell}>
+        <div className={styles.loading}>
+          <span className={styles.loadingDots}>Loading work tree…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={styles.workShell} id="work-page">
-      {/* ---- Header ---- */}
-      <header className={styles.workHeader}>
-        <span className={styles.workHeaderIcon}>🌳</span>
-        <h1 className={styles.workTitle}>
-          Work — {prime?.name || "Prime"}
-        </h1>
-        <Link href={`/p/${id}`} className={styles.workBack} id="work-back-btn">
-          ← Hub
-        </Link>
-      </header>
+    <div className={styles.shell}>
+      {/* ---- Back link ---- */}
+      <Link href={`/p/${id}`} className={styles.backLink}>
+        ← Back to Hub
+      </Link>
 
-      {/* ---- Filter Bar ---- */}
-      <div className={styles.filterBar} id="work-filter-bar">
-        {filters.map((f) => (
-          <button
-            key={f.mode}
-            id={`work-filter-${f.mode}`}
-            className={`${styles.filterBtn} ${filter === f.mode ? styles.filterBtnActive : ""}`}
-            onClick={() => setFilter(f.mode)}
-          >
-            {f.label}
-            {f.count !== undefined && f.count > 0 && (
-              <span className={`${styles.filterBadge} ${f.badgeClass || ""}`}>{f.count}</span>
+      {/* ---- Page Header ---- */}
+      <div className={styles.pgHeader}>
+        <h1 className={styles.pgTitle}>Work</h1>
+
+        {/* Needs input pill */}
+        {needsInputCount > 0 && (
+          <span className={styles.needsPill}>⚡ {needsInputCount} needs input</span>
+        )}
+
+        {/* Prime selector */}
+        {primes.length > 1 && (
+          <div className={styles.primeSelector} ref={dropdownRef}>
+            <button
+              className={styles.primeSelectorBtn}
+              onClick={() => setPrimeDropdownOpen((v) => !v)}
+            >
+              {prime?.name || id}
+              <span
+                className={`${styles.primeSelectorChev} ${primeDropdownOpen ? styles.primeSelectorChevOpen : ""}`}
+              >
+                ▾
+              </span>
+            </button>
+            {primeDropdownOpen && (
+              <div className={styles.primeSelectorDropdown}>
+                {primes.map((p) => (
+                  <button
+                    key={p.id}
+                    className={`${styles.primeSelectorItem} ${p.id === id ? styles.primeSelectorItemActive : ""}`}
+                    onClick={() => handleSwitchPrime(p.id)}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
             )}
-          </button>
-        ))}
+          </div>
+        )}
       </div>
 
-      {/* ---- Agent Focus Strip ---- */}
-      {fleet.length > 0 && (
-        <div className={styles.agentStrip} id="work-agent-strip">
-          {Array.from(agentTasks.entries()).map(([name, task]) => (
-            <AgentChip
-              key={name}
-              name={name}
-              status={fleet.find((a) => a.name === name)?.status || "offline"}
-              task={task ? truncate(task.instruction || task.intent, 40) : undefined}
-            />
+      <div className={styles.pgSub}>
+        {selectedAgent
+          ? `Showing work for ${selectedAgent}`
+          : "Select an agent to filter, or view all work"}
+      </div>
+
+      {/* ---- Agent Strip ---- */}
+      {agentInfo.length > 0 && (
+        <div className={styles.agents}>
+          {agentInfo.map((agent) => (
+            <button
+              key={agent.name}
+              className={`${styles.ag} ${selectedAgent === agent.name ? styles.agSel : ""}`}
+              onClick={() => handleSelectAgent(agent.name)}
+            >
+              <span
+                className={`${styles.agDot} ${agent.working ? styles.agDotOn : styles.agDotIdle}`}
+              />
+              <div className={styles.agInfo}>
+                <span className={styles.agName}>{agent.name}</span>
+                <span className={agent.working ? styles.agDoing : styles.agIdle}>
+                  {agent.doing}
+                </span>
+              </div>
+            </button>
           ))}
         </div>
       )}
 
-      {/* ---- Main Layout ---- */}
-      <div className={styles.workLayout}>
-        {/* Tree Panel */}
-        <div className={styles.workTreePanel}>
-          <WorkTree
-            primeId={id}
-            onSelectEnvelope={setSelectedWorkId}
-            selectedId={selectedWorkId}
-          />
+      {/* ---- Tabs ---- */}
+      <div className={styles.workPanel}>
+        <div className={styles.tabs}>
+          <button
+            className={`${styles.tab} ${activeTab === "current" ? styles.tabOn : ""}`}
+            onClick={() => handleSelectTab("current")}
+          >
+            Currently working on
+            <span className={`${styles.badge} ${styles.badgeTeal}`}>
+              {current.length}
+            </span>
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === "queue" ? styles.tabOn : ""}`}
+            onClick={() => handleSelectTab("queue")}
+          >
+            In Queue
+            <span className={`${styles.badge} ${styles.badgeSlate}`}>
+              {queue.length}
+            </span>
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === "previous" ? styles.tabOn : ""}`}
+            onClick={() => handleSelectTab("previous")}
+          >
+            Previous Work
+            <span className={`${styles.badge} ${styles.badgeSlate}`}>
+              {previous.length}
+            </span>
+          </button>
         </div>
 
-        {/* Detail Panel */}
-        <div className={styles.workDetailPanel}>
-          <WorkDetail
-            envelope={selectedEnvelope}
-            onNavigate={setSelectedWorkId}
-          />
-          {selectedEnvelope?.status === "needs_input" && (
-            <WorkRespondForm
-              envelope={selectedEnvelope}
-              primeId={id}
-              onResponded={() => setSelectedWorkId(null)}
-            />
-          )}
-          {selectedEnvelope?.status === "blocked" && (
-            <div style={{ padding: 16 }}>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  background: "rgba(216, 79, 69, 0.08)",
-                  border: "1px solid rgba(216, 79, 69, 0.2)",
-                  borderRadius: 8,
-                  fontSize: 13,
-                }}
-              >
-                <strong style={{ color: "#D84F45" }}>🚫 Blocked:</strong>{" "}
-                <span style={{ color: "#AEB8C4" }}>
-                  {selectedEnvelope.blocker || "Unknown blocker"}
-                </span>
+        {/* ---- Tab bodies ---- */}
+
+        {/* Current */}
+        <div className={activeTab === "current" ? styles.tabBodyVis : styles.tabBody}>
+          {current.length === 0 ? (
+            <div className={styles.empty}>
+              <div className={styles.emptyIcon}>◎</div>
+              <div className={styles.emptyTitle}>No active work</div>
+              <div className={styles.emptySub}>
+                Active missions and tasks will appear here
               </div>
             </div>
+          ) : (
+            <WorkTree
+              nodes={current}
+              onSelectNode={handleSelectNode}
+              selectedId={selectedWorkId}
+            />
+          )}
+        </div>
+
+        {/* Queue */}
+        <div className={activeTab === "queue" ? styles.tabBodyVis : styles.tabBody}>
+          {queue.length === 0 ? (
+            <div className={styles.empty}>
+              <div className={styles.emptyIcon}>◎</div>
+              <div className={styles.emptyTitle}>Queue is empty</div>
+              <div className={styles.emptySub}>
+                Pending work will appear here
+              </div>
+            </div>
+          ) : (
+            <WorkTree
+              nodes={queue}
+              onSelectNode={handleSelectNode}
+              selectedId={selectedWorkId}
+            />
+          )}
+        </div>
+
+        {/* Previous */}
+        <div className={activeTab === "previous" ? styles.tabBodyVis : styles.tabBody}>
+          {previous.length === 0 ? (
+            <div className={styles.empty}>
+              <div className={styles.emptyIcon}>◎</div>
+              <div className={styles.emptyTitle}>No previous work</div>
+              <div className={styles.emptySub}>
+                Completed missions will appear here
+              </div>
+            </div>
+          ) : (
+            <>
+              <WorkTree
+                nodes={prevSlice}
+                onSelectNode={handleSelectNode}
+                selectedId={selectedWorkId}
+              />
+              {totalPrevPages > 1 && (
+                <div className={styles.pager}>
+                  <button
+                    className={styles.pgBtn}
+                    disabled={prevPage === 0}
+                    onClick={() => setPrevPage((p) => Math.max(0, p - 1))}
+                  >
+                    ← Prev
+                  </button>
+                  <span className={styles.pgInfo}>
+                    {prevPage + 1} / {totalPrevPages}
+                  </span>
+                  <button
+                    className={styles.pgBtn}
+                    disabled={prevPage >= totalPrevPages - 1}
+                    onClick={() => setPrevPage((p) => Math.min(totalPrevPages - 1, p + 1))}
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
+
+      {/* ---- Detail Modal ---- */}
+      <WorkDetail
+        envelope={selectedEnvelope}
+        allEnvelopes={allEnvelopes}
+        onClose={handleCloseDetail}
+        primeId={id}
+      />
     </div>
   );
 }
 
-/* ---- Helper ---- */
+/* ---- Helpers ---- */
 function truncate(text: string, max: number): string {
   if (!text) return "";
   return text.length > max ? text.slice(0, max) + "…" : text;

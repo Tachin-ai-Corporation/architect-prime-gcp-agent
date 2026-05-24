@@ -1,40 +1,45 @@
 "use client";
 
-import { useState } from "react";
-import styles from "@/app/page.module.css";
-import { useWorkEnvelopes } from "./useWorkEnvelopes";
-import type { WorkTreeNode } from "./useWorkEnvelopes";
+import { useState, useCallback } from "react";
+import styles from "./WorkTree.module.css";
+import type { TreeNode } from "./useWorkEnvelopes";
 
+/* ---- Props ---- */
 interface WorkTreeProps {
-  primeId: string;
-  onSelectEnvelope: (id: string) => void;
+  nodes: TreeNode[];
+  onSelectNode: (id: string) => void;
   selectedId: string | null;
 }
 
-const STATUS_ICONS: Record<string, string> = {
-  complete: "🟢",
-  active: "🔵",
-  waiting: "🟡",
-  needs_input: "🟡",
-  blocked: "🚫",
-  cancelled: "⚪",
-  failed: "🔴",
-  pending: "⚪",
-  archived: "⚪",
-};
+/* ---- Helpers ---- */
 
-const TYPE_LABELS: Record<string, string> = {
-  R: "Responsibility",
-  M: "Mission",
-  C: "Checkpoint",
-  T: "Task",
-};
-
-function truncate(text: string, max: number): string {
-  if (!text) return "";
-  return text.length > max ? text.slice(0, max) + "…" : text;
+/** Check if a node or any descendant is active/waiting. */
+function hasActiveDescendant(node: TreeNode): boolean {
+  if (node.status === "active" || node.status === "waiting" || node.status === "needs_input") {
+    return true;
+  }
+  for (const child of node.children) {
+    if (hasActiveDescendant(child)) return true;
+  }
+  return false;
 }
 
+/** Format elapsed time from a date string to now. */
+function elapsedSince(isoDate: string | null): string | null {
+  if (!isoDate) return null;
+  const ms = Date.now() - new Date(isoDate).getTime();
+  if (ms < 0) return null;
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "<1m";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h`;
+}
+
+/** Format duration between two timestamps. */
 function formatDuration(start: string | null, end: string | null): string | null {
   if (!start || !end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
@@ -42,141 +47,217 @@ function formatDuration(start: string | null, end: string | null): string | null
   const secs = Math.floor(ms / 1000);
   if (secs < 60) return `${secs}s`;
   const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m`;
+  if (mins < 60) return `${mins}m ${secs % 60}s`;
   const hrs = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  return `${hrs}h ${remMins}m`;
+  return `${hrs}h ${mins % 60}m`;
 }
 
-function WorkNode({
+/** Format a timestamp for display. */
+function formatDate(ts: string | null): string | null {
+  if (!ts) return null;
+  try {
+    return new Date(ts).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return ts;
+  }
+}
+
+/** Truncate text. */
+function truncate(text: string | null, max: number): string {
+  if (!text) return "";
+  return text.length > max ? text.slice(0, max) + "…" : text;
+}
+
+/* ---- Node Component ---- */
+
+function TreeNodeRow({
   node,
   depth,
-  onSelect,
+  onSelectNode,
   selectedId,
 }: {
-  node: WorkTreeNode;
+  node: TreeNode;
   depth: number;
-  onSelect: (id: string) => void;
+  onSelectNode: (id: string) => void;
   selectedId: string | null;
 }) {
-  const [expanded, setExpanded] = useState(depth === 0);
-  const { envelope } = node;
-  const hasChildren = node.children.length > 0;
-  const isSelected = selectedId === envelope.id;
-  const statusIcon = STATUS_ICONS[envelope.status] || "⚪";
-  const duration = formatDuration(envelope.started_at, envelope.completed_at);
-  const agentName =
-    envelope.type === "T" && envelope.source_meta?.agent
-      ? String(envelope.source_meta.agent)
-      : null;
+  const hasKids = node.children.length > 0;
+  const shouldAutoExpand =
+    node.status === "active" ||
+    node.status === "waiting" ||
+    node.status === "needs_input" ||
+    hasActiveDescendant(node);
+  const [expanded, setExpanded] = useState(shouldAutoExpand);
+
+  const depthClass =
+    depth === 0 ? styles.d0 : depth === 1 ? styles.d1 : styles.d2;
+
+  // Status dot class
+  const dotStatus =
+    node.status === "complete"
+      ? "done"
+      : node.status === "active"
+        ? "active"
+        : node.status === "waiting" || node.status === "needs_input"
+          ? "waiting"
+          : node.status === "failed"
+            ? "failed"
+            : "pending";
+
+  // Label class
+  const labelClass =
+    node.status === "active"
+      ? styles.activeL
+      : node.status === "waiting" || node.status === "needs_input"
+        ? styles.waitingL
+        : node.status === "complete"
+          ? styles.doneL
+          : "";
+
+  // Type tag
+  const tagClass = node.type === "M" ? `${styles.tag} ${styles.mTag}` : styles.tag;
+
+  // Meta pieces
+  const metaParts: string[] = [];
+  const metaJsx: React.ReactNode[] = [];
+
+  if (node.owner) metaJsx.push(<span key="owner">{node.owner}</span>);
+  if (node.project_id) metaJsx.push(<span key="proj">{node.project_id}</span>);
+
+  if (node.status === "active" && node.started_at) {
+    const el = elapsedSince(node.started_at);
+    if (el) metaJsx.push(<span key="elapsed" className={styles.live}>{el} elapsed</span>);
+  }
+
+  if ((node.status === "waiting" || node.status === "needs_input") && node.blocked_at) {
+    const wt = elapsedSince(node.blocked_at);
+    if (wt) metaJsx.push(<span key="wait" className={styles.warn}>⚡ {wt}</span>);
+  }
+
+  if (node.status === "complete") {
+    const dur = formatDuration(node.started_at, node.completed_at);
+    if (dur) metaJsx.push(<span key="dur">{dur}</span>);
+    const comp = formatDate(node.completed_at);
+    if (comp) metaJsx.push(<span key="comp">{comp}</span>);
+  }
+
+  const handleChevClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setExpanded((prev) => !prev);
+    },
+    []
+  );
+
+  const handleRowClick = useCallback(() => {
+    onSelectNode(node.id);
+  }, [node.id, onSelectNode]);
+
+  // Determine waiting callout text
+  const waitingText =
+    (node.status === "waiting" || node.status === "needs_input") && node.blocker
+      ? node.blocker
+      : (node.status === "waiting" || node.status === "needs_input") && node.output
+        ? node.output
+        : null;
 
   return (
-    <div className={styles["work-node"]}>
+    <>
       <div
-        className={`${styles["work-node-header"]} ${isSelected ? styles["work-node-selected"] : ""}`}
-        onClick={() => onSelect(envelope.id)}
-        style={{ paddingLeft: depth * 20 + 8 }}
+        className={`${styles.row} ${depthClass}`}
+        onClick={handleRowClick}
       >
-        {hasChildren ? (
+        <span className={`${styles.rDot} ${styles[dotStatus] || ""}`} />
+        <div className={styles.rBody}>
+          <div className={`${styles.rLabel} ${labelClass}`}>
+            <span className={tagClass}>{node.type}</span>
+            {truncate(node.intent || node.instruction, 100)}
+          </div>
+
+          {metaJsx.length > 0 && (
+            <div className={styles.rMeta}>
+              {metaJsx.map((part, i) => (
+                <span key={i}>
+                  {i > 0 && " · "}
+                  {part}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {node.status === "active" && node.iteration > 0 && (
+            <div className={styles.rProg}>
+              <div
+                className={styles.rProgFill}
+                style={{ width: `${Math.min(node.iteration * 10, 100)}%` }}
+              />
+            </div>
+          )}
+
+          {waitingText && (
+            <div className={styles.rAsk}>
+              <strong>{node.owner || "Agent"} asks:</strong> {truncate(waitingText, 200)}
+              {node.blocked_at && (
+                <div className={styles.timer}>
+                  Waiting {elapsedSince(node.blocked_at) || ""}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {hasKids && (
           <button
-            className={styles["work-node-expand"]}
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
+            className={`${styles.rChev} ${expanded ? styles.rChevOpen : ""}`}
+            onClick={handleChevClick}
+            aria-label={expanded ? "Collapse" : "Expand"}
           >
-            {expanded ? "▾" : "▸"}
+            ›
           </button>
-        ) : (
-          <span className={styles["work-node-expand"]} style={{ visibility: "hidden" }}>
-            ▸
-          </span>
         )}
-        <span className={styles["work-node-status"]}>{statusIcon}</span>
-        <span
-          className={styles["work-node-badge"]}
-          data-type={envelope.type}
-        >
-          {envelope.type}
-        </span>
-        <span className={styles["work-node-text"]}>
-          {truncate(envelope.instruction || envelope.intent, 80)}
-        </span>
-        {agentName && (
-          <span className={styles["work-node-agent"]}>{agentName}</span>
-        )}
-        {duration && (
-          <span className={styles["work-node-duration"]}>{duration}</span>
-        )}
-        <span className={styles["work-node-owner"]}>{envelope.owner}</span>
       </div>
-      {expanded && hasChildren && (
-        <div className={styles["work-node-children"]}>
+
+      {hasKids && (
+        <div className={expanded ? styles.rKidsOpen : styles.rKids}>
           {node.children.map((child) => (
-            <WorkNode
-              key={child.envelope.id}
+            <TreeNodeRow
+              key={child.id}
               node={child}
-              depth={depth + 1}
-              onSelect={onSelect}
+              depth={Math.min(depth + 1, 2)}
+              onSelectNode={onSelectNode}
               selectedId={selectedId}
             />
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
-export function WorkTree({ primeId, onSelectEnvelope, selectedId }: WorkTreeProps) {
-  const { tree, loading, error } = useWorkEnvelopes(primeId);
+/* ---- Exported WorkTree ---- */
 
-  if (loading) {
+export function WorkTree({ nodes, onSelectNode, selectedId }: WorkTreeProps) {
+  if (nodes.length === 0) {
     return (
-      <div className={styles["work-tree"]}>
-        <div style={{ padding: 24, color: "var(--text-tertiary)", fontSize: 13 }}>
-          Loading work tree…
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={styles["work-tree"]}>
-        <div style={{ padding: 24, color: "var(--accent-danger)", fontSize: 13 }}>
-          Error loading work: {error}
-        </div>
-      </div>
-    );
-  }
-
-  if (tree.length === 0) {
-    return (
-      <div className={styles["work-tree"]}>
-        <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)", marginBottom: 4 }}>
-            No work items yet
-          </div>
-          <div style={{ fontSize: 12 }}>
-            Work envelopes from the last 7 days will appear here.
-          </div>
-        </div>
+      <div className={styles.tree}>
+        <div className={styles.emptyTree}>Nothing here</div>
       </div>
     );
   }
 
   return (
-    <div className={styles["work-tree"]}>
-      <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-tertiary)" }}>
-        Work Tree ({tree.length} top-level)
-      </div>
-      {tree.map((node) => (
-        <WorkNode
-          key={node.envelope.id}
+    <div className={styles.tree}>
+      {nodes.map((node) => (
+        <TreeNodeRow
+          key={node.id}
           node={node}
           depth={0}
-          onSelect={onSelectEnvelope}
+          onSelectNode={onSelectNode}
           selectedId={selectedId}
         />
       ))}

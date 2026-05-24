@@ -24,6 +24,13 @@ const CHANNEL = process.env.CHANNEL || 'dashboard';
 const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const PRIME_ID = process.env.PRIME_ID || '';
 const AGENT_ID = process.env.AGENT_ID || 'agent';
+
+// Agent hostname for Firestore path (fleet-{name} → {name})
+let AGENT_HOSTNAME = '';
+try {
+  AGENT_HOSTNAME = require('os').hostname().replace(/^fleet-/, '');
+} catch {}
+
 const GATEWAY_URL = 'http://127.0.0.1:18789/v1/chat/completions';
 const HTTP_TIMEOUT = 600_000;
 
@@ -314,6 +321,36 @@ async function markFirestoreConsumed(msg) {
   });
 }
 
+// ---- Firestore Poller for Fleet Dashboard Messages ----
+async function pollFirestoreDashboard() {
+  if (!PRIME_ID || !AGENT_HOSTNAME) return [];
+  const token = await getAccessToken();
+  const body = { structuredQuery: { from: [{ collectionId: 'messages' }],
+    where: { fieldFilter: { field: { fieldPath: 'processed' }, op: 'EQUAL', value: { booleanValue: false } } },
+    limit: 50 } };
+  const parentPath = `primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}`;
+  const res = await fetch(`${FIRESTORE_URL}/${parentPath}:runQuery`, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data
+    .filter(d => { const f = d.document?.fields; return f?.text?.stringValue && f?.sender?.stringValue === 'admin'; })
+    .map(d => ({ text: d.document.fields.text.stringValue, id: d.document.name,
+      timestamp: d.document.fields.timestamp?.timestampValue || '',
+      metadata: { source: 'dashboard' } }))
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
+async function markFirestoreDashboardConsumed(msg) {
+  const token = await getAccessToken();
+  await fetch(`https://firestore.googleapis.com/v1/${msg.id}?updateMask.fieldPaths=processed`, {
+    method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { processed: { booleanValue: true } } })
+  });
+}
+
 // ---- GChat Poller (Fleet) ----
 let _gchatSpaces = [];
 let _gchatLastDiscovery = 0;
@@ -474,7 +511,14 @@ async function main() {
   while (true) {
     try {
       // Poll for messages
-      const messages = CHANNEL === 'gchat' ? await pollGChat() : await pollFirestore();
+      let messages;
+      if (CHANNEL === 'gchat') {
+        const gchatMsgs = await pollGChat();
+        const dashMsgs = await pollFirestoreDashboard();
+        messages = [...gchatMsgs, ...dashMsgs];
+      } else {
+        messages = await pollFirestore();
+      }
 
       // Expire stale dedup entries
       const now = Date.now();
@@ -488,7 +532,9 @@ async function main() {
         // Dedup
         if (recentMessages.has(dedupKey)) {
           log('Dedup — skipping', { text: msg.text.slice(0, 60) });
-          if (CHANNEL === 'gchat') markGChatConsumed(msg); else await markFirestoreConsumed(msg);
+          if (msg.metadata?.source === 'dashboard') await markFirestoreDashboardConsumed(msg);
+          else if (CHANNEL === 'gchat') markGChatConsumed(msg);
+          else await markFirestoreConsumed(msg);
           continue;
         }
 
@@ -497,7 +543,9 @@ async function main() {
         const lastTime = lastSeen.get(sender) || 0;
         if (now - lastTime < COOLDOWN_MS) {
           log('Cooldown — skipping', { sender, text: msg.text.slice(0, 60) });
-          if (CHANNEL === 'gchat') markGChatConsumed(msg); else await markFirestoreConsumed(msg);
+          if (msg.metadata?.source === 'dashboard') await markFirestoreDashboardConsumed(msg);
+          else if (CHANNEL === 'gchat') markGChatConsumed(msg);
+          else await markFirestoreConsumed(msg);
           continue;
         }
 
@@ -505,7 +553,9 @@ async function main() {
         lastSeen.set(sender, now);
 
         // Mark consumed IMMEDIATELY
-        if (CHANNEL === 'gchat') markGChatConsumed(msg); else await markFirestoreConsumed(msg);
+        if (msg.metadata?.source === 'dashboard') await markFirestoreDashboardConsumed(msg);
+        else if (CHANNEL === 'gchat') markGChatConsumed(msg);
+        else await markFirestoreConsumed(msg);
 
         const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         log('Received', { text: msg.text.slice(0, 100), taskId });
@@ -527,7 +577,7 @@ async function main() {
         const intakeDoc = {
           id: { stringValue: intakeId },
           text: { stringValue: cleanedText },
-          source: { stringValue: CHANNEL },
+          source: { stringValue: msg.metadata?.source === 'dashboard' ? 'dashboard' : CHANNEL },
           source_meta: { mapValue: { fields: {
             taskId: { stringValue: taskId },
             agentEmail: { stringValue: AGENT_USER_EMAIL },

@@ -28,6 +28,12 @@ const AGENT_DISPLAY_NAME = process.env.AGENT_DISPLAY_NAME || '';
 const AGENT_FIRST_NAME = process.env.AGENT_FIRST_NAME || '';
 const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
+
+let AGENT_HOSTNAME = '';
+try {
+  AGENT_HOSTNAME = require('os').hostname().replace(/^fleet-/, '');
+} catch {}
+
 const POLL_INTERVAL = 2000;
 const AGENT_VOICE_NAME = AGENT_DISPLAY_NAME || AGENT_FIRST_NAME || '';
 
@@ -443,9 +449,32 @@ async function deliverToGChat(text) {
   }
 }
 
-async function deliver(text) {
-  if (CHANNEL === 'gchat') await deliverToGChat(text);
-  else await deliverToFirestore(text);
+async function deliverToFleetFirestore(text) {
+  if (!PRIME_ID || !AGENT_HOSTNAME) return;
+  const token = await getAccessToken();
+  const parentPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}/messages`;
+  await fetch(parentPath, {
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: {
+      text: { stringValue: text }, sender: { stringValue: AGENT_HOSTNAME },
+      timestamp: { timestampValue: new Date().toISOString() }, processed: { booleanValue: true }
+    } })
+  });
+  log('Delivered to fleet Firestore', { agent: AGENT_HOSTNAME, chars: text.length });
+}
+
+async function deliver(text, sourceChannel) {
+  if (CHANNEL === 'gchat') {
+    await deliverToGChat(text);
+    // Also deliver to Firestore for dashboard visibility
+    if (sourceChannel === 'dashboard' || true) {
+      try { await deliverToFleetFirestore(text); } catch (err) {
+        log('Fleet Firestore delivery failed (non-critical)', { error: err.message });
+      }
+    }
+  } else {
+    await deliverToFirestore(text);
+  }
 }
 
 // ================================================================

@@ -6,9 +6,10 @@ import Link from "next/link";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
+import { ChatPanel } from "@/components/ChatPanel";
 import { usePrime } from "@/contexts/PrimeContext";
 import { api } from "@/lib/api";
-import type { PrimeInstance, SetupState } from "@/lib/types";
+import type { PrimeInstance, SetupState, FleetAgent, DeployStep } from "@/lib/types";
 
 /* ---- SVG connection line data ---- */
 interface ConnectionLine {
@@ -17,6 +18,15 @@ interface ConnectionLine {
   x2: number;
   y2: number;
   id: string;
+}
+
+/* ---- Chat target ---- */
+interface ChatTarget {
+  type: "prime" | "agent";
+  primeId: string;
+  agentName?: string;
+  entityName: string;
+  entityStatus: string;
 }
 
 function HomeInner() {
@@ -31,11 +41,15 @@ function HomeInner() {
   const [deploying, setDeploying] = useState(false);
   const [copied, setCopied] = useState("");
   const [lines, setLines] = useState<ConnectionLine[]>([]);
+  const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
+  const [leftWidth, setLeftWidth] = useState(60); // percentage
 
-  /* ---- Refs for SVG line computation ---- */
+  /* ---- Refs ---- */
   const containerRef = useRef<HTMLDivElement>(null);
   const primeChipRef = useRef<HTMLButtonElement>(null);
   const agentCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const isDragging = useRef(false);
+  const splitRef = useRef<HTMLDivElement>(null);
 
   /* ---- Auto-select first prime ---- */
   useEffect(() => {
@@ -75,22 +89,68 @@ function HomeInner() {
   }, [activeFleet.length]);
 
   useLayoutEffect(() => {
-    // Small delay to let CSS animations settle
     const timer = setTimeout(computeLines, 100);
     return () => clearTimeout(timer);
   }, [computeLines, selectedPrimeId]);
 
-  /* ---- ResizeObserver for dynamic recomputation ---- */
+  /* ---- ResizeObserver ---- */
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
-    const observer = new ResizeObserver(() => {
-      computeLines();
-    });
+    const observer = new ResizeObserver(() => computeLines());
     observer.observe(container);
     return () => observer.disconnect();
   }, [computeLines]);
+
+  /* ---- Divider drag ---- */
+  const handleDividerDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMove = (ev: MouseEvent) => {
+      if (!isDragging.current || !splitRef.current) return;
+      const rect = splitRef.current.getBoundingClientRect();
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setLeftWidth(Math.max(30, Math.min(80, pct)));
+    };
+
+    const handleUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      computeLines();
+    };
+
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+  }, [computeLines]);
+
+  /* ---- Select Prime for chat ---- */
+  const selectPrimeChat = useCallback((prime: PrimeInstance) => {
+    setSelectedPrimeId(prime.id);
+    setChatTarget({
+      type: "prime",
+      primeId: prime.id,
+      entityName: prime.name,
+      entityStatus: prime.status,
+    });
+  }, []);
+
+  /* ---- Select Agent for chat ---- */
+  const selectAgentChat = useCallback((agent: FleetAgent) => {
+    if (!selectedPrimeId) return;
+    setChatTarget({
+      type: "agent",
+      primeId: selectedPrimeId,
+      agentName: agent.name,
+      entityName: agent.name,
+      entityStatus: agent.status,
+    });
+  }, [selectedPrimeId]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -138,6 +198,17 @@ function HomeInner() {
     }
   };
 
+  /* ---- Deploy progress helper ---- */
+  const getDeployProgress = (steps: DeployStep[] | undefined) => {
+    if (!steps || steps.length === 0) return null;
+    const done = steps.filter((s) => s.status === "done").length;
+    const failed = steps.filter((s) => s.status === "failed").length;
+    const active = steps.find((s) => s.status === "active");
+    const lastDone = [...steps].reverse().find((s) => s.status === "done");
+    const progress = Math.round((done / steps.length) * 100);
+    return { progress, done, total: steps.length, failed, activeStep: active, lastDoneStep: lastDone };
+  };
+
   /* ---- Loading ---- */
   if (loading) {
     return (
@@ -163,7 +234,6 @@ function HomeInner() {
               Let&apos;s get your first Prime instance running.
             </p>
           </div>
-
           <div className={styles.steps}>
             <div className={`${styles.step} ${styles.active}`}>
               <div className={styles.stepNumber}>1</div>
@@ -207,7 +277,6 @@ function HomeInner() {
                 </div>
               </div>
             </div>
-
             <div className={styles.step}>
               <div className={styles.stepNumber}>2</div>
               <div className={styles.stepContent}>
@@ -218,7 +287,6 @@ function HomeInner() {
                 <DWDGuide setup={setup} copied={copied} onCopy={copyToClipboard} />
               </div>
             </div>
-
             <div className={styles.step}>
               <div className={styles.stepNumber}>3</div>
               <div className={styles.stepContent}>
@@ -235,25 +303,21 @@ function HomeInner() {
   }
 
   /* ==================================================
-     Living Agent Graph
+     Living Agent Graph — Split Panel Layout
      ================================================== */
 
-  /* Prime sub-page quick nav config */
+  /* Prime sub-page quick nav config (no chat — chat is the right panel) */
   const primeNavItems = [
-    { icon: "💬", label: "Chat", path: "chat" },
     { icon: "📁", label: "Projects", path: "projects" },
     { icon: "🌳", label: "Work", path: "work" },
     { icon: "🧠", label: "Models", path: "models" },
-    { icon: "⚙", label: "Settings", path: "settings" },
   ];
 
-  /* Agent sub-page quick nav config */
+  /* Agent sub-page quick nav config (no chat) */
   const agentNavItems = [
-    { icon: "💬", label: "Chat", path: "chat" },
     { icon: "📋", label: "Work", path: "work" },
     { icon: "🧠", label: "Brain", path: "brain" },
     { icon: "🔧", label: "Skills", path: "skills" },
-    { icon: "⚙", label: "Settings", path: "settings" },
   ];
 
   return (
@@ -277,157 +341,188 @@ function HomeInner() {
         </button>
       </header>
 
-      {/* ---- Graph Container ---- */}
-      <div className={styles.graphContainer} ref={containerRef}>
+      {/* ---- Split Panel ---- */}
+      <div
+        className={styles.splitPanel}
+        ref={splitRef}
+        style={{ "--left-pct": `${leftWidth}%` } as React.CSSProperties}
+      >
+        {/* ---- Left: Graph ---- */}
+        <div className={styles.leftPanel}>
+          <div className={styles.graphContainer} ref={containerRef}>
 
-        {/* ---- Prime Chip Bar ---- */}
-        <div className={styles.primeChipBar} id="prime-chip-bar">
-          {primes.map((p) => (
-            <button
-              key={p.id}
-              id={`prime-chip-${p.id}`}
-              ref={p.id === selectedPrimeId ? primeChipRef : undefined}
-              className={`${styles.primeChip} ${p.id === selectedPrimeId ? styles.primeChipSelected : ""}`}
-              onClick={() => setSelectedPrimeId(p.id)}
-            >
-              <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
-              <span className={styles.chipName}>{p.name}</span>
-              <span className={styles.chipMeta}>
-                {p.fleetCount} agent{p.fleetCount !== 1 ? "s" : ""}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* ---- SVG Connection Layer ---- */}
-        <svg className={styles.connectionLayer} aria-hidden="true">
-          <defs>
-            <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor="rgba(31,154,155,0.35)" />
-              <stop offset="100%" stopColor="rgba(31,154,155,0.08)" />
-            </linearGradient>
-          </defs>
-          {lines.map((line) => {
-            const midX = (line.x1 + line.x2) / 2;
-            const midY = (line.y1 + line.y2) / 2;
-            const pathD = `M ${line.x1} ${line.y1} Q ${midX} ${line.y1 + 30} ${line.x2} ${line.y2}`;
-            return (
-              <g key={line.id}>
-                {/* Connection curve */}
-                <path
-                  d={pathD}
-                  stroke="url(#lineGrad)"
-                  strokeWidth="1.5"
-                  fill="none"
-                  opacity="0.7"
-                />
-                {/* Traveling pulse dot */}
-                <circle r="2.5" className={styles.pulseDot}>
-                  <animateMotion
-                    dur={`${2 + Math.random() * 1.5}s`}
-                    repeatCount="indefinite"
-                    path={pathD}
-                  />
-                </circle>
-                {/* Second pulse dot, offset */}
-                <circle r="1.5" className={styles.pulseDot} opacity="0.4">
-                  <animateMotion
-                    dur={`${2.5 + Math.random() * 1.5}s`}
-                    repeatCount="indefinite"
-                    path={pathD}
-                    begin={`${1 + Math.random()}s`}
-                  />
-                </circle>
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* ---- Selected Prime Info + Quick Nav ---- */}
-        {selectedPrime && (
-          <>
-            <div className={styles.primeInfoStrip}>
-              <span className={`${styles.statusDot} ${statusClass(selectedPrime.status)}`} />
-              <Link href={`/p/${selectedPrimeId}`} className={styles.primeInfoName}>
-                {selectedPrime.name}
-              </Link>
-              <span className={styles.primeInfoStatus}>
-                {selectedPrime.status} · {selectedPrime.zone}
-              </span>
-              <div className={styles.primeQuickNav}>
-                {primeNavItems.map((item) => (
-                  <Link
-                    key={item.path}
-                    href={`/p/${selectedPrimeId}/${item.path}`}
-                    className={styles.quickNavIcon}
-                    data-tooltip={item.label}
-                    id={`prime-nav-${item.path}`}
+            {/* ---- Prime Chip Bar ---- */}
+            <div className={styles.primeChipBar} id="prime-chip-bar">
+              {primes.map((p) => {
+                const isSelected = p.id === selectedPrimeId;
+                return (
+                  <button
+                    key={p.id}
+                    id={`prime-chip-${p.id}`}
+                    ref={isSelected ? primeChipRef : undefined}
+                    className={`${styles.primeChip} ${isSelected ? styles.primeChipSelected : ""}`}
+                    onClick={() => selectPrimeChat(p)}
                   >
-                    {item.icon}
-                  </Link>
-                ))}
-              </div>
+                    <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
+                    <span className={styles.chipName}>{p.name}</span>
+                    <span className={styles.chipMeta}>
+                      {p.fleetCount} agent{p.fleetCount !== 1 ? "s" : ""}
+                    </span>
+                    {/* Inline nav icons for selected prime */}
+                    {isSelected && (
+                      <span className={styles.chipNavIcons}>
+                        {primeNavItems.map((item) => (
+                          <Link
+                            key={item.path}
+                            href={`/p/${p.id}/${item.path}`}
+                            className={styles.chipNavIcon}
+                            data-tooltip={item.label}
+                            id={`prime-nav-${item.path}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {item.icon}
+                          </Link>
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-            <div className={styles.graphDivider} />
-          </>
-        )}
 
-        {/* ---- Agent Grid ---- */}
-        {selectedPrime && (
-          <div className={styles.agentGrid} id="agent-grid">
-            {activeFleet.map((agent, i) => (
-              <div
-                key={agent.name}
-                ref={(el) => {
-                  if (el) agentCardRefs.current.set(agent.name, el);
-                  else agentCardRefs.current.delete(agent.name);
-                }}
-                className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""}`}
-                style={{ animationDelay: `${i * 80}ms` }}
-                id={`agent-card-${agent.name}`}
-              >
-                <Link href={`/p/${selectedPrimeId}/a/${agent.name}`} className={styles.agentMain}>
-                  <div className={styles.agentHeader}>
-                    <div className={styles.agentAvatar}>
-                      {agent.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className={styles.agentName}>{agent.name}</div>
-                      <div className={styles.agentMeta}>
-                        <span className={styles.specialtyBadge}>{agent.specialty}</span>
-                        <span className={`${styles.statusDot} ${statusClass(agent.status)}`} />
-                        <span>{agent.status}</span>
+            {/* ---- SVG Connection Layer ---- */}
+            <svg className={styles.connectionLayer} aria-hidden="true">
+              <defs>
+                <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="rgba(31,154,155,0.35)" />
+                  <stop offset="100%" stopColor="rgba(31,154,155,0.08)" />
+                </linearGradient>
+              </defs>
+              {lines.map((line) => {
+                const pathD = `M ${line.x1} ${line.y1} Q ${(line.x1 + line.x2) / 2} ${line.y1 + 30} ${line.x2} ${line.y2}`;
+                return (
+                  <g key={line.id}>
+                    <path d={pathD} stroke="url(#lineGrad)" strokeWidth="1.5" fill="none" opacity="0.7" />
+                    <circle r="2.5" className={styles.pulseDot}>
+                      <animateMotion dur={`${2 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} />
+                    </circle>
+                    <circle r="1.5" className={styles.pulseDot} opacity="0.4">
+                      <animateMotion dur={`${2.5 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} begin={`${1 + Math.random()}s`} />
+                    </circle>
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* ---- Agent Grid ---- */}
+            {selectedPrime && (
+              <div className={styles.agentGrid} id="agent-grid">
+                {activeFleet.map((agent, i) => {
+                  const dp = getDeployProgress(agent.deploySteps);
+                  const isDeploying = agent.status === "deploying" && dp;
+                  const isChatTarget = chatTarget?.type === "agent" && chatTarget?.agentName === agent.name;
+
+                  return (
+                    <div
+                      key={agent.name}
+                      ref={(el) => {
+                        if (el) agentCardRefs.current.set(agent.name, el);
+                        else agentCardRefs.current.delete(agent.name);
+                      }}
+                      className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""} ${isChatTarget ? styles.agentCardActive : ""}`}
+                      style={{ animationDelay: `${i * 80}ms` }}
+                      id={`agent-card-${agent.name}`}
+                      onClick={() => selectAgentChat(agent)}
+                    >
+                      <div className={styles.agentHeader}>
+                        <div className={styles.agentAvatar}>
+                          {agent.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className={styles.agentName}>{agent.name}</div>
+                          <div className={styles.agentMeta}>
+                            <span className={styles.specialtyBadge}>{agent.specialty}</span>
+                            <span className={`${styles.statusDot} ${statusClass(agent.status)}`} />
+                            <span>{agent.status}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Deploy progress */}
+                      {isDeploying && dp && (
+                        <div className={styles.deploySection}>
+                          <div className={styles.deployBar}>
+                            <div
+                              className={`${styles.deployBarFill} ${dp.failed > 0 ? styles.deployBarFailed : ""}`}
+                              style={{ width: `${dp.progress}%` }}
+                            />
+                          </div>
+                          <div className={styles.deployInfo}>
+                            <span className={styles.deployPct}>{dp.progress}%</span>
+                            <span className={styles.deployStep}>
+                              {dp.activeStep
+                                ? `⏳ ${dp.activeStep.label}`
+                                : dp.lastDoneStep
+                                ? `✅ ${dp.lastDoneStep.label}`
+                                : `${dp.done}/${dp.total}`}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Nav icons */}
+                      <div className={styles.agentIconRow}>
+                        {agentNavItems.map((item) => (
+                          <Link
+                            key={item.path}
+                            href={`/p/${selectedPrimeId}/a/${agent.name}/${item.path}`}
+                            className={styles.agentIcon}
+                            data-tooltip={item.label}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {item.icon}
+                          </Link>
+                        ))}
                       </div>
                     </div>
-                  </div>
-                </Link>
-                <div className={styles.agentIconRow}>
-                  {agentNavItems.map((item) => (
-                    <Link
-                      key={item.path}
-                      href={`/p/${selectedPrimeId}/a/${agent.name}/${item.path}`}
-                      className={styles.agentIcon}
-                      data-tooltip={item.label}
-                    >
-                      {item.icon}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ))}
+                  );
+                })}
 
-            {activeFleet.length === 0 && (
-              <div className={styles.emptyFleet}>
-                <div className={styles.emptyFleetIcon}>🚀</div>
-                <div className={styles.emptyFleetText}>No agents deployed yet</div>
-                <Link
-                  href={`/p/${selectedPrimeId}/fleet`}
-                  className={styles.emptyFleetLink}
-                >
-                  Hire your first agent →
-                </Link>
+                {activeFleet.length === 0 && (
+                  <div className={styles.emptyFleet}>
+                    <div className={styles.emptyFleetIcon}>🚀</div>
+                    <div className={styles.emptyFleetText}>No agents deployed yet</div>
+                    <Link
+                      href={`/p/${selectedPrimeId}/fleet`}
+                      className={styles.emptyFleetLink}
+                    >
+                      Hire your first agent →
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* ---- Divider ---- */}
+        {chatTarget && (
+          <div
+            className={styles.divider}
+            onMouseDown={handleDividerDown}
+          />
+        )}
+
+        {/* ---- Right: Chat Panel ---- */}
+        {chatTarget && (
+          <div className={styles.rightPanel}>
+            <ChatPanel
+              key={`${chatTarget.primeId}-${chatTarget.agentName || "prime"}`}
+              primeId={chatTarget.primeId}
+              agentName={chatTarget.type === "agent" ? chatTarget.agentName : undefined}
+              entityName={chatTarget.entityName}
+              entityStatus={chatTarget.entityStatus}
+            />
           </div>
         )}
       </div>

@@ -31,6 +31,10 @@ export function fleetCol(primeId: string) {
   return getDb().collection("primes").doc(primeId).collection("fleet");
 }
 
+export function fleetMessagesCol(primeId: string, agentName: string) {
+  return getDb().collection("primes").doc(primeId).collection("fleet").doc(agentName).collection("messages");
+}
+
 /* ---- Types ---- */
 
 export interface PrimeDoc {

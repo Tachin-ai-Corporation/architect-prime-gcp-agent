@@ -42,8 +42,8 @@ export default function AgentWork() {
 
   const agentEnvelopes = useMemo(() => {
     return envelopes
-      .filter((e) => e.owner === agent)
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      .filter((e: WorkEnvelope) => e.owner === agent)
+      .sort((a: WorkEnvelope, b: WorkEnvelope) => b.created_at.localeCompare(a.created_at));
   }, [envelopes, agent]);
 
   if (loading) {
@@ -73,7 +73,7 @@ export default function AgentWork() {
         )}
 
         <div className={styles.timeline} id="agent-work-timeline">
-          {agentEnvelopes.map((env) => {
+          {agentEnvelopes.map((env: WorkEnvelope) => {
             const si = STATUS_ICONS[env.status] || STATUS_ICONS.pending;
             const isExpanded = expandedId === env.id;
             const isActive = env.status === "active" || env.status === "waiting";

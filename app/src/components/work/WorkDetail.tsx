@@ -1,43 +1,35 @@
 "use client";
 
-import { useState } from "react";
-import styles from "@/app/page.module.css";
-import { MarkdownMessage } from "@/components/MarkdownMessage";
+import { useEffect, useCallback } from "react";
+import styles from "./WorkDetail.module.css";
+import { WorkRespondForm } from "./WorkRespondForm";
 import type { WorkEnvelope } from "@/lib/types";
 
+/* ---- Props ---- */
 interface WorkDetailProps {
   envelope: WorkEnvelope | null;
-  onNavigate: (id: string) => void;
+  allEnvelopes: WorkEnvelope[];
+  onClose: () => void;
+  primeId: string;
 }
 
-const STATUS_ICONS: Record<string, string> = {
-  complete: "🟢",
-  active: "🔵",
-  waiting: "🟡",
-  needs_input: "🟡",
-  blocked: "🚫",
-  cancelled: "⚪",
-  failed: "🔴",
-  pending: "⚪",
-  archived: "⚪",
-};
+/* ---- Helpers ---- */
 
 const TYPE_LABELS: Record<string, string> = {
-  R: "Responsibility",
-  M: "Mission",
-  C: "Checkpoint",
-  T: "Task",
+  R: "RESPONSIBILITY",
+  M: "MISSION",
+  C: "CHECKPOINT",
+  T: "TASK",
 };
 
 function formatTimestamp(ts: string | null): string {
   if (!ts) return "—";
   try {
-    return new Date(ts).toLocaleString([], {
+    return new Date(ts).toLocaleDateString([], {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
     });
   } catch {
     return ts;
@@ -56,252 +48,283 @@ function formatDuration(start: string | null, end: string | null): string | null
   return `${hrs}h ${mins % 60}m`;
 }
 
-export function WorkDetail({ envelope, onNavigate }: WorkDetailProps) {
-  const [contextExpanded, setContextExpanded] = useState(false);
+function elapsedSince(isoDate: string | null): string | null {
+  if (!isoDate) return null;
+  const ms = Date.now() - new Date(isoDate).getTime();
+  if (ms < 0) return null;
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "<1m";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ${hrs % 24}h`;
+}
 
-  if (!envelope) {
-    return (
-      <div className={styles["work-detail"]}>
-        <div style={{ padding: 24, textAlign: "center", color: "var(--text-tertiary)" }}>
-          <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
-          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-secondary)" }}>
-            Select a work item
-          </div>
-          <div style={{ fontSize: 12, marginTop: 4 }}>
-            Click an item in the tree to view its details.
-          </div>
-        </div>
-      </div>
-    );
+function statusLabel(status: string): string {
+  switch (status) {
+    case "active": return "In progress";
+    case "complete": return "Complete";
+    case "waiting":
+    case "needs_input": return "Needs input";
+    case "failed": return "Failed";
+    case "cancelled": return "Cancelled";
+    case "blocked": return "Blocked";
+    default: return "Pending";
   }
+}
 
-  const statusIcon = STATUS_ICONS[envelope.status] || "⚪";
+function statusChipClass(status: string): string {
+  switch (status) {
+    case "active": return styles.chipAct;
+    case "complete": return styles.chipDone;
+    case "waiting":
+    case "needs_input": return styles.chipWait;
+    case "failed": return styles.chipFail;
+    default: return "";
+  }
+}
+
+function dotColor(status: string): string {
+  switch (status) {
+    case "complete": return "#3BAA78";
+    case "active": return "#1F9A9B";
+    case "waiting":
+    case "needs_input": return "#D6A83A";
+    case "failed": return "#D84F45";
+    default: return "#566373";
+  }
+}
+
+/* ---- Component ---- */
+
+export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDetailProps) {
+  // Close on Escape
+  useEffect(() => {
+    if (!envelope) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [envelope, onClose]);
+
+  // Lock body scroll when open
+  useEffect(() => {
+    if (envelope) {
+      document.body.style.overflow = "hidden";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [envelope]);
+
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === e.currentTarget) onClose();
+    },
+    [onClose]
+  );
+
+  if (!envelope) return null;
+
   const typeLabel = TYPE_LABELS[envelope.type] || envelope.type;
   const duration = formatDuration(envelope.started_at, envelope.completed_at);
+  const elapsed = envelope.status === "active" ? elapsedSince(envelope.started_at) : null;
+
+  // Find children envelopes
+  const childEnvelopes = allEnvelopes.filter((e) => e.parent_id === envelope.id);
+  childEnvelopes.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+
+  // Title class
+  const titleClass = `${styles.mTitle} ${
+    envelope.status === "active"
+      ? styles.mTitleAct
+      : envelope.status === "waiting" || envelope.status === "needs_input"
+        ? styles.mTitleWait
+        : ""
+  }`;
+
+  // Progress value (use iteration as a rough proxy; real progress not in schema)
+  const progress =
+    envelope.status === "active" && envelope.iteration > 0
+      ? Math.min(envelope.iteration * 10, 95)
+      : null;
+
+  // Waiting/needs_input text
+  const waitingText =
+    (envelope.status === "waiting" || envelope.status === "needs_input")
+      ? (envelope.blocker || envelope.output || null)
+      : null;
+
+  const childLabel = envelope.type === "M" ? "Checkpoints" : "Tasks";
 
   return (
-    <div className={styles["work-detail"]}>
-      {/* Header: Type + Status */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <span
-          className={styles["work-node-badge"]}
-          data-type={envelope.type}
-          style={{ fontSize: 12, padding: "3px 8px" }}
-        >
-          {typeLabel}
-        </span>
-        <span style={{ fontSize: 14 }}>{statusIcon}</span>
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{envelope.status}</span>
-        {envelope.owner && (
-          <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-tertiary)" }}>
-            Owner: <strong style={{ color: "var(--text-secondary)" }}>{envelope.owner}</strong>
-          </span>
-        )}
-      </div>
+    <div
+      className={`${styles.overlay} ${styles.overlayOpen}`}
+      onClick={handleBackdropClick}
+    >
+      <div className={styles.modal}>
+        {/* Top bar */}
+        <div className={styles.modalTop}>
+          <span className={styles.mType}>{typeLabel}</span>
+          <button className={styles.mClose} onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
 
-      {envelope.status === "blocked" && envelope.blocker && (
-        <div style={{
-          marginTop: 8, padding: "10px 12px", background: "rgba(239, 68, 68, 0.08)",
-          border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: 8, fontSize: 13,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-            <span style={{ fontSize: 14 }}>🚫</span>
-            <span style={{ fontWeight: 600, color: "#ef4444" }}>Blocked</span>
-            {envelope.blocker_type && (
-              <span style={{
-                fontSize: 10, padding: "2px 6px", borderRadius: 4,
-                background: "rgba(239, 68, 68, 0.15)", color: "#ef4444", fontWeight: 600,
-                textTransform: "uppercase",
-              }}>{envelope.blocker_type}</span>
+        {/* Body */}
+        <div className={styles.mBody}>
+          {/* Title */}
+          <div className={titleClass}>
+            {envelope.intent || envelope.instruction || "Untitled"}
+          </div>
+
+          {/* Chips */}
+          <div className={styles.mChips}>
+            <span className={`${styles.mChip} ${statusChipClass(envelope.status)}`}>
+              {statusLabel(envelope.status)}
+            </span>
+            {envelope.owner && (
+              <span className={styles.mChip}>{envelope.owner}</span>
+            )}
+            {envelope.project_id && (
+              <span className={styles.mChip}>{envelope.project_id}</span>
             )}
           </div>
-          <div style={{ color: "var(--text-secondary)" }}>{envelope.blocker}</div>
-        </div>
-      )}
-      {envelope.status === "cancelled" && (
-        <div style={{
-          marginTop: 8, padding: "10px 12px", background: "rgba(107, 114, 128, 0.08)",
-          border: "1px solid rgba(107, 114, 128, 0.2)", borderRadius: 8, fontSize: 13,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-            <span style={{ fontSize: 14 }}>⚪</span>
-            <span style={{ fontWeight: 600, color: "var(--text-tertiary)" }}>Cancelled</span>
-          </div>
-          {envelope.cancelled_reason && (
-            <div style={{ color: "var(--text-secondary)" }}>{envelope.cancelled_reason}</div>
-          )}
-        </div>
-      )}
 
-      {/* Instruction */}
-      <div className={styles["work-detail-section"]}>
-        <div className={styles["work-detail-label"]}>Instruction</div>
-        <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-          {envelope.instruction || <span style={{ color: "var(--text-tertiary)" }}>No instruction</span>}
-        </div>
-      </div>
-
-      {/* Accept Criteria */}
-      {envelope.accept_criteria && (
-        <div className={styles["work-detail-section"]}>
-          <div className={styles["work-detail-label"]}>Accept Criteria</div>
-          <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--text-secondary)" }}>
-            {envelope.accept_criteria}
-          </div>
-        </div>
-      )}
-
-      {/* Output */}
-      {envelope.output && (
-        <div className={styles["work-detail-section"]}>
-          <div className={styles["work-detail-label"]}>Output</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-            <MarkdownMessage text={envelope.output} />
-          </div>
-        </div>
-      )}
-
-      {/* Error */}
-      {envelope.error && (
-        <div className={styles["work-detail-section"]}>
-          <div className={styles["work-detail-label"]} style={{ color: "#f85149" }}>Error</div>
-          <div style={{
-            fontSize: 13,
-            lineHeight: 1.5,
-            padding: "10px 12px",
-            background: "rgba(248, 81, 73, 0.08)",
-            border: "1px solid rgba(248, 81, 73, 0.25)",
-            borderRadius: 6,
-            color: "#f85149",
-          }}>
-            {envelope.error}
-          </div>
-        </div>
-      )}
-
-      {/* Context Summary (collapsible) */}
-      {envelope.context_summary && (
-        <div className={styles["work-detail-section"]}>
-          <button
-            onClick={() => setContextExpanded(!contextExpanded)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: 0,
-              color: "var(--text-tertiary)",
-              fontSize: 12,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-            }}
-          >
-            {contextExpanded ? "▾" : "▸"} Context Summary
-          </button>
-          {contextExpanded && (
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.5 }}>
-              {envelope.context_summary}
+          {/* Progress bar */}
+          {progress !== null && progress > 0 && progress < 100 && (
+            <div className={styles.mProg}>
+              <div className={styles.mProgBar}>
+                <div
+                  className={styles.mProgFill}
+                  style={{
+                    width: `${progress}%`,
+                    background:
+                      envelope.status === "waiting" || envelope.status === "needs_input"
+                        ? "#D6A83A"
+                        : "#1F9A9B",
+                  }}
+                />
+              </div>
+              <div className={styles.mProgLbl}>
+                <span>{progress}%</span>
+                {elapsed && <span>{elapsed} elapsed</span>}
+              </div>
             </div>
           )}
-        </div>
-      )}
 
-      {/* Timestamps */}
-      <div className={styles["work-detail-section"]}>
-        <div className={styles["work-detail-label"]}>Timestamps</div>
-        <div style={{ display: "grid", gap: 4, fontSize: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-tertiary)" }}>Created</span>
-            <span>{formatTimestamp(envelope.created_at)}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-tertiary)" }}>Started</span>
-            <span>{formatTimestamp(envelope.started_at)}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-tertiary)" }}>Completed</span>
-            <span>{formatTimestamp(envelope.completed_at)}</span>
-          </div>
-          {duration && (
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "var(--text-tertiary)" }}>Duration</span>
-              <span style={{ fontWeight: 600 }}>{duration}</span>
+          {/* Definition of Done */}
+          {envelope.accept_criteria && (
+            <div className={styles.mSec}>
+              <div className={styles.mSecTitle}>Definition of done</div>
+              <div className={styles.mBlock}>{envelope.accept_criteria}</div>
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Parent Link */}
-      {envelope.parent_id && (
-        <div className={styles["work-detail-section"]}>
-          <div className={styles["work-detail-label"]}>Parent</div>
-          <button
-            onClick={() => onNavigate(envelope.parent_id!)}
-            style={{
-              background: "var(--bg-tertiary)",
-              border: "1px solid var(--border-subtle)",
-              borderRadius: 6,
-              padding: "6px 10px",
-              cursor: "pointer",
-              fontSize: 12,
-              color: "var(--accent-primary-hover)",
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            ↑ {envelope.parent_id}
-          </button>
-        </div>
-      )}
+          {/* Waiting / Needs Input callout */}
+          {waitingText && (
+            <div className={styles.mSec}>
+              <div className={styles.mSecTitle}>Waiting for input</div>
+              <div className={`${styles.mBlock} ${styles.mBlockWarn}`}>
+                <strong>{envelope.owner || "Agent"} asks:</strong> {waitingText}
+                {envelope.blocked_at && (
+                  <div className={styles.timer}>
+                    Waiting {elapsedSince(envelope.blocked_at) || ""}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-      {/* Children Links */}
-      {envelope.children && envelope.children.length > 0 && (
-        <div className={styles["work-detail-section"]}>
-          <div className={styles["work-detail-label"]}>
-            Children ({envelope.children.length})
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {envelope.children.map((childId) => (
-              <button
-                key={childId}
-                onClick={() => onNavigate(childId)}
-                style={{
-                  background: "var(--bg-tertiary)",
-                  border: "1px solid var(--border-subtle)",
-                  borderRadius: 6,
-                  padding: "6px 10px",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  color: "var(--accent-primary-hover)",
-                  fontFamily: "'JetBrains Mono', monospace",
-                  textAlign: "left",
-                }}
-              >
-                → {childId}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+          {/* Respond Form for needs_input */}
+          {(envelope.status === "needs_input" || envelope.status === "waiting") && (
+            <div className={styles.respondWrap}>
+              <WorkRespondForm
+                envelope={envelope}
+                primeId={primeId}
+                onResponded={onClose}
+              />
+            </div>
+          )}
 
-      {/* Metadata */}
-      <div className={styles["work-detail-section"]}>
-        <div className={styles["work-detail-label"]}>Metadata</div>
-        <div style={{ display: "grid", gap: 4, fontSize: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-tertiary)" }}>ID</span>
-            <code className="mono" style={{ fontSize: 11 }}>{envelope.id}</code>
+          {/* Output */}
+          {envelope.output && envelope.status !== "waiting" && envelope.status !== "needs_input" && (
+            <div className={styles.mSec}>
+              <div className={styles.mSecTitle}>Output</div>
+              <div className={styles.mBlock}>{envelope.output}</div>
+            </div>
+          )}
+
+          {/* Error */}
+          {envelope.error && (
+            <div className={styles.mSec}>
+              <div className={styles.mSecTitle}>Error</div>
+              <div className={`${styles.mBlock} ${styles.mBlockError}`}>
+                {envelope.error}
+              </div>
+            </div>
+          )}
+
+          {/* Details grid */}
+          <div className={styles.mSec}>
+            <div className={styles.mSecTitle}>Details</div>
+            <div className={styles.mGrid}>
+              <span className={styles.mk}>Created</span>
+              <span className={styles.mv}>{formatTimestamp(envelope.created_at)}</span>
+              {envelope.started_at && (
+                <>
+                  <span className={styles.mk}>Started</span>
+                  <span className={styles.mv}>{formatTimestamp(envelope.started_at)}</span>
+                </>
+              )}
+              {envelope.completed_at && (
+                <>
+                  <span className={styles.mk}>Completed</span>
+                  <span className={styles.mv}>{formatTimestamp(envelope.completed_at)}</span>
+                </>
+              )}
+              {duration && (
+                <>
+                  <span className={styles.mk}>Duration</span>
+                  <span className={styles.mv}>{duration}</span>
+                </>
+              )}
+              <span className={styles.mk}>ID</span>
+              <span className={`${styles.mv} ${styles.mvId}`}>{envelope.id}</span>
+            </div>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-tertiary)" }}>Iteration</span>
-            <span>{envelope.iteration}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-tertiary)" }}>Source</span>
-            <span>{envelope.source_channel || "—"}</span>
-          </div>
+
+          {/* Children list */}
+          {childEnvelopes.length > 0 && (
+            <div className={styles.mSec}>
+              <div className={styles.mSecTitle}>{childLabel}</div>
+              <div className={styles.mKids}>
+                {childEnvelopes.map((child) => (
+                  <div key={child.id} className={styles.mKid}>
+                    <span
+                      className={styles.mkDot}
+                      style={{ background: dotColor(child.status) }}
+                    />
+                    <span className={styles.mkText}>
+                      <strong>{child.intent || child.instruction || child.id}</strong>
+                      {child.owner && ` — ${child.owner}`}
+                      {child.status === "complete" &&
+                        formatDuration(child.started_at, child.completed_at) &&
+                        ` · ${formatDuration(child.started_at, child.completed_at)}`}
+                      {child.status === "active" && child.iteration > 0 &&
+                        ` · ${Math.min(child.iteration * 10, 95)}%`}
+                      {(child.status === "waiting" || child.status === "needs_input") && (
+                        <span className={styles.mkNeedsInput}> · needs input</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

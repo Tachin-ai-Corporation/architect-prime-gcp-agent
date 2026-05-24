@@ -1,5 +1,5 @@
 /* ============================================
-   Home Page — Living Agent Graph
+   Home Page — Split Panel Agent Graph
    1health Design System
    ============================================ */
 
@@ -150,22 +150,23 @@
 }
 
 /* ============================================
-   Home Shell — Graph Layout
+   Home Shell — Split Panel Layout
    ============================================ */
 
 .homeShell {
   min-height: 100vh;
-  padding: 40px 24px 64px;
+  padding: 32px 24px 0;
   background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- Header ---- */
 .homeHeader {
-  max-width: 1080px;
-  margin: 0 auto 28px;
   display: flex;
   align-items: center;
   gap: 14px;
+  padding: 0 8px 24px;
 }
 
 .homeLogo {
@@ -211,25 +212,84 @@
 }
 
 /* ============================================
-   Graph Container
+   Split Panel
+   ============================================ */
+
+.splitPanel {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  gap: 0;
+}
+
+.leftPanel {
+  width: var(--left-pct, 60%);
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding-bottom: 64px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(86, 99, 115, 0.2) transparent;
+}
+
+.rightPanel {
+  flex: 1;
+  min-width: 280px;
+  height: calc(100vh - 120px);
+  position: sticky;
+  top: 0;
+}
+
+/* ---- Divider ---- */
+.divider {
+  width: 4px;
+  cursor: col-resize;
+  background: rgba(86, 99, 115, 0.15);
+  transition: background 200ms ease;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 32px;
+  border-radius: 1px;
+  background: rgba(86, 99, 115, 0.3);
+  transition: background 200ms ease;
+}
+
+.divider:hover {
+  background: rgba(143, 216, 230, 0.12);
+}
+
+.divider:hover::after {
+  background: rgba(143, 216, 230, 0.4);
+}
+
+/* ============================================
+   Graph Container (inside left panel)
    ============================================ */
 
 .graphContainer {
-  max-width: 1080px;
-  margin: 0 auto;
   position: relative;
+  padding: 0 12px;
 }
 
 /* ---- Prime Chip Bar ---- */
 .primeChipBar {
   display: flex;
   gap: 12px;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
   overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(86, 99, 115, 0.25) transparent;
+  scrollbar-width: none;
 }
+
+.primeChipBar::-webkit-scrollbar { display: none; }
 
 .primeChip {
   display: flex;
@@ -299,45 +359,74 @@
   font-weight: 500;
 }
 
+/* ---- Inline nav icons in expanded prime chip ---- */
+.chipNavIcons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(86, 99, 115, 0.3);
+  animation: chipNavIn 200ms ease;
+}
+
+@keyframes chipNavIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.chipNavIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  text-decoration: none;
+  transition: all 160ms ease;
+  background: rgba(86, 99, 115, 0.1);
+}
+
+.chipNavIcon:hover {
+  background: rgba(143, 216, 230, 0.12);
+  transform: translateY(-1px);
+}
+
 /* ---- Status Dots ---- */
 .statusDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  display: inline-block;
   flex-shrink: 0;
-  background: #7A8696;
 }
 
 .statusOnline {
-  background: var(--care-mint);
-  box-shadow: 0 0 8px rgba(95, 199, 178, 0.5);
-  animation: statusPulse 2.5s ease-in-out infinite;
+  background: #1F9A9B;
+  box-shadow: 0 0 10px rgba(31, 154, 155, 0.4);
 }
 
 .statusDeploying {
-  background: var(--amber);
-  box-shadow: 0 0 8px rgba(214, 168, 58, 0.4);
+  background: #D6A83A;
   animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+.statusError {
+  background: #D84F45;
 }
 
 .statusOffline {
   background: #566373;
-}
-
-.statusError {
-  background: var(--pulse);
-  box-shadow: 0 0 8px rgba(216, 79, 69, 0.4);
+  opacity: 0.5;
 }
 
 @keyframes statusPulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.3; }
 }
 
-/* ============================================
-   SVG Connection Layer
-   ============================================ */
-
+/* ---- SVG Connection Layer ---- */
 .connectionLayer {
   position: absolute;
   inset: 0;
@@ -345,120 +434,11 @@
   height: 100%;
   pointer-events: none;
   z-index: 0;
-  overflow: visible;
-}
-
-.connectionLine {
-  stroke: rgba(31, 154, 155, 0.15);
-  stroke-width: 1.5;
-  fill: none;
-  transition: stroke 300ms ease, stroke-width 300ms ease;
-}
-
-.connectionLineActive {
-  stroke: rgba(31, 154, 155, 0.3);
-  stroke-width: 2;
 }
 
 .pulseDot {
-  fill: rgba(143, 216, 230, 0.6);
-}
-
-/* ============================================
-   Prime Quick Nav
-   ============================================ */
-
-.primeInfoStrip {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 0 12px;
-  animation: fadeIn 300ms ease;
-  position: relative;
-  z-index: 1;
-}
-
-.primeInfoName {
-  font-size: 14px;
-  font-weight: 600;
-  color: #E6EBF0;
-}
-
-.primeInfoStatus {
-  font-size: 11px;
-  color: #7A8696;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.primeQuickNav {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-}
-
-.quickNavIcon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  font-size: 16px;
-  color: #7A8696;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 200ms ease;
-  position: relative;
-  text-decoration: none;
-}
-
-.quickNavIcon:hover {
-  background: rgba(86, 99, 115, 0.25);
-  color: #E6EBF0;
-  transform: translateY(-1px);
-}
-
-/* Tooltip */
-.quickNavIcon::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  padding: 4px 8px;
-  background: #394556;
-  border: 1px solid rgba(86, 99, 115, 0.3);
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #E6EBF0;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: all 150ms ease;
-}
-
-.quickNavIcon:hover::after {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* ---- Divider ---- */
-.graphDivider {
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(31, 154, 155, 0.2) 20%,
-    rgba(31, 154, 155, 0.2) 80%,
-    transparent 100%
-  );
-  margin: 4px 0 20px;
+  fill: #1F9A9B;
+  filter: drop-shadow(0 0 4px rgba(31, 154, 155, 0.5));
 }
 
 /* ============================================
@@ -467,278 +447,202 @@
 
 .agentGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 16px;
+  padding-top: 20px;
   position: relative;
   z-index: 1;
-  padding-top: 4px;
 }
 
-/* ---- Agent Card ---- */
 .agentCard {
-  background: rgba(49, 59, 71, 0.55);
-  backdrop-filter: blur(16px);
+  background: rgba(49, 59, 71, 0.4);
   border: 1px solid rgba(86, 99, 115, 0.18);
   border-radius: 14px;
-  padding: 0;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: cardIn 400ms ease backwards;
   position: relative;
   overflow: hidden;
-  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
-  animation: fadeInUp 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  will-change: transform;
 }
 
-/* Subtle gradient sheen */
-.agentCard::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  background: linear-gradient(180deg, rgba(31, 154, 155, 0.04) 0%, transparent 100%);
-  pointer-events: none;
-  transition: opacity 300ms ease;
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
 }
 
 .agentCard:hover {
-  transform: translateY(-4px) scale(1.01);
-  border-color: rgba(31, 154, 155, 0.3);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.25),
-    0 0 24px rgba(31, 154, 155, 0.08);
+  border-color: rgba(86, 99, 115, 0.35);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
-.agentCard:hover::before {
-  opacity: 1.5;
-}
-
-/* Status-specific card glow */
-.agentCardOnline {
-  animation-name: fadeInUp;
-}
-
-.agentCardOnline::after {
+.agentCard::before {
   content: '';
   position: absolute;
-  bottom: -1px;
-  left: 20%;
-  right: 20%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(95, 199, 178, 0.3), transparent);
-  transition: opacity 300ms ease;
-}
-
-.agentCardOnline:hover::after {
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% -20%, rgba(31, 154, 155, 0.04), transparent 70%);
   opacity: 0;
+  transition: opacity 300ms;
 }
 
-/* ---- Agent Main (clickable area) ---- */
-.agentMain {
-  display: block;
-  padding: 18px 18px 14px;
-  text-decoration: none;
-  color: inherit;
-  cursor: pointer;
+.agentCardOnline::before {
+  opacity: 1;
+}
+
+.agentCardActive {
+  border-color: rgba(143, 216, 230, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.15), 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
 .agentHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
 .agentAvatar {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, rgba(31, 154, 155, 0.2), rgba(36, 107, 143, 0.2));
-  border: 1px solid rgba(31, 154, 155, 0.15);
+  background: linear-gradient(135deg, rgba(31, 154, 155, 0.25), rgba(143, 216, 230, 0.12));
+  color: #8FD8E6;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
   font-weight: 700;
-  color: var(--signal-aqua);
   flex-shrink: 0;
-  transition: all 300ms ease;
-}
-
-.agentCard:hover .agentAvatar {
-  border-color: rgba(31, 154, 155, 0.35);
-  box-shadow: 0 0 12px rgba(31, 154, 155, 0.15);
 }
 
 .agentName {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: #E6EBF0;
-  letter-spacing: -0.01em;
-  margin-bottom: 3px;
 }
 
 .agentMeta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
   color: #7A8696;
+  margin-top: 2px;
 }
 
 .specialtyBadge {
-  padding: 1px 8px;
-  background: rgba(86, 99, 115, 0.2);
+  background: rgba(86, 99, 115, 0.18);
+  padding: 1px 6px;
   border-radius: 4px;
-  font-size: 11px;
   font-weight: 500;
+  font-size: 10px;
   color: #AEB8C4;
-  text-transform: capitalize;
 }
 
-/* ---- Agent Icon Row ---- */
-.agentIconRow {
+/* ---- Deploy Progress ---- */
+.deploySection {
+  margin: 8px 0 4px;
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(86, 99, 115, 0.15);
+}
+
+.deployBar {
+  height: 4px;
+  background: rgba(86, 99, 115, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.deployBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #1F9A9B, #5FC7B2);
+  border-radius: 2px;
+  transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.deployBarFailed {
+  background: linear-gradient(90deg, #D6A83A, #D84F45);
+}
+
+.deployInfo {
   display: flex;
   align-items: center;
-  gap: 0;
-  padding: 0 6px 6px;
-  border-top: 1px solid rgba(86, 99, 115, 0.1);
-  margin: 0 12px;
-  padding-top: 8px;
-  opacity: 0.5;
-  transition: opacity 300ms ease;
+  gap: 8px;
+  margin-top: 5px;
 }
 
-.agentCard:hover .agentIconRow {
-  opacity: 1;
+.deployPct {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1F9A9B;
+  flex-shrink: 0;
+}
+
+.deployStep {
+  font-size: 11px;
+  color: #AEB8C4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Agent Nav Icons ---- */
+.agentIconRow {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .agentIcon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(86, 99, 115, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 30px;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #7A8696;
+  font-size: 13px;
   text-decoration: none;
-  cursor: pointer;
-  transition: all 180ms ease;
-  position: relative;
+  transition: all 160ms ease;
 }
 
 .agentIcon:hover {
-  background: rgba(86, 99, 115, 0.3);
-  color: #E6EBF0;
+  background: rgba(143, 216, 230, 0.12);
   transform: translateY(-1px);
 }
 
-/* Agent icon tooltips */
-.agentIcon::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 5px);
-  left: 50%;
-  transform: translateX(-50%) translateY(3px);
-  padding: 3px 7px;
-  background: #394556;
-  border: 1px solid rgba(86, 99, 115, 0.3);
-  border-radius: 5px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #E6EBF0;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: all 130ms ease;
-  z-index: 10;
-}
-
-.agentIcon:hover::after {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
-/* ---- Empty Fleet State ---- */
+/* ---- Empty Fleet ---- */
 .emptyFleet {
   grid-column: 1 / -1;
   text-align: center;
   padding: 48px 24px;
-  color: #7A8696;
 }
 
 .emptyFleetIcon {
-  font-size: 36px;
+  font-size: 32px;
   margin-bottom: 12px;
-  opacity: 0.6;
 }
 
 .emptyFleetText {
-  font-size: 14px;
-  margin-bottom: 16px;
+  font-size: 15px;
+  font-weight: 600;
   color: #AEB8C4;
+  margin-bottom: 8px;
 }
 
 .emptyFleetLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 20px;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--care-mint);
-  background: rgba(95, 199, 178, 0.08);
-  border: 1px solid rgba(95, 199, 178, 0.25);
-  border-radius: 8px;
+  color: #1F9A9B;
   text-decoration: none;
-  transition: all 200ms ease;
+  font-weight: 500;
 }
 
 .emptyFleetLink:hover {
-  background: rgba(95, 199, 178, 0.16);
-  border-color: rgba(95, 199, 178, 0.4);
-  transform: translateY(-1px);
-}
-
-/* ============================================
-   Animations
-   ============================================ */
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(24px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.012); }
-}
-
-/* Subtle idle floating — each card gets a different delay via inline style */
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2.5px); }
-}
-
-/* Pulse glow for selected prime chip */
-@keyframes chipGlow {
-  0%, 100% { box-shadow: 0 0 20px rgba(31, 154, 155, 0.08), inset 0 0 20px rgba(31, 154, 155, 0.03); }
-  50% { box-shadow: 0 0 28px rgba(31, 154, 155, 0.14), inset 0 0 20px rgba(31, 154, 155, 0.05); }
-}
-
-.primeChipSelected {
-  animation: chipGlow 3s ease-in-out infinite;
+  text-decoration: underline;
 }
 
 /* ============================================
@@ -748,23 +652,22 @@
 .modalOverlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  animation: fadeIn 150ms ease;
 }
 
 .modal {
+  width: 420px;
+  max-width: 92%;
   background: #313B47;
-  border: 1px solid rgba(86, 99, 115, 0.35);
+  border: 1px solid rgba(86, 99, 115, 0.3);
   border-radius: 16px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
-  width: min(440px, calc(100vw - 40px));
   padding: 28px;
-  animation: slideUp 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
 }
 
 .modalTitle {
@@ -781,69 +684,53 @@
 .modalLabel {
   display: block;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   color: #AEB8C4;
   margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .modalActions {
   display: flex;
+  gap: 10px;
   justify-content: flex-end;
-  gap: 8px;
   margin-top: 24px;
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* ============================================
    Responsive
    ============================================ */
 
-@media (max-width: 880px) {
-  .agentGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .connectionLayer {
-    display: none;
-  }
-
-  .primeChipBar {
-    flex-wrap: wrap;
-  }
-
-  .onboardingCard {
-    padding: 32px 24px;
-  }
-
-  .homeHeader {
-    padding: 0 8px;
-  }
-
-  .primeInfoStrip {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .primeQuickNav {
-    margin-left: 0;
-    width: 100%;
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 560px) {
+@media (max-width: 768px) {
   .homeShell {
-    padding: 24px 16px 48px;
+    padding: 20px 12px 0;
   }
 
-  .deployBtn {
-    padding: 6px 12px;
-    font-size: 12px;
+  .splitPanel {
+    flex-direction: column;
+  }
+
+  .leftPanel {
+    width: 100% !important;
+  }
+
+  .rightPanel {
+    height: 50vh;
+    position: relative;
+  }
+
+  .divider {
+    width: 100%;
+    height: 4px;
+    cursor: row-resize;
+  }
+
+  .divider::after {
+    width: 32px;
+    height: 2px;
+  }
+
+  .agentGrid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
   }
 }
