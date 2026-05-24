@@ -162,6 +162,34 @@ function handleSkills() {
           }
         } catch {}
 
+        // ---- Body-Part Category Reference ----
+        // When adding new tools, assign them to the correct body part:
+        //
+        //  ears    - Input pipeline: polling, preprocessing, DWD auth, chat I/O
+        //            Matches: agent-ears*, start-agent-ears, ears-*, chat-*, dwd-token, ws-token
+        //
+        //  mouth   - Output pipeline: response classification, delivery, status updates
+        //            Matches: agent-mouth*, start-agent-mouth, mouth-*
+        //
+        //  brain   - Orchestration: envelope daemon, telemetry, tool assembly, introspect
+        //            Matches: agent-brain*, start-agent-brain, brain-telemetry-*, assemble-tools,
+        //                     agent-introspect*, start-agent-introspect
+        //
+        //  cortex  - Decision layer: the agent's main reasoning tools
+        //            Matches: agent-ask, agent-status
+        //
+        //  motor   - Execution layer: all tools Motor sub-agent uses to DO things
+        //            Matches: responsibility-manage, project-manage, task-log-*,
+        //                     fleet-*, command-runner, discover-models,
+        //                     drive-*, gmail-*, calendar-*, docs-*, sheets-*
+        //
+        //  memory  - Temporal-memory: long-term memory read/write/retire, deep truths
+        //            Matches: core-memory-*, update-deep-truths, session-summary
+        //
+        //  config  - System config & maintenance (gear icon catch-all)
+        //            Matches: upgrade-*, validate-contracts, render-config, oc, agent-ou-manage,
+        //                     *.md, *.json, *.tmpl, *.sh
+        //
         // Categorize by agent body part
         if (f.startsWith('agent-ears') || f.startsWith('start-agent-ears') || f.startsWith('ears-') || f === 'ears-health-check') category = 'ears';
         else if (f.startsWith('agent-mouth') || f.startsWith('start-agent-mouth') || f.startsWith('mouth-') || f === 'mouth-health-check') category = 'mouth';

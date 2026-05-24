@@ -48,6 +48,24 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
 - **Dashboard**: Living Agent Graph home screen — interactive network topology with prime chip selector (deploy chip as last inline element), SVG connection lines + pulse dots, glassmorphic agent cards with hover-reveal quick-nav icon rows. Shell header: logo + title + version left-aligned with breadcrumb trail. 17-page breadcrumb-navigated hierarchy (no sidebar). Home → Prime Hub → Chat/Fleet/Work/Projects/Models/Settings → Agent Hub → Chat/Work/Brain/Skills/Settings. Skills page queries real VM filesystem via Firestore bus introspection API. Real-time M→C→T work tree, envelope detail view, human-in-the-loop response form for needs_input envelopes. Real-time Cloud Build status polling for dashboard upgrades. Projects as first-class Firestore entity with real-time listeners. 1health design system (Graphite/Charcoal/Teal/Aqua).
 
+### Skills / Body-Part Categorization
+The Skills page categorizes tools by agent "body part". The introspect daemon (`agent-introspect.mjs`) assigns categories by filename pattern. When adding new tools, follow the naming conventions below so they auto-categorize correctly:
+
+| Body Part | Icon | Pattern | What goes here |
+|-----------|------|---------|----------------|
+| **Ears** | 👂 | `agent-ears*`, `ears-*`, `chat-*`, `dwd-token`, `ws-token` | Input pipeline, polling, DWD auth, chat I/O |
+| **Mouth** | 🗣️ | `agent-mouth*`, `mouth-*` | Output pipeline, response classification, delivery |
+| **Brain** | 🧠 | `agent-brain*`, `brain-telemetry-*`, `assemble-tools`, `agent-introspect*` | Orchestration daemon, telemetry, tool assembly |
+| **Cortex** | 🔮 | `agent-ask`, `agent-status` | Decision layer — reasoning tools the cortex agent uses |
+| **Motor** | ⚡ | `responsibility-manage`, `project-manage`, `task-log-*`, `fleet-*`, `drive-*`, `gmail-*`, `calendar-*`, `docs-*`, `sheets-*` | Execution layer — all tools Motor uses to DO things |
+| **Memory** | 💾 | `core-memory-*`, `update-deep-truths`, `session-summary` | Temporal-memory tools |
+| **Config** | ⚙️ | `upgrade-*`, `validate-contracts`, `render-config`, `oc`, `*.md`, `*.json`, `*.tmpl` | System config & maintenance (catch-all) |
+
+Source of truth: categorization logic in `corekit/daemon/agent-introspect.mjs`, labels in `app/src/app/p/[id]/a/[agent]/skills/page.tsx`.
+
+### Workspace Skill Manifests
+Workspace tools (Google Drive/Gmail/Calendar/Docs/Sheets) are installed per job type, NOT globally. Manifest layering: `base.txt` → `role-{fleet|prime}.txt` → `job-{type}.txt`. Prime has ZERO workspace skills.
+
 ### Identity Lockdown
 - `.identity-lock` file (chmod 444) written at bootstrap/upgrade with the agent's Workspace email
 - `dwd-token` refuses to impersonate any email that doesn't match the lockfile
