@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import styles from "./WorkTree.module.css";
 import type { TreeNode } from "./useWorkEnvelopes";
+import { formatAgentDisplayName } from "@/components/AgentChip";
 
 /* ---- Props ---- */
 interface WorkTreeProps {
@@ -126,7 +127,7 @@ function TreeNodeRow({
   const metaParts: string[] = [];
   const metaJsx: React.ReactNode[] = [];
 
-  if (node.owner) metaJsx.push(<span key="owner">{node.owner}</span>);
+  if (node.owner) metaJsx.push(<span key="owner" title={node.owner}>{formatAgentDisplayName(node.owner)}</span>);
   if (node.project_id) metaJsx.push(<span key="proj">{node.project_id}</span>);
 
   if (node.status === "active" && node.started_at) {
@@ -201,7 +202,7 @@ function TreeNodeRow({
 
           {waitingText && (
             <div className={styles.rAsk}>
-              <strong>{node.owner || "Agent"} asks:</strong> {truncate(waitingText, 200)}
+              <strong>{node.owner ? formatAgentDisplayName(node.owner) : "Agent"} asks:</strong> {truncate(waitingText, 200)}
               {node.blocked_at && (
                 <div className={styles.timer}>
                   Waiting {elapsedSince(node.blocked_at) || ""}

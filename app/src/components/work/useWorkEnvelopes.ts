@@ -69,6 +69,20 @@ function collectTreeIds(root: TreeNode, ids: Set<string>): void {
 }
 
 /**
+ * Helper to match an envelope's owner (which might be an email like devops-agent-stan@domain)
+ * to a short agent name (like "stan").
+ */
+export function matchAgent(owner: string | undefined | null, agentName: string): boolean {
+  if (!owner) return false;
+  const ownerLower = owner.toLowerCase();
+  const agentLower = agentName.toLowerCase();
+  if (ownerLower === agentLower) return true;
+  const emailPrefix = ownerLower.split("@")[0];
+  const segments = emailPrefix.split(/[-_.]/);
+  return segments.includes(agentLower);
+}
+
+/**
  * Hook that fetches work envelopes and buckets them into current / queue / previous trees.
  * Supports optional agent name filtering.
  */
@@ -112,7 +126,7 @@ export function useWorkEnvelopes(
     // Optional agent filter — keep only envelopes where owner matches
     let filtered = envelopes;
     if (agentFilter) {
-      filtered = envelopes.filter((e) => e.owner === agentFilter);
+      filtered = envelopes.filter((e) => matchAgent(e.owner, agentFilter));
     }
 
     // Build full trees from filtered envelopes

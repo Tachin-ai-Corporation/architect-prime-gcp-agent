@@ -4,6 +4,7 @@ import { useEffect, useCallback } from "react";
 import styles from "./WorkDetail.module.css";
 import { WorkRespondForm } from "./WorkRespondForm";
 import type { WorkEnvelope } from "@/lib/types";
+import { formatAgentDisplayName } from "@/components/AgentChip";
 
 /* ---- Props ---- */
 interface WorkDetailProps {
@@ -187,7 +188,7 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
               {statusLabel(envelope.status)}
             </span>
             {envelope.owner && (
-              <span className={styles.mChip}>{envelope.owner}</span>
+              <span className={styles.mChip} title={envelope.owner}>{formatAgentDisplayName(envelope.owner)}</span>
             )}
             {envelope.project_id && (
               <span className={styles.mChip}>{envelope.project_id}</span>
@@ -229,7 +230,7 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
             <div className={styles.mSec}>
               <div className={styles.mSecTitle}>Waiting for input</div>
               <div className={`${styles.mBlock} ${styles.mBlockWarn}`}>
-                <strong>{envelope.owner || "Agent"} asks:</strong> {waitingText}
+                <strong>{envelope.owner ? formatAgentDisplayName(envelope.owner) : "Agent"} asks:</strong> {waitingText}
                 {envelope.blocked_at && (
                   <div className={styles.timer}>
                     Waiting {elapsedSince(envelope.blocked_at) || ""}
@@ -310,7 +311,7 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
                     />
                     <span className={styles.mkText}>
                       <strong>{child.intent || child.instruction || child.id}</strong>
-                      {child.owner && ` — ${child.owner}`}
+                      {child.owner && ` — ${formatAgentDisplayName(child.owner)}`}
                       {child.status === "complete" &&
                         formatDuration(child.started_at, child.completed_at) &&
                         ` · ${formatDuration(child.started_at, child.completed_at)}`}

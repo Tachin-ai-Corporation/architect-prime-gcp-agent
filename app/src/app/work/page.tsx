@@ -4,7 +4,7 @@ import { Suspense, useState, useMemo, useCallback, useRef, useEffect } from "rea
 import { useSearchParams, useRouter } from "next/navigation";
 import styles from "./page.module.css";
 import { usePrime } from "@/contexts/PrimeContext";
-import { useWorkEnvelopes } from "@/components/work/useWorkEnvelopes";
+import { useWorkEnvelopes, matchAgent } from "@/components/work/useWorkEnvelopes";
 import { WorkTree } from "@/components/work/WorkTree";
 import { WorkDetail } from "@/components/work/WorkDetail";
 
@@ -100,7 +100,7 @@ function WorkPage() {
     return agents.map((agent) => {
       const activeTask = allEnvelopes.find(
         (e) =>
-          e.owner === agent.name &&
+          matchAgent(e.owner, agent.name) &&
           (e.status === "active" || e.status === "waiting")
       );
       return {
