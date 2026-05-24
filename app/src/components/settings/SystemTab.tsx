@@ -39,29 +39,66 @@ export function SystemTab({ versionInfo, upgrading, setUpgrading }: SystemTabPro
       commit?: string;
     }>("/api/upgrade", { method: "POST" });
 
-    if (result?.success) {
-      const buildId = result.buildId || "unknown";
-      setBuildStatus(`Build ${buildId} submitted. Deploying ${result.version || "main"}...`);
+    if (result?.success && result.buildId) {
+      setBuildStatus(`Build ${result.buildId.substring(0, 8)} submitted. Polling for status...`);
       dialog.toast({
         message: result.message || "Dashboard upgrade initiated!",
         variant: "success",
         duration: 6000,
       });
 
-      // Countdown timer — Cloud Build takes ~3 minutes
-      let remaining = 180;
-      const countdown = setInterval(() => {
-        remaining -= 1;
-        if (remaining <= 0) {
-          clearInterval(countdown);
-          setBuildStatus("Deploy should be complete. Refresh the page to see changes.");
+      // Poll Cloud Build status every 5s
+      const pollBuild = async () => {
+        try {
+          const status = await api<{
+            buildId: string;
+            status: string;
+            progress: number;
+            activeStep: string | null;
+            failedStep: string | null;
+            doneSteps: number;
+            totalSteps: number;
+          }>(`/api/upgrade/status?buildId=${result.buildId}`);
+
+          if (!status) {
+            setBuildStatus("Failed to check build status.");
+            setUpgrading(false);
+            return;
+          }
+
+          if (status.status === "SUCCESS") {
+            setBuildStatus("✅ Deploy complete! Refreshing in 5s...");
+            setUpgrading(false);
+            setTimeout(() => window.location.reload(), 5000);
+            return;
+          }
+
+          if (status.status === "FAILURE" || status.status === "TIMEOUT" || status.status === "CANCELLED") {
+            setBuildStatus(`❌ Build ${status.status.toLowerCase()}${status.failedStep ? ` at: ${status.failedStep}` : ""}`);
+            setUpgrading(false);
+            return;
+          }
+
+          // Still running — show progress
+          const stepLabel = status.activeStep || `${status.doneSteps}/${status.totalSteps} steps`;
+          setBuildStatus(`Building... ${status.progress}% — ${stepLabel}`);
+
+          // Continue polling
+          setTimeout(pollBuild, 5000);
+        } catch {
+          setBuildStatus("Error polling build status. Build may still be running.");
           setUpgrading(false);
-        } else {
-          const min = Math.floor(remaining / 60);
-          const sec = remaining % 60;
-          setBuildStatus(`Building & deploying... ~${min}:${sec.toString().padStart(2, "0")} remaining`);
         }
-      }, 1000);
+      };
+
+      // Start polling after a short delay
+      setTimeout(pollBuild, 3000);
+    } else if (result?.success) {
+      setBuildStatus("Build submitted. Dashboard will update automatically.");
+      setTimeout(() => {
+        setBuildStatus(null);
+        setUpgrading(false);
+      }, 10000);
     } else {
       dialog.toast({ message: result?.error || "Upgrade failed", variant: "error" });
       setBuildStatus(null);
