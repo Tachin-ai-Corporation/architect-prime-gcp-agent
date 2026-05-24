@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.23.9.0`
+> - **Current version:** `v2026.05.24.17.0`
 
 ---
 
@@ -23,6 +23,8 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     │
     ├─ POST /api/primes/{id}/deploy           → Creates Prime GCE VM
     ├─ POST /api/primes/{id}/messages          → Writes chat to Firestore
+    ├─ GET  /api/primes/{id}/fleet/{agent}/messages → Fleet agent dashboard chat
+    ├─ POST /api/primes/{id}/fleet/{agent}/messages → Send message to fleet agent via Firestore
     ├─ POST /api/primes/{id}/fleet/hire        → Triggers fleet-deploy on Prime VM
     ├─ POST /api/primes/{id}/fleet/fire        → Triggers fleet-teardown on Prime VM
     ├─ POST /api/primes/{id}/fleet/update-status → Fleet VM self-reports completion
@@ -41,6 +43,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     ├── primes/{id}                   → Prime instance metadata
     ├── primes/{id}/messages/{msg}    → Dashboard ↔ Prime chat messages
     ├── primes/{id}/fleet/{agent}     → Fleet agent status, deploy steps, health
+    ├── primes/{id}/fleet/{agent}/messages/{msg} → Dashboard ↔ Fleet agent chat messages
     ├── primes/{id}/tasks/{taskId}    → Prime task lifecycle log
     ├── primes/{id}/fleet/{agent}/tasks/{taskId} → Fleet task lifecycle log
     ├── config/settings               → Agent defaults (email domain)
@@ -55,6 +58,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     │   └── Polls channels, deduplicates, rate-limits, fire-and-forget gateway POST
     │       ├── Zero LLM calls — 100% deterministic
     │       ├── Firestore poll (3s) or GChat poll (5s) via DWD
+    │       ├── Dashboard Firestore poll (secondary, fleet only) — polls primes/{id}/fleet/{agent}/messages
     │       └── Cooldown + dedup window (configurable)
     │
     ├── agent-brain (systemd) — Brain state machine orchestrator
@@ -126,8 +130,8 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     │   ├── timeoutSeconds: 600 (safety ceiling; real timeout is heartbeat-based)
     │   └── ADC fix: model-auth-env patched for GCE metadata fallback
     │
-    ├── agent-ears (systemd) — GChat polling via DWD (deterministic, no ACK)
-    ├── agent-mouth (systemd) — output classification + GChat delivery + task log
+    ├── agent-ears (systemd) — GChat polling via DWD + dashboard Firestore poll (deterministic, no ACK)
+    ├── agent-mouth (systemd) — output classification + GChat delivery + Firestore delivery + task log
     │
     └── CoreKit (manifest-installed from same repo)
 ```
@@ -183,11 +187,13 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 
 **Agent Ears — Deterministic Input Processing (`agent-ears.mjs`):**
 1. Polls input channel every N seconds (Firestore for Prime, GChat API for Fleet via DWD)
-2. Deduplicates (60s sliding window, same-text collapse)
-3. **GChat context window** — when an @mention is detected, ears includes the prior N messages from the space as context (configurable, default 5). Messages are formatted as `[Chat messages since your last reply - for context]` preamble with sender names, followed by `[Current message - respond to this]`.
-4. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info)
-5. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
-6. Gateway call completes asynchronously — ears is already free to poll the next message
+2. **Dashboard Firestore poll** (fleet only) — secondary poll of `primes/{id}/fleet/{agent}/messages` for admin messages sent from the dashboard. Merged with GChat messages.
+3. Deduplicates (60s sliding window, same-text collapse)
+4. **GChat context window** — when an @mention is detected, ears includes the prior N messages from the space as context (configurable, default 5). Messages are formatted as `[Chat messages since your last reply - for context]` preamble with sender names, followed by `[Current message - respond to this]`.
+5. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info, source: dashboard|gchat)
+6. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
+7. Gateway call completes asynchronously — ears is already free to poll the next message
+8. Dashboard messages are marked `processed: true` in Firestore after consumption
 
 **Agent Mouth — JSONL-Native Output Processing (`agent-mouth.mjs` v2):**
 1. Tails the OpenClaw JSONL session transcript (`~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl`)
@@ -196,7 +202,7 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 4. **Status updates**: fires LLM-voiced ack at 5s, progress update at 120s (configurable via contracts). Deterministic fallback text if LLM fails.
 5. **Final response detection**: candidate is the last assistant text block not followed by a toolCall/toolResult within one poll cycle (2s)
 6. **LLM classify**: Gemini Flash in JSON mode — `{"action": "deliver"|"suppress", "text": "..."}`
-7. **Delivery**: writes to Firestore (dashboard) or sends via GChat API (fleet)
+7. **Delivery**: writes to Firestore (dashboard) or sends via GChat API (fleet). Fleet mouth also writes to `primes/{id}/fleet/{agent}/messages` for dashboard visibility.
 8. **Safety**: unknown classification → deliver raw (never drops user messages). 10-minute timeout delivers warning.
 
 **Prompt architecture (external files):**
@@ -910,6 +916,18 @@ architect-prime/
 3. **Agent cards** — Glassmorphic cards with gradient sheens, staggered spring-eased entry animation, status-coded glow (teal/amber/red), hover lift + scale. Bottom icon row (💬📋🧠🔧⚙) for direct agent sub-page navigation.
 4. **SVG connection layer** — Dynamically positioned via `useLayoutEffect` + `ResizeObserver`. Dual pulse dots per line at randomized speeds for organic feel.
 5. **Fleet upgrade fix** — Fixed `commandId` → `id` field mismatch in agent settings page that caused all fleet CoreKit upgrades to show false "Failed" toast.
+
+### Completed: v2026.05.24.17.0 — Dashboard UX Upgrade (Split-Panel Home + Fleet Chat + Work Tree)
+> *Full-width split-panel home, inline fleet agent chat, deploy progress bars, M→C→T work tree hierarchy.*
+
+1. **Split-panel home screen** — Replaced centered max-width graph with full-width split panel. Left column: agent graph. Right column: inline chat panel with draggable divider (30-80% range). Header is fixed, only columns scroll. No scroll-within-scroll.
+2. **Expandable prime chips** — Selected prime chip expands inline to show nav icons (📁 Projects, 🌳 Work, 🧠 Models). No redundant info strip below. Clicking any chip or agent card opens chat.
+3. **Fleet agent dashboard chat** — New dual-channel pipeline: Dashboard writes to `primes/{id}/fleet/{agent}/messages` in Firestore; fleet `agent-ears` polls this collection alongside GChat; fleet `agent-mouth` delivers responses to both GChat AND Firestore for dashboard visibility.
+4. **Deploy progress bars** — Agent cards show real-time deploy progress (percentage, current step label, amber→red gradient for failures) when `status === 'deploying'`.
+5. **Work tree overhaul** — Ported `work-tree-demo.html` spec to live Work page. Hierarchical M→C→T tree with depth indentation, expand/collapse chevrons, status dots with pulse animation, type tags (M/C/T), progress bars on active nodes, amber-bordered waiting callout blocks. Agent strip for filtering. Three tabs (Currently working on, In Queue, Previous Work) with badge counts. Detail modal overlay.
+6. **ChatPanel component** — Reusable inline chat for both Prime and fleet agents. Instant snap-to-bottom on load, near-bottom auto-scroll on new messages. 3s polling.
+7. **Daemon log file permissions** — Start scripts now pre-create `/var/log/agent-*.log` with `node:node` ownership inside the Docker container before launching daemons.
+8. **Nav button fix** — Added `pointer-events: none` to `::before` overlays, `z-index: 2` to nav icons. Removed `overflow: hidden` from prime chips.
 
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*
