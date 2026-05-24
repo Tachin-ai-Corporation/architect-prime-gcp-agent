@@ -1,24 +1,96 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
 import { usePrime } from "@/contexts/PrimeContext";
-import { NavCard } from "@/components/NavCard";
 import { api } from "@/lib/api";
 import type { PrimeInstance, SetupState } from "@/lib/types";
 
+/* ---- SVG connection line data ---- */
+interface ConnectionLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  id: string;
+}
+
 function HomeInner() {
   const dialog = useDialog();
-  const { primes, setup, loading, versionInfo, refreshPrimes } = usePrime();
+  const { primes, setup, sidebarFleet, loading, versionInfo, refreshPrimes } = usePrime();
 
+  /* ---- State ---- */
+  const [selectedPrimeId, setSelectedPrimeId] = useState<string | null>(null);
   const [showDeploy, setShowDeploy] = useState(false);
   const [newPrimeName, setNewPrimeName] = useState("");
   const [newPrimeZone, setNewPrimeZone] = useState("us-central1-a");
   const [deploying, setDeploying] = useState(false);
   const [copied, setCopied] = useState("");
+  const [lines, setLines] = useState<ConnectionLine[]>([]);
+
+  /* ---- Refs for SVG line computation ---- */
+  const containerRef = useRef<HTMLDivElement>(null);
+  const primeChipRef = useRef<HTMLButtonElement>(null);
+  const agentCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  /* ---- Auto-select first prime ---- */
+  useEffect(() => {
+    if (primes.length > 0 && !selectedPrimeId) {
+      setSelectedPrimeId(primes[0].id);
+    }
+  }, [primes, selectedPrimeId]);
+
+  /* ---- Derived data ---- */
+  const selectedPrime = primes.find((p) => p.id === selectedPrimeId);
+  const selectedFleet = selectedPrimeId ? sidebarFleet[selectedPrimeId] || [] : [];
+  const activeFleet = selectedFleet.filter((a) => a.status !== "removed");
+
+  /* ---- Compute SVG connection lines ---- */
+  const computeLines = useCallback(() => {
+    const container = containerRef.current;
+    const primeEl = primeChipRef.current;
+    if (!container || !primeEl || activeFleet.length === 0) {
+      setLines([]);
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const primeRect = primeEl.getBoundingClientRect();
+    const x1 = primeRect.left + primeRect.width / 2 - containerRect.left;
+    const y1 = primeRect.bottom - containerRect.top;
+
+    const newLines: ConnectionLine[] = [];
+    agentCardRefs.current.forEach((el, name) => {
+      const agentRect = el.getBoundingClientRect();
+      const x2 = agentRect.left + agentRect.width / 2 - containerRect.left;
+      const y2 = agentRect.top - containerRect.top;
+      newLines.push({ x1, y1, x2, y2, id: name });
+    });
+
+    setLines(newLines);
+  }, [activeFleet.length]);
+
+  useLayoutEffect(() => {
+    // Small delay to let CSS animations settle
+    const timer = setTimeout(computeLines, 100);
+    return () => clearTimeout(timer);
+  }, [computeLines, selectedPrimeId]);
+
+  /* ---- ResizeObserver for dynamic recomputation ---- */
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(() => {
+      computeLines();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [computeLines]);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -38,7 +110,6 @@ function HomeInner() {
     });
 
     if (result) {
-      // Trigger VM provisioning
       api(`/api/primes/${result.id}/deploy`, { method: "POST" });
       dialog.toast({
         message: `Deploying Prime "${result.name}" in ${newPrimeZone}…`,
@@ -51,6 +122,20 @@ function HomeInner() {
     setShowDeploy(false);
     setDeploying(false);
     setNewPrimeName("");
+  };
+
+  /* ---- Status class helper ---- */
+  const statusClass = (status: string) => {
+    switch (status) {
+      case "online":
+        return styles.statusOnline;
+      case "deploying":
+        return styles.statusDeploying;
+      case "error":
+        return styles.statusError;
+      default:
+        return styles.statusOffline;
+    }
   };
 
   /* ---- Loading ---- */
@@ -80,7 +165,6 @@ function HomeInner() {
           </div>
 
           <div className={styles.steps}>
-            {/* Step 1: Deploy */}
             <div className={`${styles.step} ${styles.active}`}>
               <div className={styles.stepNumber}>1</div>
               <div className={styles.stepContent}>
@@ -124,7 +208,6 @@ function HomeInner() {
               </div>
             </div>
 
-            {/* Step 2: DWD */}
             <div className={styles.step}>
               <div className={styles.stepNumber}>2</div>
               <div className={styles.stepContent}>
@@ -136,7 +219,6 @@ function HomeInner() {
               </div>
             </div>
 
-            {/* Step 3 */}
             <div className={styles.step}>
               <div className={styles.stepNumber}>3</div>
               <div className={styles.stepContent}>
@@ -152,11 +234,33 @@ function HomeInner() {
     );
   }
 
-  /* ---- Home Grid (primes exist) ---- */
+  /* ==================================================
+     Living Agent Graph
+     ================================================== */
+
+  /* Prime sub-page quick nav config */
+  const primeNavItems = [
+    { icon: "💬", label: "Chat", path: "chat" },
+    { icon: "📁", label: "Projects", path: "projects" },
+    { icon: "🌳", label: "Work", path: "work" },
+    { icon: "🧠", label: "Models", path: "models" },
+    { icon: "⚙", label: "Settings", path: "settings" },
+  ];
+
+  /* Agent sub-page quick nav config */
+  const agentNavItems = [
+    { icon: "💬", label: "Chat", path: "chat" },
+    { icon: "📋", label: "Work", path: "work" },
+    { icon: "🧠", label: "Brain", path: "brain" },
+    { icon: "🔧", label: "Skills", path: "skills" },
+    { icon: "⚙", label: "Settings", path: "settings" },
+  ];
+
   return (
     <div className={styles.homeShell} id="home-page">
+      {/* ---- Header ---- */}
       <header className={styles.homeHeader}>
-        <Image src="/architect-prime-logo.png" alt="Architect Prime" width={44} height={44} className={styles.homeLogo} />
+        <Image src="/architect-prime-logo.png" alt="Architect Prime" width={40} height={40} className={styles.homeLogo} />
         <div>
           <h1 className={styles.homeTitle}>Architect Prime</h1>
           <div className={styles.homeSubtitle}>
@@ -164,38 +268,168 @@ function HomeInner() {
             {versionInfo && ` · ${versionInfo.deployedVersion}`}
           </div>
         </div>
+        <button
+          id="deploy-prime-btn"
+          className={styles.deployBtn}
+          onClick={() => setShowDeploy(true)}
+        >
+          + Deploy Prime
+        </button>
       </header>
 
-      <div className={styles.primeGrid} id="prime-grid">
-        {primes.map((p) => (
-          <NavCard
-            key={p.id}
-            id={`prime-card-${p.id}`}
-            icon="●"
-            title={p.name}
-            description={`${p.fleetCount} agent${p.fleetCount !== 1 ? "s" : ""} · ${p.status}`}
-            variant="accent"
-            href={`/p/${p.id}`}
-          />
-        ))}
+      {/* ---- Graph Container ---- */}
+      <div className={styles.graphContainer} ref={containerRef}>
 
-        <NavCard
-          id="deploy-prime-card"
-          icon="+"
-          title="Deploy Prime"
-          description="Launch a new Prime instance"
-          variant="action"
-          onClick={() => setShowDeploy(true)}
-        />
+        {/* ---- Prime Chip Bar ---- */}
+        <div className={styles.primeChipBar} id="prime-chip-bar">
+          {primes.map((p) => (
+            <button
+              key={p.id}
+              id={`prime-chip-${p.id}`}
+              ref={p.id === selectedPrimeId ? primeChipRef : undefined}
+              className={`${styles.primeChip} ${p.id === selectedPrimeId ? styles.primeChipSelected : ""}`}
+              onClick={() => setSelectedPrimeId(p.id)}
+            >
+              <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
+              <span className={styles.chipName}>{p.name}</span>
+              <span className={styles.chipMeta}>
+                {p.fleetCount} agent{p.fleetCount !== 1 ? "s" : ""}
+              </span>
+            </button>
+          ))}
+        </div>
 
-        <NavCard
-          id="settings-card"
-          icon="⚙"
-          title="Dashboard Settings"
-          description="DWD, integrations, system info"
-          variant="default"
-          href="/settings"
-        />
+        {/* ---- SVG Connection Layer ---- */}
+        <svg className={styles.connectionLayer} aria-hidden="true">
+          <defs>
+            <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(31,154,155,0.35)" />
+              <stop offset="100%" stopColor="rgba(31,154,155,0.08)" />
+            </linearGradient>
+          </defs>
+          {lines.map((line) => {
+            const midX = (line.x1 + line.x2) / 2;
+            const midY = (line.y1 + line.y2) / 2;
+            const pathD = `M ${line.x1} ${line.y1} Q ${midX} ${line.y1 + 30} ${line.x2} ${line.y2}`;
+            return (
+              <g key={line.id}>
+                {/* Connection curve */}
+                <path
+                  d={pathD}
+                  stroke="url(#lineGrad)"
+                  strokeWidth="1.5"
+                  fill="none"
+                  opacity="0.7"
+                />
+                {/* Traveling pulse dot */}
+                <circle r="2.5" className={styles.pulseDot}>
+                  <animateMotion
+                    dur={`${2 + Math.random() * 1.5}s`}
+                    repeatCount="indefinite"
+                    path={pathD}
+                  />
+                </circle>
+                {/* Second pulse dot, offset */}
+                <circle r="1.5" className={styles.pulseDot} opacity="0.4">
+                  <animateMotion
+                    dur={`${2.5 + Math.random() * 1.5}s`}
+                    repeatCount="indefinite"
+                    path={pathD}
+                    begin={`${1 + Math.random()}s`}
+                  />
+                </circle>
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* ---- Selected Prime Info + Quick Nav ---- */}
+        {selectedPrime && (
+          <>
+            <div className={styles.primeInfoStrip}>
+              <span className={`${styles.statusDot} ${statusClass(selectedPrime.status)}`} />
+              <Link href={`/p/${selectedPrimeId}`} className={styles.primeInfoName}>
+                {selectedPrime.name}
+              </Link>
+              <span className={styles.primeInfoStatus}>
+                {selectedPrime.status} · {selectedPrime.zone}
+              </span>
+              <div className={styles.primeQuickNav}>
+                {primeNavItems.map((item) => (
+                  <Link
+                    key={item.path}
+                    href={`/p/${selectedPrimeId}/${item.path}`}
+                    className={styles.quickNavIcon}
+                    data-tooltip={item.label}
+                    id={`prime-nav-${item.path}`}
+                  >
+                    {item.icon}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className={styles.graphDivider} />
+          </>
+        )}
+
+        {/* ---- Agent Grid ---- */}
+        {selectedPrime && (
+          <div className={styles.agentGrid} id="agent-grid">
+            {activeFleet.map((agent, i) => (
+              <div
+                key={agent.name}
+                ref={(el) => {
+                  if (el) agentCardRefs.current.set(agent.name, el);
+                  else agentCardRefs.current.delete(agent.name);
+                }}
+                className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""}`}
+                style={{ animationDelay: `${i * 80}ms` }}
+                id={`agent-card-${agent.name}`}
+              >
+                <Link href={`/p/${selectedPrimeId}/a/${agent.name}`} className={styles.agentMain}>
+                  <div className={styles.agentHeader}>
+                    <div className={styles.agentAvatar}>
+                      {agent.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className={styles.agentName}>{agent.name}</div>
+                      <div className={styles.agentMeta}>
+                        <span className={styles.specialtyBadge}>{agent.specialty}</span>
+                        <span className={`${styles.statusDot} ${statusClass(agent.status)}`} />
+                        <span>{agent.status}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+                <div className={styles.agentIconRow}>
+                  {agentNavItems.map((item) => (
+                    <Link
+                      key={item.path}
+                      href={`/p/${selectedPrimeId}/a/${agent.name}/${item.path}`}
+                      className={styles.agentIcon}
+                      data-tooltip={item.label}
+                    >
+                      {item.icon}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {activeFleet.length === 0 && (
+              <div className={styles.emptyFleet}>
+                <div className={styles.emptyFleetIcon}>🚀</div>
+                <div className={styles.emptyFleetText}>No agents deployed yet</div>
+                <Link
+                  href={`/p/${selectedPrimeId}/fleet`}
+                  className={styles.emptyFleetLink}
+                >
+                  Hire your first agent →
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ---- Deploy Modal ---- */}

@@ -1,5 +1,5 @@
 /* ============================================
-   Home Page — page.module.css
+   Home Page — Living Agent Graph
    1health Design System
    ============================================ */
 
@@ -149,51 +149,602 @@
   margin-top: 8px;
 }
 
-/* ---- Home Grid ---- */
+/* ============================================
+   Home Shell — Graph Layout
+   ============================================ */
+
 .homeShell {
   min-height: 100vh;
-  padding: 48px 24px;
+  padding: 40px 24px 64px;
   background: var(--bg-primary);
 }
 
+/* ---- Header ---- */
 .homeHeader {
-  max-width: 960px;
-  margin: 0 auto 32px;
+  max-width: 1080px;
+  margin: 0 auto 28px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
 }
 
 .homeLogo {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   object-fit: contain;
   flex-shrink: 0;
 }
 
 .homeTitle {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   color: #E6EBF0;
   letter-spacing: -0.02em;
 }
 
 .homeSubtitle {
+  font-size: 12px;
+  color: #7A8696;
+  margin-top: 1px;
+}
+
+.deployBtn {
+  margin-left: auto;
+  padding: 8px 18px;
   font-size: 13px;
-  color: #AEB8C4;
-  margin-top: 2px;
+  font-weight: 600;
+  color: var(--care-mint);
+  background: rgba(95, 199, 178, 0.08);
+  border: 1px solid rgba(95, 199, 178, 0.25);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 200ms ease;
+  white-space: nowrap;
 }
 
-.primeGrid {
-  max-width: 960px;
+.deployBtn:hover {
+  background: rgba(95, 199, 178, 0.16);
+  border-color: rgba(95, 199, 178, 0.45);
+  box-shadow: 0 0 16px rgba(95, 199, 178, 0.12);
+  transform: translateY(-1px);
+}
+
+/* ============================================
+   Graph Container
+   ============================================ */
+
+.graphContainer {
+  max-width: 1080px;
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  position: relative;
 }
 
-/* ---- Deploy Modal ---- */
+/* ---- Prime Chip Bar ---- */
+.primeChipBar {
+  display: flex;
+  gap: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(86, 99, 115, 0.25) transparent;
+}
+
+.primeChip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: rgba(49, 59, 71, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(86, 99, 115, 0.2);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.primeChip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% 0%, rgba(31, 154, 155, 0.06) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.primeChip:hover {
+  border-color: rgba(86, 99, 115, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.primeChip:hover::before {
+  opacity: 1;
+}
+
+.primeChipSelected {
+  border-color: rgba(31, 154, 155, 0.45);
+  background: rgba(31, 154, 155, 0.06);
+  box-shadow:
+    0 0 24px rgba(31, 154, 155, 0.1),
+    inset 0 0 20px rgba(31, 154, 155, 0.04);
+}
+
+.primeChipSelected::before {
+  opacity: 1;
+}
+
+.primeChipSelected:hover {
+  border-color: rgba(31, 154, 155, 0.55);
+  box-shadow:
+    0 0 32px rgba(31, 154, 155, 0.15),
+    inset 0 0 20px rgba(31, 154, 155, 0.04);
+}
+
+.chipName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #E6EBF0;
+  letter-spacing: -0.01em;
+}
+
+.chipMeta {
+  font-size: 11px;
+  color: #7A8696;
+  font-weight: 500;
+}
+
+/* ---- Status Dots ---- */
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #7A8696;
+}
+
+.statusOnline {
+  background: var(--care-mint);
+  box-shadow: 0 0 8px rgba(95, 199, 178, 0.5);
+  animation: statusPulse 2.5s ease-in-out infinite;
+}
+
+.statusDeploying {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(214, 168, 58, 0.4);
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+.statusOffline {
+  background: #566373;
+}
+
+.statusError {
+  background: var(--pulse);
+  box-shadow: 0 0 8px rgba(216, 79, 69, 0.4);
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ============================================
+   SVG Connection Layer
+   ============================================ */
+
+.connectionLayer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+.connectionLine {
+  stroke: rgba(31, 154, 155, 0.15);
+  stroke-width: 1.5;
+  fill: none;
+  transition: stroke 300ms ease, stroke-width 300ms ease;
+}
+
+.connectionLineActive {
+  stroke: rgba(31, 154, 155, 0.3);
+  stroke-width: 2;
+}
+
+.pulseDot {
+  fill: rgba(143, 216, 230, 0.6);
+}
+
+/* ============================================
+   Prime Quick Nav
+   ============================================ */
+
+.primeInfoStrip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 12px;
+  animation: fadeIn 300ms ease;
+  position: relative;
+  z-index: 1;
+}
+
+.primeInfoName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #E6EBF0;
+}
+
+.primeInfoStatus {
+  font-size: 11px;
+  color: #7A8696;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.primeQuickNav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.quickNavIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #7A8696;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 200ms ease;
+  position: relative;
+  text-decoration: none;
+}
+
+.quickNavIcon:hover {
+  background: rgba(86, 99, 115, 0.25);
+  color: #E6EBF0;
+  transform: translateY(-1px);
+}
+
+/* Tooltip */
+.quickNavIcon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 4px 8px;
+  background: #394556;
+  border: 1px solid rgba(86, 99, 115, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #E6EBF0;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: all 150ms ease;
+}
+
+.quickNavIcon:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ---- Divider ---- */
+.graphDivider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(31, 154, 155, 0.2) 20%,
+    rgba(31, 154, 155, 0.2) 80%,
+    transparent 100%
+  );
+  margin: 4px 0 20px;
+}
+
+/* ============================================
+   Agent Grid
+   ============================================ */
+
+.agentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  position: relative;
+  z-index: 1;
+  padding-top: 4px;
+}
+
+/* ---- Agent Card ---- */
+.agentCard {
+  background: rgba(49, 59, 71, 0.55);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(86, 99, 115, 0.18);
+  border-radius: 14px;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  transition: all 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeInUp 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  will-change: transform;
+}
+
+/* Subtle gradient sheen */
+.agentCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(180deg, rgba(31, 154, 155, 0.04) 0%, transparent 100%);
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+
+.agentCard:hover {
+  transform: translateY(-4px) scale(1.01);
+  border-color: rgba(31, 154, 155, 0.3);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.25),
+    0 0 24px rgba(31, 154, 155, 0.08);
+}
+
+.agentCard:hover::before {
+  opacity: 1.5;
+}
+
+/* Status-specific card glow */
+.agentCardOnline {
+  animation-name: fadeInUp;
+}
+
+.agentCardOnline::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(95, 199, 178, 0.3), transparent);
+  transition: opacity 300ms ease;
+}
+
+.agentCardOnline:hover::after {
+  opacity: 0;
+}
+
+/* ---- Agent Main (clickable area) ---- */
+.agentMain {
+  display: block;
+  padding: 18px 18px 14px;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.agentHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.agentAvatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(31, 154, 155, 0.2), rgba(36, 107, 143, 0.2));
+  border: 1px solid rgba(31, 154, 155, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--signal-aqua);
+  flex-shrink: 0;
+  transition: all 300ms ease;
+}
+
+.agentCard:hover .agentAvatar {
+  border-color: rgba(31, 154, 155, 0.35);
+  box-shadow: 0 0 12px rgba(31, 154, 155, 0.15);
+}
+
+.agentName {
+  font-size: 15px;
+  font-weight: 600;
+  color: #E6EBF0;
+  letter-spacing: -0.01em;
+  margin-bottom: 3px;
+}
+
+.agentMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #7A8696;
+}
+
+.specialtyBadge {
+  padding: 1px 8px;
+  background: rgba(86, 99, 115, 0.2);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #AEB8C4;
+  text-transform: capitalize;
+}
+
+/* ---- Agent Icon Row ---- */
+.agentIconRow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 6px 6px;
+  border-top: 1px solid rgba(86, 99, 115, 0.1);
+  margin: 0 12px;
+  padding-top: 8px;
+  opacity: 0.5;
+  transition: opacity 300ms ease;
+}
+
+.agentCard:hover .agentIconRow {
+  opacity: 1;
+}
+
+.agentIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #7A8696;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 180ms ease;
+  position: relative;
+}
+
+.agentIcon:hover {
+  background: rgba(86, 99, 115, 0.3);
+  color: #E6EBF0;
+  transform: translateY(-1px);
+}
+
+/* Agent icon tooltips */
+.agentIcon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  padding: 3px 7px;
+  background: #394556;
+  border: 1px solid rgba(86, 99, 115, 0.3);
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #E6EBF0;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: all 130ms ease;
+  z-index: 10;
+}
+
+.agentIcon:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ---- Empty Fleet State ---- */
+.emptyFleet {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 24px;
+  color: #7A8696;
+}
+
+.emptyFleetIcon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.emptyFleetText {
+  font-size: 14px;
+  margin-bottom: 16px;
+  color: #AEB8C4;
+}
+
+.emptyFleetLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--care-mint);
+  background: rgba(95, 199, 178, 0.08);
+  border: 1px solid rgba(95, 199, 178, 0.25);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 200ms ease;
+}
+
+.emptyFleetLink:hover {
+  background: rgba(95, 199, 178, 0.16);
+  border-color: rgba(95, 199, 178, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ============================================
+   Animations
+   ============================================ */
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.012); }
+}
+
+/* Subtle idle floating — each card gets a different delay via inline style */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2.5px); }
+}
+
+/* Pulse glow for selected prime chip */
+@keyframes chipGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(31, 154, 155, 0.08), inset 0 0 20px rgba(31, 154, 155, 0.03); }
+  50% { box-shadow: 0 0 28px rgba(31, 154, 155, 0.14), inset 0 0 20px rgba(31, 154, 155, 0.05); }
+}
+
+.primeChipSelected {
+  animation: chipGlow 3s ease-in-out infinite;
+}
+
+/* ============================================
+   Deploy Modal
+   ============================================ */
+
 .modalOverlay {
   position: fixed;
   inset: 0;
@@ -244,20 +795,26 @@
   margin-top: 24px;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(12px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ---- Responsive ---- */
+/* ============================================
+   Responsive
+   ============================================ */
+
 @media (max-width: 880px) {
-  .primeGrid {
+  .agentGrid {
     grid-template-columns: 1fr;
+  }
+
+  .connectionLayer {
+    display: none;
+  }
+
+  .primeChipBar {
+    flex-wrap: wrap;
   }
 
   .onboardingCard {
@@ -266,5 +823,27 @@
 
   .homeHeader {
     padding: 0 8px;
+  }
+
+  .primeInfoStrip {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .primeQuickNav {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .homeShell {
+    padding: 24px 16px 48px;
+  }
+
+  .deployBtn {
+    padding: 6px 12px;
+    font-size: 12px;
   }
 }
