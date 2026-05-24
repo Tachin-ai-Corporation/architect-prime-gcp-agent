@@ -394,7 +394,7 @@ function HomeInner() {
                         {navItems.map((item) => (
                           <Link
                             key={item.path}
-                            href={`/p/${p.id}/${item.path}`}
+                            href={`/${item.path}?prime=${p.id}`}
                             className={styles.chipNavIcon}
                             data-tooltip={item.label}
                             id={`prime-nav-${item.path}`}
@@ -505,7 +505,7 @@ function HomeInner() {
                         {navItems.map((item) => (
                           <Link
                             key={item.path}
-                            href={`/p/${selectedPrimeId}/a/${agent.name}/${item.path}`}
+                            href={`/${item.path}?prime=${selectedPrimeId}&agent=${agent.name}`}
                             className={styles.agentIcon}
                             data-tooltip={item.label}
                             onClick={(e) => e.stopPropagation()}

@@ -106,7 +106,7 @@ export default function PrimeHub() {
             title="Brain"
             description="LLM model assignments"
             variant="accent"
-            href={`/p/${id}/brain`}
+            href={`/brain?prime=${id}`}
           />
           <NavCard
             id="hub-fleet"
@@ -123,7 +123,7 @@ export default function PrimeHub() {
             title="Work"
             description="Missions, tasks, and envelopes"
             variant="accent"
-            href={`/p/${id}/work`}
+            href={`/work?prime=${id}`}
             badge={metrics.needsInput > 0 ? String(metrics.needsInput) : undefined}
             badgeVariant={metrics.needsInput > 0 ? "warning" : undefined}
           />
@@ -133,7 +133,7 @@ export default function PrimeHub() {
             title="Skills"
             description="Installed tools and skills"
             variant="default"
-            href={`/p/${id}/skills`}
+            href={`/skills?prime=${id}`}
           />
           <NavCard
             id="hub-settings"

@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
+import { Suspense, useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import styles from "./page.module.css";
 import { usePrime } from "@/contexts/PrimeContext";
 import { useWorkEnvelopes } from "@/components/work/useWorkEnvelopes";
@@ -14,19 +13,42 @@ type TabId = "current" | "queue" | "previous";
 
 const PAGE_SIZE = 10;
 
-export default function WorkPage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const { primes, sidebarFleet } = usePrime();
-  const prime = primes.find((p) => p.id === id);
-  const fleet = sidebarFleet[id] || [];
+export default function WorkPageWrapper() {
+  return (
+    <Suspense fallback={<div style={{ padding: 48, textAlign: "center", color: "#AEB8C4" }}>Loading…</div>}>
+      <WorkPage />
+    </Suspense>
+  );
+}
 
-  /* ---- Agent filter ---- */
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+function WorkPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { primes, sidebarFleet } = usePrime();
+
+  /* ---- Prime selection from URL param or first available ---- */
+  const paramPrime = searchParams.get("prime");
+  const paramAgent = searchParams.get("agent");
+
+  const selectedPrimeId = paramPrime && primes.find((p) => p.id === paramPrime)
+    ? paramPrime
+    : primes[0]?.id || null;
+
+  const fleet = selectedPrimeId ? sidebarFleet[selectedPrimeId] || [] : [];
+
+  /* ---- Agent filter — from URL param or local state ---- */
+  const [localAgent, setLocalAgent] = useState<string | null>(paramAgent || null);
+
+  // Sync URL param on mount / change
+  useEffect(() => {
+    if (paramAgent) setLocalAgent(paramAgent);
+  }, [paramAgent]);
+
+  const selectedAgent = localAgent;
 
   /* ---- Data hook ---- */
   const { current, queue, previous, allEnvelopes, loading } = useWorkEnvelopes(
-    id,
+    selectedPrimeId,
     selectedAgent
   );
 
@@ -48,6 +70,18 @@ export default function WorkPage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  /* ---- Update URL params helper ---- */
+  const updateParams = useCallback(
+    (prime: string | null, agent: string | null) => {
+      const params = new URLSearchParams();
+      if (prime) params.set("prime", prime);
+      if (agent) params.set("agent", agent);
+      const qs = params.toString();
+      router.replace(`/work${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [router]
+  );
 
   /* ---- Computed ---- */
   const needsInputCount = useMemo(
@@ -87,11 +121,13 @@ export default function WorkPage() {
   /* ---- Handlers ---- */
   const handleSelectAgent = useCallback(
     (name: string) => {
-      setSelectedAgent((prev) => (prev === name ? null : name));
+      const next = localAgent === name ? null : name;
+      setLocalAgent(next);
       setActiveTab("current");
       setPrevPage(0);
+      updateParams(selectedPrimeId, next);
     },
-    []
+    [localAgent, selectedPrimeId, updateParams]
   );
 
   const handleSelectTab = useCallback((tab: TabId) => {
@@ -110,15 +146,16 @@ export default function WorkPage() {
   const handleSwitchPrime = useCallback(
     (primeId: string) => {
       setPrimeDropdownOpen(false);
-      if (primeId !== id) {
-        router.push(`/p/${primeId}/work`);
-      }
+      setLocalAgent(null);
+      setActiveTab("current");
+      setPrevPage(0);
+      updateParams(primeId, null);
     },
-    [id, router]
+    [updateParams]
   );
 
   /* ---- Loading state ---- */
-  if (loading) {
+  if (loading && !allEnvelopes.length) {
     return (
       <div className={styles.shell}>
         <div className={styles.loading}>
@@ -128,13 +165,10 @@ export default function WorkPage() {
     );
   }
 
+  const prime = primes.find((p) => p.id === selectedPrimeId);
+
   return (
     <div className={styles.shell}>
-      {/* ---- Back link ---- */}
-      <Link href={`/p/${id}`} className={styles.backLink}>
-        ← Back to Hub
-      </Link>
-
       {/* ---- Page Header ---- */}
       <div className={styles.pgHeader}>
         <h1 className={styles.pgTitle}>Work</h1>
@@ -145,13 +179,13 @@ export default function WorkPage() {
         )}
 
         {/* Prime selector */}
-        {primes.length > 1 && (
+        {primes.length > 0 && (
           <div className={styles.primeSelector} ref={dropdownRef}>
             <button
               className={styles.primeSelectorBtn}
               onClick={() => setPrimeDropdownOpen((v) => !v)}
             >
-              {prime?.name || id}
+              {prime?.name || selectedPrimeId || "Select Prime"}
               <span
                 className={`${styles.primeSelectorChev} ${primeDropdownOpen ? styles.primeSelectorChevOpen : ""}`}
               >
@@ -163,7 +197,7 @@ export default function WorkPage() {
                 {primes.map((p) => (
                   <button
                     key={p.id}
-                    className={`${styles.primeSelectorItem} ${p.id === id ? styles.primeSelectorItemActive : ""}`}
+                    className={`${styles.primeSelectorItem} ${p.id === selectedPrimeId ? styles.primeSelectorItemActive : ""}`}
                     onClick={() => handleSwitchPrime(p.id)}
                   >
                     {p.name}
@@ -320,12 +354,14 @@ export default function WorkPage() {
       </div>
 
       {/* ---- Detail Modal ---- */}
-      <WorkDetail
-        envelope={selectedEnvelope}
-        allEnvelopes={allEnvelopes}
-        onClose={handleCloseDetail}
-        primeId={id}
-      />
+      {selectedPrimeId && (
+        <WorkDetail
+          envelope={selectedEnvelope}
+          allEnvelopes={allEnvelopes}
+          onClose={handleCloseDetail}
+          primeId={selectedPrimeId}
+        />
+      )}
     </div>
   );
 }

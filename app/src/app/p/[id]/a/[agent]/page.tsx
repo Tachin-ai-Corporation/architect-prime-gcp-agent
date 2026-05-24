@@ -127,7 +127,7 @@ export default function AgentHub() {
             title="Work"
             description="Task timeline and progress"
             variant="accent"
-            href={`/p/${id}/a/${agent}/work`}
+            href={`/work?prime=${id}&agent=${agent}`}
           />
           <NavCard
             id="agent-brain"
@@ -135,7 +135,7 @@ export default function AgentHub() {
             title="Brain"
             description="LLM model assignments"
             variant="accent"
-            href={`/p/${id}/a/${agent}/brain`}
+            href={`/brain?prime=${id}&agent=${agent}`}
           />
           <NavCard
             id="agent-skills"
@@ -143,7 +143,7 @@ export default function AgentHub() {
             title="Skills"
             description="Installed skill kits"
             variant="default"
-            href={`/p/${id}/a/${agent}/skills`}
+            href={`/skills?prime=${id}&agent=${agent}`}
           />
           <NavCard
             id="agent-settings"
