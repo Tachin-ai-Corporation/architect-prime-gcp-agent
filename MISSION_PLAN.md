@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.20.48`
+> - **Current version:** `v2026.05.24.21.32`
 
 ---
 
@@ -984,6 +984,22 @@ architect-prime/
 4. **No hover underlines** — Removed all `text-decoration: underline` on hover globally (fixed duplicate `a` rule in globals.css, updated md-link).
 5. **Regional Cloud Build API** — Build submission and status polling switched from global to regional endpoint (`locations/{region}/builds`). Global endpoint only returned overall status; regional provides real-time step-level timing and progress.
 6. **Build status UX** — Distinguished QUEUED ("waiting for Cloud Build to start") from WORKING (shows active step + elapsed time).
+
+### Completed: v2026.05.24.20.48 — Top-Level Route Consolidation
+> *Work/Brain/Skills promoted to top-level routes with query parameters, 12 old nested routes deleted.*
+
+1. **Top-Level Promotion** — Work, Brain, and Skills pages promoted from nested `/p/[id]/...` and `/p/[id]/a/[agent]/...` structures to global `/work`, `/brain`, and `/skills` routes.
+2. **Dynamic URL Params** — Promoted pages use unified `?prime={id}` and optionally `&agent={name}` query parameters to load context dynamically, allowing direct links.
+3. **Clean-Up** — Deleted 12 redundant nested route directories, reducing duplicate page logic and styling code.
+4. **Component Alignment** — Updated living agent graph and page navigation to direct users to these clean global routes.
+
+### Completed: v2026.05.24.21.32 — Deployment, Scroll & Build Fixes
+> *require('os') in ESM chat pickup fix, Brain page ModelInfo object crash fix, Work/Brain/Skills/Settings page vertical scrolling enabling, real-time Cloud Build step progress estimation.*
+
+1. **require('os') ESM Patcher** — Fixed `require('os')` usage inside `agent-ears.mjs` and `agent-mouth.mjs` which was throwing "require is not defined" in Node v24 ESM context. Replaced with clean `import { hostname as osHostname } from 'os'` ESM import. This resolves the silent bug where `AGENT_HOSTNAME` resolved to `""`, causing the fleet dashboard chat pickup poll to permanently short-circuit.
+2. **Brain Page Crash Fix** — Fixed a crash on the Brain page caused by the `/api/primes/[id]/models` endpoint returning structured `ModelInfo` objects rather than plain strings. Corrected string operations to read the object attributes safely.
+3. **Enable Vertical Scroll** — Re-enabled vertical scrolling for the Work, Brain, Skills, and Settings (Models) pages. Modified the global Shell layout by setting `overflow-y: auto` on content containers and removing obsolete viewport-locked `min-height: 100vh` overrides from individual page components.
+4. **Real-Time Step Progress Heuristic** — Hardened Cloud Build upgrade tracking by adding an elapsed-time heuristic in the status API. Since standard Cloud Build API does not report per-step sub-statuses in real time, the API now estimates step progress based on historical/typical step durations, ensuring smooth visual progress transitions.
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*

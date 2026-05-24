@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.24.20.48`
+> **Current version:** `v2026.05.24.21.32`
 
 ---
 
@@ -383,6 +383,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.24.19.09** | Dashboard UX Overhaul — Unified Prime/Fleet navigation (Work/Brain/Skills), Prime Brain page (6-slot LLM grid with model picker), model discovery moved to Settings→Models tab, +Hire card with dynamic specialty picker (agent-types API), floating glassmorphic chat overlay (slide-in animation, resize handle, X close), Home breadcrumb restoration, Prime Hub nav updated (Brain/Skills replace Projects/Models). |
 | **v2026.05.24.19.51** | Dashboard UX Polish + Cloud Build Fix — Header version below title, specialty badge, text nav labels, hover underline removal, regional Cloud Build API, build status UX |
 | **v2026.05.24.20.48** | Top-Level Route Consolidation — Work/Brain/Skills promoted to `/work`, `/brain`, `/skills` with `?prime=X&agent=Y` URL params. Built-in prime selector + agent strip. 12 old nested routes deleted. |
+| **v2026.05.24.21.32** | Deployment & Scroll Fixes — Fixed `require('os')` ESM crash on Node v24 (silently broke fleet agent dashboard chat pickup), fixed Brain page crash due to ModelInfo object/string conversion, enabled vertical scrolling on Work/Brain/Skills/Settings pages (fixed viewport height shell constraints), real-time Cloud Build step-level progress estimation with elapsed time heuristics. |
 
 ---
 
