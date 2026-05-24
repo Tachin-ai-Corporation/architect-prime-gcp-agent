@@ -14,9 +14,11 @@ interface ChatPanelProps {
   entityName: string;
   /** Entity status */
   entityStatus?: string;
+  /** Agent specialty type (e.g. data, pm, devops) */
+  specialty?: string;
 }
 
-export function ChatPanel({ primeId, agentName, entityName, entityStatus }: ChatPanelProps) {
+export function ChatPanel({ primeId, agentName, entityName, entityStatus, specialty }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -111,7 +113,12 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus }: Chat
           {agentName ? agentName.charAt(0).toUpperCase() : "P"}
         </div>
         <div className={styles.chatHeaderInfo}>
-          <span className={styles.chatHeaderName}>{entityName}</span>
+          <div className={styles.chatHeaderNameRow}>
+            <span className={styles.chatHeaderName}>{entityName}</span>
+            {specialty && (
+              <span className={styles.chatHeaderBadge}>{specialty}</span>
+            )}
+          </div>
           {entityStatus && (
             <span className={styles.chatHeaderStatus}>
               <span className={`${styles.statusDot} ${statusClass}`} />
@@ -119,9 +126,6 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus }: Chat
             </span>
           )}
         </div>
-        {agentName && (
-          <span className={styles.chatHeaderBadge}>Fleet Agent</span>
-        )}
       </div>
 
       {/* ---- Messages ---- */}

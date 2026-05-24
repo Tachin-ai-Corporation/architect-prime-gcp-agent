@@ -50,6 +50,13 @@
   object-fit: contain;
 }
 
+.logoStack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  line-height: 1;
+}
+
 .logoTitle {
   font-size: 14px;
   font-weight: 700;
@@ -74,6 +81,7 @@
 
 .homeCrumb:hover {
   color: var(--signal-aqua);
+  text-decoration: none;
 }
 
 .topBarRight {
@@ -105,6 +113,7 @@
 .iconBtn:hover {
   background: rgba(86, 99, 115, 0.2);
   color: #E6EBF0; /* Cloud */
+  text-decoration: none;
 }
 
 /* ---- Bell badge ---- */
@@ -135,12 +144,20 @@
 
 .versionTag {
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   color: #566373; /* Slate */
-  padding: 0 8px;
   white-space: nowrap;
   user-select: none;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 180ms ease;
+  margin-top: 1px;
+}
+
+.versionTag:hover {
+  color: var(--signal-aqua);
+  text-decoration: none;
 }
 
 .versionStable {

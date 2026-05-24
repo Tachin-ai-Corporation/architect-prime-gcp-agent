@@ -35,6 +35,7 @@ interface ChatTarget {
   agentName?: string;
   entityName: string;
   entityStatus: string;
+  specialty?: string;
 }
 
 function HomeInner() {
@@ -163,6 +164,7 @@ function HomeInner() {
       agentName: agent.name,
       entityName: agent.name,
       entityStatus: agent.status,
+      specialty: agent.specialty,
     });
   }, [selectedPrimeId]);
 
@@ -354,9 +356,9 @@ function HomeInner() {
 
   /* Shared sub-page quick nav — same icons for Prime and Fleet */
   const navItems = [
-    { icon: "🌳", label: "Work", path: "work" },
-    { icon: "🧠", label: "Brain", path: "brain" },
-    { icon: "🔧", label: "Skills", path: "skills" },
+    { label: "Work", path: "work" },
+    { label: "Brain", path: "brain" },
+    { label: "Skills", path: "skills" },
   ];
 
   return (
@@ -398,7 +400,7 @@ function HomeInner() {
                             id={`prime-nav-${item.path}`}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {item.icon}
+                            {item.label}
                           </Link>
                         ))}
                       </span>
@@ -508,7 +510,7 @@ function HomeInner() {
                             data-tooltip={item.label}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {item.icon}
+                            {item.label}
                           </Link>
                         ))}
                       </div>
@@ -558,6 +560,7 @@ function HomeInner() {
             agentName={chatTarget.type === "agent" ? chatTarget.agentName : undefined}
             entityName={chatTarget.entityName}
             entityStatus={chatTarget.entityStatus}
+            specialty={chatTarget.specialty}
           />
         </div>
       )}

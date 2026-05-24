@@ -37,19 +37,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/" className={styles.logoLink} id="shell-home-link">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/architect-prime-logo.png" alt="Architect Prime" width={28} height={28} className={styles.logoImg} />
-            <span className={styles.logoTitle}>Architect Prime</span>
-          </Link>
-          {versionInfo && (
-            <span className={styles.versionTag} id="shell-version">
-              {versionInfo.deployedVersion}
-              <span className={versionInfo.deployedStable ? styles.versionStable : styles.versionUnstable}>
-                {versionInfo.deployedStable ? "STABLE" : "DEV"}
-              </span>
-              {versionInfo.updateAvailable && (
-                <span className={styles.versionUpdate} title="Update available">●</span>
+            <div className={styles.logoStack}>
+              <span className={styles.logoTitle}>Architect Prime</span>
+              {versionInfo && (
+                <Link href="/settings?tab=system" className={styles.versionTag} id="shell-version">
+                  {versionInfo.deployedVersion}
+                  <span className={versionInfo.deployedStable ? styles.versionStable : styles.versionUnstable}>
+                    {versionInfo.deployedStable ? "STABLE" : "DEV"}
+                  </span>
+                  {versionInfo.updateAvailable && (
+                    <span className={styles.versionUpdate} title="Update available">●</span>
+                  )}
+                </Link>
               )}
-            </span>
-          )}
+            </div>
+          </Link>
           {!isHome && (
             <>
               <span className={styles.breadcrumbSep}>›</span>

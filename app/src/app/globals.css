@@ -151,13 +151,7 @@ code, pre, .mono {
   font-family: 'JetBrains Mono', monospace;
 }
 
-a {
-  color: var(--text-link);
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
-}
+/* Links inside markdown content use signal-aqua, no underline */
 
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar {
@@ -811,7 +805,7 @@ a:hover {
 }
 .md-link:hover {
   color: var(--signal-aqua);
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .md-inline-code {

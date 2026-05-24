@@ -436,13 +436,14 @@
 }
 
 .chipNavIcon {
-  width: 28px;
-  height: 28px;
+  padding: 3px 10px;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary, #AEB8C4);
   text-decoration: none;
   transition: all 160ms ease;
   background: rgba(86, 99, 115, 0.1);
@@ -452,7 +453,9 @@
 
 .chipNavIcon:hover {
   background: rgba(143, 216, 230, 0.12);
+  color: var(--signal-aqua, #8FD8E6);
   transform: translateY(-1px);
+  text-decoration: none;
 }
 
 /* ---- Status Dots ---- */
@@ -663,14 +666,15 @@
 }
 
 .agentIcon {
-  width: 28px;
-  height: 28px;
+  padding: 3px 10px;
   border-radius: 6px;
   background: rgba(86, 99, 115, 0.12);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary, #AEB8C4);
   text-decoration: none;
   transition: all 160ms ease;
   position: relative;
@@ -679,7 +683,9 @@
 
 .agentIcon:hover {
   background: rgba(143, 216, 230, 0.12);
+  color: var(--signal-aqua, #8FD8E6);
   transform: translateY(-1px);
+  text-decoration: none;
 }
 
 /* ---- Empty Fleet ---- */
