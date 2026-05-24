@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.24.17.3`
+> **Current version:** `v2026.05.24.17.7`
 
 ---
 
@@ -23,6 +23,7 @@ Prime handles **infrastructure, not orchestration**. Humans assign work to agent
 | **Self-Upgrading** | Dashboard upgrades itself via Cloud Build; CoreKit upgrades cascade to fleet |
 | **Contract Enforcement** | `contracts.json` is the single source of truth — validated at bootstrap and upgrade |
 | **Work Tree Dashboard** | Real-time M→C→T work hierarchy, human-in-the-loop for agent questions |
+| **Agent Introspection** | Query actual installed tools/skills from agent VMs via Firestore bus — real filesystem data |
 | **Autonomous Responsibilities** | Agents self-program recurring duties with cron schedules — R/M/C/T hierarchy |
 | **Self-Hosted** | Everything runs in YOUR GCP project — zero shared infrastructure, no API keys |
 
@@ -377,6 +378,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.23.8.0** | Brain Resilience (Timeout Continue + Contextual Ack) — Motor timeout detection with distinct `timed_out` status, cortex `continue` action for re-dispatching timed-out tasks with check-first context, synthesize guard ignores timeouts. Contextual ack upgrade with recent mission history + project awareness for continuity recognition. DevOps SOUL hardening (task decomposition, Shared Drive flags, end-to-end verification). |
 | **v2026.05.23.9.0** | Living Agent Graph Home Screen — Network topology home page replacing flat NavCard grid. Prime chips as compact selectable nodes, fleet agents as glassmorphic cards connected by animated SVG Bézier curves with traveling pulse dots. Prime/agent quick-nav icon rows for direct sub-page navigation. Staggered spring-eased entry animations, status-coded glow, hover lift effects. Fleet upgrade fix (`commandId` → `id` field mismatch). |
 | **v2026.05.24.17.3** | Dashboard UX Upgrade (Split-Panel Home + Fleet Chat + Work Tree) — Full-width split-panel home with draggable divider, expandable prime chips with inline nav, inline fleet agent chat (dual-channel Firestore pipeline in ears/mouth), deploy progress bars on agent cards, M→C→T work tree hierarchy ported from demo spec (agent strip, 3-tab view, detail modal), ChatPanel component with instant-bottom scroll. Daemon log file permission fix. Shell scroll fix (viewport-locked header, no scroll-within-scroll). |
+| **v2026.05.24.17.7** | Real-Time Visibility + Agent Introspection + Dashboard Polish — Real-time Cloud Build status polling (replaced fake countdown), Firestore bus introspection daemon (`agent-introspect.mjs` reads real VM filesystem), live skills page showing actual installed tools per agent, Shell header redesign (logo+title+version left-aligned with breadcrumb), Deploy Prime as inline chip, prime chip clipping fix. |
 
 ---
 

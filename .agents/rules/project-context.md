@@ -3,11 +3,11 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.24.17.3)
+## Current Architecture (v2026.05.24.17.7)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
-- **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, config
+- **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, introspect queries, config
 - **Compute Engine VMs** — One per Prime + one per fleet agent
 - **OpenClaw** — AI brain on each VM (v2026.4.15, Gemini 3.1 Pro via Vertex AI ADC)
 - **Google Chat** — Agent-to-human communication via DWD
@@ -29,7 +29,8 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ### Fleet VM Architecture
 - Single OpenClaw agent per VM with specialty-specific workspace (identity fragment + shared SOUL_PROTOCOL.md composed at bootstrap) + brain sub-agents
-- Same `agent-ears.mjs` + `agent-mouth.mjs` as Prime (CHANNEL=gchat) — built-in DWD, fire-and-forget input, strict LLM output classification
+- Same `agent-ears.mjs` + `agent-mouth.mjs` + `agent-introspect.mjs` as Prime (CHANNEL=gchat) — built-in DWD, fire-and-forget input, strict LLM output classification
+- Introspect daemon reads real VM filesystem (bin/, skills/, workspace/) and responds to Firestore queries from the dashboard
 - CoreKit tools shared with Prime via manifest system
 
 ### I/O Architecture (Ears + Mouth)
@@ -43,7 +44,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - Mouth also runs independent Brain v3 envelope poll (5s interval) — primary query on `delivery_status=pending`, fallback to 3-status query for migration
 - `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
-- **Dashboard**: Living Agent Graph home screen — interactive network topology with prime chip selector, SVG connection lines + pulse dots, glassmorphic agent cards with hover-reveal quick-nav icon rows. 17-page breadcrumb-navigated hierarchy (no sidebar). Home → Prime Hub → Chat/Fleet/Work/Projects/Models/Settings → Agent Hub → Chat/Work/Brain/Skills/Settings. Real-time M→C→T work tree, envelope detail view, human-in-the-loop response form for needs_input envelopes. Projects as first-class Firestore entity with real-time listeners. 1health design system (Graphite/Charcoal/Teal/Aqua). Skill Kit Library (11 kits).
+- **Dashboard**: Living Agent Graph home screen — interactive network topology with prime chip selector (deploy chip as last inline element), SVG connection lines + pulse dots, glassmorphic agent cards with hover-reveal quick-nav icon rows. Shell header: logo + title + version left-aligned with breadcrumb trail. 17-page breadcrumb-navigated hierarchy (no sidebar). Home → Prime Hub → Chat/Fleet/Work/Projects/Models/Settings → Agent Hub → Chat/Work/Brain/Skills/Settings. Skills page queries real VM filesystem via Firestore bus introspection API. Real-time M→C→T work tree, envelope detail view, human-in-the-loop response form for needs_input envelopes. Real-time Cloud Build status polling for dashboard upgrades. Projects as first-class Firestore entity with real-time listeners. 1health design system (Graphite/Charcoal/Teal/Aqua).
 
 ### Identity Lockdown
 - `.identity-lock` file (chmod 444) written at bootstrap/upgrade with the agent's Workspace email

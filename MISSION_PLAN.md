@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.17.3`
+> - **Current version:** `v2026.05.24.17.7`
 
 ---
 
@@ -34,9 +34,11 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     ├─ GET  /api/setup                         → Project config (DWD, email domain)
     ├─ POST /api/setup                         → Save settings (agent email domain)
     ├─ GET  /api/upgrade                       → Current + latest version info
-    └─ POST /api/upgrade                       → Trigger Cloud Build self-upgrade
+    ├─ POST /api/upgrade                       → Trigger Cloud Build self-upgrade
+    ├─ GET  /api/upgrade/status                → Real-time Cloud Build status polling
     ├─ GET  /api/primes/{id}/work              → Work envelopes (last 7 days)
     ├─ POST /api/primes/{id}/work/{workId}/respond → Human-in-the-loop response
+    └─ POST/GET /api/primes/{id}/fleet/{agent}/introspect → Agent VM introspection (Firestore bus)
          │
          ▼
     Firestore (state store)
@@ -50,6 +52,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     ├── primes/{id}/work/{id}          → Work envelopes (R/C/M/T state machine)
     ├── primes/{id}/work/{id}/history/ → Status transition log
     ├── primes/{id}/intake/{id}        → Brain intake queue
+    ├── primes/{id}/fleet/{agent}/introspect/{queryId} → Introspection query/result bus
     └── config/dwd                    → DWD configuration
          │
          ▼
@@ -110,8 +113,9 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home)
         │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
         ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
         ├── chat/: chat-send, chat-read, dwd-token (identity-locked)
-        ├── daemon/: agent-ears.mjs, agent-mouth.mjs, mouth-classify-prompt.md,
-        │           mouth-status-prompts.md, start-agent-ears, start-agent-mouth,
+        ├── daemon/: agent-ears.mjs, agent-mouth.mjs, agent-introspect.mjs,
+        │           mouth-classify-prompt.md, mouth-status-prompts.md,
+        │           start-agent-ears, start-agent-mouth, start-agent-introspect,
         │           ears-health-check, mouth-health-check
         ├── brain/: agent-ask, assemble-tools, brain-telemetry-write/read,
         │          task-log-write, task-log-read
@@ -930,10 +934,24 @@ architect-prime/
 8. **Nav button fix** — Added `pointer-events: none` to `::before` overlays, `z-index: 2` to nav icons. Removed `overflow: hidden` from prime chips.
 9. **Shell scroll fix** — Shell is `height: 100vh; overflow: hidden`. Content area fills parent with `overflow: hidden`. Pages manage their own column scrolling. Header breadcrumb bar never scrolls. No scroll-within-scroll anywhere.
 
-### Current: Next Phase — TBD
-> *Goal: To be determined based on fleet operational experience and user priorities.*
+### Completed: v2026.05.24.17.7 — Real-Time Visibility + Agent Introspection + Dashboard Polish
+> *Cloud Build polling, real VM skills page, Firestore bus introspection daemon, Shell header redesign.*
+
+1. **Real-time Cloud Build status** — Replaced fake countdown timer with `GET /api/upgrade/status` endpoint that polls Cloud Build API. Dashboard shows live build phase, step number, and elapsed time.
+2. **Agent introspection API (Firestore bus)** — New `agent-introspect.mjs` daemon polls `primes/{id}/fleet/{agent}/introspect/{queryId}` for pending queries, reads local filesystem (`~/.openclaw/bin/`, skills, workspace files), writes results back. Supports 4 query types: `skills`, `status`, `config`, `workspace`. Dashboard proxy at `POST/GET /api/primes/{id}/fleet/{agent}/introspect`.
+3. **Real VM skills page** — Skills page now queries the actual agent VM via introspection API instead of showing hardcoded kit lists. Categorized accordion UI (Brain, Workspace, Memory, Chat, Daemon, System). Shows real tool names, descriptions parsed from file headers, and skill pack counts.
+4. **Shell header redesign** — Architect Prime logo + title + version moved to the fixed Shell header bar, left-aligned with breadcrumb trail. Removed redundant rocket ship operations button. Breadcrumb no longer shows redundant "Home" text.
+5. **Deploy Prime chip** — Deploy button moved from isolated top-right to inline in the prime chip bar as the last chip (dashed border `+` style).
+6. **Prime chip clipping fix** — Added top padding to prime chip bar so hover `translateY(-2px)` animation doesn't clip against the header.
+7. **Manifest + upgrade integration** — `agent-introspect.mjs`, `.service`, and `start-agent-introspect` added to `base.txt` manifest. `upgrade-corekit` now installs, enables, and restarts the introspect daemon alongside ears/mouth/brain.
+
+### Current: Next Phase — Agent Introspection Live + Prime Skill Ops
+> *Goal: Deploy introspection to fleet, validate live data, build skill CRUD operations.*
 
 Candidates:
+- Upgrade fleet agents to get introspect daemon running
+- Validate introspection data against VM reality
+- Build 5 skill operation types for Prime (install, uninstall, enable, disable, configure)
 - RSI Engine (git-ops, code-write/test skills, human gates)
 - Fleet templates and self-evolution
 - Multi-project federation
