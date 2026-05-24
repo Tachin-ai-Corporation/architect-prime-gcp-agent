@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.23.8.0`
+> - **Current version:** `v2026.05.23.9.0`
 
 ---
 
@@ -19,7 +19,7 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 ## Architecture
 
 ```
-Dashboard (Cloud Run — Next.js)
+Dashboard (Cloud Run — Next.js, Living Agent Graph home)
     │
     ├─ POST /api/primes/{id}/deploy           → Creates Prime GCE VM
     ├─ POST /api/primes/{id}/messages          → Writes chat to Firestore
@@ -901,6 +901,15 @@ architect-prime/
 3. **Archival sweep** — `timed_out` envelopes are now archived alongside failed/complete/cancelled envelopes.
 4. **DevOps SOUL hardening** — Task decomposition guidance (never combine read + code + build + verify in one dispatch), Google Drive Shared Drive flag requirements, end-to-end verification rules.
 5. **Cortex SOUL update** — `continue` action documented in both fleet and prime cortex SOUL.md files.
+
+### Completed: v2026.05.23.9.0 — Living Agent Graph Home Screen
+> *Network topology home page with SVG connections, pulse dots, glassmorphic agent cards, and hover-reveal quick-nav.*
+
+1. **Living agent graph** — Replaced flat NavCard grid with interactive network topology. Prime instances as compact selectable chips at top, fleet agents as glassmorphic cards below, connected by animated SVG Bézier curves with traveling pulse dots.
+2. **Prime quick-nav** — Icon row (💬📁🌳🧠⚙) for direct navigation to all prime sub-pages without routing through the hub.
+3. **Agent cards** — Glassmorphic cards with gradient sheens, staggered spring-eased entry animation, status-coded glow (teal/amber/red), hover lift + scale. Bottom icon row (💬📋🧠🔧⚙) for direct agent sub-page navigation.
+4. **SVG connection layer** — Dynamically positioned via `useLayoutEffect` + `ResizeObserver`. Dual pulse dots per line at randomized speeds for organic feel.
+5. **Fleet upgrade fix** — Fixed `commandId` → `id` field mismatch in agent settings page that caused all fleet CoreKit upgrades to show false "Failed" toast.
 
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*
