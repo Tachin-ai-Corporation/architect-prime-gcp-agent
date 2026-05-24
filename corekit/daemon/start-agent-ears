@@ -50,6 +50,10 @@ fi
 docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
 sleep 1
 
+# Pre-create in-container log files so the node user can write to them.
+# The daemon appends to these for structured JSON logging alongside stderr.
+docker exec openclaw-gateway sh -c 'touch /var/log/agent-ears.log /var/log/agent-ears-preprocess.log && chown node:node /var/log/agent-ears.log /var/log/agent-ears-preprocess.log' 2>/dev/null || true
+
 exec stdbuf -oL docker exec \
   -e CHANNEL="${CHANNEL:-gchat}" \
   -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
