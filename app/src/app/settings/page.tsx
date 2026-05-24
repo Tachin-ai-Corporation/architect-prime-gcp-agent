@@ -266,6 +266,8 @@ export default function DashboardSettingsPage() {
             failedStep: string | null;
             doneSteps: number;
             totalSteps: number;
+            steps?: Array<{ label: string; status: string; startTime?: string; endTime?: string }>;
+            startTime?: string | null;
           }>(`/api/upgrade/status?buildId=${result.buildId}`);
 
           if (!status) {
@@ -287,9 +289,19 @@ export default function DashboardSettingsPage() {
             return;
           }
 
-          // Still running — show progress
-          const stepLabel = status.activeStep || `${status.doneSteps}/${status.totalSteps} steps`;
-          setBuildStatus(`Building... ${status.progress}% — ${stepLabel}`);
+          // QUEUED vs WORKING display
+          if (status.status === "QUEUED") {
+            setBuildStatus("⏳ Build queued — waiting for Cloud Build to start...");
+          } else {
+            // WORKING — show step progress
+            const stepLabel = status.activeStep
+              ? `⏳ ${status.activeStep}`
+              : `${status.doneSteps}/${status.totalSteps} steps`;
+            const elapsed = status.startTime
+              ? ` (${Math.round((Date.now() - new Date(status.startTime).getTime()) / 1000)}s)`
+              : "";
+            setBuildStatus(`Building... ${status.progress}% — ${stepLabel}${elapsed}`);
+          }
 
           // Continue polling
           setTimeout(pollBuild, 5000);
