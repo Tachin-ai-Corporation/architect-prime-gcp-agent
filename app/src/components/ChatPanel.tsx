@@ -20,8 +20,9 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus }: Chat
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isInitialLoad = useRef(true);
 
   const apiBase = agentName
     ? `/api/primes/${primeId}/fleet/${agentName}/messages`
@@ -40,6 +41,7 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus }: Chat
 
   useEffect(() => {
     setMessages([]);
+    isInitialLoad.current = true;
     loadMessages();
   }, [loadMessages]);
 
@@ -52,9 +54,19 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus }: Chat
     };
   }, [loadMessages]);
 
-  /* ---- Auto-scroll ---- */
+  /* ---- Auto-scroll: snap to bottom instantly on load, smooth only for new messages ---- */
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesRef.current;
+    if (!el) return;
+    if (isInitialLoad.current) {
+      // First load: snap to bottom instantly (no animation)
+      el.scrollTop = el.scrollHeight;
+      if (messages.length > 0) isInitialLoad.current = false;
+    } else {
+      // Subsequent messages: only auto-scroll if already near bottom
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      if (nearBottom) el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
 
   /* ---- Send ---- */
@@ -122,7 +134,7 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus }: Chat
           </div>
         </div>
       ) : (
-        <div className={styles.chatMessages}>
+        <div className={styles.chatMessages} ref={messagesRef}>
           {messages.map((msg) => {
             const isEntity = msg.sender !== "admin";
             return (
@@ -153,7 +165,6 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus }: Chat
               </div>
             );
           })}
-          <div ref={chatEndRef} />
         </div>
       )}
 
