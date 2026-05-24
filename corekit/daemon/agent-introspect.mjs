@@ -162,16 +162,19 @@ function handleSkills() {
           }
         } catch {}
 
-        // Categorize by filename pattern
-        if (f.startsWith('agent-')) category = 'daemon';
-        else if (f.startsWith('start-agent-')) category = 'daemon';
-        else if (f.startsWith('brain-') || f === 'agent-ask' || f === 'agent-status' || f === 'assemble-tools') category = 'brain';
-        else if (f.startsWith('chat-') || f === 'dwd-token' || f === 'ws-token') category = 'chat';
-        else if (f.startsWith('drive-') || f.startsWith('gmail-') || f.startsWith('calendar-') || f.startsWith('docs-') || f.startsWith('sheets-')) category = 'workspace';
+        // Categorize by agent body part
+        if (f.startsWith('agent-ears') || f.startsWith('start-agent-ears') || f.startsWith('ears-') || f === 'ears-health-check') category = 'ears';
+        else if (f.startsWith('agent-mouth') || f.startsWith('start-agent-mouth') || f.startsWith('mouth-') || f === 'mouth-health-check') category = 'mouth';
+        else if (f === 'agent-brain.mjs' || f === 'start-agent-brain' || f === 'assemble-tools' || f === 'brain-telemetry-write' || f === 'brain-telemetry-read') category = 'brain';
+        else if (f === 'agent-introspect.mjs' || f === 'start-agent-introspect') category = 'brain';
+        else if (f === 'responsibility-manage' || f === 'project-manage' || f === 'task-log-write' || f === 'task-log-read') category = 'motor';
+        else if (f.startsWith('fleet-') || f === 'command-runner' || f === 'discover-models') category = 'motor';
+        else if (f.startsWith('drive-') || f.startsWith('gmail-') || f.startsWith('calendar-') || f.startsWith('docs-') || f.startsWith('sheets-')) category = 'motor';
+        else if (f === 'agent-ask' || f === 'agent-status') category = 'cortex';
         else if (f.startsWith('core-memory-') || f === 'update-deep-truths' || f === 'session-summary') category = 'memory';
-        else if (f.startsWith('task-log-') || f === 'responsibility-manage' || f === 'project-manage') category = 'brain';
-        else if (f.startsWith('upgrade-') || f === 'validate-contracts' || f === 'render-config' || f === 'oc') category = 'system';
-        else if (f.endsWith('.md') || f.endsWith('.json') || f.endsWith('.tmpl')) category = 'config';
+        else if (f.startsWith('chat-') || f === 'dwd-token' || f === 'ws-token') category = 'ears';
+        else if (f.startsWith('upgrade-') || f === 'validate-contracts' || f === 'render-config' || f === 'oc' || f === 'agent-ou-manage') category = 'config';
+        else if (f.endsWith('.md') || f.endsWith('.json') || f.endsWith('.tmpl') || f.endsWith('.sh')) category = 'config';
 
         tools.push({
           name: f,

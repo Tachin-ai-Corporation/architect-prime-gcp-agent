@@ -27,14 +27,13 @@ interface SkillsResult {
 }
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; order: number }> = {
-  brain: { label: "Brain", icon: "🧠", order: 1 },
-  workspace: { label: "Workspace (Google)", icon: "📁", order: 2 },
-  memory: { label: "Memory", icon: "💾", order: 3 },
-  chat: { label: "Chat & Auth", icon: "💬", order: 4 },
-  daemon: { label: "Daemons", icon: "⚙️", order: 5 },
-  system: { label: "System", icon: "🔧", order: 6 },
-  tool: { label: "Tools", icon: "🛠️", order: 7 },
-  config: { label: "Config", icon: "📄", order: 8 },
+  ears: { label: "Ears", icon: "👂", order: 1 },
+  mouth: { label: "Mouth", icon: "🗣️", order: 2 },
+  brain: { label: "Brain", icon: "🧠", order: 3 },
+  cortex: { label: "Cortex", icon: "🔮", order: 4 },
+  motor: { label: "Motor", icon: "⚡", order: 5 },
+  memory: { label: "Memory", icon: "💾", order: 6 },
+  config: { label: "Config", icon: "⚙️", order: 7 },
 };
 
 export default function AgentSkills() {
