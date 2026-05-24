@@ -338,10 +338,15 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 5. **Envelope Context Accumulation:** Rolling 400K token budget is attached to the envelope history. Pruning keeps the first 10% (ambient context) and the last 90% (most recent activity) of the token window.
 6. **Cross-Agent Delegation:** Envelopes can be delegated to other fleet agents (e.g. Prime to PM/Stan). `agent-brain` yields execution and resumes once the child envelope reports success.
 
-**Tool ownership (strict boundaries):**
-- Motor owns ALL 28 Workspace tools: Drive (9), Gmail (5), Calendar (5), Docs (6), Sheets (3)
+**Tool ownership (strict boundaries — fleet agents):**
+- Fleet Motor owns Workspace tools per job type: devops (Drive+Gmail), pm (Drive+Gmail+Docs+Sheets), assistant (Drive+Gmail+Calendar+Docs), etc.
 - temporal-memory has ZERO external API tools — pure memory only
 - cerebellum has read-only verification tools
+
+**Prime tool ownership (infrastructure only):**
+- Prime has ZERO Google Workspace tools — no Drive, Gmail, Calendar, Docs, or Sheets
+- Prime Motor has fleet lifecycle tools: fleet-deploy, fleet-hire, fleet-fire, fleet-status, fleet-upgrade, fleet-verify
+- Prime skills are focused on fleet management and will be progressively exposed through the dashboard for manual triggering
 
 **Dynamic skill awareness:** `assemble-tools` generates `TOOLS.md` from the agent type's skill list (in `agent-registry.json`) and copies it to cortex, prefrontal, and motor workspaces. Prefrontal reads TOOLS.md to know which tools are available before planning.
 
@@ -356,8 +361,8 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 - 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
 - 🔒 `temporal-research` is the ONLY agent capable of web search.
 - 🔒 `temporal-memory` has ZERO external API tools — pure memory only.
-- 🔒 Motor owns ALL Google Workspace tools (read + write).
-- 🔒 Cortex on gemini-3.1-pro-preview. Sub-agents on gemini-2.5-flash.
+- 🔒 Fleet Motor owns Google Workspace tools per job type (never globally). Prime Motor has ZERO Workspace tools.
+- 🔒 Prime is infrastructure only — fleet management, visibility, hire/fire. Never a worker. No Workspace skills.
 - 🔒 SOUL.md above `## Deep Truths` is IMMUTABLE.
 - 🔒 Core Memory writes happen via nightly consolidation, NOT during conversation turns.
 - 🔒 Deep Truths: max 10 items, single-line bullets, immutability enforced above `## Deep Truths` marker.
