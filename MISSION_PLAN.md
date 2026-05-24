@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.17.0`
+> - **Current version:** `v2026.05.24.17.3`
 
 ---
 
@@ -928,6 +928,7 @@ architect-prime/
 6. **ChatPanel component** — Reusable inline chat for both Prime and fleet agents. Instant snap-to-bottom on load, near-bottom auto-scroll on new messages. 3s polling.
 7. **Daemon log file permissions** — Start scripts now pre-create `/var/log/agent-*.log` with `node:node` ownership inside the Docker container before launching daemons.
 8. **Nav button fix** — Added `pointer-events: none` to `::before` overlays, `z-index: 2` to nav icons. Removed `overflow: hidden` from prime chips.
+9. **Shell scroll fix** — Shell is `height: 100vh; overflow: hidden`. Content area fills parent with `overflow: hidden`. Pages manage their own column scrolling. Header breadcrumb bar never scrolls. No scroll-within-scroll anywhere.
 
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*
