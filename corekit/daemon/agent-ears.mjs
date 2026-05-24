@@ -18,6 +18,7 @@
 // ============================================================
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { hostname as osHostname } from 'os';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -28,7 +29,7 @@ const AGENT_ID = process.env.AGENT_ID || 'agent';
 // Agent hostname for Firestore path (fleet-{name} → {name})
 let AGENT_HOSTNAME = '';
 try {
-  AGENT_HOSTNAME = require('os').hostname().replace(/^fleet-/, '');
+  AGENT_HOSTNAME = osHostname().replace(/^fleet-/, '');
 } catch {}
 
 const GATEWAY_URL = 'http://127.0.0.1:18789/v1/chat/completions';

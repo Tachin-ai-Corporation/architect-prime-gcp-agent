@@ -18,6 +18,7 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync,
          statSync, openSync, readSync, closeSync } from 'fs';
 import { dirname } from 'path';
+import { hostname as osHostname } from 'os';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -31,7 +32,7 @@ const CHAT_API = 'https://chat.googleapis.com/v1';
 
 let AGENT_HOSTNAME = '';
 try {
-  AGENT_HOSTNAME = require('os').hostname().replace(/^fleet-/, '');
+  AGENT_HOSTNAME = osHostname().replace(/^fleet-/, '');
 } catch {}
 
 const POLL_INTERVAL = 2000;
