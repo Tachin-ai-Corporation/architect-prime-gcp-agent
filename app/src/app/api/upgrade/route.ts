@@ -1,5 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/require-auth";
+import { commandsCol } from "@/lib/firestore";
+import { FieldValue } from "@google-cloud/firestore";
 
 const GH_OWNER = "Tachin-ai-Corporation";
 const GH_REPO = "architect-prime-gcp-agent";
@@ -127,9 +129,18 @@ export async function GET() {
  * Always deploys from main HEAD. Sets APP_VERSION to the extracted
  * version from the commit message and APP_COMMIT to the sha.
  */
-export async function POST() {
+export async function POST(req: NextRequest) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
+
+  // Read optional primeId from body for ops tracking
+  let primeId: string | undefined;
+  try {
+    const body = await req.json().catch(() => ({}));
+    primeId = body?.primeId;
+  } catch {
+    // non-fatal — body is optional
+  }
 
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
@@ -268,6 +279,20 @@ export async function POST() {
     const buildId = buildData?.metadata?.build?.id || buildData?.name || "unknown";
 
     console.log(`[api/upgrade] Cloud Build submitted: ${buildId} → ${deployVersion} (ref: ${deployRef}, commit: ${deployCommit})`);
+
+    // Write command doc for ops feed tracking
+    if (primeId) {
+      try {
+        await commandsCol(primeId).doc().set({
+          type: "dashboard_deploy",
+          status: "running",
+          args: { version: deployVersion, buildId, commit: deployCommit },
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        console.warn("[api/upgrade] Failed to write command doc:", e);
+      }
+    }
 
     return NextResponse.json({
       success: true,

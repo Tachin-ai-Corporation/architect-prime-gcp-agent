@@ -88,7 +88,8 @@ export type CommandType =
   | "fleet_teardown"
   | "fleet_upgrade"
   | "upgrade_corekit"
-  | "gateway_restart";
+  | "gateway_restart"
+  | "dashboard_deploy";
 
 export interface CommandDoc {
   type: CommandType;
