@@ -33,7 +33,6 @@
 
 /* ---- Shell ---- */
 .shell {
-  min-height: 100vh;
   padding: 32px 24px 48px;
   background: var(--bg-primary);
 }
