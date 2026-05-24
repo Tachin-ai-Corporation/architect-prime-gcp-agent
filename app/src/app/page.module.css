@@ -150,8 +150,8 @@
 }
 
 .homeShell {
-  height: 100vh;
-  padding: 32px 24px 0;
+  height: 100%;
+  padding: 24px 24px 0;
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
