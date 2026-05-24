@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# upgrade-corekit â€” Agent-facing CoreKit upgrade tool
+# upgrade-corekit -- Agent-facing CoreKit upgrade tool
 #
 # Usage:
 #   upgrade-corekit --check           # Check for drift
@@ -257,9 +257,9 @@ case "${1:-}" in
 
     echo "==> Running contract validation..."
       if OC_HOST_ROOT="$OC_HOST_ROOT" "$VALIDATE" --runtime 2>&1; then
-        echo "  âœ… Contracts validated"
+        echo "  ✅ Contracts validated"
       else
-        echo "  âš ï¸  Contract validation found issues"
+        echo "  ⚠️  Contract validation found issues"
       fi
     fi
 
@@ -275,12 +275,12 @@ case "${1:-}" in
       fi
     done
 
-    # Flush filesystem before restart â€” docker bind-mount may cache old file
+    # Flush filesystem before restart -- docker bind-mount may cache old file
     sync
     sleep 1
 
     # Kill ALL orphaned daemon/ears/mouth node processes inside the container.
-    # docker exec only kills the host-side process â€” the node process inside
+    # docker exec only kills the host-side process -- the node process inside
     # the container keeps running after restart.
     docker exec openclaw-gateway pkill -f 'message-daemon.mjs' 2>/dev/null || true
     docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
@@ -332,7 +332,7 @@ case "${1:-}" in
     echo "  State     : ${STATE_FILE}"
     ;;
   *)
-    echo "upgrade-corekit â€” Architect Prime CoreKit upgrade tool"
+    echo "upgrade-corekit -- Architect Prime CoreKit upgrade tool"
     echo ""
     echo "Usage:"
     echo "  upgrade-corekit --check           Check for file drift"
