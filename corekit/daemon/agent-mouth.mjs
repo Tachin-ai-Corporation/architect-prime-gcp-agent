@@ -741,7 +741,7 @@ async function pollBrainV3Envelopes() {
         // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)
         const token2 = await getAccessToken();
         const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
-        await fetch(docPath, {
+        const patchRes = await fetch(docPath, {
           method: 'PATCH',
           headers: { Authorization: `Bearer ${token2}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ fields: {
@@ -750,6 +750,10 @@ async function pollBrainV3Envelopes() {
             delivery_status: { stringValue: 'delivered' },
           } }),
         });
+        if (!patchRes.ok) {
+          const patchBody = await patchRes.text().catch(() => '');
+          throw new Error(`Firestore PATCH failed: ${patchRes.status} ${patchBody.slice(0, 200)}`);
+        }
         delivered++;
       } catch (err) {
         log('Envelope delivery error', { envId, error: err.message });

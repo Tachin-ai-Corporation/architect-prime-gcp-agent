@@ -829,13 +829,15 @@ async function scanActiveEnvelopes() {
 // ---- Recent mission scan (for ack context) ----
 async function scanRecentMissions(limit = 5) {
   try {
+    // Query completed work envelopes (utilizes existing index on owner + status + created_at)
     const recent = await firestoreQuery('work', [
       { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
-      { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'complete' } },
     ]);
-    // Sort by completed_at descending and take most recent completed/archived
+    
+    // Filter to Missions (type: M) in memory to avoid new composite index requirement
     return recent
-      .filter(e => e.completed_at || e.status === 'archived' || e.status === 'blocked')
+      .filter(e => e.type === 'M')
       .sort((a, b) => (b.completed_at || b.updated_at || '').localeCompare(a.completed_at || a.updated_at || ''))
       .slice(0, limit)
       .map(e => ({
@@ -1092,7 +1094,7 @@ async function processIntake(intake) {
   const activeEnvelopes = await scanActiveEnvelopes();
 
   // Phase 7A: Quick ack — immediately tell the user we received it (with mission + recent context)
-  if (intake.source && intake.source !== 'brain' && intake.source !== 'system') {
+  if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent) {
     const recentMissions = await scanRecentMissions(5);
     const ackText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
     const ackId = generateId('ack');
@@ -1120,6 +1122,15 @@ async function processIntake(intake) {
       delivery_status: 'pending',
     });
     log('INFO', `Quick ack sent: ${ackId} — "${ackText.substring(0, 60)}"`);
+
+    // Set in-memory and write to Firestore to prevent multiple ACKs if this intake retries
+    intake.quick_ack_sent = true;
+    await firestoreWrite('intake', intake.id, {
+      ...intake,
+      status: 'claimed',
+      claimed_at: now(),
+      quick_ack_sent: true,
+    });
   }
 
   // Phase 3+: Dual memory recall
