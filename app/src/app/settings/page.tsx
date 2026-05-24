@@ -1,25 +1,82 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import styles from "./page.module.css";
 import { usePrime } from "@/contexts/PrimeContext";
 import { useDialog } from "@/components/DialogProvider";
 import { api } from "@/lib/api";
 
-type SettingsTab = "general" | "integration" | "security" | "system";
+type SettingsTab = "general" | "integration" | "security" | "models" | "system";
 
 const TABS: { id: SettingsTab; label: string; icon: string }[] = [
   { id: "general", label: "General", icon: "⚙️" },
   { id: "integration", label: "Integration", icon: "🔗" },
   { id: "security", label: "Security", icon: "🔐" },
+  { id: "models", label: "Models", icon: "🧠" },
   { id: "system", label: "System", icon: "🖥️" },
 ];
+
+/* ---- Model types & constants ---- */
+interface ModelInfo {
+  id: string;
+  name: string;
+  tier: string;
+  provider: string;
+  status: "available" | "not_found" | "auth_error" | "timeout" | "checking" | "unknown";
+  httpCode?: number;
+  openclawId?: string;
+  description?: string;
+  cost?: string;
+}
+
+interface ModelsResponse {
+  models: ModelInfo[];
+  currentModel: string;
+  projectId: string;
+  scannedAt: string | null;
+  assignments: unknown;
+}
+
+const PROVIDER_COLORS: Record<string, string> = {
+  google: "rgba(66,133,244,0.15)",
+  anthropic: "rgba(217,119,87,0.15)",
+  openai: "rgba(0,166,126,0.15)",
+  meta: "rgba(0,128,255,0.15)",
+  mistral: "rgba(255,128,0,0.15)",
+};
+
+const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: string }> = {
+  available: { icon: "✅", label: "Available", color: "#3BAA78" },
+  not_found: { icon: "❌", label: "Not Available", color: "#D84F45" },
+  auth_error: { icon: "🔒", label: "Needs Enablement", color: "#D6A83A" },
+  timeout: { icon: "⚠️", label: "Timeout", color: "#D6A83A" },
+  checking: { icon: "⏳", label: "Checking...", color: "#2F80A8" },
+  unknown: { icon: "❓", label: "Not Scanned", color: "#566373" },
+};
+
+const PROVIDER_ORDER = ["google", "anthropic", "openai", "meta", "mistral"];
+const PROVIDER_LABELS: Record<string, string> = {
+  google: "Google",
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  meta: "Meta",
+  mistral: "Mistral",
+};
 
 export default function DashboardSettingsPage() {
   const { setup, versionInfo, primes, sidebarFleet } = usePrime();
   const dialog = useDialog();
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+
+  // Read ?tab= query param on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (tab && TABS.find((t) => t.id === tab)) {
+      setActiveTab(tab as SettingsTab);
+    }
+  }, []);
 
   // DWD test state
   const [dwdTestEmail, setDwdTestEmail] = useState("");
@@ -41,6 +98,97 @@ export default function DashboardSettingsPage() {
   // System state
   const [upgrading, setUpgrading] = useState(false);
   const [buildStatus, setBuildStatus] = useState<string | null>(null);
+
+  // Models state
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [scannedAt, setScannedAt] = useState<string | null>(null);
+
+  const firstPrimeId = primes.length > 0 ? primes[0].id : null;
+  const projectId = setup.projectId;
+
+  // Load models
+  const loadModels = useCallback(async () => {
+    if (!firstPrimeId) return;
+    const data = await api<ModelsResponse>(`/api/primes/${firstPrimeId}/models`);
+    if (data) {
+      if (data.models.length > 0) setModels(data.models);
+      setScannedAt(data.scannedAt);
+    }
+  }, [firstPrimeId]);
+
+  // Load models when switching to models tab
+  useEffect(() => {
+    if (activeTab === "models") {
+      loadModels();
+    }
+  }, [activeTab, loadModels]);
+
+  // Group models by provider
+  const groupedModels = useMemo(() => {
+    const groups: Record<string, ModelInfo[]> = {};
+    for (const model of models) {
+      const provider = model.provider || "other";
+      if (!groups[provider]) groups[provider] = [];
+      groups[provider].push(model);
+    }
+    const sorted: { provider: string; label: string; models: ModelInfo[] }[] = [];
+    for (const p of PROVIDER_ORDER) {
+      if (groups[p]) {
+        sorted.push({ provider: p, label: PROVIDER_LABELS[p] || p, models: groups[p] });
+        delete groups[p];
+      }
+    }
+    for (const [p, m] of Object.entries(groups)) {
+      sorted.push({ provider: p, label: p.charAt(0).toUpperCase() + p.slice(1), models: m });
+    }
+    return sorted;
+  }, [models]);
+
+  // Scan models
+  const handleScan = async () => {
+    if (!firstPrimeId) return;
+    setScanning(true);
+    setModels((prev) => prev.map((m) => ({ ...m, status: "checking" as const })));
+
+    const result = await api<{ commandId: string }>(`/api/primes/${firstPrimeId}/models/scan`, {
+      method: "POST",
+    });
+
+    if (!result?.commandId) {
+      setScanning(false);
+      setModels((prev) => prev.map((m) => ({ ...m, status: "unknown" as const })));
+      return;
+    }
+
+    const maxAttempts = 60;
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const cmd = await api<{ status: string; result?: string }>(
+        `/api/primes/${firstPrimeId}/commands/${result.commandId}`
+      );
+      if (cmd?.status === "complete" && cmd.result) {
+        try {
+          const scanResult = JSON.parse(cmd.result);
+          if (scanResult.models) {
+            setModels(scanResult.models);
+            setScannedAt(new Date().toISOString());
+          }
+        } catch {
+          /* ignore parse error */
+        }
+        break;
+      }
+      if (cmd?.status === "failed") break;
+    }
+    await loadModels();
+    setScanning(false);
+  };
+
+  const getTierClass = (tier: string) => {
+    if (tier === "preview") return styles.previewTag;
+    return "";
+  };
 
   // Clipboard
   const [copied, setCopied] = useState("");
@@ -451,6 +599,122 @@ export default function DashboardSettingsPage() {
                   )}
                 </>
               )}
+            </section>
+          )}
+
+          {/* ==== Models Tab ==== */}
+          {activeTab === "models" && (
+            <section className={styles.section} id="settings-models">
+              <div className={styles.sectionHeader}>
+                <span className={styles.sectionTitle}>Available Models</span>
+                <button
+                  id="settings-models-scan-btn"
+                  className="btn btn-sm btn-ghost"
+                  style={{ borderColor: "rgba(86,99,115,0.35)" }}
+                  onClick={handleScan}
+                  disabled={scanning || !firstPrimeId}
+                >
+                  {scanning ? "⏳ Scanning..." : "↻ Scan Models"}
+                </button>
+              </div>
+
+              {!firstPrimeId && (
+                <div className={`${styles.alertBox} ${styles.alertWarning}`} style={{ marginTop: 0 }}>
+                  No Prime instances found. Deploy a Prime to scan for models.
+                </div>
+              )}
+
+              {scannedAt && (
+                <div className={styles.scannedAt}>
+                  Last scanned: {new Date(scannedAt).toLocaleString()}
+                </div>
+              )}
+
+              {/* Empty state */}
+              {models.length === 0 && !scanning && firstPrimeId && (
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyIcon}>🔍</div>
+                  No models discovered yet.<br />
+                  Click <strong>&quot;Scan Models&quot;</strong> to probe Vertex AI for available models.<br />
+                  <span style={{ fontSize: 12 }}>
+                    Models are discovered dynamically via{" "}
+                    <code style={{ fontSize: 11, background: "rgba(32,40,51,0.5)", padding: "1px 4px", borderRadius: 3 }}>
+                      discover-models
+                    </code>{" "}
+                    on the Prime VM.
+                  </span>
+                </div>
+              )}
+
+              {/* Model cards grouped by provider */}
+              {groupedModels.map((group) => (
+                <div key={group.provider} className={styles.providerGroup}>
+                  <div className={styles.providerLabel}>{group.label}</div>
+                  <div className={styles.modelGrid}>
+                    {group.models.map((model) => {
+                      const statusInfo = STATUS_DISPLAY[model.status] || STATUS_DISPLAY.unknown;
+                      const providerColor = PROVIDER_COLORS[model.provider] || "rgba(128,128,128,0.15)";
+
+                      return (
+                        <div
+                          key={model.id}
+                          id={`settings-model-card-${model.id}`}
+                          className={`${styles.modelCard} ${
+                            model.status === "not_found" || model.status === "auth_error"
+                              ? styles.modelCardUnavailable
+                              : ""
+                          }`}
+                        >
+                          <div className={styles.modelCardHeader}>
+                            <div>
+                              <div className={styles.modelName}>
+                                {model.name}
+                                {model.tier && model.tier !== "standard" && (
+                                  <span className={`${styles.tierTag} ${getTierClass(model.tier)}`}>
+                                    {model.tier}
+                                  </span>
+                                )}
+                                <span
+                                  className={styles.providerTag}
+                                  style={{ background: providerColor, color: "#AEB8C4" }}
+                                >
+                                  {model.provider}
+                                </span>
+                                {model.cost && <span className={styles.costTag}>{model.cost}</span>}
+                              </div>
+                              {model.description && (
+                                <div className={styles.modelDesc}>{model.description}</div>
+                              )}
+                            </div>
+                            <div className={styles.modelStatus} style={{ color: statusInfo.color }}>
+                              <span>{statusInfo.icon}</span>
+                              <span>{statusInfo.label}</span>
+                            </div>
+                          </div>
+
+                          {(model.status === "not_found" || model.status === "auth_error") && (
+                            <div className={styles.enableHint}>
+                              <span style={{ fontSize: 12, color: "#566373" }}>
+                                Enable in Google Cloud Console to use.
+                              </span>
+                              <a
+                                href={`https://console.cloud.google.com/vertex-ai/publishers/${
+                                  model.provider === "anthropic" ? "anthropic" : "google"
+                                }/model-garden/${model.id}?project=${projectId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.enableLink}
+                              >
+                                Open in Model Garden →
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </section>
           )}
 

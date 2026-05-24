@@ -101,12 +101,12 @@ export default function PrimeHub() {
             href={`/p/${id}/chat`}
           />
           <NavCard
-            id="hub-projects"
-            icon="📁"
-            title="Projects"
-            description="Repositories and codebases"
+            id="hub-brain"
+            icon="🧠"
+            title="Brain"
+            description="LLM model assignments"
             variant="accent"
-            href={`/p/${id}/projects`}
+            href={`/p/${id}/brain`}
           />
           <NavCard
             id="hub-fleet"
@@ -128,12 +128,12 @@ export default function PrimeHub() {
             badgeVariant={metrics.needsInput > 0 ? "warning" : undefined}
           />
           <NavCard
-            id="hub-models"
-            icon="🧠"
-            title="Models"
-            description="AI model configuration"
+            id="hub-skills"
+            icon="🔧"
+            title="Skills"
+            description="Installed tools and skills"
             variant="default"
-            href={`/p/${id}/models`}
+            href={`/p/${id}/skills`}
           />
           <NavCard
             id="hub-settings"
