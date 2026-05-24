@@ -188,25 +188,32 @@
   margin-top: 1px;
 }
 
-.deployBtn {
-  margin-left: auto;
-  padding: 8px 18px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--care-mint);
-  background: rgba(95, 199, 178, 0.08);
-  border: 1px solid rgba(95, 199, 178, 0.25);
-  border-radius: 8px;
+.deployChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: rgba(95, 199, 178, 0.06);
+  backdrop-filter: blur(12px);
+  border: 1px dashed rgba(95, 199, 178, 0.3);
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 200ms ease;
-  white-space: nowrap;
+  transition: all 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
 }
 
-.deployBtn:hover {
-  background: rgba(95, 199, 178, 0.16);
-  border-color: rgba(95, 199, 178, 0.45);
-  box-shadow: 0 0 16px rgba(95, 199, 178, 0.12);
-  transform: translateY(-1px);
+.deployChip:hover {
+  border-color: rgba(95, 199, 178, 0.5);
+  background: rgba(95, 199, 178, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(95, 199, 178, 0.12);
+}
+
+.deployChipIcon {
+  font-size: 18px;
+  font-weight: 300;
+  color: var(--care-mint);
+  line-height: 1;
 }
 
 /* ============================================
@@ -280,7 +287,7 @@
 .primeChipBar {
   display: flex;
   gap: 12px;
-  padding-bottom: 12px;
+  padding: 8px 0 12px;
   margin-bottom: 12px;
   overflow-x: auto;
   scrollbar-width: none;

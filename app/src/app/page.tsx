@@ -322,25 +322,6 @@ function HomeInner() {
 
   return (
     <div className={styles.homeShell} id="home-page">
-      {/* ---- Header ---- */}
-      <header className={styles.homeHeader}>
-        <Image src="/architect-prime-logo.png" alt="Architect Prime" width={40} height={40} className={styles.homeLogo} />
-        <div>
-          <h1 className={styles.homeTitle}>Architect Prime</h1>
-          <div className={styles.homeSubtitle}>
-            {primes.length} instance{primes.length !== 1 ? "s" : ""}
-            {versionInfo && ` · ${versionInfo.deployedVersion}`}
-          </div>
-        </div>
-        <button
-          id="deploy-prime-btn"
-          className={styles.deployBtn}
-          onClick={() => setShowDeploy(true)}
-        >
-          + Deploy Prime
-        </button>
-      </header>
-
       {/* ---- Split Panel ---- */}
       <div
         className={styles.splitPanel}
@@ -388,6 +369,16 @@ function HomeInner() {
                   </button>
                 );
               })}
+
+              {/* Deploy Prime — always last chip */}
+              <button
+                id="deploy-prime-btn"
+                className={styles.deployChip}
+                onClick={() => setShowDeploy(true)}
+              >
+                <span className={styles.deployChipIcon}>+</span>
+                <span className={styles.chipName}>Deploy</span>
+              </button>
             </div>
 
             {/* ---- SVG Connection Layer ---- */}

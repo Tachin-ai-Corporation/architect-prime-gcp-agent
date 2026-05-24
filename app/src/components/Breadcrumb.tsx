@@ -37,9 +37,9 @@ export function Breadcrumb() {
 
   const crumbs = useMemo<Crumb[]>(() => {
     const parts = pathname.split("/").filter(Boolean);
-    if (parts.length === 0) return [{ label: "Home", href: "/", linkable: true }];
+    if (parts.length === 0) return []; // Home — logo is the home link
 
-    const result: Crumb[] = [{ label: "Home", href: "/", linkable: true }];
+    const result: Crumb[] = [];
     let builtPath = "";
 
     for (let i = 0; i < parts.length; i++) {

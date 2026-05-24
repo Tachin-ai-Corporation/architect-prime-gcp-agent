@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Breadcrumb } from "./Breadcrumb";
 import { usePrime } from "@/contexts/PrimeContext";
 import { OperationsFeed, useOperations } from "./OperationsFeed";
@@ -9,6 +10,8 @@ import styles from "./Shell.module.css";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { primes, versionInfo } = usePrime();
+  const pathname = usePathname();
+  const isHome = pathname === "/";
 
   /* Use the first prime for operations polling (most common case) */
   const firstPrimeId = primes.length > 0 ? primes[0].id : null;
@@ -31,34 +34,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* ---- Top bar ---- */}
       <header className={styles.topBar} id="shell-topbar">
         <div className={styles.topBarLeft}>
-          <Breadcrumb />
-        </div>
-
-        <div className={styles.topBarRight}>
-          {/* Operations button */}
-          <button
-            className={`${styles.iconBtn} ${activeCount > 0 ? styles.opsActive : ""}`}
-            onClick={() => setOpsOpen(!opsOpen)}
-            title={activeCount > 0 ? `${activeCount} active operations` : "Operations"}
-            id="shell-ops-btn"
-          >
-            🚀
-            {activeCount > 0 && (
-              <span className={styles.opsBadge}>{activeCount}</span>
-            )}
-          </button>
-
-          {/* Settings gear */}
-          <Link
-            href="/settings"
-            className={styles.iconBtn}
-            title="Settings"
-            id="shell-settings"
-          >
-            ⚙️
+          <Link href="/" className={styles.logoLink} id="shell-home-link">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/architect-prime-logo.png" alt="Architect Prime" width={28} height={28} className={styles.logoImg} />
+            <span className={styles.logoTitle}>Architect Prime</span>
           </Link>
-
-          {/* Version info */}
           {versionInfo && (
             <span className={styles.versionTag} id="shell-version">
               {versionInfo.deployedVersion}
@@ -70,6 +50,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
               )}
             </span>
           )}
+          {!isHome && (
+            <>
+              <span className={styles.breadcrumbSep}>›</span>
+              <Breadcrumb />
+            </>
+          )}
+        </div>
+
+        <div className={styles.topBarRight}>
+          {/* Settings gear */}
+          <Link
+            href="/settings"
+            className={styles.iconBtn}
+            title="Settings"
+            id="shell-settings"
+          >
+            ⚙️
+          </Link>
         </div>
       </header>
 
