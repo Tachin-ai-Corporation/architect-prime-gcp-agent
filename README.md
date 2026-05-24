@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.23.7.1`
+> **Current version:** `v2026.05.23.8.0`
 
 ---
 
@@ -374,6 +374,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.23.6.0** | Delivery Pipeline Fix + Memory Reliability — `delivery_status` field (pending/delivered/internal), mouth query restructured to single efficient query, archival limit 10→300, memory_written false-positive fix (failure patterns scoped to motor/verifier), ACK context extraction, 365-item backfill |
 | **v2026.05.23.7.0** | Dashboard v3 Redesign (1health Design System) — Single-page monolith (1355 lines) → 17-page breadcrumb-navigated hierarchy (~150 lines avg). 1health design system (883 lines of design tokens). Projects as first-class Firestore entity with real-time listeners. Per-agent pages (Hub, Chat, Work, Brain, Skills, Settings). Skill Kit Library + API. No sidebar — breadcrumb navigation. 45 routes (17 pages + 28 APIs). |
 | **v2026.05.23.7.1** | Dashboard v3 Polish — Removed link underlines globally, removed work bell from header, centered breadcrumb navigation, non-clickable structural breadcrumb segments (Primes/Agents), architect-prime-logo.png on home page. |
+| **v2026.05.23.8.0** | Brain Resilience (Timeout Continue + Contextual Ack) — Motor timeout detection with distinct `timed_out` status, cortex `continue` action for re-dispatching timed-out tasks with check-first context, synthesize guard ignores timeouts. Contextual ack upgrade with recent mission history + project awareness for continuity recognition. DevOps SOUL hardening (task decomposition, Shared Drive flags, end-to-end verification). |
 
 ---
 

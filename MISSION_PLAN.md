@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.23.7.1`
+> - **Current version:** `v2026.05.23.8.0`
 
 ---
 
@@ -317,8 +317,8 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 
 **Brain State Machine (agent-brain.mjs):**
 The `agent-brain` daemon runs as a continuous systemd service on both Prime and all fleet VMs. It implements a fully robust, envelope-based pipeline.
-1. **Intake Processing & Contextual Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, extracts the current message from the composite intake (parsing past the context preamble), generates a contextual LLM-voiced acknowledgment (personality-aware, references what the user actually asked), and starts the Cortex decide loop. The ACK is marked `[BRAIN-ORCHESTRATED]` to prevent double delivery by mouth's JSONL tailer.
-2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`).
+1. **Intake Processing & Contextual Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, extracts the current message from the composite intake (parsing past the context preamble), generates a contextual LLM-voiced acknowledgment (personality-aware, references what the user actually asked, includes recent mission history and project context for continuity awareness), and starts the Cortex decide loop. The ACK is marked `[BRAIN-ORCHESTRATED]` to prevent double delivery by mouth's JSONL tailer.
+2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"continue"|"synthesize"`). The `continue` action re-dispatches timed-out tasks with check-first context, avoiding redundant work.
 3. **R/M/C/T Cognitive Hierarchy:** 
    - **Responsibilities (R):** Cron-scheduled recurring duties. Configured in `responsibilities-job.json` and hot-reloaded by a file watcher.
    - **Missions (M):** Multi-checkpoint, high-level objectives with clear definitions of done.
@@ -892,6 +892,15 @@ architect-prime/
 7. **Settings hierarchy** — Three scopes: Dashboard (GCP, DWD, OAuth), Prime (VM, upgrade, teardown), Agent (identity, fire).
 8. **Skill Kit Library** — Global registry API (11 kits: base, 2 roles, 8 jobs) + browsable UI with type filters.
 9. **Prime Models** — Provider-grouped model grid, per-brain-agent model assignment, scan + save.
+
+### Completed: v2026.05.23.8.0 — Brain Resilience (Timeout Continue + Contextual Ack)
+> *Motor timeout detection, cortex continue action, synthesize guard, contextual ack with recent mission + project awareness.*
+
+1. **Motor timeout continue** — Timeouts are now a distinct status (`timed_out`) separate from hard failures. Cortex gets a `continue` action to re-dispatch timed-out tasks with check-first context ("what was already accomplished?") rather than restarting from scratch. Synthesize guard ignores timeouts (only hard failures block synthesis).
+2. **Contextual ack upgrade** — Quick acks now include recent mission history (last 5 completed/archived/blocked missions) and project context. Acks recognize when incoming messages relate to prior work and acknowledge continuity instead of treating everything as brand new.
+3. **Archival sweep** — `timed_out` envelopes are now archived alongside failed/complete/cancelled envelopes.
+4. **DevOps SOUL hardening** — Task decomposition guidance (never combine read + code + build + verify in one dispatch), Google Drive Shared Drive flag requirements, end-to-end verification rules.
+5. **Cortex SOUL update** — `continue` action documented in both fleet and prime cortex SOUL.md files.
 
 ### Current: Next Phase — TBD
 > *Goal: To be determined based on fleet operational experience and user priorities.*
