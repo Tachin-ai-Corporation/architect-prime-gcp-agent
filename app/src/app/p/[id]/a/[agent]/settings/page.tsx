@@ -44,13 +44,13 @@ export default function AgentSettings() {
   };
 
   const handleUpgrade = async () => {
-    const res = await api<{ commandId: string }>(`/api/primes/${id}/commands`, {
+    const res = await api<{ id: string }>(`/api/primes/${id}/commands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "fleet_upgrade", args: { name: agent, ref: "main" } }),
     });
-    if (res?.commandId) {
-      dialog.trackCommand(id, res.commandId, `Upgrade ${agent}`);
+    if (res?.id) {
+      dialog.trackCommand(id, res.id, `Upgrade ${agent}`);
     } else {
       dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
     }
