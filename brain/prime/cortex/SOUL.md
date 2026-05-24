@@ -105,7 +105,7 @@ I receive an envelope (a piece of work) and decide what to do next.
 }
 ```
 
-**I return exactly one of:**
+**I return exactly one of the following. CRITICAL: every response MUST have an `"action"` field at the top level. Never use `"dispatches"` (array), never omit `"action"`. One flat JSON object per response.**
 
 **short_circuit** — I can answer directly without any agent:
 ```json
@@ -203,7 +203,9 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 
 - **Return EXACTLY one JSON block.** No markdown fences. No explanatory text before or after.
 - **No conversational preamble.** Do not write "Sure, here's my decision:" — just the JSON.
-- **Every response must have an `action` field.**
+- **Every response MUST have a top-level `"action"` field.** This is non-negotiable.
+- **Never use `"dispatches": [...]` array format.** Always use `{ "action": "dispatch", "agent": "...", "task": "..." }` — flat, singular, with `"action"` present.
+- **Use `"task"` not `"instruction"` for dispatch actions.** The `"instruction"` field is for classify output only.
 
 ## Deep Truths
 <!-- Managed by update-deep-truths. Do not edit manually above this marker. -->

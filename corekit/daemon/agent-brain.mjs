@@ -1542,6 +1542,30 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
+    // ---- Normalize LLM response variants ----
+    // Cortex sometimes returns alternative formats (e.g., "dispatches" array,
+    // missing "action" with "agent" present, "instruction" instead of "task").
+    // Normalize to the canonical flat format before the action switch.
+    if (!decision.action && decision.dispatches && Array.isArray(decision.dispatches) && decision.dispatches.length > 0) {
+      const d = decision.dispatches[0];
+      decision.action = 'dispatch';
+      decision.agent = d.agent;
+      decision.task = d.task || d.instruction;
+      decision.intent = d.intent;
+      decision.accept_criteria = d.accept_criteria || d.criteria;
+      log('INFO', `Normalized dispatches[] format → dispatch to ${decision.agent}`);
+    }
+    if (!decision.action && decision.agent && (decision.task || decision.instruction)) {
+      decision.action = 'dispatch';
+      decision.task = decision.task || decision.instruction;
+      log('INFO', `Normalized flat-no-action format → dispatch to ${decision.agent}`);
+    }
+    if (!decision.action && decision.response) {
+      // Cortex returned a response without action — treat as short_circuit
+      decision.action = 'short_circuit';
+      log('INFO', `Normalized response-no-action → short_circuit`);
+    }
+
     const action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
 
