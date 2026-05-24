@@ -50,7 +50,7 @@ function HomeInner() {
   const [copied, setCopied] = useState("");
   const [lines, setLines] = useState<ConnectionLine[]>([]);
   const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
-  const [leftWidth, setLeftWidth] = useState(60); // percentage
+  const [chatWidth, setChatWidth] = useState(420); // pixels
 
   /* ---- Hire state ---- */
   const [showHire, setShowHire] = useState(false);
@@ -118,18 +118,17 @@ function HomeInner() {
     return () => observer.disconnect();
   }, [computeLines]);
 
-  /* ---- Divider drag ---- */
-  const handleDividerDown = useCallback((e: React.MouseEvent) => {
+  /* ---- Chat panel resize (left-edge drag) ---- */
+  const handleResizeDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDragging.current = true;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
     const handleMove = (ev: MouseEvent) => {
-      if (!isDragging.current || !splitRef.current) return;
-      const rect = splitRef.current.getBoundingClientRect();
-      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
-      setLeftWidth(Math.max(30, Math.min(80, pct)));
+      if (!isDragging.current) return;
+      const newWidth = window.innerWidth - ev.clientX;
+      setChatWidth(Math.max(320, Math.min(800, newWidth)));
     };
 
     const handleUp = () => {
@@ -138,12 +137,11 @@ function HomeInner() {
       document.body.style.userSelect = "";
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
-      computeLines();
     };
 
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
-  }, [computeLines]);
+  }, []);
 
   /* ---- Select Prime for chat ---- */
   const selectPrimeChat = useCallback((prime: PrimeInstance) => {
@@ -363,13 +361,11 @@ function HomeInner() {
 
   return (
     <div className={styles.homeShell} id="home-page">
-      {/* ---- Split Panel ---- */}
+      {/* ---- Full-width Graph ---- */}
       <div
         className={styles.splitPanel}
         ref={splitRef}
-        style={{ "--left-pct": `${leftWidth}%` } as React.CSSProperties}
       >
-        {/* ---- Left: Graph ---- */}
         <div className={styles.leftPanel}>
           <div className={styles.graphContainer} ref={containerRef}>
 
@@ -533,28 +529,38 @@ function HomeInner() {
             )}
           </div>
         </div>
-
-        {/* ---- Divider ---- */}
-        {chatTarget && (
-          <div
-            className={styles.divider}
-            onMouseDown={handleDividerDown}
-          />
-        )}
-
-        {/* ---- Right: Chat Panel ---- */}
-        {chatTarget && (
-          <div className={styles.rightPanel}>
-            <ChatPanel
-              key={`${chatTarget.primeId}-${chatTarget.agentName || "prime"}`}
-              primeId={chatTarget.primeId}
-              agentName={chatTarget.type === "agent" ? chatTarget.agentName : undefined}
-              entityName={chatTarget.entityName}
-              entityStatus={chatTarget.entityStatus}
-            />
-          </div>
-        )}
       </div>
+
+      {/* ---- Floating Chat Panel ---- */}
+      {chatTarget && (
+        <div
+          className={styles.chatOverlay}
+          style={{ width: chatWidth }}
+          id="chat-overlay"
+        >
+          {/* Resize handle (left edge) */}
+          <div
+            className={styles.chatResizeHandle}
+            onMouseDown={handleResizeDown}
+          />
+          {/* Close button */}
+          <button
+            className={styles.chatCloseBtn}
+            onClick={() => setChatTarget(null)}
+            aria-label="Close chat"
+            id="chat-close-btn"
+          >
+            ✕
+          </button>
+          <ChatPanel
+            key={`${chatTarget.primeId}-${chatTarget.agentName || "prime"}`}
+            primeId={chatTarget.primeId}
+            agentName={chatTarget.type === "agent" ? chatTarget.agentName : undefined}
+            entityName={chatTarget.entityName}
+            entityStatus={chatTarget.entityStatus}
+          />
+        </div>
+      )}
 
       {/* ---- Deploy Modal ---- */}
       {showDeploy && (
