@@ -28,6 +28,9 @@ brain/fleet/_brain/cerebellum/IDENTITY.md .openclaw/workspace-_brain/cerebellum/
 # Workspace auth token (shared by all workspace skills)
 skills/workspace-drive/ws-token .openclaw/bin/ws-token
 
+# Skills (shared by all fleet agents)
+skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
+
 # Memory — Core Memory + Deep Truths + nightly consolidation
 corekit/memory/core-memory-read .openclaw/bin/core-memory-read
 corekit/memory/core-memory-write .openclaw/bin/core-memory-write
