@@ -285,6 +285,7 @@ case "${1:-}" in
     docker exec openclaw-gateway pkill -f 'message-daemon.mjs' 2>/dev/null || true
     docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
     docker exec openclaw-gateway pkill -f 'agent-mouth.mjs' 2>/dev/null || true
+    docker exec openclaw-gateway pkill -f 'agent-introspect.mjs' 2>/dev/null || true
     sleep 1
 
     # Install ears + mouth + brain services
@@ -300,12 +301,16 @@ case "${1:-}" in
     if [[ -f "$BRAIN_SVC_SRC" ]]; then
       cp "$BRAIN_SVC_SRC" /etc/systemd/system/agent-brain.service
     fi
+    INTROSPECT_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/agent-introspect.service"
+    if [[ -f "$INTROSPECT_SVC_SRC" ]]; then
+      cp "$INTROSPECT_SVC_SRC" /etc/systemd/system/agent-introspect.service
+    fi
     systemctl daemon-reload
 
-    # Enable and start ears + mouth + brain
-    systemctl enable agent-ears agent-mouth agent-brain 2>/dev/null || true
-    systemctl restart agent-ears agent-mouth agent-brain
-    echo "  Started: agent-ears + agent-mouth + agent-brain"
+    # Enable and start ears + mouth + brain + introspect
+    systemctl enable agent-ears agent-mouth agent-brain agent-introspect 2>/dev/null || true
+    systemctl restart agent-ears agent-mouth agent-brain agent-introspect
+    echo "  Started: agent-ears + agent-mouth + agent-brain + agent-introspect"
     ;;
   --status)
     if [[ ! -f "$STATE_FILE" ]]; then

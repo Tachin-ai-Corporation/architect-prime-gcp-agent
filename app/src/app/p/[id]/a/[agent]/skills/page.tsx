@@ -1,82 +1,122 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import styles from "./page.module.css";
 import { api } from "@/lib/api";
 import { useDialog } from "@/components/DialogProvider";
-import type { AgentDetail } from "@/lib/types";
 
-interface SkillKit {
-  id: string;
+interface Tool {
+  name: string;
+  category: string;
+  description: string;
+  sizeBytes: number;
+}
+
+interface SkillPack {
   name: string;
   description: string;
-  type: "base" | "role" | "job";
-  tools: number;
+  files: number;
 }
 
-const KIT_ICONS: Record<string, string> = {
-  base: "📦",
-  "role-fleet": "🤝",
-  "role-prime": "👑",
-  "job-devops": "🔧",
-  "job-engineer": "💻",
-  "job-pm": "📊",
-  "job-qa": "🧪",
-  "job-security": "🔐",
-  "job-finance": "💰",
-  "job-assistant": "🤖",
-  "job-data": "📈",
+interface SkillsResult {
+  tools: Tool[];
+  skillPacks: SkillPack[];
+  binDir: string;
+  skillsDir: string;
+}
+
+const CATEGORY_LABELS: Record<string, { label: string; icon: string; order: number }> = {
+  brain: { label: "Brain", icon: "🧠", order: 1 },
+  workspace: { label: "Workspace (Google)", icon: "📁", order: 2 },
+  memory: { label: "Memory", icon: "💾", order: 3 },
+  chat: { label: "Chat & Auth", icon: "💬", order: 4 },
+  daemon: { label: "Daemons", icon: "⚙️", order: 5 },
+  system: { label: "System", icon: "🔧", order: 6 },
+  tool: { label: "Tools", icon: "🛠️", order: 7 },
+  config: { label: "Config", icon: "📄", order: 8 },
 };
-
-/* Map agent specialty to job kit id */
-function specialtyToJobKit(specialty: string | undefined): string {
-  if (!specialty) return "";
-  const map: Record<string, string> = {
-    devops: "job-devops",
-    engineer: "job-engineer",
-    pm: "job-pm",
-    qa: "job-qa",
-    security: "job-security",
-    finance: "job-finance",
-    assistant: "job-assistant",
-    data: "job-data",
-  };
-  return map[specialty] || `job-${specialty}`;
-}
 
 export default function AgentSkills() {
   const { id, agent } = useParams<{ id: string; agent: string }>();
   const dialog = useDialog();
-  const [allKits, setAllKits] = useState<SkillKit[]>([]);
-  const [detail, setDetail] = useState<AgentDetail | null>(null);
-  const [expandedKit, setExpandedKit] = useState<string | null>(null);
-  const [upgrading, setUpgrading] = useState(false);
+  const [skills, setSkills] = useState<SkillsResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchData = useCallback(async () => {
-    const [kitsRes, detailRes] = await Promise.all([
-      api<{ kits: SkillKit[] }>("/api/skills"),
-      api<AgentDetail>(`/api/primes/${id}/fleet/${agent}/logs`),
-    ]);
-    if (kitsRes?.kits) setAllKits(kitsRes.kits);
-    if (detailRes) setDetail(detailRes);
-    setLoading(false);
+  /* ---- Fetch skills via Firestore bus ---- */
+  const fetchSkills = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    // 1. Submit query
+    const submitRes = await api<{ queryId: string; status: string }>(
+      `/api/primes/${id}/fleet/${agent}/introspect`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "skills" }),
+      }
+    );
+
+    if (!submitRes?.queryId) {
+      setError("Failed to submit introspection query. Is the agent online?");
+      setLoading(false);
+      return;
+    }
+
+    // 2. Poll for result
+    const queryId = submitRes.queryId;
+    let attempts = 0;
+    const maxAttempts = 20; // ~20s max wait
+
+    const poll = async () => {
+      attempts++;
+      const result = await api<{
+        queryId: string;
+        type: string;
+        status: string;
+        result: SkillsResult | null;
+        error: string | null;
+      }>(`/api/primes/${id}/fleet/${agent}/introspect?queryId=${queryId}`);
+
+      if (result?.status === "complete" && result.result) {
+        setSkills(result.result);
+        setLoading(false);
+        return;
+      }
+
+      if (result?.status === "error") {
+        setError(result.error || "Introspection query failed");
+        setLoading(false);
+        return;
+      }
+
+      if (attempts >= maxAttempts) {
+        setError("Timed out waiting for agent response. The introspect daemon may not be running yet — try upgrading CoreKit.");
+        setLoading(false);
+        return;
+      }
+
+      // Continue polling
+      pollRef.current = setTimeout(poll, 1000);
+    };
+
+    // Start polling after 1s delay
+    pollRef.current = setTimeout(poll, 1000);
   }, [id, agent]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchSkills();
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current);
+    };
+  }, [fetchSkills]);
 
-  /* Determine which kits are installed for this agent */
-  const installedKitIds = new Set<string>();
-  installedKitIds.add("base"); // always installed
-  installedKitIds.add("role-fleet"); // fleet agents always have fleet overlay
-  const jobKit = specialtyToJobKit(detail?.specialty);
-  if (jobKit) installedKitIds.add(jobKit);
-
-  const installedKits = allKits.filter((k) => installedKitIds.has(k.id));
-  const availableKits = allKits.filter((k) => !installedKitIds.has(k.id));
-
-  /* Upgrade CoreKit */
+  /* ---- Upgrade CoreKit ---- */
   const handleUpgrade = async () => {
     setUpgrading(true);
     const res = await api<{ id: string }>(`/api/primes/${id}/commands`, {
@@ -92,15 +132,21 @@ export default function AgentSkills() {
     setUpgrading(false);
   };
 
-  if (loading) {
-    return (
-      <div className={styles.shell}>
-        <div className={styles.container}>
-          <div className={styles.loadingState}>Loading skill kits…</div>
-        </div>
-      </div>
-    );
-  }
+  /* ---- Group tools by category ---- */
+  const groupedTools = skills?.tools
+    ? Object.entries(
+        skills.tools.reduce<Record<string, Tool[]>>((acc, tool) => {
+          const cat = tool.category || "tool";
+          if (!acc[cat]) acc[cat] = [];
+          acc[cat].push(tool);
+          return acc;
+        }, {})
+      ).sort(([a], [b]) => {
+        const oa = CATEGORY_LABELS[a]?.order ?? 99;
+        const ob = CATEGORY_LABELS[b]?.order ?? 99;
+        return oa - ob;
+      })
+    : [];
 
   return (
     <div className={styles.shell} id="agent-skills">
@@ -108,9 +154,12 @@ export default function AgentSkills() {
         <header className={styles.header}>
           <div>
             <h1 className={styles.title}>🔧 Skills — {agent}</h1>
-            <p className={styles.subtitle}>
-              {detail?.specialty || "fleet"} agent · {installedKits.length} kits installed · {installedKits.reduce((sum, k) => sum + k.tools, 0)} tools
-            </p>
+            {skills && (
+              <p className={styles.subtitle}>
+                {skills.tools.length} tools · {skills.skillPacks.length} skill packs · Live from VM
+              </p>
+            )}
+            {loading && <p className={styles.subtitle}>Querying agent VM…</p>}
           </div>
           <button
             className={styles.upgradeBtn}
@@ -122,101 +171,88 @@ export default function AgentSkills() {
           </button>
         </header>
 
-        {/* ---- Installed Kits ---- */}
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>
-            Installed Kits
-            <span className={styles.sectionBadge}>{installedKits.length}</span>
-          </h2>
-          <div className={styles.kitList} id="agent-skills-installed">
-            {installedKits.map((kit) => {
-              const isExpanded = expandedKit === kit.id;
-              return (
-                <button
-                  key={kit.id}
-                  className={`${styles.kitCard} ${isExpanded ? styles.kitCardExpanded : ""}`}
-                  onClick={() => setExpandedKit(isExpanded ? null : kit.id)}
-                  id={`skill-${kit.id}`}
-                >
-                  <div className={styles.kitHeader}>
-                    <span className={styles.kitIcon}>{KIT_ICONS[kit.id] || "📦"}</span>
-                    <div className={styles.kitInfo}>
-                      <span className={styles.kitName}>{kit.name}</span>
-                      <span className={styles.kitType}>
-                        {kit.type === "base" ? "Foundation" : kit.type === "role" ? "Role Layer" : "Specialty"}
-                      </span>
-                    </div>
-                    <span className={styles.kitToolCount}>{kit.tools} tools</span>
-                    <span className={`${styles.kitChevron} ${isExpanded ? styles.kitChevronOpen : ""}`}>▸</span>
-                  </div>
-                  {isExpanded && (
-                    <div className={styles.kitDetail}>
-                      <p className={styles.kitDesc}>{kit.description}</p>
-                      <div className={styles.kitMeta}>
-                        <span className={styles.kitMetaItem}>📦 ID: <code>{kit.id}</code></span>
-                        <span className={styles.kitMetaItem}>🔧 {kit.tools} scripts/tools</span>
-                        <span className={`${styles.kitMetaItem} ${styles.kitInstalled}`}>✓ Installed</span>
-                      </div>
-                    </div>
-                  )}
-                </button>
-              );
-            })}
+        {/* ---- Loading state ---- */}
+        {loading && (
+          <div className={styles.loadingState}>
+            <span className={styles.spinner} />
+            <span>Waiting for agent introspection response…</span>
           </div>
-        </section>
+        )}
 
-        {/* ---- Available Kits ---- */}
-        {availableKits.length > 0 && (
-          <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>
-              Available Kits
-              <span className={styles.sectionBadge}>{availableKits.length}</span>
-            </h2>
-            <div className={styles.kitList} id="agent-skills-available">
-              {availableKits.map((kit) => {
-                const isExpanded = expandedKit === kit.id;
-                return (
-                  <button
-                    key={kit.id}
-                    className={`${styles.kitCard} ${styles.kitCardAvailable} ${isExpanded ? styles.kitCardExpanded : ""}`}
-                    onClick={() => setExpandedKit(isExpanded ? null : kit.id)}
-                    id={`skill-avail-${kit.id}`}
-                  >
-                    <div className={styles.kitHeader}>
-                      <span className={styles.kitIcon} style={{ opacity: 0.5 }}>{KIT_ICONS[kit.id] || "📦"}</span>
-                      <div className={styles.kitInfo}>
-                        <span className={styles.kitName}>{kit.name}</span>
-                        <span className={styles.kitType}>
-                          {kit.type === "base" ? "Foundation" : kit.type === "role" ? "Role Layer" : "Specialty"}
-                        </span>
-                      </div>
-                      <span className={styles.kitToolCount} style={{ opacity: 0.5 }}>{kit.tools} tools</span>
-                      <span className={`${styles.kitChevron} ${isExpanded ? styles.kitChevronOpen : ""}`}>▸</span>
+        {/* ---- Error state ---- */}
+        {error && (
+          <div className={styles.errorState}>
+            <span>⚠️ {error}</span>
+            <button className={styles.retryBtn} onClick={fetchSkills}>Retry</button>
+          </div>
+        )}
+
+        {/* ---- Tool Categories ---- */}
+        {skills && groupedTools.map(([category, tools]) => {
+          const meta = CATEGORY_LABELS[category] || { label: category, icon: "📦", order: 99 };
+          const isExpanded = expandedCategory === category;
+
+          return (
+            <section key={category} className={styles.categorySection}>
+              <button
+                className={styles.categoryHeader}
+                onClick={() => setExpandedCategory(isExpanded ? null : category)}
+                id={`cat-${category}`}
+              >
+                <span className={styles.categoryIcon}>{meta.icon}</span>
+                <span className={styles.categoryName}>{meta.label}</span>
+                <span className={styles.categoryCount}>{tools.length}</span>
+                <span className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}>▸</span>
+              </button>
+              {isExpanded && (
+                <div className={styles.toolList}>
+                  {tools.sort((a, b) => a.name.localeCompare(b.name)).map((tool) => (
+                    <div key={tool.name} className={styles.toolRow}>
+                      <code className={styles.toolName}>{tool.name}</code>
+                      <span className={styles.toolDesc}>{tool.description}</span>
                     </div>
-                    {isExpanded && (
-                      <div className={styles.kitDetail}>
-                        <p className={styles.kitDesc}>{kit.description}</p>
-                        <div className={styles.kitMeta}>
-                          <span className={styles.kitMetaItem}>📦 ID: <code>{kit.id}</code></span>
-                          <span className={styles.kitMetaItem}>🔧 {kit.tools} scripts/tools</span>
-                          <span className={styles.kitNotInstalled}>Not installed — change specialty to use</span>
-                        </div>
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        {/* ---- Skill Packs ---- */}
+        {skills && skills.skillPacks.length > 0 && (
+          <section className={styles.categorySection}>
+            <button
+              className={styles.categoryHeader}
+              onClick={() => setExpandedCategory(expandedCategory === "_skills" ? null : "_skills")}
+              id="cat-skillpacks"
+            >
+              <span className={styles.categoryIcon}>📚</span>
+              <span className={styles.categoryName}>Skill Packs</span>
+              <span className={styles.categoryCount}>{skills.skillPacks.length}</span>
+              <span className={`${styles.chevron} ${expandedCategory === "_skills" ? styles.chevronOpen : ""}`}>▸</span>
+            </button>
+            {expandedCategory === "_skills" && (
+              <div className={styles.toolList}>
+                {skills.skillPacks.map((pack) => (
+                  <div key={pack.name} className={styles.toolRow}>
+                    <code className={styles.toolName}>{pack.name}</code>
+                    <span className={styles.toolDesc}>{pack.description || `${pack.files} files`}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
-        <div className={styles.note} id="agent-skills-note">
-          <span className={styles.noteIcon}>ℹ️</span>
-          <span>
-            Kits are assigned automatically based on role and specialty.
-            Upgrade CoreKit to pull the latest tools from the repo.
-          </span>
-        </div>
+        {skills && (
+          <div className={styles.note} id="agent-skills-note">
+            <span className={styles.noteIcon}>ℹ️</span>
+            <span>
+              Data read live from the agent VM filesystem.
+              Source: <code>{skills.binDir}</code>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

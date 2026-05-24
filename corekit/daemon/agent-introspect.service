@@ -1,0 +1,16 @@
+[Unit]
+Description=Agent Introspect — Filesystem Introspection Service
+After=network-online.target openclaw-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/openclaw/.openclaw/bin/start-agent-introspect
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/agent-introspect.log
+StandardError=append:/var/log/agent-introspect.log
+Environment=OC_HOST_ROOT=/opt/openclaw
+
+[Install]
+WantedBy=multi-user.target

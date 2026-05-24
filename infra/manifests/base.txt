@@ -63,6 +63,11 @@ corekit/daemon/start-agent-brain .openclaw/bin/start-agent-brain
 corekit/config/agent-registry.json .openclaw/corekit/agent-registry.json
 corekit/config/responsibilities.json .openclaw/corekit/responsibilities.json
 
+# Introspect — filesystem introspection service (Firestore bus)
+corekit/daemon/agent-introspect.mjs .openclaw/bin/agent-introspect.mjs
+corekit/daemon/agent-introspect.service .openclaw/corekit/agent-introspect.service
+corekit/daemon/start-agent-introspect .openclaw/bin/start-agent-introspect
+
 # Config templates (both needed for render-config)
 corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
 corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl
