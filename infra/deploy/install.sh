@@ -185,7 +185,7 @@ read -rp "  Enter Google OAuth Client ID: " GOOGLE_CLIENT_ID
 [[ -n "$GOOGLE_CLIENT_ID" ]] || die "OAuth Client ID is required"
 read -rp "  Enter Google OAuth Client Secret: " GOOGLE_CLIENT_SECRET
 [[ -n "$GOOGLE_CLIENT_SECRET" ]] || die "OAuth Client Secret is required"
-read -rp "  Enter allowed domain (e.g., tachin.ag): " ALLOWED_DOMAIN
+read -rp "  Enter allowed domain (e.g., yourcompany.com): " ALLOWED_DOMAIN
 ok "OAuth credentials captured"
 
 # Generate NextAuth secret

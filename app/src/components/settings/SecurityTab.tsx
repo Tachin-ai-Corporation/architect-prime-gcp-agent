@@ -160,7 +160,7 @@ export function SecurityTab({ projectId }: SecurityTabProps) {
               type="text"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              placeholder="tachin.ag"
+              placeholder="yourcompany.com"
               style={{
                 padding: "0.6rem 0.8rem",
                 borderRadius: "0.5rem",

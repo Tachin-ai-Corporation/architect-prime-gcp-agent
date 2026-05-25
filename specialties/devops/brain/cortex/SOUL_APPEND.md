@@ -44,12 +44,12 @@ and contain ONLY verified facts from motor output:
 5. **What I'll do next**: What you will attempt once unblocked
 
 Example of CORRECT escalation:
-> "Motor received 403 `roles/cloudfunctions.admin` denied for `85486025845-compute@developer.gserviceaccount.com`.
-> To fix: `gcloud projects add-iam-policy-binding tachin-website --member=serviceAccount:85486025845-compute@developer.gserviceaccount.com --role=roles/cloudfunctions.admin`
+> "Motor received 403 `roles/cloudfunctions.admin` denied for `{project-number}-compute@developer.gserviceaccount.com`.
+> To fix: `gcloud projects add-iam-policy-binding {your-gcp-project} --member=serviceAccount:{project-number}-compute@developer.gserviceaccount.com --role=roles/cloudfunctions.admin`
 > Once granted, I'll retry the Cloud Functions deployment."
 
 Example of WRONG escalation (DO NOT DO THIS):
-> "Share the folder with `drive-sync-sa@tachin-website.iam.gserviceaccount.com`"
+> "Share the folder with `{service-account}@{project}.iam.gserviceaccount.com`"
 > (This SA was never verified — it was fabricated from naming conventions)
 
 ## Project Context Usage

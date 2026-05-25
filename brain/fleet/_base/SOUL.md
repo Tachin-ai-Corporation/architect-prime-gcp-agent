@@ -151,9 +151,9 @@ This is NOT a report — it is an **escalation**. The `synthesis` must state exa
 ```json
 {
   "action": "blocked",
-  "blocker": "The eventarc.googleapis.com API is not enabled in the tachin-website GCP project",
+  "blocker": "The eventarc.googleapis.com API is not enabled in the {your-gcp-project} GCP project",
   "blocker_type": "api",
-  "escalation_message": "I need the Eventarc API enabled in the tachin-website project to deploy Cloud Functions Gen 2. Can you run: gcloud services enable eventarc.googleapis.com --project=tachin-website",
+  "escalation_message": "I need the Eventarc API enabled in the {your-gcp-project} project to deploy Cloud Functions Gen 2. Can you run: gcloud services enable eventarc.googleapis.com --project={your-gcp-project}",
   "failure_summary": "Missing required API in target project"
 }
 ```

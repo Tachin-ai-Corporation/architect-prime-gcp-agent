@@ -1,3 +1,7 @@
+# job-swe.txt — SWE is an alias for the engineer specialty.
+# This manifest installs the same engineer workspace files.
+# The alias exists because "swe" and "engineer" are interchangeable agent types.
+
 # infra/manifests/job-swe.txt
 # SWE specialty — maps to engineer workspace (agent-types.json workspace: "engineer")
 # Installed by: infra/install.sh --role fleet --job swe

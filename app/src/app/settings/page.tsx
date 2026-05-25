@@ -592,7 +592,7 @@ export default function DashboardSettingsPage() {
                       type="text"
                       value={oauthDomain}
                       onChange={(e) => setOauthDomain(e.target.value)}
-                      placeholder="tachin.ag"
+                      placeholder="yourcompany.com"
                     />
                     <button
                       id="settings-oauth-save-btn"

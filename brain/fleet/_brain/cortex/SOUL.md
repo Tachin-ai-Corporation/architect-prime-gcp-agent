@@ -86,9 +86,9 @@ I receive a raw inbound message and decide what kind of work it represents.
 {
   "action": "classify",
   "classification": "new_mission",
-  "project_id": "tachin-website",
+  "project_id": "{your-gcp-project}",
   "instruction": "Delete the broken syncService Cloud Function",
-  "reasoning": "syncService is listed in the Tachin Website project's resources"
+  "reasoning": "syncService is listed in the project's resources"
 }
 ```
 
@@ -250,9 +250,9 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 ```json
 {
   "action": "blocked",
-  "blocker": "Missing IAM roles on tachin-website project",
+  "blocker": "Missing IAM roles on {your-gcp-project} project",
   "blocker_type": "permissions",
-  "escalation_message": "I need two IAM permissions granted on the `tachin-website` project to proceed:\n\n1. `roles/storage.objectViewer` for `85486025845-compute@developer.gserviceaccount.com`\n2. `roles/artifactregistry.writer` for `85486025845@cloudbuild.gserviceaccount.com`\n\nPlease run:\n```\ngcloud projects add-iam-policy-binding tachin-website --member=serviceAccount:85486025845-compute@developer.gserviceaccount.com --role=roles/storage.objectViewer\ngcloud projects add-iam-policy-binding tachin-website --member=serviceAccount:85486025845@cloudbuild.gserviceaccount.com --role=roles/artifactregistry.writer\n```\nOnce granted, tell me to retry."
+  "escalation_message": "I need two IAM permissions granted on the `{your-gcp-project}` project to proceed:\n\n1. `roles/storage.objectViewer` for `{project-number}-compute@developer.gserviceaccount.com`\n2. `roles/artifactregistry.writer` for `{project-number}@cloudbuild.gserviceaccount.com`\n\nPlease run:\n```\ngcloud projects add-iam-policy-binding {your-gcp-project} --member=serviceAccount:{project-number}-compute@developer.gserviceaccount.com --role=roles/storage.objectViewer\ngcloud projects add-iam-policy-binding {your-gcp-project} --member=serviceAccount:{project-number}@cloudbuild.gserviceaccount.com --role=roles/artifactregistry.writer\n```\nOnce granted, tell me to retry."
 }
 ```
 **CRITICAL:** `escalation_message` is what the user sees in chat. It MUST include:
@@ -276,10 +276,10 @@ Use this pattern (dispatching motor with `project-manage create`) when work clea
 ```json
 {
   "action": "delegate",
-  "delegate_to": "stan@tachin.ai",
+  "delegate_to": "{agent-name}@{domain}",
   "delegation_task": "Run the infrastructure audit on the staging environment",
   "accept_criteria": "Audit report with findings written to shared Drive folder",
-  "reasoning": "Stan is the DevOps specialist with infrastructure access"
+  "reasoning": "The target agent is the DevOps specialist with infrastructure access"
 }
 ```
 Use this when the task belongs to a different agent's specialty. Brain will create a Mission envelope owned by the target agent, mark the current envelope as `waiting`, and resume automatically when the delegation completes.
@@ -378,7 +378,7 @@ You are writing instructions for your future self. The process you author is wha
 - ❌ Bad: "Organize the files"
 - ✅ Good: "List all files in Drive folder ID 1ABCxyz. For each file, read contents using motor. Based on the organization structure in workspace/org-structure.md, determine the correct subfolder. Move each file using the Drive API."
 
-**Include IDs, paths, and concrete references.** Don't say "the folder" — say "Google Drive folder ID 1ABCxyz". Don't say "the team lead" — say "delegate to fleet agent mary@tachin.ag".
+**Include IDs, paths, and concrete references.** Don't say "the folder" — say "Google Drive folder ID 1ABCxyz". Don't say "the team lead" — say "delegate to fleet agent {agent-name}@{domain}".
 
 **Write success_criteria that are verifiable.** Don't say "everything looks good" — say "All files moved, index updated with new entries, zero files remaining in inbox."
 

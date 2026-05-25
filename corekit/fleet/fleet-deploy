@@ -35,7 +35,7 @@ Usage: fleet-deploy --name <name> --specialty <desc> --agent-email <email> [opti
 
   --name         Agent name (lowercase, no spaces, e.g. 'stan')
   --specialty    Agent type ID from agent-types.json (e.g. 'devops', 'swe')
-  --agent-email  Workspace email for the agent (e.g. devops-agent-stan@tachin.ai)
+  --agent-email  Workspace email for the agent (e.g. devops-agent-stan@yourcompany.com)
   --chat-space   Chat space ID override (default: Prime's space)
   --machine-type VM machine type (default: e2-medium)
   --disk         Boot disk size (default: 50GB)
@@ -59,7 +59,7 @@ done
 
 [[ -n "$AGENT_NAME" ]] || die "Missing --name"
 [[ -n "$SPECIALTY" ]] || die "Missing --specialty"
-[[ -n "$AGENT_USER_EMAIL" ]] || die "Missing --agent-email (Workspace user for DWD, e.g. devops-agent-stan@tachin.ai)"
+[[ -n "$AGENT_USER_EMAIL" ]] || die "Missing --agent-email (Workspace user for DWD, e.g. devops-agent-stan@yourcompany.com)"
 [[ "$AGENT_NAME" =~ ^[a-z][a-z0-9-]*$ ]] || die "Name must be lowercase alphanumeric with hyphens"
 
 # ---- Resolve Prime's project context ----

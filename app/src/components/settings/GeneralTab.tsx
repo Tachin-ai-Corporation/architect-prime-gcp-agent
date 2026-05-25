@@ -83,7 +83,7 @@ export function GeneralTab({ setup, setSetup, primeCount, fleetCount, primes, si
             <input
               className="input"
               style={{ width: 260, fontSize: 13 }}
-              placeholder="e.g. tachin.ai"
+              placeholder="e.g. yourcompany.com"
               value={setup.agentEmailDomain}
               onChange={(e) => setSetup(prev => ({ ...prev, agentEmailDomain: e.target.value }))}
               onKeyDown={async (e) => {
