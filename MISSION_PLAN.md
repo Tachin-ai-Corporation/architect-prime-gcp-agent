@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.25.3.0`
+> - **Current version:** `v2026.05.25.4.0`
 
 ---
 
@@ -32,7 +32,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home, top-level Work/Brain/
     ├─ GET  /api/primes/{id}/fleet             → Reads fleet from Firestore
     ├─ GET  /api/primes/{id}/fleet/[agent]/logs → Agent detail + health + activity
     ├─ GET  /api/agent-types                   → Dynamic specialty list from repo (5m cache)
-    ├─ GET  /api/setup                         → Project config (DWD, email domain)
+    ├─ GET  /api/setup                         → Project config (DWD, email domain, auth status)
     ├─ POST /api/setup                         → Save settings (agent email domain)
     ├─ GET  /api/upgrade                       → Current + latest version info
     ├─ POST /api/upgrade                       → Trigger Cloud Build self-upgrade
@@ -1048,6 +1048,18 @@ architect-prime/
 5. **Stale files deleted** — `SOUL_PROTOCOL.md` (1-line placeholder), 3 scratch implementation plan files.
 6. **`.gitignore` expanded** — Added `.DS_Store`, `*.pem`, `.env*`, runtime state paths, `.agents/scratch/`.
 7. **`job-swe.txt` documented** — Added alias comment explaining SWE is an alias for the engineer specialty.
+
+### Completed: v2026.05.25.4.0 — Dashboard Settings & Security Polish
+> *OAuth setup fix, runtime auth detection, editable agent defaults, header warning icons, dead code cleanup (−1,282 lines).*
+
+1. **OAuth setup fixed** — Root cause: security tab used `NEXT_PUBLIC_AUTH_CONFIGURED` (build-time env var that can never change at runtime). Replaced with `authConfigured` field from `GET /api/setup` (runtime `isAuthConfigured()` check). OAuth route also sets the env var on Cloud Run for belt+suspenders.
+2. **Runtime auth status** — Added `authConfigured: boolean` to `SetupState` type and `GET /api/setup` response. Frontend checks auth status dynamically instead of relying on build-time env vars.
+3. **Header warning icons** — Pulsing amber-dotted icons appear in Shell header when DWD (🔗) or Auth (🔐) aren't configured. Each links directly to the relevant settings tab (`?tab=integration` / `?tab=security`). Disappear automatically once configured.
+4. **Editable agent email domain** — Settings → General tab now has an input field + save button for the agent email domain. Syncs with `POST /api/setup`, persists to Firestore `config/settings.agentEmailDomain`. Flows to the hire dialog for auto-filling agent emails.
+5. **Settings URL params** — All settings tabs sync to `?tab=` URL query parameters for deep-linking and bookmarking.
+6. **Header cleanup** — Removed approval checkmark/badge from header. Centered breadcrumb in header bar.
+7. **Upgrade fix** — Restored seed files (fleet-registry.json, responsibilities.json, responsibilities-job.json) and removed stale SOUL_PROTOCOL from manifest to fix fleet upgrade failures.
+8. **Dead code cleanup** — Deleted 5 old settings components (SettingsView, GeneralTab, ModelsTab, SecurityTab, SystemTab = −1,282 lines). Stripped IntegrationTab to only its used export (DWDGuide). Fixed import from deleted SettingsView → `@/lib/types`.
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
