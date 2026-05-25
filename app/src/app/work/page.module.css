@@ -393,6 +393,26 @@
   animation: fadeText 1.5s ease-in-out infinite;
 }
 
+/* ---- Project filter ---- */
+.projectFilter {
+  margin: 0 0 16px 0;
+}
+.projectSelect {
+  background: var(--charcoal, #313B47);
+  color: var(--cloud, #E6EBF0);
+  border: 1px solid rgba(86,99,115,0.28);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 180px;
+}
+.projectSelect:focus {
+  outline: none;
+  border-color: rgba(143,216,230,0.48);
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
   .shell {

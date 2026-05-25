@@ -1,28 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/require-auth";
-import { getDb } from "@/lib/firestore";
+import { projectsCol } from "@/lib/firestore";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
 /**
- * GET /api/primes/[id]/projects — List projects for a Prime
+ * GET /api/primes/[id]/projects — List all projects for a prime
+ * Query: ?status=active&includeArchived=true
  */
-export async function GET(_req: NextRequest, ctx: RouteContext) {
-  const auth = await requireAuth();
-  if (!auth.authenticated) return auth.response;
-
+export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
-    const db = getDb();
-    const col = db.collection("primes").doc(id).collection("projects");
+    const url = new URL(req.url);
+    const statusFilter = url.searchParams.get("status");
+    const includeArchived = url.searchParams.get("includeArchived") === "true";
 
+    const col = projectsCol(id);
     const snap = await col.orderBy("created_at", "desc").get();
-    const projects = snap.docs.map((doc) => ({
+
+    let projects = snap.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
+
+    // Exclude archived by default
+    if (!includeArchived) {
+      projects = projects.filter((p: any) => p.status !== "archived");
+    }
+
+    // Optional status filter
+    if (statusFilter) {
+      projects = projects.filter((p: any) => p.status === statusFilter);
+    }
 
     return NextResponse.json({ projects });
   } catch (err) {
@@ -32,43 +42,41 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 }
 
 /**
- * POST /api/primes/[id]/projects — Create a project
- * Body: { name: string, description?: string }
+ * POST /api/primes/[id]/projects — Create a new project
+ * Body: { id, name, description, ownerAgent?, context? }
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
-  const auth = await requireAuth();
-  if (!auth.authenticated) return auth.response;
-
   try {
     const { id } = await ctx.params;
     const body = await req.json();
-    const { name, description } = body;
 
-    if (!name || typeof name !== "string" || !name.trim()) {
-      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    if (!body.id || !body.name || !body.description) {
+      return NextResponse.json(
+        { error: "Missing required fields: id, name, description" },
+        { status: 400 }
+      );
     }
 
-    const projectId = `proj-${Date.now()}`;
     const now = new Date().toISOString();
 
     const project = {
-      id: projectId,
-      name: name.trim(),
-      description: typeof description === "string" ? description.trim() : "",
-      status: "active" as const,
+      name: body.name,
+      description: body.description,
+      status: "active",
+      ownerAgent: body.ownerAgent || null,
+      participants: [],
+      missionCount: 0,
+      completedMissions: 0,
+      context: body.context || {},
       created_at: now,
-      updated_at: now,
+      created_by: "operator",
+      completed_at: null,
     };
 
-    const db = getDb();
-    await db
-      .collection("primes")
-      .doc(id)
-      .collection("projects")
-      .doc(projectId)
-      .set(project);
+    const col = projectsCol(id);
+    await col.doc(body.id).set(project);
 
-    return NextResponse.json({ project }, { status: 201 });
+    return NextResponse.json({ project: { id: body.id, ...project } });
   } catch (err) {
     console.error(`[api/primes/projects] POST error:`, err);
     return NextResponse.json({ error: "Failed to create project" }, { status: 500 });

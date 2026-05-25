@@ -138,20 +138,216 @@ async function ensureProjectsLoaded() {
   }
 }
 
-function buildProjectContext(projectId) {
+// ---- Process registry (loaded from Firestore, refreshed periodically) ----
+let PROCESSES = {}; // keyed by process id
+let _processesLoadedAt = 0;
+const PROCESSES_REFRESH_MS = 60_000;
+
+async function loadProcesses() {
+  try {
+    const token = await getAuthToken();
+    if (!token) return;
+    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes`;
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const processes = {};
+    for (const doc of (data.documents || [])) {
+      const p = firestoreDecode(doc.fields || {});
+      if (p.id && p.status !== 'deprecated') {
+        processes[p.id] = p;
+      }
+    }
+    PROCESSES = processes;
+    _processesLoadedAt = Date.now();
+    if (Object.keys(processes).length > 0) {
+      log('INFO', `Processes loaded: ${Object.keys(processes).join(', ')}`);
+    }
+  } catch (e) {
+    log('WARN', `Failed to load processes: ${e.message}`);
+  }
+}
+
+async function ensureProcessesLoaded() {
+  if (Date.now() - _processesLoadedAt > PROCESSES_REFRESH_MS) {
+    await loadProcesses();
+  }
+}
+
+/**
+ * Convert a Process definition into a checkpoint_plan decision payload.
+ * Groups steps by checkpointBoundary markers into checkpoints.
+ * Substitutes parameters into step titles, descriptions, and context.
+ */
+function processToCheckpointPlan(process, parameters = {}) {
+  const steps = process.steps || [];
+  if (steps.length === 0) return null;
+
+  // Substitute parameters in strings
+  function substitute(text) {
+    if (!text || typeof text !== 'string') return text;
+    let result = text;
+    for (const [key, value] of Object.entries(parameters)) {
+      result = result.replace(new RegExp(`\\$\\{${key}\\}|\\{\\{${key}\\}\\}`, 'g'), String(value));
+    }
+    return result;
+  }
+
+  // Group steps into checkpoints (split on checkpointBoundary: true)
+  const checkpoints = [];
+  let currentTasks = [];
+  let cpIndex = 1;
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const task = {
+      agent: step.agent || 'motor',
+      task: substitute(step.description || step.title),
+      accept_criteria: substitute(step.accept_criteria || ''),
+      intent: step.intent || 'execute',
+      // Carry process metadata for special step types
+      _step_type: step.type || 'standard',
+      _optional: step.optional || false,
+      _specialty: step.specialty || null,
+    };
+    currentTasks.push(task);
+
+    // Create checkpoint boundary
+    if (step.checkpointBoundary || i === steps.length - 1) {
+      checkpoints.push({
+        instruction: substitute(step.checkpointBoundary
+          ? `Checkpoint ${cpIndex}: ${step.title || 'Steps ' + (i - currentTasks.length + 2) + '-' + (i + 1)}`
+          : `Process Steps`),
+        accept_criteria: '',
+        tasks: currentTasks,
+      });
+      currentTasks = [];
+      cpIndex++;
+    }
+  }
+
+  return {
+    action: 'checkpoint_plan',
+    checkpoints,
+    process_id: process.id,
+    process_name: process.name,
+    process_version: process.version || 1,
+  };
+}
+
+// ---- Context Packet helpers ----
+// Context entry kinds and their display icons
+const CONTEXT_KIND_LABELS = {
+  drive_folder: 'drive_folder', sheet: 'sheet', doc: 'doc',
+  dataset: 'dataset', url: 'url', template: 'template',
+  people: 'people', convention: 'convention',
+};
+
+/**
+ * Merge two context packets (maps of key→entry). Child wins on key collision.
+ * Both inputs are { key: { kind, ref, url, name, summary, updatedAt, updatedBy } }
+ */
+function mergeContextPackets(parentCtx, childCtx) {
+  if (!parentCtx && !childCtx) return {};
+  if (!parentCtx) return { ...(childCtx || {}) };
+  if (!childCtx) return { ...(parentCtx || {}) };
+  return { ...parentCtx, ...childCtx }; // shallow by key — child overrides
+}
+
+/**
+ * Render a context packet as structured text for brain injection.
+ * Handles both rich context entries (kind/ref/summary) and legacy flat values.
+ */
+function renderContextPacket(ctx) {
+  if (!ctx || typeof ctx !== 'object') return '';
+  const lines = [];
+  for (const [key, entry] of Object.entries(ctx)) {
+    if (!entry) continue;
+    // Rich context entry (has 'kind' or 'summary')
+    if (typeof entry === 'object' && (entry.kind || entry.summary)) {
+      const kind = entry.kind || 'unknown';
+      const name = entry.name || key;
+      const line = `${key} (${kind}): ${name}`;
+      lines.push(line);
+      const details = [];
+      if (entry.ref) details.push(`ID: ${entry.ref}`);
+      if (entry.url) details.push(`URL: ${entry.url}`);
+      if (entry.updatedAt) {
+        const dateStr = typeof entry.updatedAt === 'string' ? entry.updatedAt.substring(0, 10) : '';
+        const byStr = entry.updatedBy ? ` by ${entry.updatedBy}` : '';
+        details.push(`Updated: ${dateStr}${byStr}`);
+      }
+      if (details.length > 0) lines.push(`  ${details.join(' | ')}`);
+      if (entry.summary) lines.push(`  ${entry.summary}`);
+    } else {
+      // Legacy flat value (string, number, array)
+      const val = Array.isArray(entry) ? entry.join(', ') : String(entry);
+      lines.push(`${key}: ${val}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Build full project context for injection into agent dispatches.
+ * Merges project-level context with optional envelope-level context.
+ * Returns null if no project found.
+ */
+function buildProjectContext(projectId, envelopeContext = null) {
   if (!projectId || !PROJECTS[projectId]) return null;
   const p = PROJECTS[projectId];
-  const ctx = p.context || {};
-  const lines = [`Project: ${p.name || p.id}`];
-  if (p.description) lines.push(`Description: ${p.description}`);
-  if (ctx.gcp_project_id) lines.push(`GCP Project: ${ctx.gcp_project_id} (use --project=${ctx.gcp_project_id} for all gcloud commands)`);
-  if (ctx.gcp_region) lines.push(`Region: ${ctx.gcp_region}`);
-  if (ctx.resources) {
-    const res = Array.isArray(ctx.resources) ? ctx.resources.join(', ') : ctx.resources;
-    lines.push(`Resources: ${res}`);
+  const projectCtx = p.context || {};
+  const mergedCtx = mergeContextPackets(projectCtx, envelopeContext);
+
+  const header = [`## Project Context: ${p.name || p.id}`];
+  if (p.description) header.push(`Description: ${p.description}`);
+  header.push('');
+
+  const rendered = renderContextPacket(mergedCtx);
+  if (!rendered && !p.description) return null;
+
+  return header.join('\n') + rendered;
+}
+
+/**
+ * Attempt to backfill null-ref context entries after a motor dispatch creates resources.
+ * Looks for patterns like folder IDs, sheet IDs, doc IDs in the agent output.
+ */
+async function backfillContextRefs(envelope, agentOutput) {
+  if (!agentOutput || !envelope.context || typeof envelope.context !== 'object') return;
+  const nullRefEntries = Object.entries(envelope.context)
+    .filter(([, entry]) => entry && typeof entry === 'object' && entry.ref === null);
+  if (nullRefEntries.length === 0) return;
+
+  // Extract resource IDs from common creation patterns in motor output
+  const patterns = [
+    { kind: 'drive_folder', regex: /(?:created folder|folder id|folderId)[:\s]+['"]?([a-zA-Z0-9_-]{20,})['"]?/gi },
+    { kind: 'sheet', regex: /(?:created spreadsheet|spreadsheet id|spreadsheetId)[:\s]+['"]?([a-zA-Z0-9_-]{20,})['"]?/gi },
+    { kind: 'doc', regex: /(?:created document|document id|documentId)[:\s]+['"]?([a-zA-Z0-9_-]{20,})['"]?/gi },
+  ];
+
+  let updated = false;
+  for (const [key, entry] of nullRefEntries) {
+    for (const { kind, regex } of patterns) {
+      if (entry.kind !== kind) continue;
+      const match = regex.exec(agentOutput);
+      if (match) {
+        entry.ref = match[1];
+        entry.updatedAt = now();
+        entry.updatedBy = `backfill`;
+        updated = true;
+        log('INFO', `Context backfill: ${key} → ref=${match[1]}`);
+        break;
+      }
+    }
   }
-  if (ctx.notes) lines.push(`Notes: ${ctx.notes}`);
-  return lines.join('\n');
+
+  if (updated) {
+    await firestoreWrite('work', envelope.id, { ...envelope, context: envelope.context, updated_at: now() });
+    log('INFO', `Context backfill: updated envelope ${envelope.id} with ${nullRefEntries.filter(([,e]) => e.ref !== null).length} refs`);
+  }
 }
 
 // ---- File read cache (60s TTL) ----
@@ -464,6 +660,17 @@ function buildSystemPrompt(mode, payload) {
     parts.push(`[PROJECT REGISTRY — active work streams with context]\nEach project carries context that applies to all missions within it. When classifying or deciding, identify the relevant project and use its context.\n${JSON.stringify(projectSummary, null, 2)}`);
   }
 
+  // 6. Process registry (if any processes exist)
+  if (Object.keys(PROCESSES).length > 0) {
+    const processSummary = Object.values(PROCESSES).map(p => ({
+      id: p.id, name: p.name, description: p.description,
+      version: p.version || 1,
+      step_count: (p.steps || []).length,
+      parameters: Object.keys(p.parameters || {}),
+    }));
+    parts.push(`[PROCESS REGISTRY — reusable playbooks]\nProcesses are stored, versioned playbooks that define step-by-step workflows. Use the "follow_process" action when work matches an existing process. Available:\n${JSON.stringify(processSummary, null, 2)}`);
+  }
+
   // 6. Mode and JSON constraint
   parts.push(`Mode: ${mode}\nYou MUST respond with exactly one JSON block and nothing else.`);
 
@@ -490,6 +697,12 @@ function buildUserPrompt(mode, payload) {
         context_summary: JSON.stringify(p.context || {}),
       }));
     }
+    if (Object.keys(PROCESSES).length > 0) {
+      classifyPayload.process_registry = Object.values(PROCESSES).map(p => ({
+        id: p.id, name: p.name, description: p.description,
+        parameters: Object.keys(p.parameters || {}),
+      }));
+    }
     return JSON.stringify(classifyPayload);
   }
   if (mode === 'decide') {
@@ -508,6 +721,14 @@ function buildUserPrompt(mode, payload) {
     const envProjectId = payload.envelope?.project_id;
     if (envProjectId && PROJECTS[envProjectId]) {
       decidePayload.project = PROJECTS[envProjectId];
+    }
+    // Inject available processes so Cortex can suggest follow_process
+    if (Object.keys(PROCESSES).length > 0) {
+      decidePayload.available_processes = Object.values(PROCESSES).map(p => ({
+        id: p.id, name: p.name, description: (p.description || '').substring(0, 200),
+        step_count: (p.steps || []).length,
+        parameters: p.parameters || {},
+      }));
     }
     return JSON.stringify(decidePayload);
   }
@@ -1081,6 +1302,7 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
 // ---- Intake processing (Phase 3: memory + active scan + attach) ----
 async function processIntake(intake) {
   await ensureProjectsLoaded();
+  await ensureProcessesLoaded();
   log('INFO', `Processing intake: ${intake.id} from ${intake.source}`);
 
   // Claim the intake
@@ -1246,6 +1468,8 @@ async function processIntake(intake) {
     error: null,
     source_channel: intake.source,
     source_meta: intake.source_meta || {},
+    project_id: decision.project_id || null,
+    context: decision.context || null,
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -1785,9 +2009,9 @@ async function processEnvelope(envelope, memoryContext) {
 
       log('INFO', `Dispatching child ${childId} to ${agentId}: ${task.substring(0, 100)}`);
 
-      // Prepend project context for motor dispatches
-      if (agentId === 'motor' && envelope.project_id) {
-        const projCtx = buildProjectContext(envelope.project_id);
+      // Prepend project context for dispatches (all agent types, not just motor)
+      if (envelope.project_id) {
+        const projCtx = buildProjectContext(envelope.project_id, envelope.context);
         if (projCtx) {
           childEnvelope.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${childEnvelope.instruction}`;
         }
@@ -1803,6 +2027,12 @@ async function processEnvelope(envelope, memoryContext) {
       childEnvelope.completed_at = now();
       childEnvelope.updated_at = now();
       await firestoreWrite('work', childId, childEnvelope);
+
+      // Context backfill: if motor created resources, update null-ref context entries
+      if (agentId === 'motor' && result.success && envelope.context) {
+        await backfillContextRefs(envelope, result.output);
+      }
+
       await writeHistory(childId, 'active', childEnvelope.status, agentId,
         result.success ? `Completed (${result.durationMs}ms)` : (result.timedOut ? `Timed out (${result.durationMs}ms)` : `Failed: ${result.error}`));
 
@@ -1911,9 +2141,9 @@ async function processEnvelope(envelope, memoryContext) {
 
         log('INFO', `Plan step ${stepNum}/${steps.length}: dispatching to ${stepAgent} — ${stepTask.substring(0, 80)}`);
 
-        // Prepend project context for motor plan steps
-        if (stepAgent === 'motor' && envelope.project_id) {
-          const projCtx = buildProjectContext(envelope.project_id);
+        // Prepend project context for plan steps (all agent types)
+        if (envelope.project_id) {
+          const projCtx = buildProjectContext(envelope.project_id, envelope.context);
           if (projCtx) {
             stepChild.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${stepChild.instruction}`;
           }
@@ -1997,6 +2227,94 @@ async function processEnvelope(envelope, memoryContext) {
 
       log('INFO', `Plan execution ${planFailed ? 'FAILED' : 'complete'}: ${planContext.length}/${steps.length} steps. Consulting Cortex for synthesis.`);
       continue; // Loop back to Cortex for synthesize decision
+    }
+
+    if (action === 'follow_process') {
+      // Process execution: load process, validate parameters, convert to checkpoint_plan
+      const processId = decision.processId || decision.process_id;
+      await ensureProcessesLoaded();
+      const process = PROCESSES[processId];
+
+      if (!process) {
+        log('ERROR', `follow_process: process '${processId}' not found`);
+        priorResults.push({ agent: 'system', result: `[SYSTEM] Process '${processId}' not found. Available processes: ${Object.keys(PROCESSES).join(', ') || 'none'}` });
+        continue;
+      }
+
+      const parameters = decision.parameters || {};
+
+      // Validate required parameters
+      const requiredParams = Object.entries(process.parameters || {})
+        .filter(([, def]) => def && typeof def === 'object' && def.required && !def.default)
+        .map(([key]) => key);
+      const missingParams = requiredParams.filter(k => !(k in parameters));
+      if (missingParams.length > 0) {
+        log('WARN', `follow_process: missing required parameters: ${missingParams.join(', ')}`);
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] Process '${process.name}' requires parameters that were not provided: ${missingParams.join(', ')}. Use needs_input to ask the user, or provide default values.`,
+        });
+        continue;
+      }
+
+      // Fill defaults for missing optional parameters
+      for (const [key, def] of Object.entries(process.parameters || {})) {
+        if (!(key in parameters) && def && typeof def === 'object' && def.default !== undefined) {
+          parameters[key] = def.default;
+        }
+      }
+
+      // Convert process to checkpoint_plan format
+      const cpPlan = processToCheckpointPlan(process, parameters);
+      if (!cpPlan) {
+        priorResults.push({ agent: 'system', result: `[SYSTEM] Process '${process.name}' has no steps defined.` });
+        continue;
+      }
+
+      log('INFO', `follow_process: executing '${process.name}' v${process.version || 1} with ${cpPlan.checkpoints.length} checkpoints`);
+
+      // Merge process context template into envelope context
+      if (process.contextTemplate && typeof process.contextTemplate === 'object') {
+        const templateCtx = {};
+        for (const [key, entry] of Object.entries(process.contextTemplate)) {
+          if (entry && typeof entry === 'object') {
+            // Substitute parameters in context template values
+            const processed = { ...entry };
+            if (processed.name) processed.name = processed.name.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
+            if (processed.summary) processed.summary = processed.summary.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
+            templateCtx[key] = processed;
+          }
+        }
+        envelope.context = mergeContextPackets(envelope.context, templateCtx);
+        await firestoreWrite('work', envelope.id, { ...envelope, context: envelope.context, updated_at: now() });
+      }
+
+      // Tag envelope with process metadata
+      envelope.process_id = processId;
+      envelope.process_version = process.version || 1;
+      await firestoreWrite('work', envelope.id, envelope);
+
+      // Increment execution count
+      try {
+        const token = await getAuthToken();
+        if (token) {
+          const procUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes/${processId}`;
+          const currentCount = process.execution_count || 0;
+          await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: {
+              execution_count: { integerValue: String(currentCount + 1) },
+              last_executed_at: { stringValue: now() },
+            }}),
+          });
+        }
+      } catch (e) { log('DEBUG', `Process execution count update failed: ${e.message}`); }
+
+      // Fall through to checkpoint_plan by overwriting action and decision
+      decision = cpPlan;
+      action = 'checkpoint_plan';
+      // Note: falls through to checkpoint_plan handler below
     }
 
     if (action === 'checkpoint_plan') {
@@ -2113,9 +2431,9 @@ async function processEnvelope(envelope, memoryContext) {
 
           log('INFO', `CP${cpNum} Task ${taskNum}/${cpTasks.length}: ${taskAgent} — ${taskDesc.substring(0, 60)}`);
 
-          // Prepend project context for motor checkpoint tasks
-          if (taskAgent === 'motor' && envelope.project_id) {
-            const projCtx = buildProjectContext(envelope.project_id);
+          // Prepend project context for checkpoint tasks (all agent types)
+          if (envelope.project_id) {
+            const projCtx = buildProjectContext(envelope.project_id, envelope.context);
             if (projCtx) {
               taskEnvelope.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${taskEnvelope.instruction}`;
             }

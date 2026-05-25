@@ -7,6 +7,7 @@ import { usePrime } from "@/contexts/PrimeContext";
 import { useWorkEnvelopes, matchAgent } from "@/components/work/useWorkEnvelopes";
 import { WorkTree } from "@/components/work/WorkTree";
 import { WorkDetail } from "@/components/work/WorkDetail";
+import { api } from "@/lib/api";
 
 /* ---- Tab types ---- */
 type TabId = "current" | "queue" | "previous";
@@ -57,6 +58,21 @@ function WorkPage() {
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);
   const [prevPage, setPrevPage] = useState(0);
   const [primeDropdownOpen, setPrimeDropdownOpen] = useState(false);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [projects, setProjects] = useState<{id: string; name: string}[]>([]);
+
+  /* ---- Project filter (client-side) ---- */
+  const filteredEnvelopes = useMemo(() => {
+    if (!projectFilter) return { current, queue, previous };
+    const filterFn = (nodes: typeof current) => nodes.filter(n =>
+      projectFilter === '__none__' ? !(n as any).project_id : (n as any).project_id === projectFilter
+    );
+    return {
+      current: filterFn(current),
+      queue: filterFn(queue),
+      previous: filterFn(previous),
+    };
+  }, [current, queue, previous, projectFilter]);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -70,6 +86,15 @@ function WorkPage() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  /* ---- Fetch projects ---- */
+  useEffect(() => {
+    if (!selectedPrimeId) return;
+    api<{ projects: { id: string; name: string }[] }>(`/api/primes/${selectedPrimeId}/projects`)
+      .then((data) => {
+        if (data?.projects) setProjects(data.projects);
+      });
+  }, [selectedPrimeId]);
 
   /* ---- Update URL params helper ---- */
   const updateParams = useCallback(
@@ -115,8 +140,8 @@ function WorkPage() {
   }, [fleet, allEnvelopes]);
 
   /* ---- Previous work pagination ---- */
-  const totalPrevPages = Math.ceil(previous.length / PAGE_SIZE);
-  const prevSlice = previous.slice(prevPage * PAGE_SIZE, (prevPage + 1) * PAGE_SIZE);
+  const totalPrevPages = Math.ceil(filteredEnvelopes.previous.length / PAGE_SIZE);
+  const filteredPrevSlice = filteredEnvelopes.previous.slice(prevPage * PAGE_SIZE, (prevPage + 1) * PAGE_SIZE);
 
   /* ---- Handlers ---- */
   const handleSelectAgent = useCallback(
@@ -215,6 +240,23 @@ function WorkPage() {
           : "Select an agent to filter, or view all work"}
       </div>
 
+      {/* ---- Project Filter ---- */}
+      {projects.length > 0 && (
+        <div className={styles.projectFilter}>
+          <select
+            className={styles.projectSelect}
+            value={projectFilter || ""}
+            onChange={(e) => setProjectFilter(e.target.value || null)}
+          >
+            <option value="">All projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+            <option value="__none__">No project</option>
+          </select>
+        </div>
+      )}
+
       {/* ---- Agent Strip ---- */}
       {agentInfo.length > 0 && (
         <div className={styles.agents}>
@@ -247,7 +289,7 @@ function WorkPage() {
           >
             Currently working on
             <span className={`${styles.badge} ${styles.badgeTeal}`}>
-              {current.length}
+              {filteredEnvelopes.current.length}
             </span>
           </button>
           <button
@@ -256,7 +298,7 @@ function WorkPage() {
           >
             In Queue
             <span className={`${styles.badge} ${styles.badgeSlate}`}>
-              {queue.length}
+              {filteredEnvelopes.queue.length}
             </span>
           </button>
           <button
@@ -265,7 +307,7 @@ function WorkPage() {
           >
             Previous Work
             <span className={`${styles.badge} ${styles.badgeSlate}`}>
-              {previous.length}
+              {filteredEnvelopes.previous.length}
             </span>
           </button>
         </div>
@@ -274,7 +316,7 @@ function WorkPage() {
 
         {/* Current */}
         <div className={activeTab === "current" ? styles.tabBodyVis : styles.tabBody}>
-          {current.length === 0 ? (
+          {filteredEnvelopes.current.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>◎</div>
               <div className={styles.emptyTitle}>No active work</div>
@@ -284,7 +326,7 @@ function WorkPage() {
             </div>
           ) : (
             <WorkTree
-              nodes={current}
+              nodes={filteredEnvelopes.current}
               onSelectNode={handleSelectNode}
               selectedId={selectedWorkId}
             />
@@ -293,7 +335,7 @@ function WorkPage() {
 
         {/* Queue */}
         <div className={activeTab === "queue" ? styles.tabBodyVis : styles.tabBody}>
-          {queue.length === 0 ? (
+          {filteredEnvelopes.queue.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>◎</div>
               <div className={styles.emptyTitle}>Queue is empty</div>
@@ -303,7 +345,7 @@ function WorkPage() {
             </div>
           ) : (
             <WorkTree
-              nodes={queue}
+              nodes={filteredEnvelopes.queue}
               onSelectNode={handleSelectNode}
               selectedId={selectedWorkId}
             />
@@ -312,7 +354,7 @@ function WorkPage() {
 
         {/* Previous */}
         <div className={activeTab === "previous" ? styles.tabBodyVis : styles.tabBody}>
-          {previous.length === 0 ? (
+          {filteredEnvelopes.previous.length === 0 ? (
             <div className={styles.empty}>
               <div className={styles.emptyIcon}>◎</div>
               <div className={styles.emptyTitle}>No previous work</div>
@@ -323,7 +365,7 @@ function WorkPage() {
           ) : (
             <>
               <WorkTree
-                nodes={prevSlice}
+                nodes={filteredPrevSlice}
                 onSelectNode={handleSelectNode}
                 selectedId={selectedWorkId}
               />

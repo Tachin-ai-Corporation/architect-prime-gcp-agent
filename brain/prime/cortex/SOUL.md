@@ -189,6 +189,19 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 }
 ```
 
+**follow_process** — Execute a stored, reusable process playbook:
+```json
+{
+  "action": "follow_process",
+  "processId": "fleet-onboarding",
+  "parameters": {
+    "agent_name": "stan",
+    "specialty": "devops"
+  }
+}
+```
+Use this when `available_processes` is in the decide payload and the work matches a known process. Brain loads the process definition, substitutes parameters, and converts steps into a `checkpoint_plan` for execution. Required: `processId`. Optional: `parameters` (key-value map matching the process's parameter definitions).
+
 ## Decision Rules
 
 1. **Use `short_circuit` liberally.** Simple questions, greetings, status checks, and anything I can answer from my knowledge or memory — answer directly.
@@ -198,6 +211,7 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 5. **Use `needs_input` sparingly.** Only when genuinely ambiguous — prefer making a reasonable assumption over blocking.
 6. **Escalate, don't report.** When you hit a blocker you cannot solve yourself (missing permissions, missing access, need human decision), do NOT just describe the problem. Use `synthesize_with_failure` and come back with a **concrete ask**: what you need, who can provide it, and the exact command or action to unblock you. Escalate to wherever the task came from (the `source_channel` / `source_meta` in the envelope). This is the standard for all agents.
 7. **Try to unblock yourself first.** Before reporting `blocked`, attempt at least one alternative approach. Only use `blocked` when you have confirmed the dependency is genuinely external and you cannot work around it.
+8. **Use `follow_process` for known playbooks.** When `available_processes` is in the payload and the work matches a process, prefer `follow_process` over building a plan from scratch. Processes are tested, versioned playbooks.
 
 ## Output Format Rules
 

@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
-# project-manage — CRUD for projects stored in Firestore
-# Motor tool: reads/writes primes/{PRIME_ID}/projects/{projectId}
+# process-manage — CRUD for processes stored in Firestore
+# Motor tool: reads/writes primes/{PRIME_ID}/processes/{processId}
 #
 # Usage:
-#   project-manage list                    # List all projects (id, name, status, description)
-#   project-manage get <id>                # Get full project details as JSON
-#   project-manage create '<json>'         # Create new project
-#   project-manage update '<id>' '<json>'  # Update project (deep merge on context)
-#   project-manage archive '<id>'          # Set status to 'archived'
+#   process-manage list                    # List all processes (id, name, status, version, created_by)
+#   process-manage get <id>                # Get full process details as JSON
+#   process-manage create '<json>'         # Create new process
+#   process-manage update '<id>' '<json>'  # Update process (deep merge on steps, parameters, contextTemplate)
+#   process-manage deprecate '<id>'        # Set status to 'deprecated'
 #
-# The JSON for create must include: id, name, description, context
-# The JSON for update does a deep merge on the context field and shallow merge on others
-# Context entries follow the Context Packet schema:
-#   { "key": { "kind": "sheet|drive_folder|doc|dataset|url|template|people|convention",
-#              "ref": "resource-id", "url": "https://...", "name": "Display Name",
-#              "summary": "Description of this resource", "updatedAt": "ISO", "updatedBy": "agent" } }
-# Automatically sets created_at and updated_at timestamps; defaults status to 'active'
+# The JSON for create must include: id, name, description, steps
+# Steps are an array of objects:
+#   { "title": "...", "description": "...", "agent": "motor",
+#     "type": "standard|delegation|spawn_responsibility|approval_gate",
+#     "optional": false, "checkpointBoundary": false, "contextTemplate": {} }
+#
+# Defaults on create: status='active', version=1, created_at=now, updated_at=now,
+#   created_by='system', execution_count=0, visibility='team',
+#   parameters={}, contextTemplate={}, changelog=[]
+#
+# The update command deep merges steps, parameters, and contextTemplate.
+# Auto-increments version and appends to changelog.
 
 set -euo pipefail
 
@@ -23,7 +28,7 @@ PRIME_ID="${PRIME_ID:?'PRIME_ID env var is required'}"
 GCP_PROJECT_ID="${GCP_PROJECT_ID:?'GCP_PROJECT_ID env var is required'}"
 
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
-COLLECTION_PATH="primes/${PRIME_ID}/projects"
+COLLECTION_PATH="primes/${PRIME_ID}/processes"
 
 get_token() {
   gcloud auth print-access-token --quiet 2>/dev/null
@@ -47,14 +52,14 @@ result = subprocess.run(
     capture_output=True, text=True
 )
 if result.returncode != 0:
-    print(f'ERROR: Failed to list projects: {result.stderr}', file=sys.stderr)
+    print(f'ERROR: Failed to list processes: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
 data = json.loads(result.stdout)
 docs = data.get('documents', [])
 
 if not docs:
-    print('No projects found.')
+    print('No processes found.')
     sys.exit(0)
 
 def extract_value(field):
@@ -81,19 +86,21 @@ for doc in docs:
     pid = extract_value(fields.get('id', {'stringValue': '—'}))
     name = extract_value(fields.get('name', {'stringValue': '—'}))
     status = extract_value(fields.get('status', {'stringValue': '—'}))
-    desc = extract_value(fields.get('description', {'stringValue': ''}))
+    version = extract_value(fields.get('version', {'integerValue': '0'}))
+    created_by = extract_value(fields.get('created_by', {'stringValue': '—'}))
     print(f'  {pid}')
-    print(f'    Name:        {name}')
-    print(f'    Status:      {status}')
-    print(f'    Description: {(desc or \"\")[:120]}')
+    print(f'    Name:       {name}')
+    print(f'    Status:     {status}')
+    print(f'    Version:    {version}')
+    print(f'    Created by: {created_by}')
     print()
 
-print(f'Total: {len(docs)} projects')
+print(f'Total: {len(docs)} processes')
 "
     ;;
 
   get)
-    TARGET_ID="${1:?'get requires a project id'}"
+    TARGET_ID="${1:?'get requires a process id'}"
     python3 -c "
 import json, sys, subprocess
 
@@ -108,7 +115,7 @@ result = subprocess.run(
     capture_output=True, text=True
 )
 if result.returncode != 0:
-    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    print(f'ERROR: Process \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
 data = json.loads(result.stdout)
@@ -144,24 +151,49 @@ print(json.dumps(plain, indent=2))
 import json, sys, subprocess
 from datetime import datetime, timezone
 
-new_project = json.loads('''$NEW_JSON''')
+new_process = json.loads('''$NEW_JSON''')
 
 # Validate required fields
-required = ['id', 'name', 'description', 'context']
-missing = [f for f in required if f not in new_project]
+required = ['id', 'name', 'description', 'steps']
+missing = [f for f in required if f not in new_process]
 if missing:
     print(f'ERROR: Missing required fields: {missing}', file=sys.stderr)
     sys.exit(1)
 
-if not isinstance(new_project.get('context'), dict):
-    print('ERROR: context must be a JSON object/map.', file=sys.stderr)
+if not isinstance(new_process.get('steps'), list):
+    print('ERROR: steps must be a JSON array.', file=sys.stderr)
     sys.exit(1)
+
+if len(new_process['steps']) == 0:
+    print('ERROR: steps array must contain at least one step.', file=sys.stderr)
+    sys.exit(1)
+
+# Validate each step has required fields
+for i, step in enumerate(new_process['steps']):
+    step_required = ['title', 'description']
+    step_missing = [f for f in step_required if f not in step]
+    if step_missing:
+        print(f'ERROR: Step {i} missing required fields: {step_missing}', file=sys.stderr)
+        sys.exit(1)
+    # Enforce step defaults
+    step.setdefault('agent', 'motor')
+    step.setdefault('type', 'standard')
+    step.setdefault('optional', False)
+    step.setdefault('checkpointBoundary', False)
+    step.setdefault('contextTemplate', {})
 
 # Enforce defaults
 now = datetime.now(timezone.utc).isoformat()
-new_project.setdefault('status', 'active')
-new_project['created_at'] = now
-new_project['updated_at'] = now
+new_process.setdefault('status', 'active')
+new_process.setdefault('version', 1)
+new_process['created_at'] = now
+new_process['updated_at'] = now
+new_process.setdefault('created_by', 'system')
+new_process.setdefault('execution_count', 0)
+new_process.setdefault('visibility', 'team')
+new_process.setdefault('parameters', {})
+new_process.setdefault('contextTemplate', {})
+new_process.setdefault('changelog', [])
 
 # Convert plain JSON → Firestore format
 def to_firestore(value):
@@ -181,13 +213,13 @@ def to_firestore(value):
         return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
     return {'stringValue': str(value)}
 
-firestore_doc = {'fields': {k: to_firestore(v) for k, v in new_project.items()}}
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in new_process.items()}}
 
 token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
 base = '${FIRESTORE_BASE}'
 path = '${COLLECTION_PATH}'
-project_id = new_project['id']
-url = f'{base}/{path}/{project_id}'
+process_id = new_process['id']
+url = f'{base}/{path}/{process_id}'
 
 result = subprocess.run(
     ['curl', '-s', '-f', '-X', 'PATCH', url,
@@ -197,18 +229,20 @@ result = subprocess.run(
     capture_output=True, text=True
 )
 if result.returncode != 0:
-    print(f'ERROR: Failed to create project: {result.stderr}', file=sys.stderr)
+    print(f'ERROR: Failed to create process: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
-print(f\"Created project '{project_id}'.\")
-print(f'  Name:        {new_project[\"name\"]}')
-print(f'  Status:      {new_project[\"status\"]}')
-print(f'  Description: {new_project[\"description\"][:120]}')
+print(f\"Created process '{process_id}'.\")
+print(f'  Name:        {new_process[\"name\"]}')
+print(f'  Status:      {new_process[\"status\"]}')
+print(f'  Version:     {new_process[\"version\"]}')
+print(f'  Steps:       {len(new_process[\"steps\"])}')
+print(f'  Description: {new_process[\"description\"][:120]}')
 "
     ;;
 
   update)
-    TARGET_ID="${1:?'update requires a project id'}"
+    TARGET_ID="${1:?'update requires a process id'}"
     UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
     python3 -c "
 import json, sys, subprocess
@@ -228,7 +262,7 @@ result = subprocess.run(
     capture_output=True, text=True
 )
 if result.returncode != 0:
-    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    print(f'ERROR: Process \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
 data = json.loads(result.stdout)
@@ -256,195 +290,148 @@ def extract_value(field):
 
 existing = {k: extract_value(v) for k, v in fields.items()}
 
-# Deep merge context
-if 'context' in updates:
-    existing_ctx = existing.get('context', {})
+# Deep merge steps (replace by index if provided)
+if 'steps' in updates:
+    existing['steps'] = updates['steps']
+    del updates['steps']
+
+# Deep merge parameters
+if 'parameters' in updates:
+    existing_params = existing.get('parameters', {})
+    if not isinstance(existing_params, dict):
+        existing_params = {}
+    for k, v in updates['parameters'].items():
+        existing_params[k] = v
+    existing['parameters'] = existing_params
+    del updates['parameters']
+
+# Deep merge contextTemplate
+if 'contextTemplate' in updates:
+    existing_ctx = existing.get('contextTemplate', {})
     if not isinstance(existing_ctx, dict):
         existing_ctx = {}
-    for k, v in updates['context'].items():
+    for k, v in updates['contextTemplate'].items():
         existing_ctx[k] = v
-    existing['context'] = existing_ctx
-    del updates['context']
+    existing['contextTemplate'] = existing_ctx
+    del updates['contextTemplate']
 
 # Shallow merge rest
 for k, v in updates.items():
+    if k in ('version', 'changelog', 'updated_at'):
+        continue  # managed fields
     existing[k] = v
 
+# Auto-increment version
+old_version = existing.get('version', 1)
+if isinstance(old_version, str):
+    old_version = int(old_version)
+new_version = old_version + 1
+existing['version'] = new_version
+
 # Update timestamp
-existing['updated_at'] = datetime.now(timezone.utc).isoformat()
-
-# Convert back to Firestore format
-def to_firestore(value):
-    if value is None:
-        return {'nullValue': None}
-    if isinstance(value, bool):
-        return {'booleanValue': value}
-    if isinstance(value, int):
-        return {'integerValue': str(value)}
-    if isinstance(value, float):
-        return {'doubleValue': value}
-    if isinstance(value, str):
-        return {'stringValue': value}
-    if isinstance(value, list):
-        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
-    if isinstance(value, dict):
-        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
-    return {'stringValue': str(value)}
-
-firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
-
-result = subprocess.run(
-    ['curl', '-s', '-f', '-X', 'PATCH', url,
-     '-H', f'Authorization: Bearer {token}',
-     '-H', 'Content-Type: application/json',
-     '-d', json.dumps(firestore_doc)],
-    capture_output=True, text=True
-)
-if result.returncode != 0:
-    print(f'ERROR: Failed to update project: {result.stderr}', file=sys.stderr)
-    sys.exit(1)
-
-print(f\"Updated project '{target_id}'.\")
-"
-    ;;
-
-  archive)
-    TARGET_ID="${1:?'archive requires a project id'}"
-    python3 -c "
-import json, sys, subprocess
-from datetime import datetime, timezone
-
-target_id = '$TARGET_ID'
-
-token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
-base = '${FIRESTORE_BASE}'
-path = '${COLLECTION_PATH}'
-url = f'{base}/{path}/{target_id}'
-
-# Fetch existing document
-result = subprocess.run(
-    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
-    capture_output=True, text=True
-)
-if result.returncode != 0:
-    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
-    sys.exit(1)
-
-data = json.loads(result.stdout)
-fields = data.get('fields', {})
-
-# Extract existing document to plain JSON
-def extract_value(field):
-    if 'stringValue' in field:
-        return field['stringValue']
-    if 'integerValue' in field:
-        return int(field['integerValue'])
-    if 'booleanValue' in field:
-        return field['booleanValue']
-    if 'doubleValue' in field:
-        return field['doubleValue']
-    if 'nullValue' in field:
-        return None
-    if 'mapValue' in field:
-        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
-    if 'arrayValue' in field:
-        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
-    if 'timestampValue' in field:
-        return field['timestampValue']
-    return str(field)
-
-existing = {k: extract_value(v) for k, v in fields.items()}
-
-# Set archived
-existing['status'] = 'archived'
-existing['updated_at'] = datetime.now(timezone.utc).isoformat()
-
-# Convert back to Firestore format
-def to_firestore(value):
-    if value is None:
-        return {'nullValue': None}
-    if isinstance(value, bool):
-        return {'booleanValue': value}
-    if isinstance(value, int):
-        return {'integerValue': str(value)}
-    if isinstance(value, float):
-        return {'doubleValue': value}
-    if isinstance(value, str):
-        return {'stringValue': value}
-    if isinstance(value, list):
-        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
-    if isinstance(value, dict):
-        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
-    return {'stringValue': str(value)}
-
-firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
-
-result = subprocess.run(
-    ['curl', '-s', '-f', '-X', 'PATCH', url,
-     '-H', f'Authorization: Bearer {token}',
-     '-H', 'Content-Type: application/json',
-     '-d', json.dumps(firestore_doc)],
-    capture_output=True, text=True
-)
-if result.returncode != 0:
-    print(f'ERROR: Failed to archive project: {result.stderr}', file=sys.stderr)
-    sys.exit(1)
-
-print(f\"Archived project '{target_id}'.\")
-"
-    ;;
-
-  complete)
-    TARGET_ID="${1:?'complete requires a project id'}"
-    python3 -c "
-import json, sys, subprocess
-from datetime import datetime, timezone
-
-target_id = '$TARGET_ID'
-
-token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
-base = '${FIRESTORE_BASE}'
-path = '${COLLECTION_PATH}'
-url = f'{base}/{path}/{target_id}'
-
-# Fetch existing document
-result = subprocess.run(
-    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
-    capture_output=True, text=True
-)
-if result.returncode != 0:
-    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
-    sys.exit(1)
-
-data = json.loads(result.stdout)
-fields = data.get('fields', {})
-
-# Extract existing document to plain JSON
-def extract_value(field):
-    if 'stringValue' in field:
-        return field['stringValue']
-    if 'integerValue' in field:
-        return int(field['integerValue'])
-    if 'booleanValue' in field:
-        return field['booleanValue']
-    if 'doubleValue' in field:
-        return field['doubleValue']
-    if 'nullValue' in field:
-        return None
-    if 'mapValue' in field:
-        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
-    if 'arrayValue' in field:
-        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
-    if 'timestampValue' in field:
-        return field['timestampValue']
-    return str(field)
-
-existing = {k: extract_value(v) for k, v in fields.items()}
-
-# Set completed
 now = datetime.now(timezone.utc).isoformat()
-existing['status'] = 'completed'
-existing['completed_at'] = now
+existing['updated_at'] = now
+
+# Append changelog entry
+changelog = existing.get('changelog', [])
+if not isinstance(changelog, list):
+    changelog = []
+changelog.append({
+    'version': new_version,
+    'updated_at': now,
+    'changes': updates.get('_changelog_message', f'Updated to version {new_version}')
+})
+existing['changelog'] = changelog
+
+# Remove internal-only key if present
+existing.pop('_changelog_message', None)
+
+# Convert back to Firestore format
+def to_firestore(value):
+    if value is None:
+        return {'nullValue': None}
+    if isinstance(value, bool):
+        return {'booleanValue': value}
+    if isinstance(value, int):
+        return {'integerValue': str(value)}
+    if isinstance(value, float):
+        return {'doubleValue': value}
+    if isinstance(value, str):
+        return {'stringValue': value}
+    if isinstance(value, list):
+        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict):
+        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update process: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f\"Updated process '{target_id}' to version {new_version}.\")
+"
+    ;;
+
+  deprecate)
+    TARGET_ID="${1:?'deprecate requires a process id'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Process \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+# Extract existing document to plain JSON
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Set deprecated
+now = datetime.now(timezone.utc).isoformat()
+existing['status'] = 'deprecated'
+existing['deprecated_at'] = now
 existing['updated_at'] = now
 
 # Convert back to Firestore format
@@ -475,28 +462,48 @@ result = subprocess.run(
     capture_output=True, text=True
 )
 if result.returncode != 0:
-    print(f'ERROR: Failed to complete project: {result.stderr}', file=sys.stderr)
+    print(f'ERROR: Failed to deprecate process: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
-print(f\"Completed project '{target_id}'.\")
+print(f\"Deprecated process '{target_id}'.\")
 "
     ;;
 
   help|*)
-    echo "Usage: project-manage <list|get|create|update|complete|archive> [args]"
+    echo "Usage: process-manage <list|get|create|update|deprecate> [args]"
     echo ""
     echo "Commands:"
-    echo "  list                        List all projects (id, name, status, description)"
-    echo "  get '<id>'                  Get full project details as JSON"
-    echo "  create '<json>'             Create a new project (full JSON)"
-    echo "  update '<id>' '<json>'      Update a project (partial JSON, deep merge on context)"
-    echo "  complete '<id>'             Set project status to 'completed' with timestamp"
-    echo "  archive '<id>'              Set project status to 'archived'"
+    echo "  list                        List all processes (id, name, status, version, created_by)"
+    echo "  get '<id>'                  Get full process details as JSON"
+    echo "  create '<json>'             Create a new process (full JSON)"
+    echo "  update '<id>' '<json>'      Update a process (deep merge on steps, parameters, contextTemplate)"
+    echo "  deprecate '<id>'            Set process status to 'deprecated' with timestamp"
     echo ""
     echo "The create JSON MUST include:"
-    echo "  id, name, description, context"
+    echo "  id, name, description, steps"
     echo ""
-    echo "Context entries use the Context Packet schema:"
-    echo '  { "key": { "kind": "sheet|drive_folder|doc|...", "ref": "id", "name": "...", "summary": "..." } }'
+    echo "Defaults on create:"
+    echo "  status='active', version=1, created_at=now, updated_at=now,"
+    echo "  created_by='system', execution_count=0, visibility='team',"
+    echo "  parameters={}, contextTemplate={}, changelog=[]"
+    echo ""
+    echo "Step schema (each element in steps array):"
+    echo '  { "title": "Step title",'
+    echo '    "description": "What to do",'
+    echo '    "agent": "motor",'
+    echo '    "type": "standard|delegation|spawn_responsibility|approval_gate",'
+    echo '    "optional": false,'
+    echo '    "checkpointBoundary": false,'
+    echo '    "contextTemplate": {} }'
+    echo ""
+    echo "Update behavior:"
+    echo "  - Deep merges: steps (replace), parameters, contextTemplate"
+    echo "  - Auto-increments version"
+    echo "  - Appends to changelog: {version, updated_at, changes}"
+    echo "  - Sets updated_at timestamp"
+    echo "  - Pass _changelog_message in update JSON to set custom changelog description"
+    echo ""
+    echo "Process statuses: active, deprecated"
+    echo "Step types: standard, delegation, spawn_responsibility, approval_gate"
     ;;
 esac

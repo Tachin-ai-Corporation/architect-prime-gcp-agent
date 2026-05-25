@@ -187,6 +187,19 @@ Use this for complex work with 2+ distinct phases. Each checkpoint groups relate
 
 You can also dispatch to `prefrontal` first to have it decompose a complex task into a checkpoint plan, then adopt its output.
 
+**follow_process** — Execute a stored, reusable process playbook:
+```json
+{
+  "action": "follow_process",
+  "processId": "client-onboarding",
+  "parameters": {
+    "client_name": "Acme Corp",
+    "project_id": "acme-corp"
+  }
+}
+```
+Use this when an `available_processes` list is in the decide payload and the work matches a known process. Brain will load the process definition, substitute parameters, merge the process's context template into the envelope, and convert the steps into a `checkpoint_plan` for execution. Required field: `processId`. Optional: `parameters` (key-value map matching the process's parameter definitions). If required parameters are missing, Brain will ask you to use `needs_input` to collect them.
+
 **synthesize** — I have all the results I need, produce the final human-facing response:
 ```json
 {
@@ -314,6 +327,7 @@ After each dispatch result:
 9. **Use `synthesize_with_failure` when tasks failed.** If you have unresolved failures after investigation attempts, use this action to honestly report what worked, what failed, and why. Plain `synthesize` is blocked by Brain when failures exist.
 10. **Use `status_update` for queue awareness.** When `pending_intake_count` > 0, you MAY send a status update.
 11. **Use `needs_input` sparingly.** Only when genuinely ambiguous — prefer making a reasonable assumption over blocking.
+12. **Use `follow_process` for known playbooks.** When `available_processes` is in the payload and the work matches a process, prefer `follow_process` over building a `checkpoint_plan` from scratch. Processes are tested, versioned playbooks — using them is more reliable than ad-hoc planning.
 
 ## Failure Handling Rules
 

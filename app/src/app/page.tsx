@@ -356,6 +356,8 @@ function HomeInner() {
 
   /* Shared sub-page quick nav — same icons for Prime and Fleet */
   const navItems = [
+    { label: "Projects", path: "projects" },
+    { label: "Processes", path: "processes" },
     { label: "Work", path: "work" },
     { label: "Brain", path: "brain" },
     { label: "Skills", path: "skills" },

@@ -38,3 +38,4 @@ corekit/memory/core-memory-retire .openclaw/bin/core-memory-retire
 corekit/memory/update-deep-truths .openclaw/bin/update-deep-truths
 corekit/memory/session-summary .openclaw/bin/session-summary
 skills/memory-consolidate/SKILL.md .openclaw/skills/memory-consolidate/SKILL.md
+corekit/brain/process-manage .openclaw/bin/process-manage
