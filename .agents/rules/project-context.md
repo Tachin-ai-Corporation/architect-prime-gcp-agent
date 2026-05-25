@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.24.22.03)
+## Current Architecture (v2026.05.25.2.1)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -14,7 +14,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
-- **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Contextual ack with recent mission history + project awareness. Motor timeout detection (`timed_out` status) with cortex `continue` action for re-dispatching timed-out tasks.
+- **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Contextual ack with recent mission history + project awareness. Motor timeout detection (`timed_out` status) with cortex `continue` action for re-dispatching timed-out tasks. Process step type dispatch (standard/delegation/spawn_responsibility/approval_gate/optional). Approval gate polling and resume. Responsibility→process linking via processRef (auto-execute, skip Cortex decide).
 - **Prime role: infrastructure only** — fleet management (hire/fire/upgrade/monitor), visibility, delegation. ZERO Google Workspace tools. Prime's skills will be progressively exposed through the dashboard for manual triggering.
 - **Tool ownership boundaries:**
   - Prime Motor has fleet lifecycle tools only (fleet-deploy, fleet-hire, fleet-fire, fleet-status, fleet-upgrade, fleet-verify)
@@ -22,7 +22,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
   - cerebellum is a pure test runner: executes validation rules, reports PASS/FAIL with evidence, structured verdicts (ALL_PASS/FAIL/NO_RULES)
 - **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
-- **Responsibility self-management**: Agents create responsibilities through normal M→C→T pipeline. `responsibility-manage` Motor tool for CRUD on `responsibilities-job.json`. Cortex classifies responsibility requests as new_mission → Prefrontal designs process → Motor writes config → Cerebellum verifies. Brain scheduler fires responsibilities on cron schedules.
+- **Responsibility self-management**: Agents create responsibilities through normal M→C→T pipeline. `responsibility-manage` Motor tool for CRUD on `responsibilities-job.json`. Cortex classifies responsibility requests as new_mission → Prefrontal designs process → Motor writes config → Cerebellum verifies. Brain scheduler fires responsibilities on cron schedules. Responsibilities can link to stored processes via `processRef` + `processParams` for deterministic execution.
 - **Context assembly**: System prompt loads SOUL.md + IDENTITY.md + MEMORY.md + full agent registry (cached, 60s TTL). Per-agent generation params: Motor 65536 max_tokens, Cortex/Prefrontal 32768, Cerebellum/Memory 8192. Temperature tuned per role (0.1–0.6). Envelope context accumulation: rolling 400K token budget with oldest-first pruning.
 - **Input/Output architecture (ears + mouth)**:
   - `agent-ears.mjs` — 100% deterministic input (poll, dedup, rate-limit, fire-and-forget gateway POST)
@@ -36,7 +36,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - CoreKit tools shared with Prime via manifest system
 
 ### I/O Architecture (Ears + Mouth)
-- Ears polls channel (Firestore or GChat), deduplicates, repairs Chat-mangled text via Gemini Flash preprocessor, writes TASK.json, fires gateway POST (non-blocking)
+- Ears polls channel (Firestore or GChat), deduplicates, repairs Chat-mangled text via Gemini Flash preprocessor, detects approval gate responses in GChat (intercepts approve/reject replies), writes TASK.json, fires gateway POST (non-blocking)
 - **GChat context window**: when @mention detected, ears includes prior N messages (default 5) from the space as `[Chat messages since your last reply - for context]` preamble with sender names
 - Mouth v2 tails JSONL session transcript (`~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl`) — structurally detects final responses vs intermediate tool output
 - Turn state machine: IDLE → WORKING → ACKED → UPDATED → DONE

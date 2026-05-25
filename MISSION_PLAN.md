@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.24.22.03`
+> - **Current version:** `v2026.05.25.2.1`
 
 ---
 
@@ -54,6 +54,9 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home, top-level Work/Brain/
     ├── primes/{id}/work/{id}/history/ → Status transition log
     ├── primes/{id}/intake/{id}        → Brain intake queue
     ├── primes/{id}/fleet/{agent}/introspect/{queryId} → Introspection query/result bus
+    ├── primes/{id}/processes/{id}     → Stored reusable processes (step sequences)
+    ├── primes/{id}/approvals/{id}     → Approval gate documents (pending/approved/rejected)
+    ├── primes/{id}/projects/{id}/promotions/{id} → Context promotion candidates
     └── config/dwd                    → DWD configuration
          │
          ▼
@@ -63,6 +66,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home, top-level Work/Brain/
     │       ├── Zero LLM calls — 100% deterministic
     │       ├── Firestore poll (3s) or GChat poll (5s) via DWD
     │       ├── Dashboard Firestore poll (secondary, fleet only) — polls primes/{id}/fleet/{agent}/messages
+    │       ├── Approval gate detection — intercepts approve/reject replies in GChat, updates Firestore approval docs
     │       └── Cooldown + dedup window (configurable)
     │
     ├── agent-brain (systemd) — Brain state machine orchestrator
@@ -195,10 +199,11 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 2. **Dashboard Firestore poll** (fleet only) — secondary poll of `primes/{id}/fleet/{agent}/messages` for admin messages sent from the dashboard. Merged with GChat messages.
 3. Deduplicates (60s sliding window, same-text collapse)
 4. **GChat context window** — when an @mention is detected, ears includes the prior N messages from the space as context (configurable, default 5). Messages are formatted as `[Chat messages since your last reply - for context]` preamble with sender names, followed by `[Current message - respond to this]`.
-5. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info, source: dashboard|gchat)
-6. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
-7. Gateway call completes asynchronously — ears is already free to poll the next message
-8. Dashboard messages are marked `processed: true` in Firestore after consumption
+5. **Approval gate detection** — after preprocessing, checks if the message matches approval patterns (`approve`, `yes`, `lgtm`, `go ahead`, `proceed`, `👍`) or rejection patterns (`reject`, `no`, `deny`, `stop`, `👎`). If matched, queries Firestore for the most recent pending approval doc and PATCHes it with the decision. Handled messages skip normal intake processing.
+6. Writes `workspace/TASK.json` with channel metadata (channel type, taskId, sender info, source: dashboard|gchat)
+7. Fires gateway POST (`fire-and-forget`) — does NOT wait for response
+8. Gateway call completes asynchronously — ears is already free to poll the next message
+9. Dashboard messages are marked `processed: true` in Firestore after consumption
 
 **Agent Mouth — JSONL-Native Output Processing (`agent-mouth.mjs` v2):**
 1. Tails the OpenClaw JSONL session transcript (`~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl`)
@@ -331,9 +336,9 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 1. **Intake Processing & Contextual Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, extracts the current message from the composite intake (parsing past the context preamble), generates a contextual LLM-voiced acknowledgment (personality-aware, references what the user actually asked, includes recent mission history and project context for continuity awareness), and starts the Cortex decide loop. The ACK is marked `[BRAIN-ORCHESTRATED]` to prevent double delivery by mouth's JSONL tailer.
 2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"continue"|"synthesize"`). The `continue` action re-dispatches timed-out tasks with check-first context, avoiding redundant work.
 3. **R/M/C/T Cognitive Hierarchy:** 
-   - **Responsibilities (R):** Cron-scheduled recurring duties. Configured in `responsibilities-job.json` and hot-reloaded by a file watcher.
+   - **Responsibilities (R):** Cron-scheduled recurring duties. Configured in `responsibilities-job.json` and hot-reloaded by a file watcher. Can link to stored processes via `processRef` for deterministic execution (skips Cortex decide step).
    - **Missions (M):** Multi-checkpoint, high-level objectives with clear definitions of done.
-   - **Checkpoints (C):** Observable milestones with concrete completion criteria.
+   - **Checkpoints (C):** Observable milestones with concrete completion criteria. Support 5 step types: `standard`, `delegation`, `spawn_responsibility`, `approval_gate`, `optional`.
    - **Tasks (T):** Specific, atomic execution steps.
 4. **Context Assembly & Generation Parameters:** System prompt loads `SOUL.md` + `IDENTITY.md` + `MEMORY.md` + the full agent registry from `agent-registry.json` (~20K tokens). Generation parameters (max_tokens, temperature, top_p) are mapped per sub-agent dynamically. Motor is configured with 65536 max output tokens for rich artifact production.
 5. **Envelope Context Accumulation:** Rolling 400K token budget is attached to the envelope history. Pruning keeps the first 10% (ambient context) and the last 90% (most recent activity) of the token window.
@@ -593,6 +598,8 @@ architect-prime/
 | | `assemble-tools` | Builds TOOLS.md from skill definitions |
 | | `task-log-write` | Writes structured task lifecycle record to Firestore |
 | | `task-log-read` | Queries recent task records from Firestore |
+| | `responsibility-manage` | CRUD for responsibilities-job.json (create/update/list/delete) + `--process-ref` linking |
+| | `project-manage` | CRUD for project context/phases + `--processes` for standard process linking |
 | **memory/** | `core-memory-read` | Queries Firestore Core Memory by category/tags |
 | | `core-memory-write` | Writes durable facts to Firestore Core Memory |
 | | `update-deep-truths` | Safely updates the Deep Truths section at end of Cortex SOUL.md |
@@ -1016,6 +1023,20 @@ architect-prime/
 2. **Recent Mission Query Optimization** — Rewrote `scanRecentMissions` in `agent-brain.mjs` to query completed work envelopes (utilizing the existing composite index on owner + status + created_at) and filtered by `type === 'M'` in memory, avoiding the need for a new Firestore composite index on Compute Engine VMs.
 3. **Safety POST/PATCH Checks** — Added a strict `res.ok` validation block to the Firestore PATCH call inside `agent-mouth.mjs` to ensure payload delivery issues throw clear errors rather than failing silently.
 
+
+### Completed: v2026.05.25.2.1 — Projects & Processes Architecture (Phase 3 Composition)
+> *Stored reusable processes, responsibility→process linking, approval gates, context promotion, ears approval detection, settings process linking UI.*
+
+1. **Process step type execution** — Brain daemon dispatches checkpoint tasks based on `_step_type`: `standard` (unchanged), `delegation` (intent tag + source_meta), `spawn_responsibility` (motor runs `responsibility-manage create`), `approval_gate` (writes Firestore doc, notifies via mouth, pauses envelope until resolved), `optional` (checks fleet agent availability, skips if offline).
+2. **Approval gate polling** — `checkApprovedApprovals()` polls `primes/{id}/approvals` every 5th cycle (~15s). Approved → resumes paused envelope. Rejected → marks envelope failed with reason.
+3. **Ears approval detection** — `checkApprovalResponse()` in `agent-ears.mjs` intercepts GChat replies matching approval/rejection patterns before normal intake processing. Updates the most recent pending Firestore approval doc. Falls through to normal processing on no match.
+4. **Responsibility → Process linking** — Responsibilities with `processRef` auto-execute the linked process (skip Cortex decide). `responsibility-manage` updated with `--process-ref` and `--process-params` flags. Brain daemon loads process, substitutes parameters, converts to checkpoint plan, and executes.
+5. **Project ↔ Process composition** — `project-manage` updated with `--processes` flag for `standardProcesses`. Context promotion: after mission completion, brain detects new context entries and suggests promotions to project level. Auto or manual based on `contracts.json` `projects.promotion_auto` setting.
+6. **Dashboard process editing** — Processes page supports inline editing (steps reorder/add/remove, parameters edit, save auto-increments version, deprecate). Projects page shows linked standard processes and pending context promotions (accept/dismiss).
+7. **Approval notification badge** — Shell header polls pending approvals every 30s, shows pulsing red badge with count.
+8. **Settings process linking UI** — Agent settings page replaces responsibility placeholder with a process-linking command builder (process dropdown, parameter inputs, generated `responsibility-manage update` command preview, copy button).
+9. **Contracts extended** — Added `projects` section to `contracts.json` (`context_max_tokens`, `promotion_auto`, `archive_completed_after_days`). Check 12 in `validate-contracts`.
+10. **Dashboard APIs** — New routes: `approvals` (GET/POST), `promotions` (GET/POST), `projects/{projectId}` (GET/PUT with `standardProcesses`).
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
