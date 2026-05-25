@@ -70,6 +70,7 @@ export interface AgentDetail {
 export interface SetupState {
   hasPrimes: boolean;
   dwdConfigured: boolean;
+  authConfigured: boolean;
   projectId: string;
   dwdSignerSA: string;
   dwdClientId: string;

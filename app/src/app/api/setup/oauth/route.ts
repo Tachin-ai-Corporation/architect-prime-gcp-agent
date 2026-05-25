@@ -149,6 +149,7 @@ export async function POST(request: Request) {
     setEnv("NEXTAUTH_SECRET", nextAuthSecret);
     setEnv("NEXTAUTH_URL", currentUrl);
     if (domain) setEnv("ALLOWED_DOMAIN", domain);
+    setEnv("NEXT_PUBLIC_AUTH_CONFIGURED", "true");
 
     // Add secret reference for client secret
     const secretIdx = env.findIndex((e: { name: string }) => e.name === "GOOGLE_CLIENT_SECRET");

@@ -564,7 +564,7 @@ export default function DashboardSettingsPage() {
             <section className={styles.section} id="settings-security">
               <div className={styles.sectionTitle}>🔐 Authentication</div>
 
-              {process.env.NEXT_PUBLIC_AUTH_CONFIGURED === "true" ? (
+              {setup.authConfigured ? (
                 <div className={`${styles.alertBox} ${styles.alertSuccess}`}>
                   <strong>✓ Google OAuth is configured</strong>
                   <div style={{ marginTop: 4, fontSize: 12, color: "#AEB8C4" }}>

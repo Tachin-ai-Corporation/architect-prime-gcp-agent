@@ -9,7 +9,7 @@ import { OperationsFeed, useOperations } from "./OperationsFeed";
 import styles from "./Shell.module.css";
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const { primes, versionInfo } = usePrime();
+  const { primes, versionInfo, setup } = usePrime();
   const pathname = usePathname();
   const isHome = pathname === "/";
 
@@ -65,6 +65,32 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
 
         <div className={styles.topBarRight}>
+          {/* DWD not configured warning */}
+          {!setup.dwdConfigured && setup.hasPrimes && (
+            <Link
+              href="/settings?tab=integration"
+              className={styles.iconBtn}
+              title="DWD not configured — click to set up"
+              id="shell-dwd-warning"
+            >
+              <span className={styles.warningIcon}>🔗</span>
+              <span className={styles.warningDot} />
+            </Link>
+          )}
+
+          {/* Auth not configured warning */}
+          {!setup.authConfigured && (
+            <Link
+              href="/settings?tab=security"
+              className={styles.iconBtn}
+              title="Authentication not configured — click to set up"
+              id="shell-auth-warning"
+            >
+              <span className={styles.warningIcon}>🔐</span>
+              <span className={styles.warningDot} />
+            </Link>
+          )}
+
           {/* Settings gear */}
           <Link
             href="/settings"

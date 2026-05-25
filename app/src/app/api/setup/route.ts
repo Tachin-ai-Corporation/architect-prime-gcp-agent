@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { primesCol, getDb } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
+import { isAuthConfigured } from "@/lib/auth";
 
 /**
  * GET /api/setup — Returns the project's setup state.
@@ -34,6 +35,7 @@ export async function GET() {
     return NextResponse.json({
       hasPrimes,
       dwdConfigured: dwdConfig?.configured === true,
+      authConfigured: isAuthConfigured(),
       projectId,
       dwdSignerSA,
       dwdClientId,
@@ -45,6 +47,7 @@ export async function GET() {
     return NextResponse.json({
       hasPrimes: false,
       dwdConfigured: false,
+      authConfigured: false,
       projectId: process.env.GCP_PROJECT_ID || "",
       dwdSignerSA: "",
       dwdClientId: "",

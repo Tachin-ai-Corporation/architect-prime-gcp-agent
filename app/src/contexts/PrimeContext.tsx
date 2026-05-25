@@ -54,6 +54,7 @@ export function PrimeProvider({ children }: { children: React.ReactNode }) {
   const [setup, setSetup] = useState<SetupState>({
     hasPrimes: false,
     dwdConfigured: false,
+    authConfigured: false,
     projectId: "",
     dwdSignerSA: "",
     dwdClientId: "",

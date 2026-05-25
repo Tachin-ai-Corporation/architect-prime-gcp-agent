@@ -278,3 +278,20 @@
   overflow-y: auto;
   background: #202833; /* Graphite */
 }
+
+/* ---- Warning icons ---- */
+
+.warningIcon {
+  font-size: 14px;
+}
+
+.warningDot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #D6A83A;
+  animation: badgePulse 2s ease-in-out infinite;
+}
