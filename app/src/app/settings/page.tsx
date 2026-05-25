@@ -77,6 +77,33 @@ export default function DashboardSettingsPage() {
     router.replace(`/settings?tab=${tab}`, { scroll: false });
   }, [router]);
 
+  // Agent email domain editing state
+  const [emailDomain, setEmailDomain] = useState(setup.agentEmailDomain || "");
+  const [domainSaving, setDomainSaving] = useState(false);
+  const [domainSaved, setDomainSaved] = useState(false);
+
+  // Sync local state when setup loads from context
+  useEffect(() => {
+    if (setup.agentEmailDomain) setEmailDomain(setup.agentEmailDomain);
+  }, [setup.agentEmailDomain]);
+
+  const handleSaveDomain = useCallback(async () => {
+    setDomainSaving(true);
+    setDomainSaved(false);
+    try {
+      const res = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentEmailDomain: emailDomain.trim() }),
+      });
+      if (res.ok) {
+        setDomainSaved(true);
+        setTimeout(() => setDomainSaved(false), 2500);
+      }
+    } catch { /* ignore */ }
+    setDomainSaving(false);
+  }, [emailDomain]);
+
   // DWD test state
   const [dwdTestEmail, setDwdTestEmail] = useState("");
   const [dwdTesting, setDwdTesting] = useState(false);
@@ -391,9 +418,32 @@ export default function DashboardSettingsPage() {
                 <div className={styles.sectionDesc}>
                   Configure defaults that apply to all new fleet agents.
                 </div>
-                <div className={styles.fieldRow}>
+                <div className={styles.fieldRow} style={{ alignItems: "center" }}>
                   <span className={styles.fieldLabel}>Agent Email Domain</span>
-                  <span className={styles.fieldValue}>{setup.agentEmailDomain || "—"}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      id="settings-email-domain-input"
+                      className="input"
+                      style={{ width: 220, fontSize: 13 }}
+                      placeholder="e.g. yourcompany.com"
+                      value={emailDomain}
+                      onChange={(e) => setEmailDomain(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Enter") handleSaveDomain();
+                      }}
+                    />
+                    <button
+                      id="settings-email-domain-save"
+                      className="btn btn-sm btn-primary"
+                      onClick={handleSaveDomain}
+                      disabled={domainSaving}
+                    >
+                      {domainSaving ? "Saving..." : "Save"}
+                    </button>
+                    {domainSaved && (
+                      <span style={{ color: "#3BAA78", fontSize: 12, fontWeight: 500 }}>✓ Saved</span>
+                    )}
+                  </span>
                 </div>
                 <div style={{ fontSize: 11, color: "#566373", marginTop: 4 }}>
                   When set, agent emails auto-fill as{" "}
