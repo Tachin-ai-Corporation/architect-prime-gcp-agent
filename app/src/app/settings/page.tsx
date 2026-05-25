@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
@@ -65,7 +65,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   mistral: "Mistral",
 };
 
-export default function DashboardSettingsPage() {
+function SettingsPageInner() {
   const { setup, versionInfo, primes, sidebarFleet } = usePrime();
   const dialog = useDialog();
   const router = useRouter();
@@ -850,5 +850,13 @@ export default function DashboardSettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DashboardSettingsPage() {
+  return (
+    <Suspense>
+      <SettingsPageInner />
+    </Suspense>
   );
 }
