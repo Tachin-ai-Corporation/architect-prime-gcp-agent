@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.25.2.1`
+> - **Current version:** `v2026.05.25.3.0`
 
 ---
 
@@ -1037,6 +1037,17 @@ architect-prime/
 8. **Settings process linking UI** — Agent settings page replaces responsibility placeholder with a process-linking command builder (process dropdown, parameter inputs, generated `responsibility-manage update` command preview, copy button).
 9. **Contracts extended** — Added `projects` section to `contracts.json` (`context_max_tokens`, `promotion_auto`, `archive_completed_after_days`). Check 12 in `validate-contracts`.
 10. **Dashboard APIs** — New routes: `approvals` (GET/POST), `promotions` (GET/POST), `projects/{projectId}` (GET/PUT with `standardProcesses`).
+
+### Completed: v2026.05.25.3.0 — Codebase Audit Cleanup
+> *Scrubbed sensitive data from public repo, deleted 25+ stale files (−6,462 lines), expanded .gitignore.*
+
+1. **Sensitive data scrubbed** — Replaced all real GCP project IDs (`tachin-website`), numeric project numbers (`85486025845`), service account emails (`@architect-prime-beta.iam.gserviceaccount.com`), and internal domain references (`@tachin.ai`, `@tachin.ag`) with generic placeholders across 9 files (SOUL.md files, fleet-deploy, install.sh, dashboard components).
+2. **Dead nested routes deleted** — Entire `app/src/app/p/` directory tree removed (20 files, ~4,000 lines). These were duplicate pages from before the v2026.05.24.20.48 top-level route promotion.
+3. **Boilerplate deleted** — 5 default Next.js template SVGs removed from `app/public/`.
+4. **Runtime state removed from git** — `sessions.json`, `auth-profiles.json`, `checkpoint/progress.json` deleted. These are runtime artifacts that get written to by OpenClaw.
+5. **Stale files deleted** — `SOUL_PROTOCOL.md` (1-line placeholder), 3 scratch implementation plan files.
+6. **`.gitignore` expanded** — Added `.DS_Store`, `*.pem`, `.env*`, runtime state paths, `.agents/scratch/`.
+7. **`job-swe.txt` documented** — Added alias comment explaining SWE is an alias for the engineer specialty.
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
