@@ -388,7 +388,7 @@ function HomeInner() {
                     <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
                     <span className={styles.chipName}>{p.name}</span>
                     <span className={styles.chipMeta}>
-                      {p.fleetCount} agent{p.fleetCount !== 1 ? "s" : ""}
+                      {(sidebarFleet[p.id] || []).length} agent{(sidebarFleet[p.id] || []).length !== 1 ? "s" : ""}
                     </span>
                     {/* Inline nav icons for selected prime */}
                     {isSelected && (
@@ -418,7 +418,7 @@ function HomeInner() {
                 onClick={() => setShowDeploy(true)}
               >
                 <span className={styles.deployChipIcon}>+</span>
-                <span className={styles.chipName}>Deploy</span>
+                <span className={styles.chipName}>Deploy Prime</span>
               </button>
             </div>
 
@@ -502,20 +502,7 @@ function HomeInner() {
                         </div>
                       )}
 
-                      {/* Nav icons */}
-                      <div className={styles.agentIconRow}>
-                        {navItems.map((item) => (
-                          <Link
-                            key={item.path}
-                            href={`/${item.path}?prime=${selectedPrimeId}&agent=${agent.name}`}
-                            className={styles.agentIcon}
-                            data-tooltip={item.label}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {item.label}
-                          </Link>
-                        ))}
-                      </div>
+
                     </div>
                   );
                 })}
