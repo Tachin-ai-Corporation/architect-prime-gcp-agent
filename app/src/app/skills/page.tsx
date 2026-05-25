@@ -118,9 +118,10 @@ function SkillsPage() {
     setError(null);
     setSkills(null);
 
-    // For Prime, use the prime's own hostname as the "agent" for introspect
-    // The introspect daemon on Prime's VM uses hostname() which matches the prime instance name
-    const introspectAgent = isPrimeSelected ? selectedPrimeId : selectedAgent;
+    // For Prime, the VM hostname is "prime-{id}" (e.g. prime-chucknorris).
+    // The introspect daemon uses hostname().replace(/^fleet-/, '') which does NOT strip "prime-",
+    // so it polls at primes/{id}/fleet/prime-{id}/introspect.
+    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
 
     // 1. Submit query
     const submitRes = await api<{ queryId: string; status: string }>(
