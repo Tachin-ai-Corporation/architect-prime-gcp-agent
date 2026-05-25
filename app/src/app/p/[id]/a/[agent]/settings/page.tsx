@@ -7,12 +7,36 @@ import { api } from "@/lib/api";
 import { useDialog } from "@/components/DialogProvider";
 import type { AgentDetail } from "@/lib/types";
 
+/* ---- Process types (from /api/primes/[id]/processes) ---- */
+interface ProcessParam {
+  description?: string;
+  default?: string;
+  required?: boolean;
+}
+
+interface ProcessSummary {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  parameters?: Record<string, ProcessParam | string>;
+  steps?: { id: string; title: string }[];
+}
+
 export default function AgentSettings() {
   const { id, agent } = useParams<{ id: string; agent: string }>();
   const router = useRouter();
   const dialog = useDialog();
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [loading, setLoading] = useState(true);
+
+  /* ---- Process linking state ---- */
+  const [processes, setProcesses] = useState<ProcessSummary[]>([]);
+  const [processesLoading, setProcessesLoading] = useState(false);
+  const [selectedProcessId, setSelectedProcessId] = useState("");
+  const [responsibilityId, setResponsibilityId] = useState("");
+  const [paramOverrides, setParamOverrides] = useState<Record<string, string>>({});
+  const [copied, setCopied] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     const data = await api<AgentDetail>(`/api/primes/${id}/fleet/${agent}/logs`);
@@ -22,6 +46,70 @@ export default function AgentSettings() {
 
   useEffect(() => { fetchDetail(); }, [fetchDetail]);
 
+  /* ---- Fetch processes for the dropdown ---- */
+  const fetchProcesses = useCallback(async () => {
+    setProcessesLoading(true);
+    const data = await api<{ processes: ProcessSummary[] }>(`/api/primes/${id}/processes`);
+    if (data?.processes) setProcesses(data.processes.filter((p) => p.status === "active"));
+    setProcessesLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetchProcesses(); }, [fetchProcesses]);
+
+  /* ---- Derived: selected process detail ---- */
+  const selectedProcess = processes.find((p) => p.id === selectedProcessId) || null;
+
+  /* Reset param overrides when process changes */
+  useEffect(() => {
+    setParamOverrides({});
+    setCopied(false);
+  }, [selectedProcessId]);
+
+  /* ---- Build the CLI command ---- */
+  const buildCommand = (): string => {
+    if (!responsibilityId || !selectedProcessId) return "";
+    const parts = [`responsibility-manage update '${responsibilityId}' '{}'`];
+    parts.push(`--process-ref ${selectedProcessId}`);
+    const nonEmpty = Object.fromEntries(
+      Object.entries(paramOverrides).filter(([, v]) => v.trim() !== "")
+    );
+    if (Object.keys(nonEmpty).length > 0) {
+      parts.push(`--process-params '${JSON.stringify(nonEmpty)}'`);
+    }
+    return parts.join(" \\\n  ");
+  };
+
+  const handleCopy = async () => {
+    const cmd = buildCommand();
+    if (!cmd) return;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      dialog.toast({ message: "Command copied to clipboard.", variant: "success" });
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      dialog.toast({ message: "Failed to copy.", variant: "error" });
+    }
+  };
+
+  /* ---- Build the unlink command ---- */
+  const buildUnlinkCommand = (): string => {
+    if (!responsibilityId) return "";
+    return `responsibility-manage update '${responsibilityId}' '{}' --process-ref ""`;
+  };
+
+  const handleCopyUnlink = async () => {
+    const cmd = buildUnlinkCommand();
+    if (!cmd) return;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      dialog.toast({ message: "Unlink command copied.", variant: "success" });
+    } catch {
+      dialog.toast({ message: "Failed to copy.", variant: "error" });
+    }
+  };
+
+  /* ---- Existing handlers ---- */
   const handleFire = async () => {
     const confirmed = await dialog.confirm({
       title: `Fire ${agent}?`,
@@ -56,6 +144,43 @@ export default function AgentSettings() {
     }
   };
 
+  /* ---- Render helpers ---- */
+  const renderParamFields = () => {
+    if (!selectedProcess?.parameters) return null;
+    const params = selectedProcess.parameters;
+    const entries = Object.entries(params);
+    if (entries.length === 0) return null;
+
+    return (
+      <div className={styles.paramFields}>
+        <label className={styles.fieldLabel}>Process Parameters</label>
+        {entries.map(([key, val]) => {
+          const param = typeof val === "object" ? val : { description: String(val) };
+          return (
+            <div key={key} className={styles.paramRow}>
+              <div className={styles.paramHeader}>
+                <span className={styles.paramName}>{key}</span>
+                {param.required && <span className={styles.paramRequired}>required</span>}
+              </div>
+              {param.description && (
+                <div className={styles.paramDesc}>{param.description}</div>
+              )}
+              <input
+                className={styles.paramInput}
+                type="text"
+                placeholder={param.default || ""}
+                value={paramOverrides[key] || ""}
+                onChange={(e) =>
+                  setParamOverrides((prev) => ({ ...prev, [key]: e.target.value }))
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className={styles.shell}>
@@ -65,6 +190,8 @@ export default function AgentSettings() {
       </div>
     );
   }
+
+  const command = buildCommand();
 
   return (
     <div className={styles.shell} id="agent-settings">
@@ -106,15 +233,111 @@ export default function AgentSettings() {
           </div>
         </section>
 
-        {/* Responsibilities Section */}
+        {/* Responsibilities → Process Linking Section */}
         <section className={styles.section} id="agent-settings-responsibilities">
-          <h2 className={styles.sectionTitle}>Responsibilities</h2>
-          <div className={styles.placeholder}>
-            <span className={styles.placeholderIcon}>📋</span>
-            <span>
-              Responsibilities are managed via the{" "}
-              <a href={`/p/${id}/a/${agent}/work`} className={styles.link}>Work screen</a>.
-            </span>
+          <h2 className={styles.sectionTitle}>Responsibilities — Process Linking</h2>
+          <p className={styles.sectionDesc}>
+            Link a responsibility to a process definition. Responsibilities live on the agent
+            VM and are managed via <code>responsibility-manage</code>. Select a process below
+            to build the linking command.
+          </p>
+
+          {/* Responsibility ID input */}
+          <div className={styles.respField}>
+            <label className={styles.fieldLabel}>Responsibility ID</label>
+            <input
+              className={styles.respInput}
+              type="text"
+              placeholder="e.g. r-memory-consolidation"
+              value={responsibilityId}
+              onChange={(e) => {
+                setResponsibilityId(e.target.value);
+                setCopied(false);
+              }}
+            />
+            <div className={styles.respHint}>
+              Run <code>responsibility-manage list</code> on the VM to see available IDs.
+            </div>
+          </div>
+
+          {/* Process selector */}
+          <div className={styles.respField}>
+            <label className={styles.fieldLabel}>Link to Process</label>
+            {processesLoading ? (
+              <div className={styles.respHint}>Loading processes…</div>
+            ) : processes.length === 0 ? (
+              <div className={styles.respHint}>
+                No active processes found.{" "}
+                <a href={`/processes`} className={styles.link}>Create one →</a>
+              </div>
+            ) : (
+              <select
+                className={styles.respSelect}
+                value={selectedProcessId}
+                onChange={(e) => setSelectedProcessId(e.target.value)}
+              >
+                <option value="">— Select a process —</option>
+                {processes.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.id})
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Selected process detail */}
+          {selectedProcess && (
+            <div className={styles.processDetail}>
+              <div className={styles.processHeader}>
+                <span className={styles.processName}>{selectedProcess.name}</span>
+                <span className={styles.processBadge}>{selectedProcess.id}</span>
+              </div>
+              <div className={styles.processDesc}>{selectedProcess.description}</div>
+
+              {selectedProcess.steps && selectedProcess.steps.length > 0 && (
+                <div className={styles.processSteps}>
+                  <label className={styles.fieldLabel}>
+                    Steps ({selectedProcess.steps.length})
+                  </label>
+                  <ol className={styles.stepsList}>
+                    {selectedProcess.steps.map((s, i) => (
+                      <li key={s.id || i} className={styles.stepItem}>
+                        {s.title || s.id}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              {renderParamFields()}
+            </div>
+          )}
+
+          {/* Command output */}
+          {command && (
+            <div className={styles.commandBlock}>
+              <label className={styles.fieldLabel}>Generated Command</label>
+              <pre className={styles.commandPre}>{command}</pre>
+              <div className={styles.commandActions}>
+                <button className={styles.copyBtn} onClick={handleCopy}>
+                  {copied ? "✓ Copied" : "📋 Copy Command"}
+                </button>
+                <button
+                  className={styles.unlinkBtn}
+                  onClick={handleCopyUnlink}
+                  title="Copy the command to unlink any process from this responsibility"
+                >
+                  🔗 Copy Unlink Command
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Hint */}
+          <div className={styles.respHint} style={{ marginTop: 12 }}>
+            Paste the command on the agent VM to link the process. The brain scheduler
+            auto-reloads within 10 seconds.
           </div>
         </section>
 
@@ -152,3 +375,4 @@ export default function AgentSettings() {
     </div>
   );
 }
+

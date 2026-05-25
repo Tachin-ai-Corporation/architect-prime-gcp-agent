@@ -474,6 +474,80 @@ async function updateFirestoreStatus(status) {
   } catch {}
 }
 
+// ---- Phase 3: Approval gate response detection ----
+async function checkApprovalResponse(text) {
+  // Extract the actual user message (after context lines)
+  const lines = text.split('\n');
+  const currentMsgLine = lines.find(l => l.startsWith('User: ')) || lines[lines.length - 1];
+  const userText = currentMsgLine.replace(/^User:\s*/, '').trim().toLowerCase();
+
+  // Match approval patterns
+  const approvePatterns = ['approve', 'approved', 'yes', 'lgtm', 'go ahead', 'proceed', '👍'];
+  const rejectPatterns = ['reject', 'rejected', 'no', 'deny', 'denied', 'stop', '👎'];
+
+  let action = null;
+  if (approvePatterns.some(p => userText === p || userText.startsWith(p + ' '))) {
+    action = 'approved';
+  } else if (rejectPatterns.some(p => userText === p || userText.startsWith(p + ' '))) {
+    action = 'rejected';
+  }
+
+  if (!action) return false;
+
+  // Check if there are any pending approvals
+  try {
+    const token = await getAccessToken();
+    const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}/approvals:runQuery`;
+    const resp = await fetch(queryUrl, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: 'approvals' }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath: 'status' },
+              op: 'EQUAL',
+              value: { stringValue: 'pending' },
+            },
+          },
+          orderBy: [{ field: { fieldPath: 'requestedAt' }, direction: 'DESCENDING' }],
+          limit: 1,
+        },
+      }),
+    });
+    if (!resp.ok) return false;
+
+    const results = await resp.json();
+    const pending = results.find(r => r.document);
+    if (!pending) return false;
+
+    // Update the most recent pending approval
+    const docPath = pending.document.name.split('/documents/')[1];
+    const reason = userText.length > 20 ? userText : undefined;
+
+    await fetch(`${FIRESTORE_URL}/${docPath}?updateMask.fieldPaths=status&updateMask.fieldPaths=resolvedAt&updateMask.fieldPaths=resolvedBy${reason ? '&updateMask.fieldPaths=reason' : ''}`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: {
+        status: { stringValue: action },
+        resolvedAt: { stringValue: new Date().toISOString() },
+        resolvedBy: { stringValue: `gchat:${AGENT_USER_EMAIL}` },
+        ...(reason ? { reason: { stringValue: reason } } : {}),
+      }}),
+    });
+
+    log(`Approval ${action} via GChat`, {
+      approvalDoc: docPath,
+      by: AGENT_USER_EMAIL,
+    });
+    return true;
+  } catch (err) {
+    log('Approval check error', { error: err.message });
+    return false;
+  }
+}
+
 // ================================================================
 // MAIN LOOP
 // ================================================================
@@ -569,6 +643,14 @@ async function main() {
             cleaned: cleanedText.slice(0, 100),
             taskId
           });
+        }
+
+        // ---- Phase 3: Approval gate detection ----
+        // Check if this message is an approval response (approve/reject/yes/no)
+        const approvalHandled = await checkApprovalResponse(cleanedText);
+        if (approvalHandled) {
+          log('Approval response handled', { text: cleanedText.slice(0, 60) });
+          continue; // Skip normal intake processing
         }
 
         // ---- Brain v3: Write intake record to Firestore ----
