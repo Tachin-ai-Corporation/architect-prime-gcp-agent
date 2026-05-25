@@ -129,6 +129,7 @@ function SettingsPageInner() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [scanning, setScanning] = useState(false);
   const [scannedAt, setScannedAt] = useState<string | null>(null);
+  const [collapsedProviders, setCollapsedProviders] = useState<Record<string, boolean>>({});
 
   const firstPrimeId = primes.length > 0 ? primes[0].id : null;
   const projectId = setup.projectId;
@@ -709,74 +710,88 @@ function SettingsPageInner() {
               )}
 
               {/* Model cards grouped by provider */}
-              {groupedModels.map((group) => (
-                <div key={group.provider} className={styles.providerGroup}>
-                  <div className={styles.providerLabel}>{group.label}</div>
-                  <div className={styles.modelGrid}>
-                    {group.models.map((model) => {
-                      const statusInfo = STATUS_DISPLAY[model.status] || STATUS_DISPLAY.unknown;
-                      const providerColor = PROVIDER_COLORS[model.provider] || "rgba(128,128,128,0.15)";
+              {groupedModels.map((group) => {
+                const isCollapsed = collapsedProviders[group.provider] || false;
+                const availCount = group.models.filter(m => m.status === "available").length;
+                return (
+                  <div key={group.provider} className={styles.providerGroup}>
+                    <button
+                      className={styles.providerLabel}
+                      onClick={() => setCollapsedProviders(prev => ({ ...prev, [group.provider]: !prev[group.provider] }))}
+                      style={{ cursor: "pointer", background: "none", border: "none", width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <span style={{ transition: "transform 160ms", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", display: "inline-block", fontSize: 10 }}>▼</span>
+                      <span>{group.label}</span>
+                      <span style={{ fontSize: 10, color: "#566373", fontWeight: 500, letterSpacing: 0 }}>
+                        {availCount}/{group.models.length} available
+                      </span>
+                    </button>
+                    {!isCollapsed && (
+                    <div className={styles.modelGrid}>
+                      {group.models.map((model) => {
+                        const statusInfo = STATUS_DISPLAY[model.status] || STATUS_DISPLAY.unknown;
+                        const providerColor = PROVIDER_COLORS[model.provider] || "rgba(128,128,128,0.15)";
 
-                      return (
-                        <div
-                          key={model.id}
-                          id={`settings-model-card-${model.id}`}
-                          className={`${styles.modelCard} ${
-                            model.status === "not_found" || model.status === "auth_error"
-                              ? styles.modelCardUnavailable
-                              : ""
-                          }`}
-                        >
-                          <div className={styles.modelCardHeader}>
-                            <div>
-                              <div className={styles.modelName}>
-                                {model.name}
-                                {model.tier && model.tier !== "standard" && (
-                                  <span className={`${styles.tierTag} ${getTierClass(model.tier)}`}>
-                                    {model.tier}
+                        return (
+                          <div
+                            key={model.id}
+                            id={`settings-model-card-${model.id}`}
+                            className={`${styles.modelCard} ${
+                              model.status === "not_found" || model.status === "auth_error"
+                                ? styles.modelCardUnavailable
+                                : ""
+                            }`}
+                          >
+                            <div className={styles.modelCardHeader}>
+                              <div>
+                                <div className={styles.modelName}>
+                                  {model.name}
+                                  {model.tier && model.tier !== "standard" && (
+                                    <span className={`${styles.tierTag} ${getTierClass(model.tier)}`}>
+                                      {model.tier}
+                                    </span>
+                                  )}
+                                  <span
+                                    className={styles.providerTag}
+                                    style={{ background: providerColor, color: "#AEB8C4" }}
+                                  >
+                                    {model.provider}
                                   </span>
+                                  {model.cost && <span className={styles.costTag}>{model.cost}</span>}
+                                </div>
+                                {model.description && (
+                                  <div className={styles.modelDesc}>{model.description}</div>
                                 )}
-                                <span
-                                  className={styles.providerTag}
-                                  style={{ background: providerColor, color: "#AEB8C4" }}
-                                >
-                                  {model.provider}
-                                </span>
-                                {model.cost && <span className={styles.costTag}>{model.cost}</span>}
                               </div>
-                              {model.description && (
-                                <div className={styles.modelDesc}>{model.description}</div>
-                              )}
+                              <div className={styles.modelStatus} style={{ color: statusInfo.color }}>
+                                <span>{statusInfo.icon}</span>
+                                <span>{statusInfo.label}</span>
+                              </div>
                             </div>
-                            <div className={styles.modelStatus} style={{ color: statusInfo.color }}>
-                              <span>{statusInfo.icon}</span>
-                              <span>{statusInfo.label}</span>
-                            </div>
-                          </div>
 
-                          {(model.status === "not_found" || model.status === "auth_error") && (
-                            <div className={styles.enableHint}>
-                              <span style={{ fontSize: 12, color: "#566373" }}>
-                                Enable in Google Cloud Console to use.
-                              </span>
-                              <a
-                                href={`https://console.cloud.google.com/vertex-ai/publishers/${
-                                  model.provider === "anthropic" ? "anthropic" : "google"
-                                }/model-garden/${model.id}?project=${projectId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={styles.enableLink}
-                              >
-                                Open in Model Garden →
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                            {(model.status === "not_found" || model.status === "auth_error") && (
+                              <div className={styles.enableHint}>
+                                <span style={{ fontSize: 12, color: "#566373" }}>
+                                  Enable in Google Cloud Console to use.
+                                </span>
+                                <a
+                                  href={`https://console.cloud.google.com/vertex-ai/publishers/${model.provider}/model-garden/${model.id}?project=${projectId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={styles.enableLink}
+                                >
+                                  Open in Model Garden →
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </section>
           )}
 

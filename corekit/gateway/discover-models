@@ -138,13 +138,12 @@ for m in garden:
         continue
     if model_id in candidates:
         continue
-    provider = 'anthropic' if publisher == 'anthropic' else 'google'
     launch = m.get('launchStage', 'PREVIEW').upper()
     candidates[model_id] = {
         'id': model_id,
         'name': make_name(model_id),
         'tier': 'ga' if launch == 'GA' else 'preview',
-        'provider': provider,
+        'provider': publisher,
     }
 
 # --- Filter out discontinued models ---
@@ -168,28 +167,30 @@ def _do_probe(url, body):
 def probe(mid, provider, tier='ga'):
     body_google = b'{"contents":[{"role":"user","parts":[{"text":"pong"}]}],"generationConfig":{"maxOutputTokens":5}}'
     body_anthropic = b'{"anthropic_version":"vertex-2023-10-16","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}'
+    body_generic = b'{"max_tokens":5,"messages":[{"role":"user","content":"hi"}]}'
 
-    if provider == 'anthropic':
-        url = f"https://{LOC}-aiplatform.googleapis.com/v1/projects/{PROJ}/locations/{LOC}/publishers/anthropic/models/{mid}:rawPredict"
-        return _do_probe(url, body_anthropic)
+    if provider == 'google':
+        # Google models: try regional first, then global for preview models
+        regional_url = f"https://{LOC}-aiplatform.googleapis.com/v1beta1/projects/{PROJ}/locations/{LOC}/publishers/google/models/{mid}:generateContent"
+        code = _do_probe(regional_url, body_google)
 
-    # Google models: try regional first, then global for preview models
-    regional_url = f"https://{LOC}-aiplatform.googleapis.com/v1beta1/projects/{PROJ}/locations/{LOC}/publishers/google/models/{mid}:generateContent"
-    code = _do_probe(regional_url, body_google)
+        if code in (200, 429):
+            return code
 
-    if code in (200, 429):
+        # For preview models, try the global endpoint (required for Gemini 3+)
+        if tier == 'preview':
+            global_url = f"https://aiplatform.googleapis.com/v1/projects/{PROJ}/locations/global/publishers/google/models/{mid}:generateContent"
+            global_code = _do_probe(global_url, body_google)
+            if global_code in (200, 429):
+                return global_code
+            return global_code if global_code != 0 else code
+
         return code
 
-    # For preview models, try the global endpoint (required for Gemini 3+)
-    if tier == 'preview':
-        global_url = f"https://aiplatform.googleapis.com/v1/projects/{PROJ}/locations/global/publishers/google/models/{mid}:generateContent"
-        global_code = _do_probe(global_url, body_google)
-        if global_code in (200, 429):
-            return global_code
-        # Return whichever is more informative
-        return global_code if global_code != 0 else code
-
-    return code
+    # Third-party models (Anthropic, Meta, Mistral, etc.) — use rawPredict
+    body = body_anthropic if provider == 'anthropic' else body_generic
+    url = f"https://{LOC}-aiplatform.googleapis.com/v1/projects/{PROJ}/locations/{LOC}/publishers/{provider}/models/{mid}:rawPredict"
+    return _do_probe(url, body)
 
 mode = '${MODE}'
 results, best = [], ''
