@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import styles from "./page.module.css";
 import { usePrime } from "@/contexts/PrimeContext";
@@ -22,7 +22,40 @@ interface ProjectSummary {
 
 interface ProjectDetail extends ProjectSummary {
   context: Record<string, ContextEntry>;
+  standardProcesses?: string[];
 }
+
+interface ProcessSummary {
+  id: string;
+  name: string;
+  description: string;
+  status: "active" | "deprecated";
+  version: number;
+  execution_count: number;
+  created_by: string;
+  created_at: string;
+  steps: { title: string }[];
+}
+
+interface PromotionEntry {
+  id: string;
+  contextKey: string;
+  kind: string;
+  name: string;
+  summary: string;
+  sourceMissionId: string;
+  created_at: string;
+  status: "pending" | "accepted" | "dismissed";
+}
+
+const KIND_ICONS: Record<string, string> = {
+  document: "📄",
+  code: "💻",
+  config: "⚙️",
+  reference: "📌",
+  learning: "🧠",
+  decision: "⚖️",
+};
 
 /* ---- Wrapper with Suspense ---- */
 export default function ProjectsPageWrapper() {
@@ -206,6 +239,16 @@ function ProjectDetailView({
   const [localContext, setLocalContext] = useState<Record<string, ContextEntry>>({});
   const [saving, setSaving] = useState(false);
 
+  /* ---- Standard Processes state ---- */
+  const [allProcesses, setAllProcesses] = useState<ProcessSummary[]>([]);
+  const [linkedProcessIds, setLinkedProcessIds] = useState<string[]>([]);
+  const [showProcessDropdown, setShowProcessDropdown] = useState(false);
+  const [processesDirty, setProcessesDirty] = useState(false);
+
+  /* ---- Suggested Context (promotions) state ---- */
+  const [promotions, setPromotions] = useState<PromotionEntry[]>([]);
+  const [promotionsLoading, setPromotionsLoading] = useState(false);
+
   /* ---- Fetch project ---- */
   useEffect(() => {
     let cancelled = false;
@@ -216,9 +259,38 @@ function ProjectDetailView({
         setProject(data.project);
         setDesc(data.project.description);
         setLocalContext(data.project.context ?? {});
+        setLinkedProcessIds(data.project.standardProcesses ?? []);
         setLoading(false);
       } else if (!cancelled) {
         setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [primeId, projectId]);
+
+  /* ---- Fetch all processes for linking ---- */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const data = await api<{ processes: ProcessSummary[] }>(`/api/primes/${primeId}/processes`);
+      if (!cancelled && data?.processes) {
+        setAllProcesses(data.processes);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [primeId]);
+
+  /* ---- Fetch pending promotions ---- */
+  useEffect(() => {
+    let cancelled = false;
+    setPromotionsLoading(true);
+    (async () => {
+      const data = await api<{ promotions: PromotionEntry[] }>(
+        `/api/primes/${primeId}/projects/${projectId}/promotions?status=pending`
+      );
+      if (!cancelled) {
+        setPromotions(data?.promotions ?? []);
+        setPromotionsLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -237,18 +309,46 @@ function ProjectDetailView({
     setContextDirty(true);
   }, []);
 
+  /* ---- Process linking ---- */
+  const handleLinkProcess = useCallback((processId: string) => {
+    setLinkedProcessIds((prev) => [...prev, processId]);
+    setProcessesDirty(true);
+    setShowProcessDropdown(false);
+  }, []);
+
+  const handleUnlinkProcess = useCallback((processId: string) => {
+    setLinkedProcessIds((prev) => prev.filter((id) => id !== processId));
+    setProcessesDirty(true);
+  }, []);
+
+  /* ---- Promotion actions ---- */
+  const handlePromotionAction = useCallback(async (promotionId: string, action: "accept" | "dismiss") => {
+    await api(`/api/primes/${primeId}/projects/${projectId}/promotions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ promotionId, action }),
+    });
+    setPromotions((prev) => prev.filter((p) => p.id !== promotionId));
+  }, [primeId, projectId]);
+
   /* ---- Save ---- */
+  const isDirty = contextDirty || processesDirty || editDesc;
   const handleSave = useCallback(async () => {
     setSaving(true);
     await api(`/api/primes/${primeId}/projects/${projectId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ description: desc, context: localContext }),
+      body: JSON.stringify({
+        description: desc,
+        context: localContext,
+        standardProcesses: linkedProcessIds,
+      }),
     });
     setContextDirty(false);
+    setProcessesDirty(false);
     setEditDesc(false);
     setSaving(false);
-  }, [primeId, projectId, desc, localContext]);
+  }, [primeId, projectId, desc, localContext, linkedProcessIds]);
 
   if (loading) {
     return (
@@ -271,6 +371,12 @@ function ProjectDetailView({
   const progress = project.missionCount > 0
     ? (project.completedMissions / project.missionCount) * 100
     : 0;
+
+  // Derived data for processes
+  const linkedProcesses = allProcesses.filter((p) => linkedProcessIds.includes(p.id));
+  const availableProcesses = allProcesses.filter(
+    (p) => !linkedProcessIds.includes(p.id) && p.status !== "deprecated"
+  );
 
   return (
     <>
@@ -316,7 +422,7 @@ function ProjectDetailView({
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Context</h2>
-          {contextDirty && (
+          {isDirty && (
             <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : "Save Changes"}
             </button>
@@ -326,6 +432,112 @@ function ProjectDetailView({
           context={localContext}
           onChange={handleContextChange}
         />
+      </div>
+
+      {/* ---- Standard Processes section ---- */}
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Standard Processes</h2>
+          <div className={styles.processLinkWrap}>
+            <button
+              className={styles.linkProcessBtn}
+              onClick={() => setShowProcessDropdown((v) => !v)}
+              disabled={availableProcesses.length === 0}
+            >
+              + Link Process
+            </button>
+            {showProcessDropdown && availableProcesses.length > 0 && (
+              <div className={styles.processDropdown}>
+                {availableProcesses.map((proc) => (
+                  <button
+                    key={proc.id}
+                    className={styles.processDropdownItem}
+                    onClick={() => handleLinkProcess(proc.id)}
+                  >
+                    <span className={styles.processDropdownName}>{proc.name}</span>
+                    <span className={styles.processDropdownMeta}>v{proc.version} · {proc.steps?.length ?? 0} steps</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {linkedProcesses.length > 0 ? (
+          <div className={styles.processCards}>
+            {linkedProcesses.map((proc) => (
+              <div key={proc.id} className={styles.processCard}>
+                <div className={styles.processCardHeader}>
+                  <span className={styles.processCardName}>{proc.name}</span>
+                  <button
+                    className={styles.processCardRemove}
+                    onClick={() => handleUnlinkProcess(proc.id)}
+                    title="Remove process"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className={styles.processCardMeta}>
+                  <span className={styles.processVersionBadge}>v{proc.version}</span>
+                  <span className={styles.processCardSteps}>{proc.steps?.length ?? 0} steps</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.emptySection}>No processes linked. Click &quot;Link Process&quot; to add one.</div>
+        )}
+      </div>
+
+      {/* ---- Suggested Context (Promotions) section ---- */}
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Suggested Context</h2>
+          {promotions.length > 0 && (
+            <span className={styles.countPill}>{promotions.length} pending</span>
+          )}
+        </div>
+
+        {promotionsLoading ? (
+          <div className={styles.emptySection}>Loading suggestions…</div>
+        ) : promotions.length > 0 ? (
+          <div className={styles.promotionCards}>
+            {promotions.map((promo) => (
+              <div key={promo.id} className={styles.promotionCard}>
+                <div className={styles.promotionCardBody}>
+                  <div className={styles.promotionCardHeader}>
+                    <span className={styles.promotionKindIcon}>{KIND_ICONS[promo.kind] || "📎"}</span>
+                    <span className={styles.promotionKey}>{promo.contextKey}</span>
+                    <span className={styles.promotionName}>{promo.name}</span>
+                  </div>
+                  <div className={styles.promotionSummary}>{promo.summary}</div>
+                  <div className={styles.promotionMeta}>
+                    <span>Mission: {promo.sourceMissionId}</span>
+                    <span>{new Date(promo.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <div className={styles.promotionActions}>
+                  <button
+                    className={styles.promotionAccept}
+                    onClick={() => handlePromotionAction(promo.id, "accept")}
+                    title="Accept"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    className={styles.promotionDismiss}
+                    onClick={() => handlePromotionAction(promo.id, "dismiss")}
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.emptySection}>No pending context suggestions</div>
+        )}
       </div>
     </>
   );

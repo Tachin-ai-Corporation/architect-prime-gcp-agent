@@ -140,6 +140,25 @@
   color: #D6A83A; /* Amber */
 }
 
+.approvalBadge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: #D84F45; /* Pulse red */
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
 /* ---- Version tag ---- */
 
 .versionTag {

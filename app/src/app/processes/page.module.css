@@ -890,6 +890,114 @@
 }
 
 /* ================================================================
+   Edit Mode
+   ================================================================ */
+.editBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--mist);
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.editBtn:hover {
+  background: rgba(143, 216, 230, 0.06);
+  border-color: var(--border-accent);
+  color: var(--signal-aqua);
+}
+
+.editActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.editTitleInput {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  flex: 1;
+  min-width: 200px;
+}
+
+.editDescTextarea {
+  margin-bottom: 16px;
+}
+
+.deprecateBtn {
+  padding: 7px 16px;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  color: #ef4444;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard);
+}
+.deprecateBtn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.deprecateBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stepBuilderHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.reorderBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--slate);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.reorderBtn:hover:not(:disabled) {
+  background: rgba(143, 216, 230, 0.06);
+  border-color: var(--border-accent);
+  color: var(--signal-aqua);
+}
+.reorderBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.emptySection {
+  font-size: 13px;
+  color: var(--slate);
+  padding: 12px 0;
+}
+
+/* ================================================================
    Responsive
    ================================================================ */
 @media (max-width: 768px) {
@@ -920,5 +1028,8 @@
   }
   .paramBuilderRow {
     grid-template-columns: 1fr;
+  }
+  .editActions {
+    flex-wrap: wrap;
   }
 }

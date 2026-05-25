@@ -95,6 +95,14 @@ export function commandsCol(primeId: string) {
   return getDb().collection("primes").doc(primeId).collection("commands");
 }
 
+export function approvalsCol(primeId: string) {
+  return getDb().collection("primes").doc(primeId).collection("approvals");
+}
+
+export function promotionsCol(primeId: string, projectId: string) {
+  return getDb().collection("primes").doc(primeId).collection("projects").doc(projectId).collection("promotions");
+}
+
 export type CommandType =
   | "fleet_deploy"
   | "fleet_teardown"

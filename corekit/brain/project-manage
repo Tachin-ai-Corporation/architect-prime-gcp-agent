@@ -5,8 +5,8 @@
 # Usage:
 #   project-manage list                    # List all projects (id, name, status, description)
 #   project-manage get <id>                # Get full project details as JSON
-#   project-manage create '<json>'         # Create new project
-#   project-manage update '<id>' '<json>'  # Update project (deep merge on context)
+#   project-manage create '<json>' [--processes <comma-separated-ids>]   # Create new project
+#   project-manage update '<id>' '<json>' [--processes <comma-separated-ids>]  # Update project
 #   project-manage archive '<id>'          # Set status to 'archived'
 #
 # The JSON for create must include: id, name, description, context
@@ -16,6 +16,7 @@
 #              "ref": "resource-id", "url": "https://...", "name": "Display Name",
 #              "summary": "Description of this resource", "updatedAt": "ISO", "updatedBy": "agent" } }
 # Automatically sets created_at and updated_at timestamps; defaults status to 'active'
+# Optional: --processes provides comma-separated process IDs stored as standardProcesses array
 
 set -euo pipefail
 
@@ -86,6 +87,10 @@ for doc in docs:
     print(f'    Name:        {name}')
     print(f'    Status:      {status}')
     print(f'    Description: {(desc or \"\")[:120]}')
+    if 'standardProcesses' in fields:
+        procs = extract_value(fields['standardProcesses'])
+        if procs:
+            print(f'    Processes:   {", ".join(procs)}')
     print()
 
 print(f'Total: {len(docs)} projects')
@@ -140,6 +145,15 @@ print(json.dumps(plain, indent=2))
 
   create)
     NEW_JSON="${1:?'create requires a JSON string'}"
+    shift
+    PROCESSES=""
+    PROCESSES_SET=false
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --processes) PROCESSES="$2"; PROCESSES_SET=true; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+      esac
+    done
     python3 -c "
 import json, sys, subprocess
 from datetime import datetime, timezone
@@ -156,6 +170,15 @@ if missing:
 if not isinstance(new_project.get('context'), dict):
     print('ERROR: context must be a JSON object/map.', file=sys.stderr)
     sys.exit(1)
+
+# Handle --processes
+processes_set = '$PROCESSES_SET' == 'true'
+processes_raw = '''$PROCESSES'''
+if processes_set:
+    if processes_raw:
+        new_project['standardProcesses'] = [p.strip() for p in processes_raw.split(',') if p.strip()]
+    else:
+        new_project['standardProcesses'] = []
 
 # Enforce defaults
 now = datetime.now(timezone.utc).isoformat()
@@ -204,12 +227,23 @@ print(f\"Created project '{project_id}'.\")
 print(f'  Name:        {new_project[\"name\"]}')
 print(f'  Status:      {new_project[\"status\"]}')
 print(f'  Description: {new_project[\"description\"][:120]}')
+if new_project.get('standardProcesses'):
+    print(f'  Processes:   {\", \".join(new_project[\"standardProcesses\"])}')
 "
     ;;
 
   update)
     TARGET_ID="${1:?'update requires a project id'}"
     UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
+    shift 2
+    PROCESSES=""
+    PROCESSES_SET=false
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --processes) PROCESSES="$2"; PROCESSES_SET=true; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+      esac
+    done
     python3 -c "
 import json, sys, subprocess
 from datetime import datetime, timezone
@@ -269,6 +303,16 @@ if 'context' in updates:
 # Shallow merge rest
 for k, v in updates.items():
     existing[k] = v
+
+# Handle --processes
+processes_set = '$PROCESSES_SET' == 'true'
+processes_raw = '''$PROCESSES'''
+if processes_set:
+    if processes_raw:
+        existing['standardProcesses'] = [p.strip() for p in processes_raw.split(',') if p.strip()]
+    else:
+        existing.pop('standardProcesses', None)
+        print('Cleared standardProcesses.', file=sys.stderr)
 
 # Update timestamp
 existing['updated_at'] = datetime.now(timezone.utc).isoformat()
@@ -486,15 +530,19 @@ print(f\"Completed project '{target_id}'.\")
     echo "Usage: project-manage <list|get|create|update|complete|archive> [args]"
     echo ""
     echo "Commands:"
-    echo "  list                        List all projects (id, name, status, description)"
-    echo "  get '<id>'                  Get full project details as JSON"
-    echo "  create '<json>'             Create a new project (full JSON)"
-    echo "  update '<id>' '<json>'      Update a project (partial JSON, deep merge on context)"
-    echo "  complete '<id>'             Set project status to 'completed' with timestamp"
-    echo "  archive '<id>'              Set project status to 'archived'"
+    echo "  list                                             List all projects (id, name, status, description)"
+    echo "  get '<id>'                                       Get full project details as JSON"
+    echo "  create '<json>' [--processes <ids>]               Create a new project (full JSON)"
+    echo "  update '<id>' '<json>' [--processes <ids>]        Update a project (partial JSON, deep merge on context)"
+    echo "  complete '<id>'                                   Set project status to 'completed' with timestamp"
+    echo "  archive '<id>'                                    Set project status to 'archived'"
     echo ""
     echo "The create JSON MUST include:"
     echo "  id, name, description, context"
+    echo ""
+    echo "Optional flags (create/update):"
+    echo "  --processes <comma-separated-ids>   Set standardProcesses array (e.g. 'proc1,proc2')"
+    echo "  --processes \"\"                     Clear the standardProcesses list"
     echo ""
     echo "Context entries use the Context Packet schema:"
     echo '  { "key": { "kind": "sheet|drive_folder|doc|...", "ref": "id", "name": "...", "summary": "..." } }'

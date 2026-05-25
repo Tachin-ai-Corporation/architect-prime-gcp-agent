@@ -53,6 +53,11 @@ const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'openclaw/cortex';
 
+// ---- Project contracts config ----
+const PROJECT_CONTEXT_MAX_TOKENS = CONTRACTS.projects?.context_max_tokens || 2000;
+const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
+const PROJECT_ARCHIVE_DAYS = CONTRACTS.projects?.archive_completed_after_days || 30;
+
 // ---- Context forwarding budgets (chars per prior step) ----
 const CTX_DISPATCH_SUCCESS = CONTRACTS.brain?.ctx_dispatch_success || 4000;
 const CTX_DISPATCH_FAILURE = CONTRACTS.brain?.ctx_dispatch_failure || 3000;
@@ -1843,6 +1848,12 @@ async function processEnvelope(envelope, memoryContext) {
       // Phase 3: Write completed work to memory (synthesize only, not short_circuit)
       await writeMemory(envelope);
       await cleanupSharedWorkspace(envelope.id);
+
+      // Phase 3C: Context promotion — suggest new context entries for the parent project
+      if (envelope.project_id && envelope.type === 'M' && envelope.context) {
+        await suggestContextPromotions(envelope);
+      }
+
       return;
     }
 
@@ -2387,11 +2398,170 @@ async function processEnvelope(envelope, memoryContext) {
           const taskAgent = task.agent;
           const taskDesc = task.task || task.instruction || '';
           const taskCriteria = task.accept_criteria || '';
+          const stepType = task._step_type || 'standard';
+          const isOptional = task._optional === true;
 
           if (!taskAgent) {
             log('WARN', `Checkpoint ${cpNum} task ${taskNum} missing agent, skipping`);
             cpResults.push({ step: `${cpNum}.${taskNum}`, agent: 'unknown', result: '[SKIPPED]', success: false });
             continue;
+          }
+
+          // ---- Optional step: skip if agent unavailable ----
+          if (isOptional) {
+            // Check if the target agent is online (for fleet agents)
+            let agentAvailable = true;
+            try {
+              const token = await getAuthToken();
+              if (token && PRIME_ID) {
+                const fleetUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/fleet/${taskAgent}`;
+                const fleetResp = await fetch(fleetUrl, {
+                  headers: { 'Authorization': `Bearer ${token}` },
+                  signal: AbortSignal.timeout(3000),
+                });
+                if (fleetResp.ok) {
+                  const fleetDoc = await fleetResp.json();
+                  const fleetStatus = fleetDoc.fields?.status?.stringValue;
+                  agentAvailable = fleetStatus === 'online';
+                }
+              }
+            } catch { /* assume available on error */ }
+
+            if (!agentAvailable) {
+              log('INFO', `CP${cpNum} Task ${taskNum}: Optional step skipped — agent '${taskAgent}' unavailable`);
+              cpResults.push({
+                step: `${cpNum}.${taskNum}`,
+                agent: taskAgent,
+                result: '[SKIPPED] Optional step — agent unavailable',
+                success: true,
+                durationMs: 0,
+              });
+              continue;
+            }
+          }
+
+          // ---- Approval Gate: pause checkpoint and notify ----
+          if (stepType === 'approval_gate') {
+            log('INFO', `CP${cpNum} Task ${taskNum}: Approval gate — pausing checkpoint`);
+
+            // Write approval request to Firestore
+            const approvalId = generateId('apr');
+            try {
+              const token = await getAuthToken();
+              if (token) {
+                const approvalUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/approvals/${approvalId}`;
+                await fetch(approvalUrl, {
+                  method: 'PATCH',
+                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ fields: {
+                    envelopeId: { stringValue: envelope.id },
+                    checkpointId: { stringValue: cpId },
+                    taskIndex: { integerValue: String(ti) },
+                    checkpointIndex: { integerValue: String(ci) },
+                    title: { stringValue: taskDesc.substring(0, 200) },
+                    description: { stringValue: taskCriteria || taskDesc },
+                    processId: { stringValue: envelope.process_id || '' },
+                    processName: { stringValue: decision.process_name || '' },
+                    status: { stringValue: 'pending' },
+                    requestedAt: { stringValue: now() },
+                  }}),
+                });
+              }
+            } catch (e) { log('WARN', `Failed to write approval doc: ${e.message}`); }
+
+            // Mark checkpoint as awaiting approval
+            cpEnvelope.status = 'awaiting_approval';
+            cpEnvelope.source_meta = {
+              ...cpEnvelope.source_meta,
+              approval_id: approvalId,
+              approval_task_index: ti,
+            };
+            cpEnvelope.updated_at = now();
+            await firestoreWrite('work', cpId, cpEnvelope);
+            await writeHistory(cpId, 'active', 'awaiting_approval', 'brain',
+              `Approval gate: ${taskDesc.substring(0, 60)}`);
+
+            // Send notification via mouth (creates a deliverable envelope)
+            const notifId = generateId('w');
+            await firestoreWrite('work', notifId, {
+              id: notifId,
+              type: 'T',
+              parent_id: envelope.id,
+              owner: AGENT_EMAIL || AGENT_ID,
+              status: 'complete',
+              intent: 'notification',
+              instruction: 'Approval gate notification',
+              output: `⏸ **Process paused — approval needed**\n\n**${taskDesc.substring(0, 200)}**\n\n${taskCriteria ? `Criteria: ${taskCriteria}\n\n` : ''}Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
+              source_channel: envelope.source_channel || 'system',
+              source_meta: { approval_id: approvalId, notification_type: 'approval_gate' },
+              created_at: now(),
+              started_at: now(),
+              completed_at: now(),
+              updated_at: now(),
+              children: [],
+              accept_criteria: null,
+              context_summary: null,
+              context_forward: null,
+              error: null,
+              iteration: 0,
+              delivery_status: envelope.parent_id ? 'internal' : 'pending',
+            });
+
+            // Record partial results so far
+            allResults.push(...cpResults);
+
+            // Store resume state on the envelope so approval handler can continue
+            envelope.source_meta = {
+              ...envelope.source_meta,
+              paused_approval_id: approvalId,
+              paused_checkpoint_index: ci,
+              paused_task_index: ti,
+              paused_checkpoints: checkpoints,
+              paused_all_results: allResults,
+            };
+            envelope.status = 'awaiting_approval';
+            envelope.updated_at = now();
+            await firestoreWrite('work', envelope.id, envelope);
+
+            log('INFO', `Checkpoint paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);
+
+            // Exit the entire checkpoint plan — will be resumed by approval handler
+            return;
+          }
+
+          // ---- Spawn Responsibility: create a responsibility entry ----
+          if (stepType === 'spawn_responsibility') {
+            log('INFO', `CP${cpNum} Task ${taskNum}: Spawning responsibility via motor`);
+
+            const respResult = await callAgent('motor', {
+              instruction: `Create a new responsibility using the responsibility-manage tool:\n\nresponsibility-manage create --name "${taskDesc.replace(/"/g, '\\"')}" --instruction "${(taskCriteria || taskDesc).replace(/"/g, '\\"')}"\n\nThis is a process step of type 'spawn_responsibility'.`,
+              accept_criteria: 'Responsibility created successfully',
+              _missionId: envelope.id,
+            });
+
+            cpResults.push({
+              step: `${cpNum}.${taskNum}`,
+              agent: 'motor',
+              task: `[spawn_responsibility] ${taskDesc.substring(0, 150)}`,
+              result: respResult.success
+                ? smartTruncate(respResult.output || '', CTX_AGENT_STEP)
+                : `[FAILED] ${respResult.error}`,
+              success: respResult.success,
+              durationMs: respResult.durationMs,
+            });
+
+            if (!respResult.success && !isOptional) {
+              cpFailed = true;
+              break;
+            }
+            continue;
+          }
+
+          // ---- Delegation: route through delegation envelope ----
+          if (stepType === 'delegation') {
+            log('INFO', `CP${cpNum} Task ${taskNum}: Delegation to '${task._specialty || taskAgent}'`);
+            // Delegation dispatches work the same as standard but tag the intent
+            // The agent receiving it treats it as a delegated work item
           }
 
           // Create Task envelope under Checkpoint
@@ -2402,7 +2572,7 @@ async function processEnvelope(envelope, memoryContext) {
             parent_id: cpId,
             owner: AGENT_EMAIL || AGENT_ID,
             status: 'active',
-            intent: task.intent || 'execute',
+            intent: stepType === 'delegation' ? 'delegation' : (task.intent || 'execute'),
             instruction: taskDesc,
             accept_criteria: taskCriteria,
             context_summary: [...allResults, ...cpResults].length > 0
@@ -2413,7 +2583,13 @@ async function processEnvelope(envelope, memoryContext) {
             context_forward: null,
             error: null,
             source_channel: 'brain',
-            source_meta: { dispatched_by: cpId, checkpoint: cpNum, task_step: taskNum },
+            source_meta: {
+              dispatched_by: cpId,
+              checkpoint: cpNum,
+              task_step: taskNum,
+              step_type: stepType,
+              ...(stepType === 'delegation' ? { delegated_to: task._specialty || taskAgent } : {}),
+            },
             project_id: envelope.project_id || null,
             created_at: now(),
             started_at: now(),
@@ -2826,6 +3002,7 @@ async function main() {
   setInterval(async () => {
     await pollIntake();
     await checkWaitingEnvelopes();
+    await checkApprovedApprovals();
   }, POLL_MS);
 
   // Phase 7A: Start Responsibility scheduler
@@ -2908,6 +3085,198 @@ function cronNextFire(expression) {
 const _respLastFired = {}; // id → timestamp
 let _respNextFire = {};    // id → Date
 
+// ---- Phase 3A: Approval gate resume handler ----
+let approvalCheckCount = 0;
+
+async function checkApprovedApprovals() {
+  approvalCheckCount++;
+  // Only check every 5th poll cycle (~15s)
+  if (approvalCheckCount % 5 !== 0) return;
+
+  try {
+    const token = await getAuthToken();
+    if (!token || !PRIME_ID) return;
+
+    // Query for approved or rejected approvals
+    for (const targetStatus of ['approved', 'rejected']) {
+      const queryUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/approvals:runQuery`;
+      const resp = await fetch(queryUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'approvals' }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'status' },
+                op: 'EQUAL',
+                value: { stringValue: targetStatus },
+              },
+            },
+            limit: 5,
+          },
+        }),
+      });
+      if (!resp.ok) continue;
+
+      const results = await resp.json();
+      for (const row of results) {
+        if (!row.document) continue;
+        const fields = row.document.fields || {};
+        const approvalId = row.document.name.split('/').pop();
+        const envelopeId = fields.envelopeId?.stringValue;
+        const processed = fields._processed?.booleanValue;
+
+        if (!envelopeId || processed) continue;
+
+        log('INFO', `Approval ${approvalId} ${targetStatus} — resuming envelope ${envelopeId}`);
+
+        // Mark approval as processed to avoid re-processing
+        const approvalDocPath = row.document.name.split('/documents/')[1];
+        await fetch(`${FIRESTORE_BASE}/${approvalDocPath}?updateMask.fieldPaths=_processed`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: { _processed: { booleanValue: true } } }),
+        }).catch(() => {});
+
+        // Load the paused envelope
+        const envDoc = await firestoreRead('work', envelopeId);
+        if (!envDoc || envDoc.status !== 'awaiting_approval') {
+          log('WARN', `Approval ${approvalId}: envelope ${envelopeId} not in awaiting_approval state (${envDoc?.status})`);
+          continue;
+        }
+
+        const meta = envDoc.source_meta || {};
+        const pausedCheckpoints = meta.paused_checkpoints;
+        const pausedCpIndex = meta.paused_checkpoint_index;
+        const pausedTaskIndex = meta.paused_task_index;
+        const pausedAllResults = meta.paused_all_results || [];
+
+        if (!pausedCheckpoints || pausedCpIndex === undefined || pausedTaskIndex === undefined) {
+          log('WARN', `Approval ${approvalId}: missing resume state on envelope`);
+          continue;
+        }
+
+        if (targetStatus === 'rejected') {
+          // Cancel remaining tasks and mark as failed
+          envDoc.status = 'failed';
+          envDoc.output = `Process rejected at approval gate (approval ${approvalId})`;
+          envDoc.error = fields.reason?.stringValue || 'Approval rejected by user';
+          envDoc.completed_at = now();
+          envDoc.updated_at = now();
+          if (!envDoc.parent_id) envDoc.delivery_status = 'pending';
+          await firestoreWrite('work', envelopeId, envDoc);
+          await writeHistory(envelopeId, 'awaiting_approval', 'failed', 'brain', `Approval rejected`);
+          log('INFO', `Envelope ${envelopeId} rejected at approval gate`);
+          continue;
+        }
+
+        // Approved — resume checkpoint execution from after the approval gate task
+        log('INFO', `Resuming checkpoint plan from CP${pausedCpIndex + 1} task ${pausedTaskIndex + 2}`);
+
+        envDoc.status = 'active';
+        envDoc.updated_at = now();
+        // Clean up paused state
+        delete envDoc.source_meta.paused_approval_id;
+        delete envDoc.source_meta.paused_checkpoints;
+        delete envDoc.source_meta.paused_checkpoint_index;
+        delete envDoc.source_meta.paused_task_index;
+        delete envDoc.source_meta.paused_all_results;
+        await firestoreWrite('work', envelopeId, envDoc);
+
+        // Resume processing the envelope through the normal Cortex loop
+        // The approval gate task is marked as completed, remaining tasks continue
+        const memory = await recallMemory(envDoc.instruction, {
+          instruction: envDoc.instruction,
+          context_summary: (envDoc.context_summary || '').substring(0, 500),
+        });
+        await processEnvelope(envDoc, memory);
+      }
+    }
+  } catch (e) {
+    log('DEBUG', `Approval check error: ${e.message}`);
+  }
+}
+
+// ---- Phase 3C: Context promotion (suggest + approve) ----
+
+async function suggestContextPromotions(envelope) {
+  if (!envelope.project_id || !envelope.context) return;
+
+  try {
+    const project = PROJECTS[envelope.project_id];
+    if (!project) return;
+
+    const projectContext = project.context || {};
+    const missionContext = envelope.context || {};
+
+    // Find NEW context entries in mission that aren't in project
+    const newEntries = {};
+    for (const [key, entry] of Object.entries(missionContext)) {
+      if (!projectContext[key] && entry && typeof entry === 'object') {
+        newEntries[key] = entry;
+      }
+    }
+
+    if (Object.keys(newEntries).length === 0) return;
+
+    log('INFO', `Context promotion: ${Object.keys(newEntries).length} new entries from mission ${envelope.id} for project ${envelope.project_id}`);
+
+    const token = await getAuthToken();
+    if (!token) return;
+
+    if (PROJECT_PROMOTION_AUTO) {
+      // Auto-promote: merge directly into project context
+      const projectUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${envelope.project_id}`;
+      const merged = mergeContextPackets(projectContext, newEntries);
+      const contextFields = {};
+      for (const [k, v] of Object.entries(merged)) {
+        if (v && typeof v === 'object') {
+          const entryFields = {};
+          if (v.kind) entryFields.kind = { stringValue: v.kind };
+          if (v.ref) entryFields.ref = { stringValue: v.ref };
+          if (v.name) entryFields.name = { stringValue: v.name };
+          if (v.summary) entryFields.summary = { stringValue: v.summary };
+          contextFields[k] = { mapValue: { fields: entryFields } };
+        }
+      }
+      await fetch(`${projectUrl}?updateMask.fieldPaths=context`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {
+          context: { mapValue: { fields: contextFields } },
+        }}),
+      });
+      log('INFO', `Auto-promoted ${Object.keys(newEntries).length} context entries to project ${envelope.project_id}`);
+    } else {
+      // Write promotion candidates for dashboard approval
+      for (const [key, entry] of Object.entries(newEntries)) {
+        const promoId = generateId('promo');
+        const promoUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${envelope.project_id}/promotions/${promoId}`;
+        await fetch(promoUrl, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: {
+            key: { stringValue: key },
+            entry: { mapValue: { fields: {
+              ...(entry.kind ? { kind: { stringValue: entry.kind } } : {}),
+              ...(entry.ref ? { ref: { stringValue: entry.ref } } : {}),
+              ...(entry.name ? { name: { stringValue: entry.name } } : {}),
+              ...(entry.summary ? { summary: { stringValue: entry.summary } } : {}),
+            }}},
+            source_mission_id: { stringValue: envelope.id },
+            suggested_at: { stringValue: now() },
+            status: { stringValue: 'pending' },
+          }}),
+        });
+      }
+      log('INFO', `Wrote ${Object.keys(newEntries).length} promotion candidates for project ${envelope.project_id}`);
+    }
+  } catch (e) {
+    log('DEBUG', `Context promotion error: ${e.message}`);
+  }
+}
+
 function startResponsibilityScheduler() {
   if (RESPONSIBILITIES.length === 0) {
     log('INFO', 'No responsibilities configured, scheduler idle');
@@ -2957,6 +3326,143 @@ function startResponsibilityScheduler() {
 }
 
 async function fireResponsibility(resp) {
+  // Phase 3B: If responsibility has a processRef, execute the process directly
+  if (resp.processRef) {
+    await ensureProcessesLoaded();
+    const process = PROCESSES[resp.processRef];
+    if (process) {
+      log('INFO', `Responsibility ${resp.id}: executing linked process '${process.name}' v${process.version || 1}`);
+
+      // Build parameters: merge process defaults → responsibility overrides
+      const parameters = {};
+      for (const [key, def] of Object.entries(process.parameters || {})) {
+        if (def && typeof def === 'object' && def.default !== undefined) {
+          parameters[key] = def.default;
+        }
+      }
+      Object.assign(parameters, resp.processParameters || {});
+
+      // Validate required parameters
+      const requiredParams = Object.entries(process.parameters || {})
+        .filter(([, def]) => def && typeof def === 'object' && def.required && !def.default)
+        .map(([key]) => key);
+      const missingParams = requiredParams.filter(k => !(k in parameters));
+      if (missingParams.length > 0) {
+        log('WARN', `Responsibility ${resp.id}: process '${process.name}' missing required params: ${missingParams.join(', ')} — falling through to normal mission`);
+        // Fall through to normal responsibility firing below
+      } else {
+        // Convert process to checkpoint plan
+        const cpPlan = processToCheckpointPlan(process, parameters);
+        if (cpPlan) {
+          // Create R envelope
+          const respEnvId = generateId('w');
+          const respEnvelope = {
+            id: respEnvId,
+            type: 'R',
+            parent_id: null,
+            owner: AGENT_EMAIL || AGENT_ID,
+            status: 'complete',
+            intent: 'responsibility',
+            instruction: resp.instruction,
+            accept_criteria: resp.context?.success_criteria || null,
+            context_summary: `Process: ${process.name} v${process.version || 1}`,
+            output: `Responsibility ${resp.id} fired at ${now()} → process ${process.id}`,
+            children: [],
+            context_forward: null,
+            error: null,
+            source_channel: 'scheduler',
+            source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, schedule: resp.schedule, process_id: process.id },
+            created_at: now(),
+            started_at: now(),
+            completed_at: now(),
+            updated_at: now(),
+            iteration: 0,
+          };
+          await firestoreWrite('work', respEnvId, respEnvelope);
+
+          // Create M mission with process already loaded
+          const missionId = generateId('w');
+          const missionEnvelope = {
+            id: missionId,
+            type: 'M',
+            parent_id: respEnvId,
+            owner: AGENT_EMAIL || AGENT_ID,
+            status: 'active',
+            intent: 'execute',
+            instruction: resp.instruction,
+            accept_criteria: resp.context?.success_criteria || null,
+            context_summary: `Executing process: ${process.name}`,
+            output: null,
+            children: [],
+            context_forward: null,
+            error: null,
+            source_channel: 'scheduler',
+            source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, fired_at: now(), process_id: process.id },
+            process_id: process.id,
+            process_version: process.version || 1,
+            created_at: now(),
+            started_at: now(),
+            completed_at: null,
+            updated_at: now(),
+            iteration: 0,
+            delivery_status: 'internal',
+            memory_context: null,
+          };
+
+          // Merge process context template
+          if (process.contextTemplate && typeof process.contextTemplate === 'object') {
+            const templateCtx = {};
+            for (const [key, entry] of Object.entries(process.contextTemplate)) {
+              if (entry && typeof entry === 'object') {
+                const processed = { ...entry };
+                if (processed.name) processed.name = processed.name.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
+                if (processed.summary) processed.summary = processed.summary.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
+                templateCtx[key] = processed;
+              }
+            }
+            missionEnvelope.context = templateCtx;
+          }
+
+          respEnvelope.children.push(missionId);
+          await firestoreWrite('work', respEnvId, respEnvelope);
+          await firestoreWrite('work', missionId, missionEnvelope);
+          await writeHistory(missionId, null, 'active', 'scheduler', `Process ${process.id} from responsibility ${resp.id}`);
+
+          // Increment process execution count
+          try {
+            const token = await getAuthToken();
+            if (token) {
+              const procUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes/${process.id}`;
+              const currentCount = process.execution_count || 0;
+              await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fields: {
+                  execution_count: { integerValue: String(currentCount + 1) },
+                  last_executed_at: { stringValue: now() },
+                }}),
+              });
+            }
+          } catch (e) { log('DEBUG', `Process execution count update failed: ${e.message}`); }
+
+          // Recall memory then execute the checkpoint plan directly
+          const memory = await recallMemory(resp.instruction, {
+            instruction: resp.instruction,
+            context_summary: `Process: ${process.name}`,
+          });
+          missionEnvelope.memory_context = memory;
+          await firestoreWrite('work', missionId, missionEnvelope);
+          await processEnvelope(missionEnvelope, memory);
+
+          log('INFO', `Responsibility ${resp.id} → process ${process.id} execution started`);
+          return;
+        }
+      }
+    } else {
+      log('WARN', `Responsibility ${resp.id}: processRef '${resp.processRef}' not found, falling through to normal mission`);
+    }
+  }
+
   // Build rich context summary from the responsibility definition
   const contextParts = [];
   if (resp.context?.purpose) contextParts.push(`PURPOSE: ${resp.context.purpose}`);

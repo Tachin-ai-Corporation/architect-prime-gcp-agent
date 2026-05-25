@@ -4,12 +4,14 @@
 #
 # Usage:
 #   responsibility-manage list
-#   responsibility-manage create '<json>'
-#   responsibility-manage update '<id>' '<partial-json>'
+#   responsibility-manage create '<json>' [--process-ref <processId>] [--process-params '<json>']
+#   responsibility-manage update '<id>' '<partial-json>' [--process-ref <processId>] [--process-params '<json>']
 #   responsibility-manage remove '<id>'
 #
 # The JSON for create must include: id, name, schedule, instruction, context
 # The JSON for update is merged into the existing responsibility
+# Optional: --process-ref links responsibility to a process definition
+#           --process-params provides JSON parameter overrides for the process
 
 set -euo pipefail
 
@@ -42,6 +44,10 @@ for r in resps:
     print(f\"    Enabled:  {r.get('enabled', True)}\")
     print(f\"    Spacing:  {r.get('min_spacing_minutes', 30)}m min\")
     print(f\"    Process:  {process_count} steps\")
+    if r.get('processRef'):
+        print(f\"    ProcRef:  {r['processRef']}\")
+    if r.get('processParameters'):
+        print(f\"    ProcParams: {json.dumps(r['processParameters'])}\")
     print(f\"    Purpose:  {(ctx.get('purpose', '') or '')[:100]}\")
     print()
 print(f'Total: {len(resps)} responsibilities')
@@ -50,6 +56,16 @@ print(f'Total: {len(resps)} responsibilities')
 
   create)
     NEW_JSON="${1:?'create requires a JSON string'}"
+    shift
+    PROCESS_REF=""
+    PROCESS_PARAMS=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --process-ref) PROCESS_REF="$2"; shift 2 ;;
+        --process-params) PROCESS_PARAMS="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+      esac
+    done
     python3 -c "
 import json, sys
 
@@ -74,6 +90,21 @@ if not ctx.get('success_criteria'):
     print('ERROR: context.success_criteria is required — how do we know this succeeded?', file=sys.stderr)
     sys.exit(1)
 
+# Handle --process-ref
+process_ref = '''$PROCESS_REF'''
+if process_ref:
+    new_resp['processRef'] = process_ref
+    print(f'WARNING: processRef \"{process_ref}\" set — process may not exist yet.', file=sys.stderr)
+
+# Handle --process-params
+process_params_raw = '''$PROCESS_PARAMS'''
+if process_params_raw:
+    try:
+        new_resp['processParameters'] = json.loads(process_params_raw)
+    except json.JSONDecodeError as e:
+        print(f'ERROR: --process-params must be valid JSON: {e}', file=sys.stderr)
+        sys.exit(1)
+
 # Enforce defaults
 new_resp.setdefault('enabled', True)
 new_resp.setdefault('min_spacing_minutes', 30)
@@ -92,6 +123,10 @@ with open('$RESP_FILE', 'w') as f:
 
 print(f\"Created responsibility '{new_resp['id']}' with schedule '{new_resp['schedule']}'\")
 print(f\"  Process: {len(ctx['process'])} steps\")
+if new_resp.get('processRef'):
+    print(f\"  ProcessRef: {new_resp['processRef']}\")
+if new_resp.get('processParameters'):
+    print(f\"  ProcessParams: {json.dumps(new_resp['processParameters'])}\")
 print(f\"  Purpose: {ctx['purpose'][:120]}\")
 print(f\"  Success criteria: {ctx['success_criteria'][:120]}\")
 print('Brain scheduler will auto-reload within 10 seconds.')
@@ -101,11 +136,25 @@ print('Brain scheduler will auto-reload within 10 seconds.')
   update)
     TARGET_ID="${1:?'update requires a responsibility id'}"
     UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
+    shift 2
+    PROCESS_REF=""
+    PROCESS_REF_SET=false
+    PROCESS_PARAMS=""
+    PROCESS_PARAMS_SET=false
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --process-ref) PROCESS_REF="$2"; PROCESS_REF_SET=true; shift 2 ;;
+        --process-params) PROCESS_PARAMS="$2"; PROCESS_PARAMS_SET=true; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+      esac
+    done
     python3 -c "
 import json, sys
 
 target_id = '$TARGET_ID'
 updates = json.loads('''$UPDATE_JSON''')
+process_ref_set = '$PROCESS_REF_SET' == 'true'
+process_params_set = '$PROCESS_PARAMS_SET' == 'true'
 
 with open('$RESP_FILE') as f:
     data = json.load(f)
@@ -126,6 +175,29 @@ if 'context' in updates:
 # Shallow merge rest
 for k, v in updates.items():
     data['responsibilities'][idx][k] = v
+
+# Handle --process-ref
+if process_ref_set:
+    process_ref = '''$PROCESS_REF'''
+    if process_ref:
+        data['responsibilities'][idx]['processRef'] = process_ref
+        print(f'WARNING: processRef \"{process_ref}\" set — process may not exist yet.', file=sys.stderr)
+    else:
+        data['responsibilities'][idx].pop('processRef', None)
+        print('Cleared processRef.', file=sys.stderr)
+
+# Handle --process-params
+if process_params_set:
+    process_params_raw = '''$PROCESS_PARAMS'''
+    if process_params_raw:
+        try:
+            data['responsibilities'][idx]['processParameters'] = json.loads(process_params_raw)
+        except json.JSONDecodeError as e:
+            print(f'ERROR: --process-params must be valid JSON: {e}', file=sys.stderr)
+            sys.exit(1)
+    else:
+        data['responsibilities'][idx].pop('processParameters', None)
+        print('Cleared processParameters.', file=sys.stderr)
 
 with open('$RESP_FILE', 'w') as f:
     json.dump(data, f, indent=2)
@@ -165,12 +237,17 @@ print('Brain scheduler will auto-reload within 10 seconds.')
     echo "Usage: responsibility-manage <list|create|update|remove> [args]"
     echo ""
     echo "Commands:"
-    echo "  list                        List all responsibilities"
-    echo "  create '<json>'             Create a new responsibility (full JSON)"
-    echo "  update '<id>' '<json>'      Update a responsibility (partial JSON merge)"
-    echo "  remove '<id>'               Remove a responsibility by ID"
+    echo "  list                                                  List all responsibilities"
+    echo "  create '<json>' [--process-ref <id>] [--process-params '<json>']  Create a new responsibility"
+    echo "  update '<id>' '<json>' [--process-ref <id>] [--process-params '<json>']  Update a responsibility"
+    echo "  remove '<id>'                                         Remove a responsibility by ID"
     echo ""
     echo "The create JSON MUST include:"
     echo "  id, name, schedule, instruction, context.purpose, context.process, context.success_criteria"
+    echo ""
+    echo "Optional flags (create/update):"
+    echo "  --process-ref <processId>      Link responsibility to a process definition"
+    echo "  --process-params '<json>'      JSON parameter overrides for the process"
+    echo "  Use --process-ref \"\" to clear the process link on update"
     ;;
 esac

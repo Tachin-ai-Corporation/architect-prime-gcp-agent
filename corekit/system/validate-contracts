@@ -240,6 +240,40 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fail "brain.context_token_budget missing from contracts.json"
   fi
 
+  # ---- Check 12: projects config fields ----
+  C_PROJ_CTX_MAX="$(read_contract 'projects.context_max_tokens' 2>/dev/null || echo '')"
+  if [[ -n "$C_PROJ_CTX_MAX" ]]; then
+    if [[ "$C_PROJ_CTX_MAX" -gt 0 ]]; then
+      pass "projects.context_max_tokens = ${C_PROJ_CTX_MAX}"
+    else
+      fail "projects.context_max_tokens = ${C_PROJ_CTX_MAX} (expected positive number)"
+    fi
+  else
+    fail "projects.context_max_tokens missing from contracts.json"
+  fi
+
+  C_PROJ_PROMO="$(read_contract 'projects.promotion_auto' 2>/dev/null || echo '')"
+  if [[ -n "$C_PROJ_PROMO" ]]; then
+    if [[ "$C_PROJ_PROMO" == "True" || "$C_PROJ_PROMO" == "False" ]]; then
+      pass "projects.promotion_auto = ${C_PROJ_PROMO}"
+    else
+      fail "projects.promotion_auto = '${C_PROJ_PROMO}' (expected boolean)"
+    fi
+  else
+    fail "projects.promotion_auto missing from contracts.json"
+  fi
+
+  C_PROJ_ARCHIVE="$(read_contract 'projects.archive_completed_after_days' 2>/dev/null || echo '')"
+  if [[ -n "$C_PROJ_ARCHIVE" ]]; then
+    if [[ "$C_PROJ_ARCHIVE" -ge 0 ]]; then
+      pass "projects.archive_completed_after_days = ${C_PROJ_ARCHIVE}"
+    else
+      fail "projects.archive_completed_after_days = ${C_PROJ_ARCHIVE} (expected non-negative number)"
+    fi
+  else
+    fail "projects.archive_completed_after_days missing from contracts.json"
+  fi
+
 
 fi
 

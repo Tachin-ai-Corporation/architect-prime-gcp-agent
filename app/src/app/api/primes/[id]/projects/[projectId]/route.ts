@@ -19,7 +19,14 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ project: { id: doc.id, ...doc.data() } });
+    const data = doc.data() || {};
+    return NextResponse.json({
+      project: {
+        id: doc.id,
+        ...data,
+        standardProcesses: data.standardProcesses || [],
+      },
+    });
   } catch (err) {
     console.error(`[api/primes/projects/detail] GET error:`, err);
     return NextResponse.json({ error: "Failed to get project" }, { status: 500 });
@@ -50,6 +57,16 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
         ...(existingData.context || {}),
         ...body.context,
       };
+    }
+
+    // Validate standardProcesses if provided
+    if (body.standardProcesses !== undefined) {
+      if (!Array.isArray(body.standardProcesses)) {
+        return NextResponse.json(
+          { error: "standardProcesses must be an array of process ID strings" },
+          { status: 400 }
+        );
+      }
     }
 
     const update = {

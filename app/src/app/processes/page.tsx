@@ -226,6 +226,14 @@ function ProcessDetailView({
   const [process, setProcess] = useState<ProcessDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /* ---- Editing state ---- */
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editSteps, setEditSteps] = useState<StepDef[]>([]);
+  const [editParams, setEditParams] = useState<ParamDef[]>([]);
+  const [saving, setSaving] = useState(false);
+
   /* ---- Fetch process ---- */
   useEffect(() => {
     let cancelled = false;
@@ -241,6 +249,112 @@ function ProcessDetailView({
     })();
     return () => { cancelled = true; };
   }, [primeId, processId]);
+
+  /* ---- Enter edit mode ---- */
+  const startEditing = useCallback(() => {
+    if (!process) return;
+    setEditName(process.name);
+    setEditDesc(process.description);
+    setEditSteps(process.steps.map((s) => ({ ...s })));
+    // Convert parameters record to array
+    const paramArr: ParamDef[] = Object.entries(process.parameters || {}).map(([key, param]) => ({
+      key,
+      type: (param as ParamDef).type,
+      default: (param as ParamDef).default,
+      description: (param as ParamDef).description,
+    }));
+    setEditParams(paramArr);
+    setIsEditing(true);
+  }, [process]);
+
+  const cancelEditing = useCallback(() => {
+    setIsEditing(false);
+  }, []);
+
+  /* ---- Step helpers ---- */
+  const updateEditStep = useCallback((index: number, field: keyof StepDef, value: string | boolean) => {
+    setEditSteps((prev) => prev.map((s, i) => (i === index ? { ...s, [field]: value } : s)));
+  }, []);
+
+  const removeEditStep = useCallback((index: number) => {
+    setEditSteps((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const addEditStep = useCallback(() => {
+    setEditSteps((prev) => [...prev, { title: "", description: "", agent: "", type: "standard", optional: false, checkpointBoundary: false }]);
+  }, []);
+
+  const moveEditStep = useCallback((index: number, direction: -1 | 1) => {
+    setEditSteps((prev) => {
+      const next = [...prev];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }, []);
+
+  /* ---- Param helpers ---- */
+  const updateEditParam = useCallback((index: number, field: keyof ParamDef, value: string) => {
+    setEditParams((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
+  }, []);
+
+  const removeEditParam = useCallback((index: number) => {
+    setEditParams((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const addEditParam = useCallback(() => {
+    setEditParams((prev) => [...prev, { key: "", type: "string", default: "", description: "" }]);
+  }, []);
+
+  /* ---- Save changes ---- */
+  const handleSave = useCallback(async () => {
+    if (!process) return;
+    setSaving(true);
+
+    const parametersObj: Record<string, Omit<ParamDef, "key">> = {};
+    editParams.forEach((p) => {
+      if (p.key.trim()) {
+        parametersObj[p.key.trim()] = {
+          type: p.type,
+          default: p.default,
+          description: p.description,
+        };
+      }
+    });
+
+    const result = await api<{ process: ProcessDetail }>(`/api/primes/${primeId}/processes/${processId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: editName.trim(),
+        description: editDesc,
+        steps: editSteps,
+        parameters: parametersObj,
+      }),
+    });
+
+    if (result?.process) {
+      setProcess(result.process);
+    }
+    setIsEditing(false);
+    setSaving(false);
+  }, [process, editName, editDesc, editSteps, editParams, primeId, processId]);
+
+  /* ---- Deprecate ---- */
+  const handleDeprecate = useCallback(async () => {
+    if (!process) return;
+    setSaving(true);
+    const result = await api<{ process: ProcessDetail }>(`/api/primes/${primeId}/processes/${processId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "deprecated" }),
+    });
+    if (result?.process) {
+      setProcess(result.process);
+    }
+    setSaving(false);
+  }, [process, primeId, processId]);
 
   /* ---- Back nav ---- */
   const handleBack = useCallback(() => {
@@ -278,13 +392,39 @@ function ProcessDetailView({
 
       <div className={styles.detailHeader}>
         <div className={styles.detailTitleRow}>
-          <h1 className={styles.pgTitle}>{process.name}</h1>
+          {isEditing ? (
+            <input
+              className={`${styles.fieldInput} ${styles.editTitleInput}`}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Process name"
+            />
+          ) : (
+            <h1 className={styles.pgTitle}>{process.name}</h1>
+          )}
           <span className={styles.versionBadge}>v{process.version}</span>
           <span className={`${styles.statusBadge} ${process.status === "active" ? styles.badgeActive : styles.badgeDeprecated}`}>
             {process.status}
           </span>
+          {!isEditing && process.status === "active" && (
+            <button className={styles.editBtn} onClick={startEditing} title="Edit process">
+              ✏️
+            </button>
+          )}
         </div>
-        <div className={styles.detailDesc}>{process.description}</div>
+
+        {isEditing ? (
+          <textarea
+            className={`${styles.fieldTextarea} ${styles.editDescTextarea}`}
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            rows={3}
+            placeholder="Process description"
+          />
+        ) : (
+          <div className={styles.detailDesc}>{process.description}</div>
+        )}
+
         <div className={styles.detailMetaRow}>
           <span className={styles.detailMetaItem}>⚡ {process.execution_count} executions</span>
           <span className={styles.detailMetaItem}>👤 {process.created_by}</span>
@@ -293,43 +433,201 @@ function ProcessDetailView({
             <span className={styles.detailMetaItem}>👁 {process.visibility}</span>
           )}
         </div>
+
+        {/* ---- Action buttons ---- */}
+        {isEditing && (
+          <div className={styles.editActions}>
+            <button className={styles.cancelBtn} onClick={cancelEditing}>Cancel</button>
+            <button
+              className={styles.deprecateBtn}
+              onClick={handleDeprecate}
+              disabled={saving || process.status === "deprecated"}
+            >
+              Deprecate
+            </button>
+            <button
+              className={styles.createBtn}
+              onClick={handleSave}
+              disabled={saving || !editName.trim() || editSteps.length === 0}
+            >
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ---- Steps ---- */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Steps</h2>
-          <span className={styles.countPill}>{process.steps.length} steps</span>
+          <span className={styles.countPill}>{isEditing ? editSteps.length : process.steps.length} steps</span>
         </div>
-        <div className={styles.stepList}>
-          {process.steps.map((step, i) => (
-            <div key={i} className={styles.stepItem}>
-              <div className={`${styles.stepDot} ${step.checkpointBoundary ? styles.stepDotCheckpoint : ""}`} />
-              <div className={styles.stepNumber}>Step {i + 1}</div>
-              <div className={styles.stepTitle}>
-                <span>{TYPE_ICONS[step.type]}</span>
-                {step.title}
+
+        {isEditing ? (
+          /* ---- Editable Steps ---- */
+          <div className={styles.stepBuilder}>
+            {editSteps.map((step, i) => (
+              <div key={i} className={styles.stepBuilderItem}>
+                <div className={styles.stepBuilderHeader}>
+                  <span className={styles.stepBuilderNum}>Step {i + 1}</span>
+                  <div className={styles.stepBuilderHeaderActions}>
+                    <button
+                      className={styles.reorderBtn}
+                      onClick={() => moveEditStep(i, -1)}
+                      disabled={i === 0}
+                      type="button"
+                      title="Move up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className={styles.reorderBtn}
+                      onClick={() => moveEditStep(i, 1)}
+                      disabled={i === editSteps.length - 1}
+                      type="button"
+                      title="Move down"
+                    >
+                      ↓
+                    </button>
+                    {editSteps.length > 1 && (
+                      <button className={styles.removeStepBtn} onClick={() => removeEditStep(i)} type="button">
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className={styles.stepBuilderRow}>
+                  <input
+                    className={styles.fieldInput}
+                    value={step.title}
+                    onChange={(e) => updateEditStep(i, "title", e.target.value)}
+                    placeholder="Step title"
+                  />
+                  <input
+                    className={styles.fieldInput}
+                    value={step.agent}
+                    onChange={(e) => updateEditStep(i, "agent", e.target.value)}
+                    placeholder="Agent name"
+                  />
+                </div>
+                <input
+                  className={styles.fieldInput}
+                  value={step.description}
+                  onChange={(e) => updateEditStep(i, "description", e.target.value)}
+                  placeholder="Step description"
+                />
+                <div className={styles.stepBuilderRow}>
+                  <select
+                    className={styles.fieldSelect}
+                    value={step.type}
+                    onChange={(e) => updateEditStep(i, "type", e.target.value)}
+                  >
+                    {STEP_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {TYPE_ICONS[t]} {t.replace("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.stepBuilderOptions}>
+                  <label className={styles.fieldCheckbox}>
+                    <input
+                      type="checkbox"
+                      checked={step.optional ?? false}
+                      onChange={(e) => updateEditStep(i, "optional", e.target.checked)}
+                    />
+                    Optional
+                  </label>
+                  <label className={styles.fieldCheckbox}>
+                    <input
+                      type="checkbox"
+                      checked={step.checkpointBoundary ?? false}
+                      onChange={(e) => updateEditStep(i, "checkpointBoundary", e.target.checked)}
+                    />
+                    Checkpoint boundary
+                  </label>
+                </div>
               </div>
-              {step.description && <div className={styles.stepDesc}>{step.description}</div>}
-              <div className={styles.stepMeta}>
-                <span className={`${styles.typeBadge} ${TYPE_CLASSES[step.type]}`}>
-                  {step.type.replace("_", " ")}
-                </span>
-                {step.agent && <span className={styles.stepAgent}>{step.agent}</span>}
-                {step.optional && <span className={styles.optionalFlag}>Optional</span>}
-                {step.checkpointBoundary && <span className={styles.checkpointIndicator}>🔒 Checkpoint</span>}
+            ))}
+            <button className={styles.addStepBtn} onClick={addEditStep} type="button">
+              + Add Step
+            </button>
+          </div>
+        ) : (
+          /* ---- Read-only Steps ---- */
+          <div className={styles.stepList}>
+            {process.steps.map((step, i) => (
+              <div key={i} className={styles.stepItem}>
+                <div className={`${styles.stepDot} ${step.checkpointBoundary ? styles.stepDotCheckpoint : ""}`} />
+                <div className={styles.stepNumber}>Step {i + 1}</div>
+                <div className={styles.stepTitle}>
+                  <span>{TYPE_ICONS[step.type]}</span>
+                  {step.title}
+                </div>
+                {step.description && <div className={styles.stepDesc}>{step.description}</div>}
+                <div className={styles.stepMeta}>
+                  <span className={`${styles.typeBadge} ${TYPE_CLASSES[step.type]}`}>
+                    {step.type.replace("_", " ")}
+                  </span>
+                  {step.agent && <span className={styles.stepAgent}>{step.agent}</span>}
+                  {step.optional && <span className={styles.optionalFlag}>Optional</span>}
+                  {step.checkpointBoundary && <span className={styles.checkpointIndicator}>🔒 Checkpoint</span>}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ---- Parameters ---- */}
-      {paramEntries.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Parameters</h2>
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Parameters</h2>
+        </div>
+
+        {isEditing ? (
+          /* ---- Editable Parameters ---- */
+          <div className={styles.paramBuilder}>
+            {editParams.map((p, i) => (
+              <div key={i} className={styles.paramBuilderRow}>
+                <input
+                  className={styles.fieldInput}
+                  value={p.key}
+                  onChange={(e) => updateEditParam(i, "key", e.target.value)}
+                  placeholder="Key"
+                />
+                <select
+                  className={styles.fieldSelect}
+                  value={p.type}
+                  onChange={(e) => updateEditParam(i, "type", e.target.value)}
+                >
+                  <option value="string">string</option>
+                  <option value="number">number</option>
+                  <option value="boolean">boolean</option>
+                </select>
+                <input
+                  className={styles.fieldInput}
+                  value={p.default}
+                  onChange={(e) => updateEditParam(i, "default", e.target.value)}
+                  placeholder="Default"
+                />
+                <input
+                  className={styles.fieldInput}
+                  value={p.description}
+                  onChange={(e) => updateEditParam(i, "description", e.target.value)}
+                  placeholder="Description"
+                />
+                <button className={styles.removeParamBtn} onClick={() => removeEditParam(i)} type="button">
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button className={styles.addStepBtn} onClick={addEditParam} type="button">
+              + Add Parameter
+            </button>
           </div>
+        ) : paramEntries.length > 0 ? (
+          /* ---- Read-only Parameters ---- */
           <table className={styles.paramTable}>
             <thead>
               <tr>
@@ -350,8 +648,10 @@ function ProcessDetailView({
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        ) : (
+          <div className={styles.emptySection}>No parameters defined</div>
+        )}
+      </div>
 
       {/* ---- Context Template ---- */}
       {contextEntries.length > 0 && (

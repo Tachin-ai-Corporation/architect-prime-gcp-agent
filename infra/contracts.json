@@ -65,5 +65,10 @@
       "enabled": true,
       "schedule_ms": [10000, 300000, 600000, 1800000, 7200000]
     }
+  },
+  "projects": {
+    "context_max_tokens": 2000,
+    "promotion_auto": false,
+    "archive_completed_after_days": 30
   }
 }
