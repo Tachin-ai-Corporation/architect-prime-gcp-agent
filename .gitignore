@@ -3,7 +3,4 @@ node_modules/
 .DS_Store
 *.pem
 .env*
-brain/agents/main/sessions/
-brain/agents/main/agent/auth-profiles.json
-brain/prime/cortex/checkpoint/
 .agents/scratch/

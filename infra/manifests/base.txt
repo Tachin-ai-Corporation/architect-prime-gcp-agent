@@ -73,6 +73,6 @@ corekit/daemon/start-agent-introspect .openclaw/bin/start-agent-introspect
 corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
 corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl
 
-# Agent runtime skeleton
-brain/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json
-brain/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json
+# Agent runtime skeleton (seed files — no-clobber on upgrade)
+brain/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json?
+brain/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json?
