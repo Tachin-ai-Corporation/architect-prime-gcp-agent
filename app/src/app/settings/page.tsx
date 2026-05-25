@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
 import { usePrime } from "@/contexts/PrimeContext";
 import { useDialog } from "@/components/DialogProvider";
@@ -67,16 +68,14 @@ const PROVIDER_LABELS: Record<string, string> = {
 export default function DashboardSettingsPage() {
   const { setup, versionInfo, primes, sidebarFleet } = usePrime();
   const dialog = useDialog();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeTab: SettingsTab = (tabParam && TABS.find((t) => t.id === tabParam) ? tabParam : "general") as SettingsTab;
 
-  // Read ?tab= query param on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tab = params.get("tab");
-    if (tab && TABS.find((t) => t.id === tab)) {
-      setActiveTab(tab as SettingsTab);
-    }
-  }, []);
+  const setActiveTab = useCallback((tab: SettingsTab) => {
+    router.replace(`/settings?tab=${tab}`, { scroll: false });
+  }, [router]);
 
   // DWD test state
   const [dwdTestEmail, setDwdTestEmail] = useState("");

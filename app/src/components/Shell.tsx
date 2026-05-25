@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Breadcrumb } from "./Breadcrumb";
 import { usePrime } from "@/contexts/PrimeContext";
 import { OperationsFeed, useOperations } from "./OperationsFeed";
-import { api } from "@/lib/api";
 import styles from "./Shell.module.css";
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -30,25 +29,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setPrevActiveCount(activeCount);
   }, [activeCount, prevActiveCount]);
 
-  /* ---- Approval badge polling ---- */
-  const [approvalCount, setApprovalCount] = useState(0);
 
-  const fetchApprovals = useCallback(async () => {
-    if (!firstPrimeId) return;
-    const data = await api<{ approvals: { id: string }[] }>(
-      `/api/primes/${firstPrimeId}/approvals?status=pending`
-    );
-    if (data?.approvals) {
-      setApprovalCount(data.approvals.length);
-    }
-  }, [firstPrimeId]);
-
-  useEffect(() => {
-    if (!firstPrimeId) return;
-    fetchApprovals();
-    const interval = setInterval(fetchApprovals, 30000);
-    return () => clearInterval(interval);
-  }, [firstPrimeId, fetchApprovals]);
 
   return (
     <div className={styles.shell} id="shell">
@@ -73,30 +54,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </Link>
-          {!isHome && (
-            <>
-              <span className={styles.breadcrumbSep}>›</span>
-              <Link href="/" className={styles.homeCrumb}>Home</Link>
-              <span className={styles.breadcrumbSep}>›</span>
-              <Breadcrumb />
-            </>
-          )}
         </div>
 
-        <div className={styles.topBarRight}>
-          {/* Approvals link with badge */}
-          <Link
-            href={firstPrimeId ? `/work?prime=${firstPrimeId}&tab=approvals` : "/work"}
-            className={`${styles.iconBtn} ${approvalCount > 0 ? styles.bellActive : ""}`}
-            title={approvalCount > 0 ? `${approvalCount} pending approvals` : "Approvals"}
-            id="shell-approvals"
-          >
-            ✅
-            {approvalCount > 0 && (
-              <span className={styles.approvalBadge}>{approvalCount}</span>
-            )}
-          </Link>
+        {!isHome && (
+          <div className={styles.topBarCenter}>
+            <Link href="/" className={styles.homeCrumb}>Home</Link>
+            <span className={styles.breadcrumbSep}>›</span>
+            <Breadcrumb />
+          </div>
+        )}
 
+        <div className={styles.topBarRight}>
           {/* Settings gear */}
           <Link
             href="/settings"
