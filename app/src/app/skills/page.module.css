@@ -327,6 +327,79 @@
   cursor: not-allowed;
 }
 
+/* ---- Upgrade Fleet Button ---- */
+.upgradeFleetBtn {
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(31, 154, 155, 0.35);
+  background: transparent;
+  color: var(--network-teal);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 200ms ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.upgradeFleetBtn:hover:not(:disabled) {
+  background: rgba(31, 154, 155, 0.08);
+  border-color: rgba(31, 154, 155, 0.5);
+}
+
+.upgradeFleetBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Header actions row ---- */
+.headerActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ---- Prime agent strip badge ---- */
+.agPrime {
+  border: 1px solid rgba(214, 168, 58, 0.25);
+}
+.agPrime:hover {
+  border-color: rgba(214, 168, 58, 0.4);
+}
+.agPrime.agSel {
+  border-color: rgba(214, 168, 58, 0.5);
+  background: rgba(214, 168, 58, 0.06);
+}
+.agPrime.agSel .agName {
+  color: var(--amber);
+}
+.agPrime .agIdle {
+  color: var(--amber);
+  opacity: 0.6;
+}
+
+/* ---- Empty state (no selection) ---- */
+.emptyState {
+  text-align: center;
+  padding: 80px 24px;
+}
+.emptyIcon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+.emptyTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--cloud);
+  margin-bottom: 8px;
+}
+.emptySub {
+  font-size: 14px;
+  color: var(--mist);
+  line-height: 1.6;
+}
+
 /* ============================================
    Agent Skills — Loading / Error
    ============================================ */

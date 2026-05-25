@@ -29,19 +29,6 @@ interface SkillsResult {
 }
 
 /* ---- Constants ---- */
-const PRIME_TOOLS = [
-  { name: "fleet-deploy", desc: "Deploy a new fleet agent VM" },
-  { name: "fleet-hire", desc: "Hire agent — create VM, bootstrap OpenClaw" },
-  { name: "fleet-fire", desc: "Terminate and remove a fleet agent" },
-  { name: "fleet-status", desc: "Check fleet agent health and status" },
-  { name: "fleet-upgrade", desc: "Upgrade CoreKit on a fleet agent" },
-  { name: "fleet-monitor", desc: "Monitor fleet deployment progress" },
-  { name: "command-runner", desc: "Execute queued commands from dashboard" },
-  { name: "discover-models", desc: "Scan Vertex AI for available models" },
-  { name: "upgrade-corekit", desc: "Self-upgrade CoreKit from main branch" },
-  { name: "validate-contracts", desc: "Verify contracts.json compliance" },
-  { name: "render-config", desc: "Render config templates with contracts" },
-];
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; order: number }> = {
   ears: { label: "Ears", icon: "👂", order: 1 },
@@ -78,7 +65,7 @@ function SkillsPage() {
 
   const fleet = selectedPrimeId ? sidebarFleet[selectedPrimeId] || [] : [];
 
-  /* ---- Agent selection ---- */
+  /* ---- Agent selection: "prime" means the prime itself, otherwise a fleet agent name ---- */
   const [localAgent, setLocalAgent] = useState<string | null>(paramAgent || null);
 
   useEffect(() => {
@@ -86,6 +73,7 @@ function SkillsPage() {
   }, [paramAgent]);
 
   const selectedAgent = localAgent;
+  const isPrimeSelected = selectedAgent === "prime";
 
   /* ---- Prime dropdown ---- */
   const [primeDropdownOpen, setPrimeDropdownOpen] = useState(false);
@@ -113,15 +101,16 @@ function SkillsPage() {
     [router]
   );
 
-  /* ---- Agent skills state (only when agent selected) ---- */
+  /* ---- Agent skills state ---- */
   const [skills, setSkills] = useState<SkillsResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const [upgradingFleet, setUpgradingFleet] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* ---- Fetch agent skills via Firestore bus ---- */
+  /* ---- Fetch skills via Firestore introspect bus ---- */
   const fetchSkills = useCallback(async () => {
     if (!selectedPrimeId || !selectedAgent) return;
 
@@ -129,9 +118,13 @@ function SkillsPage() {
     setError(null);
     setSkills(null);
 
+    // For Prime, use the prime's own hostname as the "agent" for introspect
+    // The introspect daemon on Prime's VM uses hostname() which matches the prime instance name
+    const introspectAgent = isPrimeSelected ? selectedPrimeId : selectedAgent;
+
     // 1. Submit query
     const submitRes = await api<{ queryId: string; status: string }>(
-      `/api/primes/${selectedPrimeId}/fleet/${selectedAgent}/introspect`,
+      `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -158,7 +151,7 @@ function SkillsPage() {
         status: string;
         result: SkillsResult | null;
         error: string | null;
-      }>(`/api/primes/${selectedPrimeId}/fleet/${selectedAgent}/introspect?queryId=${queryId}`);
+      }>(`/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect?queryId=${queryId}`);
 
       if (result?.status === "complete" && result.result) {
         setSkills(result.result);
@@ -184,7 +177,7 @@ function SkillsPage() {
 
     // Start polling after 1s delay
     pollRef.current = setTimeout(poll, 1000);
-  }, [selectedPrimeId, selectedAgent]);
+  }, [selectedPrimeId, selectedAgent, isPrimeSelected]);
 
   /* ---- Fetch when agent changes ---- */
   useEffect(() => {
@@ -200,21 +193,75 @@ function SkillsPage() {
     };
   }, [fetchSkills, selectedAgent]);
 
-  /* ---- Upgrade CoreKit ---- */
+  /* ---- Upgrade CoreKit (works for both Prime and fleet) ---- */
   const handleUpgrade = async () => {
     if (!selectedPrimeId || !selectedAgent) return;
     setUpgrading(true);
-    const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/commands`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "fleet_upgrade", args: { name: selectedAgent, ref: "main" } }),
-    });
-    if (res?.id) {
-      dialog.trackCommand(selectedPrimeId, res.id, `Upgrade ${selectedAgent}`);
+
+    if (isPrimeSelected) {
+      // Prime upgrade: queue upgrade_corekit command
+      const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "upgrade_corekit", args: { ref: "main" } }),
+      });
+      if (res?.id) {
+        dialog.trackCommand(selectedPrimeId, res.id, `Upgrade ${selectedPrimeId} CoreKit`);
+      } else {
+        dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
+      }
     } else {
-      dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
+      // Fleet upgrade: queue fleet_upgrade command
+      const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "fleet_upgrade", args: { name: selectedAgent, ref: "main" } }),
+      });
+      if (res?.id) {
+        dialog.trackCommand(selectedPrimeId, res.id, `Upgrade ${selectedAgent}`);
+      } else {
+        dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
+      }
     }
     setUpgrading(false);
+  };
+
+  /* ---- Upgrade ALL fleet agents ---- */
+  const handleUpgradeFleet = async () => {
+    if (!selectedPrimeId) return;
+    const activeAgents = fleet.filter((a) => a.status !== "removed");
+    if (activeAgents.length === 0) {
+      dialog.toast({ message: "No active fleet agents to upgrade.", variant: "error" });
+      return;
+    }
+
+    const ok = await dialog.confirm({
+      title: `Upgrade all ${activeAgents.length} fleet agents?`,
+      message:
+        `This will upgrade CoreKit on: ${activeAgents.map((a) => a.name).join(", ")}.\n\nEach agent will restart briefly during the upgrade.`,
+      confirmText: "Upgrade All",
+    });
+    if (!ok) return;
+
+    setUpgradingFleet(true);
+    let successCount = 0;
+    for (const agent of activeAgents) {
+      const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "fleet_upgrade", args: { name: agent.name, ref: "main" } }),
+      });
+      if (res?.id) {
+        dialog.trackCommand(selectedPrimeId, res.id, `Upgrade ${agent.name}`);
+        successCount++;
+      }
+    }
+    if (successCount === activeAgents.length) {
+      dialog.toast({ message: `Upgrading ${successCount} fleet agents…`, variant: "success", duration: 4000 });
+    } else {
+      dialog.toast({ message: `Started ${successCount}/${activeAgents.length} upgrades.`, variant: "error" });
+    }
+    setUpgradingFleet(false);
   };
 
   /* ---- Group tools by category ---- */
@@ -233,16 +280,35 @@ function SkillsPage() {
       })
     : [];
 
-  /* ---- Agent strip info ---- */
+  /* ---- Agent strip info (Prime + fleet) ---- */
   const agentInfo = useMemo(() => {
-    return fleet
+    const agents: { name: string; online: boolean; status: string; isPrime: boolean }[] = [];
+
+    // Prime first
+    const prime = primes.find((p) => p.id === selectedPrimeId);
+    if (prime) {
+      agents.push({
+        name: "prime",
+        online: prime.status === "online",
+        status: prime.status,
+        isPrime: true,
+      });
+    }
+
+    // Fleet agents
+    fleet
       .filter((a) => a.status !== "removed")
-      .map((agent) => ({
-        name: agent.name,
-        online: agent.status === "online",
-        status: agent.status,
-      }));
-  }, [fleet]);
+      .forEach((agent) => {
+        agents.push({
+          name: agent.name,
+          online: agent.status === "online",
+          status: agent.status,
+          isPrime: false,
+        });
+      });
+
+    return agents;
+  }, [fleet, primes, selectedPrimeId]);
 
   /* ---- Handlers ---- */
   const handleSelectAgent = useCallback(
@@ -268,6 +334,9 @@ function SkillsPage() {
   );
 
   const prime = primes.find((p) => p.id === selectedPrimeId);
+  const displayLabel = isPrimeSelected
+    ? `${prime?.name || selectedPrimeId} (Prime)`
+    : selectedAgent || null;
 
   return (
     <div className={styles.shell} id="skills-page">
@@ -307,26 +376,30 @@ function SkillsPage() {
       </div>
 
       <div className={styles.pgSub}>
-        {selectedAgent
-          ? `Showing skills for ${selectedAgent}`
-          : "Showing Prime infrastructure tools · Select an agent to view their skills"}
+        {displayLabel
+          ? `Showing skills for ${displayLabel}`
+          : "Select Prime or a fleet agent to view their skills"}
       </div>
 
-      {/* ---- Agent Strip ---- */}
+      {/* ---- Agent Strip (Prime + Fleet) ---- */}
       {agentInfo.length > 0 && (
         <div className={styles.agents}>
           {agentInfo.map((agent) => (
             <button
               key={agent.name}
-              className={`${styles.ag} ${selectedAgent === agent.name ? styles.agSel : ""}`}
+              className={`${styles.ag} ${selectedAgent === agent.name ? styles.agSel : ""} ${agent.isPrime ? styles.agPrime : ""}`}
               onClick={() => handleSelectAgent(agent.name)}
             >
               <span
                 className={`${styles.agDot} ${agent.online ? styles.agDotOn : styles.agDotIdle}`}
               />
               <div className={styles.agInfo}>
-                <span className={styles.agName}>{agent.name}</span>
-                <span className={styles.agIdle}>{agent.status}</span>
+                <span className={styles.agName}>
+                  {agent.isPrime ? (prime?.name || "Prime") : agent.name}
+                </span>
+                <span className={styles.agIdle}>
+                  {agent.isPrime ? "prime" : agent.status}
+                </span>
               </div>
             </button>
           ))}
@@ -334,46 +407,25 @@ function SkillsPage() {
       )}
 
       <div className={styles.container}>
-        {/* ======== NO AGENT: Prime Skills ======== */}
+        {/* ======== NO SELECTION: prompt ======== */}
         {!selectedAgent && (
-          <>
-            <header className={styles.header}>
-              <div>
-                <h2 className={styles.title}>Prime Skills</h2>
-                <p className={styles.subtitle}>
-                  {PRIME_TOOLS.length} tools · Infrastructure only · No workspace skills
-                </p>
-              </div>
-            </header>
-
-            <section className={styles.section}>
-              <div className={styles.sectionTitle}>Fleet Management Tools</div>
-              <div className={styles.primeToolList}>
-                {PRIME_TOOLS.map((tool) => (
-                  <div key={tool.name} className={styles.primeToolRow}>
-                    <code className={styles.primeToolName}>{tool.name}</code>
-                    <span className={styles.primeToolDesc}>{tool.desc}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <div className={styles.note}>
-              <span className={styles.noteIcon}>ℹ️</span>
-              <span>
-                Prime is infrastructure-only — fleet management, visibility, hire/fire.
-                Workspace skills (Drive, Gmail, etc.) are only installed on fleet agents.
-              </span>
+          <div className={styles.emptyState}>
+            <div className={styles.emptyIcon}>🔧</div>
+            <div className={styles.emptyTitle}>Select an agent above</div>
+            <div className={styles.emptySub}>
+              Choose <strong>Prime</strong> or a fleet agent to view installed tools, skill packs, and upgrade CoreKit
             </div>
-          </>
+          </div>
         )}
 
-        {/* ======== AGENT SELECTED: Agent Skills ======== */}
+        {/* ======== AGENT SELECTED: Skills view ======== */}
         {selectedAgent && (
           <>
             <header className={styles.header}>
               <div>
-                <h2 className={styles.title}>Skills — {selectedAgent}</h2>
+                <h2 className={styles.title}>
+                  Skills — {displayLabel}
+                </h2>
                 {skills && (
                   <p className={styles.subtitle}>
                     {skills.tools.length} tools · {skills.skillPacks.length} skill packs · Live from VM
@@ -381,14 +433,26 @@ function SkillsPage() {
                 )}
                 {loading && <p className={styles.subtitle}>Querying agent VM…</p>}
               </div>
-              <button
-                className={styles.upgradeBtn}
-                onClick={handleUpgrade}
-                disabled={upgrading}
-                id="agent-upgrade-corekit-btn"
-              >
-                {upgrading ? "Upgrading…" : "⬆ Upgrade CoreKit"}
-              </button>
+              <div className={styles.headerActions}>
+                <button
+                  className={styles.upgradeBtn}
+                  onClick={handleUpgrade}
+                  disabled={upgrading}
+                  id={isPrimeSelected ? "prime-upgrade-corekit-btn" : "agent-upgrade-corekit-btn"}
+                >
+                  {upgrading ? "Upgrading…" : "⬆ Upgrade CoreKit"}
+                </button>
+                {isPrimeSelected && (
+                  <button
+                    className={styles.upgradeFleetBtn}
+                    onClick={handleUpgradeFleet}
+                    disabled={upgradingFleet || fleet.filter((a) => a.status !== "removed").length === 0}
+                    id="upgrade-fleet-btn"
+                  >
+                    {upgradingFleet ? "Upgrading…" : `⬆ Upgrade Fleet (${fleet.filter((a) => a.status !== "removed").length})`}
+                  </button>
+                )}
+              </div>
             </header>
 
             {/* ---- Loading state ---- */}
