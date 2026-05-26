@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.25.6.0`
+> **Current version:** `v2026.05.25.7.0`
 
 
 ---
@@ -392,6 +392,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.25.4.0** | Dashboard Settings & Security Polish — Fixed OAuth setup (build-time env var → runtime `authConfigured` API field), header warning icons for unconfigured DWD/Auth, editable agent email domain in Settings, settings tab URL params (`?tab=`), removed approval badge, centered breadcrumb, fleet upgrade fix (restored seed files, removed stale manifest entry), dead code cleanup (−1,282 lines). |
 | **v2026.05.25.5.0** | Brain Live Model Introspection — Brain page queries live `openclaw.json` from agent VMs via introspection to show actual running models. Per-agent model swap with pending state + Apply & Restart flow. All-provider model discovery (Meta, Mistral, OpenAI). Collapsible provider sections in Settings. Model picker restricted to available models. |
 | **v2026.05.25.6.0** | Multi-Provider Model Discovery — Curated third-party MaaS models (4 Meta Llama + 4 Mistral) since gcloud CLI only lists Google/Anthropic. OpenAI-compatible endpoint probing. Python heredoc-to-temp-file for robustness. Settings tab switching fix (local state + history.replaceState). 24 models across 4 providers. |
+| **v2026.05.25.7.0** | Live Model Discovery — Moved scanning from VM to Cloud Run. Queries Model Garden REST API (`publishers/*/models`) for ALL 600+ models dynamically. Zero curation: discovers xAI, DeepSeek, Meta, Mistral, AI21, NVIDIA, etc. automatically. Dynamic provider colors/labels in frontend. Brain page picker respects scan results. |
 
 
 ---

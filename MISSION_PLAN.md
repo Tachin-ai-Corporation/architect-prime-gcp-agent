@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.25.6.0`
+> - **Current version:** `v2026.05.25.7.0`
 
 ---
 
@@ -289,38 +289,26 @@ infra/install.sh --role fleet --job pm         → base.txt + role-fleet.txt + j
 
 ### Dynamic Model Discovery
 
-The model catalog is built at runtime by `discover-models`, replacing a static JSON file. The flow:
+The model catalog is built at runtime by the dashboard API route (`app/src/app/api/primes/[id]/models/scan/route.ts`), running entirely on Cloud Run. No VM involvement.
 
 1. **Dashboard** → user clicks "Scan for Models" → `POST /api/primes/{id}/models/scan`
-2. **API** writes `discover_models` command to Firestore commands collection
-3. **command-runner** picks up command, runs `discover-models --probe-only`, writes JSON to temp file
-4. **discover-models**:
-   - Queries `gcloud ai model-garden models list` (~600 models, returns Google + Anthropic only)
-   - Adds curated third-party MaaS models (Meta Llama, Mistral) not listed by gcloud CLI
-   - Filters: MaaS-only, text generation, excludes image/video/TTS/embed
-   - Uses real publisher name from Model Garden API (google, anthropic, meta, mistralai)
-   - Generates display names: `claude-opus-4-7` → `Claude Opus 4.7`
-   - Removes discontinued models (e.g., `gemini-3-pro-preview`)
-   - Probes: Google uses `generateContent` (regional + global fallback), Anthropic uses `rawPredict`, Meta/Mistral use OpenAI-compatible `/endpoints/openapi/chat/completions`
-   - Python runs as temp file (`/tmp/discover-models-probe.py`) with args via `sys.argv` (avoids heredoc CRLF corruption)
-   - Returns JSON with `models[]`, `currentModel`, `bestAvailable`
-5. **command-runner** → Python transforms JSON to Firestore `mapValue`/`arrayValue` structures → PATCH to `primes/{id}/config/settings`
-6. **Dashboard** reads `modelCatalog` array from Firestore → renders model cards grouped by provider with collapsible sections and availability counts
+2. **API route** (Cloud Run) calls Model Garden REST API:
+   - `GET https://{region}-aiplatform.googleapis.com/v1beta1/publishers/*/models?filter=is_hf_wildcard(false)&listAllVersions=True`
+   - Same endpoint `gcloud ai model-garden models list` uses internally
+   - Returns 600+ models from all providers (Google, Anthropic, Meta, Mistral, xAI, DeepSeek, AI21, NVIDIA, etc.)
+3. **Filter** for text LLMs with MaaS access (`openGenerationAiStudio` or `openMaas` in `supportedActions`)
+   - Excludes: image, video, TTS, embed, vision, OCR, medical, weather, diffusion, etc. (~60 exclusion keywords)
+   - Removes discontinued models
+4. **Probe** each candidate with the correct endpoint:
+   - Google: `generateContent` (regional + global fallback for preview)
+   - Anthropic: `rawPredict`
+   - All others (Meta, Mistral, xAI, DeepSeek, etc.): OpenAI-compatible `/endpoints/openapi/chat/completions`
+   - Batched 10 parallel, 10s timeout each
+5. **Results** returned synchronously + written to Firestore `primes/{id}/config/settings.modelCatalog`
+6. **Brain page** reads the same `modelCatalog` → picker shows only `status=="available"` models as selectable
+7. **Frontend** dynamically generates provider groups, colors, and labels for any provider slug
 
-**Current catalog** (24 models, 6 available as of May 2026):
-
-| Model | Provider | Status |
-|-------|----------|--------|
-| Gemini 3.1 Pro Preview | Google | ✅ Available (global) |
-| Gemini 3.1 Flash Lite Preview | Google | ✅ Available (global) |
-| Gemini 2.5 Pro | Google | ✅ Available |
-| Gemini 2.5 Flash | Google | ✅ Available |
-| Gemini 2.0 Flash 001 | Google | ✅ Available |
-| Gemini 2.0 Flash Lite 001 | Google | ✅ Available |
-| Gemini 3.5 Flash, 3.1 Flash Lite | Google | ❌ Not yet available |
-| Claude Opus/Sonnet/Haiku (7 models) | Anthropic | ❌ Needs MaaS enablement |
-| Llama 4 Scout/Maverick, 3.3/3.2 (4 models) | Meta | ❌ Needs Model Garden enablement |
-| Mistral Large/Small/Nemo, Codestral (4 models) | Mistral AI | ❌ Needs Model Garden enablement |
+**Zero curation.** Any new model or provider added to Model Garden is automatically discovered on the next scan.
 
 ### Brain Architecture (Autonomous Multi-Agent Orchestrator)
 
@@ -1053,6 +1041,16 @@ architect-prime/
 5. **Stale files deleted** — `SOUL_PROTOCOL.md` (1-line placeholder), 3 scratch implementation plan files.
 6. **`.gitignore` expanded** — Added `.DS_Store`, `*.pem`, `.env*`, runtime state paths, `.agents/scratch/`.
 7. **`job-swe.txt` documented** — Added alias comment explaining SWE is an alias for the engineer specialty.
+
+### Completed: v2026.05.25.7.0 — Live Model Discovery via Model Garden API
+> *Zero-curation live discovery from Cloud Run. Model Garden REST API, dynamic provider support, all providers visible.*
+
+1. **Live model discovery on Cloud Run** — Moved model scanning from the Prime VM (bash script + command-runner + Firestore roundtrip) to a Cloud Run API route. Scan runs entirely server-side, returns results synchronously (~30s vs ~2min). No VM involvement.
+2. **Model Garden REST API** — Reverse-engineered the endpoint `gcloud ai model-garden models list` uses: `GET /v1beta1/publishers/*/models?filter=is_hf_wildcard(false)&listAllVersions=True`. Returns 600+ models from all providers.
+3. **Zero curation** — Removed static/curated model lists. All models are discovered dynamically from the API. New providers (xAI, DeepSeek, AI21, NVIDIA, etc.) appear automatically.
+4. **Dynamic provider support** — Frontend generates provider groups, colors, and labels for any provider slug. Known providers (Google, Anthropic, Meta, xAI, etc.) get branded colors; unknown providers get auto-generated palette colors.
+5. **Brain page integration** — Brain page already reads `modelCatalog` from Firestore (same data scan writes). Model picker restricts choices to `status=="available"`. Apply & Restart handles any provider via `toOpenClawId()`.
+6. **Settings tab fix** — `router.replace()` inside `<Suspense>` broke tab navigation. Fixed with `useState` + `window.history.replaceState()`.
 
 ### Completed: v2026.05.25.6.0 — Multi-Provider Model Discovery + Settings Tab Fix
 > *Curated third-party MaaS models (Meta Llama, Mistral), heredoc-to-temp-file robustness, settings tab nav fix.*
