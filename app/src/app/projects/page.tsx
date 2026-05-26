@@ -171,16 +171,16 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
               <div className={styles.progressBar}>
                 <div
                   className={styles.progressFill}
-                  style={{ width: `${proj.missionCount > 0 ? (proj.completedMissions / proj.missionCount) * 100 : 0}%` }}
+                  style={{ width: `${(proj.missionCount || 0) > 0 ? ((proj.completedMissions || 0) / proj.missionCount) * 100 : 0}%` }}
                 />
               </div>
               <span className={styles.progressLabel}>
-                {proj.completedMissions}/{proj.missionCount} missions
+                {proj.completedMissions || 0}/{proj.missionCount || 0} missions
               </span>
             </div>
 
             {/* Participants */}
-            {proj.participants.length > 0 && (
+            {(proj.participants?.length ?? 0) > 0 && (
               <div className={styles.participants}>
                 {proj.participants.slice(0, 4).map((name) => (
                   <span key={name} className={styles.agentChip}>{name}</span>
@@ -368,8 +368,8 @@ function ProjectDetailView({
     );
   }
 
-  const progress = project.missionCount > 0
-    ? (project.completedMissions / project.missionCount) * 100
+  const progress = (project.missionCount || 0) > 0
+    ? ((project.completedMissions || 0) / project.missionCount) * 100
     : 0;
 
   // Derived data for processes
@@ -413,7 +413,7 @@ function ProjectDetailView({
             <div className={styles.progressFill} style={{ width: `${progress}%` }} />
           </div>
           <span className={styles.progressLabel}>
-            {project.completedMissions}/{project.missionCount} missions completed
+            {project.completedMissions || 0}/{project.missionCount || 0} missions completed
           </span>
         </div>
       </div>
