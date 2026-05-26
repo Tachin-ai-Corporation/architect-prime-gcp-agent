@@ -109,11 +109,15 @@ garden = json.load(open('${GARDEN_TMP}'))
 EXCLUDE = ['image', 'video', 'veo', 'lyria', 'tts', 'try-on', 'embed',
            'segment', 'detect', 'vision', 'translate', 'shield', 'weather',
            'path-foundation', 'derm', 'hear', 'medasr', 'medsiglip', 'ocr',
-           'computer-use', 'virtual', 'sam3']
+           'computer-use', 'virtual', 'sam3', 'reward', 'guard', 'safety',
+           'speech', 'cxr-foundation', 'prompt-optimizer', 'code-gecko',
+           'code-bison', 'text-bison', 'chat-bison', 'text-unicorn']
 
 def make_name(mid):
     """gemini-2.5-pro → Gemini 2.5 Pro, claude-opus-4-7 → Claude Opus 4.7"""
-    parts, out, i = mid.split('-'), [], 0
+    # Strip -maas suffix for display
+    display_id = re.sub(r'-maas$', '', mid)
+    parts, out, i = display_id.split('-'), [], 0
     while i < len(parts):
         p = parts[i]
         if p.isdigit() and i+1 < len(parts) and parts[i+1].isdigit():
@@ -121,14 +125,20 @@ def make_name(mid):
         out.append(p if re.match(r'^\d{3}$', p) else p.capitalize())
         i += 1
     name = ' '.join(out)
-    for b in ['Gemini','Claude','Flash','Pro','Opus','Sonnet','Haiku','Lite','Preview']:
+    # Brand name casing
+    brands = ['Gemini','Claude','Flash','Pro','Opus','Sonnet','Haiku','Lite','Preview',
+              'Llama','Mistral','Large','Medium','Small','Nemo','Codestral','Pixtral',
+              'Instruct','Chat','Maverick','Scout','Jamba','Mini']
+    for b in brands:
         name = re.sub(r'\b' + b.lower() + r'\b', b, name, flags=re.IGNORECASE)
     return name
 
 candidates = {}
 for m in garden:
     name = m.get('name', '')
-    if 'openGenerationAiStudio' not in m.get('supportedActions', {}):
+    actions = m.get('supportedActions', {})
+    # Accept models with AI Studio access OR Model-as-a-Service (MaaS) endpoints
+    if 'openGenerationAiStudio' not in actions and 'openMaas' not in actions:
         continue
     parts = name.split('/')
     if len(parts) < 4:
@@ -136,6 +146,12 @@ for m in garden:
     publisher, model_id = parts[1], parts[3]
     if any(kw in model_id.lower() for kw in EXCLUDE):
         continue
+    # Deduplicate: if model-X-maas exists and we already have model-X (or vice versa), keep one
+    base_id = re.sub(r'-maas$', '', model_id)
+    if model_id != base_id and base_id in candidates:
+        continue  # Already have the base model
+    if model_id == base_id and (base_id + '-maas') in candidates:
+        continue  # Already have the MaaS variant
     if model_id in candidates:
         continue
     launch = m.get('launchStage', 'PREVIEW').upper()
