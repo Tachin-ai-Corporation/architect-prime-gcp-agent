@@ -30,9 +30,14 @@ const AGENT_FIRST_NAME = process.env.AGENT_FIRST_NAME || '';
 const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
 
+// Agent hostname for Firestore path
+// hostname() returns e.g. "fleet-chucknorris-tom" → strip to "tom"
 let AGENT_HOSTNAME = '';
 try {
-  AGENT_HOSTNAME = osHostname().replace(/^fleet-/, '');
+  const raw = osHostname().replace(/^fleet-/, '');
+  AGENT_HOSTNAME = PRIME_ID && raw.startsWith(`${PRIME_ID}-`)
+    ? raw.slice(PRIME_ID.length + 1)
+    : raw;
 } catch {}
 
 const POLL_INTERVAL = 2000;
@@ -557,9 +562,12 @@ async function writeTaskLog(task, status, outputChars, classified, errorMsg) {
     const token = await getAccessToken();
     let agentHostname = '';
     try {
-      agentHostname = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/name',
+      const vmName = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/name',
         { headers: { 'Metadata-Flavor': 'Google' } }).then(r => r.text());
-      agentHostname = agentHostname.replace(/^fleet-/, '').replace(/^prime-/, '');
+      const raw = vmName.replace(/^fleet-/, '').replace(/^prime-/, '');
+      agentHostname = PRIME_ID && raw.startsWith(`${PRIME_ID}-`)
+        ? raw.slice(PRIME_ID.length + 1)
+        : raw;
     } catch {}
 
     const primeId = PRIME_ID || agentHostname;

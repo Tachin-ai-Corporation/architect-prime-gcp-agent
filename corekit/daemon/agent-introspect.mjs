@@ -11,7 +11,13 @@ import { execSync } from 'child_process';
 // ---- Config ----
 const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const PRIME_ID = process.env.PRIME_ID || '';
-const AGENT_HOSTNAME = hostname().replace(/^fleet-/, '');
+// hostname() returns e.g. "fleet-chucknorris-tom"
+// Strip "fleet-" prefix AND the "{primeId}-" prefix to get "tom"
+// which matches the Firestore doc ID at primes/{primeId}/fleet/{agentName}
+const rawHostname = hostname().replace(/^fleet-/, '');
+const AGENT_HOSTNAME = PRIME_ID && rawHostname.startsWith(`${PRIME_ID}-`)
+  ? rawHostname.slice(PRIME_ID.length + 1)
+  : rawHostname;
 const POLL_MS = 5000;
 
 const FIRESTORE_URL = GCP_PROJECT
