@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.25.5.0`
+> - **Current version:** `v2026.05.25.6.0`
 
 ---
 
@@ -295,17 +295,19 @@ The model catalog is built at runtime by `discover-models`, replacing a static J
 2. **API** writes `discover_models` command to Firestore commands collection
 3. **command-runner** picks up command, runs `discover-models --probe-only`, writes JSON to temp file
 4. **discover-models**:
-   - Queries `gcloud ai model-garden models list` (~600 models)
+   - Queries `gcloud ai model-garden models list` (~600 models, returns Google + Anthropic only)
+   - Adds curated third-party MaaS models (Meta Llama, Mistral) not listed by gcloud CLI
    - Filters: MaaS-only, text generation, excludes image/video/TTS/embed
-   - Uses real publisher name from Model Garden API (google, anthropic, meta, mistral, openai, etc.)
+   - Uses real publisher name from Model Garden API (google, anthropic, meta, mistralai)
    - Generates display names: `claude-opus-4-7` → `Claude Opus 4.7`
-   - Removes discontinued models (e.g., `gemini-3-pro-preview` — shut down March 2026)
-   - Probes each model: Google uses `generateContent` (regional + global fallback for preview), third-party publishers use `rawPredict`
+   - Removes discontinued models (e.g., `gemini-3-pro-preview`)
+   - Probes: Google uses `generateContent` (regional + global fallback), Anthropic uses `rawPredict`, Meta/Mistral use OpenAI-compatible `/endpoints/openapi/chat/completions`
+   - Python runs as temp file (`/tmp/discover-models-probe.py`) with args via `sys.argv` (avoids heredoc CRLF corruption)
    - Returns JSON with `models[]`, `currentModel`, `bestAvailable`
 5. **command-runner** → Python transforms JSON to Firestore `mapValue`/`arrayValue` structures → PATCH to `primes/{id}/config/settings`
 6. **Dashboard** reads `modelCatalog` array from Firestore → renders model cards grouped by provider with collapsible sections and availability counts
 
-**Current catalog** (14 models, 6 available as of April 2026):
+**Current catalog** (24 models, 6 available as of May 2026):
 
 | Model | Provider | Status |
 |-------|----------|--------|
@@ -315,8 +317,10 @@ The model catalog is built at runtime by `discover-models`, replacing a static J
 | Gemini 2.5 Flash | Google | ✅ Available |
 | Gemini 2.0 Flash 001 | Google | ✅ Available |
 | Gemini 2.0 Flash Lite 001 | Google | ✅ Available |
-| Claude Opus/Sonnet/Haiku (6 models) | Anthropic | ❌ Needs MaaS enablement |
-| Chirp 2 | Google | ❌ Audio model (not text) |
+| Gemini 3.5 Flash, 3.1 Flash Lite | Google | ❌ Not yet available |
+| Claude Opus/Sonnet/Haiku (7 models) | Anthropic | ❌ Needs MaaS enablement |
+| Llama 4 Scout/Maverick, 3.3/3.2 (4 models) | Meta | ❌ Needs Model Garden enablement |
+| Mistral Large/Small/Nemo, Codestral (4 models) | Mistral AI | ❌ Needs Model Garden enablement |
 
 ### Brain Architecture (Autonomous Multi-Agent Orchestrator)
 
@@ -1049,6 +1053,16 @@ architect-prime/
 5. **Stale files deleted** — `SOUL_PROTOCOL.md` (1-line placeholder), 3 scratch implementation plan files.
 6. **`.gitignore` expanded** — Added `.DS_Store`, `*.pem`, `.env*`, runtime state paths, `.agents/scratch/`.
 7. **`job-swe.txt` documented** — Added alias comment explaining SWE is an alias for the engineer specialty.
+
+### Completed: v2026.05.25.6.0 — Multi-Provider Model Discovery + Settings Tab Fix
+> *Curated third-party MaaS models (Meta Llama, Mistral), heredoc-to-temp-file robustness, settings tab nav fix.*
+
+1. **Third-party MaaS model discovery** — `gcloud ai model-garden models list` only returns Google + Anthropic (via `openGenerationAiStudio`). Meta Llama and Mistral are available but not in the CLI listing. Added curated `THIRD_PARTY_MAAS` list: 4 Meta Llama models (Scout, Maverick, 3.3, 3.2) + 4 Mistral models (Large, Small, Nemo, Codestral).
+2. **OpenAI-compatible probing** — Meta and Mistral MaaS models use `/endpoints/openapi/chat/completions` (not `rawPredict` or `generateContent`). Probe function now branches on `maas_openai` flag.
+3. **Heredoc-to-temp-file rewrite** — `discover-models` Python was embedded in a bash heredoc (`<<PYEOF`). CRLF line endings from Windows SCP corrupted the heredoc. Rewritten to `cat > /tmp/discover-models-probe.py <<'PYEOF'` (quoted, no var expansion) + `python3 $PY_TMP $args`.
+4. **Settings tab switching fix** — `router.replace()` inside `<Suspense>` boundary re-suspended the component, breaking tab navigation for General/Integration/Models tabs. Replaced with local `useState` + `window.history.replaceState()` for instant tab switching.
+5. **Expanded model exclusions** — Added `reward`, `guard`, `safety`, `speech`, `code-gecko`, `text-bison`, `chat-bison`, `text-unicorn` to exclude list. Added `-maas` suffix dedup logic.
+6. **Brand name casing** — Extended `make_name()` with Llama, Mistral, Codestral, Maverick, Scout, Jamba, etc.
 
 ### Completed: v2026.05.25.5.0 — Brain Live Model Introspection + Model Discovery Polish
 > *Live model config scanning, per-agent model swap with Apply & Restart, all-provider model discovery, collapsible provider sections.*
