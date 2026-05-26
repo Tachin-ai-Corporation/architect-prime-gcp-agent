@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.25.7.0`
+> - **Current version:** `v2026.05.25.8.0`
 
 ---
 
@@ -289,26 +289,30 @@ infra/install.sh --role fleet --job pm         → base.txt + role-fleet.txt + j
 
 ### Dynamic Model Discovery
 
-The model catalog is built at runtime by the dashboard API route (`app/src/app/api/primes/[id]/models/scan/route.ts`), running entirely on Cloud Run. No VM involvement.
+The model catalog is built at runtime by `POST /api/models/scan` (project-scoped, no Prime dependency), running entirely on Cloud Run.
 
-1. **Dashboard** → user clicks "Scan for Models" → `POST /api/primes/{id}/models/scan`
-2. **API route** (Cloud Run) calls Model Garden REST API:
-   - `GET https://{region}-aiplatform.googleapis.com/v1beta1/publishers/*/models?filter=is_hf_wildcard(false)&listAllVersions=True`
-   - Same endpoint `gcloud ai model-garden models list` uses internally
-   - Returns 600+ models from all providers (Google, Anthropic, Meta, Mistral, xAI, DeepSeek, AI21, NVIDIA, etc.)
-3. **Filter** for text LLMs with MaaS access (`openGenerationAiStudio` or `openMaas` in `supportedActions`)
-   - Excludes: image, video, TTS, embed, vision, OCR, medical, weather, diffusion, etc. (~60 exclusion keywords)
-   - Removes discontinued models
-4. **Probe** each candidate with the correct endpoint:
+**Architecture insight:** The Model Garden REST API (`publishers/*/models`) returns ~300 models but only Google models have `supportedActions` (like `openGenerationAiStudio`). Anthropic and xAI are MaaS-only partners — they appear in the Model Garden UI but are NOT in the REST API at all. Third-party models (Meta, DeepSeek, Mistral, Qwen) are in the API but have zero `supportedActions`.
+
+**Hybrid discovery approach:**
+
+1. **Dashboard** → user clicks "Scan for Models" → `POST /api/models/scan`
+2. **API route** (Cloud Run) queries Model Garden REST API with pagination:
+   - `GET https://{region}-aiplatform.googleapis.com/v1beta1/publishers/*/models?alt=json&filter=is_hf_wildcard(false)&listAllVersions=True`
+   - Returns ~300 models from ~23 publishers (Google, Meta, DeepSeek, Mistral, Qwen, etc.)
+3. **Filter** with provider-aware logic:
+   - **Google**: require `openGenerationAiStudio` in `supportedActions` (avoids 100+ deploy-only models)
+   - **Non-Google from API**: probe ALL text LLM candidates (no `supportedActions` filter — third-party models don't have it)
+   - **MaaS-only partners** (Anthropic, xAI): added as `MAAS_ONLY_MODELS` since they’re not in the API
+   - **Skip non-text publishers**: advimman, dandelin, stability-ai, etc.
+   - Excludes: image, video, TTS, embed, vision, OCR, medical, etc. (~60 exclusion keywords)
+4. **Probe** each candidate:
    - Google: `generateContent` (regional + global fallback for preview)
    - Anthropic: `rawPredict`
-   - All others (Meta, Mistral, xAI, DeepSeek, etc.): OpenAI-compatible `/endpoints/openapi/chat/completions`
+   - All others: OpenAI-compatible `/endpoints/openapi/chat/completions`
    - Batched 10 parallel, 10s timeout each
-5. **Results** returned synchronously + written to Firestore `primes/{id}/config/settings.modelCatalog`
+5. **Results** returned synchronously + written to Firestore `config/models` (project-level) + per-Prime for backward compat
 6. **Brain page** reads the same `modelCatalog` → picker shows only `status=="available"` models as selectable
 7. **Frontend** dynamically generates provider groups, colors, and labels for any provider slug
-
-**Zero curation.** Any new model or provider added to Model Garden is automatically discovered on the next scan.
 
 ### Brain Architecture (Autonomous Multi-Agent Orchestrator)
 
@@ -1041,6 +1045,16 @@ architect-prime/
 5. **Stale files deleted** — `SOUL_PROTOCOL.md` (1-line placeholder), 3 scratch implementation plan files.
 6. **`.gitignore` expanded** — Added `.DS_Store`, `*.pem`, `.env*`, runtime state paths, `.agents/scratch/`.
 7. **`job-swe.txt` documented** — Added alias comment explaining SWE is an alias for the engineer specialty.
+
+### Completed: v2026.05.25.8.0 — All-Provider Model Discovery + Project-Level Scan
+> *Hybrid discovery (API + MaaS-only partners), project-scoped routes, all providers visible.*
+
+1. **Project-level scan route** — Moved from `/api/primes/{id}/models/scan` to `/api/models/scan`. Model Garden is project-scoped, not Prime-scoped. New `GET /api/models` reads from `config/models` Firestore doc.
+2. **Hybrid discovery** — Model Garden REST API only returns deploy-capable models (~300). Third-party models have zero `supportedActions`. Anthropic/xAI aren't in the API at all. Fix: Google uses `openGenerationAiStudio` filter; all others probe directly; Anthropic/xAI added as `MAAS_ONLY_MODELS`.
+3. **All-provider probing** — Now discovers and probes: Google, Anthropic, Meta (47 models), DeepSeek (16), Mistral (11), Qwen (59), Microsoft (2), Salesforce (5), OpenAI (2), xAI (4). Skip non-text publishers.
+4. **API fixes** — Added `alt=json` param (matching gcloud), pagination support (20 pages max), proper error surfacing with details in response body.
+5. **Dynamic provider support** — Frontend generates provider groups, colors, and labels for any provider slug. Known providers get branded colors; unknown providers get auto-generated palette.
+6. **Brain page integration** — Brain page reads same `modelCatalog` from Firestore. Picker restricts to `status=="available"`. Backward compat: scan writes to both project-level and per-Prime Firestore.
 
 ### Completed: v2026.05.25.7.0 — Live Model Discovery via Model Garden API
 > *Zero-curation live discovery from Cloud Run. Model Garden REST API, dynamic provider support, all providers visible.*
