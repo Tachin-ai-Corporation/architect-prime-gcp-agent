@@ -164,6 +164,38 @@ interface ModelCandidate {
   probeType: "google-generate" | "anthropic-raw" | "openai-maas";
 }
 
+/**
+ * MaaS-only publishers NOT in the Model Garden API listing.
+ * These are direct partners that only appear in the UI.
+ * We add them as candidates and let probing determine availability.
+ */
+const MAAS_ONLY_MODELS: ModelCandidate[] = [
+  // Anthropic — rawPredict
+  { id: "claude-sonnet-4-6",   provider: "anthropic", tier: "ga", probeType: "anthropic-raw" },
+  { id: "claude-sonnet-4-5",   provider: "anthropic", tier: "ga", probeType: "anthropic-raw" },
+  { id: "claude-opus-4-7",     provider: "anthropic", tier: "ga", probeType: "anthropic-raw" },
+  { id: "claude-opus-4-6",     provider: "anthropic", tier: "ga", probeType: "anthropic-raw" },
+  { id: "claude-opus-4-5",     provider: "anthropic", tier: "ga", probeType: "anthropic-raw" },
+  { id: "claude-opus-4-1",     provider: "anthropic", tier: "ga", probeType: "anthropic-raw" },
+  { id: "claude-haiku-4-5",    provider: "anthropic", tier: "ga", probeType: "anthropic-raw" },
+  // xAI — OpenAI-compatible
+  { id: "grok-3",              provider: "xai", tier: "ga",      probeType: "openai-maas" },
+  { id: "grok-3-mini",         provider: "xai", tier: "ga",      probeType: "openai-maas" },
+  { id: "grok-4-20",           provider: "xai", tier: "preview", probeType: "openai-maas" },
+  { id: "grok-4-20-reasoning", provider: "xai", tier: "preview", probeType: "openai-maas" },
+];
+
+/**
+ * Publishers whose models should NOT be probed (deploy-only, not text LLMs, etc.)
+ * These return hundreds of models in the API but none are MaaS text generation.
+ */
+const SKIP_PUBLISHERS = new Set([
+  "advimman", "dandelin", "ifzhang", "impira", "intfloat",
+  "liuhaotian", "lllyasviel", "lmsys", "openlm-research",
+  "runwayml", "timbrooks", "tiiuae", "xiaomimimo",
+  "stability-ai", "autogluon-ai",
+]);
+
 function filterModels(gardenModels: GardenModel[]): ModelCandidate[] {
   const candidates: Map<string, ModelCandidate> = new Map();
 
@@ -173,27 +205,31 @@ function filterModels(gardenModels: GardenModel[]): ModelCandidate[] {
     const publisher = parts[1];
     const modelId = parts[3];
 
+    // Skip known non-MaaS publishers
+    if (SKIP_PUBLISHERS.has(publisher)) continue;
+
     const lower = modelId.toLowerCase();
     if (EXCLUDE_KEYWORDS.some((kw) => lower.includes(kw))) continue;
     if (DISCONTINUED.has(modelId)) continue;
 
     const actions = m.supportedActions || {};
     const hasAiStudio = "openGenerationAiStudio" in actions;
-    const hasMaas = "openMaas" in actions;
 
-    if (!hasAiStudio && !hasMaas) continue;
+    // For Google: require openGenerationAiStudio (avoids 100+ deploy-only models)
+    if (publisher === "google" && !hasAiStudio) continue;
 
+    // Dedup: prefer base over -maas variant
     const baseId = modelId.replace(/-maas$/, "");
     if (modelId !== baseId && candidates.has(baseId)) continue;
     if (modelId === baseId && candidates.has(baseId + "-maas")) continue;
     if (candidates.has(modelId)) continue;
 
+    // Determine probe type
     let probeType: ModelCandidate["probeType"];
     if (publisher === "google" && hasAiStudio) {
       probeType = "google-generate";
-    } else if (publisher === "anthropic" && hasAiStudio) {
-      probeType = "anthropic-raw";
     } else {
+      // All non-Google models: try OpenAI-compatible endpoint
       probeType = "openai-maas";
     }
 
@@ -205,6 +241,13 @@ function filterModels(gardenModels: GardenModel[]): ModelCandidate[] {
       tier: launch === "GA" ? "ga" : "preview",
       probeType,
     });
+  }
+
+  // Add MaaS-only publishers not in the API
+  for (const m of MAAS_ONLY_MODELS) {
+    if (!candidates.has(m.id)) {
+      candidates.set(m.id, m);
+    }
   }
 
   return Array.from(candidates.values());
