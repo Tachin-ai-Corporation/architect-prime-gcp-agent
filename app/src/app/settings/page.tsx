@@ -161,15 +161,14 @@ function SettingsPageInner() {
   const firstPrimeId = primes.length > 0 ? primes[0].id : null;
   const projectId = setup.projectId;
 
-  // Load models
+  // Load models (project-level, no Prime dependency)
   const loadModels = useCallback(async () => {
-    if (!firstPrimeId) return;
-    const data = await api<ModelsResponse>(`/api/primes/${firstPrimeId}/models`);
+    const data = await api<ModelsResponse>(`/api/models`);
     if (data) {
       if (data.models.length > 0) setModels(data.models);
       setScannedAt(data.scannedAt);
     }
-  }, [firstPrimeId]);
+  }, []);
 
   // Load models when switching to models tab
   useEffect(() => {
@@ -201,9 +200,8 @@ function SettingsPageInner() {
     return sorted;
   }, [models]);
 
-  // Scan models — runs entirely on Cloud Run, returns synchronously
+  // Scan models — project-level, runs on Cloud Run, returns synchronously
   const handleScan = async () => {
-    if (!firstPrimeId) return;
     setScanning(true);
     setModels((prev) => prev.map((m) => ({ ...m, status: "checking" as const })));
 
@@ -214,7 +212,9 @@ function SettingsPageInner() {
         discovered: number;
         available: number;
         scannedAt: string;
-      }>(`/api/primes/${firstPrimeId}/models/scan`, { method: "POST" });
+        error?: string;
+        details?: string;
+      }>(`/api/models/scan`, { method: "POST" });
 
       if (result?.models) {
         setModels(result.models);
