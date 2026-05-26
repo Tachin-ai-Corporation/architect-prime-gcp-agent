@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.25.4.0`
+> **Current version:** `v2026.05.25.5.0`
 
 
 ---
@@ -390,6 +390,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.25.2.1** | Projects & Processes Architecture (Phase 3 Composition) — Stored reusable processes with 5 step types (standard/delegation/spawn_responsibility/approval_gate/optional), responsibility→process linking (auto-execute, skip Cortex), project↔process composition with context promotion, approval gate polling + GChat approval detection in ears daemon, dashboard process editing (inline CRUD + approval badge), settings process linking UI (command builder), contracts.json `projects` section. |
 | **v2026.05.25.3.0** | Codebase Audit Cleanup — Scrubbed sensitive data (project IDs, SAs, domains → placeholders), deleted 25+ stale files including entire `/p/` nested route tree (−6,462 lines), removed runtime state from git, expanded `.gitignore`, documented `job-swe.txt` alias. |
 | **v2026.05.25.4.0** | Dashboard Settings & Security Polish — Fixed OAuth setup (build-time env var → runtime `authConfigured` API field), header warning icons for unconfigured DWD/Auth, editable agent email domain in Settings, settings tab URL params (`?tab=`), removed approval badge, centered breadcrumb, fleet upgrade fix (restored seed files, removed stale manifest entry), dead code cleanup (−1,282 lines). |
+| **v2026.05.25.5.0** | Brain Live Model Introspection — Brain page queries live `openclaw.json` from agent VMs via introspection to show actual running models. Per-agent model swap with pending state + Apply & Restart flow. All-provider model discovery (Meta, Mistral, OpenAI). Collapsible provider sections in Settings. Model picker restricted to available models. |
 
 
 ---

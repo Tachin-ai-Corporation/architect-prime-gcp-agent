@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.25.4.0`
+> - **Current version:** `v2026.05.25.5.0`
 
 ---
 
@@ -297,12 +297,13 @@ The model catalog is built at runtime by `discover-models`, replacing a static J
 4. **discover-models**:
    - Queries `gcloud ai model-garden models list` (~600 models)
    - Filters: MaaS-only, text generation, excludes image/video/TTS/embed
+   - Uses real publisher name from Model Garden API (google, anthropic, meta, mistral, openai, etc.)
    - Generates display names: `claude-opus-4-7` → `Claude Opus 4.7`
    - Removes discontinued models (e.g., `gemini-3-pro-preview` — shut down March 2026)
-   - Probes each model: regional endpoint first, then **global fallback** for preview tier
+   - Probes each model: Google uses `generateContent` (regional + global fallback for preview), third-party publishers use `rawPredict`
    - Returns JSON with `models[]`, `currentModel`, `bestAvailable`
 5. **command-runner** → Python transforms JSON to Firestore `mapValue`/`arrayValue` structures → PATCH to `primes/{id}/config/settings`
-6. **Dashboard** reads `modelCatalog` array from Firestore → renders model cards with status badges
+6. **Dashboard** reads `modelCatalog` array from Firestore → renders model cards grouped by provider with collapsible sections and availability counts
 
 **Current catalog** (14 models, 6 available as of April 2026):
 
@@ -951,7 +952,7 @@ architect-prime/
 > *Cloud Build polling, real VM skills page, Firestore bus introspection daemon, Shell header redesign.*
 
 1. **Real-time Cloud Build status** — Replaced fake countdown timer with `GET /api/upgrade/status` endpoint that polls Cloud Build API. Dashboard shows live build phase, step number, and elapsed time.
-2. **Agent introspection API (Firestore bus)** — New `agent-introspect.mjs` daemon polls `primes/{id}/fleet/{agent}/introspect/{queryId}` for pending queries, reads local filesystem (`~/.openclaw/bin/`, skills, workspace files), writes results back. Supports 4 query types: `skills`, `status`, `config`, `workspace`. Dashboard proxy at `POST/GET /api/primes/{id}/fleet/{agent}/introspect`.
+2. **Agent introspection API (Firestore bus)** — New `agent-introspect.mjs` daemon polls `primes/{id}/fleet/{agent}/introspect/{queryId}` for pending queries, reads local filesystem (`~/.openclaw/bin/`, skills, workspace files), writes results back. Supports 6 query types: `skills`, `status`, `config`, `workspace`, `brain_config` (reads live `openclaw.json` model assignments), `set_model` (writes new model config + restarts gateway). Query params decoded from Firestore `params` mapValue. Dashboard proxy at `POST/GET /api/primes/{id}/fleet/{agent}/introspect`.
 3. **Real VM skills page** — Skills page now queries the actual agent VM via introspection API instead of showing hardcoded kit lists. Categorized accordion UI (Brain, Workspace, Memory, Chat, Daemon, System). Shows real tool names, descriptions parsed from file headers, and skill pack counts.
 4. **Shell header redesign** — Architect Prime logo + title + version moved to the fixed Shell header bar, left-aligned with breadcrumb trail. Removed redundant rocket ship operations button. Breadcrumb no longer shows redundant "Home" text.
 5. **Deploy Prime chip** — Deploy button moved from isolated top-right to inline in the prime chip bar as the last chip (dashed border `+` style).
@@ -1048,6 +1049,17 @@ architect-prime/
 5. **Stale files deleted** — `SOUL_PROTOCOL.md` (1-line placeholder), 3 scratch implementation plan files.
 6. **`.gitignore` expanded** — Added `.DS_Store`, `*.pem`, `.env*`, runtime state paths, `.agents/scratch/`.
 7. **`job-swe.txt` documented** — Added alias comment explaining SWE is an alias for the engineer specialty.
+
+### Completed: v2026.05.25.5.0 — Brain Live Model Introspection + Model Discovery Polish
+> *Live model config scanning, per-agent model swap with Apply & Restart, all-provider model discovery, collapsible provider sections.*
+
+1. **Brain page live introspection** — Brain page now queries each agent VM's live `openclaw.json` via introspection (`brain_config` query type) to show the actual running model per sub-agent slot, not just template-level Firestore assignments.
+2. **Model swap with Apply & Restart** — Clicking a slot opens a picker restricted to available models only. Selection is UI-only (pending state with amber highlight). "Apply & Restart" bar appears with Discard/Apply buttons. Apply fires `set_model` introspection query which rewrites `openclaw.json` on the VM and restarts the gateway container.
+3. **All-provider model discovery** — `discover-models` now uses real publisher names from Model Garden API instead of mapping everything to `google`/`anthropic`. Surfaces Meta, Mistral, OpenAI, etc. as distinct provider groups. Third-party probing uses `rawPredict` endpoint.
+4. **Collapsible provider sections** — Settings → Models tab provider groups are now collapsible with chevron toggle and `N/M available` count badge.
+5. **Model Garden deep links** — "Open in Model Garden" link now uses the real publisher name in the URL path for all providers.
+6. **Suspense boundary fix** — Settings page wrapped in `<Suspense>` for `useSearchParams()` to fix Next.js static generation build failure.
+7. **Naming convention mapping** — Brain page handles OpenClaw ID (`google-vertex/model`) ↔ catalog bare ID (`model`) ↔ display name (`Model Name`) conversion.
 
 ### Completed: v2026.05.25.4.0 — Dashboard Settings & Security Polish
 > *OAuth setup fix, runtime auth detection, editable agent defaults, header warning icons, dead code cleanup (−1,282 lines).*
