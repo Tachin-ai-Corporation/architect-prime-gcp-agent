@@ -177,7 +177,7 @@ function TreeNodeRow({
         <div className={styles.rBody}>
           <div className={`${styles.rLabel} ${labelClass}`}>
             <span className={tagClass}>{node.type}</span>
-            {truncate(node.intent || node.instruction, 100)}
+            {truncate(node.title || node.instruction || node.intent, 100)}
           </div>
 
           {metaJsx.length > 0 && (

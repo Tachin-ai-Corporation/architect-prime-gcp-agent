@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.26.9.0`
+> - **Current version:** `v2026.05.26.10.0`
 
 ---
 
@@ -421,7 +421,7 @@ At bootstrap, `fleet-bootstrap.sh`:
 - Agent name: lowercase alphanumeric with hyphens (e.g., `stan`, `anora`)
 - VM name: `fleet-{name}` (e.g., `fleet-stan`)
 - Service account: `fleet-{name}@{project}.iam.gserviceaccount.com`
-- Workspace email: `{specialty}-agent-{name}@tachin.ai` (e.g., `devops-agent-stan@tachin.ai`)
+- Workspace email: `{specialty}-agent-{name}@{workspace-domain}` (e.g., `devops-agent-stan@yourdomain.com`)
 - GChat @-mention: `{FirstName} {LastName}` (e.g., `Devops-Agent Stan`)
 - The @-mention MUST match the Workspace account's First Name + Last Name exactly
 
@@ -629,7 +629,7 @@ architect-prime/
 
 | Agent | Specialty | VM | Email | Status |
 |-------|-----------|-----|-------|--------|
-| stan | devops | fleet-stan | devops-agent-stan@tachin.ai | Online |
+| stan | devops | fleet-stan | devops-agent-stan@{workspace-domain} | Online |
 
 **Prime instance:** `chucknorris` — VM: `prime-chucknorris`, zone: `us-central1-a`, project: `architect-prime-beta`
 
@@ -1105,6 +1105,15 @@ architect-prime/
 6. **Header cleanup** — Removed approval checkmark/badge from header. Centered breadcrumb in header bar.
 7. **Upgrade fix** — Restored seed files (fleet-registry.json, responsibilities.json, responsibilities-job.json) and removed stale SOUL_PROTOCOL from manifest to fix fleet upgrade failures.
 8. **Dead code cleanup** — Deleted 5 old settings components (SettingsView, GeneralTab, ModelsTab, SecurityTab, SystemTab = −1,282 lines). Stripped IntegrationTab to only its used export (DWDGuide). Fixed import from deleted SettingsView → `@/lib/types`.
+
+### Completed: v2026.05.26.10.0 — Work Title System + Data Migration
+> *Human-readable work titles, Cortex title generation, 304-item Stan migration, tachin-website project linking, domain placeholder cleanup.*
+
+1. **`title` field on work envelopes** — Added `title?: string` to `WorkEnvelope` TypeScript interface. Dashboard `WorkTree.tsx` and `WorkDetail.tsx` now display `title || instruction || intent` (was `intent || instruction`). New "Instruction" section in WorkDetail shown separately when title differs from instruction.
+2. **Brain daemon title generation (heuristic + LLM)** — Added `summarizeTitle()` helper to `agent-brain.mjs` (first sentence, max 80 chars, word-boundary truncation). Added `title` field to all 10 envelope creation points: ACK, intake classify (2 paths), dispatch, plan steps, checkpoints, checkpoint tasks, responsibilities (2 paths), and responsibility missions (2 paths). ACKs get `"Acknowledged: {user text}"`, responsibilities get their configured `name`, other envelopes get first-sentence heuristic.
+3. **Cortex LLM title generation** — Updated Cortex SOUL.md classify output schema with mandatory `title` field (5-12 word human-readable summary). Three examples updated. Brain daemon uses Cortex-provided title when available, falls back to heuristic `summarizeTitle()`.
+4. **Stan data migration** — Migrated 304 work items: generated titles for all items (0 errors), linked 206 items to `tachin-website` project via `project_id`. Owner verified as agent's actual workspace email (`AGENT_USER_EMAIL` env var).
+5. **Domain placeholder cleanup** — Replaced hardcoded `@tachin.ai` in MISSION_PLAN naming conventions and fleet table with `{workspace-domain}` placeholders. Workspace email domain is operator-specific, not hardcoded.
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*

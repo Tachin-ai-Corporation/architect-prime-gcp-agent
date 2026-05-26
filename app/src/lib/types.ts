@@ -86,6 +86,7 @@ export interface WorkEnvelope {
   owner: string;
   status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived';
   intent: string;
+  title?: string;
   instruction: string;
   accept_criteria: string;
   context_summary: string | null;

@@ -179,7 +179,7 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
         <div className={styles.mBody}>
           {/* Title */}
           <div className={titleClass}>
-            {envelope.intent || envelope.instruction || "Untitled"}
+            {envelope.title || envelope.instruction || envelope.intent || "Untitled"}
           </div>
 
           {/* Chips */}
@@ -222,6 +222,14 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
             <div className={styles.mSec}>
               <div className={styles.mSecTitle}>Definition of done</div>
               <div className={styles.mBlock}>{envelope.accept_criteria}</div>
+            </div>
+          )}
+
+          {/* Instruction (shown separately when title differs) */}
+          {envelope.instruction && envelope.title && envelope.instruction !== envelope.title && (
+            <div className={styles.mSec}>
+              <div className={styles.mSecTitle}>Instruction</div>
+              <div className={styles.mBlock}>{envelope.instruction}</div>
             </div>
           )}
 
@@ -310,7 +318,7 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
                       style={{ background: dotColor(child.status) }}
                     />
                     <span className={styles.mkText}>
-                      <strong>{child.intent || child.instruction || child.id}</strong>
+                      <strong>{child.title || child.instruction || child.intent || child.id}</strong>
                       {child.owner && ` — ${formatAgentDisplayName(child.owner)}`}
                       {child.status === "complete" &&
                         formatDuration(child.started_at, child.completed_at) &&

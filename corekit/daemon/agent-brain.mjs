@@ -74,6 +74,25 @@ function smartTruncate(text, budget) {
   return `${head}\n[...${truncated} chars truncated...]\n${tail}`;
 }
 
+/**
+ * Generate a human-readable title from instruction text.
+ * Takes the first sentence (up to maxLen chars), trimming at word boundaries.
+ * Used as heuristic fallback when Cortex doesn't provide a title.
+ */
+function summarizeTitle(text, maxLen = 80) {
+  if (!text) return 'Untitled';
+  // Strip leading tool-name prefix (e.g. "project-manage update 'tachin-website'")
+  const cleaned = text.replace(/^```[^\n]*\n?/, '').trim();
+  // Take first sentence (split on period, newline, exclamation, question)
+  const firstSentence = cleaned.split(/[.\n!?]/)[0].trim();
+  if (!firstSentence) return cleaned.substring(0, maxLen);
+  if (firstSentence.length <= maxLen) return firstSentence;
+  // Truncate at word boundary
+  const truncated = firstSentence.substring(0, maxLen);
+  const lastSpace = truncated.lastIndexOf(' ');
+  return (lastSpace > maxLen * 0.5 ? truncated.substring(0, lastSpace) : truncated) + '…';
+}
+
 // ---- Gateway token ----
 let GATEWAY_TOKEN = 'no-token';
 try {
@@ -1332,6 +1351,7 @@ async function processIntake(intake) {
       owner: AGENT_EMAIL || AGENT_ID,
       status: 'complete',
       intent: 'ack',
+      title: `Acknowledged: ${summarizeTitle(intake.text, 60)}`,
       instruction: 'Quick acknowledgment',
       output: ackText,
       source_channel: intake.source,
@@ -1464,6 +1484,7 @@ async function processIntake(intake) {
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
     intent: decision.intent || 'decide',
+    title: decision.title || summarizeTitle(decision.instruction || intake.text),
     instruction: decision.instruction || intake.text,
     accept_criteria: decision.accept_criteria || null,
     context_summary: decision.context_summary || null,
@@ -1589,6 +1610,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
     intent: decision.intent || 'decide',
+    title: decision.title || summarizeTitle(decision.instruction || intake.text),
     instruction: decision.instruction || intake.text,
     accept_criteria: decision.accept_criteria || null,
     context_summary: decision.context_summary || null,
@@ -1993,6 +2015,7 @@ async function processEnvelope(envelope, memoryContext) {
         owner: AGENT_EMAIL || AGENT_ID,
         status: 'active',
         intent: decision.intent || 'execute',
+        title: decision.title || summarizeTitle(task),
         instruction: task,
         accept_criteria: criteria,
         context_summary: envelope.context_summary || null,
@@ -2123,6 +2146,7 @@ async function processEnvelope(envelope, memoryContext) {
           owner: AGENT_EMAIL || AGENT_ID,
           status: 'active',
           intent: step.intent || 'execute',
+          title: step.title || summarizeTitle(stepTask),
           instruction: stepTask,
           accept_criteria: stepCriteria,
           context_summary: planContext.length > 0
@@ -2358,6 +2382,7 @@ async function processEnvelope(envelope, memoryContext) {
           owner: AGENT_EMAIL || AGENT_ID,
           status: 'active',
           intent: 'checkpoint',
+          title: summarizeTitle(cpInstruction),
           instruction: cpInstruction,
           accept_criteria: cpCriteria,
           context_summary: allResults.length > 0
@@ -2573,6 +2598,7 @@ async function processEnvelope(envelope, memoryContext) {
             owner: AGENT_EMAIL || AGENT_ID,
             status: 'active',
             intent: stepType === 'delegation' ? 'delegation' : (task.intent || 'execute'),
+            title: task.title || summarizeTitle(taskDesc),
             instruction: taskDesc,
             accept_criteria: taskCriteria,
             context_summary: [...allResults, ...cpResults].length > 0
@@ -3363,6 +3389,7 @@ async function fireResponsibility(resp) {
             owner: AGENT_EMAIL || AGENT_ID,
             status: 'complete',
             intent: 'responsibility',
+            title: resp.name || resp.id,
             instruction: resp.instruction,
             accept_criteria: resp.context?.success_criteria || null,
             context_summary: `Process: ${process.name} v${process.version || 1}`,
@@ -3389,6 +3416,7 @@ async function fireResponsibility(resp) {
             owner: AGENT_EMAIL || AGENT_ID,
             status: 'active',
             intent: 'execute',
+            title: `Execute: ${resp.name || resp.id}`,
             instruction: resp.instruction,
             accept_criteria: resp.context?.success_criteria || null,
             context_summary: `Executing process: ${process.name}`,
@@ -3489,6 +3517,7 @@ async function fireResponsibility(resp) {
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'complete', // R is just a container, mark complete immediately
     intent: 'responsibility',
+    title: resp.name || resp.id,
     instruction: resp.instruction,
     accept_criteria: resp.context?.success_criteria || null,
     context_summary: contextSummary,
@@ -3521,6 +3550,7 @@ async function fireResponsibility(resp) {
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
     intent: 'execute',
+    title: `Execute: ${resp.name || resp.id}`,
     instruction: resp.instruction,
     accept_criteria: resp.context?.success_criteria || null,
     context_summary: contextSummary,

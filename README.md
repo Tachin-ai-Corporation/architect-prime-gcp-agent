@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.26.9.0`
+> **Current version:** `v2026.05.26.10.0`
 
 
 ---
@@ -395,6 +395,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.25.7.0** | Live Model Discovery — Moved scanning from VM to Cloud Run. Queries Model Garden REST API (`publishers/*/models`) for ALL 600+ models dynamically. Zero curation: discovers xAI, DeepSeek, Meta, Mistral, AI21, NVIDIA, etc. automatically. Dynamic provider colors/labels in frontend. Brain page picker respects scan results. |
 | **v2026.05.25.8.0** | All-Provider Discovery — Hybrid approach: API returns ~300 models but only Google has `supportedActions`; Anthropic/xAI are MaaS-only (not in API). Fix: Google uses `openGenerationAiStudio` filter, all others probed directly, Anthropic/xAI added as `MAAS_ONLY_MODELS`. Project-level `/api/models/scan` route. Pagination + error surfacing. |
 | **v2026.05.26.9.0** | Fleet Introspect Crash Loop Fix — `set_model` handler called `docker restart` which killed introspect daemon (runs inside container via `docker exec`), creating infinite restart loop. Fix: deferred restart pattern (write result to Firestore first, restart after). `PRIME_ID` empty on startup due to container restart race; added 3-attempt retry + VM metadata fallback. |
+| **v2026.05.26.10.0** | Work Title System + Data Migration — Added `title` field to work envelopes with dual-source generation (Cortex LLM + `summarizeTitle()` heuristic fallback). Dashboard displays `title || instruction || intent`. Migrated 304 Stan work items with human-readable titles, linked 206 to tachin-website project. Replaced hardcoded email domain with `{workspace-domain}` placeholders. |
 
 
 ---
