@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.25.8.0`
+> - **Current version:** `v2026.05.26.9.0`
 
 ---
 
@@ -1045,6 +1045,13 @@ architect-prime/
 5. **Stale files deleted** — `SOUL_PROTOCOL.md` (1-line placeholder), 3 scratch implementation plan files.
 6. **`.gitignore` expanded** — Added `.DS_Store`, `*.pem`, `.env*`, runtime state paths, `.agents/scratch/`.
 7. **`job-swe.txt` documented** — Added alias comment explaining SWE is an alias for the engineer specialty.
+
+### Completed: v2026.05.26.9.0 — Fleet Introspect Crash Loop Fix + Daemon Robustness
+> *Fixed set_model crash loop, PRIME_ID empty on restart, deferred restart pattern.*
+
+1. **set_model crash loop fix** — `handleSetModel()` called `docker restart openclaw-gateway`, killing the introspect daemon (runs inside container via `docker exec`). `writeResult()` never completed → query stayed `pending` → infinite restart loop every 8s. Fix: deferred restart pattern — handler returns `_needsRestart` flag, `tick()` writes result to Firestore first, then restarts gateway.
+2. **PRIME_ID empty on startup** — `start-agent-introspect` reads `PRIME_ID` from Docker container env, but during gateway restart the container isn't responding to `docker exec`. Fix: 3-attempt retry with 2s sleep + VM metadata fallback (`instance/attributes/prime_id`).
+3. **Hostname derivation verified** — Fleet VMs are `fleet-{name}` (not `fleet-{primeId}-{name}`). Original `hostname().replace(/^fleet-/, '')` was correct. Reverted unnecessary PRIME_ID-stripping changes.
 
 ### Completed: v2026.05.25.8.0 — All-Provider Model Discovery + Project-Level Scan
 > *Hybrid discovery (API + MaaS-only partners), project-scoped routes, all providers visible.*
