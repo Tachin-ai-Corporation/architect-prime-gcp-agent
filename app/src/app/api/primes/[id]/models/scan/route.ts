@@ -3,95 +3,94 @@ import { getDb } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
 
 /**
- * POST /api/primes/[id]/models/scan — Scan Model Garden directly from Cloud Run.
+ * POST /api/primes/[id]/models/scan — Live model discovery from Cloud Run.
  *
- * No VM involvement. Probes Vertex AI endpoints using the Cloud Run SA token.
- * Returns results synchronously and writes to Firestore.
+ * 1. Queries Model Garden REST API for ALL models (publishers/*)
+ * 2. Filters for text generation MaaS models
+ * 3. Probes each model's endpoint to determine availability
+ * 4. Returns results synchronously + writes to Firestore
+ *
+ * Zero curation — discovers everything Model Garden exposes.
  */
 
-/* ---- Model catalog ---- */
+/* ---- Types ---- */
 
-interface ModelDef {
-  id: string;
-  provider: string;
-  tier: "ga" | "preview";
-  probeType: "google" | "anthropic" | "openai-maas";
+interface GardenModel {
+  name: string; // "publishers/google/models/gemini-2.5-pro"
+  supportedActions?: Record<string, unknown>;
+  launchStage?: string;
 }
 
-/**
- * Curated model catalog.
- *
- * Google/Anthropic models come from `gcloud ai model-garden models list` (openGenerationAiStudio).
- * Meta/Mistral models are NOT in that listing — they use the OpenAI-compatible MaaS endpoint.
- * Update this list when new models appear in Model Garden.
- */
-const MODEL_CATALOG: ModelDef[] = [
-  // Google — generateContent
-  { id: "gemini-3.1-pro-preview",        provider: "google",    tier: "preview", probeType: "google" },
-  { id: "gemini-3.1-flash-lite-preview",  provider: "google",    tier: "preview", probeType: "google" },
-  { id: "gemini-3.1-flash-lite",          provider: "google",    tier: "ga",      probeType: "google" },
-  { id: "gemini-3.5-flash",              provider: "google",    tier: "preview", probeType: "google" },
-  { id: "gemini-2.5-pro",                provider: "google",    tier: "ga",      probeType: "google" },
-  { id: "gemini-2.5-flash",              provider: "google",    tier: "ga",      probeType: "google" },
-  { id: "gemini-2.0-flash-001",          provider: "google",    tier: "ga",      probeType: "google" },
-  { id: "gemini-2.0-flash-lite-001",     provider: "google",    tier: "ga",      probeType: "google" },
+interface ProbeResult {
+  id: string;
+  name: string;
+  tier: string;
+  provider: string;
+  status: string;
+  httpCode: number;
+  openclawId: string;
+}
 
-  // Anthropic — rawPredict
-  { id: "claude-sonnet-4-6",   provider: "anthropic", tier: "ga",      probeType: "anthropic" },
-  { id: "claude-sonnet-4-5",   provider: "anthropic", tier: "ga",      probeType: "anthropic" },
-  { id: "claude-opus-4-7",     provider: "anthropic", tier: "ga",      probeType: "anthropic" },
-  { id: "claude-opus-4-6",     provider: "anthropic", tier: "ga",      probeType: "anthropic" },
-  { id: "claude-opus-4-5",     provider: "anthropic", tier: "ga",      probeType: "anthropic" },
-  { id: "claude-opus-4-1",     provider: "anthropic", tier: "ga",      probeType: "anthropic" },
-  { id: "claude-haiku-4-5",    provider: "anthropic", tier: "ga",      probeType: "anthropic" },
+/* ---- Constants ---- */
 
-  // Meta Llama — OpenAI-compatible MaaS endpoint
-  { id: "llama-4-scout-17b-16e-instruct-maas",    provider: "meta",      tier: "preview", probeType: "openai-maas" },
-  { id: "llama-4-maverick-17b-128e-instruct-maas", provider: "meta",      tier: "preview", probeType: "openai-maas" },
-  { id: "llama-3.3-70b-instruct-maas",             provider: "meta",      tier: "ga",      probeType: "openai-maas" },
-  { id: "llama-3.2-90b-vision-instruct-maas",      provider: "meta",      tier: "ga",      probeType: "openai-maas" },
-
-  // Mistral — OpenAI-compatible MaaS endpoint
-  { id: "mistral-large-2411",   provider: "mistralai", tier: "ga", probeType: "openai-maas" },
-  { id: "mistral-small-2503",   provider: "mistralai", tier: "ga", probeType: "openai-maas" },
-  { id: "mistral-nemo-2407",    provider: "mistralai", tier: "ga", probeType: "openai-maas" },
-  { id: "codestral-2501",       provider: "mistralai", tier: "ga", probeType: "openai-maas" },
+// Keywords that indicate non-text models (image, video, audio, etc.)
+const EXCLUDE_KEYWORDS = [
+  "image", "video", "veo", "lyria", "tts", "try-on", "embed",
+  "segment", "detect", "vision", "translate", "shield", "weather",
+  "path-foundation", "derm", "hear", "medasr", "medsiglip", "ocr",
+  "computer-use", "virtual", "sam3", "reward", "guard", "safety",
+  "speech", "cxr-foundation", "prompt-optimizer", "code-gecko",
+  "code-bison", "text-bison", "chat-bison", "text-unicorn",
+  "efficientnet", "vit", "paligemma", "controlnet", "diffusion",
+  "whisper", "bert", "t5-", "flan-t5", "chirp", "musicgen",
+  "encoder", "decoder-only-tokenizer", "classification",
+  "summarization", "nllb", "madlad", "timesfm", "tapas",
+  "byot5", "ul2", "switch-", "palm-", "gecko-", "moirai",
+  "imagegen", "imagen", "stable-diffusion", "sdxl", "sana",
+  "flux", "hunyuan", "ltx-video", "wan", "cosmos",
+  "grounding-dino", "owlv2", "detr", "yolo",
+  "molmo", "patchscopes", "sparsetsr",
 ];
+
+// Models that are known to be discontinued
+const DISCONTINUED = new Set([
+  "gemini-3-pro-preview",
+  "gemini-3-flash-preview",
+]);
 
 /* ---- Display name generator ---- */
 
 function makeName(mid: string): string {
-  // Strip -maas suffix for display
   const displayId = mid.replace(/-maas$/, "");
   const parts = displayId.split("-");
   const out: string[] = [];
   let i = 0;
   while (i < parts.length) {
     const p = parts[i];
-    // Join consecutive digit groups with a dot: "2" + "5" -> "2.5"
     if (/^\d+$/.test(p) && i + 1 < parts.length && /^\d+$/.test(parts[i + 1])) {
       out.push(`${p}.${parts[i + 1]}`);
       i += 2;
       continue;
     }
-    // Keep 3-digit version numbers as-is (e.g., "001")
-    out.push(/^\d{3}$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1));
+    out.push(/^\d{3,4}$/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1));
     i++;
   }
   let name = out.join(" ");
-  // Brand name casing
   const brands = [
     "Gemini", "Claude", "Flash", "Pro", "Opus", "Sonnet", "Haiku", "Lite", "Preview",
     "Llama", "Mistral", "Large", "Medium", "Small", "Nemo", "Codestral", "Pixtral",
     "Instruct", "Chat", "Maverick", "Scout", "Jamba", "Mini",
+    "Grok", "Deepseek", "DeepSeek",
   ];
   for (const b of brands) {
     name = name.replace(new RegExp(`\\b${b}\\b`, "gi"), b);
   }
+  // Fix "Deepseek" -> "DeepSeek"
+  name = name.replace(/\bDeepseek\b/g, "DeepSeek");
   return name;
 }
 
-/* ---- Probing ---- */
+/* ---- Auth ---- */
 
 async function getAccessToken(): Promise<string> {
   const res = await fetch(
@@ -103,8 +102,95 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
+/* ---- Model Garden API ---- */
+
+async function fetchModelGarden(
+  token: string,
+  location: string,
+): Promise<GardenModel[]> {
+  // This is the same endpoint gcloud ai model-garden models list calls
+  const url = `https://${location}-aiplatform.googleapis.com/v1beta1/publishers/*/models?filter=is_hf_wildcard(false)&listAllVersions=True`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    console.error(`[models/scan] Model Garden API returned ${res.status}`);
+    return [];
+  }
+  const data = await res.json();
+  return data.publisherModels || [];
+}
+
+/* ---- Filter logic ---- */
+
+interface ModelCandidate {
+  id: string;
+  provider: string;
+  tier: string;
+  probeType: "google-generate" | "anthropic-raw" | "openai-maas";
+}
+
+function filterModels(gardenModels: GardenModel[]): ModelCandidate[] {
+  const candidates: Map<string, ModelCandidate> = new Map();
+
+  for (const m of gardenModels) {
+    const parts = (m.name || "").split("/");
+    if (parts.length < 4) continue;
+    const publisher = parts[1];
+    const modelId = parts[3];
+
+    // Exclude non-text models
+    const lower = modelId.toLowerCase();
+    if (EXCLUDE_KEYWORDS.some((kw) => lower.includes(kw))) continue;
+
+    // Exclude discontinued
+    if (DISCONTINUED.has(modelId)) continue;
+
+    // Determine if this model has MaaS access
+    const actions = m.supportedActions || {};
+    const hasAiStudio = "openGenerationAiStudio" in actions;
+    const hasMaas = "openMaas" in actions;
+
+    if (!hasAiStudio && !hasMaas) continue; // deploy-only, skip
+
+    // Dedup: prefer base over -maas variant
+    const baseId = modelId.replace(/-maas$/, "");
+    if (modelId !== baseId && candidates.has(baseId)) continue;
+    if (modelId === baseId && candidates.has(baseId + "-maas")) continue;
+    if (candidates.has(modelId)) continue;
+
+    // Determine probe type
+    let probeType: ModelCandidate["probeType"];
+    if (publisher === "google" && hasAiStudio) {
+      probeType = "google-generate";
+    } else if (publisher === "anthropic" && hasAiStudio) {
+      probeType = "anthropic-raw";
+    } else {
+      // All third-party MaaS: Meta, Mistral, xAI, DeepSeek, AI21, etc.
+      probeType = "openai-maas";
+    }
+
+    const launch = (m.launchStage || "PREVIEW").toUpperCase();
+
+    candidates.set(modelId, {
+      id: modelId,
+      provider: publisher,
+      tier: launch === "GA" ? "ga" : "preview",
+      probeType,
+    });
+  }
+
+  return Array.from(candidates.values());
+}
+
+/* ---- Probing ---- */
+
 async function probeModel(
-  model: ModelDef,
+  model: ModelCandidate,
   token: string,
   projectId: string,
   location: string,
@@ -113,7 +199,7 @@ async function probeModel(
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
-  const timeout = 15_000;
+  const timeout = 10_000;
 
   try {
     if (model.probeType === "openai-maas") {
@@ -130,7 +216,7 @@ async function probeModel(
       return res.status;
     }
 
-    if (model.probeType === "google") {
+    if (model.probeType === "google-generate") {
       // Regional first
       const regionalUrl = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${model.id}:generateContent`;
       const body = JSON.stringify({
@@ -156,7 +242,7 @@ async function probeModel(
       return res.status;
     }
 
-    // Anthropic — rawPredict
+    // anthropic-raw
     const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/${model.provider}/models/${model.id}:rawPredict`;
     const body = JSON.stringify({
       anthropic_version: "vertex-2023-10-16",
@@ -188,20 +274,21 @@ export async function POST(
     const location = process.env.GCP_REGION || "us-central1";
     const token = await getAccessToken();
 
-    // Probe all models in parallel (batched to avoid overwhelming)
-    const BATCH_SIZE = 8;
-    const results: Array<{
-      id: string;
-      name: string;
-      tier: string;
-      provider: string;
-      status: string;
-      httpCode: number;
-      openclawId: string;
-    }> = [];
+    // Step 1: Query Model Garden API for ALL models
+    console.log("[models/scan] Querying Model Garden API...");
+    const gardenModels = await fetchModelGarden(token, location);
+    console.log(`[models/scan] Model Garden returned ${gardenModels.length} models`);
 
-    for (let i = 0; i < MODEL_CATALOG.length; i += BATCH_SIZE) {
-      const batch = MODEL_CATALOG.slice(i, i + BATCH_SIZE);
+    // Step 2: Filter for text LLM MaaS candidates
+    const candidates = filterModels(gardenModels);
+    console.log(`[models/scan] Filtered to ${candidates.length} text LLM candidates`);
+
+    // Step 3: Probe all models in parallel batches
+    const BATCH_SIZE = 10;
+    const results: ProbeResult[] = [];
+
+    for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
+      const batch = candidates.slice(i, i + BATCH_SIZE);
       const probes = batch.map(async (model) => {
         const code = await probeModel(model, token, projectId, location);
         let status: string;
@@ -229,10 +316,20 @@ export async function POST(
       results.push(...batchResults);
     }
 
+    // Sort: available first, then by provider, then by name
+    results.sort((a, b) => {
+      if (a.status === "available" && b.status !== "available") return -1;
+      if (a.status !== "available" && b.status === "available") return 1;
+      if (a.provider !== b.provider) return a.provider.localeCompare(b.provider);
+      return a.name.localeCompare(b.name);
+    });
+
     const available = results.filter((r) => r.status === "available");
     const bestModel = available.length > 0 ? available[0].id : "";
 
-    // Write to Firestore
+    console.log(`[models/scan] Discovered ${results.length} models, ${available.length} available`);
+
+    // Step 4: Write to Firestore
     const db = getDb();
     await db
       .collection("primes").doc(primeId)
@@ -248,6 +345,7 @@ export async function POST(
       bestModel,
       discovered: results.length,
       available: available.length,
+      gardenTotal: gardenModels.length,
       scannedAt: new Date().toISOString(),
     });
   } catch (err) {

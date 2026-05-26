@@ -45,7 +45,20 @@ const PROVIDER_COLORS: Record<string, string> = {
   openai: "rgba(0,166,126,0.15)",
   meta: "rgba(0,128,255,0.15)",
   mistralai: "rgba(255,128,0,0.15)",
+  xai: "rgba(130,100,255,0.15)",
+  deepseek: "rgba(60,180,200,0.15)",
+  ai21: "rgba(200,80,160,0.15)",
 };
+
+// Fallback colors for any unknown provider
+const EXTRA_COLORS = [
+  "rgba(180,120,60,0.15)", "rgba(80,180,120,0.15)", "rgba(200,160,60,0.15)",
+  "rgba(120,80,200,0.15)", "rgba(60,140,180,0.15)", "rgba(180,60,120,0.15)",
+];
+
+function getProviderColor(provider: string, index: number): string {
+  return PROVIDER_COLORS[provider] || EXTRA_COLORS[index % EXTRA_COLORS.length];
+}
 
 const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: string }> = {
   available: { icon: "✅", label: "Available", color: "#3BAA78" },
@@ -56,14 +69,26 @@ const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: strin
   unknown: { icon: "❓", label: "Not Scanned", color: "#566373" },
 };
 
-const PROVIDER_ORDER = ["google", "anthropic", "openai", "meta", "mistralai"];
+// Known providers show first in this order; any others are appended alphabetically
+const PROVIDER_ORDER = ["google", "anthropic", "meta", "mistralai", "xai", "deepseek"];
 const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   anthropic: "Anthropic",
   openai: "OpenAI",
   meta: "Meta",
   mistralai: "Mistral AI",
+  xai: "xAI",
+  deepseek: "DeepSeek",
+  ai21: "AI21",
+  nvidia: "NVIDIA",
+  writer: "Writer",
+  "stability.ai": "Stability AI",
 };
+
+/** Generate a display label for any provider slug */
+function getProviderLabel(provider: string): string {
+  return PROVIDER_LABELS[provider] || provider.charAt(0).toUpperCase() + provider.slice(1);
+}
 
 function SettingsPageInner() {
   const { setup, versionInfo, primes, sidebarFleet } = usePrime();
@@ -164,12 +189,14 @@ function SettingsPageInner() {
     const sorted: { provider: string; label: string; models: ModelInfo[] }[] = [];
     for (const p of PROVIDER_ORDER) {
       if (groups[p]) {
-        sorted.push({ provider: p, label: PROVIDER_LABELS[p] || p, models: groups[p] });
+        sorted.push({ provider: p, label: getProviderLabel(p), models: groups[p] });
         delete groups[p];
       }
     }
-    for (const [p, m] of Object.entries(groups)) {
-      sorted.push({ provider: p, label: p.charAt(0).toUpperCase() + p.slice(1), models: m });
+    // Append any remaining providers alphabetically
+    const remaining = Object.keys(groups).sort();
+    for (const p of remaining) {
+      sorted.push({ provider: p, label: getProviderLabel(p), models: groups[p] });
     }
     return sorted;
   }, [models]);
@@ -720,7 +747,7 @@ function SettingsPageInner() {
                     <div className={styles.modelGrid}>
                       {group.models.map((model) => {
                         const statusInfo = STATUS_DISPLAY[model.status] || STATUS_DISPLAY.unknown;
-                        const providerColor = PROVIDER_COLORS[model.provider] || "rgba(128,128,128,0.15)";
+                        const providerColor = getProviderColor(model.provider, 0);
 
                         return (
                           <div
