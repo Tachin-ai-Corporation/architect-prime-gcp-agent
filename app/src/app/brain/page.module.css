@@ -49,7 +49,7 @@
   font-size: 14px;
 }
 
-/* ---- Page header (work-page pattern) ---- */
+/* ---- Page header ---- */
 .pgHeader {
   display: flex;
   align-items: center;
@@ -141,7 +141,7 @@
 .agents {
   display: flex;
   gap: 8px;
-  padding-bottom: 32px;
+  padding-bottom: 20px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -225,11 +225,154 @@
   50% { opacity: 0.45; }
 }
 
+/* ---- Live status ---- */
+.liveStatus {
+  font-size: 11px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.liveLoading {
+  color: #D6A83A;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.livePulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #D6A83A;
+  animation: livePulseAnim 1.2s ease-in-out infinite;
+}
+
+@keyframes livePulseAnim {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.8); }
+}
+
+.liveConnected {
+  color: #3BAA78;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.liveDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3BAA78;
+}
+
+.liveError {
+  color: #D84F45;
+}
+
 /* ---- Scanned date ---- */
 .scanned {
   font-size: 11px;
   color: #566373;
   margin-bottom: 16px;
+}
+
+/* ---- Apply & Restart bar ---- */
+.applyBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(214, 168, 58, 0.08);
+  border: 1px solid rgba(214, 168, 58, 0.3);
+  border-radius: 12px;
+  margin-bottom: 16px;
+  animation: slideDown 220ms var(--ease);
+}
+
+.applyInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #D6A83A;
+  font-weight: 500;
+}
+
+.applyIcon {
+  font-size: 16px;
+}
+
+.applyActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.applyDiscard {
+  padding: 6px 14px;
+  border: 1px solid rgba(86, 99, 115, 0.35);
+  border-radius: 8px;
+  background: transparent;
+  color: #AEB8C4;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 160ms;
+}
+.applyDiscard:hover {
+  border-color: rgba(216, 79, 69, 0.5);
+  color: #D84F45;
+}
+.applyDiscard:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.applyBtn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1F9A9B, #246B8F);
+  color: #E6EBF0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 160ms;
+  box-shadow: 0 2px 8px rgba(31, 154, 155, 0.3);
+}
+.applyBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(31, 154, 155, 0.4);
+}
+.applyBtn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+}
+
+.applyResult {
+  font-size: 12px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  animation: slideDown 220ms var(--ease);
+}
+.applySuccess {
+  background: rgba(59, 170, 120, 0.1);
+  border: 1px solid rgba(59, 170, 120, 0.3);
+  color: #3BAA78;
+}
+.applyError {
+  background: rgba(216, 79, 69, 0.1);
+  border: 1px solid rgba(216, 79, 69, 0.3);
+  color: #D84F45;
 }
 
 /* ---- Slot Grid ---- */
@@ -243,8 +386,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 24px 16px 20px;
+  gap: 4px;
+  padding: 22px 16px 18px;
   background: #313B47;
   border: 1px solid rgba(86, 99, 115, 0.25);
   border-radius: 16px;
@@ -255,12 +398,40 @@
               box-shadow 220ms cubic-bezier(0.4, 0, 0.2, 1);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: inherit;
+  position: relative;
 }
 
 .slot:hover {
   transform: translateY(-2px);
   border-color: rgba(143, 216, 230, 0.35);
   box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.32), 0 0 24px rgba(143, 216, 230, 0.18);
+}
+
+.slot:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.slot:disabled:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: rgba(86, 99, 115, 0.25);
+}
+
+.slotPending {
+  border-color: rgba(214, 168, 58, 0.5);
+  box-shadow: 0 0 0 1px rgba(214, 168, 58, 0.2);
+}
+.slotPending:hover {
+  border-color: rgba(214, 168, 58, 0.7);
+  box-shadow: 0 0 0 1px rgba(214, 168, 58, 0.3), 0 0 16px rgba(214, 168, 58, 0.12);
+}
+
+.slotLoading {
+  animation: slotShimmer 1.5s ease-in-out infinite;
+}
+@keyframes slotShimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .slotIcon {
@@ -289,6 +460,35 @@
   max-width: 100%;
 }
 
+.slotModelId {
+  font-size: 10px;
+  color: #566373;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.slotModelLoading {
+  font-size: 11px;
+  color: #D6A83A;
+  margin-top: 4px;
+  animation: livePulseAnim 1.2s ease-in-out infinite;
+}
+
+.slotPendingBadge {
+  font-size: 9px;
+  font-weight: 600;
+  color: #D6A83A;
+  background: rgba(214, 168, 58, 0.12);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
 .slotSwap {
   font-size: 10px;
   color: #566373;
@@ -312,11 +512,12 @@
   border: 1px solid rgba(86, 99, 115, 0.35);
   border-radius: 16px;
   width: 100%;
-  max-width: 480px;
-  max-height: 70vh;
+  max-width: 520px;
+  max-height: 75vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+  animation: slideDown 220ms var(--ease);
 }
 
 .modalHeader {
@@ -369,11 +570,14 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(86, 99, 115, 0.15);
 }
 
 .modelOption {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   width: 100%;
   padding: 10px 12px;
@@ -385,16 +589,11 @@
   color: #E6EBF0;
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
-  transition: background 160ms;
+  transition: background 160ms, border-color 160ms;
 }
 
 .modelOption:hover {
   background: rgba(49, 59, 71, 0.7);
-}
-
-.modelOption:disabled {
-  opacity: 0.5;
-  cursor: wait;
 }
 
 .modelCurrent {
@@ -402,17 +601,75 @@
   background: rgba(143, 216, 230, 0.06);
 }
 
-.modelName {
+.modelPending {
+  border-color: rgba(214, 168, 58, 0.4);
+  background: rgba(214, 168, 58, 0.06);
+}
+
+.modelDisabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+.modelOptionInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
   flex: 1;
 }
 
-.currentBadge {
-  font-size: 10px;
+.modelOptionRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.modelName {
+  font-size: 13px;
   font-weight: 500;
+  color: #E6EBF0;
+}
+
+.modelId {
+  font-size: 10px;
+  color: #566373;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.modelProviderBadge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(128, 128, 128, 0.15);
+  color: #AEB8C4;
+}
+
+.currentBadge {
+  font-size: 9px;
+  font-weight: 600;
   color: #8FD8E6;
   background: rgba(143, 216, 230, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pendingBadge {
+  font-size: 9px;
+  font-weight: 600;
+  color: #D6A83A;
+  background: rgba(214, 168, 58, 0.12);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 /* ---- Responsive ---- */
@@ -437,6 +694,14 @@
   }
   .primeSelector {
     margin-left: 0;
+  }
+  .applyBar {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .applyActions {
+    justify-content: flex-end;
   }
 }
 

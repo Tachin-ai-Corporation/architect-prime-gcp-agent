@@ -3,9 +3,10 @@
 // Polls Firestore for introspection queries, reads local filesystem, writes results.
 // Runs alongside ears/mouth/brain.
 
-import { readFileSync, readdirSync, statSync, existsSync, appendFileSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, appendFileSync } from 'fs';
 import { join, basename } from 'path';
 import { hostname } from 'os';
+import { execSync } from 'child_process';
 
 // ---- Config ----
 const GCP_PROJECT = process.env.GCP_PROJECT_ID;
@@ -72,10 +73,27 @@ async function pollForQueries() {
   const docs = await res.json();
   return docs
     .filter(d => d.document)
-    .map(d => ({
-      path: d.document.name,
-      type: d.document.fields?.type?.stringValue || 'unknown',
-    }));
+    .map(d => {
+      // Decode params mapValue if present
+      const paramsFields = d.document.fields?.params?.mapValue?.fields || {};
+      const params = {};
+      for (const [k, v] of Object.entries(paramsFields)) {
+        if (v.stringValue !== undefined) params[k] = v.stringValue;
+        else if (v.mapValue) {
+          // Decode nested map (e.g., overrides)
+          const nested = {};
+          for (const [nk, nv] of Object.entries(v.mapValue.fields || {})) {
+            if (nv.stringValue !== undefined) nested[nk] = nv.stringValue;
+          }
+          params[k] = nested;
+        }
+      }
+      return {
+        path: d.document.name,
+        type: d.document.fields?.type?.stringValue || 'unknown',
+        params,
+      };
+    });
 }
 
 async function writeResult(docPath, result) {
@@ -331,13 +349,83 @@ function handleWorkspace() {
   return { workspaces };
 }
 
+function handleBrainConfig() {
+  const configPath = join(OC_HOME, 'openclaw.json');
+  if (!existsSync(configPath)) {
+    return { error: 'openclaw.json not found', default: '', slots: {} };
+  }
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    const defaultModel = config?.agents?.defaults?.model?.primary || '';
+    const slots = {};
+    const agentList = config?.agents?.list || [];
+    for (const agent of agentList) {
+      if (agent.id) {
+        slots[agent.id] = agent.model?.primary || null;
+      }
+    }
+    return { default: defaultModel, slots };
+  } catch (err) {
+    return { error: `Failed to parse openclaw.json: ${err.message}`, default: '', slots: {} };
+  }
+}
+
+function handleSetModel(params) {
+  const configPath = join(OC_HOME, 'openclaw.json');
+  if (!existsSync(configPath)) {
+    return { success: false, error: 'openclaw.json not found' };
+  }
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    const newDefault = params.default;
+    const overrides = params.overrides || {};
+
+    // Update default model
+    if (newDefault) {
+      if (!config.agents) config.agents = {};
+      if (!config.agents.defaults) config.agents.defaults = {};
+      if (!config.agents.defaults.model) config.agents.defaults.model = {};
+      config.agents.defaults.model.primary = newDefault;
+    }
+
+    // Apply per-agent overrides
+    const agentList = config.agents?.list || [];
+    for (const agent of agentList) {
+      if (agent.id && overrides[agent.id] !== undefined) {
+        const modelId = overrides[agent.id];
+        if (modelId) {
+          if (!agent.model) agent.model = {};
+          agent.model.primary = modelId;
+        } else {
+          delete agent.model;
+        }
+      }
+    }
+
+    // Write config back
+    writeFileSync(configPath, JSON.stringify(config, null, 2));
+    log('Updated openclaw.json with new model assignments', { default: newDefault, overrides });
+
+    // Restart gateway container
+    execSync('docker restart openclaw-gateway', { timeout: 60000, stdio: 'pipe' });
+    log('Gateway restarted after model change');
+
+    return { success: true, message: 'Models updated and gateway restarted' };
+  } catch (err) {
+    log('set_model error', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
 // ---- Query dispatcher ----
-function processQuery(type) {
+function processQuery(type, params = {}) {
   switch (type) {
     case 'skills': return handleSkills();
     case 'status': return handleStatus();
     case 'config': return handleConfig();
     case 'workspace': return handleWorkspace();
+    case 'brain_config': return handleBrainConfig();
+    case 'set_model': return handleSetModel(params);
     default: throw new Error(`Unknown query type: ${type}`);
   }
 }
@@ -355,7 +443,7 @@ async function tick() {
     for (const q of queries) {
       log('Processing query', { type: q.type, path: q.path });
       try {
-        const result = processQuery(q.type);
+        const result = processQuery(q.type, q.params);
         await writeResult(q.path, result);
         log('Query complete', { type: q.type });
       } catch (err) {

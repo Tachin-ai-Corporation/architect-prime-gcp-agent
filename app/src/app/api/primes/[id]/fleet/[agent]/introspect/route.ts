@@ -26,9 +26,10 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   const body = await req.json().catch(() => ({}));
   const type = body?.type;
 
-  if (!type || !["skills", "status", "config", "workspace"].includes(type)) {
+  const VALID_TYPES = ["skills", "status", "config", "workspace", "brain_config", "set_model"];
+  if (!type || !VALID_TYPES.includes(type)) {
     return NextResponse.json(
-      { error: "Invalid type. Must be one of: skills, status, config, workspace" },
+      { error: `Invalid type. Must be one of: ${VALID_TYPES.join(", ")}` },
       { status: 400 }
     );
   }
@@ -43,11 +44,18 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       .collection("introspect")
       .doc();
 
-    await queryRef.set({
+    const doc: Record<string, unknown> = {
       type,
       status: "pending",
       requestedAt: FieldValue.serverTimestamp(),
-    });
+    };
+
+    // Pass through params for set_model (model assignments payload)
+    if (body?.params && typeof body.params === "object") {
+      doc.params = body.params;
+    }
+
+    await queryRef.set(doc);
 
     return NextResponse.json({
       queryId: queryRef.id,
