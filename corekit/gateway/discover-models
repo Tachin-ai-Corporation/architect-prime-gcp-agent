@@ -100,10 +100,18 @@ GARDEN_TMP="/tmp/model-garden-catalog.json"
 gcloud ai model-garden models list --format=json --project="${GCP_PROJECT_ID}" > "$GARDEN_TMP" 2>/dev/null || echo "[]" > "$GARDEN_TMP"
 
 # ---- Step 2: Filter + probe + output (all in Python) ----
-python3 <<PYEOF
-import json, os, re, pathlib, urllib.request, urllib.error
+PY_TMP="/tmp/discover-models-probe.py"
+cat > "$PY_TMP" <<'PYEOF'
+import json, os, re, sys, pathlib, urllib.request, urllib.error
 
-garden = json.load(open('${GARDEN_TMP}'))
+GARDEN_FILE = sys.argv[1]
+TOKEN = sys.argv[2]
+LOC = sys.argv[3]
+PROJ = sys.argv[4]
+MODE = sys.argv[5]
+OC_HOST_DIR = sys.argv[6]
+
+garden = json.load(open(GARDEN_FILE))
 
 # --- Filter for MaaS text LLMs ---
 EXCLUDE = ['image', 'video', 'veo', 'lyria', 'tts', 'try-on', 'embed',
@@ -167,16 +175,11 @@ DISCONTINUED = {'gemini-3-pro-preview', 'gemini-3-flash-preview'}
 candidates = {k: v for k, v in candidates.items() if k not in DISCONTINUED}
 
 # --- Add curated third-party MaaS models ---
-# These ARE available in Model Garden but are NOT returned by `gcloud ai model-garden models list`.
-# They use the OpenAI-compatible endpoint (/endpoints/openapi) instead of generateContent/rawPredict.
-# Update this list when new models appear in Model Garden.
 THIRD_PARTY_MAAS = [
-    # Meta Llama
     {'id': 'llama-4-scout-17b-16e-instruct-maas',      'provider': 'meta',      'tier': 'preview'},
     {'id': 'llama-4-maverick-17b-128e-instruct-maas',   'provider': 'meta',      'tier': 'preview'},
     {'id': 'llama-3.3-70b-instruct-maas',               'provider': 'meta',      'tier': 'ga'},
     {'id': 'llama-3.2-90b-vision-instruct-maas',        'provider': 'meta',      'tier': 'ga'},
-    # Mistral
     {'id': 'mistral-large-2411',                        'provider': 'mistralai', 'tier': 'ga'},
     {'id': 'codestral-2501',                            'provider': 'mistralai', 'tier': 'ga'},
     {'id': 'mistral-nemo-2407',                         'provider': 'mistralai', 'tier': 'ga'},
@@ -190,16 +193,11 @@ for m in THIRD_PARTY_MAAS:
             'name': make_name(mid),
             'tier': m['tier'],
             'provider': m['provider'],
-            'maas_openai': True,  # flag: use OpenAI-compatible endpoint for probing
+            'maas_openai': True,
         }
 
 # --- Probe each ---
-TOKEN = '${TOKEN}'
-LOC = '${LOCATION}'
-PROJ = '${GCP_PROJECT_ID}'
-
 def _do_probe(url, body):
-    """Send probe request, return HTTP status code."""
     req = urllib.request.Request(url, data=body, method='POST',
         headers={'Authorization': f'Bearer {TOKEN}', 'Content-Type': 'application/json'})
     try:
@@ -211,52 +209,39 @@ def probe(mid, info):
     provider = info['provider']
     tier = info.get('tier', 'ga')
     is_openai_maas = info.get('maas_openai', False)
-
     body_google = b'{"contents":[{"role":"user","parts":[{"text":"pong"}]}],"generationConfig":{"maxOutputTokens":5}}'
     body_anthropic = b'{"anthropic_version":"vertex-2023-10-16","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}'
     body_generic = b'{"max_tokens":5,"messages":[{"role":"user","content":"hi"}]}'
 
     if is_openai_maas:
-        # Meta Llama, Mistral, etc. — use OpenAI-compatible endpoint
         body = json.dumps({"model": f"{provider}/{mid}", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}).encode()
         url = f"https://{LOC}-aiplatform.googleapis.com/v1beta1/projects/{PROJ}/locations/{LOC}/endpoints/openapi/chat/completions"
         return _do_probe(url, body)
 
     if provider == 'google':
-        # Google models: try regional first, then global for preview models
         regional_url = f"https://{LOC}-aiplatform.googleapis.com/v1beta1/projects/{PROJ}/locations/{LOC}/publishers/google/models/{mid}:generateContent"
         code = _do_probe(regional_url, body_google)
-
-        if code in (200, 429):
-            return code
-
-        # For preview models, try the global endpoint (required for Gemini 3+)
+        if code in (200, 429): return code
         if tier == 'preview':
             global_url = f"https://aiplatform.googleapis.com/v1/projects/{PROJ}/locations/global/publishers/google/models/{mid}:generateContent"
             global_code = _do_probe(global_url, body_google)
-            if global_code in (200, 429):
-                return global_code
+            if global_code in (200, 429): return global_code
             return global_code if global_code != 0 else code
-
         return code
 
-    # Third-party models (Anthropic, etc.) — use rawPredict
     body = body_anthropic if provider == 'anthropic' else body_generic
     url = f"https://{LOC}-aiplatform.googleapis.com/v1/projects/{PROJ}/locations/{LOC}/publishers/{provider}/models/{mid}:rawPredict"
     return _do_probe(url, body)
 
-mode = '${MODE}'
 results, best = [], ''
-
-# Detect current model
 current = ''
-for tmpl in ['${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl']:
+for tmpl in [f'{OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl']:
     p = pathlib.Path(tmpl)
     if p.exists():
         hit = re.search(r'"primary":\s*"(?:google-vertex|vertex_ai)/([^"]+)"', p.read_text())
         if hit: current = hit.group(1)
 
-if mode != 'probe-only':
+if MODE != 'probe-only':
     print(f"\n  {'Model':<40} {'Provider':<12} Status")
     print(f"  {'─'*70}")
 
@@ -265,27 +250,23 @@ for mid, info in sorted(candidates.items()):
     if code in (200, 429):
         status, label = 'available', '✅ Available'
         if not best: best = mid
-    elif code == 404:
-        status, label = 'not_found', '❌ Not found'
-    elif code in (401, 403):
-        status, label = 'auth_error', '🔒 Needs enablement'
-    elif code == 0:
-        status, label = 'timeout', '⚠️  Timeout'
-    else:
-        status, label = 'unknown', f'⚠️  HTTP {code}'
+    elif code == 404: status, label = 'not_found', '❌ Not found'
+    elif code in (401, 403): status, label = 'auth_error', '🔒 Needs enablement'
+    elif code == 0: status, label = 'timeout', '⚠️  Timeout'
+    else: status, label = 'unknown', f'⚠️  HTTP {code}'
 
-    if mode != 'probe-only':
+    if MODE != 'probe-only':
         print(f"  {info['name']:<40} {info['provider']:<12} {label}")
 
     oc = f"google-vertex/{mid}" if info['provider'] == 'google' else f"vertex_ai/{mid}"
     clean_info = {k: v for k, v in info.items() if k != 'maas_openai'}
     results.append({**clean_info, 'status': status, 'httpCode': code, 'openclawId': oc})
 
-if mode != 'probe-only':
+if MODE != 'probe-only':
     avail = sum(1 for r in results if r['status'] == 'available')
     print(f"\n  Discovered {len(results)} models, {avail} available\n")
 
-if mode == 'probe-only':
+if MODE == 'probe-only':
     print(json.dumps({
         'models': results, 'bestModel': best,
         'currentModel': current, 'projectId': PROJ,
@@ -293,8 +274,10 @@ if mode == 'probe-only':
     }))
 PYEOF
 
+python3 "$PY_TMP" "$GARDEN_TMP" "$TOKEN" "$LOCATION" "$GCP_PROJECT_ID" "$MODE" "$OC_HOST_DIR"
+
 # Clean up
-rm -f "$GARDEN_TMP"
+rm -f "$GARDEN_TMP" "$PY_TMP"
 
 # ---- Apply mode ----
 if [[ "$MODE" == "apply" && -n "$FORCE_MODEL" ]]; then
