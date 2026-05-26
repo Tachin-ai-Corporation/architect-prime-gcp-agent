@@ -44,7 +44,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "rgba(217,119,87,0.15)",
   openai: "rgba(0,166,126,0.15)",
   meta: "rgba(0,128,255,0.15)",
-  mistral: "rgba(255,128,0,0.15)",
+  mistralai: "rgba(255,128,0,0.15)",
 };
 
 const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: string }> = {
@@ -56,13 +56,13 @@ const STATUS_DISPLAY: Record<string, { icon: string; label: string; color: strin
   unknown: { icon: "❓", label: "Not Scanned", color: "#566373" },
 };
 
-const PROVIDER_ORDER = ["google", "anthropic", "openai", "meta", "mistral"];
+const PROVIDER_ORDER = ["google", "anthropic", "openai", "meta", "mistralai"];
 const PROVIDER_LABELS: Record<string, string> = {
   google: "Google",
   anthropic: "Anthropic",
   openai: "OpenAI",
   meta: "Meta",
-  mistral: "Mistral",
+  mistralai: "Mistral AI",
 };
 
 function SettingsPageInner() {
@@ -174,43 +174,31 @@ function SettingsPageInner() {
     return sorted;
   }, [models]);
 
-  // Scan models
+  // Scan models — runs entirely on Cloud Run, returns synchronously
   const handleScan = async () => {
     if (!firstPrimeId) return;
     setScanning(true);
     setModels((prev) => prev.map((m) => ({ ...m, status: "checking" as const })));
 
-    const result = await api<{ commandId: string }>(`/api/primes/${firstPrimeId}/models/scan`, {
-      method: "POST",
-    });
+    try {
+      const result = await api<{
+        models: ModelInfo[];
+        bestModel: string;
+        discovered: number;
+        available: number;
+        scannedAt: string;
+      }>(`/api/primes/${firstPrimeId}/models/scan`, { method: "POST" });
 
-    if (!result?.commandId) {
-      setScanning(false);
-      setModels((prev) => prev.map((m) => ({ ...m, status: "unknown" as const })));
-      return;
-    }
-
-    const maxAttempts = 60;
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const cmd = await api<{ status: string; result?: string }>(
-        `/api/primes/${firstPrimeId}/commands/${result.commandId}`
-      );
-      if (cmd?.status === "complete" && cmd.result) {
-        try {
-          const scanResult = JSON.parse(cmd.result);
-          if (scanResult.models) {
-            setModels(scanResult.models);
-            setScannedAt(new Date().toISOString());
-          }
-        } catch {
-          /* ignore parse error */
-        }
-        break;
+      if (result?.models) {
+        setModels(result.models);
+        setScannedAt(result.scannedAt);
+      } else {
+        // Fallback: reload from Firestore
+        await loadModels();
       }
-      if (cmd?.status === "failed") break;
+    } catch {
+      await loadModels();
     }
-    await loadModels();
     setScanning(false);
   };
 
