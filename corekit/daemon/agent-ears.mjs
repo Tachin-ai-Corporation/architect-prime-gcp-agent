@@ -26,15 +26,10 @@ const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const PRIME_ID = process.env.PRIME_ID || '';
 const AGENT_ID = process.env.AGENT_ID || 'agent';
 
-// Agent hostname for Firestore path
-// hostname() returns e.g. "fleet-chucknorris-tom"
-// Strip "fleet-" and then "{primeId}-" to get "tom" matching Firestore doc IDs
+// Agent hostname for Firestore path (fleet-{name} → {name})
 let AGENT_HOSTNAME = '';
 try {
-  const raw = osHostname().replace(/^fleet-/, '');
-  AGENT_HOSTNAME = PRIME_ID && raw.startsWith(`${PRIME_ID}-`)
-    ? raw.slice(PRIME_ID.length + 1)
-    : raw;
+  AGENT_HOSTNAME = osHostname().replace(/^fleet-/, '');
 } catch {}
 
 const GATEWAY_URL = 'http://127.0.0.1:18789/v1/chat/completions';
