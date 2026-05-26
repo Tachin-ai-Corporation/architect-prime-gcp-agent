@@ -67,13 +67,46 @@ function detectKindFromUrl(url: string): { kind: ContextEntry["kind"]; ref: stri
 /* ---- Blank entry for the add form ---- */
 const BLANK_FORM = { key: "", kind: "url" as ContextEntry["kind"], ref: "", url: "", name: "", summary: "" };
 
+/* ---- Normalize legacy free-form context values ---- */
+function normalizeEntry(key: string, raw: unknown): ContextEntry {
+  // Already a proper ContextEntry (has 'kind' and 'name')
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && "kind" in raw && "name" in raw) {
+    return raw as ContextEntry;
+  }
+  // Legacy: plain string
+  if (typeof raw === "string") {
+    return { kind: "convention", ref: null, name: key.replace(/_/g, " "), summary: raw };
+  }
+  // Legacy: array (e.g. service_accounts, cloud_run_services)
+  if (Array.isArray(raw)) {
+    const summary = raw.map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item === "object" && item !== null) {
+        return Object.entries(item).map(([k, v]) => `${k}: ${v}`).join(", ");
+      }
+      return String(item);
+    }).join("\n");
+    return { kind: "dataset", ref: null, name: key.replace(/_/g, " "), summary };
+  }
+  // Legacy: nested object without kind/name
+  if (raw && typeof raw === "object") {
+    const summary = Object.entries(raw).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join("\n");
+    return { kind: "convention", ref: null, name: key.replace(/_/g, " "), summary };
+  }
+  // Fallback
+  return { kind: "convention", ref: null, name: key.replace(/_/g, " "), summary: String(raw ?? "") };
+}
+
 /* ---- Component ---- */
 export function ContextEditor({ context, onChange, readOnly = false }: ContextEditorProps) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState({ ...BLANK_FORM });
 
-  const entries = Object.entries(context);
+  // Normalize all entries so legacy free-form values render properly
+  const entries: [string, ContextEntry][] = Object.entries(context).map(
+    ([key, raw]) => [key, normalizeEntry(key, raw)]
+  );
 
   /* ---- Toggle expand ---- */
   const toggleExpand = useCallback((key: string) => {
