@@ -166,6 +166,33 @@ for m in garden:
 DISCONTINUED = {'gemini-3-pro-preview', 'gemini-3-flash-preview'}
 candidates = {k: v for k, v in candidates.items() if k not in DISCONTINUED}
 
+# --- Add curated third-party MaaS models ---
+# These ARE available in Model Garden but are NOT returned by `gcloud ai model-garden models list`.
+# They use the OpenAI-compatible endpoint (/endpoints/openapi) instead of generateContent/rawPredict.
+# Update this list when new models appear in Model Garden.
+THIRD_PARTY_MAAS = [
+    # Meta Llama
+    {'id': 'llama-4-scout-17b-16e-instruct-maas',      'provider': 'meta',      'tier': 'preview'},
+    {'id': 'llama-4-maverick-17b-128e-instruct-maas',   'provider': 'meta',      'tier': 'preview'},
+    {'id': 'llama-3.3-70b-instruct-maas',               'provider': 'meta',      'tier': 'ga'},
+    {'id': 'llama-3.2-90b-vision-instruct-maas',        'provider': 'meta',      'tier': 'ga'},
+    # Mistral
+    {'id': 'mistral-large-2411',                        'provider': 'mistralai', 'tier': 'ga'},
+    {'id': 'codestral-2501',                            'provider': 'mistralai', 'tier': 'ga'},
+    {'id': 'mistral-nemo-2407',                         'provider': 'mistralai', 'tier': 'ga'},
+    {'id': 'mistral-small-2503',                        'provider': 'mistralai', 'tier': 'ga'},
+]
+for m in THIRD_PARTY_MAAS:
+    mid = m['id']
+    if mid not in candidates:
+        candidates[mid] = {
+            'id': mid,
+            'name': make_name(mid),
+            'tier': m['tier'],
+            'provider': m['provider'],
+            'maas_openai': True,  # flag: use OpenAI-compatible endpoint for probing
+        }
+
 # --- Probe each ---
 TOKEN = '${TOKEN}'
 LOC = '${LOCATION}'
@@ -180,10 +207,20 @@ def _do_probe(url, body):
     except urllib.error.HTTPError as e: return e.code
     except: return 0
 
-def probe(mid, provider, tier='ga'):
+def probe(mid, info):
+    provider = info['provider']
+    tier = info.get('tier', 'ga')
+    is_openai_maas = info.get('maas_openai', False)
+
     body_google = b'{"contents":[{"role":"user","parts":[{"text":"pong"}]}],"generationConfig":{"maxOutputTokens":5}}'
     body_anthropic = b'{"anthropic_version":"vertex-2023-10-16","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}'
     body_generic = b'{"max_tokens":5,"messages":[{"role":"user","content":"hi"}]}'
+
+    if is_openai_maas:
+        # Meta Llama, Mistral, etc. — use OpenAI-compatible endpoint
+        body = json.dumps({"model": f"{provider}/{mid}", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}).encode()
+        url = f"https://{LOC}-aiplatform.googleapis.com/v1beta1/projects/{PROJ}/locations/{LOC}/endpoints/openapi/chat/completions"
+        return _do_probe(url, body)
 
     if provider == 'google':
         # Google models: try regional first, then global for preview models
@@ -203,7 +240,7 @@ def probe(mid, provider, tier='ga'):
 
         return code
 
-    # Third-party models (Anthropic, Meta, Mistral, etc.) — use rawPredict
+    # Third-party models (Anthropic, etc.) — use rawPredict
     body = body_anthropic if provider == 'anthropic' else body_generic
     url = f"https://{LOC}-aiplatform.googleapis.com/v1/projects/{PROJ}/locations/{LOC}/publishers/{provider}/models/{mid}:rawPredict"
     return _do_probe(url, body)
@@ -224,7 +261,7 @@ if mode != 'probe-only':
     print(f"  {'─'*70}")
 
 for mid, info in sorted(candidates.items()):
-    code = probe(mid, info['provider'], info.get('tier', 'ga'))
+    code = probe(mid, info)
     if code in (200, 429):
         status, label = 'available', '✅ Available'
         if not best: best = mid
@@ -241,7 +278,8 @@ for mid, info in sorted(candidates.items()):
         print(f"  {info['name']:<40} {info['provider']:<12} {label}")
 
     oc = f"google-vertex/{mid}" if info['provider'] == 'google' else f"vertex_ai/{mid}"
-    results.append({**info, 'status': status, 'httpCode': code, 'openclawId': oc})
+    clean_info = {k: v for k, v in info.items() if k != 'maas_openai'}
+    results.append({**clean_info, 'status': status, 'httpCode': code, 'openclawId': oc})
 
 if mode != 'probe-only':
     avail = sum(1 for r in results if r['status'] == 'available')
