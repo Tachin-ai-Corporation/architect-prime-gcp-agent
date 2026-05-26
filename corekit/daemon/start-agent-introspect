@@ -19,9 +19,19 @@ if [ -z "$GCP_PROJECT_ID" ]; then
     'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
 fi
 
-# Fallback: read PRIME_ID from Docker container env
+# Fallback: read PRIME_ID from Docker container env (with retry for restart race)
 if [ -z "$PRIME_ID" ]; then
-  PRIME_ID="$(docker exec openclaw-gateway printenv PRIME_ID 2>/dev/null)" || true
+  for attempt in 1 2 3; do
+    PRIME_ID="$(docker exec openclaw-gateway printenv PRIME_ID 2>/dev/null)" || true
+    [ -n "$PRIME_ID" ] && break
+    sleep 2
+  done
+fi
+
+# Fallback: read from VM metadata (fleet agents have prime_id in metadata)
+if [ -z "$PRIME_ID" ]; then
+  PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null)" || true
 fi
 
 # Kill any orphan introspect processes inside the container

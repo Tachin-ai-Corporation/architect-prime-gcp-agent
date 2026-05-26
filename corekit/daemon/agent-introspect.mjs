@@ -412,11 +412,10 @@ function handleSetModel(params) {
     writeFileSync(configPath, JSON.stringify(config, null, 2));
     log('Updated openclaw.json with new model assignments', { default: newDefault, overrides });
 
-    // Restart gateway container
-    execSync('docker restart openclaw-gateway', { timeout: 60000, stdio: 'pipe' });
-    log('Gateway restarted after model change');
-
-    return { success: true, message: 'Models updated and gateway restarted' };
+    // NOTE: Do NOT restart gateway here. The restart kills this process
+    // (since we run inside the container via docker exec). The tick() loop
+    // will restart the gateway AFTER writing the result to Firestore.
+    return { success: true, message: 'Models updated — gateway restart pending', _needsRestart: true };
   } catch (err) {
     log('set_model error', { error: err.message });
     return { success: false, error: err.message };
@@ -445,16 +444,33 @@ async function tick() {
       wfs('/var/run/agent-introspect-last-poll', String(Date.now()));
     } catch {}
 
+    let needsRestart = false;
     const queries = await pollForQueries();
     for (const q of queries) {
       log('Processing query', { type: q.type, path: q.path });
       try {
         const result = processQuery(q.type, q.params);
+        // Write result to Firestore BEFORE any restart
         await writeResult(q.path, result);
         log('Query complete', { type: q.type });
+        // Check if handler flagged a restart (set_model)
+        if (result?._needsRestart) needsRestart = true;
       } catch (err) {
         log('Query error', { type: q.type, error: err.message });
         await writeError(q.path, err.message).catch(() => {});
+      }
+    }
+
+    // Restart gateway AFTER all results are written to Firestore.
+    // This will kill this process (running inside the container),
+    // but systemd RestartAlways will bring us back.
+    if (needsRestart) {
+      log('Restarting gateway (deferred from set_model)...');
+      try {
+        execSync('docker restart openclaw-gateway', { timeout: 60000, stdio: 'pipe' });
+      } catch (err) {
+        // Expected: this process dies during the restart
+        log('Gateway restart (expected exit)', { error: err.message });
       }
     }
   } catch (err) {
