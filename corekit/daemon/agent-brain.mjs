@@ -235,6 +235,7 @@ function processToCheckpointPlan(process, parameters = {}) {
       _step_type: step.type || 'standard',
       _optional: step.optional || false,
       _specialty: step.specialty || null,
+      _approval_message: substitute(step.approval_message || null),
     };
     currentTasks.push(task);
 
@@ -431,6 +432,7 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
           agent: task.agent || 'motor',
           optional: task._optional || false,
           specialty: task._specialty || null,
+          approval_message: task._approval_message || null,
         },
         project_id: mission.project_id || null,
         process_id: processId,
@@ -584,6 +586,27 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
         await firestoreWrite('work', mission.id, mission);
         await writeHistory(mission.id, 'active', 'awaiting_approval', 'brain', `Process paused — approval gate`);
 
+        // Build context summary from completed steps
+        const priorSteps = [...allResults, ...cpResults];
+        const completedSummary = priorSteps.length > 0
+          ? priorSteps.map(r => `${r.success ? '✅' : '❌'} **Step ${r.step}** (${r.agent}): ${(r.result || '').substring(0, 400)}`).join('\n\n')
+          : '';
+
+        // Use custom approval_message from process definition if available
+        const customMessage = tEnv.source_meta?.approval_message || '';
+        const approvalTitle = tEnv.title || tEnv.instruction || 'Approval needed';
+
+        const notifOutput = [
+          `⏸ **Process paused — approval needed**`,
+          ``,
+          `**${approvalTitle.substring(0, 200)}**`,
+          customMessage ? `\n${customMessage}` : '',
+          tEnv.instruction && !customMessage ? `\nDetails: ${tEnv.instruction}` : '',
+          completedSummary ? `\n### Completed Steps\n${completedSummary}` : '',
+          ``,
+          `Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
+        ].filter(Boolean).join('\n');
+
         // Send notification
         const notifId = generateId('w');
         await firestoreWrite('work', notifId, {
@@ -594,7 +617,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
           status: 'complete',
           intent: 'notification',
           instruction: 'Approval gate notification',
-          output: `⏸ **Process paused — approval needed**\n\n**${(tEnv.title || tEnv.instruction || '').substring(0, 200)}**\n\n${tEnv.instruction ? `Details: ${tEnv.instruction}\n\n` : ''}Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
+          output: notifOutput,
           source_channel: mission.source_channel || 'system',
           source_meta: { approval_id: approvalId, notification_type: 'approval_gate' },
           created_at: now(),
