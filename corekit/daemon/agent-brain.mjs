@@ -1389,13 +1389,22 @@ function buildUserPrompt(mode, payload) {
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
         dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as "short_circuit" and reference the prior result, or classify as "attach" to add follow-up context. Only create new_mission if the inbound is genuinely different work.',
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
+        required_processes: 'CRITICAL: Projects may define required_processes — activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
       },
     };
     if (Object.keys(PROJECTS).length > 0) {
-      classifyPayload.project_registry = Object.values(PROJECTS).map(p => ({
-        id: p.id, name: p.name, description: p.description,
-        context_summary: JSON.stringify(p.context || {}),
-      }));
+      classifyPayload.project_registry = Object.values(PROJECTS).map(p => {
+        const entry = {
+          id: p.id, name: p.name, description: p.description,
+          context_summary: JSON.stringify(p.context || {}),
+        };
+        // Surface required_processes so Cortex can match incoming work
+        const rp = p.required_processes || p.context?.required_processes;
+        if (rp && Array.isArray(rp) && rp.length > 0) {
+          entry.required_processes = rp;
+        }
+        return entry;
+      });
     }
     if (Object.keys(PROCESSES).length > 0) {
       classifyPayload.process_registry = Object.values(PROCESSES).map(p => ({
@@ -1420,7 +1429,13 @@ function buildUserPrompt(mode, payload) {
     // Inject project context if envelope is scoped to a project
     const envProjectId = payload.envelope?.project_id;
     if (envProjectId && PROJECTS[envProjectId]) {
-      decidePayload.project = PROJECTS[envProjectId];
+      const proj = PROJECTS[envProjectId];
+      decidePayload.project = proj;
+      // Surface required_processes explicitly so Cortex sees them prominently
+      const rp = proj.required_processes || proj.context?.required_processes;
+      if (rp && Array.isArray(rp) && rp.length > 0) {
+        decidePayload.required_processes = rp;
+      }
     }
     // Inject available processes so Cortex can suggest follow_process
     if (Object.keys(PROCESSES).length > 0) {

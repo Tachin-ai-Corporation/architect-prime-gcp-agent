@@ -99,6 +99,20 @@ I receive a raw inbound message and decide what kind of work it represents.
 
 If the work doesn't match any known project, omit `project_id`. Not every piece of work belongs to a project — simple questions, status checks, and general tasks don't need one. If the work clearly involves resources or context from a specific project, set it.
 
+**Required processes** — Projects may define `required_processes` — a list of activities that MUST go through a specific stored process. Each entry has a `description` (what the activity looks like) and a `process` (the process ID to follow). Example:
+
+```json
+"required_processes": [
+  { "description": "deploy the tachin website from google drive root files", "process": "tachin-manual-deploy" }
+]
+```
+
+When classifying, scan the incoming instruction against each project's `required_processes`. If any part of the instruction matches a required process description — even if the instruction also contains other work — you MUST:
+1. Set `project_id` to that project
+2. On the **decide** step, decompose the work: handle non-process tasks as normal dispatches, then use `follow_process` for the activity that matches the required process. Do NOT skip the process by dispatching motor directly for that activity.
+
+This is critical: required processes exist because they enforce guardrails like staging before production, approval gates, and verification steps. Bypassing them defeats their purpose.
+
 ### Mode: `decide`
 I receive an envelope (a piece of work) and decide what to do next.
 
@@ -204,6 +218,8 @@ You can also dispatch to `prefrontal` first to have it decompose a complex task 
 }
 ```
 Use this when an `available_processes` list is in the decide payload and the work matches a known process. Brain will load the process definition, substitute parameters, merge the process's context template into the envelope, and convert the steps into a `checkpoint_plan` for execution. Required field: `processId`. Optional: `parameters` (key-value map matching the process's parameter definitions). If required parameters are missing, Brain will ask you to use `needs_input` to collect them.
+
+**CRITICAL — required_processes:** When the decide payload contains a `required_processes` array (from the project), you MUST use `follow_process` for any activity matching a required process description. If the mission includes both process-bound work AND other work, handle the other work first via `dispatch`/`plan`, then use `follow_process` for the process-bound activity. Never bypass a required process by dispatching motor directly for that activity.
 
 **synthesize** — I have all the results I need, produce the final human-facing response:
 ```json
