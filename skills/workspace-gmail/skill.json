@@ -1,0 +1,13 @@
+{
+  "id": "workspace-gmail",
+  "name": "Gmail",
+  "version": "1.0.0",
+  "description": "Search, read, send, and draft emails via Gmail",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "workspace",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When sending, reading, searching, or drafting emails"
+}

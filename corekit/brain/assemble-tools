@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
-# assemble-tools — Build TOOLS.md + apply specialty SOUL appends
+# assemble-tools — Build per-agent TOOLS.md from skill packages
 #
-# Reads agent-types.json to determine which skills this agent
-# has, then concatenates their SKILL.md files into a single
-# TOOLS.md that OpenClaw reads as part of the workspace.
+# Reads skill.json manifests to determine which skills route to
+# which brain agent, then generates targeted TOOLS.md files:
+#   - motor/cerebellum/temporal-research: full SKILL.md content
+#   - cortex/prefrontal: skill INDEX only (name + when_to_use)
 #
 # Also appends specialty-specific SOUL sections to sub-agent
-# workspace SOUL.md files (e.g., devops cortex anti-hallucination
-# rules, motor operational procedures).
+# workspace SOUL.md files.
 #
 # Usage: assemble-tools [agent-type]
 #   agent-type defaults to "prime"
@@ -24,9 +24,19 @@ SKILLS_DIR="${OC}/skills"
 TYPES_FILE="${OC}/corekit/agent-types.json"
 SPECIALTIES_DIR="${OC}/corekit/specialties"
 WORKSPACE="${OC}/workspace"
-OUT="${WORKSPACE}/TOOLS.md"
+CUSTOM_SKILLS_DIR="${WORKSPACE}/custom-skills"
 
-# Determine skill list
+# Brain agent workspaces
+declare -A AGENT_WORKSPACES=(
+  [cortex]="${OC}/workspace"
+  [motor]="${OC}/workspace-motor"
+  [cerebellum]="${OC}/workspace-cerebellum"
+  [temporal-research]="${OC}/workspace-temporal-research"
+  [temporal-memory]="${OC}/workspace-temporal-memory"
+  [prefrontal]="${OC}/workspace-prefrontal"
+)
+
+# ---- Determine skill list for this agent type ----
 if [[ "$AGENT_TYPE" == "prime" ]]; then
   SKILLS="agent-ask fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade memory-consolidate"
 elif [[ -f "$TYPES_FILE" ]]; then
@@ -44,50 +54,143 @@ else
   SKILLS="agent-ask"
 fi
 
-# ---- Phase 1: Assemble TOOLS.md from skills ----
-{
-  echo "# Tools — ${AGENT_TYPE}"
-  echo ""
-  echo "The following skills are available. Use exec to run the commands described."
-  echo ""
+# ---- Collect all skill packages with their metadata ----
+# Each entry: skill_id|agent_part|skill_dir|when_to_use|name
+SKILL_ENTRIES=()
 
-  # Standard skills from $SKILLS_DIR
-  for skill in $SKILLS; do
-    SKILL_FILE="${SKILLS_DIR}/${skill}/SKILL.md"
-    if [[ -f "$SKILL_FILE" ]]; then
-      echo "---"
-      echo ""
-      cat "$SKILL_FILE"
-      echo ""
-    fi
-  done
+collect_skill() {
+  local skill_id="$1"
+  local skill_dir="$2"
+  local skill_json="${skill_dir}/skill.json"
+  local skill_md="${skill_dir}/SKILL.md"
 
-  # Specialty-specific skills (from specialties/{type}/skills/)
-  SPEC_SKILLS_DIR="${SPECIALTIES_DIR}/${AGENT_TYPE}/skills"
-  if [[ -d "$SPEC_SKILLS_DIR" ]]; then
-    for skill_dir in "$SPEC_SKILLS_DIR"/*/; do
-      SKILL_FILE="${skill_dir}SKILL.md"
-      if [[ -f "$SKILL_FILE" ]]; then
-        echo "---"
-        echo ""
-        cat "$SKILL_FILE"
-        echo ""
-      fi
-    done
+  if [[ ! -f "$skill_md" ]]; then
+    return
   fi
-} > "$OUT"
 
-# Copy TOOLS.md to sub-agent workspaces that need skill awareness
-# Prefrontal needs it for dispatch planning (which tools exist?)
-# Motor needs it to know which exec tools are available
-for sub in prefrontal motor; do
-  SUB_WS="${OC}/workspace-${sub}"
-  if [[ -d "$SUB_WS" ]]; then
-    cp "$OUT" "${SUB_WS}/TOOLS.md"
+  # Read agent_part from skill.json, default to "motor"
+  local agent_part="motor"
+  local when_to_use=""
+  local name="$skill_id"
+
+  if [[ -f "$skill_json" ]]; then
+    agent_part="$(python3 -c "
+import json
+d = json.load(open('$skill_json'))
+print(d.get('agent_part', 'motor'))
+" 2>/dev/null || echo "motor")"
+
+    when_to_use="$(python3 -c "
+import json
+d = json.load(open('$skill_json'))
+print(d.get('when_to_use', ''))
+" 2>/dev/null || echo "")"
+
+    name="$(python3 -c "
+import json
+d = json.load(open('$skill_json'))
+print(d.get('name', '$skill_id'))
+" 2>/dev/null || echo "$skill_id")"
+  fi
+
+  SKILL_ENTRIES+=("${skill_id}|${agent_part}|${skill_dir}|${when_to_use}|${name}")
+}
+
+# Collect standard skills
+for skill in $SKILLS; do
+  SKILL_FILE_DIR="${SKILLS_DIR}/${skill}"
+  if [[ -d "$SKILL_FILE_DIR" ]]; then
+    collect_skill "$skill" "$SKILL_FILE_DIR"
   fi
 done
 
-echo "Assembled TOOLS.md into ${OUT} (+prefrontal, +motor)"
+# Collect specialty-specific skills
+SPEC_SKILLS_DIR="${SPECIALTIES_DIR}/${AGENT_TYPE}/skills"
+if [[ -d "$SPEC_SKILLS_DIR" ]]; then
+  for skill_dir in "$SPEC_SKILLS_DIR"/*/; do
+    if [[ -d "$skill_dir" ]]; then
+      skill_id="$(basename "$skill_dir")"
+      collect_skill "$skill_id" "$skill_dir"
+    fi
+  done
+fi
+
+# Collect per-agent custom skills (installed ad-hoc)
+if [[ -d "$CUSTOM_SKILLS_DIR" ]]; then
+  for skill_dir in "$CUSTOM_SKILLS_DIR"/*/; do
+    if [[ -d "$skill_dir" ]]; then
+      skill_id="$(basename "$skill_dir")"
+      collect_skill "$skill_id" "$skill_dir"
+    fi
+  done
+fi
+
+echo "Collected ${#SKILL_ENTRIES[@]} skill packages"
+
+# ---- Phase 1: Generate per-agent TOOLS.md ----
+# Execution agents get full SKILL.md content for their skills
+# Planning agents get a skill index only
+
+for agent in cortex motor cerebellum temporal-research prefrontal; do
+  WS="${AGENT_WORKSPACES[$agent]:-}"
+  if [[ -z "$WS" || ! -d "$WS" ]]; then
+    continue
+  fi
+
+  OUT="${WS}/TOOLS.md"
+
+  if [[ "$agent" == "cortex" || "$agent" == "prefrontal" ]]; then
+    # ---- INDEX MODE: name + when_to_use for all skills ----
+    {
+      echo "# Skill Index — ${AGENT_TYPE}"
+      echo ""
+      echo "Available skills in this agent's toolkit. Reference these when planning dispatches."
+      echo ""
+      echo "| Skill | When to Use |"
+      echo "|-------|-------------|"
+
+      for entry in "${SKILL_ENTRIES[@]}"; do
+        IFS='|' read -r sid spart sdir swhen sname <<< "$entry"
+        # Show the target agent so cortex/prefrontal know where to dispatch
+        echo "| **${sname}** (${spart}) | ${swhen} |"
+      done
+
+      echo ""
+      echo "Skills are routed to specific brain agents (shown in parentheses)."
+      echo "Dispatch to the correct agent when invoking a skill."
+    } > "$OUT"
+
+    echo "  ${agent}: skill index (${#SKILL_ENTRIES[@]} skills)"
+
+  else
+    # ---- FULL MODE: complete SKILL.md for matching skills ----
+    MATCH_COUNT=0
+    {
+      echo "# Tools — ${AGENT_TYPE} (${agent})"
+      echo ""
+      echo "The following skills are available. Use exec to run the commands described."
+      echo ""
+
+      for entry in "${SKILL_ENTRIES[@]}"; do
+        IFS='|' read -r sid spart sdir swhen sname <<< "$entry"
+        if [[ "$spart" == "$agent" ]]; then
+          SKILL_MD="${sdir}/SKILL.md"
+          if [[ -f "$SKILL_MD" ]]; then
+            echo "---"
+            echo ""
+            cat "$SKILL_MD"
+            echo ""
+            MATCH_COUNT=$((MATCH_COUNT + 1))
+          fi
+        fi
+      done
+    } > "$OUT"
+
+    echo "  ${agent}: ${MATCH_COUNT} skills (full SKILL.md)"
+  fi
+done
+
+echo "Generated per-agent TOOLS.md files"
 
 # ---- Phase 2: Append specialty SOUL sections to sub-agent workspaces ----
 SPEC_BRAIN_DIR="${SPECIALTIES_DIR}/${AGENT_TYPE}/brain"
@@ -96,7 +199,7 @@ APPEND_COUNT=0
 if [[ -d "$SPEC_BRAIN_DIR" ]]; then
   for sub in cortex motor prefrontal cerebellum temporal-memory temporal-research; do
     APPEND_FILE="${SPEC_BRAIN_DIR}/${sub}/SOUL_APPEND.md"
-    SUB_SOUL="${OC}/workspace-${sub}/SOUL.md"
+    SUB_SOUL="${AGENT_WORKSPACES[$sub]:-${OC}/workspace-${sub}}/SOUL.md"
     if [[ -f "$APPEND_FILE" && -f "$SUB_SOUL" ]]; then
       echo "" >> "$SUB_SOUL"
       echo "---" >> "$SUB_SOUL"
@@ -109,3 +212,4 @@ if [[ -d "$SPEC_BRAIN_DIR" ]]; then
 fi
 
 echo "Specialty SOUL appends: ${APPEND_COUNT} applied"
+echo "Assembly complete for agent type: ${AGENT_TYPE}"

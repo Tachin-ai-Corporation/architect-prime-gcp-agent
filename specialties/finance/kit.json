@@ -1,0 +1,9 @@
+{
+  "id": "finance",
+  "name": "Finance Analyst",
+  "version": "1.0.0",
+  "description": "Budget tracking, cost analysis, financial reporting, forecasting, vendor management",
+  "base_skills": ["agent-ask", "workspace-gmail", "workspace-sheets"],
+  "specialty_skills": [],
+  "brain_appends": []
+}

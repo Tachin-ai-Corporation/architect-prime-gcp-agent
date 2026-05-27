@@ -1,0 +1,9 @@
+{
+  "id": "data",
+  "name": "Data Engineer",
+  "version": "1.0.0",
+  "description": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
+  "base_skills": ["agent-ask", "workspace-sheets"],
+  "specialty_skills": [],
+  "brain_appends": []
+}

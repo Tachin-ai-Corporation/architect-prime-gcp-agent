@@ -1,0 +1,13 @@
+{
+  "id": "gcp-devops",
+  "name": "GCP DevOps Operations",
+  "version": "1.0.0",
+  "description": "GCP infrastructure procedures — service accounts, IAM, Cloud Run, Cloud Build",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "infrastructure",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When performing GCP infrastructure tasks via gcloud CLI"
+}

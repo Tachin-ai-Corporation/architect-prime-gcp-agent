@@ -1,0 +1,13 @@
+{
+  "id": "agent-ask",
+  "name": "Vertex AI Grounding Search",
+  "version": "1.0.0",
+  "description": "Real-time web search via Vertex AI grounding for current information",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "search",
+  "agent_part": "temporal-research",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When you need current, real-time information from the web"
+}

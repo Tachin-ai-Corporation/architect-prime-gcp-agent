@@ -1,0 +1,13 @@
+{
+  "id": "fleet-verify",
+  "name": "Fleet Verify",
+  "version": "1.0.0",
+  "description": "Ping a fleet agent to check if it's alive and responding",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "fleet",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When verifying, pinging, or checking if a fleet agent is online"
+}

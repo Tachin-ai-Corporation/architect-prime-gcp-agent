@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# ============================================================
+# skill-author — Generate a skill package from observed patterns
+#
+# Motor tool used by Prime's skill discovery responsibility.
+# Generates a well-formed skill package (skill.json + SKILL.md)
+# from a description of what the skill does.
+#
+# Usage:
+#   skill-author create --id <id> --name <name> --description <desc> \
+#     --agent-part <part> --category <cat> --when-to-use <when> \
+#     [--origin learned] [--author <author>] [--output-dir <dir>]
+#
+#   skill-author validate --dir <skill-dir>
+#
+#   skill-author list-parts
+#
+# Outputs:
+#   <output-dir>/<id>/
+#     skill.json    — Metadata manifest
+#     SKILL.md      — Instructions (generated from --description)
+#
+# Environment:
+#   OC_HOST_ROOT — OpenClaw root (default: /opt/openclaw)
+# ============================================================
+set -euo pipefail
+
+OC="${OC_HOST_ROOT:-/opt/openclaw}/.openclaw"
+STAGING_DIR="${OC}/workspace/skill-staging"
+
+ACTION="${1:-help}"
+shift || true
+
+show_help() {
+  cat <<'EOF'
+skill-author — Generate and validate skill packages
+
+Commands:
+  create    Generate a new skill package
+  validate  Validate an existing skill package
+  list-parts  Show valid agent_part values
+
+Create options:
+  --id           Skill ID (lowercase, hyphens, e.g. "brand-image-check")
+  --name         Human-readable name (e.g. "Brand Image Compliance")
+  --description  What the skill does (used to generate SKILL.md)
+  --agent-part   Brain agent: motor, cerebellum, temporal-research, cortex, prefrontal
+  --category     Category: workspace, fleet, search, memory, infrastructure, verification, custom
+  --when-to-use  When this skill should be invoked
+  --origin       Origin: core, specialty, learned (default: learned)
+  --author       Author (default: current agent identity)
+  --output-dir   Output directory (default: workspace/skill-staging)
+  --skill-md     Full SKILL.md content (if provided, skips generation)
+
+Validate options:
+  --dir          Path to skill directory to validate
+
+Examples:
+  skill-author create \
+    --id firebase-deploy-check \
+    --name "Firebase Deploy Verification" \
+    --description "After running firebase deploy, fetch the deployment URL and verify the page loads correctly. Check for 200 status, correct content, and no error pages." \
+    --agent-part cerebellum \
+    --category verification \
+    --when-to-use "After any Firebase Hosting deployment to verify the site is live and correct"
+
+  skill-author validate --dir workspace/skill-staging/firebase-deploy-check
+EOF
+}
+
+# ---- Parse arguments ----
+ID="" NAME="" DESC="" PART="" CAT="" WHEN="" ORIGIN="learned" AUTHOR="" OUTPUT="" SKILL_MD_CONTENT=""
+VALIDATE_DIR=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --id) ID="$2"; shift 2 ;;
+    --name) NAME="$2"; shift 2 ;;
+    --description) DESC="$2"; shift 2 ;;
+    --agent-part) PART="$2"; shift 2 ;;
+    --category) CAT="$2"; shift 2 ;;
+    --when-to-use) WHEN="$2"; shift 2 ;;
+    --origin) ORIGIN="$2"; shift 2 ;;
+    --author) AUTHOR="$2"; shift 2 ;;
+    --output-dir) OUTPUT="$2"; shift 2 ;;
+    --skill-md) SKILL_MD_CONTENT="$2"; shift 2 ;;
+    --dir) VALIDATE_DIR="$2"; shift 2 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+# ---- Command: list-parts ----
+if [[ "$ACTION" == "list-parts" ]]; then
+  echo "Valid agent_part values:"
+  echo "  motor            — Execution tools (Drive, Gmail, shell commands, fleet ops)"
+  echo "  cerebellum       — Verification and validation tools"
+  echo "  temporal-research — Web search and URL fetching tools"
+  echo "  cortex           — Decision and classification tools (rare)"
+  echo "  prefrontal       — Planning tools (rare)"
+  exit 0
+fi
+
+# ---- Command: validate ----
+if [[ "$ACTION" == "validate" ]]; then
+  if [[ -z "$VALIDATE_DIR" ]]; then
+    echo "ERROR: --dir is required for validate"
+    exit 1
+  fi
+
+  ERRORS=0
+
+  # Check skill.json exists
+  if [[ ! -f "${VALIDATE_DIR}/skill.json" ]]; then
+    echo "FAIL: Missing skill.json"
+    ERRORS=$((ERRORS + 1))
+  else
+    # Validate required fields
+    for field in id name version description agent_part origin when_to_use; do
+      val="$(python3 -c "import json; d=json.load(open('${VALIDATE_DIR}/skill.json')); print(d.get('$field', ''))" 2>/dev/null)"
+      if [[ -z "$val" ]]; then
+        echo "FAIL: skill.json missing required field: $field"
+        ERRORS=$((ERRORS + 1))
+      fi
+    done
+
+    # Validate agent_part value
+    part="$(python3 -c "import json; print(json.load(open('${VALIDATE_DIR}/skill.json')).get('agent_part',''))" 2>/dev/null)"
+    case "$part" in
+      motor|cerebellum|temporal-research|cortex|prefrontal) ;;
+      *) echo "FAIL: Invalid agent_part: $part"; ERRORS=$((ERRORS + 1)) ;;
+    esac
+  fi
+
+  # Check SKILL.md exists
+  if [[ ! -f "${VALIDATE_DIR}/SKILL.md" ]]; then
+    echo "FAIL: Missing SKILL.md"
+    ERRORS=$((ERRORS + 1))
+  else
+    # Check minimum content
+    lines="$(wc -l < "${VALIDATE_DIR}/SKILL.md")"
+    if [[ "$lines" -lt 5 ]]; then
+      echo "WARN: SKILL.md is very short ($lines lines)"
+    fi
+  fi
+
+  if [[ "$ERRORS" -eq 0 ]]; then
+    echo "PASS: Skill package is valid"
+    exit 0
+  else
+    echo "ERRORS: $ERRORS validation failures"
+    exit 1
+  fi
+fi
+
+# ---- Command: create ----
+if [[ "$ACTION" == "create" ]]; then
+  # Validate required fields
+  missing=()
+  [[ -z "$ID" ]] && missing+=("--id")
+  [[ -z "$NAME" ]] && missing+=("--name")
+  [[ -z "$DESC" ]] && missing+=("--description")
+  [[ -z "$PART" ]] && missing+=("--agent-part")
+  [[ -z "$CAT" ]] && missing+=("--category")
+  [[ -z "$WHEN" ]] && missing+=("--when-to-use")
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "ERROR: Missing required fields: ${missing[*]}"
+    echo "Run 'skill-author help' for usage"
+    exit 1
+  fi
+
+  # Validate agent_part
+  case "$PART" in
+    motor|cerebellum|temporal-research|cortex|prefrontal) ;;
+    *) echo "ERROR: Invalid --agent-part: $PART (use: motor, cerebellum, temporal-research, cortex, prefrontal)"; exit 1 ;;
+  esac
+
+  # Set defaults
+  [[ -z "$OUTPUT" ]] && OUTPUT="$STAGING_DIR"
+  [[ -z "$AUTHOR" ]] && AUTHOR="$(cat "${OC}/workspace/IDENTITY.md" 2>/dev/null | head -5 | grep -oP '(?<=\*\*)[^*]+' | head -1 || echo 'prime')"
+
+  SKILL_DIR="${OUTPUT}/${ID}"
+  mkdir -p "$SKILL_DIR"
+
+  # Write skill.json
+  python3 -c "
+import json
+
+skill = {
+    'id': '$ID',
+    'name': '$NAME',
+    'version': '1.0.0',
+    'description': '''$DESC''',
+    'author': '$AUTHOR',
+    'origin': '$ORIGIN',
+    'category': '$CAT',
+    'agent_part': '$PART',
+    'scripts': [],
+    'dependencies': [],
+    'when_to_use': '''$WHEN'''
+}
+
+with open('${SKILL_DIR}/skill.json', 'w') as f:
+    json.dump(skill, f, indent=2)
+    f.write('\n')
+"
+
+  # Write SKILL.md (use provided content or generate from description)
+  if [[ -n "$SKILL_MD_CONTENT" ]]; then
+    echo "$SKILL_MD_CONTENT" > "${SKILL_DIR}/SKILL.md"
+  else
+    cat > "${SKILL_DIR}/SKILL.md" <<SKILLEOF
+# Skill: ${NAME}
+
+## What this skill does
+${DESC}
+
+## When to use
+${WHEN}
+
+## Procedures
+
+_This skill was auto-generated by skill-author. Add specific tool commands and procedures here._
+SKILLEOF
+  fi
+
+  echo "Created skill package at: ${SKILL_DIR}"
+  echo "  skill.json: $(wc -c < "${SKILL_DIR}/skill.json") bytes"
+  echo "  SKILL.md:   $(wc -l < "${SKILL_DIR}/SKILL.md") lines"
+  echo ""
+  echo "Next steps:"
+  echo "  1. Review and edit SKILL.md with specific procedures"
+  echo "  2. Validate: skill-author validate --dir ${SKILL_DIR}"
+  echo "  3. Submit for approval via Firestore skill-registry"
+  exit 0
+fi
+
+# ---- Command: help ----
+show_help

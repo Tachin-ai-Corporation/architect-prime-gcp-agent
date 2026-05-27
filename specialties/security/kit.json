@@ -1,0 +1,9 @@
+{
+  "id": "security",
+  "name": "Security Engineer",
+  "version": "1.0.0",
+  "description": "IAM audit, compliance, vulnerability assessment, security architecture, incident response",
+  "base_skills": ["agent-ask", "workspace-gmail"],
+  "specialty_skills": [],
+  "brain_appends": []
+}

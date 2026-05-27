@@ -1,0 +1,13 @@
+{
+  "id": "workspace-drive",
+  "name": "Google Drive",
+  "version": "1.0.0",
+  "description": "List, search, upload, download, organize, and share files in Google Drive",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "workspace",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When working with files in Google Drive — listing, uploading, downloading, organizing, or sharing"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "workspace-docs",
+  "name": "Google Docs",
+  "version": "1.0.0",
+  "description": "Create, read, write, and annotate Google Docs",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "workspace",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When creating, reading, editing, or commenting on Google Docs"
+}

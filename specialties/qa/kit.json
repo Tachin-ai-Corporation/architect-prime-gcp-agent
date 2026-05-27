@@ -1,0 +1,9 @@
+{
+  "id": "qa",
+  "name": "QA Engineer",
+  "version": "1.0.0",
+  "description": "Test planning, test automation, regression testing, performance testing, quality gates",
+  "base_skills": ["agent-ask"],
+  "specialty_skills": [],
+  "brain_appends": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "workspace-calendar",
+  "name": "Google Calendar",
+  "version": "1.0.0",
+  "description": "List, search, create, update, and delete Google Calendar events",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "workspace",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When managing calendar events — listing, creating, updating, or deleting meetings"
+}

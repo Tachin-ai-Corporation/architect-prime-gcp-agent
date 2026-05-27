@@ -1,0 +1,13 @@
+{
+  "id": "workspace-sheets",
+  "name": "Google Sheets",
+  "version": "1.0.0",
+  "description": "Read and write Google Sheets — get cell ranges, update values, append rows",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "workspace",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When reading from or writing to Google Sheets spreadsheets"
+}

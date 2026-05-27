@@ -1,0 +1,9 @@
+{
+  "id": "engineer",
+  "name": "Software Engineer",
+  "version": "1.0.0",
+  "description": "Full-stack development, code review, debugging, API design, architecture, testing",
+  "base_skills": ["agent-ask"],
+  "specialty_skills": [],
+  "brain_appends": []
+}
