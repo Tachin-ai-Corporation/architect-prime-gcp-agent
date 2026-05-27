@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# ============================================================
+# web-fetch — Fetch and extract content from a URL
+#
+# A research tool for temporal-research. Fetches a web page
+# and returns its content as either readable text or raw HTML.
+#
+# Usage:
+#   web-fetch --url "https://example.com/about" --format text
+#   web-fetch --url "https://example.com/page" --format html
+#
+# Options:
+#   --url <url>        URL to fetch (required)
+#   --format <fmt>     Output format: "text" (default) or "html"
+#   --max <bytes>      Max response size in bytes (default: 500000)
+#   --timeout <secs>   Request timeout in seconds (default: 10)
+#
+# The "text" format strips HTML tags and extracts readable content.
+# The "html" format returns the raw HTML for parsing.
+#
+# Safety:
+#   - Max 500KB response by default
+#   - 10 second timeout
+#   - Only HTTP/HTTPS URLs
+#   - User-Agent identifies as a bot
+# ============================================================
+set -euo pipefail
+
+# ---- DEFAULTS ----
+URL=""
+FORMAT="text"
+MAX_BYTES=500000
+TIMEOUT=10
+
+# ---- PARSE ARGS ----
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --url)      URL="$2"; shift 2 ;;
+    --format)   FORMAT="$2"; shift 2 ;;
+    --max)      MAX_BYTES="$2"; shift 2 ;;
+    --timeout)  TIMEOUT="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: web-fetch --url <url> [--format text|html] [--max <bytes>] [--timeout <secs>]"
+      exit 0
+      ;;
+    *) echo "[web-fetch] Unknown arg: $1" >&2; exit 1 ;;
+  esac
+done
+
+[[ -n "$URL" ]] || { echo "[web-fetch] ERROR: --url is required" >&2; exit 1; }
+
+# Validate URL scheme
+case "$URL" in
+  http://*|https://*) ;;
+  *) echo "[web-fetch] ERROR: Only http:// and https:// URLs are supported" >&2; exit 1 ;;
+esac
+
+# ---- FETCH ----
+RESPONSE=$(curl -sL \
+  --max-time "$TIMEOUT" \
+  --max-filesize "$MAX_BYTES" \
+  -H "User-Agent: Mozilla/5.0 (compatible; AgentResearch/1.0)" \
+  -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+  -H "Accept-Language: en-US,en;q=0.5" \
+  -w "\n__HTTP_CODE__:%{http_code}" \
+  "$URL" 2>/dev/null) || {
+  echo "[web-fetch] ERROR: Failed to fetch URL (timeout or connection error)"
+  exit 1
+}
+
+# Extract HTTP code
+HTTP_CODE=$(echo "$RESPONSE" | grep -o '__HTTP_CODE__:[0-9]*' | tail -1 | cut -d: -f2)
+BODY=$(echo "$RESPONSE" | sed '/__HTTP_CODE__:[0-9]*/d')
+
+if [[ "$HTTP_CODE" -ge 400 ]]; then
+  echo "[web-fetch] ERROR: HTTP $HTTP_CODE for $URL"
+  exit 1
+fi
+
+# ---- FORMAT OUTPUT ----
+if [[ "$FORMAT" == "html" ]]; then
+  # Raw HTML output (truncated to max)
+  echo "$BODY" | head -c "$MAX_BYTES"
+else
+  # Text extraction: strip HTML, collapse whitespace, extract readable content
+  echo "$BODY" | python3 -c "
+import sys, re, html
+
+raw = sys.stdin.read()
+
+# Remove script and style blocks
+raw = re.sub(r'<script[^>]*>.*?</script>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+raw = re.sub(r'<style[^>]*>.*?</style>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+raw = re.sub(r'<nav[^>]*>.*?</nav>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+raw = re.sub(r'<footer[^>]*>.*?</footer>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+
+# Extract title
+title_match = re.search(r'<title[^>]*>(.*?)</title>', raw, re.IGNORECASE | re.DOTALL)
+title = html.unescape(title_match.group(1).strip()) if title_match else ''
+
+# Extract meta description
+desc_match = re.search(r'<meta[^>]*name=[\"']description[\"'][^>]*content=[\"']([^\"']*)[\"']', raw, re.IGNORECASE)
+if not desc_match:
+    desc_match = re.search(r'<meta[^>]*content=[\"']([^\"']*)[\"'][^>]*name=[\"']description[\"']', raw, re.IGNORECASE)
+desc = html.unescape(desc_match.group(1).strip()) if desc_match else ''
+
+# Extract image URLs (for research purposes)
+img_urls = re.findall(r'<img[^>]*src=[\"']([^\"']+)[\"'][^>]*>', raw, re.IGNORECASE)
+# Filter to likely profile/meaningful images
+img_urls = [u for u in img_urls if not any(skip in u.lower() for skip in ['pixel', 'tracking', 'spacer', 'blank', 'icon', '1x1', 'logo'])]
+
+# Extract link URLs with text
+links = re.findall(r'<a[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>', raw, re.IGNORECASE | re.DOTALL)
+
+# Strip remaining HTML tags
+text = re.sub(r'<[^>]+>', ' ', raw)
+text = html.unescape(text)
+
+# Collapse whitespace
+text = re.sub(r'[ \t]+', ' ', text)
+text = re.sub(r'\n\s*\n', '\n\n', text)
+text = text.strip()
+
+# Truncate
+max_chars = int(${MAX_BYTES} * 0.6)  # text is ~60% of HTML size
+if len(text) > max_chars:
+    text = text[:max_chars] + '...[truncated]'
+
+# Output structured result
+output = []
+if title:
+    output.append(f'TITLE: {title}')
+if desc:
+    output.append(f'DESCRIPTION: {desc}')
+if img_urls[:10]:
+    output.append(f'IMAGES ({len(img_urls)} found): ' + ' | '.join(img_urls[:10]))
+output.append('')
+output.append(text)
+
+print('\n'.join(output))
+" 2>/dev/null || {
+    # Fallback: basic tag stripping if python fails
+    echo "$BODY" | sed 's/<[^>]*>//g' | head -c "$MAX_BYTES"
+  }
+fi

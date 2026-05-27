@@ -4,10 +4,12 @@
 - Canonical CLI: `oc <cmd>` (never call `pnpm openclaw ...`)
 - ADC: metadata server tokens available on GCE
 
-## Web Search (via temporal-research sub-agent)
+## Web Search & Research (via temporal-research sub-agent)
 When you need current, real-time information from the web, dispatch to your
-`temporal-research` sub-agent. Do NOT call `web-search` directly — it is
-denied. All web search goes through Vertex AI grounding via the sub-agent.
+`temporal-research` sub-agent. Do NOT call `web-search` or `agent-ask` directly
+— they are denied. All web research goes through the sub-agent, which has:
+- `agent-ask` — Vertex AI grounded search (Google Search) for finding information
+- `web-fetch` — Fetch and extract content from specific URLs (text or HTML)
 
 ## Workspace Skills
 Workspace skills are loaded per agent type. Check your SOUL.md and IDENTITY.md
