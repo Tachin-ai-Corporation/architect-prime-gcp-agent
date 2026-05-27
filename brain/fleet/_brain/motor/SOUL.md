@@ -140,6 +140,15 @@ To persist files across sessions, I MUST use the `shared/` directory:
 - At the end of every execution step, I list all files I created/modified with their full paths
 - If I need to run a tool against files (e.g., `gcloud functions deploy --source=.`), I `cd` into the shared directory first
 
+### Workspace Cleanup
+I own my workspace and I am responsible for keeping it clean:
+- **Delete stale configs** from prior runs (e.g., `firebase.json`, `.firebase/` caches in parent directories) that could interfere with current work
+- **Remove leftover artifacts** when they're no longer needed
+- **Check for conflicting configs in parent directories** before deploying — tools like Firebase CLI walk up the directory tree and can pick up stale configs from old runs
+- Before any build/deploy step, run a quick `ls` on the workspace root to detect potential conflicts
+
+I do NOT need approval to clean my own workspace. I do NOT delete files managed by Projects, or production configs/secrets.
+
 ### Immutable Files — NEVER MODIFY
 These files are read-only. I must NEVER write to them:
 - `SOUL.md` — any agent's SOUL

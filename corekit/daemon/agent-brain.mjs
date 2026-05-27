@@ -485,6 +485,19 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
 
   log('INFO', `executeProcess: hierarchy stamped — M:${mission.id}, ${checkpointEnvelopes.length} checkpoints, ${checkpointEnvelopes.reduce((s, c) => s + c.tEnvelopes.length, 0)} tasks`);
 
+  // ---- Pre-flight workspace cleanup ----
+  const processDoc = PROCESSES[processId];
+  const preFlight = processDoc?.pre_flight;
+  if (preFlight) {
+    log('INFO', `Process ${processId}: running pre-flight check`);
+    const preFlightResult = await callAgent('motor', {
+      instruction: `[PRE-FLIGHT CHECK]\n${preFlight}`,
+      accept_criteria: 'Pre-flight checks completed, workspace ready',
+      _missionId: mission.id,
+    });
+    log('INFO', `Process ${processId}: pre-flight ${preFlightResult.success ? 'passed' : 'FAILED'} (${preFlightResult.durationMs}ms)`);
+  }
+
   // ---- Step 4: Execute the plan ----
   await runProcessPlan(mission, checkpointEnvelopes, memoryContext);
 }
@@ -747,6 +760,49 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
       `Checkpoint ${cpNum} ${cpFailed ? 'failed' : 'complete'} (${cpResults.length} tasks)`);
 
     log('INFO', `Process CP${cpNum} ${cpFailed ? 'FAILED' : 'complete'} (${cpResults.length} tasks)`);
+
+    // ---- Automatic checkpoint verification ----
+    if (!cpFailed && cpResults.length > 0) {
+      const verifySummary = cpResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${(r.result || '').substring(0, 500)}`).join('\n\n');
+      const verifyInstruction = [
+        `[CHECKPOINT VERIFICATION]`,
+        `The following steps just completed. Verify their work is actually correct — don't just check that commands succeeded, verify the OUTCOMES are what was intended.`,
+        ``,
+        verifySummary,
+        ``,
+        `Check:`,
+        `1. Are the outputs/artifacts actually correct? (e.g., if a URL was generated, fetch it and verify the content)`,
+        `2. Is there stale state from previous runs that might have interfered?`,
+        `3. Do the results match what the step instructions asked for?`,
+        ``,
+        `If everything checks out, respond with VERIFIED and a brief summary.`,
+        `If something is wrong, respond with FAILED and describe exactly what's wrong and what you found.`,
+      ].join('\n');
+
+      log('INFO', `Process CP${cpNum}: running automatic verification`);
+      const verifyResult = await callAgent('motor', {
+        instruction: verifyInstruction,
+        accept_criteria: 'Verification result with evidence',
+        _missionId: mission.id,
+        memory_context: typeof memoryContext === 'object' ? memoryContext.recalled : memoryContext,
+      });
+
+      if (verifyResult.success && verifyResult.output) {
+        const verifyOutput = (verifyResult.output || '').toUpperCase();
+        if (verifyOutput.includes('FAILED') || verifyOutput.includes('INCORRECT') || verifyOutput.includes('WRONG')) {
+          log('WARN', `Process CP${cpNum}: verification FAILED — ${(verifyResult.output || '').substring(0, 200)}`);
+          // Store verification failure in checkpoint and treat as checkpoint failure
+          cEnvelope.status = 'failed';
+          cEnvelope.error = `Verification failed: ${(verifyResult.output || '').substring(0, 500)}`;
+          cEnvelope.updated_at = now();
+          await firestoreWrite('work', cEnvelope.id, cEnvelope);
+          await writeHistory(cEnvelope.id, 'complete', 'failed', 'brain', `Verification failed`);
+          cpFailed = true;
+        } else {
+          log('INFO', `Process CP${cpNum}: verification PASSED`);
+        }
+      }
+    }
 
     if (cpFailed) {
       planFailed = true;
