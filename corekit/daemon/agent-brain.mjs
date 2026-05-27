@@ -469,7 +469,17 @@ function firestoreDecode(fields) {
     else if ('nullValue' in v) obj[k] = null;
     else if ('timestampValue' in v) obj[k] = v.timestampValue;
     else if ('arrayValue' in v) {
-      obj[k] = (v.arrayValue.values || []).map(item => item.stringValue || item.integerValue || '');
+      obj[k] = (v.arrayValue.values || []).map(item => {
+        if ('mapValue' in item) return firestoreDecode(item.mapValue.fields || {});
+        if ('stringValue' in item) return item.stringValue;
+        if ('integerValue' in item) return parseInt(item.integerValue);
+        if ('booleanValue' in item) return item.booleanValue;
+        if ('doubleValue' in item) return item.doubleValue;
+        if ('nullValue' in item) return null;
+        if ('timestampValue' in item) return item.timestampValue;
+        if ('arrayValue' in item) return (item.arrayValue.values || []).map(sub => sub.stringValue || sub.integerValue || '');
+        return '';
+      });
     } else if ('mapValue' in v) {
       obj[k] = firestoreDecode(v.mapValue.fields);
     }
@@ -2297,6 +2307,17 @@ async function processEnvelope(envelope, memoryContext) {
     if (action === 'follow_process') {
       // Process execution: load process, validate parameters, convert to checkpoint_plan
       const processId = decision.processId || decision.process_id;
+
+      // Guard: prevent re-executing a process that already ran in this envelope
+      if (envelope.process_id) {
+        log('WARN', `follow_process: process '${envelope.process_id}' already executed on this envelope — forcing synthesize`);
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] Process '${envelope.process_id}' has already been executed on this envelope. You MUST now synthesize the results. Use action "synthesize" with a summary of what was accomplished.`,
+        });
+        continue;
+      }
+
       await ensureProcessesLoaded();
       const process = PROCESSES[processId];
 
