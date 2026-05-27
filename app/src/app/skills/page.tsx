@@ -28,6 +28,47 @@ interface SkillsResult {
   skillsDir: string;
 }
 
+interface SkillManifest {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  origin: "core" | "specialty" | "learned";
+  category: string;
+  agent_part: string;
+  when_to_use: string;
+}
+
+interface SkillInstall {
+  id: string;
+  installed_at: string;
+  installed_by: string;
+  origin: string;
+  version: string;
+  status: string;
+}
+
+interface SkillProposal {
+  id: string;
+  skill_id: string;
+  name: string;
+  description: string;
+  agent_part: string;
+  category: string;
+  origin: string;
+  type: "new" | "improvement";
+  status: "proposed" | "approved" | "rejected";
+  proposed_by: string;
+  proposed_at: string;
+  discovery_context: string;
+  skill_md: string;
+  skill_json: SkillManifest;
+  // For improvements
+  target_skill_id?: string;
+  diff_summary?: string;
+}
+
 /* ---- Constants ---- */
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; order: number }> = {
@@ -40,6 +81,16 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: string; order: numb
   config: { label: "Config", icon: "⚙️", order: 7 },
   custom: { label: "Custom", icon: "🧩", order: 8 },
 };
+
+const PART_ICONS: Record<string, string> = {
+  motor: "⚡",
+  cerebellum: "🔬",
+  "temporal-research": "🔮",
+  cortex: "🧠",
+  prefrontal: "📋",
+};
+
+type TabKey = "installed" | "library" | "proposals";
 
 export default function SkillsPageWrapper() {
   return (
@@ -58,6 +109,7 @@ function SkillsPage() {
   /* ---- URL params ---- */
   const paramPrime = searchParams.get("prime");
   const paramAgent = searchParams.get("agent");
+  const paramTab = searchParams.get("tab") as TabKey | null;
 
   const selectedPrimeId = paramPrime && primes.find((p) => p.id === paramPrime)
     ? paramPrime
@@ -65,7 +117,7 @@ function SkillsPage() {
 
   const fleet = selectedPrimeId ? sidebarFleet[selectedPrimeId] || [] : [];
 
-  /* ---- Agent selection: "prime" means the prime itself, otherwise a fleet agent name ---- */
+  /* ---- Agent selection ---- */
   const [localAgent, setLocalAgent] = useState<string | null>(paramAgent || null);
 
   useEffect(() => {
@@ -74,6 +126,14 @@ function SkillsPage() {
 
   const selectedAgent = localAgent;
   const isPrimeSelected = selectedAgent === "prime";
+
+  /* ---- Tab state ---- */
+  const [activeTab, setActiveTab] = useState<TabKey>(paramTab || (selectedAgent ? "installed" : "library"));
+
+  useEffect(() => {
+    if (paramTab) setActiveTab(paramTab);
+    else if (selectedAgent) setActiveTab("installed");
+  }, [paramTab, selectedAgent]);
 
   /* ---- Prime dropdown ---- */
   const [primeDropdownOpen, setPrimeDropdownOpen] = useState(false);
@@ -91,17 +151,18 @@ function SkillsPage() {
 
   /* ---- Update URL params ---- */
   const updateParams = useCallback(
-    (prime: string | null, agent: string | null) => {
+    (prime: string | null, agent: string | null, tab?: TabKey) => {
       const params = new URLSearchParams();
       if (prime) params.set("prime", prime);
       if (agent) params.set("agent", agent);
+      if (tab && tab !== "installed") params.set("tab", tab);
       const qs = params.toString();
       router.replace(`/skills${qs ? `?${qs}` : ""}`, { scroll: false });
     },
     [router]
   );
 
-  /* ---- Agent skills state ---- */
+  /* ---- VM Introspection (Installed tab) ---- */
   const [skills, setSkills] = useState<SkillsResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +170,19 @@ function SkillsPage() {
   const [upgrading, setUpgrading] = useState(false);
   const [upgradingFleet, setUpgradingFleet] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /* ---- Per-agent custom skills (Firestore) ---- */
+  const [customSkills, setCustomSkills] = useState<SkillInstall[]>([]);
+
+  /* ---- Skill catalog (Library tab) ---- */
+  const [catalog, setCatalog] = useState<SkillManifest[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState("");
+
+  /* ---- Proposals (Proposals tab) ---- */
+  const [proposals, setProposals] = useState<SkillProposal[]>([]);
+  const [proposalsLoading, setProposalsLoading] = useState(false);
+  const [previewProposal, setPreviewProposal] = useState<SkillProposal | null>(null);
 
   /* ---- Fetch skills via Firestore introspect bus ---- */
   const fetchSkills = useCallback(async () => {
@@ -118,12 +192,8 @@ function SkillsPage() {
     setError(null);
     setSkills(null);
 
-    // For Prime, the VM hostname is "prime-{id}" (e.g. prime-chucknorris).
-    // The introspect daemon uses hostname().replace(/^fleet-/, '') which does NOT strip "prime-",
-    // so it polls at primes/{id}/fleet/prime-{id}/introspect.
     const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
 
-    // 1. Submit query
     const submitRes = await api<{ queryId: string; status: string }>(
       `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect`,
       {
@@ -139,10 +209,9 @@ function SkillsPage() {
       return;
     }
 
-    // 2. Poll for result
     const queryId = submitRes.queryId;
     let attempts = 0;
-    const maxAttempts = 20; // ~20s max wait
+    const maxAttempts = 20;
 
     const poll = async () => {
       attempts++;
@@ -172,18 +241,46 @@ function SkillsPage() {
         return;
       }
 
-      // Continue polling
       pollRef.current = setTimeout(poll, 1000);
     };
 
-    // Start polling after 1s delay
     pollRef.current = setTimeout(poll, 1000);
   }, [selectedPrimeId, selectedAgent, isPrimeSelected]);
 
-  /* ---- Fetch when agent changes ---- */
+  /* ---- Fetch per-agent custom skills from Firestore ---- */
+  const fetchCustomSkills = useCallback(async () => {
+    if (!selectedPrimeId || !selectedAgent) return;
+    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
+    const res = await api<{ skills: SkillInstall[] }>(
+      `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/skills`
+    );
+    if (res?.skills) setCustomSkills(res.skills);
+  }, [selectedPrimeId, selectedAgent, isPrimeSelected]);
+
+  /* ---- Fetch skill catalog ---- */
+  const fetchCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    const res = await api<{ skills: SkillManifest[] }>("/api/skills");
+    if (res?.skills) setCatalog(res.skills);
+    setCatalogLoading(false);
+  }, []);
+
+  /* ---- Fetch proposals ---- */
+  const fetchProposals = useCallback(async () => {
+    if (!selectedPrimeId) return;
+    setProposalsLoading(true);
+    const res = await api<{ proposals: SkillProposal[] }>(
+      `/api/primes/${selectedPrimeId}/skill-proposals`
+    );
+    if (res?.proposals) setProposals(res.proposals);
+    setProposalsLoading(false);
+  }, [selectedPrimeId]);
+
+  /* ---- Effects ---- */
   useEffect(() => {
-    if (selectedAgent) {
+    if (selectedAgent && activeTab === "installed") {
       fetchSkills();
+      fetchCustomSkills();
     } else {
       setSkills(null);
       setError(null);
@@ -192,15 +289,60 @@ function SkillsPage() {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-  }, [fetchSkills, selectedAgent]);
+  }, [fetchSkills, fetchCustomSkills, selectedAgent, activeTab]);
 
-  /* ---- Upgrade CoreKit (works for both Prime and fleet) ---- */
+  useEffect(() => {
+    if (activeTab === "library") fetchCatalog();
+  }, [activeTab, fetchCatalog]);
+
+  useEffect(() => {
+    if (activeTab === "proposals") fetchProposals();
+  }, [activeTab, fetchProposals]);
+
+  /* ---- Install / Uninstall handlers ---- */
+  const handleInstallSkill = async (skillId: string, origin: string, version: string) => {
+    if (!selectedPrimeId || !selectedAgent) return;
+    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
+    await api(`/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/skills`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ skillId, origin, version }),
+    });
+    dialog.toast({ message: `Queued ${skillId} for install. Run CoreKit upgrade to apply.`, variant: "success" });
+    fetchCustomSkills();
+  };
+
+  const handleUninstallSkill = async (skillId: string) => {
+    if (!selectedPrimeId || !selectedAgent) return;
+    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
+    await api(`/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/skills?skillId=${skillId}`, {
+      method: "DELETE",
+    });
+    dialog.toast({ message: `Removed ${skillId}. Run CoreKit upgrade to apply.`, variant: "success" });
+    fetchCustomSkills();
+  };
+
+  /* ---- Proposal action handlers ---- */
+  const handleProposalAction = async (proposalId: string, action: "approve" | "reject") => {
+    if (!selectedPrimeId) return;
+    await api(`/api/primes/${selectedPrimeId}/skill-proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ proposalId, action }),
+    });
+    dialog.toast({
+      message: action === "approve" ? "Skill approved! Available in Library." : "Proposal rejected.",
+      variant: action === "approve" ? "success" : "error",
+    });
+    fetchProposals();
+  };
+
+  /* ---- Upgrade CoreKit ---- */
   const handleUpgrade = async () => {
     if (!selectedPrimeId || !selectedAgent) return;
     setUpgrading(true);
 
     if (isPrimeSelected) {
-      // Prime upgrade: queue upgrade_corekit command
       const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/commands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -212,7 +354,6 @@ function SkillsPage() {
         dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
       }
     } else {
-      // Fleet upgrade: queue fleet_upgrade command
       const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/commands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -281,33 +422,43 @@ function SkillsPage() {
       })
     : [];
 
+  /* ---- Library: group by agent_part, filter by search ---- */
+  const filteredCatalog = useMemo(() => {
+    const q = librarySearch.toLowerCase().trim();
+    const filtered = q
+      ? catalog.filter(
+          (s) =>
+            s.name.toLowerCase().includes(q) ||
+            s.id.toLowerCase().includes(q) ||
+            s.description.toLowerCase().includes(q)
+        )
+      : catalog;
+
+    const groups: Record<string, SkillManifest[]> = {};
+    for (const s of filtered) {
+      const part = s.agent_part || "motor";
+      if (!groups[part]) groups[part] = [];
+      groups[part].push(s);
+    }
+    return groups;
+  }, [catalog, librarySearch]);
+
+  /* ---- Custom skill IDs set (for quick lookup) ---- */
+  const customSkillIds = useMemo(() => new Set(customSkills.map((s) => s.id)), [customSkills]);
+
+  /* ---- Pending proposals count ---- */
+  const pendingCount = proposals.filter((p) => p.status === "proposed").length;
+
   /* ---- Agent strip info (Prime + fleet) ---- */
   const agentInfo = useMemo(() => {
     const agents: { name: string; online: boolean; status: string; isPrime: boolean }[] = [];
-
-    // Prime first
     const prime = primes.find((p) => p.id === selectedPrimeId);
     if (prime) {
-      agents.push({
-        name: "prime",
-        online: prime.status === "online",
-        status: prime.status,
-        isPrime: true,
-      });
+      agents.push({ name: "prime", online: prime.status === "online", status: prime.status, isPrime: true });
     }
-
-    // Fleet agents
-    fleet
-      .filter((a) => a.status !== "removed")
-      .forEach((agent) => {
-        agents.push({
-          name: agent.name,
-          online: agent.status === "online",
-          status: agent.status,
-          isPrime: false,
-        });
-      });
-
+    fleet.filter((a) => a.status !== "removed").forEach((agent) => {
+      agents.push({ name: agent.name, online: agent.status === "online", status: agent.status, isPrime: false });
+    });
     return agents;
   }, [fleet, primes, selectedPrimeId]);
 
@@ -317,6 +468,7 @@ function SkillsPage() {
       const next = localAgent === name ? null : name;
       setLocalAgent(next);
       setExpandedCategory(null);
+      setActiveTab(next ? "installed" : "library");
       updateParams(selectedPrimeId, next);
     },
     [localAgent, selectedPrimeId, updateParams]
@@ -332,6 +484,14 @@ function SkillsPage() {
       updateParams(primeId, null);
     },
     [updateParams]
+  );
+
+  const handleTabChange = useCallback(
+    (tab: TabKey) => {
+      setActiveTab(tab);
+      updateParams(selectedPrimeId, selectedAgent, tab);
+    },
+    [selectedPrimeId, selectedAgent, updateParams]
   );
 
   const prime = primes.find((p) => p.id === selectedPrimeId);
@@ -407,136 +567,416 @@ function SkillsPage() {
         </div>
       )}
 
+      {/* ---- Tab Bar ---- */}
+      <div className={styles.tabBar} id="skills-tab-bar">
+        <button
+          className={`${styles.tab} ${activeTab === "installed" ? styles.tabActive : ""}`}
+          onClick={() => handleTabChange("installed")}
+          disabled={!selectedAgent}
+          id="tab-installed"
+        >
+          Installed
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === "library" ? styles.tabActive : ""}`}
+          onClick={() => handleTabChange("library")}
+          id="tab-library"
+        >
+          Library
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === "proposals" ? styles.tabActive : ""}`}
+          onClick={() => handleTabChange("proposals")}
+          id="tab-proposals"
+        >
+          Proposals
+          {pendingCount > 0 && (
+            <span className={styles.tabBadge}>{pendingCount}</span>
+          )}
+        </button>
+      </div>
+
       <div className={styles.container}>
-        {/* ======== NO SELECTION: prompt ======== */}
-        {!selectedAgent && (
-          <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>🔧</div>
-            <div className={styles.emptyTitle}>Select an agent above</div>
-            <div className={styles.emptySub}>
-              Choose <strong>Prime</strong> or a fleet agent to view installed tools, skill packs, and upgrade CoreKit
-            </div>
-          </div>
+        {/* ======== TAB: INSTALLED ======== */}
+        {activeTab === "installed" && (
+          <>
+            {!selectedAgent && (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyIcon}>🔧</div>
+                <div className={styles.emptyTitle}>Select an agent above</div>
+                <div className={styles.emptySub}>
+                  Choose <strong>Prime</strong> or a fleet agent to view installed tools, skill packs, and upgrade CoreKit
+                </div>
+              </div>
+            )}
+
+            {selectedAgent && (
+              <>
+                <header className={styles.header}>
+                  <div>
+                    <h2 className={styles.title}>
+                      Installed — {displayLabel}
+                    </h2>
+                    {skills && (
+                      <p className={styles.subtitle}>
+                        {skills.tools.length} tools · {skills.skillPacks.length} skill packs · Live from VM
+                      </p>
+                    )}
+                    {loading && <p className={styles.subtitle}>Querying agent VM…</p>}
+                  </div>
+                  <div className={styles.headerActions}>
+                    <button
+                      className={styles.upgradeBtn}
+                      onClick={handleUpgrade}
+                      disabled={upgrading}
+                      id={isPrimeSelected ? "prime-upgrade-corekit-btn" : "agent-upgrade-corekit-btn"}
+                    >
+                      {upgrading ? "Upgrading…" : "⬆ Upgrade CoreKit"}
+                    </button>
+                    {isPrimeSelected && (
+                      <button
+                        className={styles.upgradeFleetBtn}
+                        onClick={handleUpgradeFleet}
+                        disabled={upgradingFleet || fleet.filter((a) => a.status !== "removed").length === 0}
+                        id="upgrade-fleet-btn"
+                      >
+                        {upgradingFleet ? "Upgrading…" : `⬆ Upgrade Fleet (${fleet.filter((a) => a.status !== "removed").length})`}
+                      </button>
+                    )}
+                  </div>
+                </header>
+
+                {/* Loading / Error */}
+                {loading && (
+                  <div className={styles.loadingState}>
+                    <span className={styles.spinner} />
+                    <span>Waiting for agent introspection response…</span>
+                  </div>
+                )}
+
+                {error && (
+                  <div className={styles.errorState}>
+                    <span>⚠️ {error}</span>
+                    <button className={styles.retryBtn} onClick={fetchSkills}>Retry</button>
+                  </div>
+                )}
+
+                {/* Tool Categories (from VM introspection) */}
+                {skills && groupedTools.map(([category, tools]) => {
+                  const meta = CATEGORY_LABELS[category] || { label: category, icon: "📦", order: 99 };
+                  const isExpanded = expandedCategory === category;
+
+                  return (
+                    <section key={category} className={styles.categorySection}>
+                      <button
+                        className={styles.categoryHeader}
+                        onClick={() => setExpandedCategory(isExpanded ? null : category)}
+                        id={`cat-${category}`}
+                      >
+                        <span className={styles.categoryIcon}>{meta.icon}</span>
+                        <span className={styles.categoryName}>{meta.label}</span>
+                        <span className={styles.categoryCount}>{tools.length}</span>
+                        <span className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}>▸</span>
+                      </button>
+                      {isExpanded && (
+                        <div className={styles.toolList}>
+                          {tools.sort((a, b) => a.name.localeCompare(b.name)).map((tool) => (
+                            <div key={tool.name} className={styles.toolRow}>
+                              <code className={styles.toolName}>{tool.name}</code>
+                              <span className={styles.toolDesc}>{tool.description}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+
+                {/* Skill Packs */}
+                {skills && skills.skillPacks.length > 0 && (
+                  <section className={styles.categorySection}>
+                    <button
+                      className={styles.categoryHeader}
+                      onClick={() => setExpandedCategory(expandedCategory === "_skills" ? null : "_skills")}
+                      id="cat-skillpacks"
+                    >
+                      <span className={styles.categoryIcon}>📚</span>
+                      <span className={styles.categoryName}>Skill Packs</span>
+                      <span className={styles.categoryCount}>{skills.skillPacks.length}</span>
+                      <span className={`${styles.chevron} ${expandedCategory === "_skills" ? styles.chevronOpen : ""}`}>▸</span>
+                    </button>
+                    {expandedCategory === "_skills" && (
+                      <div className={styles.toolList}>
+                        {skills.skillPacks.map((pack) => (
+                          <div key={pack.name} className={styles.toolRow}>
+                            <code className={styles.toolName}>{pack.name}</code>
+                            <span className={styles.toolDesc}>{pack.description || `${pack.files} files`}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Custom skills (from Firestore) */}
+                {customSkills.length > 0 && (
+                  <section className={styles.categorySection}>
+                    <button
+                      className={styles.categoryHeader}
+                      onClick={() => setExpandedCategory(expandedCategory === "_custom" ? null : "_custom")}
+                      id="cat-custom-skills"
+                    >
+                      <span className={styles.categoryIcon}>🧩</span>
+                      <span className={styles.categoryName}>Custom Skills</span>
+                      <span className={styles.categoryCount}>{customSkills.length}</span>
+                      <span className={`${styles.chevron} ${expandedCategory === "_custom" ? styles.chevronOpen : ""}`}>▸</span>
+                    </button>
+                    {expandedCategory === "_custom" && (
+                      <div className={styles.toolList}>
+                        {customSkills.map((sk) => (
+                          <div key={sk.id} className={styles.customSkillRow}>
+                            <div className={styles.customSkillInfo}>
+                              <code className={styles.toolName}>{sk.id}</code>
+                              <span className={styles.customSkillMeta}>
+                                {sk.origin} · v{sk.version} · {sk.status === "pending_install" ? "⏳ pending upgrade" : "✓ installed"}
+                              </span>
+                            </div>
+                            <button
+                              className={styles.uninstallBtn}
+                              onClick={() => handleUninstallSkill(sk.id)}
+                              title="Remove skill"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Add skill CTA */}
+                {skills && (
+                  <button
+                    className={styles.addSkillBtn}
+                    onClick={() => handleTabChange("library")}
+                    id="add-skill-btn"
+                  >
+                    + Add Skill
+                  </button>
+                )}
+
+                {skills && (
+                  <div className={styles.note} id="agent-skills-note">
+                    <span className={styles.noteIcon}>ℹ️</span>
+                    <span>
+                      Data read live from the agent VM filesystem.
+                      Source: <code>{skills.binDir}</code>
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
 
-        {/* ======== AGENT SELECTED: Skills view ======== */}
-        {selectedAgent && (
+        {/* ======== TAB: LIBRARY ======== */}
+        {activeTab === "library" && (
           <>
             <header className={styles.header}>
               <div>
-                <h2 className={styles.title}>
-                  Skills — {displayLabel}
-                </h2>
-                {skills && (
-                  <p className={styles.subtitle}>
-                    {skills.tools.length} tools · {skills.skillPacks.length} skill packs · Live from VM
-                  </p>
-                )}
-                {loading && <p className={styles.subtitle}>Querying agent VM…</p>}
-              </div>
-              <div className={styles.headerActions}>
-                <button
-                  className={styles.upgradeBtn}
-                  onClick={handleUpgrade}
-                  disabled={upgrading}
-                  id={isPrimeSelected ? "prime-upgrade-corekit-btn" : "agent-upgrade-corekit-btn"}
-                >
-                  {upgrading ? "Upgrading…" : "⬆ Upgrade CoreKit"}
-                </button>
-                {isPrimeSelected && (
-                  <button
-                    className={styles.upgradeFleetBtn}
-                    onClick={handleUpgradeFleet}
-                    disabled={upgradingFleet || fleet.filter((a) => a.status !== "removed").length === 0}
-                    id="upgrade-fleet-btn"
-                  >
-                    {upgradingFleet ? "Upgrading…" : `⬆ Upgrade Fleet (${fleet.filter((a) => a.status !== "removed").length})`}
-                  </button>
-                )}
+                <h2 className={styles.title}>Skill Library</h2>
+                <p className={styles.subtitle}>
+                  {catalog.length} skills available
+                  {selectedAgent && ` · Installing for ${displayLabel}`}
+                </p>
               </div>
             </header>
 
-            {/* ---- Loading state ---- */}
-            {loading && (
+            {/* Search */}
+            <div className={styles.librarySearch}>
+              <input
+                type="text"
+                className={styles.searchInput}
+                placeholder="Search skills…"
+                value={librarySearch}
+                onChange={(e) => setLibrarySearch(e.target.value)}
+                id="library-search"
+              />
+            </div>
+
+            {catalogLoading && (
               <div className={styles.loadingState}>
                 <span className={styles.spinner} />
-                <span>Waiting for agent introspection response…</span>
+                <span>Loading skill catalog…</span>
               </div>
             )}
 
-            {/* ---- Error state ---- */}
-            {error && (
-              <div className={styles.errorState}>
-                <span>⚠️ {error}</span>
-                <button className={styles.retryBtn} onClick={fetchSkills}>Retry</button>
-              </div>
-            )}
-
-            {/* ---- Tool Categories ---- */}
-            {skills && groupedTools.map(([category, tools]) => {
-              const meta = CATEGORY_LABELS[category] || { label: category, icon: "📦", order: 99 };
-              const isExpanded = expandedCategory === category;
-
-              return (
-                <section key={category} className={styles.categorySection}>
-                  <button
-                    className={styles.categoryHeader}
-                    onClick={() => setExpandedCategory(isExpanded ? null : category)}
-                    id={`cat-${category}`}
-                  >
-                    <span className={styles.categoryIcon}>{meta.icon}</span>
-                    <span className={styles.categoryName}>{meta.label}</span>
-                    <span className={styles.categoryCount}>{tools.length}</span>
-                    <span className={`${styles.chevron} ${isExpanded ? styles.chevronOpen : ""}`}>▸</span>
-                  </button>
-                  {isExpanded && (
-                    <div className={styles.toolList}>
-                      {tools.sort((a, b) => a.name.localeCompare(b.name)).map((tool) => (
-                        <div key={tool.name} className={styles.toolRow}>
-                          <code className={styles.toolName}>{tool.name}</code>
-                          <span className={styles.toolDesc}>{tool.description}</span>
+            {/* Skills grouped by agent_part */}
+            {!catalogLoading && Object.entries(filteredCatalog).map(([part, partSkills]) => (
+              <section key={part} className={styles.libraryGroup}>
+                <div className={styles.libraryGroupHeader}>
+                  <span className={styles.categoryIcon}>{PART_ICONS[part] || "📦"}</span>
+                  <span className={styles.categoryName}>{part}</span>
+                  <span className={styles.categoryCount}>{partSkills.length}</span>
+                </div>
+                <div className={styles.libraryCards}>
+                  {partSkills.map((skill) => {
+                    const isInstalled = customSkillIds.has(skill.id);
+                    return (
+                      <div key={skill.id} className={styles.skillCard} id={`skill-${skill.id}`}>
+                        <div className={styles.skillCardTop}>
+                          <div className={styles.skillCardName}>{skill.name}</div>
+                          <span className={`${styles.originBadge} ${styles[`origin_${skill.origin}`] || ""}`}>
+                            {skill.origin}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-
-            {/* ---- Skill Packs ---- */}
-            {skills && skills.skillPacks.length > 0 && (
-              <section className={styles.categorySection}>
-                <button
-                  className={styles.categoryHeader}
-                  onClick={() => setExpandedCategory(expandedCategory === "_skills" ? null : "_skills")}
-                  id="cat-skillpacks"
-                >
-                  <span className={styles.categoryIcon}>📚</span>
-                  <span className={styles.categoryName}>Skill Packs</span>
-                  <span className={styles.categoryCount}>{skills.skillPacks.length}</span>
-                  <span className={`${styles.chevron} ${expandedCategory === "_skills" ? styles.chevronOpen : ""}`}>▸</span>
-                </button>
-                {expandedCategory === "_skills" && (
-                  <div className={styles.toolList}>
-                    {skills.skillPacks.map((pack) => (
-                      <div key={pack.name} className={styles.toolRow}>
-                        <code className={styles.toolName}>{pack.name}</code>
-                        <span className={styles.toolDesc}>{pack.description || `${pack.files} files`}</span>
+                        <div className={styles.skillCardDesc}>{skill.description}</div>
+                        <div className={styles.skillCardMeta}>
+                          v{skill.version} · {skill.category}
+                        </div>
+                        {selectedAgent && (
+                          <div className={styles.skillCardActions}>
+                            {isInstalled ? (
+                              <span className={styles.installedBadge}>✓ Installed</span>
+                            ) : (
+                              <button
+                                className={styles.installBtn}
+                                onClick={() => handleInstallSkill(skill.id, skill.origin, skill.version)}
+                              >
+                                + Install
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+
+            {!catalogLoading && catalog.length === 0 && (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyIcon}>📚</div>
+                <div className={styles.emptyTitle}>No skills found</div>
+                <div className={styles.emptySub}>The skill catalog is empty or could not be loaded.</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ======== TAB: PROPOSALS ======== */}
+        {activeTab === "proposals" && (
+          <>
+            <header className={styles.header}>
+              <div>
+                <h2 className={styles.title}>Skill Proposals</h2>
+                <p className={styles.subtitle}>
+                  Skills discovered by Prime from fleet work patterns
+                </p>
+              </div>
+            </header>
+
+            {proposalsLoading && (
+              <div className={styles.loadingState}>
+                <span className={styles.spinner} />
+                <span>Loading proposals…</span>
+              </div>
+            )}
+
+            {!proposalsLoading && proposals.filter((p) => p.status === "proposed").length === 0 && (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyIcon}>💡</div>
+                <div className={styles.emptyTitle}>No pending proposals</div>
+                <div className={styles.emptySub}>
+                  Prime will analyze fleet work patterns and propose new skills here.
+                  Check back after your agents have completed some missions.
+                </div>
+              </div>
+            )}
+
+            {proposals.filter((p) => p.status === "proposed").map((proposal) => (
+              <div
+                key={proposal.id}
+                className={`${styles.proposalCard} ${proposal.type === "improvement" ? styles.proposalImprovement : styles.proposalNew}`}
+                id={`proposal-${proposal.id}`}
+              >
+                <div className={styles.proposalHeader}>
+                  <span className={styles.proposalType}>
+                    {proposal.type === "improvement" ? "📈 IMPROVEMENT" : "🆕 NEW SKILL"}
+                  </span>
+                  <span className={styles.proposalDate}>
+                    {new Date(proposal.proposed_at).toLocaleDateString()}
+                  </span>
+                </div>
+
+                <div className={styles.proposalName}>
+                  {proposal.type === "improvement"
+                    ? `${proposal.target_skill_id} → v${proposal.skill_json?.version || "?"}`
+                    : proposal.name}
+                </div>
+
+                <div className={styles.proposalDesc}>{proposal.description}</div>
+
+                {proposal.discovery_context && (
+                  <div className={styles.proposalContext}>
+                    <span className={styles.proposalContextLabel}>Discovered from:</span>
+                    {proposal.discovery_context}
                   </div>
                 )}
-              </section>
-            )}
 
-            {skills && (
-              <div className={styles.note} id="agent-skills-note">
-                <span className={styles.noteIcon}>ℹ️</span>
-                <span>
-                  Data read live from the agent VM filesystem.
-                  Source: <code>{skills.binDir}</code>
-                </span>
+                <div className={styles.proposalMeta}>
+                  {PART_ICONS[proposal.agent_part] || "📦"} {proposal.agent_part} · {proposal.category} · by {proposal.proposed_by}
+                </div>
+
+                <div className={styles.proposalActions}>
+                  <button
+                    className={styles.previewBtn}
+                    onClick={() => setPreviewProposal(previewProposal?.id === proposal.id ? null : proposal)}
+                  >
+                    {previewProposal?.id === proposal.id ? "Hide Preview" : (proposal.type === "improvement" ? "View Diff" : "Preview SKILL.md")}
+                  </button>
+                  <button
+                    className={styles.approveBtn}
+                    onClick={() => handleProposalAction(proposal.id, "approve")}
+                  >
+                    ✓ Approve
+                  </button>
+                  <button
+                    className={styles.rejectBtn}
+                    onClick={() => handleProposalAction(proposal.id, "reject")}
+                  >
+                    ✕ Reject
+                  </button>
+                </div>
+
+                {previewProposal?.id === proposal.id && proposal.skill_md && (
+                  <div className={styles.proposalPreview}>
+                    <pre>{proposal.skill_md}</pre>
+                  </div>
+                )}
               </div>
+            ))}
+
+            {/* Show approved/rejected history */}
+            {proposals.filter((p) => p.status !== "proposed").length > 0 && (
+              <details className={styles.proposalHistory}>
+                <summary className={styles.proposalHistorySummary}>
+                  Past decisions ({proposals.filter((p) => p.status !== "proposed").length})
+                </summary>
+                {proposals.filter((p) => p.status !== "proposed").map((p) => (
+                  <div key={p.id} className={styles.proposalHistoryItem}>
+                    <span className={p.status === "approved" ? styles.statusApproved : styles.statusRejected}>
+                      {p.status === "approved" ? "✓" : "✕"}
+                    </span>
+                    <span>{p.name || p.skill_id}</span>
+                    <span className={styles.proposalDate}>
+                      {new Date(p.proposed_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))}
+              </details>
             )}
           </>
         )}

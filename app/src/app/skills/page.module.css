@@ -614,3 +614,466 @@
     margin-left: 0;
   }
 }
+
+/* ============================================
+   Tab Bar
+   ============================================ */
+
+.tabBar {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 0;
+}
+
+.tab {
+  position: relative;
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--mist);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--d-hover) var(--ease);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--cloud);
+}
+
+.tab:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tabActive {
+  color: var(--signal-aqua);
+  border-bottom-color: var(--network-teal);
+}
+
+.tabBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--network-teal);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* ============================================
+   Library Tab
+   ============================================ */
+
+.librarySearch {
+  margin-bottom: 20px;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 10px 16px;
+  background: rgba(49, 59, 71, 0.3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  color: var(--cloud);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: all var(--d-hover) var(--ease);
+}
+
+.searchInput:focus {
+  border-color: var(--border-active);
+  background: rgba(49, 59, 71, 0.5);
+  box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.12);
+}
+
+.searchInput::placeholder {
+  color: var(--slate);
+}
+
+.libraryGroup {
+  margin-bottom: 24px;
+}
+
+.libraryGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.libraryCards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skillCard {
+  padding: 14px 18px;
+  background: rgba(49, 59, 71, 0.2);
+  border: 1px solid rgba(86, 99, 115, 0.15);
+  border-radius: var(--r-md);
+  transition: all var(--d-hover) var(--ease);
+}
+
+.skillCard:hover {
+  border-color: rgba(86, 99, 115, 0.3);
+  background: rgba(49, 59, 71, 0.35);
+}
+
+.skillCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.skillCardName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cloud);
+}
+
+.skillCardDesc {
+  font-size: 12px;
+  color: var(--mist);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.skillCardMeta {
+  font-size: 11px;
+  color: var(--slate);
+  margin-bottom: 8px;
+}
+
+.skillCardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.originBadge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.origin_core {
+  background: rgba(31, 154, 155, 0.12);
+  color: var(--network-teal);
+}
+
+.origin_specialty {
+  background: rgba(214, 168, 58, 0.12);
+  color: var(--amber);
+}
+
+.origin_learned {
+  background: rgba(95, 199, 178, 0.12);
+  color: var(--care-mint);
+}
+
+.installedBadge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.installBtn {
+  padding: 5px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(31, 154, 155, 0.35);
+  background: transparent;
+  color: var(--network-teal);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--d-hover) var(--ease);
+}
+
+.installBtn:hover {
+  background: rgba(31, 154, 155, 0.08);
+  border-color: rgba(31, 154, 155, 0.5);
+}
+
+.uninstallBtn {
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(216, 79, 69, 0.2);
+  background: transparent;
+  color: var(--pulse);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--d-hover) var(--ease);
+  flex-shrink: 0;
+}
+
+.uninstallBtn:hover {
+  background: rgba(216, 79, 69, 0.08);
+  border-color: rgba(216, 79, 69, 0.4);
+}
+
+/* ---- Custom skill row (Installed tab) ---- */
+.customSkillRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px 8px 42px;
+  border-bottom: 1px solid rgba(86, 99, 115, 0.06);
+}
+
+.customSkillRow:last-child {
+  border-bottom: none;
+}
+
+.customSkillInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.customSkillMeta {
+  font-size: 11px;
+  color: var(--slate);
+}
+
+/* ---- Add Skill button ---- */
+.addSkillBtn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 12px;
+  border: 1px dashed rgba(31, 154, 155, 0.3);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--network-teal);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--d-hover) var(--ease);
+  text-align: center;
+}
+
+.addSkillBtn:hover {
+  border-color: rgba(31, 154, 155, 0.5);
+  background: rgba(31, 154, 155, 0.04);
+}
+
+/* ============================================
+   Proposals Tab
+   ============================================ */
+
+.proposalCard {
+  padding: 20px;
+  margin-bottom: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid rgba(86, 99, 115, 0.2);
+  background: rgba(49, 59, 71, 0.15);
+  transition: all var(--d-hover) var(--ease);
+}
+
+.proposalCard:hover {
+  border-color: rgba(86, 99, 115, 0.35);
+}
+
+.proposalNew {
+  border-left: 3px solid var(--care-mint);
+}
+
+.proposalImprovement {
+  border-left: 3px solid var(--amber);
+}
+
+.proposalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.proposalType {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mist);
+}
+
+.proposalDate {
+  font-size: 11px;
+  color: var(--slate);
+}
+
+.proposalName {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--cloud);
+  margin-bottom: 6px;
+}
+
+.proposalDesc {
+  font-size: 13px;
+  color: var(--mist);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.proposalContext {
+  font-size: 12px;
+  color: var(--slate);
+  padding: 8px 12px;
+  background: rgba(32, 40, 51, 0.4);
+  border-radius: var(--r-sm);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.proposalContextLabel {
+  font-weight: 600;
+  color: var(--mist);
+  margin-right: 4px;
+}
+
+.proposalMeta {
+  font-size: 11px;
+  color: var(--slate);
+  margin-bottom: 14px;
+}
+
+.proposalActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.previewBtn {
+  padding: 6px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--mist);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--d-hover) var(--ease);
+}
+
+.previewBtn:hover {
+  color: var(--cloud);
+  border-color: var(--border-active);
+}
+
+.approveBtn {
+  padding: 6px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(59, 170, 120, 0.35);
+  background: transparent;
+  color: var(--success);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--d-hover) var(--ease);
+}
+
+.approveBtn:hover {
+  background: rgba(59, 170, 120, 0.08);
+  border-color: rgba(59, 170, 120, 0.5);
+}
+
+.rejectBtn {
+  padding: 6px 14px;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(216, 79, 69, 0.2);
+  background: transparent;
+  color: var(--pulse);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--d-hover) var(--ease);
+}
+
+.rejectBtn:hover {
+  background: rgba(216, 79, 69, 0.08);
+  border-color: rgba(216, 79, 69, 0.4);
+}
+
+.proposalPreview {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: rgba(32, 40, 51, 0.6);
+  border: 1px solid rgba(86, 99, 115, 0.15);
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+}
+
+.proposalPreview pre {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 11px;
+  color: var(--mist);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+/* ---- Proposal history ---- */
+.proposalHistory {
+  margin-top: 24px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+}
+
+.proposalHistorySummary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slate);
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.proposalHistorySummary:hover {
+  color: var(--mist);
+}
+
+.proposalHistoryItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--mist);
+}
+
+.statusApproved {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.statusRejected {
+  color: var(--pulse);
+  font-weight: 700;
+}

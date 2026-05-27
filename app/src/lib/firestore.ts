@@ -103,6 +103,14 @@ export function promotionsCol(primeId: string, projectId: string) {
   return getDb().collection("primes").doc(primeId).collection("projects").doc(projectId).collection("promotions");
 }
 
+export function fleetSkillsCol(primeId: string, agentName: string) {
+  return getDb().collection("primes").doc(primeId).collection("fleet").doc(agentName).collection("skills");
+}
+
+export function skillProposalsCol(primeId: string) {
+  return getDb().collection("primes").doc(primeId).collection("skill-proposals");
+}
+
 export type CommandType =
   | "fleet_deploy"
   | "fleet_teardown"
