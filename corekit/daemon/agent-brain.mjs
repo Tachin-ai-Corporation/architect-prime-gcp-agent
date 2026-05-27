@@ -1798,7 +1798,7 @@ async function processEnvelope(envelope, memoryContext) {
     // Store accumulated context back on envelope
     envelope._accumulated_context = envelopeContext;
 
-    const decision = await callCortex('decide', {
+    let decision = await callCortex('decide', {
       envelope: {
         id: envelope.id,
         type: envelope.type,
@@ -1858,7 +1858,7 @@ async function processEnvelope(envelope, memoryContext) {
       log('INFO', `Normalized response-no-action → short_circuit`);
     }
 
-    const action = decision.action;
+    let action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
 
     if (action === 'short_circuit') {
