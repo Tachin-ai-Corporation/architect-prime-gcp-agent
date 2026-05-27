@@ -728,10 +728,15 @@ async function pollBrainV3Envelopes() {
 
       // Classify and deliver through the existing pipeline
       try {
+        const envIntent = f.intent?.stringValue;
         if (status === 'needs_input' || status === 'blocked') {
           // For needs_input or blocked, deliver the message directly (escalation/question)
           await deliver(output);
           log(`Delivered ${status} message`, { envId });
+        } else if (envIntent === 'notification') {
+          // Notification envelopes are already human-ready — deliver raw, no LLM rewriting
+          await deliver(output, f.source_channel?.stringValue);
+          log('Delivered notification raw', { envId, chars: output.length });
         } else {
           // For complete, run through the full classify pipeline
           const envQuestion = f.instruction?.stringValue || f.context_summary?.stringValue || '';

@@ -589,7 +589,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
         // Build context summary from completed steps
         const priorSteps = [...allResults, ...cpResults];
         const completedSummary = priorSteps.length > 0
-          ? priorSteps.map(r => `${r.success ? '✅' : '❌'} **Step ${r.step}** (${r.agent}): ${(r.result || '').substring(0, 400)}`).join('\n\n')
+          ? priorSteps.map(r => `${r.success ? '✅' : '❌'} **Step ${r.step}** (${r.agent}): ${(r.result || '').substring(0, 800)}`).join('\n\n')
           : '';
 
         // Use custom approval_message from process definition if available
