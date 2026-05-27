@@ -58,7 +58,6 @@ function HomeInner() {
   const [agentTypes, setAgentTypes] = useState<AgentType[]>([]);
   const [hireName, setHireName] = useState("");
   const [hireType, setHireType] = useState("");
-  const [hireEmail, setHireEmail] = useState("");
   const [hiring, setHiring] = useState(false);
 
   /* ---- Refs ---- */
@@ -212,13 +211,18 @@ function HomeInner() {
     }
   };
 
+  // Auto-generate email from type + name + domain
+  const generatedEmail = hireName && hireType
+    ? `${hireType}-agent-${hireName}@${setup.agentEmailDomain || 'example.com'}`
+    : '';
+
   const handleHire = async () => {
-    if (!hireName.trim() || !hireType || !hireEmail.trim() || !selectedPrimeId) return;
+    if (!hireName.trim() || !hireType || !generatedEmail || !selectedPrimeId) return;
     setHiring(true);
     const res = await api<{ id: string }>(`/api/primes/${selectedPrimeId}/fleet/hire`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: hireName, specialty: hireType, email: hireEmail }),
+      body: JSON.stringify({ name: hireName, specialty: hireType, email: generatedEmail }),
     });
     if (res?.id) {
       dialog.trackCommand(selectedPrimeId, res.id, `Hire ${hireName}`);
@@ -229,7 +233,6 @@ function HomeInner() {
     setShowHire(false);
     setHiring(false);
     setHireName("");
-    setHireEmail("");
   };
 
   /* ---- Status class helper ---- */
@@ -606,18 +609,6 @@ function HomeInner() {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalTitle}>Hire New Agent</div>
             <div className={styles.modalField}>
-              <label className={styles.modalLabel} htmlFor="hire-agent-name">Agent Name</label>
-              <input
-                id="hire-agent-name"
-                className="input"
-                placeholder="e.g. alice"
-                autoFocus
-                value={hireName}
-                onChange={(e) => setHireName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleHire(); }}
-              />
-            </div>
-            <div className={styles.modalField}>
               <label className={styles.modalLabel} htmlFor="hire-agent-type">Specialty</label>
               {agentTypes.length === 0 ? (
                 <div className={styles.modalHint}>Loading specialties…</div>
@@ -640,23 +631,49 @@ function HomeInner() {
               )}
             </div>
             <div className={styles.modalField}>
-              <label className={styles.modalLabel} htmlFor="hire-agent-email">Workspace Email</label>
+              <label className={styles.modalLabel} htmlFor="hire-agent-name">Agent Name</label>
               <input
-                id="hire-agent-email"
+                id="hire-agent-name"
                 className="input"
-                placeholder="agent@yourdomain.com"
-                value={hireEmail}
-                onChange={(e) => setHireEmail(e.target.value)}
+                placeholder="e.g. alice"
+                autoFocus
+                value={hireName}
+                maxLength={15}
+                onChange={(e) => {
+                  const v = e.target.value.toLowerCase().replace(/[^a-z]/g, '');
+                  setHireName(v.slice(0, 15));
+                }}
                 onKeyDown={(e) => { if (e.key === "Enter") handleHire(); }}
               />
+              <div className={styles.modalHint}>
+                Lowercase letters only, max 15 characters
+              </div>
             </div>
+            {generatedEmail && (
+              <div className={styles.modalField}>
+                <label className={styles.modalLabel}>Workspace Email</label>
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    background: 'rgba(32,40,51,0.5)',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    color: '#AEB8C4',
+                    fontFamily: 'monospace',
+                    letterSpacing: '0.02em',
+                  }}
+                >
+                  {generatedEmail}
+                </div>
+              </div>
+            )}
             <div className={styles.modalActions}>
               <button className="btn btn-ghost" onClick={() => setShowHire(false)}>Cancel</button>
               <button
                 id="hire-agent-submit"
                 className="btn btn-primary"
                 onClick={handleHire}
-                disabled={!hireName.trim() || !hireType || !hireEmail.trim() || hiring}
+                disabled={!hireName.trim() || !hireType || !generatedEmail || hiring}
               >
                 {hiring ? "Hiring…" : "Hire"}
               </button>
