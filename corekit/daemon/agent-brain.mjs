@@ -601,24 +601,40 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
 
         // Build context summary from completed steps
         const priorSteps = [...allResults, ...cpResults];
-        const completedSummary = priorSteps.length > 0
-          ? priorSteps.map(r => `${r.success ? '✅' : '❌'} **Step ${r.step}** (${r.agent}): ${(r.result || '').substring(0, 800)}`).join('\n\n')
-          : '';
+        const rawStepData = priorSteps.map(r => ({
+          step: r.step, agent: r.agent, success: r.success,
+          result: (r.result || '').substring(0, 1500),
+        }));
 
         // Use custom approval_message from process definition if available
         const customMessage = tEnv.source_meta?.approval_message || '';
         const approvalTitle = tEnv.title || tEnv.instruction || 'Approval needed';
 
-        const notifOutput = [
-          `⏸ **Process paused — approval needed**`,
+        // Basic fallback text (used if LLM summarization fails)
+        const fallbackText = [
+          `⏸ **Approval needed**`,
           ``,
           `**${approvalTitle.substring(0, 200)}**`,
           customMessage ? `\n${customMessage}` : '',
-          tEnv.instruction && !customMessage ? `\nDetails: ${tEnv.instruction}` : '',
-          completedSummary ? `\n### Completed Steps\n${completedSummary}` : '',
           ``,
           `Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
         ].filter(Boolean).join('\n');
+
+        // LLM summarization for clean, self-contained approval notification
+        const cleanSummary = await summarizeForDelivery('approval_request', fallbackText, {
+          steps: rawStepData,
+          title: approvalTitle,
+          processName: PROCESSES[mission.process_id]?.name || '',
+          customMessage,
+        });
+
+        const notifOutput = [
+          `⏸ **Approval needed**`,
+          ``,
+          cleanSummary,
+          ``,
+          `Reply \`approve\` or \`reject\` here, or use the dashboard.`,
+        ].join('\n');
 
         // Send notification
         const notifId = generateId('w');
@@ -1511,6 +1527,107 @@ function extractBalancedJson(text) {
 }
 
 // ---- Gateway HTTP dispatch to agents ----
+// ---- Notification summarizer ----
+// Type-specific summarization for outbound notifications.
+// Some types need LLM to distill raw data; others pass through.
+const SUMMARY_TYPES = {
+  approval_request: {
+    llm: true,
+    maxChars: 1500,
+    prompt: (ctx) => [
+      `You are writing a concise approval request notification for a human reviewer.`,
+      `Summarize the completed work into a clean, self-contained message.`,
+      ``,
+      `RULES:`,
+      `- 3-8 sentences max, under ${ctx.maxChars || 1500} characters`,
+      `- Include ALL relevant URLs, links, and artifact references inline`,
+      `- The reader must NOT need any prior context — everything self-contained`,
+      `- State what was done, what the outcome is, and what happens next if approved`,
+      `- NEVER say "see above", "the link from earlier", or reference prior messages`,
+      `- Do NOT include raw command output, JSON blobs, or deployment logs`,
+      `- Do NOT include step numbers, agent names (motor, cerebellum), or internal jargon`,
+      `- Use markdown for readability (bold for key items, links clickable)`,
+      ``,
+      ctx.processName ? `PROCESS: ${ctx.processName}` : '',
+      ctx.title ? `APPROVAL TITLE: ${ctx.title}` : '',
+      ctx.customMessage ? `CUSTOM CONTEXT: ${ctx.customMessage}` : '',
+      ``,
+      `COMPLETED STEPS:`,
+      JSON.stringify(ctx.steps, null, 2),
+    ].filter(Boolean).join('\n'),
+  },
+  status_update: { llm: false },  // Pass through — already human-readable
+  error_report: { llm: false },   // Pass through — errors should be precise
+};
+
+/**
+ * Summarize raw notification data for delivery.
+ * @param {string} type - Summary type key (e.g. 'approval_request')
+ * @param {string} rawText - Fallback text if LLM is skipped or fails
+ * @param {object} context - Type-specific context (steps, title, processName, etc.)
+ * @returns {string} Clean, delivery-ready text
+ */
+async function summarizeForDelivery(type, rawText, context = {}) {
+  const config = SUMMARY_TYPES[type];
+  if (!config || !config.llm) {
+    // No LLM needed — return raw text as-is
+    return rawText;
+  }
+
+  const maxChars = config.maxChars || 1500;
+  const promptText = config.prompt({ ...context, maxChars });
+
+  try {
+    const route = CORTEX_ROUTE;
+    const resp = await fetch(GATEWAY_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: route,
+        messages: [
+          { role: 'system', content: 'You are a notification writer. Return ONLY the notification text — no JSON, no markdown fences, no preamble.' },
+          { role: 'user', content: promptText },
+        ],
+        max_tokens: 2048,
+        temperature: 0.3,
+        top_p: 0.9,
+      }),
+      signal: AbortSignal.timeout(30_000), // 30s timeout — this should be fast
+    });
+
+    if (!resp.ok) {
+      log('WARN', `summarizeForDelivery(${type}) HTTP ${resp.status} — falling back to raw`);
+      return rawText;
+    }
+
+    const data = await resp.json();
+    let content = '';
+    const msg = data.choices?.[0]?.message;
+    if (typeof msg?.content === 'string') {
+      content = msg.content;
+    } else if (Array.isArray(msg?.content)) {
+      content = msg.content.filter(c => c.type === 'text').map(c => c.text || '').join('\n');
+    }
+
+    // Strip any markdown fences or JSON wrapping the LLM might add
+    content = content.replace(/^```[a-z]*\s*/gi, '').replace(/\s*```$/g, '').trim();
+
+    if (content.length > 0) {
+      log('INFO', `summarizeForDelivery(${type}): ${content.length} chars (from ${JSON.stringify(context.steps || []).length} chars raw)`);
+      return content.substring(0, maxChars);
+    }
+
+    log('WARN', `summarizeForDelivery(${type}): empty response — falling back to raw`);
+    return rawText;
+  } catch (e) {
+    log('WARN', `summarizeForDelivery(${type}) error: ${e.message} — falling back to raw`);
+    return rawText;
+  }
+}
+
 async function callAgent(agentId, envelope) {
   const agentInfo = REGISTRY.agents[agentId];
   if (!agentInfo) {
@@ -3182,6 +3299,19 @@ async function processEnvelope(envelope, memoryContext) {
               `Approval gate: ${taskDesc.substring(0, 60)}`);
 
             // Send notification via mouth (creates a deliverable envelope)
+            const rawStepData = cpResults.map(r => ({
+              step: r.step, agent: r.agent, success: r.success,
+              result: (r.result || '').substring(0, 1500),
+            }));
+            const fallbackNotif = `⏸ **Approval needed**\n\n**${taskDesc.substring(0, 200)}**\n\n${taskCriteria ? `Criteria: ${taskCriteria}\n\n` : ''}Reply \`approve\` or \`reject\` here, or use the dashboard.`;
+            const cleanNotif = await summarizeForDelivery('approval_request', fallbackNotif, {
+              steps: rawStepData,
+              title: taskDesc.substring(0, 200),
+              processName: decision.process_name || '',
+              customMessage: taskCriteria || '',
+            });
+            const notifOutput = `⏸ **Approval needed**\n\n${cleanNotif}\n\nReply \`approve\` or \`reject\` here, or use the dashboard.`;
+
             const notifId = generateId('w');
             await firestoreWrite('work', notifId, {
               id: notifId,
@@ -3191,7 +3321,7 @@ async function processEnvelope(envelope, memoryContext) {
               status: 'complete',
               intent: 'notification',
               instruction: 'Approval gate notification',
-              output: `⏸ **Process paused — approval needed**\n\n**${taskDesc.substring(0, 200)}**\n\n${taskCriteria ? `Criteria: ${taskCriteria}\n\n` : ''}Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
+              output: notifOutput,
               source_channel: envelope.source_channel || 'system',
               source_meta: { approval_id: approvalId, notification_type: 'approval_gate' },
               created_at: now(),
