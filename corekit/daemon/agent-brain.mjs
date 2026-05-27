@@ -261,7 +261,592 @@ function processToCheckpointPlan(process, parameters = {}) {
   };
 }
 
-// ---- Context Packet helpers ----
+// ---- Deterministic Process Executor ----
+// Stamps the full M/C/T hierarchy from a process definition and executes
+// tasks sequentially without Cortex decide loop involvement.
+
+/**
+ * Execute a process deterministically.
+ * Creates the full M → C → T envelope hierarchy upfront, then runs
+ * each task sequentially. No Cortex involvement in structure or flow.
+ *
+ * @param {object|null} intake - The intake that triggered this (null if from decide loop)
+ * @param {object} decision - Cortex classify/decide result with process info
+ * @param {object} memoryContext - Memory context for agent dispatches
+ * @param {string} processId - The process ID to execute
+ * @param {object|null} existingEnvelope - If called from decide loop, the existing envelope to use as mission
+ */
+async function executeProcess(intake, decision, memoryContext, processId, existingEnvelope = null) {
+  await ensureProcessesLoaded();
+  const process = PROCESSES[processId];
+  if (!process) {
+    log('ERROR', `executeProcess: process '${processId}' not found`);
+    return;
+  }
+
+  const parameters = decision.parameters || {};
+
+  // Validate required parameters
+  const requiredParams = Object.entries(process.parameters || {})
+    .filter(([, def]) => def && typeof def === 'object' && def.required && !def.default)
+    .map(([key]) => key);
+  const missingParams = requiredParams.filter(k => !(k in parameters));
+  if (missingParams.length > 0) {
+    log('WARN', `executeProcess: missing required parameters: ${missingParams.join(', ')}`);
+    // TODO: create needs_input envelope to ask user for parameters
+    return;
+  }
+
+  // Fill defaults for missing optional parameters
+  for (const [key, def] of Object.entries(process.parameters || {})) {
+    if (!(key in parameters) && def && typeof def === 'object' && def.default !== undefined) {
+      parameters[key] = def.default;
+    }
+  }
+
+  // Convert process to checkpoint structure
+  const cpPlan = processToCheckpointPlan(process, parameters);
+  if (!cpPlan || !cpPlan.checkpoints || cpPlan.checkpoints.length === 0) {
+    log('ERROR', `executeProcess: process '${processId}' has no steps`);
+    return;
+  }
+
+  log('INFO', `executeProcess: '${process.name}' v${process.version || 1} — ${cpPlan.checkpoints.length} checkpoints, stamping hierarchy`);
+
+  // ---- Step 1: Create or reuse Mission envelope ----
+  let mission;
+  if (existingEnvelope) {
+    mission = existingEnvelope;
+    mission.process_id = processId;
+    mission.process_version = process.version || 1;
+    mission.status = 'active';
+    mission.started_at = mission.started_at || now();
+    mission.updated_at = now();
+  } else {
+    const missionId = generateId('w');
+    mission = {
+      id: missionId,
+      type: 'M',
+      parent_id: null,
+      owner: AGENT_EMAIL || AGENT_ID,
+      status: 'active',
+      intent: 'process_execution',
+      title: decision.title || summarizeTitle(`${process.name}: ${decision.instruction || process.description || ''}`),
+      instruction: decision.instruction || intake?.text || `Execute process: ${process.name}`,
+      accept_criteria: decision.accept_criteria || `Process '${process.name}' completes all steps successfully.`,
+      context_summary: decision.context_summary || process.description || null,
+      output: null,
+      children: [],
+      context_forward: null,
+      error: null,
+      source_channel: intake?.source || 'system',
+      source_meta: intake?.source_meta || {},
+      project_id: decision.project_id || null,
+      context: decision.context || null,
+      process_id: processId,
+      process_version: process.version || 1,
+      created_at: now(),
+      started_at: now(),
+      completed_at: null,
+      updated_at: now(),
+      iteration: 0,
+      memory_context: memoryContext,
+      delivery_status: 'internal',
+    };
+  }
+
+  // Merge process context template into mission context
+  if (process.contextTemplate && typeof process.contextTemplate === 'object') {
+    const templateCtx = {};
+    for (const [key, entry] of Object.entries(process.contextTemplate)) {
+      if (entry && typeof entry === 'object') {
+        const processed = { ...entry };
+        if (processed.name) processed.name = processed.name.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
+        if (processed.summary) processed.summary = processed.summary.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
+        templateCtx[key] = processed;
+      }
+    }
+    mission.context = mergeContextPackets(mission.context, templateCtx);
+  }
+
+  // ---- Step 2: Stamp all C and T envelopes upfront ----
+  const checkpointEnvelopes = []; // { cEnvelope, tEnvelopes[] }
+
+  for (let ci = 0; ci < cpPlan.checkpoints.length; ci++) {
+    const cp = cpPlan.checkpoints[ci];
+    const cpId = generateId('w');
+    const cpNum = ci + 1;
+
+    const cEnvelope = {
+      id: cpId,
+      type: 'C',
+      parent_id: mission.id,
+      owner: AGENT_EMAIL || AGENT_ID,
+      status: 'pending',
+      intent: 'checkpoint',
+      title: summarizeTitle(cp.instruction || `Checkpoint ${cpNum}`),
+      instruction: cp.instruction || `Checkpoint ${cpNum}`,
+      accept_criteria: cp.accept_criteria || '',
+      output: null,
+      children: [],
+      context_forward: null,
+      error: null,
+      source_channel: mission.source_channel || 'system',
+      source_meta: {},
+      project_id: mission.project_id || null,
+      process_id: processId,
+      created_at: now(),
+      started_at: null,
+      completed_at: null,
+      updated_at: now(),
+      iteration: 0,
+    };
+
+    const tEnvelopes = [];
+    for (let ti = 0; ti < (cp.tasks || []).length; ti++) {
+      const task = cp.tasks[ti];
+      const tId = generateId('w');
+      const taskNum = ti + 1;
+      const stepType = task._step_type || 'standard';
+
+      const tEnvelope = {
+        id: tId,
+        type: 'T',
+        parent_id: cpId,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'pending',
+        intent: stepType === 'approval_gate' ? 'approval_gate' : (task.intent || 'execute'),
+        title: summarizeTitle(task.task || `Step ${cpNum}.${taskNum}`),
+        instruction: task.task || '',
+        accept_criteria: task.accept_criteria || '',
+        output: null,
+        children: [],
+        context_forward: null,
+        error: null,
+        source_channel: mission.source_channel || 'system',
+        source_meta: {
+          step_type: stepType,
+          step_index: ti,
+          checkpoint_index: ci,
+          agent: task.agent || 'motor',
+          optional: task._optional || false,
+          specialty: task._specialty || null,
+        },
+        project_id: mission.project_id || null,
+        process_id: processId,
+        created_at: now(),
+        started_at: null,
+        completed_at: null,
+        updated_at: now(),
+        iteration: 0,
+      };
+
+      tEnvelopes.push(tEnvelope);
+      cEnvelope.children.push(tId);
+    }
+
+    checkpointEnvelopes.push({ cEnvelope, tEnvelopes });
+    mission.children.push(cpId);
+  }
+
+  // ---- Step 3: Write everything to Firestore ----
+  await firestoreWrite('work', mission.id, mission);
+  if (!existingEnvelope) {
+    await writeHistory(mission.id, null, 'active', 'brain', `Process '${process.name}' — stamped full hierarchy`);
+  }
+
+  for (const { cEnvelope, tEnvelopes } of checkpointEnvelopes) {
+    await firestoreWrite('work', cEnvelope.id, cEnvelope);
+    await writeHistory(cEnvelope.id, null, 'pending', 'brain', `Checkpoint created (process: ${process.name})`);
+    for (const tEnv of tEnvelopes) {
+      await firestoreWrite('work', tEnv.id, tEnv);
+      await writeHistory(tEnv.id, null, 'pending', 'brain', `Task created (${tEnv.source_meta.step_type})`);
+    }
+  }
+
+  // Increment process execution count
+  try {
+    const token = await getAuthToken();
+    if (token) {
+      const procUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes/${processId}`;
+      const currentCount = process.execution_count || 0;
+      await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {
+          execution_count: { integerValue: String(currentCount + 1) },
+          last_executed_at: { stringValue: now() },
+        }}),
+      });
+    }
+  } catch (e) { log('DEBUG', `Process execution count update failed: ${e.message}`); }
+
+  log('INFO', `executeProcess: hierarchy stamped — M:${mission.id}, ${checkpointEnvelopes.length} checkpoints, ${checkpointEnvelopes.reduce((s, c) => s + c.tEnvelopes.length, 0)} tasks`);
+
+  // ---- Step 4: Execute the plan ----
+  await runProcessPlan(mission, checkpointEnvelopes, memoryContext);
+}
+
+/**
+ * Mechanical sequential executor for a stamped process plan.
+ * Walks through C → T envelopes, dispatches to agents, handles approval gates.
+ * No Cortex involvement — purely deterministic.
+ *
+ * @param {object} mission - The M-envelope
+ * @param {Array} checkpointEnvelopes - Array of { cEnvelope, tEnvelopes[] }
+ * @param {object} memoryContext - Memory context for agent dispatches
+ * @param {number} startCpIndex - Checkpoint index to start from (for resumption)
+ * @param {number} startTaskIndex - Task index within the starting checkpoint (for resumption)
+ */
+async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, startCpIndex = 0, startTaskIndex = 0) {
+  let allResults = [];
+  let planFailed = false;
+
+  for (let ci = startCpIndex; ci < checkpointEnvelopes.length; ci++) {
+    const { cEnvelope, tEnvelopes } = checkpointEnvelopes[ci];
+    const cpNum = ci + 1;
+    const taskStartIdx = (ci === startCpIndex) ? startTaskIndex : 0;
+
+    // Mark checkpoint active
+    cEnvelope.status = 'active';
+    cEnvelope.started_at = cEnvelope.started_at || now();
+    cEnvelope.updated_at = now();
+    await firestoreWrite('work', cEnvelope.id, cEnvelope);
+    if (taskStartIdx === 0) {
+      await writeHistory(cEnvelope.id, 'pending', 'active', 'brain', `Checkpoint ${cpNum} started`);
+    }
+
+    log('INFO', `Process CP${cpNum}/${checkpointEnvelopes.length}: ${tEnvelopes.length} tasks`);
+
+    let cpFailed = false;
+    let cpResults = [];
+
+    for (let ti = taskStartIdx; ti < tEnvelopes.length; ti++) {
+      const tEnv = tEnvelopes[ti];
+      const taskNum = ti + 1;
+      const stepType = tEnv.source_meta?.step_type || 'standard';
+      const taskAgent = tEnv.source_meta?.agent || 'motor';
+      const isOptional = tEnv.source_meta?.optional || false;
+
+      // ---- Approval Gate ----
+      if (stepType === 'approval_gate') {
+        log('INFO', `Process CP${cpNum} Task ${taskNum}: Approval gate — pausing`);
+
+        const approvalId = generateId('apr');
+
+        // Write approval doc
+        try {
+          const token = await getAuthToken();
+          if (token) {
+            const approvalUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/approvals/${approvalId}`;
+            await fetch(approvalUrl, {
+              method: 'PATCH',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fields: {
+                envelopeId: { stringValue: mission.id },
+                checkpointId: { stringValue: cEnvelope.id },
+                taskIndex: { integerValue: String(ti) },
+                checkpointIndex: { integerValue: String(ci) },
+                title: { stringValue: (tEnv.title || '').substring(0, 200) },
+                description: { stringValue: tEnv.instruction || tEnv.title || '' },
+                processId: { stringValue: mission.process_id || '' },
+                processName: { stringValue: PROCESSES[mission.process_id]?.name || '' },
+                status: { stringValue: 'pending' },
+                requestedAt: { stringValue: now() },
+              }}),
+            });
+          }
+        } catch (e) { log('WARN', `Failed to write approval doc: ${e.message}`); }
+
+        // Mark task as awaiting approval
+        tEnv.status = 'awaiting_approval';
+        tEnv.started_at = now();
+        tEnv.updated_at = now();
+        tEnv.source_meta.approval_id = approvalId;
+        await firestoreWrite('work', tEnv.id, tEnv);
+        await writeHistory(tEnv.id, 'pending', 'awaiting_approval', 'brain', `Approval gate: ${tEnv.title}`);
+
+        // Mark checkpoint as awaiting
+        cEnvelope.status = 'awaiting_approval';
+        cEnvelope.updated_at = now();
+        await firestoreWrite('work', cEnvelope.id, cEnvelope);
+        await writeHistory(cEnvelope.id, 'active', 'awaiting_approval', 'brain', `Paused at approval gate`);
+
+        // Mark mission as awaiting with resume state
+        mission.status = 'awaiting_approval';
+        mission.updated_at = now();
+        mission.source_meta = {
+          ...mission.source_meta,
+          paused_approval_id: approvalId,
+          paused_checkpoint_index: ci,
+          paused_task_index: ti,
+        };
+        await firestoreWrite('work', mission.id, mission);
+        await writeHistory(mission.id, 'active', 'awaiting_approval', 'brain', `Process paused — approval gate`);
+
+        // Send notification
+        const notifId = generateId('w');
+        await firestoreWrite('work', notifId, {
+          id: notifId,
+          type: 'T',
+          parent_id: mission.id,
+          owner: AGENT_EMAIL || AGENT_ID,
+          status: 'complete',
+          intent: 'notification',
+          instruction: 'Approval gate notification',
+          output: `⏸ **Process paused — approval needed**\n\n**${(tEnv.title || tEnv.instruction || '').substring(0, 200)}**\n\n${tEnv.instruction ? `Details: ${tEnv.instruction}\n\n` : ''}Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
+          source_channel: mission.source_channel || 'system',
+          source_meta: { approval_id: approvalId, notification_type: 'approval_gate' },
+          created_at: now(),
+          started_at: now(),
+          completed_at: now(),
+          updated_at: now(),
+          children: [],
+          accept_criteria: null,
+          context_summary: null,
+          context_forward: null,
+          error: null,
+          iteration: 0,
+          delivery_status: mission.parent_id ? 'internal' : 'pending',
+        });
+
+        log('INFO', `Process paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);
+        return; // Exit — approval handler will resume
+      }
+
+      // ---- Standard / spawn_responsibility / delegation task ----
+      log('INFO', `Process CP${cpNum} Task ${taskNum}/${tEnvelopes.length}: ${taskAgent} — ${(tEnv.title || '').substring(0, 60)}`);
+
+      // Mark task active
+      tEnv.status = 'active';
+      tEnv.started_at = now();
+      tEnv.updated_at = now();
+      await firestoreWrite('work', tEnv.id, tEnv);
+      await writeHistory(tEnv.id, 'pending', 'active', 'brain', `Dispatching to ${taskAgent}`);
+
+      // Build instruction with prior results context
+      let instruction = tEnv.instruction || '';
+
+      // Prepend project context
+      if (mission.project_id) {
+        const projCtx = buildProjectContext(mission.project_id, mission.context);
+        if (projCtx) {
+          instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${instruction}`;
+        }
+      }
+
+      // Add prior results for context
+      const priorContext = allResults.length > 0
+        ? allResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
+        : null;
+
+      // Dispatch to agent
+      const dispatchEnvelope = {
+        instruction,
+        accept_criteria: tEnv.accept_criteria || '',
+        context_summary: tEnv.instruction || '',
+        prior_results_context: priorContext,
+        memory_context: typeof memoryContext === 'object' ? memoryContext.recalled : memoryContext,
+        _missionId: mission.id,
+      };
+
+      const result = await callAgent(taskAgent, dispatchEnvelope);
+
+      // Record result
+      const stepResult = {
+        step: `${cpNum}.${taskNum}`,
+        agent: taskAgent,
+        task: (tEnv.title || tEnv.instruction || '').substring(0, 150),
+        result: result.success
+          ? smartTruncate(result.output || '', CTX_AGENT_STEP)
+          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
+        success: result.success,
+        durationMs: result.durationMs,
+      };
+      cpResults.push(stepResult);
+
+      // Update task envelope
+      tEnv.output = result.success
+        ? smartTruncate(result.output || '', CTX_AGENT_STEP)
+        : result.error || 'Task failed';
+      tEnv.status = result.success ? 'complete' : 'failed';
+      tEnv.completed_at = now();
+      tEnv.updated_at = now();
+      if (result.error) tEnv.error = result.error;
+      await firestoreWrite('work', tEnv.id, tEnv);
+      await writeHistory(tEnv.id, 'active', tEnv.status, 'brain',
+        `${taskAgent}: ${result.success ? 'completed' : 'failed'} (${result.durationMs}ms)`);
+
+      log('INFO', `Process CP${cpNum} Task ${taskNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
+
+      // Retry once on failure (for non-optional tasks)
+      if (!result.success && !isOptional) {
+        log('INFO', `Process CP${cpNum} Task ${taskNum}: retrying once`);
+        const retryResult = await callAgent(taskAgent, {
+          ...dispatchEnvelope,
+          instruction: `[RETRY — previous attempt failed: ${result.error}]\n\n${instruction}`,
+          prior_results_context: [
+            priorContext,
+            `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${smartTruncate(result.output || '', 500)}`,
+          ].filter(Boolean).join('\n\n'),
+        });
+
+        if (retryResult.success) {
+          log('INFO', `Process CP${cpNum} Task ${taskNum}: retry succeeded`);
+          cpResults[cpResults.length - 1] = {
+            ...stepResult,
+            result: smartTruncate(retryResult.output || '', CTX_AGENT_STEP),
+            success: true,
+            durationMs: result.durationMs + retryResult.durationMs,
+          };
+          tEnv.output = smartTruncate(retryResult.output || '', CTX_AGENT_STEP);
+          tEnv.status = 'complete';
+          tEnv.error = null;
+          tEnv.completed_at = now();
+          tEnv.updated_at = now();
+          await firestoreWrite('work', tEnv.id, tEnv);
+          await writeHistory(tEnv.id, 'failed', 'complete', 'brain', `Retry succeeded (${retryResult.durationMs}ms)`);
+        } else {
+          // Hard failure
+          cpFailed = true;
+          break;
+        }
+      }
+    }
+
+    // Mark checkpoint complete/failed
+    allResults.push(...cpResults);
+    cEnvelope.status = cpFailed ? 'failed' : 'complete';
+    cEnvelope.completed_at = now();
+    cEnvelope.updated_at = now();
+    await firestoreWrite('work', cEnvelope.id, cEnvelope);
+    await writeHistory(cEnvelope.id, 'active', cEnvelope.status, 'brain',
+      `Checkpoint ${cpNum} ${cpFailed ? 'failed' : 'complete'} (${cpResults.length} tasks)`);
+
+    log('INFO', `Process CP${cpNum} ${cpFailed ? 'FAILED' : 'complete'} (${cpResults.length} tasks)`);
+
+    if (cpFailed) {
+      planFailed = true;
+      break;
+    }
+  }
+
+  // ---- Step 5: Auto-complete the mission ----
+  const processName = PROCESSES[mission.process_id]?.name || mission.process_id;
+  const totalTasks = allResults.length;
+  const successTasks = allResults.filter(r => r.success).length;
+
+  if (planFailed) {
+    const failedStep = allResults.find(r => !r.success);
+    mission.output = [
+      `❌ Process "${processName}" failed at step ${failedStep?.step || '?'}.`,
+      '',
+      ...allResults.map((r, i) => `${i + 1}. **${r.task}** (${r.agent}): ${r.success ? '✅' : '❌'} ${(r.result || '').substring(0, 150)}`),
+      '',
+      `Failed: ${failedStep?.result || 'Unknown error'}`,
+    ].join('\n');
+    mission.status = 'blocked';
+    mission.blocker = `Process step failed: ${failedStep?.task || 'unknown'}`;
+    mission.blocker_type = 'task_failure';
+    mission.blocked_at = now();
+  } else {
+    mission.output = [
+      `✅ Process "${processName}" completed successfully (${successTasks}/${totalTasks} tasks).`,
+      '',
+      ...allResults.map((r, i) => `${i + 1}. **${r.task}** (${r.agent}): ✅ ${(r.result || '').substring(0, 150)}`),
+    ].join('\n');
+    mission.status = 'complete';
+    mission.completed_at = now();
+  }
+
+  mission.updated_at = now();
+  if (!mission.parent_id) mission.delivery_status = 'pending';
+  await firestoreWrite('work', mission.id, mission);
+  await writeHistory(mission.id, 'active', mission.status, 'brain',
+    `Process ${planFailed ? 'blocked' : 'complete'}: ${processName} (${successTasks}/${totalTasks} tasks)`);
+
+  log('INFO', `Process "${processName}" ${planFailed ? 'BLOCKED' : 'COMPLETE'}: ${successTasks}/${totalTasks} tasks`);
+
+  // Write to memory
+  await writeMemory(mission);
+
+  // Context promotion for project-scoped missions
+  if (mission.project_id && mission.type === 'M' && mission.context) {
+    await suggestContextPromotions(mission);
+  }
+}
+
+/**
+ * Resume a process plan after an approval gate.
+ * Loads the child C/T envelopes from Firestore and continues execution
+ * from the task after the approval gate.
+ *
+ * @param {object} mission - The M-envelope with paused_checkpoint_index/paused_task_index
+ */
+async function resumeProcessPlan(mission) {
+  const ci = mission.source_meta?.paused_checkpoint_index;
+  const ti = mission.source_meta?.paused_task_index;
+
+  if (ci === undefined || ti === undefined) {
+    log('ERROR', `resumeProcessPlan: missing resume state on mission ${mission.id}`);
+    return;
+  }
+
+  log('INFO', `resumeProcessPlan: resuming ${mission.id} from CP${ci + 1} task ${ti + 2}`);
+
+  // Clean up paused state
+  delete mission.source_meta.paused_approval_id;
+  delete mission.source_meta.paused_checkpoint_index;
+  delete mission.source_meta.paused_task_index;
+  mission.status = 'active';
+  mission.updated_at = now();
+  await firestoreWrite('work', mission.id, mission);
+  await writeHistory(mission.id, 'awaiting_approval', 'active', 'brain', 'Approval granted — resuming');
+
+  // Load all child envelopes to reconstruct the plan
+  const allChildren = [];
+  for (const childId of (mission.children || [])) {
+    const child = await firestoreRead('work', childId);
+    if (child) allChildren.push(child);
+  }
+
+  // Reconstruct checkpointEnvelopes structure
+  const checkpointEnvelopes = [];
+  for (const cEnv of allChildren.filter(c => c.type === 'C').sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))) {
+    const tEnvelopes = [];
+    for (const tId of (cEnv.children || [])) {
+      const tEnv = await firestoreRead('work', tId);
+      if (tEnv) tEnvelopes.push(tEnv);
+    }
+    // Sort by created_at to preserve order
+    tEnvelopes.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    checkpointEnvelopes.push({ cEnvelope: cEnv, tEnvelopes });
+  }
+
+  if (checkpointEnvelopes.length === 0) {
+    log('ERROR', `resumeProcessPlan: no checkpoint envelopes found for mission ${mission.id}`);
+    return;
+  }
+
+  // Mark the approval gate task as complete
+  if (checkpointEnvelopes[ci] && checkpointEnvelopes[ci].tEnvelopes[ti]) {
+    const approvalTask = checkpointEnvelopes[ci].tEnvelopes[ti];
+    approvalTask.status = 'complete';
+    approvalTask.output = 'Approval granted';
+    approvalTask.completed_at = now();
+    approvalTask.updated_at = now();
+    await firestoreWrite('work', approvalTask.id, approvalTask);
+    await writeHistory(approvalTask.id, 'awaiting_approval', 'complete', 'brain', 'Approval granted');
+  }
+
+  // Recall memory for context
+  const memoryContext = await recallMemory(mission.instruction);
+
+  // Resume from the task AFTER the approval gate
+  await runProcessPlan(mission, checkpointEnvelopes, memoryContext, ci, ti + 1);
+}
+
+
 // Context entry kinds and their display icons
 const CONTEXT_KIND_LABELS = {
   drive_folder: 'drive_folder', sheet: 'sheet', doc: 'doc',
@@ -1472,6 +2057,18 @@ async function processIntake(intake) {
   // Create envelope based on classification
   const classification = decision.classification || 'new_task';
 
+  // ---- Process routing: deterministic execution for known processes ----
+  if (classification === 'new_mission' || classification === 'new_task') {
+    const processId = decision.process_id || decision.processId;
+    if (processId) {
+      await ensureProcessesLoaded();
+      if (PROCESSES[processId]) {
+        log('INFO', `Process route: '${processId}' detected — routing to executeProcess`);
+        return executeProcess(intake, decision, memoryContext, processId);
+      }
+    }
+  }
+
   // ---- Hard dedup guard: prevent duplicate active missions ----
   if (classification === 'new_mission' && activeEnvelopes.length > 0) {
     const newInst = (decision.instruction || intake.text || '').toLowerCase().substring(0, 120);
@@ -2305,8 +2902,14 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'follow_process') {
-      // Process execution: load process, validate parameters, convert to checkpoint_plan
+      // Deterministic process execution — redirect to dedicated executor
       const processId = decision.processId || decision.process_id;
+
+      if (!processId) {
+        log('ERROR', 'follow_process: missing processId');
+        priorResults.push({ agent: 'system', result: '[SYSTEM] follow_process requires a processId.' });
+        continue;
+      }
 
       // Guard: prevent re-executing a process that already ran in this envelope
       if (envelope.process_id) {
@@ -2319,88 +2922,15 @@ async function processEnvelope(envelope, memoryContext) {
       }
 
       await ensureProcessesLoaded();
-      const process = PROCESSES[processId];
-
-      if (!process) {
+      if (!PROCESSES[processId]) {
         log('ERROR', `follow_process: process '${processId}' not found`);
         priorResults.push({ agent: 'system', result: `[SYSTEM] Process '${processId}' not found. Available processes: ${Object.keys(PROCESSES).join(', ') || 'none'}` });
         continue;
       }
 
-      const parameters = decision.parameters || {};
-
-      // Validate required parameters
-      const requiredParams = Object.entries(process.parameters || {})
-        .filter(([, def]) => def && typeof def === 'object' && def.required && !def.default)
-        .map(([key]) => key);
-      const missingParams = requiredParams.filter(k => !(k in parameters));
-      if (missingParams.length > 0) {
-        log('WARN', `follow_process: missing required parameters: ${missingParams.join(', ')}`);
-        priorResults.push({
-          agent: 'system',
-          result: `[SYSTEM] Process '${process.name}' requires parameters that were not provided: ${missingParams.join(', ')}. Use needs_input to ask the user, or provide default values.`,
-        });
-        continue;
-      }
-
-      // Fill defaults for missing optional parameters
-      for (const [key, def] of Object.entries(process.parameters || {})) {
-        if (!(key in parameters) && def && typeof def === 'object' && def.default !== undefined) {
-          parameters[key] = def.default;
-        }
-      }
-
-      // Convert process to checkpoint_plan format
-      const cpPlan = processToCheckpointPlan(process, parameters);
-      if (!cpPlan) {
-        priorResults.push({ agent: 'system', result: `[SYSTEM] Process '${process.name}' has no steps defined.` });
-        continue;
-      }
-
-      log('INFO', `follow_process: executing '${process.name}' v${process.version || 1} with ${cpPlan.checkpoints.length} checkpoints`);
-
-      // Merge process context template into envelope context
-      if (process.contextTemplate && typeof process.contextTemplate === 'object') {
-        const templateCtx = {};
-        for (const [key, entry] of Object.entries(process.contextTemplate)) {
-          if (entry && typeof entry === 'object') {
-            // Substitute parameters in context template values
-            const processed = { ...entry };
-            if (processed.name) processed.name = processed.name.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-            if (processed.summary) processed.summary = processed.summary.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-            templateCtx[key] = processed;
-          }
-        }
-        envelope.context = mergeContextPackets(envelope.context, templateCtx);
-        await firestoreWrite('work', envelope.id, { ...envelope, context: envelope.context, updated_at: now() });
-      }
-
-      // Tag envelope with process metadata
-      envelope.process_id = processId;
-      envelope.process_version = process.version || 1;
-      await firestoreWrite('work', envelope.id, envelope);
-
-      // Increment execution count
-      try {
-        const token = await getAuthToken();
-        if (token) {
-          const procUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes/${processId}`;
-          const currentCount = process.execution_count || 0;
-          await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
-            method: 'PATCH',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: {
-              execution_count: { integerValue: String(currentCount + 1) },
-              last_executed_at: { stringValue: now() },
-            }}),
-          });
-        }
-      } catch (e) { log('DEBUG', `Process execution count update failed: ${e.message}`); }
-
-      // Fall through to checkpoint_plan by overwriting action and decision
-      decision = cpPlan;
-      action = 'checkpoint_plan';
-      // Note: falls through to checkpoint_plan handler below
+      // Hand off to deterministic executor — exits the Cortex decide loop
+      log('INFO', `follow_process: handing off '${processId}' to executeProcess`);
+      return executeProcess(null, decision, memoryContext || {}, processId, envelope);
     }
 
     if (action === 'checkpoint_plan') {
@@ -3268,26 +3798,32 @@ async function checkApprovedApprovals() {
           continue;
         }
 
-        // Approved — resume checkpoint execution from after the approval gate task
-        log('INFO', `Resuming checkpoint plan from CP${pausedCpIndex + 1} task ${pausedTaskIndex + 2}`);
+        // Approved — resume execution
+        if (envDoc.process_id) {
+          // Process work: use deterministic resumption (no Cortex loop)
+          log('INFO', `Approved: resuming process plan for ${envelopeId}`);
+          await resumeProcessPlan(envDoc);
+        } else {
+          // Non-process work: resume through Cortex decide loop (legacy)
+          log('INFO', `Resuming checkpoint plan from CP${pausedCpIndex + 1} task ${pausedTaskIndex + 2}`);
 
-        envDoc.status = 'active';
-        envDoc.updated_at = now();
-        // Clean up paused state
-        delete envDoc.source_meta.paused_approval_id;
-        delete envDoc.source_meta.paused_checkpoints;
-        delete envDoc.source_meta.paused_checkpoint_index;
-        delete envDoc.source_meta.paused_task_index;
-        delete envDoc.source_meta.paused_all_results;
-        await firestoreWrite('work', envelopeId, envDoc);
+          envDoc.status = 'active';
+          envDoc.updated_at = now();
+          // Clean up paused state
+          delete envDoc.source_meta.paused_approval_id;
+          delete envDoc.source_meta.paused_checkpoints;
+          delete envDoc.source_meta.paused_checkpoint_index;
+          delete envDoc.source_meta.paused_task_index;
+          delete envDoc.source_meta.paused_all_results;
+          await firestoreWrite('work', envelopeId, envDoc);
 
-        // Resume processing the envelope through the normal Cortex loop
-        // The approval gate task is marked as completed, remaining tasks continue
-        const memory = await recallMemory(envDoc.instruction, {
-          instruction: envDoc.instruction,
-          context_summary: (envDoc.context_summary || '').substring(0, 500),
-        });
-        await processEnvelope(envDoc, memory);
+          // Resume processing the envelope through the normal Cortex loop
+          const memory = await recallMemory(envDoc.instruction, {
+            instruction: envDoc.instruction,
+            context_summary: (envDoc.context_summary || '').substring(0, 500),
+          });
+          await processEnvelope(envDoc, memory);
+        }
       }
     }
   } catch (e) {
