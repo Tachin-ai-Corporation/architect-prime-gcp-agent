@@ -375,6 +375,18 @@
   color: #D84F45;
 }
 
+/* ---- Section Labels ---- */
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--mist);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 20px;
+  margin-bottom: 8px;
+  padding-left: 2px;
+}
+
 /* ---- Slot Grid ---- */
 .grid {
   display: grid;

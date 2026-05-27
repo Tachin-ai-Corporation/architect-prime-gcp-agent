@@ -353,27 +353,46 @@ function handleWorkspace() {
 
 function handleBrainConfig() {
   const configPath = join(OC_HOME, 'openclaw.json');
-  if (!existsSync(configPath)) {
+  const contractsPath = join(COREKIT_DIR, 'contracts.json');
+  
+  let defaultModel = '';
+  const slots = {};
+
+  // Read openclaw.json for gateway agent slots (cortex, motor, etc.)
+  if (existsSync(configPath)) {
+    try {
+      const config = JSON.parse(readFileSync(configPath, 'utf8'));
+      defaultModel = config?.agents?.defaults?.model?.primary || '';
+      const agentList = config?.agents?.list || [];
+      for (const agent of agentList) {
+        if (agent.id) {
+          slots[agent.id] = agent.model?.primary || null;
+        }
+      }
+    } catch (err) {
+      return { error: `Failed to parse openclaw.json: ${err.message}`, default: '', slots: {} };
+    }
+  } else {
     return { error: 'openclaw.json not found', default: '', slots: {} };
   }
-  try {
-    const config = JSON.parse(readFileSync(configPath, 'utf8'));
-    const defaultModel = config?.agents?.defaults?.model?.primary || '';
-    const slots = {};
-    const agentList = config?.agents?.list || [];
-    for (const agent of agentList) {
-      if (agent.id) {
-        slots[agent.id] = agent.model?.primary || null;
-      }
-    }
-    return { default: defaultModel, slots };
-  } catch (err) {
-    return { error: `Failed to parse openclaw.json: ${err.message}`, default: '', slots: {} };
+
+  // Read contracts.json for ears/mouth daemon models
+  const daemonModels = {};
+  if (existsSync(contractsPath)) {
+    try {
+      const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
+      daemonModels.ears = contracts?.ears?.preprocess?.model || null;
+      daemonModels.mouth = contracts?.mouth?.model || null;
+    } catch {}
   }
+
+  return { default: defaultModel, slots, daemonModels };
 }
 
 function handleSetModel(params) {
   const configPath = join(OC_HOME, 'openclaw.json');
+  const contractsPath = join(COREKIT_DIR, 'contracts.json');
+
   if (!existsSync(configPath)) {
     return { success: false, error: 'openclaw.json not found' };
   }
@@ -381,6 +400,7 @@ function handleSetModel(params) {
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     const newDefault = params.default;
     const overrides = params.overrides || {};
+    const daemonOverrides = params.daemonOverrides || {};
 
     // Update default model
     if (newDefault) {
@@ -390,7 +410,7 @@ function handleSetModel(params) {
       config.agents.defaults.model.primary = newDefault;
     }
 
-    // Apply per-agent overrides
+    // Apply per-agent overrides (cortex, motor, etc.)
     const agentList = config.agents?.list || [];
     for (const agent of agentList) {
       if (agent.id && overrides[agent.id] !== undefined) {
@@ -407,6 +427,26 @@ function handleSetModel(params) {
     // Write config back
     writeFileSync(configPath, JSON.stringify(config, null, 2));
     log('Updated openclaw.json with new model assignments', { default: newDefault, overrides });
+
+    // Apply daemon model overrides (ears/mouth) to contracts.json
+    if (Object.keys(daemonOverrides).length > 0 && existsSync(contractsPath)) {
+      try {
+        const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
+        if (daemonOverrides.ears) {
+          if (!contracts.ears) contracts.ears = {};
+          if (!contracts.ears.preprocess) contracts.ears.preprocess = {};
+          contracts.ears.preprocess.model = daemonOverrides.ears;
+        }
+        if (daemonOverrides.mouth) {
+          if (!contracts.mouth) contracts.mouth = {};
+          contracts.mouth.model = daemonOverrides.mouth;
+        }
+        writeFileSync(contractsPath, JSON.stringify(contracts, null, 2));
+        log('Updated contracts.json with daemon model overrides', { daemonOverrides });
+      } catch (err) {
+        log('contracts.json update failed (non-fatal)', { error: err.message });
+      }
+    }
 
     // NOTE: Do NOT restart gateway here. The restart kills this process
     // (since we run inside the container via docker exec). The tick() loop

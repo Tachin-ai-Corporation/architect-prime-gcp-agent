@@ -31,7 +31,13 @@ interface ModelsData {
 interface LiveBrainConfig {
   default: string; // e.g. "google-vertex/gemini-3.1-pro-preview"
   slots: Record<string, string | null>; // per-agent overrides (null = inherits default)
+  daemonModels?: { ears?: string | null; mouth?: string | null };
 }
+
+const DAEMON_SLOTS = [
+  { key: "ears", label: "Ears", desc: "Input preprocessor", icon: "👂" },
+  { key: "mouth", label: "Mouth", desc: "Output voicing", icon: "🗣️" },
+] as const;
 
 const SLOTS = [
   { key: "cortex", label: "Cortex", desc: "Plan executor", icon: "🧩" },
@@ -41,6 +47,8 @@ const SLOTS = [
   { key: "motor", label: "Motor", desc: "Executor", icon: "⚡" },
   { key: "cerebellum", label: "Cerebellum", desc: "Verifier", icon: "✅" },
 ] as const;
+
+const DAEMON_KEYS: Set<string> = new Set(DAEMON_SLOTS.map(s => s.key));
 
 /* ================================================================
    Model naming helpers
@@ -231,6 +239,11 @@ function BrainPage() {
 
     // 2. Live config from introspection
     if (liveConfig) {
+      // Daemon slots (ears/mouth) read from daemonModels
+      if (DAEMON_KEYS.has(slot)) {
+        const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
+        return dm || "gemini-2.5-flash"; // daemon default
+      }
       const override = liveConfig.slots[slot];
       return override || liveConfig.default || "—";
     }
@@ -239,7 +252,6 @@ function BrainPage() {
     if (modelsData) {
       const override = modelsData.assignments?.overrides?.[slot];
       if (override) {
-        // Firestore stores bare IDs, need to add prefix
         const catalogModel = modelsData.models.find((m) => m.id === override);
         return catalogModel ? toOpenClawId(catalogModel.id, catalogModel.provider) : override;
       }
@@ -273,6 +285,10 @@ function BrainPage() {
   /** Get slot model WITHOUT pending changes (for comparison) */
   const getSlotModelWithoutPending = (slot: string): string => {
     if (liveConfig) {
+      if (DAEMON_KEYS.has(slot)) {
+        const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
+        return dm || "gemini-2.5-flash";
+      }
       return liveConfig.slots[slot] || liveConfig.default || "—";
     }
     if (modelsData) {
@@ -300,6 +316,7 @@ function BrainPage() {
       // Build the new config: start from live config, apply pending changes
       const newDefault = liveConfig.default;
       const overrides: Record<string, string> = {};
+      const daemonOverrides: Record<string, string> = {};
 
       for (const slot of SLOTS) {
         const pending = pendingChanges[slot.key];
@@ -314,13 +331,22 @@ function BrainPage() {
         }
       }
 
+      // Daemon slot overrides (ears/mouth) — write to contracts.json
+      for (const slot of DAEMON_SLOTS) {
+        const pending = pendingChanges[slot.key];
+        if (pending) {
+          // Daemon models use bare Vertex AI model IDs (no openclaw prefix)
+          daemonOverrides[slot.key] = stripPrefix(pending);
+        }
+      }
+
       // Fire set_model introspection query
       const submit = await api<{ queryId: string }>(`/api/primes/${selectedPrimeId}/fleet/${selectedAgent}/introspect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: "set_model",
-          params: { default: newDefault, overrides },
+          params: { default: newDefault, overrides, daemonOverrides },
         }),
       });
 
@@ -511,13 +537,49 @@ function BrainPage() {
           </div>
         )}
 
-        {/* ---- Slot Grid ---- */}
-        <div className={styles.grid} id="brain-slot-grid">
-          {SLOTS.map(({ key, label, desc, icon }) => {
+        {/* ---- Daemon Services Section ---- */}
+        <div className={styles.sectionLabel} id="brain-daemon-section">Daemon Services</div>
+        <div className={styles.grid} id="brain-daemon-grid">
+          {DAEMON_SLOTS.map(({ key, label, desc, icon }) => {
             const modelId = getSlotModel(key);
             const isPending = !!pendingChanges[key];
             const displayModel = modelId === "—" ? "—" : getDisplayName(modelId, modelsData?.models || []);
             const shortId = modelId === "—" ? "" : stripPrefix(modelId);
+
+            return (
+              <button
+                key={key}
+                className={`${styles.slot} ${isPending ? styles.slotPending : ""} ${loadingLive ? styles.slotLoading : ""}`}
+                onClick={() => setPickerSlot(key)}
+                id={`brain-slot-${key}`}
+                disabled={loadingLive}
+              >
+                <span className={styles.slotIcon}>{icon}</span>
+                <span className={styles.slotLabel}>{label}</span>
+                <span className={styles.slotDesc}>{desc}</span>
+                {loadingLive ? (
+                  <span className={styles.slotModelLoading}>scanning…</span>
+                ) : (
+                  <>
+                    <span className={styles.slotModel}>{displayModel}</span>
+                    {shortId && <span className={styles.slotModelId}>{shortId}</span>}
+                  </>
+                )}
+                {isPending && <span className={styles.slotPendingBadge}>pending</span>}
+                {!loadingLive && <span className={styles.slotSwap}>click to swap</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ---- Brain Agents Section ---- */}
+        <div className={styles.sectionLabel} id="brain-agents-section">Brain Agents</div>
+        <div className={styles.grid} id="brain-slot-grid">
+          {SLOTS.map(({ key, label, desc, icon }) => {
+            const modelId = getSlotModel(key);
+            const isPending = !!pendingChanges[key];
+          const displayModel = modelId === "—" ? "—" : getDisplayName(modelId, modelsData?.models || []);
+          const shortId = modelId === "—" ? "" : (DAEMON_KEYS.has(key) ? modelId : stripPrefix(modelId));
 
             return (
               <button
@@ -551,7 +613,7 @@ function BrainPage() {
             <div className={styles.modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" id="brain-picker-modal">
               <div className={styles.modalHeader}>
                 <h2 className={styles.modalTitle}>
-                  Select model for {SLOTS.find((s) => s.key === pickerSlot)?.label}
+                  Select model for {[...DAEMON_SLOTS, ...SLOTS].find((s) => s.key === pickerSlot)?.label}
                 </h2>
                 <button className={styles.modalClose} onClick={() => setPickerSlot(null)} aria-label="Close">✕</button>
               </div>
