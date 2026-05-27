@@ -2941,11 +2941,31 @@ async function pollIntake() {
         await processIntake(intake);
       } catch (e) {
         log('ERROR', `Intake processing error: ${e.message}\n${e.stack}`);
+        const retryCount = (intake.retry_count || 0) + 1;
+        const MAX_RETRIES = 3;
         try {
-          await firestoreWrite('intake', intake.id, { ...intake, status: 'pending', claimed_at: null });
-          log('INFO', `Intake ${intake.id} reverted to pending for retry after exception`);
+          if (retryCount >= MAX_RETRIES) {
+            // Exhaust retries — fail the intake permanently
+            await firestoreWrite('intake', intake.id, {
+              ...intake,
+              status: 'failed',
+              error: `Exhausted ${MAX_RETRIES} retries: ${e.message}`,
+              retry_count: retryCount,
+              failed_at: now(),
+            });
+            log('ERROR', `Intake ${intake.id} permanently failed after ${MAX_RETRIES} retries: ${e.message}`);
+          } else {
+            // Revert to pending with incremented retry counter
+            await firestoreWrite('intake', intake.id, {
+              ...intake,
+              status: 'pending',
+              claimed_at: null,
+              retry_count: retryCount,
+            });
+            log('WARN', `Intake ${intake.id} reverted to pending (retry ${retryCount}/${MAX_RETRIES})`);
+          }
         } catch (revertErr) {
-          log('ERROR', `Failed to revert intake ${intake.id} to pending: ${revertErr.message}`);
+          log('ERROR', `Failed to update intake ${intake.id} status: ${revertErr.message}`);
         }
       }
     }
