@@ -709,9 +709,11 @@ function buildUserPrompt(mode, payload) {
       memory: payload.memory || {},
       core_facts: payload.memory?.recalled || null,
       active_envelopes: payload.active_envelopes || [],
+      recent_completed_missions: payload.recent_completed_missions || [],
       classification_guidance: {
         blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
+        dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as "short_circuit" and reference the prior result, or classify as "attach" to add follow-up context. Only create new_mission if the inbound is genuinely different work.',
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
       },
     };
@@ -1086,6 +1088,7 @@ async function scanRecentMissions(limit = 5) {
       .sort((a, b) => (b.completed_at || b.updated_at || '').localeCompare(a.completed_at || a.updated_at || ''))
       .slice(0, limit)
       .map(e => ({
+        id: e.id,
         instruction: (e.instruction || '').substring(0, 120),
         output: (e.output || '').substring(0, 150),
         status: e.status,
@@ -1384,7 +1387,8 @@ async function processIntake(intake) {
   // First recall: ambient context from raw inbound text (helps classify)
   const ambientMemory = await recallMemory(intake.text);
 
-  // Call Cortex in classify mode (with ambient memory)
+  // Call Cortex in classify mode (with ambient memory + recent missions for dedup)
+  const recentMissionsForClassify = await scanRecentMissions(5);
   const decision = await callCortex('classify', {
     inbound: {
       text: intake.text,
@@ -1393,6 +1397,7 @@ async function processIntake(intake) {
     },
     memory: ambientMemory,
     active_envelopes: activeEnvelopes,
+    recent_completed_missions: recentMissionsForClassify,
   });
 
   // Second recall: enriched with classify results (instruction, context_summary)
@@ -1456,6 +1461,31 @@ async function processIntake(intake) {
 
   // Create envelope based on classification
   const classification = decision.classification || 'new_task';
+
+  // ---- Hard dedup guard: prevent duplicate active missions ----
+  if (classification === 'new_mission' && activeEnvelopes.length > 0) {
+    const newInst = (decision.instruction || intake.text || '').toLowerCase().substring(0, 120);
+    const duplicate = activeEnvelopes.find(ae => {
+      const aeInst = (ae.instruction || '').toLowerCase();
+      // Simple similarity: shared prefix of meaningful length
+      const minLen = Math.min(newInst.length, aeInst.length);
+      if (minLen < 20) return false;
+      let matched = 0;
+      const words1 = newInst.split(/\s+/);
+      const words2 = aeInst.split(/\s+/);
+      for (const w of words1) {
+        if (w.length > 3 && words2.includes(w)) matched++;
+      }
+      return matched >= 3 && matched / words1.length > 0.4;
+    });
+    if (duplicate) {
+      log('WARN', `Dedup guard: suppressing new_mission — similar active envelope ${duplicate.id} exists. Forcing attach.`);
+      decision.classification = 'attach';
+      decision.attach_to = duplicate.id;
+      await handleAttach(intake, decision, memoryContext);
+      return;
+    }
+  }
 
   // Phase 3: Handle attach classification (follow-up to existing work)
   if (classification === 'attach') {
