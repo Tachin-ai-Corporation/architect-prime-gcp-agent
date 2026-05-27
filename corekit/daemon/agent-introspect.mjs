@@ -463,7 +463,7 @@ function handleResponsibilities() {
   const results = [];
   const possibleFiles = [
     join(COREKIT_DIR, 'responsibilities.json'),
-    join(COREKIT_DIR, 'responsibilities-prime.json'),
+    join(COREKIT_DIR, 'responsibilities-job.json'),
   ];
   for (const filePath of possibleFiles) {
     if (!existsSync(filePath)) continue;

@@ -354,28 +354,34 @@ function SkillsPage() {
   }, [selectedPrimeId, selectedAgent, isPrimeSelected]);
 
   /* ---- Effects ---- */
+  // Fetch introspection data when agent is selected (any tab)
   useEffect(() => {
-    if (selectedAgent && activeTab === "installed") {
+    if (selectedAgent) {
       fetchSkills();
       fetchCustomSkills();
-      fetchResponsibilities();
     } else {
       setSkills(null);
       setError(null);
       setLoading(false);
+      setCustomSkills([]);
     }
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-  }, [fetchSkills, fetchCustomSkills, fetchResponsibilities, selectedAgent, activeTab]);
+  }, [fetchSkills, fetchCustomSkills, selectedAgent]);
+
+  // Responsibilities only on Installed tab
+  useEffect(() => {
+    if (selectedAgent && activeTab === "installed") {
+      fetchResponsibilities();
+    }
+  }, [fetchResponsibilities, selectedAgent, activeTab]);
 
   useEffect(() => {
     if (activeTab === "library") {
       fetchCatalog();
-      // Also fetch custom skills so we know what's already installed
-      if (selectedAgent) fetchCustomSkills();
     }
-  }, [activeTab, fetchCatalog, fetchCustomSkills, selectedAgent]);
+  }, [activeTab, fetchCatalog]);
 
   useEffect(() => {
     if (activeTab === "proposals") fetchProposals();
