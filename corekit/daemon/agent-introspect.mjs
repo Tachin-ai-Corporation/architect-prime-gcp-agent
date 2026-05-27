@@ -458,6 +458,38 @@ function handleSetModel(params) {
   }
 }
 
+// ---- handleResponsibilities ----
+function handleResponsibilities() {
+  const results = [];
+  const possibleFiles = [
+    join(COREKIT_DIR, 'responsibilities.json'),
+    join(COREKIT_DIR, 'responsibilities-prime.json'),
+  ];
+  for (const filePath of possibleFiles) {
+    if (!existsSync(filePath)) continue;
+    try {
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
+      const responsibilities = data.responsibilities || [];
+      for (const r of responsibilities) {
+        results.push({
+          id: r.id || 'unknown',
+          name: r.name || r.id || 'Unnamed',
+          schedule: r.schedule || '',
+          enabled: r.enabled !== false,
+          min_spacing_minutes: r.min_spacing_minutes || 0,
+          instruction: (r.instruction || '').substring(0, 200),
+          has_process: !!(r.context?.process?.length),
+          process_steps: r.context?.process?.length || 0,
+          source: basename(filePath),
+        });
+      }
+    } catch (err) {
+      log('Error reading responsibilities file', { path: filePath, error: err.message });
+    }
+  }
+  return { responsibilities: results };
+}
+
 // ---- Query dispatcher ----
 function processQuery(type, params = {}) {
   switch (type) {
@@ -467,6 +499,7 @@ function processQuery(type, params = {}) {
     case 'workspace': return handleWorkspace();
     case 'brain_config': return handleBrainConfig();
     case 'set_model': return handleSetModel(params);
+    case 'responsibilities': return handleResponsibilities();
     default: throw new Error(`Unknown query type: ${type}`);
   }
 }

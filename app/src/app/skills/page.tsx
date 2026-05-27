@@ -49,6 +49,18 @@ interface SkillInstall {
   status: string;
 }
 
+interface Responsibility {
+  id: string;
+  name: string;
+  schedule: string;
+  enabled: boolean;
+  min_spacing_minutes: number;
+  instruction: string;
+  has_process: boolean;
+  process_steps: number;
+  source: string;
+}
+
 interface SkillProposal {
   id: string;
   skill_id: string;
@@ -85,9 +97,26 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: string; order: numb
 const PART_ICONS: Record<string, string> = {
   motor: "⚡",
   cerebellum: "🔬",
-  "temporal-research": "🔮",
+  "temporal-research": "🔍",
   cortex: "🧠",
   prefrontal: "📋",
+};
+
+const PART_LABELS: Record<string, string> = {
+  motor: "Motor",
+  cerebellum: "Cerebellum",
+  "temporal-research": "Research",
+  cortex: "Cortex",
+  prefrontal: "Prefrontal",
+};
+
+const LIBRARY_CATEGORY_LABELS: Record<string, { label: string; icon: string; order: number }> = {
+  workspace: { label: "Workspace", icon: "📎", order: 1 },
+  fleet: { label: "Fleet", icon: "🚀", order: 2 },
+  search: { label: "Search", icon: "🔍", order: 3 },
+  memory: { label: "Memory", icon: "💾", order: 4 },
+  system: { label: "System", icon: "⚙️", order: 5 },
+  other: { label: "Other", icon: "📦", order: 99 },
 };
 
 type TabKey = "installed" | "library" | "proposals";
@@ -184,6 +213,14 @@ function SkillsPage() {
   const [proposalsLoading, setProposalsLoading] = useState(false);
   const [previewProposal, setPreviewProposal] = useState<SkillProposal | null>(null);
 
+  /* ---- Responsibilities (Installed tab) ---- */
+  const [responsibilities, setResponsibilities] = useState<Responsibility[]>([]);
+  const [respLoading, setRespLoading] = useState(false);
+  const [respExpanded, setRespExpanded] = useState(false);
+
+  /* ---- Library collapsible state ---- */
+  const [collapsedLibGroups, setCollapsedLibGroups] = useState<Set<string>>(new Set());
+
   /* ---- Fetch skills via Firestore introspect bus ---- */
   const fetchSkills = useCallback(async () => {
     if (!selectedPrimeId || !selectedAgent) return;
@@ -276,11 +313,52 @@ function SkillsPage() {
     setProposalsLoading(false);
   }, [selectedPrimeId]);
 
+  /* ---- Fetch responsibilities via introspect ---- */
+  const fetchResponsibilities = useCallback(async () => {
+    if (!selectedPrimeId || !selectedAgent) return;
+    setRespLoading(true);
+    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
+    const submitRes = await api<{ queryId: string; status: string }>(
+      `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "responsibilities" }),
+      }
+    );
+    if (!submitRes?.queryId) {
+      setRespLoading(false);
+      return;
+    }
+    const queryId = submitRes.queryId;
+    let attempts = 0;
+    const poll = async () => {
+      attempts++;
+      const result = await api<{
+        queryId: string; type: string; status: string;
+        result: { responsibilities: Responsibility[] } | null;
+        error: string | null;
+      }>(`/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect?queryId=${queryId}`);
+      if (result?.status === "complete" && result.result) {
+        setResponsibilities(result.result.responsibilities || []);
+        setRespLoading(false);
+        return;
+      }
+      if (result?.status === "error" || attempts >= 15) {
+        setRespLoading(false);
+        return;
+      }
+      setTimeout(poll, 1000);
+    };
+    setTimeout(poll, 1000);
+  }, [selectedPrimeId, selectedAgent, isPrimeSelected]);
+
   /* ---- Effects ---- */
   useEffect(() => {
     if (selectedAgent && activeTab === "installed") {
       fetchSkills();
       fetchCustomSkills();
+      fetchResponsibilities();
     } else {
       setSkills(null);
       setError(null);
@@ -289,11 +367,15 @@ function SkillsPage() {
     return () => {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
-  }, [fetchSkills, fetchCustomSkills, selectedAgent, activeTab]);
+  }, [fetchSkills, fetchCustomSkills, fetchResponsibilities, selectedAgent, activeTab]);
 
   useEffect(() => {
-    if (activeTab === "library") fetchCatalog();
-  }, [activeTab, fetchCatalog]);
+    if (activeTab === "library") {
+      fetchCatalog();
+      // Also fetch custom skills so we know what's already installed
+      if (selectedAgent) fetchCustomSkills();
+    }
+  }, [activeTab, fetchCatalog, fetchCustomSkills, selectedAgent]);
 
   useEffect(() => {
     if (activeTab === "proposals") fetchProposals();
@@ -422,7 +504,7 @@ function SkillsPage() {
       })
     : [];
 
-  /* ---- Library: group by agent_part, filter by search ---- */
+  /* ---- Library: group by category, filter by search ---- */
   const filteredCatalog = useMemo(() => {
     const q = librarySearch.toLowerCase().trim();
     const filtered = q
@@ -430,21 +512,50 @@ function SkillsPage() {
           (s) =>
             s.name.toLowerCase().includes(q) ||
             s.id.toLowerCase().includes(q) ||
-            s.description.toLowerCase().includes(q)
+            s.description.toLowerCase().includes(q) ||
+            s.agent_part.toLowerCase().includes(q) ||
+            s.category.toLowerCase().includes(q)
         )
       : catalog;
 
     const groups: Record<string, SkillManifest[]> = {};
     for (const s of filtered) {
-      const part = s.agent_part || "motor";
-      if (!groups[part]) groups[part] = [];
-      groups[part].push(s);
+      const cat = s.category || "other";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(s);
     }
-    return groups;
+    return Object.entries(groups).sort(([a], [b]) => {
+      const oa = LIBRARY_CATEGORY_LABELS[a]?.order ?? 99;
+      const ob = LIBRARY_CATEGORY_LABELS[b]?.order ?? 99;
+      return oa - ob;
+    });
   }, [catalog, librarySearch]);
 
-  /* ---- Custom skill IDs set (for quick lookup) ---- */
-  const customSkillIds = useMemo(() => new Set(customSkills.map((s) => s.id)), [customSkills]);
+  /* ---- Compute installed skill IDs (VM introspection + Firestore custom) ---- */
+  const allInstalledSkillIds = useMemo(() => {
+    const ids = new Set(customSkills.map((s) => s.id));
+    // Also include skills detected from VM introspection (skill packs)
+    if (skills?.skillPacks) {
+      for (const pack of skills.skillPacks) {
+        ids.add(pack.name);
+      }
+    }
+    return ids;
+  }, [customSkills, skills]);
+
+  /* ---- Count skills per brain-agent type from catalog ---- */
+  const perAgentPartCounts = useMemo(() => {
+    const counts: Record<string, { total: number; installed: number }> = {};
+    for (const s of catalog) {
+      const part = s.agent_part || "motor";
+      if (!counts[part]) counts[part] = { total: 0, installed: 0 };
+      counts[part].total++;
+      if (allInstalledSkillIds.has(s.id)) counts[part].installed++;
+    }
+    return counts;
+  }, [catalog, allInstalledSkillIds]);
+
+
 
   /* ---- Pending proposals count ---- */
   const pendingCount = proposals.filter((p) => p.status === "proposed").length;
@@ -766,6 +877,56 @@ function SkillsPage() {
                   </button>
                 )}
 
+                {/* ---- Responsibilities ---- */}
+                <section className={styles.categorySection} style={{ marginTop: 20 }}>
+                  <button
+                    className={styles.categoryHeader}
+                    onClick={() => setRespExpanded((v) => !v)}
+                    id="cat-responsibilities"
+                  >
+                    <span className={styles.categoryIcon}>📋</span>
+                    <span className={styles.categoryName}>Responsibilities</span>
+                    <span className={styles.categoryCount}>
+                      {respLoading ? "…" : responsibilities.length}
+                    </span>
+                    <span className={`${styles.chevron} ${respExpanded ? styles.chevronOpen : ""}`}>▸</span>
+                  </button>
+                  {respExpanded && (
+                    <div className={styles.toolList}>
+                      {respLoading && (
+                        <div className={styles.toolRow}>
+                          <span className={styles.toolDesc}>Querying agent VM…</span>
+                        </div>
+                      )}
+                      {!respLoading && responsibilities.length === 0 && (
+                        <div className={styles.toolRow}>
+                          <span className={styles.toolDesc}>No responsibilities configured</span>
+                        </div>
+                      )}
+                      {responsibilities.map((r) => (
+                        <div key={r.id} className={styles.respRow}>
+                          <div className={styles.respInfo}>
+                            <div className={styles.respName}>
+                              <span className={`${styles.respDot} ${r.enabled ? styles.respDotOn : styles.respDotOff}`} />
+                              {r.name}
+                            </div>
+                            <div className={styles.respMeta}>
+                              <code className={styles.respSchedule}>{r.schedule}</code>
+                              {r.has_process && (
+                                <span className={styles.respProcess}>{r.process_steps} steps</span>
+                              )}
+                              {r.min_spacing_minutes > 0 && (
+                                <span>min {Math.round(r.min_spacing_minutes / 60)}h spacing</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className={styles.respDesc}>{r.instruction}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
                 {skills && (
                   <div className={styles.note} id="agent-skills-note">
                     <span className={styles.noteIcon}>ℹ️</span>
@@ -812,49 +973,88 @@ function SkillsPage() {
               </div>
             )}
 
-            {/* Skills grouped by agent_part */}
-            {!catalogLoading && Object.entries(filteredCatalog).map(([part, partSkills]) => (
-              <section key={part} className={styles.libraryGroup}>
-                <div className={styles.libraryGroupHeader}>
-                  <span className={styles.categoryIcon}>{PART_ICONS[part] || "📦"}</span>
-                  <span className={styles.categoryName}>{part}</span>
-                  <span className={styles.categoryCount}>{partSkills.length}</span>
-                </div>
-                <div className={styles.libraryCards}>
-                  {partSkills.map((skill) => {
-                    const isInstalled = customSkillIds.has(skill.id);
-                    return (
-                      <div key={skill.id} className={styles.skillCard} id={`skill-${skill.id}`}>
-                        <div className={styles.skillCardTop}>
-                          <div className={styles.skillCardName}>{skill.name}</div>
-                          <span className={`${styles.originBadge} ${styles[`origin_${skill.origin}`] || ""}`}>
-                            {skill.origin}
-                          </span>
-                        </div>
-                        <div className={styles.skillCardDesc}>{skill.description}</div>
-                        <div className={styles.skillCardMeta}>
-                          v{skill.version} · {skill.category}
-                        </div>
-                        {selectedAgent && (
-                          <div className={styles.skillCardActions}>
-                            {isInstalled ? (
-                              <span className={styles.installedBadge}>✓ Installed</span>
-                            ) : (
-                              <button
-                                className={styles.installBtn}
-                                onClick={() => handleInstallSkill(skill.id, skill.origin, skill.version)}
-                              >
-                                + Install
-                              </button>
+            {/* Brain agent type installed counts */}
+            {selectedAgent && Object.keys(perAgentPartCounts).length > 0 && (
+              <div className={styles.partCountStrip}>
+                {Object.entries(perAgentPartCounts)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([part, counts]) => (
+                    <div key={part} className={styles.partCountChip}>
+                      <span>{PART_ICONS[part] || "📦"}</span>
+                      <span className={styles.partCountLabel}>{PART_LABELS[part] || part}</span>
+                      <span className={styles.partCountNum}>
+                        {counts.installed}/{counts.total}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {/* Skills grouped by category (collapsible) */}
+            {!catalogLoading && filteredCatalog.map(([cat, catSkills]) => {
+              const meta = LIBRARY_CATEGORY_LABELS[cat] || { label: cat, icon: "📦", order: 99 };
+              const isCollapsed = collapsedLibGroups.has(cat);
+              return (
+                <section key={cat} className={styles.libraryGroup}>
+                  <button
+                    className={styles.libraryGroupHeaderBtn}
+                    onClick={() => {
+                      setCollapsedLibGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(cat)) next.delete(cat);
+                        else next.add(cat);
+                        return next;
+                      });
+                    }}
+                  >
+                    <span className={styles.categoryIcon}>{meta.icon}</span>
+                    <span className={styles.categoryName}>{meta.label}</span>
+                    <span className={styles.categoryCount}>{catSkills.length}</span>
+                    <span className={`${styles.chevron} ${isCollapsed ? "" : styles.chevronOpen}`}>▸</span>
+                  </button>
+                  {!isCollapsed && (
+                    <div className={styles.libraryCards}>
+                      {catSkills.map((skill) => {
+                        const isInstalled = allInstalledSkillIds.has(skill.id);
+                        return (
+                          <div key={skill.id} className={`${styles.skillCard} ${isInstalled ? styles.skillCardInstalled : ""}`} id={`skill-${skill.id}`}>
+                            <div className={styles.skillCardTop}>
+                              <div className={styles.skillCardName}>{skill.name}</div>
+                              <div className={styles.skillCardBadges}>
+                                <span className={styles.partBadge} title={`Routes to ${skill.agent_part}`}>
+                                  {PART_ICONS[skill.agent_part] || "📦"} {PART_LABELS[skill.agent_part] || skill.agent_part}
+                                </span>
+                                <span className={`${styles.originBadge} ${styles[`origin_${skill.origin}`] || ""}`}>
+                                  {skill.origin}
+                                </span>
+                              </div>
+                            </div>
+                            <div className={styles.skillCardDesc}>{skill.description}</div>
+                            <div className={styles.skillCardMeta}>
+                              v{skill.version}
+                            </div>
+                            {selectedAgent && (
+                              <div className={styles.skillCardActions}>
+                                {isInstalled ? (
+                                  <span className={styles.installedBadge}>✓ Installed</span>
+                                ) : (
+                                  <button
+                                    className={styles.installBtn}
+                                    onClick={() => handleInstallSkill(skill.id, skill.origin, skill.version)}
+                                  >
+                                    + Install
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
 
             {!catalogLoading && catalog.length === 0 && (
               <div className={styles.emptyState}>
