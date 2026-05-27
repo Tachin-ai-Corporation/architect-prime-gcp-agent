@@ -1,1 +1,32 @@
-{"version": 1, "responsibilities": []}
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-skill-discovery",
+      "name": "Skill Discovery",
+      "schedule": "0 4 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 1200,
+      "instruction": "Analyze fleet work from the past 24 hours to identify repeatable patterns that should become codified skills. Propose new skills or improvements to existing skills.",
+      "context": {
+        "purpose": "Skills are learned behaviors codified as executable instructions and scripts. They persist outside the LLM's memory — surviving model reboots and context resets. An agent's competence is the sum of its installed skills. This responsibility automates the discovery of new skills by analyzing real fleet work and extracting repeatable patterns.",
+        "process": [
+          "STEP 1 — GATHER WORK: Query fleet work envelopes completed in the last 24 hours. Focus on missions that involved multi-step execution (3+ dispatches).",
+          "STEP 2 — GATHER TELEMETRY: Examine dispatch telemetry for the same period. Look for: repeated tool sequences (same 3+ commands across missions), custom scripts Motor wrote that succeeded, verification patterns Cerebellum checked repeatedly, research patterns in temporal-research dispatches.",
+          "STEP 3 — COMPARE EXISTING: Read the current installed skill manifests (skill.json files in /opt/openclaw/.openclaw/skills/) to understand what is already covered. Do not propose duplicates.",
+          "STEP 4 — IDENTIFY CANDIDATES: For each candidate pattern, evaluate: (a) Was this pattern used 2+ times across separate missions? (b) Is it atomic — one capability, not a bundle? (c) Is it portable — no hardcoded project IDs, URLs, or credentials? (d) Does an existing skill already cover this? If all answers favor creating a skill, proceed.",
+          "STEP 5 — CHECK FOR IMPROVEMENTS: Also check if any agent worked around a limitation in an existing skill. Signs: Motor wrote manual commands for something a skill should cover, an agent failed and then succeeded with a different approach, an agent encountered edge cases not covered by current SKILL.md instructions.",
+          "STEP 6 — GENERATE PROPOSALS: For each candidate (max 3 per run), use the skill-author tool to generate the skill package: `skill-author create --id <id> --name <name> --description <desc> --agent-part <part> --category <cat> --when-to-use <when>`",
+          "STEP 7 — VALIDATE: Run `skill-author validate --dir <path>` on each generated package to verify format.",
+          "STEP 8 — SUBMIT: Write proposals to Firestore at primes/{prime_id}/skill-proposals/{proposal_id}. Each proposal document should contain: skill_id, name, description, agent_part, category, type (new or improvement), status (proposed), proposed_by (this agent's name), proposed_at (ISO timestamp), discovery_context (which agent/missions triggered this), skill_md (full SKILL.md content), skill_json (full skill.json content).",
+          "STEP 9 — REPORT: Summarize findings: how many work items reviewed, candidates identified, proposals submitted, and any improvement opportunities flagged."
+        ],
+        "reference_files": [
+          "workspace/TOOLS.md"
+        ],
+        "success_criteria": "Fleet work patterns analyzed. New skill proposals (if any) written to Firestore with status 'proposed'. Improvement proposals (if any) include diff context. Maximum 3 proposals per run to maintain quality. Zero proposals is a valid outcome if no patterns qualify.",
+        "prior_learnings": "Be conservative — only propose skills that meet the quality bar (repeated across missions, atomic, portable, not covered by existing skills). A proposal that gets rejected wastes human review time. Quality over quantity."
+      }
+    }
+  ]
+}

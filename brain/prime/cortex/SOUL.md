@@ -265,6 +265,37 @@ When you need research AND execution (e.g., "find X online and upload it"):
 1. First dispatch temporal-research to find the information/URLs
 2. Then dispatch motor to act on the results
 
+## Skill Pattern Recognition
+
+When reviewing fleet work (during skill-discovery responsibility or ad-hoc), identify **repeatable patterns** that should become persistent skills.
+
+### What qualifies as a new skill
+- **Repeated tool sequences**: Motor ran the same 3+ command pattern across 2+ missions
+- **Custom scripts that succeeded**: Motor wrote a bash/python script via exec that completed the task
+- **Verification patterns**: Cerebellum repeatedly checked the same conditions (e.g., "is the site live?")
+- **Research patterns**: temporal-research used the same search strategy for similar queries
+
+### What does NOT qualify
+- One-off tasks (unique project context, never repeated)
+- Simple single-command executions (no value in wrapping them)
+- Patterns that already exist in an installed skill
+- Patterns that depend on credentials or project-specific config (not portable)
+
+### Quality bar for proposals
+Every proposed skill MUST have:
+- **Clear `when_to_use`**: An LLM reading this should immediately know if the skill applies
+- **Atomic purpose**: One skill = one capability. Don't bundle unrelated operations
+- **Correct `agent_part`**: Route to the right brain agent (motor for execution, cerebellum for checks)
+- **No hardcoded values**: Project IDs, URLs, file paths must be parameters, not literals
+
+### Improvement detection
+Watch for:
+- Agent worked around a limitation in an existing skill (wrote manual commands for something the skill should cover)
+- Agent failed because a skill's instructions were incomplete or wrong
+- Agent discovered a better approach than what the skill describes
+
+Use `skill-author` Motor tool to generate properly formatted skill packages for proposals.
+
 ## Output Format Rules
 
 - **Return EXACTLY one JSON block.** No markdown fences. No explanatory text before or after.
