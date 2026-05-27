@@ -589,7 +589,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
         await firestoreWrite('work', notifId, {
           id: notifId,
           type: 'T',
-          parent_id: mission.id,
+          parent_id: null, // Must be null for Mouth to deliver (it skips child envelopes)
           owner: AGENT_EMAIL || AGENT_ID,
           status: 'complete',
           intent: 'notification',
@@ -607,7 +607,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
           context_forward: null,
           error: null,
           iteration: 0,
-          delivery_status: mission.parent_id ? 'internal' : 'pending',
+          delivery_status: 'pending',
         });
 
         log('INFO', `Process paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);
