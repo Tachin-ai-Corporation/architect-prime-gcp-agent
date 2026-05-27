@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.27.11.0)
+## Current Architecture (v2026.05.27.12.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -22,7 +22,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - temporal-research is web search + URL fetching (Vertex AI grounding + web-fetch, zero execution tools)
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
   - cerebellum is a pure test runner: executes validation rules, reports PASS/FAIL with evidence, structured verdicts (ALL_PASS/FAIL/NO_RULES)
-- **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
+- **Dynamic skill awareness**: `assemble-tools` generates per-agent TOOLS.md from `skill.json` manifests (routes by `agent_part` field). Execution agents get full SKILL.md content; planning agents get compact index tables. `skill-author` Motor tool for generating new skill packages. Custom skills synced from Firestore during `upgrade-corekit`. Prime runs nightly `r-skill-discovery` responsibility to propose new skills. Dashboard 3-tab skills page (Installed/Library/Proposals) with per-agent install/uninstall.
 - **Responsibility self-management**: Agents create responsibilities through normal M→C→T pipeline. `responsibility-manage` Motor tool for CRUD on `responsibilities-job.json`. Cortex classifies responsibility requests as new_mission → Prefrontal designs process → Motor writes config → Cerebellum verifies. Brain scheduler fires responsibilities on cron schedules. Responsibilities can link to stored processes via `processRef` + `processParams` for deterministic execution.
 - **Context assembly**: System prompt loads SOUL.md + IDENTITY.md + MEMORY.md + full agent registry (cached, 60s TTL). Per-agent generation params: Motor 65536 max_tokens, Cortex/Prefrontal 32768, Cerebellum/Memory 8192. Temperature tuned per role (0.1–0.6). Envelope context accumulation: rolling 400K token budget with oldest-first pruning.
 - **Input/Output architecture (ears + mouth)**:

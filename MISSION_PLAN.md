@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.27.11.0`
+> - **Current version:** `v2026.05.27.12.0`
 
 ---
 
@@ -56,6 +56,8 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home, top-level Work/Brain/
     ├── primes/{id}/fleet/{agent}/introspect/{queryId} → Introspection query/result bus
     ├── primes/{id}/processes/{id}     → Stored reusable processes (step sequences)
     ├── primes/{id}/approvals/{id}     → Approval gate documents (pending/approved/rejected)
+    ├── primes/{id}/fleet/{agent}/skills/{id} → Per-agent custom skill installs
+    ├── primes/{id}/skill-proposals/{id}  → Skill discovery proposals (new/improvement)
     ├── primes/{id}/projects/{id}/promotions/{id} → Context promotion candidates
     └── config/dwd                    → DWD configuration
          │
@@ -351,7 +353,7 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 - Prime Motor has fleet lifecycle tools: fleet-deploy, fleet-hire, fleet-fire, fleet-status, fleet-upgrade, fleet-verify
 - Prime skills are focused on fleet management and will be progressively exposed through the dashboard for manual triggering
 
-**Dynamic skill awareness:** `assemble-tools` generates `TOOLS.md` from the agent type's skill list (in `agent-registry.json`) and copies it to cortex, prefrontal, and motor workspaces. Prefrontal reads TOOLS.md to know which tools are available before planning.
+**Dynamic skill awareness:** `assemble-tools` generates per-agent `TOOLS.md` from `skill.json` manifests, routing skills by `agent_part` field. Execution agents (motor, cerebellum, temporal-research) get full SKILL.md content for their skills. Planning agents (cortex, prefrontal) get a compact index table (name + when_to_use + target agent). Custom skills synced from Firestore during `upgrade-corekit` are included. `skill-author` Motor tool generates new skill packages. Prefrontal reads TOOLS.md to know which tools are available before planning.
 
 **Three-layer memory model:**
 - **Working Memory (`MEMORY.md`):** Loaded into every Cortex system prompt. Agent's RAM — accumulates freely during the day, pruned nightly to < 2,000 chars.
@@ -592,7 +594,8 @@ architect-prime/
 | | `brain-telemetry-read` | Queries recent dispatch telemetry for debugging (table or JSON) |
 | | `agent-ask` | Vertex AI grounding web search (used by temporal-research) |
 | | `agent-status` | Reads/writes agent STATUS.json |
-| | `assemble-tools` | Builds TOOLS.md from skill definitions |
+| | `assemble-tools` | Builds per-agent TOOLS.md from skill.json manifests (routes by agent_part) |
+| | `skill-author` | Generates new skill packages (create/validate/list-parts) |
 | | `task-log-write` | Writes structured task lifecycle record to Firestore |
 | | `task-log-read` | Queries recent task records from Firestore |
 | | `responsibility-manage` | CRUD for responsibilities-job.json (create/update/list/delete) + `--process-ref` linking |
@@ -1134,13 +1137,23 @@ architect-prime/
 14. **Mission dedup guard** — Added `recent_completed_missions` in classify payload + hard dedup against duplicate active missions.
 15. **Intake retry limit** — Max 3 retries on deterministic errors prevents infinite retry loops.
 
-### Current: Next Phase — Prime Skills + Skill CRUD
-> *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*
+### Completed: v2026.05.27.12.0 — Skill Ecosystem Architecture
+> *Self-describing skills, per-agent routing, dashboard 3-tab management, Prime auto-discovery, Firestore custom skills sync.*
+
+1. **skill.json manifest format** — Every skill package now has a self-describing `skill.json` with `id`, `name`, `version`, `description`, `agent_part` (routing target), `category`, `origin` (core/specialty/learned), and `when_to_use`. 13 core skills + 1 specialty skill retrofitted with manifests.
+2. **kit.json manifests** — 8 specialty types formalized with `kit.json` containing skill lists and workspace metadata.
+3. **Per-agent TOOLS.md routing** — `assemble-tools` rewritten to generate per-agent TOOLS.md files. Skills routed by `agent_part` field: execution agents (motor, cerebellum, temporal-research) get full SKILL.md content, planning agents (cortex, prefrontal) get a compact index table.
+4. **skill-author Motor tool** — New tool for generating properly formatted skill packages (`create`, `validate`, `list-parts` subcommands).
+5. **Dashboard 3-tab Skills page** — Installed tab (live VM introspection + Firestore custom skills + uninstall), Library tab (full catalog grouped by agent_part with search + install), Proposals tab (Prime discovery suggestions with approve/reject/preview).
+6. **3 new API routes** — `/api/skills` (dynamic catalog), `/api/primes/{id}/fleet/{agent}/skills` (per-agent install CRUD), `/api/primes/{id}/skill-proposals` (proposal review).
+7. **Firestore custom skills sync** — `upgrade-corekit` queries `primes/{prime}/fleet/{agent}/skills` at upgrade time, downloads skill packages from GitHub repo or extracts from Firestore docs, writes to `workspace/custom-skills/` before `assemble-tools` runs.
+8. **Prime skill discovery responsibility** — `r-skill-discovery` (nightly 4AM UTC): 9-step process analyzing fleet work to find repeatable patterns, max 3 proposals per run.
+9. **Cortex skill pattern recognition** — SOUL.md updated with qualification criteria (repeated patterns, custom scripts, verification patterns), quality bar (atomic, portable, correct agent_part), and improvement detection.
+
+### Current: Next Phase — RSI Engine
+> *Goal: Self-improvement via code-write/test skills with human gates.*
 
 Candidates:
-- Build 5 skill operation types for Prime (install, uninstall, enable, disable, configure)
-- Prime-specific skills: fleet health monitoring, cost analysis, capacity planning
-- Dashboard skill CRUD — manual install/uninstall/toggle from the Skills page
 - RSI Engine (git-ops, code-write/test skills, human gates)
 - Fleet templates and self-evolution
 - Multi-project federation
