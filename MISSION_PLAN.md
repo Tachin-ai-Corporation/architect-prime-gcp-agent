@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.26.10.0`
+> - **Current version:** `v2026.05.27.11.0`
 
 ---
 
@@ -322,7 +322,7 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 | Agent | Model | Role | Workspace | Tools |
 |-------|-------|------|-----------|-------|
 | **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec |
-| **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `~/.openclaw/workspace-temporal-research` | exec (agent-ask only) |
+| **temporal-research** | gemini-2.5-flash | Web search + URL fetching (Vertex AI grounding + web-fetch) | `~/.openclaw/workspace-temporal-research` | exec (agent-ask, web-fetch) |
 | **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) | `~/.openclaw/workspace-temporal-memory` | read, exec (core-memory-read only) |
 | **prefrontal** | gemini-2.5-flash | Two-mode dispatch planner (simple + advisory) | `~/.openclaw/workspace-prefrontal` | read only |
 | **motor** | gemini-2.5-flash | Execution + advisory mode + ALL Workspace tools | `~/.openclaw/workspace-motor` | read, write, edit, exec |
@@ -361,8 +361,8 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 - **Nightly consolidation:** 10-step responsibility-driven process (gather → triage → reconcile T2 → retire stale → promote → prune T1 → review Deep Truths → report). Max 5 T2 writes/retires + 2 Deep Truth changes per run.
 
 **Locked-in design decisions:**
-- 🔒 Web search = `exec agent-ask` (Vertex AI grounding). NEVER native web-search tool.
-- 🔒 `temporal-research` is the ONLY agent capable of web search.
+- 🔒 Web search = `exec agent-ask` (Vertex AI grounding) + `exec web-fetch` (URL content extraction). NEVER native web-search tool.
+- 🔒 `temporal-research` is the ONLY agent capable of web search and URL fetching. Motor must NEVER do web research.
 - 🔒 `temporal-memory` has ZERO external API tools — pure memory only.
 - 🔒 Fleet Motor owns Google Workspace tools per job type (never globally). Prime Motor has ZERO Workspace tools.
 - 🔒 Prime is infrastructure only — fleet management, visibility, hire/fire. Never a worker. No Workspace skills.
@@ -1114,6 +1114,25 @@ architect-prime/
 3. **Cortex LLM title generation** — Updated Cortex SOUL.md classify output schema with mandatory `title` field (5-12 word human-readable summary). Three examples updated. Brain daemon uses Cortex-provided title when available, falls back to heuristic `summarizeTitle()`.
 4. **Stan data migration** — Migrated 304 work items: generated titles for all items (0 errors), linked 206 items to `tachin-website` project via `project_id`. Owner verified as agent's actual workspace email (`AGENT_USER_EMAIL` env var).
 5. **Domain placeholder cleanup** — Replaced hardcoded `@tachin.ai` in MISSION_PLAN naming conventions and fleet table with `{workspace-domain}` placeholders. Workspace email domain is operator-specific, not hardcoded.
+
+### Completed: v2026.05.27.11.0 — Autonomous Agency Hardening
+> *Deterministic process execution, self-correction protocol, verification gates, risk classification, web-fetch tool, systemic search upgrades.*
+
+1. **Deterministic process executor** — Process execution now stamps full M/C/T hierarchy upfront and executes without re-entering the Cortex decide loop. Process-bound steps run deterministically with proper delegation, approval gates, and spawn_responsibility step types.
+2. **Context-rich approval notifications** — Approval gate notifications now include prior step results and LLM-summarized context. `summarizeForDelivery()` in `agent-mouth.mjs` supports context-type-aware summarization (approval requests get reader-friendly extraction, other types pass through).
+3. **Project-level required_processes** — Projects can define `required_processes` with description+process pairs. Cortex SOUL.md instructs LLM to match incoming work against these descriptions and use `follow_process` instead of ad-hoc motor dispatch.
+4. **Self-correction protocol** — Cortex SOUL.md now includes a structured correction chain: fix the immediate problem → identify the source document (process/project/responsibility/memory) → update it autonomously. No approval needed for corrections.
+5. **Automatic checkpoint verification** — Brain runs automatic verification at every checkpoint boundary. Cerebellum verifies outcomes against acceptance criteria.
+6. **Workspace ownership** — Agents can freely clean up stale workspace files (old configs, cached artifacts, temporary workspaces) without approval.
+7. **Content verification rules** — Cortex must add cerebellum verification before deploying external content (images, attributed content, web-fetched data). Verification failure blocks deployment.
+8. **Action risk classification** — LOW (auto-proceed), MEDIUM (add verification), HIGH (always recommend approval gate). HIGH includes: deploying, attaching content to people's identities, deleting data, external communications, publishing.
+9. **Agent dispatch for web research** — Cortex SOUL.md now explicitly requires `temporal-research` for ALL web research. Motor must NEVER do web research (it has no search tools and resorts to fragile HTML scraping).
+10. **temporal-research search strategy** — Complete SOUL.md rewrite with prioritized search methodology: LinkedIn first → company website → professional directories → broad search. Image provenance verification rules.
+11. **`web-fetch` CoreKit tool** — New tool for temporal-research. Fetches URLs, extracts readable text or raw HTML, strips scripts/styles, extracts image URLs with metadata. Safety: 500KB max, 10s timeout.
+12. **Dashboard ears/mouth LLM control** — Brain page now shows daemon model slots (ears preprocessor, mouth classifier) alongside brain agent slots. Reads/writes `contracts.json` for daemon models.
+13. **Dashboard hire email generation** — Hire modal auto-generates agent email from `{type}-agent-{name}@{domain}`. Name field restricted to lowercase alpha, 15 char max, no special characters.
+14. **Mission dedup guard** — Added `recent_completed_missions` in classify payload + hard dedup against duplicate active missions.
+15. **Intake retry limit** — Max 3 retries on deterministic errors prevents infinite retry loops.
 
 ### Current: Next Phase — Prime Skills + Skill CRUD
 > *Goal: Build Prime's specialized fleet management skills and expose them through the dashboard.*

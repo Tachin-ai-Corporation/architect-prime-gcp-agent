@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.26.10.0`
+> **Current version:** `v2026.05.27.11.0`
 
 
 ---
@@ -141,7 +141,7 @@ Prime's brain uses **multi-agent dispatch** — Cortex is the user-facing orches
 | Agent | Model | Role |
 |-------|-------|------|
 | **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) |
-| **temporal-research** | gemini-2.5-flash | Web search via Vertex AI grounding |
+| **temporal-research** | gemini-2.5-flash | Web search + URL fetching (Vertex AI grounding + web-fetch) |
 | **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) |
 | **prefrontal** | gemini-2.5-flash | Mandatory dispatch planner |
 | **motor** | gemini-2.5-flash | Execution + 28 Workspace tools (Drive, Gmail, Calendar, Docs, Sheets) |
@@ -396,6 +396,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.25.8.0** | All-Provider Discovery — Hybrid approach: API returns ~300 models but only Google has `supportedActions`; Anthropic/xAI are MaaS-only (not in API). Fix: Google uses `openGenerationAiStudio` filter, all others probed directly, Anthropic/xAI added as `MAAS_ONLY_MODELS`. Project-level `/api/models/scan` route. Pagination + error surfacing. |
 | **v2026.05.26.9.0** | Fleet Introspect Crash Loop Fix — `set_model` handler called `docker restart` which killed introspect daemon (runs inside container via `docker exec`), creating infinite restart loop. Fix: deferred restart pattern (write result to Firestore first, restart after). `PRIME_ID` empty on startup due to container restart race; added 3-attempt retry + VM metadata fallback. |
 | **v2026.05.26.10.0** | Work Title System + Data Migration — Added `title` field to work envelopes with dual-source generation (Cortex LLM + `summarizeTitle()` heuristic fallback). Dashboard displays `title || instruction || intent`. Migrated 304 Stan work items with human-readable titles, linked 206 to tachin-website project. Replaced hardcoded email domain with `{workspace-domain}` placeholders. |
+| **v2026.05.27.11.0** | Autonomous Agency Hardening — Deterministic process executor (M/C/T stamped upfront, no Cortex re-entry), project-level `required_processes` binding, self-correction protocol (fix → identify source doc → update autonomously), content verification rules (cerebellum gates external content), action risk classification (LOW/MEDIUM/HIGH), `web-fetch` CoreKit tool for temporal-research, prioritized search strategy (LinkedIn first), agent dispatch rules (temporal-research for ALL web research, never Motor), ears/mouth LLM control in Brain dashboard, hire email auto-generation. |
 
 
 ---

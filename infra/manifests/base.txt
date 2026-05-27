@@ -35,6 +35,7 @@ corekit/daemon/mouth-health-check .openclaw/bin/mouth-health-check
 
 # Brain tools
 corekit/brain/agent-ask .openclaw/bin/agent-ask
+corekit/brain/web-fetch .openclaw/bin/web-fetch
 corekit/brain/agent-status .openclaw/bin/agent-status
 corekit/brain/brain-telemetry-write .openclaw/bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read .openclaw/bin/brain-telemetry-read

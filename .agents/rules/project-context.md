@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.26.10.0)
+## Current Architecture (v2026.05.27.11.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -19,6 +19,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Tool ownership boundaries:**
   - Prime Motor has fleet lifecycle tools only (fleet-deploy, fleet-hire, fleet-fire, fleet-status, fleet-upgrade, fleet-verify)
   - Fleet Motor owns Google Workspace tools per job type: devops (Drive+Gmail), pm (Drive+Gmail+Docs+Sheets), assistant (Drive+Gmail+Calendar+Docs), etc.
+  - temporal-research is web search + URL fetching (Vertex AI grounding + web-fetch, zero execution tools)
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
   - cerebellum is a pure test runner: executes validation rules, reports PASS/FAIL with evidence, structured verdicts (ALL_PASS/FAIL/NO_RULES)
 - **Dynamic skill awareness**: `assemble-tools` generates TOOLS.md from agent type's skill list, copies to cortex + prefrontal + motor workspaces
