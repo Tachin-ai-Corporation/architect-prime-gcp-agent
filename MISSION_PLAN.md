@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.27.12.0`
+> - **Current version:** `v2026.05.27.13.0`
 
 ---
 
@@ -1149,6 +1149,16 @@ architect-prime/
 7. **Firestore custom skills sync** — `upgrade-corekit` queries `primes/{prime}/fleet/{agent}/skills` at upgrade time, downloads skill packages from GitHub repo or extracts from Firestore docs, writes to `workspace/custom-skills/` before `assemble-tools` runs.
 8. **Prime skill discovery responsibility** — `r-skill-discovery` (nightly 4AM UTC): 9-step process analyzing fleet work to find repeatable patterns, max 3 proposals per run.
 9. **Cortex skill pattern recognition** — SOUL.md updated with qualification criteria (repeated patterns, custom scripts, verification patterns), quality bar (atomic, portable, correct agent_part), and improvement detection.
+
+### Completed: v2026.05.27.13.0 — Dashboard Skills & Responsibilities UX
+> *Live responsibilities view, library by category, install dedup, brain-agent routing badges.*
+
+1. **Responsibilities live view** — New collapsible "Responsibilities" section in the Installed tab. Queries agent VMs via introspect daemon (`responsibilities` query type) to show: name, cron schedule, enabled/disabled status, process step count, min spacing, instruction preview.
+2. **Introspect `responsibilities` handler** — New query type in `agent-introspect.mjs` reads both `responsibilities.json` and `responsibilities-prime.json` from the corekit dir, returns merged list.
+3. **Library reorganized by category** — Skills grouped by functional category (Workspace → Fleet → Search → Memory → System) instead of brain agent type. Categories are collapsible with chevron toggle.
+4. **Install dedup** — Install button hidden when skill is already present (checked against both VM introspection skill packs AND Firestore custom skills). Installed cards visually dimmed.
+5. **Brain-agent routing badges** — Each skill card shows which brain agent type it routes to (⚡ Motor, 🔬 Cerebellum, etc.) via a teal pill badge.
+6. **Per-agent-part installed counts** — Pill strip above library groups showing installed/total counts per brain agent type (e.g., "⚡ Motor 3/5").
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*
