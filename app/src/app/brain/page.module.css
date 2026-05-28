@@ -173,6 +173,10 @@
 .agSel .agName {
   color: var(--signal-aqua);
 }
+.agPrime {
+  border-color: var(--signal-aqua);
+  border-width: 1px;
+}
 
 .agDot {
   width: 9px;

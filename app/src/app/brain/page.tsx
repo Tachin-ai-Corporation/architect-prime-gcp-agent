@@ -119,6 +119,7 @@ function BrainPage() {
   useEffect(() => { if (paramAgent) setLocalAgent(paramAgent); }, [paramAgent]);
 
   const selectedAgent = localAgent;
+  const isPrimeSelected = selectedAgent === "prime";
 
   /* ---- UI State ---- */
   const [modelsData, setModelsData] = useState<ModelsData | null>(null);
@@ -216,24 +217,29 @@ function BrainPage() {
   // Fetch live config when agent changes
   useEffect(() => {
     if (selectedAgent) {
-      fetchLiveConfig(selectedAgent);
+      const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
+      fetchLiveConfig(introspectAgent);
     } else {
       setLiveConfig(null);
       setPendingChanges({});
       setApplyResult(null);
     }
-  }, [selectedAgent, fetchLiveConfig]);
+  }, [selectedAgent, fetchLiveConfig, isPrimeSelected, selectedPrimeId]);
 
   /* ---- Agent strip data ---- */
   const agentInfo = useMemo(() => {
-    return fleet
+    const agents: { name: string; working: boolean; status: string; isPrime: boolean }[] = [];
+    const p = primes.find((pr) => pr.id === selectedPrimeId);
+    if (p) {
+      agents.push({ name: "prime", working: p.status === "online", status: p.status, isPrime: true });
+    }
+    fleet
       .filter((a) => a.status !== "removed")
-      .map((agent) => ({
-        name: agent.name,
-        working: agent.status === "online",
-        status: agent.status,
-      }));
-  }, [fleet]);
+      .forEach((agent) => {
+        agents.push({ name: agent.name, working: agent.status === "online", status: agent.status, isPrime: false });
+      });
+    return agents;
+  }, [fleet, primes, selectedPrimeId]);
 
   /* ---- Available models (only "available" status) ---- */
   const availableModels = useMemo(() => {
@@ -323,6 +329,7 @@ function BrainPage() {
   /* ---- Apply & Restart ---- */
   const handleApplyRestart = async () => {
     if (!selectedAgent || !selectedPrimeId || !liveConfig) return;
+    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
     setApplying(true);
     setApplyResult(null);
 
@@ -355,7 +362,7 @@ function BrainPage() {
       }
 
       // Fire set_model introspection query
-      const submit = await api<{ queryId: string }>(`/api/primes/${selectedPrimeId}/fleet/${selectedAgent}/introspect`, {
+      const submit = await api<{ queryId: string }>(`/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -374,7 +381,7 @@ function BrainPage() {
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const poll = await api<{ status: string; result?: { success: boolean; message?: string; error?: string }; error?: string }>(
-          `/api/primes/${selectedPrimeId}/fleet/${selectedAgent}/introspect?queryId=${submit.queryId}`
+          `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect?queryId=${submit.queryId}`
         );
 
         if (poll?.status === "complete") {
@@ -382,7 +389,7 @@ function BrainPage() {
             setApplyResult("✅ Models updated & gateway restarted");
             setPendingChanges({});
             // Refresh live config after a brief delay for gateway to fully start
-            setTimeout(() => fetchLiveConfig(selectedAgent), 5000);
+            setTimeout(() => fetchLiveConfig(introspectAgent), 5000);
           } else {
             setApplyResult(`❌ ${poll.result?.error || "Unknown error"}`);
           }
@@ -476,19 +483,21 @@ function BrainPage() {
         {/* ---- Agent Strip ---- */}
         {agentInfo.length > 0 && (
           <div className={styles.agents}>
-            {agentInfo.map((agent) => (
+          {agentInfo.map((agent) => (
               <button
                 key={agent.name}
-                className={`${styles.ag} ${selectedAgent === agent.name ? styles.agSel : ""}`}
+                className={`${styles.ag} ${selectedAgent === agent.name ? styles.agSel : ""} ${agent.isPrime ? styles.agPrime : ""}`}
                 onClick={() => handleSelectAgent(agent.name)}
               >
                 <span
                   className={`${styles.agDot} ${agent.working ? styles.agDotOn : styles.agDotIdle}`}
                 />
                 <div className={styles.agInfo}>
-                  <span className={styles.agName}>{agent.name}</span>
+                  <span className={styles.agName}>
+                    {agent.isPrime ? (prime?.name || "Prime") : agent.name}
+                  </span>
                   <span className={agent.working ? styles.agDoing : styles.agIdle}>
-                    {agent.working ? "Online" : "Idle"}
+                    {agent.isPrime ? "prime" : (agent.working ? "Online" : "Idle")}
                   </span>
                 </div>
               </button>
