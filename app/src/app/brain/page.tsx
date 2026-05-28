@@ -31,12 +31,26 @@ interface ModelsData {
 interface LiveBrainConfig {
   default: string; // e.g. "google-vertex/gemini-3.1-pro-preview"
   slots: Record<string, string | null>; // per-agent overrides (null = inherits default)
-  daemonModels?: { ears?: string | null; mouth?: string | null };
+  daemonModels?: { ears?: string | null; mouth?: string | null; brain?: string | null };
+  responsibilities?: Responsibility[];
+}
+
+interface Responsibility {
+  id: string;
+  name: string;
+  schedule: string;
+  enabled: boolean;
+  min_spacing_minutes: number;
+  instruction: string;
+  has_process: boolean;
+  process_steps: number;
+  source: string;
 }
 
 const DAEMON_SLOTS = [
   { key: "ears", label: "Ears", desc: "Input preprocessor", icon: "👂" },
   { key: "mouth", label: "Mouth", desc: "Output voicing", icon: "🗣️" },
+  { key: "brain", label: "Brain", desc: "Orchestrator daemon", icon: "🧠" },
 ] as const;
 
 const SLOTS = [
@@ -239,9 +253,15 @@ function BrainPage() {
 
     // 2. Live config from introspection
     if (liveConfig) {
-      // Daemon slots (ears/mouth) read from daemonModels
+      // Daemon slots (ears/mouth/brain) read from daemonModels
       if (DAEMON_KEYS.has(slot)) {
         const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
+        if (slot === "brain") {
+          // Brain daemon routes LLM calls through the Cortex gateway route.
+          // If no explicit brain model override, it uses whatever Cortex is set to.
+          if (dm) return dm;
+          return liveConfig.slots["cortex"] || liveConfig.default || "—";
+        }
         return dm || "gemini-2.5-flash"; // daemon default
       }
       const override = liveConfig.slots[slot];
@@ -287,6 +307,10 @@ function BrainPage() {
     if (liveConfig) {
       if (DAEMON_KEYS.has(slot)) {
         const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
+        if (slot === "brain") {
+          if (dm) return dm;
+          return liveConfig.slots["cortex"] || liveConfig.default || "—";
+        }
         return dm || "gemini-2.5-flash";
       }
       return liveConfig.slots[slot] || liveConfig.default || "—";
@@ -606,6 +630,42 @@ function BrainPage() {
             );
           })}
         </div>
+
+        {/* ---- Responsibilities Section ---- */}
+        {selectedAgent && (
+          <>
+            <div className={styles.sectionLabel} id="brain-responsibilities-section">Responsibilities</div>
+            {loadingLive ? (
+              <div className={styles.respLoading}>
+                <span className={styles.livePulse} /> Scanning responsibilities…
+              </div>
+            ) : liveConfig?.responsibilities && liveConfig.responsibilities.length > 0 ? (
+              <div className={styles.respGrid}>
+                {liveConfig.responsibilities.map((r) => (
+                  <div key={r.id} className={styles.respCard} id={`resp-${r.id}`}>
+                    <div className={styles.respCardHeader}>
+                      <span className={`${styles.respDot} ${r.enabled ? styles.respDotOn : styles.respDotOff}`} />
+                      <span className={styles.respCardName}>{r.name}</span>
+                      <code className={styles.respSchedule}>{r.schedule}</code>
+                    </div>
+                    <div className={styles.respCardDesc}>{r.instruction}</div>
+                    <div className={styles.respCardMeta}>
+                      {r.has_process && (
+                        <span className={styles.respProcess}>{r.process_steps} steps</span>
+                      )}
+                      {r.min_spacing_minutes > 0 && (
+                        <span>min {Math.round(r.min_spacing_minutes / 60)}h spacing</span>
+                      )}
+                      <span className={styles.respSource}>{r.source}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : !loadingLive && liveConfig ? (
+              <div className={styles.respEmpty}>No responsibilities configured for this agent</div>
+            ) : null}
+          </>
+        )}
 
         {/* ---- Model Picker Modal ---- */}
         {pickerSlot && (

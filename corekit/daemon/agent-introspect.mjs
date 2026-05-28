@@ -376,17 +376,45 @@ function handleBrainConfig() {
     return { error: 'openclaw.json not found', default: '', slots: {} };
   }
 
-  // Read contracts.json for ears/mouth daemon models
+  // Read contracts.json for ears/mouth/brain daemon models
   const daemonModels = {};
   if (existsSync(contractsPath)) {
     try {
       const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
       daemonModels.ears = contracts?.ears?.preprocess?.model || null;
       daemonModels.mouth = contracts?.mouth?.model || null;
+      // Brain daemon uses the Cortex gateway route — its LLM is whatever Cortex is set to
+      daemonModels.brain = contracts?.brain?.model || null;
     } catch {}
   }
 
-  return { default: defaultModel, slots, daemonModels };
+  // Read responsibilities (same query to avoid extra introspection roundtrip)
+  const responsibilities = [];
+  const respFiles = [
+    join(COREKIT_DIR, 'responsibilities.json'),
+    join(COREKIT_DIR, 'responsibilities-job.json'),
+  ];
+  for (const respPath of respFiles) {
+    if (!existsSync(respPath)) continue;
+    try {
+      const data = JSON.parse(readFileSync(respPath, 'utf8'));
+      for (const r of (data.responsibilities || [])) {
+        responsibilities.push({
+          id: r.id || 'unknown',
+          name: r.name || r.id || 'Unnamed',
+          schedule: r.schedule || '',
+          enabled: r.enabled !== false,
+          min_spacing_minutes: r.min_spacing_minutes || 0,
+          instruction: (r.instruction || '').substring(0, 200),
+          has_process: !!(r.context?.process?.length),
+          process_steps: r.context?.process?.length || 0,
+          source: basename(respPath),
+        });
+      }
+    } catch {}
+  }
+
+  return { default: defaultModel, slots, daemonModels, responsibilities };
 }
 
 function handleSetModel(params) {

@@ -49,18 +49,6 @@ interface SkillInstall {
   status: string;
 }
 
-interface Responsibility {
-  id: string;
-  name: string;
-  schedule: string;
-  enabled: boolean;
-  min_spacing_minutes: number;
-  instruction: string;
-  has_process: boolean;
-  process_steps: number;
-  source: string;
-}
-
 interface SkillProposal {
   id: string;
   skill_id: string;
@@ -213,11 +201,6 @@ function SkillsPage() {
   const [proposalsLoading, setProposalsLoading] = useState(false);
   const [previewProposal, setPreviewProposal] = useState<SkillProposal | null>(null);
 
-  /* ---- Responsibilities (Installed tab) ---- */
-  const [responsibilities, setResponsibilities] = useState<Responsibility[]>([]);
-  const [respLoading, setRespLoading] = useState(false);
-  const [respExpanded, setRespExpanded] = useState(false);
-
   /* ---- Library collapsible state ---- */
   const [collapsedLibGroups, setCollapsedLibGroups] = useState<Set<string>>(new Set());
 
@@ -313,46 +296,6 @@ function SkillsPage() {
     setProposalsLoading(false);
   }, [selectedPrimeId]);
 
-  /* ---- Fetch responsibilities via introspect ---- */
-  const fetchResponsibilities = useCallback(async () => {
-    if (!selectedPrimeId || !selectedAgent) return;
-    setRespLoading(true);
-    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
-    const submitRes = await api<{ queryId: string; status: string }>(
-      `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "responsibilities" }),
-      }
-    );
-    if (!submitRes?.queryId) {
-      setRespLoading(false);
-      return;
-    }
-    const queryId = submitRes.queryId;
-    let attempts = 0;
-    const poll = async () => {
-      attempts++;
-      const result = await api<{
-        queryId: string; type: string; status: string;
-        result: { responsibilities: Responsibility[] } | null;
-        error: string | null;
-      }>(`/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect?queryId=${queryId}`);
-      if (result?.status === "complete" && result.result) {
-        setResponsibilities(result.result.responsibilities || []);
-        setRespLoading(false);
-        return;
-      }
-      if (result?.status === "error" || attempts >= 15) {
-        setRespLoading(false);
-        return;
-      }
-      setTimeout(poll, 1000);
-    };
-    setTimeout(poll, 1000);
-  }, [selectedPrimeId, selectedAgent, isPrimeSelected]);
-
   /* ---- Effects ---- */
   // Fetch introspection data when agent is selected (any tab)
   useEffect(() => {
@@ -369,13 +312,6 @@ function SkillsPage() {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, [fetchSkills, fetchCustomSkills, selectedAgent]);
-
-  // Responsibilities only on Installed tab
-  useEffect(() => {
-    if (selectedAgent && activeTab === "installed") {
-      fetchResponsibilities();
-    }
-  }, [fetchResponsibilities, selectedAgent, activeTab]);
 
   useEffect(() => {
     if (activeTab === "library") {
@@ -883,55 +819,6 @@ function SkillsPage() {
                   </button>
                 )}
 
-                {/* ---- Responsibilities ---- */}
-                <section className={styles.categorySection} style={{ marginTop: 20 }}>
-                  <button
-                    className={styles.categoryHeader}
-                    onClick={() => setRespExpanded((v) => !v)}
-                    id="cat-responsibilities"
-                  >
-                    <span className={styles.categoryIcon}>📋</span>
-                    <span className={styles.categoryName}>Responsibilities</span>
-                    <span className={styles.categoryCount}>
-                      {respLoading ? "…" : responsibilities.length}
-                    </span>
-                    <span className={`${styles.chevron} ${respExpanded ? styles.chevronOpen : ""}`}>▸</span>
-                  </button>
-                  {respExpanded && (
-                    <div className={styles.toolList}>
-                      {respLoading && (
-                        <div className={styles.toolRow}>
-                          <span className={styles.toolDesc}>Querying agent VM…</span>
-                        </div>
-                      )}
-                      {!respLoading && responsibilities.length === 0 && (
-                        <div className={styles.toolRow}>
-                          <span className={styles.toolDesc}>No responsibilities configured</span>
-                        </div>
-                      )}
-                      {responsibilities.map((r) => (
-                        <div key={r.id} className={styles.respRow}>
-                          <div className={styles.respInfo}>
-                            <div className={styles.respName}>
-                              <span className={`${styles.respDot} ${r.enabled ? styles.respDotOn : styles.respDotOff}`} />
-                              {r.name}
-                            </div>
-                            <div className={styles.respMeta}>
-                              <code className={styles.respSchedule}>{r.schedule}</code>
-                              {r.has_process && (
-                                <span className={styles.respProcess}>{r.process_steps} steps</span>
-                              )}
-                              {r.min_spacing_minutes > 0 && (
-                                <span>min {Math.round(r.min_spacing_minutes / 60)}h spacing</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className={styles.respDesc}>{r.instruction}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
 
                 {skills && (
                   <div className={styles.note} id="agent-skills-note">
