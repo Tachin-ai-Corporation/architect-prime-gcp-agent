@@ -1,0 +1,13 @@
+{
+  "id": "git-ops",
+  "name": "Git Workflow Operations",
+  "version": "1.0.0",
+  "description": "Git workflow procedures — branching, commits, pre-commit checks, PR templates, merge conflicts",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "workflow",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When performing git workflow operations — branching, committing, creating PRs, resolving conflicts"
+}

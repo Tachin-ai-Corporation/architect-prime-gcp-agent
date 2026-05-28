@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import styles from "./page.module.css";
 
 /* ---- Types ---- */
@@ -226,8 +227,25 @@ export default function AgentTypesPage() {
                     )}
                   </div>
 
-                  {/* Version */}
-                  <div className={styles.versionBadge}>v{spec.version}</div>
+                  {/* Version + Detail link */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                    <div className={styles.versionBadge}>v{spec.version}</div>
+                    <Link
+                      href={`/agent-types/${spec.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: spec.accent,
+                        textDecoration: 'none',
+                        transition: 'opacity 180ms',
+                      }}
+                      onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '0.75'; }}
+                      onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
+                    >
+                      View Class Sheet →
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>

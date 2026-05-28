@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "description": "Quality assurance, test planning, regression testing, defect tracking, coverage analysis",
   "base_skills": ["agent-ask"],
-  "specialty_skills": [],
+  "specialty_skills": ["test-runner"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

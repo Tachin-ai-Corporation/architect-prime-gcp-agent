@@ -27,3 +27,7 @@ specialties/finance/responsibilities-finance.json .openclaw/corekit/responsibili
 specialties/finance/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/finance/brain/cortex/SOUL_APPEND.md
 specialties/finance/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/finance/brain/motor/SOUL_APPEND.md
 specialties/finance/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/finance/brain/cerebellum/SOUL_APPEND.md
+
+# Specialty skills
+specialties/finance/skills/billing-ops/SKILL.md .openclaw/corekit/specialties/finance/skills/billing-ops/SKILL.md
+specialties/finance/skills/billing-ops/skill.json .openclaw/corekit/specialties/finance/skills/billing-ops/skill.json

@@ -21,3 +21,7 @@ specialties/security/responsibilities-security.json .openclaw/corekit/responsibi
 specialties/security/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/security/brain/cortex/SOUL_APPEND.md
 specialties/security/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/security/brain/motor/SOUL_APPEND.md
 specialties/security/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/security/brain/cerebellum/SOUL_APPEND.md
+
+# Specialty skills
+specialties/security/skills/iam-audit/SKILL.md .openclaw/corekit/specialties/security/skills/iam-audit/SKILL.md
+specialties/security/skills/iam-audit/skill.json .openclaw/corekit/specialties/security/skills/iam-audit/skill.json

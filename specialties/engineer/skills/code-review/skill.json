@@ -1,0 +1,13 @@
+{
+  "id": "code-review",
+  "name": "Code Review Operations",
+  "version": "1.0.0",
+  "description": "Code review procedures — diff analysis, code smell detection, coverage checks, security scanning",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "quality",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When reviewing code changes — analyzing diffs, checking quality, scanning for issues"
+}

@@ -50,3 +50,7 @@ specialties/assistant/responsibilities-assistant.json .openclaw/corekit/responsi
 specialties/assistant/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/cortex/SOUL_APPEND.md
 specialties/assistant/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/motor/SOUL_APPEND.md
 specialties/assistant/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/cerebellum/SOUL_APPEND.md
+
+# Specialty skills
+specialties/assistant/skills/calendar-email-ops/SKILL.md .openclaw/corekit/specialties/assistant/skills/calendar-email-ops/SKILL.md
+specialties/assistant/skills/calendar-email-ops/skill.json .openclaw/corekit/specialties/assistant/skills/calendar-email-ops/skill.json

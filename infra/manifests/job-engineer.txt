@@ -13,3 +13,9 @@ specialties/engineer/responsibilities-engineer.json .openclaw/corekit/responsibi
 specialties/engineer/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/engineer/brain/cortex/SOUL_APPEND.md
 specialties/engineer/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/engineer/brain/motor/SOUL_APPEND.md
 specialties/engineer/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/engineer/brain/cerebellum/SOUL_APPEND.md
+
+# Specialty skills
+specialties/engineer/skills/git-ops/SKILL.md .openclaw/corekit/specialties/engineer/skills/git-ops/SKILL.md
+specialties/engineer/skills/git-ops/skill.json .openclaw/corekit/specialties/engineer/skills/git-ops/skill.json
+specialties/engineer/skills/code-review/SKILL.md .openclaw/corekit/specialties/engineer/skills/code-review/SKILL.md
+specialties/engineer/skills/code-review/skill.json .openclaw/corekit/specialties/engineer/skills/code-review/skill.json

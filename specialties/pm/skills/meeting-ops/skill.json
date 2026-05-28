@@ -1,0 +1,13 @@
+{
+  "id": "meeting-ops",
+  "name": "Meeting Operations",
+  "version": "1.0.0",
+  "description": "Meeting management procedures — notes extraction, action item tracking, agenda preparation, status report templates",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "workflow",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When processing meeting notes, extracting action items, preparing agendas, or writing status reports"
+}

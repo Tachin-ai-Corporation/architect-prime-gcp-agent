@@ -13,3 +13,7 @@ specialties/qa/responsibilities-qa.json .openclaw/corekit/responsibilities-job.j
 specialties/qa/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/qa/brain/cortex/SOUL_APPEND.md
 specialties/qa/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/qa/brain/motor/SOUL_APPEND.md
 specialties/qa/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/qa/brain/cerebellum/SOUL_APPEND.md
+
+# Specialty skills
+specialties/qa/skills/test-runner/SKILL.md .openclaw/corekit/specialties/qa/skills/test-runner/SKILL.md
+specialties/qa/skills/test-runner/skill.json .openclaw/corekit/specialties/qa/skills/test-runner/skill.json

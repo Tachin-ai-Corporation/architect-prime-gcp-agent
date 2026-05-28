@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "description": "IAM auditing, policy compliance, vulnerability assessment, security monitoring, incident investigation",
   "base_skills": ["agent-ask", "workspace-gmail"],
-  "specialty_skills": [],
+  "specialty_skills": ["iam-audit"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

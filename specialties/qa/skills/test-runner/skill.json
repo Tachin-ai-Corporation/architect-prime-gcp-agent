@@ -1,0 +1,13 @@
+{
+  "id": "test-runner",
+  "name": "Test Runner Operations",
+  "version": "1.0.0",
+  "description": "Test execution procedures — npm test, pytest, go test, coverage collection, regression diffing, flaky detection",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "testing",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When running test suites, collecting coverage, or analyzing test results"
+}

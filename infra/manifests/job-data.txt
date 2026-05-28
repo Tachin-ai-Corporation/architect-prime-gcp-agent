@@ -19,3 +19,7 @@ specialties/data/responsibilities-data.json .openclaw/corekit/responsibilities-j
 specialties/data/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/cortex/SOUL_APPEND.md
 specialties/data/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/motor/SOUL_APPEND.md
 specialties/data/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/cerebellum/SOUL_APPEND.md
+
+# Specialty skills
+specialties/data/skills/bq-ops/SKILL.md .openclaw/corekit/specialties/data/skills/bq-ops/SKILL.md
+specialties/data/skills/bq-ops/skill.json .openclaw/corekit/specialties/data/skills/bq-ops/skill.json
