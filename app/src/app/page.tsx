@@ -364,6 +364,7 @@ function HomeInner() {
     { label: "Work", path: "work" },
     { label: "Brain", path: "brain" },
     { label: "Skills", path: "skills" },
+    { label: "Agent Types", path: "agent-types" },
   ];
 
   return (
