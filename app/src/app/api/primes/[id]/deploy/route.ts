@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { primesCol } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
+import { seedCoreProcesses } from "@/lib/seed-processes";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -41,6 +42,11 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
 
     // Update status to deploying
     await primesCol().doc(id).update({ status: "deploying" });
+
+    // Seed core processes (p-plan, p-investigate) — idempotent
+    seedCoreProcesses(id).catch((err) =>
+      console.error(`[deploy] Failed to seed core processes:`, err)
+    );
 
     // Create the VM via Compute Engine REST API
     const token = await getAccessToken();

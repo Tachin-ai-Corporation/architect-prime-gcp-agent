@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { commandsCol, fleetCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
 import { requireAuth } from "@/lib/require-auth";
+import { seedCoreProcesses } from "@/lib/seed-processes";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -71,6 +72,11 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       status: "pending",
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    // Seed core processes (p-plan, p-investigate) — idempotent
+    seedCoreProcesses(id).catch((err) =>
+      console.error(`[hire] Failed to seed core processes:`, err)
+    );
 
     return NextResponse.json(
       {
