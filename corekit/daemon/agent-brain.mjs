@@ -53,6 +53,11 @@ const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'openclaw/cortex';
 
+// Brain's own LLM — used for classify/decide/summarize (not agent dispatches)
+// Defaults to a cheaper model; configurable via contracts.json brain.model
+const BRAIN_MODEL = CONTRACTS.brain?.model || null;
+const BRAIN_ROUTE = BRAIN_MODEL ? `google-vertex/${BRAIN_MODEL}` : CORTEX_ROUTE;
+
 // ---- Project contracts config ----
 const PROJECT_CONTEXT_MAX_TOKENS = CONTRACTS.projects?.context_max_tokens || 2000;
 const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
@@ -1273,7 +1278,7 @@ async function callCortex(mode, payload) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: CORTEX_ROUTE,
+      model: BRAIN_ROUTE,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -1578,7 +1583,6 @@ async function summarizeForDelivery(type, rawText, context = {}) {
   const promptText = config.prompt({ ...context, maxChars });
 
   try {
-    const route = CORTEX_ROUTE;
     const resp = await fetch(GATEWAY_URL, {
       method: 'POST',
       headers: {
@@ -1586,7 +1590,7 @@ async function summarizeForDelivery(type, rawText, context = {}) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: route,
+        model: BRAIN_ROUTE,
         messages: [
           { role: 'system', content: 'You are a notification writer. Return ONLY the notification text — no JSON, no markdown fences, no preamble.' },
           { role: 'user', content: promptText },
@@ -2107,7 +2111,7 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: CORTEX_ROUTE,
+        model: BRAIN_ROUTE,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${ackMessage.substring(0, 300)}"` },
@@ -3824,7 +3828,7 @@ async function checkWaitingEnvelopes() {
 async function main() {
   log('INFO', '=== Brain v3 starting ===');
   log('INFO', `Agent: ${AGENT_ID} | Project: ${GCP_PROJECT} | Prime: ${PRIME_ID}`);
-  log('INFO', `Gateway: ${GATEWAY_URL} | Route: ${CORTEX_ROUTE}`);
+  log('INFO', `Gateway: ${GATEWAY_URL} | Cortex: ${CORTEX_ROUTE} | Brain: ${BRAIN_ROUTE}`);
   log('INFO', `Registry agents: ${Object.keys(REGISTRY.agents).join(', ') || 'none loaded'}`);
 
   // Load projects from Firestore

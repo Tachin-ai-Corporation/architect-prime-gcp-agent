@@ -256,12 +256,6 @@ function BrainPage() {
       // Daemon slots (ears/mouth/brain) read from daemonModels
       if (DAEMON_KEYS.has(slot)) {
         const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
-        if (slot === "brain") {
-          // Brain daemon routes LLM calls through the Cortex gateway route.
-          // If no explicit brain model override, it uses whatever Cortex is set to.
-          if (dm) return dm;
-          return liveConfig.slots["cortex"] || liveConfig.default || "—";
-        }
         return dm || "gemini-2.5-flash"; // daemon default
       }
       const override = liveConfig.slots[slot];
@@ -307,10 +301,6 @@ function BrainPage() {
     if (liveConfig) {
       if (DAEMON_KEYS.has(slot)) {
         const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
-        if (slot === "brain") {
-          if (dm) return dm;
-          return liveConfig.slots["cortex"] || liveConfig.default || "—";
-        }
         return dm || "gemini-2.5-flash";
       }
       return liveConfig.slots[slot] || liveConfig.default || "—";

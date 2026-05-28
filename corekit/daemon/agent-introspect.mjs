@@ -469,6 +469,10 @@ function handleSetModel(params) {
           if (!contracts.mouth) contracts.mouth = {};
           contracts.mouth.model = daemonOverrides.mouth;
         }
+        if (daemonOverrides.brain) {
+          if (!contracts.brain) contracts.brain = {};
+          contracts.brain.model = daemonOverrides.brain;
+        }
         writeFileSync(contractsPath, JSON.stringify(contracts, null, 2));
         log('Updated contracts.json with daemon model overrides', { daemonOverrides });
       } catch (err) {

@@ -32,6 +32,7 @@
     "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
   },
   "brain": {
+    "model": "gemini-2.5-flash",
     "poll_interval_ms": 3000,
     "max_iterations": 12,
     "gateway_timeout_ms": 300000,
