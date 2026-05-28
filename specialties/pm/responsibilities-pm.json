@@ -1,1 +1,71 @@
-{"version": 1, "responsibilities": []}
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-pm-weekly-status",
+      "name": "Weekly Status Compilation",
+      "schedule": "0 13 * * 1",
+      "enabled": true,
+      "min_spacing_minutes": 10020,
+      "instruction": "Compile a weekly status report across all active projects. For each project, gather progress on milestones, completed work, blockers, and upcoming priorities. Produce a consolidated status report following the standard status report template and save it to the project's Drive folder.",
+      "context": {
+        "purpose": "Provide the operator with a comprehensive weekly view of all active projects so they can make informed decisions, spot risks early, and communicate progress to stakeholders.",
+        "process": [
+          "STEP 1 — Read MEMORY.md to identify all active projects and their current state.",
+          "STEP 2 — For each active project, check the project's tracking Sheet (if linked) for milestone status and action item progress.",
+          "STEP 3 — Check for any completed milestones or newly-blocked items since last report.",
+          "STEP 4 — Compile a consolidated status report using the standard template: highlights, milestones table, blockers with owners and target dates, action items, and next-week focus.",
+          "STEP 5 — Save the report to Drive using the naming convention: [Project] — Status Report — [YYYY-MM-DD].",
+          "STEP 6 — Update MEMORY.md with the report date and any new insights discovered during compilation."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "A complete status report exists for each active project covering highlights, milestone status, blockers with owners, and next-week priorities. Report is saved to Drive and MEMORY.md is updated.",
+        "prior_learnings": "Check for stale project entries in MEMORY.md — if a project has had no activity for 2+ weeks, flag it as potentially inactive rather than reporting empty status. Always verify milestone dates against the tracking Sheet rather than relying on memory alone."
+      }
+    },
+    {
+      "id": "r-pm-blocker-scan",
+      "name": "Weekly Blocker Scan",
+      "schedule": "0 21 * * 5",
+      "enabled": true,
+      "min_spacing_minutes": 10020,
+      "instruction": "Scan all active projects for overdue action items and unresolved blockers. Identify items that have been blocked for more than 3 days or action items past their due date. Produce a blocker summary and escalation recommendations.",
+      "context": {
+        "purpose": "Ensure blockers don't silently stall projects over the weekend. A Friday scan gives the operator a clear picture of what needs attention and allows them to take action before the next work week.",
+        "process": [
+          "STEP 1 — Read MEMORY.md to identify all active projects and known blockers.",
+          "STEP 2 — For each project, check the action item tracker (Sheet or Doc) for items past their due date.",
+          "STEP 3 — Check for blockers that have been unresolved for more than 3 days.",
+          "STEP 4 — For each overdue or stale-blocked item, note the owner, how many days overdue, and the downstream impact.",
+          "STEP 5 — Produce a blocker summary using the blocker escalation template: issue, owner, impact, suggested resolution.",
+          "STEP 6 — If critical blockers exist (blocking milestone completion), flag them for immediate operator attention."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "All overdue action items and unresolved blockers are identified and reported with owner, days overdue, and impact. Critical blockers are escalated. No stale blockers go unnoticed.",
+        "prior_learnings": "Some action items may have informal extensions agreed upon in chat — check recent mission history before flagging. Group blockers by project to make the report scannable. Distinguish between 'waiting on external party' and 'internally stalled' blockers."
+      }
+    },
+    {
+      "id": "r-pm-overdue-actions",
+      "name": "Daily Overdue Action Check",
+      "schedule": "0 14 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Check all active project action item trackers for items that are overdue or due today. Flag overdue items and produce a brief daily digest of action item status.",
+      "context": {
+        "purpose": "Catch overdue action items quickly rather than letting them accumulate until the weekly review. Daily visibility keeps projects moving and ensures owners are reminded promptly.",
+        "process": [
+          "STEP 1 — Read MEMORY.md to identify active projects with action item trackers.",
+          "STEP 2 — For each project, check the action item tracker for items due today or overdue.",
+          "STEP 3 — Categorize items: 🔴 Overdue (past due date), 🟡 Due Today, 🟢 On Track (due within next 3 days).",
+          "STEP 4 — Produce a brief daily digest listing overdue and due-today items with owners.",
+          "STEP 5 — If any item is more than 2 days overdue, include it in a highlighted alert section.",
+          "STEP 6 — Update MEMORY.md if any items have changed status or new information was discovered."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "All overdue and due-today action items are identified and reported with owner and days overdue. The digest is concise (scannable in under 30 seconds). MEMORY.md reflects current state.",
+        "prior_learnings": "Keep the daily digest short — operators skim it quickly. Only include items that need attention (overdue or due today), not the full backlog. If no items are overdue, a brief 'all clear' message is sufficient rather than generating a full report."
+      }
+    }
+  ]
+}

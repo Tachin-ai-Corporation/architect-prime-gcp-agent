@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-data-freshness-sweep",
+      "name": "Data Freshness Sweep",
+      "schedule": "0 10 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Check data freshness across all key BigQuery tables. For each table in the monitored set, verify lastModifiedTime is within the expected SLA window. Report any stale tables with their age and expected freshness target.",
+      "context": {
+        "purpose": "Detect stale data before it impacts downstream consumers. Data pipelines can silently fail, leaving tables outdated without triggering errors. This daily sweep catches those gaps early.",
+        "process": [
+          "STEP 1 — Read MEMORY.md to get the list of monitored tables and their freshness SLAs.",
+          "STEP 2 — For each monitored table, run `bq show --format=prettyjson dataset.table` and extract lastModifiedTime and numRows.",
+          "STEP 3 — Calculate the age of each table (current time minus lastModifiedTime).",
+          "STEP 4 — Compare age against the defined SLA. Flag any table where age exceeds the SLA threshold.",
+          "STEP 5 — For flagged tables, check if a known pipeline job exists and its last run status.",
+          "STEP 6 — Produce a freshness report: table name, last modified, age, SLA, status (OK/STALE).",
+          "STEP 7 — If any tables are STALE, escalate with the report. If all OK, log success to MEMORY.md."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "All monitored tables are within their freshness SLA, or stale tables are identified and escalated with actionable context (table name, age, expected SLA, likely pipeline).",
+        "prior_learnings": "Billing export tables can lag 24-48 hours by design — do not flag these as stale unless they exceed 72 hours. Some tables are only updated weekly — check the SLA definition, not a blanket daily expectation."
+      }
+    },
+    {
+      "id": "r-data-schema-drift",
+      "name": "Schema Drift Detection",
+      "schedule": "0 11 * * 1",
+      "enabled": true,
+      "min_spacing_minutes": 10000,
+      "instruction": "Compare current BigQuery table schemas against the documented expected schemas. Detect any columns added, removed, type-changed, or mode-changed since the last check. Report drift with specific details.",
+      "context": {
+        "purpose": "Schema drift causes silent pipeline failures and incorrect downstream results. Weekly detection ensures changes are intentional and documented, preventing data quality incidents.",
+        "process": [
+          "STEP 1 — Read MEMORY.md to get the list of tables with documented schemas and their last-known schema snapshot.",
+          "STEP 2 — For each monitored table, run `bq show --schema --format=prettyjson dataset.table` to get the current schema.",
+          "STEP 3 — Compare current schema to the documented expected schema field-by-field: name, type, mode, description.",
+          "STEP 4 — Classify each difference: ADDED (new column), REMOVED (missing column), TYPE_CHANGED, MODE_CHANGED, DESCRIPTION_CHANGED.",
+          "STEP 5 — For any drift detected, check if the change was documented in a recent mission or MEMORY.md update.",
+          "STEP 6 — Produce a drift report: table name, field name, change type, old value, new value, documented (yes/no).",
+          "STEP 7 — If undocumented drift is found, escalate with the report. If all schemas match or drift is documented, log success to MEMORY.md with the current schema snapshot."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "All monitored table schemas match their documented expectations, or any drift is identified with specific field-level details and flagged for review.",
+        "prior_learnings": "BigQuery can auto-add __NULL columns in some edge cases — these are usually safe to ignore. Schema drift in views often cascades from base table changes — check the base table first. New NULLABLE columns are usually backward-compatible; type changes are high risk."
+      }
+    }
+  ]
+}

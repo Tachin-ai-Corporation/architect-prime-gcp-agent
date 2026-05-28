@@ -2,8 +2,8 @@
   "id": "assistant",
   "name": "Executive Assistant",
   "version": "1.0.0",
-  "description": "Scheduling, communications, admin tasks, document drafting, information gathering",
+  "description": "Calendar management, email triage, meeting prep, follow-up tracking, daily briefings",
   "base_skills": ["agent-ask", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs"],
   "specialty_skills": [],
-  "brain_appends": []
+  "brain_appends": ["cortex", "motor", "cerebellum"]
 }

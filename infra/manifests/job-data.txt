@@ -11,3 +11,11 @@ skills/workspace-sheets/SKILL.md .openclaw/skills/workspace-sheets/SKILL.md
 skills/workspace-sheets/sheets-get .openclaw/bin/sheets-get
 skills/workspace-sheets/sheets-append .openclaw/bin/sheets-append
 skills/workspace-sheets/sheets-update .openclaw/bin/sheets-update
+
+# Data responsibilities
+specialties/data/responsibilities-data.json .openclaw/corekit/responsibilities-job.json
+
+# Specialty brain SOUL appends
+specialties/data/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/cortex/SOUL_APPEND.md
+specialties/data/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/motor/SOUL_APPEND.md
+specialties/data/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/cerebellum/SOUL_APPEND.md

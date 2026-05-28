@@ -7,6 +7,10 @@ specialties/pm/workspace/SOUL.md .openclaw/workspace-pm/SOUL.md
 specialties/pm/workspace/MEMORY.md .openclaw/workspace-pm/MEMORY.md
 specialties/pm/responsibilities-pm.json .openclaw/corekit/responsibilities-job.json
 
+# Specialty brain SOUL appends
+specialties/pm/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/pm/brain/cortex/SOUL_APPEND.md
+specialties/pm/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/pm/brain/motor/SOUL_APPEND.md
+
 # Workspace skills — Google Drive
 skills/workspace-drive/SKILL.md .openclaw/skills/workspace-drive/SKILL.md
 skills/workspace-drive/drive-ls .openclaw/bin/drive-ls

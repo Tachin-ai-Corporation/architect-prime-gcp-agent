@@ -42,3 +42,11 @@ skills/workspace-docs/docs-write .openclaw/bin/docs-write
 skills/workspace-docs/docs-find-replace .openclaw/bin/docs-find-replace
 skills/workspace-docs/docs-comments-list .openclaw/bin/docs-comments-list
 skills/workspace-docs/docs-comments-add .openclaw/bin/docs-comments-add
+
+# Assistant responsibilities
+specialties/assistant/responsibilities-assistant.json .openclaw/corekit/responsibilities-job.json
+
+# Specialty brain SOUL appends
+specialties/assistant/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/cortex/SOUL_APPEND.md
+specialties/assistant/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/motor/SOUL_APPEND.md
+specialties/assistant/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/cerebellum/SOUL_APPEND.md

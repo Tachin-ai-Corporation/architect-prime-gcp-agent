@@ -2,8 +2,8 @@
   "id": "qa",
   "name": "QA Engineer",
   "version": "1.0.0",
-  "description": "Test planning, test automation, regression testing, performance testing, quality gates",
+  "description": "Quality assurance, test planning, regression testing, defect tracking, coverage analysis",
   "base_skills": ["agent-ask"],
   "specialty_skills": [],
-  "brain_appends": []
+  "brain_appends": ["cortex", "motor", "cerebellum"]
 }

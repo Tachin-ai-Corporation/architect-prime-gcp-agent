@@ -2,8 +2,8 @@
   "id": "pm",
   "name": "Project Manager",
   "version": "1.0.0",
-  "description": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
+  "description": "Project management, status tracking, stakeholder communication, milestone planning, action item management",
   "base_skills": ["agent-ask", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets"],
   "specialty_skills": [],
-  "brain_appends": []
+  "brain_appends": ["cortex", "motor"]
 }

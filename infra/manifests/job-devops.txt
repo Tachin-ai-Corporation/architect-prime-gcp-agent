@@ -13,6 +13,7 @@ specialties/devops/responsibilities-devops.json .openclaw/corekit/responsibiliti
 # Appended to sub-agent SOUL.md at install time for specialty-specific rules
 specialties/devops/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/cortex/SOUL_APPEND.md
 specialties/devops/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/motor/SOUL_APPEND.md
+specialties/devops/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty-specific skills (used by assemble-tools phase 1)
 # Assembled into TOOLS.md alongside standard skills

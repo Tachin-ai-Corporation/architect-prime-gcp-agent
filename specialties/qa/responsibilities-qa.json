@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-qa-regression-nightly",
+      "name": "Nightly Regression Suite",
+      "schedule": "0 6 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Run the saved regression test suite, diff results against the last baseline, and write a regression report to MEMORY.md.",
+      "context": {
+        "purpose": "Catch regressions early by running the full test suite every night and comparing results to the last known-good baseline. Provides a daily quality signal.",
+        "process": [
+          "STEP 1 — Load the regression suite definition from the project's test configuration or MEMORY.md test registry.",
+          "STEP 2 — Execute all tests in the suite. Do NOT skip any tests without a documented reason.",
+          "STEP 3 — Collect structured results: {pass, fail, skip, error} counts and failure details with evidence.",
+          "STEP 4 — Load the last baseline results from MEMORY.md or the test results archive.",
+          "STEP 5 — Compute the regression diff: new failures, fixes, persistent failures, new tests.",
+          "STEP 6 — Flag any unexplained skips or test count anomalies.",
+          "STEP 7 — Write the regression report to MEMORY.md under '## Latest Regression Run'.",
+          "STEP 8 — If any S1/S2 regressions are found, escalate immediately to the operator.",
+          "STEP 9 — Save current results as the new baseline for tomorrow's comparison."
+        ],
+        "reference_files": [
+          "workspace/MEMORY.md",
+          "workspace/SOUL.md"
+        ],
+        "success_criteria": "Regression report written with pass/fail/skip counts, regression diff against baseline, all failures have evidence, and S1/S2 regressions escalated.",
+        "prior_learnings": "Flaky tests can create false regression signals — track flaky history and note it in the diff. Always check that total test count is consistent with baseline; a drop may indicate tests were removed rather than fixed."
+      }
+    },
+    {
+      "id": "r-qa-defect-aging",
+      "name": "Weekly Defect Aging Review",
+      "schedule": "0 15 * * 1",
+      "enabled": true,
+      "min_spacing_minutes": 4320,
+      "instruction": "Review all open defects, flag stale items that have not been updated in >7 days, reassess severity based on current context, and update the defect tracking sheet.",
+      "context": {
+        "purpose": "Prevent defects from going stale and ensure severity ratings reflect current reality. Keeps the defect backlog honest and actionable.",
+        "process": [
+          "STEP 1 — Load the current defect list from the tracking sheet or MEMORY.md defect registry.",
+          "STEP 2 — For each open defect, check the last update date.",
+          "STEP 3 — Flag any defect with no update in >7 days as STALE.",
+          "STEP 4 — Reassess severity for stale defects: has the impact changed? Is the workaround still valid? Has the affected feature been deprecated?",
+          "STEP 5 — Update severity if warranted (document the reason for any change).",
+          "STEP 6 — Produce an aging summary: total open, stale count, severity distribution (S1/S2/S3/S4), oldest open defect.",
+          "STEP 7 — Write the aging report to MEMORY.md under '## Defect Aging Report'.",
+          "STEP 8 — If any S1 defects are >48 hours old without progress, escalate to the operator."
+        ],
+        "reference_files": [
+          "workspace/MEMORY.md",
+          "workspace/SOUL.md"
+        ],
+        "success_criteria": "Aging report written with stale defect count, severity distribution, and any re-severity justifications. S1 defects >48h escalated.",
+        "prior_learnings": "Severity drift is real — a defect filed as S3 may become S2 if the workaround breaks or if the feature becomes more critical. Always re-evaluate in current context rather than rubber-stamping the original severity."
+      }
+    }
+  ]
+}

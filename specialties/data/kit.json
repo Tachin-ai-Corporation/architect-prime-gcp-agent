@@ -2,8 +2,8 @@
   "id": "data",
   "name": "Data Engineer",
   "version": "1.0.0",
-  "description": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
+  "description": "BigQuery operations, data pipelines, ETL, schema management, data quality, cost optimization",
   "base_skills": ["agent-ask", "workspace-sheets"],
   "specialty_skills": [],
-  "brain_appends": []
+  "brain_appends": ["cortex", "motor", "cerebellum"]
 }

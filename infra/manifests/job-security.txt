@@ -13,3 +13,11 @@ skills/workspace-gmail/gmail-get .openclaw/bin/gmail-get
 skills/workspace-gmail/gmail-send .openclaw/bin/gmail-send
 skills/workspace-gmail/gmail-draft-create .openclaw/bin/gmail-draft-create
 skills/workspace-gmail/gmail-draft-send .openclaw/bin/gmail-draft-send
+
+# Security responsibilities
+specialties/security/responsibilities-security.json .openclaw/corekit/responsibilities-job.json
+
+# Specialty brain SOUL appends
+specialties/security/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/security/brain/cortex/SOUL_APPEND.md
+specialties/security/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/security/brain/motor/SOUL_APPEND.md
+specialties/security/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/security/brain/cerebellum/SOUL_APPEND.md

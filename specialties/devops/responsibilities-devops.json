@@ -1,1 +1,78 @@
-{"version": 1, "responsibilities": []}
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-devops-uptime-sweep",
+      "name": "Uptime & Health Sweep",
+      "schedule": "0 11 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Check uptime monitoring status, active alerting incidents, and endpoint health for all managed GCP services. Verify that monitoring is configured and functioning. Report any services that are down, degraded, or missing monitoring coverage.",
+      "context": {
+        "purpose": "Daily health sweep ensures no service outage goes undetected and that monitoring coverage has no gaps. Catching a degraded service early prevents user-facing impact from escalating.",
+        "process": [
+          "STEP 1 — Read MEMORY.md for the list of managed projects and known service endpoints.",
+          "STEP 2 — For each project, list uptime check configs: gcloud monitoring uptime list-configs --project=PROJECT",
+          "STEP 3 — Check for active alerting incidents: gcloud alpha monitoring policies list --project=PROJECT --filter='enabled=true'",
+          "STEP 4 — For each Cloud Run service, verify it responds: curl -s -o /dev/null -w '%{http_code}' SERVICE_URL/health",
+          "STEP 5 — For each Compute instance, verify status is RUNNING: gcloud compute instances list --project=PROJECT --format='table(NAME,ZONE,STATUS)'",
+          "STEP 6 — Flag any service without uptime monitoring as a coverage gap.",
+          "STEP 7 — Report findings: healthy services, degraded services, down services, and monitoring gaps.",
+          "STEP 8 — Update MEMORY.md with sweep timestamp and any new findings."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "All managed services checked for health status. All monitoring coverage gaps identified. Any down or degraded service is escalated immediately. MEMORY.md updated with sweep results and timestamp.",
+        "prior_learnings": "Cloud Run services that receive no traffic may show as healthy in monitoring but return 5xx on cold start — always do a real HTTP probe. Some services use /healthz or /ready instead of /health — check MEMORY.md for service-specific health endpoints. Uptime checks may lag by up to 5 minutes — don't flag a service as down based solely on a single failed check."
+      }
+    },
+    {
+      "id": "r-devops-iam-drift",
+      "name": "IAM Drift Detection",
+      "schedule": "0 5 * * *",
+      "enabled": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Compare current IAM bindings against the expected state documented in MEMORY.md. Detect any drift — new bindings, removed bindings, or role changes that were not part of an approved change. Report drift with specific details.",
+      "context": {
+        "purpose": "IAM drift detection catches unauthorized permission changes early. Bindings modified outside of approved workflows (Terraform, approved PRs) may indicate a security issue or operational mistake. Running at 05:00 UTC catches overnight changes before the workday begins.",
+        "process": [
+          "STEP 1 — Read MEMORY.md for the expected IAM state baseline and managed project list.",
+          "STEP 2 — For each project, export current IAM policy: gcloud projects get-iam-policy PROJECT --format=json",
+          "STEP 3 — Compare current bindings against the expected state baseline.",
+          "STEP 4 — Identify: new members added, members removed, roles changed, new role bindings created.",
+          "STEP 5 — For each drift, determine if it matches a known approved change (check MEMORY.md for recent approved modifications).",
+          "STEP 6 — Report unexplained drift with: member, role, project, and whether it was an addition or removal.",
+          "STEP 7 — If the drift involves roles/owner, roles/editor, or external principals, escalate immediately.",
+          "STEP 8 — Update MEMORY.md with the new baseline and drift findings."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "All managed projects compared against baseline. Every IAM change is classified as approved or unexplained. Unexplained drift involving privileged roles is escalated. Baseline updated in MEMORY.md.",
+        "prior_learnings": "GCP service agents (like @cloudservices.gserviceaccount.com, @cloudbuild.gserviceaccount.com) are managed by Google and may appear or disappear — these are usually not drift. Terraform state files may show bindings in a different order than gcloud output — compare by content, not by position. If the baseline in MEMORY.md is stale (>7 days), re-establish it rather than reporting everything as drift."
+      }
+    },
+    {
+      "id": "r-devops-cost-pulse",
+      "name": "GCP Cost Pulse",
+      "schedule": "0 12 * * 1",
+      "enabled": true,
+      "min_spacing_minutes": 4320,
+      "instruction": "Generate a GCP billing snapshot for all managed projects. Check current month spend, compare against previous month, identify cost trends and any unexpected spikes. Report top cost drivers and anomalies.",
+      "context": {
+        "purpose": "Weekly cost monitoring prevents billing surprises. Catching a cost spike early (e.g., runaway Cloud Build, oversized instances, unexpected egress) allows intervention before the monthly bill lands. Monday monitoring covers weekend changes.",
+        "process": [
+          "STEP 1 — Read MEMORY.md for managed projects and any cost thresholds or budget alerts configured.",
+          "STEP 2 — For each project, check billing account linkage: gcloud billing projects describe PROJECT",
+          "STEP 3 — Query cost data via BigQuery billing export if available, or use: gcloud billing accounts list and gcloud billing budgets list",
+          "STEP 4 — Identify the top 5 cost drivers by service (Compute, Cloud Run, Storage, Networking, etc.).",
+          "STEP 5 — Compare current month-to-date spend against the same period in the previous month.",
+          "STEP 6 — Flag any service with >20% cost increase as a potential anomaly.",
+          "STEP 7 — Check for idle resources: stopped instances still incurring disk charges, unused static IPs, orphaned load balancers.",
+          "STEP 8 — Produce a cost summary with: total MTD spend, top cost drivers, anomalies, and optimization recommendations.",
+          "STEP 9 — Update MEMORY.md with cost snapshot and timestamp."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "success_criteria": "Cost snapshot generated for all managed projects. Top cost drivers identified. Any >20% cost increase flagged and explained. Idle resource waste identified. MEMORY.md updated with cost trends.",
+        "prior_learnings": "Billing data may lag by 1-2 days — account for this when comparing periods. BigQuery billing export is the most reliable source if configured; fall back to gcloud billing commands otherwise. Network egress costs are often the surprise — check cross-region and internet egress specifically. Committed use discounts and sustained use discounts affect comparisons — note these when reporting."
+      }
+    }
+  ]
+}

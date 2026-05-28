@@ -5,5 +5,5 @@
   "description": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
   "base_skills": ["agent-ask", "workspace-drive", "workspace-gmail"],
   "specialty_skills": ["gcp-devops"],
-  "brain_appends": ["cortex", "motor"]
+  "brain_appends": ["cortex", "motor", "cerebellum"]
 }

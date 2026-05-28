@@ -2,8 +2,8 @@
   "id": "engineer",
   "name": "Software Engineer",
   "version": "1.0.0",
-  "description": "Full-stack development, code review, debugging, API design, architecture, testing",
+  "description": "Software development, code quality, testing, CI/CD, feature branches, code review",
   "base_skills": ["agent-ask"],
   "specialty_skills": [],
-  "brain_appends": []
+  "brain_appends": ["cortex", "motor", "cerebellum"]
 }
