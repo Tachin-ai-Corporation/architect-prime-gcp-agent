@@ -2753,6 +2753,13 @@ async function processEnvelope(envelope, memoryContext) {
       decision.action = 'short_circuit';
       log('INFO', `Normalized response-no-action → short_circuit`);
     }
+    // Normalize synonyms — Cortex sometimes uses 'delegate' instead of 'dispatch'
+    if (decision.action === 'delegate') {
+      decision.action = 'dispatch';
+      decision.agent = decision.agent || decision.target_agent;
+      decision.task = decision.task || decision.instruction;
+      log('INFO', `Normalized delegate → dispatch to ${decision.agent}`);
+    }
 
     let action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
