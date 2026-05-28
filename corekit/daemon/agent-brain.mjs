@@ -163,6 +163,28 @@ function smartTruncate(text, budget) {
 }
 
 /**
+ * Summarize text using the brain's direct Vertex AI LLM.
+ * Falls back to smartTruncate if the LLM call fails or times out.
+ * @param {string} text - Text to summarize
+ * @param {number} budget - Max character budget for the result
+ * @param {string} prompt - Summarization instruction optimized for context
+ * @returns {Promise<string>} Summarized text
+ */
+async function smartSummarize(text, budget, prompt) {
+  if (!text || text.length <= budget) return text || '';
+  try {
+    const result = await summarizeViaVertex(text, prompt, { maxTokens: Math.ceil(budget / 3) });
+    if (result && result.length > 0) {
+      // Ensure result fits budget
+      return result.length <= budget ? result : result.substring(0, budget);
+    }
+  } catch (e) {
+    log('WARN', `smartSummarize fallback to truncate: ${e.message}`);
+  }
+  return smartTruncate(text, budget);
+}
+
+/**
  * Generate a human-readable title from instruction text.
  * Takes the first sentence (up to maxLen chars), trimming at word boundaries.
  * Used as heuristic fallback when Cortex doesn't provide a title.
@@ -777,7 +799,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
 
       // Add prior results for context
       const priorContext = allResults.length > 0
-        ? allResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
+        ? (await Promise.all(allResults.map(async r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this agent execution result. Keep key outputs, file paths, resource names, URLs, and error messages. Omit verbose logs and raw command output.')}`))).join('\n\n')
         : null;
 
       // Dispatch to agent
@@ -798,8 +820,8 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
         agent: taskAgent,
         task: (tEnv.title || tEnv.instruction || '').substring(0, 150),
         result: result.success
-          ? smartTruncate(result.output || '', CTX_AGENT_STEP)
-          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
+          ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this successful agent execution output. Keep key results, file paths, resource names, and actionable details. Omit verbose logs.')
+          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_AGENT_STEP, 'Summarize this failed agent output. Keep error details, partial progress, and diagnostic info.')}`,
         success: result.success,
         durationMs: result.durationMs,
       };
@@ -807,7 +829,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
 
       // Update task envelope
       tEnv.output = result.success
-        ? smartTruncate(result.output || '', CTX_AGENT_STEP)
+        ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this task completion output. Keep deliverables, file paths, and key outcomes.')
         : result.error || 'Task failed';
       tEnv.status = result.success ? 'complete' : 'failed';
       tEnv.completed_at = now();
@@ -827,7 +849,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
           instruction: `[RETRY — previous attempt failed: ${result.error}]\n\n${instruction}`,
           prior_results_context: [
             priorContext,
-            `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${smartTruncate(result.output || '', 500)}`,
+            `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${await smartSummarize(result.output || '', 500, 'Summarize why this attempt failed. Keep error messages and root cause details.')}`,
           ].filter(Boolean).join('\n\n'),
         });
 
@@ -835,11 +857,11 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
           log('INFO', `Process CP${cpNum} Task ${taskNum}: retry succeeded`);
           cpResults[cpResults.length - 1] = {
             ...stepResult,
-            result: smartTruncate(retryResult.output || '', CTX_AGENT_STEP),
+            result: await smartSummarize(retryResult.output || '', CTX_AGENT_STEP, 'Summarize this successful retry output. Keep key results and deliverables.'),
             success: true,
             durationMs: result.durationMs + retryResult.durationMs,
           };
-          tEnv.output = smartTruncate(retryResult.output || '', CTX_AGENT_STEP);
+          tEnv.output = await smartSummarize(retryResult.output || '', CTX_AGENT_STEP, 'Summarize this task completion output. Keep deliverables, file paths, and key outcomes.');
           tEnv.status = 'complete';
           tEnv.error = null;
           tEnv.completed_at = now();
@@ -1666,45 +1688,14 @@ async function summarizeForDelivery(type, rawText, context = {}) {
   const promptText = config.prompt({ ...context, maxChars });
 
   try {
-    const resp = await fetch(GATEWAY_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: BRAIN_ROUTE,
-        messages: [
-          { role: 'system', content: 'You are a notification writer. Return ONLY the notification text — no JSON, no markdown fences, no preamble.' },
-          { role: 'user', content: promptText },
-        ],
-        max_tokens: 2048,
-        temperature: 0.3,
-        top_p: 0.9,
-      }),
-      signal: AbortSignal.timeout(30_000), // 30s timeout — this should be fast
-    });
+    const instruction = 'You are a notification writer. Return ONLY the notification text — no JSON, no markdown fences, no preamble.';
+    const content = await summarizeViaVertex(promptText, instruction, { maxTokens: 2048 });
 
-    if (!resp.ok) {
-      log('WARN', `summarizeForDelivery(${type}) HTTP ${resp.status} — falling back to raw`);
-      return rawText;
-    }
-
-    const data = await resp.json();
-    let content = '';
-    const msg = data.choices?.[0]?.message;
-    if (typeof msg?.content === 'string') {
-      content = msg.content;
-    } else if (Array.isArray(msg?.content)) {
-      content = msg.content.filter(c => c.type === 'text').map(c => c.text || '').join('\n');
-    }
-
-    // Strip any markdown fences or JSON wrapping the LLM might add
-    content = content.replace(/^```[a-z]*\s*/gi, '').replace(/\s*```$/g, '').trim();
-
-    if (content.length > 0) {
-      log('INFO', `summarizeForDelivery(${type}): ${content.length} chars (from ${JSON.stringify(context.steps || []).length} chars raw)`);
-      return content.substring(0, maxChars);
+    if (content && content.length > 0) {
+      // Strip any markdown fences or JSON wrapping the LLM might add
+      const cleaned = content.replace(/^```[a-z]*\s*/gi, '').replace(/\s*```$/g, '').trim();
+      log('INFO', `summarizeForDelivery(${type}): ${cleaned.length} chars (from ${JSON.stringify(context.steps || []).length} chars raw)`);
+      return cleaned.substring(0, maxChars);
     }
 
     log('WARN', `summarizeForDelivery(${type}): empty response — falling back to raw`);
@@ -3010,10 +3001,10 @@ async function processEnvelope(envelope, memoryContext) {
         agent: agentId,
         task: task.substring(0, 200),
         result: result.success
-          ? smartTruncate(result.output || '', CTX_CORTEX_STEP)
+          ? await smartSummarize(result.output || '', CTX_CORTEX_STEP, 'Summarize this agent result for the orchestrator. Keep key outcomes, decisions made, and resources created or modified.')
           : result.timedOut
             ? `[TIMED OUT after ${Math.round(result.durationMs / 1000)}s] ${result.error}`
-            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_DISPATCH_FAILURE)}`,
+            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_DISPATCH_FAILURE, 'Summarize this failed dispatch output. Keep error context and partial progress.')}`,
         success: result.success,
         durationMs: result.durationMs,
         timedOut: result.timedOut || false,
@@ -3125,10 +3116,10 @@ async function processEnvelope(envelope, memoryContext) {
           instruction: stepTask,
           accept_criteria: stepCriteria,
           context_summary: planContext.length > 0
-            ? planContext.map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
+            ? (await Promise.all(planContext.map(async r => `Step ${r.step} (${r.agent}): ${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this prior step result briefly. Keep key outputs and state changes.')}`))).join('\n')
             : undefined,
           prior_results_context: planContext.length > 0
-            ? planContext.map(r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
+            ? (await Promise.all(planContext.map(async r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this completed step. Keep deliverables, changes made, and any issues encountered.')}`))).join('\n\n')
             : undefined,
         };
 
@@ -3161,8 +3152,8 @@ async function processEnvelope(envelope, memoryContext) {
           agent: stepAgent,
           task: stepTask.substring(0, 200),
           result: result.success
-            ? smartTruncate(result.output || '', CTX_AGENT_STEP)
-            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
+            ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this plan step result. Keep key outputs, file paths, and resource names.')
+            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_AGENT_STEP, 'Summarize this failed step output. Keep error details and partial progress.')}`,
           success: result.success,
           durationMs: result.durationMs,
         });
@@ -3461,7 +3452,7 @@ async function processEnvelope(envelope, memoryContext) {
               agent: 'motor',
               task: `[spawn_responsibility] ${taskDesc.substring(0, 150)}`,
               result: respResult.success
-                ? smartTruncate(respResult.output || '', CTX_AGENT_STEP)
+                ? await smartSummarize(respResult.output || '', CTX_AGENT_STEP, 'Summarize this responsibility creation result. Keep the responsibility name and config details.')
                 : `[FAILED] ${respResult.error}`,
               success: respResult.success,
               durationMs: respResult.durationMs,
@@ -3539,10 +3530,10 @@ async function processEnvelope(envelope, memoryContext) {
             accept_criteria: taskCriteria,
             _missionId: envelope.id,  // mission-scoped shared workspace
             context_summary: [...allResults, ...cpResults].length > 0
-              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
+              ? (await Promise.all([...allResults, ...cpResults].map(async r => `Step ${r.step} (${r.agent}): ${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this prior step result briefly. Keep key outputs and state changes.')}`))).join('\n')
               : undefined,
             prior_results_context: [...allResults, ...cpResults].length > 0
-              ? [...allResults, ...cpResults].map(r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
+              ? (await Promise.all([...allResults, ...cpResults].map(async r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this completed step. Keep deliverables, changes made, and any issues encountered.')}`))).join('\n\n')
               : undefined,
           });
 
@@ -3571,8 +3562,8 @@ async function processEnvelope(envelope, memoryContext) {
             agent: taskAgent,
             task: taskDesc.substring(0, 200),
             result: result.success
-              ? smartTruncate(result.output || '', CTX_AGENT_STEP)
-              : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
+              ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this checkpoint task result. Keep key outputs, file paths, and resource names.')
+              : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_AGENT_STEP, 'Summarize this failed task output. Keep error details and partial progress.')}`,
             success: result.success,
             durationMs: result.durationMs,
           };
