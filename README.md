@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.27.13.0`
+> **Current version:** `v2026.05.27.14.0`
 
 
 ---
@@ -399,6 +399,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.27.11.0** | Autonomous Agency Hardening — Deterministic process executor (M/C/T stamped upfront, no Cortex re-entry), project-level `required_processes` binding, self-correction protocol (fix → identify source doc → update autonomously), content verification rules (cerebellum gates external content), action risk classification (LOW/MEDIUM/HIGH), `web-fetch` CoreKit tool for temporal-research, prioritized search strategy (LinkedIn first), agent dispatch rules (temporal-research for ALL web research, never Motor), ears/mouth LLM control in Brain dashboard, hire email auto-generation. |
 | **v2026.05.27.12.0** | Skill Ecosystem Architecture — Self-describing `skill.json` manifests with `agent_part` routing, `assemble-tools` rewritten for per-agent TOOLS.md generation, `skill-author` Motor tool, dashboard 3-tab skills page (Installed/Library/Proposals), 3 new API routes (catalog + per-agent install + proposals), Firestore custom skills sync in `upgrade-corekit`, Prime `r-skill-discovery` nightly responsibility, Cortex skill pattern recognition in SOUL.md. |
 | **v2026.05.27.13.0** | Dashboard Skills & Responsibilities UX — Live responsibilities view via introspect daemon (cron schedule, enabled status, process steps), library reorganized by functional category (Workspace/Fleet/Search/Memory) with collapsible groups, install dedup (hides Install button for already-installed skills, checks both VM introspection + Firestore), brain-agent routing badges on skill cards, per-agent-part installed count strip. |
+| **v2026.05.27.14.0** | Brain Dashboard + Independent Brain LLM — Responsibilities moved to Brain page (piggybacked on brain_config scan), Brain daemon own configurable LLM (`contracts.json → brain.model`, default gemini-2.5-flash, used for classify/decide/summarize), Brain as Daemon Service in dashboard (alongside Ears/Mouth), library install dedup fix (skills persist across tabs), responsibilities path fix (`responsibilities-job.json`). |
 
 
 ---

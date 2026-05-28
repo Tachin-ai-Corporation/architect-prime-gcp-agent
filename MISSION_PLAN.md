@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.27.13.0`
+> - **Current version:** `v2026.05.27.14.0`
 
 ---
 
@@ -73,6 +73,7 @@ Dashboard (Cloud Run — Next.js, Living Agent Graph home, top-level Work/Brain/
     │
     ├── agent-brain (systemd) — Brain state machine orchestrator
     │   └── Polls Firestore intake, creates work envelopes, dispatches sub-agents
+    │       ├── Own LLM (brain.model in contracts.json, default gemini-2.5-flash) for classify/decide/summarize
     │       ├── Cortex classify + decide loop (deterministic state machine)
     │       ├── M→C→T envelope hierarchy (Missions, Checkpoints, Tasks)
     │       ├── Memory recall + write via temporal-memory dispatch
@@ -1150,15 +1151,15 @@ architect-prime/
 8. **Prime skill discovery responsibility** — `r-skill-discovery` (nightly 4AM UTC): 9-step process analyzing fleet work to find repeatable patterns, max 3 proposals per run.
 9. **Cortex skill pattern recognition** — SOUL.md updated with qualification criteria (repeated patterns, custom scripts, verification patterns), quality bar (atomic, portable, correct agent_part), and improvement detection.
 
-### Completed: v2026.05.27.13.0 — Dashboard Skills & Responsibilities UX
-> *Live responsibilities view, library by category, install dedup, brain-agent routing badges.*
+### Completed: v2026.05.27.14.0 — Brain Dashboard + Independent Brain LLM
+> *Responsibilities on Brain page, Brain daemon gets its own configurable LLM, library install dedup fixed, Brain as a Daemon Service.*
 
-1. **Responsibilities live view** — New collapsible "Responsibilities" section in the Installed tab. Queries agent VMs via introspect daemon (`responsibilities` query type) to show: name, cron schedule, enabled/disabled status, process step count, min spacing, instruction preview.
-2. **Introspect `responsibilities` handler** — New query type in `agent-introspect.mjs` reads both `responsibilities.json` and `responsibilities-prime.json` from the corekit dir, returns merged list.
-3. **Library reorganized by category** — Skills grouped by functional category (Workspace → Fleet → Search → Memory → System) instead of brain agent type. Categories are collapsible with chevron toggle.
-4. **Install dedup** — Install button hidden when skill is already present (checked against both VM introspection skill packs AND Firestore custom skills). Installed cards visually dimmed.
-5. **Brain-agent routing badges** — Each skill card shows which brain agent type it routes to (⚡ Motor, 🔬 Cerebellum, etc.) via a teal pill badge.
-6. **Per-agent-part installed counts** — Pill strip above library groups showing installed/total counts per brain agent type (e.g., "⚡ Motor 3/5").
+1. **Responsibilities moved to Brain page** — Responsibilities removed from Skills page and placed on the Brain page as a new section below Brain Agents. Piggybacked on the `brain_config` introspect query (single scan returns both LLM config and responsibilities). Cards show: enabled dot, name, cron schedule, instruction preview (2-line clamp), process steps, spacing, source file.
+2. **Responsibilities path fix** — Introspect daemon now reads `responsibilities-job.json` (the actual manifest-installed filename) instead of the wrong `responsibilities-prime.json`.
+3. **Brain daemon independent LLM** — Brain daemon now has its own configurable model (`contracts.json → brain.model`, defaults to `gemini-2.5-flash`). All Brain's own LLM calls (classify, decide, summarizeForDelivery, quick-ack) use `BRAIN_ROUTE` instead of `CORTEX_ROUTE`. Agent dispatches (motor, temporal, etc.) still use their own routes.
+4. **Brain as Daemon Service** — Brain added to the Daemon Services section on the Brain page alongside Ears and Mouth. Model is swappable from the dashboard like other daemon slots. `handleSetModel` writes brain model overrides to contracts.json.
+5. **Library install dedup fix** — Skills introspection data now persists across tab switches (was being cleared on tab change). Install button correctly hidden when agent already has a skill installed.
+6. **Skills library UX** — Grouped by functional category with collapsible sections, brain-agent routing badges, per-agent-part installed count strip.
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*
