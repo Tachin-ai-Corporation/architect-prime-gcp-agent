@@ -53,10 +53,11 @@ const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'openclaw/cortex';
 
-// Brain's own LLM — used for classify/decide/summarize (not agent dispatches)
-// Defaults to a cheaper model; configurable via contracts.json brain.model
-const BRAIN_MODEL = CONTRACTS.brain?.model || null;
-const BRAIN_ROUTE = BRAIN_MODEL ? `google-vertex/${BRAIN_MODEL}` : CORTEX_ROUTE;
+// Brain's own LLM — used ONLY for simple text→text summarization via direct
+// Vertex AI calls (not through gateway). Classify/decide/synthesize always use
+// cortex through the gateway. See summarizeViaVertex() below.
+const BRAIN_MODEL = CONTRACTS.brain?.model || 'gemini-2.5-flash';
+const BRAIN_ROUTE = CORTEX_ROUTE;  // classify/decide/synthesize always use cortex
 
 // ---- Project contracts config ----
 const PROJECT_CONTEXT_MAX_TOKENS = CONTRACTS.projects?.context_max_tokens || 2000;
@@ -68,6 +69,88 @@ const CTX_DISPATCH_SUCCESS = CONTRACTS.brain?.ctx_dispatch_success || 4000;
 const CTX_DISPATCH_FAILURE = CONTRACTS.brain?.ctx_dispatch_failure || 3000;
 const CTX_AGENT_STEP = CONTRACTS.brain?.ctx_agent_step || 8000;
 const CTX_CORTEX_STEP = CONTRACTS.brain?.ctx_cortex_step || 4000;
+
+// ---- Direct Vertex AI summarization ----
+// Brain's own LLM for simple text→text tasks (summarize, compress, rephrase).
+// Bypasses the OpenClaw gateway entirely — no agent routing, no workspace, no tools.
+// Uses GCE metadata server for OAuth2 tokens (same as ears/mouth).
+
+const VERTEX_LOCATION = CONTRACTS.vertex?.location || 'global';
+const VERTEX_API_BASE = `https://${VERTEX_LOCATION === 'global' ? '' : VERTEX_LOCATION + '-'}aiplatform.googleapis.com/v1/projects/${GCP_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models`;
+
+/** Cache for GCE metadata OAuth2 token (auto-refreshes when expired) */
+let _gceTokenCache = { token: null, expiresAt: 0 };
+
+async function getGceToken() {
+  if (_gceTokenCache.token && Date.now() < _gceTokenCache.expiresAt - 30_000) {
+    return _gceTokenCache.token;
+  }
+  const resp = await fetch(
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+    { headers: { 'Metadata-Flavor': 'Google' }, signal: AbortSignal.timeout(5_000) }
+  );
+  if (!resp.ok) throw new Error(`GCE metadata token fetch failed: ${resp.status}`);
+  const data = await resp.json();
+  _gceTokenCache = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
+  };
+  return _gceTokenCache.token;
+}
+
+/**
+ * Direct Vertex AI call for simple text→text summarization.
+ * Bypasses the OpenClaw gateway. No agent context, no tools.
+ *
+ * @param {string} text - The text to summarize/transform
+ * @param {string} instruction - What to do with the text (e.g. "Summarize in 2 sentences")
+ * @param {object} [opts] - Optional overrides
+ * @param {number} [opts.maxTokens=1024] - Max output tokens
+ * @param {number} [opts.temperature=0.3] - Temperature
+ * @returns {Promise<string>} - The summarized/transformed text
+ */
+async function summarizeViaVertex(text, instruction, opts = {}) {
+  const model = BRAIN_MODEL;
+  const maxTokens = opts.maxTokens || 1024;
+  const temperature = opts.temperature ?? 0.3;
+
+  log('DEBUG', `summarizeViaVertex: model=${model}, instruction="${instruction.substring(0, 80)}", input=${text.length} chars`);
+
+  try {
+    const token = await getGceToken();
+    const url = `${VERTEX_API_BASE}/${model}:generateContent`;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: `${instruction}\n\n---\n\n${text}` }] }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature: temperature,
+        },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      log('ERROR', `summarizeViaVertex HTTP ${resp.status}: ${errText.substring(0, 200)}`);
+      return null;
+    }
+
+    const data = await resp.json();
+    const result = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    log('DEBUG', `summarizeViaVertex result: ${result.length} chars`);
+    return result.trim();
+  } catch (err) {
+    log('ERROR', `summarizeViaVertex failed: ${err.message}`);
+    return null;
+  }
+}
 
 function smartTruncate(text, budget) {
   if (!text || text.length <= budget) return text;
@@ -3828,7 +3911,8 @@ async function checkWaitingEnvelopes() {
 async function main() {
   log('INFO', '=== Brain v3 starting ===');
   log('INFO', `Agent: ${AGENT_ID} | Project: ${GCP_PROJECT} | Prime: ${PRIME_ID}`);
-  log('INFO', `Gateway: ${GATEWAY_URL} | Cortex: ${CORTEX_ROUTE} | Brain: ${BRAIN_ROUTE}`);
+  log('INFO', `Gateway: ${GATEWAY_URL} | Cortex route: ${CORTEX_ROUTE}`);
+  log('INFO', `Brain summarizer: ${BRAIN_MODEL} (direct Vertex, bypasses gateway)`);
   log('INFO', `Registry agents: ${Object.keys(REGISTRY.agents).join(', ') || 'none loaded'}`);
 
   // Load projects from Firestore
