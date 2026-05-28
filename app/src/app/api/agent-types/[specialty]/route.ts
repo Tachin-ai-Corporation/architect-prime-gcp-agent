@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
+
+const GH_RAW =
+  "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/main";
 
 /** Theme data per specialty */
 const THEMES: Record<string, { glyph: string; accent: string }> = {
@@ -16,35 +17,23 @@ const THEMES: Record<string, { glyph: string; accent: string }> = {
 
 /* ---- Helpers ---- */
 
-function safeRead(filePath: string): string | null {
+async function ghText(path: string): Promise<string | null> {
   try {
-    return fs.readFileSync(filePath, "utf-8");
+    const res = await fetch(`${GH_RAW}/${path}`, { next: { revalidate: 300 } });
+    if (!res.ok) return null;
+    return await res.text();
   } catch {
     return null;
   }
 }
 
-function safeJsonParse<T>(filePath: string): T | null {
-  const content = safeRead(filePath);
-  if (!content) return null;
+async function ghJson<T>(path: string): Promise<T | null> {
   try {
-    return JSON.parse(content) as T;
+    const res = await fetch(`${GH_RAW}/${path}`, { next: { revalidate: 300 } });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
   } catch {
     return null;
-  }
-}
-
-function fileMeta(filePath: string): { exists: boolean; sizeBytes: number; preview: string } {
-  try {
-    const stat = fs.statSync(filePath);
-    const content = fs.readFileSync(filePath, "utf-8");
-    return {
-      exists: true,
-      sizeBytes: stat.size,
-      preview: content.slice(0, 200),
-    };
-  } catch {
-    return { exists: false, sizeBytes: 0, preview: "" };
   }
 }
 
@@ -104,8 +93,8 @@ interface WorkspaceFile {
 /**
  * GET /api/agent-types/[specialty]
  *
- * Returns full detail for a single specialty: kit, SOUL, brain appends,
- * responsibilities, skills, workspace files.
+ * Returns full detail for a single specialty by fetching files from GitHub raw.
+ * Works on Cloud Run (no filesystem dependency).
  */
 export async function GET(
   _request: Request,
@@ -114,35 +103,43 @@ export async function GET(
   try {
     const { specialty } = await params;
 
-    // Validate specialty name (alphanumeric + dash only)
-    if (!/^[a-z0-9-]+$/.test(specialty)) {
+    // Validate specialty name
+    if (!/^[a-z0-9-]+$/.test(specialty) || !THEMES[specialty]) {
       return NextResponse.json({ error: "Invalid specialty" }, { status: 400 });
     }
 
-    const specialtiesDir = path.resolve(process.cwd(), "..", "specialties");
-    const specDir = path.join(specialtiesDir, specialty);
-
-    if (!fs.existsSync(specDir)) {
-      return NextResponse.json({ error: "Specialty not found" }, { status: 404 });
-    }
+    const base = `specialties/${specialty}`;
 
     // ---- Kit ----
-    const kitPath = path.join(specDir, "kit.json");
-    const kit = safeJsonParse<KitJson>(kitPath);
+    const kit = await ghJson<KitJson>(`${base}/kit.json`);
     if (!kit) {
-      return NextResponse.json({ error: "kit.json not found or invalid" }, { status: 404 });
+      return NextResponse.json({ error: "kit.json not found" }, { status: 404 });
     }
 
     const theme = THEMES[kit.id] || { glyph: "🔹", accent: "#94a3b8" };
 
-    // ---- SOUL.md ----
-    const soulContent = safeRead(path.join(specDir, "workspace", "SOUL.md")) || "";
-
-    // ---- Brain SOUL appends ----
+    // ---- Parallel fetches for all content ----
     const BRAIN_PARTS = ["cortex", "motor", "cerebellum"];
-    const brainAppends: BrainAppend[] = BRAIN_PARTS.map((part) => {
-      const appendPath = path.join(specDir, "brain", part, "SOUL_APPEND.md");
-      const content = safeRead(appendPath);
+    const WORKSPACE_FILES = ["IDENTITY.md", "SOUL.md", "MEMORY.md"];
+
+    const [
+      soulContent,
+      respData,
+      ...brainAndWorkspace
+    ] = await Promise.all([
+      // SOUL.md
+      ghText(`${base}/workspace/SOUL.md`),
+      // Responsibilities
+      ghJson<{ responsibilities: Responsibility[] }>(`${base}/responsibilities-${specialty}.json`),
+      // Brain appends (3)
+      ...BRAIN_PARTS.map((part) => ghText(`${base}/brain/${part}/SOUL_APPEND.md`)),
+      // Workspace files (3)
+      ...WORKSPACE_FILES.map((name) => ghText(`${base}/workspace/${name}`)),
+    ]);
+
+    // Parse brain appends (indices 0-2 of brainAndWorkspace)
+    const brainAppends: BrainAppend[] = BRAIN_PARTS.map((part, i) => {
+      const content = brainAndWorkspace[i] as string | null;
       return {
         part,
         exists: content !== null,
@@ -150,9 +147,18 @@ export async function GET(
       };
     });
 
-    // ---- Responsibilities ----
-    const respPath = path.join(specDir, `responsibilities-${specialty}.json`);
-    const respData = safeJsonParse<{ responsibilities: Responsibility[] }>(respPath);
+    // Parse workspace files (indices 3-5 of brainAndWorkspace)
+    const workspaceFiles: WorkspaceFile[] = WORKSPACE_FILES.map((name, i) => {
+      const content = brainAndWorkspace[BRAIN_PARTS.length + i] as string | null;
+      return {
+        name,
+        exists: content !== null,
+        sizeBytes: content ? new TextEncoder().encode(content).length : 0,
+        preview: content ? content.slice(0, 200) : "",
+      };
+    });
+
+    // Parse responsibilities
     const responsibilities: Responsibility[] = (respData?.responsibilities || []).map((r) => ({
       id: r.id,
       name: r.name,
@@ -163,39 +169,25 @@ export async function GET(
       context: r.context,
     }));
 
-    // ---- Skills ----
-    const skillsDir = path.join(specDir, "skills");
+    // ---- Skills (fetch each specialty skill's metadata + content) ----
     const skills: SkillManifest[] = [];
-    if (fs.existsSync(skillsDir)) {
-      const skillDirs = fs.readdirSync(skillsDir, { withFileTypes: true })
-        .filter((d) => d.isDirectory());
-
-      for (const dir of skillDirs) {
-        const skillJsonPath = path.join(skillsDir, dir.name, "skill.json");
-        const skillMdPath = path.join(skillsDir, dir.name, "SKILL.md");
-        const manifest = safeJsonParse<SkillManifest>(skillJsonPath);
-        const skillMd = safeRead(skillMdPath);
-
-        if (manifest) {
-          skills.push({
-            id: manifest.id || dir.name,
-            name: manifest.name || dir.name,
-            description: manifest.description || "",
-            category: manifest.category,
-            agent_part: manifest.agent_part,
-            version: manifest.version,
-            skillMdContent: skillMd || undefined,
-          });
-        }
+    for (const skillId of kit.specialty_skills) {
+      const [manifest, skillMd] = await Promise.all([
+        ghJson<SkillManifest>(`${base}/skills/${skillId}/skill.json`),
+        ghText(`${base}/skills/${skillId}/SKILL.md`),
+      ]);
+      if (manifest) {
+        skills.push({
+          id: manifest.id || skillId,
+          name: manifest.name || skillId,
+          description: manifest.description || "",
+          category: manifest.category,
+          agent_part: manifest.agent_part,
+          version: manifest.version,
+          skillMdContent: skillMd || undefined,
+        });
       }
     }
-
-    // ---- Workspace files ----
-    const WORKSPACE_FILES = ["IDENTITY.md", "SOUL.md", "MEMORY.md"];
-    const workspaceFiles: WorkspaceFile[] = WORKSPACE_FILES.map((name) => {
-      const meta = fileMeta(path.join(specDir, "workspace", name));
-      return { name, ...meta };
-    });
 
     // ---- Assemble response ----
     return NextResponse.json({
@@ -210,7 +202,7 @@ export async function GET(
         specialty_skills: kit.specialty_skills,
         brain_appends: kit.brain_appends,
         totalSkills: kit.base_skills.length + kit.specialty_skills.length,
-        soulContent,
+        soulContent: soulContent || "",
         brainAppends,
         responsibilities,
         skills,
