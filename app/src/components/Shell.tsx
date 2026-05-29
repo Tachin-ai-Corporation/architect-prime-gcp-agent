@@ -2,13 +2,24 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { usePrime } from "@/contexts/PrimeContext";
 import { OperationsFeed, useOperations } from "./OperationsFeed";
-import { SideNav } from "./SideNav";
 import styles from "./Shell.module.css";
+
+const navItems = [
+  { label: "Home", path: "/" },
+  { label: "Projects", path: "/projects" },
+  { label: "Processes", path: "/processes" },
+  { label: "Work", path: "/work" },
+  { label: "Brain", path: "/brain" },
+  { label: "Skills", path: "/skills" },
+  { label: "Agent Types", path: "/agent-types" },
+];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { primes, versionInfo, setup } = usePrime();
+  const pathname = usePathname();
 
   /* Use the first prime for operations polling (most common case) */
   const firstPrimeId = primes.length > 0 ? primes[0].id : null;
@@ -16,9 +27,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   /* Drawer state */
   const [opsOpen, setOpsOpen] = useState(false);
-
-  /* Sidebar state */
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   /* Auto-open drawer when new active operations appear */
   const [prevActiveCount, setPrevActiveCount] = useState(0);
@@ -28,6 +36,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     }
     setPrevActiveCount(activeCount);
   }, [activeCount, prevActiveCount]);
+
+  const isActive = (path: string) => {
+    if (path === "/") return pathname === "/";
+    return pathname.startsWith(path);
+  };
 
   return (
     <div className={styles.shell} id="shell">
@@ -52,6 +65,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </Link>
+
+          {/* ---- Nav links ---- */}
+          <nav className={styles.navLinks} id="shell-nav">
+            {navItems.map((item) => (
+              <Link
+                key={item.path}
+                href={item.path}
+                className={`${styles.navLink} ${isActive(item.path) ? styles.navLinkActive : ""}`}
+                id={`nav-${item.path.replace("/", "") || "home"}`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
         </div>
 
         <div className={styles.topBarRight}>
@@ -108,29 +135,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* ---- Body: Sidebar + Content ---- */}
-      <div className={styles.body}>
-        <SideNav
-          collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed((v) => !v)}
-        />
+      {/* ---- Operations Drawer ---- */}
+      {opsOpen && firstPrimeId && (
+        <div className={styles.opsDrawer} id="ops-drawer">
+          <OperationsFeed
+            primeId={firstPrimeId}
+            operations={operations}
+            onClose={() => setOpsOpen(false)}
+          />
+        </div>
+      )}
 
-        {/* ---- Operations Drawer ---- */}
-        {opsOpen && firstPrimeId && (
-          <div className={styles.opsDrawer} id="ops-drawer">
-            <OperationsFeed
-              primeId={firstPrimeId}
-              operations={operations}
-              onClose={() => setOpsOpen(false)}
-            />
-          </div>
-        )}
-
-        {/* ---- Full-page content ---- */}
-        <main className={styles.content} id="shell-content">
-          {children}
-        </main>
-      </div>
+      {/* ---- Full-page content ---- */}
+      <main className={styles.content} id="shell-content">
+        {children}
+      </main>
     </div>
   );
 }

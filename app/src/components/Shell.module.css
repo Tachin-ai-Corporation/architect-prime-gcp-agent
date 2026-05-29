@@ -38,15 +38,6 @@
   flex-shrink: 0;
 }
 
-/* ---- Body (sidebar + content) ---- */
-
-.body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  position: relative;
-}
-
 /* ---- Logo ---- */
 
 .logoLink {
@@ -81,6 +72,42 @@
   font-weight: 700;
   color: #E6EBF0;
   letter-spacing: -0.01em;
+}
+
+/* ---- Nav links (inline in header) ---- */
+
+.navLinks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 24px;
+}
+
+.navLink {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #7A8696;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: color 150ms ease, background 150ms ease;
+  white-space: nowrap;
+}
+
+.navLink:hover {
+  color: #E6EBF0;
+  background: rgba(86, 99, 115, 0.15);
+  text-decoration: none;
+}
+
+.navLinkActive {
+  color: var(--signal-aqua, #8FD8E6);
+  background: rgba(31, 154, 155, 0.1);
+}
+
+.navLinkActive:hover {
+  color: var(--signal-aqua, #8FD8E6);
+  background: rgba(31, 154, 155, 0.15);
 }
 
 /* ---- Icon buttons ---- */
@@ -184,7 +211,7 @@
 
 .opsDrawer {
   position: absolute;
-  top: 0;
+  top: 48px;
   right: 12px;
   width: min(420px, calc(100vw - 24px));
   z-index: 100;
