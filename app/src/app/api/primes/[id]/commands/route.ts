@@ -12,6 +12,7 @@ const VALID_TYPES = [
   "fleet_teardown",
   "fleet_upgrade",
   "upgrade_corekit",
+  "dashboard_deploy",
   "gateway_restart",
 ] as const;
 

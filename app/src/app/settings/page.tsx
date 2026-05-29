@@ -294,7 +294,11 @@ function SettingsPageInner() {
       buildId?: string;
       version?: string;
       region?: string;
-    }>("/api/upgrade", { method: "POST" });
+    }>("/api/upgrade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ primeId: firstPrimeId }),
+    });
 
     if (result?.success && result.buildId) {
       setBuildStatus(`Build ${result.buildId.substring(0, 8)} submitted. Polling for status...`);

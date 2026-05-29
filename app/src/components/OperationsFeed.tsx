@@ -20,6 +20,7 @@ interface Operation {
   status: string;
   label: string;
   target: string;
+  prime: string;
   startedAt: string | null;
   completedAt: string | null;
   duration: number | null;

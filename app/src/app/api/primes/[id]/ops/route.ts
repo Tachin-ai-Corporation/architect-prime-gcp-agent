@@ -21,6 +21,7 @@ interface Operation {
   status: string;
   label: string;
   target: string;
+  prime: string;
   startedAt: string | null;
   completedAt: string | null;
   duration: number | null;
@@ -41,10 +42,11 @@ function mapType(cmdType: string): string {
   return TYPE_MAP[cmdType] || cmdType;
 }
 
-function makeLabel(cmdType: string, args: Record<string, string>): string {
+function makeLabel(cmdType: string, args: Record<string, string>, primeId: string): string {
+  const primeName = primeId.charAt(0).toUpperCase() + primeId.slice(1);
   switch (cmdType) {
     case "upgrade_corekit":
-      return "CoreKit Upgrade — Prime";
+      return `CoreKit Upgrade — ${primeName}`;
     case "fleet_upgrade":
       return `CoreKit Upgrade — ${args.name || "unknown"}`;
     case "fleet_deploy":
@@ -52,9 +54,9 @@ function makeLabel(cmdType: string, args: Record<string, string>): string {
     case "fleet_teardown":
       return `Removing Agent — ${args.name || "unknown"}`;
     case "dashboard_deploy":
-      return `Dashboard Rebuild — ${args.version || "unknown"}`;
+      return `Dashboard Deploy — ${args.version || "latest"}`;
     case "gateway_restart":
-      return "Gateway Restart";
+      return `Gateway Restart — ${primeName}`;
     default:
       return cmdType;
   }
@@ -138,7 +140,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     // 1. Fetch last 15 commands
     const snap = await commandsCol(primeId)
       .orderBy("createdAt", "desc")
-      .limit(15)
+      .limit(25)
       .get();
 
     // 2. Build operations in parallel
@@ -219,8 +221,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
           id: doc.id,
           type: mapType(cmdType),
           status,
-          label: makeLabel(cmdType, args),
+          label: makeLabel(cmdType, args, primeId),
           target: makeTarget(cmdType, args),
+          prime: primeId,
           startedAt,
           completedAt,
           duration,
