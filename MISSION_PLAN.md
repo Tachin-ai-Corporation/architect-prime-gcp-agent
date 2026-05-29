@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.29.15.0`
+> - **Current version:** `v2026.05.29.16.0`
 
 ---
 
@@ -19,7 +19,7 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 ## Architecture
 
 ```
-Dashboard (Cloud Run — Next.js, Living Agent Graph home, top-level Work/Brain/Skills pages)
+Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects + SVG lines, inline header nav, top-level Work/Brain/Skills pages)
     │
     ├─ POST /api/primes/{id}/deploy           → Creates Prime GCE VM
     ├─ POST /api/primes/{id}/messages          → Writes chat to Firestore
@@ -486,7 +486,7 @@ architect-prime/
 │   ├── src/app/skills/               # Skill Kit Library (global registry)
 │   ├── src/app/api/primes/[id]/      # REST API routes (28 endpoints)
 │   ├── src/app/api/skills/           # Skill Kit registry API
-│   ├── src/components/               # Shell, Breadcrumb, NavCard, StatusStrip, AgentChip
+│   ├── src/components/               # Shell (header nav), ChatPanel, OperationsFeed, AgentChip
 │   ├── src/contexts/                 # PrimeContext (shared state)
 │   ├── src/hooks/                    # useProjects (real-time Firestore)
 │   ├── src/lib/                      # Firestore, auth, types, API utilities
@@ -634,6 +634,7 @@ architect-prime/
 | Agent | Specialty | VM | Email | Status |
 |-------|-----------|-----|-------|--------|
 | stan | devops | fleet-stan | devops-agent-stan@{workspace-domain} | Online |
+| anora | pm | fleet-anora | pm-agent-anora@{workspace-domain} | Online |
 
 **Prime instance:** `chucknorris` — VM: `prime-chucknorris`, zone: `us-central1-a`, project: `architect-prime-beta`
 
@@ -1172,6 +1173,16 @@ architect-prime/
 6. **summarizeForDelivery via Vertex** — Approval escalation summaries now use direct Vertex AI instead of routing through the gateway.
 7. **Brain action normalization** — `delegate` → `dispatch` normalization in decide handler (Cortex sometimes returns `delegate` with `target_agent` instead of `dispatch` with `agent`).
 8. **Operations dashboard** — Prime name shown in operation labels (e.g., "CoreKit Upgrade — Chucknorris"), dashboard deploy tracking fixed (sends primeId), ops bell icon button in header with active count badge, feed limit increased to 25.
+
+### Completed: v2026.05.29.16.0 — Dashboard Redesign (Vertical Prime List + Proximity Effects + Header Nav)
+> *Vertical prime list with expand/collapse, SVG connection lines restored, proximity-based hover glow, inline header navigation replacing sidebar/breadcrumb.*
+
+1. **Dashboard redesign — vertical prime list** — Replaced horizontal prime chip bar with vertical expandable prime rows. Agent cards appear below the selected prime. Deploy Prime button pinned top-right.
+2. **SVG connection lines restored** — Curved bezier paths with animated pulse dots from selected prime chip to each agent card. ResizeObserver + useLayoutEffect for responsive recomputation.
+3. **Proximity hover effect** — Mouse proximity drives continuous CSS custom property (`--prox` 0→1 with cubic easing, 220px radius). Cards/chips smoothly lift, scale, and glow as mouse approaches. requestAnimationFrame throttled for 60fps.
+4. **Inline header navigation** — 7 text nav links (Home, Projects, Processes, Work, Brain, Skills, Agent Types) in the header bar. No sidebar, no breadcrumb. Active route highlighted with signal-aqua tint.
+5. **CoreKit upgrade buttons on home** — Upgrade CoreKit buttons added to both prime chips and fleet agent cards, ported from the skills page.
+6. **Removed agent count bug** — Fixed prime chip agent count to exclude `removed` agents (e.g., fired Tom).
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*
