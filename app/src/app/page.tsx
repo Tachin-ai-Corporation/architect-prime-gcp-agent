@@ -1,15 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { DWDGuide } from "@/components/settings/IntegrationTab";
 import { ChatPanel } from "@/components/ChatPanel";
 import { usePrime } from "@/contexts/PrimeContext";
 import { api } from "@/lib/api";
-import type { PrimeInstance, SetupState, FleetAgent, DeployStep } from "@/lib/types";
+import type { PrimeInstance, FleetAgent, DeployStep } from "@/lib/types";
 
 interface AgentType {
   id: string;
@@ -17,15 +16,6 @@ interface AgentType {
   specialty: string;
   emailPattern: string;
   skills: string[];
-}
-
-/* ---- SVG connection line data ---- */
-interface ConnectionLine {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  id: string;
 }
 
 /* ---- Chat target ---- */
@@ -40,7 +30,7 @@ interface ChatTarget {
 
 function HomeInner() {
   const dialog = useDialog();
-  const { primes, setup, sidebarFleet, loading, versionInfo, refreshPrimes } = usePrime();
+  const { primes, setup, sidebarFleet, loading, refreshPrimes } = usePrime();
 
   /* ---- State ---- */
   const [selectedPrimeId, setSelectedPrimeId] = useState<string | null>(null);
@@ -49,9 +39,8 @@ function HomeInner() {
   const [newPrimeZone, setNewPrimeZone] = useState("us-central1-a");
   const [deploying, setDeploying] = useState(false);
   const [copied, setCopied] = useState("");
-  const [lines, setLines] = useState<ConnectionLine[]>([]);
   const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
-  const [chatWidth, setChatWidth] = useState(420); // pixels
+  const [chatWidth, setChatWidth] = useState(420);
 
   /* ---- Hire state ---- */
   const [showHire, setShowHire] = useState(false);
@@ -60,12 +49,12 @@ function HomeInner() {
   const [hireType, setHireType] = useState("");
   const [hiring, setHiring] = useState(false);
 
+  /* ---- Upgrade state ---- */
+  const [upgradingPrime, setUpgradingPrime] = useState<string | null>(null);
+  const [upgradingAgent, setUpgradingAgent] = useState<string | null>(null);
+
   /* ---- Refs ---- */
-  const containerRef = useRef<HTMLDivElement>(null);
-  const primeChipRef = useRef<HTMLButtonElement>(null);
-  const agentCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const isDragging = useRef(false);
-  const splitRef = useRef<HTMLDivElement>(null);
+  const isDragging = { current: false };
 
   /* ---- Auto-select first prime ---- */
   useEffect(() => {
@@ -73,50 +62,6 @@ function HomeInner() {
       setSelectedPrimeId(primes[0].id);
     }
   }, [primes, selectedPrimeId]);
-
-  /* ---- Derived data ---- */
-  const selectedPrime = primes.find((p) => p.id === selectedPrimeId);
-  const selectedFleet = selectedPrimeId ? sidebarFleet[selectedPrimeId] || [] : [];
-  const activeFleet = selectedFleet.filter((a) => a.status !== "removed");
-
-  /* ---- Compute SVG connection lines ---- */
-  const computeLines = useCallback(() => {
-    const container = containerRef.current;
-    const primeEl = primeChipRef.current;
-    if (!container || !primeEl || activeFleet.length === 0) {
-      setLines([]);
-      return;
-    }
-
-    const containerRect = container.getBoundingClientRect();
-    const primeRect = primeEl.getBoundingClientRect();
-    const x1 = primeRect.left + primeRect.width / 2 - containerRect.left;
-    const y1 = primeRect.bottom - containerRect.top;
-
-    const newLines: ConnectionLine[] = [];
-    agentCardRefs.current.forEach((el, name) => {
-      const agentRect = el.getBoundingClientRect();
-      const x2 = agentRect.left + agentRect.width / 2 - containerRect.left;
-      const y2 = agentRect.top - containerRect.top;
-      newLines.push({ x1, y1, x2, y2, id: name });
-    });
-
-    setLines(newLines);
-  }, [activeFleet.length]);
-
-  useLayoutEffect(() => {
-    const timer = setTimeout(computeLines, 100);
-    return () => clearTimeout(timer);
-  }, [computeLines, selectedPrimeId]);
-
-  /* ---- ResizeObserver ---- */
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver(() => computeLines());
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [computeLines]);
 
   /* ---- Chat panel resize (left-edge drag) ---- */
   const handleResizeDown = useCallback((e: React.MouseEvent) => {
@@ -141,11 +86,12 @@ function HomeInner() {
 
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleUp);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ---- Select Prime for chat ---- */
-  const selectPrimeChat = useCallback((prime: PrimeInstance) => {
-    setSelectedPrimeId(prime.id);
+  /* ---- Select Prime ---- */
+  const selectPrime = useCallback((prime: PrimeInstance) => {
+    setSelectedPrimeId((prev) => (prev === prime.id ? null : prime.id));
     setChatTarget({
       type: "prime",
       primeId: prime.id,
@@ -155,17 +101,16 @@ function HomeInner() {
   }, []);
 
   /* ---- Select Agent for chat ---- */
-  const selectAgentChat = useCallback((agent: FleetAgent) => {
-    if (!selectedPrimeId) return;
+  const selectAgentChat = useCallback((primeId: string, agent: FleetAgent) => {
     setChatTarget({
       type: "agent",
-      primeId: selectedPrimeId,
+      primeId,
       agentName: agent.name,
       entityName: agent.name,
       entityStatus: agent.status,
       specialty: agent.specialty,
     });
-  }, [selectedPrimeId]);
+  }, []);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -211,7 +156,6 @@ function HomeInner() {
     }
   };
 
-  // Auto-generate email from type + name + domain
   const generatedEmail = hireName && hireType
     ? `${hireType}-agent-${hireName}@${setup.agentEmailDomain || 'example.com'}`
     : '';
@@ -235,17 +179,47 @@ function HomeInner() {
     setHireName("");
   };
 
+  /* ---- Upgrade CoreKit (Prime) ---- */
+  const handleUpgradePrime = async (primeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUpgradingPrime(primeId);
+    const res = await api<{ id: string }>(`/api/primes/${primeId}/commands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "upgrade_corekit", args: { ref: "main" } }),
+    });
+    if (res?.id) {
+      dialog.trackCommand(primeId, res.id, `Upgrade ${primeId} CoreKit`);
+    } else {
+      dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
+    }
+    setUpgradingPrime(null);
+  };
+
+  /* ---- Upgrade CoreKit (Fleet Agent) ---- */
+  const handleUpgradeAgent = async (primeId: string, agentName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setUpgradingAgent(agentName);
+    const res = await api<{ id: string }>(`/api/primes/${primeId}/commands`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "fleet_upgrade", args: { name: agentName, ref: "main" } }),
+    });
+    if (res?.id) {
+      dialog.trackCommand(primeId, res.id, `Upgrade ${agentName}`);
+    } else {
+      dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
+    }
+    setUpgradingAgent(null);
+  };
+
   /* ---- Status class helper ---- */
   const statusClass = (status: string) => {
     switch (status) {
-      case "online":
-        return styles.statusOnline;
-      case "deploying":
-        return styles.statusDeploying;
-      case "error":
-        return styles.statusError;
-      default:
-        return styles.statusOffline;
+      case "online": return styles.statusOnline;
+      case "deploying": return styles.statusDeploying;
+      case "error": return styles.statusError;
+      default: return styles.statusOffline;
     }
   };
 
@@ -354,176 +328,152 @@ function HomeInner() {
   }
 
   /* ==================================================
-     Living Agent Graph — Split Panel Layout
+     Main Home View — Vertical Prime List
      ================================================== */
-
-  /* Shared sub-page quick nav — same icons for Prime and Fleet */
-  const navItems = [
-    { label: "Projects", path: "projects" },
-    { label: "Processes", path: "processes" },
-    { label: "Work", path: "work" },
-    { label: "Brain", path: "brain" },
-    { label: "Skills", path: "skills" },
-    { label: "Agent Types", path: "agent-types" },
-  ];
 
   return (
     <div className={styles.homeShell} id="home-page">
-      {/* ---- Full-width Graph ---- */}
-      <div
-        className={styles.splitPanel}
-        ref={splitRef}
-      >
-        <div className={styles.leftPanel}>
-          <div className={styles.graphContainer} ref={containerRef}>
-
-            {/* ---- Prime Chip Bar ---- */}
-            <div className={styles.primeChipBar} id="prime-chip-bar">
-              {primes.map((p) => {
-                const isSelected = p.id === selectedPrimeId;
-                return (
-                  <button
-                    key={p.id}
-                    id={`prime-chip-${p.id}`}
-                    ref={isSelected ? primeChipRef : undefined}
-                    className={`${styles.primeChip} ${isSelected ? styles.primeChipSelected : ""}`}
-                    onClick={() => selectPrimeChat(p)}
-                  >
-                    <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
-                    <span className={styles.chipName}>{p.name}</span>
-                    <span className={styles.chipMeta}>
-                      {(sidebarFleet[p.id] || []).filter((a) => a.status !== "removed").length} agent{(sidebarFleet[p.id] || []).filter((a) => a.status !== "removed").length !== 1 ? "s" : ""}
-                    </span>
-                    {/* Inline nav icons for selected prime */}
-                    {isSelected && (
-                      <span className={styles.chipNavIcons}>
-                        {navItems.map((item) => (
-                          <Link
-                            key={item.path}
-                            href={`/${item.path}?prime=${p.id}`}
-                            className={styles.chipNavIcon}
-                            data-tooltip={item.label}
-                            id={`prime-nav-${item.path}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {item.label}
-                          </Link>
-                        ))}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-
-              {/* Deploy Prime — always last chip */}
-              <button
-                id="deploy-prime-btn"
-                className={styles.deployChip}
-                onClick={() => setShowDeploy(true)}
-              >
-                <span className={styles.deployChipIcon}>+</span>
-                <span className={styles.chipName}>Deploy Prime</span>
-              </button>
-            </div>
-
-            {/* ---- SVG Connection Layer ---- */}
-            <svg className={styles.connectionLayer} aria-hidden="true">
-              <defs>
-                <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="rgba(31,154,155,0.35)" />
-                  <stop offset="100%" stopColor="rgba(31,154,155,0.08)" />
-                </linearGradient>
-              </defs>
-              {lines.map((line) => {
-                const pathD = `M ${line.x1} ${line.y1} Q ${(line.x1 + line.x2) / 2} ${line.y1 + 30} ${line.x2} ${line.y2}`;
-                return (
-                  <g key={line.id}>
-                    <path d={pathD} stroke="url(#lineGrad)" strokeWidth="1.5" fill="none" opacity="0.7" />
-                    <circle r="2.5" className={styles.pulseDot}>
-                      <animateMotion dur={`${2 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} />
-                    </circle>
-                    <circle r="1.5" className={styles.pulseDot} opacity="0.4">
-                      <animateMotion dur={`${2.5 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} begin={`${1 + Math.random()}s`} />
-                    </circle>
-                  </g>
-                );
-              })}
-            </svg>
-
-            {/* ---- Agent Grid ---- */}
-            {selectedPrime && (
-              <div className={styles.agentGrid} id="agent-grid">
-                {activeFleet.map((agent, i) => {
-                  const dp = getDeployProgress(agent.deploySteps);
-                  const isDeploying = agent.status === "deploying" && dp;
-                  const isChatTarget = chatTarget?.type === "agent" && chatTarget?.agentName === agent.name;
-
-                  return (
-                    <div
-                      key={agent.name}
-                      ref={(el) => {
-                        if (el) agentCardRefs.current.set(agent.name, el);
-                        else agentCardRefs.current.delete(agent.name);
-                      }}
-                      className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""} ${isChatTarget ? styles.agentCardActive : ""}`}
-                      style={{ animationDelay: `${i * 80}ms` }}
-                      id={`agent-card-${agent.name}`}
-                      onClick={() => selectAgentChat(agent)}
-                    >
-                      <div className={styles.agentHeader}>
-                        <div className={styles.agentAvatar}>
-                          {agent.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className={styles.agentName}>{agent.name}</div>
-                          <div className={styles.agentMeta}>
-                            <span className={styles.specialtyBadge}>{agent.specialty}</span>
-                            <span className={`${styles.statusDot} ${statusClass(agent.status)}`} />
-                            <span>{agent.status}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Deploy progress */}
-                      {isDeploying && dp && (
-                        <div className={styles.deploySection}>
-                          <div className={styles.deployBar}>
-                            <div
-                              className={`${styles.deployBarFill} ${dp.failed > 0 ? styles.deployBarFailed : ""}`}
-                              style={{ width: `${dp.progress}%` }}
-                            />
-                          </div>
-                          <div className={styles.deployInfo}>
-                            <span className={styles.deployPct}>{dp.progress}%</span>
-                            <span className={styles.deployStep}>
-                              {dp.activeStep
-                                ? `⏳ ${dp.activeStep.label}`
-                                : dp.lastDoneStep
-                                ? `✅ ${dp.lastDoneStep.label}`
-                                : `${dp.done}/${dp.total}`}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-
-                    </div>
-                  );
-                })}
-
-                {/* +Hire card — always last in the grid */}
-                <div
-                  className={styles.hireCard}
-                  onClick={openHireModal}
-                  id="hire-agent-btn"
-                >
-                  <span className={styles.hireCardIcon}>+</span>
-                  <span className={styles.hireCardText}>Hire</span>
-                </div>
-              </div>
-            )}
-          </div>
+      {/* ---- Top Row: title + Deploy Prime ---- */}
+      <div className={styles.homeTopRow}>
+        <div>
+          <div className={styles.homeTopTitle}>Fleet Overview</div>
+          <div className={styles.homeTopSub}>{primes.length} prime{primes.length !== 1 ? "s" : ""} · {Object.values(sidebarFleet).flat().filter(a => a.status !== "removed").length} agents</div>
         </div>
+        <button
+          id="deploy-prime-btn"
+          className={styles.deployBtn}
+          onClick={() => setShowDeploy(true)}
+        >
+          <span className={styles.deployBtnIcon}>+</span>
+          Deploy Prime
+        </button>
+      </div>
+
+      {/* ---- Scrollable Prime List ---- */}
+      <div className={styles.primeList}>
+        {primes.map((p) => {
+          const isSelected = p.id === selectedPrimeId;
+          const fleet = (sidebarFleet[p.id] || []).filter((a) => a.status !== "removed");
+
+          return (
+            <div key={p.id} className={styles.primeRow}>
+              {/* Prime Chip */}
+              <button
+                id={`prime-chip-${p.id}`}
+                className={`${styles.primeChip} ${isSelected ? styles.primeChipSelected : ""}`}
+                onClick={() => selectPrime(p)}
+              >
+                <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
+                <span className={styles.chipName}>{p.name}</span>
+                <span className={styles.chipMeta}>
+                  {fleet.length} agent{fleet.length !== 1 ? "s" : ""} · {p.status}
+                </span>
+                <span className={styles.chipSpacer} />
+
+                {/* Upgrade CoreKit button on Prime chip */}
+                {p.status === "online" && (
+                  <button
+                    className={styles.chipUpgradeBtn}
+                    onClick={(e) => handleUpgradePrime(p.id, e)}
+                    disabled={upgradingPrime === p.id}
+                    title="Upgrade Prime CoreKit"
+                    id={`upgrade-prime-${p.id}`}
+                  >
+                    {upgradingPrime === p.id ? "⏳" : "⬆ Upgrade"}
+                  </button>
+                )}
+
+                <span className={`${styles.chipExpandIcon} ${isSelected ? styles.chipExpandIconOpen : ""}`}>
+                  ▸
+                </span>
+              </button>
+
+              {/* Agent Cards (only for selected prime) */}
+              {isSelected && (
+                <div className={styles.agentSection}>
+                  <div className={styles.agentGrid} id="agent-grid">
+                    {fleet.map((agent, i) => {
+                      const dp = getDeployProgress(agent.deploySteps);
+                      const isDeploying = agent.status === "deploying" && dp;
+                      const isChatTarget = chatTarget?.type === "agent" && chatTarget?.agentName === agent.name;
+
+                      return (
+                        <div
+                          key={agent.name}
+                          className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""} ${isChatTarget ? styles.agentCardActive : ""}`}
+                          style={{ animationDelay: `${i * 80}ms` }}
+                          id={`agent-card-${agent.name}`}
+                          onClick={() => selectAgentChat(p.id, agent)}
+                        >
+                          <div className={styles.agentHeader}>
+                            <div className={styles.agentAvatar}>
+                              {agent.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className={styles.agentName}>{agent.name}</div>
+                              <div className={styles.agentMeta}>
+                                <span className={styles.specialtyBadge}>{agent.specialty}</span>
+                                <span className={`${styles.statusDot} ${statusClass(agent.status)}`} />
+                                <span>{agent.status}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Deploy progress */}
+                          {isDeploying && dp && (
+                            <div className={styles.deploySection}>
+                              <div className={styles.deployBar}>
+                                <div
+                                  className={`${styles.deployBarFill} ${dp.failed > 0 ? styles.deployBarFailed : ""}`}
+                                  style={{ width: `${dp.progress}%` }}
+                                />
+                              </div>
+                              <div className={styles.deployInfo}>
+                                <span className={styles.deployPct}>{dp.progress}%</span>
+                                <span className={styles.deployStep}>
+                                  {dp.activeStep
+                                    ? `⏳ ${dp.activeStep.label}`
+                                    : dp.lastDoneStep
+                                    ? `✅ ${dp.lastDoneStep.label}`
+                                    : `${dp.done}/${dp.total}`}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Upgrade button */}
+                          {agent.status === "online" && (
+                            <div className={styles.agentFooter}>
+                              <button
+                                className={styles.agentUpgradeBtn}
+                                onClick={(e) => handleUpgradeAgent(p.id, agent.name, e)}
+                                disabled={upgradingAgent === agent.name}
+                                title={`Upgrade ${agent.name} CoreKit`}
+                                id={`upgrade-agent-${agent.name}`}
+                              >
+                                {upgradingAgent === agent.name ? "⏳" : "⬆ Upgrade"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* +Hire card */}
+                    <div
+                      className={styles.hireCard}
+                      onClick={openHireModal}
+                      id="hire-agent-btn"
+                    >
+                      <span className={styles.hireCardIcon}>+</span>
+                      <span className={styles.hireCardText}>Hire</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* ---- Floating Chat Panel ---- */}
@@ -533,12 +483,10 @@ function HomeInner() {
           style={{ width: chatWidth }}
           id="chat-overlay"
         >
-          {/* Resize handle (left edge) */}
           <div
             className={styles.chatResizeHandle}
             onMouseDown={handleResizeDown}
           />
-          {/* Close button */}
           <button
             className={styles.chatCloseBtn}
             onClick={() => setChatTarget(null)}

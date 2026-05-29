@@ -20,6 +20,7 @@
   border-bottom: 1px solid rgba(86, 99, 115, 0.15); /* Slate 15% */
   flex-shrink: 0;
   position: relative;
+  z-index: 50;
 }
 
 .topBarLeft {
@@ -30,16 +31,23 @@
   flex-shrink: 0;
 }
 
-.topBarCenter {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+.topBarRight {
   display: flex;
   align-items: center;
-  gap: 0;
-  font-size: 13px;
-  white-space: nowrap;
+  gap: 6px;
+  flex-shrink: 0;
 }
+
+/* ---- Body (sidebar + content) ---- */
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* ---- Logo ---- */
 
 .logoLink {
   display: flex;
@@ -75,33 +83,6 @@
   letter-spacing: -0.01em;
 }
 
-.breadcrumbSep {
-  font-size: 14px;
-  color: #566373;
-  margin: 0 8px;
-  flex-shrink: 0;
-}
-
-.homeCrumb {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-dim);
-  text-decoration: none;
-  transition: color 180ms ease;
-}
-
-.homeCrumb:hover {
-  color: var(--signal-aqua);
-  text-decoration: none;
-}
-
-.topBarRight {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
 /* ---- Icon buttons ---- */
 
 .iconBtn {
@@ -125,49 +106,6 @@
   background: rgba(86, 99, 115, 0.2);
   color: #E6EBF0; /* Cloud */
   text-decoration: none;
-}
-
-/* ---- Bell badge ---- */
-
-.bellBadge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 9999px;
-  background: #D6A83A; /* Amber */
-  color: #202833; /* Graphite */
-  font-size: 9px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-.bellActive {
-  color: #D6A83A; /* Amber */
-}
-
-.approvalBadge {
-  position: absolute;
-  top: 3px;
-  right: 2px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  border-radius: 9999px;
-  background: #D84F45; /* Pulse red */
-  color: white;
-  font-size: 9px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  animation: badgePulse 2s ease-in-out infinite;
 }
 
 /* ---- Version tag ---- */
@@ -246,7 +184,7 @@
 
 .opsDrawer {
   position: absolute;
-  top: 48px;
+  top: 0;
   right: 12px;
   width: min(420px, calc(100vw - 24px));
   z-index: 100;
@@ -275,6 +213,7 @@
 .content {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   background: #202833; /* Graphite */
 }

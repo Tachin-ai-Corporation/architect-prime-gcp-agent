@@ -2,16 +2,13 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Breadcrumb } from "./Breadcrumb";
 import { usePrime } from "@/contexts/PrimeContext";
 import { OperationsFeed, useOperations } from "./OperationsFeed";
+import { SideNav } from "./SideNav";
 import styles from "./Shell.module.css";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { primes, versionInfo, setup } = usePrime();
-  const pathname = usePathname();
-  const isHome = pathname === "/";
 
   /* Use the first prime for operations polling (most common case) */
   const firstPrimeId = primes.length > 0 ? primes[0].id : null;
@@ -19,6 +16,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   /* Drawer state */
   const [opsOpen, setOpsOpen] = useState(false);
+
+  /* Sidebar state */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   /* Auto-open drawer when new active operations appear */
   const [prevActiveCount, setPrevActiveCount] = useState(0);
@@ -28,8 +28,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     }
     setPrevActiveCount(activeCount);
   }, [activeCount, prevActiveCount]);
-
-
 
   return (
     <div className={styles.shell} id="shell">
@@ -55,14 +53,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </div>
           </Link>
         </div>
-
-        {!isHome && (
-          <div className={styles.topBarCenter}>
-            <Link href="/" className={styles.homeCrumb}>Home</Link>
-            <span className={styles.breadcrumbSep}>›</span>
-            <Breadcrumb />
-          </div>
-        )}
 
         <div className={styles.topBarRight}>
           {/* DWD not configured warning */}
@@ -118,21 +108,29 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* ---- Operations Drawer ---- */}
-      {opsOpen && firstPrimeId && (
-        <div className={styles.opsDrawer} id="ops-drawer">
-          <OperationsFeed
-            primeId={firstPrimeId}
-            operations={operations}
-            onClose={() => setOpsOpen(false)}
-          />
-        </div>
-      )}
+      {/* ---- Body: Sidebar + Content ---- */}
+      <div className={styles.body}>
+        <SideNav
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((v) => !v)}
+        />
 
-      {/* ---- Full-page content ---- */}
-      <main className={styles.content} id="shell-content">
-        {children}
-      </main>
+        {/* ---- Operations Drawer ---- */}
+        {opsOpen && firstPrimeId && (
+          <div className={styles.opsDrawer} id="ops-drawer">
+            <OperationsFeed
+              primeId={firstPrimeId}
+              operations={operations}
+              onClose={() => setOpsOpen(false)}
+            />
+          </div>
+        )}
+
+        {/* ---- Full-page content ---- */}
+        <main className={styles.content} id="shell-content">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
