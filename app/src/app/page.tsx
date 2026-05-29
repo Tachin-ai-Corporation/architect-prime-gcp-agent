@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
 import Image from "next/image";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
@@ -16,6 +16,15 @@ interface AgentType {
   specialty: string;
   emailPattern: string;
   skills: string[];
+}
+
+/* ---- SVG connection line data ---- */
+interface ConnectionLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  id: string;
 }
 
 /* ---- Chat target ---- */
@@ -53,8 +62,15 @@ function HomeInner() {
   const [upgradingPrime, setUpgradingPrime] = useState<string | null>(null);
   const [upgradingAgent, setUpgradingAgent] = useState<string | null>(null);
 
+  /* ---- SVG line state ---- */
+  const [lines, setLines] = useState<ConnectionLine[]>([]);
+
   /* ---- Refs ---- */
-  const isDragging = { current: false };
+  const isDragging = useRef(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const primeChipRef = useRef<HTMLButtonElement>(null);
+  const agentCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const proximityRaf = useRef<number>(0);
 
   /* ---- Auto-select first prime ---- */
   useEffect(() => {
@@ -62,6 +78,86 @@ function HomeInner() {
       setSelectedPrimeId(primes[0].id);
     }
   }, [primes, selectedPrimeId]);
+
+  /* ---- Compute SVG connection lines ---- */
+  const computeLines = useCallback(() => {
+    const container = listRef.current;
+    const primeEl = primeChipRef.current;
+    if (!container || !primeEl) {
+      setLines([]);
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const primeRect = primeEl.getBoundingClientRect();
+    const x1 = primeRect.left + primeRect.width / 2 - containerRect.left;
+    const y1 = primeRect.bottom - containerRect.top;
+
+    const newLines: ConnectionLine[] = [];
+    agentCardRefs.current.forEach((el, name) => {
+      const agentRect = el.getBoundingClientRect();
+      const x2 = agentRect.left + agentRect.width / 2 - containerRect.left;
+      const y2 = agentRect.top - containerRect.top;
+      newLines.push({ x1, y1, x2, y2, id: name });
+    });
+    setLines(newLines);
+  }, []);
+
+  useLayoutEffect(() => {
+    const timer = setTimeout(computeLines, 120);
+    return () => clearTimeout(timer);
+  }, [computeLines, selectedPrimeId]);
+
+  useEffect(() => {
+    const container = listRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => computeLines());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [computeLines]);
+
+  /* ---- Proximity glow effect ---- */
+  useEffect(() => {
+    const container = listRef.current;
+    if (!container) return;
+
+    const RADIUS = 220; // px — max effect distance
+
+    const handleMouse = (e: MouseEvent) => {
+      cancelAnimationFrame(proximityRaf.current);
+      proximityRaf.current = requestAnimationFrame(() => {
+        const mx = e.clientX;
+        const my = e.clientY;
+
+        // Apply to all proximity-aware elements
+        const els = container.querySelectorAll<HTMLElement>('[data-proximity]');
+        els.forEach((el) => {
+          const rect = el.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const dist = Math.sqrt((mx - cx) ** 2 + (my - cy) ** 2);
+          const intensity = Math.max(0, 1 - dist / RADIUS);
+          // Ease with cubic for smooth falloff
+          const eased = intensity * intensity * intensity;
+          el.style.setProperty('--prox', eased.toFixed(3));
+        });
+      });
+    };
+
+    const handleLeave = () => {
+      cancelAnimationFrame(proximityRaf.current);
+      const els = container.querySelectorAll<HTMLElement>('[data-proximity]');
+      els.forEach((el) => el.style.setProperty('--prox', '0'));
+    };
+
+    container.addEventListener('mousemove', handleMouse);
+    container.addEventListener('mouseleave', handleLeave);
+    return () => {
+      container.removeEventListener('mousemove', handleMouse);
+      container.removeEventListener('mouseleave', handleLeave);
+      cancelAnimationFrame(proximityRaf.current);
+    };
+  }, []);
 
   /* ---- Chat panel resize (left-edge drag) ---- */
   const handleResizeDown = useCallback((e: React.MouseEvent) => {
@@ -350,7 +446,7 @@ function HomeInner() {
       </div>
 
       {/* ---- Scrollable Prime List ---- */}
-      <div className={styles.primeList}>
+      <div className={styles.primeList} ref={listRef}>
         {primes.map((p) => {
           const isSelected = p.id === selectedPrimeId;
           const fleet = (sidebarFleet[p.id] || []).filter((a) => a.status !== "removed");
@@ -360,8 +456,10 @@ function HomeInner() {
               {/* Prime Chip */}
               <button
                 id={`prime-chip-${p.id}`}
+                ref={isSelected ? primeChipRef : undefined}
                 className={`${styles.primeChip} ${isSelected ? styles.primeChipSelected : ""}`}
                 onClick={() => selectPrime(p)}
+                data-proximity
               >
                 <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
                 <span className={styles.chipName}>{p.name}</span>
@@ -389,6 +487,32 @@ function HomeInner() {
               </button>
 
               {/* Agent Cards (only for selected prime) */}
+              {/* SVG Connection Lines */}
+              {isSelected && lines.length > 0 && (
+                <svg className={styles.connectionLayer} aria-hidden="true">
+                  <defs>
+                    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="rgba(31,154,155,0.35)" />
+                      <stop offset="100%" stopColor="rgba(31,154,155,0.08)" />
+                    </linearGradient>
+                  </defs>
+                  {lines.map((line) => {
+                    const pathD = `M ${line.x1} ${line.y1} Q ${(line.x1 + line.x2) / 2} ${line.y1 + 30} ${line.x2} ${line.y2}`;
+                    return (
+                      <g key={line.id}>
+                        <path d={pathD} stroke="url(#lineGrad)" strokeWidth="1.5" fill="none" opacity="0.7" />
+                        <circle r="2.5" className={styles.pulseDot}>
+                          <animateMotion dur={`${2 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} />
+                        </circle>
+                        <circle r="1.5" className={styles.pulseDot} opacity="0.4">
+                          <animateMotion dur={`${2.5 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} begin={`${1 + Math.random()}s`} />
+                        </circle>
+                      </g>
+                    );
+                  })}
+                </svg>
+              )}
+
               {isSelected && (
                 <div className={styles.agentSection}>
                   <div className={styles.agentGrid} id="agent-grid">
@@ -400,10 +524,15 @@ function HomeInner() {
                       return (
                         <div
                           key={agent.name}
+                          ref={(el) => {
+                            if (el) agentCardRefs.current.set(agent.name, el);
+                            else agentCardRefs.current.delete(agent.name);
+                          }}
                           className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""} ${isChatTarget ? styles.agentCardActive : ""}`}
                           style={{ animationDelay: `${i * 80}ms` }}
                           id={`agent-card-${agent.name}`}
                           onClick={() => selectAgentChat(p.id, agent)}
+                          data-proximity
                         >
                           <div className={styles.agentHeader}>
                             <div className={styles.agentAvatar}>
@@ -464,6 +593,7 @@ function HomeInner() {
                       className={styles.hireCard}
                       onClick={openHireModal}
                       id="hire-agent-btn"
+                      data-proximity
                     >
                       <span className={styles.hireCardIcon}>+</span>
                       <span className={styles.hireCardText}>Hire</span>
