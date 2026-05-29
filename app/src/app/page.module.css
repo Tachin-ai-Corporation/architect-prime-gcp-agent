@@ -226,6 +226,9 @@
 .primeRow {
   margin-bottom: 8px;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .primeChip {
@@ -233,7 +236,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  width: 200px;
   padding: 14px 20px;
   background: rgba(49, 59, 71, 0.5);
   backdrop-filter: blur(12px);
@@ -369,8 +372,9 @@
    ============================================ */
 
 .agentSection {
-  padding: 12px 0 8px 0;
+  padding: 32px 0 8px 0;
   animation: sectionExpand 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  width: 100%;
 }
 
 @keyframes sectionExpand {
@@ -387,14 +391,17 @@
 }
 
 .agentGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
   padding: 0 8px;
 }
 
 .agentCard {
   --prox: 0;
+  width: 210px;
+  min-width: 210px;
   background: rgba(49, 59, 71, 0.4);
   border: 1px solid rgba(86, 99, 115, calc(0.18 + var(--prox) * 0.22));
   border-radius: 14px;
@@ -665,6 +672,8 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+  width: 210px;
+  min-width: 210px;
   min-height: 90px;
   padding: 14px;
   background: rgba(95, 199, 178, 0.04);
