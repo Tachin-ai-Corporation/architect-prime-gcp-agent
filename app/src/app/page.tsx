@@ -392,7 +392,7 @@ function HomeInner() {
                     <span className={`${styles.statusDot} ${statusClass(p.status)}`} />
                     <span className={styles.chipName}>{p.name}</span>
                     <span className={styles.chipMeta}>
-                      {(sidebarFleet[p.id] || []).length} agent{(sidebarFleet[p.id] || []).length !== 1 ? "s" : ""}
+                      {(sidebarFleet[p.id] || []).filter((a) => a.status !== "removed").length} agent{(sidebarFleet[p.id] || []).filter((a) => a.status !== "removed").length !== 1 ? "s" : ""}
                     </span>
                     {/* Inline nav icons for selected prime */}
                     {isSelected && (
