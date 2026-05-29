@@ -91,6 +91,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           )}
 
+          {/* Operations toggle */}
+          {firstPrimeId && (
+            <button
+              className={`${styles.iconBtn} ${activeCount > 0 ? styles.opsActive : ""}`}
+              onClick={() => setOpsOpen((v) => !v)}
+              title={activeCount > 0 ? `${activeCount} active operation${activeCount > 1 ? "s" : ""}` : "Operations"}
+              id="shell-ops-toggle"
+            >
+              🔔
+              {activeCount > 0 && (
+                <span className={styles.opsBadge}>{activeCount}</span>
+              )}
+            </button>
+          )}
+
           {/* Settings gear */}
           <Link
             href="/settings"
