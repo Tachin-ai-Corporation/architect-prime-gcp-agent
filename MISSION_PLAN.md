@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.27.14.0`
+> - **Current version:** `v2026.05.29.15.0`
 
 ---
 
@@ -1160,6 +1160,18 @@ architect-prime/
 4. **Brain as Daemon Service** — Brain added to the Daemon Services section on the Brain page alongside Ears and Mouth. Model is swappable from the dashboard like other daemon slots. `handleSetModel` writes brain model overrides to contracts.json.
 5. **Library install dedup fix** — Skills introspection data now persists across tab switches (was being cleared on tab change). Install button correctly hidden when agent already has a skill installed.
 6. **Skills library UX** — Grouped by functional category with collapsible sections, brain-agent routing badges, per-agent-part installed count strip.
+
+### Completed: v2026.05.29.15.0 — Fleet Specialties + Brain Summarizer + Operations Dashboard
+> *8 fleet specialties at DevOps maturity, core processes (p-plan/p-investigate), Agent Type Explorer dashboard, LLM-powered smartSummarize replacing truncation, operations bell icon.*
+
+1. **Fleet specialties at DevOps maturity** — All 8 agent types (devops, engineer, qa, pm, finance, data, security, assistant) built to full operational maturity with brain SOUL appends, cron-driven responsibilities, kit.json manifests, and installer manifest fragments.
+2. **Core processes** — `p-plan` and `p-investigate` process templates deployed at Prime creation time via `seedCoreProcesses()`. Cortex SOUL updated with `follow_process` action and pattern-match rules.
+3. **Agent Type Explorer** — RPG-style dashboard page (`/skills` → Class Sheet tab) displaying 8 specialty cards with detail pages fetched from GitHub raw (Cloud Run has no local specialties dir).
+4. **Brain direct Vertex summarizer** — `summarizeViaVertex()` function makes direct Vertex AI REST API calls using GCE metadata tokens, bypassing the gateway entirely. Used for all text summarization.
+5. **LLM-powered smartSummarize** — Replaced all 13 `smartTruncate()` call sites (dumb head+tail character chopping) with `smartSummarize()` using context-specific LLM prompts. Falls back to truncation on failure.
+6. **summarizeForDelivery via Vertex** — Approval escalation summaries now use direct Vertex AI instead of routing through the gateway.
+7. **Brain action normalization** — `delegate` → `dispatch` normalization in decide handler (Cortex sometimes returns `delegate` with `target_agent` instead of `dispatch` with `agent`).
+8. **Operations dashboard** — Prime name shown in operation labels (e.g., "CoreKit Upgrade — Chucknorris"), dashboard deploy tracking fixed (sends primeId), ops bell icon button in header with active count badge, feed limit increased to 25.
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*
