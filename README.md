@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.05.30.17.0`
+> **Current version:** `v2026.05.30.18.0`
 
 
 ---
@@ -403,6 +403,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.29.15.0** | Fleet Specialties + Brain Summarizer + Operations Dashboard — 8 fleet specialties at DevOps maturity (brain SOUL appends, responsibilities, kit.json), core processes (p-plan, p-investigate) with deploy-time seeder, Agent Type Explorer dashboard page (RPG-style class roster), `follow_process` Cortex action, direct Vertex AI summarizer (`summarizeViaVertex`), LLM-powered `smartSummarize` replacing 13 `smartTruncate` sites, `summarizeForDelivery` via Vertex, `delegate`→`dispatch` action normalization, operations bell icon in header with prime name labels. |
 | **v2026.05.29.16.0** | Dashboard Redesign — Vertical prime list with expand/collapse agent cards, SVG connection lines (bezier curves + animated pulse dots), proximity hover effect (`--prox` CSS custom property, cubic easing, 220px radius, 60fps), inline header nav (7 text links replacing sidebar/breadcrumb), CoreKit upgrade buttons on prime chips + agent cards. |
 | **v2026.05.30.17.0** | Skill Discovery Data Pipeline + Process/Skill Doctrine — `work-log-read` CoreKit tool (queries fleet work envelopes from Firestore), `r-skill-discovery` responsibility rewrite (explicit tool commands replacing vague instructions), codified process vs skill design principle (processes = orchestration, skills = execution, processes reference skills for mechanical steps). |
+| **v2026.05.30.18.0** | Source Text Preservation + Dashboard Polish — `source_text` field on M envelopes preserves raw user message verbatim through brain pipeline (fixes cortex classify lossy summarization of URLs/code/data), `extractCurrentMessage()` helper, `[ORIGINAL USER REQUEST]` context block prepended to all child dispatches. Dashboard: dynamic prime chip width (`fit-content`), home page top padding fix. |
 
 
 ---

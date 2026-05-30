@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.30.17.0`
+> - **Current version:** `v2026.05.30.18.0`
 
 ---
 
@@ -340,9 +340,10 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
    - **Missions (M):** Multi-checkpoint, high-level objectives with clear definitions of done.
    - **Checkpoints (C):** Observable milestones with concrete completion criteria. Support 5 step types: `standard`, `delegation`, `spawn_responsibility`, `approval_gate`, `optional`.
    - **Tasks (T):** Specific, atomic execution steps.
-4. **Context Assembly & Generation Parameters:** System prompt loads `SOUL.md` + `IDENTITY.md` + `MEMORY.md` + the full agent registry from `agent-registry.json` (~20K tokens). Generation parameters (max_tokens, temperature, top_p) are mapped per sub-agent dynamically. Motor is configured with 65536 max output tokens for rich artifact production.
-5. **Envelope Context Accumulation:** Rolling 400K token budget is attached to the envelope history. Pruning keeps the first 10% (ambient context) and the last 90% (most recent activity) of the token window.
-6. **Cross-Agent Delegation:** Envelopes can be delegated to other fleet agents (e.g. Prime to PM/Stan). `agent-brain` yields execution and resumes once the child envelope reports success.
+4. **Source text preservation:** When brain creates an M envelope from a user intake, the raw user message (extracted from the composite intake using the `[Current message]` marker) is stored as `source_text` on the envelope. On every child dispatch, the verbatim user request is prepended as `[ORIGINAL USER REQUEST — verbatim]` context block, ensuring motor sees exact URLs, code snippets, and data that cortex classification may summarize away.
+5. **Context Assembly & Generation Parameters:** System prompt loads `SOUL.md` + `IDENTITY.md` + `MEMORY.md` + the full agent registry from `agent-registry.json` (~20K tokens). Generation parameters (max_tokens, temperature, top_p) are mapped per sub-agent dynamically. Motor is configured with 65536 max output tokens for rich artifact production.
+6. **Envelope Context Accumulation:** Rolling 400K token budget is attached to the envelope history. Pruning keeps the first 10% (ambient context) and the last 90% (most recent activity) of the token window.
+7. **Cross-Agent Delegation:** Envelopes can be delegated to other fleet agents (e.g. Prime to PM/Stan). `agent-brain` yields execution and resumes once the child envelope reports success.
 
 **Tool ownership (strict boundaries — fleet agents):**
 - Fleet Motor owns Workspace tools per job type: devops (Drive+Gmail), pm (Drive+Gmail+Docs+Sheets), assistant (Drive+Gmail+Calendar+Docs), etc.
@@ -1196,6 +1197,13 @@ architect-prime/
 1. **`work-log-read` CoreKit tool** — New brain tool that queries the `primes/{primeId}/work/` Firestore collection. Supports filtering by `--hours`, `--owner`, `--status`, `--type`, `--min-steps`. Returns envelope details (id, type, status, owner, title, instruction, result, timing, child count). Same auth pattern as `brain-telemetry-read` (GCE metadata token + REST). Deployed to all agents via `base.txt` manifest.
 2. **`r-skill-discovery` responsibility rewrite** — Replaced vague "query Firestore" instructions with explicit tool commands. Steps 1-3 now reference exact invocations: `work-log-read --hours 24 --status complete --type M --json`, `brain-telemetry-read --last 50 --json`, `session-summary --hours 24 --limit 20`. Motor can copy-paste commands instead of improvising.
 3. **Process vs Skill design principle** — Codified the distinction: processes are for orchestration (when/what order/approvals), skills are for execution (how to do it correctly every time). Processes should reference skills for mechanical steps. Anti-pattern documented: telling motor to improvise deterministic operations.
+
+### Completed: v2026.05.30.18.0 — Source Text Preservation + Dashboard Polish
+> *Raw user messages preserved through brain pipeline, dynamic prime chip width, home page padding fix.*
+
+1. **Source text preservation** — `extractCurrentMessage()` extracts the raw user message from the composite intake (using the `[Current message - respond to this]` marker). Stored as `source_text` on M envelopes (both regular and process-routed). Prepended to every child dispatch instruction as `[ORIGINAL USER REQUEST — verbatim]` context block. Fixes the cortex classification lossy summarization bug where URLs, code, and embedded data were dropped.
+2. **Dashboard prime chip dynamic width** — Changed from fixed `200px` to `fit-content` with `min-width: 180px`. Chip grows to accommodate name + agent count + Upgrade button.
+3. **Dashboard home page top padding** — Added 24px top padding to `primeList` to prevent prime chip hover scale/lift effect from clipping under the header.
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*
