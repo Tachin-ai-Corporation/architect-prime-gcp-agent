@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.29.16.0`
+> - **Current version:** `v2026.05.30.17.0`
 
 ---
 
@@ -355,6 +355,12 @@ The `agent-brain` daemon runs as a continuous systemd service on both Prime and 
 - Prime skills are focused on fleet management and will be progressively exposed through the dashboard for manual triggering
 
 **Dynamic skill awareness:** `assemble-tools` generates per-agent `TOOLS.md` from `skill.json` manifests, routing skills by `agent_part` field. Execution agents (motor, cerebellum, temporal-research) get full SKILL.md content for their skills. Planning agents (cortex, prefrontal) get a compact index table (name + when_to_use + target agent). Custom skills synced from Firestore during `upgrade-corekit` are included. `skill-author` Motor tool generates new skill packages. Prefrontal reads TOOLS.md to know which tools are available before planning.
+
+**Processes vs Skills (design principle):**
+- **Processes are for orchestration** — defining *when* to do things, in what order, with what approvals. A process is a stored reusable playbook with typed steps (standard/delegation/approval_gate/etc.) that brain executes deterministically. Processes coordinate multi-step workflows but do not dictate *how* each step is executed.
+- **Skills are for execution** — codifying *how* to do a specific thing correctly every time. A skill includes exact commands, scripts, and instructions injected into motor's context via TOOLS.md. Skills eliminate improvisation by providing deterministic, repeatable procedures.
+- **Processes reference skills, not the other way around.** When a process step requires mechanical execution (e.g., deploying a website, running a backup), the step should reference a skill that handles the deterministic parts. The process provides the workflow structure; the skill provides the execution guarantee.
+- **Anti-pattern:** A process that tells motor to "recursively fetch all files" without a skill providing the exact script. Motor will improvise differently each run, leading to inconsistent results (missed files, wrong directories, etc.).
 
 **Three-layer memory model:**
 - **Working Memory (`MEMORY.md`):** Loaded into every Cortex system prompt. Agent's RAM — accumulates freely during the day, pruned nightly to < 2,000 chars.
@@ -1183,6 +1189,13 @@ architect-prime/
 4. **Inline header navigation** — 7 text nav links (Home, Projects, Processes, Work, Brain, Skills, Agent Types) in the header bar. No sidebar, no breadcrumb. Active route highlighted with signal-aqua tint.
 5. **CoreKit upgrade buttons on home** — Upgrade CoreKit buttons added to both prime chips and fleet agent cards, ported from the skills page.
 6. **Removed agent count bug** — Fixed prime chip agent count to exclude `removed` agents (e.g., fired Tom).
+
+### Completed: v2026.05.30.17.0 — Skill Discovery Data Pipeline + Process/Skill Doctrine
+> *Fixed skill discovery data access, codified process vs skill design principle, `work-log-read` CoreKit tool.*
+
+1. **`work-log-read` CoreKit tool** — New brain tool that queries the `primes/{primeId}/work/` Firestore collection. Supports filtering by `--hours`, `--owner`, `--status`, `--type`, `--min-steps`. Returns envelope details (id, type, status, owner, title, instruction, result, timing, child count). Same auth pattern as `brain-telemetry-read` (GCE metadata token + REST). Deployed to all agents via `base.txt` manifest.
+2. **`r-skill-discovery` responsibility rewrite** — Replaced vague "query Firestore" instructions with explicit tool commands. Steps 1-3 now reference exact invocations: `work-log-read --hours 24 --status complete --type M --json`, `brain-telemetry-read --last 50 --json`, `session-summary --hours 24 --limit 20`. Motor can copy-paste commands instead of improvising.
+3. **Process vs Skill design principle** — Codified the distinction: processes are for orchestration (when/what order/approvals), skills are for execution (how to do it correctly every time). Processes should reference skills for mechanical steps. Anti-pattern documented: telling motor to improvise deterministic operations.
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*

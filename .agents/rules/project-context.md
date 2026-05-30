@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.05.29.16.0)
+## Current Architecture (v2026.05.30.17.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -22,7 +22,8 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - temporal-research is web search + URL fetching (Vertex AI grounding + web-fetch, zero execution tools)
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
   - cerebellum is a pure test runner: executes validation rules, reports PASS/FAIL with evidence, structured verdicts (ALL_PASS/FAIL/NO_RULES)
-- **Dynamic skill awareness**: `assemble-tools` generates per-agent TOOLS.md from `skill.json` manifests (routes by `agent_part` field). Execution agents get full SKILL.md content; planning agents get compact index tables. `skill-author` Motor tool for generating new skill packages. Custom skills synced from Firestore during `upgrade-corekit`. Prime runs nightly `r-skill-discovery` responsibility to propose new skills. Dashboard 3-tab skills page (Installed/Library/Proposals) with per-agent install/uninstall.
+- **Dynamic skill awareness**: `assemble-tools` generates per-agent TOOLS.md from `skill.json` manifests (routes by `agent_part` field). Execution agents get full SKILL.md content; planning agents get compact index tables. `skill-author` Motor tool for generating new skill packages. Custom skills synced from Firestore during `upgrade-corekit`. Prime runs nightly `r-skill-discovery` responsibility to propose new skills (uses `work-log-read`, `brain-telemetry-read`, `session-summary` for data gathering). Dashboard 3-tab skills page (Installed/Library/Proposals) with per-agent install/uninstall.
+- **Processes vs Skills design principle**: Processes are for **orchestration** (when to do things, in what order, with what approvals). Skills are for **execution** (how to do a specific thing correctly every time). Processes should reference skills for mechanical steps. Anti-pattern: a process that tells motor to improvise deterministic operations without a skill providing the exact script.
 - **Responsibility self-management**: Agents create responsibilities through normal M→C→T pipeline. `responsibility-manage` Motor tool for CRUD on `responsibilities-job.json`. Cortex classifies responsibility requests as new_mission → Prefrontal designs process → Motor writes config → Cerebellum verifies. Brain scheduler fires responsibilities on cron schedules. Responsibilities can link to stored processes via `processRef` + `processParams` for deterministic execution.
 - **Context assembly**: System prompt loads SOUL.md + IDENTITY.md + MEMORY.md + full agent registry (cached, 60s TTL). Per-agent generation params: Motor 65536 max_tokens, Cortex/Prefrontal 32768, Cerebellum/Memory 8192. Temperature tuned per role (0.1–0.6). Envelope context accumulation: rolling 400K token budget with oldest-first pruning.
 - **Input/Output architecture (ears + mouth)**:
@@ -58,7 +59,7 @@ The Skills page categorizes tools by agent "body part". The introspect daemon (`
 | **Mouth** | 🗣️ | `agent-mouth*`, `mouth-*` | Output pipeline, response classification, delivery |
 | **Brain** | 🧠 | `agent-brain*`, `brain-telemetry-*`, `assemble-tools`, `agent-introspect*` | Orchestration daemon, telemetry, tool assembly |
 | **Cortex** | 🔮 | `agent-ask`, `agent-status` | Decision layer — reasoning tools the cortex agent uses |
-| **Motor** | ⚡ | `responsibility-manage`, `project-manage`, `task-log-*`, `fleet-*`, `drive-*`, `gmail-*`, `calendar-*`, `docs-*`, `sheets-*` | Execution layer — all tools Motor uses to DO things |
+| **Motor** | ⚡ | `responsibility-manage`, `project-manage`, `task-log-*`, `fleet-*`, `work-log-read`, `drive-*`, `gmail-*`, `calendar-*`, `docs-*`, `sheets-*` | Execution layer — all tools Motor uses to DO things |
 | **Memory** | 💾 | `core-memory-*`, `update-deep-truths`, `session-summary` | Temporal-memory tools |
 | **Config** | ⚙️ | `upgrade-*`, `validate-contracts`, `render-config`, `oc`, `*.md`, `*.json`, `*.tmpl` | System config & base functions: OpenClaw/fleet infra |
 | **Custom** | 🧩 | *(anything not matched above)* | Fallback for uncategorized / user-added tools |
