@@ -435,6 +435,8 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
     mission.updated_at = now();
   } else {
     const missionId = generateId('w');
+    // Extract raw user message for source_text preservation
+    const sourceText = intake?.text ? extractCurrentMessage(intake.text) : null;
     mission = {
       id: missionId,
       type: 'M',
@@ -454,6 +456,7 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
       source_meta: intake?.source_meta || {},
       project_id: decision.project_id || null,
       context: decision.context || null,
+      source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
       process_id: processId,
       process_version: process.version || 1,
       created_at: now(),
@@ -2161,13 +2164,7 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
     }
 
     // Extract the actual current message from the composite intake
-    // (ears format: "[Chat messages since...]\ncontext...\n[Current message - respond to this]\nUser: actual message")
-    let ackMessage = intakeText;
-    const currentMsgMarker = '[Current message - respond to this]';
-    const markerIdx = intakeText.indexOf(currentMsgMarker);
-    if (markerIdx !== -1) {
-      ackMessage = intakeText.substring(markerIdx + currentMsgMarker.length).trim();
-    }
+    const ackMessage = extractCurrentMessage(intakeText);
 
     const systemPrompt = [
       `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.`,
@@ -2210,11 +2207,27 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
   return ACK_FALLBACKS[Math.floor(Math.random() * ACK_FALLBACKS.length)];
 }
 
+// ---- Extract current message from composite intake ----
+// Ears format: "[Chat messages since...]\ncontext...\n[Current message - respond to this]\nUser: actual message"
+function extractCurrentMessage(intakeText) {
+  if (!intakeText) return intakeText || '';
+  const marker = '[Current message - respond to this]';
+  const idx = intakeText.indexOf(marker);
+  if (idx !== -1) {
+    return intakeText.substring(idx + marker.length).trim();
+  }
+  return intakeText;
+}
+
 // ---- Intake processing (Phase 3: memory + active scan + attach) ----
 async function processIntake(intake) {
   await ensureProjectsLoaded();
   await ensureProcessesLoaded();
   log('INFO', `Processing intake: ${intake.id} from ${intake.source}`);
+
+  // Extract the raw user message (verbatim) from the composite intake.
+  // This preserves URLs, code snippets, and data that cortex classify may summarize away.
+  const sourceText = extractCurrentMessage(intake.text);
 
   // Claim the intake
   await firestoreWrite('intake', intake.id, {
@@ -2422,6 +2435,7 @@ async function processIntake(intake) {
     source_meta: intake.source_meta || {},
     project_id: decision.project_id || null,
     context: decision.context || null,
+    source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -2982,6 +2996,12 @@ async function processEnvelope(envelope, memoryContext) {
         if (projCtx) {
           childEnvelope.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${childEnvelope.instruction}`;
         }
+      }
+
+      // Prepend verbatim user request — preserves URLs, code, and data that
+      // cortex classification may have summarized away
+      if (envelope.source_text) {
+        childEnvelope.instruction = `[ORIGINAL USER REQUEST — verbatim]\n${envelope.source_text}\n[END ORIGINAL USER REQUEST]\n\n${childEnvelope.instruction}`;
       }
 
       // Call the agent
