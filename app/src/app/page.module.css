@@ -236,7 +236,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 200px;
+  width: fit-content;
+  min-width: 180px;
   padding: 14px 20px;
   background: rgba(49, 59, 71, 0.5);
   backdrop-filter: blur(12px);
