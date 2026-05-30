@@ -217,7 +217,7 @@
 .primeList {
   flex: 1;
   overflow-y: auto;
-  padding: 0 28px 32px;
+  padding: 24px 28px 32px;
   scrollbar-width: thin;
   scrollbar-color: rgba(86, 99, 115, 0.2) transparent;
 }
