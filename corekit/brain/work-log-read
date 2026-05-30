@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# ============================================================
+# work-log-read — Query recent fleet work envelopes
+#
+# Reads completed work envelopes from Firestore and displays
+# them for skill discovery analysis. Shows mission details
+# including what agents were dispatched, outcomes, and timing.
+#
+# Usage:
+#   work-log-read --hours 24                   # Last 24h, all agents
+#   work-log-read --hours 24 --owner stan      # Stan's work only
+#   work-log-read --hours 24 --status complete # Completed only
+#   work-log-read --hours 48 --type M          # Missions only
+#   work-log-read --hours 24 --min-steps 3     # Multi-step only
+#   work-log-read --hours 24 --json            # JSON output
+#   work-log-read --hours 24 --verbose         # Include result text
+#
+# Reads from: /primes/{primeId}/work/
+# ============================================================
+set -euo pipefail
+
+# ── Parse arguments ────────────────────────────────────────
+HOURS=24
+OWNER_FILTER=""
+STATUS_FILTER=""
+TYPE_FILTER=""
+MIN_STEPS=0
+LIMIT=50
+JSON_OUTPUT=false
+VERBOSE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hours)     HOURS="$2";           shift 2 ;;
+    --owner)     OWNER_FILTER="$2";    shift 2 ;;
+    --status)    STATUS_FILTER="$2";   shift 2 ;;
+    --type)      TYPE_FILTER="$2";     shift 2 ;;
+    --min-steps) MIN_STEPS="$2";       shift 2 ;;
+    --limit)     LIMIT="$2";           shift 2 ;;
+    --json)      JSON_OUTPUT=true;     shift ;;
+    --verbose)   VERBOSE=true;         shift ;;
+    --help|-h)
+      cat <<'HELP'
+Usage: work-log-read [OPTIONS]
+
+Options:
+  --hours N        Look back N hours (default: 24)
+  --owner NAME     Filter by agent owner (e.g. stan, anora)
+  --status STATUS  Filter by status (complete, failed, active, pending)
+  --type TYPE      Filter by envelope type (M=mission, C=child, R=responsibility)
+  --min-steps N    Only show envelopes with N+ child dispatches (default: 0)
+  --limit N        Max results (default: 50)
+  --json           Output as JSON array
+  --verbose        Include result/instruction text in output
+HELP
+      exit 0
+      ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+# ── Resolve Prime ID and Project ───────────────────────────
+PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//' | sed 's/^fleet-//')
+fi
+
+PROJECT_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "")
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "ERROR: Could not resolve PROJECT_ID" >&2
+  exit 1
+fi
+
+# ── Get access token ───────────────────────────────────────
+TOKEN=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# ── Compute cutoff timestamp ──────────────────────────────
+CUTOFF=$(python3 -c "
+from datetime import datetime, timedelta, timezone
+cutoff = datetime.now(timezone.utc) - timedelta(hours=${HOURS})
+print(cutoff.strftime('%Y-%m-%dT%H:%M:%S.000Z'))
+")
+
+# ── Build Firestore query filters ─────────────────────────
+FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
+PARENT_PATH="primes/${PRIME_ID}"
+
+# Always filter by createdAt >= cutoff
+FILTER_PARTS=()
+FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"createdAt\"},\"op\":\"GREATER_THAN_OR_EQUAL\",\"value\":{\"stringValue\":\"${CUTOFF}\"}}}")
+
+if [[ -n "$OWNER_FILTER" ]]; then
+  FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"owner\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${OWNER_FILTER}\"}}}")
+fi
+if [[ -n "$STATUS_FILTER" ]]; then
+  FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"status\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${STATUS_FILTER}\"}}}")
+fi
+if [[ -n "$TYPE_FILTER" ]]; then
+  FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"type\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${TYPE_FILTER}\"}}}")
+fi
+
+# Build where clause
+if [[ ${#FILTER_PARTS[@]} -eq 1 ]]; then
+  WHERE_CLAUSE="\"where\": ${FILTER_PARTS[0]},"
+else
+  JOINED=$(printf ",%s" "${FILTER_PARTS[@]}")
+  JOINED="${JOINED:1}"  # remove leading comma
+  WHERE_CLAUSE="\"where\": {\"compositeFilter\":{\"op\":\"AND\",\"filters\":[${JOINED}]}},"
+fi
+
+QUERY_BODY=$(cat <<EOF
+{
+  "structuredQuery": {
+    "from": [{"collectionId": "work"}],
+    ${WHERE_CLAUSE}
+    "orderBy": [{"field": {"fieldPath": "createdAt"}, "direction": "DESCENDING"}],
+    "limit": ${LIMIT}
+  }
+}
+EOF
+)
+
+# ── Execute query ──────────────────────────────────────────
+RESPONSE=$(curl -sf --max-time 15 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "${FIRESTORE_BASE}/${PARENT_PATH}:runQuery" \
+  -d "${QUERY_BODY}" 2>&1)
+
+# ── Parse and display ──────────────────────────────────────
+python3 - <<'PYPARSE' "$RESPONSE" "$JSON_OUTPUT" "$VERBOSE" "$MIN_STEPS"
+import json, sys
+
+raw = sys.argv[1]
+json_mode = sys.argv[2] == "true"
+verbose = sys.argv[3] == "true"
+min_steps = int(sys.argv[4])
+
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError:
+    print("ERROR: Could not parse Firestore response", file=sys.stderr)
+    print(raw[:500], file=sys.stderr)
+    sys.exit(1)
+
+if not isinstance(data, list):
+    data = [data]
+
+def fv(fields, key, kind="stringValue", default=""):
+    """Extract a typed value from Firestore fields."""
+    f = fields.get(key, {})
+    if kind == "stringValue":
+        return f.get("stringValue", default)
+    elif kind == "integerValue":
+        return int(f.get("integerValue", default or 0))
+    elif kind == "booleanValue":
+        return f.get("booleanValue", default)
+    elif kind == "arrayValue":
+        arr = f.get("arrayValue", {}).get("values", [])
+        return [v.get("stringValue", "") for v in arr]
+    return default
+
+# Extract documents
+envelopes = []
+for entry in data:
+    doc = entry.get("document")
+    if not doc:
+        continue
+    fields = doc.get("fields", {})
+    name = doc.get("name", "")
+    env_id = name.split("/")[-1] if name else "?"
+
+    # Count children by looking at child_ids array or childCount field
+    child_ids = fv(fields, "child_ids", "arrayValue")
+    child_count = len(child_ids) if child_ids else fv(fields, "childCount", "integerValue", 0)
+
+    # Skip if below min-steps threshold
+    if min_steps > 0 and child_count < min_steps:
+        continue
+
+    env = {
+        "id": env_id,
+        "type": fv(fields, "type"),
+        "status": fv(fields, "status"),
+        "owner": fv(fields, "owner"),
+        "title": fv(fields, "title"),
+        "instruction": fv(fields, "instruction"),
+        "result": fv(fields, "result"),
+        "createdAt": fv(fields, "createdAt"),
+        "completedAt": fv(fields, "completedAt"),
+        "intent": fv(fields, "intent"),
+        "agent": fv(fields, "agent"),
+        "source_channel": fv(fields, "source_channel"),
+        "childCount": child_count,
+        "child_ids": child_ids,
+        "process_id": fv(fields, "process_id"),
+    }
+
+    # Calculate duration if both timestamps present
+    if env["createdAt"] and env["completedAt"]:
+        try:
+            from datetime import datetime
+            fmt = "%Y-%m-%dT%H:%M:%S"
+            c = env["createdAt"][:19]
+            d = env["completedAt"][:19]
+            dt = datetime.strptime(d, fmt) - datetime.strptime(c, fmt)
+            env["durationSec"] = int(dt.total_seconds())
+        except Exception:
+            env["durationSec"] = None
+    else:
+        env["durationSec"] = None
+
+    envelopes.append(env)
+
+if not envelopes:
+    print("No work envelopes found matching criteria.")
+    sys.exit(0)
+
+if json_mode:
+    # Trim non-verbose fields for cleaner output
+    if not verbose:
+        for e in envelopes:
+            if e.get("instruction"):
+                e["instruction"] = e["instruction"][:200] + ("..." if len(e.get("instruction","")) > 200 else "")
+            if e.get("result"):
+                e["result"] = e["result"][:300] + ("..." if len(e.get("result","")) > 300 else "")
+    print(json.dumps(envelopes, indent=2))
+    sys.exit(0)
+
+# ── Table output ──────────────────────────────────────────
+status_icons = {
+    "complete": "✅",
+    "failed": "❌",
+    "active": "🔄",
+    "pending": "⏳",
+    "blocked": "🚫",
+    "cancelled": "⊘",
+}
+
+print(f"\n{'ID':<35} {'TYPE':<4} {'OWNER':<12} {'STATUS':<10} {'CHILDREN':<9} {'DURATION':<10} TITLE")
+print("─" * 120)
+
+for e in envelopes:
+    icon = status_icons.get(e["status"], "?")
+    dur = f"{e['durationSec']}s" if e["durationSec"] is not None else "—"
+    title = (e["title"] or e["instruction"] or "—")[:45]
+    owner = e["owner"] or "—"
+    children = str(e["childCount"]) if e["childCount"] else "—"
+    print(f"{e['id']:<35} {e['type']:<4} {owner:<12} {icon} {e['status']:<7} {children:<9} {dur:<10} {title}")
+
+    if verbose and e.get("result"):
+        result_preview = e["result"][:200].replace("\n", " ")
+        print(f"   └─ Result: {result_preview}")
+    if verbose and e.get("process_id"):
+        print(f"   └─ Process: {e['process_id']}")
+
+print(f"\n{len(envelopes)} envelope(s) shown.")
+
+# Summary stats
+owners = {}
+for e in envelopes:
+    o = e["owner"] or "unknown"
+    owners[o] = owners.get(o, 0) + 1
+
+if len(owners) > 1:
+    parts = [f"{o}: {c}" for o, c in sorted(owners.items(), key=lambda x: -x[1])]
+    print(f"By owner: {', '.join(parts)}")
+PYPARSE

@@ -40,6 +40,7 @@ corekit/brain/agent-status .openclaw/bin/agent-status
 corekit/brain/skill-author .openclaw/bin/skill-author
 corekit/brain/brain-telemetry-write .openclaw/bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read .openclaw/bin/brain-telemetry-read
+corekit/brain/work-log-read .openclaw/bin/work-log-read
 corekit/brain/assemble-tools .openclaw/bin/assemble-tools
 corekit/brain/task-log-write .openclaw/bin/task-log-write
 corekit/brain/task-log-read .openclaw/bin/task-log-read
