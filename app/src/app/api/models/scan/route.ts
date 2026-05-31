@@ -375,7 +375,7 @@ export async function POST() {
       const probes = batch.map(async (model) => {
         const code = await probeModel(model, token, projectId, location);
         let status: string;
-        if (code === 200 || code === 429) status = "available";
+        if (code === 200 || code === 429 || code === 400) status = "available"; // 400 = endpoint exists but probe payload rejected (e.g. old anthropic_version)
         else if (code === 404) status = "not_found";
         else if (code === 401 || code === 403) status = "auth_error";
         else if (code === 0) status = "timeout";
