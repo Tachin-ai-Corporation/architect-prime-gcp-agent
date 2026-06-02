@@ -3,10 +3,10 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import styles from "./page.module.css";
-import { usePrime } from "@/contexts/PrimeContext";
 import { api } from "@/lib/api";
 import { ContextEditor } from "@/components/projects/ContextEditor";
 import type { ContextEntry } from "@/components/projects/ContextEditor";
+import { useFleetSelection, FleetSelector, FleetEmptyPrompt } from "@/components/FleetSelector";
 
 /* ---- Types ---- */
 interface StepDef {
@@ -82,33 +82,30 @@ export default function ProcessesPageWrapper() {
 function ProcessesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { primes } = usePrime();
+  const sel = useFleetSelection();
 
-  /* ---- URL params ---- */
-  const paramPrime = searchParams.get("prime");
+  /* ---- URL params (page-specific) ---- */
   const paramProcess = searchParams.get("process");
 
-  const selectedPrimeId = paramPrime && primes.find((p) => p.id === paramPrime)
-    ? paramPrime
-    : primes[0]?.id || null;
-
-  /* ---- Render either list or detail ---- */
+  /* ---- Render ---- */
   return (
     <div className={styles.shell}>
-      {paramProcess && selectedPrimeId ? (
+      <FleetSelector mode="prime" selection={sel} />
+
+      {paramProcess && sel.selectedPrimeId ? (
         <ProcessDetailView
-          primeId={selectedPrimeId}
+          primeId={sel.selectedPrimeId}
           processId={paramProcess}
           router={router}
         />
-      ) : selectedPrimeId ? (
-        <ProcessListView primeId={selectedPrimeId} router={router} />
+      ) : sel.selectedPrimeId ? (
+        <ProcessListView primeId={sel.selectedPrimeId} router={router} />
       ) : (
-        <div className={styles.empty}>
-          <div className={styles.emptyIcon}>◎</div>
-          <div className={styles.emptyTitle}>No primes configured</div>
-          <div className={styles.emptySub}>Set up a prime instance to get started</div>
-        </div>
+        <FleetEmptyPrompt
+          icon="🔄"
+          title="Select a prime above"
+          subtitle="Choose a prime to view its processes"
+        />
       )}
     </div>
   );

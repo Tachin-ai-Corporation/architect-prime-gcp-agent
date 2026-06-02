@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import styles from "./page.module.css";
-import { usePrime } from "@/contexts/PrimeContext";
+import { useFleetSelection, FleetSelector, FleetEmptyPrompt } from "@/components/FleetSelector";
 import { api } from "@/lib/api";
 import { ContextEditor } from "@/components/projects/ContextEditor";
 import type { ContextEntry } from "@/components/projects/ContextEditor";
@@ -70,33 +70,29 @@ export default function ProjectsPageWrapper() {
 function ProjectsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { primes } = usePrime();
+  const sel = useFleetSelection();
 
   /* ---- URL params ---- */
-  const paramPrime = searchParams.get("prime");
   const paramProject = searchParams.get("project");
-
-  const selectedPrimeId = paramPrime && primes.find((p) => p.id === paramPrime)
-    ? paramPrime
-    : primes[0]?.id || null;
 
   /* ---- Render either list or detail ---- */
   return (
     <div className={styles.shell}>
-      {paramProject && selectedPrimeId ? (
+      <FleetSelector mode="prime" selection={sel} />
+      {paramProject && sel.selectedPrimeId ? (
         <ProjectDetailView
-          primeId={selectedPrimeId}
+          primeId={sel.selectedPrimeId}
           projectId={paramProject}
           router={router}
         />
-      ) : selectedPrimeId ? (
-        <ProjectListView primeId={selectedPrimeId} router={router} />
+      ) : sel.selectedPrimeId ? (
+        <ProjectListView primeId={sel.selectedPrimeId} router={router} />
       ) : (
-        <div className={styles.empty}>
-          <div className={styles.emptyIcon}>◎</div>
-          <div className={styles.emptyTitle}>No primes configured</div>
-          <div className={styles.emptySub}>Set up a prime instance to get started</div>
-        </div>
+        <FleetEmptyPrompt
+          icon="📋"
+          title="Select a prime above"
+          subtitle="Choose a prime to view its projects"
+        />
       )}
     </div>
   );

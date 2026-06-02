@@ -1,0 +1,200 @@
+/* ============================================
+   FleetSelector — FleetSelector.module.css
+   Unified Prime → Agent chip-based selector
+   1health Design System
+   ============================================ */
+
+/* ---- Selector Wrapper ---- */
+.selectorWrap {
+  margin-bottom: 28px;
+}
+
+/* ---- Tier (chip row container) ---- */
+.tier {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tierAgents {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(86, 99, 115, 0.12);
+  animation: tierSlideIn 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes tierSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Chip Row ---- */
+.chipRow {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chipRow::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Individual Chip ---- */
+.chip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  min-width: 120px;
+  font-family: inherit;
+}
+
+.chip:hover {
+  background: rgba(49, 59, 71, 0.5);
+}
+
+.chipSelected {
+  background: #313B47;
+  border-color: rgba(143, 216, 230, 0.48);
+}
+
+.chipSelected .chipName {
+  color: #8FD8E6;
+}
+
+/* ---- Prime chip tier-1 styling ---- */
+.chipPrime {
+  border: 1px solid rgba(214, 168, 58, 0.2);
+}
+
+.chipPrime:hover {
+  border-color: rgba(214, 168, 58, 0.35);
+}
+
+.chipPrime.chipSelected {
+  border-color: rgba(214, 168, 58, 0.5);
+  background: rgba(214, 168, 58, 0.06);
+}
+
+.chipPrime.chipSelected .chipName {
+  color: #D6A83A;
+}
+
+.chipPrime .chipSub {
+  color: #D6A83A;
+  opacity: 0.6;
+}
+
+/* ---- Prime-as-agent in tier-2 (amber tint) ---- */
+.chipPrimeAgent {
+  border: 1px solid rgba(214, 168, 58, 0.2);
+}
+
+.chipPrimeAgent:hover {
+  border-color: rgba(214, 168, 58, 0.35);
+}
+
+.chipPrimeAgent.chipSelected {
+  border-color: rgba(214, 168, 58, 0.5);
+  background: rgba(214, 168, 58, 0.06);
+}
+
+.chipPrimeAgent.chipSelected .chipName {
+  color: #D6A83A;
+}
+
+.chipPrimeAgent .chipSub {
+  color: #D6A83A;
+  opacity: 0.6;
+}
+
+/* ---- Status Dot ---- */
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotOn {
+  background: #1F9A9B;
+  box-shadow: 0 0 10px rgba(31, 154, 155, 0.4);
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+.dotIdle {
+  background: #3BAA78;
+  opacity: 0.35;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ---- Chip Info (name + subtitle) ---- */
+.chipInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.chipName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #E6EBF0;
+  white-space: nowrap;
+}
+
+.chipSub {
+  font-size: 11px;
+  color: #566373;
+  white-space: nowrap;
+}
+
+/* ---- Empty Prompt ---- */
+.emptyPrompt {
+  text-align: center;
+  padding: 64px 24px;
+}
+
+.emptyIcon {
+  font-size: 40px;
+  margin-bottom: 14px;
+  opacity: 0.7;
+}
+
+.emptyTitle {
+  font-size: 17px;
+  font-weight: 600;
+  color: #E6EBF0;
+  margin-bottom: 6px;
+}
+
+.emptySub {
+  font-size: 13px;
+  color: #AEB8C4;
+  line-height: 1.6;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .chip {
+    min-width: 100px;
+    padding: 10px 14px;
+  }
+}

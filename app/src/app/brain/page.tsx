@@ -1,10 +1,9 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import styles from "./page.module.css";
 import { api } from "@/lib/api";
-import { usePrime } from "@/contexts/PrimeContext";
+import { useFleetSelection, FleetSelector, FleetEmptyPrompt } from "@/components/FleetSelector";
 
 /* ================================================================
    Types
@@ -100,26 +99,8 @@ export default function BrainPageWrapper() {
 }
 
 function BrainPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const { primes, sidebarFleet } = usePrime();
-
-  /* ---- Prime/Agent selection ---- */
-  const paramPrime = searchParams.get("prime");
-  const paramAgent = searchParams.get("agent");
-
-  const selectedPrimeId = paramPrime && primes.find((p) => p.id === paramPrime)
-    ? paramPrime
-    : primes[0]?.id || null;
-
-  const prime = primes.find((p) => p.id === selectedPrimeId);
-  const fleet = selectedPrimeId ? sidebarFleet[selectedPrimeId] || [] : [];
-
-  const [localAgent, setLocalAgent] = useState<string | null>(paramAgent || null);
-  useEffect(() => { if (paramAgent) setLocalAgent(paramAgent); }, [paramAgent]);
-
-  const selectedAgent = localAgent;
-  const isPrimeSelected = selectedAgent === "prime";
+  const sel = useFleetSelection();
+  const { selectedPrimeId, selectedAgent, isPrimeSelected, fleet, prime, primes } = sel;
 
   /* ---- UI State ---- */
   const [modelsData, setModelsData] = useState<ModelsData | null>(null);
@@ -127,7 +108,6 @@ function BrainPage() {
   const [loadingModels, setLoadingModels] = useState(true);
   const [loadingLive, setLoadingLive] = useState(false);
   const [pickerSlot, setPickerSlot] = useState<string | null>(null);
-  const [primeDropdownOpen, setPrimeDropdownOpen] = useState(false);
 
   // Pending changes: slot → openclawId
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
@@ -137,31 +117,7 @@ function BrainPage() {
   // Responsibility toggle state
   const [togglingResp, setTogglingResp] = useState<string | null>(null);
 
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
-
-  /* ---- Close dropdown on outside click ---- */
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setPrimeDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  /* ---- URL param helper ---- */
-  const updateParams = useCallback(
-    (primeId: string | null, agent: string | null) => {
-      const params = new URLSearchParams();
-      if (primeId) params.set("prime", primeId);
-      if (agent) params.set("agent", agent);
-      const qs = params.toString();
-      router.replace(`/brain${qs ? `?${qs}` : ""}`, { scroll: false });
-    },
-    [router]
-  );
 
   /* ---- Fetch model catalog from Firestore ---- */
   const fetchModelCatalog = useCallback(async () => {
@@ -229,20 +185,7 @@ function BrainPage() {
     }
   }, [selectedAgent, fetchLiveConfig, isPrimeSelected, selectedPrimeId]);
 
-  /* ---- Agent strip data ---- */
-  const agentInfo = useMemo(() => {
-    const agents: { name: string; working: boolean; status: string; isPrime: boolean }[] = [];
-    const p = primes.find((pr) => pr.id === selectedPrimeId);
-    if (p) {
-      agents.push({ name: "prime", working: p.status === "online", status: p.status, isPrime: true });
-    }
-    fleet
-      .filter((a) => a.status !== "removed")
-      .forEach((agent) => {
-        agents.push({ name: agent.name, working: agent.status === "online", status: agent.status, isPrime: false });
-      });
-    return agents;
-  }, [fleet, primes, selectedPrimeId]);
+
 
   /* ---- Available models (only "available" status) ---- */
   const availableModels = useMemo(() => {
@@ -469,25 +412,6 @@ function BrainPage() {
     setTogglingResp(null);
   };
 
-  /* ---- Handlers ---- */
-  const handleSelectAgent = useCallback(
-    (name: string) => {
-      const next = localAgent === name ? null : name;
-      setLocalAgent(next);
-      updateParams(selectedPrimeId, next);
-    },
-    [localAgent, selectedPrimeId, updateParams]
-  );
-
-  const handleSwitchPrime = useCallback(
-    (primeId: string) => {
-      setPrimeDropdownOpen(false);
-      setLocalAgent(null);
-      updateParams(primeId, null);
-    },
-    [updateParams]
-  );
-
   /* ---- Title ---- */
   const displayName = selectedAgent
     ? selectedAgent
@@ -511,61 +435,18 @@ function BrainPage() {
         {/* ---- Page Header ---- */}
         <div className={styles.pgHeader}>
           <h1 className={styles.pgTitle}>🧠 Brain — LLM Slots{titleSuffix}</h1>
-
-          {/* Prime selector */}
-          {primes.length > 0 && (
-            <div className={styles.primeSelector} ref={dropdownRef}>
-              <button
-                className={styles.primeSelectorBtn}
-                onClick={() => setPrimeDropdownOpen((v) => !v)}
-              >
-                {prime?.name || selectedPrimeId || "Select Prime"}
-                <span
-                  className={`${styles.primeSelectorChev} ${primeDropdownOpen ? styles.primeSelectorChevOpen : ""}`}
-                >
-                  ▾
-                </span>
-              </button>
-              {primeDropdownOpen && (
-                <div className={styles.primeSelectorDropdown}>
-                  {primes.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`${styles.primeSelectorItem} ${p.id === selectedPrimeId ? styles.primeSelectorItemActive : ""}`}
-                      onClick={() => handleSwitchPrime(p.id)}
-                    >
-                      {p.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* ---- Agent Strip ---- */}
-        {agentInfo.length > 0 && (
-          <div className={styles.agents}>
-          {agentInfo.map((agent) => (
-              <button
-                key={agent.name}
-                className={`${styles.ag} ${selectedAgent === agent.name ? styles.agSel : ""} ${agent.isPrime ? styles.agPrime : ""}`}
-                onClick={() => handleSelectAgent(agent.name)}
-              >
-                <span
-                  className={`${styles.agDot} ${agent.working ? styles.agDotOn : styles.agDotIdle}`}
-                />
-                <div className={styles.agInfo}>
-                  <span className={styles.agName}>
-                    {agent.isPrime ? (prime?.name || "Prime") : agent.name}
-                  </span>
-                  <span className={agent.working ? styles.agDoing : styles.agIdle}>
-                    {agent.isPrime ? "prime" : (agent.working ? "Online" : "Idle")}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
+        {/* ---- Fleet Selector ---- */}
+        <FleetSelector mode="agent" showPrimeAsAgent selection={sel} />
+
+        {/* ---- Empty state ---- */}
+        {!selectedPrimeId && (
+          <FleetEmptyPrompt
+            icon="🧠"
+            title="Select a prime above"
+            subtitle="Choose a prime and an agent to view brain configuration"
+          />
         )}
 
         {/* ---- Live config status ---- */}

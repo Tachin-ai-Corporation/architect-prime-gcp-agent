@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import styles from "./page.module.css";
-import { usePrime } from "@/contexts/PrimeContext";
+import { useFleetSelection, FleetSelector, FleetEmptyPrompt } from "@/components/FleetSelector";
 import { api } from "@/lib/api";
 import { useDialog } from "@/components/DialogProvider";
 
@@ -120,63 +120,37 @@ export default function SkillsPageWrapper() {
 function SkillsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { primes, sidebarFleet } = usePrime();
+  const sel = useFleetSelection();
+  const { selectedPrimeId, selectedAgent, isPrimeSelected, fleet, prime, primes } = sel;
   const dialog = useDialog();
 
-  /* ---- URL params ---- */
-  const paramPrime = searchParams.get("prime");
-  const paramAgent = searchParams.get("agent");
-  const paramTab = searchParams.get("tab") as TabKey | null;
-
-  const selectedPrimeId = paramPrime && primes.find((p) => p.id === paramPrime)
-    ? paramPrime
-    : primes[0]?.id || null;
-
-  const fleet = selectedPrimeId ? sidebarFleet[selectedPrimeId] || [] : [];
-
-  /* ---- Agent selection ---- */
-  const [localAgent, setLocalAgent] = useState<string | null>(paramAgent || null);
-
-  useEffect(() => {
-    if (paramAgent) setLocalAgent(paramAgent);
-  }, [paramAgent]);
-
-  const selectedAgent = localAgent;
-  const isPrimeSelected = selectedAgent === "prime";
-
   /* ---- Tab state ---- */
-  const [activeTab, setActiveTab] = useState<TabKey>(paramTab || (selectedAgent ? "installed" : "library"));
+  const paramTab = searchParams.get("tab") as TabKey | null;
+  const [activeTab, setActiveTab] = useState<TabKey>(paramTab || "installed");
 
   useEffect(() => {
     if (paramTab) setActiveTab(paramTab);
     else if (selectedAgent) setActiveTab("installed");
   }, [paramTab, selectedAgent]);
 
-  /* ---- Prime dropdown ---- */
-  const [primeDropdownOpen, setPrimeDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
+  /* ---- Reset tab when agent changes via FleetSelector ---- */
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setPrimeDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+    if (selectedAgent) {
+      setActiveTab("installed");
+    }
+  }, [selectedAgent]);
 
-  /* ---- Update URL params ---- */
-  const updateParams = useCallback(
-    (prime: string | null, agent: string | null, tab?: TabKey) => {
-      const params = new URLSearchParams();
-      if (prime) params.set("prime", prime);
-      if (agent) params.set("agent", agent);
+  /* ---- Tab URL update (preserves selection params) ---- */
+  const handleTabChange = useCallback(
+    (tab: TabKey) => {
+      setActiveTab(tab);
+      const params = new URLSearchParams(searchParams.toString());
       if (tab && tab !== "installed") params.set("tab", tab);
+      else params.delete("tab");
       const qs = params.toString();
       router.replace(`/skills${qs ? `?${qs}` : ""}`, { scroll: false });
     },
-    [router]
+    [router, searchParams]
   );
 
   /* ---- VM Introspection (Installed tab) ---- */
@@ -202,7 +176,9 @@ function SkillsPage() {
   const [previewProposal, setPreviewProposal] = useState<SkillProposal | null>(null);
 
   /* ---- Library collapsible state ---- */
-  const [collapsedLibGroups, setCollapsedLibGroups] = useState<Set<string>>(new Set());
+  const [collapsedLibGroups, setCollapsedLibGroups] = useState<Set<string>>(
+    new Set(Object.keys(LIBRARY_CATEGORY_LABELS))
+  );
 
   /* ---- Fetch skills via Firestore introspect bus ---- */
   const fetchSkills = useCallback(async () => {
@@ -265,6 +241,7 @@ function SkillsPage() {
     };
 
     pollRef.current = setTimeout(poll, 1000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPrimeId, selectedAgent, isPrimeSelected]);
 
   /* ---- Fetch per-agent custom skills from Firestore ---- */
@@ -395,7 +372,7 @@ function SkillsPage() {
   /* ---- Upgrade ALL fleet agents ---- */
   const handleUpgradeFleet = async () => {
     if (!selectedPrimeId) return;
-    const activeAgents = fleet.filter((a) => a.status !== "removed");
+    const activeAgents = fleet;
     if (activeAgents.length === 0) {
       dialog.toast({ message: "No active fleet agents to upgrade.", variant: "error" });
       return;
@@ -502,52 +479,6 @@ function SkillsPage() {
   /* ---- Pending proposals count ---- */
   const pendingCount = proposals.filter((p) => p.status === "proposed").length;
 
-  /* ---- Agent strip info (Prime + fleet) ---- */
-  const agentInfo = useMemo(() => {
-    const agents: { name: string; online: boolean; status: string; isPrime: boolean }[] = [];
-    const prime = primes.find((p) => p.id === selectedPrimeId);
-    if (prime) {
-      agents.push({ name: "prime", online: prime.status === "online", status: prime.status, isPrime: true });
-    }
-    fleet.filter((a) => a.status !== "removed").forEach((agent) => {
-      agents.push({ name: agent.name, online: agent.status === "online", status: agent.status, isPrime: false });
-    });
-    return agents;
-  }, [fleet, primes, selectedPrimeId]);
-
-  /* ---- Handlers ---- */
-  const handleSelectAgent = useCallback(
-    (name: string) => {
-      const next = localAgent === name ? null : name;
-      setLocalAgent(next);
-      setExpandedCategory(null);
-      setActiveTab(next ? "installed" : "library");
-      updateParams(selectedPrimeId, next);
-    },
-    [localAgent, selectedPrimeId, updateParams]
-  );
-
-  const handleSwitchPrime = useCallback(
-    (primeId: string) => {
-      setPrimeDropdownOpen(false);
-      setLocalAgent(null);
-      setSkills(null);
-      setError(null);
-      setExpandedCategory(null);
-      updateParams(primeId, null);
-    },
-    [updateParams]
-  );
-
-  const handleTabChange = useCallback(
-    (tab: TabKey) => {
-      setActiveTab(tab);
-      updateParams(selectedPrimeId, selectedAgent, tab);
-    },
-    [selectedPrimeId, selectedAgent, updateParams]
-  );
-
-  const prime = primes.find((p) => p.id === selectedPrimeId);
   const displayLabel = isPrimeSelected
     ? `${prime?.name || selectedPrimeId} (Prime)`
     : selectedAgent || null;
@@ -557,68 +488,22 @@ function SkillsPage() {
       {/* ---- Page Header ---- */}
       <div className={styles.pgHeader}>
         <h1 className={styles.pgTitle}>🔧 Skills</h1>
-
-        {/* Prime selector */}
-        {primes.length > 0 && (
-          <div className={styles.primeSelector} ref={dropdownRef}>
-            <button
-              className={styles.primeSelectorBtn}
-              onClick={() => setPrimeDropdownOpen((v) => !v)}
-            >
-              {prime?.name || selectedPrimeId || "Select Prime"}
-              <span
-                className={`${styles.primeSelectorChev} ${primeDropdownOpen ? styles.primeSelectorChevOpen : ""}`}
-              >
-                ▾
-              </span>
-            </button>
-            {primeDropdownOpen && (
-              <div className={styles.primeSelectorDropdown}>
-                {primes.map((p) => (
-                  <button
-                    key={p.id}
-                    className={`${styles.primeSelectorItem} ${p.id === selectedPrimeId ? styles.primeSelectorItemActive : ""}`}
-                    onClick={() => handleSwitchPrime(p.id)}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      <div className={styles.pgSub}>
-        {displayLabel
-          ? `Showing skills for ${displayLabel}`
-          : "Select Prime or a fleet agent to view their skills"}
-      </div>
+      {/* ---- Fleet Selector (Prime + Agent chips) ---- */}
+      <FleetSelector mode="agent" showPrimeAsAgent selection={sel} />
 
-      {/* ---- Agent Strip (Prime + Fleet) ---- */}
-      {agentInfo.length > 0 && (
-        <div className={styles.agents}>
-          {agentInfo.map((agent) => (
-            <button
-              key={agent.name}
-              className={`${styles.ag} ${selectedAgent === agent.name ? styles.agSel : ""} ${agent.isPrime ? styles.agPrime : ""}`}
-              onClick={() => handleSelectAgent(agent.name)}
-            >
-              <span
-                className={`${styles.agDot} ${agent.online ? styles.agDotOn : styles.agDotIdle}`}
-              />
-              <div className={styles.agInfo}>
-                <span className={styles.agName}>
-                  {agent.isPrime ? (prime?.name || "Prime") : agent.name}
-                </span>
-                <span className={styles.agIdle}>
-                  {agent.isPrime ? "prime" : agent.status}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
+      {/* ---- Empty state when no prime selected ---- */}
+      {!selectedPrimeId && (
+        <FleetEmptyPrompt
+          icon="🔧"
+          title="Select a prime above"
+          subtitle="Choose a prime and an agent to view their skills"
+        />
       )}
+
+      {selectedPrimeId && (
+        <>
 
       {/* ---- Tab Bar ---- */}
       <div className={styles.tabBar} id="skills-tab-bar">
@@ -690,10 +575,10 @@ function SkillsPage() {
                       <button
                         className={styles.upgradeFleetBtn}
                         onClick={handleUpgradeFleet}
-                        disabled={upgradingFleet || fleet.filter((a) => a.status !== "removed").length === 0}
+                        disabled={upgradingFleet || fleet.length === 0}
                         id="upgrade-fleet-btn"
                       >
-                        {upgradingFleet ? "Upgrading…" : `⬆ Upgrade Fleet (${fleet.filter((a) => a.status !== "removed").length})`}
+                        {upgradingFleet ? "Upgrading…" : `⬆ Upgrade Fleet (${fleet.length})`}
                       </button>
                     )}
                   </div>
@@ -1074,6 +959,8 @@ function SkillsPage() {
           </>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
