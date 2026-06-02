@@ -500,6 +500,9 @@ function BrainPage() {
           </div>
         )}
 
+        {/* ---- All brain content gated behind prime selection ---- */}
+        {selectedPrimeId && (
+          <>
         {/* ---- Daemon Services Section ---- */}
         <div className={styles.sectionLabel} id="brain-daemon-section">Daemon Services</div>
         <div className={styles.grid} id="brain-daemon-grid">
@@ -691,6 +694,8 @@ function BrainPage() {
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

@@ -62,8 +62,8 @@
 
 .logoStack {
   display: flex;
-  flex-direction: column;
-  gap: 0;
+  align-items: center;
+  gap: 8px;
   line-height: 1;
 }
 
@@ -74,13 +74,15 @@
   letter-spacing: -0.01em;
 }
 
-/* ---- Nav links (inline in header) ---- */
+/* ---- Nav links (centered in header) ---- */
 
 .navLinks {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 2px;
-  margin-left: 24px;
+  flex: 1;
+  min-width: 0;
 }
 
 .navLink {
@@ -135,6 +137,16 @@
   text-decoration: none;
 }
 
+.iconBtnActive {
+  color: var(--signal-aqua, #8FD8E6);
+  background: rgba(31, 154, 155, 0.1);
+}
+
+.iconBtnActive:hover {
+  color: var(--signal-aqua, #8FD8E6);
+  background: rgba(31, 154, 155, 0.15);
+}
+
 /* ---- Version tag ---- */
 
 .versionTag {
@@ -147,7 +159,7 @@
   text-decoration: none;
   cursor: pointer;
   transition: color 180ms ease;
-  margin-top: 1px;
+  margin-left: 8px;
 }
 
 .versionTag:hover {

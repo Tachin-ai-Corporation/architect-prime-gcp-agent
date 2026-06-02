@@ -50,23 +50,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/" className={styles.logoLink} id="shell-home-link">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/architect-prime-logo.png" alt="Architect Prime" width={28} height={28} className={styles.logoImg} />
-            <div className={styles.logoStack}>
-              <span className={styles.logoTitle}>Architect Prime</span>
-              {versionInfo && (
-                <Link href="/settings?tab=system" className={styles.versionTag} id="shell-version">
-                  {versionInfo.deployedVersion}
-                  <span className={versionInfo.deployedStable ? styles.versionStable : styles.versionUnstable}>
-                    {versionInfo.deployedStable ? "STABLE" : "DEV"}
-                  </span>
-                  {versionInfo.updateAvailable && (
-                    <span className={styles.versionUpdate} title="Update available">●</span>
-                  )}
-                </Link>
-              )}
-            </div>
+            <span className={styles.logoTitle}>Architect Prime</span>
           </Link>
+        </div>
 
-          {/* ---- Nav links ---- */}
+          {/* ---- Nav links (centered) ---- */}
           <nav className={styles.navLinks} id="shell-nav">
             {navItems.map((item) => (
               <Link
@@ -79,7 +67,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             ))}
           </nav>
-        </div>
 
         <div className={styles.topBarRight}>
           {/* DWD not configured warning */}
@@ -126,12 +113,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {/* Settings gear */}
           <Link
             href="/settings"
-            className={styles.iconBtn}
+            className={`${styles.iconBtn} ${isActive("/settings") ? styles.iconBtnActive : ""}`}
             title="Settings"
             id="shell-settings"
           >
             ⚙️
           </Link>
+
+          {/* Version tag */}
+          {versionInfo && (
+            <Link href="/settings?tab=system" className={styles.versionTag} id="shell-version">
+              {versionInfo.deployedVersion}
+              <span className={versionInfo.deployedStable ? styles.versionStable : styles.versionUnstable}>
+                {versionInfo.deployedStable ? "STABLE" : "DEV"}
+              </span>
+              {versionInfo.updateAvailable && (
+                <span className={styles.versionUpdate} title="Update available">●</span>
+              )}
+            </Link>
+          )}
         </div>
       </header>
 
