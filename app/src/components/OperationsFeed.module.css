@@ -62,7 +62,7 @@
 .feedList {
   padding: 8px;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 6px;
 }
 
@@ -314,7 +314,7 @@
 @keyframes opFadeIn {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
