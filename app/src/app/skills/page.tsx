@@ -491,7 +491,7 @@ function SkillsPage() {
       </div>
 
       {/* ---- Fleet Selector (Prime + Agent chips) ---- */}
-      <FleetSelector mode="agent" showPrimeAsAgent selection={sel} />
+      <FleetSelector mode="agent" selection={sel} />
 
       {/* ---- Empty state when no prime selected ---- */}
       {!selectedPrimeId && (

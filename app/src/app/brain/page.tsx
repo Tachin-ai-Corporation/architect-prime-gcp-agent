@@ -105,7 +105,7 @@ function BrainPage() {
   /* ---- UI State ---- */
   const [modelsData, setModelsData] = useState<ModelsData | null>(null);
   const [liveConfig, setLiveConfig] = useState<LiveBrainConfig | null>(null);
-  const [loadingModels, setLoadingModels] = useState(true);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [loadingLive, setLoadingLive] = useState(false);
   const [pickerSlot, setPickerSlot] = useState<string | null>(null);
 
@@ -418,27 +418,11 @@ function BrainPage() {
     : prime?.name || selectedPrimeId || "";
   const titleSuffix = displayName ? ` · ${displayName}` : "";
 
-  /* ---- Loading state ---- */
-  if (loadingModels && !modelsData) {
-    return (
-      <div className={styles.shell}>
-        <div className={styles.container}>
-          <div className={styles.loading}>Loading models…</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={styles.shell} id="brain-page">
       <div className={styles.container}>
-        {/* ---- Page Header ---- */}
-        <div className={styles.pgHeader}>
-          <h1 className={styles.pgTitle}>🧠 Brain — LLM Slots{titleSuffix}</h1>
-        </div>
-
         {/* ---- Fleet Selector ---- */}
-        <FleetSelector mode="agent" showPrimeAsAgent selection={sel} />
+        <FleetSelector mode="agent" selection={sel} />
 
         {/* ---- Empty state ---- */}
         {!selectedPrimeId && (
@@ -447,6 +431,18 @@ function BrainPage() {
             title="Select a prime above"
             subtitle="Choose a prime and an agent to view brain configuration"
           />
+        )}
+
+        {/* ---- Loading state ---- */}
+        {selectedPrimeId && loadingModels && !modelsData && (
+          <div className={styles.loading}>Loading models…</div>
+        )}
+
+        {/* ---- Page Header ---- */}
+        {selectedPrimeId && (
+          <div className={styles.pgHeader}>
+            <h1 className={styles.pgTitle}>🧠 Brain — LLM Slots{titleSuffix}</h1>
+          </div>
         )}
 
         {/* ---- Live config status ---- */}
