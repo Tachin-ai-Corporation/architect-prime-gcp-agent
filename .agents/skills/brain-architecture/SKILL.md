@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.05.30.18.0)
+## Current State (v2026.06.02.19.0)
 6 brain agents in OpenClaw multi-agent configuration, coordinated by the `agent-brain.service` state machine.
 
 ### Agent Inventory
@@ -20,8 +20,8 @@ description: Use when working on the brain agent system — creating/editing age
 
 ### Dispatch Pattern
 - **Brain v3 state machine (`agent-brain.mjs`)**: Manages deterministic, envelope-based coordination as a continuous service.
-- **Cortex JSON Decide Loop**: Cortex classifies inputs and makes structured decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`).
-- **R/M/C/T Hierarchy**: Work is managed as nested envelopes of Responsibilities (cron scheduled), Missions, Checkpoints, and Tasks.
+- **Cortex JSON Decide Loop**: Cortex classifies inputs and makes structured decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`). 10-case response normalizer infers actions from fields present (e.g., `intent:"synthesize"` → synthesize, `blocker` → blocked, `result` → synthesize fallback).
+- **R/M/C/T Hierarchy**: Work is managed as nested envelopes of Responsibilities (cron scheduled, individually toggleable), Missions, Checkpoints, and Tasks.
 - **Sub-agent Dispatch**: Sub-agents are invoked dynamically by Cortex to execute planned steps.
 
 ### I/O Architecture

@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.05.30.18.0`
+> - **Current version:** `v2026.06.02.19.0`
 
 ---
 
@@ -334,9 +334,9 @@ principle: **LLMs think. Deterministic systems move data, enforce rules, and del
 **Brain State Machine (agent-brain.mjs):**
 The `agent-brain` daemon runs as a continuous systemd service on both Prime and all fleet VMs. It implements a fully robust, envelope-based pipeline.
 1. **Intake Processing & Contextual Ack:** Ears claims an incoming request and writes it to the Firestore `intake/` collection. `agent-brain` picks it up, extracts the current message from the composite intake (parsing past the context preamble), generates a contextual LLM-voiced acknowledgment (personality-aware, references what the user actually asked, includes recent mission history and project context for continuity awareness), and starts the Cortex decide loop. The ACK is marked `[BRAIN-ORCHESTRATED]` to prevent double delivery by mouth's JSONL tailer.
-2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"continue"|"synthesize"`). The `continue` action re-dispatches timed-out tasks with check-first context, avoiding redundant work.
+2. **Cortex JSON Decide Loop:** Cortex classifies the intake and directs the progress of envelopes (representing work) by returning structured JSON decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"continue"|"synthesize"`). The 10-case response normalizer infers actions from fields present (e.g., `intent: "synthesize"` without `action` → synthesize, `blocker` without `action` → blocked), with a universal fallback treating any `result` field as a synthesis. The `continue` action re-dispatches timed-out tasks with check-first context, avoiding redundant work.
 3. **R/M/C/T Cognitive Hierarchy:** 
-   - **Responsibilities (R):** Cron-scheduled recurring duties. Configured in `responsibilities-job.json` and hot-reloaded by a file watcher. Can link to stored processes via `processRef` for deterministic execution (skips Cortex decide step).
+   - **Responsibilities (R):** Cron-scheduled recurring duties. Configured in `responsibilities-job.json` and hot-reloaded by a file watcher. Can link to stored processes via `processRef` for deterministic execution (skips Cortex decide step). Individual responsibilities can be toggled enabled/disabled via dashboard toggle, `responsibility-manage toggle` Motor tool, or `set_responsibility_enabled` introspection query.
    - **Missions (M):** Multi-checkpoint, high-level objectives with clear definitions of done.
    - **Checkpoints (C):** Observable milestones with concrete completion criteria. Support 5 step types: `standard`, `delegation`, `spawn_responsibility`, `approval_gate`, `optional`.
    - **Tasks (T):** Specific, atomic execution steps.
@@ -1204,6 +1204,13 @@ architect-prime/
 1. **Source text preservation** — `extractCurrentMessage()` extracts the raw user message from the composite intake (using the `[Current message - respond to this]` marker). Stored as `source_text` on M envelopes (both regular and process-routed). Prepended to every child dispatch instruction as `[ORIGINAL USER REQUEST — verbatim]` context block. Fixes the cortex classification lossy summarization bug where URLs, code, and embedded data were dropped.
 2. **Dashboard prime chip dynamic width** — Changed from fixed `200px` to `fit-content` with `min-width: 180px`. Chip grows to accommodate name + agent count + Upgrade button.
 3. **Dashboard home page top padding** — Added 24px top padding to `primeList` to prevent prime chip hover scale/lift effect from clipping under the header.
+
+### Completed: v2026.06.02.19.0 — Cortex Normalizer Robustness + Responsibility Toggle
+> *10-case response normalizer (fixes 100% ChuckNorris responsibility failure), responsibility enable/disable toggle in dashboard + motor tool + introspection.*
+
+1. **Cortex response normalizer rewrite** — Expanded from 4 cases to 10 with a universal fallback. Instead of failing on unrecognized Cortex response formats (`unknown action undefined`), the normalizer infers the most likely action from the fields present: `intent:"synthesize"` → synthesize, `failure_summary` → synthesize_with_failure, `blocker`/`blocker_type` → blocked, `question`/`what_is_needed` → needs_input, `steps[]` → plan, `result` field fallback → synthesize. Fixes ChuckNorris's 100% responsibility failure rate where Cortex returned `intent: "synthesize"` without an `action` field.
+2. **Responsibility enable/disable toggle** — Three touchpoints: `set_responsibility_enabled` introspection handler (reads/writes responsibility config JSON), dashboard toggle switch on Brain → Responsibilities cards (optimistic UI + introspection poll), `responsibility-manage toggle <id> [on|off]` Motor subcommand. Brain's file watcher auto-reloads config within 10 seconds. Scheduler already checks `r.enabled` — toggle just flips the field.
+3. **Model probe fix** — HTTP 400 treated as "available" in model scan (endpoint exists but rejected probe payload, e.g., old `anthropic_version` header for Opus 4.6).
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*
