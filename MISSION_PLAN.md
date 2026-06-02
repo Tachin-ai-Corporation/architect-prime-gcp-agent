@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.02.19.2`
+> - **Current version:** `v2026.06.02.19.3`
 
 ---
 
@@ -19,7 +19,7 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 ## Architecture
 
 ```
-Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects + SVG lines, inline header nav, top-level Work/Brain/Skills pages, shared FleetSelector chip-based prime/agent selection)
+Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects + SVG lines, centered header nav with version/STABLE right-aligned, top-level Work/Brain/Skills pages, shared FleetSelector chip-based prime/agent selection)
     │
     ├─ POST /api/primes/{id}/deploy           → Creates Prime GCE VM
     ├─ POST /api/primes/{id}/messages          → Writes chat to Firestore
@@ -1224,6 +1224,14 @@ architect-prime/
 2. **Chip-based selection** — Replaced dropdown-based prime selection and ad-hoc agent strips with consistent two-tier chip layout. Removed auto-select behavior (user must click a prime chip).
 3. **URL deep linking** — All pages support `?prime=xxx&agent=yyy` query parameters for direct linking to specific prime/agent contexts.
 4. **Skills page defaults** — Library tab defaults to all sections collapsed. Installed tab is the default active tab.
+
+### Completed: v2026.06.02.19.3 — Dashboard Polish + SVG Fix + Header Layout
+> *Brain page empty state, SVG line coordinate fix, header layout overhaul (centered nav, version right, settings highlight).*
+
+1. **Brain page empty state** — All brain content (Daemon Services, Brain Agents, Responsibilities, Model Picker) gated behind `selectedPrimeId`. Shows only FleetSelector + empty prompt when no prime selected. Fixed `loadingModels` initialization to prevent permanent loading state.
+2. **SVG connection line fix** — Changed coordinate reference from `primeList` to `primeRow` (the SVG’s positioning ancestor). Fixes Y-axis offset where lines originated well below the prime chip.
+3. **Header layout overhaul** — Version/STABLE tag moved to far right (after gear icon). Nav links centered with `flex:1 + justify-content:center`. "Architect Prime" title vertically centered inline with logo icon. Settings gear gets active aqua highlight when on `/settings` page.
+4. **FleetSelector conformity** — Removed `showPrimeAsAgent` from Brain and Skills pages so prime only appears in tier 1 chips, consistent with all other pages.
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*
