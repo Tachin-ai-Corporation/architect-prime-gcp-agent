@@ -2745,9 +2745,11 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     // ---- Normalize LLM response variants ----
-    // Cortex sometimes returns alternative formats (e.g., "dispatches" array,
-    // missing "action" with "agent" present, "instruction" instead of "task").
-    // Normalize to the canonical flat format before the action switch.
+    // Cortex sometimes returns alternative formats. Rather than failing on
+    // unrecognized shapes, we infer the most likely action from the fields
+    // present. Ordered from most-specific signal to least-specific.
+
+    // 1. dispatches[] array → dispatch (first item)
     if (!decision.action && decision.dispatches && Array.isArray(decision.dispatches) && decision.dispatches.length > 0) {
       const d = decision.dispatches[0];
       decision.action = 'dispatch';
@@ -2757,22 +2759,66 @@ async function processEnvelope(envelope, memoryContext) {
       decision.accept_criteria = d.accept_criteria || d.criteria;
       log('INFO', `Normalized dispatches[] format → dispatch to ${decision.agent}`);
     }
+
+    // 2. Flat dispatch: agent + task/instruction but no action
     if (!decision.action && decision.agent && (decision.task || decision.instruction)) {
       decision.action = 'dispatch';
       decision.task = decision.task || decision.instruction;
       log('INFO', `Normalized flat-no-action format → dispatch to ${decision.agent}`);
     }
-    if (!decision.action && decision.response) {
-      // Cortex returned a response without action — treat as short_circuit
-      decision.action = 'short_circuit';
-      log('INFO', `Normalized response-no-action → short_circuit`);
-    }
-    // Normalize synonyms — Cortex sometimes uses 'delegate' instead of 'dispatch'
+
+    // 3. Synonym: 'delegate' → dispatch
     if (decision.action === 'delegate') {
       decision.action = 'dispatch';
       decision.agent = decision.agent || decision.target_agent;
       decision.task = decision.task || decision.instruction;
       log('INFO', `Normalized delegate → dispatch to ${decision.agent}`);
+    }
+
+    // 4. Synthesize: intent:"synthesize" or synthesis field present (no action)
+    if (!decision.action && (decision.intent === 'synthesize' || decision.synthesis !== undefined)) {
+      decision.action = 'synthesize';
+      decision.synthesis = decision.synthesis || decision.result || decision.response;
+      log('INFO', `Normalized intent/field → synthesize`);
+    }
+
+    // 5. Synthesize with failure: intent or failure_summary present
+    if (!decision.action && (decision.intent === 'synthesize_with_failure' || decision.failure_summary)) {
+      decision.action = 'synthesize_with_failure';
+      decision.synthesis = decision.synthesis || decision.result || decision.response;
+      log('INFO', `Normalized intent/field → synthesize_with_failure`);
+    }
+
+    // 6. Blocked: blocker or blocker_type present (no action)
+    if (!decision.action && (decision.blocker || decision.blocker_type)) {
+      decision.action = 'blocked';
+      log('INFO', `Normalized blocker fields → blocked`);
+    }
+
+    // 7. Needs input: question or what_is_needed present (no action)
+    if (!decision.action && (decision.question || decision.what_is_needed)) {
+      decision.action = 'needs_input';
+      log('INFO', `Normalized question fields → needs_input`);
+    }
+
+    // 8. Plan: steps[] array present (no action)
+    if (!decision.action && Array.isArray(decision.steps) && decision.steps.length > 0) {
+      decision.action = 'plan';
+      log('INFO', `Normalized steps[] → plan (${decision.steps.length} steps)`);
+    }
+
+    // 9. Short circuit: response field present (no action, no agent)
+    if (!decision.action && decision.response) {
+      decision.action = 'short_circuit';
+      log('INFO', `Normalized response-no-action → short_circuit`);
+    }
+
+    // 10. Universal fallback: result field present → treat as synthesize
+    // Any response with a "result" field is almost certainly a synthesis
+    if (!decision.action && decision.result !== undefined) {
+      decision.action = 'synthesize';
+      decision.synthesis = decision.result;
+      log('INFO', `Normalized result field fallback → synthesize`);
     }
 
     let action = decision.action;

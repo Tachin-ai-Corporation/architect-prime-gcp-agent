@@ -233,14 +233,52 @@ print('Brain scheduler will auto-reload within 10 seconds.')
 "
     ;;
 
+  toggle)
+    TARGET_ID="${1:?'toggle requires a responsibility id'}"
+    TOGGLE_STATE="${2:-}"  # on, off, or empty (flip)
+    python3 -c "
+import json, sys
+
+target_id = '$TARGET_ID'
+toggle_state = '$TOGGLE_STATE'
+
+with open('$RESP_FILE') as f:
+    data = json.load(f)
+
+idx = next((i for i, r in enumerate(data['responsibilities']) if r['id'] == target_id), None)
+if idx is None:
+    print(f'ERROR: Responsibility \"{target_id}\" not found.', file=sys.stderr)
+    sys.exit(1)
+
+current = data['responsibilities'][idx].get('enabled', True)
+
+if toggle_state == 'on':
+    new_state = True
+elif toggle_state == 'off':
+    new_state = False
+else:
+    new_state = not current
+
+data['responsibilities'][idx]['enabled'] = new_state
+
+with open('$RESP_FILE', 'w') as f:
+    json.dump(data, f, indent=2)
+
+state_label = 'ENABLED' if new_state else 'DISABLED'
+print(f\"Responsibility '{target_id}' is now {state_label}.\")
+print('Brain scheduler will auto-reload within 10 seconds.')
+"
+    ;;
+
   help|*)
-    echo "Usage: responsibility-manage <list|create|update|remove> [args]"
+    echo "Usage: responsibility-manage <list|create|update|remove|toggle> [args]"
     echo ""
     echo "Commands:"
     echo "  list                                                  List all responsibilities"
     echo "  create '<json>' [--process-ref <id>] [--process-params '<json>']  Create a new responsibility"
     echo "  update '<id>' '<json>' [--process-ref <id>] [--process-params '<json>']  Update a responsibility"
     echo "  remove '<id>'                                         Remove a responsibility by ID"
+    echo "  toggle '<id>' [on|off]                                Enable/disable a responsibility"
     echo ""
     echo "The create JSON MUST include:"
     echo "  id, name, schedule, instruction, context.purpose, context.process, context.success_criteria"

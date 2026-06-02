@@ -789,6 +789,61 @@
   font-style: italic;
 }
 
+.respCardDisabled {
+  opacity: 0.45;
+}
+.respCardDisabled .respCardDesc {
+  color: var(--slate);
+}
+
+.respToggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: background 200ms var(--ease);
+  flex-shrink: 0;
+  padding: 0;
+  background: rgba(86, 99, 115, 0.4);
+}
+.respToggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #E6EBF0;
+  transition: transform 200ms var(--ease);
+}
+.respToggleOn {
+  background: var(--network-teal);
+}
+.respToggleOn::after {
+  transform: translateX(16px);
+}
+.respToggle:hover {
+  box-shadow: 0 0 8px rgba(143, 216, 230, 0.2);
+}
+.respToggle:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.respPausedBadge {
+  font-size: 9px;
+  font-weight: 600;
+  color: #D6A83A;
+  background: rgba(214, 168, 58, 0.12);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .respLoading {
   display: flex;
   align-items: center;

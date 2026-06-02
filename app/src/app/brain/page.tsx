@@ -134,6 +134,9 @@ function BrainPage() {
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
 
+  // Responsibility toggle state
+  const [togglingResp, setTogglingResp] = useState<string | null>(null);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 
@@ -406,6 +409,66 @@ function BrainPage() {
     setApplying(false);
   };
 
+  /* ---- Toggle responsibility enabled/disabled ---- */
+  const handleToggleResp = async (respId: string, currentEnabled: boolean) => {
+    if (!selectedPrimeId || !selectedAgent) return;
+    const introspectAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
+    setTogglingResp(respId);
+
+    // Optimistic UI update
+    if (liveConfig?.responsibilities) {
+      setLiveConfig({
+        ...liveConfig,
+        responsibilities: liveConfig.responsibilities.map((r) =>
+          r.id === respId ? { ...r, enabled: !currentEnabled } : r
+        ),
+      });
+    }
+
+    try {
+      const submit = await api<{ queryId: string }>(
+        `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "set_responsibility_enabled",
+            params: { id: respId, enabled: !currentEnabled },
+          }),
+        }
+      );
+
+      if (submit?.queryId) {
+        // Poll for result (max 10 attempts × 2s)
+        for (let i = 0; i < 10; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const poll = await api<{ status: string; result?: { success: boolean; message?: string; error?: string }; error?: string }>(
+            `/api/primes/${selectedPrimeId}/fleet/${introspectAgent}/introspect?queryId=${submit.queryId}`
+          );
+
+          if (poll?.status === "complete") {
+            if (!poll.result?.success) {
+              // Revert optimistic update
+              fetchLiveConfig(introspectAgent);
+            }
+            break;
+          }
+          if (poll?.status === "error") {
+            fetchLiveConfig(introspectAgent);
+            break;
+          }
+        }
+      } else {
+        fetchLiveConfig(introspectAgent);
+      }
+    } catch {
+      // Revert on error
+      const intrAgent = isPrimeSelected ? `prime-${selectedPrimeId}` : selectedAgent;
+      fetchLiveConfig(intrAgent);
+    }
+    setTogglingResp(null);
+  };
+
   /* ---- Handlers ---- */
   const handleSelectAgent = useCallback(
     (name: string) => {
@@ -641,11 +704,24 @@ function BrainPage() {
             ) : liveConfig?.responsibilities && liveConfig.responsibilities.length > 0 ? (
               <div className={styles.respGrid}>
                 {liveConfig.responsibilities.map((r) => (
-                  <div key={r.id} className={styles.respCard} id={`resp-${r.id}`}>
+                  <div
+                    key={r.id}
+                    className={`${styles.respCard} ${!r.enabled ? styles.respCardDisabled : ""}`}
+                    id={`resp-${r.id}`}
+                  >
                     <div className={styles.respCardHeader}>
                       <span className={`${styles.respDot} ${r.enabled ? styles.respDotOn : styles.respDotOff}`} />
                       <span className={styles.respCardName}>{r.name}</span>
+                      {!r.enabled && <span className={styles.respPausedBadge}>paused</span>}
                       <code className={styles.respSchedule}>{r.schedule}</code>
+                      <button
+                        className={`${styles.respToggle} ${r.enabled ? styles.respToggleOn : ""}`}
+                        onClick={() => handleToggleResp(r.id, r.enabled)}
+                        disabled={togglingResp === r.id}
+                        title={r.enabled ? "Pause responsibility" : "Resume responsibility"}
+                        aria-label={r.enabled ? `Pause ${r.name}` : `Resume ${r.name}`}
+                        id={`resp-toggle-${r.id}`}
+                      />
                     </div>
                     <div className={styles.respCardDesc}>{r.instruction}</div>
                     <div className={styles.respCardMeta}>

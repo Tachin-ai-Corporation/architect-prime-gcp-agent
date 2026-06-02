@@ -522,6 +522,43 @@ function handleResponsibilities() {
   return { responsibilities: results };
 }
 
+// ---- handleSetResponsibilityEnabled ----
+function handleSetResponsibilityEnabled(params) {
+  const { id, enabled } = params;
+  if (!id) return { success: false, error: 'Missing required param: id' };
+  if (enabled === undefined) return { success: false, error: 'Missing required param: enabled' };
+
+  const targetEnabled = enabled === true || enabled === 'true';
+  const respFiles = [
+    join(COREKIT_DIR, 'responsibilities.json'),
+    join(COREKIT_DIR, 'responsibilities-job.json'),
+  ];
+
+  for (const filePath of respFiles) {
+    if (!existsSync(filePath)) continue;
+    try {
+      const data = JSON.parse(readFileSync(filePath, 'utf8'));
+      const resps = data.responsibilities || [];
+      const idx = resps.findIndex(r => r.id === id);
+      if (idx === -1) continue;
+
+      resps[idx].enabled = targetEnabled;
+      writeFileSync(filePath, JSON.stringify(data, null, 2));
+      log(`Set responsibility ${id} enabled=${targetEnabled}`, { file: basename(filePath) });
+      return {
+        success: true,
+        id,
+        enabled: targetEnabled,
+        message: `Responsibility '${resps[idx].name || id}' ${targetEnabled ? 'enabled' : 'disabled'}. Brain scheduler will reload within 10 seconds.`,
+      };
+    } catch (err) {
+      return { success: false, error: `Failed to update ${basename(filePath)}: ${err.message}` };
+    }
+  }
+
+  return { success: false, error: `Responsibility '${id}' not found in any config file` };
+}
+
 // ---- Query dispatcher ----
 function processQuery(type, params = {}) {
   switch (type) {
@@ -532,6 +569,7 @@ function processQuery(type, params = {}) {
     case 'brain_config': return handleBrainConfig();
     case 'set_model': return handleSetModel(params);
     case 'responsibilities': return handleResponsibilities();
+    case 'set_responsibility_enabled': return handleSetResponsibilityEnabled(params);
     default: throw new Error(`Unknown query type: ${type}`);
   }
 }
