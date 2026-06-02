@@ -81,23 +81,26 @@ function HomeInner() {
 
   /* ---- Compute SVG connection lines ---- */
   const computeLines = useCallback(() => {
-    const container = listRef.current;
     const primeEl = primeChipRef.current;
-    if (!container || !primeEl) {
+    if (!primeEl) {
       setLines([]);
       return;
     }
 
-    const containerRect = container.getBoundingClientRect();
+    // The SVG is position:absolute inside .primeRow, so use primeRow as the coordinate reference
+    const rowEl = primeEl.parentElement;
+    if (!rowEl) { setLines([]); return; }
+
+    const rowRect = rowEl.getBoundingClientRect();
     const primeRect = primeEl.getBoundingClientRect();
-    const x1 = primeRect.left + primeRect.width / 2 - containerRect.left;
-    const y1 = primeRect.bottom - containerRect.top - 6; // nudge into chip's rounded border
+    const x1 = primeRect.left + primeRect.width / 2 - rowRect.left;
+    const y1 = primeRect.bottom - rowRect.top;
 
     const newLines: ConnectionLine[] = [];
     agentCardRefs.current.forEach((el, name) => {
       const agentRect = el.getBoundingClientRect();
-      const x2 = agentRect.left + agentRect.width / 2 - containerRect.left;
-      const y2 = agentRect.top - containerRect.top;
+      const x2 = agentRect.left + agentRect.width / 2 - rowRect.left;
+      const y2 = agentRect.top - rowRect.top;
       newLines.push({ x1, y1, x2, y2, id: name });
     });
     setLines(newLines);
