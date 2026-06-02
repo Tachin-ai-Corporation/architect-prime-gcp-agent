@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.02.19.1`
+> - **Current version:** `v2026.06.02.19.2`
 
 ---
 
@@ -19,7 +19,7 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 ## Architecture
 
 ```
-Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects + SVG lines, inline header nav, top-level Work/Brain/Skills pages)
+Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects + SVG lines, inline header nav, top-level Work/Brain/Skills pages, shared FleetSelector chip-based prime/agent selection)
     │
     ├─ POST /api/primes/{id}/deploy           → Creates Prime GCE VM
     ├─ POST /api/primes/{id}/messages          → Writes chat to Firestore
@@ -493,9 +493,9 @@ architect-prime/
 │   ├── src/app/skills/               # Skill Kit Library (global registry)
 │   ├── src/app/api/primes/[id]/      # REST API routes (28 endpoints)
 │   ├── src/app/api/skills/           # Skill Kit registry API
-│   ├── src/components/               # Shell (header nav), ChatPanel, OperationsFeed, AgentChip
+│   ├── src/components/               # Shell (header nav), ChatPanel, OperationsFeed, AgentChip, FleetSelector
 │   ├── src/contexts/                 # PrimeContext (shared state)
-│   ├── src/hooks/                    # useProjects (real-time Firestore)
+│   ├── src/hooks/                    # useProjects (real-time Firestore), useFleetSelection (shared prime/agent selection)
 │   ├── src/lib/                      # Firestore, auth, types, API utilities
 │   └── Dockerfile
 ├── infra/                            # MODULE 2: Infrastructure
@@ -1211,6 +1211,19 @@ architect-prime/
 1. **Cortex response normalizer rewrite** — Expanded from 4 cases to 10 with a universal fallback. Instead of failing on unrecognized Cortex response formats (`unknown action undefined`), the normalizer infers the most likely action from the fields present: `intent:"synthesize"` → synthesize, `failure_summary` → synthesize_with_failure, `blocker`/`blocker_type` → blocked, `question`/`what_is_needed` → needs_input, `steps[]` → plan, `result` field fallback → synthesize. Fixes ChuckNorris's 100% responsibility failure rate where Cortex returned `intent: "synthesize"` without an `action` field.
 2. **Responsibility enable/disable toggle** — Three touchpoints: `set_responsibility_enabled` introspection handler (reads/writes responsibility config JSON), dashboard toggle switch on Brain → Responsibilities cards (optimistic UI + introspection poll), `responsibility-manage toggle <id> [on|off]` Motor subcommand. Brain's file watcher auto-reloads config within 10 seconds. Scheduler already checks `r.enabled` — toggle just flips the field.
 3. **Model probe fix** — HTTP 400 treated as "available" in model scan (endpoint exists but rejected probe payload, e.g., old `anthropic_version` header for Opus 4.6).
+
+### Completed: v2026.06.02.19.1 — Operations Drawer Bottom-Right
+> *Moved operations notification drawer from top-right dropdown to fixed bottom-right panel with reversed stacking (newest at bottom), slide-up animation.*
+
+1. **Operations drawer relocation** — Moved operations notification drawer from top-right dropdown to fixed bottom-right panel with reversed stacking (newest at bottom), slide-up animation.
+
+### Completed: v2026.06.02.19.2 — Shared FleetSelector Component + Unified Dashboard Selection
+> *Consistent chip-based prime/agent selection across all 5 dashboard pages, URL deep linking, Skills page defaults.*
+
+1. **Shared FleetSelector component** — Created `FleetSelector.tsx` with `useFleetSelection` hook, `FleetSelector` two-tier chip UI, and `FleetEmptyPrompt`. Unified prime/agent selection across all 5 dashboard pages (Projects, Processes, Work, Brain, Skills).
+2. **Chip-based selection** — Replaced dropdown-based prime selection and ad-hoc agent strips with consistent two-tier chip layout. Removed auto-select behavior (user must click a prime chip).
+3. **URL deep linking** — All pages support `?prime=xxx&agent=yyy` query parameters for direct linking to specific prime/agent contexts.
+4. **Skills page defaults** — Library tab defaults to all sections collapsed. Installed tab is the default active tab.
 
 ### Current: Next Phase — RSI Engine
 > *Goal: Self-improvement via code-write/test skills with human gates.*

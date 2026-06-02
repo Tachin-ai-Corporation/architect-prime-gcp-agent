@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.02.19.1`
+> **Current version:** `v2026.06.02.19.2`
 
 
 ---
@@ -93,7 +93,7 @@ Required for fleet agents to communicate via Google Chat:
 ```
 Your GCP Project
 ├── Cloud Run (Control Plane — Next.js Dashboard)
-│   ├── Dashboard UI (17-page breadcrumb-navigated hierarchy, 1health design system)
+│   ├── Dashboard UI (17-page breadcrumb-navigated hierarchy, 1health design system, shared FleetSelector)
 │   ├── REST API (primes, fleet, messages, commands, projects, skills, upgrade)
 │   └── Firestore client (state management)
 │
@@ -169,9 +169,9 @@ architect-prime/
 │   ├── src/app/settings/             # Dashboard Settings
 │   ├── src/app/skills/               # Skill Kit Library
 │   ├── src/app/api/primes/[id]/      # REST API routes (28 endpoints)
-│   ├── src/components/               # Shell, Breadcrumb, NavCard, StatusStrip, AgentChip
+│   ├── src/components/               # Shell, Breadcrumb, NavCard, StatusStrip, AgentChip, FleetSelector
 │   ├── src/contexts/                 # PrimeContext (shared state)
-│   ├── src/hooks/                    # useProjects (real-time Firestore)
+│   ├── src/hooks/                    # useProjects (real-time Firestore), useFleetSelection
 │   └── Dockerfile
 │
 ├── infra/                            # MODULE 2: Infrastructure
@@ -406,6 +406,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.30.18.0** | Source Text Preservation + Dashboard Polish — `source_text` field on M envelopes preserves raw user message verbatim through brain pipeline (fixes cortex classify lossy summarization of URLs/code/data), `extractCurrentMessage()` helper, `[ORIGINAL USER REQUEST]` context block prepended to all child dispatches. Dashboard: dynamic prime chip width (`fit-content`), home page top padding fix. |
 | **v2026.06.02.19.0** | Cortex Normalizer Robustness + Responsibility Toggle — Cortex response normalizer expanded from 4 to 10 cases with universal fallback (infers action from fields present: `intent:"synthesize"` → synthesize, `blocker` → blocked, `result` field → synthesize). Fixes 100% ChuckNorris responsibility failure (`unknown action undefined`). Responsibility enable/disable toggle: `set_responsibility_enabled` introspection handler, dashboard toggle switch on Brain page, `responsibility-manage toggle` Motor tool. Model probe: HTTP 400 treated as available (fixes Opus 4.6 false negative). |
 | **v2026.06.02.19.1** | Operations Drawer Bottom-Right — Moved operations notification drawer from top-right dropdown to fixed bottom-right panel with reversed stacking (newest at bottom), slide-up animation. |
+| **v2026.06.02.19.2** | Shared FleetSelector Component — Created shared FleetSelector component (`useFleetSelection` hook + `FleetSelector` UI + `FleetEmptyPrompt`), unified chip-based prime/agent selection across all 5 dashboard pages, URL deep linking (`?prime=xxx&agent=yyy`), removed auto-select behavior, Skills page library defaults collapsed + installed tab default. |
 
 
 ---
