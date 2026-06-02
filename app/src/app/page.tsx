@@ -91,7 +91,7 @@ function HomeInner() {
     const containerRect = container.getBoundingClientRect();
     const primeRect = primeEl.getBoundingClientRect();
     const x1 = primeRect.left + primeRect.width / 2 - containerRect.left;
-    const y1 = primeRect.bottom - containerRect.top;
+    const y1 = primeRect.bottom - containerRect.top - 6; // nudge into chip's rounded border
 
     const newLines: ConnectionLine[] = [];
     agentCardRefs.current.forEach((el, name) => {
