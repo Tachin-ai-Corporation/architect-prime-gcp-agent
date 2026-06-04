@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.04.3.0`
+> **Current version:** `v2026.06.04.4.0`
 
 
 ---
@@ -411,6 +411,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.04.1.0** | Process distribution, model ID fix, SOUL limit, elevated exec |
 | **v2026.06.04.2.0** | Operations UI consolidation, multi-prime polling, deploy completion fix |
 | **v2026.06.04.3.0** | Deploy progress fix, action-required popup UI |
+| **v2026.06.04.4.0** | Action required modal UI |
 
 
 ---
