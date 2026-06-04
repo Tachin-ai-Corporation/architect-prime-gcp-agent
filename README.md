@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.02.19.3`
+> **Current version:** `v2026.06.04.1.0`
 
 
 ---
@@ -408,6 +408,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.02.19.1** | Operations Drawer Bottom-Right — Moved operations notification drawer from top-right dropdown to fixed bottom-right panel with reversed stacking (newest at bottom), slide-up animation. |
 | **v2026.06.02.19.2** | Shared FleetSelector Component — Created shared FleetSelector component (`useFleetSelection` hook + `FleetSelector` UI + `FleetEmptyPrompt`), unified chip-based prime/agent selection across all 5 dashboard pages, URL deep linking (`?prime=xxx&agent=yyy`), removed auto-select behavior, Skills page library defaults collapsed + installed tab default. |
 | **v2026.06.02.19.3** | Dashboard Polish + SVG Fix + Header Layout — Brain page hides all content until prime selected (fixed permanent loading state). SVG connection lines use primeRow as coordinate reference (fixes Y-axis offset). Header: version/STABLE moved right, nav centered, title vertically centered, settings gear active highlight. Removed showPrimeAsAgent from Brain/Skills. |
+| **v2026.06.04.1.0** | Process distribution, model ID fix, SOUL limit, elevated exec |
 
 
 ---

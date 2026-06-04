@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.02.19.3`
+> - **Current version:** `v2026.06.04.1.0`
 
 ---
 
@@ -130,7 +130,8 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
         ├── dashboard/: command-runner
         ├── system/: upgrade-corekit, validate-contracts
-        └── config/: agent-registry.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
+        ├── config/: agent-registry.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
+        └── config/processes/: investigate.json, plan.json (standard bundled processes)
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
     ├── .identity-lock              → DWD impersonation guard (chmod 444)
@@ -1233,13 +1234,23 @@ architect-prime/
 3. **Header layout overhaul** — Version/STABLE tag moved to far right (after gear icon). Nav links centered with `flex:1 + justify-content:center`. "Architect Prime" title vertically centered inline with logo icon. Settings gear gets active aqua highlight when on `/settings` page.
 4. **FleetSelector conformity** — Removed `showPrimeAsAgent` from Brain and Skills pages so prime only appears in tier 1 chips, consistent with all other pages.
 
-### Current: Next Phase — RSI Engine
-> *Goal: Self-improvement via code-write/test skills with human gates.*
+### Completed: v2026.06.04.1.0 — Process Distribution + Model Fix + Config Hardening
+> *Standard processes bundled with CoreKit, model ID fix, SOUL.md limit increase, elevated exec for temporal-memory.*
+
+1. **Standard process distribution** — Created `investigate.json` and `plan.json` as CoreKit-bundled standard processes. Added to base manifest. Modified `agent-brain.mjs` to merge local process files with Firestore processes (local provides baseline, Firestore overrides by ID). Fleet agents now have `investigate` and `plan` processes available without Firestore dependency.
+2. **Model ID fix** — All Vertex AI models (including Anthropic MaaS) now use `google-vertex/` prefix consistently. Fixed `discover-models`, `brain/page.tsx`, and both dashboard scan routes. The `vertex_ai/` prefix was not recognized by OpenClaw gateway, causing every non-Google model call to fail and fall back.
+3. **SOUL.md size limit increase** — Set `bootstrapMaxChars: 40000` in both config templates. Cortex SOUL.md (34K chars) was being silently truncated at 12K, losing ~65% of process routing instructions. Added SOUL.md size validation to `validate-contracts`.
+4. **Elevated exec for temporal-memory** — Enabled `tools.elevated` globally in both config templates with `ask: off`. Added `elevated` to temporal-memory's tool allow list. Fixes inability to write MEMORY.md via file commands.
+5. **CoreKit upgrade model persistence** — Implemented snapshot/restore mechanism in `upgrade-corekit` that preserves LLM model assignments through CoreKit upgrades (snapshots from live `openclaw.json` before template overwrite, re-applies via `discover-models --set-config` after `render-config`).
+
+### Current: Next Phase — Process Maturity + Dashboard Process UI
+> *Goal: Dashboard UI for process management, process on/off per agent, SOUL.md audit/trim.*
 
 Candidates:
+- Dashboard process management UI (toggle processes on/off per fleet agent)
+- SOUL.md audit and trim (reduce Cortex SOUL below 40K limit)
 - RSI Engine (git-ops, code-write/test skills, human gates)
 - Fleet templates and self-evolution
-- Multi-project federation
 
 ### Future: RSI Engine
 - Git-ops skill — branch, commit, push, PR
