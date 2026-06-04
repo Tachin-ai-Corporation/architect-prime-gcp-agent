@@ -590,20 +590,13 @@
 }
 
 .actionPopup {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 4px;
-  padding: 14px 16px;
-  background: rgba(41, 49, 60, 0.98);
-  backdrop-filter: blur(16px);
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: rgba(35, 42, 52, 0.95);
   border: 1px solid rgba(214, 168, 58, 0.25);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border-radius: 10px;
   z-index: 20;
   animation: popupIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
-  min-width: 280px;
 }
 @keyframes popupIn {
   from { opacity: 0; transform: translateY(-4px); }
