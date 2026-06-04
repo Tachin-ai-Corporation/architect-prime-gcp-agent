@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePrime } from "@/contexts/PrimeContext";
@@ -21,9 +21,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { primes, versionInfo, setup } = usePrime();
   const pathname = usePathname();
 
-  /* Use the first prime for operations polling (most common case) */
-  const firstPrimeId = primes.length > 0 ? primes[0].id : null;
-  const { operations, activeCount } = useOperations(firstPrimeId);
+  /* Poll operations across all primes */
+  const primeIds = useMemo(() => primes.map(p => p.id), [primes]);
+  const { operations, activeCount, refresh } = useOperations(primeIds);
 
   /* Drawer state */
   const [opsOpen, setOpsOpen] = useState(false);
@@ -41,6 +41,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
     if (path === "/") return pathname === "/";
     return pathname.startsWith(path);
   };
+
+  const handleClearOps = useCallback(async () => {
+    await Promise.all(
+      primeIds.map((pid) =>
+        fetch(`/api/primes/${pid}/ops`, { method: "DELETE" }).catch(() => {})
+      )
+    );
+    refresh();
+  }, [primeIds, refresh]);
 
   return (
     <div className={styles.shell} id="shell">
@@ -96,14 +105,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
           )}
 
           {/* Operations toggle */}
-          {firstPrimeId && (
+          {primeIds.length > 0 && (
             <button
               className={`${styles.iconBtn} ${activeCount > 0 ? styles.opsActive : ""}`}
-              onClick={() => setOpsOpen((v) => !v)}
+              onClick={() => {
+                setOpsOpen((v) => {
+                  if (!v) refresh();
+                  return !v;
+                });
+              }}
               title={activeCount > 0 ? `${activeCount} active operation${activeCount > 1 ? "s" : ""}` : "Operations"}
               id="shell-ops-toggle"
             >
-              🔔
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <rect x="2" y="2" width="12" height="12" rx="2" />
+                <line x1="5" y1="5.5" x2="11" y2="5.5" />
+                <line x1="5" y1="8" x2="9" y2="8" />
+                <line x1="5" y1="10.5" x2="10" y2="10.5" />
+              </svg>
               {activeCount > 0 && (
                 <span className={styles.opsBadge}>{activeCount}</span>
               )}
@@ -136,12 +155,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* ---- Operations Drawer ---- */}
-      {opsOpen && firstPrimeId && (
+      {opsOpen && primeIds.length > 0 && (
         <div className={styles.opsDrawer} id="ops-drawer">
           <OperationsFeed
-            primeId={firstPrimeId}
+            primeId={primeIds[0] || ""}
             operations={operations}
             onClose={() => setOpsOpen(false)}
+            onClear={handleClearOps}
           />
         </div>
       )}

@@ -268,7 +268,6 @@ function HomeInner() {
       body: JSON.stringify({ name: hireName, specialty: hireType, email: generatedEmail }),
     });
     if (res?.id) {
-      dialog.trackCommand(selectedPrimeId, res.id, `Hire ${hireName}`);
       refreshPrimes();
     } else {
       dialog.toast({ message: "Failed to hire agent.", variant: "error" });
@@ -288,7 +287,7 @@ function HomeInner() {
       body: JSON.stringify({ type: "upgrade_corekit", args: { ref: "main" } }),
     });
     if (res?.id) {
-      dialog.trackCommand(primeId, res.id, `Upgrade ${primeId} CoreKit`);
+      dialog.toast({ message: `Upgrading ${primeId} CoreKit…`, variant: "success" });
     } else {
       dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
     }
@@ -305,7 +304,7 @@ function HomeInner() {
       body: JSON.stringify({ type: "fleet_upgrade", args: { name: agentName, ref: "main" } }),
     });
     if (res?.id) {
-      dialog.trackCommand(primeId, res.id, `Upgrade ${agentName}`);
+      dialog.toast({ message: `Upgrading ${agentName}…`, variant: "success" });
     } else {
       dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
     }

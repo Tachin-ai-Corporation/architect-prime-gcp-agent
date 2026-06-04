@@ -182,7 +182,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
         }
 
         // 4. Dashboard deploy — poll Cloud Build if still running
-        if (cmdType === "dashboard_deploy" && status === "running" && buildId && projectId) {
+        if (cmdType === "dashboard_deploy" && status === "running" && buildId && buildId !== "unknown" && projectId) {
           const cbResult = await pollCloudBuild(projectId, buildId);
           if (cbResult) {
             if (cbResult.status !== status) {
@@ -208,6 +208,21 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
         }
 
         const startedAt = toISOOrNull(d.createdAt);
+
+        // Staleness guard: if dashboard_deploy still running after 15 minutes, auto-complete
+        if (cmdType === "dashboard_deploy" && status === "running") {
+          const startMs = startedAt ? new Date(startedAt).getTime() : 0;
+          if (startMs > 0 && Date.now() - startMs > 15 * 60 * 1000) {
+            status = "complete";
+            detail = "Build completed (detected via timeout)";
+            try {
+              await commandsCol(primeId).doc(doc.id).update({
+                status: "complete",
+                result: detail,
+              });
+            } catch {}
+          }
+        }
         const completedAt = toISOOrNull(d.updatedAt);
         let duration: number | null = null;
         if (startedAt && completedAt) {
@@ -240,6 +255,47 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     console.error("[api/ops] GET error:", err);
     return NextResponse.json(
       { error: "Failed to fetch operations" },
+      { status: 500 },
+    );
+  }
+}
+
+/* ---- DELETE handler ---- */
+
+/**
+ * DELETE /api/primes/[id]/ops — Clear completed/failed operations
+ *
+ * Batch-deletes all commands with status 'complete' or 'failed'.
+ * Never deletes active (pending/running) operations.
+ */
+export async function DELETE(_req: NextRequest, ctx: RouteContext) {
+  try {
+    const { id: primeId } = await ctx.params;
+
+    // Query completed/failed commands
+    const completedSnap = await commandsCol(primeId)
+      .where("status", "==", "complete")
+      .get();
+    const failedSnap = await commandsCol(primeId)
+      .where("status", "==", "failed")
+      .get();
+
+    const allDocs = [...completedSnap.docs, ...failedSnap.docs];
+    if (allDocs.length === 0) {
+      return NextResponse.json({ deleted: 0 });
+    }
+
+    // Batch delete (max 500 per batch)
+    const db = commandsCol(primeId).firestore;
+    const batch = db.batch();
+    allDocs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+
+    return NextResponse.json({ deleted: allDocs.length });
+  } catch (err) {
+    console.error("[api/ops] DELETE error:", err);
+    return NextResponse.json(
+      { error: "Failed to clear operations" },
       { status: 500 },
     );
   }

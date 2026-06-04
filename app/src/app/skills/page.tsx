@@ -350,7 +350,7 @@ function SkillsPage() {
         body: JSON.stringify({ type: "upgrade_corekit", args: { ref: "main" } }),
       });
       if (res?.id) {
-        dialog.trackCommand(selectedPrimeId, res.id, `Upgrade ${selectedPrimeId} CoreKit`);
+        dialog.toast({ message: `Upgrading ${selectedPrimeId} CoreKit…`, variant: "success" });
       } else {
         dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
       }
@@ -361,7 +361,7 @@ function SkillsPage() {
         body: JSON.stringify({ type: "fleet_upgrade", args: { name: selectedAgent, ref: "main" } }),
       });
       if (res?.id) {
-        dialog.trackCommand(selectedPrimeId, res.id, `Upgrade ${selectedAgent}`);
+        dialog.toast({ message: `Upgrading ${selectedAgent}…`, variant: "success" });
       } else {
         dialog.toast({ message: "Failed to start upgrade.", variant: "error" });
       }
@@ -395,7 +395,6 @@ function SkillsPage() {
         body: JSON.stringify({ type: "fleet_upgrade", args: { name: agent.name, ref: "main" } }),
       });
       if (res?.id) {
-        dialog.trackCommand(selectedPrimeId, res.id, `Upgrade ${agent.name}`);
         successCount++;
       }
     }

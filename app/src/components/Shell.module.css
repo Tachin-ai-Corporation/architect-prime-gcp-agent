@@ -224,7 +224,7 @@
 .opsDrawer {
   position: fixed;
   bottom: 16px;
-  right: 16px;
+  left: 16px;
   width: min(420px, calc(100vw - 32px));
   z-index: 100;
   background: #2A3441;

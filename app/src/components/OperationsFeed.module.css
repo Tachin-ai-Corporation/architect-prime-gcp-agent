@@ -58,6 +58,21 @@
   color: #E6EBF0;
 }
 
+.feedClear {
+  background: none;
+  border: none;
+  color: var(--text-tertiary, #566373);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: color 150ms ease, background 150ms ease;
+}
+.feedClear:hover {
+  color: var(--text-primary, #E6EBF0);
+  background: rgba(86, 99, 115, 0.15);
+}
+
 /* ---- Feed List ---- */
 .feedList {
   padding: 8px;

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import styles from "./OperationsFeed.module.css";
-import { usePrime } from "@/contexts/PrimeContext";
+
 
 /* ---- Types ---- */
 interface DeployStep {
@@ -79,26 +79,46 @@ function stepIcon(status: string): string {
 }
 
 /* ==== useOperations hook ==== */
-export function useOperations(primeId: string | null) {
+export function useOperations(primeIds: string[]) {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const primeIdsKey = JSON.stringify(primeIds);
   const poll = useCallback(async () => {
-    if (!primeId) return;
+    if (primeIds.length === 0) return;
     try {
-      const res = await fetch(`/api/primes/${primeId}/ops`);
-      if (res.ok) {
-        const data = await res.json();
-        setOperations(data.operations || []);
-      }
-    } catch {
-      // network error, keep polling
-    }
+      const results = await Promise.all(
+        primeIds.map(async (pid) => {
+          try {
+            const res = await fetch(`/api/primes/${pid}/ops`);
+            if (res.ok) {
+              const data = await res.json();
+              return (data.operations || []) as Operation[];
+            }
+          } catch {}
+          return [] as Operation[];
+        })
+      );
+      const merged = results.flat();
+      // Dedupe by id, sort newest first
+      const seen = new Set<string>();
+      const deduped = merged.filter((op) => {
+        if (seen.has(op.id)) return false;
+        seen.add(op.id);
+        return true;
+      });
+      deduped.sort((a, b) => {
+        const ta = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+        const tb = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+        return tb - ta;
+      });
+      setOperations(deduped);
+    } catch {}
     setLoading(false);
-  }, [primeId]);
+  }, [primeIdsKey]);
 
   useEffect(() => {
-    if (!primeId) {
+    if (primeIds.length === 0) {
       setOperations([]);
       return;
     }
@@ -106,7 +126,7 @@ export function useOperations(primeId: string | null) {
     poll();
     const iv = setInterval(poll, 5000);
     return () => clearInterval(iv);
-  }, [primeId, poll]);
+  }, [primeIds, poll]);
 
   const activeCount = operations.filter(
     (op) => op.status === "pending" || op.status === "running"
@@ -253,9 +273,10 @@ interface OperationsFeedProps {
   primeId: string;
   operations: Operation[];
   onClose?: () => void;
+  onClear?: () => void;
 }
 
-export function OperationsFeed({ primeId, operations, onClose }: OperationsFeedProps) {
+export function OperationsFeed({ primeId, operations, onClose, onClear }: OperationsFeedProps) {
   const activeOps = operations.filter(
     (op) => op.status === "pending" || op.status === "running"
   );
@@ -289,9 +310,14 @@ export function OperationsFeed({ primeId, operations, onClose }: OperationsFeedP
             <span className={styles.feedBadge}>{activeOps.length} active</span>
           )}
         </span>
-        {onClose && (
-          <button className={styles.feedClose} onClick={onClose}>✕</button>
-        )}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {recentOps.length > 0 && onClear && (
+            <button className={styles.feedClear} onClick={onClear}>Clear</button>
+          )}
+          {onClose && (
+            <button className={styles.feedClose} onClick={onClose}>✕</button>
+          )}
+        </span>
       </div>
 
       <div className={styles.feedList}>

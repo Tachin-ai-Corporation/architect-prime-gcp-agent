@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useCallback, createContext, useContext, useRef, useEffect } from "react";
-import { CommandProgress } from "./CommandProgress";
 
 /* ---- Types ---- */
 interface ConfirmOptions {
@@ -18,17 +17,9 @@ interface ToastOptions {
   duration?: number;
 }
 
-interface TrackedCommand {
-  id: number;
-  primeId: string;
-  commandId: string;
-  label: string;
-}
-
 interface DialogContextType {
   confirm: (options: ConfirmOptions) => Promise<boolean>;
   toast: (options: ToastOptions) => void;
-  trackCommand: (primeId: string, commandId: string, label: string) => void;
 }
 
 const DialogContext = createContext<DialogContextType | null>(null);
@@ -118,9 +109,7 @@ interface ActiveToast extends ToastOptions {
 export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [activeConfirm, setActiveConfirm] = useState<ActiveConfirm | null>(null);
   const [toasts, setToasts] = useState<ActiveToast[]>([]);
-  const [trackedCommands, setTrackedCommands] = useState<TrackedCommand[]>([]);
   const toastIdRef = useRef(0);
-  const cmdIdRef = useRef(0);
 
   const confirm = useCallback((options: ConfirmOptions): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -137,10 +126,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     }, duration);
   }, []);
 
-  const trackCommand = useCallback((primeId: string, commandId: string, label: string) => {
-    const id = ++cmdIdRef.current;
-    setTrackedCommands((prev) => [...prev, { id, primeId, commandId, label }]);
-  }, []);
+
 
   const handleConfirm = useCallback(() => {
     activeConfirm?.resolve(true);
@@ -152,12 +138,10 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     setActiveConfirm(null);
   }, [activeConfirm]);
 
-  const dismissCommand = useCallback((id: number) => {
-    setTrackedCommands((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+
 
   return (
-    <DialogContext.Provider value={{ confirm, toast, trackCommand }}>
+    <DialogContext.Provider value={{ confirm, toast }}>
       {children}
       {activeConfirm && (
         <ConfirmModal
@@ -170,17 +154,8 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           onCancel={handleCancel}
         />
       )}
-      {(toasts.length > 0 || trackedCommands.length > 0) && (
+      {toasts.length > 0 && (
         <div className="toast-container">
-          {trackedCommands.map((cmd) => (
-            <CommandProgress
-              key={cmd.id}
-              primeId={cmd.primeId}
-              commandId={cmd.commandId}
-              label={cmd.label}
-              onDismiss={() => dismissCommand(cmd.id)}
-            />
-          ))}
           {toasts.map((t) => (
             <Toast
               key={t.id}
