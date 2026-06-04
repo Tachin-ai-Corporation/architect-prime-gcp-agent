@@ -276,9 +276,20 @@ export async function POST(req: NextRequest) {
     }
 
     const buildData = await buildRes.json();
-    const buildId = buildData?.metadata?.build?.id || buildData?.name || "unknown";
+    // Cloud Build regional API returns Operation with metadata.build.id
+    // The name field is "operations/build/PROJECT_ID/BUILD_ID"
+    let buildId = buildData?.metadata?.build?.id || "";
+    if (!buildId && buildData?.name) {
+      // Extract BUILD_ID from "operations/build/PROJECT_ID/BUILD_ID"
+      const parts = (buildData.name as string).split("/");
+      buildId = parts.length >= 4 ? parts[parts.length - 1] : buildData.name;
+    }
+    if (!buildId) buildId = "unknown";
 
     console.log(`[api/upgrade] Cloud Build submitted: ${buildId} → ${deployVersion} (ref: ${deployRef}, commit: ${deployCommit})`);
+    if (buildId === "unknown") {
+      console.warn(`[api/upgrade] buildId extraction failed. Response keys: ${Object.keys(buildData).join(", ")}. name: ${buildData?.name}`);
+    }
 
     // Write command doc for ops feed tracking
     if (primeId) {

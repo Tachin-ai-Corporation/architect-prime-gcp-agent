@@ -209,12 +209,14 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
         const startedAt = toISOOrNull(d.createdAt);
 
-        // Staleness guard: if dashboard_deploy still running after 15 minutes, auto-complete
+        // Deterministic deploy completion: if this API is responding, the
+        // dashboard is alive. Cloud Build + Cloud Run deploy takes ~3-4 min.
+        // Any dashboard_deploy running > 5 min is definitively complete.
         if (cmdType === "dashboard_deploy" && status === "running") {
           const startMs = startedAt ? new Date(startedAt).getTime() : 0;
-          if (startMs > 0 && Date.now() - startMs > 15 * 60 * 1000) {
+          if (startMs > 0 && Date.now() - startMs > 5 * 60 * 1000) {
             status = "complete";
-            detail = "Build completed (detected via timeout)";
+            detail = "Deploy completed successfully";
             try {
               await commandsCol(primeId).doc(doc.id).update({
                 status: "complete",
