@@ -212,7 +212,7 @@ else
 import pathlib
 oc = pathlib.Path("${OC_HOST_DIR}")
 tmpl_path = oc / "corekit" / "openclaw-bootstrap.json5.tmpl"
-out_path = pathlib.Path("/tmp/openclaw-bootstrap.json5")
+out_path = pathlib.Path("${OC_HOST_DIR}/openclaw.json")
 tmpl = tmpl_path.read_text(encoding="utf-8")
 tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
 tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
@@ -247,7 +247,7 @@ print(j.get("hash") or (j.get("payload") or {}).get("hash") or ((j.get("result")
 
   PARAMS="$(python3 - <<PYAPPLY
 import json
-raw=open("/tmp/openclaw-bootstrap.json5","r",encoding="utf-8").read()
+raw=open("${OC_HOST_DIR}/openclaw.json","r",encoding="utf-8").read()
 print(json.dumps({"raw": raw, "baseHash": "${BASE_HASH}", "note": "bootstrap"}))
 PYAPPLY
 )"
