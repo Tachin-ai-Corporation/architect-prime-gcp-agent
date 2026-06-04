@@ -73,6 +73,37 @@ case "${1:-}" in
     [[ -n "$EXISTING_JOB" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $EXISTING_JOB"
     echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${EXISTING_JOB:-none}"
 
+    # ---- Snapshot current model assignments (before install.sh overwrites templates) ----
+    # ADR: install.sh downloads fresh .json5.tmpl files from the repo, which
+    # resets any model customizations that discover-models --set-config wrote.
+    # We snapshot the live config's model assignments here and re-apply them
+    # after render-config runs on the fresh template.
+    MODEL_SNAPSHOT="/tmp/upgrade-model-snapshot-$$.json"
+    RENDERED_CONFIG="${OC_HOST_ROOT}/.openclaw/openclaw.json"
+    if [[ -f "$RENDERED_CONFIG" ]]; then
+      python3 -c "
+import json, sys
+try:
+    cfg = json.load(open('${RENDERED_CONFIG}'))
+    defaults = cfg.get('agents',{}).get('defaults',{})
+    default_model = defaults.get('model',{}).get('primary','')
+    agents = cfg.get('agents',{}).get('list',[])
+    overrides = {}
+    for a in agents:
+        am = a.get('model',{}).get('primary','')
+        if am and am != default_model:
+            overrides[a['id']] = am
+    snapshot = {'default': default_model, 'overrides': overrides}
+    if default_model:
+        json.dump(snapshot, open('$MODEL_SNAPSHOT','w'))
+        print(f'  Model snapshot: default={default_model}, {len(overrides)} override(s)')
+    else:
+        print('  No model assignment found — skipping snapshot')
+except Exception as e:
+    print(f'  [WARN] Could not snapshot models: {e}', file=sys.stderr)
+" || true
+    fi
+
     curl -fsSL "${CORE_BASE}/infra/install.sh" | \
       GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
       GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
@@ -87,6 +118,23 @@ case "${1:-}" in
     if [[ -x "$RENDER" ]]; then
       echo "==> Re-rendering config (token sync)..."
       "$RENDER" || echo "  (render-config failed, config may have stale token)"
+    fi
+
+    # ---- Re-apply saved model assignments ----
+    # ADR: The fresh template from install.sh has default models. Re-apply
+    # the snapshot we took before the upgrade to preserve user's choices.
+    if [[ -f "$MODEL_SNAPSHOT" ]]; then
+      echo "==> Re-applying model assignments..."
+      DISCOVER="${OC_HOST_ROOT}/.openclaw/bin/discover-models"
+      if [[ -x "$DISCOVER" ]]; then
+        GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(curl -sf -H 'Metadata-Flavor: Google' \
+          http://metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null || echo '')}" \
+          OC_HOST_ROOT="$OC_HOST_ROOT" "$DISCOVER" --set-config "$MODEL_SNAPSHOT" || \
+          echo "  [WARN] Failed to re-apply model assignments"
+      else
+        echo "  [WARN] discover-models not found, cannot re-apply models"
+      fi
+      rm -f "$MODEL_SNAPSHOT"
     fi
 
     # ---- Install/update systemd units from corekit config ----
