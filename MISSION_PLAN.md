@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.04.1.0`
+> - **Current version:** `v2026.06.04.2.0`
 
 ---
 
@@ -1242,6 +1242,15 @@ architect-prime/
 3. **SOUL.md size limit increase** — Set `bootstrapMaxChars: 40000` in both config templates. Cortex SOUL.md (34K chars) was being silently truncated at 12K, losing ~65% of process routing instructions. Added SOUL.md size validation to `validate-contracts`.
 4. **Elevated exec for temporal-memory** — Enabled `tools.elevated` globally in both config templates with `ask: off`. Added `elevated` to temporal-memory's tool allow list. Fixes inability to write MEMORY.md via file commands.
 5. **CoreKit upgrade model persistence** — Implemented snapshot/restore mechanism in `upgrade-corekit` that preserves LLM model assignments through CoreKit upgrades (snapshots from live `openclaw.json` before template overwrite, re-applies via `discover-models --set-config` after `render-config`).
+
+### Completed: v2026.06.04.2.0 — Operations UI Consolidation
+> *Unified operations drawer, multi-prime polling, deploy completion detection.*
+
+1. **Operations UI consolidation** — Removed duplicate CommandProgress top-right chips. Consolidated to single bottom-left OperationsFeed drawer. Deleted CommandProgress.tsx, cleaned DialogProvider (removed trackCommand), cleaned page.tsx and skills/page.tsx callers, removed cmd-progress CSS.
+2. **Multi-prime operations polling** — useOperations hook now accepts string[] of all prime IDs, polls each prime's ops endpoint in parallel, merges and deduplicates results. Fixes fleet agent upgrades not appearing (were only polling first prime).
+3. **Dashboard deploy completion** — Fixed buildId extraction from Cloud Build regional API (parse operations/build/PROJECT/BUILD_ID format). Reduced staleness guard from 15min to 5min. Added deterministic completion: if dashboard API is responding and deploy >5min old, auto-mark complete.
+4. **Clear operations** — Added DELETE /api/primes/{id}/ops endpoint to batch-delete completed/failed commands. Added Clear button in OperationsFeed header.
+5. **UX improvements** — Changed header icon from bell emoji to SVG logs icon. Moved operations drawer from bottom-right to bottom-left. Force-refresh on drawer open.
 
 ### Current: Next Phase — Process Maturity + Dashboard Process UI
 > *Goal: Dashboard UI for process management, process on/off per agent, SOUL.md audit/trim.*
