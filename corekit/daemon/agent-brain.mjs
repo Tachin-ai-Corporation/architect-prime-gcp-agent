@@ -26,7 +26,7 @@
 // Run:
 //   node agent-brain.mjs
 // ============================================================
-import { readFileSync, appendFileSync, existsSync, watchFile } from 'fs';
+import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync } from 'fs';
 import { randomBytes } from 'crypto';
 
 // ---- Contracts (loaded first — config depends on it) ----
@@ -272,35 +272,68 @@ async function ensureProjectsLoaded() {
   }
 }
 
-// ---- Process registry (loaded from Firestore, refreshed periodically) ----
+// ---- Process registry (loaded from local files + Firestore, refreshed periodically) ----
 let PROCESSES = {}; // keyed by process id
 let _processesLoadedAt = 0;
 const PROCESSES_REFRESH_MS = 60_000;
 
-async function loadProcesses() {
+/** Load standard processes bundled with CoreKit (on-disk JSON files). */
+function loadLocalProcesses() {
+  const localProcs = {};
+  const procDir = '/home/node/.openclaw/corekit/processes';
   try {
-    const token = await getAuthToken();
-    if (!token) return;
-    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes`;
-    const resp = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const processes = {};
-    for (const doc of (data.documents || [])) {
-      const p = firestoreDecode(doc.fields || {});
-      if (p.id && p.status !== 'deprecated') {
-        processes[p.id] = p;
+    if (!existsSync(procDir)) return localProcs;
+    for (const file of readdirSync(procDir)) {
+      if (!file.endsWith('.json')) continue;
+      try {
+        const p = JSON.parse(readFileSync(`${procDir}/${file}`, 'utf8'));
+        if (p.id && p.status !== 'deprecated') {
+          localProcs[p.id] = p;
+        }
+      } catch (e) {
+        log('WARN', `Failed to parse local process ${file}: ${e.message}`);
       }
     }
-    PROCESSES = processes;
-    _processesLoadedAt = Date.now();
-    if (Object.keys(processes).length > 0) {
-      log('INFO', `Processes loaded: ${Object.keys(processes).join(', ')}`);
+  } catch (e) {
+    log('DEBUG', `Local processes dir not found: ${e.message}`);
+  }
+  return localProcs;
+}
+
+async function loadProcesses() {
+  // 1. Load standard processes from local CoreKit files (always available)
+  const localProcs = loadLocalProcesses();
+
+  // 2. Load user-defined processes from Firestore (may override local by ID)
+  const firestoreProcs = {};
+  try {
+    const token = await getAuthToken();
+    if (token) {
+      const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes`;
+      const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        for (const doc of (data.documents || [])) {
+          const p = firestoreDecode(doc.fields || {});
+          if (p.id && p.status !== 'deprecated') {
+            firestoreProcs[p.id] = p;
+          }
+        }
+      }
     }
   } catch (e) {
-    log('WARN', `Failed to load processes: ${e.message}`);
+    log('WARN', `Failed to load Firestore processes: ${e.message}`);
+  }
+
+  // 3. Merge: Firestore overrides local (same ID), local provides baseline
+  PROCESSES = { ...localProcs, ...firestoreProcs };
+  _processesLoadedAt = Date.now();
+  const localCount = Object.keys(localProcs).length;
+  const fsCount = Object.keys(firestoreProcs).length;
+  if (localCount + fsCount > 0) {
+    log('INFO', `Processes loaded: ${Object.keys(PROCESSES).join(', ')} (${localCount} local, ${fsCount} firestore)`);
   }
 }
 

@@ -73,10 +73,10 @@ function stripPrefix(openclawId: string): string {
   return slash >= 0 ? openclawId.slice(slash + 1) : openclawId;
 }
 
-/** Build OpenClaw ID from catalog model: "gemini-3.1-pro-preview" (provider "google") → "google-vertex/gemini-3.1-pro-preview" */
+/** Build OpenClaw ID from catalog model: always uses google-vertex/ prefix for Vertex AI */
 function toOpenClawId(modelId: string, provider: string): string {
   if (modelId.includes("/")) return modelId; // already prefixed
-  return provider === "google" ? `google-vertex/${modelId}` : `vertex_ai/${modelId}`;
+  return `google-vertex/${modelId}`;
 }
 
 /** Find display name from model catalog */

@@ -1,0 +1,63 @@
+{
+  "id": "plan",
+  "name": "Plan",
+  "description": "Structured planning process for complex tasks that require upfront design before execution. Gathers requirements, analyzes options, produces a detailed implementation plan, and optionally seeks approval before proceeding.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "goal": {
+      "description": "What needs to be planned",
+      "required": true
+    },
+    "project_id": {
+      "description": "Project context (optional)",
+      "required": false,
+      "default": ""
+    },
+    "require_approval": {
+      "description": "Whether to pause for approval before execution",
+      "required": false,
+      "default": "false"
+    }
+  },
+  "steps": [
+    {
+      "title": "Gather requirements and context",
+      "description": "Gather all relevant context for planning ${goal}. Recall memory, check project context, examine current state of any systems involved. Identify constraints, dependencies, and prior art. List the specific requirements and success criteria.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Requirements are clearly documented. All relevant context has been gathered. Constraints and dependencies are identified."
+    },
+    {
+      "title": "Analyze options and design approach",
+      "description": "For ${goal}, analyze possible approaches. Consider trade-offs, risks, and complexity of each option. Select the best approach and document the rationale. Identify what needs to change, what should stay the same, and what order to do things in.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "At least 2 approaches considered. Best approach selected with clear rationale. Risks identified.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Produce implementation plan",
+      "description": "Create a detailed implementation plan for ${goal}. Include: (1) Step-by-step execution order, (2) Specific files/systems to change, (3) Verification steps for each change, (4) Rollback strategy if something fails. The plan should be detailed enough that someone with no prior context could execute it.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Implementation plan is complete, detailed, and actionable. Each step has clear inputs, outputs, and verification criteria."
+    },
+    {
+      "title": "Update project context with plan",
+      "description": "Store the implementation plan for ${goal} in project context so it persists for future execution. Include the selected approach, key decisions, and any discovered constraints.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Plan is stored in project context. Key decisions and constraints are documented for future reference."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

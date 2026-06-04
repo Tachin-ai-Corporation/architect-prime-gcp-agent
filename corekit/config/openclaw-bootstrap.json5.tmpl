@@ -7,6 +7,7 @@
   },
   "agents": {
     "defaults": {
+      "bootstrapMaxChars": 40000,
       "model": {
         "primary": "google-vertex/gemini-3.1-pro-preview"
       },
@@ -110,7 +111,7 @@
         "workspace": "~/.openclaw/workspace-temporal-memory",
         "sandbox": { "mode": "off" },
         "tools": {
-          "allow": ["read", "exec"],
+          "allow": ["read", "exec", "elevated"],
           "deny": ["write", "edit", "browser", "web-search"]
         }
       },
@@ -164,6 +165,10 @@
       "security": "full",
       "ask": "off",
       "pathPrepend": ["~/.openclaw/bin"]
+    },
+    "elevated": {
+      "enabled": true,
+      "ask": "off"
     }
   },
   "messages": {

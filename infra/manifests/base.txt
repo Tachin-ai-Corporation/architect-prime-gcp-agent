@@ -67,6 +67,10 @@ corekit/daemon/start-agent-brain .openclaw/bin/start-agent-brain
 corekit/config/agent-registry.json .openclaw/corekit/agent-registry.json
 corekit/config/responsibilities.json .openclaw/corekit/responsibilities.json
 
+# Standard processes (bundled — always available)
+corekit/config/processes/investigate.json .openclaw/corekit/processes/investigate.json
+corekit/config/processes/plan.json .openclaw/corekit/processes/plan.json
+
 # Introspect — filesystem introspection service (Firestore bus)
 corekit/daemon/agent-introspect.mjs .openclaw/bin/agent-introspect.mjs
 corekit/daemon/agent-introspect.service .openclaw/corekit/agent-introspect.service

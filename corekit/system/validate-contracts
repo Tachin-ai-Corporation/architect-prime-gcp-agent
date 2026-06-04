@@ -429,6 +429,26 @@ sys.exit(1)
 fi
 
 # ============================================================
+# Check: Workspace SOUL.md sizes (runtime only)
+# ============================================================
+if [[ "$MODE" == "runtime" ]]; then
+  OC_DIR="${OC_HOST_ROOT}/.openclaw"
+  BOOTSTRAP_LIMIT=40000
+  SOUL_OVER=0
+  for soul in "${OC_DIR}"/workspace*/SOUL.md; do
+    [ -f "$soul" ] || continue
+    size=$(wc -c < "$soul" 2>/dev/null || echo 0)
+    if [ "$size" -gt "$BOOTSTRAP_LIMIT" ]; then
+      fail "$(basename $(dirname $soul))/SOUL.md is ${size} chars (limit: ${BOOTSTRAP_LIMIT})"
+      SOUL_OVER=1
+    fi
+  done
+  if [ "$SOUL_OVER" -eq 0 ]; then
+    pass "All SOUL.md files within ${BOOTSTRAP_LIMIT} char limit"
+  fi
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 echo ""

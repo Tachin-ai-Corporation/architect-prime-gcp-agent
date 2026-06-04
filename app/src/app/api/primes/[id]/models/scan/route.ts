@@ -298,9 +298,7 @@ export async function POST(
         else if (code === 0) status = "timeout";
         else status = "unknown";
 
-        const openclawId = model.provider === "google"
-          ? `google-vertex/${model.id}`
-          : `vertex_ai/${model.id}`;
+        const openclawId = `google-vertex/${model.id}`;
 
         return {
           id: model.id,

@@ -258,7 +258,7 @@ for mid, info in sorted(candidates.items()):
     if MODE != 'probe-only':
         print(f"  {info['name']:<40} {info['provider']:<12} {label}")
 
-    oc = f"google-vertex/{mid}" if info['provider'] == 'google' else f"vertex_ai/{mid}"
+    oc = f"google-vertex/{mid}"
     clean_info = {k: v for k, v in info.items() if k != 'maas_openai'}
     results.append({**clean_info, 'status': status, 'httpCode': code, 'openclawId': oc})
 

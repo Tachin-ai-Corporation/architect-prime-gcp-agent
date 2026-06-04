@@ -1,0 +1,58 @@
+{
+  "id": "investigate",
+  "name": "Investigate",
+  "description": "Structured investigation process for diagnosing issues, understanding system behavior, or answering questions that require research. Gathers evidence, analyzes findings, and produces a clear report.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "topic": {
+      "description": "What to investigate",
+      "required": true
+    },
+    "project_id": {
+      "description": "Project context (optional)",
+      "required": false,
+      "default": ""
+    }
+  },
+  "steps": [
+    {
+      "title": "Gather context and define scope",
+      "description": "Recall any relevant context from memory about ${topic}. Check project context if available. Define the specific questions we need to answer and what evidence to look for.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Investigation scope is defined with clear questions to answer. All available context has been gathered."
+    },
+    {
+      "title": "Investigate primary sources",
+      "description": "Investigate ${topic} by examining primary sources: logs, configuration files, code, infrastructure state, or documentation. Use the tools available (exec, read, web-fetch) to gather concrete evidence. Record exact findings — commands run, outputs observed, error messages, timestamps.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Primary evidence has been gathered from at least 2 sources. All findings are documented with exact details (not summaries).",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Analyze findings and identify root cause",
+      "description": "Analyze the evidence gathered about ${topic}. Identify the root cause or answer the investigation questions. If the initial investigation was insufficient, gather additional evidence. Cross-reference findings for consistency.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Root cause or answer is identified with supporting evidence. Analysis explains the 'why' not just the 'what'."
+    },
+    {
+      "title": "Document findings and recommendations",
+      "description": "Produce a clear investigation report about ${topic}. Include: (1) Summary of findings, (2) Root cause analysis, (3) Evidence chain, (4) Recommended actions or next steps. Update project context with relevant discoveries.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Investigation report is complete with actionable findings. Project context updated if applicable."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}
