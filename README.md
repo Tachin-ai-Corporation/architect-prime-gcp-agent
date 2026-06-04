@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.04.2.0`
+> **Current version:** `v2026.06.04.3.0`
 
 
 ---
@@ -410,6 +410,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.02.19.3** | Dashboard Polish + SVG Fix + Header Layout — Brain page hides all content until prime selected (fixed permanent loading state). SVG connection lines use primeRow as coordinate reference (fixes Y-axis offset). Header: version/STABLE moved right, nav centered, title vertically centered, settings gear active highlight. Removed showPrimeAsAgent from Brain/Skills. |
 | **v2026.06.04.1.0** | Process distribution, model ID fix, SOUL limit, elevated exec |
 | **v2026.06.04.2.0** | Operations UI consolidation, multi-prime polling, deploy completion fix |
+| **v2026.06.04.3.0** | Deploy progress fix, action-required popup UI |
 
 
 ---

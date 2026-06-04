@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.04.2.0`
+> - **Current version:** `v2026.06.04.3.0`
 
 ---
 
@@ -1251,6 +1251,13 @@ architect-prime/
 3. **Dashboard deploy completion** — Fixed buildId extraction from Cloud Build regional API (parse operations/build/PROJECT/BUILD_ID format). Reduced staleness guard from 15min to 5min. Added deterministic completion: if dashboard API is responding and deploy >5min old, auto-mark complete.
 4. **Clear operations** — Added DELETE /api/primes/{id}/ops endpoint to batch-delete completed/failed commands. Added Clear button in OperationsFeed header.
 5. **UX improvements** — Changed header icon from bell emoji to SVG logs icon. Moved operations drawer from bottom-right to bottom-left. Force-refresh on drawer open.
+
+### Completed: v2026.06.04.3.0 — Deploy Progress Fix + Action Required UI
+> *Monotonic deploy progress, action-required popup on agent cards.*
+
+1. **Deploy progress regression fix** — Pre-populate all 12 deploy steps as `pending` in fleet-deploy. Both fleet-deploy and fleet-monitor update steps in-place by id instead of appending. Milestone statuses changed from `active` to `done`. Progress now monotonically increases from 8% to 100%.
+2. **Action required popup** — Small pulsing ⚠ icon on agent chip when `actionRequired` is set. Click opens positioned popup with instructions + Done button. Backend already sets this during hire (workspace user creation instructions).
+3. **Dashboard deploy completion** — Fixed buildId extraction from Cloud Build regional API. Reduced staleness guard from 15min to 5min.
 
 ### Current: Next Phase — Process Maturity + Dashboard Process UI
 > *Goal: Dashboard UI for process management, process on/off per agent, SOUL.md audit/trim.*
