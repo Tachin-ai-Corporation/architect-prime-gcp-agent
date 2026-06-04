@@ -311,6 +311,17 @@ function HomeInner() {
     setUpgradingAgent(null);
   };
 
+  /* ---- Confirm agent setup (clear actionRequired) ---- */
+  const handleConfirmSetup = async (primeId: string, agentName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await api(`/api/primes/${primeId}/fleet/confirm-setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: agentName }),
+    });
+    refreshPrimes();
+  };
+
   /* ---- Status class helper ---- */
   const statusClass = (status: string) => {
     switch (status) {
@@ -324,7 +335,7 @@ function HomeInner() {
   /* ---- Deploy progress helper ---- */
   const getDeployProgress = (steps: DeployStep[] | undefined) => {
     if (!steps || steps.length === 0) return null;
-    const done = steps.filter((s) => s.status === "done").length;
+    const done = steps.filter((s) => s.status === "done" || s.status === "skipped").length;
     const failed = steps.filter((s) => s.status === "failed").length;
     const active = steps.find((s) => s.status === "active");
     const lastDone = [...steps].reverse().find((s) => s.status === "done");
@@ -569,6 +580,27 @@ function HomeInner() {
                                     : `${dp.done}/${dp.total}`}
                                 </span>
                               </div>
+                            </div>
+                          )}
+
+                          {/* Action Required Banner */}
+                          {agent.actionRequired && (
+                            <div className={styles.actionRequired}>
+                              <div className={styles.actionHeader}>
+                                <span className={styles.actionIcon}>⚠</span>
+                                <span className={styles.actionTitle}>{agent.actionRequired.title}</span>
+                              </div>
+                              <ol className={styles.actionSteps}>
+                                {agent.actionRequired.instructions.map((inst: string, idx: number) => (
+                                  <li key={idx}>{inst}</li>
+                                ))}
+                              </ol>
+                              <button
+                                className={styles.actionDoneBtn}
+                                onClick={(e) => handleConfirmSetup(p.id, agent.name, e)}
+                              >
+                                ✓ Done
+                              </button>
                             </div>
                           )}
 

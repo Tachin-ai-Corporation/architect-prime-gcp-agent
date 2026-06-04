@@ -229,7 +229,16 @@ new_step = {
 if step_detail:
     new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
 
-existing_steps.append(new_step)
+# Find existing step by id and update in-place, or append if not found
+updated = False
+for i, s in enumerate(existing_steps):
+    fields_map = s.get("mapValue", {}).get("fields", {})
+    if fields_map.get("id", {}).get("stringValue") == step_id:
+        existing_steps[i] = new_step
+        updated = True
+        break
+if not updated:
+    existing_steps.append(new_step)
 
 # Build update body
 fields = {
@@ -271,8 +280,71 @@ except Exception as e:
 PYEOF
 }
 
-# Write initial deploying status with empty steps
-write_deploy_step "deploy_started" "Deployment initiated" "done" "" "deploying"
+# Pre-populate all expected deploy steps so the progress bar has a stable denominator
+init_deploy_steps() {
+  [[ -n "$PRIME_ID" ]] || return 0
+
+  local token
+  token="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || return 0
+
+  python3 - <<PYEOF "$token"
+import sys, json, urllib.request
+from datetime import datetime, timezone
+
+token = sys.argv[1]
+now = datetime.now(timezone.utc).isoformat()
+fs_url = "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}"
+
+all_steps = [
+    ("deploy_started", "Deployment initiated", "done"),
+    ("sa_created", "Service account created", "pending"),
+    ("iam_granted", "IAM roles granted", "pending"),
+    ("vm_created", "VM created", "pending"),
+    ("prime_setup_done", "Prime-side setup complete", "pending"),
+    ("packages_installing", "System packages installing", "pending"),
+    ("docker_installing", "Docker CE installing", "pending"),
+    ("corekit_installing", "CoreKit installing", "pending"),
+    ("openclaw_building", "OpenClaw Docker image building", "pending"),
+    ("gateway_ready", "OpenClaw gateway started", "pending"),
+    ("bootstrap_complete", "Bootstrap complete", "pending"),
+    ("online", "Agent online", "pending"),
+]
+
+steps_values = []
+for sid, slabel, sstatus in all_steps:
+    step = {"mapValue": {"fields": {
+        "id": {"stringValue": sid},
+        "label": {"stringValue": slabel},
+        "status": {"stringValue": sstatus},
+        "timestamp": {"stringValue": now if sstatus == "done" else ""},
+    }}}
+    steps_values.append(step)
+
+fields = {
+    "status": {"stringValue": "deploying"},
+    "specialty": {"stringValue": "${SPECIALTY}"},
+    "email": {"stringValue": "${AGENT_USER_EMAIL}"},
+    "vm": {"stringValue": "${FLEET_VM}"},
+    "zone": {"stringValue": "${ZONE}"},
+    "deployedAt": {"stringValue": "${DEPLOY_TS}"},
+    "name": {"stringValue": "${AGENT_NAME}"},
+    "deploySteps": {"arrayValue": {"values": steps_values}},
+}
+
+mask = "&".join(f"updateMask.fieldPaths={f}" for f in ["status","specialty","email","vm","zone","deployedAt","name","deploySteps"])
+body = json.dumps({"fields": fields}).encode()
+req = urllib.request.Request(f"{fs_url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f"[fleet-deploy] Init steps failed: {e}", file=sys.stderr)
+PYEOF
+}
+
+init_deploy_steps
 
 # ============================================================
 # 2. APIs already enabled on PRIME_PROJECT — skip

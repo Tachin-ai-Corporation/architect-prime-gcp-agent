@@ -569,6 +569,55 @@
   white-space: nowrap;
 }
 
+/* ---- Action Required ---- */
+.actionRequired {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(214, 168, 58, 0.08);
+  border: 1px solid rgba(214, 168, 58, 0.2);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.actionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--status-warning, #d6a83a);
+  margin-bottom: 6px;
+}
+.actionIcon {
+  font-size: 14px;
+}
+.actionTitle {
+  font-size: 12px;
+}
+.actionSteps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary, #AEB8C4);
+  line-height: 1.6;
+  font-size: 11px;
+}
+.actionSteps li {
+  margin-bottom: 4px;
+}
+.actionDoneBtn {
+  margin-top: 8px;
+  padding: 4px 12px;
+  background: rgba(31, 154, 155, 0.15);
+  border: 1px solid rgba(31, 154, 155, 0.3);
+  border-radius: 6px;
+  color: var(--accent, #1F9A9B);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.actionDoneBtn:hover {
+  background: rgba(31, 154, 155, 0.25);
+}
+
 /* ---- Floating Chat Overlay ---- */
 .chatOverlay {
   position: fixed;

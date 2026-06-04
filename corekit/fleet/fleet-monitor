@@ -101,7 +101,16 @@ new_step = {"mapValue": {"fields": {
 }}}
 if step_detail:
     new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
-existing_steps.append(new_step)
+# Find existing step by id and update in-place, or append if not found
+updated = False
+for i, s in enumerate(existing_steps):
+    fields_map = s.get("mapValue", {}).get("fields", {})
+    if fields_map.get("id", {}).get("stringValue") == step_id:
+        existing_steps[i] = new_step
+        updated = True
+        break
+if not updated:
+    existing_steps.append(new_step)
 
 cur_status = "deploying"
 if "fields" in doc and "status" in doc["fields"]:
@@ -153,10 +162,10 @@ clear_action_required() {
 # ---- Serial console milestone markers ----
 # These are printed by fleet-bootstrap.sh during setup
 declare -A MILESTONES=(
-  ["Installing system packages"]="packages_installing|System packages installing|active"
-  ["Installing Docker CE"]="docker_installing|Docker CE installing|active"
-  ["Installing CoreKit"]="corekit_installing|CoreKit installing|active"
-  ["Building Docker image"]="openclaw_building|OpenClaw Docker image building|active"
+  ["Installing system packages"]="packages_installing|System packages installing|done"
+  ["Installing Docker CE"]="docker_installing|Docker CE installing|done"
+  ["Installing CoreKit"]="corekit_installing|CoreKit installing|done"
+  ["Building Docker image"]="openclaw_building|OpenClaw Docker image building|done"
   ["Gateway ready"]="gateway_ready|OpenClaw gateway started|done"
   ["FLEET AGENT SETUP COMPLETE"]="bootstrap_complete|Bootstrap complete|done"
 )
