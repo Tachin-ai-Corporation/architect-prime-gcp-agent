@@ -569,7 +569,7 @@
   white-space: nowrap;
 }
 
-/* ---- Action Required Badge + Popup ---- */
+/* ---- Action Required Badge + Modal ---- */
 .actionBadge {
   background: none;
   border: none;
@@ -588,73 +588,35 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
-
-.actionPopup {
-  margin-top: 10px;
-  padding: 12px 14px;
-  background: rgba(35, 42, 52, 0.95);
-  border: 1px solid rgba(214, 168, 58, 0.25);
-  border-radius: 10px;
-  z-index: 20;
-  animation: popupIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes popupIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.actionPopupHeader {
+.actionModalHeader {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
-.actionPopupIcon {
-  font-size: 14px;
+.actionModalIcon {
+  font-size: 20px;
   color: #d6a83a;
 }
-.actionPopupTitle {
+.actionModalAgent {
   font-size: 12px;
-  font-weight: 600;
-  color: #d6a83a;
-  flex: 1;
-}
-.actionPopupClose {
-  background: none;
-  border: none;
   color: #7A8696;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-  transition: color 120ms;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(86, 99, 115, 0.2);
 }
-.actionPopupClose:hover {
+.actionModalAgent strong {
   color: #AEB8C4;
 }
-.actionPopupSteps {
-  margin: 0;
-  padding-left: 18px;
+.actionModalSteps {
+  margin: 0 0 8px;
+  padding-left: 20px;
   color: #AEB8C4;
-  line-height: 1.6;
-  font-size: 11px;
+  line-height: 1.7;
+  font-size: 13px;
 }
-.actionPopupSteps li {
-  margin-bottom: 6px;
-}
-.actionDoneBtn {
-  margin-top: 10px;
-  padding: 5px 14px;
-  background: rgba(31, 154, 155, 0.15);
-  border: 1px solid rgba(31, 154, 155, 0.3);
-  border-radius: 6px;
-  color: var(--accent, #1F9A9B);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 150ms ease;
-}
-.actionDoneBtn:hover {
-  background: rgba(31, 154, 155, 0.25);
+.actionModalSteps li {
+  margin-bottom: 8px;
 }
 
 /* ---- Floating Chat Overlay ---- */

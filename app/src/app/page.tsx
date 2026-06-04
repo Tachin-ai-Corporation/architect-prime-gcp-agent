@@ -62,8 +62,10 @@ function HomeInner() {
   const [upgradingPrime, setUpgradingPrime] = useState<string | null>(null);
   const [upgradingAgent, setUpgradingAgent] = useState<string | null>(null);
 
-  /* ---- Action required popup ---- */
-  const [actionPopup, setActionPopup] = useState<string | null>(null);
+  /* ---- Action required modal ---- */
+  const [actionModal, setActionModal] = useState<{
+    primeId: string; agentName: string; action: { title: string; instructions: string[] };
+  } | null>(null);
 
   /* ---- SVG line state ---- */
   const [lines, setLines] = useState<ConnectionLine[]>([]);
@@ -315,9 +317,8 @@ function HomeInner() {
   };
 
   /* ---- Confirm agent setup (clear actionRequired) ---- */
-  const handleConfirmSetup = async (primeId: string, agentName: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setActionPopup(null);
+  const handleConfirmSetup = async (primeId: string, agentName: string) => {
+    setActionModal(null);
     await api(`/api/primes/${primeId}/fleet/confirm-setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -562,17 +563,21 @@ function HomeInner() {
                                 <span className={`${styles.statusDot} ${statusClass(agent.status)}`} />
                                 <span>{agent.status}</span>
                                 {agent.actionRequired && (
-                                  <button
-                                    className={styles.actionBadge}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setActionPopup(actionPopup === agent.name ? null : agent.name);
-                                    }}
-                                    title="Action required"
-                                  >
-                                    ⚠
-                                  </button>
-                                )}
+                                <button
+                                  className={styles.actionBadge}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActionModal({
+                                      primeId: p.id,
+                                      agentName: agent.name,
+                                      action: agent.actionRequired!,
+                                    });
+                                  }}
+                                  title="Action required"
+                                >
+                                  ⚠
+                                </button>
+                              )}
                               </div>
                             </div>
                           </div>
@@ -599,30 +604,7 @@ function HomeInner() {
                             </div>
                           )}
 
-                          {/* Action Required Popup */}
-                          {agent.actionRequired && actionPopup === agent.name && (
-                            <div className={styles.actionPopup}>
-                              <div className={styles.actionPopupHeader}>
-                                <span className={styles.actionPopupIcon}>⚠</span>
-                                <span className={styles.actionPopupTitle}>{agent.actionRequired.title}</span>
-                                <button
-                                  className={styles.actionPopupClose}
-                                  onClick={(e) => { e.stopPropagation(); setActionPopup(null); }}
-                                >×</button>
-                              </div>
-                              <ol className={styles.actionPopupSteps}>
-                                {agent.actionRequired.instructions.map((inst: string, idx: number) => (
-                                  <li key={idx}>{inst}</li>
-                                ))}
-                              </ol>
-                              <button
-                                className={styles.actionDoneBtn}
-                                onClick={(e) => handleConfirmSetup(p.id, agent.name, e)}
-                              >
-                                ✓ Done
-                              </button>
-                            </div>
-                          )}
+
 
                           {/* Upgrade button */}
                           {agent.status === "online" && (
@@ -809,6 +791,42 @@ function HomeInner() {
                 disabled={!hireName.trim() || !hireType || !generatedEmail || hiring}
               >
                 {hiring ? "Hiring…" : "Hire"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Action Required Modal ---- */}
+      {actionModal && (
+        <div className={styles.modalOverlay} onClick={() => setActionModal(null)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.actionModalHeader}>
+              <span className={styles.actionModalIcon}>⚠</span>
+              <span className={styles.modalTitle} style={{ marginBottom: 0 }}>
+                {actionModal.action.title}
+              </span>
+            </div>
+            <div className={styles.actionModalAgent}>
+              Agent: <strong>{actionModal.agentName}</strong>
+            </div>
+            <ol className={styles.actionModalSteps}>
+              {actionModal.action.instructions.map((inst, idx) => (
+                <li key={idx}>{inst}</li>
+              ))}
+            </ol>
+            <div className={styles.modalActions}>
+              <button
+                className="btn"
+                onClick={() => setActionModal(null)}
+              >
+                Close
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => handleConfirmSetup(actionModal.primeId, actionModal.agentName)}
+              >
+                ✓ Done — I completed these steps
               </button>
             </div>
           </div>
