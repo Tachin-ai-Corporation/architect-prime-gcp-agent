@@ -62,6 +62,9 @@ function HomeInner() {
   const [upgradingPrime, setUpgradingPrime] = useState<string | null>(null);
   const [upgradingAgent, setUpgradingAgent] = useState<string | null>(null);
 
+  /* ---- Action required popup ---- */
+  const [actionPopup, setActionPopup] = useState<string | null>(null);
+
   /* ---- SVG line state ---- */
   const [lines, setLines] = useState<ConnectionLine[]>([]);
 
@@ -314,6 +317,7 @@ function HomeInner() {
   /* ---- Confirm agent setup (clear actionRequired) ---- */
   const handleConfirmSetup = async (primeId: string, agentName: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    setActionPopup(null);
     await api(`/api/primes/${primeId}/fleet/confirm-setup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -557,6 +561,18 @@ function HomeInner() {
                                 <span className={styles.specialtyBadge}>{agent.specialty}</span>
                                 <span className={`${styles.statusDot} ${statusClass(agent.status)}`} />
                                 <span>{agent.status}</span>
+                                {agent.actionRequired && (
+                                  <button
+                                    className={styles.actionBadge}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActionPopup(actionPopup === agent.name ? null : agent.name);
+                                    }}
+                                    title="Action required"
+                                  >
+                                    ⚠
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -583,14 +599,18 @@ function HomeInner() {
                             </div>
                           )}
 
-                          {/* Action Required Banner */}
-                          {agent.actionRequired && (
-                            <div className={styles.actionRequired}>
-                              <div className={styles.actionHeader}>
-                                <span className={styles.actionIcon}>⚠</span>
-                                <span className={styles.actionTitle}>{agent.actionRequired.title}</span>
+                          {/* Action Required Popup */}
+                          {agent.actionRequired && actionPopup === agent.name && (
+                            <div className={styles.actionPopup}>
+                              <div className={styles.actionPopupHeader}>
+                                <span className={styles.actionPopupIcon}>⚠</span>
+                                <span className={styles.actionPopupTitle}>{agent.actionRequired.title}</span>
+                                <button
+                                  className={styles.actionPopupClose}
+                                  onClick={(e) => { e.stopPropagation(); setActionPopup(null); }}
+                                >×</button>
                               </div>
-                              <ol className={styles.actionSteps}>
+                              <ol className={styles.actionPopupSteps}>
                                 {agent.actionRequired.instructions.map((inst: string, idx: number) => (
                                   <li key={idx}>{inst}</li>
                                 ))}

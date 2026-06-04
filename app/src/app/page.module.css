@@ -569,42 +569,88 @@
   white-space: nowrap;
 }
 
-/* ---- Action Required ---- */
-.actionRequired {
-  margin-top: 8px;
-  padding: 10px 12px;
-  background: rgba(214, 168, 58, 0.08);
-  border: 1px solid rgba(214, 168, 58, 0.2);
-  border-radius: 8px;
+/* ---- Action Required Badge + Popup ---- */
+.actionBadge {
+  background: none;
+  border: none;
+  padding: 0 2px;
   font-size: 12px;
+  cursor: pointer;
+  color: #d6a83a;
+  line-height: 1;
+  transition: transform 120ms ease;
+  animation: actionPulse 2s ease-in-out infinite;
 }
-.actionHeader {
+.actionBadge:hover {
+  transform: scale(1.2);
+}
+@keyframes actionPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.actionPopup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  padding: 14px 16px;
+  background: rgba(41, 49, 60, 0.98);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(214, 168, 58, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+  animation: popupIn 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  min-width: 280px;
+}
+@keyframes popupIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.actionPopupHeader {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-weight: 600;
-  color: var(--status-warning, #d6a83a);
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
-.actionIcon {
+.actionPopupIcon {
   font-size: 14px;
+  color: #d6a83a;
 }
-.actionTitle {
+.actionPopupTitle {
   font-size: 12px;
+  font-weight: 600;
+  color: #d6a83a;
+  flex: 1;
 }
-.actionSteps {
+.actionPopupClose {
+  background: none;
+  border: none;
+  color: #7A8696;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color 120ms;
+}
+.actionPopupClose:hover {
+  color: #AEB8C4;
+}
+.actionPopupSteps {
   margin: 0;
-  padding-left: 20px;
-  color: var(--text-secondary, #AEB8C4);
+  padding-left: 18px;
+  color: #AEB8C4;
   line-height: 1.6;
   font-size: 11px;
 }
-.actionSteps li {
-  margin-bottom: 4px;
+.actionPopupSteps li {
+  margin-bottom: 6px;
 }
 .actionDoneBtn {
-  margin-top: 8px;
-  padding: 4px 12px;
+  margin-top: 10px;
+  padding: 5px 14px;
   background: rgba(31, 154, 155, 0.15);
   border: 1px solid rgba(31, 154, 155, 0.3);
   border-radius: 6px;
