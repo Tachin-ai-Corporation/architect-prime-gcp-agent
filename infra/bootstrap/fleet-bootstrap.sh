@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# fleet-bootstrap.sh — Fleet Agent VM setup (Docker-based OpenClaw)
+# fleet-bootstrap.sh — Fleet Agent VM setup (Brain Module + Docker)
 #
 # Downloaded and executed by fleet-deploy's boot stub.
 # All config is read from VM metadata attributes.
@@ -294,23 +294,21 @@ fi
 systemctl daemon-reload
 systemctl enable agent-ears agent-mouth agent-brain vertex-claude-proxy 2>/dev/null || true
 
-
 # ============================================================
-# PHASE 2 — OpenClaw Docker image + config
+# PHASE 2 — Brain Module (replaces OpenClaw gateway)
 # ============================================================
 
-# ---- 9) Clone + build OpenClaw Docker image ----
-info "Cloning OpenClaw repo..."
+# ---- 9) Clone + build OpenClaw Docker image (still needed for Node.js runtime) ----
+info "Cloning OpenClaw repo (Node.js runtime container)..."
 cd /root
 if [[ ! -d openclaw/.git ]]; then
   git clone https://github.com/openclaw/openclaw.git
 fi
 cd openclaw
 git fetch --all --prune
-# Pin to known-good release — read from contracts.json
 STABLE_COMMIT="${C_OC_PIN}"
 git checkout "${STABLE_COMMIT}"
-info "Using OpenClaw commit: ${STABLE_COMMIT:0:12} (from contracts.json)"
+info "Using OpenClaw commit: ${STABLE_COMMIT:0:12} (container base)"
 
 cat > .env <<EOF
 GATEWAY_BIND=loopback
@@ -318,7 +316,6 @@ GATEWAY_PORT=${C_GATEWAY_PORT}
 OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN}
 OPENCLAW_CONFIG_DIR=/home/node/.openclaw
 OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
-OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json
 GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
 GCLOUD_PROJECT=${GCP_PROJECT_ID}
 CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
@@ -332,55 +329,10 @@ EOF
 info "Building Docker image openclaw:local ..."
 DOCKER_BUILDKIT=1 docker build -t openclaw:local .
 
-# ---- 10) Write OpenClaw config directly (no RPC) ----
-info "Writing OpenClaw config..."
-FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-fleet-bootstrap.json5.tmpl"
-if [[ ! -f "$FLEET_TMPL" ]]; then
-  FLEET_TMPL="${OC_HOST_DIR}/corekit/openclaw-bootstrap.json5.tmpl"
-  warn "Fleet config template not found, using prime template"
-fi
-
-# Note: SOUL.md is loaded automatically by OpenClaw from the workspace directory.
-# No systemPrompt injection needed — the workspace files (step 4) handle identity.
-
-python3 - <<PY
-import pathlib, re, json
-
-tmpl_path = pathlib.Path("${FLEET_TMPL}")
-out_path = pathlib.Path("${OC_HOST_DIR}/openclaw.json")
-
-tmpl = tmpl_path.read_text(encoding="utf-8")
-
-# Remove json5 comments (// style)
-tmpl = re.sub(r'//.*$', '', tmpl, flags=re.MULTILINE)
-
-# Template substitutions
-tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
-tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
-tmpl = tmpl.replace("\${AGENT_ID}", "${AGENT_ID}")
-tmpl = tmpl.replace("\${AGENT_DISPLAY_NAME}", "${AGENT_DISPLAY_NAME}")
-
-out_path.write_text(tmpl, encoding="utf-8")
-print("  Config written to " + str(out_path))
-PY
-chown root:root "${OC_HOST_DIR}/openclaw.json"
-chmod 644 "${OC_HOST_DIR}/openclaw.json"
-
-# ---- 10b) Validate config against contracts ----
-VALIDATE="${OC_HOST_DIR}/bin/validate-contracts"
-if [[ -x "$VALIDATE" ]]; then
-  info "Running contract validation on rendered config..."
-  if OC_HOST_ROOT="${OC_HOST_ROOT}" "$VALIDATE" --file "${OC_HOST_DIR}/openclaw.json" 2>&1; then
-    info "Config validation PASSED"
-  else
-    warn "Config validation found issues — check rendered openclaw.json"
-  fi
-fi
-
-# ---- 11) Start OpenClaw container ----
+# ---- 10) Start container (OpenClaw gateway runs initially for backward compat) ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
 
-info "Starting OpenClaw container..."
+info "Starting container..."
 docker run -d \
   --name openclaw-gateway \
   --network host \
@@ -391,14 +343,14 @@ docker run -d \
   --group-add "${DOCKER_GID}" \
   openclaw:local
 
-# ---- 12) Wait for gateway readiness ----
+# ---- 11) Wait for container readiness ----
 wait_gateway "Gateway (initial)" 180 || true
 
 # ============================================================
-# PHASE 3 — Container hardening + Vertex AI fix
+# PHASE 3 — Container hardening + Brain module install
 # ============================================================
 
-# ---- 13) Harden container permissions ----
+# ---- 12) Harden container permissions ----
 info "Hardening container permissions..."
 docker exec -u 0 openclaw-gateway bash -lc '
 set -e
@@ -406,11 +358,10 @@ mkdir -p /home/node/.openclaw/credentials
 chmod 700 /home/node/.openclaw
 chmod 700 /home/node/.openclaw/credentials
 chmod 700 /home/node/.openclaw/bin 2>/dev/null || true
-chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
 chown -R node:node /home/node/.openclaw
 '
 
-# ---- 14) Post-apply: inject Docker CLI + PATH ----
+# ---- 13) Post-apply: inject Docker CLI + PATH ----
 info "Post-config setup..."
 docker cp "$(which docker)" openclaw-gateway:/usr/local/bin/docker || true
 docker exec -u 0 openclaw-gateway chmod +x /usr/local/bin/docker || true
@@ -429,7 +380,7 @@ echo "PATH=/home/node/.openclaw/bin:${CURRENT_PATH}" > /etc/environment
 chown node:node /home/node/.bashrc
 ' || warn "PATH setup had non-fatal errors"
 
-# ---- 15) Install gcloud CLI + jq in container ----
+# ---- 14) Install gcloud CLI + jq in container ----
 info "Installing gcloud CLI in container..."
 docker exec -u 0 openclaw-gateway bash -c '
 set -e
@@ -442,7 +393,29 @@ fi
 which jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1; }
 ' || warn "gcloud install had non-fatal errors"
 
-# ---- 16) Vertex AI ADC fix (same as Prime) ----
+# ---- 15) Install Brain module inside container ----
+info "Installing Brain module..."
+BRAIN_DIR="/home/node/.openclaw/brain"
+docker exec -u 0 openclaw-gateway bash -c "
+mkdir -p ${BRAIN_DIR}
+"
+# Copy brain module files from corekit
+for f in package.json index.mjs router.mjs loop.mjs tools.mjs config.mjs context.mjs health.mjs; do
+  SRC="${OC_HOST_DIR}/corekit/brain/${f}"
+  if [[ -f "$SRC" ]]; then
+    docker cp "$SRC" "openclaw-gateway:${BRAIN_DIR}/${f}"
+    echo "  Copied: ${f}"
+  else
+    warn "Brain module file not found: ${f}"
+  fi
+done
+docker exec -u 0 openclaw-gateway chown -R node:node "${BRAIN_DIR}"
+
+# npm install brain dependencies
+info "Installing brain npm dependencies..."
+docker exec -w "${BRAIN_DIR}" openclaw-gateway npm install 2>&1 | tail -5
+
+# ---- 16) Vertex AI ADC fix (same as Prime — still needed for OpenClaw compat) ----
 info "Applying Vertex AI ADC auth fix..."
 
 # Step 1: Empty auth-profiles for ALL agents
@@ -464,10 +437,10 @@ if [ ! -f "$AP" ]; then
 fi
 ' || warn "auth-profiles step had non-fatal errors"
 
-# Step 2: Patch model-auth-env — write patcher directly inside container
+# Step 2: Patch model-auth-env (still needed for OpenClaw's own inference)
 AUTH_ENV_FILE=$(docker exec openclaw-gateway find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
 if [ -n "$AUTH_ENV_FILE" ]; then
-  docker exec -i openclaw-gateway tee /tmp/patch-adc.py << 'PYEOF' >/dev/null
+  docker exec -i openclaw-gateway tee /tmp/patch-adc.py <<'PYEOF' >/dev/null
 import sys
 fpath = sys.argv[1]
 with open(fpath) as f: code = f.read()
@@ -490,19 +463,40 @@ fi
 # Step 3: Remove stale ADC files
 docker exec -u 0 openclaw-gateway rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
 
-# ---- 17) Restart gateway to pick up ADC patch + smoke test ----
+# ---- 17) Restart gateway + Brain smoke test ----
 info "Restarting gateway to activate ADC patch..."
 docker restart openclaw-gateway
 wait_gateway "Gateway (post-ADC)" 120 || true
 
-
-
-# Let gateway fully initialize (plugins, channels, LLM backend)
+# Let gateway fully initialize
 info "Waiting 15s for gateway to settle..."
 sleep 15
 
-# Vertex AI smoke test — retry up to 3 times with backoff
-info "Running Vertex AI smoke test..."
+# Brain module smoke test
+info "Running Brain module smoke test..."
+BRAIN_SMOKE_OK=false
+BRAIN_SMOKE_RESP="$(docker exec \
+  -e GOOGLE_CLOUD_PROJECT="${GCP_PROJECT_ID}" \
+  -e GOOGLE_CLOUD_LOCATION="${C_LOCATION}" \
+  -e BRAIN_PORT="19999" \
+  -w "${BRAIN_DIR}" \
+  openclaw-gateway timeout 30 node -e "
+import { createVertex } from '@ai-sdk/google-vertex';
+import { generateText } from 'ai';
+const v = createVertex({project: process.env.GOOGLE_CLOUD_PROJECT, location: process.env.GOOGLE_CLOUD_LOCATION});
+const r = await generateText({model: v('gemini-2.5-flash'), prompt: 'Reply: BRAIN_OK', maxTokens: 5});
+console.log(r.text.includes('BRAIN_OK') ? 'BRAIN_SMOKE_PASS' : 'BRAIN_SMOKE_FAIL: ' + r.text);
+" 2>&1)" || BRAIN_SMOKE_RESP="SMOKE_ERROR"
+
+if echo "$BRAIN_SMOKE_RESP" | grep -q 'BRAIN_SMOKE_PASS'; then
+  info "Brain module smoke test PASSED"
+  BRAIN_SMOKE_OK=true
+else
+  warn "Brain smoke test failed: ${BRAIN_SMOKE_RESP:0:200}"
+fi
+
+# Vertex AI smoke test (OpenClaw gateway — backward compat)
+info "Running Vertex AI gateway smoke test..."
 SMOKE_OK=false
 for attempt in 1 2 3; do
   SMOKE_RESP="$(curl -s --max-time 60 -X POST http://localhost:${C_GATEWAY_PORT}/v1/chat/completions \
@@ -520,10 +514,7 @@ for attempt in 1 2 3; do
 done
 [[ "$SMOKE_OK" == "true" ]] || warn "Smoke test did not pass after 3 attempts — agent may still work once IAM propagates"
 
-# ---- 17c) Warm-up probe (pre-warm ADC tokens) ----
-# ADR: The smoke test uses a minimal prompt. This warm-up fires a request
-# through the full cortex route to ensure all model/ADC paths are cached
-# before the first real user message. Saves 10-20s on first interaction.
+# ---- 17c) Warm-up probe ----
 info "Running warm-up probe..."
 curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \
@@ -532,8 +523,6 @@ curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/comple
   > /dev/null 2>&1 || warn "Warm-up probe failed (non-fatal)"
 
 # ---- 17d) Register cron jobs ----
-# ADR: OpenClaw cron jobs are managed via the `openclaw cron` CLI or
-# ~/.openclaw/cron/jobs.json — NOT via openclaw.json config.
 info "Registering cron jobs..."
 docker exec openclaw-gateway node /app/openclaw.mjs cron add \
   --name "memory-consolidate" \
@@ -613,7 +602,7 @@ echo "  FLEET AGENT SETUP COMPLETE"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"
-echo "  OpenClaw commit: ${STABLE_COMMIT}"
+echo "  Brain module : installed"
 echo "  Agent          : ${AGENT_DISPLAY_NAME} (${SPECIALTY})"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "============================================"

@@ -88,12 +88,12 @@ function makeName(mid: string): string {
   return name;
 }
 
-/* ---- OpenClaw model ID helpers ---- */
+/* ---- Brain model ID helpers ---- */
 
-function toOpenClawId(modelId: string, provider: string): string {
-  if (provider === "anthropic") return `vertex-claude/${modelId}`;
-  if (provider === "google")    return `google-vertex/${modelId}`;
-  return `google-vertex/${provider}/${modelId}`;
+function toBrainModelId(modelId: string, provider: string): string {
+  if (provider === "anthropic") return `vertex-anthropic/${modelId}`;
+  if (provider === "google")    return `vertex-google/${modelId}`;
+  return `vertex-maas/${provider}/${modelId}`;
 }
 
 /** Vertex AI hostname — global endpoint has no region prefix */
@@ -395,7 +395,7 @@ export async function POST() {
         else if (code === 0) status = "timeout";
         else status = "unknown";
 
-        const openclawId = toOpenClawId(model.id, model.provider);
+        const openclawId = toBrainModelId(model.id, model.provider);
 
         return {
           id: model.id,

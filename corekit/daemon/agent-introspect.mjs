@@ -372,8 +372,23 @@ function handleBrainConfig() {
     } catch (err) {
       return { error: `Failed to parse openclaw.json: ${err.message}`, default: '', slots: {} };
     }
+  } else if (existsSync(contractsPath)) {
+    // Brain module mode: no openclaw.json, read models from contracts.json
+    try {
+      const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
+      const models = contracts?.vertex?.models || {};
+      defaultModel = models.cortex || '';
+      slots.cortex = models.cortex || null;
+      // Map subagent model to each known subagent ID
+      const subagentIds = contracts?.agents?.subagentIds || ['temporal-research', 'temporal-memory', 'prefrontal', 'motor', 'cerebellum'];
+      for (const id of subagentIds) {
+        slots[id] = models.subagent || models.cortex || null;
+      }
+    } catch (err) {
+      return { error: `Failed to parse contracts.json: ${err.message}`, default: '', slots: {} };
+    }
   } else {
-    return { error: 'openclaw.json not found', default: '', slots: {} };
+    return { error: 'No config file found (openclaw.json or contracts.json)', default: '', slots: {} };
   }
 
   // Read contracts.json for ears/mouth/brain daemon models
@@ -422,7 +437,52 @@ function handleSetModel(params) {
   const contractsPath = join(COREKIT_DIR, 'contracts.json');
 
   if (!existsSync(configPath)) {
-    return { success: false, error: 'openclaw.json not found' };
+    // Brain module mode: write models to contracts.json
+    if (!existsSync(contractsPath)) {
+      return { success: false, error: 'No config file found' };
+    }
+    try {
+      const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
+      const newDefault = params.default;
+      const overrides = params.overrides || {};
+      const daemonOverrides = params.daemonOverrides || {};
+
+      if (!contracts.vertex) contracts.vertex = {};
+      if (!contracts.vertex.models) contracts.vertex.models = {};
+
+      if (newDefault) {
+        contracts.vertex.models.cortex = newDefault;
+      }
+      // Per-agent overrides: cortex goes to cortex, everything else to subagent
+      for (const [agentId, modelId] of Object.entries(overrides)) {
+        if (agentId === 'cortex') {
+          contracts.vertex.models.cortex = modelId || contracts.vertex.models.cortex;
+        } else if (modelId) {
+          contracts.vertex.models.subagent = modelId;
+        }
+      }
+      // Daemon overrides
+      if (daemonOverrides.ears) {
+        if (!contracts.ears) contracts.ears = {};
+        if (!contracts.ears.preprocess) contracts.ears.preprocess = {};
+        contracts.ears.preprocess.model = daemonOverrides.ears;
+      }
+      if (daemonOverrides.mouth) {
+        if (!contracts.mouth) contracts.mouth = {};
+        contracts.mouth.model = daemonOverrides.mouth;
+      }
+      if (daemonOverrides.brain) {
+        if (!contracts.brain) contracts.brain = {};
+        contracts.brain.model = daemonOverrides.brain;
+      }
+
+      writeFileSync(contractsPath, JSON.stringify(contracts, null, 2));
+      log('Updated contracts.json with brain model assignments', { default: newDefault, overrides });
+      return { success: true, message: 'Models updated in contracts.json — brain reload pending', _needsRestart: true };
+    } catch (err) {
+      log('set_model error (brain mode)', { error: err.message });
+      return { success: false, error: err.message };
+    }
   }
   try {
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
@@ -618,9 +678,15 @@ async function tick() {
     if (needsRestart) {
       log('Restarting gateway (deferred from set_model)...');
       try {
-        execSync('docker restart openclaw-gateway', { timeout: 60000, stdio: 'pipe' });
+        // Try brain module first (native process), fall back to Docker container
+        try {
+          execSync('pkill -HUP -f "node.*index.mjs"', { timeout: 5000, stdio: 'pipe' });
+          log('Sent SIGHUP to brain process');
+        } catch {
+          // Brain not running as native process — try Docker restart
+          execSync('docker restart openclaw-gateway', { timeout: 60000, stdio: 'pipe' });
+        }
       } catch (err) {
-        // Expected: this process dies during the restart
         log('Gateway restart (expected exit)', { error: err.message });
       }
     }

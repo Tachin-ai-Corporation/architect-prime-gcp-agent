@@ -265,11 +265,11 @@ for mid, info in sorted(candidates.items()):
         print(f"  {info['name']:<40} {info['provider']:<12} {label}")
 
     if provider == 'anthropic':
-        oc = f"vertex-claude/{mid}"
+        oc = f"vertex-anthropic/{mid}"
     elif provider == 'google':
-        oc = f"google-vertex/{mid}"
+        oc = f"vertex-google/{mid}"
     else:
-        oc = f"google-vertex/{provider}/{mid}"
+        oc = f"vertex-maas/{provider}/{mid}"
     clean_info = {k: v for k, v in info.items() if k != 'maas_openai'}
     results.append({**clean_info, 'status': status, 'httpCode': code, 'openclawId': oc})
 

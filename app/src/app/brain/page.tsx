@@ -73,13 +73,13 @@ function stripPrefix(openclawId: string): string {
   return slash >= 0 ? openclawId.slice(slash + 1) : openclawId;
 }
 
-/** Build OpenClaw ID from catalog model — provider-aware prefix */
-function toOpenClawId(modelId: string, provider: string): string {
+/** Build Brain model ID from catalog model — provider-aware prefix */
+function toBrainModelId(modelId: string, provider: string): string {
   if (modelId.includes("/")) return modelId; // already prefixed
-  if (provider === "anthropic") return `vertex-claude/${modelId}`;
-  if (provider === "google")    return `google-vertex/${modelId}`;
+  if (provider === "anthropic") return `vertex-anthropic/${modelId}`;
+  if (provider === "google")    return `vertex-google/${modelId}`;
   // MaaS: embed publisher so SDK gets "meta/llama-...", "xai/grok-...", etc.
-  return `google-vertex/${provider}/${modelId}`;
+  return `vertex-maas/${provider}/${modelId}`;
 }
 
 /** Find display name from model catalog */
@@ -222,12 +222,12 @@ function BrainPage() {
       const override = modelsData.assignments?.overrides?.[slot];
       if (override) {
         const catalogModel = modelsData.models.find((m) => m.id === override);
-        return catalogModel ? toOpenClawId(catalogModel.id, catalogModel.provider) : override;
+        return catalogModel ? toBrainModelId(catalogModel.id, catalogModel.provider) : override;
       }
       const defaultModel = modelsData.assignments?.default || modelsData.currentModel;
       if (defaultModel) {
         const catalogModel = modelsData.models.find((m) => m.id === defaultModel);
-        return catalogModel ? toOpenClawId(catalogModel.id, catalogModel.provider) : defaultModel;
+        return catalogModel ? toBrainModelId(catalogModel.id, catalogModel.provider) : defaultModel;
       }
     }
     return "—";
@@ -235,7 +235,7 @@ function BrainPage() {
 
   /* ---- Handle model selection in picker (UI only) ---- */
   const handleSelectModel = (slot: string, model: ModelInfo) => {
-    const openclawId = toOpenClawId(model.id, model.provider);
+    const openclawId = toBrainModelId(model.id, model.provider);
     const currentModel = getSlotModelWithoutPending(slot);
 
     if (openclawId === currentModel) {
@@ -264,12 +264,12 @@ function BrainPage() {
       const override = modelsData.assignments?.overrides?.[slot];
       if (override) {
         const catalogModel = modelsData.models.find((m) => m.id === override);
-        return catalogModel ? toOpenClawId(catalogModel.id, catalogModel.provider) : override;
+        return catalogModel ? toBrainModelId(catalogModel.id, catalogModel.provider) : override;
       }
       const defaultModel = modelsData.assignments?.default || modelsData.currentModel;
       if (defaultModel) {
         const catalogModel = modelsData.models.find((m) => m.id === defaultModel);
-        return catalogModel ? toOpenClawId(catalogModel.id, catalogModel.provider) : defaultModel;
+        return catalogModel ? toBrainModelId(catalogModel.id, catalogModel.provider) : defaultModel;
       }
     }
     return "—";
@@ -647,7 +647,7 @@ function BrainPage() {
                   <div className={styles.providerGroup}>
                     <div className={styles.providerLabel}>Available Models</div>
                     {availableModels.map((m) => {
-                      const openclawId = toOpenClawId(m.id, m.provider);
+                      const openclawId = toBrainModelId(m.id, m.provider);
                       const currentModel = getSlotModelWithoutPending(pickerSlot);
                       const isCurrent = openclawId === currentModel;
                       const isPendingSelection = pendingChanges[pickerSlot] === openclawId;

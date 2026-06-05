@@ -97,7 +97,7 @@ export function getBrainConfig() {
   return {
     port: parseInt(process.env.BRAIN_PORT || contracts.gateway?.port || '18789', 10),
     project: process.env.GOOGLE_CLOUD_PROJECT || contracts.vertex?.project || '',
-    googleLocation: process.env.GOOGLE_LOCATION || contracts.vertex?.googleLocation || 'us-central1',
+    googleLocation: process.env.GOOGLE_LOCATION || contracts.vertex?.location || 'us-central1',
     anthropicLocation: process.env.ANTHROPIC_LOCATION || contracts.vertex?.anthropicLocation || 'us-east5',
   };
 }

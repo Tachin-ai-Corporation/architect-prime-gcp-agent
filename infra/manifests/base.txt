@@ -48,6 +48,15 @@ corekit/brain/responsibility-manage .openclaw/bin/responsibility-manage
 corekit/brain/project-manage .openclaw/bin/project-manage
 corekit/brain/process-manage .openclaw/bin/process-manage
 
+# Brain module (AI SDK gateway — replaces OpenClaw)
+corekit/brain/package.json .openclaw/corekit/brain/package.json
+corekit/brain/index.mjs .openclaw/corekit/brain/index.mjs
+corekit/brain/router.mjs .openclaw/corekit/brain/router.mjs
+corekit/brain/loop.mjs .openclaw/corekit/brain/loop.mjs
+corekit/brain/tools.mjs .openclaw/corekit/brain/tools.mjs
+corekit/brain/config.mjs .openclaw/corekit/brain/config.mjs
+corekit/brain/context.mjs .openclaw/corekit/brain/context.mjs
+corekit/brain/health.mjs .openclaw/corekit/brain/health.mjs
 
 # Config
 corekit/README.md .openclaw/corekit/README.md
