@@ -1,14 +1,14 @@
 // corekit/brain/tools.mjs — Tool Registry
 //
-// Wraps CoreKit scripts as AI SDK tools with explicit JSON Schema
-// (NOT Zod — Zod-to-JSON conversion has known bugs in AI SDK v6
-// with Vertex AI function calling).
+// Wraps CoreKit scripts as AI SDK tools with explicit JSON Schema.
 //
-// The current architecture uses an `exec` tool that lets the LLM run
-// shell commands — the same pattern as OpenClaw's exec tool type.
+// IMPORTANT: AI SDK v6 has a property name mismatch — tool() creates
+// {parameters} but the framework reads {inputSchema}. We must add
+// inputSchema manually to each tool definition.
+//
 // CoreKit scripts are in PATH via ~/.openclaw/bin/.
 
-import { tool, jsonSchema } from 'ai';
+import { jsonSchema } from 'ai';
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
@@ -19,23 +19,36 @@ const execAsync = promisify(execCb);
 const TOOL_TIMEOUT = 120_000; // 2 minutes per tool call
 const BIN_DIR = process.env.BIN_DIR || '/home/node/.openclaw/bin';
 
+// ---- Helper: Create tool with both parameters and inputSchema ----
+function makeTool({ description, parameters, execute }) {
+  return {
+    type: 'function',
+    description,
+    parameters,
+    inputSchema: parameters,  // AI SDK v6 framework reads this
+    execute,
+  };
+}
+
 // ---- Core tool: Shell command execution ----
 
-export const runCommand = tool({
+const runCommandSchema = jsonSchema({
+  type: 'object',
+  properties: {
+    command: { type: 'string', description: 'Shell command to execute. Use CoreKit scripts for agent capabilities.' },
+  },
+  required: ['command'],
+});
+
+export const runCommand = makeTool({
   description: `Execute a shell command on the agent's host. CoreKit scripts are available in PATH: agent-ask, web-fetch, chat-send, chat-read, drive-ls, drive-upload, drive-download, send-email, read-inbox, search-email, read-calendar, create-event, list-events, agent-status, brain-telemetry-write, brain-telemetry-read, task-log-write, task-log-read, responsibility-manage, project-manage, process-manage, work-log-read, skill-author, assemble-tools.`,
-  parameters: jsonSchema({
-    type: 'object',
-    properties: {
-      command: { type: 'string', description: 'Shell command to execute. Use CoreKit scripts for agent capabilities.' },
-    },
-    required: ['command'],
-  }),
+  parameters: runCommandSchema,
   execute: async ({ command }) => {
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd: process.env.WORKSPACE || '/home/node/.openclaw/workspace-cortex',
         timeout: TOOL_TIMEOUT,
-        maxBuffer: 1024 * 1024, // 1MB
+        maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: `${BIN_DIR}:${process.env.PATH}` },
       });
       const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : '')).trim();
@@ -48,7 +61,7 @@ export const runCommand = tool({
 
 // ---- File tools ----
 
-export const readFileTool = tool({
+export const readFileTool = makeTool({
   description: 'Read the contents of a file from the agent workspace or filesystem.',
   parameters: jsonSchema({
     type: 'object',
@@ -75,7 +88,7 @@ export const readFileTool = tool({
   },
 });
 
-export const writeFileTool = tool({
+export const writeFileTool = makeTool({
   description: 'Write content to a file. Creates the file if it does not exist.',
   parameters: jsonSchema({
     type: 'object',
@@ -95,7 +108,7 @@ export const writeFileTool = tool({
   },
 });
 
-export const listDirTool = tool({
+export const listDirTool = makeTool({
   description: 'List directory contents.',
   parameters: jsonSchema({
     type: 'object',
@@ -124,9 +137,6 @@ export const listDirTool = tool({
 
 // ---- Tool set builders ----
 
-/**
- * All available tools.
- */
 export function getAllTools() {
   return {
     runCommand,
@@ -136,12 +146,6 @@ export function getAllTools() {
   };
 }
 
-/**
- * Filter tools by allowed list.
- *
- * @param {string[]|null} allowList  Array of tool names, or null for all tools
- * @returns {object|undefined}  Filtered tool set, or undefined if empty
- */
 export function getFilteredTools(allowList) {
   const all = getAllTools();
   if (!allowList) return all;
