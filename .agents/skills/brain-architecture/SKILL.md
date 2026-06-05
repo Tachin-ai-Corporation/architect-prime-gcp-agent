@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.06.04.4.0)
+## Current State (v2026.06.04.5.0)
 6 brain agents in OpenClaw multi-agent configuration, coordinated by the `agent-brain.service` state machine.
 
 ### Agent Inventory

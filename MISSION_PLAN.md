@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.04.4.0`
+> - **Current version:** `v2026.06.04.5.0`
 
 ---
 
@@ -96,7 +96,7 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
     │       └── Never drops messages — unknown classification → deliver raw
     │
     ├── openclaw-gateway (Docker, --network host, port 18789)
-    │   ├── GOOGLE_CLOUD_LOCATION=global (required for Gemini 3.1+ preview models)
+    │   ├── GOOGLE_CLOUD_LOCATION=us-central1
     │   ├── Brain agents (6 OpenClaw agents, Cortex-first orchestration)
     │   │   ├── cortex (DEFAULT) — Gemini 3.1 Pro Preview — plan executor + synthesizer
     │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
@@ -136,7 +136,7 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
     ├── .identity-lock              → DWD impersonation guard (chmod 444)
     ├── openclaw-gateway (Docker, --network host, port 18789)
-    │   ├── GOOGLE_CLOUD_LOCATION=global (same as Prime)
+    │   ├── GOOGLE_CLOUD_LOCATION=us-central1 (same as Prime)
     │   ├── Default agent: cortex (Gemini 3.1 Pro Preview via Vertex AI ADC)
     │   ├── Brain sub-agents: same 6-agent architecture as Prime
     │   ├── SOUL.md loaded automatically from workspace (no systemPrompt injection)
@@ -237,15 +237,15 @@ Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. Op
 
 ### Vertex AI Location
 
-`GOOGLE_CLOUD_LOCATION` is set to `global` (not a specific region like `us-central1`). This is required because Gemini 3.1+ preview models only resolve via the global Vertex AI endpoint (`aiplatform.googleapis.com/locations/global`). GA models (Gemini 2.5, 2.0) also work via the global endpoint. The `@google/genai` SDK natively supports `location=global`.
+`GOOGLE_CLOUD_LOCATION` is set to `us-central1`. The `vertexHost()` helper handles the special case where `global` location maps to `aiplatform.googleapis.com` (no region prefix), while regional locations use `{region}-aiplatform.googleapis.com`.
 
 ### Contract Enforcement
 
 `infra/contracts.json` is the **single source of truth** for all cross-cutting values. It defines:
 - **OpenClaw pin** — commit hash and label for the pinned OpenClaw version
-- **Vertex AI** — location (`global`), primary model (`gemini-3.1-pro-preview`), sub-agent model (`gemini-2.5-flash`)
+- **Vertex AI** — location (`us-central1`), primary model (`gemini-3.1-pro-preview`), sub-agent model (`gemini-2.5-flash`)
 - **Agent IDs** — default agent (`cortex`), gateway route (`openclaw/cortex`), sub-agent list
-- **Gateway** — port (`18789`), timeout (`120s`), bind mode (`loopback`)
+- **Gateway** — port (`18789`), timeout (`180s`), bind mode (`loopback`)
 - **Environment** — `GOOGLE_GENAI_USE_VERTEXAI`, `GCE_METADATA_HOST`
 
 The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contracts.json` on every VM. Scripts read from it at runtime instead of hardcoding values.
@@ -269,19 +269,7 @@ The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contr
 infra/install.sh --role prime                  → base.txt + role-prime.txt
 infra/install.sh --role fleet --job devops     → base.txt + role-fleet.txt + job-devops.txt
 infra/install.sh --role fleet --job assistant  → base.txt + role-fleet.txt + job-assistant.txt
-infra/install.sh --role fleet --job pm         → base.txt + role-fleet.txt + job-pm.txt
-```
-
-| Fragment | Contents | Scope |
-|----------|----------|-------|
-| `infra/manifests/base.txt` | contracts, gateway tools, chat tools, brain tools, config templates, agent skeleton | Every agent |
-| `infra/manifests/role-prime.txt` | fleet lifecycle, dashboard bridge, memory, skills, brain workspaces (cortex + 5 sub-agents) | Prime only |
-| `infra/manifests/role-fleet.txt` | fleet brain sub-agent workspaces, fleet template workspace, 5 Workspace skill packages (Drive 9, Gmail 5, Calendar 5, Docs 6, Sheets 3 = 28 tools) | Fleet agents |
-| `infra/manifests/job-devops.txt` | devops specialty workspace (3 files) | DevOps agents |
-| `infra/manifests/job-swe.txt` | SWE specialty — maps to engineer workspace (3 files) | SWE agents |
-| `infra/manifests/job-engineer.txt` | engineer specialty workspace (3 files) | Engineer agents |
-| `infra/manifests/job-qa.txt` | QA specialty workspace (3 files) | QA agents |
-| `infra/manifests/job-pm.txt` | PM specialty workspace (3 files) | PM agents |
+infra/install.sh --| `infra/manifests/job-pm.txt` | PM specialty workspace (3 files) | PM agents |
 | `infra/manifests/job-finance.txt` | finance specialty workspace (3 files) | Finance agents |
 | `infra/manifests/job-data.txt` | data specialty workspace (3 files) | Data agents |
 | `infra/manifests/job-security.txt` | security specialty workspace (3 files) | Security agents |
@@ -297,6 +285,17 @@ The model catalog is built at runtime by `POST /api/models/scan` (project-scoped
 
 **Architecture insight:** The Model Garden REST API (`publishers/*/models`) returns ~300 models but only Google models have `supportedActions` (like `openGenerationAiStudio`). Anthropic and xAI are MaaS-only partners — they appear in the Model Garden UI but are NOT in the REST API at all. Third-party models (Meta, DeepSeek, Mistral, Qwen) are in the API but have zero `supportedActions`.
 
+**Provider-aware model ID mapping:** `toOpenClawId()` emits correct prefixes for each provider:
+- `anthropic-vertex/` for Claude models (Anthropic MaaS)
+- `google-vertex/{publisher}/` for third-party MaaS models (Meta, xAI, Mistral)
+- `google-vertex/` for Gemini models (native Google)
+
+This mapping is applied consistently in the Brain page model picker, the scan route, and `discover-models`.
+
+**Dynamic model registry:** `ensureModelRegistered()` in `agent-introspect.mjs` auto-adds models to the OpenClaw models map at runtime when a model is assigned via the Brain page but not yet in the gateway config. Bootstrap templates are pre-seeded with 4 Claude models.
+
+**Anthropic-vertex provider patcher:** The `patch-anthropic-vertex` CoreKit script fixes 2 bugs in the bundled `anthropic-vertex` provider: `.ts→.js` manifest extension fix and ADC environment identity check. Called from both `prime-bootstrap.sh` and `fleet-bootstrap.sh`.
+
 **Hybrid discovery approach:**
 
 1. **Dashboard** → user clicks "Scan for Models" → `POST /api/models/scan`
@@ -305,6 +304,18 @@ The model catalog is built at runtime by `POST /api/models/scan` (project-scoped
    - Returns ~300 models from ~23 publishers (Google, Meta, DeepSeek, Mistral, Qwen, etc.)
 3. **Filter** with provider-aware logic:
    - **Google**: require `openGenerationAiStudio` in `supportedActions` (avoids 100+ deploy-only models)
+   - **Non-Google from API**: probe ALL text LLM candidates (no `supportedActions` filter — third-party models don't have it)
+   - **MaaS-only partners** (Anthropic, xAI): added as `MAAS_ONLY_MODELS` since they're not in the API
+   - **Skip non-text publishers**: advimman, dandelin, stability-ai, etc.
+   - Excludes: image, video, TTS, embed, vision, OCR, medical, etc. (~60 exclusion keywords)
+4. **Probe** each candidate:
+   - Google: `generateContent` (regional + global fallback for preview)
+   - Anthropic: `rawPredict`
+   - All others: OpenAI-compatible `/endpoints/openapi/chat/completions`
+   - Batched 10 parallel, 10s timeout each
+5. **Results** returned synchronously + written to Firestore `config/models` (project-level) + per-Prime for backward compat
+6. **Brain page** reads the same `modelCatalog` → picker shows only `status=="available"` models as selectable
+7. **Frontend** dynamically generates provider groups, colors, and labels for any provider slugr slug0+ deploy-only models)
    - **Non-Google from API**: probe ALL text LLM candidates (no `supportedActions` filter — third-party models don't have it)
    - **MaaS-only partners** (Anthropic, xAI): added as `MAAS_ONLY_MODELS` since they’re not in the API
    - **Skip non-text publishers**: advimman, dandelin, stability-ai, etc.
@@ -1238,7 +1249,7 @@ architect-prime/
 > *Standard processes bundled with CoreKit, model ID fix, SOUL.md limit increase, elevated exec for temporal-memory.*
 
 1. **Standard process distribution** — Created `investigate.json` and `plan.json` as CoreKit-bundled standard processes. Added to base manifest. Modified `agent-brain.mjs` to merge local process files with Firestore processes (local provides baseline, Firestore overrides by ID). Fleet agents now have `investigate` and `plan` processes available without Firestore dependency.
-2. **Model ID fix** — All Vertex AI models (including Anthropic MaaS) now use `google-vertex/` prefix consistently. Fixed `discover-models`, `brain/page.tsx`, and both dashboard scan routes. The `vertex_ai/` prefix was not recognized by OpenClaw gateway, causing every non-Google model call to fail and fall back.
+2. **Model ID fix** — All Vertex AI models (including Anthropic MaaS) now use provider-aware prefixes (`anthropic-vertex/` for Claude, `google-vertex/{publisher}/` for MaaS, `google-vertex/` for Gemini). Fixed `discover-models`, `brain/page.tsx`, and both dashboard scan routes.
 3. **SOUL.md size limit increase** — Set `bootstrapMaxChars: 40000` in both config templates. Cortex SOUL.md (34K chars) was being silently truncated at 12K, losing ~65% of process routing instructions. Added SOUL.md size validation to `validate-contracts`.
 4. **Elevated exec for temporal-memory** — Enabled `tools.elevated` globally in both config templates with `ask: off`. Added `elevated` to temporal-memory's tool allow list. Fixes inability to write MEMORY.md via file commands.
 5. **CoreKit upgrade model persistence** — Implemented snapshot/restore mechanism in `upgrade-corekit` that preserves LLM model assignments through CoreKit upgrades (snapshots from live `openclaw.json` before template overwrite, re-applies via `discover-models --set-config` after `render-config`).
@@ -1258,6 +1269,15 @@ architect-prime/
 1. **Deploy progress regression fix** — Pre-populate all 12 deploy steps as `pending` in fleet-deploy. Both fleet-deploy and fleet-monitor update steps in-place by id instead of appending. Milestone statuses changed from `active` to `done`. Progress now monotonically increases from 8% to 100%.
 2. **Action required popup** — Small pulsing ⚠ icon on agent chip when `actionRequired` is set. Click opens positioned popup with instructions + Done button. Backend already sets this during hire (workspace user creation instructions).
 3. **Dashboard deploy completion** — Fixed buildId extraction from Cloud Build regional API. Reduced staleness guard from 15min to 5min.
+
+### Completed: v2026.06.04.5.0 — Vertex AI Model Routing Fix
+> *Provider-aware prefix mapping, global endpoint hostname fix, dynamic model registry, Anthropic-vertex provider patcher, contract updates.*
+
+1. **Provider-aware prefix mapping** — `toOpenClawId()` in brain page, scan route, and `discover-models` now emits correct prefixes: `anthropic-vertex/` for Claude, `google-vertex/{publisher}/` for MaaS (Meta/xAI/Mistral), `google-vertex/` for Gemini.
+2. **Global endpoint hostname fix** — `vertexHost()` helper handles `global` → `aiplatform.googleapis.com` (no region prefix).
+3. **Dynamic model registry** — `ensureModelRegistered()` in `agent-introspect.mjs` auto-adds models to OpenClaw models map. Bootstrap templates pre-seeded with 4 Claude models.
+4. **Anthropic-vertex provider patcher** — NEW `patch-anthropic-vertex` script fixes 2 bugs in bundled provider (`.ts→.js` manifest, ADC env identity check). Called from both bootstrap scripts.
+5. **Contracts** — `vertex.location`: `global` → `us-central1`, `gateway.timeoutSeconds`: `120` → `180`.
 
 ### Current: Next Phase — Process Maturity + Dashboard Process UI
 > *Goal: Dashboard UI for process management, process on/off per agent, SOUL.md audit/trim.*

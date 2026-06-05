@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.04.4.0`
+> **Current version:** `v2026.06.04.5.0`
 
 
 ---
@@ -293,9 +293,9 @@ The deploy API uses a **boot stub pattern**:
 ```json
 {
   "openclaw":  { "pin": "041266a6...", "pinLabel": "v2026.4.15" },
-  "vertex":    { "location": "global", "primaryModel": "gemini-3.1-pro-preview", "subagentModel": "gemini-2.5-flash" },
+  "vertex":    { "location": "us-central1", "primaryModel": "gemini-3.1-pro-preview", "subagentModel": "gemini-2.5-flash" },
   "agents":    { "defaultId": "cortex", "gatewayRoute": "openclaw/cortex", "subagentIds": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"] },
-  "gateway":   { "port": 18789, "timeoutSeconds": 120, "bind": "loopback" }
+  "gateway":   { "port": 18789, "timeoutSeconds": 180, "bind": "loopback" }
 }
 ```
 
@@ -412,6 +412,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.04.2.0** | Operations UI consolidation, multi-prime polling, deploy completion fix |
 | **v2026.06.04.3.0** | Deploy progress fix, action-required popup UI |
 | **v2026.06.04.4.0** | Action required modal UI |
+| **v2026.06.04.5.0** | Vertex AI model routing fix — provider-aware prefixes, dynamic model registry, Anthropic-vertex provider patcher |
 
 
 ---
