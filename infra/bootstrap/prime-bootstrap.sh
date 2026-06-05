@@ -407,14 +407,6 @@ else
   warn "Gateway may not be ready yet after ADC patch restart. Continuing..."
 fi
 
-# ---- 12a-2) Patch anthropic-vertex provider bugs ----
-info "Patching anthropic-vertex provider..."
-PATCH_AV="${OC_HOST_DIR}/corekit/system/patch-anthropic-vertex"
-if [[ -x "$PATCH_AV" ]]; then
-  docker exec -u 0 openclaw-gateway bash -c "/home/node/.openclaw/corekit/system/patch-anthropic-vertex /home/node/.openclaw" || warn "patch-anthropic-vertex failed (non-fatal)"
-else
-  warn "patch-anthropic-vertex not found — skipping"
-fi
 
 # ---- 12b) Model discovery — find best available Gemini model ----
 # Probes Vertex AI to find the best model the project has access to.
@@ -534,10 +526,14 @@ fi
 if [[ -f "$BRAIN_SVC_SRC" ]]; then
   cp "$BRAIN_SVC_SRC" /etc/systemd/system/agent-brain.service
 fi
+PROXY_SVC_SRC="${OC_HOST_DIR}/corekit/vertex-claude-proxy.service"
+if [[ -f "$PROXY_SVC_SRC" ]]; then
+  cp "$PROXY_SVC_SRC" /etc/systemd/system/vertex-claude-proxy.service
+fi
 
 systemctl daemon-reload
-systemctl enable agent-ears agent-mouth agent-brain 2>/dev/null || true
-systemctl start agent-ears agent-mouth agent-brain
+systemctl enable agent-ears agent-mouth agent-brain vertex-claude-proxy 2>/dev/null || true
+systemctl start agent-ears agent-mouth agent-brain vertex-claude-proxy
 
 
 # ---- 14) Install command-runner as systemd service ----

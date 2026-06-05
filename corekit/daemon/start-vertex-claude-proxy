@@ -1,0 +1,33 @@
+#!/bin/bash
+# start-vertex-claude-proxy — Launch Vertex Claude proxy inside Docker
+# Translates Anthropic Messages API to Vertex AI rawPredict.
+
+OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_HOST_DIR="${OC_HOST_ROOT}/.openclaw"
+PRIME_CFG="${OC_HOST_DIR}/corekit/prime-config.json"
+CONFIG="${OC_HOST_DIR}/corekit/chat-config.json"
+
+# Auto-detect GCP project
+if [ -f "$PRIME_CFG" ]; then
+  [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('projectId',''))" 2>/dev/null)"
+elif [ -f "$CONFIG" ]; then
+  : # fleet agent — project from metadata
+fi
+
+# Read GCP_PROJECT_ID from metadata if still missing
+if [ -z "$GCP_PROJECT_ID" ]; then
+  GCP_PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+fi
+
+# Kill any orphan proxy processes inside the container
+docker exec openclaw-gateway pkill -f 'vertex-claude-proxy.mjs' 2>/dev/null || true
+sleep 1
+
+# Pre-create log file so node user can write
+docker exec openclaw-gateway sh -c 'touch /var/log/vertex-claude-proxy.log && chown node:node /var/log/vertex-claude-proxy.log' 2>/dev/null || true
+
+exec stdbuf -oL docker exec \
+  -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
+  -e CLOUD_ML_REGION="us-central1" \
+  openclaw-gateway node /home/node/.openclaw/bin/vertex-claude-proxy.mjs

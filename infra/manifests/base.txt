@@ -76,6 +76,11 @@ corekit/daemon/agent-introspect.mjs .openclaw/bin/agent-introspect.mjs
 corekit/daemon/agent-introspect.service .openclaw/corekit/agent-introspect.service
 corekit/daemon/start-agent-introspect .openclaw/bin/start-agent-introspect
 
+# Vertex Claude Proxy — Anthropic Messages API to Vertex AI rawPredict
+corekit/daemon/vertex-claude-proxy.mjs      .openclaw/bin/vertex-claude-proxy.mjs
+corekit/daemon/vertex-claude-proxy.service  .openclaw/corekit/vertex-claude-proxy.service
+corekit/daemon/start-vertex-claude-proxy    .openclaw/bin/start-vertex-claude-proxy
+
 # Config templates (both needed for render-config)
 corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
 corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl

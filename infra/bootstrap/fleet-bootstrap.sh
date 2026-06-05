@@ -287,8 +287,12 @@ fi
 if [[ -f "$BRAIN_SVC_SRC" ]]; then
   cp "$BRAIN_SVC_SRC" /etc/systemd/system/agent-brain.service
 fi
+PROXY_SVC_SRC="${OC_HOST_DIR}/corekit/vertex-claude-proxy.service"
+if [[ -f "$PROXY_SVC_SRC" ]]; then
+  cp "$PROXY_SVC_SRC" /etc/systemd/system/vertex-claude-proxy.service
+fi
 systemctl daemon-reload
-systemctl enable agent-ears agent-mouth agent-brain 2>/dev/null || true
+systemctl enable agent-ears agent-mouth agent-brain vertex-claude-proxy 2>/dev/null || true
 
 
 # ============================================================
@@ -491,14 +495,7 @@ info "Restarting gateway to activate ADC patch..."
 docker restart openclaw-gateway
 wait_gateway "Gateway (post-ADC)" 120 || true
 
-# ---- 17a) Patch anthropic-vertex provider bugs ----
-info "Patching anthropic-vertex provider..."
-PATCH_AV="${OC_HOST_DIR}/corekit/system/patch-anthropic-vertex"
-if [[ -x "$PATCH_AV" ]]; then
-  docker exec -u 0 openclaw-gateway bash -c "/home/node/.openclaw/corekit/system/patch-anthropic-vertex /home/node/.openclaw" || warn "patch-anthropic-vertex failed (non-fatal)"
-else
-  warn "patch-anthropic-vertex not found — skipping"
-fi
+
 
 # Let gateway fully initialize (plugins, channels, LLM backend)
 info "Waiting 15s for gateway to settle..."
@@ -579,7 +576,7 @@ find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null |
 
 # ---- 18) Start agent-ears + agent-mouth + agent-brain ----
 info "Starting systemd services..."
-systemctl start agent-brain || warn "agent-brain start failed"
+systemctl start agent-brain vertex-claude-proxy || warn "agent-brain/vertex-claude-proxy start failed"
 
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
   systemctl start agent-ears agent-mouth || warn "ears/mouth start failed (DWD may not be configured)"

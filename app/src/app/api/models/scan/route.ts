@@ -91,7 +91,7 @@ function makeName(mid: string): string {
 /* ---- OpenClaw model ID helpers ---- */
 
 function toOpenClawId(modelId: string, provider: string): string {
-  if (provider === "anthropic") return `anthropic-vertex/${modelId}`;
+  if (provider === "anthropic") return `vertex-claude/${modelId}`;
   if (provider === "google")    return `google-vertex/${modelId}`;
   return `google-vertex/${provider}/${modelId}`;
 }

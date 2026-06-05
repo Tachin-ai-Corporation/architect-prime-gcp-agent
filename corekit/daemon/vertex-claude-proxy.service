@@ -1,0 +1,16 @@
+[Unit]
+Description=Vertex Claude Proxy — Anthropic Messages API to Vertex AI rawPredict
+After=network-online.target openclaw-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/openclaw/.openclaw/bin/start-vertex-claude-proxy
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/vertex-claude-proxy.log
+StandardError=append:/var/log/vertex-claude-proxy.log
+Environment=OC_HOST_ROOT=/opt/openclaw
+
+[Install]
+WantedBy=multi-user.target

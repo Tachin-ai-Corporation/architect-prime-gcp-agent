@@ -76,7 +76,7 @@ function stripPrefix(openclawId: string): string {
 /** Build OpenClaw ID from catalog model — provider-aware prefix */
 function toOpenClawId(modelId: string, provider: string): string {
   if (modelId.includes("/")) return modelId; // already prefixed
-  if (provider === "anthropic") return `anthropic-vertex/${modelId}`;
+  if (provider === "anthropic") return `vertex-claude/${modelId}`;
   if (provider === "google")    return `google-vertex/${modelId}`;
   // MaaS: embed publisher so SDK gets "meta/llama-...", "xai/grok-...", etc.
   return `google-vertex/${provider}/${modelId}`;

@@ -265,7 +265,7 @@ for mid, info in sorted(candidates.items()):
         print(f"  {info['name']:<40} {info['provider']:<12} {label}")
 
     if provider == 'anthropic':
-        oc = f"anthropic-vertex/{mid}"
+        oc = f"vertex-claude/{mid}"
     elif provider == 'google':
         oc = f"google-vertex/{mid}"
     else:
