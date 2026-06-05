@@ -145,41 +145,52 @@ EOF
 info "Building Docker image openclaw:local ..."
 DOCKER_BUILDKIT=1 docker build -t openclaw:local .
 
-# ---- 6) Run OpenClaw container ----
+# ---- 6) Run container with brain gateway as PID 1 ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
 
-info "Starting OpenClaw container..."
+info "Starting container (brain gateway mode)..."
 docker run -d \
   --name openclaw-gateway \
   --network host \
   --restart always \
-  --env-file .env \
   -v "${OC_HOST_DIR}:/home/node/.openclaw" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   --group-add "${DOCKER_GID}" \
-  openclaw:local
+  -e OC_ROOT=/home/node/.openclaw \
+  -e BRAIN_PORT=${C_GATEWAY_PORT} \
+  -e GATEWAY_TOKEN=${MY_TOKEN} \
+  -e OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN} \
+  -e PRIME_ID=${PRIME_ID} \
+  -e BIN_DIR=/home/node/.openclaw/bin \
+  -e GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID} \
+  -e GCLOUD_PROJECT=${GCP_PROJECT_ID} \
+  -e CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID} \
+  -e GOOGLE_CLOUD_LOCATION=${C_LOCATION} \
+  -e GOOGLE_GENAI_USE_VERTEXAI=True \
+  -e CONTRACTS_PATH=/home/node/.openclaw/corekit/contracts.json \
+  -e NODE_ENV=production \
+  -e GCE_METADATA_HOST=metadata.google.internal \
+  -e AGENT_ID=${AGENT_ID} \
+  openclaw:local \
+  node /home/node/.openclaw/corekit/brain/index.mjs
 
-# ---- 7) Wait for gateway readiness ----
-# ADR: HTTP 401 from the gateway means "auth required but I'm alive" —
-# this IS a healthy response. The gateway requires a Bearer token.
-info "Waiting for OpenClaw gateway..."
-READY=false
-MAX_WAIT=180
-WAITED=0
-INTERVAL=5
-while [[ "$WAITED" -lt "$MAX_WAIT" ]]; do
-  HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-    http://localhost:${C_GATEWAY_PORT}/v1/models 2>/dev/null)" || HTTP_CODE="000"
-  if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "200" ]]; then
-    READY=true
+# ---- 7) Wait for brain gateway readiness ----
+info "Waiting for brain gateway..."
+BRAIN_READY=false
+BRAIN_MAX_WAIT=120
+BRAIN_WAITED=0
+while [[ "$BRAIN_WAITED" -lt "$BRAIN_MAX_WAIT" ]]; do
+  BRAIN_HEALTH="$(curl -sf http://localhost:${C_GATEWAY_PORT}/healthz 2>/dev/null || echo "")" 
+  if echo "$BRAIN_HEALTH" | grep -q "ok"; then
+    BRAIN_READY=true
     break
   fi
-  echo "  Gateway not ready yet (HTTP ${HTTP_CODE}, ${WAITED}s elapsed)..."
-  sleep "$INTERVAL"
-  WAITED=$((WAITED + INTERVAL))
+  echo "  Brain gateway not ready yet (${BRAIN_WAITED}s elapsed)..."
+  sleep 5
+  BRAIN_WAITED=$((BRAIN_WAITED + 5))
 done
-[[ "$READY" == "true" ]] || { echo "[ERROR] Gateway did not become ready within ${MAX_WAIT}s"; exit 1; }
-info "Gateway is ready (took ~${WAITED}s)."
+[[ "$BRAIN_READY" == "true" ]] || { echo "[ERROR] Brain gateway did not become ready within ${BRAIN_MAX_WAIT}s"; exit 1; }
+info "Brain gateway is ready (took ~${BRAIN_WAITED}s)."
 
 # ---- 8) Harden container perms (pre-config) ----
 # ADR: These permissions are INSIDE the Docker container (/home/node/.openclaw).
@@ -198,80 +209,28 @@ chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
 chown -R node:node /home/node/.openclaw
 '
 
-# ---- 9) Render config template via render-config ----
-# render-config handles JSON5→JSON conversion, token sync from container
-# env var, and writes the token file. Falls back to inline render if
-# render-config isn't available yet (shouldn't happen — CoreKit installs first).
-info "Rendering bootstrap config..."
-RENDER="${OC_HOST_DIR}/bin/render-config"
-if [[ -x "$RENDER" ]]; then
-  GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$RENDER"
+# ---- 9) Brain module: install npm dependencies ----
+# Brain .mjs files are already at .openclaw/corekit/brain/ (manifest).
+# Bind mount makes them visible in the container. Just need npm install.
+info "Installing brain module dependencies..."
+BRAIN_DIR="/home/node/.openclaw/corekit/brain"
+if docker exec openclaw-gateway test -f "${BRAIN_DIR}/package.json"; then
+  docker exec -u 0 -w "${BRAIN_DIR}" openclaw-gateway npm install --omit=dev 2>&1 | tail -5
+  docker exec -u 0 openclaw-gateway chown -R node:node "${BRAIN_DIR}/node_modules" 2>/dev/null || true
+  info "Brain dependencies installed"
 else
-  warn "render-config not found, using inline fallback..."
-  python3 - <<PY
-import pathlib
-oc = pathlib.Path("${OC_HOST_DIR}")
-tmpl_path = oc / "corekit" / "openclaw-bootstrap.json5.tmpl"
-out_path = pathlib.Path("${OC_HOST_DIR}/openclaw.json")
-tmpl = tmpl_path.read_text(encoding="utf-8")
-tmpl = tmpl.replace("\${GCP_PROJECT_ID}", "${GCP_PROJECT_ID}")
-tmpl = tmpl.replace("\${MY_TOKEN}", "${MY_TOKEN}")
-out_path.write_text(tmpl, encoding="utf-8")
-print("Wrote", out_path)
-PY
+  warn "Brain package.json not found at ${BRAIN_DIR}"
 fi
 
-# ---- 10) Apply config via RPC (with retry + fresh baseHash) ----
-info "Applying config via RPC..."
-APPLY_OK=false
-for attempt in 1 2 3 4 5; do
-  CONFIG_GET_RAW="$(docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' 2>&1)" || true
-  BASE_HASH="$(python3 -c '
-import json,sys,re
-raw=sys.stdin.read()
-m=re.search(r"\{.*\}", raw, re.S)
-raw_json=m.group(0) if m else raw
-try:
-  j=json.loads(raw_json)
-except Exception:
-  sys.exit(0)
-print(j.get("hash") or (j.get("payload") or {}).get("hash") or ((j.get("result") or {}).get("payload") or {}).get("hash") or "")
-' <<<"$CONFIG_GET_RAW")"
-
-  if [[ -z "$BASE_HASH" ]]; then
-    warn "config.get attempt ${attempt}: could not read baseHash. Retrying in 15s..."
-    sleep 15
-    continue
-  fi
-  echo "baseHash (attempt ${attempt}): ${BASE_HASH}"
-
-  PARAMS="$(python3 - <<PYAPPLY
-import json
-raw=open("${OC_HOST_DIR}/openclaw.json","r",encoding="utf-8").read()
-print(json.dumps({"raw": raw, "baseHash": "${BASE_HASH}", "note": "bootstrap"}))
-PYAPPLY
-)"
-
-  if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.apply --json --params "${PARAMS}" 2>&1; then
-    APPLY_OK=true
-    break
-  fi
-  warn "config.apply attempt ${attempt} failed (gateway may be restarting). Retrying in 15s..."
-  sleep 15
-done
-
-# config.apply triggers a gateway restart, which often kills the client connection
-# before the success response arrives. Check if config was actually written.
-if [[ "$APPLY_OK" != "true" ]]; then
-  info "All config.apply attempts returned errors. Checking if config was actually written..."
-  sleep 10
-  if docker exec openclaw-gateway test -f /home/node/.openclaw/openclaw.json 2>/dev/null; then
-    info "openclaw.json exists — config.apply likely succeeded despite connection errors."
-    APPLY_OK=true
-  else
-    echo "[ERROR] config.apply failed after 5 attempts and openclaw.json not found"
-    exit 1
-  fi
+# Restart container to pick up brain module
+info "Restarting container after brain install..."
+docker restart openclaw-gateway
+sleep 10
+BRAIN_HEALTH="$(curl -sf http://localhost:${C_GATEWAY_PORT}/healthz 2>/dev/null || echo "")"
+if echo "$BRAIN_HEALTH" | grep -q "ok"; then
+  info "Brain gateway healthy after restart"
+else
+  warn "Brain gateway not healthy after restart (continuing)"
 fi
 
 # ---- 11) Post-apply harden + inject host Docker CLI ----
@@ -329,95 +288,22 @@ chown node:node /home/node/.bashrc
 echo "  PATH configured: /home/node/.openclaw/bin added"
 ' || warn "gcloud/PATH setup had non-fatal errors (continuing)"
 
-# ---- 12) Vertex AI ADC fix — GCE metadata-based authentication ----
-# On GCE, the google-vertex provider in pi-ai can use ADC auto-discovery
-# via GoogleGenAI({vertexai:true}), which uses google-auth-library to
-# detect the GCE metadata server and obtain real OAuth2 tokens.
-#
-# However, OpenClaw's model-auth-env layer calls getEnvApiKey("google-vertex")
-# which returns null when no ADC file exists — blocking the provider call entirely.
-#
-# The fix:
-#   1. Patch model-auth-env to return a placeholder sentinel "<gce-adc>"
-#      when getEnvApiKey returns null. The google-vertex provider's
-#      isPlaceholderApiKey(/^<[^>]+>$/) catches this and falls through
-#      to createClient(model, project, location) → GoogleGenAI({vertexai:true})
-#      → GCE metadata server → real OAuth2 tokens.
-#   2. Empty auth-profiles.json to prevent literal "adc" being sent as API key.
-info "Applying Vertex AI ADC auth fix..."
-docker exec -u 0 openclaw-gateway bash -c '
-set -e
-
-# Step 1: Empty auth-profiles.json — prevents literal "adc" being sent as API key
-# v2026.4.15+ creates per-agent auth-profiles in agents/{id}/agent/
-for AP in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
-  if [ -f "$AP" ]; then
-    echo "{\"version\":1,\"profiles\":{}}" > "$AP"
-    chown node:node "$AP"
-    chmod 600 "$AP"
-    echo "  auth-profiles.json emptied: $AP"
-  fi
-done
-# Also handle legacy main agent path
-AP="/home/node/.openclaw/agents/main/agent/auth-profiles.json"
-if [ ! -f "$AP" ]; then
-  mkdir -p "$(dirname "$AP")"
-  echo "{\"version\":1,\"profiles\":{}}" > "$AP"
-  chown -R node:node /home/node/.openclaw/agents
-  echo "  auth-profiles.json created: $AP"
-fi
-
-# Step 2: Patch model-auth-env — GCE ADC fallback for google-vertex
-# When getEnvApiKey returns null (no ADC file), return a placeholder sentinel
-# that the google-vertex provider recognizes and strips, falling through to ADC.
-AUTH_ENV_FILE=$(find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
-if [ -n "$AUTH_ENV_FILE" ]; then
-  if grep -q "if (!envKey) return null;" "$AUTH_ENV_FILE" 2>/dev/null; then
-    sed -i '\''s|if (!envKey) return null;|if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };|'\'' "$AUTH_ENV_FILE"
-    echo "  Patched model-auth-env: GCE ADC fallback enabled"
-  elif grep -q "gce-adc" "$AUTH_ENV_FILE" 2>/dev/null; then
-    echo "  model-auth-env already patched"
-  else
-    echo "  [WARN] Could not find expected pattern in model-auth-env"
-  fi
-else
-  echo "  [WARN] model-auth-env file not found in /app/dist"
-fi
-
-# ============================================================
-# PHASE 3 — Container hardening + Vertex AI fix
-# ============================================================
-
-# Step 3: Remove any stale ADC files that might interfere with GCE metadata discovery
-rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
-
-# Step 4: Verify metadata server is reachable from container
+# ---- 12) ADC setup (brain gateway uses native GCE metadata auth) ----
+# The brain gateway uses @ai-sdk/google-vertex which discovers GCE metadata
+# automatically via google-auth-library. No OpenClaw ADC patching needed.
+info "Verifying GCE metadata auth..."
+docker exec openclaw-gateway bash -c '
 TOKEN_CHECK=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email" 2>/dev/null || echo "UNREACHABLE")
 echo "  GCE metadata check: $TOKEN_CHECK"
-' || warn "ADC fix had non-fatal errors (continuing)"
+' || warn "GCE metadata check failed (non-fatal)"
 
-# Restart gateway to pick up the model-auth-env patch
-info "Restarting gateway to apply ADC patch..."
-docker restart openclaw-gateway
-sleep 10
-if docker exec openclaw-gateway node /app/openclaw.mjs gateway call config.get --json --params '{}' > /dev/null 2>&1; then
-  info "Gateway restarted successfully after ADC patch."
-else
-  warn "Gateway may not be ready yet after ADC patch restart. Continuing..."
-fi
-
-
-# ---- 12b) Model discovery — find best available Gemini model ----
-# Probes Vertex AI to find the best model the project has access to.
-# Updates config template with the best model, re-renders, and restarts.
+# ---- 12b) Model discovery ----
 DISCOVER="${OC_HOST_DIR}/bin/discover-models"
 if [[ -x "$DISCOVER" ]]; then
   info "Discovering best available model..."
   GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$DISCOVER" --apply || \
-    warn "Model discovery failed (non-fatal — keeping current model config)"
-else
-  warn "discover-models not found — skipping model discovery"
+    warn "Model discovery failed (non-fatal)"
 fi
 
 # ---- 12c) Validate config against contracts ----
@@ -427,38 +313,17 @@ if [[ -x "$VALIDATE" ]]; then
   if OC_HOST_ROOT="${OC_HOST_ROOT}" "$VALIDATE" --runtime 2>&1; then
     info "Contract validation PASSED"
   else
-    warn "Contract validation found issues (non-fatal during bootstrap)"
+    warn "Contract validation found issues (non-fatal)"
   fi
 fi
 
 # ---- 12d) Warm-up probe (pre-warm ADC tokens) ----
-# ADR: After the ADC patch + model discovery + contract validation, fire a
-# lightweight request through the full cortex route to pre-warm ADC tokens.
-# This ensures the first real user message from agent-ears doesn't eat
-# 10-20s of token initialization.
 info "Running warm-up probe..."
 curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${MY_TOKEN}" \
   -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
   > /dev/null 2>&1 || warn "Warm-up probe failed (non-fatal)"
-
-# ---- 12e) Register cron jobs ----
-# ADR: OpenClaw cron jobs are managed via the `openclaw cron` CLI or
-# ~/.openclaw/cron/jobs.json — NOT via openclaw.json config (which only
-# supports cron.enabled). The cron.jobs config key does not exist and
-# causes a gateway crash-loop if present.
-info "Registering cron jobs..."
-docker exec openclaw-gateway node /app/openclaw.mjs cron add \
-  --name "memory-consolidate" \
-  --cron "0 2 * * *" \
-  --tz "America/Chicago" \
-  --agent "temporal-memory" \
-  --session isolated \
-  --no-deliver \
-  --timeout-seconds 120 \
-  --message "[SKILL:memory-consolidate] Execute nightly memory consolidation." \
-  --json 2>&1 || warn "memory-consolidate cron registration failed (non-fatal)"
 
 # ============================================================
 # PHASE 4 — Start services + finalize

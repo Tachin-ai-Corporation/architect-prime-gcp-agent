@@ -65,7 +65,7 @@ fi
 
 # ---- SSH and upgrade ----
 log "SSHing into ${FLEET_VM} to run upgrade..."
-UPGRADE_CMD="sudo CORE_REF='${TARGET_REF}' OC_HOST_ROOT=/opt/openclaw /opt/openclaw/.openclaw/bin/upgrade-corekit --apply '${TARGET_REF}' && sudo docker restart openclaw-gateway && echo 'UPGRADE_SUCCESS'"
+UPGRADE_CMD="sudo CORE_REF='${TARGET_REF}' OC_HOST_ROOT=/opt/openclaw /opt/openclaw/.openclaw/bin/upgrade-corekit --apply '${TARGET_REF}' && echo 'UPGRADE_SUCCESS'"
 
 RESULT="$(gcloud compute ssh "$FLEET_VM" \
   --zone="$FLEET_ZONE" \

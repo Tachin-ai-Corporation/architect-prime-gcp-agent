@@ -329,22 +329,52 @@ EOF
 info "Building Docker image openclaw:local ..."
 DOCKER_BUILDKIT=1 docker build -t openclaw:local .
 
-# ---- 10) Start container (OpenClaw gateway runs initially for backward compat) ----
+# ---- 10) Start container with brain gateway as PID 1 ----
 docker rm -f openclaw-gateway > /dev/null 2>&1 || true
 
-info "Starting container..."
+info "Starting container (brain gateway mode)..."
 docker run -d \
   --name openclaw-gateway \
   --network host \
   --restart always \
-  --env-file .env \
   -v "${OC_HOST_DIR}:/home/node/.openclaw" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   --group-add "${DOCKER_GID}" \
-  openclaw:local
+  -e OC_ROOT=/home/node/.openclaw \
+  -e BRAIN_PORT=${C_GATEWAY_PORT} \
+  -e GATEWAY_TOKEN=${MY_TOKEN} \
+  -e OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN} \
+  -e PRIME_ID=${PRIME_ID} \
+  -e BIN_DIR=/home/node/.openclaw/bin \
+  -e GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID} \
+  -e GCLOUD_PROJECT=${GCP_PROJECT_ID} \
+  -e CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID} \
+  -e GOOGLE_CLOUD_LOCATION=${C_LOCATION} \
+  -e GOOGLE_GENAI_USE_VERTEXAI=True \
+  -e CONTRACTS_PATH=/home/node/.openclaw/corekit/contracts.json \
+  -e NODE_ENV=production \
+  -e GCE_METADATA_HOST=metadata.google.internal \
+  -e AGENT_ID=${AGENT_ID} \
+  openclaw:local \
+  node /home/node/.openclaw/corekit/brain/index.mjs
 
-# ---- 11) Wait for container readiness ----
-wait_gateway "Gateway (initial)" 180 || true
+# ---- 11) Wait for brain gateway readiness ----
+info "Waiting for brain gateway..."
+BRAIN_READY=false
+BRAIN_MAX_WAIT=120
+BRAIN_WAITED=0
+while [[ "$BRAIN_WAITED" -lt "$BRAIN_MAX_WAIT" ]]; do
+  BRAIN_HEALTH="$(curl -sf http://localhost:${C_GATEWAY_PORT}/healthz 2>/dev/null || echo "")" 
+  if echo "$BRAIN_HEALTH" | grep -q "ok"; then
+    BRAIN_READY=true
+    break
+  fi
+  echo "  Brain gateway not ready yet (${BRAIN_WAITED}s elapsed)..."
+  sleep 5
+  BRAIN_WAITED=$((BRAIN_WAITED + 5))
+done
+[[ "$BRAIN_READY" == "true" ]] || warn "Brain gateway did not become ready within ${BRAIN_MAX_WAIT}s (continuing)"
+info "Brain gateway is ready (took ~${BRAIN_WAITED}s)."
 
 # ============================================================
 # PHASE 3 — Container hardening + Brain module install
@@ -406,71 +436,27 @@ else
   warn "Brain package.json not found at ${BRAIN_DIR} — skipping npm install"
 fi
 
-# ---- 16) Vertex AI ADC fix (same as Prime — still needed for OpenClaw compat) ----
-info "Applying Vertex AI ADC auth fix..."
+# ---- 16) ADC setup (brain gateway uses native GCE metadata auth) ----
+# The brain gateway uses @ai-sdk/google-vertex which discovers GCE metadata
+# automatically via google-auth-library. No OpenClaw ADC patching needed.
+info "Verifying GCE metadata auth..."
+META_EMAIL=$(docker exec openclaw-gateway curl -sf --max-time 3 \
+  -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email" \
+  2>/dev/null || echo "UNREACHABLE")
+info "  GCE metadata SA: ${META_EMAIL}"
 
-# Step 1: Empty auth-profiles for ALL agents
-docker exec -u 0 openclaw-gateway bash -c '
-for AP in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
-  if [ -f "$AP" ]; then
-    echo "{\"version\":1,\"profiles\":{}}" > "$AP"
-    chown node:node "$AP"
-    chmod 600 "$AP"
-    echo "  auth-profiles.json emptied: $AP"
-  fi
-done
-AP="/home/node/.openclaw/agents/cortex/agent/auth-profiles.json"
-if [ ! -f "$AP" ]; then
-  mkdir -p "$(dirname "$AP")"
-  echo "{\"version\":1,\"profiles\":{}}" > "$AP"
-  chown -R node:node /home/node/.openclaw/agents
-  echo "  auth-profiles.json created: $AP"
-fi
-' || warn "auth-profiles step had non-fatal errors"
+# ---- 17) Brain gateway health verification ----
+info "Verifying brain gateway..."
+sleep 5
 
-# Step 2: Patch model-auth-env (still needed for OpenClaw's own inference)
-AUTH_ENV_FILE=$(docker exec openclaw-gateway find /app/dist -name "model-auth-env-*" -type f 2>/dev/null | head -1)
-if [ -n "$AUTH_ENV_FILE" ]; then
-  docker exec -i openclaw-gateway tee /tmp/patch-adc.py <<'PYEOF' >/dev/null
-import sys
-fpath = sys.argv[1]
-with open(fpath) as f: code = f.read()
-if "<gce-adc>" in code and "if (!envKey) return null;" not in code:
-    print("  model-auth-env already patched"); sys.exit(0)
-patched = False
-if "if (!envKey) return null;" in code:
-    code = code.replace("if (!envKey) return null;",
-        'if (!envKey) return { apiKey: "<gce-adc>", source: "gce metadata" };', 1)
-    patched = True; print("  Patched model-auth-env (ADC fallback)")
-else:
-    print("  WARN: model-auth-env sentinel not found"); sys.exit(0)
-if patched:
-    with open(fpath, "w") as f: f.write(code)
-PYEOF
-  docker exec -u 0 openclaw-gateway python3 /tmp/patch-adc.py "$AUTH_ENV_FILE" || warn "ADC patch script error"
-  docker exec -u 0 openclaw-gateway rm -f /tmp/patch-adc.py
-fi
-
-# Step 3: Remove stale ADC files
-docker exec -u 0 openclaw-gateway rm -f /home/node/.config/gcloud/application_default_credentials.json 2>/dev/null || true
-
-# ---- 17) Restart gateway + Brain smoke test ----
-info "Restarting gateway to activate ADC patch..."
-docker restart openclaw-gateway
-wait_gateway "Gateway (post-ADC)" 120 || true
-
-# Let gateway fully initialize
-info "Waiting 15s for gateway to settle..."
-sleep 15
-
-# Brain module smoke test
-info "Running Brain module smoke test..."
+# Brain gateway smoke test — verify Vertex AI inference works
+info "Running brain gateway smoke test..."
 BRAIN_SMOKE_OK=false
 BRAIN_SMOKE_RESP="$(docker exec \
   -e GOOGLE_CLOUD_PROJECT="${GCP_PROJECT_ID}" \
   -e GOOGLE_CLOUD_LOCATION="${C_LOCATION}" \
-  -e BRAIN_PORT="19999" \
-  -w "${BRAIN_DIR}" \
+  -w /home/node/.openclaw/corekit/brain \
   openclaw-gateway timeout 30 node -e "
 import { createVertex } from '@ai-sdk/google-vertex';
 import { generateText } from 'ai';
@@ -480,51 +466,22 @@ console.log(r.text.includes('BRAIN_OK') ? 'BRAIN_SMOKE_PASS' : 'BRAIN_SMOKE_FAIL
 " 2>&1)" || BRAIN_SMOKE_RESP="SMOKE_ERROR"
 
 if echo "$BRAIN_SMOKE_RESP" | grep -q 'BRAIN_SMOKE_PASS'; then
-  info "Brain module smoke test PASSED"
+  info "Brain gateway smoke test PASSED"
   BRAIN_SMOKE_OK=true
 else
   warn "Brain smoke test failed: ${BRAIN_SMOKE_RESP:0:200}"
 fi
 
-# Vertex AI smoke test (OpenClaw gateway — backward compat)
-info "Running Vertex AI gateway smoke test..."
-SMOKE_OK=false
-for attempt in 1 2 3; do
-  SMOKE_RESP="$(curl -s --max-time 60 -X POST http://localhost:${C_GATEWAY_PORT}/v1/chat/completions \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${MY_TOKEN}" \
-    -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"respond with just the word pong"}]}' 2>&1)" || SMOKE_RESP="CURL_ERROR"
-
-  if echo "$SMOKE_RESP" | grep -q '"pong"'; then
-    info "Vertex AI smoke test PASSED (attempt ${attempt})"
-    SMOKE_OK=true
-    break
-  fi
-  warn "Smoke test attempt ${attempt}/3 failed: ${SMOKE_RESP:0:150}"
-  [[ $attempt -lt 3 ]] && sleep $((attempt * 15))
-done
-[[ "$SMOKE_OK" == "true" ]] || warn "Smoke test did not pass after 3 attempts — agent may still work once IAM propagates"
-
-# ---- 17c) Warm-up probe ----
+# ---- 17c) Warm-up probe via brain gateway ----
 info "Running warm-up probe..."
 curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${MY_TOKEN}" \
-  -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
+  -d '{"model":"vertex-google/gemini-2.5-flash","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
   > /dev/null 2>&1 || warn "Warm-up probe failed (non-fatal)"
 
-# ---- 17d) Register cron jobs ----
-info "Registering cron jobs..."
-docker exec openclaw-gateway node /app/openclaw.mjs cron add \
-  --name "memory-consolidate" \
-  --cron "0 2 * * *" \
-  --tz "America/Chicago" \
-  --agent "temporal-memory" \
-  --session isolated \
-  --no-deliver \
-  --timeout-seconds 120 \
-  --message "[SKILL:memory-consolidate] Execute nightly memory consolidation." \
-  --json 2>&1 || warn "memory-consolidate cron registration failed (non-fatal)"
+# Note: Cron jobs (memory consolidation) are handled by the responsibility system
+# in agent-brain.mjs, not by OpenClaw cron. No registration needed.
 
 # ============================================================
 # PHASE 4 — Start services + finalize
