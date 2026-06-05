@@ -438,6 +438,17 @@ function handleSetModel(params) {
       config.agents.defaults.model.primary = newDefault;
     }
 
+    // --- Dynamic model registration: ensure selected models are in the models map ---
+    function ensureModelRegistered(models, modelId) {
+      if (!modelId || models[modelId]) return;
+      const bare = modelId.includes('/') ? modelId.split('/').pop() : modelId;
+      const alias = bare.split('-')
+        .map(w => /^\d/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      models[modelId] = { alias };
+    }
+    ensureModelRegistered(config.agents.defaults.models, newDefault);
+
     // Apply per-agent overrides (cortex, motor, etc.)
     const agentList = config.agents?.list || [];
     for (const agent of agentList) {
@@ -446,6 +457,7 @@ function handleSetModel(params) {
         if (modelId) {
           if (!agent.model) agent.model = {};
           agent.model.primary = modelId;
+          ensureModelRegistered(config.agents.defaults.models, modelId);
         } else {
           delete agent.model;
         }

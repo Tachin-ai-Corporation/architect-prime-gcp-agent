@@ -491,6 +491,15 @@ info "Restarting gateway to activate ADC patch..."
 docker restart openclaw-gateway
 wait_gateway "Gateway (post-ADC)" 120 || true
 
+# ---- 17a) Patch anthropic-vertex provider bugs ----
+info "Patching anthropic-vertex provider..."
+PATCH_AV="${OC_HOST_DIR}/corekit/system/patch-anthropic-vertex"
+if [[ -x "$PATCH_AV" ]]; then
+  docker exec -u 0 openclaw-gateway bash -c "/home/node/.openclaw/corekit/system/patch-anthropic-vertex /home/node/.openclaw" || warn "patch-anthropic-vertex failed (non-fatal)"
+else
+  warn "patch-anthropic-vertex not found — skipping"
+fi
+
 # Let gateway fully initialize (plugins, channels, LLM backend)
 info "Waiting 15s for gateway to settle..."
 sleep 15

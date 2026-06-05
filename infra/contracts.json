@@ -7,7 +7,7 @@
     "_note": "v2026.5.2 (8b2a6e57) removed google-auth-library GCE metadata auth — DO NOT upgrade until upstream fixes GCE service account support"
   },
   "vertex": {
-    "location": "global",
+    "location": "us-central1",
     "primaryModel": "gemini-3.1-pro-preview",
     "subagentModel": "gemini-2.5-flash"
   },
@@ -18,7 +18,7 @@
   },
   "gateway": {
     "port": 18789,
-    "timeoutSeconds": 120,
+    "timeoutSeconds": 180,
     "bind": "loopback"
   },
   "env": {

@@ -407,6 +407,15 @@ else
   warn "Gateway may not be ready yet after ADC patch restart. Continuing..."
 fi
 
+# ---- 12a-2) Patch anthropic-vertex provider bugs ----
+info "Patching anthropic-vertex provider..."
+PATCH_AV="${OC_HOST_DIR}/corekit/system/patch-anthropic-vertex"
+if [[ -x "$PATCH_AV" ]]; then
+  docker exec -u 0 openclaw-gateway bash -c "/home/node/.openclaw/corekit/system/patch-anthropic-vertex /home/node/.openclaw" || warn "patch-anthropic-vertex failed (non-fatal)"
+else
+  warn "patch-anthropic-vertex not found — skipping"
+fi
+
 # ---- 12b) Model discovery — find best available Gemini model ----
 # Probes Vertex AI to find the best model the project has access to.
 # Updates config template with the best model, re-renders, and restarts.

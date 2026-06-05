@@ -88,6 +88,20 @@ function makeName(mid: string): string {
   return name;
 }
 
+/* ---- OpenClaw model ID helpers ---- */
+
+function toOpenClawId(modelId: string, provider: string): string {
+  if (provider === "anthropic") return `anthropic-vertex/${modelId}`;
+  if (provider === "google")    return `google-vertex/${modelId}`;
+  return `google-vertex/${provider}/${modelId}`;
+}
+
+/** Vertex AI hostname — global endpoint has no region prefix */
+function vertexHost(location: string): string {
+  if (location === "global") return "https://aiplatform.googleapis.com";
+  return `https://${location}-aiplatform.googleapis.com`;
+}
+
 /* ---- Auth ---- */
 
 async function getAccessToken(): Promise<string> {
@@ -269,7 +283,7 @@ async function probeModel(
 
   try {
     if (model.probeType === "openai-maas") {
-      const url = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/endpoints/openapi/chat/completions`;
+      const url = `${vertexHost(location)}/v1beta1/projects/${projectId}/locations/${location}/endpoints/openapi/chat/completions`;
       const body = JSON.stringify({
         model: `${model.provider}/${model.id}`,
         messages: [{ role: "user", content: "hi" }],
@@ -283,7 +297,7 @@ async function probeModel(
     }
 
     if (model.probeType === "google-generate") {
-      const regionalUrl = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${model.id}:generateContent`;
+      const regionalUrl = `${vertexHost(location)}/v1beta1/projects/${projectId}/locations/${location}/publishers/google/models/${model.id}:generateContent`;
       const body = JSON.stringify({
         contents: [{ role: "user", parts: [{ text: "pong" }] }],
         generationConfig: { maxOutputTokens: 5 },
@@ -307,7 +321,7 @@ async function probeModel(
     }
 
     // anthropic-raw
-    const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/${model.provider}/models/${model.id}:rawPredict`;
+    const url = `${vertexHost(location)}/v1/projects/${projectId}/locations/${location}/publishers/${model.provider}/models/${model.id}:rawPredict`;
     const body = JSON.stringify({
       anthropic_version: "vertex-2023-10-16",
       max_tokens: 5,
@@ -381,7 +395,7 @@ export async function POST() {
         else if (code === 0) status = "timeout";
         else status = "unknown";
 
-        const openclawId = `google-vertex/${model.id}`;
+        const openclawId = toOpenClawId(model.id, model.provider);
 
         return {
           id: model.id,

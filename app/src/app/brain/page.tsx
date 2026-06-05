@@ -73,10 +73,13 @@ function stripPrefix(openclawId: string): string {
   return slash >= 0 ? openclawId.slice(slash + 1) : openclawId;
 }
 
-/** Build OpenClaw ID from catalog model: always uses google-vertex/ prefix for Vertex AI */
+/** Build OpenClaw ID from catalog model — provider-aware prefix */
 function toOpenClawId(modelId: string, provider: string): string {
   if (modelId.includes("/")) return modelId; // already prefixed
-  return `google-vertex/${modelId}`;
+  if (provider === "anthropic") return `anthropic-vertex/${modelId}`;
+  if (provider === "google")    return `google-vertex/${modelId}`;
+  // MaaS: embed publisher so SDK gets "meta/llama-...", "xai/grok-...", etc.
+  return `google-vertex/${provider}/${modelId}`;
 }
 
 /** Find display name from model catalog */

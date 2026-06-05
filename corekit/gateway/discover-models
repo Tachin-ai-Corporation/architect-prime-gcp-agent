@@ -205,6 +205,12 @@ def _do_probe(url, body):
     except urllib.error.HTTPError as e: return e.code
     except: return 0
 
+def vertex_host(loc):
+    """Vertex AI hostname — global endpoint has no region prefix"""
+    if loc == 'global':
+        return 'https://aiplatform.googleapis.com'
+    return f'https://{loc}-aiplatform.googleapis.com'
+
 def probe(mid, info):
     provider = info['provider']
     tier = info.get('tier', 'ga')
@@ -215,11 +221,11 @@ def probe(mid, info):
 
     if is_openai_maas:
         body = json.dumps({"model": f"{provider}/{mid}", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}).encode()
-        url = f"https://{LOC}-aiplatform.googleapis.com/v1beta1/projects/{PROJ}/locations/{LOC}/endpoints/openapi/chat/completions"
+        url = f"{vertex_host(LOC)}/v1beta1/projects/{PROJ}/locations/{LOC}/endpoints/openapi/chat/completions"
         return _do_probe(url, body)
 
     if provider == 'google':
-        regional_url = f"https://{LOC}-aiplatform.googleapis.com/v1beta1/projects/{PROJ}/locations/{LOC}/publishers/google/models/{mid}:generateContent"
+        regional_url = f"{vertex_host(LOC)}/v1beta1/projects/{PROJ}/locations/{LOC}/publishers/google/models/{mid}:generateContent"
         code = _do_probe(regional_url, body_google)
         if code in (200, 429): return code
         if tier == 'preview':
@@ -230,7 +236,7 @@ def probe(mid, info):
         return code
 
     body = body_anthropic if provider == 'anthropic' else body_generic
-    url = f"https://{LOC}-aiplatform.googleapis.com/v1/projects/{PROJ}/locations/{LOC}/publishers/{provider}/models/{mid}:rawPredict"
+    url = f"{vertex_host(LOC)}/v1/projects/{PROJ}/locations/{LOC}/publishers/{provider}/models/{mid}:rawPredict"
     return _do_probe(url, body)
 
 results, best = [], ''
@@ -258,7 +264,12 @@ for mid, info in sorted(candidates.items()):
     if MODE != 'probe-only':
         print(f"  {info['name']:<40} {info['provider']:<12} {label}")
 
-    oc = f"google-vertex/{mid}"
+    if provider == 'anthropic':
+        oc = f"anthropic-vertex/{mid}"
+    elif provider == 'google':
+        oc = f"google-vertex/{mid}"
+    else:
+        oc = f"google-vertex/{provider}/{mid}"
     clean_info = {k: v for k, v in info.items() if k != 'maas_openai'}
     results.append({**clean_info, 'status': status, 'httpCode': code, 'openclawId': oc})
 
