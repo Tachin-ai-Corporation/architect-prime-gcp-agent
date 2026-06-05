@@ -309,6 +309,31 @@
   cursor: not-allowed;
 }
 
+/* Delete button on prime chip */
+.chipDeleteBtn {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: #7A8696;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 180ms ease;
+  white-space: nowrap;
+}
+
+.chipDeleteBtn:hover {
+  color: #D84F45;
+  background: rgba(216, 79, 69, 0.08);
+  border-color: rgba(216, 79, 69, 0.25);
+}
+
+.chipDeleteBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .chipExpandIcon {
   font-size: 12px;
   color: #566373;
@@ -812,6 +837,98 @@
   color: var(--text-dim);
   margin-top: 4px;
   line-height: 1.4;
+}
+
+/* ============================================
+   Delete Prime Modal
+   ============================================ */
+
+.deleteModalHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.deleteModalIcon {
+  font-size: 20px;
+}
+
+.deleteModalPrime {
+  font-size: 12px;
+  color: #7A8696;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(86, 99, 115, 0.2);
+}
+
+.deleteModalPrime strong {
+  color: #AEB8C4;
+}
+
+.deleteBlockNotice {
+  background: rgba(216, 79, 69, 0.06);
+  border: 1px solid rgba(216, 79, 69, 0.2);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 8px;
+}
+
+.deleteBlockTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #D84F45;
+  margin-bottom: 6px;
+}
+
+.deleteBlockDesc {
+  font-size: 13px;
+  color: #AEB8C4;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.deleteBlockAgents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.deleteBlockAgent {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: rgba(86, 99, 115, 0.15);
+  border: 1px solid rgba(86, 99, 115, 0.25);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #AEB8C4;
+}
+
+.deleteWarning {
+  font-size: 13px;
+  color: #AEB8C4;
+  line-height: 1.6;
+  margin-bottom: 8px;
+  padding: 12px 16px;
+  background: rgba(214, 168, 58, 0.06);
+  border: 1px solid rgba(214, 168, 58, 0.2);
+  border-radius: 10px;
+}
+
+.deleteConfirmBtn {
+  background: rgba(216, 79, 69, 0.12) !important;
+  border: 1px solid rgba(216, 79, 69, 0.35) !important;
+  color: #D84F45 !important;
+  font-weight: 600;
+  transition: all 180ms ease;
+}
+
+.deleteConfirmBtn:hover {
+  background: rgba(216, 79, 69, 0.2) !important;
+  border-color: rgba(216, 79, 69, 0.5) !important;
+  box-shadow: 0 4px 16px rgba(216, 79, 69, 0.15);
 }
 
 /* ============================================

@@ -60,6 +60,12 @@ function HomeInner() {
 
   /* ---- Upgrade state ---- */
   const [upgradingPrime, setUpgradingPrime] = useState<string | null>(null);
+
+  /* ---- Delete Prime state ---- */
+  const [deletingPrime, setDeletingPrime] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    primeId: string; primeName: string; activeFleet: string[]; canDelete: boolean;
+  } | null>(null);
   const [upgradingAgent, setUpgradingAgent] = useState<string | null>(null);
 
   /* ---- Action required modal ---- */
@@ -316,6 +322,36 @@ function HomeInner() {
     setUpgradingAgent(null);
   };
 
+  /* ---- Delete Prime (with fleet guard) ---- */
+  const handleDeletePrime = async (primeId: string, primeName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const fleet = (sidebarFleet[primeId] || []).filter(a => a.status !== "removed");
+    const activeFleet = fleet.map(a => a.name);
+    setDeleteConfirm({
+      primeId,
+      primeName,
+      activeFleet,
+      canDelete: activeFleet.length === 0,
+    });
+  };
+
+  const confirmDeletePrime = async () => {
+    if (!deleteConfirm || !deleteConfirm.canDelete) return;
+    setDeletingPrime(deleteConfirm.primeId);
+    setDeleteConfirm(null);
+    const res = await api<{ success: boolean }>(`/api/primes/${deleteConfirm.primeId}/teardown`, {
+      method: "POST",
+    });
+    if (res?.success) {
+      dialog.toast({ message: `Prime "${deleteConfirm.primeName}" is being deleted…`, variant: "success", duration: 5000 });
+      if (selectedPrimeId === deleteConfirm.primeId) setSelectedPrimeId(null);
+      refreshPrimes();
+    } else {
+      dialog.toast({ message: "Failed to delete Prime.", variant: "error" });
+    }
+    setDeletingPrime(null);
+  };
+
   /* ---- Confirm agent setup (clear actionRequired) ---- */
   const handleConfirmSetup = async (primeId: string, agentName: string) => {
     setActionModal(null);
@@ -496,6 +532,19 @@ function HomeInner() {
                     id={`upgrade-prime-${p.id}`}
                   >
                     {upgradingPrime === p.id ? "⏳" : "⬆ Upgrade"}
+                  </button>
+                )}
+
+                {/* Delete Prime button */}
+                {p.status !== "deploying" && p.status !== "tearing_down" && (
+                  <button
+                    className={styles.chipDeleteBtn}
+                    onClick={(e) => handleDeletePrime(p.id, p.name, e)}
+                    disabled={deletingPrime === p.id}
+                    title="Delete Prime"
+                    id={`delete-prime-${p.id}`}
+                  >
+                    {deletingPrime === p.id ? "⏳" : "🗑"}
                   </button>
                 )}
 
@@ -828,6 +877,52 @@ function HomeInner() {
               >
                 ✓ Done — I completed these steps
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Delete Prime Confirmation Modal ---- */}
+      {deleteConfirm && (
+        <div className={styles.modalOverlay} onClick={() => setDeleteConfirm(null)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.deleteModalHeader}>
+              <span className={styles.deleteModalIcon}>🗑</span>
+              <span className={styles.modalTitle} style={{ marginBottom: 0 }}>
+                Delete Prime
+              </span>
+            </div>
+            <div className={styles.deleteModalPrime}>
+              Prime: <strong>{deleteConfirm.primeName}</strong>
+            </div>
+            {!deleteConfirm.canDelete ? (
+              <div className={styles.deleteBlockNotice}>
+                <div className={styles.deleteBlockTitle}>⚠ Cannot delete — active fleet agents</div>
+                <div className={styles.deleteBlockDesc}>
+                  All fleet agents must be fired before deleting this Prime.
+                </div>
+                <div className={styles.deleteBlockAgents}>
+                  {deleteConfirm.activeFleet.map(name => (
+                    <span key={name} className={styles.deleteBlockAgent}>{name}</span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className={styles.deleteWarning}>
+                This will permanently delete the VM and stop all billing. The Prime can be re-deployed later.
+              </div>
+            )}
+            <div className={styles.modalActions}>
+              <button className="btn btn-ghost" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              {deleteConfirm.canDelete && (
+                <button
+                  id="confirm-delete-prime"
+                  className={`btn ${styles.deleteConfirmBtn}`}
+                  onClick={confirmDeletePrime}
+                >
+                  Delete Prime
+                </button>
+              )}
             </div>
           </div>
         </div>
