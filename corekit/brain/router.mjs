@@ -4,6 +4,11 @@
 // "vertex-anthropic/claude-opus-4-6" to the correct AI SDK model instance
 // backed by Vertex AI with native ADC auth.
 //
+// IMPORTANT: Google and Anthropic models may require different Vertex AI regions.
+// Probe testing showed:
+//   - Google (Gemini): works in us-central1
+//   - Anthropic (Claude): works in us-east5 (404/400 in us-central1)
+//
 // Supported prefixes:
 //   vertex-google/     → Google models (Gemini) via createVertex()
 //   vertex-anthropic/  → Anthropic models (Claude) via createVertexAnthropic()
@@ -13,23 +18,31 @@
 import { createVertex } from '@ai-sdk/google-vertex';
 
 let _vertexGoogle, _vertexAnthropic;
+let _config = {};
 
 /**
- * Initialize the router with GCP project and location.
- * Must be called before resolveModel().
+ * Initialize the router with GCP project and per-provider locations.
+ *
+ * @param {object} opts
+ * @param {string} opts.project          GCP project ID
+ * @param {string} opts.googleLocation   Location for Google models (default: us-central1)
+ * @param {string} opts.anthropicLocation Location for Anthropic models (default: us-east5)
  */
-export async function initRouter({ project, location }) {
-  _vertexGoogle = createVertex({ project, location });
+export async function initRouter({ project, googleLocation = 'us-central1', anthropicLocation = 'us-east5' }) {
+  _config = { project, googleLocation, anthropicLocation };
+
+  _vertexGoogle = createVertex({ project, location: googleLocation });
 
   // Dynamic import for the anthropic sub-path export.
-  // This avoids a hard dependency if the package doesn't include it.
   try {
     const { createVertexAnthropic } = await import('@ai-sdk/google-vertex/anthropic');
-    _vertexAnthropic = createVertexAnthropic({ project, location });
+    _vertexAnthropic = createVertexAnthropic({ project, location: anthropicLocation });
   } catch (err) {
     console.warn('[router] @ai-sdk/google-vertex/anthropic not available:', err.message);
     _vertexAnthropic = null;
   }
+
+  console.log(`[router] Initialized: project=${project} google=${googleLocation} anthropic=${anthropicLocation}`);
 }
 
 /**
@@ -73,7 +86,7 @@ export function resolveModel(modelString) {
  */
 export function getProviderStatus() {
   return {
-    'vertex-google': !!_vertexGoogle,
-    'vertex-anthropic': !!_vertexAnthropic,
+    'vertex-google': { available: !!_vertexGoogle, location: _config.googleLocation },
+    'vertex-anthropic': { available: !!_vertexAnthropic, location: _config.anthropicLocation },
   };
 }
