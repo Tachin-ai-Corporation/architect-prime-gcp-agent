@@ -463,9 +463,51 @@ except:
     sleep 1
 
     # Restart container to pick up brain module changes (new node_modules, etc.)
-    echo "  Restarting container..."
-    docker restart openclaw-gateway 2>/dev/null || true
-    sleep 5
+    # If brain module is installed, ensure container runs brain gateway as PID 1
+    BRAIN_CONTAINER_DIR="/home/node/.openclaw/corekit/brain"
+    CURRENT_CMD="$(docker inspect openclaw-gateway --format='{{join .Config.Cmd " "}}' 2>/dev/null || echo "")"
+    if [[ -f "${OC_DIR}/corekit/brain/index.mjs" ]] && [[ "$CURRENT_CMD" != *"brain/index.mjs"* ]]; then
+      echo "  Switching container to brain gateway mode..."
+      # Read identity
+      META="http://metadata.google.internal/computeMetadata/v1"
+      MH="Metadata-Flavor: Google"
+      GCP_PROJECT_CONT=$(curl -sf -H "$MH" "${META}/project/project-id" 2>/dev/null || echo "architect-prime-beta")
+      PRIME_ID_CONT=$(curl -sf -H "$MH" "${META}/instance/attributes/prime_id" 2>/dev/null || echo "")
+      GATEWAY_TOKEN_CONT=$(docker exec openclaw-gateway printenv OPENCLAW_GATEWAY_TOKEN 2>/dev/null || echo "")
+      [[ -z "$GATEWAY_TOKEN_CONT" ]] && GATEWAY_TOKEN_CONT=$(grep '^OPENCLAW_GATEWAY_TOKEN=' "/root/openclaw/.env" 2>/dev/null | cut -d= -f2 || echo "")
+      IMAGE_CONT=$(docker inspect openclaw-gateway --format='{{.Config.Image}}' 2>/dev/null || echo "openclaw:local")
+      systemctl stop agent-brain agent-ears agent-mouth agent-introspect 2>/dev/null || true
+      docker stop openclaw-gateway 2>/dev/null || true
+      docker rm openclaw-gateway 2>/dev/null || true
+      docker run -d \
+        --name openclaw-gateway \
+        --restart unless-stopped \
+        --network host \
+        -v "${OC_DIR}:/home/node/.openclaw" \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -e OC_ROOT=/home/node/.openclaw \
+        -e BRAIN_PORT=18789 \
+        -e GATEWAY_TOKEN="${GATEWAY_TOKEN_CONT}" \
+        -e OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN_CONT}" \
+        -e PRIME_ID="${PRIME_ID_CONT}" \
+        -e BIN_DIR=/home/node/.openclaw/bin \
+        -e GOOGLE_CLOUD_PROJECT="${GCP_PROJECT_CONT}" \
+        -e GCLOUD_PROJECT="${GCP_PROJECT_CONT}" \
+        -e CLOUDSDK_CORE_PROJECT="${GCP_PROJECT_CONT}" \
+        -e GOOGLE_CLOUD_LOCATION=us-central1 \
+        -e GOOGLE_GENAI_USE_VERTEXAI=True \
+        -e CONTRACTS_PATH=/home/node/.openclaw/corekit/contracts.json \
+        -e NODE_ENV=production \
+        -e GCE_METADATA_HOST=metadata.google.internal \
+        "${IMAGE_CONT}" \
+        node "${BRAIN_CONTAINER_DIR}/index.mjs"
+      echo "  Container recreated with brain gateway"
+      sleep 5
+    else
+      echo "  Restarting container..."
+      docker restart openclaw-gateway 2>/dev/null || true
+      sleep 5
+    fi
 
     # Kill ALL orphaned daemon/ears/mouth node processes inside the container.
     # docker exec only kills the host-side process -- the node process inside
