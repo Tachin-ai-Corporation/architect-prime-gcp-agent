@@ -59,6 +59,12 @@ export function loadAgentConfig(agentId) {
     systemPrompt = readFileSync(soulPath, 'utf8');
   }
 
+  // Append TOOLS.md if it exists (tool documentation for the agent)
+  const toolsPath = join(workspace, 'TOOLS.md');
+  if (existsSync(toolsPath)) {
+    systemPrompt += '\n\n' + readFileSync(toolsPath, 'utf8');
+  }
+
   // Default model from contracts
   const vertexCfg = contracts.vertex || {};
   const models = vertexCfg.models || {};
@@ -79,13 +85,18 @@ export function loadAgentConfig(agentId) {
     } catch {}
   }
 
+  // Execution agents (motor, cerebellum, temporal-research) get tools
+  // Planning/synthesizing agents (cortex, prefrontal, temporal-memory) don't
+  const EXECUTION_AGENTS = new Set(['motor', 'cerebellum', 'temporal-research']);
+  const needsTools = EXECUTION_AGENTS.has(agentId);
+
   return {
     model: agentOverrides.model || defaultModel,
     fallbackModel: agentOverrides.fallbackModel || fallbackModel,
     systemPrompt,
-    maxSteps: agentOverrides.maxSteps || maxSteps,
+    maxSteps: needsTools ? (agentOverrides.maxSteps || maxSteps) : 1,
     workspace,
-    allowedTools: agentOverrides.allowedTools || null, // null = all tools
+    allowedTools: needsTools ? (agentOverrides.allowedTools || null) : [],
   };
 }
 

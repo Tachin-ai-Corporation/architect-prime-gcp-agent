@@ -36,7 +36,7 @@ function readBody(req) {
 
 // ---- Gateway token auth ----
 const OC_ROOT = process.env.OC_ROOT || '/home/node/.openclaw';
-let GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
+let GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || '';
 if (!GATEWAY_TOKEN) {
   const tokenPath = join(OC_ROOT, '.gateway-token');
   if (existsSync(tokenPath)) {
