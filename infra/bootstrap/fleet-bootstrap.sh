@@ -394,26 +394,17 @@ which jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq jq >/
 ' || warn "gcloud install had non-fatal errors"
 
 # ---- 15) Install Brain module inside container ----
-info "Installing Brain module..."
-BRAIN_DIR="/home/node/.openclaw/brain"
-docker exec -u 0 openclaw-gateway bash -c "
-mkdir -p ${BRAIN_DIR}
-"
-# Copy brain module files from corekit
-for f in package.json index.mjs router.mjs loop.mjs tools.mjs config.mjs context.mjs health.mjs; do
-  SRC="${OC_HOST_DIR}/corekit/brain/${f}"
-  if [[ -f "$SRC" ]]; then
-    docker cp "$SRC" "openclaw-gateway:${BRAIN_DIR}/${f}"
-    echo "  Copied: ${f}"
-  else
-    warn "Brain module file not found: ${f}"
-  fi
-done
-docker exec -u 0 openclaw-gateway chown -R node:node "${BRAIN_DIR}"
-
-# npm install brain dependencies
-info "Installing brain npm dependencies..."
-docker exec -w "${BRAIN_DIR}" openclaw-gateway npm install 2>&1 | tail -5
+# Brain .mjs files are already installed at .openclaw/corekit/brain/ by the manifest
+# (bind-mounted into the container). We just need npm install for dependencies.
+info "Installing Brain module dependencies..."
+BRAIN_DIR="/home/node/.openclaw/corekit/brain"
+if docker exec openclaw-gateway test -f "${BRAIN_DIR}/package.json"; then
+  docker exec -u 0 -w "${BRAIN_DIR}" openclaw-gateway npm install --omit=dev 2>&1 | tail -5
+  docker exec -u 0 openclaw-gateway chown -R node:node "${BRAIN_DIR}/node_modules" 2>/dev/null || true
+  echo "  Brain dependencies installed"
+else
+  warn "Brain package.json not found at ${BRAIN_DIR} — skipping npm install"
+fi
 
 # ---- 16) Vertex AI ADC fix (same as Prime — still needed for OpenClaw compat) ----
 info "Applying Vertex AI ADC auth fix..."
