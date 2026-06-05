@@ -146,8 +146,9 @@ const server = createServer(async (req, res) => {
       // Load agent config
       const agentConfig = loadAgentConfig(agentId);
 
-      // Get tools for this agent
-      const tools = getFilteredTools(agentConfig.allowedTools);
+      // Get tools for this agent (undefined = no tools, not empty object)
+      const rawTools = getFilteredTools(agentConfig.allowedTools);
+      const tools = rawTools && Object.keys(rawTools).length > 0 ? rawTools : undefined;
 
       // Separate system messages from the rest
       const systemMessages = messages.filter(m => m.role === 'system');
