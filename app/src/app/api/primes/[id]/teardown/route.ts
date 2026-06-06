@@ -21,6 +21,8 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
 
+  // Declare outside try so catch block can update on failure
+  let cmdRef: FirebaseFirestore.DocumentReference | null = null;
 
   try {
     // Get Prime config from Firestore
@@ -43,13 +45,14 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     await primesCol().doc(id).update({ status: "tearing_down" });
 
     // Log operation in commands collection for ops queue visibility
-    const cmdRef = commandsCol(id).doc();
+    cmdRef = commandsCol(id).doc();
     await cmdRef.set({
       type: "prime_teardown",
       args: { vmName, zone },
       status: "running",
       createdAt: FieldValue.serverTimestamp(),
     });
+    console.log(`[teardown] Command logged: ${cmdRef.id} for prime ${id}`);
 
     // Delete the VM via Compute Engine REST API
     const token = await getAccessToken();
@@ -82,6 +85,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       result: `VM ${vmName} deleted`,
       updatedAt: FieldValue.serverTimestamp(),
     });
+    console.log(`[teardown] Complete: ${vmName} (command ${cmdRef.id})`);
 
     return NextResponse.json({
       success: true,
@@ -95,14 +99,9 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     await primesCol().doc(id).update({ status: "error" }).catch(() => {});
     // Try to update the command status to failed
     try {
-      const cmds = await commandsCol(id)
-        .where("type", "==", "prime_teardown")
-        .where("status", "==", "running")
-        .orderBy("createdAt", "desc")
-        .limit(1)
-        .get();
-      if (!cmds.empty) {
-        await cmds.docs[0].ref.update({
+      // cmdRef may not be defined if error happened before it was created
+      if (cmdRef) {
+        await cmdRef.update({
           status: "failed",
           error: err instanceof Error ? err.message : "Unknown error",
           updatedAt: FieldValue.serverTimestamp(),

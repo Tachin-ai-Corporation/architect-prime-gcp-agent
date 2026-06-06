@@ -9,12 +9,14 @@ import { requireAuth } from "@/lib/require-auth";
 export async function GET() {
   try {
     const snap = await primesCol().orderBy("createdAt", "desc").get();
-    const primes = snap.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
-      updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() ?? null,
-    }));
+    const primes = snap.docs
+      .filter((doc) => doc.data().status !== "removed")
+      .map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
+        updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() ?? null,
+      }));
     return NextResponse.json({ primes });
   } catch (err) {
     console.error("[api/primes] GET error:", err);
