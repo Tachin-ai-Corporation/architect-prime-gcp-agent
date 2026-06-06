@@ -26,7 +26,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   const body = await req.json().catch(() => ({}));
   const type = body?.type;
 
-  const VALID_TYPES = ["skills", "status", "config", "workspace", "brain_config", "set_model"];
+  const VALID_TYPES = ["skills", "status", "config", "workspace", "brain_config", "set_model", "responsibilities", "set_responsibility_enabled"];
   if (!type || !VALID_TYPES.includes(type)) {
     return NextResponse.json(
       { error: `Invalid type. Must be one of: ${VALID_TYPES.join(", ")}` },

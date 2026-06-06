@@ -93,7 +93,7 @@ Required for fleet agents to communicate via Google Chat:
 ```
 Your GCP Project
 ├── Cloud Run (Control Plane — Next.js Dashboard)
-│   ├── Dashboard UI (17-page breadcrumb-navigated hierarchy, 1health design system, shared FleetSelector)
+│   ├── Dashboard UI (8-page flat navigation, shared FleetSelector)
 │   ├── REST API (primes, fleet, messages, commands, projects, skills, upgrade)
 │   └── Firestore client (state management)
 │
@@ -113,7 +113,7 @@ Your GCP Project
 │
 ├── Prime VM (Compute Engine e2-medium, Ubuntu 22.04)
 │   ├── agent-brain-gateway (systemd, port 18789)
-│   │   ├── cortex          — Gemini 3.1 Pro Preview — orchestrator (DEFAULT)
+│   │   ├── cortex          — claude-opus-4-6 (configurable) — orchestrator (DEFAULT)
 │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
 │   │   ├── temporal-memory — Gemini 2.5 Flash — memory/context recall
 │   │   ├── prefrontal      — Gemini 2.5 Flash — strategic planning
@@ -123,7 +123,7 @@ Your GCP Project
 │   ├── agent-brain (systemd)      → Brain state machine (intake → classify → decide → dispatch → synthesize)
 │   ├── agent-mouth (systemd)      → Output classification + delivery (strict LLM filter)
 │   ├── REST API: GET /api/primes/{id}/work, POST /api/primes/{id}/work/{workId}/respond
-│   ├── CoreKit (40 scripts)     → fleet, chat, brain, memory, dashboard, system
+│   ├── CoreKit (50 scripts)     → fleet, chat, brain, memory, dashboard, system
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
 └── Fleet Agent VMs (Compute Engine e2-medium, one per agent)
@@ -165,10 +165,14 @@ Dispatch flow: Cortex returns structured JSON decisions → `agent-brain` daemon
 architect-prime/
 ├── app/                              # MODULE 1: Control Plane (Cloud Run, Next.js)
 │   ├── src/app/page.tsx              # Home (Prime cards, deploy)
-│   ├── src/app/p/[id]/               # Prime hub + sub-pages (17 pages)
+│   ├── src/app/brain/               # Brain / Model Management
 │   ├── src/app/settings/             # Dashboard Settings
-│   ├── src/app/skills/               # Skill Kit Library
-│   ├── src/app/api/primes/[id]/      # REST API routes (28 endpoints)
+│   ├── src/app/skills/               # Skill Catalog
+│   ├── src/app/work/                 # Work Tree
+│   ├── src/app/projects/             # Projects
+│   ├── src/app/processes/            # Processes
+│   ├── src/app/agent-types/          # Agent Type Explorer
+│   ├── src/app/api/primes/[id]/      # REST API routes (19 routes)
 │   ├── src/components/               # Shell, Breadcrumb, NavCard, StatusStrip, AgentChip, FleetSelector
 │   ├── src/contexts/                 # PrimeContext (shared state)
 │   ├── src/hooks/                    # useProjects (real-time Firestore), useFleetSelection
@@ -199,18 +203,17 @@ architect-prime/
 │       ├── uninstall.sh              # Clean teardown
 │       └── tutorial.md               # Cloud Shell guided tutorial
 │
-├── corekit/                          # MODULE 3: CoreKit Runtime (59 VM-side scripts)
+├── corekit/                          # MODULE 3: CoreKit Runtime (50 scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
 │   ├── chat/                         # Google Chat / DWD integration (3 scripts)
-│   ├── brain/                        # Brain execution layer (11 scripts)
-│   ├── memory/                       # Memory subsystem (3 scripts)
+│   ├── brain/                        # Brain execution layer (19 scripts)
+│   ├── memory/                       # Memory subsystem (5 scripts)
 │   ├── dashboard/                    # Dashboard bridge (1 script)
-│   ├── daemon/                       # Ears/Mouth I/O services (6 scripts)
-│   ├── system/                       # Cross-cutting utilities (2 scripts)
+│   ├── daemon/                       # Ears/Mouth/Brain I/O daemons (10 scripts)
+│   ├── system/                       # Cross-cutting utilities (3 scripts)
 │   └── config/                       # Templates, service files, agent-types
 │
 ├── brain/                            # MODULE 4: Agent Identity
-│   ├── agents/main/                  # Brain agent skeleton (auth, sessions)
 │   ├── prime/                        # Prime brain workspaces (6 agents)
 │   │   ├── cortex/                   # SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md
 │   │   ├── temporal-research/        # SOUL.md, IDENTITY.md
@@ -353,7 +356,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v4.0** | Contract enforcement — `contracts.json`, `validate-contracts`, modular manifests |
 | **v5.0** | 6-module architecture (`app/`, `infra/`, `corekit/`, `brain/`, `specialties/`, `skills/`) |
 | **v2026.05.19.17.0** | Brain v3 — Envelope-based orchestration, M→C→T hierarchy, Work dashboard |
-| **v2026.05.23.7.0** | Dashboard v3 — 17-page breadcrumb hierarchy, 1health design system |
+| **v2026.05.23.7.0** | Dashboard v3 — 8-page dashboard, shared FleetSelector |
 | **v2026.05.25.2.1** | Processes & Responsibilities — Cron-driven autonomy, approval gates |
 | **v2026.05.27.12.0** | Skill Ecosystem — Self-describing manifests, per-agent TOOLS.md, skill discovery |
 | **v2026.06.05.1.0** | Host-native migration — Removed Docker/OpenClaw, systemd-based brain gateway |

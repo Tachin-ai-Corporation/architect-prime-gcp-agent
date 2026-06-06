@@ -109,7 +109,7 @@ All work flows through four levels. No exceptions.
 architect-prime/
 ├── app/                    # Dashboard (Cloud Run, Next.js) — 28 API endpoints
 ├── infra/                  # Infrastructure — contracts.json, install.sh, bootstraps, manifests
-├── corekit/                # CoreKit Runtime — 40+ VM-side scripts grouped by domain
+├── corekit/                # CoreKit Runtime — 50 VM-side scripts grouped by domain
 │   ├── fleet/              # Fleet lifecycle (9 scripts)
 │   ├── chat/               # Google Chat / DWD (3 scripts)
 │   ├── brain/              # Brain tools (11 scripts)
