@@ -3832,7 +3832,8 @@ async function main() {
   // When brain restarts mid-processing, envelopes get stuck with no processor
   // Use paginated REST list (no structured query, no index needed)
   try {
-    const agentEmail = AGENT_EMAIL || AGENT_ID;
+    // Owner field is full email (e.g. devops-agent-stan@tachin.ag), match by AGENT_ID substring
+    const agentId = AGENT_ID;
     const token = await getAuthToken();
     if (token) {
       const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
@@ -3859,7 +3860,7 @@ async function main() {
       } while (nextPageToken);
 
       log('INFO', `Startup recovery: scanned ${allDocs.length} work docs`);
-      const orphaned = allDocs.filter(e => e.type === 'M' && e.owner === agentEmail &&
+      const orphaned = allDocs.filter(e => e.type === 'M' && (e.owner || '').includes(agentId) &&
         (e.status === 'active' || e.status === 'pending'));
       if (orphaned.length > 0) {
         log('INFO', `Startup recovery: found ${orphaned.length} orphaned M envelope(s)`);
