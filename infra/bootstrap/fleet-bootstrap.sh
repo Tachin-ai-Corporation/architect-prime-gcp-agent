@@ -183,8 +183,8 @@ curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/comple
 # PHASE 3 — finalize
 # ============================================================
 
-# ---- 12) Write chat-config.json ----
-if [[ -n "${AGENT_USER_EMAIL}" && -n "${CHAT_SPACE_ID}" ]]; then
+# ---- 12) Write chat-config.json (ears uses this to select gchat channel) ----
+if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   info "Writing Google Chat config..."
   cat > "${CORE_DIR}/corekit/chat-config.json" <<CHATCFG
 {
