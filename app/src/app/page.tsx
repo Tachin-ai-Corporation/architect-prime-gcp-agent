@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
@@ -39,6 +40,7 @@ interface ChatTarget {
 
 function HomeInner() {
   const dialog = useDialog();
+  const router = useRouter();
   const { primes, setup, sidebarFleet, loading, refreshPrimes } = usePrime();
 
   /* ---- State ---- */
@@ -598,7 +600,7 @@ function HomeInner() {
                           className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""} ${isChatTarget ? styles.agentCardActive : ""}`}
                           style={{ animationDelay: `${i * 80}ms` }}
                           id={`agent-card-${agent.name}`}
-                          onClick={() => selectAgentChat(p.id, agent)}
+                          onClick={() => router.push(`/p/${p.id}/a/${agent.name}`)}
                           data-proximity
                         >
                           <div className={styles.agentHeader}>
@@ -658,6 +660,17 @@ function HomeInner() {
                           {/* Upgrade button */}
                           {agent.status === "online" && (
                             <div className={styles.agentFooter}>
+                              <button
+                                className={styles.agentChatBtn}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectAgentChat(p.id, agent);
+                                }}
+                                title={`Chat with ${agent.name}`}
+                                id={`chat-agent-${agent.name}`}
+                              >
+                                💬
+                              </button>
                               <button
                                 className={styles.agentUpgradeBtn}
                                 onClick={(e) => handleUpgradeAgent(p.id, agent.name, e)}

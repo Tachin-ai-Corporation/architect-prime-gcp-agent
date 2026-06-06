@@ -8,6 +8,13 @@
   border-left: 1px solid rgba(86, 99, 115, 0.28);
 }
 
+/* Inline mode — no border, fill parent container */
+.chatPanelInline {
+  border-left: none;
+  border-radius: var(--radius-md);
+  min-height: 500px;
+}
+
 /* ---- Header ---- */
 .chatHeader {
   display: flex;

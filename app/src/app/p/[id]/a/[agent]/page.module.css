@@ -1,77 +1,45 @@
-/* ---- Agent Deep Dive ---- */
+/* ---- Agent Deep Dive Page ---- */
 
 .agentPage {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  padding: var(--space-6);
-  max-width: 960px;
-  margin: 0 auto;
-  animation: fadeIn var(--duration-page) var(--ease-premium);
+  overflow: hidden;
+  background: var(--bg-primary);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ---- Header ---- */
-.header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.backLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-tertiary);
-  text-decoration: none;
-  transition: color var(--duration-hover) var(--ease-standard);
-  margin-bottom: var(--space-2);
-  width: fit-content;
-}
-
-.backLink:hover {
-  color: var(--text-link);
-}
-
-.agentName {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-.subtitle {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-/* ---- Tabs ---- */
+/* ---- Tab Bar ---- */
 .tabBar {
   display: flex;
-  gap: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--space-6);
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabBar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
-  padding: var(--space-2) var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-tertiary);
-  cursor: pointer;
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  font-family: inherit;
-  transition:
-    color var(--duration-hover) var(--ease-standard),
-    border-color var(--duration-hover) var(--ease-standard);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease;
   white-space: nowrap;
+  margin-bottom: -1px;
 }
 
 .tab:hover {
@@ -79,37 +47,191 @@
 }
 
 .tabActive {
-  color: var(--text-primary);
+  color: var(--signal-aqua);
   border-bottom-color: var(--network-teal);
-}
-
-/* ---- Tab Content ---- */
-.tabContent {
-  background: var(--charcoal);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: var(--space-6);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  text-align: center;
-  gap: var(--space-3);
+  font-weight: 600;
 }
 
 .tabIcon {
-  font-size: 32px;
-  opacity: 0.6;
+  font-size: 14px;
 }
 
-.tabTitle {
-  font-size: 16px;
+/* ---- Tab Content Area ---- */
+.tabContentArea {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
+}
+
+/* ---- Overview Tab ---- */
+.overviewGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.overviewCard {
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.overviewCard:first-child {
+  grid-column: 1 / -1;
+}
+
+.overviewCardTitle {
+  font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
 }
 
-.tabDesc {
+.overviewStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.overviewSpecialty {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--care-mint);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(95, 199, 178, 0.10);
+  border: 1px solid rgba(95, 199, 178, 0.20);
+}
+
+.overviewMeta {
+  display: flex;
+  gap: var(--space-4);
   font-size: 13px;
   color: var(--text-tertiary);
+}
+
+.overviewMeta a {
+  color: var(--signal-aqua);
+}
+
+.overviewWorkList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.overviewWorkItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.overviewWorkTitle {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overviewMoreBtn {
+  font-size: 12px;
+  color: var(--signal-aqua);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-2) 0;
+  text-align: left;
+}
+
+.overviewMoreBtn:hover {
+  text-decoration: underline;
+}
+
+/* ---- Identity preview ---- */
+.identityPre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--graphite);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ---- Work Tab ---- */
+.workTabContent {
+  position: relative;
+}
+
+.workSection {
+  margin-bottom: var(--space-5);
+}
+
+.workSectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+
+/* ---- Chat Tab ---- */
+.chatTabContent {
+  height: calc(100vh - 220px);
+  min-height: 400px;
+}
+
+/* ---- Shared States ---- */
+.loadingPulse {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  padding: var(--space-5);
+  text-align: center;
+  animation: fadePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes fadePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.emptyHint {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  padding: var(--space-3) 0;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .overviewGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tabBar {
+    padding: 0 var(--space-4);
+  }
+
+  .tabContentArea {
+    padding: var(--space-4);
+  }
+
+  .tab {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
 }

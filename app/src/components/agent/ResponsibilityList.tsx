@@ -1,0 +1,194 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { useIntrospect, useIntrospectMutation } from "@/hooks/useIntrospect";
+import styles from "./ResponsibilityList.module.css";
+
+/* ================================================================
+   Types
+   ================================================================ */
+
+export interface Responsibility {
+  id: string;
+  name: string;
+  schedule: string;
+  enabled: boolean;
+  min_spacing_minutes: number;
+  instruction: string;
+  has_process: boolean;
+  process_steps: number;
+  source: string;
+}
+
+interface BrainConfig {
+  responsibilities: Responsibility[];
+  [key: string]: unknown;
+}
+
+interface ResponsibilityListProps {
+  primeId: string;
+  agentName: string;
+}
+
+/* ================================================================
+   Component
+   ================================================================ */
+
+export function ResponsibilityList({ primeId, agentName }: ResponsibilityListProps) {
+  const { data, loading, error, refresh } = useIntrospect<BrainConfig>({
+    primeId,
+    agent: agentName,
+    type: "brain_config",
+  });
+
+  /* ---- Loading ---- */
+  if (loading) {
+    return (
+      <div className={styles.loading}>
+        <div className={styles.spinner} />
+        <span className={styles.pulse}>Loading responsibilities…</span>
+      </div>
+    );
+  }
+
+  /* ---- Error ---- */
+  if (error) {
+    return (
+      <div className={styles.error}>
+        <span className={styles.errorMsg}>⚠ {error}</span>
+        <button className={styles.retryBtn} onClick={refresh}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  /* ---- Empty ---- */
+  const responsibilities = data?.responsibilities ?? [];
+  if (responsibilities.length === 0) {
+    return (
+      <div className={styles.empty}>
+        <div className={styles.emptyIcon}>📋</div>
+        No responsibilities configured
+      </div>
+    );
+  }
+
+  /* ---- List ---- */
+  return (
+    <div className={styles.list}>
+      {responsibilities.map((resp) => (
+        <ResponsibilityCard
+          key={resp.id}
+          resp={resp}
+          primeId={primeId}
+          agentName={agentName}
+          onMutated={refresh}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ================================================================
+   ResponsibilityCard — individual card with toggle switch
+   ================================================================ */
+
+interface CardProps {
+  resp: Responsibility;
+  primeId: string;
+  agentName: string;
+  onMutated: () => void;
+}
+
+function ResponsibilityCard({ resp, primeId, agentName, onMutated }: CardProps) {
+  const [optimisticEnabled, setOptimisticEnabled] = useState(resp.enabled);
+  const [instructionExpanded, setInstructionExpanded] = useState(false);
+
+  const { mutate, loading: mutating } = useIntrospectMutation({
+    primeId,
+    agent: agentName,
+  });
+
+  const handleToggle = useCallback(async () => {
+    const newEnabled = !optimisticEnabled;
+    // Optimistic update
+    setOptimisticEnabled(newEnabled);
+
+    const result = await mutate("set_responsibility_enabled", {
+      id: resp.id,
+      enabled: newEnabled,
+    });
+
+    if (!result.success) {
+      // Revert on failure
+      setOptimisticEnabled(!newEnabled);
+    } else {
+      // Refresh parent data to stay in sync
+      onMutated();
+    }
+  }, [optimisticEnabled, mutate, resp.id, onMutated]);
+
+  const spacingHours = (resp.min_spacing_minutes / 60).toFixed(1).replace(/\.0$/, "");
+
+  return (
+    <div
+      className={`${styles.card} ${!optimisticEnabled ? styles.cardDisabled : ""}`}
+    >
+      {/* Header */}
+      <div className={styles.cardHeader}>
+        <span
+          className={`${styles.dot} ${
+            optimisticEnabled ? styles.dotOn : styles.dotOff
+          }`}
+        />
+        <span className={styles.name}>{resp.name}</span>
+
+        {!optimisticEnabled && (
+          <span className={styles.pausedBadge}>Paused</span>
+        )}
+
+        <code className={styles.schedule}>{resp.schedule}</code>
+
+        <button
+          className={`${styles.toggle} ${optimisticEnabled ? styles.toggleOn : ""}`}
+          onClick={handleToggle}
+          disabled={mutating}
+          aria-label={optimisticEnabled ? "Disable responsibility" : "Enable responsibility"}
+        />
+      </div>
+
+      {/* Instruction */}
+      {resp.instruction && (
+        <>
+          <div
+            className={`${styles.instruction} ${
+              instructionExpanded ? styles.instructionExpanded : ""
+            }`}
+          >
+            {resp.instruction}
+          </div>
+          <button
+            className={styles.expandBtn}
+            onClick={() => setInstructionExpanded((v) => !v)}
+          >
+            {instructionExpanded ? "Show less" : "Show more"}
+          </button>
+        </>
+      )}
+
+      {/* Meta */}
+      <div className={styles.meta}>
+        {resp.has_process && (
+          <span className={styles.process}>
+            {resp.process_steps} step{resp.process_steps !== 1 ? "s" : ""}
+          </span>
+        )}
+        <span className={styles.spacing}>
+          ⏱ {spacingHours}h min spacing
+        </span>
+        <span className={styles.source}>{resp.source}</span>
+      </div>
+    </div>
+  );
+}

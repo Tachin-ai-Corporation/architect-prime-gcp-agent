@@ -516,13 +516,31 @@
   color: #AEB8C4;
 }
 
-/* Agent card footer (upgrade button) */
+/* Agent card footer (chat + upgrade buttons) */
 .agentFooter {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid rgba(86, 99, 115, 0.12);
+}
+
+.agentChatBtn {
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--signal-aqua);
+  background: rgba(143, 216, 230, 0.06);
+  border: 1px solid rgba(143, 216, 230, 0.18);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.agentChatBtn:hover {
+  background: rgba(143, 216, 230, 0.12);
+  border-color: rgba(143, 216, 230, 0.35);
 }
 
 .agentUpgradeBtn {

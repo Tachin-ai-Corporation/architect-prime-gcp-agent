@@ -16,9 +16,11 @@ interface ChatPanelProps {
   entityStatus?: string;
   /** Agent specialty type (e.g. data, pm, devops) */
   specialty?: string;
+  /** When true, renders without fixed positioning — for embedding in a tab */
+  inline?: boolean;
 }
 
-export function ChatPanel({ primeId, agentName, entityName, entityStatus, specialty }: ChatPanelProps) {
+export function ChatPanel({ primeId, agentName, entityName, entityStatus, specialty, inline }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -106,7 +108,7 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
     : styles.statusOffline;
 
   return (
-    <div className={styles.chatPanel} id="chat-panel">
+    <div className={`${styles.chatPanel} ${inline ? styles.chatPanelInline : ""}`} id="chat-panel">
       {/* ---- Header ---- */}
       <div className={styles.chatHeader}>
         <div className={styles.chatHeaderAvatar}>
