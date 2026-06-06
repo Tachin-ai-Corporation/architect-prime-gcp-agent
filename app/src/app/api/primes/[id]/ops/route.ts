@@ -53,6 +53,8 @@ function makeLabel(cmdType: string, args: Record<string, string>, primeId: strin
       return `Hiring Agent — ${args.name || "unknown"}`;
     case "fleet_teardown":
       return `Removing Agent — ${args.name || "unknown"}`;
+    case "prime_teardown":
+      return `Deleting Prime — ${primeName}`;
     case "dashboard_deploy":
       return `Dashboard Deploy — ${args.version || "latest"}`;
     case "gateway_restart":
@@ -67,6 +69,7 @@ function makeTarget(cmdType: string, args: Record<string, string>): string {
     return args.name || "unknown";
   }
   if (cmdType === "dashboard_deploy") return "dashboard";
+  if (cmdType === "prime_teardown") return "prime";
   return "prime";
 }
 

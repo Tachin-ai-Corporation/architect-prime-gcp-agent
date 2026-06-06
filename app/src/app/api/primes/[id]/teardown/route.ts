@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { primesCol } from "@/lib/firestore";
+import { primesCol, commandsCol } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
+import { FieldValue } from "@google-cloud/firestore";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -41,6 +42,15 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     // Update status to tearing_down
     await primesCol().doc(id).update({ status: "tearing_down" });
 
+    // Log operation in commands collection for ops queue visibility
+    const cmdRef = commandsCol(id).doc();
+    await cmdRef.set({
+      type: "prime_teardown",
+      args: { vmName, zone },
+      status: "running",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
     // Delete the VM via Compute Engine REST API
     const token = await getAccessToken();
     const deleteResult = await deleteVM(token, projectId, zone, vmName);
@@ -66,6 +76,13 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       removedAt: new Date().toISOString(),
     });
 
+    // Mark operation complete
+    await cmdRef.update({
+      status: "complete",
+      result: `VM ${vmName} deleted`,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
     return NextResponse.json({
       success: true,
       status: "removed",
@@ -76,6 +93,22 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   } catch (err) {
     console.error(`[teardown] Error:`, err);
     await primesCol().doc(id).update({ status: "error" }).catch(() => {});
+    // Try to update the command status to failed
+    try {
+      const cmds = await commandsCol(id)
+        .where("type", "==", "prime_teardown")
+        .where("status", "==", "running")
+        .orderBy("createdAt", "desc")
+        .limit(1)
+        .get();
+      if (!cmds.empty) {
+        await cmds.docs[0].ref.update({
+          status: "failed",
+          error: err instanceof Error ? err.message : "Unknown error",
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+    } catch {} // best-effort
     return NextResponse.json({ error: "Teardown failed" }, { status: 500 });
   }
 }
