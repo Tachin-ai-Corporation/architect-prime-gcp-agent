@@ -3830,17 +3830,18 @@ async function main() {
 
   // Startup recovery: re-process orphaned active/pending M envelopes
   // When brain restarts mid-processing, envelopes get stuck with no processor
-  // Use simple status query to avoid composite index requirements
+  // Use two simple equality queries to avoid composite index requirements
   try {
     const agentEmail = AGENT_EMAIL || AGENT_ID;
-    const activeEnvelopes = await firestoreQuery('work', [
-      { field: 'status', op: 'IN', value: { arrayValue: { values: [
-        { stringValue: 'active' },
-        { stringValue: 'pending' },
-      ] } } },
+    const activeEnvs = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
     ]);
+    const pendingEnvs = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
+    ]);
+    const allEnvs = [...activeEnvs, ...pendingEnvs];
     // Filter to M-type envelopes owned by this agent
-    const orphaned = activeEnvelopes.filter(e => e.type === 'M' && e.owner === agentEmail);
+    const orphaned = allEnvs.filter(e => e.type === 'M' && e.owner === agentEmail);
     if (orphaned.length > 0) {
       log('INFO', `Startup recovery: found ${orphaned.length} orphaned M envelope(s)`);
       for (const env of orphaned) {
