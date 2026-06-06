@@ -1,0 +1,279 @@
+/* ============================================
+   Work — page.module.css
+   Architect Prime · Work Page
+   Design tokens from work-tree-demo spec
+   ============================================ */
+
+/* ---- Design tokens (local) ---- */
+:root {
+  --graphite: #202833;
+  --charcoal: #313B47;
+  --slate: #566373;
+  --mist: #AEB8C4;
+  --cloud: #E6EBF0;
+  --trust-blue: #246B8F;
+  --network-teal: #1F9A9B;
+  --care-mint: #5FC7B2;
+  --signal-aqua: #8FD8E6;
+  --clinical-ice: #E8F7FA;
+  --amber: #D6A83A;
+  --pulse: #D84F45;
+  --success: #3BAA78;
+  --neutral: #7A8696;
+
+  --border-subtle: rgba(86, 99, 115, 0.28);
+  --border-default: rgba(86, 99, 115, 0.4);
+  --border-active: rgba(143, 216, 230, 0.48);
+
+  --status-success-fill: rgba(59, 170, 120, 0.14);
+  --status-warning-fill: rgba(214, 168, 58, 0.16);
+  --status-info-fill: rgba(47, 128, 168, 0.16);
+
+  --glow-aqua: 0 0 0 1px rgba(143, 216, 230, 0.28), 0 0 24px rgba(143, 216, 230, 0.16);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.24);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.32);
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --d-hover: 160ms;
+  --d-panel: 220ms;
+  --d-page: 300ms;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+}
+
+/* ---- Shell ---- */
+.shell {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 32px 100px;
+}
+
+/* ---- Page header ---- */
+.pgHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 2px;
+}
+.pgTitle {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--cloud);
+}
+.pgSub {
+  font-size: 14px;
+  color: var(--mist);
+  margin-bottom: 32px;
+}
+
+/* ---- Needs input pill ---- */
+.needsPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--status-warning-fill);
+  color: var(--amber);
+  font-weight: 600;
+  font-size: 11px;
+  animation: warmGlow 3s ease-in-out infinite;
+}
+@keyframes warmGlow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 5px rgba(214, 168, 58, 0.08); }
+}
+
+/* ---- Sub-filters (inside FleetSelector) ---- */
+.subFilters {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(86, 99, 115, 0.12);
+}
+
+/* ---- Empty state ---- */
+.empty {
+  text-align: center;
+  padding: 80px 20px;
+}
+.emptyIcon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.2;
+}
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--mist);
+  margin-bottom: 4px;
+}
+.emptySub {
+  font-size: 13px;
+  color: var(--slate);
+}
+
+/* ---- Work panel (fade in) ---- */
+.workPanel {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--d-page) var(--ease),
+    transform var(--d-page) var(--ease);
+}
+
+/* ---- Tabs ---- */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 24px;
+}
+.tab {
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--mist);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all var(--d-hover) var(--ease);
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font-family: inherit;
+}
+.tab:hover {
+  color: var(--cloud);
+}
+.tabOn {
+  color: var(--signal-aqua);
+  border-bottom-color: var(--network-teal);
+  font-weight: 600;
+}
+
+/* ---- Tab badges ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.badgeTeal {
+  background: rgba(31, 154, 155, 0.18);
+  color: var(--network-teal);
+}
+.badgeSlate {
+  background: rgba(86, 99, 115, 0.2);
+  color: var(--slate);
+}
+.badgeAmber {
+  background: var(--status-warning-fill);
+  color: var(--amber);
+}
+
+/* ---- Tab body ---- */
+.tabBody {
+  display: none;
+}
+.tabBodyVis {
+  display: block;
+}
+
+/* ---- Pager ---- */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0;
+}
+.pgBtn {
+  padding: 7px 16px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--mist);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--d-hover) var(--ease);
+}
+.pgBtn:hover:not(:disabled) {
+  border-color: var(--border-active);
+  color: var(--cloud);
+  background: rgba(143, 216, 230, 0.04);
+}
+.pgBtn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+.pgInfo {
+  font-size: 12px;
+  color: var(--slate);
+  padding: 0 8px;
+}
+
+/* ---- Loading state ---- */
+.loading {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--mist);
+  font-size: 14px;
+}
+.loadingDots {
+  display: inline-block;
+  animation: fadeText 1.5s ease-in-out infinite;
+}
+@keyframes fadeText {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ---- Project filter ---- */
+.projectFilter {
+  margin: 0 0 16px 0;
+}
+.projectSelect {
+  background: var(--charcoal, #313B47);
+  color: var(--cloud, #E6EBF0);
+  border: 1px solid rgba(86,99,115,0.28);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 180px;
+}
+.projectSelect:focus {
+  outline: none;
+  border-color: rgba(143,216,230,0.48);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .shell {
+    padding: 20px 16px 60px;
+  }
+  .tabs {
+    overflow-x: auto;
+  }
+  .pgHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+

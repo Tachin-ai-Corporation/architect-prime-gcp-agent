@@ -74,7 +74,6 @@ export default function PrimeHubPage({
           title="Work"
           description="Missions, tasks & envelopes"
           href={`/p/${id}/work`}
-          badge="Coming soon"
         />
         <NavCard
           icon="📁"
