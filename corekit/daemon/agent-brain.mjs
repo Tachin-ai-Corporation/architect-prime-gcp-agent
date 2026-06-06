@@ -2793,6 +2793,17 @@ async function processEnvelope(envelope, memoryContext) {
       log('INFO', `Normalized dispatches[] format → dispatch to ${decision.agent}`);
     }
 
+    // 1b. actions[] array → dispatch (first item) — alternate key name
+    if (!decision.action && decision.actions && Array.isArray(decision.actions) && decision.actions.length > 0) {
+      const a = decision.actions[0];
+      decision.action = 'dispatch';
+      decision.agent = a.agent;
+      decision.task = a.task || a.instruction;
+      decision.intent = a.intent;
+      decision.accept_criteria = a.accept_criteria || a.criteria;
+      log('INFO', `Normalized actions[] format → dispatch to ${decision.agent}`);
+    }
+
     // 2. Flat dispatch: agent + task/instruction but no action
     if (!decision.action && decision.agent && (decision.task || decision.instruction)) {
       decision.action = 'dispatch';
