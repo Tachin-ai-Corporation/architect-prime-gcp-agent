@@ -159,7 +159,6 @@ const CORTEX_SCHEMAS = {
     type: 'OBJECT',
     properties: {
       classification: { type: 'STRING', enum: ['new_mission', 'attach', 'continue', 'cancel', 'info_only'] },
-      title:          { type: 'STRING' },
       instruction:    { type: 'STRING' },
       intent:         { type: 'STRING' },
       reasoning:      { type: 'STRING' },
@@ -169,7 +168,7 @@ const CORTEX_SCHEMAS = {
       project_id:     { type: 'STRING' },
       process_id:     { type: 'STRING' },
     },
-    required: ['classification', 'title', 'reasoning'],
+    required: ['classification', 'reasoning'],
   },
   decide: {
     type: 'OBJECT',
@@ -306,6 +305,31 @@ function summarizeTitle(text, maxLen = 80) {
   const truncated = firstSentence.substring(0, maxLen);
   const lastSpace = truncated.lastIndexOf(' ');
   return (lastSpace > maxLen * 0.5 ? truncated.substring(0, lastSpace) : truncated) + '…';
+}
+
+/**
+ * Generate a clean title for an M, C, or T envelope using Gemini Flash.
+ * Falls back to summarizeTitle() on failure.
+ */
+async function generateTitle(text, type = 'mission') {
+  if (!text || text.length < 3) return 'Untitled';
+  const typeLabels = {
+    mission: 'mission (high-level goal)',
+    checkpoint: 'checkpoint (milestone within a mission)',
+    task: 'task (atomic unit of work)',
+  };
+  const prompt = `Write a concise 5-12 word title for this ${typeLabels[type] || type}. ` +
+    `The title should describe WHAT the work accomplishes, not HOW. ` +
+    `No quotes, no prefixes like "Mission:" or "Task:". Just the title.`;
+  try {
+    const result = await summarizeViaVertex(text.substring(0, 1000), prompt, { maxTokens: 30, temperature: 0.3 });
+    if (result && result.length > 2 && result.length < 120) {
+      return result.replace(/^["']|["']$/g, '').trim();
+    }
+  } catch (e) {
+    log('DEBUG', `generateTitle failed: ${e.message}`);
+  }
+  return summarizeTitle(text);
 }
 
 /**
@@ -598,7 +622,7 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
       owner: AGENT_EMAIL || AGENT_ID,
       status: 'active',
       intent: 'process_execution',
-      title: decision.title || summarizeTitle(`${process.name}: ${decision.instruction || process.description || ''}`),
+      title: await generateTitle(decision.instruction || process.description || process.name, 'mission'),
       instruction: decision.instruction || intake?.text || `Execute process: ${process.name}`,
       accept_criteria: decision.accept_criteria || `Process '${process.name}' completes all steps successfully.`,
       context_summary: decision.context_summary || process.description || null,
@@ -652,7 +676,7 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
       owner: AGENT_EMAIL || AGENT_ID,
       status: 'pending',
       intent: 'checkpoint',
-      title: summarizeTitle(cp.instruction || `Checkpoint ${cpNum}`),
+      title: await generateTitle(cp.instruction || `Checkpoint ${cpNum}`, 'checkpoint'),
       instruction: cp.instruction || `Checkpoint ${cpNum}`,
       accept_criteria: cp.accept_criteria || '',
       output: null,
@@ -684,7 +708,7 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
         owner: AGENT_EMAIL || AGENT_ID,
         status: 'pending',
         intent: stepType === 'approval_gate' ? 'approval_gate' : (task.intent || 'execute'),
-        title: summarizeTitle(task.task || `Step ${cpNum}.${taskNum}`),
+        title: await generateTitle(task.task || `Step ${cpNum}.${taskNum}`, 'task'),
         instruction: task.task || '',
         accept_criteria: task.accept_criteria || '',
         output: null,
@@ -2138,7 +2162,7 @@ async function scanRecentMissions(limit = 5) {
       .map(e => ({
         id: e.id,
         instruction: (e.instruction || '').substring(0, 120),
-        output: (e.output || '').substring(0, 150),
+        output: (typeof e.output === 'string' ? e.output : JSON.stringify(e.output) || '').substring(0, 150),
         status: e.status,
         completed_at: e.completed_at || e.updated_at,
         project_id: e.project_id || null,
@@ -2404,46 +2428,7 @@ async function processIntake(intake) {
   // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)
   const activeEnvelopes = await scanActiveEnvelopes();
 
-  // Phase 7A: Quick ack — immediately tell the user we received it (with mission + recent context)
-  if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent) {
-    const recentMissions = await scanRecentMissions(5);
-    const ackText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
-    const ackId = generateId('ack');
-    await firestoreWrite('work', ackId, {
-      id: ackId,
-      type: 'T',
-      parent_id: null,
-      owner: AGENT_EMAIL || AGENT_ID,
-      status: 'complete',
-      intent: 'ack',
-      title: `Acknowledged: ${summarizeTitle(intake.text, 60)}`,
-      instruction: 'Quick acknowledgment',
-      output: ackText,
-      source_channel: intake.source,
-      source_meta: intake.source_meta || {},
-      created_at: now(),
-      started_at: now(),
-      completed_at: now(),
-      updated_at: now(),
-      children: [],
-      accept_criteria: null,
-      context_summary: null,
-      context_forward: null,
-      error: null,
-      iteration: 0,
-      delivery_status: 'pending',
-    });
-    log('INFO', `Quick ack sent: ${ackId} — "${ackText.substring(0, 60)}"`);
-
-    // Set in-memory and write to Firestore to prevent multiple ACKs if this intake retries
-    intake.quick_ack_sent = true;
-    await firestoreWrite('intake', intake.id, {
-      ...intake,
-      status: 'claimed',
-      claimed_at: now(),
-      quick_ack_sent: true,
-    });
-  }
+  // (Quick ack moved to after classify — see below)
 
   // Phase 3+: Dual memory recall
   // First recall: ambient context from raw inbound text (helps classify)
@@ -2491,38 +2476,49 @@ async function processIntake(intake) {
 
   log('INFO', `Classify result: ${decision.classification || decision.action}`);
 
-  // Handle info_only classification — respond immediately, no mission needed
-  if (decision.classification === 'info_only' && (decision.instruction || decision.reasoning)) {
-    const scId = generateId('w');
-    await firestoreWrite('work', scId, {
-      id: scId,
+  // Create envelope based on classification — info_only and new_task both route through new_mission
+  const classification = (decision.classification === 'new_task' || decision.classification === 'info_only')
+    ? 'new_mission' : (decision.classification || 'new_mission');
+
+  // Quick ack — only for classifications that will take real work time
+  if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent
+      && classification === 'new_mission' && decision.classification !== 'info_only') {
+    const recentMissions = await scanRecentMissions(5);
+    const ackText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
+    const ackId = generateId('ack');
+    await firestoreWrite('work', ackId, {
+      id: ackId,
       type: 'T',
       parent_id: null,
       owner: AGENT_EMAIL || AGENT_ID,
       status: 'complete',
-      intent: 'info_only',
-      instruction: intake.text,
-      accept_criteria: null,
-      context_summary: null,
-      output: decision.instruction || decision.reasoning,
-      children: [],
-      context_forward: null,
-      error: null,
+      intent: 'ack',
+      title: 'Acknowledged',
+      instruction: 'Quick acknowledgment',
+      output: ackText,
       source_channel: intake.source,
       source_meta: intake.source_meta || {},
       created_at: now(),
       started_at: now(),
       completed_at: now(),
       updated_at: now(),
+      children: [],
+      accept_criteria: null,
+      context_summary: null,
+      context_forward: null,
+      error: null,
       iteration: 0,
       delivery_status: 'pending',
     });
-    log('INFO', `Classify info_only: ${scId} — responded directly`);
-    return;
+    log('INFO', `Quick ack sent: ${ackId} — "${ackText.substring(0, 60)}"`);
+    intake.quick_ack_sent = true;
+    await firestoreWrite('intake', intake.id, {
+      ...intake,
+      status: 'claimed',
+      claimed_at: now(),
+      quick_ack_sent: true,
+    });
   }
-
-  // Create envelope based on classification
-  const classification = decision.classification === 'new_task' ? 'new_mission' : (decision.classification || 'new_mission');
 
   // ---- Process routing: deterministic execution for known processes ----
   if (classification === 'new_mission') {
@@ -2590,7 +2586,7 @@ async function processIntake(intake) {
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
     intent: decision.intent || 'decide',
-    title: decision.title || summarizeTitle(decision.instruction || intake.text),
+    title: await generateTitle(decision.instruction || stripChatFraming(intake.text), 'mission'),
     instruction: decision.instruction || stripChatFraming(intake.text),
     accept_criteria: decision.accept_criteria || null,
     context_summary: decision.context_summary || null,
@@ -2717,7 +2713,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
     intent: decision.intent || 'decide',
-    title: decision.title || summarizeTitle(decision.instruction || intake.text),
+    title: await generateTitle(decision.instruction || stripChatFraming(intake.text), 'task'),
     instruction: decision.instruction || stripChatFraming(intake.text),
     accept_criteria: decision.accept_criteria || null,
     context_summary: decision.context_summary || null,
@@ -3107,7 +3103,7 @@ async function processEnvelope(envelope, memoryContext) {
           owner: AGENT_EMAIL || AGENT_ID,
           status: 'active',
           intent: 'checkpoint',
-          title: summarizeTitle(cpInstruction),
+          title: await generateTitle(cpInstruction, 'checkpoint'),
           instruction: cpInstruction,
           accept_criteria: cpCriteria,
           context_summary: allResults.length > 0
@@ -3336,7 +3332,7 @@ async function processEnvelope(envelope, memoryContext) {
             owner: AGENT_EMAIL || AGENT_ID,
             status: 'active',
             intent: stepType === 'delegation' ? 'delegation' : (task.intent || 'execute'),
-            title: task.title || summarizeTitle(taskDesc),
+            title: await generateTitle(taskDesc, 'task'),
             instruction: taskDesc,
             accept_criteria: taskCriteria,
             context_summary: [...allResults, ...cpResults].length > 0

@@ -44,14 +44,11 @@ I receive a raw inbound message and decide what kind of work it represents.
 
 **I return exactly one of:**
 
-**Every classify response MUST include a `title` field** — a concise 5-12 word human-readable summary of what this work does. This appears in the dashboard work list. Good: "Deploy sync-service to Cloud Run". Bad: "execute", "new task", "responsibility".
-
 **New mission** (goal-oriented work with multiple potential steps):
 ```json
 {
   "action": "classify",
   "classification": "new_mission",
-  "title": "Upload budget spreadsheet to Finance folder",
   "instruction": "Upload budget.xlsx to the Finance/Q2-2026 folder",
   "intent": "execute",
   "accept_criteria": "File accessible in target Drive folder",
@@ -77,7 +74,6 @@ I receive a raw inbound message and decide what kind of work it represents.
 {
   "action": "classify",
   "classification": "info_only",
-  "title": "Identity question — who am I",
   "instruction": "I'm Stan, a DevOps specialist fleet agent. I help manage infrastructure, deployments, and cloud operations.",
   "reasoning": "Simple identity question — can answer from my own knowledge, no agent work needed"
 }
@@ -90,7 +86,6 @@ I receive a raw inbound message and decide what kind of work it represents.
   "action": "classify",
   "classification": "new_mission",
   "project_id": "{your-gcp-project}",
-  "title": "Delete broken syncService Cloud Function",
   "instruction": "Delete the broken syncService Cloud Function",
   "reasoning": "syncService is listed in the project's resources"
 }
