@@ -192,9 +192,16 @@ async function smartSummarize(text, budget, prompt) {
  */
 function summarizeTitle(text, maxLen = 80) {
   if (!text) return 'Untitled';
+  // Strip GChat context framing headers
+  let cleaned = text
+    .replace(/^\[Current message[^\]]*\]\s*/i, '')
+    .replace(/^\[Chat messages since[^\]]*\]\s*/i, '')
+    .replace(/^\[Previous context[^\]]*\]\s*/i, '')
+    .replace(/^(User|Someone|Human):\s*/i, '')
+    .trim();
   // Strip leading tool-name prefix (e.g. "project-manage update 'tachin-website'")
-  const cleaned = text.replace(/^```[^\n]*\n?/, '').trim();
-  // Take first sentence (split on period, newline, exclamation, question)
+  cleaned = cleaned.replace(/^```[^\n]*\n?/, '').trim();
+  // Take first meaningful sentence (split on period, newline, exclamation, question)
   const firstSentence = cleaned.split(/[.\n!?]/)[0].trim();
   if (!firstSentence) return cleaned.substring(0, maxLen);
   if (firstSentence.length <= maxLen) return firstSentence;
@@ -202,6 +209,21 @@ function summarizeTitle(text, maxLen = 80) {
   const truncated = firstSentence.substring(0, maxLen);
   const lastSpace = truncated.lastIndexOf(' ');
   return (lastSpace > maxLen * 0.5 ? truncated.substring(0, lastSpace) : truncated) + '…';
+}
+
+/**
+ * Strip GChat context framing from raw intake text.
+ * Removes headers like "[Current message - respond to this]\nUser:" that
+ * get prepended by agent-ears preprocessing.
+ */
+function stripChatFraming(text) {
+  if (!text) return text;
+  return text
+    .replace(/^\[Current message[^\]]*\]\s*/i, '')
+    .replace(/^\[Chat messages since[^\]]*\]\s*(?:Someone:.*\n)*/i, '')
+    .replace(/^\[Previous context[^\]]*\]\s*/i, '')
+    .replace(/^(User|Someone|Human):\s*/i, '')
+    .trim();
 }
 
 // ---- Gateway token ----
@@ -2469,7 +2491,7 @@ async function processIntake(intake) {
     status: 'pending',
     intent: decision.intent || 'decide',
     title: decision.title || summarizeTitle(decision.instruction || intake.text),
-    instruction: decision.instruction || intake.text,
+    instruction: decision.instruction || stripChatFraming(intake.text),
     accept_criteria: decision.accept_criteria || null,
     context_summary: decision.context_summary || null,
     output: null,
@@ -2596,7 +2618,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     status: 'pending',
     intent: decision.intent || 'decide',
     title: decision.title || summarizeTitle(decision.instruction || intake.text),
-    instruction: decision.instruction || intake.text,
+    instruction: decision.instruction || stripChatFraming(intake.text),
     accept_criteria: decision.accept_criteria || null,
     context_summary: decision.context_summary || null,
     output: null,
