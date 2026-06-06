@@ -119,19 +119,25 @@ async function summarizeViaVertex(text, instruction, opts = {}) {
     const token = await getGceToken();
     const url = `${VERTEX_API_BASE}/${model}:generateContent`;
 
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: `${instruction}\n\n---\n\n${text}` }] }],
+      generationConfig: {
+        maxOutputTokens: maxTokens,
+        temperature: temperature,
+      },
+    };
+    // Disable thinking for trivial summarization — saves tokens and latency
+    if (opts.disableThinking) {
+      body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
+
     const resp = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: `${instruction}\n\n---\n\n${text}` }] }],
-        generationConfig: {
-          maxOutputTokens: maxTokens,
-          temperature: temperature,
-        },
-      }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
 
@@ -142,7 +148,12 @@ async function summarizeViaVertex(text, instruction, opts = {}) {
     }
 
     const data = await resp.json();
-    const result = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // Extract the last text part — thinking models put thought in parts[0] and answer in parts[1+]
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    let result = '';
+    for (const part of parts) {
+      if (part.text && !part.thought) result = part.text;
+    }
     log('DEBUG', `summarizeViaVertex result: ${result.length} chars`);
     return result.trim();
   } catch (err) {
@@ -322,7 +333,7 @@ async function generateTitle(text, type = 'mission') {
   const prompt = (definitions[type] || definitions.mission) +
     '\nNo quotes, no prefixes, no labels. Just the title.';
   try {
-    const result = await summarizeViaVertex(text.substring(0, 1000), prompt, { maxTokens: 30, temperature: 0.3 });
+    const result = await summarizeViaVertex(text.substring(0, 1000), prompt, { maxTokens: 60, temperature: 0.3, disableThinking: true });
     if (result && result.length > 2 && result.length < 120) {
       return result.replace(/^["']|["']$/g, '').replace(/^(Mission|Checkpoint|Task):\s*/i, '').trim();
     }
