@@ -20,8 +20,21 @@
 
 set -euo pipefail
 
-PRIME_ID="${PRIME_ID:?'PRIME_ID env var is required'}"
-GCP_PROJECT_ID="${GCP_PROJECT_ID:?'GCP_PROJECT_ID env var is required'}"
+# Auto-detect PRIME_ID and GCP_PROJECT_ID from config files / metadata if not set
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+if [ -z "${GCP_PROJECT_ID:-}" ]; then
+  GCP_PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-}"
+  [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('${CORE_DIR}/corekit/prime-config.json')).get('projectId',''))" 2>/dev/null)" || true
+  [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('${CORE_DIR}/corekit/chat-config.json')).get('projectId',''))" 2>/dev/null)" || true
+  [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+fi
+if [ -z "${PRIME_ID:-}" ]; then
+  PRIME_ID="$(python3 -c "import json; print(json.load(open('${CORE_DIR}/corekit/prime-config.json')).get('primeId',''))" 2>/dev/null)" || true
+  [ -z "$PRIME_ID" ] && PRIME_ID="$(python3 -c "import json; print(json.load(open('${CORE_DIR}/corekit/chat-config.json')).get('primeId',''))" 2>/dev/null)" || true
+  [ -z "$PRIME_ID" ] && PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null)" || true
+fi
+[ -z "${PRIME_ID:-}" ] && { echo "ERROR: Cannot determine PRIME_ID from env, config files, or metadata" >&2; exit 1; }
+[ -z "${GCP_PROJECT_ID:-}" ] && { echo "ERROR: Cannot determine GCP_PROJECT_ID from env, config files, or metadata" >&2; exit 1; }
 
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
 COLLECTION_PATH="primes/${PRIME_ID}/projects"

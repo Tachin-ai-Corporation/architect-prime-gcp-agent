@@ -313,23 +313,68 @@ function summarizeTitle(text, maxLen = 80) {
  */
 async function generateTitle(text, type = 'mission') {
   if (!text || text.length < 3) return 'Untitled';
-  const typeLabels = {
-    mission: 'mission (high-level goal)',
-    checkpoint: 'checkpoint (milestone within a mission)',
-    task: 'task (atomic unit of work)',
+  const definitions = {
+    mission: 'A MISSION is a strategic goal — the top-level objective being accomplished. ' +
+      'Title it as the outcome or deliverable. 5-12 words.',
+    checkpoint: 'A CHECKPOINT is a milestone or phase within a mission — a meaningful stage of progress. ' +
+      'Title it as the deliverable or verification this phase produces. 5-10 words.',
+    task: 'A TASK is an atomic unit of work — a single action performed by one agent. ' +
+      'Title it as the specific action being taken. 5-10 words.',
   };
-  const prompt = `Write a concise 5-12 word title for this ${typeLabels[type] || type}. ` +
-    `The title should describe WHAT the work accomplishes, not HOW. ` +
-    `No quotes, no prefixes like "Mission:" or "Task:". Just the title.`;
+  const prompt = (definitions[type] || definitions.mission) +
+    '\nNo quotes, no prefixes, no labels. Just the title.';
   try {
     const result = await summarizeViaVertex(text.substring(0, 1000), prompt, { maxTokens: 30, temperature: 0.3 });
     if (result && result.length > 2 && result.length < 120) {
-      return result.replace(/^["']|["']$/g, '').trim();
+      return result.replace(/^["']|["']$/g, '').replace(/^(Mission|Checkpoint|Task):\s*/i, '').trim();
     }
   } catch (e) {
     log('DEBUG', `generateTitle failed: ${e.message}`);
   }
   return summarizeTitle(text);
+}
+
+/**
+ * Create a C→T pair under a parent envelope and return the checkpoint ID.
+ * Enforces M→C→T hierarchy for all terminal outputs.
+ */
+async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput, taskIntent = 'execute', taskStatus = 'complete', deliveryStatus = 'internal' }) {
+  const cpId = generateId('w');
+  const tId = generateId('w');
+  const cpEnvelope = {
+    id: cpId, type: 'C', parent_id: parentEnvelope.id,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: taskStatus === 'complete' ? 'complete' : 'active',
+    intent: 'checkpoint', title: checkpointTitle,
+    instruction: checkpointTitle, accept_criteria: null,
+    context_summary: null, output: null,
+    children: [tId], context_forward: null, error: null,
+    source_channel: 'brain', source_meta: {},
+    project_id: parentEnvelope.project_id || null,
+    created_at: now(), started_at: now(),
+    completed_at: taskStatus === 'complete' ? now() : null,
+    updated_at: now(), iteration: 0,
+  };
+  const tEnvelope = {
+    id: tId, type: 'T', parent_id: cpId,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: taskStatus, intent: taskIntent,
+    title: taskTitle, instruction: taskTitle,
+    accept_criteria: null, context_summary: null,
+    output: taskOutput, children: [], context_forward: null,
+    error: null, source_channel: parentEnvelope.source_channel || 'brain',
+    source_meta: parentEnvelope.source_meta || {},
+    created_at: now(), started_at: now(),
+    completed_at: taskStatus === 'complete' ? now() : null,
+    updated_at: now(), iteration: 0,
+    delivery_status: deliveryStatus,
+  };
+  await firestoreWrite('work', cpId, cpEnvelope);
+  await firestoreWrite('work', tId, tEnvelope);
+  parentEnvelope.children = parentEnvelope.children || [];
+  parentEnvelope.children.push(cpId);
+  parentEnvelope.updated_at = now();
+  return cpId;
 }
 
 /**
@@ -2480,37 +2525,12 @@ async function processIntake(intake) {
   const classification = (decision.classification === 'new_task' || decision.classification === 'info_only')
     ? 'new_mission' : (decision.classification || 'new_mission');
 
-  // Quick ack — only for classifications that will take real work time
+  // Quick ack — generate text now, inject as C→T after M envelope is created
+  let pendingAckText = null;
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent
       && classification === 'new_mission' && decision.classification !== 'info_only') {
     const recentMissions = await scanRecentMissions(5);
-    const ackText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
-    const ackId = generateId('ack');
-    await firestoreWrite('work', ackId, {
-      id: ackId,
-      type: 'T',
-      parent_id: null,
-      owner: AGENT_EMAIL || AGENT_ID,
-      status: 'complete',
-      intent: 'ack',
-      title: 'Acknowledged',
-      instruction: 'Quick acknowledgment',
-      output: ackText,
-      source_channel: intake.source,
-      source_meta: intake.source_meta || {},
-      created_at: now(),
-      started_at: now(),
-      completed_at: now(),
-      updated_at: now(),
-      children: [],
-      accept_criteria: null,
-      context_summary: null,
-      context_forward: null,
-      error: null,
-      iteration: 0,
-      delivery_status: 'pending',
-    });
-    log('INFO', `Quick ack sent: ${ackId} — "${ackText.substring(0, 60)}"`);
+    pendingAckText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
     intake.quick_ack_sent = true;
     await firestoreWrite('intake', intake.id, {
       ...intake,
@@ -2613,6 +2633,19 @@ async function processIntake(intake) {
 
   // Write history entry
   await writeHistory(envelopeId, null, 'pending', 'brain', 'Created from intake ' + intake.id);
+
+  // Inject ack as first C→T under the mission
+  if (pendingAckText) {
+    await createCT(envelope, {
+      checkpointTitle: 'Acknowledge receipt',
+      taskTitle: 'Write acknowledgment',
+      taskOutput: pendingAckText,
+      taskIntent: 'ack',
+      deliveryStatus: 'pending',
+    });
+    await firestoreWrite('work', envelope.id, envelope);
+    log('INFO', `Ack injected as C→T under ${envelopeId}`);
+  }
 
   // Process the envelope (pass memory context to avoid re-recall)
   await processEnvelope(envelope, memoryContext);
@@ -2925,6 +2958,15 @@ async function processEnvelope(envelope, memoryContext) {
         });
         continue;
       }
+
+      // Wrap synthesis in C→T under the mission
+      await createCT(envelope, {
+        checkpointTitle: 'Formulate response',
+        taskTitle: 'Synthesize answer',
+        taskOutput: decision.synthesis || decision.response,
+        taskIntent: 'synthesize',
+        deliveryStatus: envelope.parent_id ? 'internal' : 'pending',
+      });
 
       envelope.output = decision.synthesis || decision.response;
       envelope.status = 'complete';
