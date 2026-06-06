@@ -17,9 +17,12 @@ const SEGMENT_LABELS: Record<string, string> = {
   deploy: "Deploy",
   setup: "Setup",
   projects: "Projects",
+  processes: "Processes",
+  config: "Config",
   models: "Models",
   skills: "Skills",
   brain: "Brain",
+  library: "Library",
 };
 
 /* Segments that are structural labels only — not clickable */
@@ -31,7 +34,7 @@ interface Crumb {
   linkable: boolean;
 }
 
-export function Breadcrumb() {
+export function Breadcrumb({ inline }: { inline?: boolean } = {}) {
   const pathname = usePathname();
   const { primes, sidebarFleet } = usePrime();
 
@@ -75,7 +78,7 @@ export function Breadcrumb() {
   }, [pathname, primes, sidebarFleet]);
 
   return (
-    <nav className={styles.bar} aria-label="Breadcrumb" id="breadcrumb-nav">
+    <nav className={`${styles.bar} ${inline ? styles.barInline : ""}`} aria-label="Breadcrumb" id="breadcrumb-nav">
       <ol className={styles.segments}>
         {crumbs.map((crumb, i) => {
           const isLast = i === crumbs.length - 1;

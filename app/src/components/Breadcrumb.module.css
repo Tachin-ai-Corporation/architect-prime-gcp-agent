@@ -10,6 +10,14 @@
   flex-shrink: 0;
 }
 
+/* Inline mode — no background/border when embedded in header */
+.barInline {
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border-bottom: none;
+}
+
 .segments {
   display: flex;
   align-items: center;

@@ -1,0 +1,38 @@
+"use client";
+
+import { NavCard } from "@/components/NavCard";
+import styles from "./page.module.css";
+
+export default function LibraryPage() {
+  return (
+    <div className={styles.shell}>
+      <header className={styles.header}>
+        <h1 className={styles.title}>Library</h1>
+        <p className={styles.subtitle}>
+          Global resources available across all primes and agents
+        </p>
+      </header>
+
+      <div className={styles.grid}>
+        <NavCard
+          icon="🧩"
+          title="Skills"
+          description="Browse the skill catalog — tools, manifests, and capabilities available for installation"
+          href="/library/skills"
+        />
+        <NavCard
+          icon="🎭"
+          title="Agent Types"
+          description="Explore agent specialties — DevOps, Engineer, QA, PM, and more"
+          href="/library/agent-types"
+        />
+        <NavCard
+          icon="🧠"
+          title="Models"
+          description="Scan and manage Vertex AI models — Gemini, Claude, and partner models"
+          href="/library/models"
+        />
+      </div>
+    </div>
+  );
+}

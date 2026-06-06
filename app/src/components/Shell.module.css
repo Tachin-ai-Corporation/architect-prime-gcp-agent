@@ -74,42 +74,14 @@
   letter-spacing: -0.01em;
 }
 
-/* ---- Nav links (centered in header) ---- */
+/* ---- Breadcrumb area (center of header) ---- */
 
-.navLinks {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
+.breadcrumbArea {
   flex: 1;
   min-width: 0;
-}
-
-.navLink {
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #7A8696;
-  text-decoration: none;
-  border-radius: 6px;
-  transition: color 150ms ease, background 150ms ease;
-  white-space: nowrap;
-}
-
-.navLink:hover {
-  color: #E6EBF0;
-  background: rgba(86, 99, 115, 0.15);
-  text-decoration: none;
-}
-
-.navLinkActive {
-  color: var(--signal-aqua, #8FD8E6);
-  background: rgba(31, 154, 155, 0.1);
-}
-
-.navLinkActive:hover {
-  color: var(--signal-aqua, #8FD8E6);
-  background: rgba(31, 154, 155, 0.15);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
 }
 
 /* ---- Icon buttons ---- */

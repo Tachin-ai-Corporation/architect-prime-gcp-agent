@@ -1,0 +1,115 @@
+/* ---- Agent Deep Dive ---- */
+
+.agentPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  max-width: 960px;
+  margin: 0 auto;
+  animation: fadeIn var(--duration-page) var(--ease-premium);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Header ---- */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: color var(--duration-hover) var(--ease-standard);
+  margin-bottom: var(--space-2);
+  width: fit-content;
+}
+
+.backLink:hover {
+  color: var(--text-link);
+}
+
+.agentName {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* ---- Tabs ---- */
+.tabBar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+}
+
+.tab {
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+  transition:
+    color var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard);
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--text-secondary);
+}
+
+.tabActive {
+  color: var(--text-primary);
+  border-bottom-color: var(--network-teal);
+}
+
+/* ---- Tab Content ---- */
+.tabContent {
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  text-align: center;
+  gap: var(--space-3);
+}
+
+.tabIcon {
+  font-size: 32px;
+  opacity: 0.6;
+}
+
+.tabTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tabDesc {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}

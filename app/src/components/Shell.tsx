@@ -4,18 +4,11 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePrime } from "@/contexts/PrimeContext";
+import { Breadcrumb } from "./Breadcrumb";
 import { OperationsFeed, useOperations } from "./OperationsFeed";
 import styles from "./Shell.module.css";
 
-const navItems = [
-  { label: "Home", path: "/" },
-  { label: "Projects", path: "/projects" },
-  { label: "Processes", path: "/processes" },
-  { label: "Work", path: "/work" },
-  { label: "Brain", path: "/brain" },
-  { label: "Skills", path: "/skills" },
-  { label: "Agent Types", path: "/agent-types" },
-];
+
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { primes, versionInfo, setup } = usePrime();
@@ -63,19 +56,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Link>
         </div>
 
-          {/* ---- Nav links (centered) ---- */}
-          <nav className={styles.navLinks} id="shell-nav">
-            {navItems.map((item) => (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={`${styles.navLink} ${isActive(item.path) ? styles.navLinkActive : ""}`}
-                id={`nav-${item.path.replace("/", "") || "home"}`}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          {/* ---- Breadcrumb navigation (replaces flat nav links) ---- */}
+          <div className={styles.breadcrumbArea}>
+            <Breadcrumb inline />
+          </div>
 
         <div className={styles.topBarRight}>
           {/* DWD not configured warning */}
@@ -128,6 +112,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
               )}
             </button>
           )}
+
+          {/* Library link */}
+          <Link
+            href="/library"
+            className={`${styles.iconBtn} ${isActive("/library") ? styles.iconBtnActive : ""}`}
+            title="Library"
+            id="shell-library"
+          >
+            📚
+          </Link>
 
           {/* Settings gear */}
           <Link
