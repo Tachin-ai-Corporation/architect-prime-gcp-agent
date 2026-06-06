@@ -428,9 +428,19 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
     .map(([key]) => key);
   const missingParams = requiredParams.filter(k => !(k in parameters));
   if (missingParams.length > 0) {
-    log('WARN', `executeProcess: missing required parameters: ${missingParams.join(', ')}`);
-    // TODO: create needs_input envelope to ask user for parameters
-    return;
+    // Auto-fill missing params from intake/decision text when obvious
+    const sourceText = decision.instruction || intake?.text || '';
+    for (const param of [...missingParams]) {
+      if (sourceText && !parameters[param]) {
+        parameters[param] = sourceText;
+        missingParams.splice(missingParams.indexOf(param), 1);
+        log('INFO', `executeProcess: auto-filled parameter '${param}' from intake text (${sourceText.length} chars)`);
+      }
+    }
+    if (missingParams.length > 0) {
+      log('WARN', `executeProcess: missing required parameters after auto-fill: ${missingParams.join(', ')} — falling back to decide loop`);
+      return 'fallback_to_decide';
+    }
   }
 
   // Fill defaults for missing optional parameters
@@ -2399,7 +2409,9 @@ async function processIntake(intake) {
       await ensureProcessesLoaded();
       if (PROCESSES[processId]) {
         log('INFO', `Process route: '${processId}' detected — routing to executeProcess`);
-        return executeProcess(intake, decision, memoryContext, processId);
+        const processResult = await executeProcess(intake, decision, memoryContext, processId);
+        if (processResult !== 'fallback_to_decide') return;
+        log('INFO', `Process '${processId}' fell back to decide loop — continuing with normal flow`);
       }
     }
   }
