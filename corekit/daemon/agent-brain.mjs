@@ -3828,6 +3828,40 @@ async function main() {
   setInterval(() => archiveEnvelopes(), ARCHIVE_INTERVAL_MS);
   log('INFO', `Archival sweep scheduled every ${Math.round(ARCHIVE_INTERVAL_MS / 3600000)}h`);
 
+  // Startup recovery: re-process orphaned active/pending M envelopes
+  // When brain restarts mid-processing, envelopes get stuck with no processor
+  try {
+    const agentEmail = AGENT_EMAIL || AGENT_ID;
+    const orphaned = await firestoreQuery('work', [
+      { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
+      { field: 'owner', op: 'EQUAL', value: { stringValue: agentEmail } },
+      { field: 'status', op: 'IN', value: { arrayValue: { values: [
+        { stringValue: 'active' },
+        { stringValue: 'pending' },
+      ] } } },
+    ]);
+    if (orphaned.length > 0) {
+      log('INFO', `Startup recovery: found ${orphaned.length} orphaned M envelope(s)`);
+      for (const env of orphaned) {
+        log('INFO', `Recovering orphaned envelope: ${env.id} (status=${env.status}, title=${(env.title || '').substring(0, 60)})`);
+        try {
+          // Reset to pending so processEnvelope treats it as fresh
+          env.status = 'pending';
+          env.iteration = 0;
+          await firestoreWrite('work', env.id, { status: 'pending', iteration: 0, updated_at: now() });
+          await writeHistory(env.id, 'active', 'pending', 'brain', 'Recovered after brain restart');
+          const memory = await recallMemory(env.instruction);
+          await processEnvelope(env, memory);
+        } catch (e) {
+          log('ERROR', `Recovery failed for ${env.id}: ${e.message}`);
+        }
+      }
+    }
+  } catch (e) {
+    log('WARN', `Startup recovery sweep failed: ${e.message}`);
+  }
+
+
   // Start intake polling
   const POLL_MS = CONTRACTS.dispatch?.poll_interval_ms || 3000;
   log('INFO', `Starting intake poll (every ${POLL_MS}ms)`);
