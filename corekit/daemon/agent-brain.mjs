@@ -153,6 +153,103 @@ async function summarizeViaVertex(text, instruction, opts = {}) {
   }
 }
 
+// ---- Schema enforcement via Gemini structured output ----
+const CORTEX_SCHEMAS = {
+  classify: {
+    type: 'OBJECT',
+    properties: {
+      classification: { type: 'STRING', enum: ['new_mission', 'attach', 'continue', 'cancel', 'info_only'] },
+      title:          { type: 'STRING' },
+      instruction:    { type: 'STRING' },
+      intent:         { type: 'STRING' },
+      reasoning:      { type: 'STRING' },
+      attach_to:      { type: 'STRING' },
+      accept_criteria:{ type: 'STRING' },
+      context_summary:{ type: 'STRING' },
+      project_id:     { type: 'STRING' },
+      process_id:     { type: 'STRING' },
+    },
+    required: ['classification', 'title', 'reasoning'],
+  },
+  decide: {
+    type: 'OBJECT',
+    properties: {
+      action:     { type: 'STRING', enum: [
+        'checkpoint_plan', 'synthesize', 'synthesize_with_failure',
+        'needs_input', 'blocked', 'follow_process', 'status_update',
+      ]},
+      reasoning:  { type: 'STRING' },
+      checkpoints: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        instruction:     { type: 'STRING' },
+        accept_criteria: { type: 'STRING' },
+        tasks: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+          agent:           { type: 'STRING' },
+          task:            { type: 'STRING' },
+          accept_criteria: { type: 'STRING' },
+        }, required: ['agent', 'task'] }},
+      }, required: ['instruction', 'tasks'] }},
+      synthesis:       { type: 'STRING' },
+      failure_summary: { type: 'STRING' },
+      question:        { type: 'STRING' },
+      what_is_needed:  { type: 'STRING' },
+      blocker:            { type: 'STRING' },
+      blocker_type:       { type: 'STRING' },
+      escalation_message: { type: 'STRING' },
+      processId:  { type: 'STRING' },
+      parameters: { type: 'OBJECT' },
+      message: { type: 'STRING' },
+    },
+    required: ['action'],
+  },
+};
+
+async function enforceSchema(cortexRaw, mode) {
+  const schema = CORTEX_SCHEMAS[mode];
+  if (!schema) return typeof cortexRaw === 'string' ? parseJsonResponse(cortexRaw) : cortexRaw;
+
+  const input = typeof cortexRaw === 'string' ? cortexRaw : JSON.stringify(cortexRaw);
+  const prompt = `Restructure this AI decision into the required JSON schema. Preserve ALL semantic content exactly — do not invent, remove, or modify any decisions, instructions, or reasoning. Only restructure to fit the schema.\n\n---\n${input}`;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const token = await getGceToken();
+      const resp = await fetch(`${VERTEX_API_BASE}/${BRAIN_MODEL}:generateContent`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: schema,
+            maxOutputTokens: 8192,
+            temperature: 0.1,
+          },
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!resp.ok) {
+        log('WARN', `enforceSchema attempt ${attempt}: HTTP ${resp.status}`);
+        continue;
+      }
+
+      const data = await resp.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) { log('WARN', `enforceSchema attempt ${attempt}: empty response`); continue; }
+
+      const parsed = JSON.parse(text);
+      log('DEBUG', `enforceSchema OK (attempt ${attempt}): action=${parsed.action || parsed.classification}`);
+      return parsed;
+    } catch (err) {
+      log('WARN', `enforceSchema attempt ${attempt}: ${err.message}`);
+    }
+  }
+
+  log('WARN', `enforceSchema failed 2x, falling back to parseJsonResponse`);
+  return typeof cortexRaw === 'string' ? parseJsonResponse(cortexRaw) : cortexRaw;
+}
+
+
 function smartTruncate(text, budget) {
   if (!text || text.length <= budget) return text;
   const headBudget = Math.floor(budget * 0.4);
@@ -1481,7 +1578,7 @@ async function callCortex(mode, payload) {
 
   log('DEBUG', `Cortex raw response (${content.length} chars): ${content.substring(0, 300)}`);
 
-  return parseJsonResponse(content);
+  return enforceSchema(content, mode);
 }
 
 function buildSystemPrompt(mode, payload) {
@@ -1573,7 +1670,7 @@ function buildUserPrompt(mode, payload) {
       classification_guidance: {
         blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
-        dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as "short_circuit" and reference the prior result, or classify as "attach" to add follow-up context. Only create new_mission if the inbound is genuinely different work.',
+        dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as \"info_only\" and reference the prior result, or classify as \"attach\" to add follow-up context. Only create new_mission if the inbound is genuinely different work.',
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
         required_processes: 'CRITICAL: Projects may define required_processes — activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
       },
@@ -1631,13 +1728,12 @@ function buildUserPrompt(mode, payload) {
         parameters: p.parameters || {},
       }));
     }
-    // Task decomposition guidance — prevents packing too many steps into one dispatch
+    // Task decomposition guidance — enforce checkpoint_plan structure
     decidePayload.dispatch_guidance = {
-      rule: 'ONE focused task per dispatch. Do NOT pack multiple sequential steps into a single dispatch instruction.',
-      bad_example: 'Step 1: check health. Step 2: read logs. Step 3: create file. Step 4: deploy. Step 5: verify.',
-      good_example: 'First dispatch: check service health and return findings. Then decide next step based on results.',
-      reasoning: 'Each motor dispatch has a limited step budget. Packing many steps causes timeouts and lost context on failure. Dispatch one task, get the result, then decide the next action.',
-      preferred_actions: 'For multi-step investigations, prefer "checkpoint_plan" (parallel tasks per checkpoint) or sequential dispatches (one task → review result → next task).',
+      rule: 'ALL work MUST use checkpoint_plan. One focused task per task entry. Even single-step work is one checkpoint with one task.',
+      bad_example: 'Step 1: check health. Step 2: read logs. Step 3: create file.',
+      good_example: 'checkpoint_plan with separate checkpoints for research, implementation, and verification — each containing atomic tasks.',
+      reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The M→C→T hierarchy ensures progress tracking and enables re-planning on failure.',
     };
     return JSON.stringify(decidePayload);
   }
@@ -2395,8 +2491,8 @@ async function processIntake(intake) {
 
   log('INFO', `Classify result: ${decision.classification || decision.action}`);
 
-  // Handle short_circuit from classify — respond immediately, no envelope needed
-  if (decision.action === 'short_circuit' && decision.response) {
+  // Handle info_only classification — respond immediately, no mission needed
+  if (decision.classification === 'info_only' && (decision.instruction || decision.reasoning)) {
     const scId = generateId('w');
     await firestoreWrite('work', scId, {
       id: scId,
@@ -2404,11 +2500,11 @@ async function processIntake(intake) {
       parent_id: null,
       owner: AGENT_EMAIL || AGENT_ID,
       status: 'complete',
-      intent: 'short_circuit',
+      intent: 'info_only',
       instruction: intake.text,
       accept_criteria: null,
       context_summary: null,
-      output: decision.response,
+      output: decision.instruction || decision.reasoning,
       children: [],
       context_forward: null,
       error: null,
@@ -2421,15 +2517,15 @@ async function processIntake(intake) {
       iteration: 0,
       delivery_status: 'pending',
     });
-    log('INFO', `Classify short_circuit: ${scId} — responded directly`);
+    log('INFO', `Classify info_only: ${scId} — responded directly`);
     return;
   }
 
   // Create envelope based on classification
-  const classification = decision.classification || 'new_task';
+  const classification = decision.classification === 'new_task' ? 'new_mission' : (decision.classification || 'new_mission');
 
   // ---- Process routing: deterministic execution for known processes ----
-  if (classification === 'new_mission' || classification === 'new_task') {
+  if (classification === 'new_mission') {
     const processId = decision.process_id || decision.processId;
     if (processId) {
       await ensureProcessesLoaded();
@@ -2489,7 +2585,7 @@ async function processIntake(intake) {
 
   const envelope = {
     id: envelopeId,
-    type: classification === 'new_mission' ? 'M' : 'T',
+    type: 'M',
     parent_id: null,
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
@@ -2815,116 +2911,9 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
-    // ---- Normalize LLM response variants ----
-    // Cortex sometimes returns alternative formats. Rather than failing on
-    // unrecognized shapes, we infer the most likely action from the fields
-    // present. Ordered from most-specific signal to least-specific.
-
-    // 1. dispatches[] array → dispatch (first item)
-    if (!decision.action && decision.dispatches && Array.isArray(decision.dispatches) && decision.dispatches.length > 0) {
-      const d = decision.dispatches[0];
-      decision.action = 'dispatch';
-      decision.agent = d.agent;
-      decision.task = d.task || d.instruction;
-      decision.intent = d.intent;
-      decision.accept_criteria = d.accept_criteria || d.criteria;
-      log('INFO', `Normalized dispatches[] format → dispatch to ${decision.agent}`);
-    }
-
-    // 1b. actions[] array → dispatch (first item) — alternate key name
-    if (!decision.action && decision.actions && Array.isArray(decision.actions) && decision.actions.length > 0) {
-      const a = decision.actions[0];
-      decision.action = 'dispatch';
-      decision.agent = a.agent;
-      decision.task = a.task || a.instruction;
-      decision.intent = a.intent;
-      decision.accept_criteria = a.accept_criteria || a.criteria;
-      log('INFO', `Normalized actions[] format → dispatch to ${decision.agent}`);
-    }
-
-    // 2. Flat dispatch: agent + task/instruction but no action
-    if (!decision.action && decision.agent && (decision.task || decision.instruction)) {
-      decision.action = 'dispatch';
-      decision.task = decision.task || decision.instruction;
-      log('INFO', `Normalized flat-no-action format → dispatch to ${decision.agent}`);
-    }
-
-    // 3. Synonym: 'delegate' → dispatch
-    if (decision.action === 'delegate') {
-      decision.action = 'dispatch';
-      decision.agent = decision.agent || decision.target_agent;
-      decision.task = decision.task || decision.instruction;
-      log('INFO', `Normalized delegate → dispatch to ${decision.agent}`);
-    }
-
-    // 3b. Synonym: 'execute' → dispatch
-    if (decision.action === 'execute') {
-      decision.action = 'dispatch';
-      decision.agent = decision.agent || decision.target_agent;
-      decision.task = decision.task || decision.instruction;
-      log('INFO', `Normalized execute → dispatch to ${decision.agent}`);
-    }
-
-    // 4. Synthesize: intent:"synthesize" or synthesis field present (no action)
-    if (!decision.action && (decision.intent === 'synthesize' || decision.synthesis !== undefined)) {
-      decision.action = 'synthesize';
-      decision.synthesis = decision.synthesis || decision.result || decision.response;
-      log('INFO', `Normalized intent/field → synthesize`);
-    }
-
-    // 5. Synthesize with failure: intent or failure_summary present
-    if (!decision.action && (decision.intent === 'synthesize_with_failure' || decision.failure_summary)) {
-      decision.action = 'synthesize_with_failure';
-      decision.synthesis = decision.synthesis || decision.result || decision.response;
-      log('INFO', `Normalized intent/field → synthesize_with_failure`);
-    }
-
-    // 6. Blocked: blocker or blocker_type present (no action)
-    if (!decision.action && (decision.blocker || decision.blocker_type)) {
-      decision.action = 'blocked';
-      log('INFO', `Normalized blocker fields → blocked`);
-    }
-
-    // 7. Needs input: question or what_is_needed present (no action)
-    if (!decision.action && (decision.question || decision.what_is_needed)) {
-      decision.action = 'needs_input';
-      log('INFO', `Normalized question fields → needs_input`);
-    }
-
-    // 8. Plan: steps[] array present (no action)
-    if (!decision.action && Array.isArray(decision.steps) && decision.steps.length > 0) {
-      decision.action = 'plan';
-      log('INFO', `Normalized steps[] → plan (${decision.steps.length} steps)`);
-    }
-
-    // 9. Short circuit: response field present (no action, no agent)
-    if (!decision.action && decision.response) {
-      decision.action = 'short_circuit';
-      log('INFO', `Normalized response-no-action → short_circuit`);
-    }
-
-    // 10. Universal fallback: result field present → treat as synthesize
-    // Any response with a "result" field is almost certainly a synthesis
-    if (!decision.action && decision.result !== undefined) {
-      decision.action = 'synthesize';
-      decision.synthesis = decision.result;
-      log('INFO', `Normalized result field fallback → synthesize`);
-    }
-
-    let action = decision.action;
+    // Schema enforcement guarantees action field — no normalization needed
+    const action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
-
-    if (action === 'short_circuit') {
-      envelope.output = decision.response;
-      envelope.status = 'complete';
-      envelope.completed_at = now();
-      envelope.updated_at = now();
-      await firestoreWrite('work', envelope.id, envelope);
-      await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Short-circuit response');
-      log('INFO', `Envelope ${envelope.id} complete (short_circuit)`);
-      await cleanupSharedWorkspace(envelope.id);
-      return;
-    }
 
     if (action === 'synthesize') {
       // Check for unresolved failures — block premature success synthesis
@@ -2950,7 +2939,7 @@ async function processEnvelope(envelope, memoryContext) {
       await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Synthesized response');
       log('INFO', `Envelope ${envelope.id} complete (synthesize)`);
 
-      // Phase 3: Write completed work to memory (synthesize only, not short_circuit)
+      // Phase 3: Write completed work to memory
       await writeMemory(envelope);
       await cleanupSharedWorkspace(envelope.id);
 
@@ -2971,7 +2960,7 @@ async function processEnvelope(envelope, memoryContext) {
 
         priorResults.push({
           agent: 'system',
-          result: `[SELF-UNBLOCK CHECK] Before accepting this failure, try to find an alternative approach. Can you resolve this yourself using a different method? If YES: use "dispatch" to try the alternative. If NO — this is a genuine external dependency you cannot work around — use "blocked" action with a concrete blocker description. Do NOT use synthesize_with_failure; use "blocked" instead.`,
+          result: `[SELF-UNBLOCK CHECK] Before accepting this failure, try to find an alternative approach. Can you resolve this yourself using a different method? If YES: use \"checkpoint_plan\" to try the alternative. If NO — this is a genuine external dependency you cannot work around — use \"blocked\" action with a concrete blocker description. Do NOT use synthesize_with_failure; use \"blocked\" instead.`,
         });
         continue;
       }
@@ -3054,303 +3043,6 @@ async function processEnvelope(envelope, memoryContext) {
       await writeHistory(envelope.id, 'active', 'needs_input', 'brain', `Needs: ${decision.what_is_needed || 'clarification'}`);
       log('INFO', `Envelope ${envelope.id} needs_input (ambiguous)`);
       return;
-    }
-
-    if (action === 'continue') {
-      // Continue a timed-out task — re-dispatch with continuation context
-      const lastTimedOut = [...priorResults].reverse().find(r => r.timedOut);
-      if (!lastTimedOut) {
-        priorResults.push({ agent: 'system', result: '[SYSTEM] No timed-out task to continue. Use "dispatch" instead.' });
-        continue;
-      }
-      const agentId = lastTimedOut.agent || 'motor';
-      const guidance = decision.guidance || '';
-      const continuationTask = [
-        `[CONTINUATION] A previous attempt at this task timed out. Before doing anything, CHECK what was already accomplished (files written, containers built, services deployed) so you don't redo completed work.`,
-        ``,
-        `Original task: ${lastTimedOut.task}`,
-        guidance ? `\nAdditional guidance: ${guidance}` : '',
-      ].filter(Boolean).join('\n');
-
-      // Rewrite decision to look like a dispatch and fall through
-      decision.agent = agentId;
-      decision.task = continuationTask;
-      // Fall through to dispatch handler below
-    }
-
-    if (action === 'dispatch' || action === 'continue') {
-      const agentId = decision.agent;
-      const task = decision.task || decision.instruction || '';
-      const criteria = decision.accept_criteria || '';
-
-      if (!agentId) {
-        log('ERROR', `Dispatch missing agent field`);
-        priorResults.push({ agent: 'system', result: '[SYSTEM] Dispatch requires an "agent" field.' });
-        continue;
-      }
-
-      // Create child Task envelope
-      const childId = generateId('w');
-      const childEnvelope = {
-        id: childId,
-        type: 'T',
-        parent_id: envelope.id,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'active',
-        intent: decision.intent || 'execute',
-        title: decision.title || summarizeTitle(task),
-        instruction: task,
-        accept_criteria: criteria,
-        context_summary: envelope.context_summary || null,
-        output: null,
-        children: [],
-        context_forward: null,
-        error: null,
-        source_channel: 'brain',
-        source_meta: { dispatched_by: envelope.id },
-        project_id: envelope.project_id || null,
-        created_at: now(),
-        started_at: now(),
-        completed_at: null,
-        updated_at: now(),
-        iteration: 0,
-      };
-
-      await firestoreWrite('work', childId, childEnvelope);
-      await writeHistory(childId, null, 'active', 'brain', `Dispatched to ${agentId}`);
-
-      // Track child on parent
-      envelope.children.push(childId);
-      envelope.updated_at = now();
-      await firestoreWrite('work', envelope.id, envelope);
-
-      log('INFO', `Dispatching child ${childId} to ${agentId}: ${task.substring(0, 100)}`);
-
-      // Prepend project context for dispatches (all agent types, not just motor)
-      if (envelope.project_id) {
-        const projCtx = buildProjectContext(envelope.project_id, envelope.context);
-        if (projCtx) {
-          childEnvelope.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${childEnvelope.instruction}`;
-        }
-      }
-
-      // Prepend verbatim user request — preserves URLs, code, and data that
-      // cortex classification may have summarized away
-      if (envelope.source_text) {
-        childEnvelope.instruction = `[ORIGINAL USER REQUEST — verbatim]\n${envelope.source_text}\n[END ORIGINAL USER REQUEST]\n\n${childEnvelope.instruction}`;
-      }
-
-      // Call the agent
-      const result = await callAgent(agentId, childEnvelope);
-
-      // Update child envelope with result
-      childEnvelope.output = result.output || result.error;
-      childEnvelope.status = result.success ? 'complete' : (result.timedOut ? 'timed_out' : 'failed');
-      childEnvelope.error = result.error;
-      childEnvelope.completed_at = now();
-      childEnvelope.updated_at = now();
-      await firestoreWrite('work', childId, childEnvelope);
-
-      // Context backfill: if motor created resources, update null-ref context entries
-      if (agentId === 'motor' && result.success && envelope.context) {
-        await backfillContextRefs(envelope, result.output);
-      }
-
-      await writeHistory(childId, 'active', childEnvelope.status, agentId,
-        result.success ? `Completed (${result.durationMs}ms)` : (result.timedOut ? `Timed out (${result.durationMs}ms)` : `Failed: ${result.error}`));
-
-      // Feed result back to Cortex
-      priorResults.push({
-        agent: agentId,
-        task: task.substring(0, 200),
-        result: result.success
-          ? await smartSummarize(result.output || '', CTX_CORTEX_STEP, 'Summarize this agent result for the orchestrator. Keep key outcomes, decisions made, and resources created or modified.')
-          : result.timedOut
-            ? `[TIMED OUT after ${Math.round(result.durationMs / 1000)}s] ${result.error}`
-            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_DISPATCH_FAILURE, 'Summarize this failed dispatch output. Keep error context and partial progress.')}`,
-        success: result.success,
-        durationMs: result.durationMs,
-        timedOut: result.timedOut || false,
-      });
-
-      // Inject context — different for timeouts vs hard failures
-      if (result.timedOut) {
-        priorResults.push({
-          agent: 'system',
-          result: `[TIMEOUT] The dispatch to ${agentId} timed out after ${Math.round(result.durationMs / 1000)}s. ` +
-            `The work may have partially completed on the system. Options:\n` +
-            `(1) "continue" — re-dispatch to ${agentId} with instructions to CHECK what was already done and continue from where it left off\n` +
-            `(2) "dispatch" — try a DIFFERENT, simpler approach (break the task into smaller steps)\n` +
-            `(3) "synthesize_with_failure" — bail if this genuinely cannot be completed\n\n` +
-            `IMPORTANT: If you choose "continue", provide a "guidance" field with any hints about what to check first. ` +
-            `If you choose "dispatch", use a simpler instruction that avoids the timeout.`,
-        });
-      } else if (!result.success) {
-        const sourceInfo = envelope.source_channel
-          ? `The task came from ${envelope.source_channel}${envelope.source_meta?.space_name ? ' (' + envelope.source_meta.space_name + ')' : ''} — that is where you should escalate.`
-          : '';
-        priorResults.push({
-          agent: 'system',
-          result: `[FAILURE DIRECTIVE] The dispatch to ${agentId} FAILED. You MUST investigate and fix the root cause — do NOT synthesize a speculative or hopeful response. Options: (1) dispatch motor to debug (check logs, verify state, try alternate approach), (2) dispatch temporal-research for solutions, (3) retry with a corrected approach. If you have genuinely exhausted all options after multiple attempts, use the "blocked" action with a concrete blocker description (blocker, blocker_type, escalation_message) — your escalation MUST state exactly what you need (permissions, access, information, resources), who can provide it, and what specific action to take. Do NOT just report the problem — come back with what you need to unblock the work.\n\nPERMISSION ERRORS: If the failure is a GCP IAM permission denied error, your escalation_message MUST include: (a) the exact service account that needs the permission, (b) the specific IAM role(s) required, (c) the target GCP project, and (d) the exact gcloud command to grant it (e.g. "gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:SA@PROJECT.iam.gserviceaccount.com --role=roles/ROLE_NAME"). ${sourceInfo}`,
-        });
-      }
-
-      log('INFO', `Child ${childId} ${result.success ? 'completed' : (result.timedOut ? 'timed out' : 'failed')} (${result.durationMs}ms)`);
-      continue;
-    }
-
-    if (action === 'plan') {
-      // Phase 4: Multi-step plan — execute steps sequentially with context accumulation
-      const steps = decision.steps;
-      if (!Array.isArray(steps) || steps.length === 0) {
-        log('ERROR', `Plan has no steps`);
-        priorResults.push({ agent: 'system', result: '[SYSTEM] Plan requires a non-empty "steps" array.' });
-        continue;
-      }
-
-      log('INFO', `Plan received: ${steps.length} steps`);
-
-      let planContext = []; // Accumulated results from plan steps
-      let planFailed = false;
-
-      for (let si = 0; si < steps.length; si++) {
-        const step = steps[si];
-        const stepNum = si + 1;
-        const stepAgent = step.agent;
-        const stepTask = step.task || step.instruction || '';
-        const stepCriteria = step.accept_criteria || '';
-
-        if (!stepAgent) {
-          log('WARN', `Plan step ${stepNum} missing agent, skipping`);
-          planContext.push({ step: stepNum, agent: 'unknown', result: '[SKIPPED] No agent specified', success: false });
-          continue;
-        }
-
-        // Create child Task envelope for this plan step
-        const stepChildId = generateId('w');
-        const stepChild = {
-          id: stepChildId,
-          type: 'T',
-          parent_id: envelope.id,
-          owner: AGENT_EMAIL || AGENT_ID,
-          status: 'active',
-          intent: step.intent || 'execute',
-          title: step.title || summarizeTitle(stepTask),
-          instruction: stepTask,
-          accept_criteria: stepCriteria,
-          context_summary: planContext.length > 0
-            ? `Prior plan steps:\n${planContext.map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 300)}`).join('\n')}`
-            : envelope.context_summary || null,
-          output: null,
-          children: [],
-          context_forward: null,
-          error: null,
-          source_channel: 'brain',
-          source_meta: { dispatched_by: envelope.id, plan_step: stepNum, plan_total: steps.length },
-          project_id: envelope.project_id || null,
-          created_at: now(),
-          started_at: now(),
-          completed_at: null,
-          updated_at: now(),
-          iteration: 0,
-        };
-
-        await firestoreWrite('work', stepChildId, stepChild);
-        await writeHistory(stepChildId, null, 'active', 'brain', `Plan step ${stepNum}/${steps.length}: ${stepAgent}`);
-
-        // Track child on parent
-        envelope.children.push(stepChildId);
-        envelope.updated_at = now();
-        await firestoreWrite('work', envelope.id, envelope);
-
-        log('INFO', `Plan step ${stepNum}/${steps.length}: dispatching to ${stepAgent} — ${stepTask.substring(0, 80)}`);
-
-        // Prepend project context for plan steps (all agent types)
-        if (envelope.project_id) {
-          const projCtx = buildProjectContext(envelope.project_id, envelope.context);
-          if (projCtx) {
-            stepChild.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${stepChild.instruction}`;
-          }
-        }
-
-
-        // Build instruction with context for the agent
-        const contextForAgent = {
-          instruction: stepTask,
-          accept_criteria: stepCriteria,
-          context_summary: planContext.length > 0
-            ? (await Promise.all(planContext.map(async r => `Step ${r.step} (${r.agent}): ${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this prior step result briefly. Keep key outputs and state changes.')}`))).join('\n')
-            : undefined,
-          prior_results_context: planContext.length > 0
-            ? (await Promise.all(planContext.map(async r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this completed step. Keep deliverables, changes made, and any issues encountered.')}`))).join('\n\n')
-            : undefined,
-        };
-
-        // Dispatch to the agent
-        let result = await callAgent(stepAgent, contextForAgent);
-
-        // Retry once on failure
-        if (!result.success) {
-          log('WARN', `Plan step ${stepNum} failed (${stepAgent}): ${result.error}. Retrying...`);
-          const retryInstruction = {
-            instruction: `${stepTask}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
-            accept_criteria: stepCriteria,
-            context_summary: contextForAgent.context_summary,
-          };
-          result = await callAgent(stepAgent, retryInstruction);
-        }
-
-        // Update child envelope with result
-        stepChild.output = result.output || result.error;
-        stepChild.status = result.success ? 'complete' : 'failed';
-        stepChild.error = result.error;
-        stepChild.completed_at = now();
-        stepChild.updated_at = now();
-        await firestoreWrite('work', stepChildId, stepChild);
-        await writeHistory(stepChildId, 'active', stepChild.status, stepAgent,
-          result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
-
-        planContext.push({
-          step: stepNum,
-          agent: stepAgent,
-          task: stepTask.substring(0, 200),
-          result: result.success
-            ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this plan step result. Keep key outputs, file paths, and resource names.')
-            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_AGENT_STEP, 'Summarize this failed step output. Keep error details and partial progress.')}`,
-          success: result.success,
-          durationMs: result.durationMs,
-        });
-
-        log('INFO', `Plan step ${stepNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
-
-        if (!result.success) {
-          // Step failed even after retry — consult Cortex with failure context
-          log('WARN', `Plan step ${stepNum} failed after retry, consulting Cortex`);
-          planFailed = true;
-          break;
-        }
-      }
-
-      // Feed all plan results back to Cortex for synthesis (or failure handling)
-      priorResults.push(...planContext.map(r => ({
-        agent: r.agent,
-        task: r.task,
-        result: r.result,
-        success: r.success,
-        durationMs: r.durationMs,
-        plan_step: r.step,
-      })));
-
-      if (planFailed) {
-        // Add failure directive — force investigation, not handwaving
-        priorResults.push({
-          agent: 'system',
-          result: `[FAILURE DIRECTIVE] Plan execution stopped at step ${planContext.length}/${steps.length} due to failure. You MUST investigate the root cause — do NOT synthesize a speculative success response. Options: (1) dispatch motor to debug the specific failure, (2) retry the failed step with a corrected approach, (3) dispatch temporal-research for solutions. If you have exhausted all options, use the "blocked" action with a concrete blocker description (blocker, blocker_type, escalation_message) — your escalation MUST state exactly what you need (permissions, access, information, resources), who can provide it, and what specific action to take. Do NOT just report the problem — come back with what you need to unblock the work. Plain "synthesize" is blocked when failures are unresolved.`,
-        });
-      }
-
-      log('INFO', `Plan execution ${planFailed ? 'FAILED' : 'complete'}: ${planContext.length}/${steps.length} steps. Consulting Cortex for synthesis.`);
-      continue; // Loop back to Cortex for synthesize decision
     }
 
     if (action === 'follow_process') {
@@ -3771,10 +3463,19 @@ async function processEnvelope(envelope, memoryContext) {
       })));
 
       if (planFailed) {
-        priorResults.push({
-          agent: 'system',
-          result: `[SYSTEM] Checkpoint plan stopped at checkpoint ${allResults.filter(r => r.step.startsWith(String(checkpoints.length))).length > 0 ? checkpoints.length : Math.ceil(allResults.length / 2)}/${checkpoints.length} due to failure. You may: adjust and retry, synthesize with partial results, or escalate (needs_input).`,
-        });
+        const replanCount = (envelope._replan_count = (envelope._replan_count || 0) + 1);
+        const MAX_REPLANS = 3;
+        if (replanCount >= MAX_REPLANS) {
+          priorResults.push({
+            agent: 'system',
+            result: `[SYSTEM] Checkpoint plan failed ${replanCount} times. You MUST use "synthesize_with_failure" or "needs_input" to escalate. No more checkpoint_plan allowed.`,
+          });
+        } else {
+          priorResults.push({
+            agent: 'system',
+            result: `[SYSTEM] Checkpoint failed (attempt ${replanCount}/${MAX_REPLANS}). Return a NEW checkpoint_plan with adjusted approach, or use "needs_input" to escalate a hard blocker.`,
+          });
+        }
       }
 
       log('INFO', `Checkpoint plan ${planFailed ? 'FAILED' : 'complete'}: ${checkpoints.length} checkpoints, ${allResults.length} total tasks. Consulting Cortex.`);
@@ -3798,15 +3499,13 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
-    // Unknown action — fail
-    envelope.status = 'failed';
-    envelope.error = `Unknown Cortex action: ${action}`;
-    envelope.completed_at = now();
-    envelope.updated_at = now();
-    await firestoreWrite('work', envelope.id, envelope);
-    await writeHistory(envelope.id, 'active', 'failed', 'brain', envelope.error);
-    log('ERROR', `Envelope ${envelope.id} failed: unknown action ${action}`);
-    return;
+    // Unknown action — nudge Cortex to use a valid action
+    log('WARN', `Unknown action '${action}' — nudging Cortex`);
+    priorResults.push({
+      agent: 'system',
+      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update.`,
+    });
+    continue;
   }
 
   // Max iterations reached
