@@ -1,32 +1,4 @@
 {
   "version": 1,
-  "responsibilities": [
-    {
-      "id": "r-skill-discovery",
-      "name": "Skill Discovery",
-      "schedule": "0 4 * * *",
-      "enabled": true,
-      "min_spacing_minutes": 1200,
-      "instruction": "Analyze fleet work from the past 24 hours to identify repeatable patterns that should become codified skills. Propose new skills or improvements to existing skills.",
-      "context": {
-        "purpose": "Skills are learned behaviors codified as executable instructions and scripts. They persist outside the LLM's memory — surviving model reboots and context resets. An agent's competence is the sum of its installed skills. This responsibility automates the discovery of new skills by analyzing real fleet work and extracting repeatable patterns.",
-        "process": [
-          "STEP 1 — GATHER WORK: Run `work-log-read --hours 24 --status complete --type M --json`. This returns all completed missions from the past 24 hours across all fleet agents. If no results, also try `work-log-read --hours 48 --status complete --type M --json` for a wider window.",
-          "STEP 2 — GATHER TELEMETRY: Run `brain-telemetry-read --last 50 --json`. This returns dispatch-level telemetry showing which agents were called, durations, and errors. Look for repeated tool sequences and failure→retry patterns.",
-          "STEP 3 — GATHER SESSIONS: Run `session-summary --hours 24 --limit 20`. This extracts what agents actually did in their sessions — tool calls, scripts written, verification steps. Look for custom commands motor wrote that succeeded.",
-          "STEP 4 — COMPARE EXISTING: Run `ls /opt/openclaw/.openclaw/skills/` and read `cat /opt/openclaw/.openclaw/skills/*/skill.json` to understand current skill coverage. Do not propose duplicates.",
-          "STEP 5 — IDENTIFY CANDIDATES: Cross-reference steps 1-3. For each candidate pattern, evaluate: (a) Was this pattern used 2+ times across separate missions? (b) Is it atomic — one capability, not a bundle? (c) Is it portable — no hardcoded project IDs, URLs, or credentials? (d) Does an existing skill already cover this? If all answers favor creating a skill, proceed.",
-          "STEP 6 — CHECK FOR IMPROVEMENTS: Look for workarounds in session summaries — motor writing manual commands for something a skill should cover, agents failing then succeeding with a different approach, edge cases not covered by current SKILL.md instructions.",
-          "STEP 7 — GENERATE PROPOSALS: For each candidate (max 3 per run), use the skill-author tool to generate the skill package: `skill-author create --id <id> --name <name> --description <desc> --agent-part <part> --category <cat> --when-to-use <when>`",
-          "STEP 8 — VALIDATE: Run `skill-author validate --dir <path>` on each generated package to verify format.",
-          "STEP 9 — REPORT: Summarize findings: how many work items reviewed, candidates identified, proposals submitted, and any improvement opportunities flagged."
-        ],
-        "reference_files": [
-          "workspace/TOOLS.md"
-        ],
-        "success_criteria": "Fleet work patterns analyzed using work-log-read and brain-telemetry-read. New skill proposals (if any) written to Firestore with status 'proposed'. Improvement proposals (if any) include diff context. Maximum 3 proposals per run to maintain quality. Zero proposals is a valid outcome if no patterns qualify.",
-        "prior_learnings": "Be conservative — only propose skills that meet the quality bar (repeated across missions, atomic, portable, not covered by existing skills). A proposal that gets rejected wastes human review time. Quality over quantity. Always use work-log-read, brain-telemetry-read, and session-summary to gather real data — never guess or assume what fleet agents have been doing."
-      }
-    }
-  ]
+  "responsibilities": []
 }
