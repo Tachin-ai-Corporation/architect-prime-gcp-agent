@@ -8,6 +8,7 @@ import { BrainInspector } from "@/components/agent/BrainInspector";
 import { SkillInventory } from "@/components/agent/SkillInventory";
 import { ResponsibilityList } from "@/components/agent/ResponsibilityList";
 import { MemoryViewer } from "@/components/agent/MemoryViewer";
+import { LiveIndicator } from "@/components/LiveIndicator";
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkTree } from "@/components/work/WorkTree";
 import { WorkDetail } from "@/components/work/WorkDetail";
@@ -15,6 +16,36 @@ import { useWorkEnvelopes } from "@/components/work/useWorkEnvelopes";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import type { WorkEnvelope } from "@/lib/types";
 import styles from "./page.module.css";
+
+/* ---- Skeleton helper ---- */
+function LoadingSkeleton() {
+  return (
+    <div className={styles.skeleton}>
+      <div className={styles.skeletonLine} />
+      <div className={styles.skeletonLine} />
+      <div className={styles.skeletonLine} />
+      <div className={styles.skeletonLine} />
+      <div className={styles.skeletonLine} />
+    </div>
+  );
+}
+
+function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => void }) {
+  return (
+    <div className={styles.errorState}>
+      <div className={styles.errorIcon}>⚠️</div>
+      <div className={styles.errorTitle}>Failed to load</div>
+      <div className={styles.errorDesc}>
+        {message || "The agent may be offline or the introspection request timed out."}
+      </div>
+      {onRetry && (
+        <button className={styles.errorRetryBtn} onClick={onRetry}>
+          ↻ Retry
+        </button>
+      )}
+    </div>
+  );
+}
 
 const TABS = [
   { key: "overview", label: "Overview", icon: "📊" },
@@ -88,7 +119,7 @@ export default function AgentDeepDivePage({
         email={agentData?.email}
       />
 
-      {/* ---- Tab Bar ---- */}
+      {/* ---- Tab Bar (desktop) ---- */}
       <div className={styles.tabBar}>
         {TABS.map((tab) => (
           <button
@@ -102,13 +133,35 @@ export default function AgentDeepDivePage({
         ))}
       </div>
 
+      {/* ---- Tab Dropdown (mobile) ---- */}
+      <div className={styles.tabDropdownWrap}>
+        <select
+          className={styles.tabDropdown}
+          value={activeTab}
+          onChange={(e) => handleTabClick(e.target.value as TabKey)}
+        >
+          {TABS.map((tab) => (
+            <option key={tab.key} value={tab.key}>
+              {tab.icon} {tab.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* ---- Tab Content ---- */}
       <div className={styles.tabContentArea}>
         {/* Overview */}
         {activeTab === "overview" && (
           <div className={styles.overviewGrid}>
             <div className={styles.overviewCard}>
-              <h3 className={styles.overviewCardTitle}>Status</h3>
+              <h3 className={styles.overviewCardTitle}>
+                Status
+                <LiveIndicator
+                  lastUpdated={Date.now()}
+                  loading={overviewLoading}
+                  stale={agentData?.status !== "online"}
+                />
+              </h3>
               <div className={styles.overviewStatus}>
                 <span className={`badge badge-${agentData?.status || "offline"}`}>
                   {agentData?.status || "unknown"}
@@ -127,7 +180,7 @@ export default function AgentDeepDivePage({
             <div className={styles.overviewCard}>
               <h3 className={styles.overviewCardTitle}>Identity</h3>
               {overviewLoading ? (
-                <div className={styles.loadingPulse}>Loading workspace…</div>
+                <LoadingSkeleton />
               ) : identityMd ? (
                 <pre className={styles.identityPre}>{identityMd}</pre>
               ) : (

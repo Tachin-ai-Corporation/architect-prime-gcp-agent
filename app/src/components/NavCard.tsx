@@ -20,12 +20,14 @@ interface NavCardProps {
 export function NavCard({
   id: customId,
   icon,
+  iconColor,
   title,
   description,
   href,
   onClick,
   variant = "default",
   badge,
+  badgeVariant,
   progress,
 }: NavCardProps) {
   const variantClass = variant !== "default" ? styles[variant] : "";
@@ -34,8 +36,19 @@ export function NavCard({
 
   const content = (
     <>
-      {badge != null && <span className={styles.badge}>{badge}</span>}
-      {icon && <span className={styles.icon}>{icon}</span>}
+      {badge != null && (
+        <span
+          className={styles.badge}
+          style={badgeVariant ? { background: `var(--badge-${badgeVariant}, rgba(86,99,115,0.15))` } : undefined}
+        >
+          {badge}
+        </span>
+      )}
+      {icon && (
+        <span className={styles.icon} style={iconColor ? { color: iconColor } : undefined}>
+          {icon}
+        </span>
+      )}
       <span className={styles.title}>{title}</span>
       {description && <span className={styles.description}>{description}</span>}
       {progress != null && (
