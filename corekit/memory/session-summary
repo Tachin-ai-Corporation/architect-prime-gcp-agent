@@ -23,13 +23,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-OC_DIR="${OC_HOST_ROOT:-/opt/openclaw}/.openclaw"
-# Inside container, resolve directly
-if [[ -d "/home/node/.openclaw/agents/cortex/sessions" ]]; then
-  SESSION_DIR="/home/node/.openclaw/agents/cortex/sessions"
-else
-  SESSION_DIR="${OC_DIR}/agents/cortex/sessions"
-fi
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+SESSION_DIR="${CORE_DIR}/agents/cortex/sessions"
 
 # Find JSONL files modified within the time window
 CUTOFF=$(date -d "-${HOURS} hours" +%s 2>/dev/null || date -v-${HOURS}H +%s 2>/dev/null || echo "0")

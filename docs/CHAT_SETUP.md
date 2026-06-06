@@ -59,7 +59,7 @@ export CHAT_SPACE_ID=spaces/YOUR_SPACE_ID
 
 ### Step 5: Test
 
-@-mention the agent user in the Chat space. The `agent-ears` service detects the mention and routes it to the OpenClaw gateway. `agent-mouth` delivers the response.
+@-mention the agent user in the Chat space. The `agent-ears` service detects the mention and routes it to the brain gateway. `agent-mouth` delivers the response.
 
 ## How It Works
 
@@ -73,7 +73,7 @@ agent-ears polls Chat API (spaces.messages.list)
     ▼
 Detects @-mention → fires gateway POST (non-blocking)
     │
-    └── OpenClaw gateway (Vertex AI Gemini)
+    └── Brain gateway (Vertex AI Gemini)
             │
             ├── Pure Q&A → conversational response
             └── Tool invocation (if needed)

@@ -34,13 +34,13 @@ ERROR_MSG="${10:-}"
 TASK_TEXT="${TASK_TEXT:0:500}"
 
 # ── Resolve identity ───────────────────────────────────────
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-CONFIG_FILE="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
-PRIME_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CONFIG_FILE="${CORE_DIR}/corekit/chat-config.json"
+PRIME_CONFIG="${CORE_DIR}/corekit/prime-config.json"
 
 # Get agent email from chat-config or identity-lock
 AGENT_EMAIL=""
-IDENTITY_LOCK="${OC_HOST_ROOT}/.openclaw/.identity-lock"
+IDENTITY_LOCK="${CORE_DIR}/.identity-lock"
 if [[ -f "$IDENTITY_LOCK" ]]; then
   AGENT_EMAIL="$(cat "$IDENTITY_LOCK" 2>/dev/null | tr -d '[:space:]')"
 fi

@@ -1,8 +1,7 @@
 // corekit/brain/index.mjs — Brain Gateway HTTP Server
 //
-// Drop-in replacement for the OpenClaw gateway. Listens on port 18789,
-// implements the exact same API contract that agent-brain.mjs and
-// agent-ears.mjs expect:
+// Listens on port 18789, implements the exact same API contract that
+// agent-brain.mjs and agent-ears.mjs expect:
 //
 //   POST /v1/chat/completions  — OpenAI-compatible inference
 //   GET  /v1/models            — Health/liveness (used by agent-brain pre-flight)
@@ -35,10 +34,10 @@ function readBody(req) {
 }
 
 // ---- Gateway token auth ----
-const OC_ROOT = process.env.OC_ROOT || '/home/node/.openclaw';
-let GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
+let GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
 if (!GATEWAY_TOKEN) {
-  const tokenPath = join(OC_ROOT, '.gateway-token');
+  const tokenPath = join(CORE_DIR, '.gateway-token');
   if (existsSync(tokenPath)) {
     GATEWAY_TOKEN = readFileSync(tokenPath, 'utf8').trim();
   }
@@ -51,8 +50,8 @@ function checkAuth(req) {
 }
 
 // ---- Parse agent ID from model route ----
-// agent-brain.mjs sends model: "openclaw/cortex", "openclaw/motor", etc.
-// We accept: "brain/cortex", "openclaw/cortex", or just "cortex"
+// agent-brain.mjs sends model: "brain/cortex", "brain/motor", etc.
+// We accept: "brain/cortex", legacy formats, or just "cortex"
 function parseAgentId(modelRoute) {
   if (!modelRoute) return 'cortex';
   const parts = modelRoute.split('/');

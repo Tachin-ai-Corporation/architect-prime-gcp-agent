@@ -30,9 +30,10 @@ import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync } from
 import { randomBytes } from 'crypto';
 
 // ---- Contracts (loaded first — config depends on it) ----
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 let CONTRACTS = {};
 try {
-  CONTRACTS = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
+  CONTRACTS = JSON.parse(readFileSync(CORE_DIR + '/corekit/contracts.json', 'utf8'));
 } catch (e) {
   console.log('[brain] WARN: contracts.json not found, using defaults');
 }
@@ -51,7 +52,7 @@ const ARCHIVE_AGE_DAYS = CONTRACTS.brain?.archive_age_days || 7;
 const ARCHIVE_INTERVAL_MS = CONTRACTS.brain?.archive_interval_ms || 1 * 60 * 60 * 1000; // 1h default
 const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 72;
 const LOG_FILE = '/tmp/agent-brain.log';
-const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'openclaw/cortex';
+const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'brain/cortex';
 
 // Brain's own LLM — used ONLY for simple text→text summarization via direct
 // Vertex AI calls (not through gateway). Classify/decide/synthesize always use
@@ -72,7 +73,7 @@ const CTX_CORTEX_STEP = CONTRACTS.brain?.ctx_cortex_step || 4000;
 
 // ---- Direct Vertex AI summarization ----
 // Brain's own LLM for simple text→text tasks (summarize, compress, rephrase).
-// Bypasses the OpenClaw gateway entirely — no agent routing, no workspace, no tools.
+// Bypasses the brain gateway entirely — no agent routing, no workspace, no tools.
 // Uses GCE metadata server for OAuth2 tokens (same as ears/mouth).
 
 const VERTEX_LOCATION = CONTRACTS.vertex?.location || 'global';
@@ -100,7 +101,7 @@ async function getGceToken() {
 
 /**
  * Direct Vertex AI call for simple text→text summarization.
- * Bypasses the OpenClaw gateway. No agent context, no tools.
+ * Bypasses the brain gateway. No agent context, no tools.
  *
  * @param {string} text - The text to summarize/transform
  * @param {string} instruction - What to do with the text (e.g. "Summarize in 2 sentences")
@@ -206,30 +207,21 @@ function summarizeTitle(text, maxLen = 80) {
 // ---- Gateway token ----
 let GATEWAY_TOKEN = 'no-token';
 try {
-  GATEWAY_TOKEN = readFileSync('/root/.openclaw/.gateway-token', 'utf8').trim();
+  GATEWAY_TOKEN = readFileSync(CORE_DIR + '/.gateway-token', 'utf8').trim();
 } catch {
-  try {
-    GATEWAY_TOKEN = readFileSync('/home/node/.openclaw/.gateway-token', 'utf8').trim();
-  } catch {
-    // Fallback: read from openclaw.json config (same as agent-ears)
-    try {
-      const cfg = JSON.parse(readFileSync('/home/node/.openclaw/openclaw.json', 'utf8'));
-      GATEWAY_TOKEN = cfg.gateway?.auth?.token || 'no-token';
-    } catch {
-      // Fallback: read from container env
-      if (process.env.OPENCLAW_GATEWAY_TOKEN) {
-        GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN;
-      } else {
-        log('WARN', 'No gateway token found');
-      }
-    }
+  if (process.env.GATEWAY_TOKEN) {
+    GATEWAY_TOKEN = process.env.GATEWAY_TOKEN;
+  } else if (process.env.COREKIT_GATEWAY_TOKEN) {
+    GATEWAY_TOKEN = process.env.COREKIT_GATEWAY_TOKEN;
+  } else {
+    log('WARN', 'No gateway token found');
   }
 }
 
 // ---- Agent registry ----
 let REGISTRY = { agents: {} };
 try {
-  REGISTRY = JSON.parse(readFileSync('/home/node/.openclaw/corekit/agent-registry.json', 'utf8'));
+  REGISTRY = JSON.parse(readFileSync(CORE_DIR + '/corekit/agent-registry.json', 'utf8'));
 } catch {
   log('WARN', 'agent-registry.json not found');
 }
@@ -280,7 +272,7 @@ const PROCESSES_REFRESH_MS = 60_000;
 /** Load standard processes bundled with CoreKit (on-disk JSON files). */
 function loadLocalProcesses() {
   const localProcs = {};
-  const procDir = '/home/node/.openclaw/corekit/processes';
+  const procDir = CORE_DIR + '/corekit/processes';
   try {
     if (!existsSync(procDir)) return localProcs;
     for (const file of readdirSync(procDir)) {
@@ -1223,8 +1215,8 @@ function cachedReadFile(filePath) {
 let RESPONSIBILITIES = [];
 function loadResponsibilities() {
   const files = [
-    '/home/node/.openclaw/corekit/responsibilities.json',
-    '/home/node/.openclaw/corekit/responsibilities-job.json',
+    CORE_DIR + '/corekit/responsibilities.json',
+    CORE_DIR + '/corekit/responsibilities-job.json',
   ];
   const merged = [];
   const seen = new Set();
@@ -1448,7 +1440,7 @@ async function callCortex(mode, payload) {
   if (typeof msg?.content === 'string') {
     content = msg.content;
   } else if (Array.isArray(msg?.content)) {
-    // OpenClaw may return content as [{type: "text", text: "..."}]
+    // Response may contain array of content blocks (e.g. [{type: "text", text: "..."}])
     content = msg.content
       .filter(c => c.type === 'text')
       .map(c => c.text || '')
@@ -1465,8 +1457,8 @@ function buildSystemPrompt(mode, payload) {
 
   // 1. Read SOUL.md — core decision-making guidance
   const soulPaths = [
-    '/home/node/.openclaw/workspace-cortex/SOUL.md',
-    '/home/node/.openclaw/workspace/SOUL.md',
+    CORE_DIR + '/workspace-cortex/SOUL.md',
+    CORE_DIR + '/workspace/SOUL.md',
   ];
   let soulContent = null;
   for (const p of soulPaths) {
@@ -1479,9 +1471,9 @@ function buildSystemPrompt(mode, payload) {
 
   // 2. Read IDENTITY.md — who you are
   const identityPaths = [
-    `/home/node/.openclaw/workspace-${AGENT_ID}/IDENTITY.md`,
-    '/home/node/.openclaw/workspace-devops/IDENTITY.md',
-    '/home/node/.openclaw/workspace/IDENTITY.md',
+    CORE_DIR + `/workspace-${AGENT_ID}/IDENTITY.md`,
+    CORE_DIR + '/workspace-devops/IDENTITY.md',
+    CORE_DIR + '/workspace/IDENTITY.md',
   ];
   let identityContent = null;
   for (const p of identityPaths) {
@@ -1494,9 +1486,9 @@ function buildSystemPrompt(mode, payload) {
 
   // 3. Read MEMORY.md — baseline knowledge
   const memoryPaths = [
-    `/home/node/.openclaw/workspace-${AGENT_ID}/MEMORY.md`,
-    '/home/node/.openclaw/workspace-devops/MEMORY.md',
-    '/home/node/.openclaw/workspace/MEMORY.md',
+    CORE_DIR + `/workspace-${AGENT_ID}/MEMORY.md`,
+    CORE_DIR + '/workspace-devops/MEMORY.md',
+    CORE_DIR + '/workspace/MEMORY.md',
   ];
   let memoryContent = null;
   for (const p of memoryPaths) {
@@ -1617,7 +1609,7 @@ function parseJsonResponse(raw) {
   // Strip markdown fences
   let cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
 
-  // Strip OpenClaw Action: blocks that may follow JSON
+  // Strip legacy Action: blocks that may follow JSON
   cleaned = cleaned.replace(/\nAction:.*$/s, '');
 
   // Try bracket-balanced JSON extraction
@@ -1754,7 +1746,7 @@ async function callAgent(agentId, envelope) {
     return { success: false, output: null, error: 'Gateway unreachable', durationMs: 0 };
   }
 
-  const route = agentInfo.route || `openclaw/${agentId}`;
+  const route = agentInfo.route || `brain/${agentId}`;
   const instruction = envelope.instruction || envelope.task || '';
   const context = envelope.context_summary || '';
   const criteria = envelope.accept_criteria || '';
@@ -2160,8 +2152,8 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
   try {
     // Read a personality snippet from IDENTITY.md (first 500 chars)
     const identityPaths = [
-      `/home/node/.openclaw/workspace-${AGENT_ID}/IDENTITY.md`,
-      '/home/node/.openclaw/workspace/IDENTITY.md',
+      CORE_DIR + `/workspace-${AGENT_ID}/IDENTITY.md`,
+      CORE_DIR + '/workspace/IDENTITY.md',
     ];
     let identity = '';
     for (const p of identityPaths) {
@@ -3841,7 +3833,7 @@ function buildEnvelopeContext(envelope, priorResults, memoryResults) {
 async function initSharedWorkspace(envelopeId) {
   try {
     const { execSync } = await import('child_process');
-    execSync(`mkdir -p /home/node/.openclaw/shared/${envelopeId}`, { timeout: 3000 });
+    execSync(`mkdir -p ${CORE_DIR}/shared/${envelopeId}`, { timeout: 3000 });
   } catch (e) {
     log('WARN', `Failed to init shared workspace for ${envelopeId}: ${e.message}`);
   }
@@ -3850,7 +3842,7 @@ async function initSharedWorkspace(envelopeId) {
 async function cleanupSharedWorkspace(envelopeId) {
   try {
     const { execSync } = await import('child_process');
-    execSync(`rm -rf /home/node/.openclaw/shared/${envelopeId}`, { timeout: 3000 });
+    execSync(`rm -rf ${CORE_DIR}/shared/${envelopeId}`, { timeout: 3000 });
   } catch (e) {
     log('WARN', `Failed to cleanup shared workspace for ${envelopeId}: ${e.message}`);
   }
@@ -4057,8 +4049,8 @@ async function main() {
 
   // Phase 7A: Watch responsibility config for hot-reload
   for (const f of [
-    '/home/node/.openclaw/corekit/responsibilities.json',
-    '/home/node/.openclaw/corekit/responsibilities-job.json',
+    CORE_DIR + '/corekit/responsibilities.json',
+    CORE_DIR + '/corekit/responsibilities-job.json',
   ]) {
     if (existsSync(f)) {
       watchFile(f, { interval: 10000 }, () => {

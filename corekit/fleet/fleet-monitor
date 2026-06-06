@@ -51,7 +51,7 @@ done
 PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' \
   'http://metadata.google.internal/computeMetadata/v1/project/project-id')"
 FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents"
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+CORE_ROOT="${CORE_ROOT:-/opt/corekit}"
 
 POLL_INTERVAL=30       # seconds between serial console checks
 MAX_WAIT=1800          # 30 minutes max (bootstrap takes ~20-25 min with IAM waits + smoke test)
@@ -165,8 +165,8 @@ declare -A MILESTONES=(
   ["Installing system packages"]="packages_installing|System packages installing|done"
   ["Installing Docker CE"]="docker_installing|Docker CE installing|done"
   ["Installing CoreKit"]="corekit_installing|CoreKit installing|done"
-  ["Building Docker image"]="openclaw_building|OpenClaw Docker image building|done"
-  ["Gateway ready"]="gateway_ready|OpenClaw gateway started|done"
+  ["Installing brain module dependencies"]="brain_building|Brain dependencies installing|done"
+  ["Starting brain gateway service"]="gateway_ready|Brain gateway service started|done"
   ["FLEET AGENT SETUP COMPLETE"]="bootstrap_complete|Bootstrap complete|done"
 )
 declare -A SEEN_MILESTONES=()
@@ -218,13 +218,13 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
   if [[ $ELAPSED -ge $SSH_FALLBACK_AT ]]; then
     log "No serial milestones after ${ELAPSED}s — SSH-checking gateway health..."
     GW_STATUS="$(gcloud compute ssh "$FLEET_VM" --zone="$ZONE" --project="$PROJECT" \
-      --command="sudo docker inspect openclaw-gateway --format='{{.State.Status}}' 2>/dev/null || echo 'not_found'" \
+      --command="sudo systemctl is-active agent-brain-gateway 2>/dev/null || echo 'inactive'" \
       --ssh-flag="-o ConnectTimeout=${SSH_TIMEOUT}" \
       --ssh-flag="-o StrictHostKeyChecking=no" \
       2>/dev/null || echo "SSH_FAILED")"
     GW_STATUS="$(echo "$GW_STATUS" | tr -d '[:space:]')"
 
-    if [[ "$GW_STATUS" == "running" ]]; then
+    if [[ "$GW_STATUS" == "active" ]]; then
       log "Gateway is already running — bootstrap completed earlier"
       write_step "bootstrap_complete" "Bootstrap complete (detected via SSH)" "done"
       BOOTSTRAP_DONE=true
@@ -258,7 +258,7 @@ sleep 5  # give services a moment
 DWD_OK=false
 for attempt in 1 2 3; do
   DWD_RESULT="$(gcloud compute ssh "$FLEET_VM" --zone="$ZONE" --project="$PROJECT" \
-    --command="sudo ${OC_HOST_ROOT}/.openclaw/bin/dwd-token --user ${AGENT_EMAIL} 2>&1 | head -1" \
+    --command="sudo ${CORE_ROOT}/bin/dwd-token --user ${AGENT_EMAIL} 2>&1 | head -1" \
     --ssh-flag="-o ConnectTimeout=${SSH_TIMEOUT}" \
     --ssh-flag="-o StrictHostKeyChecking=no" \
     2>/dev/null || echo "SSH_FAILED")"

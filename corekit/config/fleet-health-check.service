@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/openclaw/.openclaw/bin/fleet-health-check
+ExecStart=/opt/corekit/bin/fleet-health-check
 User=root
-Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=CORE_DIR=/opt/corekit
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=300

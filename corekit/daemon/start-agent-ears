@@ -1,13 +1,12 @@
 #!/bin/bash
-# start-agent-ears — Wrapper to launch agent-ears.mjs inside Docker
+# start-agent-ears — Wrapper to launch agent-ears.mjs natively on host
 # Reads chat-config.json for agent-specific values.
-# Auto-detects CHANNEL from role config if not set via env.
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CONFIG="${CORE_DIR}/corekit/chat-config.json"
+PRIME_CFG="${CORE_DIR}/corekit/prime-config.json"
 
 # Auto-detect CHANNEL and identity from role config if not set via env
-PRIME_CFG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
 if [ -f "$PRIME_CFG" ]; then
   [ -z "$CHANNEL" ] && CHANNEL="dashboard"
   [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('projectId',''))" 2>/dev/null)"
@@ -32,9 +31,10 @@ if [ -f "$CONFIG" ]; then
   [ -z "$DWD_SIGNER_SA" ] && DWD_SIGNER_SA="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('dwdSignerSa',''))" 2>/dev/null)"
 fi
 
-# Fallback: read PRIME_ID from Docker container env (fleet-bootstrap sets it)
+# Fallback: read PRIME_ID from GCE instance metadata
 if [ -z "$PRIME_ID" ]; then
-  PRIME_ID="$(docker exec openclaw-gateway printenv PRIME_ID 2>/dev/null)" || true
+  PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null)" || true
 fi
 
 # Fallback: derive AGENT_ID from VM hostname (fleet-stan → stan)
@@ -45,21 +45,17 @@ if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "agent" ]; then
   fi
 fi
 
-# Kill any orphan agent-ears processes inside the container.
-# Same pattern as agent-mouth — prevent duplicate poll loops after restarts.
-docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
+# Kill any orphan agent-ears processes on the host.
+pkill -f 'agent-ears.mjs' 2>/dev/null || true
 sleep 1
 
-# Pre-create in-container log files so the node user can write to them.
-# The daemon appends to these for structured JSON logging alongside stderr.
-docker exec openclaw-gateway sh -c 'touch /var/log/agent-ears.log /var/log/agent-ears-preprocess.log && chown node:node /var/log/agent-ears.log /var/log/agent-ears-preprocess.log' 2>/dev/null || true
+export CORE_DIR
+export CHANNEL="${CHANNEL:-gchat}"
+export GCP_PROJECT_ID
+export AGENT_ID="${AGENT_ID:-agent}"
+export AGENT_USER_EMAIL
+export AGENT_MENTION
+export DWD_SIGNER_SA
+export PRIME_ID
 
-exec stdbuf -oL docker exec \
-  -e CHANNEL="${CHANNEL:-gchat}" \
-  -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
-  -e AGENT_ID="${AGENT_ID:-agent}" \
-  -e AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" \
-  -e AGENT_MENTION="${AGENT_MENTION}" \
-  -e DWD_SIGNER_SA="${DWD_SIGNER_SA}" \
-  -e PRIME_ID="${PRIME_ID:-}" \
-  openclaw-gateway node /home/node/.openclaw/bin/agent-ears.mjs
+exec stdbuf -oL node "${CORE_DIR}/bin/agent-ears.mjs"

@@ -12,8 +12,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+OC_HOST_ROOT="${CORE_ROOT:-/opt/corekit}"
+STATE_FILE="${OC_HOST_ROOT}/corekit/STATE.json"
 
 # Simple JSON value reader
 json_value() {
@@ -73,36 +73,7 @@ case "${1:-}" in
     [[ -n "$EXISTING_JOB" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $EXISTING_JOB"
     echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${EXISTING_JOB:-none}"
 
-    # ---- Snapshot current model assignments (before install.sh overwrites templates) ----
-    # ADR: install.sh downloads fresh .json5.tmpl files from the repo, which
-    # resets any model customizations that discover-models --set-config wrote.
-    # We snapshot the live config's model assignments here and re-apply them
-    # after render-config runs on the fresh template.
-    MODEL_SNAPSHOT="/tmp/upgrade-model-snapshot-$$.json"
-    RENDERED_CONFIG="${OC_HOST_ROOT}/.openclaw/openclaw.json"
-    if [[ -f "$RENDERED_CONFIG" ]]; then
-      python3 -c "
-import json, sys
-try:
-    cfg = json.load(open('${RENDERED_CONFIG}'))
-    defaults = cfg.get('agents',{}).get('defaults',{})
-    default_model = defaults.get('model',{}).get('primary','')
-    agents = cfg.get('agents',{}).get('list',[])
-    overrides = {}
-    for a in agents:
-        am = a.get('model',{}).get('primary','')
-        if am and am != default_model:
-            overrides[a['id']] = am
-    snapshot = {'default': default_model, 'overrides': overrides}
-    if default_model:
-        json.dump(snapshot, open('$MODEL_SNAPSHOT','w'))
-        print(f'  Model snapshot: default={default_model}, {len(overrides)} override(s)')
-    else:
-        print('  No model assignment found — skipping snapshot')
-except Exception as e:
-    print(f'  [WARN] Could not snapshot models: {e}', file=sys.stderr)
-" || true
-    fi
+    # Model snapshot logic removed (model configs are kept in agent workspaces)
 
     curl -fsSL "${CORE_BASE}/infra/install.sh" | \
       GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
@@ -111,47 +82,20 @@ except Exception as e:
       INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
       bash -s -- $INSTALL_ARGS
 
-    # ---- Brain module: install/update npm dependencies inside container ----
-    OC_DIR="${OC_HOST_ROOT}/.openclaw"
-    BRAIN_DIR="${OC_DIR}/corekit/brain"
+    # ---- Brain module: install/update npm dependencies ----
+    BRAIN_DIR="${OC_HOST_ROOT}/corekit/brain"
     if [[ -f "${BRAIN_DIR}/package.json" ]]; then
       echo "==> Installing brain module dependencies..."
-      BRAIN_CONTAINER_DIR="/home/node/.openclaw/corekit/brain"
-      docker exec -u 0 -w "${BRAIN_CONTAINER_DIR}" openclaw-gateway npm install --omit=dev 2>&1 | tail -5
-      docker exec -u 0 openclaw-gateway chown -R node:node "${BRAIN_CONTAINER_DIR}/node_modules" 2>/dev/null || true
+      (cd "${BRAIN_DIR}" && npm install --omit=dev 2>&1 | tail -5)
+      chown -R 1000:1000 "${BRAIN_DIR}/node_modules" 2>/dev/null || true
       echo "  Brain npm dependencies installed"
     fi
 
-    # ---- Re-render config with correct gateway token ----
-    # upgrade-corekit installs new config template; re-render to sync
-    # auth.token with the container's OPENCLAW_GATEWAY_TOKEN env var
-    RENDER="${OC_HOST_ROOT}/.openclaw/bin/render-config"
-    if [[ -x "$RENDER" ]]; then
-      echo "==> Re-rendering config (token sync)..."
-      "$RENDER" || echo "  (render-config failed, config may have stale token)"
-    fi
-
-    # ---- Re-apply saved model assignments ----
-    # ADR: The fresh template from install.sh has default models. Re-apply
-    # the snapshot we took before the upgrade to preserve user's choices.
-    if [[ -f "$MODEL_SNAPSHOT" ]]; then
-      echo "==> Re-applying model assignments..."
-      DISCOVER="${OC_HOST_ROOT}/.openclaw/bin/discover-models"
-      if [[ -x "$DISCOVER" ]]; then
-        GCP_PROJECT_ID="${GCP_PROJECT_ID:-$(curl -sf -H 'Metadata-Flavor: Google' \
-          http://metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null || echo '')}" \
-          OC_HOST_ROOT="$OC_HOST_ROOT" "$DISCOVER" --set-config "$MODEL_SNAPSHOT" || \
-          echo "  [WARN] Failed to re-apply model assignments"
-      else
-        echo "  [WARN] discover-models not found, cannot re-apply models"
-      fi
-      rm -f "$MODEL_SNAPSHOT"
-    fi
+    # Config template rendering and discovery-models restore removed
 
     # ---- Install/update systemd units from corekit config ----
-    OC_DIR="${OC_HOST_ROOT}/.openclaw"
     UNITS_CHANGED=0
-    for unit_file in "${OC_DIR}"/corekit/*.service "${OC_DIR}"/corekit/*.timer; do
+    for unit_file in "${OC_HOST_ROOT}"/corekit/*.service "${OC_HOST_ROOT}"/corekit/*.timer; do
       [[ -f "$unit_file" ]] || continue
       UNIT_NAME="$(basename "$unit_file")"
       if ! diff -q "$unit_file" "/etc/systemd/system/${UNIT_NAME}" >/dev/null 2>&1; then
@@ -163,7 +107,7 @@ except Exception as e:
     if [[ "$UNITS_CHANGED" -eq 1 ]]; then
       systemctl daemon-reload
       # Enable and start any .timer units
-      for timer_file in "${OC_DIR}"/corekit/*.timer; do
+      for timer_file in "${OC_HOST_ROOT}"/corekit/*.timer; do
         [[ -f "$timer_file" ]] || continue
         TIMER_NAME="$(basename "$timer_file")"
         systemctl enable --now "$TIMER_NAME" 2>/dev/null || true
@@ -172,15 +116,15 @@ except Exception as e:
     fi
 
     # ---- Fleet agent workspace re-overlay ----
-    # install.sh always installs main workspace to .openclaw/workspace/.
+    # install.sh always installs main workspace to workspace/.
     # For fleet agents, re-apply the specialty workspace on top.
-    CHAT_CFG="${OC_DIR}/corekit/chat-config.json"
+    CHAT_CFG="${OC_HOST_ROOT}/corekit/chat-config.json"
     if [[ -f "$CHAT_CFG" ]]; then
       # Read agent identity from chat-config (only fleet agents have this)
       AGENT_NAME="$(jq -r '.agentDisplayName // empty' "$CHAT_CFG" 2>/dev/null || true)"
       SPECIALTY_DIR=""
       # Try to find a specialty workspace
-      for d in "${OC_DIR}"/workspace-*/; do
+      for d in "${OC_HOST_ROOT}"/workspace-*/; do
         [[ -d "$d" ]] || continue
         # Use first non-fleet, non-brain specialty found
         bn="$(basename "$d")"
@@ -191,7 +135,7 @@ except Exception as e:
         break
       done
       # Fallback to fleet template
-      [[ -n "$SPECIALTY_DIR" ]] || SPECIALTY_DIR="${OC_DIR}/workspace-fleet"
+      [[ -n "$SPECIALTY_DIR" ]] || SPECIALTY_DIR="${OC_HOST_ROOT}/workspace-fleet"
       if [[ -d "$SPECIALTY_DIR" && -n "$AGENT_NAME" ]]; then
         echo "==> Re-applying fleet workspace from ${SPECIALTY_DIR}"
 
@@ -199,13 +143,13 @@ except Exception as e:
         PRESERVE_DIR="/tmp/upgrade-preserve-$$"
         mkdir -p "$PRESERVE_DIR"
         for preserve_file in MEMORY.md TASK.json; do
-          if [[ -f "${OC_DIR}/workspace/${preserve_file}" ]]; then
-            cp "${OC_DIR}/workspace/${preserve_file}" "$PRESERVE_DIR/"
+          if [[ -f "${OC_HOST_ROOT}/workspace/${preserve_file}" ]]; then
+            cp "${OC_HOST_ROOT}/workspace/${preserve_file}" "$PRESERVE_DIR/"
             echo "  Preserved: ${preserve_file}"
           fi
         done
 
-        rm -f "${OC_DIR}/workspace/"*.md 2>/dev/null || true
+        rm -f "${OC_HOST_ROOT}/workspace/"*.md 2>/dev/null || true
         MENTION="$(jq -r '.agentMention // empty' "$CHAT_CFG" 2>/dev/null || true)"
         PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null || true)"
         AGENT_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null || true)"
@@ -217,13 +161,13 @@ except Exception as e:
               -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
               -e "s|{{AGENT_USER_EMAIL}}|${AGENT_EMAIL}|g" \
               -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
-              "$f" > "${OC_DIR}/workspace/$(basename "$f")"
+              "$f" > "${OC_HOST_ROOT}/workspace/$(basename "$f")"
         done
 
         # Restore preserved files
         for preserve_file in MEMORY.md TASK.json; do
           if [[ -f "$PRESERVE_DIR/${preserve_file}" ]]; then
-            cp "$PRESERVE_DIR/${preserve_file}" "${OC_DIR}/workspace/${preserve_file}"
+            cp "$PRESERVE_DIR/${preserve_file}" "${OC_HOST_ROOT}/workspace/${preserve_file}"
             echo "  Restored: ${preserve_file}"
           fi
         done
@@ -233,7 +177,7 @@ except Exception as e:
 
         # ---- Sync custom skills from Firestore ----
         # Query per-agent custom skill state and download skill packages
-        CUSTOM_SKILLS_DIR="${OC_DIR}/workspace/custom-skills"
+        CUSTOM_SKILLS_DIR="${OC_HOST_ROOT}/workspace/custom-skills"
         GCP_PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo "")"
         PRIME_ID=""
         # Read prime ID from chat-config (fleet agents store their prime's ID)
@@ -356,12 +300,12 @@ except:
         fi
 
         # Also re-overlay brain sub-agent workspaces
-        BRAIN_SRC="${OC_DIR}/workspace-_brain"
+        BRAIN_SRC="${OC_HOST_ROOT}/workspace-_brain"
         if [[ -d "$BRAIN_SRC" ]]; then
           echo "==> Re-applying brain sub-agent workspaces"
           for brain_dir in cortex temporal-research temporal-memory prefrontal motor cerebellum; do
             src="${BRAIN_SRC}/${brain_dir}"
-            dest="${OC_DIR}/workspace-${brain_dir}"
+            dest="${OC_HOST_ROOT}/workspace-${brain_dir}"
             if [[ -d "$src" ]]; then
               mkdir -p "$dest"
               # Preserve brain sub-agent MEMORY.md
@@ -390,7 +334,7 @@ except:
         fi
 
         # Write identity lockfile if not present
-        IDENTITY_LOCK="${OC_DIR}/.identity-lock"
+        IDENTITY_LOCK="${OC_HOST_ROOT}/.identity-lock"
         if [[ -n "$AGENT_EMAIL" && ! -f "$IDENTITY_LOCK" ]]; then
           echo "$AGENT_EMAIL" > "$IDENTITY_LOCK"
           chmod 444 "$IDENTITY_LOCK"
@@ -398,14 +342,14 @@ except:
         fi
 
         # Run assemble-tools to generate per-agent TOOLS.md
-        ASSEMBLE="${OC_HOST_ROOT}/.openclaw/bin/assemble-tools"
+        ASSEMBLE="${OC_HOST_ROOT}/bin/assemble-tools"
         if [[ -x "$ASSEMBLE" ]]; then
           # Determine agent type from chat-config or STATE.json
           AGENT_JOB="$(jq -r '.agentType // empty' "$CHAT_CFG" 2>/dev/null || true)"
           [[ -n "$AGENT_JOB" ]] || AGENT_JOB="$(json_value "job" "$STATE_FILE" 2>/dev/null || true)"
           [[ -n "$AGENT_JOB" ]] || AGENT_JOB="devops"
           echo "==> Assembling TOOLS.md (agent type: ${AGENT_JOB})"
-          OC_HOST_ROOT="$OC_HOST_ROOT" "$ASSEMBLE" "$AGENT_JOB" 2>&1 || echo "  (assemble-tools failed)"
+          CORE_ROOT="$OC_HOST_ROOT" "$ASSEMBLE" "$AGENT_JOB" 2>&1 || echo "  (assemble-tools failed)"
         fi
       fi
     fi
@@ -415,31 +359,19 @@ except:
     # We create a central shared directory and symlink it into every workspace
     # so agents can read/write collaborative files (sandbox mode must be off).
     echo "==> Setting up shared workspace architecture..."
-    SHARED_DIR="${OC_DIR}/shared"
+    SHARED_DIR="${OC_HOST_ROOT}/shared"
     mkdir -p "$SHARED_DIR"
-    for dir in "${OC_DIR}"/workspace*; do
+    for dir in "${OC_HOST_ROOT}"/workspace*; do
       if [[ -d "$dir" ]]; then
         ln -snf "$SHARED_DIR" "$dir/shared"
       fi
     done
 
     # ---- Run contract validation ----
-    VALIDATE="${OC_HOST_ROOT}/.openclaw/bin/validate-contracts"
+    VALIDATE="${OC_HOST_ROOT}/bin/validate-contracts"
     if [[ -x "$VALIDATE" ]]; then
-    # ---- Fix .env for contract compliance ----
-    ENV_FILE="/root/openclaw/.env"
-    if [[ -f "$ENV_FILE" ]]; then
-      if ! grep -q "GOOGLE_CLOUD_LOCATION=" "$ENV_FILE"; then
-        echo "GOOGLE_CLOUD_LOCATION=global" >> "$ENV_FILE"
-        echo "  Fixed: added GOOGLE_CLOUD_LOCATION=global to .env"
-      elif ! grep -q "GOOGLE_CLOUD_LOCATION=global" "$ENV_FILE"; then
-        sed -i 's/^GOOGLE_CLOUD_LOCATION=.*/GOOGLE_CLOUD_LOCATION=global/' "$ENV_FILE"
-        echo "  Fixed: updated GOOGLE_CLOUD_LOCATION=global in .env"
-      fi
-    fi
-
-    echo "==> Running contract validation..."
-      if OC_HOST_ROOT="$OC_HOST_ROOT" "$VALIDATE" --runtime 2>&1; then
+      echo "==> Running contract validation..."
+      if CORE_ROOT="$OC_HOST_ROOT" "$VALIDATE" --runtime 2>&1; then
         echo "  ✅ Contracts validated"
       else
         echo "  ⚠️  Contract validation found issues"
@@ -462,67 +394,23 @@ except:
     sync
     sleep 1
 
-    # Restart container to pick up brain module changes (new node_modules, etc.)
-    # If brain module is installed, ensure container runs brain gateway as PID 1
-    BRAIN_CONTAINER_DIR="/home/node/.openclaw/corekit/brain"
-    CURRENT_CMD="$(docker inspect openclaw-gateway --format='{{join .Config.Cmd " "}}' 2>/dev/null || echo "")"
-    if [[ -f "${OC_DIR}/corekit/brain/index.mjs" ]] && [[ "$CURRENT_CMD" != *"brain/index.mjs"* ]]; then
-      echo "  Switching container to brain gateway mode..."
-      # Read identity
-      META="http://metadata.google.internal/computeMetadata/v1"
-      MH="Metadata-Flavor: Google"
-      GCP_PROJECT_CONT=$(curl -sf -H "$MH" "${META}/project/project-id" 2>/dev/null || echo "architect-prime-beta")
-      PRIME_ID_CONT=$(curl -sf -H "$MH" "${META}/instance/attributes/prime_id" 2>/dev/null || echo "")
-      GATEWAY_TOKEN_CONT=$(docker exec openclaw-gateway printenv OPENCLAW_GATEWAY_TOKEN 2>/dev/null || echo "")
-      [[ -z "$GATEWAY_TOKEN_CONT" ]] && GATEWAY_TOKEN_CONT=$(grep '^OPENCLAW_GATEWAY_TOKEN=' "/root/openclaw/.env" 2>/dev/null | cut -d= -f2 || echo "")
-      IMAGE_CONT=$(docker inspect openclaw-gateway --format='{{.Config.Image}}' 2>/dev/null || echo "openclaw:local")
-      systemctl stop agent-brain agent-ears agent-mouth agent-introspect 2>/dev/null || true
-      docker stop openclaw-gateway 2>/dev/null || true
-      docker rm openclaw-gateway 2>/dev/null || true
-      docker run -d \
-        --name openclaw-gateway \
-        --restart unless-stopped \
-        --network host \
-        -v "${OC_DIR}:/home/node/.openclaw" \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -e OC_ROOT=/home/node/.openclaw \
-        -e BRAIN_PORT=18789 \
-        -e GATEWAY_TOKEN="${GATEWAY_TOKEN_CONT}" \
-        -e OPENCLAW_GATEWAY_TOKEN="${GATEWAY_TOKEN_CONT}" \
-        -e PRIME_ID="${PRIME_ID_CONT}" \
-        -e BIN_DIR=/home/node/.openclaw/bin \
-        -e GOOGLE_CLOUD_PROJECT="${GCP_PROJECT_CONT}" \
-        -e GCLOUD_PROJECT="${GCP_PROJECT_CONT}" \
-        -e CLOUDSDK_CORE_PROJECT="${GCP_PROJECT_CONT}" \
-        -e GOOGLE_CLOUD_LOCATION=us-central1 \
-        -e GOOGLE_GENAI_USE_VERTEXAI=True \
-        -e CONTRACTS_PATH=/home/node/.openclaw/corekit/contracts.json \
-        -e NODE_ENV=production \
-        -e GCE_METADATA_HOST=metadata.google.internal \
-        "${IMAGE_CONT}" \
-        node "${BRAIN_CONTAINER_DIR}/index.mjs"
-      echo "  Container recreated with brain gateway"
-      sleep 5
-    else
-      echo "  Restarting container..."
-      docker restart openclaw-gateway 2>/dev/null || true
-      sleep 5
-    fi
+    # Restart brain gateway service
+    echo "==> Restarting brain gateway service..."
+    systemctl restart agent-brain-gateway 2>/dev/null || true
 
-    # Kill ALL orphaned daemon/ears/mouth node processes inside the container.
-    # docker exec only kills the host-side process -- the node process inside
-    # the container keeps running after restart.
-    docker exec openclaw-gateway pkill -f 'message-daemon.mjs' 2>/dev/null || true
-    docker exec openclaw-gateway pkill -f 'agent-ears.mjs' 2>/dev/null || true
-    docker exec openclaw-gateway pkill -f 'agent-mouth.mjs' 2>/dev/null || true
-    docker exec openclaw-gateway pkill -f 'agent-introspect.mjs' 2>/dev/null || true
-    docker exec openclaw-gateway pkill -f 'agent-brain.mjs' 2>/dev/null || true
+    # Kill ALL orphaned daemon/ears/mouth node processes on the host.
+    pkill -f 'message-daemon.mjs' 2>/dev/null || true
+    pkill -f 'agent-ears.mjs' 2>/dev/null || true
+    pkill -f 'agent-mouth.mjs' 2>/dev/null || true
+    pkill -f 'agent-introspect.mjs' 2>/dev/null || true
+    pkill -f 'agent-brain.mjs' 2>/dev/null || true
     sleep 1
 
-    # Install ears + mouth + brain services
-    EARS_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/agent-ears.service"
-    MOUTH_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/agent-mouth.service"
-    BRAIN_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/agent-brain.service"
+    # Install ears + mouth + brain + introspect services
+    EARS_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-ears.service"
+    MOUTH_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-mouth.service"
+    BRAIN_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-brain.service"
+    INTROSPECT_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-introspect.service"
     if [[ -f "$EARS_SVC_SRC" ]]; then
       cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
     fi
@@ -532,7 +420,6 @@ except:
     if [[ -f "$BRAIN_SVC_SRC" ]]; then
       cp "$BRAIN_SVC_SRC" /etc/systemd/system/agent-brain.service
     fi
-    INTROSPECT_SVC_SRC="${OC_HOST_ROOT}/.openclaw/corekit/agent-introspect.service"
     if [[ -f "$INTROSPECT_SVC_SRC" ]]; then
       cp "$INTROSPECT_SVC_SRC" /etc/systemd/system/agent-introspect.service
     fi

@@ -23,12 +23,10 @@
 - IDs: lowercase, kebab-case
 - Even segment counts only (collection/document pairs) — odd segments cause 400 errors
 
-## OpenClaw configuration
-- Bootstrap config: `corekit/config/openclaw-bootstrap.json5.tmpl` (JSON5 with `${VAR}` template vars)
-- Rendered by `render-config` → `openclaw.json`
-- Agent workspaces at `~/.openclaw/workspace` (cortex) or `~/.openclaw/workspace-{agent}` (sub-agents)
+## Brain Gateway configuration
+- Config: `/opt/corekit/corekit/config.json`
+- Agent workspaces at `/opt/corekit/workspace` (cortex) or `/opt/corekit/workspace-{agent}` (sub-agents)
 - Gateway API: `POST http://localhost:18789/v1/chat/completions` with Bearer token auth
-- Hooks: PreTurn (inject), PostTurn (validate) — configured in hooks.internal.entries
 
 ## PowerShell (local dev)
 - SSH one-liners: `echo y | gcloud compute ssh {VM} --zone={ZONE} --project=architect-prime-beta --tunnel-through-iap --command="..."`

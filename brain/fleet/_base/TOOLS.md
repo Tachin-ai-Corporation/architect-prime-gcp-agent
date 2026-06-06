@@ -1,7 +1,7 @@
 # TOOLS (Fleet Agent)
 
-- Workspace: `~/.openclaw/workspace`
-- Canonical CLI: `oc <cmd>` (never call `pnpm openclaw ...`)
+- Workspace: `/opt/corekit/workspace`
+- CoreKit tools: available directly in PATH (e.g., `agent-ask`, `agent-status`)
 - ADC: metadata server tokens available on GCE
 
 ## Web Search & Research (via temporal-research sub-agent)

@@ -2,7 +2,7 @@
 // ============================================================
 // agent-mouth.mjs v2 — JSONL-Native Output Processing
 //
-// Tails the OpenClaw JSONL session transcript to detect final
+// Tails the brain gateway's JSONL session transcript to detect final
 // agent responses structurally. Replaces log-file scraping.
 //
 // Features:
@@ -38,9 +38,10 @@ try {
 
 const POLL_INTERVAL = 2000;
 const AGENT_VOICE_NAME = AGENT_DISPLAY_NAME || AGENT_FIRST_NAME || '';
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 
 // Identity lockdown
-const IDENTITY_LOCK_PATH = '/home/node/.openclaw/.identity-lock';
+const IDENTITY_LOCK_PATH = CORE_DIR + '/.identity-lock';
 try {
   const locked = readFileSync(IDENTITY_LOCK_PATH, 'utf8').trim();
   if (locked && AGENT_USER_EMAIL && locked !== AGENT_USER_EMAIL) {
@@ -59,12 +60,12 @@ const FIRESTORE_URL = GCP_PROJECT
   : '';
 
 // TASK.json (written by ears)
-const TASK_JSON = '/home/node/.openclaw/workspace/TASK.json';
+const TASK_JSON = CORE_DIR + '/workspace/TASK.json';
 
 // ---- Contracts ----
 let CONTRACTS = { mouth: {}, agents: {} };
 try {
-  CONTRACTS = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
+  CONTRACTS = JSON.parse(readFileSync(CORE_DIR + '/corekit/contracts.json', 'utf8'));
 } catch {}
 const MOUTH_CFG = CONTRACTS.mouth || {};
 const LLM_ENABLED = MOUTH_CFG.llm_enabled !== false;
@@ -81,7 +82,7 @@ const DELIVERY_TIMEOUT = 600_000;
 // ---- Prompts (loaded from files) ----
 const SCRIPT_DIR = dirname(new URL(import.meta.url).pathname);
 function loadPrompt(name) {
-  for (const base of [SCRIPT_DIR, '/home/node/.openclaw/bin']) {
+  for (const base of [SCRIPT_DIR, CORE_DIR + '/bin']) {
     try { return readFileSync(`${base}/${name}`, 'utf8'); } catch {}
   }
   return '';
@@ -190,7 +191,7 @@ function convertToGChatMarkdown(text) {
 // ================================================================
 // JSONL TAILER
 // ================================================================
-const STATE_DIR = '/home/node/.openclaw';
+const STATE_DIR = CORE_DIR;
 const AGENT_ID = CONTRACTS.agents?.defaultId || 'cortex';
 const SESSION_DIR = `${STATE_DIR}/agents/${AGENT_ID}/sessions`;
 

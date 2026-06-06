@@ -24,7 +24,7 @@ fleet-hire --name anora --specialty pm
 ## Hiring flow
 1. If the user hasn't specified a specialty, show available types by running:
    ```
-   cat ~/.openclaw/corekit/agent-types.json
+   cat /opt/corekit/corekit/agent-types.json
    ```
 2. Once you have **name** and **specialty**, run `fleet-hire` immediately
 3. The output includes the admin setup instructions — share these with the user

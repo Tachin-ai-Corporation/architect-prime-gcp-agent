@@ -1,15 +1,15 @@
 # Architect Prime — Project Context
 
 ## What this project is
-Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, OpenClaw AI brain, and Google Chat identity) that collaborate with humans via Google Chat.
+Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native brain gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.04.5.0)
+## Current Architecture (v2026.06.05.1.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
 - **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, introspect queries, config
 - **Compute Engine VMs** — One per Prime + one per fleet agent
-- **OpenClaw** — AI brain on each VM (v2026.4.15, Gemini 3.1 Pro via Vertex AI ADC)
+- **Brain Gateway** — Host-native AI brain gateway on each VM (Gemini 3.1 Pro via Vertex AI ADC)
 - **Google Chat** — Agent-to-human communication via DWD
 
 ### Prime VM Architecture
@@ -32,7 +32,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - Legacy `message-daemon.mjs` and `channel-respond` have been deleted from codebase
 
 ### Fleet VM Architecture
-- Single OpenClaw agent per VM with specialty-specific workspace (identity fragment + shared SOUL_PROTOCOL.md composed at bootstrap) + brain sub-agents
+- Single brain gateway per VM with specialty-specific workspace (identity fragment + shared SOUL_PROTOCOL.md composed at bootstrap) + brain sub-agents
 - Same `agent-ears.mjs` + `agent-mouth.mjs` + `agent-introspect.mjs` as Prime (CHANNEL=gchat) — built-in DWD, fire-and-forget input, strict LLM output classification
 - Introspect daemon reads real VM filesystem (bin/, skills/, workspace/) and responds to Firestore queries from the dashboard
 - CoreKit tools shared with Prime via manifest system
@@ -40,13 +40,13 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 ### I/O Architecture (Ears + Mouth)
 - Ears polls channel (Firestore or GChat), deduplicates, repairs Chat-mangled text via Gemini Flash preprocessor, detects approval gate responses in GChat (intercepts approve/reject replies), writes TASK.json, fires gateway POST (non-blocking)
 - **GChat context window**: when @mention detected, ears includes prior N messages (default 5) from the space as `[Chat messages since your last reply - for context]` preamble with sender names
-- Mouth v2 tails JSONL session transcript (`~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl`) — structurally detects final responses vs intermediate tool output
+- Mouth v2 tails JSONL session transcript (`/opt/corekit/corekit/brain/agents/{agentId}/sessions/{sessionId}.jsonl`) — structurally detects final responses vs intermediate tool output
 - Turn state machine: IDLE → WORKING → ACKED → UPDATED → DONE
 - Status updates: LLM-voiced ack at 5s, progress at 120s (deterministic fallback if LLM fails)
 - LLM classify via Gemini Flash in JSON mode: `{"action": "deliver"|"suppress", "text": "..."}`
 - Prompts loaded from external `.md` files (`mouth-classify-prompt.md`, `mouth-status-prompts.md`)
 - Mouth also runs independent Brain v3 envelope poll (5s interval) — primary query on `delivery_status=pending`, fallback to 3-status query for migration
-- `channel-respond` has been removed — OpenClaw agents never call delivery tools directly
+- `channel-respond` has been removed — agents never call delivery tools directly
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
 - **Dashboard**: Living Agent Graph home screen — interactive network topology with prime chip selector (deploy chip as last inline element), SVG connection lines + pulse dots, glassmorphic agent cards with text nav labels (Work/Brain/Skills, unified for Prime and Fleet). Floating glassmorphic chat overlay (slide-in from right, resize handle 320-800px, X close button, specialty badge inline next to agent name) replaces old split-panel layout. +Hire card in fleet grid with dynamic specialty picker (fetches agent-types.json from GitHub, 5m cache). Shell header: logo + stacked title/version (version clickable → Settings System tab, sits below "Architect Prime") left-aligned with breadcrumb trail (Home as first clickable crumb). 17-page breadcrumb-navigated hierarchy (no sidebar). Home → Prime Hub → Chat/Fleet/Work/Brain/Skills/Settings → Agent Hub → Chat/Work/Brain/Skills/Settings. Brain page: 6-slot LLM grid with click-to-swap model picker. Model discovery moved to global Settings → Models tab. Skills page queries real VM filesystem via Firestore bus introspection API. Real-time M→C→T work tree, envelope detail view, human-in-the-loop response form for needs_input envelopes. Real-time Cloud Build status polling (regional API for step-level progress) for dashboard upgrades. 1health design system (Graphite/Charcoal/Teal/Aqua). Shared FleetSelector component (`useFleetSelection` hook + `FleetSelector` two-tier chip UI + `FleetEmptyPrompt`) provides consistent chip-based prime/agent selection with URL deep linking (`?prime=xxx&agent=yyy`) across all 5 top-level pages (Projects, Processes, Work, Brain, Skills). No auto-select — user must click a prime chip.
 
@@ -61,7 +61,7 @@ The Skills page categorizes tools by agent "body part". The introspect daemon (`
 | **Cortex** | 🔮 | `agent-ask`, `agent-status` | Decision layer — reasoning tools the cortex agent uses |
 | **Motor** | ⚡ | `responsibility-manage`, `project-manage`, `task-log-*`, `fleet-*`, `work-log-read`, `drive-*`, `gmail-*`, `calendar-*`, `docs-*`, `sheets-*` | Execution layer — all tools Motor uses to DO things |
 | **Memory** | 💾 | `core-memory-*`, `update-deep-truths`, `session-summary` | Temporal-memory tools |
-| **Config** | ⚙️ | `upgrade-*`, `validate-contracts`, `render-config`, `oc`, `*.md`, `*.json`, `*.tmpl` | System config & base functions: OpenClaw/fleet infra |
+| **Config** | ⚙️ | `upgrade-*`, `validate-contracts`, `*.md`, `*.json`, `*.tmpl` | System config & base functions: brain/fleet infra |
 | **Custom** | 🧩 | *(anything not matched above)* | Fallback for uncategorized / user-added tools |
 
 Source of truth: categorization logic in `corekit/daemon/agent-introspect.mjs`, labels in `app/src/app/p/[id]/a/[agent]/skills/page.tsx`.
@@ -88,7 +88,7 @@ infra/            Bootstrap scripts, manifests, contracts.json
 corekit/          Runtime tools installed on VMs (brain, fleet, gateway, chat, dashboard, memory)
 brain/            Agent workspace files (SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md)
 specialties/      Fleet agent specialty configs
-skills/           OpenClaw skill manifests
+skills/           Skill manifests
 docs/             Architecture docs
 ```
 
@@ -124,10 +124,10 @@ docs/             Architecture docs
 | Finalize checkpoint | `/finalize-checkpoint` | After verifying a stable checkpoint. Updates MISSION_PLAN.md, README.md, project-context.md, then tags and pushes. |
 
 ### Key Paths on VM
-- OpenClaw root: `/opt/openclaw`
-- Config: `/opt/openclaw/.openclaw/openclaw.json`
-- CoreKit tools: `/opt/openclaw/.openclaw/bin/`
-- Workspace: `/opt/openclaw/.openclaw/workspace/`
+- CoreKit root: `/opt/corekit`
+- Config: `/opt/corekit/corekit/`
+- CoreKit tools: `/opt/corekit/bin/`
+- Workspace: `/opt/corekit/workspace/`
 
 ### Constraints
 - No secrets in repo — runtime injection via env vars or GCP metadata

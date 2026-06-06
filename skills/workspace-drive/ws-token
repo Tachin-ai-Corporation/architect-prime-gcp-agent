@@ -19,17 +19,12 @@
 #
 # Environment:
 #   AGENT_USER_EMAIL — Workspace user to impersonate (REQUIRED)
-#   OC_HOST_ROOT     — OpenClaw host root (default: /opt/openclaw)
+#   CORE_DIR         — CoreKit host root (default: /opt/corekit)
 # ============================================================
 set -euo pipefail
 
-# Smart path: detect container ($HOME) vs host (/opt/openclaw)
-if [[ -f "${HOME}/.openclaw/bin/dwd-token" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
-else
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-fi
-DWD_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+DWD_TOKEN="${CORE_DIR}/bin/dwd-token"
 
 die() { echo "[ws-token] [ERROR] $*" >&2; exit 1; }
 
@@ -75,12 +70,10 @@ esac
 # Try env var first, then fall back to chat-config.json
 USER_EMAIL="${AGENT_USER_EMAIL:-}"
 if [[ -z "$USER_EMAIL" ]]; then
-  for cfg in "${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json" "/home/node/.openclaw/corekit/chat-config.json"; do
-    if [[ -f "$cfg" ]]; then
-      USER_EMAIL="$(python3 -c "import json; print(json.load(open('$cfg')).get('agentUserEmail',''))" 2>/dev/null)" || true
-      [[ -n "$USER_EMAIL" ]] && break
-    fi
-  done
+  cfg="${CORE_DIR}/corekit/chat-config.json"
+  if [[ -f "$cfg" ]]; then
+    USER_EMAIL="$(python3 -c "import json; print(json.load(open('$cfg')).get('agentUserEmail',''))" 2>/dev/null)" || true
+  fi
 fi
 [[ -n "$USER_EMAIL" ]] || die "Cannot determine agent email. Set AGENT_USER_EMAIL or check chat-config.json"
 

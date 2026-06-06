@@ -2,24 +2,24 @@
 # Data specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job data
 
-specialties/data/workspace/IDENTITY.md .openclaw/workspace-data/IDENTITY.md
-specialties/data/workspace/SOUL.md .openclaw/workspace-data/SOUL.md
-specialties/data/workspace/MEMORY.md .openclaw/workspace-data/MEMORY.md
+specialties/data/workspace/IDENTITY.md workspace-data/IDENTITY.md
+specialties/data/workspace/SOUL.md workspace-data/SOUL.md
+specialties/data/workspace/MEMORY.md workspace-data/MEMORY.md
 
 # Workspace skills — Sheets
-skills/workspace-sheets/SKILL.md .openclaw/skills/workspace-sheets/SKILL.md
-skills/workspace-sheets/sheets-get .openclaw/bin/sheets-get
-skills/workspace-sheets/sheets-append .openclaw/bin/sheets-append
-skills/workspace-sheets/sheets-update .openclaw/bin/sheets-update
+skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/sheets-get bin/sheets-get
+skills/workspace-sheets/sheets-append bin/sheets-append
+skills/workspace-sheets/sheets-update bin/sheets-update
 
 # Data responsibilities
-specialties/data/responsibilities-data.json .openclaw/corekit/responsibilities-job.json
+specialties/data/responsibilities-data.json corekit/responsibilities-job.json
 
 # Specialty brain SOUL appends
-specialties/data/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/cortex/SOUL_APPEND.md
-specialties/data/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/motor/SOUL_APPEND.md
-specialties/data/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/data/brain/cerebellum/SOUL_APPEND.md
+specialties/data/brain/cortex/SOUL_APPEND.md corekit/specialties/data/brain/cortex/SOUL_APPEND.md
+specialties/data/brain/motor/SOUL_APPEND.md corekit/specialties/data/brain/motor/SOUL_APPEND.md
+specialties/data/brain/cerebellum/SOUL_APPEND.md corekit/specialties/data/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty skills
-specialties/data/skills/bq-ops/SKILL.md .openclaw/corekit/specialties/data/skills/bq-ops/SKILL.md
-specialties/data/skills/bq-ops/skill.json .openclaw/corekit/specialties/data/skills/bq-ops/skill.json
+specialties/data/skills/bq-ops/SKILL.md corekit/specialties/data/skills/bq-ops/SKILL.md
+specialties/data/skills/bq-ops/skill.json corekit/specialties/data/skills/bq-ops/skill.json

@@ -16,7 +16,7 @@ interface ModelInfo {
   provider: string;
   status: string;
   httpCode?: number;
-  openclawId?: string;
+  brainModelId?: string;
 }
 
 interface ModelsData {
@@ -67,10 +67,10 @@ const DAEMON_KEYS: Set<string> = new Set(DAEMON_SLOTS.map(s => s.key));
    Model naming helpers
    ================================================================ */
 
-/** Strip OpenClaw prefix: "google-vertex/gemini-3.1-pro-preview" → "gemini-3.1-pro-preview" */
-function stripPrefix(openclawId: string): string {
-  const slash = openclawId.indexOf("/");
-  return slash >= 0 ? openclawId.slice(slash + 1) : openclawId;
+/** Strip prefix: "google-vertex/gemini-3.1-pro-preview" → "gemini-3.1-pro-preview" */
+function stripPrefix(brainModelId: string): string {
+  const slash = brainModelId.indexOf("/");
+  return slash >= 0 ? brainModelId.slice(slash + 1) : brainModelId;
 }
 
 /** Build Brain model ID from catalog model — provider-aware prefix */
@@ -83,8 +83,8 @@ function toBrainModelId(modelId: string, provider: string): string {
 }
 
 /** Find display name from model catalog */
-function getDisplayName(openclawId: string, models: ModelInfo[]): string {
-  const bare = stripPrefix(openclawId);
+function getDisplayName(brainModelId: string, models: ModelInfo[]): string {
+  const bare = stripPrefix(brainModelId);
   const found = models.find((m) => m.id === bare);
   return found?.name || bare;
 }
@@ -112,7 +112,7 @@ function BrainPage() {
   const [loadingLive, setLoadingLive] = useState(false);
   const [pickerSlot, setPickerSlot] = useState<string | null>(null);
 
-  // Pending changes: slot → openclawId
+  // Pending changes: slot → brainModelId
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
@@ -235,10 +235,10 @@ function BrainPage() {
 
   /* ---- Handle model selection in picker (UI only) ---- */
   const handleSelectModel = (slot: string, model: ModelInfo) => {
-    const openclawId = toBrainModelId(model.id, model.provider);
+    const brainModelId = toBrainModelId(model.id, model.provider);
     const currentModel = getSlotModelWithoutPending(slot);
 
-    if (openclawId === currentModel) {
+    if (brainModelId === currentModel) {
       // Deselect: remove from pending
       setPendingChanges((prev) => {
         const next = { ...prev };
@@ -246,7 +246,7 @@ function BrainPage() {
         return next;
       });
     } else {
-      setPendingChanges((prev) => ({ ...prev, [slot]: openclawId }));
+      setPendingChanges((prev) => ({ ...prev, [slot]: brainModelId }));
     }
     setPickerSlot(null);
   };
@@ -305,7 +305,7 @@ function BrainPage() {
       for (const slot of DAEMON_SLOTS) {
         const pending = pendingChanges[slot.key];
         if (pending) {
-          // Daemon models use bare Vertex AI model IDs (no openclaw prefix)
+          // Daemon models use bare Vertex AI model IDs (no provider prefix)
           daemonOverrides[slot.key] = stripPrefix(pending);
         }
       }
@@ -647,10 +647,10 @@ function BrainPage() {
                   <div className={styles.providerGroup}>
                     <div className={styles.providerLabel}>Available Models</div>
                     {availableModels.map((m) => {
-                      const openclawId = toBrainModelId(m.id, m.provider);
+                      const brainModelId = toBrainModelId(m.id, m.provider);
                       const currentModel = getSlotModelWithoutPending(pickerSlot);
-                      const isCurrent = openclawId === currentModel;
-                      const isPendingSelection = pendingChanges[pickerSlot] === openclawId;
+                      const isCurrent = brainModelId === currentModel;
+                      const isPendingSelection = pendingChanges[pickerSlot] === brainModelId;
 
                       return (
                         <button

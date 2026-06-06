@@ -13,7 +13,7 @@
 #   agent-ou-manage --check-policy           # Verify Drive sharing is restricted (read-only check)
 #
 # Environment:
-#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#   CORE_DIR — CoreKit host root (default: /opt/corekit)
 #
 # DWD scopes required (granted to dwd-signer SA):
 #   https://www.googleapis.com/auth/admin.directory.orgunit
@@ -29,17 +29,8 @@ die()  { echo "[agent-ou-manage] [ERROR] $*" >&2; exit 1; }
 log()  { echo "[agent-ou-manage] $*" >&2; }
 warn() { echo "[agent-ou-manage] [WARN] $*" >&2; }
 
-# ---- Resolve config paths (host or container) ----
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-CONFIG_SEARCH=(
-  "${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
-  "${OPENCLAW_CONFIG_DIR:-/dev/null}/corekit/chat-config.json"
-  "/home/node/.openclaw/corekit/chat-config.json"
-)
-CONFIG_FILE=""
-for p in "${CONFIG_SEARCH[@]}"; do
-  if [[ -f "$p" ]]; then CONFIG_FILE="$p"; break; fi
-done
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CONFIG_FILE="${CORE_DIR}/corekit/chat-config.json"
 [[ -n "$CONFIG_FILE" ]] || die "Cannot find chat-config.json"
 
 # ---- Read admin email from config (chat-config.json → Firestore fallback) ----
@@ -83,10 +74,7 @@ except: pass
 " 2>/dev/null)"
 
 # ---- Locate dwd-token ----
-DWD_TOKEN=""
-for d in "${OC_HOST_ROOT}/.openclaw/bin" "${OPENCLAW_CONFIG_DIR:-/dev/null}/../bin" "/home/node/.openclaw/bin"; do
-  if [[ -x "${d}/dwd-token" ]]; then DWD_TOKEN="${d}/dwd-token"; break; fi
-done
+DWD_TOKEN="${CORE_DIR}/bin/dwd-token"
 [[ -n "$DWD_TOKEN" ]] || die "Cannot find dwd-token"
 
 # ---- Get admin token with required scopes ----

@@ -15,7 +15,8 @@
 
 set -euo pipefail
 
-RESP_FILE="${RESP_FILE:-/home/node/.openclaw/corekit/responsibilities-job.json}"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+RESP_FILE="${RESP_FILE:-${CORE_DIR}/corekit/responsibilities-job.json}"
 
 # Ensure file exists
 if [ ! -f "$RESP_FILE" ]; then

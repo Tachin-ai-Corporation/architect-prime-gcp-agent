@@ -26,7 +26,7 @@ interface ModelInfo {
   provider: string;
   status: "available" | "not_found" | "auth_error" | "timeout" | "checking" | "unknown";
   httpCode?: number;
-  openclawId?: string;
+  brainModelId?: string;
   description?: string;
   cost?: string;
 }

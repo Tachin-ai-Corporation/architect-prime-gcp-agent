@@ -4,7 +4,7 @@
   "job": "prime",
   "agents": {
     "cortex": {
-      "route": "openclaw/cortex",
+      "route": "brain/cortex",
       "model": "gemini-3.1-pro-preview",
       "intents": ["classify", "decide", "synthesize", "short_circuit"],
       "tools": [],
@@ -15,7 +15,7 @@
       "top_p": 0.95
     },
     "temporal-memory": {
-      "route": "openclaw/temporal-memory",
+      "route": "brain/temporal-memory",
       "model": "gemini-2.5-flash",
       "intents": ["recall", "write"],
       "tools": ["memory_search", "core-memory-read", "core-memory-write", "core-memory-retire"],
@@ -26,7 +26,7 @@
       "top_p": 0.9
     },
     "motor": {
-      "route": "openclaw/motor",
+      "route": "brain/motor",
       "model": "gemini-2.5-flash",
       "intents": ["execute"],
       "tools": [
@@ -43,7 +43,7 @@
       "top_p": 0.9
     },
     "cerebellum": {
-      "route": "openclaw/cerebellum",
+      "route": "brain/cerebellum",
       "model": "gemini-2.5-flash",
       "intents": ["verify"],
       "tools": [],
@@ -54,7 +54,7 @@
       "top_p": 0.85
     },
     "temporal-research": {
-      "route": "openclaw/temporal-research",
+      "route": "brain/temporal-research",
       "model": "gemini-2.5-flash",
       "intents": ["research"],
       "tools": ["vertex-grounding-search", "web-fetch"],
@@ -65,7 +65,7 @@
       "top_p": 0.95
     },
     "prefrontal": {
-      "route": "openclaw/prefrontal",
+      "route": "brain/prefrontal",
       "model": "gemini-2.5-flash",
       "intents": ["plan"],
       "tools": [],

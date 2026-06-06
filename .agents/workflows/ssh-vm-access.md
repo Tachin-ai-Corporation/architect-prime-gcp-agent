@@ -1,5 +1,5 @@
 ---
-description: SSH into a Prime or Fleet VM and execute commands inside the OpenClaw Docker container. Use when you need to debug, inspect, or test anything on a running agent VM. For deploying changes, use the dashboard upgrade button instead.
+description: SSH into a Prime or Fleet VM and execute commands directly on the GCE host. Use when you need to debug, inspect, or test anything on a running agent VM. For deploying changes, use the dashboard upgrade button instead.
 ---
 
 # SSH VM Access
@@ -17,12 +17,12 @@ gcloud compute instances list --project=architect-prime-beta --format="table(nam
 Use `echo y |` to auto-accept host key, and `--command=` for one-shot execution:
 
 ```powershell
-echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=architect-prime-beta --tunnel-through-iap --command="sudo docker exec openclaw-gateway {COMMAND}"
+echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=architect-prime-beta --tunnel-through-iap --command="{COMMAND}"
 ```
 
-Example (gateway status):
+Example (gateway status check):
 ```powershell
-echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo docker exec openclaw-gateway openclaw status"
+echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo systemctl status agent-brain-gateway"
 ```
 
 ## Common commands
@@ -30,44 +30,42 @@ echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=arc
 Substitute into the `--command=` pattern above:
 
 ```bash
-# Gateway status
-sudo docker exec openclaw-gateway openclaw status
+# Brain Gateway status
+sudo systemctl status agent-brain-gateway
 
-# Container logs
-sudo docker logs openclaw-gateway --tail 50
+# Brain Gateway logs
+sudo journalctl -u agent-brain-gateway --no-pager -n 50
 
 # Agent ears logs
+sudo journalctl -u agent-ears --no-pager -n 20
 sudo tail -20 /var/log/agent-ears.log
 
-# Agent brain daemon logs
-sudo tail -20 /var/log/agent-brain.log
+# Agent mouth logs
+sudo journalctl -u agent-mouth --no-pager -n 20
+sudo tail -20 /var/log/agent-mouth.log
 
-# Agent brain daemon status
+# Agent brain daemon status/logs
 sudo systemctl status agent-brain
+sudo journalctl -u agent-brain --no-pager -n 50
 
 # Read telemetry
-sudo docker exec openclaw-gateway /home/node/.openclaw/bin/brain-telemetry-read --last 10
+/opt/corekit/bin/brain-telemetry-read --last 10
 
 # Check SOUL.md (Cortex decision framework)
-sudo docker exec openclaw-gateway cat /home/node/.openclaw/workspace-cortex/SOUL.md | head -30
+cat /opt/corekit/workspace/SOUL.md | head -30
 
-# Check rendered config hooks
-sudo docker exec openclaw-gateway grep -A 20 hooks /home/node/.openclaw/openclaw.json
-
-# OpenClaw version
-sudo docker exec openclaw-gateway openclaw --version
+# Check rendered config
+cat /opt/corekit/corekit/config.json
 
 # CoreKit install state
-sudo docker exec openclaw-gateway cat /home/node/.openclaw/corekit/STATE.json
+cat /opt/corekit/corekit/STATE.json
 
 # List workspace files
-sudo docker exec openclaw-gateway find /home/node/.openclaw/workspace -name '*.md' -type f
+find /opt/corekit/workspace -name '*.md' -type f
 ```
 
 ## Interactive SSH (when needed)
 
 ```powershell
 echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=architect-prime-beta --tunnel-through-iap
-# then inside:
-sudo docker exec -it openclaw-gateway bash
 ```

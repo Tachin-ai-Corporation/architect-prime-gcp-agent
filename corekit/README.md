@@ -1,15 +1,12 @@
 # Architect Prime — CoreKit
 
 > Generated from: `Tachin-ai-Corporation/architect-prime-gcp-agent@main`
-> Last verified: v2026.05.03.9.0
 
 ## What this is
 A manifest-driven "core kit" for Architect Prime that includes:
 
-- OpenClaw config templates (`corekit/config/openclaw-bootstrap.json5.tmpl`, `openclaw-fleet-bootstrap.json5.tmpl`)
 - Agent workspace files (`brain/prime/`, `brain/fleet/`, `specialties/`)
-- CoreKit scripts (`corekit/{brain,fleet,gateway,chat,daemon,memory,dashboard,system}/`)
-- Canonical CLI wrapper `oc` (so the agent never regresses into `pnpm openclaw ...`)
+- CoreKit scripts (`corekit/{brain,fleet,chat,daemon,memory,dashboard,system}/`)
 - Infrastructure contracts (`infra/contracts.json`)
 
 ## How you use it (manifest installer)
@@ -22,7 +19,4 @@ Set by the bootstrap script (not by the user):
 - `MY_TOKEN` (gateway auth token)
 - `AGENT_USER_EMAIL` (for fleet agents)
 
-Config rendering uses `corekit/gateway/render-config` → produces `openclaw.json`.
-
-> Note: the agent should never call `pnpm openclaw ...` directly; always use `oc <cmd>`.
-> `~/.openclaw/bin` is added to PATH via the bootstrap's `tools.exec.pathPrepend` setting.
+> `/opt/corekit/bin` is added to PATH via the bootstrap settings.

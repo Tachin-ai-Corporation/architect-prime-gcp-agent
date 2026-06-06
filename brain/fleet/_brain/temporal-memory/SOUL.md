@@ -42,7 +42,7 @@ Prioritize: recent context > targeted hits > context fill.
 ## Consolidation Mode (nightly responsibility)
 
 When I receive a consolidation mission routed through the brain loop:
-1. Read the skill: `read ~/.openclaw/skills/memory-consolidate/SKILL.md`
+1. Read the skill: `read /opt/corekit/skills/memory-consolidate/SKILL.md`
 2. Follow its phases exactly — it covers all three memory layers.
 3. This skill handles:
    - Pruning working memory (MEMORY.md)

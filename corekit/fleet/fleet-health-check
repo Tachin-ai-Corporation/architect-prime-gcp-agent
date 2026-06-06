@@ -223,14 +223,14 @@ print(cf)
 
     RESTART_OK=false
     if gcloud compute ssh "$VM" --zone="$ZONE" --quiet \
-        --command="docker restart openclaw-gateway 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
+        --command="sudo systemctl restart agent-brain-gateway 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
       RESTART_OK=true
     fi
 
     if $RESTART_OK; then
-      log "  ✅ Gateway restarted for ${NAME}"
+      log "  ✅ Gateway service restarted for ${NAME}"
     else
-      warn "  ❌ Failed to restart gateway for ${NAME}"
+      warn "  ❌ Failed to restart gateway service for ${NAME}"
     fi
 
     # Record recovery attempt
@@ -263,8 +263,8 @@ print(cf)
 
   # ---- OU Compliance Check ----
   # Check if agent is in the "AI Agents" OU (Drive sharing restricted)
-  OC_BIN="${OC_HOST_ROOT:-%/opt/openclaw}/.openclaw/bin"
-  if [[ -x "${OC_BIN}/agent-ou-manage" ]]; then
+  CORE_BIN="/opt/corekit/bin"
+  if [[ -x "${CORE_BIN}/agent-ou-manage" ]]; then
     # Get agent email from Firestore doc
     AGENT_EMAIL="$(curl -s -H "Authorization: Bearer $TOKEN" \
       "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}" 2>/dev/null | python3 -c "
@@ -273,16 +273,16 @@ d=json.load(sys.stdin)
 print(d.get('fields',{}).get('email',{}).get('stringValue',''))" 2>/dev/null || true)"
 
     if [[ -n "$AGENT_EMAIL" ]]; then
-      AGENT_OU="$(OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}" "${OC_BIN}/agent-ou-manage" --check "$AGENT_EMAIL" 2>/dev/null || echo "UNKNOWN")"
+      AGENT_OU="$(CORE_ROOT="/opt/corekit" "${CORE_BIN}/agent-ou-manage" --check "$AGENT_EMAIL" 2>/dev/null || echo "UNKNOWN")"
       OU_COMPLIANT="false"
       if [[ "$AGENT_OU" == "/AI Agents" ]]; then
         OU_COMPLIANT="true"
       elif [[ "$AGENT_OU" != "UNKNOWN" && "$AGENT_OU" != "NOT_FOUND" ]]; then
         # Not in correct OU — attempt auto-move
         log "  ⚠️  ${NAME} (${AGENT_EMAIL}) not in AI Agents OU (currently: ${AGENT_OU}) — attempting move..."
-        OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}" "${OC_BIN}/agent-ou-manage" --move "$AGENT_EMAIL" 2>/dev/null || true
+        CORE_ROOT="/opt/corekit" "${CORE_BIN}/agent-ou-manage" --move "$AGENT_EMAIL" 2>/dev/null || true
         # Re-check
-        AGENT_OU="$(OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}" "${OC_BIN}/agent-ou-manage" --check "$AGENT_EMAIL" 2>/dev/null || echo "UNKNOWN")"
+        AGENT_OU="$(CORE_ROOT="/opt/corekit" "${CORE_BIN}/agent-ou-manage" --check "$AGENT_EMAIL" 2>/dev/null || echo "UNKNOWN")"
         [[ "$AGENT_OU" == "/AI Agents" ]] && OU_COMPLIANT="true"
       fi
 

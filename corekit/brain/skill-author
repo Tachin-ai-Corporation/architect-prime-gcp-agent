@@ -21,12 +21,12 @@
 #     SKILL.md      — Instructions (generated from --description)
 #
 # Environment:
-#   OC_HOST_ROOT — OpenClaw root (default: /opt/openclaw)
+#   CORE_DIR — CoreKit root (default: /opt/corekit)
 # ============================================================
 set -euo pipefail
 
-OC="${OC_HOST_ROOT:-/opt/openclaw}/.openclaw"
-STAGING_DIR="${OC}/workspace/skill-staging"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+STAGING_DIR="${CORE_DIR}/workspace/skill-staging"
 
 ACTION="${1:-help}"
 shift || true
@@ -177,7 +177,7 @@ if [[ "$ACTION" == "create" ]]; then
 
   # Set defaults
   [[ -z "$OUTPUT" ]] && OUTPUT="$STAGING_DIR"
-  [[ -z "$AUTHOR" ]] && AUTHOR="$(cat "${OC}/workspace/IDENTITY.md" 2>/dev/null | head -5 | grep -oP '(?<=\*\*)[^*]+' | head -1 || echo 'prime')"
+  [[ -z "$AUTHOR" ]] && AUTHOR="$(cat "${CORE_DIR}/workspace/IDENTITY.md" 2>/dev/null | head -5 | grep -oP '(?<=\*\*)[^*]+' | head -1 || echo 'prime')"
 
   SKILL_DIR="${OUTPUT}/${ID}"
   mkdir -p "$SKILL_DIR"

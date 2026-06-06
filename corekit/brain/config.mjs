@@ -7,10 +7,10 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const OC_ROOT = process.env.OC_ROOT || '/home/node/.openclaw';
-const CONTRACTS_PATH = process.env.CONTRACTS_PATH || join(OC_ROOT, 'corekit/contracts.json');
-const AGENTS_DIR = process.env.AGENTS_DIR || join(OC_ROOT, 'agents/main/agent');
-const WORKSPACE_BASE = process.env.WORKSPACE_BASE || OC_ROOT;
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
+const CONTRACTS_PATH = process.env.CONTRACTS_PATH || join(CORE_DIR, 'corekit/contracts.json');
+const AGENTS_DIR = process.env.AGENTS_DIR || join(CORE_DIR, 'agents/main/agent');
+const WORKSPACE_BASE = process.env.WORKSPACE_BASE || CORE_DIR;
 
 let _contracts = null;
 
@@ -50,7 +50,9 @@ export function reloadContracts() {
  */
 export function loadAgentConfig(agentId) {
   const contracts = getContracts();
-  const workspace = join(WORKSPACE_BASE, `workspace-${agentId}`);
+  const workspace = agentId === 'cortex'
+    ? join(WORKSPACE_BASE, 'workspace')
+    : join(WORKSPACE_BASE, `workspace-${agentId}`);
 
   // System prompt from SOUL.md in agent workspace
   let systemPrompt = '';

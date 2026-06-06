@@ -25,10 +25,10 @@ done
 
 [[ -n "$AGENT_NAME" ]] || die "Missing --name"
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
-CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
-CHAT_READ="${OC_HOST_ROOT}/.openclaw/bin/chat-read"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+REGISTRY_FILE="${CORE_DIR}/corekit/fleet-registry.json"
+CHAT_SEND="${CORE_DIR}/bin/chat-send"
+CHAT_READ="${CORE_DIR}/bin/chat-read"
 
 # ---- Read agent info from registry ----
 [[ -f "$REGISTRY_FILE" ]] || die "Fleet registry not found: $REGISTRY_FILE"
@@ -46,7 +46,7 @@ if [[ -z "$CHAT_SPACE_ID" ]]; then
 fi
 [[ -n "$CHAT_SPACE_ID" ]] || die "No Chat space found for agent or in Prime metadata"
 
-export CHAT_SPACE_ID OC_HOST_ROOT
+export CHAT_SPACE_ID CORE_DIR
 
 log "Verifying fleet agent: ${AGENT_NAME}"
 log "  Agent Email: ${AGENT_EMAIL}"

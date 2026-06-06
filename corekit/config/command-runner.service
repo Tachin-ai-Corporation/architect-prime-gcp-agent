@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=CORE_DIR=/opt/corekit
 Environment=POLL_INTERVAL=5
-ExecStart=/opt/openclaw/.openclaw/bin/command-runner
+ExecStart=/opt/corekit/bin/command-runner
 Restart=always
 RestartSec=10
 StandardOutput=journal

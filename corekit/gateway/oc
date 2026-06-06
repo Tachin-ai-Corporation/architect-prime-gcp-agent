@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# Canonical OpenClaw CLI wrapper: ALWAYS use this.
-cd /app
-exec pnpm openclaw "$@"

@@ -27,9 +27,9 @@ done
 
 [[ -n "$AGENT_NAME" ]] || die "Missing --name"
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
-CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+REGISTRY_FILE="${CORE_DIR}/corekit/fleet-registry.json"
+CHAT_SEND="${CORE_DIR}/bin/chat-send"
 
 # ---- Read agent info from registry ----
 [[ -f "$REGISTRY_FILE" ]] || die "Fleet registry not found: $REGISTRY_FILE"
@@ -45,7 +45,7 @@ CURRENT_REF="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].coreRef // "unknow
 
 # Default to Prime's current ref if not specified
 if [[ -z "$TARGET_REF" ]]; then
-  STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+  STATE_FILE="${CORE_DIR}/corekit/STATE.json"
   if [[ -f "$STATE_FILE" ]]; then
     TARGET_REF="$(jq -r '.coreRef // "main"' "$STATE_FILE" 2>/dev/null)"
   fi
@@ -65,7 +65,7 @@ fi
 
 # ---- SSH and upgrade ----
 log "SSHing into ${FLEET_VM} to run upgrade..."
-UPGRADE_CMD="sudo CORE_REF='${TARGET_REF}' OC_HOST_ROOT=/opt/openclaw /opt/openclaw/.openclaw/bin/upgrade-corekit --apply '${TARGET_REF}' && echo 'UPGRADE_SUCCESS'"
+UPGRADE_CMD="sudo CORE_REF='${TARGET_REF}' CORE_DIR=/opt/corekit /opt/corekit/bin/upgrade-corekit --apply '${TARGET_REF}' && echo 'UPGRADE_SUCCESS'"
 
 RESULT="$(gcloud compute ssh "$FLEET_VM" \
   --zone="$FLEET_ZONE" \
@@ -90,7 +90,7 @@ if echo "$RESULT" | grep -q "UPGRADE_SUCCESS"; then
   CHAT_SPACE_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
     'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
   if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
-    export CHAT_SPACE_ID OC_HOST_ROOT
+    export CHAT_SPACE_ID CORE_DIR
     "$CHAT_SEND" "✅ Fleet agent *${AGENT_NAME}* upgraded: \`${CURRENT_REF}\` → \`${TARGET_REF}\`" || true
   fi
 else

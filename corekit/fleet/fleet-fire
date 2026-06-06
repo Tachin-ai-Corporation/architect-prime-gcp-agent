@@ -10,18 +10,13 @@
 #   fleet-fire --name anora
 #
 # Environment:
-#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#   CORE_DIR — CoreKit host root (default: /opt/corekit)
 # ============================================================
 set -euo pipefail
 
 # ---- CONFIG ----
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-OC_DIR="${OC_HOST_ROOT}/.openclaw"
-if [[ ! -d "$OC_DIR" && -d "${HOME}/.openclaw" ]]; then
-  OC_DIR="${HOME}/.openclaw"
-fi
-
-PRIME_CONFIG="${OC_DIR}/corekit/prime-config.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+PRIME_CONFIG="${CORE_DIR}/corekit/prime-config.json"
 
 # ---- HELPERS ----
 die()  { echo "ERROR: $*" >&2; exit 1; }

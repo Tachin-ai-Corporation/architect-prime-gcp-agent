@@ -29,7 +29,7 @@ interface ProbeResult {
   provider: string;
   status: string;
   httpCode: number;
-  openclawId: string;
+  brainModelId: string;
 }
 
 /* ---- Constants ---- */
@@ -395,7 +395,7 @@ export async function POST() {
         else if (code === 0) status = "timeout";
         else status = "unknown";
 
-        const openclawId = toBrainModelId(model.id, model.provider);
+        const brainModelId = toBrainModelId(model.id, model.provider);
 
         return {
           id: model.id,
@@ -404,7 +404,7 @@ export async function POST() {
           provider: model.provider,
           status,
           httpCode: code,
-          openclawId,
+          brainModelId,
         };
       });
       const batchResults = await Promise.all(probes);

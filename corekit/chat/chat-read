@@ -17,15 +17,15 @@
 # Environment:
 #   CHAT_SPACE_ID     — Google Chat space ID (spaces/XXXX)
 #   AGENT_USER_EMAIL  — Workspace user to impersonate
-#   OC_HOST_ROOT      — OpenClaw host root (default: /opt/openclaw)
+#   CORE_DIR          — CoreKit host root (default: /opt/corekit)
 # ============================================================
 set -euo pipefail
 
 # ---- CONFIG ----
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-CHAT_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CHAT_CONFIG="${CORE_DIR}/corekit/chat-config.json"
 CHAT_API="https://chat.googleapis.com/v1"
-DWD_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/dwd-token"
+DWD_TOKEN="${CORE_DIR}/bin/dwd-token"
 
 SINCE_SECONDS=""
 LIMIT=50

@@ -6,7 +6,7 @@
 // {parameters} but the framework reads {inputSchema}. We must add
 // inputSchema manually to each tool definition.
 //
-// CoreKit scripts are in PATH via ~/.openclaw/bin/.
+// CoreKit scripts are in PATH via /opt/corekit/bin.
 
 import { jsonSchema } from 'ai';
 import { exec as execCb } from 'node:child_process';
@@ -17,7 +17,7 @@ import { join } from 'node:path';
 const execAsync = promisify(execCb);
 
 const TOOL_TIMEOUT = 120_000; // 2 minutes per tool call
-const BIN_DIR = process.env.BIN_DIR || '/home/node/.openclaw/bin';
+const BIN_DIR = process.env.BIN_DIR || '/opt/corekit/bin';
 
 // ---- Helper: Create tool with both parameters and inputSchema ----
 function makeTool({ description, parameters, execute }) {
@@ -46,7 +46,7 @@ export const runCommand = makeTool({
   execute: async ({ command }) => {
     try {
       const { stdout, stderr } = await execAsync(command, {
-        cwd: process.env.WORKSPACE || '/home/node/.openclaw/workspace-cortex',
+        cwd: process.env.WORKSPACE || '/opt/corekit/workspace',
         timeout: TOOL_TIMEOUT,
         maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: `${BIN_DIR}:${process.env.PATH}` },

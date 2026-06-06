@@ -2,39 +2,39 @@
 # DevOps specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job devops
 
-specialties/devops/workspace/IDENTITY.md .openclaw/workspace-devops/IDENTITY.md
-specialties/devops/workspace/SOUL.md .openclaw/workspace-devops/SOUL.md
-specialties/devops/workspace/MEMORY.md .openclaw/workspace-devops/MEMORY.md
+specialties/devops/workspace/IDENTITY.md workspace-devops/IDENTITY.md
+specialties/devops/workspace/SOUL.md workspace-devops/SOUL.md
+specialties/devops/workspace/MEMORY.md workspace-devops/MEMORY.md
 
 # DevOps responsibilities (merged with base by Brain scheduler)
-specialties/devops/responsibilities-devops.json .openclaw/corekit/responsibilities-job.json
+specialties/devops/responsibilities-devops.json corekit/responsibilities-job.json
 
 # Specialty brain SOUL appends (used by assemble-tools phase 2)
 # Appended to sub-agent SOUL.md at install time for specialty-specific rules
-specialties/devops/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/cortex/SOUL_APPEND.md
-specialties/devops/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/motor/SOUL_APPEND.md
-specialties/devops/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/devops/brain/cerebellum/SOUL_APPEND.md
+specialties/devops/brain/cortex/SOUL_APPEND.md corekit/specialties/devops/brain/cortex/SOUL_APPEND.md
+specialties/devops/brain/motor/SOUL_APPEND.md corekit/specialties/devops/brain/motor/SOUL_APPEND.md
+specialties/devops/brain/cerebellum/SOUL_APPEND.md corekit/specialties/devops/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty-specific skills (used by assemble-tools phase 1)
 # Assembled into TOOLS.md alongside standard skills
-specialties/devops/skills/gcp-devops/SKILL.md .openclaw/corekit/specialties/devops/skills/gcp-devops/SKILL.md
+specialties/devops/skills/gcp-devops/SKILL.md corekit/specialties/devops/skills/gcp-devops/SKILL.md
 
 # Workspace skills — Google Drive
-skills/workspace-drive/SKILL.md .openclaw/skills/workspace-drive/SKILL.md
-skills/workspace-drive/drive-ls .openclaw/bin/drive-ls
-skills/workspace-drive/drive-search .openclaw/bin/drive-search
-skills/workspace-drive/drive-download .openclaw/bin/drive-download
-skills/workspace-drive/drive-upload .openclaw/bin/drive-upload
-skills/workspace-drive/drive-mkdir .openclaw/bin/drive-mkdir
-skills/workspace-drive/drive-rename .openclaw/bin/drive-rename
-skills/workspace-drive/drive-delete .openclaw/bin/drive-delete
-skills/workspace-drive/drive-move .openclaw/bin/drive-move
-skills/workspace-drive/drive-share .openclaw/bin/drive-share
+skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+skills/workspace-drive/drive-ls bin/drive-ls
+skills/workspace-drive/drive-search bin/drive-search
+skills/workspace-drive/drive-download bin/drive-download
+skills/workspace-drive/drive-upload bin/drive-upload
+skills/workspace-drive/drive-mkdir bin/drive-mkdir
+skills/workspace-drive/drive-rename bin/drive-rename
+skills/workspace-drive/drive-delete bin/drive-delete
+skills/workspace-drive/drive-move bin/drive-move
+skills/workspace-drive/drive-share bin/drive-share
 
 # Workspace skills — Gmail
-skills/workspace-gmail/SKILL.md .openclaw/skills/workspace-gmail/SKILL.md
-skills/workspace-gmail/gmail-search .openclaw/bin/gmail-search
-skills/workspace-gmail/gmail-get .openclaw/bin/gmail-get
-skills/workspace-gmail/gmail-send .openclaw/bin/gmail-send
-skills/workspace-gmail/gmail-draft-create .openclaw/bin/gmail-draft-create
-skills/workspace-gmail/gmail-draft-send .openclaw/bin/gmail-draft-send
+skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/gmail-search bin/gmail-search
+skills/workspace-gmail/gmail-get bin/gmail-get
+skills/workspace-gmail/gmail-send bin/gmail-send
+skills/workspace-gmail/gmail-draft-create bin/gmail-draft-create
+skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send

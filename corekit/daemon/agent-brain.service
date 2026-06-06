@@ -1,14 +1,13 @@
 [Unit]
 Description=Agent Brain v3 Orchestration Service
-After=network-online.target docker.service
+After=network-online.target agent-brain-gateway.service
 Wants=network-online.target
-Requires=docker.service
 
 [Service]
 Type=simple
 User=root
-Environment=OC_HOST_ROOT=/opt/openclaw
-ExecStart=/opt/openclaw/.openclaw/bin/start-agent-brain
+Environment=CORE_DIR=/opt/corekit
+ExecStart=/opt/corekit/bin/start-agent-brain
 Restart=always
 RestartSec=10
 StandardOutput=journal

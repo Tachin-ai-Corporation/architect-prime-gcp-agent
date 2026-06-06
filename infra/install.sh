@@ -73,7 +73,7 @@ fi
 GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
 GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
 CORE_REF="${CORE_REF:-main}"
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
+OC_HOST_ROOT="${CORE_ROOT:-/opt/corekit}"
 INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}"
 
 # For upgrade mode, override CORE_REF with the target
@@ -85,7 +85,7 @@ if [[ "$MODE" == "upgrade" ]]; then
 fi
 
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
-STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+STATE_FILE="${OC_HOST_ROOT}/corekit/STATE.json"
 
 # ---- Helpers ----
 info()  { echo -e "\n==> $*\n"; }
@@ -179,7 +179,7 @@ if [[ "$MODE" == "check" ]]; then
       echo "  [MISSING] ${file_path}"
       missing_count=$((missing_count + 1))
     fi
-  done < <(grep -o '"\.openclaw/[^"]*":"sha256:[^"]*"' "$STATE_FILE")
+  done < <(grep -o '"[^"]*":"sha256:[^"]*"' "$STATE_FILE")
 
   echo ""
   echo "Results: ${ok_count} ok, ${drift_count} drifted, ${missing_count} missing"
@@ -333,18 +333,18 @@ echo "Installed ${installed} files into ${OC_HOST_ROOT}."
 
 # ---- 4. Set permissions ----
 info "Setting ownership and permissions..."
-run chown -R 1000:1000 "${OC_HOST_ROOT}/.openclaw" 2>/dev/null || true
-run find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
-run find "${OC_HOST_ROOT}/.openclaw" -type f -exec chmod 644 {} \; 2>/dev/null || true
-run find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+run chown -R 1000:1000 "${OC_HOST_ROOT}" 2>/dev/null || true
+run find "${OC_HOST_ROOT}" -type d -exec chmod 755 {} \; 2>/dev/null || true
+run find "${OC_HOST_ROOT}" -type f -exec chmod 644 {} \; 2>/dev/null || true
+run find "${OC_HOST_ROOT}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
 # Belt-and-suspenders: ensure no CRLF in any bin scripts
 # (defensive against SCP from Windows, git autocrlf, etc.)
-run find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+run find "${OC_HOST_ROOT}/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
 # ---- 5. Write STATE.json ----
 info "Writing STATE.json..."
-state_dir="${OC_HOST_ROOT}/.openclaw/corekit"
+state_dir="${OC_HOST_ROOT}/corekit"
 run mkdir -p "$state_dir"
 
 # Build JSON with file hashes
@@ -378,9 +378,8 @@ run chmod 644 "${state_dir}/STATE.json" 2>/dev/null || true
 # ---- 6. Verify critical files ----
 info "Verifying critical files..."
 for check_file in \
-  "${OC_HOST_ROOT}/.openclaw/workspace/SOUL.md" \
-  "${OC_HOST_ROOT}/.openclaw/workspace/IDENTITY.md" \
-  "${OC_HOST_ROOT}/.openclaw/bin/oc"; do
+  "${OC_HOST_ROOT}/workspace/SOUL.md" \
+  "${OC_HOST_ROOT}/workspace/IDENTITY.md"; do
   if ! run test -f "$check_file"; then
     # Not fatal for fleet — workspace files are deployed by bootstrap, not manifest
     if [[ "$ROLE" == "fleet" ]]; then
@@ -390,12 +389,9 @@ for check_file in \
     fi
   fi
 done
-if run test -f "${OC_HOST_ROOT}/.openclaw/bin/oc"; then
-  run test -x "${OC_HOST_ROOT}/.openclaw/bin/oc" || die "oc wrapper not executable after install"
-fi
 
 # ---- 7. Run contract validation (if script is available) ----
-VALIDATE="${OC_HOST_ROOT}/.openclaw/bin/validate-contracts"
+VALIDATE="${OC_HOST_ROOT}/bin/validate-contracts"
 if run test -x "$VALIDATE" 2>/dev/null; then
   info "Running contract validation..."
   if run "$VALIDATE" --runtime 2>&1; then

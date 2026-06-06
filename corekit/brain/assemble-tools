@@ -14,26 +14,26 @@
 #   agent-type defaults to "prime"
 #
 # Environment:
-#   OC_HOST_ROOT — OpenClaw root (default: /opt/openclaw)
+#   CORE_DIR — CoreKit root (default: /opt/corekit)
 # ============================================================
 set -euo pipefail
 
 AGENT_TYPE="${1:-prime}"
-OC="${OC_HOST_ROOT:-/opt/openclaw}/.openclaw"
-SKILLS_DIR="${OC}/skills"
-TYPES_FILE="${OC}/corekit/agent-types.json"
-SPECIALTIES_DIR="${OC}/corekit/specialties"
-WORKSPACE="${OC}/workspace"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+SKILLS_DIR="${CORE_DIR}/skills"
+TYPES_FILE="${CORE_DIR}/corekit/agent-types.json"
+SPECIALTIES_DIR="${CORE_DIR}/corekit/specialties"
+WORKSPACE="${CORE_DIR}/workspace"
 CUSTOM_SKILLS_DIR="${WORKSPACE}/custom-skills"
 
 # Brain agent workspaces
 declare -A AGENT_WORKSPACES=(
-  [cortex]="${OC}/workspace"
-  [motor]="${OC}/workspace-motor"
-  [cerebellum]="${OC}/workspace-cerebellum"
-  [temporal-research]="${OC}/workspace-temporal-research"
-  [temporal-memory]="${OC}/workspace-temporal-memory"
-  [prefrontal]="${OC}/workspace-prefrontal"
+  [cortex]="${CORE_DIR}/workspace"
+  [motor]="${CORE_DIR}/workspace-motor"
+  [cerebellum]="${CORE_DIR}/workspace-cerebellum"
+  [temporal-research]="${CORE_DIR}/workspace-temporal-research"
+  [temporal-memory]="${CORE_DIR}/workspace-temporal-memory"
+  [prefrontal]="${CORE_DIR}/workspace-prefrontal"
 )
 
 # ---- Determine skill list for this agent type ----
@@ -199,7 +199,7 @@ APPEND_COUNT=0
 if [[ -d "$SPEC_BRAIN_DIR" ]]; then
   for sub in cortex motor prefrontal cerebellum temporal-memory temporal-research; do
     APPEND_FILE="${SPEC_BRAIN_DIR}/${sub}/SOUL_APPEND.md"
-    SUB_SOUL="${AGENT_WORKSPACES[$sub]:-${OC}/workspace-${sub}}/SOUL.md"
+    SUB_SOUL="${AGENT_WORKSPACES[$sub]:-${CORE_DIR}/workspace-${sub}}/SOUL.md"
     if [[ -f "$APPEND_FILE" && -f "$SUB_SOUL" ]]; then
       echo "" >> "$SUB_SOUL"
       echo "---" >> "$SUB_SOUL"

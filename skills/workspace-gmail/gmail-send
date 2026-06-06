@@ -6,12 +6,8 @@
 #        gmail-send --to "a@x.com,b@x.com" --cc c@x.com --subject "Team" --body "Hi all"
 #        gmail-send --to <addr> --subject "Re: Thread" --body "Reply" --reply-to MSG_ID
 set -euo pipefail
-if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
-else
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-fi
-WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
 GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
 die() { echo "[gmail-send] [ERROR] $*" >&2; exit 1; }
 TO="" SUBJECT="" BODY="" BODY_HTML="" CC="" BCC="" REPLY_TO=""

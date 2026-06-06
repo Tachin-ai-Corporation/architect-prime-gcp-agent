@@ -1,13 +1,12 @@
 #!/bin/bash
-# start-agent-mouth — Wrapper to launch agent-mouth.mjs inside Docker
+# start-agent-mouth — Wrapper to launch agent-mouth.mjs natively on host
 # Reads chat-config.json for agent-specific values.
-# Auto-detects CHANNEL from role config if not set via env.
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CONFIG="${CORE_DIR}/corekit/chat-config.json"
+PRIME_CFG="${CORE_DIR}/corekit/prime-config.json"
 
 # Auto-detect CHANNEL and identity from role config if not set via env
-PRIME_CFG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
 if [ -f "$PRIME_CFG" ]; then
   [ -z "$CHANNEL" ] && CHANNEL="dashboard"
   [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('projectId',''))" 2>/dev/null)"
@@ -31,11 +30,6 @@ if [ -z "$PRIME_ID" ]; then
     'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null)" || true
 fi
 
-# Fallback: read PRIME_ID from Docker container env (fleet-bootstrap sets it)
-if [ -z "$PRIME_ID" ]; then
-  PRIME_ID="$(docker exec openclaw-gateway printenv PRIME_ID 2>/dev/null)" || true
-fi
-
 # Fallback: derive AGENT_ID from VM hostname (fleet-stan → stan)
 if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "agent" ]; then
   VM_NAME="$(hostname 2>/dev/null)"
@@ -55,24 +49,19 @@ fi
 # Mouth needs GOOGLE_CLOUD_LOCATION for Vertex AI classify call
 GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-global}"
 
-# Kill any orphan agent-mouth processes inside the container.
-# When systemd restarts the service, the outer `docker exec` exits but
-# the inner node process can survive inside the container. This causes
-# two mouth instances polling the same log → double message delivery.
-docker exec openclaw-gateway pkill -f 'agent-mouth.mjs' 2>/dev/null || true
+# Kill any orphan agent-mouth processes on the host.
+pkill -f 'agent-mouth.mjs' 2>/dev/null || true
 sleep 1
 
-# Pre-create in-container log file so the node user can write to it.
-docker exec openclaw-gateway sh -c 'touch /var/log/agent-mouth.log && chown node:node /var/log/agent-mouth.log' 2>/dev/null || true
+export CORE_DIR
+export CHANNEL="${CHANNEL:-gchat}"
+export GCP_PROJECT_ID
+export AGENT_ID="${AGENT_ID:-agent}"
+export AGENT_USER_EMAIL
+export AGENT_DISPLAY_NAME="${AGENT_DISPLAY_NAME:-}"
+export AGENT_FIRST_NAME="${AGENT_FIRST_NAME:-}"
+export DWD_SIGNER_SA
+export PRIME_ID
+export GOOGLE_CLOUD_LOCATION
 
-exec stdbuf -oL docker exec \
-  -e CHANNEL="${CHANNEL:-gchat}" \
-  -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
-  -e AGENT_ID="${AGENT_ID:-agent}" \
-  -e AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" \
-  -e AGENT_DISPLAY_NAME="${AGENT_DISPLAY_NAME:-}" \
-  -e AGENT_FIRST_NAME="${AGENT_FIRST_NAME:-}" \
-  -e DWD_SIGNER_SA="${DWD_SIGNER_SA}" \
-  -e PRIME_ID="${PRIME_ID:-}" \
-  -e GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION}" \
-  openclaw-gateway node /home/node/.openclaw/bin/agent-mouth.mjs
+exec stdbuf -oL node "${CORE_DIR}/bin/agent-mouth.mjs"

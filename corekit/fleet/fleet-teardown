@@ -35,9 +35,9 @@ done
 
 [[ -n "$AGENT_NAME" ]] || die "Missing --name"
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
-CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+REGISTRY_FILE="${CORE_DIR}/corekit/fleet-registry.json"
+CHAT_SEND="${CORE_DIR}/bin/chat-send"
 
 # Single-project mode: fleet VMs are in Prime's project
 PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' \
@@ -170,7 +170,7 @@ fi
 
 # ---- 5. Notify via Chat ----
 if [[ -n "$CHAT_SPACE_ID" && -x "$CHAT_SEND" ]]; then
-  export CHAT_SPACE_ID OC_HOST_ROOT
+  export CHAT_SPACE_ID CORE_DIR
   "$CHAT_SEND" "🔥 Fleet agent *${AGENT_NAME}* decommissioned. VM and SA deleted." || true
 fi
 

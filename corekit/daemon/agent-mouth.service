@@ -1,16 +1,16 @@
 [Unit]
 Description=Agent Mouth — Output Classification and Delivery
-After=network-online.target openclaw-gateway.service
+After=network-online.target agent-brain-gateway.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/openclaw/.openclaw/bin/start-agent-mouth
+ExecStart=/opt/corekit/bin/start-agent-mouth
 Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/agent-mouth.log
 StandardError=append:/var/log/agent-mouth.log
-Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=CORE_DIR=/opt/corekit
 
 [Install]
 WantedBy=multi-user.target

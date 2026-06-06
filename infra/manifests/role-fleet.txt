@@ -4,37 +4,37 @@
 # Then a job-specific manifest is layered on top.
 
 # Fleet workspace template (fallback if no job-specific workspace)
-brain/fleet/_base/SOUL.md .openclaw/workspace-fleet/SOUL.md
-brain/fleet/_base/IDENTITY.md .openclaw/workspace-fleet/IDENTITY.md
-brain/fleet/_base/TOOLS.md .openclaw/workspace-fleet/TOOLS.md
+brain/fleet/_base/SOUL.md workspace-fleet/SOUL.md
+brain/fleet/_base/IDENTITY.md workspace-fleet/IDENTITY.md
+brain/fleet/_base/TOOLS.md workspace-fleet/TOOLS.md
 
 # Shared brain sub-agent workspaces (used by ALL fleet agents)
 # fleet-bootstrap.sh copies these to workspace-{agent}/ with template substitution
-brain/fleet/_brain/cortex/SOUL.md .openclaw/workspace-_brain/cortex/SOUL.md
-brain/fleet/_brain/temporal-research/SOUL.md .openclaw/workspace-_brain/temporal-research/SOUL.md
-brain/fleet/_brain/temporal-research/IDENTITY.md .openclaw/workspace-_brain/temporal-research/IDENTITY.md
-brain/fleet/_brain/temporal-memory/SOUL.md .openclaw/workspace-_brain/temporal-memory/SOUL.md
-brain/fleet/_brain/temporal-memory/IDENTITY.md .openclaw/workspace-_brain/temporal-memory/IDENTITY.md
-brain/fleet/_brain/prefrontal/SOUL.md .openclaw/workspace-_brain/prefrontal/SOUL.md
-brain/fleet/_brain/prefrontal/IDENTITY.md .openclaw/workspace-_brain/prefrontal/IDENTITY.md
-brain/fleet/_brain/motor/SOUL.md .openclaw/workspace-_brain/motor/SOUL.md
-brain/fleet/_brain/motor/IDENTITY.md .openclaw/workspace-_brain/motor/IDENTITY.md
-brain/fleet/_brain/motor/SOUL.md .openclaw/workspace-motor/SOUL.md
-brain/fleet/_brain/motor/IDENTITY.md .openclaw/workspace-motor/IDENTITY.md
-brain/fleet/_brain/cerebellum/SOUL.md .openclaw/workspace-_brain/cerebellum/SOUL.md
-brain/fleet/_brain/cerebellum/IDENTITY.md .openclaw/workspace-_brain/cerebellum/IDENTITY.md
+brain/fleet/_brain/cortex/SOUL.md workspace-_brain/cortex/SOUL.md
+brain/fleet/_brain/temporal-research/SOUL.md workspace-_brain/temporal-research/SOUL.md
+brain/fleet/_brain/temporal-research/IDENTITY.md workspace-_brain/temporal-research/IDENTITY.md
+brain/fleet/_brain/temporal-memory/SOUL.md workspace-_brain/temporal-memory/SOUL.md
+brain/fleet/_brain/temporal-memory/IDENTITY.md workspace-_brain/temporal-memory/IDENTITY.md
+brain/fleet/_brain/prefrontal/SOUL.md workspace-_brain/prefrontal/SOUL.md
+brain/fleet/_brain/prefrontal/IDENTITY.md workspace-_brain/prefrontal/IDENTITY.md
+brain/fleet/_brain/motor/SOUL.md workspace-_brain/motor/SOUL.md
+brain/fleet/_brain/motor/IDENTITY.md workspace-_brain/motor/IDENTITY.md
+brain/fleet/_brain/motor/SOUL.md workspace-motor/SOUL.md
+brain/fleet/_brain/motor/IDENTITY.md workspace-motor/IDENTITY.md
+brain/fleet/_brain/cerebellum/SOUL.md workspace-_brain/cerebellum/SOUL.md
+brain/fleet/_brain/cerebellum/IDENTITY.md workspace-_brain/cerebellum/IDENTITY.md
 
 # Workspace auth token (shared by all workspace skills)
-skills/workspace-drive/ws-token .openclaw/bin/ws-token
+skills/workspace-drive/ws-token bin/ws-token
 
 # Skills (shared by all fleet agents)
-skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
+skills/agent-ask/SKILL.md skills/agent-ask/SKILL.md
 
 # Memory — Core Memory + Deep Truths + nightly consolidation
-corekit/memory/core-memory-read .openclaw/bin/core-memory-read
-corekit/memory/core-memory-write .openclaw/bin/core-memory-write
-corekit/memory/core-memory-retire .openclaw/bin/core-memory-retire
-corekit/memory/update-deep-truths .openclaw/bin/update-deep-truths
-corekit/memory/session-summary .openclaw/bin/session-summary
-skills/memory-consolidate/SKILL.md .openclaw/skills/memory-consolidate/SKILL.md
-corekit/brain/process-manage .openclaw/bin/process-manage
+corekit/memory/core-memory-read bin/core-memory-read
+corekit/memory/core-memory-write bin/core-memory-write
+corekit/memory/core-memory-retire bin/core-memory-retire
+corekit/memory/update-deep-truths bin/update-deep-truths
+corekit/memory/session-summary bin/session-summary
+skills/memory-consolidate/SKILL.md skills/memory-consolidate/SKILL.md
+corekit/brain/process-manage bin/process-manage

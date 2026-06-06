@@ -17,21 +17,16 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 | Step | Description | Duration |
 |------|-------------|----------|
 | 1 | Install system packages (curl, git, python3, jq) | ~30s |
-| 2 | Install Docker CE via `get.docker.com` | ~60s |
+| 2 | Install Node.js & npm on the GCE VM host | ~60s |
 | 3 | Install CoreKit via `install.sh --role prime` | ~15s |
-| 4 | Clone OpenClaw repo, checkout stable commit (v2026.4.19) | ~10s |
-| 5 | `DOCKER_BUILDKIT=1 docker build -t openclaw:local .` | ~8 min |
-| 6 | Start OpenClaw container (`--network host`) | ~5s |
-| 7 | Wait for gateway readiness (poll `config.get`) | ~5-120s |
-| 8 | Harden container permissions | ~2s |
-| 9 | Render bootstrap config template | ~1s |
-| 10 | Apply config via RPC (`config.apply` + baseHash retry) | ~15-60s |
-| 11 | Post-apply hardening + inject Docker CLI | ~5s |
-| 12 | Vertex AI ADC + model discovery + config validation | ~10s |
-| 13 | Write `prime-config.json` + identity lockfile | ~1s |
-| 14 | Install `agent-ears` + `agent-mouth` + `agent-brain` as systemd services | ~2s |
+| 4 | Run `npm install` on the host directory `/opt/corekit/corekit/brain` | ~30s |
+| 5 | Generate agent configuration `config.json` files | ~2s |
+| 6 | Vertex AI model discovery + config validation | ~10s |
+| 7 | Write `prime-config.json` + identity lockfile | ~1s |
+| 8 | Write, enable and start `agent-brain-gateway` systemd service | ~2s |
+| 9 | Install and start `agent-ears` + `agent-mouth` + `agent-brain` + `agent-introspect` services | ~2s |
 
-**Total: ~12-15 minutes from VM creation to `PRIME VM SETUP COMPLETE`**
+**Total: ~3-5 minutes from VM creation to `PRIME VM SETUP COMPLETE`**
 
 ## VM Specifications
 
@@ -41,8 +36,7 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 | Image | Ubuntu 22.04 LTS |
 | Disk | 50GB pd-balanced |
 | Gateway port | 18789 (loopback only) |
-| Docker network | host |
-| OpenClaw config | `/opt/openclaw/.openclaw/openclaw.json` |
+| CoreKit directory | `/opt/corekit` |
 
 ## Monitoring Boot Progress
 
@@ -55,17 +49,11 @@ gcloud compute instances get-serial-port-output prime-<name> \
 grep "startup-script:" ... | grep "==>"
 # ==> Prime VM Bootstrap: ...
 # ==> Installing system packages...
-# ==> Installing Docker CE...
+# ==> Installing Node.js & npm...
 # ==> Installing CoreKit...
-# ==> Cloning OpenClaw repo...
-# ==> Building Docker image openclaw:local ...
-# ==> Starting OpenClaw container...
-# ==> Waiting for OpenClaw gateway...
-# ==> Gateway is ready
-# ==> Rendering bootstrap config...
-# ==> Applying config via RPC...
-# ==> Post-apply hardening...
-# ==> Starting agent-ears + agent-mouth + agent-brain...
+# ==> Running npm install...
+# ==> Starting agent-brain-gateway...
+# ==> Starting agent-ears + agent-mouth + agent-brain + agent-introspect...
 #   PRIME VM SETUP COMPLETE
 ```
 
@@ -74,9 +62,9 @@ grep "startup-script:" ... | grep "==>"
 ```bash
 gcloud compute ssh prime-<name> --zone=us-central1-a --project=<project>
 
-# Check OpenClaw container
-sudo docker ps
-sudo docker logs openclaw-gateway --tail 50
+# Check agent-brain-gateway service
+sudo systemctl status agent-brain-gateway
+sudo journalctl -u agent-brain-gateway --no-pager -n 50
 
 # Check agent-ears
 sudo systemctl status agent-ears
@@ -91,8 +79,8 @@ sudo systemctl status agent-brain
 sudo journalctl -u agent-brain --no-pager -n 20
 
 # Check CoreKit files
-ls -la /opt/openclaw/.openclaw/bin/
-cat /opt/openclaw/.openclaw/corekit/prime-config.json
+ls -la /opt/corekit/bin/
+cat /opt/corekit/corekit/prime-config.json
 ```
 
 ## Iterating on the Bootstrap
@@ -110,7 +98,7 @@ To modify the bootstrap:
 |------|---------|
 | `infra/bootstrap/prime-bootstrap.sh` | Full VM setup script (standalone bash) |
 | `app/src/app/api/primes/[id]/deploy/route.ts` | Deploy API with boot stub |
-| `corekit/config/openclaw-bootstrap.json5.tmpl` | OpenClaw config template |
+| `corekit/brain/index.mjs` | Node.js native brain gateway |
 | `corekit/daemon/agent-ears.mjs` | Deterministic input processing |
 | `corekit/daemon/agent-mouth.mjs` | Output classification + delivery |
 | `corekit/daemon/agent-brain.mjs` | Brain v3 orchestration daemon |

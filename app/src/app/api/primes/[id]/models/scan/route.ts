@@ -28,7 +28,7 @@ interface ProbeResult {
   provider: string;
   status: string;
   httpCode: number;
-  openclawId: string;
+  brainModelId: string;
 }
 
 /* ---- Constants ---- */
@@ -298,7 +298,7 @@ export async function POST(
         else if (code === 0) status = "timeout";
         else status = "unknown";
 
-        const openclawId = `google-vertex/${model.id}`;
+        const brainModelId = `google-vertex/${model.id}`;
 
         return {
           id: model.id,
@@ -307,7 +307,7 @@ export async function POST(
           provider: model.provider,
           status,
           httpCode: code,
-          openclawId,
+          brainModelId,
         };
       });
       const batchResults = await Promise.all(probes);

@@ -2,18 +2,18 @@
 # QA specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job qa
 
-specialties/qa/workspace/IDENTITY.md .openclaw/workspace-qa/IDENTITY.md
-specialties/qa/workspace/SOUL.md .openclaw/workspace-qa/SOUL.md
-specialties/qa/workspace/MEMORY.md .openclaw/workspace-qa/MEMORY.md
+specialties/qa/workspace/IDENTITY.md workspace-qa/IDENTITY.md
+specialties/qa/workspace/SOUL.md workspace-qa/SOUL.md
+specialties/qa/workspace/MEMORY.md workspace-qa/MEMORY.md
 
 # QA responsibilities
-specialties/qa/responsibilities-qa.json .openclaw/corekit/responsibilities-job.json
+specialties/qa/responsibilities-qa.json corekit/responsibilities-job.json
 
 # Specialty brain SOUL appends
-specialties/qa/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/qa/brain/cortex/SOUL_APPEND.md
-specialties/qa/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/qa/brain/motor/SOUL_APPEND.md
-specialties/qa/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/qa/brain/cerebellum/SOUL_APPEND.md
+specialties/qa/brain/cortex/SOUL_APPEND.md corekit/specialties/qa/brain/cortex/SOUL_APPEND.md
+specialties/qa/brain/motor/SOUL_APPEND.md corekit/specialties/qa/brain/motor/SOUL_APPEND.md
+specialties/qa/brain/cerebellum/SOUL_APPEND.md corekit/specialties/qa/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty skills
-specialties/qa/skills/test-runner/SKILL.md .openclaw/corekit/specialties/qa/skills/test-runner/SKILL.md
-specialties/qa/skills/test-runner/skill.json .openclaw/corekit/specialties/qa/skills/test-runner/skill.json
+specialties/qa/skills/test-runner/SKILL.md corekit/specialties/qa/skills/test-runner/SKILL.md
+specialties/qa/skills/test-runner/skill.json corekit/specialties/qa/skills/test-runner/skill.json

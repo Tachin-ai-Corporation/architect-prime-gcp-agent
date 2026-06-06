@@ -1,6 +1,6 @@
 ---
 name: workspace-author
-description: Use when creating/editing any OpenClaw agent workspace file — SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md for any agent.
+description: Use when creating/editing any agent workspace file — SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md for any agent.
 ---
 # Workspace File Authoring
 
@@ -24,5 +24,5 @@ description: Use when creating/editing any OpenClaw agent workspace file — SOU
 - For fleet specialty workspace: include specialty-aware identity and capabilities
 
 ## How workspaces are loaded
-OpenClaw reads workspace files natively from the mounted workspace directory.
+The brain gateway reads workspace files natively from the mounted workspace directory.
 `assemble-tools` generates TOOLS.md from skill definitions in `agent-registry.json` and copies it to cortex, prefrontal, and motor.

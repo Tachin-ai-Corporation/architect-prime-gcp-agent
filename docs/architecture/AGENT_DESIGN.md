@@ -2,11 +2,11 @@
 
 > **Status:** ACTIVE — Production design framework for multi-team fleet deployments
 > **Written:** 2026-03-22
-> **Last verified:** v2026.06.04.5.0
+> **Last verified:** v2026.06.05.1.0
 
 > **Design reference for building new fleet agent types.**
 > Defines how to scope agent specialties, assign tools, and design delegation chains.
-> Note: The system uses OpenClaw multi-agent dispatch (sessions_spawn/sessions_yield). PM-led teams and the R/M/C/T hierarchy are fully implemented.
+> Note: The system uses multi-agent dispatch (sessions_spawn/sessions_yield). PM-led teams and the R/M/C/T hierarchy are fully implemented.
 
 ---
 

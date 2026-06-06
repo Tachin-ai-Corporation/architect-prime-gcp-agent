@@ -1,16 +1,16 @@
 [Unit]
 Description=Agent Ears — Deterministic Input Processing
-After=network-online.target openclaw-gateway.service
+After=network-online.target agent-brain-gateway.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/openclaw/.openclaw/bin/start-agent-ears
+ExecStart=/opt/corekit/bin/start-agent-ears
 Restart=always
 RestartSec=3
 StandardOutput=append:/var/log/agent-ears.log
 StandardError=append:/var/log/agent-ears.log
-Environment=OC_HOST_ROOT=/opt/openclaw
+Environment=CORE_DIR=/opt/corekit
 
 [Install]
 WantedBy=multi-user.target

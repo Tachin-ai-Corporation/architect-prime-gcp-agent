@@ -24,7 +24,7 @@ Review and update these files to reflect the new checkpoint reality.
 - Update `Current version:` badge
 - Update architecture diagram if any descriptions changed
 - Update "What It Does" table if capabilities changed
-- Update bootstrap section if OpenClaw pin or process changed
+- Update bootstrap section if process or configurations changed
 - Add new version to "Version History" table at the bottom
 
 ### .agents/rules/project-context.md

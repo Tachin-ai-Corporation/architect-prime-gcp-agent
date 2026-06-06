@@ -40,8 +40,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Resolve Prime ID and Project ───────────────────────────
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-PRIME_CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+PRIME_CONFIG="${CORE_DIR}/corekit/prime-config.json"
 
 PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
   "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")

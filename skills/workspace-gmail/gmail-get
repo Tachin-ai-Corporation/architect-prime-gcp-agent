@@ -3,12 +3,8 @@
 # Brain agent: temporal-memory (READ)
 # Usage: gmail-get <message_id>
 set -euo pipefail
-if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
-else
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-fi
-WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
 GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
 die() { echo "[gmail-get] [ERROR] $*" >&2; exit 1; }
 MSG_ID="${1:-}"; [[ -n "$MSG_ID" ]] || die "Usage: gmail-get <message_id>"

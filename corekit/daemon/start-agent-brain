@@ -1,13 +1,12 @@
 #!/bin/bash
-# start-agent-brain — Wrapper to launch agent-brain.mjs inside Docker
+# start-agent-brain — Wrapper to launch agent-brain.mjs natively on host
 # Reads chat-config.json for agent-specific values.
-# Falls back to Docker container env for PRIME_ID if not in config.
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-CONFIG="${OC_HOST_ROOT}/.openclaw/corekit/chat-config.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CONFIG="${CORE_DIR}/corekit/chat-config.json"
+PRIME_CFG="${CORE_DIR}/corekit/prime-config.json"
 
 # Auto-detect role and identity
-PRIME_CFG="${OC_HOST_ROOT}/.openclaw/corekit/prime-config.json"
 if [ -f "$PRIME_CFG" ]; then
   [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('projectId',''))" 2>/dev/null)"
   [ -z "$PRIME_ID" ] && PRIME_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('primeId',''))" 2>/dev/null)"
@@ -28,11 +27,6 @@ if [ -f "$CONFIG" ]; then
   [ -z "$PRIME_ID" ] && PRIME_ID="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('primeId',''))" 2>/dev/null)"
 fi
 
-# Fallback: read PRIME_ID from Docker container env (fleet-bootstrap sets it)
-if [ -z "$PRIME_ID" ]; then
-  PRIME_ID="$(docker exec openclaw-gateway printenv PRIME_ID 2>/dev/null)" || true
-fi
-
 # Fallback: read PRIME_ID from GCE instance metadata
 if [ -z "$PRIME_ID" ]; then
   PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
@@ -47,13 +41,14 @@ if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "agent" ]; then
   fi
 fi
 
-# Kill any orphan agent-brain processes inside the container
-docker exec openclaw-gateway pkill -f 'agent-brain.mjs' 2>/dev/null || true
+# Kill any orphan agent-brain processes on the host
+pkill -f 'agent-brain.mjs' 2>/dev/null || true
 sleep 1
 
-exec stdbuf -oL docker exec \
-  -e GCP_PROJECT_ID="${GCP_PROJECT_ID}" \
-  -e AGENT_ID="${AGENT_ID:-agent}" \
-  -e AGENT_USER_EMAIL="${AGENT_USER_EMAIL}" \
-  -e PRIME_ID="${PRIME_ID:-}" \
-  openclaw-gateway node /home/node/.openclaw/bin/agent-brain.mjs
+export CORE_DIR
+export GCP_PROJECT_ID
+export AGENT_ID="${AGENT_ID:-agent}"
+export AGENT_USER_EMAIL
+export PRIME_ID
+
+exec stdbuf -oL node "${CORE_DIR}/bin/agent-brain.mjs"

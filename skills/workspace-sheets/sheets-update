@@ -4,12 +4,8 @@
 # Usage: sheets-update --sheet SHEET_ID --range "Sheet1!A1:B2" --values '[["Name","Score"],["Alice","95"]]'
 #        sheets-update --sheet SHEET_ID --range "Sheet1!A1" --values '[["Hello"]]' --raw
 set -euo pipefail
-if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
-else
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-fi
-WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
 SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
 die() { echo "[sheets-update] [ERROR] $*" >&2; exit 1; }
 SHEET_ID="" RANGE="" VALUES="" INPUT="USER_ENTERED"

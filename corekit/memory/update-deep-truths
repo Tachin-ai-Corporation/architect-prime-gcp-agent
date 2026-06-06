@@ -13,7 +13,7 @@
 #   update-deep-truths --list
 #
 # Environment:
-#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#   CORE_DIR — CoreKit host root (default: /opt/corekit)
 #
 # Safety constraints:
 #   - Max 10 items in Deep Truths
@@ -26,13 +26,8 @@ set -euo pipefail
 log() { echo "[$(date -Is)] [update-deep-truths] $*"; }
 die() { echo "[$(date -Is)] [update-deep-truths] [FATAL] $*" >&2; exit 1; }
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-SOUL_FILE="${OC_HOST_ROOT}/.openclaw/workspace/SOUL.md"
-
-# Fallback for dev environments
-if [[ ! -f "$SOUL_FILE" && -f "${HOME}/.openclaw/workspace/SOUL.md" ]]; then
-  SOUL_FILE="${HOME}/.openclaw/workspace/SOUL.md"
-fi
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+SOUL_FILE="${CORE_DIR}/workspace/SOUL.md"
 
 [[ -f "$SOUL_FILE" ]] || die "SOUL.md not found: $SOUL_FILE"
 

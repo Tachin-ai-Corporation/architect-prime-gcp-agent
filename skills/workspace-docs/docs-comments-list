@@ -3,12 +3,8 @@
 # Brain agent: temporal-memory (READ)
 # Usage: docs-comments-list --doc DOC_ID [--include-resolved]
 set -euo pipefail
-if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
-else
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-fi
-WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[docs-comments-list] [ERROR] $*" >&2; exit 1; }
 DOC_ID="" INCLUDE_RESOLVED=false

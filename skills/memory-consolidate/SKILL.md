@@ -24,7 +24,7 @@ Read all sources before making any changes.
 
 ### Step 1 — Working Memory
 ```
-read ~/.openclaw/workspace/MEMORY.md
+read /opt/corekit/workspace/MEMORY.md
 ```
 
 ### Step 2 — Recent Conversations
@@ -127,7 +127,7 @@ The result **MUST** be under 2,000 characters. An empty MEMORY.md with just the 
 
 Use exec to write the file:
 ```
-exec bash -c 'cat > ~/.openclaw/workspace/MEMORY.md << "MEMEOF"
+exec bash -c 'cat > /opt/corekit/workspace/MEMORY.md << "MEMEOF"
 <new content here>
 MEMEOF'
 ```

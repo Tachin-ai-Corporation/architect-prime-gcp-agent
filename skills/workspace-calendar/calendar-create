@@ -3,12 +3,8 @@
 # Brain agent: motor (WRITE)
 # Usage: calendar-create --summary "Meeting" --from 2026-04-25T10:00:00Z --to 2026-04-25T11:00:00Z [--description "Agenda"] [--location "Room 1"]
 set -euo pipefail
-if [[ -f "${HOME}/.openclaw/bin/ws-token" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-${HOME}}"
-else
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-fi
-WS_TOKEN="${OC_HOST_ROOT}/.openclaw/bin/ws-token"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
 CAL_API="https://www.googleapis.com/calendar/v3"
 die() { echo "[calendar-create] [ERROR] $*" >&2; exit 1; }
 CAL_ID="primary" SUMMARY="" FROM="" TO="" DESC="" LOC=""

@@ -1,19 +1,9 @@
 #!/usr/bin/env bash
 # ============================================================
-# prime-bootstrap.sh — Prime VM setup (Docker-based OpenClaw)
+# prime-bootstrap.sh — Prime VM setup (Native Node.js Brain)
 #
 # Downloaded and executed by the deploy API's boot stub.
 # All config is read from VM metadata attributes.
-#
-# Proven pattern from phase2-vm.sh:
-#   1. Install system packages + Docker CE
-#   2. Install CoreKit via manifest (install.sh)
-#   3. Clone OpenClaw repo, build Docker image
-#   4. Run OpenClaw container (--network host)
-#   5. Wait for gateway readiness
-#   6. Render + apply bootstrap config via RPC (retry/baseHash)
-#   7. Container hardening + Docker CLI injection
-#   8. Install agent-ears + agent-mouth systemd services
 # ============================================================
 set -euo pipefail
 
@@ -38,8 +28,8 @@ GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo 'archit
 GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
 
 MY_TOKEN="$(openssl rand -hex 16)"
-OC_HOST_ROOT="/opt/openclaw"
-OC_HOST_DIR="${OC_HOST_ROOT}/.openclaw"
+CORE_ROOT="/opt/corekit"
+CORE_DIR="${CORE_ROOT}"
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
 
 info "Prime VM Bootstrap: $(date -Is)"
@@ -58,7 +48,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
 
-# ---- 2) Install Docker CE (with BuildKit + buildx) ----
+# ---- 2) Install Docker CE (for subagent/motor task execution) ----
 info "Installing Docker CE..."
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
@@ -69,268 +59,129 @@ systemctl start docker
 DOCKER_GID="$(getent group docker | cut -d: -f3)"
 [[ -n "${DOCKER_GID}" ]] || { echo "[ERROR] Could not determine docker group GID"; exit 1; }
 
-# ---- 3) Install CoreKit via manifest (base + prime) ----
+# ---- 3) Install Node.js & npm ----
+info "Installing Node.js & npm..."
+if ! command -v node >/dev/null 2>&1; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y -qq nodejs
+fi
+
+# ---- 4) Install CoreKit via manifest (base + prime) ----
 info "Installing CoreKit..."
-mkdir -p "${OC_HOST_DIR}"
+mkdir -p "${CORE_DIR}"
 curl -sfL "${CORE_BASE}/infra/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
 CORE_REF="${CORE_REF}" \
   GH_OWNER="${GH_OWNER}" \
   GH_REPO="${GH_REPO}" \
-  OC_HOST_ROOT="${OC_HOST_ROOT}" \
+  CORE_ROOT="${CORE_ROOT}" \
   bash /tmp/install.sh --role prime
 
-# ---- 3b) Read contracts.json for cross-cutting values ----
-# ADR: contracts.json is the SINGLE SOURCE OF TRUTH for all values that appear
-# in multiple files (model names, agent IDs, endpoints, OpenClaw pin, ports).
-# Changing a value here propagates to .env, OC_PIN, smoke tests, etc.
-# If contracts.json is missing, fallback defaults match the last known-good.
-CONTRACTS="${OC_HOST_DIR}/corekit/contracts.json"
+# ---- 5) Read contracts.json for cross-cutting values ----
+CONTRACTS="${CORE_DIR}/corekit/contracts.json"
 if [[ -f "$CONTRACTS" ]]; then
   C_LOCATION="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['vertex']['location'])")"
-  C_OC_PIN="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['openclaw']['pin'])")"
   C_GATEWAY_PORT="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['gateway']['port'])")"
-  C_GATEWAY_ROUTE="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['agents']['gatewayRoute'])")"
-  info "Contracts loaded: location=${C_LOCATION} port=${C_GATEWAY_PORT} route=${C_GATEWAY_ROUTE}"
+  info "Contracts loaded: location=${C_LOCATION} port=${C_GATEWAY_PORT}"
 else
   warn "contracts.json not found — using defaults"
-  C_LOCATION="global"
-  C_OC_PIN="041266a6699cac3baef8ef39db41fa26f29f9db3"
+  C_LOCATION="us-central1"
   C_GATEWAY_PORT="18789"
-  C_GATEWAY_ROUTE="openclaw/cortex"
 fi
 
-# ---- 4) Save gateway token for ears/mouth ----
-# render-config (step 9) will update this with the final token;
-# write it now so the old config path works if render-config fails.
-mkdir -p /root/.openclaw
-echo "${MY_TOKEN}" > /root/.openclaw/.gateway-token
-chmod 600 /root/.openclaw/.gateway-token
+# ---- 6) Save gateway token for ears/mouth ----
+echo "${MY_TOKEN}" > "${CORE_DIR}/.gateway-token"
+chmod 600 "${CORE_DIR}/.gateway-token"
 
 # ============================================================
-# PHASE 2 — OpenClaw Docker image + config
+# PHASE 2 — Brain Module setup
 # ============================================================
 
-# ---- 5) Clone + build OpenClaw Docker image ----
-info "Cloning OpenClaw repo..."
-cd /root
-if [[ ! -d openclaw/.git ]]; then
-  git clone https://github.com/openclaw/openclaw.git
-fi
-cd openclaw
-git fetch --all --prune
-# Pin to known-good release — read from contracts.json
-STABLE_COMMIT="${C_OC_PIN}"
-git checkout "${STABLE_COMMIT}"
-info "Using OpenClaw commit: ${STABLE_COMMIT:0:12} (from contracts.json)"
-
-# ADR: .env values MUST match contracts.json. Hardcoding port/location here
-# caused stan's crash-loop when the Gemini 3.1 migration changed location
-# to 'global' but fleet-bootstrap still had 'us-central1'. Read from contracts.
-cat > .env <<EOF
-GATEWAY_BIND=loopback
-GATEWAY_PORT=${C_GATEWAY_PORT}
-OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN}
-OPENCLAW_CONFIG_DIR=/home/node/.openclaw
-OPENCLAW_WORKSPACE_DIR=/home/node/.openclaw/workspace
-OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json
-GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
-GCLOUD_PROJECT=${GCP_PROJECT_ID}
-CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID}
-GOOGLE_GENAI_USE_VERTEXAI=True
-GOOGLE_CLOUD_LOCATION=${C_LOCATION}
-GCE_METADATA_HOST=metadata.google.internal
-EOF
-
-info "Building Docker image openclaw:local ..."
-DOCKER_BUILDKIT=1 docker build -t openclaw:local .
-
-# ---- 6) Run container with brain gateway as PID 1 ----
-docker rm -f openclaw-gateway > /dev/null 2>&1 || true
-
-info "Starting container (brain gateway mode)..."
-docker run -d \
-  --name openclaw-gateway \
-  --network host \
-  --restart always \
-  -v "${OC_HOST_DIR}:/home/node/.openclaw" \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  --group-add "${DOCKER_GID}" \
-  -e OC_ROOT=/home/node/.openclaw \
-  -e BRAIN_PORT=${C_GATEWAY_PORT} \
-  -e GATEWAY_TOKEN=${MY_TOKEN} \
-  -e OPENCLAW_GATEWAY_TOKEN=${MY_TOKEN} \
-  -e PRIME_ID=${PRIME_ID} \
-  -e BIN_DIR=/home/node/.openclaw/bin \
-  -e GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID} \
-  -e GCLOUD_PROJECT=${GCP_PROJECT_ID} \
-  -e CLOUDSDK_CORE_PROJECT=${GCP_PROJECT_ID} \
-  -e GOOGLE_CLOUD_LOCATION=${C_LOCATION} \
-  -e GOOGLE_GENAI_USE_VERTEXAI=True \
-  -e CONTRACTS_PATH=/home/node/.openclaw/corekit/contracts.json \
-  -e NODE_ENV=production \
-  -e GCE_METADATA_HOST=metadata.google.internal \
-  -e AGENT_ID=${AGENT_ID} \
-  openclaw:local \
-  node /home/node/.openclaw/corekit/brain/index.mjs
-
-# ---- 7) Wait for brain gateway readiness ----
-info "Waiting for brain gateway..."
-BRAIN_READY=false
-BRAIN_MAX_WAIT=120
-BRAIN_WAITED=0
-while [[ "$BRAIN_WAITED" -lt "$BRAIN_MAX_WAIT" ]]; do
-  BRAIN_HEALTH="$(curl -sf http://localhost:${C_GATEWAY_PORT}/healthz 2>/dev/null || echo "")" 
-  if echo "$BRAIN_HEALTH" | grep -q "ok"; then
-    BRAIN_READY=true
-    break
-  fi
-  echo "  Brain gateway not ready yet (${BRAIN_WAITED}s elapsed)..."
-  sleep 5
-  BRAIN_WAITED=$((BRAIN_WAITED + 5))
-done
-[[ "$BRAIN_READY" == "true" ]] || { echo "[ERROR] Brain gateway did not become ready within ${BRAIN_MAX_WAIT}s"; exit 1; }
-info "Brain gateway is ready (took ~${BRAIN_WAITED}s)."
-
-# ---- 8) Harden container perms (pre-config) ----
-# ADR: These permissions are INSIDE the Docker container (/home/node/.openclaw).
-# They are independent from the HOST permissions at ${OC_HOST_DIR}.
-# The container volume mount overlays host files into the container's filesystem.
-# 700 here restricts access within the container to the 'node' user only.
-info "Hardening container permissions..."
-docker exec -u 0 openclaw-gateway bash -lc '
-set -e
-mkdir -p /home/node/.openclaw/credentials
-chmod 700 /home/node/.openclaw
-chmod 700 /home/node/.openclaw/credentials
-chmod 700 /home/node/.openclaw/bin 2>/dev/null || true
-chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
-chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
-chown -R node:node /home/node/.openclaw
-'
-
-# ---- 9) Brain module: install npm dependencies ----
-# Brain .mjs files are already at .openclaw/corekit/brain/ (manifest).
-# Bind mount makes them visible in the container. Just need npm install.
+# ---- 7) Install brain dependencies ----
 info "Installing brain module dependencies..."
-BRAIN_DIR="/home/node/.openclaw/corekit/brain"
-if docker exec openclaw-gateway test -f "${BRAIN_DIR}/package.json"; then
-  docker exec -u 0 -w "${BRAIN_DIR}" openclaw-gateway npm install --omit=dev 2>&1 | tail -5
-  docker exec -u 0 openclaw-gateway chown -R node:node "${BRAIN_DIR}/node_modules" 2>/dev/null || true
-  info "Brain dependencies installed"
-else
-  warn "Brain package.json not found at ${BRAIN_DIR}"
-fi
+cd "${CORE_DIR}/corekit/brain"
+npm install --omit=dev 2>&1 | tail -5
+chown -R 1000:1000 node_modules 2>/dev/null || true
 
-# Restart container to pick up brain module
-info "Restarting container after brain install..."
-docker restart openclaw-gateway
-sleep 10
-BRAIN_HEALTH="$(curl -sf http://localhost:${C_GATEWAY_PORT}/healthz 2>/dev/null || echo "")"
-if echo "$BRAIN_HEALTH" | grep -q "ok"; then
-  info "Brain gateway healthy after restart"
-else
-  warn "Brain gateway not healthy after restart (continuing)"
-fi
+# ---- 8) Write agent configs from contracts ----
+info "Writing agent configs..."
+C_SUBAGENT_IDS="$(python3 -c "
+import json
+c = json.load(open('${CONTRACTS}'))
+print(' '.join(c['agents']['subagentIds']))
+" 2>/dev/null || echo "temporal-research temporal-memory prefrontal motor cerebellum")"
 
-# ---- 11) Post-apply harden + inject host Docker CLI ----
-info "Post-apply hardening..."
-docker exec -u 0 openclaw-gateway bash -lc '
-set -e
-chmod 600 /home/node/.openclaw/openclaw.json 2>/dev/null || true
-chmod 700 /home/node/.openclaw/bin/oc 2>/dev/null || true
-chown -R node:node /home/node/.openclaw
-' || true
-
-docker cp "$(which docker)" openclaw-gateway:/usr/local/bin/docker || true
-docker exec -u 0 openclaw-gateway chmod +x /usr/local/bin/docker || true
-docker exec -u 0 openclaw-gateway groupadd -g "${DOCKER_GID}" -o -r docker 2>/dev/null || true
-docker exec -u 0 openclaw-gateway chown -R node:node /home/node/.openclaw || true
-
-# ---- 11b) Install gcloud CLI + jq + PATH for fleet tools in container ----
-# fleet-deploy needs gcloud (SA, IAM, VM), jq, and CoreKit bin on PATH
-info "Installing gcloud CLI and fleet dependencies in container..."
-docker exec -u 0 openclaw-gateway bash -c '
-set -e
-
-# Install gcloud CLI (slim)
-if ! which gcloud >/dev/null 2>&1; then
-  curl -sfL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz | tar xz -C /tmp
-  /tmp/google-cloud-sdk/install.sh --quiet --path-update=true --usage-reporting=false 2>/dev/null
-  ln -sf /tmp/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
-  ln -sf /tmp/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil 2>/dev/null || true
-  echo "  gcloud installed: $(gcloud --version 2>/dev/null | head -1)"
-else
-  echo "  gcloud already installed"
-fi
-
-# Install jq if missing
-which jq >/dev/null 2>&1 || {
-  apt-get update -qq && apt-get install -y -qq jq >/dev/null 2>&1
-  echo "  jq installed"
-}
-
-# Add CoreKit bin to PATH for all shells (exec tool, bash, etc.)
-PROFILE="/home/node/.bashrc"
-if ! grep -q ".openclaw/bin" "$PROFILE" 2>/dev/null; then
-  echo "export PATH=\"/home/node/.openclaw/bin:\$PATH\"" >> "$PROFILE"
-fi
-cat > /etc/profile.d/openclaw-path.sh << "PATHEOF"
-export PATH="/home/node/.openclaw/bin:$PATH"
-PATHEOF
-chmod +x /etc/profile.d/openclaw-path.sh
-
-# Update /etc/environment for non-login exec
-CURRENT_PATH=$(grep "^PATH=" /etc/environment 2>/dev/null | cut -d= -f2 || echo "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-echo "PATH=/home/node/.openclaw/bin:${CURRENT_PATH}" > /etc/environment
-
-chown node:node /home/node/.bashrc
-echo "  PATH configured: /home/node/.openclaw/bin added"
-' || warn "gcloud/PATH setup had non-fatal errors (continuing)"
-
-# ---- 12) ADC setup (brain gateway uses native GCE metadata auth) ----
-# The brain gateway uses @ai-sdk/google-vertex which discovers GCE metadata
-# automatically via google-auth-library. No OpenClaw ADC patching needed.
-info "Verifying GCE metadata auth..."
-docker exec openclaw-gateway bash -c '
-TOKEN_CHECK=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
-  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email" 2>/dev/null || echo "UNREACHABLE")
-echo "  GCE metadata check: $TOKEN_CHECK"
-' || warn "GCE metadata check failed (non-fatal)"
-
-# ---- 12b) Model discovery ----
-DISCOVER="${OC_HOST_DIR}/bin/discover-models"
-if [[ -x "$DISCOVER" ]]; then
-  info "Discovering best available model..."
-  GCP_PROJECT_ID="${GCP_PROJECT_ID}" OC_HOST_ROOT="${OC_HOST_ROOT}" "$DISCOVER" --apply || \
-    warn "Model discovery failed (non-fatal)"
-fi
-
-# ---- 12c) Validate config against contracts ----
-VALIDATE="${OC_HOST_DIR}/bin/validate-contracts"
-if [[ -x "$VALIDATE" ]]; then
-  info "Running contract validation..."
-  if OC_HOST_ROOT="${OC_HOST_ROOT}" "$VALIDATE" --runtime 2>&1; then
-    info "Contract validation PASSED"
-  else
-    warn "Contract validation found issues (non-fatal)"
+for AGENT_ID in cortex ${C_SUBAGENT_IDS}; do
+  AGENT_DIR="${CORE_DIR}/workspace-${AGENT_ID}"
+  if [[ "${AGENT_ID}" == "cortex" ]]; then
+    AGENT_DIR="${CORE_DIR}/workspace"
   fi
-fi
+  mkdir -p "${AGENT_DIR}"
+  
+  # config.json: model, fallback, maxSteps
+  python3 -c "
+import json
+c = json.load(open('${CONTRACTS}'))
+agent_config = {
+  'model': c['vertex']['models'].get('cortex' if '${AGENT_ID}' == 'cortex' else 'subagent', 'vertex-google/gemini-2.5-flash'),
+  'fallbackModel': c['vertex']['models'].get('cortexFallback', 'vertex-google/gemini-2.5-flash'),
+  'maxSteps': c['brain']['max_iterations'],
+}
+json.dump(agent_config, open('${AGENT_DIR}/config.json', 'w'), indent=2)
+"
+done
 
-# ---- 12d) Warm-up probe (pre-warm ADC tokens) ----
+# ---- 9) Start brain as systemd service ----
+info "Starting brain gateway service..."
+cat > /etc/systemd/system/agent-brain-gateway.service <<UNIT
+[Unit]
+Description=Architect Prime Brain Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${CORE_DIR}/corekit/brain
+Environment=GOOGLE_CLOUD_PROJECT=${GCP_PROJECT_ID}
+Environment=GOOGLE_CLOUD_LOCATION=${C_LOCATION}
+Environment=BRAIN_PORT=${C_GATEWAY_PORT}
+Environment=CONTRACTS_PATH=${CONTRACTS}
+Environment=AGENTS_DIR=${CORE_DIR}
+Environment=WORKSPACE_BASE=${CORE_DIR}
+ExecStart=/usr/bin/node index.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now agent-brain-gateway
+
+# ---- 10) Wait for brain gateway readiness ----
+info "Waiting for brain gateway..."
+WAITED=0
+until curl -sf http://127.0.0.1:${C_GATEWAY_PORT}/healthz > /dev/null 2>&1; do
+  sleep 2; WAITED=$((WAITED+2))
+  [[ $WAITED -ge 60 ]] && { echo "[ERROR] Brain gateway did not start within 60s"; exit 1; }
+done
+info "Brain gateway is ready (took ~${WAITED}s)."
+
+# ---- 11) Warm-up probe (pre-warm ADC tokens) ----
 info "Running warm-up probe..."
 curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${MY_TOKEN}" \
-  -d '{"model":"'"${C_GATEWAY_ROUTE}"'","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
+  -d '{"model":"brain/cortex","messages":[{"role":"user","content":"System warm-up. Respond: ready."}]}' \
   > /dev/null 2>&1 || warn "Warm-up probe failed (non-fatal)"
 
 # ============================================================
-# PHASE 4 — Start services + finalize
+# PHASE 3 — finalize
 # ============================================================
 
-# ---- 13) Write prime-config.json ----
-cat > "${OC_HOST_DIR}/corekit/prime-config.json" <<PCFG
+# ---- 12) Write prime-config.json ----
+cat > "${CORE_DIR}/corekit/prime-config.json" <<PCFG
 {
   "primeId": "${PRIME_ID}",
   "projectId": "${GCP_PROJECT_ID}",
@@ -338,85 +189,59 @@ cat > "${OC_HOST_DIR}/corekit/prime-config.json" <<PCFG
 }
 PCFG
 
-# ---- 13b) Write identity lockfile ----
-# Prime's identity is the prime itself (no Workspace user impersonation).
-# dwd-token reads this and refuses to impersonate any other email.
-# For Prime, AGENT_USER_EMAIL comes from Firestore setup (not VM metadata).
-# If not set, skip — Prime may not use DWD at all.
+# ---- 12b) Write identity lockfile ----
 PRIME_EMAIL=$(curl -sf -H "Metadata-Flavor: Google" \
   "http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent_user_email" 2>/dev/null || true)
 if [[ -n "${PRIME_EMAIL}" ]]; then
-  echo "${PRIME_EMAIL}" > "${OC_HOST_DIR}/.identity-lock"
-  chmod 444 "${OC_HOST_DIR}/.identity-lock"
+  echo "${PRIME_EMAIL}" > "${CORE_DIR}/.identity-lock"
+  chmod 444 "${CORE_DIR}/.identity-lock"
   info "Identity lock: ${PRIME_EMAIL}"
 fi
 
-# ---- 13c) Shared workspace architecture ----
-# ADR: Agents have isolated workspaces to load distinct SOUL/TOOLS.
-# We create a central shared directory and symlink it into every workspace
-# so agents can read/write collaborative files (sandbox mode must be off).
+# ---- 12c) Shared workspace architecture ----
 info "Setting up shared workspace architecture..."
-SHARED_DIR="${OC_HOST_ROOT}/.openclaw/shared"
+SHARED_DIR="${CORE_DIR}/shared"
 mkdir -p "$SHARED_DIR"
-for dir in "${OC_HOST_ROOT}/.openclaw"/workspace*; do
+for dir in "${CORE_DIR}"/workspace*; do
   if [[ -d "$dir" ]]; then
     ln -snf "$SHARED_DIR" "$dir/shared"
   fi
 done
 
-# ---- 13d) Final permissions sweep ----
-# ADR: File Ownership Model
-# install.sh chowns everything to 1000:1000 (ubuntu). But prime-bootstrap
-# runs as root, and root's umask is 077. Any mkdir/cp/sed AFTER install.sh
-# creates files/dirs with 700 permissions (root-only). Services that traverse
-# these dirs will fail with "Permission denied". The permissions sweep MUST
-# be the LAST thing before services start.
+# ---- 12d) Final permissions sweep ----
 info "Final permissions sweep..."
-find "${OC_HOST_ROOT}/.openclaw" -type d -exec chmod 755 {} \; 2>/dev/null || true
-find "${OC_HOST_ROOT}/.openclaw/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+find "${CORE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
+find "${CORE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 14) Install agent-ears, agent-mouth, and agent-brain as systemd services ----
-info "Installing agent-ears, agent-mouth, and agent-brain systemd services..."
-
-# Copy service files from corekit (installed by manifest)
-EARS_SVC_SRC="${OC_HOST_DIR}/corekit/agent-ears.service"
-MOUTH_SVC_SRC="${OC_HOST_DIR}/corekit/agent-mouth.service"
-BRAIN_SVC_SRC="${OC_HOST_DIR}/corekit/agent-brain.service"
-if [[ -f "$EARS_SVC_SRC" ]]; then
-  cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
-fi
-if [[ -f "$MOUTH_SVC_SRC" ]]; then
-  cp "$MOUTH_SVC_SRC" /etc/systemd/system/agent-mouth.service
-fi
-if [[ -f "$BRAIN_SVC_SRC" ]]; then
-  cp "$BRAIN_SVC_SRC" /etc/systemd/system/agent-brain.service
-fi
-PROXY_SVC_SRC="${OC_HOST_DIR}/corekit/vertex-claude-proxy.service"
-if [[ -f "$PROXY_SVC_SRC" ]]; then
-  cp "$PROXY_SVC_SRC" /etc/systemd/system/vertex-claude-proxy.service
-fi
+# ---- 13) Install agent-ears, agent-mouth, agent-brain, agent-introspect as systemd services ----
+info "Installing systemd services..."
+for svc in agent-ears agent-mouth agent-brain agent-introspect; do
+  SVC_SRC="${CORE_DIR}/corekit/${svc}.service"
+  if [[ -f "$SVC_SRC" ]]; then
+    cp "$SVC_SRC" "/etc/systemd/system/${svc}.service"
+  fi
+done
 
 systemctl daemon-reload
-systemctl enable agent-ears agent-mouth agent-brain vertex-claude-proxy 2>/dev/null || true
-systemctl start agent-ears agent-mouth agent-brain vertex-claude-proxy
-
+systemctl enable agent-ears agent-mouth agent-brain agent-introspect 2>/dev/null || true
+systemctl start agent-ears agent-mouth agent-brain agent-introspect
 
 # ---- 14) Install command-runner as systemd service ----
 info "Installing command-runner systemd service..."
 cat > /etc/systemd/system/command-runner.service <<CRUNIT
 [Unit]
 Description=Architect Prime Command Runner (Deterministic Operations)
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
-Environment=OC_HOST_ROOT=${OC_HOST_ROOT}
+Environment=CORE_ROOT=${CORE_ROOT}
 Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
 Environment=PRIME_ID=${PRIME_ID}
 Environment=POLL_INTERVAL=5
-ExecStart=${OC_HOST_DIR}/bin/command-runner
+ExecStart=${CORE_DIR}/bin/command-runner
 Restart=always
 RestartSec=10
 
@@ -430,10 +255,10 @@ systemctl start command-runner
 
 # ---- 15) Install fleet-health-check timer ----
 info "Installing fleet-health-check systemd timer..."
-cp "${OC_HOST_DIR}/corekit/fleet-health-check.service" /etc/systemd/system/fleet-health-check.service
-cp "${OC_HOST_DIR}/corekit/fleet-health-check.timer" /etc/systemd/system/fleet-health-check.timer
-chmod +x "${OC_HOST_DIR}/bin/fleet-health-check"
-chmod +x "${OC_HOST_DIR}/bin/update-deep-truths"
+cp "${CORE_DIR}/corekit/fleet-health-check.service" /etc/systemd/system/fleet-health-check.service
+cp "${CORE_DIR}/corekit/fleet-health-check.timer" /etc/systemd/system/fleet-health-check.timer
+chmod +x "${CORE_DIR}/bin/fleet-health-check"
+chmod +x "${CORE_DIR}/bin/update-deep-truths"
 systemctl daemon-reload
 systemctl enable fleet-health-check.timer
 systemctl start fleet-health-check.timer
@@ -441,16 +266,13 @@ systemctl start fleet-health-check.timer
 # ---- Done ----
 echo
 echo "============================================"
-echo "  PRIME VM SETUP COMPLETE (v2026.05.03.9.0)"
+echo "  PRIME VM SETUP COMPLETE"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
 echo "  Gateway token  : ${MY_TOKEN}"
-echo "  OpenClaw commit: ${STABLE_COMMIT:0:12}"
 echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"
 echo "  I/O Services   : agent-ears + agent-mouth"
-echo "  Dispatch       : prefrontal-first gate (Brain v2.1)"
-echo "  Health check   : fleet-health-check.timer (every 15m)"
+echo "  Health check   : fleet-health-check.timer"
 echo "============================================"
-

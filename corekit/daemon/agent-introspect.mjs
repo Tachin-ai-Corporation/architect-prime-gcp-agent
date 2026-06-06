@@ -20,10 +20,10 @@ const FIRESTORE_URL = GCP_PROJECT
   ? `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`
   : '';
 
-const OC_HOME = '/home/node/.openclaw';
-const BIN_DIR = `${OC_HOME}/bin`;
-const SKILLS_DIR = `${OC_HOME}/skills`;
-const COREKIT_DIR = `${OC_HOME}/corekit`;
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
+const BIN_DIR = join(CORE_DIR, 'bin');
+const SKILLS_DIR = join(CORE_DIR, 'skills');
+const COREKIT_DIR = join(CORE_DIR, 'corekit');
 const LOG_FILE = '/var/log/agent-introspect.log';
 
 // ---- Logging ----
@@ -206,9 +206,9 @@ function handleSkills() {
         //  memory  - Temporal-memory: long-term memory read/write/retire, deep truths
         //            Matches: core-memory-*, update-deep-truths, session-summary
         //
-        //  config  - System config & base functions: OpenClaw/fleet infra tools
-        //            Matches: upgrade-*, validate-contracts, render-config, oc, agent-ou-manage,
-        //                     *.md, *.json, *.tmpl, *.sh, bootstrap_smoke.sh
+        //  config  - System config & base functions: CoreKit/fleet infra tools
+        //            Matches: upgrade-*, validate-contracts, agent-ou-manage,
+        //                     *.md, *.json, *.tmpl, *.sh
         //
         //  custom  - Fallback for uncategorized tools (anything not matched above)
         //
@@ -308,10 +308,10 @@ function handleConfig() {
     try { contracts = JSON.parse(readFileSync(contractsPath, 'utf8')); } catch {}
   }
 
-  // OpenClaw version
+  // Brain/CoreKit version
   let ocVersion = 'unknown';
   try {
-    const pkg = JSON.parse(readFileSync('/home/node/.openclaw/package.json', 'utf8'));
+    const pkg = JSON.parse(readFileSync(join(CORE_DIR, 'corekit/brain/package.json'), 'utf8'));
     ocVersion = pkg.version || 'unknown';
   } catch {}
 
@@ -328,12 +328,11 @@ function handleConfig() {
 
 function handleWorkspace() {
   const workspaces = {};
-  const ocHome = OC_HOME;
-  if (existsSync(ocHome)) {
-    const entries = readdirSync(ocHome);
+  if (existsSync(CORE_DIR)) {
+    const entries = readdirSync(CORE_DIR);
     for (const e of entries) {
       if (!e.startsWith('workspace')) continue;
-      const wsDir = join(ocHome, e);
+      const wsDir = join(CORE_DIR, e);
       try {
         const st = statSync(wsDir);
         if (!st.isDirectory()) continue;
@@ -352,28 +351,12 @@ function handleWorkspace() {
 }
 
 function handleBrainConfig() {
-  const configPath = join(OC_HOME, 'openclaw.json');
   const contractsPath = join(COREKIT_DIR, 'contracts.json');
   
   let defaultModel = '';
   const slots = {};
 
-  // Read openclaw.json for gateway agent slots (cortex, motor, etc.)
-  if (existsSync(configPath)) {
-    try {
-      const config = JSON.parse(readFileSync(configPath, 'utf8'));
-      defaultModel = config?.agents?.defaults?.model?.primary || '';
-      const agentList = config?.agents?.list || [];
-      for (const agent of agentList) {
-        if (agent.id) {
-          slots[agent.id] = agent.model?.primary || null;
-        }
-      }
-    } catch (err) {
-      return { error: `Failed to parse openclaw.json: ${err.message}`, default: '', slots: {} };
-    }
-  } else if (existsSync(contractsPath)) {
-    // Brain module mode: no openclaw.json, read models from contracts.json
+  if (existsSync(contractsPath)) {
     try {
       const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
       const models = contracts?.vertex?.models || {};
@@ -388,7 +371,7 @@ function handleBrainConfig() {
       return { error: `Failed to parse contracts.json: ${err.message}`, default: '', slots: {} };
     }
   } else {
-    return { error: 'No config file found (openclaw.json or contracts.json)', default: '', slots: {} };
+    return { error: 'No contracts.json config file found', default: '', slots: {} };
   }
 
   // Read contracts.json for ears/mouth/brain daemon models
@@ -433,131 +416,51 @@ function handleBrainConfig() {
 }
 
 function handleSetModel(params) {
-  const configPath = join(OC_HOME, 'openclaw.json');
   const contractsPath = join(COREKIT_DIR, 'contracts.json');
 
-  if (!existsSync(configPath)) {
-    // Brain module mode: write models to contracts.json
-    if (!existsSync(contractsPath)) {
-      return { success: false, error: 'No config file found' };
-    }
-    try {
-      const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
-      const newDefault = params.default;
-      const overrides = params.overrides || {};
-      const daemonOverrides = params.daemonOverrides || {};
-
-      if (!contracts.vertex) contracts.vertex = {};
-      if (!contracts.vertex.models) contracts.vertex.models = {};
-
-      if (newDefault) {
-        contracts.vertex.models.cortex = newDefault;
-      }
-      // Per-agent overrides: cortex goes to cortex, everything else to subagent
-      for (const [agentId, modelId] of Object.entries(overrides)) {
-        if (agentId === 'cortex') {
-          contracts.vertex.models.cortex = modelId || contracts.vertex.models.cortex;
-        } else if (modelId) {
-          contracts.vertex.models.subagent = modelId;
-        }
-      }
-      // Daemon overrides
-      if (daemonOverrides.ears) {
-        if (!contracts.ears) contracts.ears = {};
-        if (!contracts.ears.preprocess) contracts.ears.preprocess = {};
-        contracts.ears.preprocess.model = daemonOverrides.ears;
-      }
-      if (daemonOverrides.mouth) {
-        if (!contracts.mouth) contracts.mouth = {};
-        contracts.mouth.model = daemonOverrides.mouth;
-      }
-      if (daemonOverrides.brain) {
-        if (!contracts.brain) contracts.brain = {};
-        contracts.brain.model = daemonOverrides.brain;
-      }
-
-      writeFileSync(contractsPath, JSON.stringify(contracts, null, 2));
-      log('Updated contracts.json with brain model assignments', { default: newDefault, overrides });
-      return { success: true, message: 'Models updated in contracts.json — brain reload pending', _needsRestart: true };
-    } catch (err) {
-      log('set_model error (brain mode)', { error: err.message });
-      return { success: false, error: err.message };
-    }
+  if (!existsSync(contractsPath)) {
+    return { success: false, error: 'contracts.json not found' };
   }
   try {
-    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
     const newDefault = params.default;
     const overrides = params.overrides || {};
     const daemonOverrides = params.daemonOverrides || {};
 
-    // Update default model
+    if (!contracts.vertex) contracts.vertex = {};
+    if (!contracts.vertex.models) contracts.vertex.models = {};
+
     if (newDefault) {
-      if (!config.agents) config.agents = {};
-      if (!config.agents.defaults) config.agents.defaults = {};
-      if (!config.agents.defaults.model) config.agents.defaults.model = {};
-      config.agents.defaults.model.primary = newDefault;
+      contracts.vertex.models.cortex = newDefault;
     }
-
-    // --- Dynamic model registration: ensure selected models are in the models map ---
-    function ensureModelRegistered(models, modelId) {
-      if (!modelId || models[modelId]) return;
-      const bare = modelId.includes('/') ? modelId.split('/').pop() : modelId;
-      const alias = bare.split('-')
-        .map(w => /^\d/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))
-        .join(' ');
-      models[modelId] = { alias };
-    }
-    ensureModelRegistered(config.agents.defaults.models, newDefault);
-
-    // Apply per-agent overrides (cortex, motor, etc.)
-    const agentList = config.agents?.list || [];
-    for (const agent of agentList) {
-      if (agent.id && overrides[agent.id] !== undefined) {
-        const modelId = overrides[agent.id];
-        if (modelId) {
-          if (!agent.model) agent.model = {};
-          agent.model.primary = modelId;
-          ensureModelRegistered(config.agents.defaults.models, modelId);
-        } else {
-          delete agent.model;
-        }
+    // Per-agent overrides: cortex goes to cortex, everything else to subagent
+    for (const [agentId, modelId] of Object.entries(overrides)) {
+      if (agentId === 'cortex') {
+        contracts.vertex.models.cortex = modelId || contracts.vertex.models.cortex;
+      } else if (modelId) {
+        contracts.vertex.models.subagent = modelId;
       }
     }
-
-    // Write config back
-    writeFileSync(configPath, JSON.stringify(config, null, 2));
-    log('Updated openclaw.json with new model assignments', { default: newDefault, overrides });
-
-    // Apply daemon model overrides (ears/mouth) to contracts.json
-    if (Object.keys(daemonOverrides).length > 0 && existsSync(contractsPath)) {
-      try {
-        const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
-        if (daemonOverrides.ears) {
-          if (!contracts.ears) contracts.ears = {};
-          if (!contracts.ears.preprocess) contracts.ears.preprocess = {};
-          contracts.ears.preprocess.model = daemonOverrides.ears;
-        }
-        if (daemonOverrides.mouth) {
-          if (!contracts.mouth) contracts.mouth = {};
-          contracts.mouth.model = daemonOverrides.mouth;
-        }
-        if (daemonOverrides.brain) {
-          if (!contracts.brain) contracts.brain = {};
-          contracts.brain.model = daemonOverrides.brain;
-        }
-        writeFileSync(contractsPath, JSON.stringify(contracts, null, 2));
-        log('Updated contracts.json with daemon model overrides', { daemonOverrides });
-      } catch (err) {
-        log('contracts.json update failed (non-fatal)', { error: err.message });
-      }
+    // Daemon overrides
+    if (daemonOverrides.ears) {
+      if (!contracts.ears) contracts.ears = {};
+      if (!contracts.ears.preprocess) contracts.ears.preprocess = {};
+      contracts.ears.preprocess.model = daemonOverrides.ears;
+    }
+    if (daemonOverrides.mouth) {
+      if (!contracts.mouth) contracts.mouth = {};
+      contracts.mouth.model = daemonOverrides.mouth;
+    }
+    if (daemonOverrides.brain) {
+      if (!contracts.brain) contracts.brain = {};
+      contracts.brain.model = daemonOverrides.brain;
     }
 
-    // NOTE: Do NOT restart gateway here. The restart kills this process
-    // (since we run inside the container via docker exec). The tick() loop
-    // will restart the gateway AFTER writing the result to Firestore.
-    return { success: true, message: 'Models updated — gateway restart pending', _needsRestart: true };
+    writeFileSync(contractsPath, JSON.stringify(contracts, null, 2));
+    log('Updated contracts.json with brain model assignments', { default: newDefault, overrides });
+    return { success: true, message: 'Models updated in contracts.json — brain reload pending', _needsRestart: true };
   } catch (err) {
-    log('set_model error', { error: err.message });
+    log('set_model error (brain mode)', { error: err.message });
     return { success: false, error: err.message };
   }
 }
@@ -676,18 +579,11 @@ async function tick() {
     // This will kill this process (running inside the container),
     // but systemd RestartAlways will bring us back.
     if (needsRestart) {
-      log('Restarting gateway (deferred from set_model)...');
+      log('Restarting agent-brain-gateway service (deferred from set_model)...');
       try {
-        // Try brain module first (native process), fall back to Docker container
-        try {
-          execSync('pkill -HUP -f "node.*index.mjs"', { timeout: 5000, stdio: 'pipe' });
-          log('Sent SIGHUP to brain process');
-        } catch {
-          // Brain not running as native process — try Docker restart
-          execSync('docker restart openclaw-gateway', { timeout: 60000, stdio: 'pipe' });
-        }
+        execSync('systemctl restart agent-brain-gateway', { timeout: 15000, stdio: 'pipe' });
       } catch (err) {
-        log('Gateway restart (expected exit)', { error: err.message });
+        log('Gateway restart error', { error: err.message });
       }
     }
   } catch (err) {

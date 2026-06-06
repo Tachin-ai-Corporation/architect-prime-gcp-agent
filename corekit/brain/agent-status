@@ -20,8 +20,14 @@
 # ============================================================
 set -euo pipefail
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-STATUS_FILE="${OC_HOST_ROOT}/.openclaw/workspace/STATUS.json"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+AGENT_ID="${AGENT_ID:-prime}"
+
+if [[ "$AGENT_ID" == "prime" || "$AGENT_ID" == "cortex" ]]; then
+  STATUS_FILE="${CORE_DIR}/workspace/STATUS.json"
+else
+  STATUS_FILE="${CORE_DIR}/workspace-${AGENT_ID}/STATUS.json"
+fi
 
 case "${1:-}" in
   set)

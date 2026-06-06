@@ -8,7 +8,7 @@
 #   fleet-status --json              # machine-readable JSON output
 #
 # Reads from Firestore: primes/{primeId}/fleet/*
-# Designed to be called by Prime's OpenClaw exec tool so the agent
+# Designed to be called by Prime's execution tools so the agent
 # can answer questions like "how's anora doing?" with real data.
 #
 # Runs on Prime's VM. Uses GCE metadata token for Firestore access.

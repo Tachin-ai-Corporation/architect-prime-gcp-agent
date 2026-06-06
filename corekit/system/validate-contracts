@@ -3,22 +3,7 @@
 # validate-contracts — Pre-flight contract validation
 #
 # Checks that all cross-cutting values in the codebase are
-# consistent with contracts.json. Catches the class of bugs
-# that caused the stan crash-loop (Gemini 3.1 migration).
-#
-# Usage:
-#   validate-contracts                    # validate from repo root
-#   validate-contracts --runtime          # validate on a live VM
-#   validate-contracts --file <path>      # check a specific rendered config
-#
-# Exit codes:
-#   0 — All contracts satisfied
-#   1 — Contract violations found
-#
-# Runs:
-#   - At commit time (optional, manual)
-#   - At bootstrap time (mandatory, called by fleet/prime-bootstrap.sh)
-#   - At upgrade time (mandatory, called by upgrade-corekit)
+# consistent with contracts.json.
 # ============================================================
 set -euo pipefail
 
@@ -41,8 +26,8 @@ done
 
 # ---- Locate contracts.json ----
 if [[ "$MODE" == "runtime" ]]; then
-  OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-  CONTRACTS="${OC_HOST_ROOT}/.openclaw/corekit/contracts.json"
+  CORE_DIR="${CORE_DIR:-/opt/corekit}"
+  CONTRACTS="${CORE_DIR}/corekit/contracts.json"
   REPO_ROOT=""
 else
   # Find repo root (walk up from script location looking for .git)
@@ -73,14 +58,12 @@ print(v)
 }
 
 C_LOCATION="$(read_contract 'vertex.location')"
-C_PRIMARY_MODEL="$(read_contract 'vertex.primaryModel')"
+C_PRIMARY_MODEL="$(read_contract 'vertex.models.cortex')"
 C_DEFAULT_AGENT="$(read_contract 'agents.defaultId')"
-C_GATEWAY_ROUTE="$(read_contract 'agents.gatewayRoute')"
-C_OC_PIN="$(read_contract 'openclaw.pin')"
 C_GATEWAY_PORT="$(read_contract 'gateway.port')"
 C_TIMEOUT="$(read_contract 'gateway.timeoutSeconds')"
 
-log "Contracts loaded: location=${C_LOCATION} model=${C_PRIMARY_MODEL} agent=${C_DEFAULT_AGENT} route=${C_GATEWAY_ROUTE}"
+log "Contracts loaded: location=${C_LOCATION} model=${C_PRIMARY_MODEL} agent=${C_DEFAULT_AGENT}"
 
 # ============================================================
 # REPO MODE: Check source files for consistency
@@ -113,75 +96,26 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 3: OpenClaw pin — no hardcoded 40-char hex in bootstraps ----
-  # Bootstraps should use ${C_OC_PIN} from contracts, not a hardcoded hash.
-  # We check that the pin value appears (either as a variable reference or literal fallback).
-  for BS_FILE in "$FLEET_BS" "$PRIME_BS"; do
-    [[ -f "$BS_FILE" ]] || continue
-    BS_NAME="$(basename "$BS_FILE")"
-    if grep -q 'C_OC_PIN' "$BS_FILE"; then
-      pass "${BS_NAME} reads OpenClaw pin from contracts (C_OC_PIN)"
-    elif grep -q "${C_OC_PIN}" "$BS_FILE"; then
-      pass "${BS_NAME} OpenClaw pin matches (literal fallback)"
-    else
-      PIN="$(grep 'OC_PIN=' "$BS_FILE" | head -1 | grep -oP '"[^"]*"' | tr -d '"' || echo 'NOT_FOUND')"
-      fail "${BS_NAME} OpenClaw pin = '${PIN:0:12}...' (expected contract-driven or '${C_OC_PIN:0:12}...')"
-    fi
-  done
-
   # ---- Check 4: fleet-bootstrap.sh smoke test model route ----
   if [[ -f "$FLEET_BS" ]]; then
-    if grep -q "\"model\":\"${C_GATEWAY_ROUTE}\"" "$FLEET_BS"; then
-      pass "fleet-bootstrap.sh smoke test route = ${C_GATEWAY_ROUTE}"
+    if grep -q "\"model\":\"brain/cortex\"" "$FLEET_BS"; then
+      pass "fleet-bootstrap.sh smoke test route = brain/cortex"
     else
       ROUTE="$(grep -oP '"model":"[^"]*"' "$FLEET_BS" | head -1 || echo 'NOT_FOUND')"
-      fail "fleet-bootstrap.sh smoke test route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
+      fail "fleet-bootstrap.sh smoke test route = '${ROUTE}' (expected 'brain/cortex')"
     fi
   fi
 
   # ---- Check 5: agent-ears.mjs model route ----
   EARS_SCRIPT="${REPO_ROOT}/corekit/daemon/agent-ears.mjs"
   if [[ -f "$EARS_SCRIPT" ]]; then
-    if grep -q "'openclaw/cortex'" "$EARS_SCRIPT"; then
-      pass "agent-ears.mjs route = ${C_GATEWAY_ROUTE}"
+    if grep -q "'brain/cortex'" "$EARS_SCRIPT"; then
+      pass "agent-ears.mjs route = brain/cortex"
     else
       ROUTE="$(grep -oP "'[^']*cortex[^']*'" "$EARS_SCRIPT" | head -1 || echo 'NOT_FOUND')"
-      fail "agent-ears.mjs route = '${ROUTE}' (expected '${C_GATEWAY_ROUTE}')"
+      fail "agent-ears.mjs route = '${ROUTE}' (expected 'brain/cortex')"
     fi
   fi
-
-  # ---- Check 7: Config templates — no systemPrompt on agents ----
-  for TMPL in "${REPO_ROOT}"/corekit/config/openclaw-*bootstrap*.tmpl; do
-    [[ -f "$TMPL" ]] || continue
-    TMPL_NAME="$(basename "$TMPL")"
-    if grep -q '"systemPrompt"' "$TMPL"; then
-      fail "${TMPL_NAME} contains 'systemPrompt' (invalid OpenClaw config key)"
-    else
-      pass "${TMPL_NAME} — no systemPrompt"
-    fi
-  done
-
-  # ---- Check 8: Config templates — default agent ID matches ----
-  for TMPL in "${REPO_ROOT}"/corekit/config/openclaw-*bootstrap*.tmpl; do
-    [[ -f "$TMPL" ]] || continue
-    TMPL_NAME="$(basename "$TMPL")"
-    if grep -q "\"id\": \"${C_DEFAULT_AGENT}\"" "$TMPL" || grep -q "\"id\":\"${C_DEFAULT_AGENT}\"" "$TMPL"; then
-      pass "${TMPL_NAME} — default agent = ${C_DEFAULT_AGENT}"
-    else
-      fail "${TMPL_NAME} — default agent ID '${C_DEFAULT_AGENT}' not found"
-    fi
-  done
-
-  # ---- Check 9: Config templates — gateway port matches ----
-  for TMPL in "${REPO_ROOT}"/corekit/config/openclaw-*bootstrap*.tmpl; do
-    [[ -f "$TMPL" ]] || continue
-    TMPL_NAME="$(basename "$TMPL")"
-    if grep -q "\"port\": ${C_GATEWAY_PORT}" "$TMPL" || grep -q "\"port\":${C_GATEWAY_PORT}" "$TMPL"; then
-      pass "${TMPL_NAME} — gateway port = ${C_GATEWAY_PORT}"
-    else
-      fail "${TMPL_NAME} — gateway port ${C_GATEWAY_PORT} not found"
-    fi
-  done
 
   # ---- Check 10: mouth config fields ----
   C_MOUTH_SOURCE="$(read_contract 'mouth.source' 2>/dev/null || echo '')"
@@ -190,16 +124,6 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
       pass "mouth.source = ${C_MOUTH_SOURCE}"
     else
       fail "mouth.source = '${C_MOUTH_SOURCE}' (expected 'jsonl' or 'log')"
-    fi
-  fi
-
-  C_MOUTH_ACK="$(read_contract 'mouth.status_updates.ack_after_ms' 2>/dev/null || echo '')"
-  C_MOUTH_UPD="$(read_contract 'mouth.status_updates.update_after_ms' 2>/dev/null || echo '')"
-  if [[ -n "$C_MOUTH_ACK" && -n "$C_MOUTH_UPD" ]]; then
-    if [[ "$C_MOUTH_ACK" -lt "$C_MOUTH_UPD" ]]; then
-      pass "mouth.status_updates timing valid (ack=${C_MOUTH_ACK}ms < update=${C_MOUTH_UPD}ms)"
-    else
-      fail "mouth.status_updates: ack_after_ms (${C_MOUTH_ACK}) must be < update_after_ms (${C_MOUTH_UPD})"
     fi
   fi
 
@@ -273,8 +197,6 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   else
     fail "projects.archive_completed_after_days missing from contracts.json"
   fi
-
-
 fi
 
 # ============================================================
@@ -283,26 +205,14 @@ fi
 if [[ "$MODE" == "runtime" ]]; then
   log "Checking runtime state..."
 
-  # ---- Check 1: .env on disk ----
-  ENV_FILE="/root/openclaw/.env"
-  if [[ -f "$ENV_FILE" ]]; then
-    if grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$ENV_FILE"; then
-      pass ".env location = ${C_LOCATION}"
-    else
-      fail ".env location mismatch (expected ${C_LOCATION})"
-    fi
+  # ---- Check 1: Gateway service active ----
+  if systemctl is-active --quiet agent-brain-gateway 2>/dev/null; then
+    pass "agent-brain-gateway service active"
   else
-    fail ".env not found at ${ENV_FILE}"
+    fail "agent-brain-gateway service not active"
   fi
 
-  # ---- Check 2: Container running ----
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -q 'openclaw-gateway'; then
-    pass "openclaw-gateway container running"
-  else
-    fail "openclaw-gateway container not running"
-  fi
-
-  # ---- Check 3: Gateway health ----
+  # ---- Check 2: Gateway health ----
   HTTP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:${C_GATEWAY_PORT}/v1/models 2>/dev/null)" || HTTP="000"
   if [[ "$HTTP" == "200" || "$HTTP" == "401" ]]; then
     pass "Gateway healthy (HTTP ${HTTP})"
@@ -310,70 +220,40 @@ if [[ "$MODE" == "runtime" ]]; then
     fail "Gateway unhealthy (HTTP ${HTTP})"
   fi
 
-  # ---- Check 4: ADC patch applied ----
-  # v2026.4.x uses gce-adc marker; v2026.5.x uses false && Array.isArray fallthrough
-  ADC_CHECK="$(docker exec openclaw-gateway bash -c 'find /app/dist -name "model-auth-env-*" -exec grep -l -E "gce-adc|false.*Array.isArray" {} \;' 2>/dev/null || echo '')"
-  if [[ -n "$ADC_CHECK" ]]; then
-    pass "ADC patch applied"
-  else
-    fail "ADC patch not found in model-auth-env"
-  fi
-
-  # ---- Check 5: Auth-profiles emptied for all agents ----
-  BAD_AP="$(docker exec openclaw-gateway bash -c '
-    for f in /home/node/.openclaw/agents/*/agent/auth-profiles.json; do
-      [ -f "$f" ] || continue
-      profiles=$(python3 -c "import json; print(len(json.load(open(\"$f\")).get(\"profiles\",{})))" 2>/dev/null || echo "ERR")
-      [ "$profiles" != "0" ] && echo "$f"
-    done
-  ' 2>/dev/null || echo '')"
+  # ---- Check 3: Auth-profiles emptied for all agents ----
+  BAD_AP=""
+  for f in "${CORE_DIR}"/agents/*/agent/auth-profiles.json; do
+    [ -f "$f" ] || continue
+    profiles=$(python3 -c "import json; print(len(json.load(open(\"$f\")).get(\"profiles\",{})))" 2>/dev/null || echo "ERR")
+    [ "$profiles" != "0" ] && BAD_AP="${BAD_AP} $f"
+  done
   if [[ -z "$BAD_AP" ]]; then
     pass "Auth-profiles empty for all agents"
   else
     fail "Non-empty auth-profiles: ${BAD_AP}"
   fi
 
-  # ---- Check 6: Rendered config — no systemPrompt ----
-  OC_JSON="${OC_HOST_ROOT}/.openclaw/openclaw.json"
-  if [[ -f "$OC_JSON" ]]; then
-    if python3 -c "
-import json, sys
-c = json.load(open('$OC_JSON'))
-for a in c.get('agents',{}).get('list',[]):
-    if 'systemPrompt' in a:
-        print(a.get('id','?'))
-        sys.exit(1)
-" 2>/dev/null; then
-      pass "No systemPrompt in rendered config"
-    else
-      fail "systemPrompt found in rendered openclaw.json"
-    fi
-  fi
-
-  # ---- Check 7: agent-ears.mjs route ----
-  EARS_SCRIPT="${OC_HOST_ROOT}/.openclaw/bin/agent-ears.mjs"
+  # ---- Check 4: agent-ears.mjs route ----
+  EARS_SCRIPT="${CORE_DIR}/bin/agent-ears.mjs"
   if [[ -f "$EARS_SCRIPT" ]]; then
-    if grep -q "'openclaw/cortex'" "$EARS_SCRIPT"; then
-      pass "agent-ears.mjs route = ${C_GATEWAY_ROUTE}"
+    if grep -q "'brain/cortex'" "$EARS_SCRIPT"; then
+      pass "agent-ears.mjs route = brain/cortex"
     else
       fail "agent-ears.mjs route mismatch"
     fi
   fi
 
-  # ---- Check 8: agent-ears + agent-mouth services active ----
-  if systemctl is-active --quiet agent-ears 2>/dev/null; then
-    pass "agent-ears service active"
-  else
-    fail "agent-ears service not active"
-  fi
-  if systemctl is-active --quiet agent-mouth 2>/dev/null; then
-    pass "agent-mouth service active"
-  else
-    fail "agent-mouth service not active"
-  fi
+  # ---- Check 5: Daemons active ----
+  for svc in agent-ears agent-mouth agent-brain agent-introspect; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      pass "${svc} service active"
+    else
+      fail "${svc} service not active"
+    fi
+  done
 
-  # ---- Check 8: Host permissions — bin dir must be 755 (not 700) ----
-  BIN_DIR="${OC_HOST_ROOT}/.openclaw/bin"
+  # ---- Check 6: Host permissions — bin dir must be 755 (not 700) ----
+  BIN_DIR="${CORE_DIR}/bin"
   if [[ -d "$BIN_DIR" ]]; then
     BIN_PERMS="$(stat -c '%a' "$BIN_DIR" 2>/dev/null || echo 'UNKNOWN')"
     if [[ "$BIN_PERMS" == "755" ]]; then
@@ -385,57 +265,12 @@ for a in c.get('agents',{}).get('list',[]):
 fi
 
 # ============================================================
-# FILE MODE: Check a specific rendered config file
-# ============================================================
-if [[ -n "$CONFIG_FILE" ]]; then
-  log "Checking config file: ${CONFIG_FILE}"
-  if [[ ! -f "$CONFIG_FILE" ]]; then
-    fail "Config file not found: ${CONFIG_FILE}"
-  else
-    # Check for systemPrompt
-    if python3 -c "
-import json, sys
-c = json.load(open('$CONFIG_FILE'))
-for a in c.get('agents',{}).get('list',[]):
-    if 'systemPrompt' in a:
-        sys.exit(1)
-" 2>/dev/null; then
-      pass "No systemPrompt in config"
-    else
-      fail "systemPrompt found in config"
-    fi
-
-    # Check default agent ID
-    if python3 -c "
-import json, sys
-c = json.load(open('$CONFIG_FILE'))
-for a in c.get('agents',{}).get('list',[]):
-    if a.get('default') and a.get('id') == '${C_DEFAULT_AGENT}':
-        sys.exit(0)
-sys.exit(1)
-" 2>/dev/null; then
-      pass "Default agent = ${C_DEFAULT_AGENT}"
-    else
-      fail "Default agent is not '${C_DEFAULT_AGENT}'"
-    fi
-
-    # Check valid JSON
-    if python3 -c "import json; json.load(open('$CONFIG_FILE'))" 2>/dev/null; then
-      pass "Valid JSON"
-    else
-      fail "Invalid JSON in config file"
-    fi
-  fi
-fi
-
-# ============================================================
 # Check: Workspace SOUL.md sizes (runtime only)
 # ============================================================
 if [[ "$MODE" == "runtime" ]]; then
-  OC_DIR="${OC_HOST_ROOT}/.openclaw"
   BOOTSTRAP_LIMIT=40000
   SOUL_OVER=0
-  for soul in "${OC_DIR}"/workspace*/SOUL.md; do
+  for soul in "${CORE_DIR}"/workspace*/SOUL.md; do
     [ -f "$soul" ] || continue
     size=$(wc -c < "$soul" 2>/dev/null || echo 0)
     if [ "$size" -gt "$BOOTSTRAP_LIMIT" ]; then

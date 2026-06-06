@@ -2,55 +2,55 @@
 # Assistant specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job assistant
 
-specialties/assistant/workspace/IDENTITY.md .openclaw/workspace-assistant/IDENTITY.md
-specialties/assistant/workspace/SOUL.md .openclaw/workspace-assistant/SOUL.md
-specialties/assistant/workspace/MEMORY.md .openclaw/workspace-assistant/MEMORY.md
+specialties/assistant/workspace/IDENTITY.md workspace-assistant/IDENTITY.md
+specialties/assistant/workspace/SOUL.md workspace-assistant/SOUL.md
+specialties/assistant/workspace/MEMORY.md workspace-assistant/MEMORY.md
 
 # Workspace skills — Google Drive
-skills/workspace-drive/SKILL.md .openclaw/skills/workspace-drive/SKILL.md
-skills/workspace-drive/drive-ls .openclaw/bin/drive-ls
-skills/workspace-drive/drive-search .openclaw/bin/drive-search
-skills/workspace-drive/drive-download .openclaw/bin/drive-download
-skills/workspace-drive/drive-upload .openclaw/bin/drive-upload
-skills/workspace-drive/drive-mkdir .openclaw/bin/drive-mkdir
-skills/workspace-drive/drive-rename .openclaw/bin/drive-rename
-skills/workspace-drive/drive-delete .openclaw/bin/drive-delete
-skills/workspace-drive/drive-move .openclaw/bin/drive-move
-skills/workspace-drive/drive-share .openclaw/bin/drive-share
+skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+skills/workspace-drive/drive-ls bin/drive-ls
+skills/workspace-drive/drive-search bin/drive-search
+skills/workspace-drive/drive-download bin/drive-download
+skills/workspace-drive/drive-upload bin/drive-upload
+skills/workspace-drive/drive-mkdir bin/drive-mkdir
+skills/workspace-drive/drive-rename bin/drive-rename
+skills/workspace-drive/drive-delete bin/drive-delete
+skills/workspace-drive/drive-move bin/drive-move
+skills/workspace-drive/drive-share bin/drive-share
 
 # Workspace skills — Gmail
-skills/workspace-gmail/SKILL.md .openclaw/skills/workspace-gmail/SKILL.md
-skills/workspace-gmail/gmail-search .openclaw/bin/gmail-search
-skills/workspace-gmail/gmail-get .openclaw/bin/gmail-get
-skills/workspace-gmail/gmail-send .openclaw/bin/gmail-send
-skills/workspace-gmail/gmail-draft-create .openclaw/bin/gmail-draft-create
-skills/workspace-gmail/gmail-draft-send .openclaw/bin/gmail-draft-send
+skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/gmail-search bin/gmail-search
+skills/workspace-gmail/gmail-get bin/gmail-get
+skills/workspace-gmail/gmail-send bin/gmail-send
+skills/workspace-gmail/gmail-draft-create bin/gmail-draft-create
+skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send
 
 # Workspace skills — Calendar
-skills/workspace-calendar/SKILL.md .openclaw/skills/workspace-calendar/SKILL.md
-skills/workspace-calendar/calendar-events .openclaw/bin/calendar-events
-skills/workspace-calendar/calendar-search .openclaw/bin/calendar-search
-skills/workspace-calendar/calendar-create .openclaw/bin/calendar-create
-skills/workspace-calendar/calendar-update .openclaw/bin/calendar-update
-skills/workspace-calendar/calendar-delete .openclaw/bin/calendar-delete
+skills/workspace-calendar/SKILL.md skills/workspace-calendar/SKILL.md
+skills/workspace-calendar/calendar-events bin/calendar-events
+skills/workspace-calendar/calendar-search bin/calendar-search
+skills/workspace-calendar/calendar-create bin/calendar-create
+skills/workspace-calendar/calendar-update bin/calendar-update
+skills/workspace-calendar/calendar-delete bin/calendar-delete
 
 # Workspace skills — Docs
-skills/workspace-docs/SKILL.md .openclaw/skills/workspace-docs/SKILL.md
-skills/workspace-docs/docs-cat .openclaw/bin/docs-cat
-skills/workspace-docs/docs-create .openclaw/bin/docs-create
-skills/workspace-docs/docs-write .openclaw/bin/docs-write
-skills/workspace-docs/docs-find-replace .openclaw/bin/docs-find-replace
-skills/workspace-docs/docs-comments-list .openclaw/bin/docs-comments-list
-skills/workspace-docs/docs-comments-add .openclaw/bin/docs-comments-add
+skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
+skills/workspace-docs/docs-cat bin/docs-cat
+skills/workspace-docs/docs-create bin/docs-create
+skills/workspace-docs/docs-write bin/docs-write
+skills/workspace-docs/docs-find-replace bin/docs-find-replace
+skills/workspace-docs/docs-comments-list bin/docs-comments-list
+skills/workspace-docs/docs-comments-add bin/docs-comments-add
 
 # Assistant responsibilities
-specialties/assistant/responsibilities-assistant.json .openclaw/corekit/responsibilities-job.json
+specialties/assistant/responsibilities-assistant.json corekit/responsibilities-job.json
 
 # Specialty brain SOUL appends
-specialties/assistant/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/cortex/SOUL_APPEND.md
-specialties/assistant/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/motor/SOUL_APPEND.md
-specialties/assistant/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/assistant/brain/cerebellum/SOUL_APPEND.md
+specialties/assistant/brain/cortex/SOUL_APPEND.md corekit/specialties/assistant/brain/cortex/SOUL_APPEND.md
+specialties/assistant/brain/motor/SOUL_APPEND.md corekit/specialties/assistant/brain/motor/SOUL_APPEND.md
+specialties/assistant/brain/cerebellum/SOUL_APPEND.md corekit/specialties/assistant/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty skills
-specialties/assistant/skills/calendar-email-ops/SKILL.md .openclaw/corekit/specialties/assistant/skills/calendar-email-ops/SKILL.md
-specialties/assistant/skills/calendar-email-ops/skill.json .openclaw/corekit/specialties/assistant/skills/calendar-email-ops/skill.json
+specialties/assistant/skills/calendar-email-ops/SKILL.md corekit/specialties/assistant/skills/calendar-email-ops/SKILL.md
+specialties/assistant/skills/calendar-email-ops/skill.json corekit/specialties/assistant/skills/calendar-email-ops/skill.json

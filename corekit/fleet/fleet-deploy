@@ -8,7 +8,7 @@
 #
 # Single-project model: all fleet agents run in the same project
 # as Prime. Isolation is enforced at the VM/SA level:
-#   - Each agent gets its own VM, SA, OpenClaw, workspace, and tools
+#   - Each agent gets its own VM, SA, brain gateway, workspace, and tools
 #   - Agents cannot access each other's filesystems or processes
 #   - Specialist toolsets mean fewer, verified tools per agent
 #
@@ -79,9 +79,9 @@ if [[ -z "$CHAT_SPACE_ID" ]]; then
     'http://metadata.google.internal/computeMetadata/v1/instance/attributes/chat_space_id' 2>/dev/null || true)"
 fi
 
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-REGISTRY_FILE="${OC_HOST_ROOT}/.openclaw/corekit/fleet-registry.json"
-CHAT_SEND="${OC_HOST_ROOT}/.openclaw/bin/chat-send"
+CORE_ROOT="${CORE_ROOT:-/opt/corekit}"
+REGISTRY_FILE="${CORE_ROOT}/corekit/fleet-registry.json"
+CHAT_SEND="${CORE_ROOT}/bin/chat-send"
 
 # Resolve Cloud Run URL for fleet-bootstrap status relay
 DASHBOARD_URL="$(gcloud run services describe architect-prime \
@@ -130,7 +130,7 @@ fi
 
 # Resolve CoreKit ref from STATE.json
 CORE_REF="main"
-STATE_FILE="${OC_HOST_ROOT}/.openclaw/corekit/STATE.json"
+STATE_FILE="${CORE_ROOT}/corekit/STATE.json"
 if [[ -f "$STATE_FILE" ]]; then
   CORE_REF="$(jq -r '.coreRef // "main"' "$STATE_FILE" 2>/dev/null)"
 fi
@@ -306,8 +306,8 @@ all_steps = [
     ("packages_installing", "System packages installing", "pending"),
     ("docker_installing", "Docker CE installing", "pending"),
     ("corekit_installing", "CoreKit installing", "pending"),
-    ("openclaw_building", "OpenClaw Docker image building", "pending"),
-    ("gateway_ready", "OpenClaw gateway started", "pending"),
+    ("brain_building", "Brain dependencies installing", "pending"),
+    ("gateway_ready", "Brain gateway service started", "pending"),
     ("bootstrap_complete", "Bootstrap complete", "pending"),
     ("online", "Agent online", "pending"),
 ]
@@ -521,7 +521,7 @@ print(json.dumps({
     ]
 }))
 ")
-write_deploy_step "prime_setup_done" "Prime-side setup complete (VM bootstrapping)" "done" "VM is now installing Docker + OpenClaw (~10 min)" "deploying" "$ACTION_JSON"
+write_deploy_step "prime_setup_done" "Prime-side setup complete (VM bootstrapping)" "done" "VM is now installing Node.js + brain gateway (~10 min)" "deploying" "$ACTION_JSON"
 
 # ============================================================
 # 6. Launch fleet-monitor (Prime-side bootstrap poller)
@@ -529,7 +529,7 @@ write_deploy_step "prime_setup_done" "Prime-side setup complete (VM bootstrappin
 # fleet-monitor polls the VM's serial console for bootstrap
 # progress and runs a DWD healthcheck at the end. ALL Firestore
 # writes happen from Prime's credentials (no IAM propagation race).
-MONITOR_BIN="${OC_HOST_ROOT}/.openclaw/bin/fleet-monitor"
+MONITOR_BIN="${CORE_ROOT}/bin/fleet-monitor"
 MONITOR_LOG="/tmp/fleet-monitor-${AGENT_NAME}.log"
 
 if [[ -x "$MONITOR_BIN" ]]; then

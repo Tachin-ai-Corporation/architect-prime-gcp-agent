@@ -1,7 +1,7 @@
 # TOOLS — Architect Prime (Cortex)
 
 ## Sub-Agent Dispatch (Native)
-Use OpenClaw's built-in subagent system. Available sub-agents:
+Use the brain gateway's built-in subagent system. Available sub-agents:
 
 | Agent | Job | Notes |
 |---|---|---|

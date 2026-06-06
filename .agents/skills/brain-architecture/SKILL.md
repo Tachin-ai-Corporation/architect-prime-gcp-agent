@@ -1,22 +1,22 @@
 ---
 name: brain-architecture
-description: Use when working on the brain agent system — creating/editing agent workspace files, updating agent-registry.json, modifying bootstrap config agent definitions, or OpenClaw gateway configuration. Also for agent routing and intent classification.
+description: Use when working on the brain agent system — creating/editing agent workspace files, updating agent-registry.json, modifying bootstrap config agent definitions, or brain gateway configuration. Also for agent routing and intent classification.
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.06.04.5.0)
-6 brain agents in OpenClaw multi-agent configuration, coordinated by the `agent-brain.service` state machine.
+## Current State (v2026.06.05.1.0)
+6 brain agents in gateway multi-agent configuration, coordinated by the `agent-brain.service` state machine.
 
 ### Agent Inventory
 
 | Agent | Model | Role | Workspace |
 |-------|-------|------|-----------|
-| **cortex** | gemini-3.1-pro-preview | JSON Decide Loop — envelope coordinator (DEFAULT) | `~/.openclaw/workspace` |
-| **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `~/.openclaw/workspace-temporal-research` |
-| **temporal-memory** | gemini-2.5-flash | Pure memory/context recall (NO external APIs) | `~/.openclaw/workspace-temporal-memory` |
-| **prefrontal** | gemini-2.5-flash | Planning + dispatch (two-mode: simple + advisory) | `~/.openclaw/workspace-prefrontal` |
-| **motor** | gemini-2.5-flash | Execution — ALL Google Workspace tools + advisory mode | `~/.openclaw/workspace-motor` |
-| **cerebellum** | gemini-2.5-flash | Verification + validation-rule checking | `~/.openclaw/workspace-cerebellum` |
+| **cortex** | gemini-3.1-pro-preview | JSON Decide Loop — envelope coordinator (DEFAULT) | `/opt/corekit/workspace` |
+| **temporal-research** | gemini-2.5-flash | Web search (Vertex AI grounding) | `/opt/corekit/workspace-temporal-research` |
+| **temporal-memory** | gemini-2.5-flash | Pure memory/context recall (NO external APIs) | `/opt/corekit/workspace-temporal-memory` |
+| **prefrontal** | gemini-2.5-flash | Planning + dispatch (two-mode: simple + advisory) | `/opt/corekit/workspace-prefrontal` |
+| **motor** | gemini-2.5-flash | Execution — ALL Google Workspace tools + advisory mode | `/opt/corekit/workspace-motor` |
+| **cerebellum** | gemini-2.5-flash | Verification + validation-rule checking | `/opt/corekit/workspace-cerebellum` |
 
 ### Dispatch Pattern
 - **Brain v3 state machine (`agent-brain.mjs`)**: Manages deterministic, envelope-based coordination as a continuous service.
@@ -27,11 +27,10 @@ description: Use when working on the brain agent system — creating/editing age
 ### I/O Architecture
 - `agent-ears` — deterministic input (poll, dedup, GChat preprocessor, fire-and-forget gateway POST)
 - `agent-mouth` — output classification + delivery (JSONL-native transcript tailer, turn state machine, LLM status updates)
-- OpenClaw agents never call delivery tools directly; `agent-mouth` polls for `delivery_status=pending` envelopes (fallback to 3-status query)
+- Agents never call delivery tools directly; `agent-mouth` polls for `delivery_status=pending` envelopes (fallback to 3-status query)
 
 ## Key Files
-- `corekit/config/openclaw-bootstrap.json5.tmpl` — Prime OpenClaw config (6 agents)
-- `corekit/config/openclaw-fleet-bootstrap.json5.tmpl` — Fleet agent OpenClaw config
+- `corekit/config/chat-config.json.tmpl` — Chat adapter config template
 - `corekit/config/agent-registry.json` — Per-agent settings (routes, models, intents, tools)
 - `corekit/config/agent-types.json` — Available fleet agent specialties
 - `brain/prime/cortex/` — Prime brain: plan executor + synthesizer
@@ -53,8 +52,8 @@ description: Use when working on the brain agent system — creating/editing age
 - **Dual-pass recall**: temporal-memory does targeted archive search (all time) + broad recent scan (30 days) + context fill
 - **Nightly consolidation**: 10-step `r-memory-consolidation` responsibility (gather → triage → reconcile → retire → promote → prune → Deep Truths → report)
 
-## OpenClaw Integration Points
-- Gateway API: `POST http://localhost:18789/v1/chat/completions` with `model: "openclaw"` or `model: "openclaw/<agentId>"`
-- `agent-ears` bridges input channels → OpenClaw gateway (fire-and-forget POST)
+## Gateway Integration Points
+- Gateway API: `POST http://localhost:18789/v1/chat/completions` with `model: "brain"` or `model: "brain/<agentId>"`
+- `agent-ears` bridges input channels → brain gateway (fire-and-forget POST)
 - `agent-mouth` bridges gateway output → delivery channel (GChat or Firestore)
-- Fleet tools (`fleet-deploy`, etc.) available via OpenClaw exec tool on PATH
+- Fleet tools (`fleet-deploy`, etc.) available via VM execution on PATH

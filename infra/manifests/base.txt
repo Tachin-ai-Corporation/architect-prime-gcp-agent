@@ -3,97 +3,87 @@
 # Installed by: infra/install.sh (always, regardless of --role)
 
 # Contracts (single source of truth)
-infra/contracts.json .openclaw/corekit/contracts.json
+infra/contracts.json corekit/contracts.json
 
 # Core tools — system utilities
-corekit/system/upgrade-corekit .openclaw/bin/upgrade-corekit
-corekit/system/validate-contracts .openclaw/bin/validate-contracts
-corekit/system/agent-ou-manage .openclaw/bin/agent-ou-manage
+corekit/system/upgrade-corekit bin/upgrade-corekit
+corekit/system/validate-contracts bin/validate-contracts
+corekit/system/agent-ou-manage bin/agent-ou-manage
 
 
 # Core tools — gateway
-corekit/gateway/render-config .openclaw/bin/render-config
-corekit/gateway/bootstrap_smoke.sh .openclaw/bin/bootstrap_smoke.sh
-corekit/gateway/upgrade-openclaw .openclaw/bin/upgrade-openclaw
-corekit/gateway/oc .openclaw/bin/oc
 
 # Chat tools (DWD)
-corekit/chat/dwd-token .openclaw/bin/dwd-token
-corekit/chat/chat-send .openclaw/bin/chat-send
-corekit/chat/chat-read .openclaw/bin/chat-read
+corekit/chat/dwd-token bin/dwd-token
+corekit/chat/chat-send bin/chat-send
+corekit/chat/chat-read bin/chat-read
 
 # Agent Ears (deterministic input) + Agent Mouth (output classification + delivery)
-corekit/daemon/agent-ears.mjs .openclaw/bin/agent-ears.mjs
-corekit/daemon/agent-mouth.mjs .openclaw/bin/agent-mouth.mjs
-corekit/daemon/mouth-classify-prompt.md .openclaw/bin/mouth-classify-prompt.md
-corekit/daemon/mouth-status-prompts.md .openclaw/bin/mouth-status-prompts.md
-corekit/daemon/ears-preprocess-prompt.md .openclaw/bin/ears-preprocess-prompt.md
-corekit/daemon/start-agent-ears .openclaw/bin/start-agent-ears
-corekit/daemon/start-agent-mouth .openclaw/bin/start-agent-mouth
-corekit/daemon/ears-health-check .openclaw/bin/ears-health-check
-corekit/daemon/mouth-health-check .openclaw/bin/mouth-health-check
+corekit/daemon/agent-ears.mjs bin/agent-ears.mjs
+corekit/daemon/agent-mouth.mjs bin/agent-mouth.mjs
+corekit/daemon/mouth-classify-prompt.md bin/mouth-classify-prompt.md
+corekit/daemon/mouth-status-prompts.md bin/mouth-status-prompts.md
+corekit/daemon/ears-preprocess-prompt.md bin/ears-preprocess-prompt.md
+corekit/daemon/start-agent-ears bin/start-agent-ears
+corekit/daemon/start-agent-mouth bin/start-agent-mouth
+corekit/daemon/ears-health-check bin/ears-health-check
+corekit/daemon/mouth-health-check bin/mouth-health-check
 
 # Brain tools
-corekit/brain/agent-ask .openclaw/bin/agent-ask
-corekit/brain/web-fetch .openclaw/bin/web-fetch
-corekit/brain/agent-status .openclaw/bin/agent-status
-corekit/brain/skill-author .openclaw/bin/skill-author
-corekit/brain/brain-telemetry-write .openclaw/bin/brain-telemetry-write
-corekit/brain/brain-telemetry-read .openclaw/bin/brain-telemetry-read
-corekit/brain/work-log-read .openclaw/bin/work-log-read
-corekit/brain/assemble-tools .openclaw/bin/assemble-tools
-corekit/brain/task-log-write .openclaw/bin/task-log-write
-corekit/brain/task-log-read .openclaw/bin/task-log-read
-corekit/brain/responsibility-manage .openclaw/bin/responsibility-manage
-corekit/brain/project-manage .openclaw/bin/project-manage
-corekit/brain/process-manage .openclaw/bin/process-manage
+corekit/brain/agent-ask bin/agent-ask
+corekit/brain/web-fetch bin/web-fetch
+corekit/brain/agent-status bin/agent-status
+corekit/brain/skill-author bin/skill-author
+corekit/brain/brain-telemetry-write bin/brain-telemetry-write
+corekit/brain/brain-telemetry-read bin/brain-telemetry-read
+corekit/brain/work-log-read bin/work-log-read
+corekit/brain/assemble-tools bin/assemble-tools
+corekit/brain/task-log-write bin/task-log-write
+corekit/brain/task-log-read bin/task-log-read
+corekit/brain/responsibility-manage bin/responsibility-manage
+corekit/brain/project-manage bin/project-manage
+corekit/brain/process-manage bin/process-manage
 
-# Brain module (AI SDK gateway — replaces OpenClaw)
-corekit/brain/package.json .openclaw/corekit/brain/package.json
-corekit/brain/index.mjs .openclaw/corekit/brain/index.mjs
-corekit/brain/router.mjs .openclaw/corekit/brain/router.mjs
-corekit/brain/loop.mjs .openclaw/corekit/brain/loop.mjs
-corekit/brain/tools.mjs .openclaw/corekit/brain/tools.mjs
-corekit/brain/config.mjs .openclaw/corekit/brain/config.mjs
-corekit/brain/context.mjs .openclaw/corekit/brain/context.mjs
-corekit/brain/health.mjs .openclaw/corekit/brain/health.mjs
+# Brain module (AI SDK gateway)
+corekit/brain/package.json corekit/brain/package.json
+corekit/brain/index.mjs corekit/brain/index.mjs
+corekit/brain/router.mjs corekit/brain/router.mjs
+corekit/brain/loop.mjs corekit/brain/loop.mjs
+corekit/brain/tools.mjs corekit/brain/tools.mjs
+corekit/brain/config.mjs corekit/brain/config.mjs
+corekit/brain/context.mjs corekit/brain/context.mjs
+corekit/brain/health.mjs corekit/brain/health.mjs
 
 # Config
-corekit/README.md .openclaw/corekit/README.md
-corekit/exec-approvals.json .openclaw/exec-approvals.json
-corekit/config/agent-types.json .openclaw/corekit/agent-types.json
-corekit/config/chat-config.json.tmpl .openclaw/corekit/chat-config.json.tmpl
-corekit/config/openclaw-gateway.service .openclaw/corekit/openclaw-gateway.service
+corekit/README.md corekit/README.md
+corekit/exec-approvals.json exec-approvals.json
+corekit/config/agent-types.json corekit/agent-types.json
+corekit/config/chat-config.json.tmpl corekit/chat-config.json.tmpl
 
 # Ears/Mouth systemd units
-corekit/daemon/agent-ears.service .openclaw/corekit/agent-ears.service
-corekit/daemon/agent-mouth.service .openclaw/corekit/agent-mouth.service
+corekit/daemon/agent-ears.service corekit/agent-ears.service
+corekit/daemon/agent-mouth.service corekit/agent-mouth.service
 
 # Brain v3 — orchestration service
-corekit/daemon/agent-brain.mjs .openclaw/bin/agent-brain.mjs
-corekit/daemon/agent-brain.service .openclaw/corekit/agent-brain.service
-corekit/daemon/start-agent-brain .openclaw/bin/start-agent-brain
-corekit/config/agent-registry.json .openclaw/corekit/agent-registry.json
-corekit/config/responsibilities.json .openclaw/corekit/responsibilities.json
+corekit/daemon/agent-brain.mjs bin/agent-brain.mjs
+corekit/daemon/agent-brain.service corekit/agent-brain.service
+corekit/daemon/start-agent-brain bin/start-agent-brain
+corekit/config/agent-registry.json corekit/agent-registry.json
+corekit/config/responsibilities.json corekit/responsibilities.json
 
 # Standard processes (bundled — always available)
-corekit/config/processes/investigate.json .openclaw/corekit/processes/investigate.json
-corekit/config/processes/plan.json .openclaw/corekit/processes/plan.json
+corekit/config/processes/investigate.json corekit/processes/investigate.json
+corekit/config/processes/plan.json corekit/processes/plan.json
 
 # Introspect — filesystem introspection service (Firestore bus)
-corekit/daemon/agent-introspect.mjs .openclaw/bin/agent-introspect.mjs
-corekit/daemon/agent-introspect.service .openclaw/corekit/agent-introspect.service
-corekit/daemon/start-agent-introspect .openclaw/bin/start-agent-introspect
+corekit/daemon/agent-introspect.mjs bin/agent-introspect.mjs
+corekit/daemon/agent-introspect.service corekit/agent-introspect.service
+corekit/daemon/start-agent-introspect bin/start-agent-introspect
 
 # Vertex Claude Proxy — Anthropic Messages API to Vertex AI rawPredict
-corekit/daemon/vertex-claude-proxy.mjs      .openclaw/bin/vertex-claude-proxy.mjs
-corekit/daemon/vertex-claude-proxy.service  .openclaw/corekit/vertex-claude-proxy.service
-corekit/daemon/start-vertex-claude-proxy    .openclaw/bin/start-vertex-claude-proxy
 
 # Config templates (both needed for render-config)
-corekit/config/openclaw-bootstrap.json5.tmpl .openclaw/corekit/openclaw-bootstrap.json5.tmpl
-corekit/config/openclaw-fleet-bootstrap.json5.tmpl .openclaw/corekit/openclaw-fleet-bootstrap.json5.tmpl
 
 # Agent runtime skeleton (seed files — no-clobber on upgrade)
-brain/agents/main/agent/auth-profiles.json .openclaw/agents/main/agent/auth-profiles.json?
-brain/agents/main/sessions/sessions.json .openclaw/agents/main/sessions/sessions.json?
+brain/agents/main/agent/auth-profiles.json agents/main/agent/auth-profiles.json?
+brain/agents/main/sessions/sessions.json agents/main/sessions/sessions.json?

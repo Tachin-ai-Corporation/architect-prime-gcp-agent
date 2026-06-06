@@ -4,13 +4,13 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.04.5.0`
+> - **Current version:** `v2026.06.05.1.0`
 
 ---
 
 ## Vision
 
-Architect Prime is a **self-bootstrapping agent factory** built on [OpenClaw](https://github.com/openclaw/openclaw) and GCP.
+Architect Prime is a **self-bootstrapping agent factory** built on a native brain gateway and GCP.
 
 Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
@@ -95,9 +95,9 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
     │       ├── Brain envelope polling (delivery_status=pending primary query, 3-status fallback)
     │       └── Never drops messages — unknown classification → deliver raw
     │
-    ├── openclaw-gateway (Docker, --network host, port 18789)
+    ├── agent-brain-gateway (systemd, port 18789)
     │   ├── GOOGLE_CLOUD_LOCATION=us-central1
-    │   ├── Brain agents (6 OpenClaw agents, Cortex-first orchestration)
+    │   ├── Brain agents (6 gateway agents, Cortex-first orchestration)
     │   │   ├── cortex (DEFAULT) — Gemini 3.1 Pro Preview — plan executor + synthesizer
     │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
     │   │   ├── temporal-memory — Gemini 2.5 Flash — pure memory/context recall (NO external APIs)
@@ -119,7 +119,6 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
         ├── validate-contracts       → Pre-flight contract validation (repo/runtime/file)
         ├── fleet/: fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-status,
         │          fleet-verify, fleet-upgrade, fleet-monitor, fleet-health-check
-        ├── gateway/: render-config, discover-models, upgrade-openclaw, oc, smoke test
         ├── chat/: chat-send, chat-read, dwd-token (identity-locked)
         ├── daemon/: agent-ears.mjs, agent-mouth.mjs, agent-introspect.mjs,
         │           mouth-classify-prompt.md, mouth-status-prompts.md,
@@ -130,18 +129,17 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
         ├── memory/: core-memory-read, core-memory-write, update-deep-truths
         ├── dashboard/: command-runner
         ├── system/: upgrade-corekit, validate-contracts
-        ├── config/: agent-registry.json, fleet-registry.json, openclaw-bootstrap.json5.tmpl
+        ├── config/: agent-registry.json, fleet-registry.json, agent-types.json
         └── config/processes/: investigate.json, plan.json (standard bundled processes)
 
     Fleet Agent VMs (e2-medium, Ubuntu 22.04, one per agent)
     ├── .identity-lock              → DWD impersonation guard (chmod 444)
-    ├── openclaw-gateway (Docker, --network host, port 18789)
+    ├── agent-brain-gateway (systemd, port 18789)
     │   ├── GOOGLE_CLOUD_LOCATION=us-central1 (same as Prime)
     │   ├── Default agent: cortex (Gemini 3.1 Pro Preview via Vertex AI ADC)
     │   ├── Brain sub-agents: same 6-agent architecture as Prime
     │   ├── SOUL.md loaded automatically from workspace (no systemPrompt injection)
-    │   ├── timeoutSeconds: 600 (safety ceiling; real timeout is heartbeat-based)
-    │   └── ADC fix: model-auth-env patched for GCE metadata fallback
+    │   └── timeoutSeconds: 600 (safety ceiling; real timeout is heartbeat-based)
     │
     ├── agent-ears (systemd) — GChat polling via DWD + dashboard Firestore poll (deterministic, no ACK)
     ├── agent-mouth (systemd) — output classification + GChat delivery + Firestore delivery + task log
@@ -157,8 +155,7 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
 
 1. Dashboard creates a GCE VM with a **boot stub** startup script
 2. Boot stub curls `infra/bootstrap/prime-bootstrap.sh` from GitHub (`raw.githubusercontent.com`)
-3. `prime-bootstrap.sh` installs Docker, CoreKit via `infra/install.sh --role prime`, builds the OpenClaw Docker image, writes config, starts the container, applies the ADC auth patch, and starts `agent-ears` + `agent-mouth`
-4. The OpenClaw image is pinned to commit `041266a6` (v2026.4.15) for stability
+3. `prime-bootstrap.sh` installs Node.js & npm on the GCE VM host, installs CoreKit via `infra/install.sh --role prime`, runs `npm install` on the host brain gateway directory, generates config files, starts the `agent-brain-gateway` systemd service, and starts `agent-ears` + `agent-mouth` + `agent-brain` + `agent-introspect` services.
 
 ### Fleet Agent Lifecycle
 
@@ -174,15 +171,12 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
    - Passes all config (agent name, specialty, email, dashboard URL, prime ID) via VM metadata
 4. `fleet-monitor` runs on Prime in background: polls serial console for milestones, SSH-checks gateway health, writes deploy progress to Firestore
 5. `fleet-bootstrap.sh` on fleet VM:
-    - Installs Docker, CoreKit via `infra/install.sh --role fleet --job {specialty}` (base + fleet + job manifests)
-    - Reads cross-cutting values from `contracts.json` (location, OpenClaw pin, gateway port/route)
+    - Installs Node.js & npm on the GCE VM host, and installs CoreKit via `infra/install.sh --role fleet --job {specialty}` (base + fleet + job manifests)
+    - Reads cross-cutting values from `contracts.json`
     - Deploys specialty workspace (clears Prime files first)
-    - Renders fleet config from `openclaw-fleet-bootstrap.json5.tmpl` (strips JSON5 comments, substitutes template vars)
-    - Runs `validate-contracts --file` on rendered config (catches schema violations pre-start)
-    - SOUL.md is loaded automatically by OpenClaw from workspace — no `systemPrompt` injection
-    - Starts container with `GOOGLE_CLOUD_LOCATION` from contracts, applies ADC patch (wildcard across all agent dirs), restarts gateway
-    - Runs Vertex AI smoke test (3 attempts with backoff, 60s timeout, contract-driven port/route)
-    - Starts `agent-ears` + `agent-mouth` (reads gateway route from `contracts.json`)
+    - Validates config and files using `validate-contracts`
+    - Starts the `agent-brain-gateway` systemd service
+    - Starts `agent-ears`, `agent-mouth`, and `agent-introspect` systemd services
     - Self-reports `status: online` to Firestore via Prime's `update-status` API endpoint
     - Prints `FLEET AGENT SETUP COMPLETE` marker for fleet-monitor
 
@@ -196,7 +190,7 @@ Dashboard (Cloud Run — Next.js, Vertical Prime List home + proximity effects +
 
 ### I/O Pipeline (Ears + Mouth Architecture)
 
-Both Prime and Fleet agents use independent, fire-and-forget input/output services. OpenClaw "just thinks" — it never worries about delivery.
+Both Prime and Fleet agents use independent, fire-and-forget input/output services. The brain "just thinks" — it never worries about delivery.
 
 **Agent Ears — Deterministic Input Processing (`agent-ears.mjs`):**
 1. Polls input channel every N seconds (Firestore for Prime, GChat API for Fleet via DWD)
@@ -210,7 +204,7 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 9. Dashboard messages are marked `processed: true` in Firestore after consumption
 
 **Agent Mouth — JSONL-Native Output Processing (`agent-mouth.mjs` v2):**
-1. Tails the OpenClaw JSONL session transcript (`~/.openclaw/agents/{agentId}/sessions/{sessionId}.jsonl`)
+1. Tails the JSONL session transcript (`/opt/corekit/corekit/brain/agents/{agentId}/sessions/{sessionId}.jsonl`)
 2. **JSONL tailer**: resolves active session file from `sessions.json`, reads new bytes from byte offset, seeks to end on startup (prevents re-delivery of old output on restart)
 3. **Turn state machine** (IDLE → WORKING → ACKED → UPDATED → DONE): structurally detects user messages (turn start), tool calls (intermediate), and final assistant text (candidate response)
 4. **Status updates**: fires LLM-voiced ack at 5s, progress update at 120s (configurable via contracts). Deterministic fallback text if LLM fails.
@@ -231,9 +225,7 @@ Both Prime and Fleet agents use independent, fire-and-forget input/output servic
 
 ### Vertex AI Authentication (ADC)
 
-Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. OpenClaw's `model-auth-env` module is patched at bootstrap time to fall back to `{ apiKey: "<gce-adc>", source: "gce metadata" }` when no explicit API key is configured. The patcher is a Python script written to the host via heredoc, then `docker cp`'d into the container to avoid shell-quoting issues with embedded Python inside `docker exec bash -c` blocks. The `upgrade-openclaw` script automatically re-applies this patch after every container recreation.
-
-> **Pin note:** OpenClaw is pinned to v2026.4.15. The v2026.5.x branch removed `google-auth-library` GCE metadata support, breaking service account ADC on GCE VMs. Do not upgrade until upstream restores GCE support.
+Fleet and Prime VMs use **Application Default Credentials** (ADC) via GCE metadata. The host-native brain gateway utilizes the standard Google Cloud/Vertex AI library, which automatically authenticates using the VM's attached service account credentials on Google Compute Engine. No API keys or credentials patching are required.
 
 ### Vertex AI Location
 
@@ -242,22 +234,21 @@ Fleet and Prime VMs use **Application Default Credentials** via GCE metadata. Op
 ### Contract Enforcement
 
 `infra/contracts.json` is the **single source of truth** for all cross-cutting values. It defines:
-- **OpenClaw pin** — commit hash and label for the pinned OpenClaw version
-- **Vertex AI** — location (`us-central1`), primary model (`gemini-3.1-pro-preview`), sub-agent model (`gemini-2.5-flash`)
-- **Agent IDs** — default agent (`cortex`), gateway route (`openclaw/cortex`), sub-agent list
+- **Vertex AI** — location (`us-central1`), primary and sub-agent models
+- **Agent IDs** — default agent (`cortex`), sub-agent list
 - **Gateway** — port (`18789`), timeout (`180s`), bind mode (`loopback`)
 - **Environment** — `GOOGLE_GENAI_USE_VERTEXAI`, `GCE_METADATA_HOST`
 
-The manifest installs `contracts.json` to `/opt/openclaw/.openclaw/corekit/contracts.json` on every VM. Scripts read from it at runtime instead of hardcoding values.
+The manifest installs `contracts.json` to `/opt/corekit/corekit/contracts.json` on every VM. Scripts read from it at runtime instead of hardcoding values.
 
 **`validate-contracts`** is the enforcement tool. Three modes:
-- **Repo mode** (`validate-contracts`) — checks source files: both bootstraps, agent-ears.mjs, config templates. Verifies location, model route, agent ID, OpenClaw pin, no `systemPrompt` key.
-- **Runtime mode** (`validate-contracts --runtime`) — checks a live VM: .env on disk, container running, gateway healthy, ADC patch applied, auth-profiles emptied, agent-ears route, agent-ears + agent-mouth services active.
-- **File mode** (`validate-contracts --file <config.json>`) — checks a rendered config: valid JSON, no systemPrompt, correct default agent ID.
+- **Repo mode** (`validate-contracts`) — checks source files: both bootstraps, agent-ears.mjs, and config templates.
+- **Runtime mode** (`validate-contracts --runtime`) — checks a live VM: .env on disk, gateway service healthy, loopback endpoint responsive, agent-ears + agent-mouth services active.
+- **File mode** (`validate-contracts --file <config.json>`) — checks a config file.
 
 **When it runs:**
-- `fleet-bootstrap.sh` calls `--file` after config rendering, before container start
-- `upgrade-corekit --apply` calls `--runtime` after upgrade completes
+- `fleet-bootstrap.sh` calls `validate-contracts` after setup
+- `upgrade-corekit` calls `validate-contracts --runtime` after upgrade completes
 
 **Why this exists:** The Gemini 3.1 migration broke stan because 5 cross-cutting values were hardcoded in 7 different files. Changing one file required synchronized edits to 6 others, and 4 were missed. Contracts make it impossible to introduce this class of bug — change one value in `contracts.json`, and validation catches every stale reference.
 
@@ -285,16 +276,14 @@ The model catalog is built at runtime by `POST /api/models/scan` (project-scoped
 
 **Architecture insight:** The Model Garden REST API (`publishers/*/models`) returns ~300 models but only Google models have `supportedActions` (like `openGenerationAiStudio`). Anthropic and xAI are MaaS-only partners — they appear in the Model Garden UI but are NOT in the REST API at all. Third-party models (Meta, DeepSeek, Mistral, Qwen) are in the API but have zero `supportedActions`.
 
-**Provider-aware model ID mapping:** `toOpenClawId()` emits correct prefixes for each provider:
+**Provider-aware model ID mapping:** `toBrainModelId()` emits correct prefixes for each provider:
 - `anthropic-vertex/` for Claude models (Anthropic MaaS)
 - `google-vertex/{publisher}/` for third-party MaaS models (Meta, xAI, Mistral)
 - `google-vertex/` for Gemini models (native Google)
 
-This mapping is applied consistently in the Brain page model picker, the scan route, and `discover-models`.
+This mapping is applied consistently in the Brain page model picker and the scan route.
 
-**Dynamic model registry:** `ensureModelRegistered()` in `agent-introspect.mjs` auto-adds models to the OpenClaw models map at runtime when a model is assigned via the Brain page but not yet in the gateway config. Bootstrap templates are pre-seeded with 4 Claude models.
-
-**Anthropic-vertex provider patcher:** The `patch-anthropic-vertex` CoreKit script fixes 2 bugs in the bundled `anthropic-vertex` provider: `.ts→.js` manifest extension fix and ADC environment identity check. Called from both `prime-bootstrap.sh` and `fleet-bootstrap.sh`.
+**Dynamic model registry:** `ensureModelRegistered()` in `agent-introspect.mjs` auto-adds models to the models map at runtime when a model is assigned via the Brain page.
 
 **Hybrid discovery approach:**
 
@@ -331,17 +320,17 @@ This mapping is applied consistently in the Brain page model picker, the scan ro
 
 ### Brain Architecture (Autonomous Multi-Agent Orchestrator)
 
-Prime and fleet use 6 OpenClaw agents in a multi-agent configuration. The core design
+Prime and fleet use 6 gateway agents in a multi-agent configuration. The core design
 principle: **LLMs think. Deterministic systems move data, enforce rules, and deliver output.**
 
 | Agent | Model | Role | Workspace | Tools |
 |-------|-------|------|-----------|-------|
-| **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) | `~/.openclaw/workspace` | read, write, edit, exec |
-| **temporal-research** | gemini-2.5-flash | Web search + URL fetching (Vertex AI grounding + web-fetch) | `~/.openclaw/workspace-temporal-research` | exec (agent-ask, web-fetch) |
-| **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) | `~/.openclaw/workspace-temporal-memory` | read, exec (core-memory-read only) |
-| **prefrontal** | gemini-2.5-flash | Two-mode dispatch planner (simple + advisory) | `~/.openclaw/workspace-prefrontal` | read only |
-| **motor** | gemini-2.5-flash | Execution + advisory mode + ALL Workspace tools | `~/.openclaw/workspace-motor` | read, write, edit, exec |
-| **cerebellum** | gemini-2.5-flash | Validation-rule checking + QA | `~/.openclaw/workspace-cerebellum` | read, exec |
+| **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) | `/opt/corekit/workspace` | read, write, edit, exec |
+| **temporal-research** | gemini-2.5-flash | Web search + URL fetching (Vertex AI grounding + web-fetch) | `/opt/corekit/workspace-temporal-research` | exec (agent-ask, web-fetch) |
+| **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) | `/opt/corekit/workspace-temporal-memory` | read, exec (core-memory-read only) |
+| **prefrontal** | gemini-2.5-flash | Two-mode dispatch planner (simple + advisory) | `/opt/corekit/workspace-prefrontal` | read only |
+| **motor** | gemini-2.5-flash | Execution + advisory mode + ALL Workspace tools | `/opt/corekit/workspace-motor` | read, write, edit, exec |
+| **cerebellum** | gemini-2.5-flash | Validation-rule checking + QA | `/opt/corekit/workspace-cerebellum` | read, exec |
 
 **Brain State Machine (agent-brain.mjs):**
 The `agent-brain` daemon runs as a continuous systemd service on both Prime and all fleet VMs. It implements a fully robust, envelope-based pipeline.
@@ -418,7 +407,7 @@ The Setup tab stores configurable defaults in Firestore `config/settings`:
 1. SSHs into each fleet agent VM and curls `localhost:18789/health`
 2. Records: status (healthy/unhealthy), latency, HTTP code, consecutive failures
 3. Writes health data to Firestore at `primes/{id}/fleet/{agent}.health`
-4. Auto-recovery: after 3 consecutive failures, restarts `openclaw-gateway` container
+4. Auto-recovery: after 3 consecutive failures, restarts `agent-brain-gateway` systemd service
 5. Dashboard Fleet tab shows health data in a "Gateway Health" column per agent
 
 ### Fleet Agent Workspaces
@@ -533,7 +522,6 @@ architect-prime/
 │   └── deploy/                       # Standalone install/uninstall scripts
 ├── corekit/                          # MODULE 3: CoreKit Runtime (59 VM-side scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
-│   ├── gateway/                      # OpenClaw gateway management (5 scripts)
 │   ├── chat/                         # Google Chat / DWD integration (3 scripts)
 │   ├── brain/                        # Brain execution layer (11 scripts)
 │   ├── daemon/                       # Ears/Mouth I/O services (8 files)
@@ -542,7 +530,7 @@ architect-prime/
 │   ├── system/                       # Cross-cutting utilities (2 scripts)
 │   └── config/                       # Templates, service files, agent-types
 ├── brain/                            # MODULE 4: Agent Identity
-│   ├── agents/main/                  # OpenClaw agent skeleton (auth, sessions)
+│   ├── agents/main/                  # Brain agent skeleton (auth, sessions)
 │   ├── prime/                        # Prime brain workspaces
 │   │   ├── cortex/                   # Orchestrator (default): SOUL, IDENTITY, TOOLS, MEMORY
 │   │   ├── temporal-research/        # Web search: SOUL, IDENTITY
@@ -594,11 +582,6 @@ architect-prime/
 | | `fleet-verify` | SSH-checks a fleet agent's gateway + DWD health |
 | | `fleet-upgrade` | Upgrades a running fleet agent's CoreKit |
 | | `fleet-health-check` | SSH-checks fleet agent gateway health, auto-recovers after 3 failures |
-| **gateway/** | `render-config` | Renders JSON5 config template with string-aware comment stripping |
-| | `discover-models` | Queries Vertex AI Model Garden, probes availability, outputs JSON catalog |
-| | `upgrade-openclaw` | Rebuilds OpenClaw container from pinned commit |
-| | `bootstrap_smoke.sh` | Vertex AI smoke test (3 attempts with backoff) |
-| | `oc` | Thin wrapper for `docker exec openclaw-gateway openclaw` |
 | **chat/** | `chat-send` | Sends messages to Google Chat via DWD |
 | | `chat-read` | Reads messages from Google Chat via DWD |
 | | `dwd-token` | Generates DWD OAuth2 tokens via GCE metadata signJwt (identity-locked) |
@@ -606,8 +589,10 @@ architect-prime/
 | | `agent-mouth.mjs` | JSONL-native output processing (tailer, turn state machine, status updates, classify, deliver) |
 | | `mouth-classify-prompt.md` | LLM classify/voice prompt template (loaded at startup) |
 | | `mouth-status-prompts.md` | Status update prompt templates: ack (5s) + two-minute (120s) |
-| | `start-agent-ears` | Container bootstrap wrapper for ears |
-| | `start-agent-mouth` | Container bootstrap wrapper for mouth |
+| | `start-agent-ears` | Service wrapper for ears |
+| | `start-agent-mouth` | Service wrapper for mouth |
+| | `start-agent-brain` | Service wrapper for brain orchestrator |
+| | `start-agent-introspect` | Service wrapper for introspect daemon |
 | | `ears-health-check` | Ears service health check |
 | | `mouth-health-check` | Mouth service health check |
 | **brain/** | `brain-telemetry-write` | Writes dispatch telemetry event to Firestore (fire-and-forget) |
@@ -631,17 +616,16 @@ architect-prime/
 
 | Path | Purpose |
 |------|---------|
-| `/opt/openclaw` | OpenClaw root (`OC_HOST_ROOT`) |
-| `/opt/openclaw/.openclaw/` | Config directory (bind-mounted into container) |
-| `/opt/openclaw/.openclaw/openclaw.json` | Gateway configuration |
-| `/opt/openclaw/.openclaw/workspace/` | Active workspace files |
-| `/opt/openclaw/.openclaw/workspace-{specialty}/` | Specialty workspace (fleet only) |
-| `/opt/openclaw/.openclaw/bin/` | CoreKit CLI tools |
-| `/opt/openclaw/.openclaw/corekit/` | Config files, templates, registry |
-| `/opt/openclaw/.openclaw/corekit/contracts.json` | Installed contracts (from `infra/contracts.json`) |
-| `/opt/openclaw/.openclaw/corekit/STATE.json` | Install provenance: ref, role, job, file hashes |
-| `/opt/openclaw/.openclaw/skills/` | Skill definitions |
-| `/root/.openclaw/.gateway-token` | Gateway auth token |
+| `/opt/corekit` | CoreKit root (`CORE_ROOT`) |
+| `/opt/corekit/bin/` | CoreKit CLI tools |
+| `/opt/corekit/corekit/` | Config files, templates, registry |
+| `/opt/corekit/corekit/contracts.json` | Installed contracts (from `infra/contracts.json`) |
+| `/opt/corekit/corekit/STATE.json` | Install provenance: ref, role, job, file hashes |
+| `/opt/corekit/corekit/brain/` | Host-native brain gateway app |
+| `/opt/corekit/workspace/` | Active workspace files |
+| `/opt/corekit/workspace-{specialty}/` | Specialty workspace (fleet only) |
+| `/opt/corekit/skills/` | Skill definitions |
+| `/opt/corekit/.gateway-token` | Gateway auth token |
 | `/var/log/fleet-agent-setup.log` | Bootstrap log (fleet VMs) |
 | `/var/log/agent-ears.log` | Ears service log |
 | `/var/log/agent-mouth.log` | Mouth service log |
@@ -665,10 +649,10 @@ architect-prime/
 2. **Contracts over documentation** — `contracts.json` is the single source of truth for cross-cutting values; `validate-contracts` enforces consistency at bootstrap and upgrade time
 3. **Modular manifests** — `install.sh --role prime|fleet --job devops|engineer` chains base + role + job fragments; each module is independently iterable
 4. **Boot stub pattern** — startup scripts live as `.sh` files on GitHub, not embedded in JS template literals
-5. **OpenClaw-native** — leverage the framework's agent loop, tools, memory, and session management
+5. **Native Brain Gateway** — leverage the framework's agent loop, tools, memory, and session management
 6. **Idempotent** — every script safely re-runnable; upgrades overwrite manifest files, never delete non-manifest files
 7. **Self-upgradable** — `upgrade-corekit` reads role/job from `STATE.json`, upgrades the correct fragment set, validates contracts
-8. **Fail fast at bootstrap, not runtime** — `validate-contracts` runs before container start; config schema violations caught in seconds, not as crash-loops
+8. **Fail fast at bootstrap, not runtime** — `validate-contracts` runs before services start; config schema violations caught in seconds, not as crash-loops
 9. **Preserve state across cycles** — service accounts and IAM bindings persist across fire/re-hire; STATE.json records role/job for idempotent upgrades
 10. **Human-auditable** — all communication logged in Firestore; structured JSON logging with mode, latency, first-chunk timing
 11. **Modular by module** — six top-level directories (`app/`, `infra/`, `corekit/`, `brain/`, `specialties/`, `skills/`) with minimal cross-dependencies; AI agents can focus on one module without understanding the whole repo
@@ -1278,6 +1262,15 @@ architect-prime/
 3. **Dynamic model registry** — `ensureModelRegistered()` in `agent-introspect.mjs` auto-adds models to OpenClaw models map. Bootstrap templates pre-seeded with 4 Claude models.
 4. **Anthropic-vertex provider patcher** — NEW `patch-anthropic-vertex` script fixes 2 bugs in bundled provider (`.ts→.js` manifest, ADC env identity check). Called from both bootstrap scripts.
 5. **Contracts** — `vertex.location`: `global` → `us-central1`, `gateway.timeoutSeconds`: `120` → `180`.
+
+### Completed: v2026.06.05.1.0 — Repository Cleanup & Brain Canonicalization
+> *Erased OpenClaw and Docker gateway files, migrated all brain/agent services to host-native systemd under /opt/corekit, updated bootstraps/installer, scrubbed references.*
+
+1. **Dead files deletion** — Removed 12+ legacy files including `upgrade-openclaw`, `vertex-claude-proxy`, OpenClaw config templates, and gateway service files.
+2. **Contracts v2** — Cleaned `infra/contracts.json` to version 2 schema, removing `openclaw` block, `gatewayRoute`, and legacy model fields.
+3. **Host-native services** — Migrated all daemons and wrappers to run natively on the host OS under `/opt/corekit` using systemd (`agent-brain-gateway.service`, `agent-ears.service`, etc.).
+4. **Bootstraps & installer** — Updated `infra/install.sh`, `upgrade-corekit`, `prime-bootstrap.sh`, and `fleet-bootstrap.sh` to target `/opt/corekit` layout directly.
+5. **Dashboard & verification** — Renamed all frontend/API occurrences of `openclawId` to `brainModelId`. Ran automated validation which successfully compiled the Next.js production build.
 
 ### Current: Next Phase — Process Maturity + Dashboard Process UI
 > *Goal: Dashboard UI for process management, process on/off per agent, SOUL.md audit/trim.*

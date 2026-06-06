@@ -37,9 +37,10 @@ const HTTP_TIMEOUT = 600_000;
 
 // Ears-specific config (from contracts or env)
 let EARS_CONFIG = { firestore_poll_ms: 3000, gchat_poll_ms: 5000, dedup_window_ms: 300000, cooldown_ms: 2000 };
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 let CONTRACTS = { ears: {}, vertex: {} };
 try {
-  CONTRACTS = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
+  CONTRACTS = JSON.parse(readFileSync(CORE_DIR + '/corekit/contracts.json', 'utf8'));
   if (CONTRACTS.ears) EARS_CONFIG = { ...EARS_CONFIG, ...CONTRACTS.ears };
 } catch {}
 
@@ -66,7 +67,7 @@ const DWD_SIGNER_SA = process.env.DWD_SIGNER_SA || '';
 const CHAT_API = 'https://chat.googleapis.com/v1';
 
 // Identity lockdown: refuse to impersonate any email other than the locked one
-const IDENTITY_LOCK_PATH = '/home/node/.openclaw/.identity-lock';
+const IDENTITY_LOCK_PATH = CORE_DIR + '/.identity-lock';
 try {
   const lockedEmail = readFileSync(IDENTITY_LOCK_PATH, 'utf8').trim();
   if (lockedEmail && AGENT_USER_EMAIL && lockedEmail !== AGENT_USER_EMAIL) {
@@ -85,23 +86,18 @@ const FIRESTORE_URL = GCP_PROJECT
 // Gateway auth token
 let GATEWAY_TOKEN = 'no-token';
 try {
-  GATEWAY_TOKEN = readFileSync('/root/.openclaw/.gateway-token', 'utf8').trim();
-} catch {
-  try {
-    const cfg = JSON.parse(readFileSync('/home/node/.openclaw/openclaw.json', 'utf8'));
-    GATEWAY_TOKEN = cfg.gateway?.auth?.token || 'no-token';
-  } catch {}
-}
+  GATEWAY_TOKEN = readFileSync(CORE_DIR + '/.gateway-token', 'utf8').trim();
+} catch {}
 
 // Gateway route from contracts.json
-let GATEWAY_ROUTE = 'openclaw/cortex';
+let GATEWAY_ROUTE = 'brain/cortex';
 try {
-  const contracts = JSON.parse(readFileSync('/home/node/.openclaw/corekit/contracts.json', 'utf8'));
+  const contracts = JSON.parse(readFileSync(CORE_DIR + '/corekit/contracts.json', 'utf8'));
   GATEWAY_ROUTE = contracts.agents?.gatewayRoute || GATEWAY_ROUTE;
 } catch {}
 
 // TASK.json path (for mouth tracking)
-const TASK_JSON = '/home/node/.openclaw/workspace/TASK.json';
+const TASK_JSON = CORE_DIR + '/workspace/TASK.json';
 
 // ---- Shared state ----
 const recentMessages = new Map();            // dedup by content hash
@@ -122,7 +118,7 @@ function log(msg, meta = {}) {
 const SCRIPT_DIR = dirname(new URL(import.meta.url).pathname);
 let PREPROCESS_PROMPT = '';
 if (PREPROCESS_ENABLED) {
-  for (const base of [SCRIPT_DIR, '/home/node/.openclaw/bin']) {
+  for (const base of [SCRIPT_DIR, CORE_DIR + '/bin']) {
     try { PREPROCESS_PROMPT = readFileSync(`${base}/ears-preprocess-prompt.md`, 'utf8'); break; } catch {}
   }
   if (!PREPROCESS_PROMPT) log('WARN: preprocess enabled but prompt file not found');

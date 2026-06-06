@@ -11,7 +11,7 @@
 # infrastructure operations or modify state.
 #
 # For fleet operations, use fleet-hire, fleet-fire, etc.
-# Those are separate skills invoked by OpenClaw via exec.
+# Those are separate skills invoked by the brain via exec.
 #
 # Usage:
 #   agent-ask "What is the latest GKE pricing?"
@@ -19,7 +19,7 @@
 #
 # Environment:
 #   AGENT_ID     — Agent identifier (default: prime)
-#   OC_HOST_ROOT — OpenClaw host root (default: /opt/openclaw)
+#   CORE_DIR     — CoreKit host root (default: /opt/corekit)
 #   GEMINI_MODEL — Model to use (default: from contracts.json or gemini-2.5-flash)
 #   REGION       — GCP region (default: from contracts.json or global)
 # ============================================================
@@ -27,14 +27,10 @@ set -euo pipefail
 
 # ---- CONFIG ----
 AGENT_ID="${AGENT_ID:-prime}"
-OC_HOST_ROOT="${OC_HOST_ROOT:-/opt/openclaw}"
-OC_DIR="${OC_HOST_ROOT}/.openclaw"
-if [[ ! -d "$OC_DIR" && -d "${HOME}/.openclaw" ]]; then
-  OC_DIR="${HOME}/.openclaw"
-fi
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
 
 # Read defaults from contracts.json if available
-CONTRACTS_FILE="${OC_DIR}/corekit/contracts.json"
+CONTRACTS_FILE="${CORE_DIR}/corekit/contracts.json"
 DEFAULT_MODEL="gemini-2.5-flash"
 DEFAULT_REGION="global"
 if [[ -f "$CONTRACTS_FILE" ]]; then
@@ -47,8 +43,8 @@ REGION="${REGION:-$DEFAULT_REGION}"
 MAX_OUTPUT_TOKENS="${MAX_OUTPUT_TOKENS:-4096}"
 TEMPERATURE="${TEMPERATURE:-0.7}"
 
-BUILD_PROMPT="${OC_DIR}/bin/build-system-prompt"
-CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
+BUILD_PROMPT="${CORE_DIR}/bin/build-system-prompt"
+CHAT_CONFIG="${CORE_DIR}/corekit/chat-config.json"
 
 # ---- HELPERS ----
 die() { echo "[agent-ask] [ERROR] $*" >&2; exit 1; }
@@ -92,7 +88,7 @@ esac
 # ---- Build system prompt ----
 SYSTEM_PROMPT=""
 if [[ -x "$BUILD_PROMPT" ]]; then
-  SYSTEM_PROMPT="$(AGENT_ID="$AGENT_ID" OC_HOST_ROOT="$OC_HOST_ROOT" "$BUILD_PROMPT" 2>/dev/null || true)"
+  SYSTEM_PROMPT="$(AGENT_ID="$AGENT_ID" CORE_DIR="$CORE_DIR" "$BUILD_PROMPT" 2>/dev/null || true)"
 fi
 if [[ -z "$SYSTEM_PROMPT" ]]; then
   SYSTEM_PROMPT="You are ${AGENT_ID}, an AI assistant. Answer questions accurately and concisely."

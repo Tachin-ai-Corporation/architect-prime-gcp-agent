@@ -59,8 +59,8 @@ echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=arc
 # Agent mouth logs (output classification + delivery)
 echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -30 /var/log/agent-mouth.log"
 
-# OpenClaw container logs (hooks, model calls, agent dispatch)
-echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo docker logs openclaw-gateway --tail 50 2>&1 | tail -50"
+# Brain Gateway logs (model calls, agent dispatch)
+echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-brain-gateway --no-pager -n 50"
 ```
 
 ## Dashboard API (also works via browser)

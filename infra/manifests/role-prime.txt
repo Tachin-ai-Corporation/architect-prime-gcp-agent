@@ -3,66 +3,65 @@
 # Installed by: infra/install.sh --role prime
 
 # Fleet lifecycle
-corekit/fleet/fleet-deploy .openclaw/bin/fleet-deploy
-corekit/fleet/fleet-monitor .openclaw/bin/fleet-monitor
-corekit/fleet/fleet-teardown .openclaw/bin/fleet-teardown
-corekit/fleet/fleet-hire .openclaw/bin/fleet-hire
-corekit/fleet/fleet-fire .openclaw/bin/fleet-fire
-corekit/fleet/fleet-status .openclaw/bin/fleet-status
-corekit/fleet/fleet-verify .openclaw/bin/fleet-verify
-corekit/fleet/fleet-upgrade .openclaw/bin/fleet-upgrade
-corekit/fleet/fleet-health-check .openclaw/bin/fleet-health-check
+corekit/fleet/fleet-deploy bin/fleet-deploy
+corekit/fleet/fleet-monitor bin/fleet-monitor
+corekit/fleet/fleet-teardown bin/fleet-teardown
+corekit/fleet/fleet-hire bin/fleet-hire
+corekit/fleet/fleet-fire bin/fleet-fire
+corekit/fleet/fleet-status bin/fleet-status
+corekit/fleet/fleet-verify bin/fleet-verify
+corekit/fleet/fleet-upgrade bin/fleet-upgrade
+corekit/fleet/fleet-health-check bin/fleet-health-check
 
 # Dashboard bridge
-corekit/dashboard/command-runner .openclaw/bin/command-runner
-corekit/gateway/discover-models .openclaw/bin/discover-models
+corekit/dashboard/command-runner bin/command-runner
 
 # Memory
-corekit/memory/core-memory-read .openclaw/bin/core-memory-read
-corekit/memory/core-memory-write .openclaw/bin/core-memory-write
-corekit/memory/core-memory-retire .openclaw/bin/core-memory-retire
-corekit/memory/update-deep-truths .openclaw/bin/update-deep-truths
-corekit/memory/session-summary .openclaw/bin/session-summary
+corekit/memory/core-memory-read bin/core-memory-read
+corekit/memory/core-memory-write bin/core-memory-write
+corekit/memory/core-memory-retire bin/core-memory-retire
+corekit/memory/update-deep-truths bin/update-deep-truths
+corekit/memory/session-summary bin/session-summary
 
 
 # Service files
-corekit/config/command-runner.service .openclaw/corekit/command-runner.service
-corekit/config/fleet-registry.json .openclaw/corekit/fleet-registry.json?
-corekit/config/fleet-health-check.service .openclaw/corekit/fleet-health-check.service
-corekit/config/fleet-health-check.timer .openclaw/corekit/fleet-health-check.timer
-corekit/config/agent-registry-prime.json .openclaw/corekit/agent-registry.json
-corekit/config/responsibilities-prime.json .openclaw/corekit/responsibilities-job.json
+corekit/config/command-runner.service corekit/command-runner.service
+corekit/config/fleet-registry.json corekit/fleet-registry.json?
+corekit/config/fleet-health-check.service corekit/fleet-health-check.service
+corekit/config/fleet-health-check.timer corekit/fleet-health-check.timer
+corekit/config/agent-registry-prime.json corekit/agent-registry.json
+corekit/config/responsibilities-prime.json corekit/responsibilities-job.json
 
 
 # Skills (Prime-only skills)
-skills/agent-ask/SKILL.md .openclaw/skills/agent-ask/SKILL.md
-skills/fleet-hire/SKILL.md .openclaw/skills/fleet-hire/SKILL.md
-skills/fleet-fire/SKILL.md .openclaw/skills/fleet-fire/SKILL.md
-skills/fleet-status/SKILL.md .openclaw/skills/fleet-status/SKILL.md
-skills/fleet-verify/SKILL.md .openclaw/skills/fleet-verify/SKILL.md
-skills/fleet-upgrade/SKILL.md .openclaw/skills/fleet-upgrade/SKILL.md
-skills/memory-consolidate/SKILL.md .openclaw/skills/memory-consolidate/SKILL.md
+skills/agent-ask/SKILL.md skills/agent-ask/SKILL.md
+skills/fleet-hire/SKILL.md skills/fleet-hire/SKILL.md
+skills/fleet-fire/SKILL.md skills/fleet-fire/SKILL.md
+skills/fleet-status/SKILL.md skills/fleet-status/SKILL.md
+skills/fleet-verify/SKILL.md skills/fleet-verify/SKILL.md
+skills/fleet-upgrade/SKILL.md skills/fleet-upgrade/SKILL.md
+skills/memory-consolidate/SKILL.md skills/memory-consolidate/SKILL.md
 
 # Prime brain workspaces (cortex + 5 sub-agents)
-brain/prime/cortex/IDENTITY.md .openclaw/workspace/IDENTITY.md
-brain/prime/cortex/SOUL.md .openclaw/workspace/SOUL.md
-brain/prime/cortex/TOOLS.md .openclaw/workspace/TOOLS.md
-brain/prime/cortex/MEMORY.md .openclaw/workspace/MEMORY.md
-brain/prime/cortex/checkpoint/progress.json .openclaw/workspace/checkpoint/progress.json?
+brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md
+brain/prime/cortex/SOUL.md workspace/SOUL.md
+brain/prime/cortex/TOOLS.md workspace/TOOLS.md
+brain/prime/cortex/MEMORY.md workspace/MEMORY.md
+brain/prime/cortex/checkpoint/progress.json workspace/checkpoint/progress.json?
 
 
 
-brain/prime/temporal-research/SOUL.md .openclaw/workspace-temporal-research/SOUL.md
-brain/prime/temporal-research/IDENTITY.md .openclaw/workspace-temporal-research/IDENTITY.md
+brain/prime/temporal-research/SOUL.md workspace-temporal-research/SOUL.md
+brain/prime/temporal-research/IDENTITY.md workspace-temporal-research/IDENTITY.md
 
-brain/prime/temporal-memory/SOUL.md .openclaw/workspace-temporal-memory/SOUL.md
-brain/prime/temporal-memory/IDENTITY.md .openclaw/workspace-temporal-memory/IDENTITY.md
+brain/prime/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.md
+brain/prime/temporal-memory/IDENTITY.md workspace-temporal-memory/IDENTITY.md
 
-brain/prime/prefrontal/SOUL.md .openclaw/workspace-prefrontal/SOUL.md
-brain/prime/prefrontal/IDENTITY.md .openclaw/workspace-prefrontal/IDENTITY.md
+brain/prime/prefrontal/SOUL.md workspace-prefrontal/SOUL.md
+brain/prime/prefrontal/IDENTITY.md workspace-prefrontal/IDENTITY.md
 
-brain/prime/motor/SOUL.md .openclaw/workspace-motor/SOUL.md
-brain/prime/motor/IDENTITY.md .openclaw/workspace-motor/IDENTITY.md
+brain/prime/motor/SOUL.md workspace-motor/SOUL.md
+brain/prime/motor/IDENTITY.md workspace-motor/IDENTITY.md
 
-brain/prime/cerebellum/SOUL.md .openclaw/workspace-cerebellum/SOUL.md
-brain/prime/cerebellum/IDENTITY.md .openclaw/workspace-cerebellum/IDENTITY.md
+brain/prime/cerebellum/SOUL.md workspace-cerebellum/SOUL.md
+brain/prime/cerebellum/IDENTITY.md workspace-cerebellum/IDENTITY.md

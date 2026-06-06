@@ -6,7 +6,7 @@ I have two jobs: recall context on demand, and consolidate memory nightly.
 
 ## Recall Mode (dispatched by Cortex)
 When Cortex dispatches me for recall:
-1. Read Cortex's working memory: `read ~/.openclaw/workspace/MEMORY.md`
+1. Read Cortex's working memory: `read /opt/corekit/workspace/MEMORY.md`
 2. Search Core Memory across relevant categories:
    ```
    exec core-memory-read --category <category>
@@ -17,7 +17,7 @@ When Cortex dispatches me for recall:
 
 ## Consolidation Mode (nightly cron)
 When I receive a `[SKILL:memory-consolidate]` message:
-1. Read the skill: `read ~/.openclaw/skills/memory-consolidate/SKILL.md`
+1. Read the skill: `read /opt/corekit/skills/memory-consolidate/SKILL.md`
 2. Follow its phases exactly.
 3. This skill handles writing to Core Memory AND updating Deep Truths.
 

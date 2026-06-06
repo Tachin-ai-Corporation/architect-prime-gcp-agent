@@ -2,11 +2,11 @@
 
 **Self-Bootstrapping AI Agent Factory for Google Cloud**
 
-Architect Prime is an **agent factory** — it creates, upgrades, monitors, and tears down autonomous AI agents running on your own GCP infrastructure. Each agent gets its own Compute Engine VM, a Docker-containerized [OpenClaw](https://github.com/openclaw/openclaw) brain powered by Vertex AI Gemini, and a Google Workspace identity for team collaboration via Google Chat.
+Architect Prime is an **agent factory** — it creates, upgrades, monitors, and tears down autonomous AI agents running on your own GCP infrastructure. Each agent gets its own Compute Engine VM, a Compute Engine host-native brain powered by Vertex AI Gemini, and a Google Workspace identity for team collaboration via Google Chat.
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.04.5.0`
+> **Current version:** `v2026.06.05.1.0`
 
 
 ---
@@ -62,7 +62,7 @@ After install, open the printed URL to access the dashboard.
 
 Open the dashboard → Enter a name (e.g., "alpha") → Click **Deploy Prime**.
 
-Your Prime will be ready in ~15 minutes. It runs on a Compute Engine VM (e2-medium) with a Docker-containerized OpenClaw brain featuring 6 specialized sub-agents powered by Vertex AI Gemini.
+Your Prime will be ready in ~15 minutes. It runs on a Compute Engine VM (e2-medium) with a Compute Engine host-native brain featuring 6 specialized sub-agents powered by Vertex AI Gemini.
 
 ### 2. Configure Domain-Wide Delegation (Optional)
 
@@ -112,7 +112,7 @@ Your GCP Project
 │   └── config/dwd                    → DWD configuration
 │
 ├── Prime VM (Compute Engine e2-medium, Ubuntu 22.04)
-│   ├── openclaw-gateway (Docker, --network host, port 18789)
+│   ├── agent-brain-gateway (systemd, port 18789)
 │   │   ├── cortex          — Gemini 3.1 Pro Preview — orchestrator (DEFAULT)
 │   │   ├── temporal-research — Gemini 2.5 Flash — web search (Vertex AI grounding)
 │   │   ├── temporal-memory — Gemini 2.5 Flash — memory/context recall
@@ -123,11 +123,11 @@ Your GCP Project
 │   ├── agent-brain (systemd)      → Brain state machine (intake → classify → decide → dispatch → synthesize)
 │   ├── agent-mouth (systemd)      → Output classification + delivery (strict LLM filter)
 │   ├── REST API: GET /api/primes/{id}/work, POST /api/primes/{id}/work/{workId}/respond
-│   ├── CoreKit (40 scripts)     → fleet, gateway, chat, brain, memory, dashboard, system
+│   ├── CoreKit (40 scripts)     → fleet, chat, brain, memory, dashboard, system
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
 └── Fleet Agent VMs (Compute Engine e2-medium, one per agent)
-    ├── openclaw-gateway (Docker) → Specialist AI brain (cortex on Gemini 3.1 Pro)
+    ├── agent-brain-gateway (systemd, port 18789) → Specialist AI brain (cortex on Gemini 3.1 Pro)
     ├── agent-ears (systemd)      → GChat polling via DWD (deterministic, fire-and-forget)
     ├── agent-mouth (systemd)     → Output classification + GChat delivery
     ├── CoreKit (role-specific)   → Manifest-installed tools
@@ -155,7 +155,7 @@ Dispatch flow: Cortex returns structured JSON decisions → `agent-brain` daemon
 - **Boot stub pattern** — VM startup scripts curl bash scripts from GitHub. Bootstrap changes only need `git push`, not a Cloud Run rebuild.
 - **Modular manifests** — `install.sh --role prime|fleet --job devops|swe|qa|pm|finance|data|security|assistant` chains base + role + job fragments. Each specialty is independently iterable.
 - **ADC authentication** — Pure Application Default Credentials via GCE metadata. No API keys, no service account key files.
-- **OpenClaw-native** — Full agent framework with conversation memory, tool execution, and workspace files. Not a custom LLM wrapper.
+- **Native Brain Gateway** — Full agent framework with conversation memory, tool execution, and workspace files. Not a custom LLM wrapper.
 
 ---
 
@@ -201,7 +201,6 @@ architect-prime/
 │
 ├── corekit/                          # MODULE 3: CoreKit Runtime (59 VM-side scripts)
 │   ├── fleet/                        # Fleet lifecycle (9 scripts)
-│   ├── gateway/                      # OpenClaw gateway management (5 scripts)
 │   ├── chat/                         # Google Chat / DWD integration (3 scripts)
 │   ├── brain/                        # Brain execution layer (11 scripts)
 │   ├── memory/                       # Memory subsystem (3 scripts)
@@ -211,7 +210,7 @@ architect-prime/
 │   └── config/                       # Templates, service files, agent-types
 │
 ├── brain/                            # MODULE 4: Agent Identity
-│   ├── agents/main/                  # OpenClaw agent skeleton (auth, sessions)
+│   ├── agents/main/                  # Brain agent skeleton (auth, sessions)
 │   ├── prime/                        # Prime brain workspaces (6 agents)
 │   │   ├── cortex/                   # SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md
 │   │   ├── temporal-research/        # SOUL.md, IDENTITY.md
@@ -266,20 +265,19 @@ The deploy API uses a **boot stub pattern**:
 2. Route creates a GCE VM with a ~10 line boot stub as the startup script
 3. Boot stub curls `infra/bootstrap/prime-bootstrap.sh` from GitHub
 4. `prime-bootstrap.sh` handles everything:
-   - Installs Docker CE
+   - Installs Node.js & npm on the GCE VM host
    - Installs CoreKit via `infra/install.sh --role prime` (chains `base.txt` + `role-prime.txt`)
-   - Builds OpenClaw Docker image from pinned commit (`v2026.4.15`)
-   - Renders gateway config from JSON5 template with contract values
-   - Starts OpenClaw container (`--network host`, port 18789)
-   - Applies ADC auth patch for GCE metadata fallback
-   - Warm-up probe through cortex route
-   - Installs `agent-ears` + `agent-mouth` as systemd services
+   - Runs `npm install` on the host directory `/opt/corekit/corekit/brain`
+   - Generates agent configuration `config.json` files
+   - Starts `agent-brain-gateway` systemd service (port 18789)
+   - Starts `agent-ears`, `agent-mouth`, `agent-brain`, and `agent-introspect` systemd services
 
 **Fleet agents** follow the same pattern via `infra/bootstrap/fleet-bootstrap.sh`:
 - `infra/install.sh --role fleet --job {specialty}` (chains `base.txt` + `role-fleet.txt` + `job-{specialty}.txt`)
 - Deploys specialty workspace, validates rendered config via `validate-contracts --file`
 - Writes `.identity-lock` (DWD impersonation guard)
-- Starts `agent-ears` + `agent-mouth` for Google Chat I/O
+- Starts `agent-brain-gateway` systemd service (port 18789)
+- Starts `agent-ears`, `agent-mouth`, and `agent-introspect` systemd services
 - Self-reports online status to Firestore
 
 **Key benefit**: Bootstrap changes only require a `git push` — no Cloud Run rebuild needed.
@@ -292,10 +290,24 @@ The deploy API uses a **boot stub pattern**:
 
 ```json
 {
-  "openclaw":  { "pin": "041266a6...", "pinLabel": "v2026.4.15" },
-  "vertex":    { "location": "us-central1", "primaryModel": "gemini-3.1-pro-preview", "subagentModel": "gemini-2.5-flash" },
-  "agents":    { "defaultId": "cortex", "gatewayRoute": "openclaw/cortex", "subagentIds": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"] },
-  "gateway":   { "port": 18789, "timeoutSeconds": 180, "bind": "loopback" }
+  "version": 2,
+  "vertex": {
+    "location": "us-central1",
+    "models": {
+      "cortex": "vertex-anthropic/claude-opus-4-6",
+      "cortexFallback": "vertex-google/gemini-2.5-pro",
+      "subagent": "vertex-google/gemini-2.5-flash"
+    }
+  },
+  "agents": {
+    "defaultId": "cortex",
+    "subagentIds": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"]
+  },
+  "gateway": {
+    "port": 18789,
+    "timeoutSeconds": 180,
+    "bind": "loopback"
+  }
 }
 ```
 
@@ -322,8 +334,8 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **Contracts over docs** | `contracts.json` single source of truth; `validate-contracts` enforces consistency |
 | **Modular manifests** | `install.sh --role --job` chains base + role + job fragments |
 | **Boot stub pattern** | Startup scripts are bash on GitHub — no JS template escaping |
-| **OpenClaw-native** | Full agent framework with memory, tools, and sessions |
-| **Docker-containerized** | OpenClaw runs in Docker (`--network host`) for isolation |
+| **Native Brain Gateway** | Full agent framework with memory, tools, and sessions |
+| **Host-native** | The brain gateway runs directly on the GCE host under systemd |
 | **Idempotent** | All installs, deploys, and upgrades are safely re-runnable |
 | **Self-upgradable** | Dashboard self-upgrades via Cloud Build; fleet agents upgraded individually via dashboard |
 | **Fail fast** | `validate-contracts` runs before container start — catches config errors in seconds |
@@ -413,6 +425,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.04.3.0** | Deploy progress fix, action-required popup UI |
 | **v2026.06.04.4.0** | Action required modal UI |
 | **v2026.06.04.5.0** | Vertex AI model routing fix — provider-aware prefixes, dynamic model registry, Anthropic-vertex provider patcher |
+| **v2026.06.05.1.0** | Repo Cleanup & Brain Canonicalization — Erased OpenClaw and Docker gateway files, migrated all brain/agent services to host-native systemd under /opt/corekit, updated bootstraps/installer, scrubbed references. |
 
 
 ---

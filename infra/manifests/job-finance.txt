@@ -2,32 +2,32 @@
 # Finance specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job finance
 
-specialties/finance/workspace/IDENTITY.md .openclaw/workspace-finance/IDENTITY.md
-specialties/finance/workspace/SOUL.md .openclaw/workspace-finance/SOUL.md
-specialties/finance/workspace/MEMORY.md .openclaw/workspace-finance/MEMORY.md
+specialties/finance/workspace/IDENTITY.md workspace-finance/IDENTITY.md
+specialties/finance/workspace/SOUL.md workspace-finance/SOUL.md
+specialties/finance/workspace/MEMORY.md workspace-finance/MEMORY.md
 
 # Workspace skills — Gmail
-skills/workspace-gmail/SKILL.md .openclaw/skills/workspace-gmail/SKILL.md
-skills/workspace-gmail/gmail-search .openclaw/bin/gmail-search
-skills/workspace-gmail/gmail-get .openclaw/bin/gmail-get
-skills/workspace-gmail/gmail-send .openclaw/bin/gmail-send
-skills/workspace-gmail/gmail-draft-create .openclaw/bin/gmail-draft-create
-skills/workspace-gmail/gmail-draft-send .openclaw/bin/gmail-draft-send
+skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/gmail-search bin/gmail-search
+skills/workspace-gmail/gmail-get bin/gmail-get
+skills/workspace-gmail/gmail-send bin/gmail-send
+skills/workspace-gmail/gmail-draft-create bin/gmail-draft-create
+skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send
 
 # Workspace skills — Sheets
-skills/workspace-sheets/SKILL.md .openclaw/skills/workspace-sheets/SKILL.md
-skills/workspace-sheets/sheets-get .openclaw/bin/sheets-get
-skills/workspace-sheets/sheets-append .openclaw/bin/sheets-append
-skills/workspace-sheets/sheets-update .openclaw/bin/sheets-update
+skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/sheets-get bin/sheets-get
+skills/workspace-sheets/sheets-append bin/sheets-append
+skills/workspace-sheets/sheets-update bin/sheets-update
 
 # Finance responsibilities
-specialties/finance/responsibilities-finance.json .openclaw/corekit/responsibilities-job.json
+specialties/finance/responsibilities-finance.json corekit/responsibilities-job.json
 
 # Specialty brain SOUL appends
-specialties/finance/brain/cortex/SOUL_APPEND.md .openclaw/corekit/specialties/finance/brain/cortex/SOUL_APPEND.md
-specialties/finance/brain/motor/SOUL_APPEND.md .openclaw/corekit/specialties/finance/brain/motor/SOUL_APPEND.md
-specialties/finance/brain/cerebellum/SOUL_APPEND.md .openclaw/corekit/specialties/finance/brain/cerebellum/SOUL_APPEND.md
+specialties/finance/brain/cortex/SOUL_APPEND.md corekit/specialties/finance/brain/cortex/SOUL_APPEND.md
+specialties/finance/brain/motor/SOUL_APPEND.md corekit/specialties/finance/brain/motor/SOUL_APPEND.md
+specialties/finance/brain/cerebellum/SOUL_APPEND.md corekit/specialties/finance/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty skills
-specialties/finance/skills/billing-ops/SKILL.md .openclaw/corekit/specialties/finance/skills/billing-ops/SKILL.md
-specialties/finance/skills/billing-ops/skill.json .openclaw/corekit/specialties/finance/skills/billing-ops/skill.json
+specialties/finance/skills/billing-ops/SKILL.md corekit/specialties/finance/skills/billing-ops/SKILL.md
+specialties/finance/skills/billing-ops/skill.json corekit/specialties/finance/skills/billing-ops/skill.json
