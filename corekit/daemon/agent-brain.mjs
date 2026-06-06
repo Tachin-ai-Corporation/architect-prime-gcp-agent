@@ -2345,8 +2345,33 @@ async function archiveEnvelopes() {
 
     // NOTE: blocked envelopes are NOT archived — they persist indefinitely for resumption
 
+    // 6. Orphaned children — active/pending C/T whose parent is cancelled/archived
+    const activeChildren = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
+    ]);
+    const pendingChildren = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
+    ]);
+    let orphanCount = 0;
+    for (const env of [...activeChildren, ...pendingChildren]) {
+      if (!env.parent_id) continue; // Only check children
+      const parent = await firestoreRead('work', env.parent_id);
+      if (!parent || ['cancelled', 'archived', 'failed'].includes(parent.status)) {
+        await firestoreWrite('work', env.id, {
+          ...env,
+          status: 'cancelled',
+          cancelled_at: now(),
+          cancelled_reason: parent ? `Parent ${env.parent_id} is ${parent.status}` : `Parent ${env.parent_id} not found`,
+          updated_at: now(),
+          completed_at: now(),
+        });
+        orphanCount++;
+      }
+    }
+    if (orphanCount) log('INFO', `Cancelled ${orphanCount} orphaned children (parent cancelled/archived/missing)`);
+
     totalArchived = failedCount + completeCount + needsInputCount + cancelledCount + timedOutCount;
-    log('INFO', `Archival sweep complete: ${totalArchived} total archived (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled, ${timedOutCount} timed_out)`);
+    log('INFO', `Archival sweep complete: ${totalArchived} total archived, ${orphanCount} orphans cancelled (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled, ${timedOutCount} timed_out)`);
   } catch (e) {
     log('WARN', `Archival sweep error: ${e.message}`);
   }
@@ -2852,8 +2877,50 @@ async function handleCancel(intake, decision) {
     `Cancelled: ${(decision.reasoning || '').substring(0, 100)}`);
   log('INFO', `Mission ${targetId} cancelled (was ${prevStatus})`);
 
+  // Cascade cancellation to children
+  await cascadeCancelChildren(targetId);
+
   // Deliver confirmation
   await deliverStatusUpdate(targetId, `✅ Cancelled mission: "${target.instruction.substring(0, 100)}"`);
+}
+
+// Cascade-cancel all active/pending children of a cancelled envelope
+async function cascadeCancelChildren(parentId) {
+  const token = await getAuthToken();
+  if (!token) return;
+  const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+  let nextPageToken = null;
+  let cancelCount = 0;
+  do {
+    const url = `${parentPath}/work?pageSize=300${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!resp.ok) break;
+    const data = await resp.json();
+    const docs = (data.documents || []).map(d => ({
+      id: d.name.split('/').pop(),
+      ...firestoreDecode(d.fields || {}),
+    }));
+    for (const child of docs) {
+      if (child.parent_id === parentId && ['active', 'pending', 'waiting', 'needs_input'].includes(child.status)) {
+        await firestoreWrite('work', child.id, {
+          status: 'cancelled',
+          cancelled_at: now(),
+          cancelled_reason: `Parent ${parentId} cancelled`,
+          updated_at: now(),
+          completed_at: now(),
+        });
+        await writeHistory(child.id, child.status, 'cancelled', 'brain', `Parent ${parentId} cancelled`);
+        cancelCount++;
+        // Recurse for grandchildren
+        await cascadeCancelChildren(child.id);
+      }
+    }
+    nextPageToken = data.nextPageToken || null;
+  } while (nextPageToken);
+  if (cancelCount > 0) log('INFO', `Cascade-cancelled ${cancelCount} children of ${parentId}`);
 }
 
 // ---- Envelope processing (Phase 3: memory-enriched Cortex loop) ----
