@@ -304,7 +304,6 @@ all_steps = [
     ("vm_created", "VM created", "pending"),
     ("prime_setup_done", "Prime-side setup complete", "pending"),
     ("packages_installing", "System packages installing", "pending"),
-    ("docker_installing", "Docker CE installing", "pending"),
     ("corekit_installing", "CoreKit installing", "pending"),
     ("brain_building", "Brain dependencies installing", "pending"),
     ("gateway_ready", "Brain gateway service started", "pending"),

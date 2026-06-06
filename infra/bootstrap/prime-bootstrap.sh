@@ -48,16 +48,6 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
 
-# ---- 2) Install Docker CE (for subagent/motor task execution) ----
-info "Installing Docker CE..."
-if ! command -v docker >/dev/null 2>&1; then
-  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-  sh /tmp/get-docker.sh
-fi
-systemctl enable docker
-systemctl start docker
-DOCKER_GID="$(getent group docker | cut -d: -f3)"
-[[ -n "${DOCKER_GID}" ]] || { echo "[ERROR] Could not determine docker group GID"; exit 1; }
 
 # ---- 3) Install Node.js & npm ----
 info "Installing Node.js & npm..."
@@ -125,7 +115,7 @@ c = json.load(open('${CONTRACTS}'))
 agent_config = {
   'model': c['vertex']['models'].get('cortex' if '${AGENT_ID}' == 'cortex' else 'subagent', 'vertex-google/gemini-2.5-flash'),
   'fallbackModel': c['vertex']['models'].get('cortexFallback', 'vertex-google/gemini-2.5-flash'),
-  'maxSteps': c['brain']['max_iterations'],
+  'maxSteps': c['dispatch']['max_iterations'],
 }
 json.dump(agent_config, open('${AGENT_DIR}/config.json', 'w'), indent=2)
 "
