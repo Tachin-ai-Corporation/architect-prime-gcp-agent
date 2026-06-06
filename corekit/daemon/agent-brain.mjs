@@ -1599,6 +1599,14 @@ function buildUserPrompt(mode, payload) {
         parameters: p.parameters || {},
       }));
     }
+    // Task decomposition guidance — prevents packing too many steps into one dispatch
+    decidePayload.dispatch_guidance = {
+      rule: 'ONE focused task per dispatch. Do NOT pack multiple sequential steps into a single dispatch instruction.',
+      bad_example: 'Step 1: check health. Step 2: read logs. Step 3: create file. Step 4: deploy. Step 5: verify.',
+      good_example: 'First dispatch: check service health and return findings. Then decide next step based on results.',
+      reasoning: 'Each motor dispatch has a limited step budget. Packing many steps causes timeouts and lost context on failure. Dispatch one task, get the result, then decide the next action.',
+      preferred_actions: 'For multi-step investigations, prefer "checkpoint_plan" (parallel tasks per checkpoint) or sequential dispatches (one task → review result → next task).',
+    };
     return JSON.stringify(decidePayload);
   }
   return JSON.stringify(payload);

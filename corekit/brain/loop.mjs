@@ -10,13 +10,16 @@ import { toGoogleSchema } from './tools.mjs';
  * Convert standard message history to Google Contents API format.
  */
 function convertMessagesToGoogle(messages) {
-  return messages.map(msg => {
-    // System messages are handled as systemInstruction, not in contents list.
-    // Map roles: 'assistant' -> 'model', 'system'/'tool'/'user' -> 'user'
-    const role = msg.role === 'assistant' ? 'model' : 'user';
+  const result = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
 
+    // System messages are handled as systemInstruction, skip here.
+    if (msg.role === 'system') continue;
+
+    // Assistant messages with tool calls → model turn with functionCall parts
     if (msg.toolCalls && msg.toolCalls.length > 0) {
-      return {
+      result.push({
         role: 'model',
         parts: msg.toolCalls.map(tc => ({
           functionCall: {
@@ -24,26 +27,38 @@ function convertMessagesToGoogle(messages) {
             args: tc.args,
           }
         }))
-      };
+      });
+      continue;
     }
 
+    // Tool responses → batch consecutive tool messages into a single user turn
+    // Gemini requires: N functionCall parts → N functionResponse parts in one turn
     if (msg.role === 'tool') {
-      return {
-        role: 'user',
-        parts: [{
+      const toolParts = [];
+      let j = i;
+      while (j < messages.length && messages[j].role === 'tool') {
+        const tm = messages[j];
+        toolParts.push({
           functionResponse: {
-            name: msg.toolName || msg.name,
-            response: typeof msg.content === 'object' ? msg.content : { result: msg.content }
+            name: tm.toolName || tm.name,
+            response: typeof tm.content === 'object' ? tm.content : { result: tm.content }
           }
-        }]
-      };
+        });
+        j++;
+      }
+      result.push({ role: 'user', parts: toolParts });
+      i = j - 1; // skip consolidated messages (loop will i++)
+      continue;
     }
 
-    return {
+    // Regular text messages
+    const role = msg.role === 'assistant' ? 'model' : 'user';
+    result.push({
       role,
       parts: [{ text: msg.content || '' }]
-    };
-  });
+    });
+  }
+  return result;
 }
 
 /**
