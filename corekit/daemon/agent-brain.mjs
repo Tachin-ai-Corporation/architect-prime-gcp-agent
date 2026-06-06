@@ -3830,33 +3830,43 @@ async function main() {
 
   // Startup recovery: re-process orphaned active/pending M envelopes
   // When brain restarts mid-processing, envelopes get stuck with no processor
-  // Use two simple equality queries to avoid composite index requirements
+  // Use raw REST query without orderBy to avoid composite index requirements
   try {
     const agentEmail = AGENT_EMAIL || AGENT_ID;
-    const activeEnvs = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
-    ]);
-    const pendingEnvs = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
-    ]);
-    const allEnvs = [...activeEnvs, ...pendingEnvs];
-    // Filter to M-type envelopes owned by this agent
-    const orphaned = allEnvs.filter(e => e.type === 'M' && e.owner === agentEmail);
-    if (orphaned.length > 0) {
-      log('INFO', `Startup recovery: found ${orphaned.length} orphaned M envelope(s)`);
-      for (const env of orphaned) {
-        log('INFO', `Recovering orphaned envelope: ${env.id} (status=${env.status}, title=${(env.title || '').substring(0, 60)})`);
-        try {
-          // Reset to pending so processEnvelope treats it as fresh
-          env.status = 'pending';
-          env.iteration = 0;
-          await firestoreWrite('work', env.id, { status: 'pending', iteration: 0, updated_at: now() });
-          await writeHistory(env.id, 'active', 'pending', 'brain', 'Recovered after brain restart');
-          const memory = await recallMemory(env.instruction);
-          await processEnvelope(env, memory);
-        } catch (e) {
-          log('ERROR', `Recovery failed for ${env.id}: ${e.message}`);
+    const token = await getAuthToken();
+    if (token) {
+      const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+      // Simple list all work docs — no filter, no index needed
+      const resp = await fetch(`${parentPath}/work?pageSize=200`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const docs = (data.documents || []).map(d => ({
+          id: d.name.split('/').pop(),
+          ...firestoreDecode(d.fields || {}),
+        }));
+        const orphaned = docs.filter(e => e.type === 'M' && e.owner === agentEmail &&
+          (e.status === 'active' || e.status === 'pending'));
+        if (orphaned.length > 0) {
+          log('INFO', `Startup recovery: found ${orphaned.length} orphaned M envelope(s)`);
+          for (const env of orphaned) {
+            log('INFO', `Recovering orphaned envelope: ${env.id} (status=${env.status}, title=${(env.title || '').substring(0, 60)})`);
+            try {
+              env.status = 'pending';
+              env.iteration = 0;
+              await firestoreWrite('work', env.id, { status: 'pending', iteration: 0, updated_at: now() });
+              await writeHistory(env.id, 'active', 'pending', 'brain', 'Recovered after brain restart');
+              const memory = await recallMemory(env.instruction);
+              await processEnvelope(env, memory);
+            } catch (e) {
+              log('ERROR', `Recovery failed for ${env.id}: ${e.message}`);
+            }
+          }
         }
+      } else {
+        log('WARN', `Startup recovery: work list failed HTTP ${resp.status}`);
       }
     }
   } catch (e) {
