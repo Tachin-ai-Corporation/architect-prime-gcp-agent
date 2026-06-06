@@ -2811,6 +2811,14 @@ async function processEnvelope(envelope, memoryContext) {
       log('INFO', `Normalized delegate → dispatch to ${decision.agent}`);
     }
 
+    // 3b. Synonym: 'execute' → dispatch
+    if (decision.action === 'execute') {
+      decision.action = 'dispatch';
+      decision.agent = decision.agent || decision.target_agent;
+      decision.task = decision.task || decision.instruction;
+      log('INFO', `Normalized execute → dispatch to ${decision.agent}`);
+    }
+
     // 4. Synthesize: intent:"synthesize" or synthesis field present (no action)
     if (!decision.action && (decision.intent === 'synthesize' || decision.synthesis !== undefined)) {
       decision.action = 'synthesize';
