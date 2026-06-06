@@ -720,7 +720,7 @@ async function pollBrainV3Envelopes() {
         _deliveredEnvelopes.delete(envId);
         log('Envelope reopened (delivered_at cleared), re-eligible for delivery', { envId });
       }
-      if (f.parent_id?.stringValue) continue; // Only deliver top-level envelopes
+      // delivery_status='pending' is the authoritative signal — no parent_id filter needed
 
       // Mark as delivered immediately to prevent duplicates
       _deliveredEnvelopes.add(envId);
