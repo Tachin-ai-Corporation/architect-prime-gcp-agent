@@ -2116,7 +2116,11 @@ async function archiveEnvelopes() {
         completeCount++;
         continue;
       }
-      // Top-level envelopes: require memory_written before archiving (safety gate)
+      // Top-level envelopes: require delivery AND memory before archiving
+      if (env.delivery_status === 'pending') {
+        // DO NOT archive — mouth hasn't delivered this to the user yet
+        continue;
+      }
       const envAge = env.completed_at || env.updated_at || env.created_at;
       if (envAge && envAge < completeCutoff) {
         if (env.memory_written) {
