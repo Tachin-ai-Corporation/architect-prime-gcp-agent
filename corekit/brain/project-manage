@@ -99,11 +99,11 @@ for doc in docs:
     print(f'  {pid}')
     print(f'    Name:        {name}')
     print(f'    Status:      {status}')
-    print(f'    Description: {(desc or \"\")[:120]}')
+    print(f'    Description: {(desc or chr(32))[:120]}')
     if 'standardProcesses' in fields:
         procs = extract_value(fields['standardProcesses'])
         if procs:
-            print(f'    Processes:   {", ".join(procs)}')
+            print('    Processes:   ' + ', '.join(procs))
     print()
 
 print(f'Total: {len(docs)} projects')
@@ -236,12 +236,16 @@ if result.returncode != 0:
     print(f'ERROR: Failed to create project: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
-print(f\"Created project '{project_id}'.\")
-print(f'  Name:        {new_project[\"name\"]}')
-print(f'  Status:      {new_project[\"status\"]}')
-print(f'  Description: {new_project[\"description\"][:120]}')
-if new_project.get('standardProcesses'):
-    print(f'  Processes:   {\", \".join(new_project[\"standardProcesses\"])}')
+nm = new_project.get('name', '')
+st = new_project.get('status', '')
+ds = new_project.get('description', '')[:120]
+sp = new_project.get('standardProcesses')
+print(f'Created project \'{project_id}\'.')
+print(f'  Name:        {nm}')
+print(f'  Status:      {st}')
+print(f'  Description: {ds}')
+if sp:
+    print('  Processes:   ' + ', '.join(sp))
 "
     ;;
 
@@ -361,7 +365,7 @@ if result.returncode != 0:
     print(f'ERROR: Failed to update project: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
-print(f\"Updated project '{target_id}'.\")
+print(f'Updated project \'{target_id}\'.')
 "
     ;;
 
@@ -447,7 +451,7 @@ if result.returncode != 0:
     print(f'ERROR: Failed to archive project: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
-print(f\"Archived project '{target_id}'.\")
+print(f'Archived project \'{target_id}\'.')
 "
     ;;
 
@@ -535,7 +539,7 @@ if result.returncode != 0:
     print(f'ERROR: Failed to complete project: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
-print(f\"Completed project '{target_id}'.\")
+print(f'Completed project \'{target_id}\'.')
 "
     ;;
 
