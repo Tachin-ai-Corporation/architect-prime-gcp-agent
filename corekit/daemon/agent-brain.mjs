@@ -2261,7 +2261,7 @@ async function archiveEnvelopes() {
     let failedCount = 0;
     for (const env of failed) {
       if (env.created_at && env.created_at < failedCutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'stale_failed', updated_at: now() });
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'stale_failed', delivery_status: 'delivered', updated_at: now() });
         failedCount++;
       }
     }
@@ -2277,7 +2277,7 @@ async function archiveEnvelopes() {
     for (const env of complete) {
       // Child envelopes (have parent_id) never need delivery — archive immediately
       if (env.parent_id) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'child_complete', updated_at: now() });
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'child_complete', delivery_status: 'delivered', updated_at: now() });
         completeCount++;
         continue;
       }
@@ -2290,12 +2290,12 @@ async function archiveEnvelopes() {
       if (envAge && envAge < completeCutoff) {
         if (env.memory_written) {
           // Memory confirmed written — safe to archive
-          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', updated_at: now() });
+          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', delivery_status: 'delivered', updated_at: now() });
           completeCount++;
         } else if (envAge < forceArchiveCutoff) {
           // Force-archive very old envelopes even without memory flag (safety fallback)
           log('WARN', `Force-archiving envelope without memory_written: ${env.id} (age > ${ARCHIVE_AGE_DAYS}d)`);
-          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered_no_memory', updated_at: now() });
+          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered_no_memory', delivery_status: 'delivered', updated_at: now() });
           completeCount++;
         }
       }
@@ -2310,7 +2310,7 @@ async function archiveEnvelopes() {
     let needsInputCount = 0;
     for (const env of needsInput) {
       if (env.updated_at && env.updated_at < needsInputCutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'unanswered', updated_at: now() });
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'unanswered', delivery_status: 'delivered', updated_at: now() });
         needsInputCount++;
         log('WARN', `Archived unanswered needs_input envelope: ${env.id} (last updated ${env.updated_at})`);
       }
@@ -2323,7 +2323,7 @@ async function archiveEnvelopes() {
     let cancelledCount = 0;
     for (const env of cancelled) {
       if (env.cancelled_at && env.cancelled_at < failedCutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'cancelled', updated_at: now() });
+        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'cancelled', delivery_status: 'delivered', updated_at: now() });
         cancelledCount++;
       }
     }
@@ -2335,7 +2335,7 @@ async function archiveEnvelopes() {
     ]);
     let timedOutCount = 0;
     for (const env of timedOut) {
-      await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'timed_out', updated_at: now() });
+      await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'timed_out', delivery_status: 'delivered', updated_at: now() });
       timedOutCount++;
     }
     if (timedOutCount) log('INFO', `Archived ${timedOutCount} timed_out envelopes`);

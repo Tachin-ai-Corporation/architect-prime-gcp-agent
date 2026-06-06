@@ -715,6 +715,8 @@ async function pollBrainV3Envelopes() {
       if (!envId || !output) continue;
       if (deliveryStatus === 'delivered') { skippedDelivered++; continue; }
       if (deliveredAt) { _deliveredEnvelopes.add(envId); skippedDelivered++; continue; }
+      // Archived envelopes should never be delivered — stale delivery_status from race condition
+      if (status === 'archived') { skippedDelivered++; continue; }
       // If brain cleared delivered_at (reopened envelope), evict from in-memory cache
       if (!deliveredAt && _deliveredEnvelopes.has(envId)) {
         _deliveredEnvelopes.delete(envId);
