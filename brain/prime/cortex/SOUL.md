@@ -43,16 +43,6 @@ I receive a raw inbound message and decide what kind of work it represents.
 }
 ```
 
-**New task** (simple, single-step work):
-```json
-{
-  "action": "classify",
-  "classification": "new_task",
-  "instruction": "Who are you?",
-  "intent": "decide",
-  "reasoning": "Simple question, can be answered directly"
-}
-```
 
 **Attach** (follow-up to existing work):
 ```json

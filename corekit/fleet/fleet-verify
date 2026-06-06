@@ -117,9 +117,9 @@ else
   echo "  4. Is the VM running?"
   echo "     gcloud compute instances describe fleet-${AGENT_NAME} \\"
   echo "       --zone=\$(jq -r '.agents[\"${AGENT_NAME}\"].zone' ${REGISTRY_FILE}) \\"
-  echo "       --project=fleet-${AGENT_NAME}"
+  echo "       --project=\$(gcloud config get-value project 2>/dev/null)"
   echo "  5. Are agent-ears and agent-mouth running on the VM?"
-  echo "     gcloud compute ssh fleet-${AGENT_NAME} --command='systemctl status agent-ears agent-mouth'"
+  echo "     gcloud compute ssh fleet-${AGENT_NAME} --project=\$(gcloud config get-value project 2>/dev/null) --command='systemctl status agent-ears agent-mouth'"
   echo
   exit 1
 fi

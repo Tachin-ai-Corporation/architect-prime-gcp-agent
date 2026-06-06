@@ -42,7 +42,7 @@ import json; print(json.load(open('$PRIME_CONFIG')).get('primeId',''))
 " 2>/dev/null)" || true
 fi
 if [[ -z "$PRIME_ID" ]]; then
-  CHAT_CONFIG="${OC_DIR}/corekit/chat-config.json"
+  CHAT_CONFIG="${CORE_DIR}/corekit/chat-config.json"
   if [[ -f "$CHAT_CONFIG" ]]; then
     PRIME_ID="$(python3 -c "
 import json; print(json.load(open('$CHAT_CONFIG')).get('primeId',''))

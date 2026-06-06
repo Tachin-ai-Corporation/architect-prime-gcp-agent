@@ -25,8 +25,7 @@ while [[ $# -gt 0 ]]; do
     --help|-h)
       echo "Usage: fleet-teardown --name <agent-name>"
       echo ""
-      echo "Deletes the agent's VM and unlinks billing."
-      echo "The GCP project shell is preserved for re-hiring."
+      echo "Deletes the agent's VM. Service account is preserved for re-hiring."
       exit 0
       ;;
     *) die "Unknown arg: $1" ;;
@@ -157,7 +156,7 @@ write_deploy_step "sa_kept" "Service account preserved" "done" "${FLEET_SA_EMAIL
 # ---- 3. Mark as removed in Firestore (preserve doc for dashboard) ----
 if [[ -n "$PRIME_ID" ]]; then
   log "Marking as removed in Firestore: primes/${PRIME_ID}/fleet/${AGENT_NAME}"
-  write_deploy_step "teardown_complete" "Teardown complete" "done" "VM + SA removed" "removed"
+  write_deploy_step "teardown_complete" "Teardown complete" "done" "VM removed (service account preserved for re-hire)" "removed"
 fi
 
 # ---- 4. Update local registry ----

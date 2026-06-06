@@ -274,11 +274,6 @@ function extractAgentName(tc) {
       return input.agentId || input.agent || null;
     } catch { return null; }
   }
-  if (name === 'exec' || name === 'Bash') {
-    const cmdText = typeof tc.arguments === 'string' ? tc.arguments : (tc.arguments?.command || '');
-    const m = cmdText.match(/brain-exec\s+(?:--plan-exec\s+)?(\S+)/);
-    return m ? m[1] : null;
-  }
   return null;
 }
 

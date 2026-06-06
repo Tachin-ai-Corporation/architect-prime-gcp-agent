@@ -61,9 +61,7 @@ const BRAIN_MODEL = CONTRACTS.dispatch?.model || 'gemini-2.5-flash';
 const BRAIN_ROUTE = CORTEX_ROUTE;  // classify/decide/synthesize always use cortex
 
 // ---- Project contracts config ----
-const PROJECT_CONTEXT_MAX_TOKENS = CONTRACTS.projects?.context_max_tokens || 2000;
 const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
-const PROJECT_ARCHIVE_DAYS = CONTRACTS.projects?.archive_completed_after_days || 30;
 
 // ---- Context forwarding budgets (chars per prior step) ----
 const CTX_DISPATCH_SUCCESS = CONTRACTS.dispatch?.ctx_dispatch_success || 4000;
@@ -158,7 +156,7 @@ const CORTEX_SCHEMAS = {
   classify: {
     type: 'OBJECT',
     properties: {
-      classification: { type: 'STRING', enum: ['new_mission', 'attach', 'continue', 'cancel', 'info_only'] },
+      classification: { type: 'STRING', enum: ['new_mission', 'attach', 'continue', 'cancel'] },
       instruction:    { type: 'STRING' },
       intent:         { type: 'STRING' },
       reasoning:      { type: 'STRING' },
@@ -1278,12 +1276,6 @@ async function resumeProcessPlan(mission) {
 }
 
 
-// Context entry kinds and their display icons
-const CONTEXT_KIND_LABELS = {
-  drive_folder: 'drive_folder', sheet: 'sheet', doc: 'doc',
-  dataset: 'dataset', url: 'url', template: 'template',
-  people: 'people', convention: 'convention',
-};
 
 /**
  * Merge two context packets (maps of key→entry). Child wins on key collision.
@@ -1739,7 +1731,7 @@ function buildUserPrompt(mode, payload) {
       classification_guidance: {
         blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
-        dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as \"info_only\" and reference the prior result, or classify as \"attach\" to add follow-up context. Only create new_mission if the inbound is genuinely different work.',
+        dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as "attach" to add follow-up context to the prior mission. Only create new_mission if the inbound is genuinely different work.',
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
         required_processes: 'CRITICAL: Projects may define required_processes — activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
       },
@@ -2521,14 +2513,13 @@ async function processIntake(intake) {
 
   log('INFO', `Classify result: ${decision.classification || decision.action}`);
 
-  // Create envelope based on classification — info_only and new_task both route through new_mission
-  const classification = (decision.classification === 'new_task' || decision.classification === 'info_only')
-    ? 'new_mission' : (decision.classification || 'new_mission');
+  // Normalize classification
+  const classification = decision.classification || 'new_mission';
 
   // Quick ack — generate text now, inject as C→T after M envelope is created
   let pendingAckText = null;
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent
-      && classification === 'new_mission' && decision.classification !== 'info_only') {
+      && classification === 'new_mission') {
     const recentMissions = await scanRecentMissions(5);
     pendingAckText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
     intake.quick_ack_sent = true;
@@ -2657,13 +2648,13 @@ async function handleAttach(intake, decision, memoryContext) {
   log('INFO', `Attach: intake ${intake.id} → target ${targetId}`);
 
   if (!targetId) {
-    log('WARN', `Attach missing attach_to field, treating as new_task`);
+    log('WARN', `Attach missing attach_to field, treating as new_mission`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
   const targetEnv = await firestoreRead('work', targetId);
   if (!targetEnv) {
-    log('WARN', `Attach target ${targetId} not found, treating as new_task`);
+    log('WARN', `Attach target ${targetId} not found, treating as new_mission`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
@@ -2965,7 +2956,7 @@ async function processEnvelope(envelope, memoryContext) {
         taskTitle: 'Synthesize answer',
         taskOutput: decision.synthesis || decision.response,
         taskIntent: 'synthesize',
-        deliveryStatus: envelope.parent_id ? 'internal' : 'pending',
+        deliveryStatus: 'internal',
       });
 
       envelope.output = decision.synthesis || decision.response;

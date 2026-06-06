@@ -62,14 +62,14 @@ apt-get update -qq
 apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
 
 
-# ---- 3) Install Node.js & npm ----
+# ---- 2) Install Node.js & npm ----
 info "Installing Node.js & npm..."
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y -qq nodejs
 fi
 
-# ---- 4) Install CoreKit via manifest ----
+# ---- 3) Install CoreKit via manifest ----
 info "Installing CoreKit..."
 mkdir -p "${CORE_DIR}"
 curl -sfL "${CORE_BASE}/infra/install.sh" -o /tmp/install.sh
@@ -80,7 +80,7 @@ CORE_REF="${CORE_REF}" \
   CORE_ROOT="${CORE_ROOT}" \
   bash /tmp/install.sh --role fleet --job "${SPECIALTY}"
 
-# ---- 5) Read contracts.json for cross-cutting values ----
+# ---- 4) Read contracts.json for cross-cutting values ----
 CONTRACTS="${CORE_DIR}/corekit/contracts.json"
 if [[ -f "$CONTRACTS" ]]; then
   C_LOCATION="$(python3 -c "import json; print(json.load(open('$CONTRACTS'))['vertex']['location'])")"
@@ -92,7 +92,7 @@ else
   C_GATEWAY_PORT="18789"
 fi
 
-# ---- 6) Save gateway token for ears/mouth ----
+# ---- 5) Save gateway token for ears/mouth ----
 echo "${MY_TOKEN}" > "${CORE_DIR}/.gateway-token"
 chmod 600 "${CORE_DIR}/.gateway-token"
 
@@ -100,13 +100,13 @@ chmod 600 "${CORE_DIR}/.gateway-token"
 # PHASE 2 — Brain Module setup
 # ============================================================
 
-# ---- 7) Install brain dependencies ----
+# ---- 6) Install brain dependencies ----
 info "Installing brain module dependencies..."
 cd "${CORE_DIR}/corekit/brain"
 npm install --omit=dev 2>&1 | tail -5
 chown -R 1000:1000 node_modules 2>/dev/null || true
 
-# ---- 8) Write agent configs from contracts ----
+# ---- 7) Write agent configs from contracts ----
 info "Writing agent configs..."
 C_SUBAGENT_IDS="$(python3 -c "
 import json
@@ -134,7 +134,7 @@ json.dump(agent_config, open('${AGENT_DIR}/config.json', 'w'), indent=2)
 "
 done
 
-# ---- 9) Start brain as systemd service ----
+# ---- 8) Start brain as systemd service ----
 info "Starting brain gateway service..."
 cat > /etc/systemd/system/agent-brain-gateway.service <<UNIT
 [Unit]
@@ -162,7 +162,7 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now agent-brain-gateway
 
-# ---- 10) Wait for brain gateway readiness ----
+# ---- 9) Wait for brain gateway readiness ----
 info "Waiting for brain gateway..."
 WAITED=0
 until curl -sf http://127.0.0.1:${C_GATEWAY_PORT}/healthz > /dev/null 2>&1; do
@@ -171,7 +171,7 @@ until curl -sf http://127.0.0.1:${C_GATEWAY_PORT}/healthz > /dev/null 2>&1; do
 done
 info "Brain gateway is ready (took ~${WAITED}s)."
 
-# ---- 11) Warm-up probe (pre-warm ADC tokens) ----
+# ---- 10) Warm-up probe (pre-warm ADC tokens) ----
 info "Running warm-up probe..."
 curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \
@@ -183,7 +183,7 @@ curl -s --max-time 30 -X POST "http://localhost:${C_GATEWAY_PORT}/v1/chat/comple
 # PHASE 3 — finalize
 # ============================================================
 
-# ---- 12) Write chat-config.json (ears uses this to select gchat channel) ----
+# ---- 11) Write chat-config.json (ears uses this to select gchat channel) ----
 if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   info "Writing Google Chat config..."
   cat > "${CORE_DIR}/corekit/chat-config.json" <<CHATCFG
@@ -203,14 +203,14 @@ if [[ -n "${AGENT_USER_EMAIL}" ]]; then
 CHATCFG
 fi
 
-# ---- 12b) Write identity lockfile ----
+# ---- 11b) Write identity lockfile ----
 if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   echo "${AGENT_USER_EMAIL}" > "${CORE_DIR}/.identity-lock"
   chmod 444 "${CORE_DIR}/.identity-lock"
   info "Identity lock: ${AGENT_USER_EMAIL}"
 fi
 
-# ---- 12c) Shared workspace architecture ----
+# ---- 11c) Shared workspace architecture ----
 info "Setting up shared workspace architecture..."
 SHARED_DIR="${CORE_DIR}/shared"
 mkdir -p "$SHARED_DIR"
@@ -220,19 +220,19 @@ for dir in "${CORE_DIR}"/workspace*; do
   fi
 done
 
-# ---- 12d) Final permissions sweep ----
+# ---- 11d) Final permissions sweep ----
 info "Final permissions sweep..."
 find "${CORE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${CORE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 13) Run assemble-tools for this agent type ----
+# ---- 12) Run assemble-tools for this agent type ----
 ASSEMBLE="${CORE_DIR}/bin/assemble-tools"
 if [[ -x "$ASSEMBLE" ]]; then
   info "Assembling TOOLS.md for fleet specialty: ${SPECIALTY}"
   CORE_ROOT="${CORE_ROOT}" "$ASSEMBLE" "${SPECIALTY}" || warn "assemble-tools failed"
 fi
 
-# ---- 14) Install agent-ears, agent-mouth, agent-brain, agent-introspect as systemd services ----
+# ---- 13) Install agent-ears, agent-mouth, agent-brain, agent-introspect as systemd services ----
 info "Installing systemd services..."
 for svc in agent-ears agent-mouth agent-brain agent-introspect; do
   SVC_SRC="${CORE_DIR}/corekit/${svc}.service"
@@ -251,7 +251,7 @@ else
   warn "ears/mouth not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
 fi
 
-# ---- 15) Report completion to Firestore via Prime's API ----
+# ---- 14) Report completion to Firestore via Prime's API ----
 if [[ -n "$DASHBOARD_URL" && -n "$PRIME_ID" ]]; then
   info "Reporting completion to dashboard..."
   STATUS_BODY="{\"agent\":\"${AGENT_ID}\",\"status\":\"online\",\"actionRequired\":{\"type\":\"workspace_user\",\"title\":\"Create Workspace user and add to Chat space\",\"instructions\":[\"Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME:-Agent}, Last: ${AGENT_LAST_NAME:-${AGENT_ID}}, Email: ${AGENT_USER_EMAIL}\",\"Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space\",\"The agent will come online automatically once the user exists\"]}}"

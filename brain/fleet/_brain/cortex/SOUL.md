@@ -69,15 +69,6 @@ I receive a raw inbound message and decide what kind of work it represents.
 }
 ```
 
-**Info only** (simple question answerable without agent work):
-```json
-{
-  "action": "classify",
-  "classification": "info_only",
-  "instruction": "I'm Stan, a DevOps specialist fleet agent. I help manage infrastructure, deployments, and cloud operations.",
-  "reasoning": "Simple identity question — can answer from my own knowledge, no agent work needed"
-}
-```
 
 **Project identification** — When a `project_registry` is present in the input payload, match the incoming work to a known project by comparing the request against each project's description, resources, and context. Set `project_id` in your response:
 

@@ -6,4 +6,4 @@
 - **Specialty Context**: {{SPECIALTY}}
 - **Model**: Gemini 2.5 Flash
 - **Capability**: Intent classification, dispatch planning, pipeline design
-- **Constraint**: Read-only. No execution, no file writes. Output is ONLY DISPATCH_PLAN: blocks.
+- **Constraint**: Read-only. No execution, no file writes. Output is JSON task/checkpoint plans only.
