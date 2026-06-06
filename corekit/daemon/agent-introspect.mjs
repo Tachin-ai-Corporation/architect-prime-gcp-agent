@@ -382,7 +382,7 @@ function handleBrainConfig() {
       daemonModels.ears = contracts?.ears?.preprocess?.model || null;
       daemonModels.mouth = contracts?.mouth?.model || null;
       // Brain daemon uses the Cortex gateway route — its LLM is whatever Cortex is set to
-      daemonModels.brain = contracts?.brain?.model || null;
+      daemonModels.brain = contracts?.dispatch?.model || null;
     } catch {}
   }
 
@@ -452,8 +452,8 @@ function handleSetModel(params) {
       contracts.mouth.model = daemonOverrides.mouth;
     }
     if (daemonOverrides.brain) {
-      if (!contracts.brain) contracts.brain = {};
-      contracts.brain.model = daemonOverrides.brain;
+      if (!contracts.dispatch) contracts.dispatch = {};
+      contracts.dispatch.model = daemonOverrides.brain;
     }
 
     writeFileSync(contractsPath, JSON.stringify(contracts, null, 2));

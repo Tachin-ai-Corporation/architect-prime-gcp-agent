@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.05.1.0`
+> **Current version:** `v2026.06.05.2.0`
 
 
 ---
@@ -127,7 +127,7 @@ Your GCP Project
 │   └── contracts.json           → Cross-cutting values (models, ports, agent IDs)
 │
 └── Fleet Agent VMs (Compute Engine e2-medium, one per agent)
-    ├── agent-brain-gateway (systemd, port 18789) → Specialist AI brain (cortex on Gemini 3.1 Pro)
+    ├── agent-brain-gateway (systemd, port 18789) → Specialist AI brain (cortex on Claude 3 Opus / Gemini)
     ├── agent-ears (systemd)      → GChat polling via DWD (deterministic, fire-and-forget)
     ├── agent-mouth (systemd)     → Output classification + GChat delivery
     ├── CoreKit (role-specific)   → Manifest-installed tools
@@ -140,7 +140,7 @@ Prime's brain uses **multi-agent dispatch** — Cortex is the user-facing orches
 
 | Agent | Model | Role |
 |-------|-------|------|
-| **cortex** | gemini-3.1-pro-preview | Plan executor + synthesizer (DEFAULT) |
+| **cortex** | claude-opus-4-6 (configurable) | Plan executor + synthesizer (DEFAULT) |
 | **temporal-research** | gemini-2.5-flash | Web search + URL fetching (Vertex AI grounding + web-fetch) |
 | **temporal-memory** | gemini-2.5-flash | Pure memory recall (NO external APIs) |
 | **prefrontal** | gemini-2.5-flash | Mandatory dispatch planner |
@@ -426,6 +426,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.04.4.0** | Action required modal UI |
 | **v2026.06.04.5.0** | Vertex AI model routing fix — provider-aware prefixes, dynamic model registry, Anthropic-vertex provider patcher |
 | **v2026.06.05.1.0** | Repo Cleanup & Brain Canonicalization — Erased OpenClaw and Docker gateway files, migrated all brain/agent services to host-native systemd under /opt/corekit, updated bootstraps/installer, scrubbed references. |
+| **v2026.06.05.2.0** | Post-Cleanup Audit Implementation — Vercel AI SDK replaced with direct vendor SDKs, contracts renamed brain key to dispatch, fossil variables cleaned up, agent-ask skill standardized. |
 
 
 ---

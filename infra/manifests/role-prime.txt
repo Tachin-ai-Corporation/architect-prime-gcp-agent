@@ -35,12 +35,19 @@ corekit/config/responsibilities-prime.json corekit/responsibilities-job.json
 
 # Skills (Prime-only skills)
 skills/agent-ask/SKILL.md skills/agent-ask/SKILL.md
+skills/agent-ask/skill.json skills/agent-ask/skill.json
 skills/fleet-hire/SKILL.md skills/fleet-hire/SKILL.md
+skills/fleet-hire/skill.json skills/fleet-hire/skill.json
 skills/fleet-fire/SKILL.md skills/fleet-fire/SKILL.md
+skills/fleet-fire/skill.json skills/fleet-fire/skill.json
 skills/fleet-status/SKILL.md skills/fleet-status/SKILL.md
+skills/fleet-status/skill.json skills/fleet-status/skill.json
 skills/fleet-verify/SKILL.md skills/fleet-verify/SKILL.md
+skills/fleet-verify/skill.json skills/fleet-verify/skill.json
 skills/fleet-upgrade/SKILL.md skills/fleet-upgrade/SKILL.md
+skills/fleet-upgrade/skill.json skills/fleet-upgrade/skill.json
 skills/memory-consolidate/SKILL.md skills/memory-consolidate/SKILL.md
+skills/memory-consolidate/skill.json skills/memory-consolidate/skill.json
 
 # Prime brain workspaces (cortex + 5 sub-agents)
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md

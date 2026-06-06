@@ -127,41 +127,41 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 11: brain config fields ----
-  C_BRAIN_POLL="$(read_contract 'brain.poll_interval_ms' 2>/dev/null || echo '')"
+  # ---- Check 11: dispatch config fields ----
+  C_BRAIN_POLL="$(read_contract 'dispatch.poll_interval_ms' 2>/dev/null || echo '')"
   if [[ -n "$C_BRAIN_POLL" ]]; then
     if [[ "$C_BRAIN_POLL" -ge 1000 && "$C_BRAIN_POLL" -le 30000 ]]; then
-      pass "brain.poll_interval_ms = ${C_BRAIN_POLL}"
+      pass "dispatch.poll_interval_ms = ${C_BRAIN_POLL}"
     else
-      fail "brain.poll_interval_ms = ${C_BRAIN_POLL} (expected 1000-30000)"
+      fail "dispatch.poll_interval_ms = ${C_BRAIN_POLL} (expected 1000-30000)"
     fi
   else
-    fail "brain.poll_interval_ms missing from contracts.json"
+    fail "dispatch.poll_interval_ms missing from contracts.json"
   fi
 
-  C_BRAIN_MAX="$(read_contract 'brain.max_iterations' 2>/dev/null || echo '')"
+  C_BRAIN_MAX="$(read_contract 'dispatch.max_iterations' 2>/dev/null || echo '')"
   if [[ -n "$C_BRAIN_MAX" ]]; then
     if [[ "$C_BRAIN_MAX" -ge 3 && "$C_BRAIN_MAX" -le 50 ]]; then
-      pass "brain.max_iterations = ${C_BRAIN_MAX}"
+      pass "dispatch.max_iterations = ${C_BRAIN_MAX}"
     else
-      fail "brain.max_iterations = ${C_BRAIN_MAX} (expected 3-50)"
+      fail "dispatch.max_iterations = ${C_BRAIN_MAX} (expected 3-50)"
     fi
   else
-    fail "brain.max_iterations missing from contracts.json"
+    fail "dispatch.max_iterations missing from contracts.json"
   fi
 
-  C_BRAIN_TIMEOUT="$(read_contract 'brain.gateway_timeout_ms' 2>/dev/null || echo '')"
+  C_BRAIN_TIMEOUT="$(read_contract 'dispatch.gateway_timeout_ms' 2>/dev/null || echo '')"
   if [[ -n "$C_BRAIN_TIMEOUT" ]]; then
-    pass "brain.gateway_timeout_ms = ${C_BRAIN_TIMEOUT}"
+    pass "dispatch.gateway_timeout_ms = ${C_BRAIN_TIMEOUT}"
   else
-    fail "brain.gateway_timeout_ms missing from contracts.json"
+    fail "dispatch.gateway_timeout_ms missing from contracts.json"
   fi
 
-  C_BRAIN_CTX="$(read_contract 'brain.context_token_budget' 2>/dev/null || echo '')"
+  C_BRAIN_CTX="$(read_contract 'dispatch.context_token_budget' 2>/dev/null || echo '')"
   if [[ -n "$C_BRAIN_CTX" ]]; then
-    pass "brain.context_token_budget = ${C_BRAIN_CTX}"
+    pass "dispatch.context_token_budget = ${C_BRAIN_CTX}"
   else
-    fail "brain.context_token_budget missing from contracts.json"
+    fail "dispatch.context_token_budget missing from contracts.json"
   fi
 
   # ---- Check 12: projects config fields ----

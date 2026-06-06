@@ -1,14 +1,8 @@
-// corekit/brain/tools.mjs — Tool Registry
+// corekit/brain/tools.mjs — Direct Vendor SDK Tool Registry
 //
-// Wraps CoreKit scripts as AI SDK tools with explicit JSON Schema.
-//
-// IMPORTANT: AI SDK v6 has a property name mismatch — tool() creates
-// {parameters} but the framework reads {inputSchema}. We must add
-// inputSchema manually to each tool definition.
-//
-// CoreKit scripts are in PATH via /opt/corekit/bin.
+// Exposes CoreKit scripts as simplified tool objects for direct vendor SDKs.
+// Removes Vercel AI SDK wrappers entirely.
 
-import { jsonSchema } from 'ai';
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
@@ -19,30 +13,18 @@ const execAsync = promisify(execCb);
 const TOOL_TIMEOUT = 120_000; // 2 minutes per tool call
 const BIN_DIR = process.env.BIN_DIR || '/opt/corekit/bin';
 
-// ---- Helper: Create tool with both parameters and inputSchema ----
-function makeTool({ description, parameters, execute }) {
-  return {
-    type: 'function',
-    description,
-    parameters,
-    inputSchema: parameters,  // AI SDK v6 framework reads this
-    execute,
-  };
-}
+// ---- Standard Tools definition ----
 
-// ---- Core tool: Shell command execution ----
-
-const runCommandSchema = jsonSchema({
-  type: 'object',
-  properties: {
-    command: { type: 'string', description: 'Shell command to execute. Use CoreKit scripts for agent capabilities.' },
-  },
-  required: ['command'],
-});
-
-export const runCommand = makeTool({
+export const runCommand = {
+  name: 'runCommand',
   description: `Execute a shell command on the agent's host. CoreKit scripts are available in PATH: agent-ask, web-fetch, chat-send, chat-read, drive-ls, drive-upload, drive-download, send-email, read-inbox, search-email, read-calendar, create-event, list-events, agent-status, brain-telemetry-write, brain-telemetry-read, task-log-write, task-log-read, responsibility-manage, project-manage, process-manage, work-log-read, skill-author, assemble-tools.`,
-  parameters: runCommandSchema,
+  schema: {
+    type: 'object',
+    properties: {
+      command: { type: 'string', description: 'Shell command to execute. Use CoreKit scripts for agent capabilities.' },
+    },
+    required: ['command'],
+  },
   execute: async ({ command }) => {
     try {
       const { stdout, stderr } = await execAsync(command, {
@@ -52,18 +34,17 @@ export const runCommand = makeTool({
         env: { ...process.env, PATH: `${BIN_DIR}:${process.env.PATH}` },
       });
       const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : '')).trim();
-      return output || '(no output)';
+      return { result: output || '(no output)' };
     } catch (err) {
-      return `ERROR: ${err.message}${err.stderr ? `\nSTDERR: ${err.stderr}` : ''}`;
+      return { error: `ERROR: ${err.message}${err.stderr ? `\nSTDERR: ${err.stderr}` : ''}` };
     }
   },
-});
+};
 
-// ---- File tools ----
-
-export const readFileTool = makeTool({
+export const readFileTool = {
+  name: 'readFile',
   description: 'Read the contents of a file from the agent workspace or filesystem.',
-  parameters: jsonSchema({
+  schema: {
     type: 'object',
     properties: {
       path: { type: 'string', description: 'Absolute or workspace-relative file path' },
@@ -71,7 +52,7 @@ export const readFileTool = makeTool({
       endLine: { type: 'number', description: 'End line (1-indexed, inclusive)' },
     },
     required: ['path'],
-  }),
+  },
   execute: async ({ path, startLine, endLine }) => {
     try {
       const content = readFileSync(path, 'utf8');
@@ -79,44 +60,46 @@ export const readFileTool = makeTool({
         const lines = content.split('\n');
         const start = (startLine || 1) - 1;
         const end = endLine || lines.length;
-        return lines.slice(start, end).join('\n');
+        return { result: lines.slice(start, end).join('\n') };
       }
-      return content;
+      return { result: content };
     } catch (err) {
-      return `ERROR: ${err.message}`;
+      return { error: `ERROR: ${err.message}` };
     }
   },
-});
+};
 
-export const writeFileTool = makeTool({
+export const writeFileTool = {
+  name: 'writeFile',
   description: 'Write content to a file. Creates the file if it does not exist.',
-  parameters: jsonSchema({
+  schema: {
     type: 'object',
     properties: {
       path: { type: 'string', description: 'Absolute or workspace-relative file path' },
       content: { type: 'string', description: 'File content to write' },
     },
     required: ['path', 'content'],
-  }),
+  },
   execute: async ({ path, content }) => {
     try {
       writeFileSync(path, content, 'utf8');
-      return `Written ${content.length} bytes to ${path}`;
+      return { result: `Written ${content.length} bytes to ${path}` };
     } catch (err) {
-      return `ERROR: ${err.message}`;
+      return { error: `ERROR: ${err.message}` };
     }
   },
-});
+};
 
-export const listDirTool = makeTool({
+export const listDirTool = {
+  name: 'listDir',
   description: 'List directory contents.',
-  parameters: jsonSchema({
+  schema: {
     type: 'object',
     properties: {
       path: { type: 'string', description: 'Directory path' },
     },
     required: ['path'],
-  }),
+  },
   execute: async ({ path }) => {
     try {
       const entries = readdirSync(path).map(name => {
@@ -128,12 +111,35 @@ export const listDirTool = makeTool({
           return `? ${name}`;
         }
       });
-      return entries.join('\n') || '(empty directory)';
+      return { result: entries.join('\n') || '(empty directory)' };
     } catch (err) {
-      return `ERROR: ${err.message}`;
+      return { error: `ERROR: ${err.message}` };
     }
   },
-});
+};
+
+// ---- Helper: Convert standard schema to Google uppercase type schema ----
+export function toGoogleSchema(schema) {
+  if (!schema) return undefined;
+  const copy = JSON.parse(JSON.stringify(schema));
+  const convert = (node) => {
+    if (node && typeof node === 'object') {
+      if (typeof node.type === 'string') {
+        node.type = node.type.toUpperCase();
+      }
+      if (node.properties && typeof node.properties === 'object') {
+        for (const k of Object.keys(node.properties)) {
+          convert(node.properties[k]);
+        }
+      }
+      if (node.items && typeof node.items === 'object') {
+        convert(node.items);
+      }
+    }
+  };
+  convert(copy);
+  return copy;
+}
 
 // ---- Tool set builders ----
 

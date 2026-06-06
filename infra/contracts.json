@@ -29,7 +29,7 @@
     "canonicalRegex": "^(v\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d+\\.\\d+)",
     "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
   },
-  "brain": {
+  "dispatch": {
     "model": "gemini-2.5-flash",
     "poll_interval_ms": 3000,
     "max_iterations": 12,

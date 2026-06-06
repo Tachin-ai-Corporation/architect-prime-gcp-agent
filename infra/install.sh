@@ -73,7 +73,7 @@ fi
 GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
 GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
 CORE_REF="${CORE_REF:-main}"
-OC_HOST_ROOT="${CORE_ROOT:-/opt/corekit}"
+INSTALL_ROOT="${CORE_ROOT:-/opt/corekit}"
 INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}"
 
 # For upgrade mode, override CORE_REF with the target
@@ -85,7 +85,7 @@ if [[ "$MODE" == "upgrade" ]]; then
 fi
 
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
-STATE_FILE="${OC_HOST_ROOT}/corekit/STATE.json"
+STATE_FILE="${INSTALL_ROOT}/corekit/STATE.json"
 
 # ---- Helpers ----
 info()  { echo -e "\n==> $*\n"; }
@@ -158,7 +158,7 @@ if [[ "$MODE" == "check" ]]; then
     file_path="$(echo "$match" | sed 's/"\([^"]*\)":"sha256:.*/\1/')"
     expected_hash="$(echo "$match" | sed 's/.*"sha256:\([^"]*\)"/\1/')"
 
-    full_path="${OC_HOST_ROOT}/${file_path}"
+    full_path="${INSTALL_ROOT}/${file_path}"
 
     if run test -f "$full_path"; then
       # Compute current hash
@@ -218,7 +218,7 @@ else
 fi
 
 echo "CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
-echo "Target  : ${OC_HOST_ROOT}"
+echo "Target  : ${INSTALL_ROOT}"
 echo "Role    : ${ROLE:-all (legacy)}"
 echo "Job     : ${JOB:-none}"
 
@@ -296,7 +296,7 @@ for pair in "${pairs[@]}"; do
     die "Refusing absolute destination path: $dest"
   fi
 
-  out_path="${OC_HOST_ROOT}/${dest}"
+  out_path="${INSTALL_ROOT}/${dest}"
   out_dir="$(dirname "$out_path")"
   src_url="${CORE_BASE}/${rel}"
 
@@ -329,22 +329,22 @@ for pair in "${pairs[@]}"; do
   installed=$((installed + 1))
 done
 
-echo "Installed ${installed} files into ${OC_HOST_ROOT}."
+echo "Installed ${installed} files into ${INSTALL_ROOT}."
 
 # ---- 4. Set permissions ----
 info "Setting ownership and permissions..."
-run chown -R 1000:1000 "${OC_HOST_ROOT}" 2>/dev/null || true
-run find "${OC_HOST_ROOT}" -type d -exec chmod 755 {} \; 2>/dev/null || true
-run find "${OC_HOST_ROOT}" -type f -exec chmod 644 {} \; 2>/dev/null || true
-run find "${OC_HOST_ROOT}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+run chown -R 1000:1000 "${INSTALL_ROOT}" 2>/dev/null || true
+run find "${INSTALL_ROOT}" -type d -exec chmod 755 {} \; 2>/dev/null || true
+run find "${INSTALL_ROOT}" -type f -exec chmod 644 {} \; 2>/dev/null || true
+run find "${INSTALL_ROOT}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
 # Belt-and-suspenders: ensure no CRLF in any bin scripts
 # (defensive against SCP from Windows, git autocrlf, etc.)
-run find "${OC_HOST_ROOT}/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+run find "${INSTALL_ROOT}/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
 # ---- 5. Write STATE.json ----
 info "Writing STATE.json..."
-state_dir="${OC_HOST_ROOT}/corekit"
+state_dir="${INSTALL_ROOT}/corekit"
 run mkdir -p "$state_dir"
 
 # Build JSON with file hashes
@@ -378,8 +378,8 @@ run chmod 644 "${state_dir}/STATE.json" 2>/dev/null || true
 # ---- 6. Verify critical files ----
 info "Verifying critical files..."
 for check_file in \
-  "${OC_HOST_ROOT}/workspace/SOUL.md" \
-  "${OC_HOST_ROOT}/workspace/IDENTITY.md"; do
+  "${INSTALL_ROOT}/workspace/SOUL.md" \
+  "${INSTALL_ROOT}/workspace/IDENTITY.md"; do
   if ! run test -f "$check_file"; then
     # Not fatal for fleet — workspace files are deployed by bootstrap, not manifest
     if [[ "$ROLE" == "fleet" ]]; then
@@ -391,7 +391,7 @@ for check_file in \
 done
 
 # ---- 7. Run contract validation (if script is available) ----
-VALIDATE="${OC_HOST_ROOT}/bin/validate-contracts"
+VALIDATE="${INSTALL_ROOT}/bin/validate-contracts"
 if run test -x "$VALIDATE" 2>/dev/null; then
   info "Running contract validation..."
   if run "$VALIDATE" --runtime 2>&1; then
@@ -407,7 +407,7 @@ else
   info "Install complete."
 fi
 echo "  CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
-echo "  Target  : ${OC_HOST_ROOT}"
+echo "  Target  : ${INSTALL_ROOT}"
 echo "  Role    : ${ROLE:-all (legacy)}"
 echo "  Job     : ${JOB:-none}"
 echo "  State   : ${state_dir}/STATE.json"

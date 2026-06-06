@@ -45,19 +45,19 @@ const AGENT_ID = process.env.AGENT_ID || 'agent';
 const AGENT_EMAIL = process.env.AGENT_USER_EMAIL || '';
 const GATEWAY_PORT = CONTRACTS.gateway?.port || 18789;
 const GATEWAY_URL = `http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`;
-const MAX_ITERATIONS = CONTRACTS.brain?.max_iterations || 12;
-const GATEWAY_TIMEOUT_MS = CONTRACTS.brain?.gateway_timeout_ms || 600_000;
-const STALE_CLEANUP_HOURS = CONTRACTS.brain?.stale_cleanup_hours || 24;
-const ARCHIVE_AGE_DAYS = CONTRACTS.brain?.archive_age_days || 7;
-const ARCHIVE_INTERVAL_MS = CONTRACTS.brain?.archive_interval_ms || 1 * 60 * 60 * 1000; // 1h default
-const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.brain?.needs_input_timeout_hours || 72;
+const MAX_ITERATIONS = CONTRACTS.dispatch?.max_iterations || 12;
+const GATEWAY_TIMEOUT_MS = CONTRACTS.dispatch?.gateway_timeout_ms || 600_000;
+const STALE_CLEANUP_HOURS = CONTRACTS.dispatch?.stale_cleanup_hours || 24;
+const ARCHIVE_AGE_DAYS = CONTRACTS.dispatch?.archive_age_days || 7;
+const ARCHIVE_INTERVAL_MS = CONTRACTS.dispatch?.archive_interval_ms || 1 * 60 * 60 * 1000; // 1h default
+const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.dispatch?.needs_input_timeout_hours || 72;
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'brain/cortex';
 
 // Brain's own LLM — used ONLY for simple text→text summarization via direct
 // Vertex AI calls (not through gateway). Classify/decide/synthesize always use
 // cortex through the gateway. See summarizeViaVertex() below.
-const BRAIN_MODEL = CONTRACTS.brain?.model || 'gemini-2.5-flash';
+const BRAIN_MODEL = CONTRACTS.dispatch?.model || 'gemini-2.5-flash';
 const BRAIN_ROUTE = CORTEX_ROUTE;  // classify/decide/synthesize always use cortex
 
 // ---- Project contracts config ----
@@ -66,10 +66,10 @@ const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
 const PROJECT_ARCHIVE_DAYS = CONTRACTS.projects?.archive_completed_after_days || 30;
 
 // ---- Context forwarding budgets (chars per prior step) ----
-const CTX_DISPATCH_SUCCESS = CONTRACTS.brain?.ctx_dispatch_success || 4000;
-const CTX_DISPATCH_FAILURE = CONTRACTS.brain?.ctx_dispatch_failure || 3000;
-const CTX_AGENT_STEP = CONTRACTS.brain?.ctx_agent_step || 8000;
-const CTX_CORTEX_STEP = CONTRACTS.brain?.ctx_cortex_step || 4000;
+const CTX_DISPATCH_SUCCESS = CONTRACTS.dispatch?.ctx_dispatch_success || 4000;
+const CTX_DISPATCH_FAILURE = CONTRACTS.dispatch?.ctx_dispatch_failure || 3000;
+const CTX_AGENT_STEP = CONTRACTS.dispatch?.ctx_agent_step || 8000;
+const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 
 // ---- Direct Vertex AI summarization ----
 // Brain's own LLM for simple text→text tasks (summarize, compress, rephrase).
@@ -3767,7 +3767,7 @@ async function processEnvelope(envelope, memoryContext) {
 }
 
 // ---- Envelope context accumulation ----
-const CONTEXT_TOKEN_BUDGET = CONTRACTS.brain?.context_token_budget || 400_000;
+const CONTEXT_TOKEN_BUDGET = CONTRACTS.dispatch?.context_token_budget || 400_000;
 const CHARS_PER_TOKEN = 4; // rough estimate
 const CONTEXT_CHAR_BUDGET = CONTEXT_TOKEN_BUDGET * CHARS_PER_TOKEN;
 
@@ -4036,7 +4036,7 @@ async function main() {
   log('INFO', `Archival sweep scheduled every ${Math.round(ARCHIVE_INTERVAL_MS / 3600000)}h`);
 
   // Start intake polling
-  const POLL_MS = CONTRACTS.brain?.poll_interval_ms || 3000;
+  const POLL_MS = CONTRACTS.dispatch?.poll_interval_ms || 3000;
   log('INFO', `Starting intake poll (every ${POLL_MS}ms)`);
   setInterval(async () => {
     await pollIntake();

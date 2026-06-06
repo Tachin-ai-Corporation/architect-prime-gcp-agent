@@ -4,7 +4,7 @@
 > - **CURRENT STATE only.** Document how things work *right now*. Do not include changelogs, historical checkpoints, or previous implementations. Git tags and commit history serve that purpose.
 > - **No stale references.** If an approach has been replaced, remove all mention of the old approach. An AI agent reading this document should never be confused about which implementation is active.
 > - **Update on every checkpoint.** When completing a checkpoint, update all sections to reflect the new reality. Move the completed checkpoint goal into the current state, and write the next checkpoint goal.
-> - **Current version:** `v2026.06.05.1.0`
+> - **Current version:** `v2026.06.05.2.0`
 
 ---
 
@@ -1271,6 +1271,14 @@ architect-prime/
 3. **Host-native services** — Migrated all daemons and wrappers to run natively on the host OS under `/opt/corekit` using systemd (`agent-brain-gateway.service`, `agent-ears.service`, etc.).
 4. **Bootstraps & installer** — Updated `infra/install.sh`, `upgrade-corekit`, `prime-bootstrap.sh`, and `fleet-bootstrap.sh` to target `/opt/corekit` layout directly.
 5. **Dashboard & verification** — Renamed all frontend/API occurrences of `openclawId` to `brainModelId`. Ran automated validation which successfully compiled the Next.js production build.
+
+### Completed: v2026.06.05.2.0 — Post-Cleanup Audit Implementation
+> *Vercel AI SDK replaced with direct vendor SDKs, contracts renamed brain key to dispatch, fossil variables cleaned up, agent-ask skill standardized.*
+
+1. **Vendor SDK Integration** — Replaced intermediary Vercel AI SDK wrapper libraries with direct `@google/genai` and `@anthropic-ai/vertex-sdk` packages. Refactored router, loop, tools, and tests to call vendor endpoints directly.
+2. **Contracts Naming Alignment** — Renamed contracts.json block `"brain"` to `"dispatch"` to avoid name collisions with the brain gateway. Cascaded changes to `agent-brain.mjs`, `agent-introspect.mjs`, and contract validations.
+3. **Fossil Variables Cleanup** — Renamed all 16 occurrences of legacy `OC_HOST_ROOT` variable to `INSTALL_ROOT` in `infra/install.sh`.
+4. **Standardized agent-ask** — Relocated the `agent-ask` script to the `skills/agent-ask/` directory, declared it in `skill.json`, and updated manifests to copy `skill.json` to the VM for correct assembler routing.
 
 ### Current: Next Phase — Process Maturity + Dashboard Process UI
 > *Goal: Dashboard UI for process management, process on/off per agent, SOUL.md audit/trim.*
