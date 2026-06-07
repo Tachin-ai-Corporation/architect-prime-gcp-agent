@@ -649,6 +649,19 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
     }
   }
 
+  // Auto-fill parameters from source_meta (e.g., requester_email from senderEmail)
+  const sourceMeta = existingEnvelope?.source_meta || intake?.source_meta || {};
+  for (const [key, def] of Object.entries(process.parameters || {})) {
+    if (!(key in parameters) && def && typeof def === 'object' && def.auto_fill) {
+      // auto_fill is a dot-path like "source_meta.senderEmail"
+      const path = def.auto_fill.replace(/^source_meta\./, '');
+      if (sourceMeta[path]) {
+        parameters[key] = sourceMeta[path];
+        log('INFO', `executeProcess: auto-filled '${key}' from source_meta.${path}`);
+      }
+    }
+  }
+
   // Convert process to checkpoint structure
   const cpPlan = processToCheckpointPlan(process, parameters);
   if (!cpPlan || !cpPlan.checkpoints || cpPlan.checkpoints.length === 0) {

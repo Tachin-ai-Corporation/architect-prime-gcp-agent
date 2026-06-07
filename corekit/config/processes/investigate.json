@@ -1,9 +1,9 @@
 {
   "id": "investigate",
   "name": "Investigate",
-  "description": "Structured investigation process for diagnosing issues, understanding system behavior, or answering questions that require research. Gathers evidence, analyzes findings, and produces a clear report.",
+  "description": "Structured investigation process for diagnosing issues, understanding system behavior, or answering questions that require research. Gathers evidence, analyzes findings, and produces a clear report. This process is READ-ONLY — it examines systems and documents findings but NEVER modifies, deploys, or fixes anything.",
   "status": "active",
-  "version": 1,
+  "version": 2,
   "visibility": "standard",
   "parameters": {
     "topic": {
@@ -18,37 +18,37 @@
   },
   "steps": [
     {
-      "title": "Gather context and define scope",
-      "description": "Recall any relevant context from memory about ${topic}. Check project context if available. Define the specific questions we need to answer and what evidence to look for.",
+      "title": "Define scope and gather context",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nGather context for investigating ${topic}:\n1. Recall memory for any prior work, incidents, or decisions related to this topic\n2. Check project context for relevant infrastructure, services, and configuration\n3. Define the specific questions we need to answer\n4. Identify what evidence to look for and where to find it\n\nOutput: investigation scope with clear questions to answer.",
       "agent": "motor",
       "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Investigation scope is defined with clear questions to answer. All available context has been gathered."
+      "intent": "research",
+      "accept_criteria": "Investigation scope is defined with clear questions to answer. All available context has been gathered. No systems were modified."
     },
     {
-      "title": "Investigate primary sources",
-      "description": "Investigate ${topic} by examining primary sources: logs, configuration files, code, infrastructure state, or documentation. Use the tools available (exec, read, web-fetch) to gather concrete evidence. Record exact findings — commands run, outputs observed, error messages, timestamps.",
+      "title": "Examine primary sources",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nInvestigate ${topic} by examining primary sources:\n1. Check logs (journalctl, tail, cat — never write or restart services)\n2. Read configuration files and code\n3. Query infrastructure state (gcloud, firebase, curl — read-only commands only)\n4. Check documentation or external references\n\nRecord exact findings: commands run, outputs observed, error messages, timestamps.\nDo NOT attempt to fix anything you find — only document it.",
       "agent": "motor",
       "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Primary evidence has been gathered from at least 2 sources. All findings are documented with exact details (not summaries).",
+      "intent": "research",
+      "accept_criteria": "Primary evidence gathered from at least 2 sources. All findings documented with exact details. No systems were modified.",
       "checkpointBoundary": true
     },
     {
       "title": "Analyze findings and identify root cause",
-      "description": "Analyze the evidence gathered about ${topic}. Identify the root cause or answer the investigation questions. If the initial investigation was insufficient, gather additional evidence. Cross-reference findings for consistency.",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nAnalyze the evidence gathered about ${topic}:\n1. Identify the root cause or answer the investigation questions\n2. If initial evidence is insufficient, gather additional evidence (read-only)\n3. Cross-reference findings for consistency\n4. Distinguish between confirmed facts and hypotheses\n\nOutput: root cause analysis with supporting evidence.",
       "agent": "motor",
       "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Root cause or answer is identified with supporting evidence. Analysis explains the 'why' not just the 'what'."
+      "intent": "research",
+      "accept_criteria": "Root cause or answer identified with supporting evidence. Analysis explains the 'why' not just the 'what'. No systems were modified."
     },
     {
       "title": "Document findings and recommendations",
-      "description": "Produce a clear investigation report about ${topic}. Include: (1) Summary of findings, (2) Root cause analysis, (3) Evidence chain, (4) Recommended actions or next steps. Update project context with relevant discoveries.",
+      "description": "⚠️ WRITE REPORT ONLY — do NOT execute any fixes or changes.\n\nProduce a clear investigation report about ${topic}:\n1. **Summary** — What was investigated and why\n2. **Findings** — What was discovered, with evidence\n3. **Root Cause** — Why the issue exists or the answer to the questions\n4. **Evidence Chain** — Commands run and outputs observed\n5. **Recommendations** — What should be done next (but do NOT do it)\n\nStore the report using: project-manage update '<project_id>' with findings in the context field (if project_id is available).\n\nIMPORTANT: Do NOT attempt to fix, deploy, or change anything. Only document findings and recommend actions.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Investigation report is complete with actionable findings. Project context updated if applicable."
+      "accept_criteria": "Investigation report is complete with actionable findings. Project context updated if applicable. No systems were modified — only documentation was produced."
     }
   ],
   "contextTemplate": {},
