@@ -1838,7 +1838,20 @@ function parseJsonResponse(raw) {
       return JSON.parse(jsonMatch[0]);
     } catch (e) {
       log('WARN', `JSON parse failed (greedy): ${e.message}`);
+      // If greedy match found a { but couldn't parse, try repair
+      const repaired = repairTruncatedJson(jsonMatch[0]);
+      if (repaired) {
+        log('INFO', `JSON repair succeeded — recovered truncated Cortex response`);
+        return repaired;
+      }
     }
+  }
+
+  // Try repair on the whole cleaned string (truncated JSON without closing braces)
+  const repaired = repairTruncatedJson(cleaned);
+  if (repaired) {
+    log('INFO', `JSON repair succeeded on raw input — recovered truncated Cortex response`);
+    return repaired;
   }
 
   // Fallback: try the whole string
@@ -1848,6 +1861,96 @@ function parseJsonResponse(raw) {
     log('ERROR', `Could not parse Cortex response: ${raw.substring(0, 300)}`);
     return { error: 'parse_failed', raw: raw.substring(0, 500) };
   }
+}
+
+/**
+ * Attempt to repair truncated JSON from LLM responses.
+ * When Cortex hits its output token limit, the JSON gets cut off mid-field.
+ * This function closes open strings, arrays, and objects to recover a parseable structure.
+ * The repaired JSON will be missing some fields but the action/checkpoints already
+ * emitted will be preserved — better than a total parse_failed.
+ */
+function repairTruncatedJson(text) {
+  if (!text || text.length < 10) return null;
+
+  // Find the start of the JSON object
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+
+  let json = text.substring(start);
+
+  // Track state by scanning through the string
+  let inString = false;
+  let escape = false;
+  const stack = []; // tracks open delimiters: '{' or '['
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"' && !escape) { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') stack.push('{');
+    else if (ch === '[') stack.push('[');
+    else if (ch === '}') { if (stack.length && stack[stack.length-1] === '{') stack.pop(); }
+    else if (ch === ']') { if (stack.length && stack[stack.length-1] === '[') stack.pop(); }
+  }
+
+  // If balanced already, nothing to repair
+  if (stack.length === 0 && !inString) return null;
+
+  // Close open string
+  if (inString) {
+    // Remove the partial string value (likely truncated mid-word)
+    // Find the last complete key-value pair by backing up to last ","
+    const lastComma = json.lastIndexOf(',');
+    const lastColon = json.lastIndexOf(':');
+    if (lastComma > lastColon && lastComma > json.length - 500) {
+      // Truncate at the last comma (dropping the incomplete field)
+      json = json.substring(0, lastComma);
+    } else {
+      // Just close the string
+      json += '"';
+    }
+  }
+
+  // Re-scan after string fix
+  inString = false;
+  escape = false;
+  stack.length = 0;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"' && !escape) { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') stack.push('{');
+    else if (ch === '[') stack.push('[');
+    else if (ch === '}') { if (stack.length && stack[stack.length-1] === '{') stack.pop(); }
+    else if (ch === ']') { if (stack.length && stack[stack.length-1] === '[') stack.pop(); }
+  }
+
+  // Close remaining open delimiters in reverse order
+  let suffix = '';
+  while (stack.length > 0) {
+    const open = stack.pop();
+    suffix += (open === '{') ? '}' : ']';
+  }
+
+  if (!suffix) return null;
+
+  const candidate = json + suffix;
+  try {
+    const parsed = JSON.parse(candidate);
+    // Validate it has the minimum required structure
+    if (parsed.action || parsed.classification) {
+      log('DEBUG', `repairTruncatedJson: closed ${suffix.length} delimiters, recovered action=${parsed.action || parsed.classification}`);
+      return parsed;
+    }
+  } catch (e) {
+    log('DEBUG', `repairTruncatedJson: repair failed: ${e.message}`);
+  }
+  return null;
 }
 
 function extractBalancedJson(text) {
