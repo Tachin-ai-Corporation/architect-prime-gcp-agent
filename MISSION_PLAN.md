@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> **Current version:** `v2026.06.06.5.0`
+> **Current version:** `v2026.06.07.1.0`
 >
 > This document describes *what Architect Prime is* and *how it works right now*.
 > Implementation plans live in `docs/plans/`. Historical changes live in git.

@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.06.5.0`
+> **Current version:** `v2026.06.07.1.0`
 
 
 ---
@@ -371,6 +371,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.05.1.0** | Host-native migration — Removed Docker/OpenClaw, systemd-based brain gateway |
 | **v2026.06.06.4.0** | **Baseline checkpoint** — Dead code cleanup, fleet bug fixes, M→C→T enforcement, docs restructure |
 | **v2026.06.06.5.0** | **Dashboard Redesign** — Hierarchical /p/[id] routing, Agent Deep Dive (7 tabs), Library namespace, LiveIndicator, responsive tabs |
+| **v2026.06.07.1.0** | **Process Hardening** — Plan/Investigate v2 (read-only research steps, Drive artifact output, approval gate), auto-fill from source_meta |
 
 Full version history is in git (`git log --oneline`).
 
