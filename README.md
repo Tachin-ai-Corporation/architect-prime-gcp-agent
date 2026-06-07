@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.06.4.0`
+> **Current version:** `v2026.06.06.5.0`
 
 
 ---
@@ -93,7 +93,8 @@ Required for fleet agents to communicate via Google Chat:
 ```
 Your GCP Project
 ├── Cloud Run (Control Plane — Next.js Dashboard)
-│   ├── Dashboard UI (8-page flat navigation, shared FleetSelector)
+│   ├── Dashboard UI (18-route hierarchical navigation, 1health design system)
+│   ├── Routes: /p/[id]/... (prime-scoped) + /library/... (global)
 │   ├── REST API (primes, fleet, messages, commands, projects, skills, upgrade)
 │   └── Firestore client (state management)
 │
@@ -164,18 +165,26 @@ Dispatch flow: Cortex returns structured JSON decisions → `agent-brain` daemon
 ```
 architect-prime/
 ├── app/                              # MODULE 1: Control Plane (Cloud Run, Next.js)
-│   ├── src/app/page.tsx              # Home (Prime cards, deploy)
-│   ├── src/app/brain/               # Brain / Model Management
+│   ├── src/app/page.tsx              # Home (agent network topology)
+│   ├── src/app/p/[id]/               # Prime Hub + prime-scoped pages
+│   │   ├── a/[agent]/                # Agent Deep Dive (7 tabs)
+│   │   ├── fleet/                    # Fleet Management
+│   │   ├── work/                     # Work Tree
+│   │   ├── projects/                 # Projects
+│   │   ├── processes/                # Processes
+│   │   ├── config/                   # Prime Configuration
+│   │   └── chat/                     # Prime Chat
+│   ├── src/app/library/              # Library Hub (global)
+│   │   ├── skills/                   # Skill Catalog
+│   │   ├── agent-types/              # Agent Type Explorer
+│   │   └── models/                   # Model Catalog
 │   ├── src/app/settings/             # Dashboard Settings
-│   ├── src/app/skills/               # Skill Catalog
-│   ├── src/app/work/                 # Work Tree
-│   ├── src/app/projects/             # Projects
-│   ├── src/app/processes/            # Processes
-│   ├── src/app/agent-types/          # Agent Type Explorer
 │   ├── src/app/api/primes/[id]/      # REST API routes (19 routes)
-│   ├── src/components/               # Shell, Breadcrumb, NavCard, StatusStrip, AgentChip, FleetSelector
+│   ├── src/components/               # Shell, Breadcrumb, NavCard, LiveIndicator, AgentHeader
+│   │   ├── agent/                    # BrainInspector, SkillInventory, ResponsibilityList, MemoryViewer
+│   │   └── work/                     # WorkTree, WorkDetail, useWorkEnvelopes
 │   ├── src/contexts/                 # PrimeContext (shared state)
-│   ├── src/hooks/                    # useProjects (real-time Firestore), useFleetSelection
+│   ├── src/hooks/                    # useProjects, useIntrospect
 │   └── Dockerfile
 │
 ├── infra/                            # MODULE 2: Infrastructure
@@ -361,6 +370,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.05.27.12.0** | Skill Ecosystem — Self-describing manifests, per-agent TOOLS.md, skill discovery |
 | **v2026.06.05.1.0** | Host-native migration — Removed Docker/OpenClaw, systemd-based brain gateway |
 | **v2026.06.06.4.0** | **Baseline checkpoint** — Dead code cleanup, fleet bug fixes, M→C→T enforcement, docs restructure |
+| **v2026.06.06.5.0** | **Dashboard Redesign** — Hierarchical /p/[id] routing, Agent Deep Dive (7 tabs), Library namespace, LiveIndicator, responsive tabs |
 
 Full version history is in git (`git log --oneline`).
 

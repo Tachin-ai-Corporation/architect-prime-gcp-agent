@@ -3,10 +3,10 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native brain gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.06.4.0)
+## Current Architecture (v2026.06.06.5.0)
 
 ### System Stack
-- **Cloud Run** — Next.js dashboard (17-page breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
+- **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
 - **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, introspect queries, config
 - **Compute Engine VMs** — One per Prime + one per fleet agent
 - **Brain Gateway** — Host-native AI brain gateway on each VM (Gemini 3.1 Pro via Vertex AI ADC)
@@ -48,7 +48,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - Mouth also runs independent Brain v3 envelope poll (5s interval) — primary query on `delivery_status=pending`, skips `status=archived` as defense-in-depth
 - Agents never call delivery tools directly — mouth handles all outbound
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
-- **Dashboard**: Living Agent Graph home screen — interactive network topology with prime chip selector (deploy chip as last inline element), SVG connection lines + pulse dots, glassmorphic agent cards with text nav labels (Work/Brain/Skills, unified for Prime and Fleet). Floating glassmorphic chat overlay (slide-in from right, resize handle 320-800px, X close button, specialty badge inline next to agent name) replaces old split-panel layout. +Hire card in fleet grid with dynamic specialty picker (fetches agent-types.json from GitHub, 5m cache). Shell header: logo + stacked title/version (version clickable → Settings System tab, sits below "Architect Prime") left-aligned with breadcrumb trail (Home as first clickable crumb). 17-page breadcrumb-navigated hierarchy (no sidebar). Home → Prime Hub → Chat/Fleet/Work/Brain/Skills/Settings → Agent Hub → Chat/Work/Brain/Skills/Settings. Brain page: 6-slot LLM grid with click-to-swap model picker. Model discovery moved to global Settings → Models tab. Skills page queries real VM filesystem via Firestore bus introspection API. Real-time M→C→T work tree, envelope detail view, human-in-the-loop response form for needs_input envelopes. Real-time Cloud Build status polling (regional API for step-level progress) for dashboard upgrades. 1health design system (Graphite/Charcoal/Teal/Aqua). Shared FleetSelector component (`useFleetSelection` hook + `FleetSelector` two-tier chip UI + `FleetEmptyPrompt`) provides consistent chip-based prime/agent selection with URL deep linking (`?prime=xxx&agent=yyy`) across all 5 top-level pages (Projects, Processes, Work, Brain, Skills). No auto-select — user must click a prime chip.
+- **Dashboard**: Living Agent Graph home screen — interactive network topology with prime chip selector (deploy chip as last inline element), SVG connection lines + pulse dots, glassmorphic agent cards with text nav labels (Work/Brain/Skills, unified for Prime and Fleet). 18-route hierarchical navigation: Home → Prime Hub (/p/[id]) → Agent Deep Dive (/p/[id]/a/[agent], 7 tabs: Overview/Brain/Skills/Responsibilities/Memory/Work/Chat) + prime-scoped pages (Fleet/Work/Projects/Processes/Config/Chat) + Library Hub (/library → Skills/Agent-Types/Models). Breadcrumb trail in header (replaces flat nav). Responsive tab dropdown on mobile (<640px). LiveIndicator component shows data freshness (Updated Xs ago / Stale / Updating…) with shimmer skeleton loading. NavCard component for hub navigation. Server-side redirects (308/307) from old routes (/skills → /library/skills, /brain → /). Path-based routing via `use(params)` replaces query-param FleetSelector on all prime-scoped pages. useIntrospect hook (POST-then-poll) shared across agent deep-dive tabs. BrainInspector component (extracted 700+ line model management UI). Settings page: 4 tabs (General/Integration/Security/System — Models extracted to /library/models). 1health design system (Graphite/Charcoal/Teal/Aqua).
 
 ### Skills / Body-Part Categorization
 The Skills page categorizes tools by agent "body part". The introspect daemon (`agent-introspect.mjs`) assigns categories by filename pattern. When adding new tools, follow the naming conventions below so they auto-categorize correctly:
@@ -83,7 +83,7 @@ Workspace tools (Google Drive/Gmail/Calendar/Docs/Sheets) are installed per job 
 
 ## Repository Structure
 ```
-app/              Cloud Run dashboard (Next.js, 17 pages, 1health design system)
+app/              Cloud Run dashboard (Next.js, 18 routes, 1health design system)
 infra/            Bootstrap scripts, manifests, contracts.json
 corekit/          Runtime tools installed on VMs (brain, fleet, gateway, chat, dashboard, memory)
 brain/            Agent workspace files (SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md)

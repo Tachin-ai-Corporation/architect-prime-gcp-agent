@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> **Current version:** `v2026.06.06.4.0`
+> **Current version:** `v2026.06.06.5.0`
 >
 > This document describes *what Architect Prime is* and *how it works right now*.
 > Implementation plans live in `docs/plans/`. Historical changes live in git.
@@ -21,6 +21,7 @@ Prime's role is **infrastructure, not orchestration**. Prime creates agents, upg
 Dashboard (Cloud Run — Next.js)
     │
     ├─ REST API (28 endpoints)        → Fleet lifecycle, chat, work, introspect
+    ├─ 18-route hierarchy              → /p/[id]/... (prime-scoped) + /library/... (global)
     │
     ▼
 Firestore (state store)
@@ -142,8 +143,6 @@ architect-prime/
 
 ## Plans
 
-Active and upcoming implementation plans live in [`docs/plans/`](docs/plans/):
+Active and upcoming implementation plans live in [`docs/plans/`](docs/plans/).
 
-| Plan | Status | Summary |
-|------|--------|---------|
-| [Dashboard Redesign](docs/plans/DASHBOARD_REDESIGN.md) | Planned | Agent-centric navigation, introspect integration, library namespace |
+No active plans.

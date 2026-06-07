@@ -3183,7 +3183,16 @@ async function processEnvelope(envelope, memoryContext) {
 
       // Hand off to deterministic executor — exits the Cortex decide loop
       log('INFO', `follow_process: handing off '${processId}' to executeProcess`);
-      return executeProcess(null, decision, memoryContext || {}, processId, envelope);
+      const processResult = await executeProcess(null, decision, memoryContext || {}, processId, envelope);
+      if (processResult === 'fallback_to_decide') {
+        log('WARN', `follow_process: process '${processId}' fell back to decide — continuing loop`);
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] follow_process '${processId}' failed: missing required parameters. Use checkpoint_plan instead and include the work steps directly, or re-issue follow_process with all required parameters filled in the "parameters" field.`,
+        });
+        continue;
+      }
+      return processResult;
     }
 
     if (action === 'checkpoint_plan') {
