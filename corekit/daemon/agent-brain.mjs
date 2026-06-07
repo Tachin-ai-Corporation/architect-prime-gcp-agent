@@ -626,7 +626,9 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
   const missingParams = requiredParams.filter(k => !(k in parameters));
   if (missingParams.length > 0) {
     // Auto-fill missing params from intake/decision text when obvious
-    const sourceText = decision.instruction || intake?.text || '';
+    // When called from follow_process (decide loop), intake is null and decision.instruction
+    // may have been stripped by enforceSchema. Fall back to the existing envelope's instruction.
+    const sourceText = decision.instruction || intake?.text || existingEnvelope?.instruction || '';
     for (const param of [...missingParams]) {
       if (sourceText && !parameters[param]) {
         parameters[param] = sourceText;
