@@ -4628,16 +4628,16 @@ async function main() {
 
   // Startup recovery: re-process orphaned active/pending M envelopes
   // When brain restarts mid-processing, envelopes get stuck with no processor
-  // Use paginated REST list (no structured query, no index needed)
+  // IMPORTANT: Only recover missions with NO children (truly orphaned).
+  // Missions with children were already being worked on — reprocessing them
+  // from scratch creates duplicate work. Archive stale ones instead.
   try {
-    // Owner field is full email (e.g. devops-agent-stan@tachin.ag), match by AGENT_ID substring
     const agentId = AGENT_ID;
     const token = await getAuthToken();
     if (token) {
       const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
       let allDocs = [];
       let nextPageToken = null;
-      // Paginate through all work docs
       do {
         const url = `${parentPath}/work?pageSize=300${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
         const resp = await fetch(url, {
@@ -4663,16 +4663,42 @@ async function main() {
       if (orphaned.length > 0) {
         log('INFO', `Startup recovery: found ${orphaned.length} orphaned M envelope(s)`);
         for (const env of orphaned) {
-          log('INFO', `Recovering orphaned envelope: ${env.id} (status=${env.status}, title=${(env.title || '').substring(0, 60)})`);
-          try {
-            env.status = 'pending';
-            env.iteration = 0;
-            await firestoreWrite('work', env.id, { status: 'pending', iteration: 0, updated_at: now() });
-            await writeHistory(env.id, 'active', 'pending', 'brain', 'Recovered after brain restart');
-            const memory = await recallMemory(env.instruction);
-            await processEnvelope(env, memory);
-          } catch (e) {
-            log('ERROR', `Recovery failed for ${env.id}: ${e.message}`);
+          const hasChildren = Array.isArray(env.children) && env.children.length > 0;
+
+          if (hasChildren) {
+            // Mission was already being worked on before restart — do NOT reprocess from scratch.
+            // Check if the children are all done (archive the mission) or still active (let them complete).
+            const childStatuses = env.children.map(cid => {
+              const child = allDocs.find(d => d.id === cid);
+              return child?.status || 'unknown';
+            });
+            const allChildrenDone = childStatuses.every(s => s === 'complete' || s === 'archived' || s === 'failed');
+
+            if (allChildrenDone) {
+              // All children finished — archive the mission as complete
+              log('INFO', `Recovery: archiving completed mission ${env.id} (${env.children.length} children all done)`);
+              await firestoreWrite('work', env.id, {
+                status: 'archived', archived_reason: 'child_complete',
+                delivery_status: 'delivered', updated_at: now(),
+              });
+              await writeHistory(env.id, env.status, 'archived', 'brain', 'Archived after restart — all children complete');
+            } else {
+              // Children still in progress — leave as-is, don't reprocess
+              log('INFO', `Recovery: skipping mission ${env.id} — has ${env.children.length} existing children (${childStatuses.join(', ')})`);
+            }
+          } else {
+            // Truly orphaned: no children, was created but processing never started
+            log('INFO', `Recovering orphaned envelope: ${env.id} (status=${env.status}, title=${(env.title || '').substring(0, 60)})`);
+            try {
+              env.status = 'pending';
+              env.iteration = 0;
+              await firestoreWrite('work', env.id, { status: 'pending', iteration: 0, updated_at: now() });
+              await writeHistory(env.id, 'active', 'pending', 'brain', 'Recovered after brain restart');
+              const memory = await recallMemory(env.instruction);
+              await processEnvelope(env, memory);
+            } catch (e) {
+              log('ERROR', `Recovery failed for ${env.id}: ${e.message}`);
+            }
           }
         }
       }
