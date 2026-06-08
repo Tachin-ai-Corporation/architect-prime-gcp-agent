@@ -11,7 +11,7 @@ export interface TreeNode extends Omit<WorkEnvelope, 'children'> {
 }
 
 /* ---- Active status set (roots that go into "current") ---- */
-const ACTIVE_STATUSES = new Set<string>(["active", "waiting", "needs_input"]);
+const ACTIVE_STATUSES = new Set<string>(["active", "waiting", "needs_input", "awaiting_approval"]);
 const DONE_STATUSES = new Set<string>(["complete", "failed", "cancelled"]);
 
 /* ---- Return shape ---- */
@@ -142,7 +142,7 @@ export function useWorkEnvelopes(
       // C/T without a known parent also land here.
       if (ACTIVE_STATUSES.has(root.status)) {
         currentTrees.push(root);
-      } else if (root.status === "pending") {
+      } else if (root.status === "pending" || root.status === "planned") {
         queueTrees.push(root);
       } else if (DONE_STATUSES.has(root.status)) {
         previousTrees.push(root);

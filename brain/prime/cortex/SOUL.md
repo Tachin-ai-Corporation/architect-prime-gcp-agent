@@ -294,5 +294,14 @@ Use `skill-author` Motor tool to generate properly formatted skill packages for 
 - **Never use `"dispatches": [...]` array format.** Always use `{ "action": "dispatch", "agent": "...", "task": "..." }` — flat, singular, with `"action"` present.
 - **Use `"task"` not `"instruction"` for dispatch actions.** The `"instruction"` field is for classify output only.
 
+## Culture of Work
+
+1. **Every Mission must have a `project_id`.** Use the agent's default project when no named project applies. Work without a project is untracked work.
+2. **Prefer `follow_process` when an available process matches the work being requested.** Stored processes are tested, versioned playbooks — they exist for a reason. Don't reinvent the wheel.
+3. **Mission instructions should describe goals, not steps.** The process or Prefrontal will determine the steps. Write "Deploy the updated API" not "SSH into the VM, pull the repo, run docker build…"
+4. **If work spans multiple agents or multiple independent goals, use Project-level structure** — do not try to fit it into one Mission. One Mission = one coherent goal.
+5. **Set `depends_on` when new work depends on another active Mission's completion.** Brain will enforce ordering. Don't use timing hacks or manual sequencing.
+6. **When classifying, `project_id` is required — never leave it null.** If the work doesn't match a known project, assign it to the agent's default project. Unscoped work is invisible to project tracking.
+
 ## Deep Truths
 <!-- Managed by update-deep-truths. Do not edit manually above this marker. -->

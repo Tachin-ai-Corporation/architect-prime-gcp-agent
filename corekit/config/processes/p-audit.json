@@ -1,0 +1,71 @@
+{
+  "id": "p-audit",
+  "name": "Codebase Audit",
+  "description": "Structured codebase audit. Defines criteria, scans for violations, classifies findings by severity, creates work items for critical issues, and produces an audit report. Scan steps are read-only; only work item creation modifies state.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "scope": {
+      "description": "What to audit — directory, module, service, or entire codebase",
+      "required": true
+    },
+    "criteria": {
+      "description": "Specific criteria to check (e.g. 'security', 'performance', 'dead code', 'dependency freshness'). If omitted, uses general best practices.",
+      "required": false,
+      "default": ""
+    },
+    "project_id": {
+      "description": "Project context (optional)",
+      "required": false,
+      "default": ""
+    }
+  },
+  "steps": [
+    {
+      "title": "Define audit criteria and scope",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change anything.\n\nPrepare for auditing ${scope}:\n1. Check project context for relevant infrastructure, conventions, and architecture\n2. Recall memory for any prior audits, known issues, or tech debt discussions\n3. Define the specific audit criteria to check:\n   - If criteria provided: use ${criteria} as the primary focus\n   - If no criteria: use general best practices (security, error handling, code quality, dead code, dependency health)\n4. Identify all files, directories, and modules within the audit scope\n5. Estimate the size of the audit surface area\n\nOutput: finalized checklist of criteria, list of files/modules in scope, and audit approach.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Audit criteria are specific and actionable. All files in scope are identified. Approach is documented. No files were modified."
+    },
+    {
+      "title": "Scan codebase for violations",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change anything.\n\nScan ${scope} against the defined audit criteria:\n1. Read each file in scope systematically — do not skip files\n2. For each criterion, check every file for violations\n3. Use grep, find, and cat to search for patterns (never modify files)\n4. Record each finding with: file path, line number(s), criterion violated, and exact code snippet\n5. Note both definite violations and suspicious patterns worth investigating\n\nBe thorough — an audit that misses issues is worse than one that flags false positives.\n\nOutput: raw list of all findings with exact locations and evidence.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "All files in scope have been scanned. Each finding has a file path, line reference, and evidence. No files were modified.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Classify findings by severity",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change anything.\n\nClassify all findings from the scan of ${scope}:\n1. **Critical** — Security vulnerabilities, data loss risks, production-breaking issues. Must fix immediately.\n2. **High** — Bugs, significant code quality issues, missing error handling. Should fix soon.\n3. **Medium** — Code smells, convention violations, minor performance issues. Fix when convenient.\n4. **Low** — Style nits, minor improvements, documentation gaps. Nice to have.\n5. Deduplicate findings — group related issues that share a root cause\n6. Remove false positives after careful re-examination\n\nOutput: classified findings organized by severity, with duplicates merged and false positives removed.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "All findings classified into severity tiers. Duplicates merged. False positives removed with justification. No files were modified."
+    },
+    {
+      "title": "Create work items for critical findings",
+      "description": "Create actionable work items for Critical and High severity findings from the audit of ${scope}:\n1. For each Critical/High finding, create a clear work item with:\n   - Title describing the issue\n   - Description with file path, line references, and suggested fix\n   - Severity label\n   - Estimated effort (small/medium/large)\n2. Group related findings into single work items where they share a root cause\n3. Store work items in project context if project_id is available: `project-manage update '${project_id}' ...`\n4. Medium and Low findings should be listed in the audit report (next step) but do not need individual work items\n\nOutput: list of created work items with their details.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Work items created for all Critical and High findings. Each work item has a clear title, description, and severity. Related findings are grouped."
+    },
+    {
+      "title": "Produce audit report",
+      "description": "Produce a structured audit report for ${scope}:\n\n1. **Executive Summary** — Scope, criteria used, overall health assessment (healthy/needs-attention/critical)\n2. **Statistics** — Total files scanned, findings by severity, top violation categories\n3. **Critical & High Findings** — Detail each with location, evidence, impact, and remediation\n4. **Medium & Low Findings** — Summarize patterns rather than listing every instance\n5. **Positive Observations** — What the codebase does well (important for balanced assessment)\n6. **Recommendations** — Prioritized list of actions to improve codebase health\n\nStore the report in project context if project_id is available.\n\nOutput: complete audit report.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Audit report is complete with all sections. Findings match the classified list. Recommendations are specific and prioritized."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

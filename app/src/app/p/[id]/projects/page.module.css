@@ -166,6 +166,14 @@
   background: rgba(86, 99, 115, 0.18);
   color: var(--slate);
 }
+.badgePaused {
+  background: rgba(214, 168, 58, 0.14);
+  color: var(--amber, #D6A83A);
+}
+.badgeComplete {
+  background: rgba(59, 170, 120, 0.14);
+  color: var(--status-success);
+}
 
 /* ---- Progress bar ---- */
 .progressWrap {
@@ -837,6 +845,222 @@
 .promotionDismiss:hover {
   color: #ef4444;
   background: rgba(239, 68, 68, 0.06);
+}
+
+/* ================================================================
+   Culture of Work — Extended Styles
+   ================================================================ */
+
+/* ---- Owner badge ---- */
+.ownerBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: rgba(36, 107, 143, 0.12);
+  border: 1px solid rgba(36, 107, 143, 0.25);
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--trust-blue);
+}
+
+/* ---- Goal text ---- */
+.goalText {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--mist);
+  margin-top: -4px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Parent link chip ---- */
+.parentLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(31, 154, 155, 0.08);
+  border: 1px solid rgba(31, 154, 155, 0.2);
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--network-teal);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard);
+}
+.parentLink:hover {
+  background: rgba(31, 154, 155, 0.15);
+  border-color: rgba(31, 154, 155, 0.35);
+}
+
+/* ---- Dependency chips ---- */
+.depChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.depChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: rgba(86, 99, 115, 0.1);
+  border: 1px solid rgba(86, 99, 115, 0.2);
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--slate);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.depChip:hover {
+  background: rgba(31, 154, 155, 0.1);
+  border-color: rgba(31, 154, 155, 0.25);
+  color: var(--network-teal);
+}
+
+/* ---- Child project indent ---- */
+.childGroup {
+  display: contents;
+}
+.childIndent {
+  margin-left: 32px;
+  position: relative;
+}
+.childIndent::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(86, 99, 115, 0.2);
+  border-radius: 1px;
+}
+
+/* ---- Context summary ---- */
+.contextSummary {
+  font-size: 11px;
+  color: var(--slate);
+  margin-top: 4px;
+}
+
+/* ---- Detail view additions ---- */
+.detailGoal {
+  font-size: 15px;
+  color: var(--mist);
+  font-style: italic;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.detailOwner {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: rgba(36, 107, 143, 0.12);
+  border: 1px solid rgba(36, 107, 143, 0.25);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--trust-blue);
+}
+.detailParentLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(31, 154, 155, 0.08);
+  border: 1px solid rgba(31, 154, 155, 0.2);
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--network-teal);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard);
+}
+.detailParentLink:hover {
+  background: rgba(31, 154, 155, 0.15);
+  border-color: rgba(31, 154, 155, 0.35);
+}
+.depSection {
+  margin-top: 8px;
+}
+.depSectionLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+/* ---- Context detail ---- */
+.contextDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.contextGroup {
+  padding: 14px 16px;
+  background: var(--graphite);
+  border: 1px solid rgba(86, 99, 115, 0.15);
+  border-radius: var(--radius-sm);
+}
+.contextGroupTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.contextList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.contextListItem {
+  font-size: 13px;
+  color: var(--mist);
+  padding: 2px 0;
+}
+.teamGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+.teamMember {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(86, 99, 115, 0.08);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+.teamMemberName {
+  color: var(--cloud);
+  font-weight: 500;
+}
+.teamMemberRole {
+  color: var(--slate);
 }
 
 /* ================================================================

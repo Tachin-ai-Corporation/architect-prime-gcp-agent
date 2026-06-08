@@ -1,0 +1,58 @@
+{
+  "id": "p-implement",
+  "name": "Feature Implementation",
+  "description": "Structured implementation process. Sets up workspace, implements changes based on requirements, validates with tests/lint, and commits for review. Use for any feature, fix, or refactor that follows a build-validate-commit cycle.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "goal": {
+      "description": "What to implement — feature, fix, or refactor",
+      "required": true
+    },
+    "project_id": {
+      "description": "Project context (optional)",
+      "required": false,
+      "default": ""
+    }
+  },
+  "steps": [
+    {
+      "title": "Set up workspace and branch",
+      "description": "Prepare the workspace for implementing ${goal}:\n1. Check project context (project-manage read) for repo location, branch conventions, and existing infrastructure\n2. Recall memory for any prior work, decisions, or plans related to this goal\n3. Create a feature branch from the appropriate base branch (e.g. `git checkout -b feat/<short-name>`)\n4. Verify the branch is clean and the working tree is ready\n5. Identify the files, modules, and systems that will need to change\n\nOutput: branch name, list of files/modules to modify, and any dependencies or constraints discovered.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Feature branch created from correct base. Workspace is clean. Files and modules to modify are identified. Dependencies and constraints are documented."
+    },
+    {
+      "title": "Implement changes",
+      "description": "Implement ${goal} based on gathered requirements and any existing plan:\n1. Make the code changes across all identified files and modules\n2. Follow existing code conventions, patterns, and style found in the codebase\n3. Write or update tests to cover the new behavior\n4. Keep changes focused — avoid unrelated refactors or scope creep\n5. If the implementation requires configuration changes, make them with clear comments\n\nIMPORTANT: Implement incrementally. After each logical unit of work, verify it compiles/parses correctly before moving on.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "All required changes are implemented. Code follows existing conventions. Tests are written or updated. Changes are focused and scoped to the goal."
+    },
+    {
+      "title": "Validate implementation",
+      "description": "Validate the implementation of ${goal}:\n1. Run the test suite — all existing and new tests must pass\n2. Run linting/formatting checks and fix any violations\n3. Verify the feature works end-to-end (manual smoke test if applicable)\n4. Check for regressions — ensure nothing previously working is broken\n5. Review your own changes: `git diff` to confirm only intended files are modified\n\nIf tests fail or lint errors are found, fix them before proceeding. Do NOT skip failing tests.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "All tests pass. Lint/format checks pass. No regressions detected. git diff shows only intended changes.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Commit and prepare for review",
+      "description": "Finalize the implementation of ${goal}:\n1. Stage all changes: `git add` the relevant files (avoid adding untracked files that shouldn't be committed)\n2. Write a clear commit message following conventional commit format (e.g. `feat: <description>`, `fix: <description>`)\n3. Push the branch to the remote\n4. Summarize what was implemented, what was tested, and any caveats or follow-up work needed\n\nOutput: commit hash, branch name, summary of changes, and any known limitations or follow-up items.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Changes committed with a clear message. Branch pushed to remote. Summary of changes and any follow-up items documented."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

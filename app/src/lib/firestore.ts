@@ -43,6 +43,10 @@ export function processesCol(primeId: string) {
   return getDb().collection("primes").doc(primeId).collection("processes");
 }
 
+export function plansCol(primeId: string) {
+  return getDb().collection("primes").doc(primeId).collection("plans");
+}
+
 /* ---- Types ---- */
 
 export interface PrimeDoc {

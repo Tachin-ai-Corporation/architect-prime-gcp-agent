@@ -72,8 +72,12 @@ corekit/config/agent-registry.json corekit/agent-registry.json
 corekit/config/responsibilities.json corekit/responsibilities.json
 
 # Standard processes (bundled — always available)
-corekit/config/processes/investigate.json corekit/processes/investigate.json
-corekit/config/processes/plan.json corekit/processes/plan.json
+corekit/config/processes/p-implement.json corekit/processes/p-implement.json
+corekit/config/processes/p-review.json corekit/processes/p-review.json
+corekit/config/processes/p-audit.json corekit/processes/p-audit.json
+corekit/config/processes/p-investigate.json corekit/processes/p-investigate.json
+corekit/config/processes/p-deploy-verify.json corekit/processes/p-deploy-verify.json
+corekit/config/processes/p-release.json corekit/processes/p-release.json
 
 # Introspect — filesystem introspection service (Firestore bus)
 corekit/daemon/agent-introspect.mjs bin/agent-introspect.mjs

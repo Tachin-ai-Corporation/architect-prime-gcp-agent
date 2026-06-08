@@ -131,6 +131,14 @@
   color: #D84F45;
   background: rgba(216, 79, 69, 0.14);
 }
+.chipPlanned {
+  background: rgba(155, 89, 182, 0.14);
+  color: #9B59B6;
+}
+.chipTimeout {
+  background: rgba(230, 126, 34, 0.14);
+  color: #E67E22;
+}
 
 /* ---- Progress ---- */
 .mProg {

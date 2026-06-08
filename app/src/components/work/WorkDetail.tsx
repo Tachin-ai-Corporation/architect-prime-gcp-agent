@@ -72,6 +72,11 @@ function statusLabel(status: string): string {
     case "failed": return "Failed";
     case "cancelled": return "Cancelled";
     case "blocked": return "Blocked";
+    case "planned": return "Planned";
+    case "awaiting_approval": return "Awaiting Approval";
+    case "rejected": return "Rejected";
+    case "timed_out": return "Timed Out";
+    case "aborted": return "Aborted";
     default: return "Pending";
   }
 }
@@ -81,8 +86,13 @@ function statusChipClass(status: string): string {
     case "active": return styles.chipAct;
     case "complete": return styles.chipDone;
     case "waiting":
-    case "needs_input": return styles.chipWait;
-    case "failed": return styles.chipFail;
+    case "needs_input":
+    case "awaiting_approval": return styles.chipWait;
+    case "failed":
+    case "rejected":
+    case "aborted": return styles.chipFail;
+    case "planned": return styles.chipPlanned;
+    case "timed_out": return styles.chipTimeout;
     default: return "";
   }
 }
@@ -92,8 +102,13 @@ function dotColor(status: string): string {
     case "complete": return "#3BAA78";
     case "active": return "#1F9A9B";
     case "waiting":
-    case "needs_input": return "#D6A83A";
-    case "failed": return "#D84F45";
+    case "needs_input":
+    case "awaiting_approval": return "#D6A83A";
+    case "failed":
+    case "rejected":
+    case "aborted": return "#D84F45";
+    case "planned": return "#9B59B6";
+    case "timed_out": return "#E67E22";
     default: return "#566373";
   }
 }
@@ -301,8 +316,32 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
                   <span className={styles.mv}>{duration}</span>
                 </>
               )}
+              {(envelope as any).depends_on?.length > 0 && (
+                <>
+                  <span className={styles.mk}>Depends On</span>
+                  <span className={styles.mv}>{(envelope as any).depends_on.join(", ")}</span>
+                </>
+              )}
+              {(envelope as any).plan_id && (
+                <>
+                  <span className={styles.mk}>Plan</span>
+                  <span className={styles.mv}>{(envelope as any).plan_id}</span>
+                </>
+              )}
               <span className={styles.mk}>ID</span>
               <span className={`${styles.mv} ${styles.mvId}`}>{envelope.id}</span>
+              {envelope.depends_on && envelope.depends_on.length > 0 && (
+                <>
+                  <span className={styles.mk}>Depends On</span>
+                  <span className={styles.mv}>{envelope.depends_on.join(", ")}</span>
+                </>
+              )}
+              {envelope.plan_id && (
+                <>
+                  <span className={styles.mk}>Plan</span>
+                  <span className={styles.mv}>{envelope.plan_id}</span>
+                </>
+              )}
             </div>
           </div>
 

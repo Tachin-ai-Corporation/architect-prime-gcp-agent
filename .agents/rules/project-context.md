@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native brain gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.07.1.0)
+## Current Architecture (v2026.06.08.1.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -23,7 +23,8 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - temporal-memory is pure memory (core-memory-read/write only, zero external APIs)
   - cerebellum is a pure test runner: executes validation rules, reports PASS/FAIL with evidence, structured verdicts (ALL_PASS/FAIL/NO_RULES)
 - **Dynamic skill awareness**: `assemble-tools` generates per-agent TOOLS.md from `skill.json` manifests (routes by `agent_part` field). Execution agents get full SKILL.md content; planning agents get compact index tables. `skill-author` Motor tool for generating new skill packages. Custom skills synced from Firestore during `upgrade-corekit`. Prime runs nightly `r-skill-discovery` responsibility to propose new skills (uses `work-log-read`, `brain-telemetry-read`, `session-summary` for data gathering). Dashboard 3-tab skills page (Installed/Library/Proposals) with per-agent install/uninstall.
-- **Processes vs Skills design principle**: Processes are for **orchestration** (when to do things, in what order, with what approvals). Skills are for **execution** (how to do a specific thing correctly every time). Processes should reference skills for mechanical steps. Anti-pattern: a process that tells motor to improvise deterministic operations without a skill providing the exact script. Process v2: plan/investigate processes enforce read-only research steps (`intent: research`, explicit `⚠️ READ-ONLY` banners in step descriptions). Plan process outputs a structured markdown document uploaded to the agent's Drive via `drive-upload`, shared with the requester via `drive-share` (never public), and gated on an `approval_gate` step before any execution. Process parameters support `auto_fill` from intake `source_meta` (e.g., `requester_email` auto-filled from `source_meta.senderEmail`).
+- **Processes vs Skills design principle**: Processes are for **orchestration** (when to do things, in what order, with what approvals). Skills are for **execution** (how to do a specific thing correctly every time). Processes should reference skills for mechanical steps. Anti-pattern: a process that tells motor to improvise deterministic operations without a skill providing the exact script. Six core processes defined: implement, review, audit, investigate, deploy-verify, release. Process steps support `intent: research` for read-only steps and `intent: execute` for modification steps. Sub-process composition via `sub_process` field (flattened into parent, circular ref protected).
+- **Culture of Work primitives**: Seven primitives form the work hierarchy: **Task** (atomic execution), **Checkpoint** (task group), **Mission** (self-contained goal), **Project** (recursive organizer with context), **Process** (reusable template), **Plan** (unexecuted Mission blueprint: draft→approved→executing→complete), **Responsibility** (scheduled/event-triggered work). Every Mission requires `project_id` (defaults to `{agent-id}/general`). Missions support `depends_on` for dependency management (auto-activation on completion). Plans are created via `createPlan()`, approved via `approvePlan()`, and stamped into M→C→T envelopes via `stampPlan()`. Projects are recursive (max depth 4) with accumulated context (documentation, processes, team, configuration).
 - **Responsibility self-management**: Agents create responsibilities through normal M→C→T pipeline. `responsibility-manage` Motor tool for CRUD + toggle on `responsibilities-job.json`. Individual responsibilities can be toggled enabled/disabled via dashboard toggle switch, `responsibility-manage toggle` Motor tool, or `set_responsibility_enabled` introspection query. Cortex classifies responsibility requests as new_mission → Prefrontal designs process → Motor writes config → Cerebellum verifies. Brain scheduler fires responsibilities on cron schedules. Responsibilities can link to stored processes via `processRef` + `processParams` for deterministic execution.
 - **Context assembly**: System prompt loads SOUL.md + IDENTITY.md + MEMORY.md + full agent registry (cached, 60s TTL). Per-agent generation params: Motor 65536 max_tokens, Cortex/Prefrontal 32768, Cerebellum/Memory 8192. Temperature tuned per role (0.1–0.6). Envelope context accumulation: rolling 400K token budget with oldest-first pruning.
 - **Input/Output architecture (ears + mouth)**:
@@ -89,7 +90,7 @@ corekit/          Runtime tools installed on VMs (brain, fleet, gateway, chat, d
 brain/            Agent workspace files (SOUL.md, IDENTITY.md, TOOLS.md, MEMORY.md)
 specialties/      Fleet agent specialty configs
 skills/           Skill manifests
-docs/             Architecture docs
+docs/             Architecture docs, Culture of Work primitives, authoring guides
 ```
 
 ## Development Discipline

@@ -3,14 +3,17 @@
 # Motor tool: reads/writes primes/{PRIME_ID}/projects/{projectId}
 #
 # Usage:
-#   project-manage list                    # List all projects (id, name, status, description)
+#   project-manage list                    # List all projects (id, name, status, goal, owner, etc.)
 #   project-manage get <id>                # Get full project details as JSON
 #   project-manage create '<json>' [--processes <comma-separated-ids>]   # Create new project
 #   project-manage update '<id>' '<json>' [--processes <comma-separated-ids>]  # Update project
 #   project-manage archive '<id>'          # Set status to 'archived'
+#   project-manage pause '<id>'            # Set status to 'paused'
 #
-# The JSON for create must include: id, name, description, context
+# The JSON for create must include: id, name, description, context, goal
+# Optional fields: owner (defaults to AGENT_USER_EMAIL), parent_id, depends_on
 # The JSON for update does a deep merge on the context field and shallow merge on others
+# Supports updating: goal, owner, parent_id, depends_on, status (active|complete|paused|archived)
 # Context entries follow the Context Packet schema:
 #   { "key": { "kind": "sheet|drive_folder|doc|dataset|url|template|people|convention",
 #              "ref": "resource-id", "url": "https://...", "name": "Display Name",
@@ -96,10 +99,22 @@ for doc in docs:
     name = extract_value(fields.get('name', {'stringValue': '—'}))
     status = extract_value(fields.get('status', {'stringValue': '—'}))
     desc = extract_value(fields.get('description', {'stringValue': ''}))
+    goal = extract_value(fields.get('goal', {'stringValue': ''}))
+    owner = extract_value(fields.get('owner', {'stringValue': ''}))
+    parent_id = extract_value(fields.get('parent_id', {'nullValue': None}))
+    depends_on = extract_value(fields.get('depends_on', {'arrayValue': {'values': []}}))
     print(f'  {pid}')
     print(f'    Name:        {name}')
     print(f'    Status:      {status}')
     print(f'    Description: {(desc or chr(32))[:120]}')
+    if goal:
+        print(f'    Goal:        {str(goal)[:120]}')
+    if owner:
+        print(f'    Owner:       {owner}')
+    if parent_id:
+        print(f'    Parent:      {parent_id}')
+    if depends_on and isinstance(depends_on, list) and len(depends_on) > 0:
+        print(f'    Depends on:  {len(depends_on)} project(s)')
     if 'standardProcesses' in fields:
         procs = extract_value(fields['standardProcesses'])
         if procs:
@@ -168,13 +183,13 @@ print(json.dumps(plain, indent=2))
       esac
     done
     python3 -c "
-import json, sys, subprocess
+import json, sys, subprocess, os
 from datetime import datetime, timezone
 
 new_project = json.loads('''$NEW_JSON''')
 
 # Validate required fields
-required = ['id', 'name', 'description', 'context']
+required = ['id', 'name', 'description', 'context', 'goal']
 missing = [f for f in required if f not in new_project]
 if missing:
     print(f'ERROR: Missing required fields: {missing}', file=sys.stderr)
@@ -193,13 +208,65 @@ if processes_set:
     else:
         new_project['standardProcesses'] = []
 
+# Defaults for new Culture of Work fields
+new_project.setdefault('owner', os.environ.get('AGENT_USER_EMAIL', ''))
+new_project.setdefault('parent_id', None)
+new_project.setdefault('depends_on', [])
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+
+# Helper: extract Firestore value to plain Python
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+# Validate parent_id if provided: must exist, depth <= 4
+if new_project.get('parent_id'):
+    parent_id = new_project['parent_id']
+    depth = 1
+    current_parent = parent_id
+    while current_parent:
+        purl = f'{base}/{path}/{current_parent}'
+        pr = subprocess.run(
+            ['curl', '-s', '-f', '-X', 'GET', purl, '-H', f'Authorization: Bearer {token}'],
+            capture_output=True, text=True
+        )
+        if pr.returncode != 0:
+            print(f'ERROR: parent_id \"{current_parent}\" not found.', file=sys.stderr)
+            sys.exit(1)
+        depth += 1
+        if depth > 4:
+            print(f'ERROR: Nesting depth exceeds maximum of 4 levels.', file=sys.stderr)
+            sys.exit(1)
+        pdata = json.loads(pr.stdout)
+        pfields = pdata.get('fields', {})
+        pid_field = pfields.get('parent_id')
+        current_parent = extract_value(pid_field) if pid_field else None
+
 # Enforce defaults
 now = datetime.now(timezone.utc).isoformat()
 new_project.setdefault('status', 'active')
 new_project['created_at'] = now
 new_project['updated_at'] = now
 
-# Convert plain JSON → Firestore format
+# Convert plain JSON -> Firestore format
 def to_firestore(value):
     if value is None:
         return {'nullValue': None}
@@ -219,9 +286,6 @@ def to_firestore(value):
 
 firestore_doc = {'fields': {k: to_firestore(v) for k, v in new_project.items()}}
 
-token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
-base = '${FIRESTORE_BASE}'
-path = '${COLLECTION_PATH}'
 project_id = new_project['id']
 url = f'{base}/{path}/{project_id}'
 
@@ -239,11 +303,18 @@ if result.returncode != 0:
 nm = new_project.get('name', '')
 st = new_project.get('status', '')
 ds = new_project.get('description', '')[:120]
+gl = new_project.get('goal', '')[:120]
+ow = new_project.get('owner', '')
 sp = new_project.get('standardProcesses')
 print(f'Created project \'{project_id}\'.')
 print(f'  Name:        {nm}')
 print(f'  Status:      {st}')
 print(f'  Description: {ds}')
+print(f'  Goal:        {gl}')
+if ow:
+    print(f'  Owner:       {ow}')
+if new_project.get('parent_id'):
+    print(f'  Parent:      {new_project["parent_id"]}')
 if sp:
     print('  Processes:   ' + ', '.join(sp))
 "
@@ -317,9 +388,39 @@ if 'context' in updates:
     existing['context'] = existing_ctx
     del updates['context']
 
+# Validate status if being updated
+if 'status' in updates:
+    valid_statuses = ['active', 'complete', 'paused', 'archived']
+    if updates['status'] not in valid_statuses:
+        print(f'ERROR: Invalid status \"{updates["status"]}\". Must be one of: {valid_statuses}', file=sys.stderr)
+        sys.exit(1)
+
 # Shallow merge rest
 for k, v in updates.items():
     existing[k] = v
+
+# Validate parent_id if changed
+if 'parent_id' in updates and updates['parent_id']:
+    parent_id = updates['parent_id']
+    depth = 1
+    current_parent = parent_id
+    while current_parent:
+        purl = f'{base}/{path}/{current_parent}'
+        pr = subprocess.run(
+            ['curl', '-s', '-f', '-X', 'GET', purl, '-H', f'Authorization: Bearer {token}'],
+            capture_output=True, text=True
+        )
+        if pr.returncode != 0:
+            print(f'ERROR: parent_id \"{current_parent}\" not found.', file=sys.stderr)
+            sys.exit(1)
+        depth += 1
+        if depth > 4:
+            print(f'ERROR: Nesting depth exceeds maximum of 4 levels.', file=sys.stderr)
+            sys.exit(1)
+        pdata = json.loads(pr.stdout)
+        pfields = pdata.get('fields', {})
+        pid_field = pfields.get('parent_id')
+        current_parent = extract_value(pid_field) if pid_field else None
 
 # Handle --processes
 processes_set = '$PROCESSES_SET' == 'true'
@@ -455,6 +556,92 @@ print(f'Archived project \'{target_id}\'.')
 "
     ;;
 
+  pause)
+    TARGET_ID="${1:?'pause requires a project id'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+# Extract existing document to plain JSON
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Set paused
+existing['status'] = 'paused'
+existing['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+# Convert back to Firestore format
+def to_firestore(value):
+    if value is None:
+        return {'nullValue': None}
+    if isinstance(value, bool):
+        return {'booleanValue': value}
+    if isinstance(value, int):
+        return {'integerValue': str(value)}
+    if isinstance(value, float):
+        return {'doubleValue': value}
+    if isinstance(value, str):
+        return {'stringValue': value}
+    if isinstance(value, list):
+        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict):
+        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to pause project: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'Paused project \'{target_id}\'.')
+"
+    ;;
+
   complete)
     TARGET_ID="${1:?'complete requires a project id'}"
     python3 -c "
@@ -544,22 +731,33 @@ print(f'Completed project \'{target_id}\'.')
     ;;
 
   help|*)
-    echo "Usage: project-manage <list|get|create|update|complete|archive> [args]"
+    echo "Usage: project-manage <list|get|create|update|complete|pause|archive> [args]"
     echo ""
     echo "Commands:"
-    echo "  list                                             List all projects (id, name, status, description)"
+    echo "  list                                             List all projects (id, name, status, goal, owner, etc.)"
     echo "  get '<id>'                                       Get full project details as JSON"
     echo "  create '<json>' [--processes <ids>]               Create a new project (full JSON)"
     echo "  update '<id>' '<json>' [--processes <ids>]        Update a project (partial JSON, deep merge on context)"
     echo "  complete '<id>'                                   Set project status to 'completed' with timestamp"
+    echo "  pause '<id>'                                      Set project status to 'paused'"
     echo "  archive '<id>'                                    Set project status to 'archived'"
     echo ""
     echo "The create JSON MUST include:"
-    echo "  id, name, description, context"
+    echo "  id, name, description, context, goal"
+    echo ""
+    echo "Optional create fields (in JSON):"
+    echo "  owner          Owner email (defaults to AGENT_USER_EMAIL env var)"
+    echo "  parent_id      Parent project ID (validated: must exist, max depth 4)"
+    echo "  depends_on     Array of project IDs this project depends on"
+    echo ""
+    echo "Status values: active | complete | paused | archived"
     echo ""
     echo "Optional flags (create/update):"
     echo "  --processes <comma-separated-ids>   Set standardProcesses array (e.g. 'proc1,proc2')"
     echo "  --processes \"\"                     Clear the standardProcesses list"
+    echo ""
+    echo "Update supports changing: goal, owner, parent_id, depends_on, status, name, description, context"
+    echo "  When parent_id is changed, existence and max depth (4) are validated."
     echo ""
     echo "Context entries use the Context Packet schema:"
     echo '  { "key": { "kind": "sheet|drive_folder|doc|...", "ref": "id", "name": "...", "summary": "..." } }'

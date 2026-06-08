@@ -1,0 +1,80 @@
+{
+  "id": "p-release",
+  "name": "Release",
+  "description": "Structured release process. Pre-flight checks, version tagging, deployment, verification, and announcement. Includes an approval gate after pre-flight to ensure human sign-off before deploying.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "version": {
+      "description": "Version to release (e.g. 'v1.2.0', '2024.06.08')",
+      "required": true
+    },
+    "target": {
+      "description": "What to release — service, package, or application name",
+      "required": false,
+      "default": ""
+    },
+    "project_id": {
+      "description": "Project context (optional)",
+      "required": false,
+      "default": ""
+    }
+  },
+  "steps": [
+    {
+      "title": "Pre-flight checks",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, deploy, tag, or change anything.\n\nVerify readiness for releasing ${version} of ${target}:\n1. Run the full test suite — all tests must pass\n2. Check for open blockers: critical bugs, failing CI, unmerged dependencies\n3. Verify the changelog or release notes are up to date\n4. Confirm the branch is in a clean, releasable state (no uncommitted changes, no WIP commits)\n5. Check that all required approvals and reviews are complete\n6. Verify dependency versions are pinned and no known vulnerabilities exist\n7. Compare against the previous release to understand what's changing\n\nOutput: pre-flight checklist with PASS/FAIL for each item. Any FAIL items must be resolved before proceeding.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "All pre-flight checks completed with PASS/FAIL status. Test suite results documented. Blockers identified (if any). No modifications were made."
+    },
+    {
+      "title": "Approval gate: proceed with release?",
+      "description": "Pre-flight checks for ${version} of ${target} are complete. Human approval is required before proceeding with tagging and deployment.",
+      "type": "approval_gate",
+      "approval_message": "🚀 **Release ${version}** of ${target} is ready for pre-flight review.\n\nAll automated checks have been completed. Please review the pre-flight results above and reply `approve` to proceed with tagging and deployment, or `reject` to abort the release.",
+      "agent": "motor",
+      "intent": "approval_gate",
+      "accept_criteria": "Human has reviewed pre-flight results and approved or rejected the release."
+    },
+    {
+      "title": "Tag version",
+      "description": "Tag the release of ${version} for ${target}:\n1. Create a git tag: `git tag -a ${version} -m 'Release ${version}'`\n2. Push the tag to the remote: `git push origin ${version}`\n3. If a release branch strategy is used, create or update the release branch\n4. Verify the tag was created correctly: `git show ${version}`\n\nOutput: tag name, commit hash, and confirmation of push.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Git tag created and pushed. Tag points to the correct commit. Tag is visible on remote."
+    },
+    {
+      "title": "Deploy to target environment",
+      "description": "Deploy ${version} of ${target}:\n1. Execute the deployment using the project's standard deployment method\n2. Monitor the deployment process for errors\n3. Wait for the deployment to complete (do not proceed until rollout is finished)\n4. Record the deployment details: timestamp, method used, any warnings observed\n\nIf deployment fails, stop immediately and document the failure. Do NOT retry without explicit instruction.\n\nOutput: deployment status (success/failure), deployment details, and any warnings.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Deployment completed successfully or failure is clearly documented. Deployment details are recorded."
+    },
+    {
+      "title": "Verify deployment",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify or fix anything found during verification.\n\nVerify the deployment of ${version} of ${target}:\n1. Run the deployment verification process (p-deploy-verify):\n   - Health check: service is running, correct version deployed\n   - Smoke test: core functionality works\n   - Regression check: nothing broken from previous state\n2. If the sub-process is not available, perform these checks manually:\n   - Verify the service is responding on all endpoints\n   - Confirm the deployed version matches ${version}\n   - Test core user-facing functionality\n   - Check error rates and logs for anomalies\n\nDo NOT fix any issues found — only report them.\n\nOutput: verification verdict (HEALTHY/DEGRADED/FAILED) with details.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Deployment verified with clear HEALTHY/DEGRADED/FAILED verdict. Version confirmed. Core functionality tested. No systems were modified.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Announce release",
+      "description": "Announce the release of ${version} of ${target}:\n1. Prepare a release summary including:\n   - Version number and what was released\n   - Key changes and new features\n   - Any known issues or caveats\n   - Verification status from the previous step\n2. Post the announcement through available channels (project context, team notifications)\n3. Update project context with the release information if project_id is available\n\nOutput: release announcement content and confirmation of where it was posted.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Release announcement prepared with version, changes, and verification status. Announcement posted. Project context updated if applicable."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

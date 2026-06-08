@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> **Current version:** `v2026.06.07.1.0`
+> **Current version:** `v2026.06.08.1.0`
 >
 > This document describes *what Architect Prime is* and *how it works right now*.
 > Implementation plans live in `docs/plans/`. Historical changes live in git.
@@ -29,8 +29,9 @@ Firestore (state store)
     ├── primes/{id}/intake/{id}        → Brain intake queue
     ├── primes/{id}/fleet/{agent}      → Fleet agent status + health
     ├── primes/{id}/messages/          → Dashboard ↔ Prime chat
-    ├── primes/{id}/projects/{id}      → Project context
+    ├── primes/{id}/projects/{id}      → Project context (recursive, with depends_on)
     ├── primes/{id}/processes/{id}     → Stored reusable processes
+    ├── primes/{id}/plans/{id}         → Plan blueprints (draft → approved → executing → complete)
     └── config/settings                → Agent defaults (email domain)
     │
     ▼
@@ -52,10 +53,17 @@ Agent VMs (e2-medium, Ubuntu 22.04)
 
 All work flows through four levels. No exceptions.
 
-- **Responsibilities (R):** Cron-scheduled recurring duties. Configured in JSON, hot-reloaded.
-- **Missions (M):** Multi-checkpoint objectives with definitions of done. Every user request becomes a mission.
+- **Responsibilities (R):** Cron-scheduled or event-triggered recurring duties. Configured in JSON, hot-reloaded. Support `trigger` events: `on_complete`, `on_deploy`, `on_failure`.
+- **Missions (M):** Multi-checkpoint objectives with definitions of done. Every user request becomes a mission. Always has `project_id`. Supports `depends_on` for dependency management.
 - **Checkpoints (C):** Observable milestones within a mission. Created by prefrontal or brain.
 - **Tasks (T):** Atomic execution steps dispatched to sub-agents. Always nested under a checkpoint.
+
+Additional primitives:
+- **Projects:** Recursive organizational containers (max depth 4) with accumulated context. Every Mission belongs to a project.
+- **Plans:** Unexecuted Mission blueprints. Created via `createPlan()`, approved via `approvePlan()`, stamped into M→C→T via `stampPlan()`. Lifecycle: draft → approved → executing → complete.
+- **Processes:** Reusable templates (6 core: implement, review, audit, investigate, deploy-verify, release). Produce Plans.
+
+Full Culture of Work framework documented in [`docs/CULTURE_OF_WORK.md`](docs/CULTURE_OF_WORK.md).
 
 ### Brain State Machine
 
@@ -121,7 +129,10 @@ architect-prime/
 ├── brain/                  # Agent Identity — SOUL.md, IDENTITY.md per agent per role
 ├── specialties/            # Per-agent-type bundles (8 specialties)
 ├── skills/                 # Skill packages (agent-ask, workspace-drive, fleet-*, etc.)
-├── docs/                   # Documentation + plans
+├── docs/                   # Documentation — Culture of Work, primitives, authoring guides
+│   ├── CULTURE_OF_WORK.md  # Culture of Work framework overview
+│   ├── primitives/         # 7 primitive reference docs (Task → Responsibility)
+│   ├── guides/             # Authoring guides (processes, responsibilities)
 │   ├── plans/              # Implementation plans (referenced, not inlined)
 │   └── architecture/       # Design documents
 ├── MISSION_PLAN.md         # This document
@@ -145,4 +156,4 @@ architect-prime/
 
 Active and upcoming implementation plans live in [`docs/plans/`](docs/plans/).
 
-No active plans.
+- [Culture of Work Implementation](docs/plans/CULTURE_IMPLEMENTATION_PLAN.md) — ✅ Complete

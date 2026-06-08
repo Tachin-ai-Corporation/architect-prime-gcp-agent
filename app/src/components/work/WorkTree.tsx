@@ -16,7 +16,7 @@ interface WorkTreeProps {
 
 /** Check if a node or any descendant is active/waiting. */
 function hasActiveDescendant(node: TreeNode): boolean {
-  if (node.status === "active" || node.status === "waiting" || node.status === "needs_input") {
+  if (node.status === "active" || node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval") {
     return true;
   }
   for (const child of node.children) {
@@ -92,6 +92,7 @@ function TreeNodeRow({
     node.status === "active" ||
     node.status === "waiting" ||
     node.status === "needs_input" ||
+    node.status === "awaiting_approval" ||
     hasActiveDescendant(node);
   const [expanded, setExpanded] = useState(shouldAutoExpand);
 
@@ -104,17 +105,21 @@ function TreeNodeRow({
       ? "done"
       : node.status === "active"
         ? "active"
-        : node.status === "waiting" || node.status === "needs_input"
+        : node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval"
           ? "waiting"
-          : node.status === "failed"
+          : node.status === "failed" || node.status === "rejected"
             ? "failed"
-            : "pending";
+            : node.status === "planned"
+              ? "planned"
+              : node.status === "timed_out"
+                ? "timedout"
+                : "pending";
 
   // Label class
   const labelClass =
     node.status === "active"
       ? styles.activeL
-      : node.status === "waiting" || node.status === "needs_input"
+      : node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval"
         ? styles.waitingL
         : node.status === "complete"
           ? styles.doneL
@@ -129,6 +134,8 @@ function TreeNodeRow({
 
   if (node.owner) metaJsx.push(<span key="owner" title={node.owner}>{formatAgentDisplayName(node.owner)}</span>);
   if (node.project_id) metaJsx.push(<span key="proj">{node.project_id}</span>);
+  if ((node as any).depends_on?.length) metaJsx.push(<span key="deps">⛓ {(node as any).depends_on.length} deps</span>);
+  if ((node as any).plan_id) metaJsx.push(<span key="plan" className={styles.live}>📑 Plan</span>);
 
   if (node.status === "active" && node.started_at) {
     const el = elapsedSince(node.started_at);

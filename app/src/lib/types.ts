@@ -84,7 +84,7 @@ export interface WorkEnvelope {
   type: 'R' | 'M' | 'C' | 'T';
   parent_id: string | null;
   owner: string;
-  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived';
+  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived' | 'awaiting_approval' | 'planned' | 'rejected' | 'timed_out';
   intent: string;
   title?: string;
   instruction: string;
@@ -93,6 +93,7 @@ export interface WorkEnvelope {
   output: string | null;
   error: string | null;
   children: string[];
+  depends_on?: string[];
   source_channel: string;
   source_meta: Record<string, unknown>;
   created_at: string;
@@ -107,6 +108,7 @@ export interface WorkEnvelope {
   cancelled_reason?: string | null;
   project_id?: string | null;
   delivery_status?: string | null;
+  plan_id?: string | null;
 }
 
 export interface WorkHistoryEntry {
@@ -122,8 +124,45 @@ export interface WorkHistoryEntry {
 export interface Project {
   id: string;
   name: string;
+  goal: string;
   description: string;
-  status: 'active' | 'archived';
+  owner: string;
+  status: 'active' | 'complete' | 'paused' | 'archived';
+  parent_id: string | null;
+  depends_on: string[];
+  context: {
+    documentation: string[];
+    processes: string[];
+    team: Record<string, string>;
+    configuration: Record<string, unknown>;
+  } | null;
   created_at: string;
   updated_at: string;
 }
+
+/* ---- Plan types ---- */
+
+export interface Plan {
+  id: string;
+  project_id: string;
+  name: string;
+  process_id: string | null;
+  process_version: number | null;
+  parameters: Record<string, unknown>;
+  layout: {
+    mission: { instruction: string; accept_criteria: string; owner: string };
+    checkpoints: {
+      instruction: string;
+      accept_criteria: string;
+      tasks: { instruction: string; accept_criteria: string; agent: string }[];
+    }[];
+  };
+  mission_id: string | null;
+  amendments: { timestamp: string; reason: string; changes: string; amended_by: string }[];
+  status: 'draft' | 'approved' | 'executing' | 'complete' | 'abandoned';
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+

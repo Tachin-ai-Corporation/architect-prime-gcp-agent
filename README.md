@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.07.1.0`
+> **Current version:** `v2026.06.08.1.0`
 
 
 ---
@@ -24,8 +24,10 @@ Prime handles **infrastructure, not orchestration**. Humans assign work to agent
 | **Self-Upgrading** | Dashboard upgrades itself via Cloud Build; CoreKit upgrades cascade to fleet |
 | **Contract Enforcement** | `contracts.json` is the single source of truth — validated at bootstrap and upgrade |
 | **Work Tree Dashboard** | Real-time M→C→T work hierarchy, human-in-the-loop for agent questions |
+| **Plan Management** | Process-driven plans (draft → approve → execute) with full M→C→T blueprint visualization |
+| **Project Hierarchy** | Recursive projects with context accumulation, dependency tracking, and auto-completion |
 | **Agent Introspection** | Query actual installed tools/skills from agent VMs via Firestore bus — real filesystem data |
-| **Autonomous Responsibilities** | Agents self-program recurring duties with cron schedules — R/M/C/T hierarchy |
+| **Autonomous Responsibilities** | Agents self-program recurring duties with cron/event triggers — R/M/C/T hierarchy |
 | **Self-Hosted** | Everything runs in YOUR GCP project — zero shared infrastructure, no API keys |
 
 ---
@@ -170,7 +172,8 @@ architect-prime/
 │   │   ├── a/[agent]/                # Agent Deep Dive (7 tabs)
 │   │   ├── fleet/                    # Fleet Management
 │   │   ├── work/                     # Work Tree
-│   │   ├── projects/                 # Projects
+│   │   ├── plans/                    # Plans (draft/approved/executing/complete)
+│   │   ├── projects/                 # Projects (hierarchy, context, dependencies)
 │   │   ├── processes/                # Processes
 │   │   ├── config/                   # Prime Configuration
 │   │   └── chat/                     # Prime Chat
@@ -258,7 +261,10 @@ architect-prime/
 │   ├── fleet-upgrade/                # Upgrade agent CoreKit
 │   └── memory-consolidate/           # Nightly memory consolidation
 │
-├── docs/                             # Architecture documentation
+├── docs/                             # Documentation
+│   ├── CULTURE_OF_WORK.md            # Culture of Work framework (7 primitives)
+│   ├── primitives/                   # Primitive reference docs (Task → Responsibility)
+│   ├── guides/                       # Authoring guides (processes, responsibilities)
 │   ├── BOOTSTRAP.md                  # Bootstrap reference
 │   ├── CHAT_SETUP.md                 # Google Chat / DWD setup guide
 │   └── architecture/                 # AGENT_DESIGN, BRAIN_ARCHITECTURE, R/C/M spec
@@ -372,6 +378,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.06.4.0** | **Baseline checkpoint** — Dead code cleanup, fleet bug fixes, M→C→T enforcement, docs restructure |
 | **v2026.06.06.5.0** | **Dashboard Redesign** — Hierarchical /p/[id] routing, Agent Deep Dive (7 tabs), Library namespace, LiveIndicator, responsive tabs |
 | **v2026.06.07.1.0** | **Process Hardening** — Plan/Investigate v2 (read-only research steps, Drive artifact output, approval gate), auto-fill from source_meta |
+| **v2026.06.08.1.0** | **Culture of Work** — 7 primitives (Task/Checkpoint/Mission/Project/Process/Plan/Responsibility), Plan engine (create→approve→stamp), recursive Projects with depends_on, event-triggered responsibilities, 6 core processes, dashboard Plans page, 12 documentation files |
 
 Full version history is in git (`git log --oneline`).
 

@@ -179,3 +179,9 @@ approach as the foundation for their pipeline steps.
 - My output is EITHER a `DISPATCH_PLAN:` block OR a `PLANNING_ROUND_REQUIRED:` block.
 - If the task is too vague to plan even with an advisory round, I return `short_circuit: true` and Cortex asks for clarification.
 - I default to conservative plans — cerebellum for any motor output.
+
+## Culture of Work — Planning Rules
+
+1. **Every Checkpoint in a plan must have explicit accept criteria.** Vague criteria like "it works" are not acceptable. Criteria must be specific, testable, and verifiable by Cerebellum.
+2. **If a plan exceeds 6-8 Checkpoints, recommend restructuring as a sub-Project with multiple Missions.** Over-long plans are fragile — they lose context, accumulate stale assumptions, and are hard to recover from failures. Break large efforts into focused Missions under a shared Project.
+3. **Always check `available_processes` before planning from scratch.** If a stored process covers the work (or part of it), use `follow_process` instead of reinventing the steps. Processes are tested and versioned — prefer them over ad-hoc plans.

@@ -76,6 +76,12 @@ export default function PrimeHubPage({
           href={`/p/${id}/work`}
         />
         <NavCard
+          icon="📑"
+          title="Plans"
+          description="Execution plans & approvals"
+          href={`/p/${id}/plans`}
+        />
+        <NavCard
           icon="📁"
           title="Projects"
           description="Organize work by project"

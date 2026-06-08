@@ -425,8 +425,11 @@ try {
 
 // ---- Project registry (loaded from Firestore, refreshed periodically) ----
 let PROJECTS = {}; // keyed by project id
+let PROJECT_CHILDREN = {}; // parent_id → [child_id, ...]
+let DEFAULT_PROJECT_ID = null;
 let _projectsLoadedAt = 0;
 const PROJECTS_REFRESH_MS = 60_000;
+const MAX_PROJECT_DEPTH = 4;
 
 async function loadProjects() {
   try {
@@ -439,13 +442,26 @@ async function loadProjects() {
     if (!resp.ok) return;
     const data = await resp.json();
     const projects = {};
+    const childIndex = {};
     for (const doc of (data.documents || [])) {
       const p = firestoreDecode(doc.fields || {});
       if (p.id && p.status !== 'archived') {
+        // Ensure new fields have defaults
+        p.goal = p.goal || '';
+        p.owner = p.owner || '';
+        p.parent_id = p.parent_id || null;
+        p.depends_on = Array.isArray(p.depends_on) ? p.depends_on : [];
+        p.context = p.context || null;
         projects[p.id] = p;
+        // Build parent→child index
+        if (p.parent_id) {
+          if (!childIndex[p.parent_id]) childIndex[p.parent_id] = [];
+          childIndex[p.parent_id].push(p.id);
+        }
       }
     }
     PROJECTS = projects;
+    PROJECT_CHILDREN = childIndex;
     _projectsLoadedAt = Date.now();
     if (Object.keys(projects).length > 0) {
       log('INFO', `Projects loaded: ${Object.keys(projects).join(', ')}`);
@@ -458,6 +474,195 @@ async function loadProjects() {
 async function ensureProjectsLoaded() {
   if (Date.now() - _projectsLoadedAt > PROJECTS_REFRESH_MS) {
     await loadProjects();
+  }
+}
+
+/**
+ * Get accumulated project context by traversing parent chain.
+ * Most specific (child) wins on key conflicts.
+ * NOTE: This is different from buildProjectContext() below which renders text for Cortex.
+ */
+function getAccumulatedProjectContext(projectId) {
+  const chain = [];
+  let current = projectId;
+  const visited = new Set();
+  while (current && PROJECTS[current] && !visited.has(current)) {
+    visited.add(current);
+    chain.unshift(current); // root first
+    current = PROJECTS[current].parent_id;
+  }
+  // Merge contexts: root → leaf (leaf wins)
+  let merged = { documentation: [], processes: [], team: {}, configuration: {} };
+  for (const pid of chain) {
+    const ctx = PROJECTS[pid]?.context;
+    if (!ctx) continue;
+    if (ctx.documentation) merged.documentation = [...merged.documentation, ...ctx.documentation];
+    if (ctx.processes) merged.processes = [...merged.processes, ...ctx.processes];
+    if (ctx.team) merged.team = { ...merged.team, ...ctx.team };
+    if (ctx.configuration) merged.configuration = { ...merged.configuration, ...ctx.configuration };
+  }
+  return { chain: chain.map(id => ({ id, name: PROJECTS[id]?.name || id })), context: merged };
+}
+
+/**
+ * Validate project nesting depth. Rejects nesting beyond MAX_PROJECT_DEPTH.
+ */
+function validateProjectDepth(parentId) {
+  let depth = 0;
+  let current = parentId;
+  const visited = new Set();
+  while (current && PROJECTS[current] && !visited.has(current)) {
+    visited.add(current);
+    depth++;
+    current = PROJECTS[current].parent_id;
+  }
+  return depth < MAX_PROJECT_DEPTH;
+}
+
+/**
+ * Check if a project's work is all complete and auto-transition to 'complete'.
+ * Called when a Mission completes — checks if the mission's project has all work done.
+ */
+async function checkProjectCompletion(projectId) {
+  if (!projectId || !PROJECTS[projectId]) return;
+  const project = PROJECTS[projectId];
+  if (project.status !== 'active') return;
+
+  try {
+    const token = await getAuthToken();
+    if (!token) return;
+
+    // 1. Check sub-projects — all must be complete/archived
+    const childIds = PROJECT_CHILDREN[projectId] || [];
+    for (const childId of childIds) {
+      const child = PROJECTS[childId];
+      if (!child) continue;
+      if (child.status !== 'complete' && child.status !== 'archived') {
+        return; // Still has active children
+      }
+    }
+
+    // 2. Check missions belonging to this project — all must be complete/archived/cancelled
+    const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+    let nextPageToken = null;
+    do {
+      const url = `${parentPath}/work?pageSize=300${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
+      const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!resp.ok) break;
+      const data = await resp.json();
+      for (const doc of (data.documents || [])) {
+        const env = firestoreDecode(doc.fields || {});
+        if (env.type !== 'M' || env.project_id !== projectId) continue;
+        if (env.status !== 'complete' && env.status !== 'archived' && env.status !== 'cancelled' && env.status !== 'failed') {
+          return; // Still has active missions
+        }
+      }
+      nextPageToken = data.nextPageToken;
+    } while (nextPageToken);
+
+    // 3. Check depends_on — all deps must be complete/archived
+    for (const depId of (project.depends_on || [])) {
+      const dep = PROJECTS[depId];
+      if (!dep) continue;
+      if (dep.status !== 'complete' && dep.status !== 'archived') {
+        return; // Dependency not met
+      }
+    }
+
+    // All children, missions, and deps are done — auto-complete
+    log('INFO', `Project ${projectId} all work complete — auto-completing`);
+    project.status = 'complete';
+    project.updated_at = now();
+    const projUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${projectId}`;
+    await fetch(projUrl, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: firestoreEncode(project) }),
+    });
+
+    // Cascade — check parent project too
+    if (project.parent_id) {
+      await checkProjectCompletion(project.parent_id);
+    }
+  } catch (e) {
+    log('WARN', `checkProjectCompletion error for ${projectId}: ${e.message}`);
+  }
+}
+
+/**
+ * Detect circular dependencies in a depends_on array.
+ * Traverses the dependency graph; returns true if adding targetId
+ * as a dependent of sourceId would create a cycle.
+ */
+function hasCircularDependency(sourceId, targetId, envelopes = {}) {
+  const visited = new Set();
+  const stack = [targetId];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === sourceId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const env = envelopes[current];
+    if (env && Array.isArray(env.depends_on)) {
+      stack.push(...env.depends_on);
+    }
+  }
+  return false;
+}
+
+/**
+ * Validate that M-type envelopes have a project_id before writing.
+ * Logs warning and assigns default if missing.
+ */
+function validateMissionProjectId(envelope) {
+  if (envelope.type === 'M' && !envelope.project_id) {
+    log('WARN', `Mission ${envelope.id} missing project_id — assigning default`);
+    envelope.project_id = DEFAULT_PROJECT_ID;
+  }
+  return envelope;
+}
+
+/**
+ * Create the agent's default project if it doesn't exist.
+ */
+async function ensureDefaultProject() {
+  const defaultId = `${AGENT_ID}/general`;
+  DEFAULT_PROJECT_ID = defaultId;
+  if (PROJECTS[defaultId]) {
+    log('DEBUG', `Default project exists: ${defaultId}`);
+    return;
+  }
+  try {
+    const token = await getAuthToken();
+    if (!token) return;
+    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${defaultId}`;
+    const body = {
+      fields: {
+        id: { stringValue: defaultId },
+        name: { stringValue: 'General' },
+        goal: { stringValue: 'General workspace for unscoped work' },
+        description: { stringValue: `Default project for ${AGENT_ID}` },
+        owner: { stringValue: AGENT_EMAIL || AGENT_ID },
+        status: { stringValue: 'active' },
+        parent_id: { nullValue: null },
+        depends_on: { arrayValue: { values: [] } },
+        created_at: { stringValue: now() },
+        updated_at: { stringValue: now() },
+      }
+    };
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    log('INFO', `Default project created: ${defaultId}`);
+    // Reload to pick it up
+    await loadProjects();
+  } catch (e) {
+    log('WARN', `Failed to create default project: ${e.message}`);
   }
 }
 
@@ -532,6 +737,366 @@ async function ensureProcessesLoaded() {
   }
 }
 
+// ---- Dependency system (Cluster 1B) ----
+
+/**
+ * Check if all depends_on targets for an envelope are complete.
+ * Returns true if no deps or all deps are complete/archived.
+ */
+async function checkDependencies(envelope) {
+  const deps = envelope.depends_on;
+  if (!Array.isArray(deps) || deps.length === 0) return true;
+  try {
+    const token = await getAuthToken();
+    if (!token) return true; // fail open
+    for (const depId of deps) {
+      const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/work/${depId}`;
+      const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!resp.ok) continue; // dep not found = don't block
+      const data = await resp.json();
+      const dep = firestoreDecode(data.fields || {});
+      if (dep.status !== 'complete' && dep.status !== 'archived') {
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    log('WARN', `checkDependencies error: ${e.message}`);
+    return true; // fail open
+  }
+}
+
+/**
+ * When a Mission completes, scan for other Missions that depend on it.
+ * Auto-activate those whose deps are all met.
+ */
+async function activateDependents(completedMissionId) {
+  try {
+    const token = await getAuthToken();
+    if (!token) return;
+    // Scan work collection for pending missions with depends_on containing completedMissionId
+    const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+    let nextPageToken = null;
+    do {
+      const url = `${parentPath}/work?pageSize=200${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
+      const resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!resp.ok) break;
+      const data = await resp.json();
+      for (const doc of (data.documents || [])) {
+        const env = firestoreDecode(doc.fields || {});
+        if (env.type !== 'M' || env.status !== 'pending') continue;
+        const deps = env.depends_on;
+        if (!Array.isArray(deps) || !deps.includes(completedMissionId)) continue;
+        // Check if all deps are now met
+        const allMet = await checkDependencies(env);
+        if (allMet) {
+          log('INFO', `Dependency met: activating mission ${env.id} (was waiting on ${completedMissionId})`);
+          env.status = 'active';
+          env.started_at = now();
+          env.updated_at = now();
+          await firestoreWrite('work', env.id, env);
+          await writeHistory(env.id, 'pending', 'active', 'brain', `Dependencies cleared — auto-activated`);
+        }
+      }
+      nextPageToken = data.nextPageToken;
+    } while (nextPageToken);
+  } catch (e) {
+    log('WARN', `activateDependents error: ${e.message}`);
+  }
+}
+
+// ---- Plan primitive (Cluster 1C) ----
+
+/**
+ * Create a Plan from a process definition. Stores the plan layout without
+ * stamping any work envelopes. Plan starts in 'draft' status.
+ *
+ * @returns {object} The created Plan document
+ */
+async function createPlan(processId, parameters, projectId, instruction) {
+  await ensureProcessesLoaded();
+  const process = PROCESSES[processId];
+  if (!process) throw new Error(`Process not found: ${processId}`);
+
+  const cpPlan = processToCheckpointPlan(process, parameters);
+  if (!cpPlan || !cpPlan.checkpoints || cpPlan.checkpoints.length === 0) {
+    throw new Error(`Process '${processId}' produces no checkpoints`);
+  }
+
+  const planId = generateId('plan');
+  const plan = {
+    id: planId,
+    project_id: projectId || DEFAULT_PROJECT_ID,
+    name: `${process.name}: ${(instruction || '').substring(0, 100)}`,
+    process_id: processId,
+    process_version: process.version || 1,
+    parameters,
+    layout: {
+      mission: {
+        instruction: instruction || `Execute process: ${process.name}`,
+        accept_criteria: `Process '${process.name}' completes all steps successfully.`,
+        owner: AGENT_EMAIL || AGENT_ID,
+      },
+      checkpoints: cpPlan.checkpoints.map(cp => ({
+        instruction: cp.instruction,
+        accept_criteria: cp.accept_criteria || '',
+        tasks: (cp.tasks || []).map(t => ({
+          instruction: t.task,
+          accept_criteria: t.accept_criteria || '',
+          agent: t.agent || 'motor',
+        })),
+      })),
+    },
+    mission_id: null,
+    amendments: [],
+    status: 'draft',
+    approved_by: null,
+    approved_at: null,
+    created_at: now(),
+    updated_at: now(),
+  };
+
+  // Write to Firestore
+  const token = await getAuthToken();
+  if (token) {
+    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
+    await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: firestoreEncode(plan) }),
+    });
+  }
+
+  log('INFO', `Plan created: ${planId} (process: ${processId}, ${cpPlan.checkpoints.length} checkpoints)`);
+  return plan;
+}
+
+/**
+ * Approve a Plan. Transitions from 'draft' to 'approved' and records the approver.
+ */
+async function approvePlan(planId, approvedBy) {
+  const token = await getAuthToken();
+  if (!token) throw new Error('No auth token');
+
+  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
+  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+  if (!resp.ok) throw new Error(`Plan not found: ${planId}`);
+  const plan = firestoreDecode((await resp.json()).fields || {});
+
+  if (plan.status !== 'draft') {
+    throw new Error(`Plan ${planId} is '${plan.status}', cannot approve`);
+  }
+
+  plan.status = 'approved';
+  plan.approved_by = approvedBy;
+  plan.approved_at = now();
+  plan.updated_at = now();
+
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: firestoreEncode(plan) }),
+  });
+
+  log('INFO', `Plan approved: ${planId} by ${approvedBy}`);
+  return plan;
+}
+
+/**
+ * Stamp a Plan: create the full M→C→T envelope hierarchy from the plan layout
+ * and begin execution. Transitions plan to 'executing'.
+ */
+async function stampPlan(planId, intake, memoryContext) {
+  const token = await getAuthToken();
+  if (!token) throw new Error('No auth token');
+
+  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
+  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+  if (!resp.ok) throw new Error(`Plan not found: ${planId}`);
+  const plan = firestoreDecode((await resp.json()).fields || {});
+
+  if (plan.status !== 'approved') {
+    throw new Error(`Plan ${planId} is '${plan.status}', must be 'approved' to stamp`);
+  }
+
+  const layout = plan.layout;
+  if (!layout || !layout.checkpoints || layout.checkpoints.length === 0) {
+    throw new Error(`Plan ${planId} has no checkpoints in layout`);
+  }
+
+  // Create Mission envelope
+  const missionId = generateId('w');
+  const mission = {
+    id: missionId,
+    type: 'M',
+    parent_id: null,
+    owner: layout.mission.owner || AGENT_EMAIL || AGENT_ID,
+    status: 'active',
+    intent: 'plan_execution',
+    title: await generateTitle(layout.mission.instruction, 'mission'),
+    instruction: layout.mission.instruction,
+    accept_criteria: layout.mission.accept_criteria,
+    context_summary: `Executing plan: ${plan.name}`,
+    output: null,
+    children: [],
+    context_forward: null,
+    error: null,
+    source_channel: intake?.source || 'plan',
+    source_meta: intake?.source_meta || { plan_id: planId },
+    project_id: plan.project_id || DEFAULT_PROJECT_ID,
+    plan_id: planId,
+    process_id: plan.process_id,
+    process_version: plan.process_version,
+    created_at: now(),
+    started_at: now(),
+    completed_at: null,
+    updated_at: now(),
+    iteration: 0,
+    memory_context: memoryContext || null,
+    delivery_status: 'internal',
+  };
+
+  // Create Checkpoint + Task envelopes
+  const checkpointEnvelopes = [];
+  for (let ci = 0; ci < layout.checkpoints.length; ci++) {
+    const cp = layout.checkpoints[ci];
+    const cpId = generateId('w');
+    const cEnvelope = {
+      id: cpId,
+      type: 'C',
+      parent_id: missionId,
+      owner: AGENT_EMAIL || AGENT_ID,
+      status: 'pending',
+      intent: 'checkpoint',
+      title: await generateTitle(cp.instruction || `Checkpoint ${ci + 1}`, 'checkpoint'),
+      instruction: cp.instruction,
+      accept_criteria: cp.accept_criteria || '',
+      output: null,
+      children: [],
+      context_forward: null,
+      error: null,
+      source_channel: 'plan',
+      source_meta: { plan_id: planId, checkpoint: ci + 1, checkpoint_total: layout.checkpoints.length },
+      project_id: plan.project_id || DEFAULT_PROJECT_ID,
+      plan_id: planId,
+      created_at: now(),
+      started_at: null,
+      completed_at: null,
+      updated_at: now(),
+      iteration: 0,
+    };
+
+    const tEnvelopes = [];
+    for (let ti = 0; ti < (cp.tasks || []).length; ti++) {
+      const task = cp.tasks[ti];
+      const tId = generateId('w');
+      const tEnvelope = {
+        id: tId,
+        type: 'T',
+        parent_id: cpId,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'pending',
+        intent: 'execute',
+        title: await generateTitle(task.instruction || `Task ${ci + 1}.${ti + 1}`, 'task'),
+        instruction: task.instruction,
+        accept_criteria: task.accept_criteria || '',
+        output: null,
+        children: [],
+        context_forward: null,
+        error: null,
+        source_channel: 'plan',
+        source_meta: {
+          plan_id: planId,
+          step_type: 'standard',
+          step_index: ti,
+          checkpoint_index: ci,
+          agent: task.agent || 'motor',
+          optional: false,
+        },
+        project_id: plan.project_id || DEFAULT_PROJECT_ID,
+        plan_id: planId,
+        created_at: now(),
+        started_at: null,
+        completed_at: null,
+        updated_at: now(),
+        iteration: 0,
+      };
+      tEnvelopes.push(tEnvelope);
+      cEnvelope.children.push(tId);
+    }
+
+    checkpointEnvelopes.push({ cEnvelope, tEnvelopes });
+    mission.children.push(cpId);
+  }
+
+  // Write everything to Firestore
+  await firestoreWrite('work', missionId, mission);
+  await writeHistory(missionId, null, 'active', 'brain', `Plan stamped: ${plan.name} (${checkpointEnvelopes.length} checkpoints)`);
+
+  for (const { cEnvelope, tEnvelopes } of checkpointEnvelopes) {
+    await firestoreWrite('work', cEnvelope.id, cEnvelope);
+    await writeHistory(cEnvelope.id, null, 'pending', 'brain', `Checkpoint created (plan: ${planId})`);
+    for (const tEnv of tEnvelopes) {
+      await firestoreWrite('work', tEnv.id, tEnv);
+      await writeHistory(tEnv.id, null, 'pending', 'brain', `Task created (plan: ${planId})`);
+    }
+  }
+
+  // Update plan with mission link
+  plan.mission_id = missionId;
+  plan.status = 'executing';
+  plan.updated_at = now();
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: firestoreEncode(plan) }),
+  });
+
+  log('INFO', `Plan stamped: ${planId} → mission ${missionId} (${checkpointEnvelopes.length} checkpoints, ${checkpointEnvelopes.reduce((s, c) => s + c.tEnvelopes.length, 0)} tasks)`);
+  return { plan, mission, checkpointEnvelopes };
+}
+
+/**
+ * Amend a Plan layout. Records the amendment and updates remaining unstamped work.
+ */
+async function amendPlan(planId, reason, changes, amendedBy) {
+  const token = await getAuthToken();
+  if (!token) throw new Error('No auth token');
+
+  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
+  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+  if (!resp.ok) throw new Error(`Plan not found: ${planId}`);
+  const plan = firestoreDecode((await resp.json()).fields || {});
+
+  if (plan.status !== 'draft' && plan.status !== 'approved' && plan.status !== 'executing') {
+    throw new Error(`Plan ${planId} is '${plan.status}', cannot amend`);
+  }
+
+  plan.amendments = plan.amendments || [];
+  plan.amendments.push({
+    timestamp: now(),
+    reason,
+    changes: typeof changes === 'string' ? changes : JSON.stringify(changes),
+    amended_by: amendedBy || AGENT_EMAIL || AGENT_ID,
+  });
+  plan.updated_at = now();
+
+  await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: firestoreEncode(plan) }),
+  });
+
+  log('INFO', `Plan amended: ${planId} — ${reason}`);
+  return plan;
+}
+
 /**
  * Convert a Process definition into a checkpoint_plan decision payload.
  * Groups steps by checkpointBoundary markers into checkpoints.
@@ -551,13 +1116,38 @@ function processToCheckpointPlan(process, parameters = {}) {
     return result;
   }
 
+  // Expand sub_process references into flat steps (with circular ref protection)
+  function expandSteps(steps, visited = new Set()) {
+    const expanded = [];
+    for (const step of steps) {
+      if (step.sub_process) {
+        if (visited.has(step.sub_process)) {
+          log('WARN', `Circular sub_process reference detected: ${step.sub_process} — skipping`);
+          continue;
+        }
+        const subProc = PROCESSES[step.sub_process];
+        if (!subProc || !subProc.steps) {
+          log('WARN', `Sub-process '${step.sub_process}' not found — skipping`);
+          continue;
+        }
+        visited.add(step.sub_process);
+        expanded.push(...expandSteps(subProc.steps, visited));
+      } else {
+        expanded.push(step);
+      }
+    }
+    return expanded;
+  }
+
+  const expandedSteps = expandSteps(steps);
+
   // Group steps into checkpoints (split on checkpointBoundary: true)
   const checkpoints = [];
   let currentTasks = [];
   let cpIndex = 1;
 
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
+  for (let i = 0; i < expandedSteps.length; i++) {
+    const step = expandedSteps[i];
     const task = {
       agent: step.agent || 'motor',
       task: substitute(step.description || step.title),
@@ -572,7 +1162,7 @@ function processToCheckpointPlan(process, parameters = {}) {
     currentTasks.push(task);
 
     // Create checkpoint boundary
-    if (step.checkpointBoundary || i === steps.length - 1) {
+    if (step.checkpointBoundary || i === expandedSteps.length - 1) {
       checkpoints.push({
         instruction: substitute(step.checkpointBoundary
           ? `Checkpoint ${cpIndex}: ${step.title || 'Steps ' + (i - currentTasks.length + 2) + '-' + (i + 1)}`
@@ -649,18 +1239,6 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
     }
   }
 
-  // Auto-fill parameters from source_meta (e.g., requester_email from senderEmail)
-  const sourceMeta = existingEnvelope?.source_meta || intake?.source_meta || {};
-  for (const [key, def] of Object.entries(process.parameters || {})) {
-    if (!(key in parameters) && def && typeof def === 'object' && def.auto_fill) {
-      // auto_fill is a dot-path like "source_meta.senderEmail"
-      const path = def.auto_fill.replace(/^source_meta\./, '');
-      if (sourceMeta[path]) {
-        parameters[key] = sourceMeta[path];
-        log('INFO', `executeProcess: auto-filled '${key}' from source_meta.${path}`);
-      }
-    }
-  }
 
   // Convert process to checkpoint structure
   const cpPlan = processToCheckpointPlan(process, parameters);
@@ -701,7 +1279,7 @@ async function executeProcess(intake, decision, memoryContext, processId, existi
       error: null,
       source_channel: intake?.source || 'system',
       source_meta: intake?.source_meta || {},
-      project_id: decision.project_id || null,
+      project_id: decision.project_id || DEFAULT_PROJECT_ID,
       context: decision.context || null,
       source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
       process_id: processId,
@@ -926,6 +1504,7 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
                 description: { stringValue: tEnv.instruction || tEnv.title || '' },
                 processId: { stringValue: mission.process_id || '' },
                 processName: { stringValue: PROCESSES[mission.process_id]?.name || '' },
+                planId: { stringValue: mission.plan_id || '' },
                 status: { stringValue: 'pending' },
                 requestedAt: { stringValue: now() },
               }}),
@@ -1524,6 +2103,10 @@ function firestoreDecode(fields) {
 async function firestoreWrite(collection, docId, data) {
   const token = await getAuthToken();
   if (!token) return null;
+  // Enforce project_id on all Mission writes
+  if (collection === 'work' && data && data.type === 'M') {
+    validateMissionProjectId(data);
+  }
   const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/${collection}/${docId}`;
   const resp = await fetch(url, {
     method: 'PATCH',
@@ -2761,7 +3344,7 @@ async function processIntake(intake) {
     error: null,
     source_channel: intake.source,
     source_meta: intake.source_meta || {},
-    project_id: decision.project_id || null,
+    project_id: decision.project_id || DEFAULT_PROJECT_ID,
     context: decision.context || null,
     source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
     created_at: now(),
@@ -2901,7 +3484,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     error: null,
     source_channel: intake.source,
     source_meta: intake.source_meta || {},
-    project_id: decision.project_id || null,
+    project_id: decision.project_id || DEFAULT_PROJECT_ID,
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -3168,6 +3751,20 @@ async function processEnvelope(envelope, memoryContext) {
       await writeMemory(envelope);
       await cleanupSharedWorkspace(envelope.id);
 
+      // Activate any missions waiting on this one via depends_on
+      if (envelope.type === 'M') {
+        await activateDependents(envelope.id);
+        // Check if mission's project is now fully complete
+        if (envelope.project_id) {
+          await checkProjectCompletion(envelope.project_id);
+        }
+        // Fire event-triggered responsibilities
+        await fireEventResponsibilities('on_complete', {
+          mission_id: envelope.id,
+          project_id: envelope.project_id,
+        });
+      }
+
       // Phase 3C: Context promotion — suggest new context entries for the parent project
       if (envelope.project_id && envelope.type === 'M' && envelope.context) {
         await suggestContextPromotions(envelope);
@@ -3222,6 +3819,11 @@ async function processEnvelope(envelope, memoryContext) {
           `Blocked (self-unblock exhausted): ${(decision.failure_summary || '').substring(0, 200)}`);
         log('INFO', `Envelope ${envelope.id} BLOCKED (synthesize_with_failure → blocked: ${(decision.failure_summary || '').substring(0, 80)})`);
         await writeMemory(envelope);
+        // Fire event-triggered responsibilities on failure
+        await fireEventResponsibilities('on_failure', {
+          mission_id: envelope.id,
+          project_id: envelope.project_id,
+        });
         return;
       }
 
@@ -3446,6 +4048,7 @@ async function processEnvelope(envelope, memoryContext) {
                     description: { stringValue: taskCriteria || taskDesc },
                     processId: { stringValue: envelope.process_id || '' },
                     processName: { stringValue: decision.process_name || '' },
+                    planId: { stringValue: envelope.plan_id || '' },
                     status: { stringValue: 'pending' },
                     requestedAt: { stringValue: now() },
                   }}),
@@ -4004,7 +4607,8 @@ async function main() {
 
   // Load projects from Firestore
   await loadProjects();
-  log('INFO', `Projects loaded: ${Object.keys(PROJECTS).length} active`);
+  await ensureDefaultProject();
+  log('INFO', `Projects loaded: ${Object.keys(PROJECTS).length} active (default: ${DEFAULT_PROJECT_ID})`);
 
   // Verify gateway is reachable
   try {
@@ -4490,6 +5094,7 @@ async function fireResponsibility(resp) {
             source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, fired_at: now(), process_id: process.id },
             process_id: process.id,
             process_version: process.version || 1,
+            project_id: resp.project_id || DEFAULT_PROJECT_ID,
             created_at: now(),
             started_at: now(),
             completed_at: null,
@@ -4626,6 +5231,7 @@ async function fireResponsibility(resp) {
       responsibility_name: resp.name,
       fired_at: now(),
     },
+    project_id: resp.project_id || DEFAULT_PROJECT_ID,
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -4652,6 +5258,67 @@ async function fireResponsibility(resp) {
 
   // Process the mission through the normal Cortex loop
   await processEnvelope(missionEnvelope, memory);
+}
+
+// ---- Event-triggered responsibilities (1D.1 + 1D.3) ----
+
+/**
+ * Fire responsibilities that match a specific event trigger.
+ * Scans loaded responsibilities for matching `trigger` field.
+ *
+ * @param {string} eventType - One of: 'on_complete', 'on_deploy', 'on_failure'
+ * @param {object} eventContext - Context about the event (e.g., { mission_id, project_id })
+ */
+async function fireEventResponsibilities(eventType, eventContext = {}) {
+  if (!eventType) return;
+
+  let RESPONSIBILITIES = [];
+  try {
+    const respFile = CORE_DIR + '/corekit/responsibilities.json';
+    if (existsSync(respFile)) {
+      RESPONSIBILITIES = JSON.parse(readFileSync(respFile, 'utf8'));
+    }
+  } catch (e) {
+    log('WARN', `Failed to load responsibilities for event trigger: ${e.message}`);
+    return;
+  }
+
+  const matching = RESPONSIBILITIES.filter(r => {
+    if (!r.enabled) return false;
+    if (!r.trigger) return false;
+    return r.trigger === eventType;
+  });
+
+  if (matching.length === 0) return;
+  log('INFO', `Event '${eventType}' triggered — ${matching.length} matching responsibilities`);
+
+  for (const resp of matching) {
+    try {
+      // Check min_spacing
+      if (resp.min_spacing_minutes && resp._lastFired) {
+        const elapsed = (Date.now() - new Date(resp._lastFired).getTime()) / 60000;
+        if (elapsed < resp.min_spacing_minutes) {
+          log('INFO', `Event resp ${resp.id}: skipping (${elapsed.toFixed(0)}m since last, min ${resp.min_spacing_minutes}m)`);
+          continue;
+        }
+      }
+
+      // Inject event context into instruction
+      let instruction = resp.instruction || '';
+      if (eventContext.mission_id) {
+        instruction += `\n\nTriggered by event: ${eventType} (mission: ${eventContext.mission_id})`;
+      }
+      if (eventContext.project_id) {
+        instruction += `\nProject: ${eventContext.project_id}`;
+      }
+
+      const eventResp = { ...resp, instruction };
+      await fireResponsibility(eventResp);
+      log('INFO', `Event resp ${resp.id} fired for '${eventType}'`);
+    } catch (e) {
+      log('WARN', `Failed to fire event resp ${resp.id}: ${e.message}`);
+    }
+  }
 }
 
 main().catch(e => {

@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, use, useState, useEffect, useCallback } from "react";
+import { Suspense, use, useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import styles from "./page.module.css";
 import { api } from "@/lib/api";
 import { ContextEditor } from "@/components/projects/ContextEditor";
@@ -11,12 +12,21 @@ import type { ContextEntry } from "@/components/projects/ContextEditor";
 interface ProjectSummary {
   id: string;
   name: string;
-  status: "active" | "completed" | "archived";
+  goal: string;
+  owner: string;
+  status: "active" | "complete" | "completed" | "paused" | "archived";
   description: string;
+  parent_id: string | null;
+  depends_on: string[];
   missionCount: number;
   completedMissions: number;
   participants: string[];
   created_at: string;
+  context?: {
+    documentation?: string[];
+    processes?: string[];
+    team?: Record<string, string>;
+  } | null;
 }
 
 interface ProjectDetail extends ProjectSummary {
@@ -129,6 +139,111 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
     );
   }
 
+  /* Build hierarchy: top-level + children map */
+  const { topLevel, childrenMap } = useMemo(() => {
+    const childMap: Record<string, ProjectSummary[]> = {};
+    const top: ProjectSummary[] = [];
+    for (const proj of projects) {
+      if (proj.parent_id) {
+        if (!childMap[proj.parent_id]) childMap[proj.parent_id] = [];
+        childMap[proj.parent_id].push(proj);
+      } else {
+        top.push(proj);
+      }
+    }
+    return { topLevel: top, childrenMap: childMap };
+  }, [projects]);
+
+  /* Context summary helper */
+  const contextSummary = (proj: ProjectSummary) => {
+    const parts: string[] = [];
+    if (proj.context?.documentation?.length) parts.push(`${proj.context.documentation.length} docs`);
+    if (proj.context?.processes?.length) parts.push(`${proj.context.processes.length} processes`);
+    if (proj.context?.team) parts.push(`${Object.keys(proj.context.team).length} team`);
+    return parts.length > 0 ? parts.join(" · ") : null;
+  };
+
+  /* Render a project card */
+  const renderProjectCard = (proj: ProjectSummary, isChild = false) => (
+    <button
+      key={proj.id}
+      id={`project-card-${proj.id}`}
+      className={`${styles.card} ${isChild ? styles.childIndent : ""}`}
+      onClick={() => handleSelectProject(proj.id)}
+    >
+      <div className={styles.cardHeader}>
+        <span className={styles.cardName}>{proj.name}</span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {proj.owner && <span className={styles.ownerBadge}>{proj.owner}</span>}
+          <StatusBadge status={proj.status} />
+        </div>
+      </div>
+      <div className={styles.cardDesc}>{truncate(proj.description, 100)}</div>
+      {proj.goal && <div className={styles.goalText}>{truncate(proj.goal, 80)}</div>}
+
+      {/* Parent link */}
+      {proj.parent_id && (
+        <Link
+          href={`/p/${primeId}/projects?project=${proj.parent_id}`}
+          className={styles.parentLink}
+          onClick={(e) => e.stopPropagation()}
+        >
+          ↑ {proj.parent_id}
+        </Link>
+      )}
+
+      {/* Progress */}
+      <div className={styles.progressWrap}>
+        <div className={styles.progressBar}>
+          <div
+            className={styles.progressFill}
+            style={{ width: `${(proj.missionCount || 0) > 0 ? ((proj.completedMissions || 0) / proj.missionCount) * 100 : 0}%` }}
+          />
+        </div>
+        <span className={styles.progressLabel}>
+          {proj.completedMissions || 0}/{proj.missionCount || 0} missions
+        </span>
+      </div>
+
+      {/* Dependencies */}
+      {proj.depends_on?.length > 0 && (
+        <div className={styles.depChips}>
+          {proj.depends_on.map((dep) => (
+            <Link
+              key={dep}
+              href={`/p/${primeId}/projects?project=${dep}`}
+              className={styles.depChip}
+              onClick={(e) => e.stopPropagation()}
+            >
+              ⛓ {dep}
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {/* Participants */}
+      {(proj.participants?.length ?? 0) > 0 && (
+        <div className={styles.participants}>
+          {proj.participants.slice(0, 4).map((name) => (
+            <span key={name} className={styles.agentChip}>{name}</span>
+          ))}
+          {proj.participants.length > 4 && (
+            <span className={styles.agentChipMore}>+{proj.participants.length - 4}</span>
+          )}
+        </div>
+      )}
+
+      {/* Context summary */}
+      {contextSummary(proj) && (
+        <div className={styles.contextSummary}>{contextSummary(proj)}</div>
+      )}
+
+      <div className={styles.cardDate}>
+        Created {new Date(proj.created_at).toLocaleDateString()}
+      </div>
+    </button>
+  );
+
   return (
     <>
       <div className={styles.pgHeader}>
@@ -139,49 +254,13 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
         Manage project context, track missions, and coordinate agents
       </div>
 
-      {/* ---- Grid ---- */}
+      {/* ---- Grid with hierarchy ---- */}
       <div className={styles.grid}>
-        {projects.map((proj) => (
-          <button
-            key={proj.id}
-            className={styles.card}
-            onClick={() => handleSelectProject(proj.id)}
-          >
-            <div className={styles.cardHeader}>
-              <span className={styles.cardName}>{proj.name}</span>
-              <StatusBadge status={proj.status} />
-            </div>
-            <div className={styles.cardDesc}>{truncate(proj.description, 100)}</div>
-
-            {/* Progress */}
-            <div className={styles.progressWrap}>
-              <div className={styles.progressBar}>
-                <div
-                  className={styles.progressFill}
-                  style={{ width: `${(proj.missionCount || 0) > 0 ? ((proj.completedMissions || 0) / proj.missionCount) * 100 : 0}%` }}
-                />
-              </div>
-              <span className={styles.progressLabel}>
-                {proj.completedMissions || 0}/{proj.missionCount || 0} missions
-              </span>
-            </div>
-
-            {/* Participants */}
-            {(proj.participants?.length ?? 0) > 0 && (
-              <div className={styles.participants}>
-                {proj.participants.slice(0, 4).map((name) => (
-                  <span key={name} className={styles.agentChip}>{name}</span>
-                ))}
-                {proj.participants.length > 4 && (
-                  <span className={styles.agentChipMore}>+{proj.participants.length - 4}</span>
-                )}
-              </div>
-            )}
-
-            <div className={styles.cardDate}>
-              Created {new Date(proj.created_at).toLocaleDateString()}
-            </div>
-          </button>
+        {topLevel.map((proj) => (
+          <div key={proj.id} className={styles.childGroup}>
+            {renderProjectCard(proj, false)}
+            {childrenMap[proj.id]?.map((child) => renderProjectCard(child, true))}
+          </div>
         ))}
 
         {/* ---- Create card ---- */}
@@ -372,7 +451,45 @@ function ProjectDetailView({
         <div className={styles.detailTitleRow}>
           <h1 className={styles.pgTitle}>{project.name}</h1>
           <StatusBadge status={project.status} />
+          {(project as any).owner && (
+            <span className={styles.detailOwner}>{(project as any).owner}</span>
+          )}
         </div>
+
+        {/* Goal */}
+        {(project as any).goal && (
+          <div className={styles.detailGoal}>{(project as any).goal}</div>
+        )}
+
+        {/* Parent link */}
+        {(project as any).parent_id && (
+          <div style={{ marginBottom: 8 }}>
+            <Link
+              href={`/p/${primeId}/projects?project=${(project as any).parent_id}`}
+              className={styles.detailParentLink}
+            >
+              ↑ Parent: {(project as any).parent_id}
+            </Link>
+          </div>
+        )}
+
+        {/* Depends on */}
+        {(project as any).depends_on?.length > 0 && (
+          <div className={styles.depSection}>
+            <div className={styles.depSectionLabel}>Depends On</div>
+            <div className={styles.depChips}>
+              {(project as any).depends_on.map((dep: string) => (
+                <Link
+                  key={dep}
+                  href={`/p/${primeId}/projects?project=${dep}`}
+                  className={styles.depChip}
+                >
+                  ⛓ {dep}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Description — editable inline */}
         <div className={styles.detailDesc}>
@@ -619,7 +736,8 @@ function CreateProjectModal({
 function StatusBadge({ status }: { status: ProjectSummary["status"] }) {
   const cls =
     status === "active" ? styles.badgeActive
-    : status === "completed" ? styles.badgeCompleted
+    : status === "complete" || status === "completed" ? styles.badgeComplete
+    : status === "paused" ? styles.badgePaused
     : styles.badgeArchived;
   return <span className={`${styles.statusBadge} ${cls}`}>{status}</span>;
 }
