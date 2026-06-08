@@ -189,6 +189,44 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
           }
         }
 
+        // 3b. Prime deploy — fetch deploy steps from prime doc
+        if (cmdType === "prime_deploy" && status === "running") {
+          try {
+            const primeSnap = await primesCol().doc(primeId).get();
+            if (primeSnap.exists) {
+              const primeData = primeSnap.data();
+              const deploySteps = primeData?.deploySteps;
+              if (Array.isArray(deploySteps) && deploySteps.length > 0) {
+                steps = deploySteps.map((s) => ({
+                  id: s.id,
+                  label: s.label,
+                  status: s.status,
+                  timestamp: s.timestamp || "",
+                  ...(s.detail ? { detail: s.detail } : {}),
+                }));
+                const completed = deploySteps.filter(
+                  (s) => s.status === "done" || s.status === "skipped",
+                ).length;
+                progress = Math.round((completed / deploySteps.length) * 100);
+
+                // Auto-complete the command when prime is online
+                if (primeData?.status === "online") {
+                  status = "complete";
+                  detail = "Prime is online";
+                  try {
+                    await commandsCol(primeId).doc(doc.id).update({
+                      status: "complete",
+                      result: "Prime deployed successfully",
+                    });
+                  } catch {}
+                }
+              }
+            }
+          } catch (e) {
+            console.warn(`[api/ops] Failed to fetch prime doc for deploy steps:`, e);
+          }
+        }
+
         // 4. Dashboard deploy — poll Cloud Build if still running
         if (cmdType === "dashboard_deploy" && status === "running" && buildId && buildId !== "unknown" && projectId) {
           const cbResult = await pollCloudBuild(projectId, buildId, args.region);

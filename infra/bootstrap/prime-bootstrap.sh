@@ -38,6 +38,142 @@ echo "Agent       : ${AGENT_ID}"
 echo "CoreRef     : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Project     : ${GCP_PROJECT_ID}"
 
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
+VM_NAME="prime-${PRIME_ID}"
+DEPLOY_TS="$(date -Is)"
+
+# ---- Deploy step tracking (writes to primes/{id}.deploySteps[]) ----
+write_deploy_step() {
+  local step_id="$1"
+  local step_label="$2"
+  local step_status="${3:-done}"   # done | active | failed | pending
+  local step_detail="${4:-}"
+
+  [[ "$PRIME_ID" != "unknown" ]] || return 0
+
+  local token
+  token="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || return 0
+
+  python3 - <<PYEOF "$token" "$step_id" "$step_label" "$step_status" "$step_detail"
+import sys, json, urllib.request
+from datetime import datetime, timezone
+
+token, step_id, step_label, step_status, step_detail = sys.argv[1:6]
+now = datetime.now(timezone.utc).isoformat()
+fs_url = "${FIRESTORE_URL}/primes/${PRIME_ID}"
+
+# Read current doc
+try:
+    req = urllib.request.Request(fs_url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req) as resp:
+        doc = json.loads(resp.read())
+except:
+    doc = {}
+
+# Extract existing deploySteps
+existing_steps = []
+if "fields" in doc and "deploySteps" in doc["fields"]:
+    existing_steps = doc["fields"]["deploySteps"].get("arrayValue", {}).get("values", [])
+
+# Build new step
+new_step = {"mapValue": {"fields": {
+    "id": {"stringValue": step_id},
+    "label": {"stringValue": step_label},
+    "status": {"stringValue": step_status},
+    "timestamp": {"stringValue": now},
+}}}
+if step_detail:
+    new_step["mapValue"]["fields"]["detail"] = {"stringValue": step_detail}
+
+# Update existing step in-place or append
+updated = False
+for i, s in enumerate(existing_steps):
+    flds = s.get("mapValue", {}).get("fields", {})
+    if flds.get("id", {}).get("stringValue") == step_id:
+        existing_steps[i] = new_step
+        updated = True
+        break
+if not updated:
+    existing_steps.append(new_step)
+
+fields = {
+    "deploySteps": {"arrayValue": {"values": existing_steps}},
+}
+mask = "updateMask.fieldPaths=deploySteps"
+
+body = json.dumps({"fields": fields}).encode()
+req = urllib.request.Request(f"{fs_url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f"[prime-bootstrap] Firestore step write failed: {e}", file=sys.stderr)
+PYEOF
+}
+
+# Seed all expected steps as pending
+init_deploy_steps() {
+  [[ "$PRIME_ID" != "unknown" ]] || return 0
+
+  local token
+  token="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || return 0
+
+  python3 - <<PYEOF "$token"
+import sys, json, urllib.request
+from datetime import datetime, timezone
+
+token = sys.argv[1]
+now = datetime.now(timezone.utc).isoformat()
+fs_url = "${FIRESTORE_URL}/primes/${PRIME_ID}"
+
+all_steps = [
+    ("deploy_started", "Deployment initiated", "done"),
+    ("packages", "System packages", "pending"),
+    ("nodejs", "Node.js installed", "pending"),
+    ("corekit", "CoreKit installed", "pending"),
+    ("contracts", "Contracts loaded", "pending"),
+    ("brain_deps", "Brain dependencies installed", "pending"),
+    ("brain_gateway", "Brain gateway started", "pending"),
+    ("brain_ready", "Brain gateway ready", "pending"),
+    ("services", "Systemd services installed", "pending"),
+    ("command_runner", "Command runner started", "pending"),
+    ("online", "Prime online", "pending"),
+]
+
+steps_values = []
+for sid, slabel, sstatus in all_steps:
+    step = {"mapValue": {"fields": {
+        "id": {"stringValue": sid},
+        "label": {"stringValue": slabel},
+        "status": {"stringValue": sstatus},
+        "timestamp": {"stringValue": now if sstatus == "done" else ""},
+    }}}
+    steps_values.append(step)
+
+fields = {
+    "status": {"stringValue": "deploying"},
+    "deploySteps": {"arrayValue": {"values": steps_values}},
+    "vmName": {"stringValue": "${VM_NAME}"},
+    "zone": {"stringValue": "us-central1-a"},
+    "deployedAt": {"stringValue": "${DEPLOY_TS}"},
+}
+mask = "&".join(f"updateMask.fieldPaths={f}" for f in fields.keys())
+body = json.dumps({"fields": fields}).encode()
+req = urllib.request.Request(f"{fs_url}?{mask}", data=body, method="PATCH",
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+try:
+    urllib.request.urlopen(req)
+except Exception as e:
+    print(f"[prime-bootstrap] Init steps failed: {e}", file=sys.stderr)
+PYEOF
+}
+
+init_deploy_steps
+
 # ============================================================
 # PHASE 1 — System setup
 # ============================================================
@@ -48,6 +184,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
 
+write_deploy_step "packages" "System packages" "done"
+
 
 # ---- 3) Install Node.js & npm ----
 info "Installing Node.js & npm..."
@@ -55,6 +193,8 @@ if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y -qq nodejs
 fi
+
+write_deploy_step "nodejs" "Node.js installed" "done" "$(node --version 2>/dev/null || echo 'unknown')"
 
 # ---- 4) Install CoreKit via manifest (base + prime) ----
 info "Installing CoreKit..."
@@ -67,6 +207,8 @@ CORE_REF="${CORE_REF}" \
   CORE_ROOT="${CORE_ROOT}" \
   bash /tmp/install.sh --role prime
 
+write_deploy_step "corekit" "CoreKit installed" "done"
+
 # ---- 5) Read contracts.json for cross-cutting values ----
 CONTRACTS="${CORE_DIR}/corekit/contracts.json"
 if [[ -f "$CONTRACTS" ]]; then
@@ -78,6 +220,8 @@ else
   C_LOCATION="us-central1"
   C_GATEWAY_PORT="18789"
 fi
+
+write_deploy_step "contracts" "Contracts loaded" "done" "location=${C_LOCATION}"
 
 # ---- 6) Save gateway token for ears/mouth ----
 echo "${MY_TOKEN}" > "${CORE_DIR}/.gateway-token"
@@ -92,6 +236,8 @@ info "Installing brain module dependencies..."
 cd "${CORE_DIR}/corekit/brain"
 npm install --omit=dev 2>&1 | tail -5
 chown -R 1000:1000 node_modules 2>/dev/null || true
+
+write_deploy_step "brain_deps" "Brain dependencies installed" "done"
 
 # ---- 8) Write agent configs from contracts ----
 info "Writing agent configs..."
@@ -149,6 +295,8 @@ UNIT
 systemctl daemon-reload
 systemctl enable --now agent-brain-gateway
 
+write_deploy_step "brain_gateway" "Brain gateway started" "active" "Waiting for healthz..."
+
 # ---- 10) Wait for brain gateway readiness ----
 info "Waiting for brain gateway..."
 WAITED=0
@@ -157,6 +305,8 @@ until curl -sf http://127.0.0.1:${C_GATEWAY_PORT}/healthz > /dev/null 2>&1; do
   [[ $WAITED -ge 60 ]] && { echo "[ERROR] Brain gateway did not start within 60s"; exit 1; }
 done
 info "Brain gateway is ready (took ~${WAITED}s)."
+
+write_deploy_step "brain_ready" "Brain gateway ready" "done" "Took ~${WAITED}s"
 
 # ---- 11) Warm-up probe (pre-warm ADC tokens) ----
 info "Running warm-up probe..."
@@ -216,6 +366,8 @@ systemctl daemon-reload
 systemctl enable agent-ears agent-mouth agent-brain agent-introspect 2>/dev/null || true
 systemctl start agent-ears agent-mouth agent-brain agent-introspect
 
+write_deploy_step "services" "Systemd services installed" "done" "ears + mouth + brain + introspect"
+
 # ---- 14) Install command-runner as systemd service ----
 info "Installing command-runner systemd service..."
 cat > /etc/systemd/system/command-runner.service <<CRUNIT
@@ -243,6 +395,8 @@ systemctl daemon-reload
 systemctl enable command-runner
 systemctl start command-runner
 
+write_deploy_step "command_runner" "Command runner started" "done"
+
 # ---- 15) Install fleet-health-check timer ----
 info "Installing fleet-health-check systemd timer..."
 cp "${CORE_DIR}/corekit/fleet-health-check.service" /etc/systemd/system/fleet-health-check.service
@@ -254,6 +408,23 @@ systemctl enable fleet-health-check.timer
 systemctl start fleet-health-check.timer
 
 # ---- Done ----
+write_deploy_step "online" "Prime online" "done"
+
+# Mark prime as online in Firestore
+if [[ "$PRIME_ID" != "unknown" ]]; then
+  FINAL_TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)" || true
+  if [[ -n "$FINAL_TOKEN" ]]; then
+    curl -sf -X PATCH \
+      "${FIRESTORE_URL}/primes/${PRIME_ID}?updateMask.fieldPaths=status" \
+      -H "Authorization: Bearer ${FINAL_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d '{"fields":{"status":{"stringValue":"online"}}}' \
+      >/dev/null 2>&1 || true
+  fi
+fi
+
 echo
 echo "============================================"
 echo "  PRIME VM SETUP COMPLETE"
