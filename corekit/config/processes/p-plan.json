@@ -19,7 +19,7 @@
   "steps": [
     {
       "title": "Investigate and gather requirements",
-      "description": "Research and understand the problem space for ${goal}:\n1. Check project context (project-manage read) for repo location, existing infrastructure, and prior decisions\n2. Recall memory for any prior work, decisions, or plans related to this goal\n3. Investigate the current state — what exists, what's missing, what constraints apply\n4. Identify stakeholders, dependencies, and technical requirements\n5. Document findings as a clear situation report\n\nOutput: current state assessment, requirements list, constraints, and dependencies.",
+      "description": "Research and understand the problem space for ${goal}:\n1. Check project context (project-manage read) for repo location, existing infrastructure, and prior decisions\n2. Download any relevant project artifacts from Drive (listed in project context) to shared/\n3. Recall memory for any prior work, decisions, or plans related to this goal\n4. Investigate the current state — what exists, what's missing, what constraints apply\n5. Identify stakeholders, dependencies, and technical requirements\n6. Document findings as a clear situation report and write to shared/\n\nOutput: current state assessment, requirements list, constraints, and dependencies.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
@@ -27,7 +27,7 @@
     },
     {
       "title": "Design implementation plan",
-      "description": "Create a detailed plan for ${goal} based on gathered requirements:\n1. Break the work into clear phases or milestones\n2. For each phase, define what will be built, how it will be tested, and what 'done' looks like\n3. Identify risks and mitigation strategies\n4. Propose the technical approach — architecture, tools, patterns\n5. Write the plan as a document the human can review\n\nIMPORTANT: The plan should be specific enough to execute but flexible enough to adapt. Present it to the user for approval before proceeding.",
+      "description": "Create a detailed plan for ${goal} based on gathered requirements:\n1. Break the work into clear phases or milestones\n2. For each phase, define what will be built, how it will be tested, and what 'done' looks like\n3. Identify risks and mitigation strategies\n4. Propose the technical approach — architecture, tools, patterns\n5. Write the plan to shared/ as plan.md so it persists as a project artifact\n\nIMPORTANT: The plan should be specific enough to execute but flexible enough to adapt. Present it to the user for approval before proceeding. Include a Drive link to the plan in your response.",
       "agent": "motor",
       "type": "approval",
       "intent": "execute",
@@ -43,7 +43,7 @@
     },
     {
       "title": "Validate and commit",
-      "description": "Validate and finalize the implementation of ${goal}:\n1. Run the test suite — all existing and new tests must pass\n2. Run linting/formatting checks and fix any violations\n3. Verify the feature works end-to-end (manual smoke test if applicable)\n4. Check for regressions — ensure nothing previously working is broken\n5. Review changes: `git diff` to confirm only intended files are modified\n6. Commit with a clear message and push to remote\n7. Summarize what was built, tested, and any follow-up items\n\nIf tests fail or lint errors are found, fix them before committing.",
+      "description": "Validate and finalize the implementation of ${goal}:\n1. Run the test suite — all existing and new tests must pass\n2. Run linting/formatting checks and fix any violations\n3. Verify the feature works end-to-end (manual smoke test if applicable)\n4. Check for regressions — ensure nothing previously working is broken\n5. Review changes: `git diff` to confirm only intended files are modified\n6. Commit with a clear message and push to remote\n7. Summarize what was built, tested, and any follow-up items\n8. Artifacts in shared/ will be auto-published to the project Drive folder on completion — include Drive links in your summary\n\nIf tests fail or lint errors are found, fix them before committing.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

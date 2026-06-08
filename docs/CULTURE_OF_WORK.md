@@ -1,10 +1,10 @@
 # Culture of Work
 
-The Culture of Work is the operational framework that governs how Architect Prime agents plan, execute, track, and verify work. It defines **7 primitives** that compose into a hierarchy, enforced by the brain daemon (`agent-brain.mjs`) and stored in Firestore.
+The Culture of Work is the operational framework that governs how Architect Prime agents plan, execute, track, and verify work. It defines **8 primitives** that compose into a hierarchy, enforced by the brain daemon (`agent-brain.mjs`) and stored in Firestore.
 
 ---
 
-## The 7 Primitives
+## The 8 Primitives
 
 | Primitive | Envelope Type | Purpose |
 |-----------|:---:|---------|
@@ -15,8 +15,9 @@ The Culture of Work is the operational framework that governs how Architect Prim
 | **Process** | — | Reusable template that produces Plans |
 | **Plan** | — | Unexecuted Mission blueprint (M→C→T layout) |
 | **Responsibility** | `R` | Scheduled or event-triggered work |
+| **Artifact** | — | Persistent work product published to Google Drive |
 
-Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the `primes/{id}/work/{workId}` Firestore collection. Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects, Processes, and Plans are separate Firestore collections.
+Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the `primes/{id}/work/{workId}` Firestore collection. Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects, Processes, and Plans are separate Firestore collections. Artifacts are not stored in Firestore — they are files published to Google Drive and referenced via project context.
 
 ---
 
@@ -220,6 +221,64 @@ See [AUTHORING_RESPONSIBILITIES.md](guides/AUTHORING_RESPONSIBILITIES.md) for th
 
 ---
 
+## Artifacts — Persistent Work Products
+
+Artifacts bridge the gap between ephemeral task outputs and lasting project knowledge. They are files produced during Mission execution that carry value beyond the current task — plans, reports, configs, code bundles, analysis results.
+
+### Local-First, Then Published
+
+| Phase | Location | Trigger |
+|-------|----------|---------|
+| **Local** | `shared/{missionId}/` | Task output > 200 chars (auto) or agent writes directly |
+| **Published** | Google Drive project folder | Mission completes |
+| **Discoverable** | Project context | Future Mission loads context |
+
+During execution, agents write to `shared/{missionId}/` — a local directory with zero network overhead. The Brain daemon auto-saves any task output exceeding 200 characters. When the Mission completes, all files in the directory are uploaded to the project's Google Drive folder.
+
+### Drive Folder Structure
+
+```
+{drive_root}/{project-name}/{prime-name}/{agent-name}/
+```
+
+Each project gets its own Drive folder under a configured root. Within a project, files are organized by prime and agent to avoid collisions between multi-agent work.
+
+**Exception:** The default project (`{agentId}/general`) uses the agent's **My Drive root** instead of the shared hierarchy. General-purpose work stays in the agent's own space.
+
+### Auto-Sharing
+
+Published artifacts are automatically shared with:
+- **Project owner** — Editor access
+- **Team members** from `project.context.team` — Viewer access
+- **Requesting user** (if user-initiated) — Viewer access
+
+### Cross-Mission Discovery
+
+Artifact manifests are accumulated in project context. When a future Mission loads its project context, prior artifact manifests are included — giving agents a list of what's already been produced, with `drive-download` commands for direct access.
+
+```mermaid
+graph LR
+    T["Task Output"] -->|auto-save| L["shared/{missionId}/"]
+    L -->|mission complete| D["Google Drive"]
+    D -->|manifest| PC["Project Context"]
+    PC -->|loaded by| FM["Future Mission"]
+    FM -->|drive-download| D
+
+    style T fill:#b8d4e8,color:#333
+    style L fill:#7eb8da,color:#fff
+    style D fill:#0f9d58,color:#fff
+    style PC fill:#e8a838,color:#fff
+    style FM fill:#4a90d9,color:#fff
+```
+
+### Agent Responsibility
+
+Agents **MUST** include Google Drive links in their responses when they produce artifacts. Stakeholders should be able to access deliverables directly from the response without searching Drive.
+
+See [08-ARTIFACT.md](primitives/08-ARTIFACT.md) for the full manifest schema, auto-persistence rules, and examples.
+
+---
+
 ## Dependency Management
 
 ### Mission Dependencies (`depends_on`)
@@ -268,6 +327,7 @@ The approval gate is **hierarchical** — it pauses the entire M→C→T stack, 
 - [05 — Process](primitives/05-PROCESS.md)
 - [06 — Plan](primitives/06-PLAN.md)
 - [07 — Responsibility](primitives/07-RESPONSIBILITY.md)
+- [08 — Artifact](primitives/08-ARTIFACT.md)
 
 ### Authoring Guides
 - [Authoring Processes](guides/AUTHORING_PROCESSES.md)

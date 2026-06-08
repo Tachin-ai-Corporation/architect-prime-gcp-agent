@@ -63,6 +63,9 @@ const BRAIN_ROUTE = CORTEX_ROUTE;  // classify/decide/synthesize always use cort
 // ---- Project contracts config ----
 const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
 
+// ---- Artifacts config (loaded from prime Firestore doc at startup) ----
+let ARTIFACTS_ROOT_FOLDER_ID = null;
+
 // ---- Context forwarding budgets (chars per prior step) ----
 const CTX_DISPATCH_SUCCESS = CONTRACTS.dispatch?.ctx_dispatch_success || 4000;
 const CTX_DISPATCH_FAILURE = CONTRACTS.dispatch?.ctx_dispatch_failure || 3000;
@@ -1945,7 +1948,28 @@ function buildProjectContext(projectId, envelopeContext = null) {
   const rendered = renderContextPacket(mergedCtx);
   if (!rendered && !p.description) return null;
 
-  return header.join('\n') + rendered;
+  let result = header.join('\n') + rendered;
+
+  // Inject artifact context for cross-mission access
+  const artifactCtx = mergedCtx?.artifacts;
+  if (artifactCtx && artifactCtx.files && artifactCtx.files.length > 0) {
+    const lines = ['\n\n## Project Artifacts (Google Drive)'];
+    if (artifactCtx.drive_url) lines.push(`📁 Project folder: ${artifactCtx.drive_url}`);
+    lines.push('');
+    lines.push('Prior work has produced these artifacts:');
+    for (const f of artifactCtx.files) {
+      lines.push(`- ${f.name} — ${f.url || `driveId: ${f.driveId}`}`);
+    }
+    lines.push('');
+    lines.push('To use a prior artifact: `drive-download <driveId> shared/{missionId}/<filename>`');
+    lines.push('To create new artifacts: write files to shared/ — they auto-publish to Drive on completion.');
+    result += lines.join('\n');
+  } else if (mergedCtx?.drive_folder?.ref) {
+    result += `\n\n📁 Project Drive folder: https://drive.google.com/drive/folders/${mergedCtx.drive_folder.ref}`;
+    result += '\nTo create artifacts: write files to shared/ — they auto-publish to Drive on completion.';
+  }
+
+  return result;
 }
 
 /**
@@ -2663,7 +2687,7 @@ async function callAgent(agentId, envelope) {
   // Resolve shared workspace path — mission-scoped for checkpoint tasks
   const workspaceId = envelope._missionId || envelope.parent_id || envelope.id;
   const workspaceDirective = workspaceId
-    ? `\n\n## Workspace\nWrite ALL files to \`shared/${workspaceId}/\` — this directory persists across sessions. Before using files from a prior step, verify they exist with \`ls shared/${workspaceId}/\`.`
+    ? `\n\n## Workspace\nWrite ALL work products to \`shared/${workspaceId}/\` — files here persist across tasks in this mission and are auto-published to Google Drive on completion.\n\nCRITICAL: Write substantial outputs (plans, reports, configs, code) as FILES, not just text responses.\nYour text response should summarize what you did and include Google Drive links to artifacts.\nPrior step outputs are also saved here automatically — check with \`ls shared/${workspaceId}/\`.`
     : '';
 
   const userMessage = [
@@ -3747,6 +3771,17 @@ async function processEnvelope(envelope, memoryContext) {
       await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Synthesized response');
       log('INFO', `Envelope ${envelope.id} complete (synthesize)`);
 
+      // Publish artifacts to Drive BEFORE cleanup (so shared/ files are still available)
+      if (envelope.type === 'M') {
+        const artifactLinks = await publishArtifacts(envelope);
+        // Append artifact links to the output for mouth delivery
+        if (artifactLinks && artifactLinks.length > 0) {
+          const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
+          envelope.output = (envelope.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+          await firestoreWrite('work', envelope.id, envelope);
+        }
+      }
+
       // Phase 3: Write completed work to memory
       await writeMemory(envelope);
       await cleanupSharedWorkspace(envelope.id);
@@ -4249,6 +4284,19 @@ async function processEnvelope(envelope, memoryContext) {
           await writeHistory(taskId, 'active', taskEnvelope.status, taskAgent,
             result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
 
+          // Persist task output as file in shared/ for cross-task access
+          if (result.success && result.output && result.output.length > 200) {
+            try {
+              const taskTitle = taskEnvelope.title || `task-${cpNum}-${taskNum}`;
+              const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+              const { writeFileSync: wfs } = await import('fs');
+              wfs(`${CORE_DIR}/shared/${envelope.id}/${slug}.md`, result.output);
+              log('INFO', `Task output saved to shared/${envelope.id}/${slug}.md (${result.output.length} chars)`);
+            } catch (e) {
+              log('WARN', `Failed to save task output to shared/: ${e.message}`);
+            }
+          }
+
           const stepResult = {
             step: `${cpNum}.${taskNum}`,
             agent: taskAgent,
@@ -4438,6 +4486,304 @@ async function cleanupSharedWorkspace(envelopeId) {
   }
 }
 
+// ---- Artifacts: Drive integration ----
+
+/**
+ * Load artifacts_root_folder_id from the prime Firestore document.
+ * Called at startup and periodically to pick up dashboard config changes.
+ */
+async function loadPrimeConfig() {
+  try {
+    const token = await getAuthToken();
+    if (!token || !PRIME_ID) return;
+    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+    const resp = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const fields = data.fields || {};
+    const rootId = fields.artifacts_root_folder_id?.stringValue || null;
+    if (rootId !== ARTIFACTS_ROOT_FOLDER_ID) {
+      ARTIFACTS_ROOT_FOLDER_ID = rootId;
+      log('INFO', `Artifacts root folder: ${rootId || '(not configured)'}`);
+    }
+  } catch (e) {
+    log('WARN', `loadPrimeConfig error: ${e.message}`);
+  }
+}
+
+/**
+ * Ensure a project has a Drive folder. Creates one under the artifacts root if needed.
+ * For the agent's "general" project, uses "root" (agent's My Drive).
+ * Returns the Drive folder ID or null if not configured.
+ */
+async function ensureProjectDriveFolder(projectId) {
+  if (!projectId || !PROJECTS[projectId]) return null;
+  const project = PROJECTS[projectId];
+  const ctx = project.context || {};
+
+  // Already has a Drive folder
+  if (ctx.drive_folder?.ref) return ctx.drive_folder.ref;
+
+  // General project uses agent's My Drive root
+  if (projectId === DEFAULT_PROJECT_ID || projectId.endsWith('/general')) {
+    return 'root';
+  }
+
+  // No artifacts root configured — can't provision
+  if (!ARTIFACTS_ROOT_FOLDER_ID) {
+    log('DEBUG', `No artifacts_root_folder_id configured — skipping Drive folder for ${projectId}`);
+    return null;
+  }
+
+  try {
+    const { execSync: exec } = await import('child_process');
+    const projName = (project.name || projectId).replace(/["']/g, '');
+
+    // Create project folder under root
+    const mkdirOut = exec(
+      `drive-mkdir "${projName}" --parent ${ARTIFACTS_ROOT_FOLDER_ID}`,
+      { timeout: 30_000, cwd: CORE_DIR, encoding: 'utf8' }
+    ).trim();
+
+    // Parse folder ID from output (drive-mkdir outputs JSON with folderId)
+    let folderId = null;
+    try {
+      const parsed = JSON.parse(mkdirOut);
+      folderId = parsed.folderId || parsed.id || null;
+    } catch {
+      // Fallback: extract folder ID from text output
+      const match = mkdirOut.match(/([a-zA-Z0-9_-]{20,})/);
+      folderId = match ? match[1] : null;
+    }
+
+    if (!folderId) {
+      log('WARN', `Failed to parse Drive folder ID from drive-mkdir output: ${mkdirOut.slice(0, 200)}`);
+      return null;
+    }
+
+    // Update project context with new Drive folder
+    project.context = project.context || {};
+    project.context.drive_folder = {
+      kind: 'drive_folder',
+      ref: folderId,
+      name: `Project: ${projName}`,
+      summary: `Shared artifact storage for ${projName}`,
+      url: `https://drive.google.com/drive/folders/${folderId}`,
+      updatedAt: now(),
+      updatedBy: 'brain',
+    };
+    PROJECTS[projectId] = project;
+
+    // Persist to Firestore
+    const token = await getAuthToken();
+    if (token) {
+      const projUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${projectId}?updateMask.fieldPaths=context`;
+      await fetch(projUrl, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { context: firestoreEncode(project.context) } }),
+      });
+    }
+
+    log('INFO', `Project Drive folder provisioned: ${projName} → ${folderId}`);
+
+    // Pre-share with fleet agents (best-effort)
+    try {
+      const fleetToken = await getAuthToken();
+      if (fleetToken && PRIME_ID) {
+        const fleetUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/fleet`;
+        const fleetResp = await fetch(fleetUrl, {
+          headers: { 'Authorization': `Bearer ${fleetToken}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (fleetResp.ok) {
+          const fleetData = await fleetResp.json();
+          for (const doc of (fleetData.documents || [])) {
+            const agentEmail = doc.fields?.email?.stringValue;
+            if (agentEmail && agentEmail !== AGENT_EMAIL) {
+              try {
+                exec(`drive-share ${folderId} --email ${agentEmail} --role writer`, { timeout: 15_000, cwd: CORE_DIR });
+                log('DEBUG', `Shared project folder with ${agentEmail}`);
+              } catch { /* best-effort */ }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      log('DEBUG', `Fleet pre-share skipped: ${e.message}`);
+    }
+
+    return folderId;
+  } catch (e) {
+    log('WARN', `ensureProjectDriveFolder failed for ${projectId}: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * Publish artifacts from shared/{missionId}/ to Drive on mission completion.
+ * Creates {project-folder}/{prime-name}/{agent-name}/ subfolder structure.
+ * Returns array of { name, driveId, url } for each published artifact.
+ */
+async function publishArtifacts(envelope) {
+  if (!envelope || envelope.type !== 'M') return [];
+
+  // Check if shared/ has files
+  let files = [];
+  try {
+    const { readdirSync, statSync } = await import('fs');
+    const sharedDir = `${CORE_DIR}/shared/${envelope.id}`;
+    try {
+      files = readdirSync(sharedDir).filter(f => {
+        try {
+          return statSync(`${sharedDir}/${f}`).isFile();
+        } catch { return false; }
+      });
+    } catch {
+      return []; // No shared dir or empty
+    }
+  } catch {
+    return [];
+  }
+
+  if (files.length === 0) return [];
+
+  // Get project Drive folder
+  const projectFolderId = await ensureProjectDriveFolder(envelope.project_id);
+  if (!projectFolderId) {
+    log('DEBUG', `No Drive folder for project ${envelope.project_id} — skipping artifact publish`);
+    return [];
+  }
+
+  try {
+    const { execSync: exec } = await import('child_process');
+    const { statSync } = await import('fs');
+
+    // Create prime/agent subfolder structure
+    const primeName = (PRIME_ID || 'unknown').replace(/["']/g, '');
+    const agentName = (AGENT_ID || 'unknown').replace(/["']/g, '');
+
+    let targetFolderId = projectFolderId;
+    if (projectFolderId !== 'root') {
+      // Create {prime-name}/ subfolder
+      try {
+        const primeOut = exec(
+          `drive-mkdir "${primeName}" --parent ${projectFolderId}`,
+          { timeout: 30_000, cwd: CORE_DIR, encoding: 'utf8' }
+        ).trim();
+        const primeParsed = JSON.parse(primeOut).folderId || JSON.parse(primeOut).id;
+        if (primeParsed) {
+          // Create {agent-name}/ subfolder under prime
+          const agentOut = exec(
+            `drive-mkdir "${agentName}" --parent ${primeParsed}`,
+            { timeout: 30_000, cwd: CORE_DIR, encoding: 'utf8' }
+          ).trim();
+          targetFolderId = JSON.parse(agentOut).folderId || JSON.parse(agentOut).id || primeParsed;
+        }
+      } catch (e) {
+        log('WARN', `Subfolder creation failed, publishing to project root: ${e.message}`);
+      }
+    }
+
+    // Upload each file
+    const artifacts = [];
+    for (const file of files) {
+      try {
+        const filePath = `${CORE_DIR}/shared/${envelope.id}/${file}`;
+        const fileSize = statSync(filePath).size;
+        const uploadOut = exec(
+          `drive-upload "${filePath}" ${targetFolderId}`,
+          { timeout: 60_000, cwd: CORE_DIR, encoding: 'utf8' }
+        ).trim();
+
+        let fileId = null, webViewLink = null;
+        try {
+          const parsed = JSON.parse(uploadOut);
+          fileId = parsed.fileId || parsed.id;
+          webViewLink = parsed.webViewLink || parsed.url || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : null);
+        } catch {
+          const match = uploadOut.match(/([a-zA-Z0-9_-]{20,})/);
+          fileId = match ? match[1] : null;
+          webViewLink = fileId ? `https://drive.google.com/file/d/${fileId}/view` : null;
+        }
+
+        if (fileId) {
+          artifacts.push({ name: file, driveId: fileId, url: webViewLink, size: fileSize });
+          log('INFO', `Artifact published: ${file} → ${fileId}`);
+        }
+      } catch (e) {
+        log('WARN', `Failed to upload artifact ${file}: ${e.message}`);
+      }
+    }
+
+    if (artifacts.length === 0) return [];
+
+    // Auto-share with project owner
+    const project = PROJECTS[envelope.project_id];
+    if (project?.owner && project.owner !== AGENT_EMAIL) {
+      try {
+        exec(
+          `drive-share ${targetFolderId} --email ${project.owner} --role reader`,
+          { timeout: 15_000, cwd: CORE_DIR }
+        );
+        log('INFO', `Artifacts shared with project owner: ${project.owner}`);
+      } catch (e) {
+        log('DEBUG', `Auto-share with owner skipped: ${e.message}`);
+      }
+    }
+
+    // Update envelope context with artifact manifest
+    envelope.context = envelope.context || {};
+    envelope.context.artifacts = {
+      kind: 'artifact_manifest',
+      summary: `${artifacts.length} artifact(s) published to Drive`,
+      drive_folder: targetFolderId,
+      drive_url: `https://drive.google.com/drive/folders/${targetFolderId}`,
+      files: artifacts,
+      updatedAt: now(),
+      updatedBy: 'brain',
+    };
+
+    // Also update project context with latest artifacts (merge)
+    if (project) {
+      project.context = project.context || {};
+      const existing = project.context.artifacts?.files || [];
+      project.context.artifacts = {
+        kind: 'artifact_manifest',
+        summary: `${existing.length + artifacts.length} artifact(s) total`,
+        drive_folder: projectFolderId !== 'root' ? projectFolderId : targetFolderId,
+        drive_url: projectFolderId !== 'root' ? `https://drive.google.com/drive/folders/${projectFolderId}` : undefined,
+        files: [...existing, ...artifacts],
+        updatedAt: now(),
+        updatedBy: AGENT_ID,
+      };
+      PROJECTS[envelope.project_id] = project;
+      try {
+        const token = await getAuthToken();
+        if (token) {
+          const projUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${envelope.project_id}?updateMask.fieldPaths=context`;
+          await fetch(projUrl, {
+            method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: { context: firestoreEncode(project.context) } }),
+          });
+        }
+      } catch (e) {
+        log('WARN', `Failed to update project artifacts context: ${e.message}`);
+      }
+    }
+
+    log('INFO', `Published ${artifacts.length} artifacts to Drive for mission ${envelope.id}`);
+    return artifacts;
+  } catch (e) {
+    log('WARN', `publishArtifacts failed: ${e.message}`);
+    return [];
+  }
+}
+
 // ---- History ----
 let _historyCounter = 0; // intra-ms tiebreaker
 let _historyLastMs = 0;
@@ -4604,6 +4950,9 @@ async function main() {
   log('INFO', `Gateway: ${GATEWAY_URL} | Cortex route: ${CORTEX_ROUTE}`);
   log('INFO', `Brain summarizer: ${BRAIN_MODEL} (direct Vertex, bypasses gateway)`);
   log('INFO', `Registry agents: ${Object.keys(REGISTRY.agents).join(', ') || 'none loaded'}`);
+
+  // Load prime config (artifacts root folder, etc.)
+  await loadPrimeConfig();
 
   // Load projects from Firestore
   await loadProjects();
