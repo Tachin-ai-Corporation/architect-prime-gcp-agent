@@ -236,7 +236,7 @@ function PlanDetailView({
         <div className={styles.detailMetaRow}>
           {plan.project_id && (
             <Link
-              href={`/p/${primeId}/projects?project=${plan.project_id}`}
+              href={`/projects?project=${plan.project_id}`}
               className={styles.linkPill}
               id="plan-project-link"
             >

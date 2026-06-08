@@ -1,54 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
 import { projectsCol } from "@/lib/firestore";
 
-interface RouteContext {
-  params: Promise<{ id: string }>;
-}
-
 /**
- * GET /api/primes/[id]/projects — List projects for a prime (legacy, filters by team)
- * Proxies to root projects collection with team filter.
+ * GET /api/projects — List projects
+ * Query: ?team=chuck — filter by team membership
+ *        &status=active — filter by status
+ *        &includeArchived=true — include archived projects
  */
-export async function GET(req: NextRequest, ctx: RouteContext) {
+export async function GET(req: NextRequest) {
   try {
-    const { id } = await ctx.params;
     const url = new URL(req.url);
+    const teamFilter = url.searchParams.get("team");
     const statusFilter = url.searchParams.get("status");
     const includeArchived = url.searchParams.get("includeArchived") === "true";
 
     const col = projectsCol();
-    const snap = await col
-      .where("team", "array-contains", id)
-      .orderBy("created_at", "desc")
-      .get();
+
+    let queryRef: FirebaseFirestore.Query = col;
+
+    // Filter by team membership if specified
+    if (teamFilter) {
+      queryRef = queryRef.where("team", "array-contains", teamFilter);
+    }
+
+    queryRef = queryRef.orderBy("created_at", "desc");
+    const snap = await queryRef.get();
 
     let projects = snap.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
 
+    // Exclude archived by default
     if (!includeArchived) {
       projects = projects.filter((p: any) => p.status !== "archived");
     }
 
+    // Optional status filter
     if (statusFilter) {
       projects = projects.filter((p: any) => p.status === statusFilter);
     }
 
     return NextResponse.json({ projects });
   } catch (err) {
-    console.error(`[api/primes/projects] GET error:`, err);
+    console.error(`[api/projects] GET error:`, err);
     return NextResponse.json({ error: "Failed to list projects" }, { status: 500 });
   }
 }
 
 /**
- * POST /api/primes/[id]/projects — Create project (legacy, adds prime to team)
- * Proxies to root projects collection.
+ * POST /api/projects — Create a new project
+ * Body: { id, name, description, team?, ownerAgent?, context? }
  */
-export async function POST(req: NextRequest, ctx: RouteContext) {
+export async function POST(req: NextRequest) {
   try {
-    const { id } = await ctx.params;
     const body = await req.json();
 
     if (!body.id || !body.name || !body.description) {
@@ -75,8 +80,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       description: body.description,
       status: "active",
       ownerAgent: body.ownerAgent || null,
-      team: body.team || [id],
-      created_by: body.created_by || id,
+      team: body.team || [],
+      created_by: body.created_by || "operator",
       participants: [],
       missionCount: 0,
       completedMissions: 0,
@@ -89,7 +94,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ project: { id: body.id, ...project } });
   } catch (err) {
-    console.error(`[api/primes/projects] POST error:`, err);
+    console.error(`[api/projects] POST error:`, err);
     return NextResponse.json({ error: "Failed to create project" }, { status: 500 });
   }
 }

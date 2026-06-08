@@ -438,7 +438,7 @@ async function loadProjects() {
   try {
     const token = await getAuthToken();
     if (!token) return;
-    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects`;
+    const url = `${FIRESTORE_BASE}/projects`;
     const resp = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` },
     });
@@ -546,7 +546,7 @@ async function checkProjectCompletion(projectId) {
     }
 
     // 2. Check missions belonging to this project — all must be complete/archived/cancelled
-    const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+    const parentPath = `${FIRESTORE_BASE}`;
     let nextPageToken = null;
     do {
       const url = `${parentPath}/work?pageSize=300${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
@@ -579,7 +579,7 @@ async function checkProjectCompletion(projectId) {
     log('INFO', `Project ${projectId} all work complete — auto-completing`);
     project.status = 'complete';
     project.updated_at = now();
-    const projUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${projectId}`;
+    const projUrl = `${FIRESTORE_BASE}/projects/${projectId}`;
     await fetch(projUrl, {
       method: 'PATCH',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -641,7 +641,7 @@ async function ensureDefaultProject() {
   try {
     const token = await getAuthToken();
     if (!token) return;
-    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${defaultId}`;
+    const url = `${FIRESTORE_BASE}/projects/${defaultId}`;
     const body = {
       fields: {
         id: { stringValue: defaultId },
@@ -652,6 +652,8 @@ async function ensureDefaultProject() {
         status: { stringValue: 'active' },
         parent_id: { nullValue: null },
         depends_on: { arrayValue: { values: [] } },
+        team: { arrayValue: { values: [{ stringValue: PRIME_ID }, { stringValue: AGENT_ID }] } },
+        created_by: { stringValue: AGENT_ID },
         created_at: { stringValue: now() },
         updated_at: { stringValue: now() },
       }
@@ -781,7 +783,7 @@ async function activateDependents(completedMissionId) {
     const token = await getAuthToken();
     if (!token) return;
     // Scan work collection for pending missions with depends_on containing completedMissionId
-    const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+    const parentPath = `${FIRESTORE_BASE}`;
     let nextPageToken = null;
     do {
       const url = `${parentPath}/work?pageSize=200${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
@@ -4580,7 +4582,7 @@ async function ensureProjectDriveFolder(projectId) {
     // Persist to Firestore
     const token = await getAuthToken();
     if (token) {
-      const projUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${projectId}?updateMask.fieldPaths=context`;
+      const projUrl = `${FIRESTORE_BASE}/projects/${projectId}?updateMask.fieldPaths=context`;
       await fetch(projUrl, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -4764,7 +4766,7 @@ async function publishArtifacts(envelope) {
       try {
         const token = await getAuthToken();
         if (token) {
-          const projUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${envelope.project_id}?updateMask.fieldPaths=context`;
+          const projUrl = `${FIRESTORE_BASE}/projects/${envelope.project_id}?updateMask.fieldPaths=context`;
           await fetch(projUrl, {
             method: 'PATCH',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -5294,7 +5296,7 @@ async function suggestContextPromotions(envelope) {
 
     if (PROJECT_PROMOTION_AUTO) {
       // Auto-promote: merge directly into project context
-      const projectUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${envelope.project_id}`;
+      const projectUrl = `${FIRESTORE_BASE}/projects/${envelope.project_id}`;
       const merged = mergeContextPackets(projectContext, newEntries);
       const contextFields = {};
       for (const [k, v] of Object.entries(merged)) {
@@ -5319,7 +5321,7 @@ async function suggestContextPromotions(envelope) {
       // Write promotion candidates for dashboard approval
       for (const [key, entry] of Object.entries(newEntries)) {
         const promoId = generateId('promo');
-        const promoUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/projects/${envelope.project_id}/promotions/${promoId}`;
+        const promoUrl = `${FIRESTORE_BASE}/projects/${envelope.project_id}/promotions/${promoId}`;
         await fetch(promoUrl, {
           method: 'PATCH',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },

@@ -3,11 +3,14 @@ import { promotionsCol, projectsCol } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
 
 interface RouteContext {
-  params: Promise<{ id: string; projectId: string }>;
+  params: Promise<{ projectId: string }>;
 }
 
 /**
- * GET /api/primes/[id]/projects/[projectId]/promotions — List promotions (legacy)
+ * GET /api/projects/[projectId]/promotions — List promotion candidates
+ *
+ * Query params:
+ *   ?status=pending — filter by status
  */
 export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
@@ -40,13 +43,16 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     return NextResponse.json({ promotions });
   } catch (err) {
-    console.error(`[api/primes/projects/promotions] GET error:`, err);
+    console.error(`[api/projects/promotions] GET error:`, err);
     return NextResponse.json({ error: "Failed to list promotions" }, { status: 500 });
   }
 }
 
 /**
- * POST /api/primes/[id]/projects/[projectId]/promotions — Accept or dismiss (legacy)
+ * POST /api/projects/[projectId]/promotions — Accept or dismiss
+ *
+ * Body: { promotionId, action: 'accept'|'dismiss' }
+ * On accept: merges entry into parent project's context field.
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const { projectId } = await ctx.params;
@@ -87,6 +93,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       resolved_at: new Date().toISOString(),
     });
 
+    // On accept: deep-merge entry into parent project's context
     if (action === "accept" && promoData.key && promoData.entry) {
       const projectRef = projectsCol().doc(projectId);
       const projectDoc = await projectRef.get();
@@ -107,9 +114,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       }
     }
 
-    return NextResponse.json({ id: promotionId, status });
+    return NextResponse.json({
+      id: promotionId,
+      status,
+    });
   } catch (err) {
-    console.error(`[api/primes/projects/promotions] POST error:`, err);
+    console.error(`[api/projects/promotions] POST error:`, err);
     return NextResponse.json(
       { error: "Failed to update promotion" },
       { status: 500 }

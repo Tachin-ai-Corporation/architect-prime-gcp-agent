@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # project-manage — CRUD for projects stored in Firestore
-# Motor tool: reads/writes primes/{PRIME_ID}/projects/{projectId}
+# Motor tool: reads/writes projects/{projectId}
 #
 # Usage:
 #   project-manage list                    # List all projects (id, name, status, goal, owner, etc.)
@@ -40,7 +40,7 @@ fi
 [ -z "${GCP_PROJECT_ID:-}" ] && { echo "ERROR: Cannot determine GCP_PROJECT_ID from env, config files, or metadata" >&2; exit 1; }
 
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
-COLLECTION_PATH="primes/${PRIME_ID}/projects"
+COLLECTION_PATH="projects"
 
 get_token() {
   gcloud auth print-access-token --quiet 2>/dev/null
@@ -263,6 +263,10 @@ if new_project.get('parent_id'):
 # Enforce defaults
 now = datetime.now(timezone.utc).isoformat()
 new_project.setdefault('status', 'active')
+prime_id = os.environ.get('PRIME_ID', '')
+agent_id = os.environ.get('AGENT_ID', 'agent')
+new_project.setdefault('team', [prime_id, agent_id])
+new_project.setdefault('created_by', agent_id)
 new_project['created_at'] = now
 new_project['updated_at'] = now
 

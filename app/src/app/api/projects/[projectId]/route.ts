@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { projectsCol } from "@/lib/firestore";
 
 interface RouteContext {
-  params: Promise<{ id: string; projectId: string }>;
+  params: Promise<{ projectId: string }>;
 }
 
 /**
- * GET /api/primes/[id]/projects/[projectId] — Get single project (legacy)
+ * GET /api/projects/[projectId] — Get single project with full context
  */
 export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
@@ -28,13 +28,14 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
       },
     });
   } catch (err) {
-    console.error(`[api/primes/projects/detail] GET error:`, err);
+    console.error(`[api/projects/detail] GET error:`, err);
     return NextResponse.json({ error: "Failed to get project" }, { status: 500 });
   }
 }
 
 /**
- * PUT /api/primes/[id]/projects/[projectId] — Update project (legacy)
+ * PUT /api/projects/[projectId] — Update project
+ * Body: partial update. Context is deep-merged (entry-level) with existing.
  */
 export async function PUT(req: NextRequest, ctx: RouteContext) {
   try {
@@ -50,6 +51,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
 
     const existingData = existing.data() || {};
 
+    // Deep merge context at entry level if provided
     if (body.context && typeof body.context === "object") {
       body.context = {
         ...(existingData.context || {}),
@@ -57,6 +59,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       };
     }
 
+    // Validate standardProcesses if provided
     if (body.standardProcesses !== undefined) {
       if (!Array.isArray(body.standardProcesses)) {
         return NextResponse.json(
@@ -73,10 +76,11 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
 
     await docRef.update(update);
 
+    // Re-read to return merged result
     const updated = await docRef.get();
     return NextResponse.json({ project: { id: updated.id, ...updated.data() } });
   } catch (err) {
-    console.error(`[api/primes/projects/detail] PUT error:`, err);
+    console.error(`[api/projects/detail] PUT error:`, err);
     return NextResponse.json({ error: "Failed to update project" }, { status: 500 });
   }
 }

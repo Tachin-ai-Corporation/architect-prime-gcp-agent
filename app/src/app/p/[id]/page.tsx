@@ -85,7 +85,7 @@ export default function PrimeHubPage({
           icon="📁"
           title="Projects"
           description="Organize work by project"
-          href={`/p/${id}/projects`}
+          href="/projects"
         />
         <NavCard
           icon="⚙️"

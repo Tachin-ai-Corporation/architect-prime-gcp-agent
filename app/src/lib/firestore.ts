@@ -35,8 +35,8 @@ export function fleetMessagesCol(primeId: string, agentName: string) {
   return getDb().collection("primes").doc(primeId).collection("fleet").doc(agentName).collection("messages");
 }
 
-export function projectsCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("projects");
+export function projectsCol() {
+  return getDb().collection("projects");
 }
 
 export function processesCol(primeId: string) {
@@ -103,8 +103,8 @@ export function approvalsCol(primeId: string) {
   return getDb().collection("primes").doc(primeId).collection("approvals");
 }
 
-export function promotionsCol(primeId: string, projectId: string) {
-  return getDb().collection("primes").doc(primeId).collection("projects").doc(projectId).collection("promotions");
+export function promotionsCol(projectId: string) {
+  return getDb().collection("projects").doc(projectId).collection("promotions");
 }
 
 export function fleetSkillsCol(primeId: string, agentName: string) {

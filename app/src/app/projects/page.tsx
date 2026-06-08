@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useState, useEffect, useCallback, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import styles from "./page.module.css";
@@ -18,6 +18,10 @@ interface ProjectSummary {
   description: string;
   parent_id: string | null;
   depends_on: string[];
+  team: string[];
+  created_by: string;
+  drive_folder_id?: string;
+  drive_url?: string;
   missionCount: number;
   completedMissions: number;
   participants: string[];
@@ -67,34 +71,33 @@ const KIND_ICONS: Record<string, string> = {
 };
 
 /* ---- Wrapper with Suspense ---- */
-export default function ProjectsPageWrapper({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ProjectsPageWrapper() {
   return (
     <Suspense fallback={<div style={{ padding: 48, textAlign: "center", color: "#AEB8C4" }}>Loading…</div>}>
-      <ProjectsPage primeId={id} />
+      <ProjectsPage />
     </Suspense>
   );
 }
 
 /* ---- Main page ---- */
-function ProjectsPage({ primeId }: { primeId: string }) {
+function ProjectsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   /* ---- URL params ---- */
   const paramProject = searchParams.get("project");
+  const teamFilter = searchParams.get("team");
 
   /* ---- Render either list or detail ---- */
   return (
     <div className={styles.shell}>
       {paramProject ? (
         <ProjectDetailView
-          primeId={primeId}
           projectId={paramProject}
           router={router}
         />
       ) : (
-        <ProjectListView primeId={primeId} router={router} />
+        <ProjectListView teamFilter={teamFilter} router={router} />
       )}
     </div>
   );
@@ -103,7 +106,7 @@ function ProjectsPage({ primeId }: { primeId: string }) {
 /* ================================================================
    List View
    ================================================================ */
-function ProjectListView({ primeId, router }: { primeId: string; router: ReturnType<typeof useRouter> }) {
+function ProjectListView({ teamFilter, router }: { teamFilter: string | null; router: ReturnType<typeof useRouter> }) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -113,19 +116,18 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const data = await api<{ projects: ProjectSummary[] }>(`/api/projects`);
+      const url = teamFilter ? `/api/projects?team=${encodeURIComponent(teamFilter)}` : `/api/projects`;
+      const data = await api<{ projects: ProjectSummary[] }>(url);
       if (!cancelled) {
         setProjects(data?.projects ?? []);
         setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [primeId]);
+  }, [teamFilter]);
 
   const handleSelectProject = useCallback(
     (projectId: string) => {
-      const params = new URLSearchParams();
-      params.set("project", projectId);
       router.push(`/projects?project=${projectId}`);
     },
     [router]
@@ -181,6 +183,18 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
       <div className={styles.cardDesc}>{truncate(proj.description, 100)}</div>
       {proj.goal && <div className={styles.goalText}>{truncate(proj.goal, 80)}</div>}
 
+      {/* Team membership */}
+      {proj.team?.length > 0 && (
+        <div className={styles.participants}>
+          {proj.team.slice(0, 4).map((t) => (
+            <span key={t} className={styles.agentChip}>{t}</span>
+          ))}
+          {proj.team.length > 4 && (
+            <span className={styles.agentChipMore}>+{proj.team.length - 4}</span>
+          )}
+        </div>
+      )}
+
       {/* Parent link */}
       {proj.parent_id && (
         <Link
@@ -221,16 +235,17 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
         </div>
       )}
 
-      {/* Participants */}
-      {(proj.participants?.length ?? 0) > 0 && (
-        <div className={styles.participants}>
-          {proj.participants.slice(0, 4).map((name) => (
-            <span key={name} className={styles.agentChip}>{name}</span>
-          ))}
-          {proj.participants.length > 4 && (
-            <span className={styles.agentChipMore}>+{proj.participants.length - 4}</span>
-          )}
-        </div>
+      {/* Drive folder link */}
+      {proj.drive_url && (
+        <a
+          href={proj.drive_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.contextSummary}
+          onClick={(e) => e.stopPropagation()}
+        >
+          📁 Drive Folder
+        </a>
       )}
 
       {/* Context summary */}
@@ -249,6 +264,11 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
       <div className={styles.pgHeader}>
         <h1 className={styles.pgTitle}>Projects</h1>
         <span className={styles.countPill}>{projects.length} total</span>
+        {teamFilter && (
+          <span className={styles.countPill} style={{ marginLeft: 4 }}>
+            team: {teamFilter}
+          </span>
+        )}
       </div>
       <div className={styles.pgSub}>
         Manage project context, track missions, and coordinate agents
@@ -273,7 +293,6 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
       {/* ---- Create modal ---- */}
       {showCreate && (
         <CreateProjectModal
-          primeId={primeId}
           onClose={() => setShowCreate(false)}
           onCreated={(proj) => {
             setProjects((prev) => [proj, ...prev]);
@@ -289,11 +308,9 @@ function ProjectListView({ primeId, router }: { primeId: string; router: ReturnT
    Detail View
    ================================================================ */
 function ProjectDetailView({
-  primeId,
   projectId,
   router,
 }: {
-  primeId: string;
   projectId: string;
   router: ReturnType<typeof useRouter>;
 }) {
@@ -332,19 +349,7 @@ function ProjectDetailView({
       }
     })();
     return () => { cancelled = true; };
-  }, [primeId, projectId]);
-
-  /* ---- Fetch all processes for linking ---- */
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const data = await api<{ processes: ProcessSummary[] }>(`/api/primes/${primeId}/processes`);
-      if (!cancelled && data?.processes) {
-        setAllProcesses(data.processes);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [primeId]);
+  }, [projectId]);
 
   /* ---- Fetch pending promotions ---- */
   useEffect(() => {
@@ -360,12 +365,12 @@ function ProjectDetailView({
       }
     })();
     return () => { cancelled = true; };
-  }, [primeId, projectId]);
+  }, [projectId]);
 
   /* ---- Back nav ---- */
   const handleBack = useCallback(() => {
     router.push(`/projects`);
-  }, [primeId, router]);
+  }, [router]);
 
   /* ---- Context change ---- */
   const handleContextChange = useCallback((ctx: Record<string, ContextEntry>) => {
@@ -393,7 +398,7 @@ function ProjectDetailView({
       body: JSON.stringify({ promotionId, action }),
     });
     setPromotions((prev) => prev.filter((p) => p.id !== promotionId));
-  }, [primeId, projectId]);
+  }, [projectId]);
 
   /* ---- Save ---- */
   const isDirty = contextDirty || processesDirty || editDesc;
@@ -412,7 +417,7 @@ function ProjectDetailView({
     setProcessesDirty(false);
     setEditDesc(false);
     setSaving(false);
-  }, [primeId, projectId, desc, localContext, linkedProcessIds]);
+  }, [projectId, desc, localContext, linkedProcessIds]);
 
   if (loading) {
     return (
@@ -456,6 +461,16 @@ function ProjectDetailView({
           )}
         </div>
 
+        {/* Team */}
+        {project.team?.length > 0 && (
+          <div className={styles.participants} style={{ marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: "#7A8696", marginRight: 4 }}>Team:</span>
+            {project.team.map((t) => (
+              <span key={t} className={styles.agentChip}>{t}</span>
+            ))}
+          </div>
+        )}
+
         {/* Goal */}
         {(project as any).goal && (
           <div className={styles.detailGoal}>{(project as any).goal}</div>
@@ -488,6 +503,20 @@ function ProjectDetailView({
                 </Link>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Drive folder */}
+        {(project as any).drive_url && (
+          <div style={{ marginBottom: 8 }}>
+            <a
+              href={(project as any).drive_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 13, color: "var(--care-mint)", textDecoration: "none" }}
+            >
+              📁 Open Drive Folder
+            </a>
           </div>
         )}
 
@@ -649,11 +678,9 @@ function ProjectDetailView({
    Create Project Modal
    ================================================================ */
 function CreateProjectModal({
-  primeId,
   onClose,
   onCreated,
 }: {
-  primeId: string;
   onClose: () => void;
   onCreated: (proj: ProjectSummary) => void;
 }) {
@@ -662,20 +689,28 @@ function CreateProjectModal({
   const [description, setDescription] = useState("");
   const [context, setContext] = useState<Record<string, ContextEntry>>({});
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleCreate = useCallback(async () => {
     if (!id.trim() || !name.trim()) return;
     setCreating(true);
-    const result = await api<{ project: ProjectSummary }>(`/api/projects`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: id.trim(), name: name.trim(), description, context }),
-    });
-    if (result?.project) {
-      onCreated(result.project);
+    setError(null);
+    try {
+      const result = await api<{ project: ProjectSummary; error?: string }>(`/api/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id.trim(), name: name.trim(), description, context }),
+      });
+      if (result?.project) {
+        onCreated(result.project);
+      } else if (result?.error) {
+        setError(result.error);
+      }
+    } catch (e: any) {
+      setError(e.message || "Failed to create project");
     }
     setCreating(false);
-  }, [id, name, description, context, primeId, onCreated]);
+  }, [id, name, description, context, onCreated]);
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -713,6 +748,12 @@ function CreateProjectModal({
 
           <label className={styles.fieldLabel}>Initial Context</label>
           <ContextEditor context={context} onChange={setContext} />
+
+          {error && (
+            <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(255,80,80,0.1)", borderRadius: 6, color: "#FF5050", fontSize: 13 }}>
+              {error}
+            </div>
+          )}
         </div>
 
         <div className={styles.modalFooter}>

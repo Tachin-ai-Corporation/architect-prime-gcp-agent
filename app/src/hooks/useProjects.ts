@@ -18,29 +18,34 @@ interface UseProjectsResult {
 
 /**
  * Real-time Firestore listener for projects.
- * Uses client-side Firebase SDK with onSnapshot for instant updates.
- * Only returns active projects by default.
+ * Projects are stored in the root `projects` collection.
+ * 
+ * @param teamFilter - Optional prime/agent ID to filter by team membership
+ * @param includeArchived - Include archived projects (default: false)
  */
 export function useProjects(
-  primeId: string | null,
+  teamFilter?: string | null,
   includeArchived = false
 ): UseProjectsResult {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!primeId) {
-      setProjects([]);
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
 
-    const col = collection(db, "primes", primeId, "projects");
-    const constraints = includeArchived
-      ? [orderBy("created_at", "desc")]
-      : [where("status", "==", "active"), orderBy("created_at", "desc")];
+    const col = collection(db, "projects");
+    const constraints: any[] = [];
+
+    // Filter by team membership if specified
+    if (teamFilter) {
+      constraints.push(where("team", "array-contains", teamFilter));
+    }
+
+    if (!includeArchived) {
+      constraints.push(where("status", "==", "active"));
+    }
+
+    constraints.push(orderBy("created_at", "desc"));
 
     const q = query(col, ...constraints);
 
@@ -61,7 +66,7 @@ export function useProjects(
     );
 
     return () => unsub();
-  }, [primeId, includeArchived]);
+  }, [teamFilter, includeArchived]);
 
   return { projects, loading };
 }

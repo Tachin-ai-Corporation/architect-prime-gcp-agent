@@ -131,6 +131,10 @@ export interface Project {
   status: 'active' | 'complete' | 'paused' | 'archived';
   parent_id: string | null;
   depends_on: string[];
+  team: string[];              // prime/agent IDs with access
+  created_by: string;          // who created this project
+  drive_folder_id?: string;    // Google Drive folder ID
+  drive_url?: string;          // Google Drive folder URL
   context: {
     documentation: string[];
     processes: string[];

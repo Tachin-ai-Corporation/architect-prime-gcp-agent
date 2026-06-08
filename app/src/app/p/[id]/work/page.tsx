@@ -54,7 +54,7 @@ function WorkPage({ primeId }: { primeId: string }) {
 
   /* ---- Fetch projects ---- */
   useEffect(() => {
-    api<{ projects: { id: string; name: string }[] }>(`/api/primes/${primeId}/projects`)
+    api<{ projects: { id: string; name: string }[] }>(`/api/projects?team=${primeId}`)
       .then((data) => {
         if (data?.projects) setProjects(data.projects);
       });
