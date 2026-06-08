@@ -107,7 +107,7 @@ export default function AgentTypeDetailPage({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/library/agent-types/${specialty}`);
+        const res = await fetch(`/api/agent-types/${specialty}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
         if (!cancelled) {
