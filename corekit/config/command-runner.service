@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 Environment=CORE_DIR=/opt/corekit
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=POLL_INTERVAL=5
 ExecStart=/opt/corekit/bin/command-runner
 Restart=always
