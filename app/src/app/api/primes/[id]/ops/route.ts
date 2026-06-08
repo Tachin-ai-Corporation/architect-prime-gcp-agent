@@ -103,6 +103,7 @@ const CB_TERMINAL = new Set(["SUCCESS", "FAILURE", "TIMEOUT", "CANCELLED", "INTE
 async function pollCloudBuild(
   projectId: string,
   buildId: string,
+  region?: string,
 ): Promise<{ status: string; detail: string | null } | null> {
   try {
     const tokenRes = await fetch(
@@ -112,10 +113,12 @@ async function pollCloudBuild(
     if (!tokenRes.ok) return null;
     const { access_token: token } = await tokenRes.json();
 
-    const res = await fetch(
-      `https://cloudbuild.googleapis.com/v1/projects/${projectId}/builds/${buildId}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    // Use regional endpoint if region is provided (regional builds aren't visible on the global endpoint)
+    const url = region
+      ? `https://cloudbuild.googleapis.com/v1/projects/${projectId}/locations/${region}/builds/${buildId}`
+      : `https://cloudbuild.googleapis.com/v1/projects/${projectId}/builds/${buildId}`;
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) return null;
 
     const data = await res.json();
@@ -188,7 +191,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
         // 4. Dashboard deploy — poll Cloud Build if still running
         if (cmdType === "dashboard_deploy" && status === "running" && buildId && buildId !== "unknown" && projectId) {
-          const cbResult = await pollCloudBuild(projectId, buildId);
+          const cbResult = await pollCloudBuild(projectId, buildId, args.region);
           if (cbResult) {
             if (cbResult.status !== status) {
               status = cbResult.status;

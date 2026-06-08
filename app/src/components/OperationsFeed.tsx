@@ -38,6 +38,7 @@ const TYPE_ICONS: Record<string, string> = {
   fleet_upgrade: "⬆",
   fleet_teardown: "🗑",
   gateway_restart: "🔄",
+  prime_deploy: "🚀",
 };
 
 /* ---- Status config ---- */

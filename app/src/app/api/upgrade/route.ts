@@ -297,7 +297,7 @@ export async function POST(req: NextRequest) {
         await commandsCol(primeId).doc().set({
           type: "dashboard_deploy",
           status: "running",
-          args: { version: deployVersion, buildId, commit: deployCommit },
+          args: { version: deployVersion, buildId, commit: deployCommit, region },
           createdAt: FieldValue.serverTimestamp(),
         });
       } catch (e) {
