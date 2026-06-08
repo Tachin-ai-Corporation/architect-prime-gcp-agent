@@ -6,7 +6,7 @@ Architect Prime is an **agent factory** — it creates, upgrades, monitors, and 
 
 Prime handles **infrastructure, not orchestration**. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
 
-> **Current version:** `v2026.06.08.1.0`
+> **Current version:** `v2026.06.08.2.0`
 
 
 ---
@@ -28,6 +28,7 @@ Prime handles **infrastructure, not orchestration**. Humans assign work to agent
 | **Project Hierarchy** | Recursive projects with context accumulation, dependency tracking, and auto-completion |
 | **Agent Introspection** | Query actual installed tools/skills from agent VMs via Firestore bus — real filesystem data |
 | **Autonomous Responsibilities** | Agents self-program recurring duties with cron/event triggers — R/M/C/T hierarchy |
+| **Google Drive Artifacts** | Task outputs auto-persist to shared workspace, auto-publish to Drive on mission completion |
 | **Self-Hosted** | Everything runs in YOUR GCP project — zero shared infrastructure, no API keys |
 
 ---
@@ -111,7 +112,7 @@ Your GCP Project
 │   ├── primes/{id}/work/{id}         → Work envelopes (R/C/M/T state machine)
 │   ├── primes/{id}/work/{id}/history/→ Status transition log
 │   ├── primes/{id}/intake/{id}       → Brain intake queue
-│   ├── config/settings               → Agent defaults (email domain, model catalog)
+│   ├── config/settings               → Agent defaults (email domain, artifacts root folder)
 │   └── config/dwd                    → DWD configuration
 │
 ├── Prime VM (Compute Engine e2-medium, Ubuntu 22.04)
@@ -262,8 +263,8 @@ architect-prime/
 │   └── memory-consolidate/           # Nightly memory consolidation
 │
 ├── docs/                             # Documentation
-│   ├── CULTURE_OF_WORK.md            # Culture of Work framework (7 primitives)
-│   ├── primitives/                   # Primitive reference docs (Task → Responsibility)
+│   ├── CULTURE_OF_WORK.md            # Culture of Work framework (8 primitives)
+│   ├── primitives/                   # Primitive reference docs (Task → Artifact)
 │   ├── guides/                       # Authoring guides (processes, responsibilities)
 │   ├── BOOTSTRAP.md                  # Bootstrap reference
 │   ├── CHAT_SETUP.md                 # Google Chat / DWD setup guide
@@ -379,6 +380,7 @@ This removes all VMs, service accounts, Cloud Run service, and Firestore data.
 | **v2026.06.06.5.0** | **Dashboard Redesign** — Hierarchical /p/[id] routing, Agent Deep Dive (7 tabs), Library namespace, LiveIndicator, responsive tabs |
 | **v2026.06.07.1.0** | **Process Hardening** — Plan/Investigate v2 (read-only research steps, Drive artifact output, approval gate), auto-fill from source_meta |
 | **v2026.06.08.1.0** | **Culture of Work** — 7 primitives (Task/Checkpoint/Mission/Project/Process/Plan/Responsibility), Plan engine (create→approve→stamp), recursive Projects with depends_on, event-triggered responsibilities, 6 core processes, dashboard Plans page, 12 documentation files |
+| **v2026.06.08.2.0** | **Google Drive Artifacts** — 8th primitive (Artifact), auto-persist task outputs to shared/, auto-publish to Drive on mission completion, cross-mission artifact context injection, dashboard Artifacts settings, p-plan process, 3-phase lifecycle (local → Drive → project context) |
 
 Full version history is in git (`git log --oneline`).
 

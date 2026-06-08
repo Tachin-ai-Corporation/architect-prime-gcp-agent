@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> **Current version:** `v2026.06.08.1.0`
+> **Current version:** `v2026.06.08.2.0`
 >
 > This document describes *what Architect Prime is* and *how it works right now*.
 > Implementation plans live in `docs/plans/`. Historical changes live in git.
@@ -32,7 +32,7 @@ Firestore (state store)
     ├── primes/{id}/projects/{id}      → Project context (recursive, with depends_on)
     ├── primes/{id}/processes/{id}     → Stored reusable processes
     ├── primes/{id}/plans/{id}         → Plan blueprints (draft → approved → executing → complete)
-    └── config/settings                → Agent defaults (email domain)
+    └── config/settings                → Agent defaults (email domain, artifacts root folder)
     │
     ▼
 Agent VMs (e2-medium, Ubuntu 22.04)
@@ -61,7 +61,8 @@ All work flows through four levels. No exceptions.
 Additional primitives:
 - **Projects:** Recursive organizational containers (max depth 4) with accumulated context. Every Mission belongs to a project.
 - **Plans:** Unexecuted Mission blueprints. Created via `createPlan()`, approved via `approvePlan()`, stamped into M→C→T via `stampPlan()`. Lifecycle: draft → approved → executing → complete.
-- **Processes:** Reusable templates (6 core: implement, review, audit, investigate, deploy-verify, release). Produce Plans.
+- **Processes:** Reusable templates (6 core: plan, review, audit, investigate, deploy-verify, release). Produce Plans.
+- **Artifacts:** Files produced during Missions, auto-published to Google Drive on completion. Organized as `{root}/{project}/{prime}/{agent}/`. Referenced in project context for cross-mission access.
 
 Full Culture of Work framework documented in [`docs/CULTURE_OF_WORK.md`](docs/CULTURE_OF_WORK.md).
 
@@ -131,7 +132,7 @@ architect-prime/
 ├── skills/                 # Skill packages (agent-ask, workspace-drive, fleet-*, etc.)
 ├── docs/                   # Documentation — Culture of Work, primitives, authoring guides
 │   ├── CULTURE_OF_WORK.md  # Culture of Work framework overview
-│   ├── primitives/         # 7 primitive reference docs (Task → Responsibility)
+│   ├── primitives/         # 8 primitive reference docs (Task → Artifact)
 │   ├── guides/             # Authoring guides (processes, responsibilities)
 │   ├── plans/              # Implementation plans (referenced, not inlined)
 │   └── architecture/       # Design documents
