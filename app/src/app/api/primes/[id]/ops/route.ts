@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { commandsCol, fleetCol } from "@/lib/firestore";
+import { commandsCol, fleetCol, primesCol } from "@/lib/firestore";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
