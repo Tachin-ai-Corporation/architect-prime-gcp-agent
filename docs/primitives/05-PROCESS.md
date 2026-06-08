@@ -11,7 +11,7 @@ A Process is a **reusable work template** that defines a sequence of steps group
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | Unique identifier (e.g. `p-implement`) |
+| `id` | `string` | Unique identifier (e.g. `p-plan`) |
 | `name` | `string` | Human-readable name |
 | `description` | `string` | What this process does and when to use it |
 | `status` | `'active' \| 'inactive'` | Whether the process is available for execution |
@@ -124,7 +124,7 @@ The process executor (`runProcessPlan`) runs Tasks sequentially without Cortex i
 
 | ID | Name | Steps | Key Features |
 |----|------|:-----:|--------------|
-| `p-implement` | Feature Implementation | 4 | Branch → implement → validate → commit |
+| `p-plan` | Plan and Build | 4 | Investigate → plan → approve → implement → validate → commit |
 | `p-review` | Code Review | 4 | All `research` intent (read-only) |
 | `p-audit` | Codebase Audit | 5 | Scan → classify → create work items → report |
 | `p-investigate` | Investigation | 4 | All `research` intent (read-only) |

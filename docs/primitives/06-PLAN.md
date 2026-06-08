@@ -156,8 +156,8 @@ This bidirectional link enables the dashboard to show the Plan alongside its exe
 {
   "id": "plan-abc123",
   "project_id": "proj-auth-v2",
-  "name": "Feature Implementation: Add JWT authentication",
-  "process_id": "p-implement",
+  "name": "Plan and Build: Add JWT authentication",
+  "process_id": "p-plan",
   "process_version": 1,
   "parameters": {
     "goal": "Add JWT-based authentication to the API"
@@ -165,7 +165,7 @@ This bidirectional link enables the dashboard to show the Plan alongside its exe
   "layout": {
     "mission": {
       "instruction": "Execute process: Feature Implementation",
-      "accept_criteria": "Process 'Feature Implementation' completes all steps successfully.",
+      "accept_criteria": "Process 'Plan and Build' completes all steps successfully.",
       "owner": "stan@company.com"
     },
     "checkpoints": [

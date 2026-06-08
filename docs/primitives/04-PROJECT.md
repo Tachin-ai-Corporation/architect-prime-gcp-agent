@@ -151,7 +151,7 @@ graph TD
   "depends_on": [],
   "context": {
     "documentation": ["/docs/auth-spec.md", "/docs/jwt-rfc.md"],
-    "processes": ["p-implement", "p-review"],
+    "processes": ["p-plan", "p-review"],
     "team": {
       "lead": "stan@company.com",
       "reviewer": "alex@company.com"

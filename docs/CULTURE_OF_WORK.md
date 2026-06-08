@@ -188,7 +188,7 @@ Key features:
 
 | Process | ID | Purpose |
 |---------|------|---------|
-| Feature Implementation | `p-implement` | Branch → implement → validate → commit |
+| Plan and Build | `p-plan` | Investigate → plan → approve → implement → validate → commit |
 | Code Review | `p-review` | Read diff → correctness → conventions → verdict |
 | Codebase Audit | `p-audit` | Define criteria → scan → classify → report |
 | Investigation | `p-investigate` | Frame → gather evidence → analyze → document |

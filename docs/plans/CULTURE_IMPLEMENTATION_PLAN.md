@@ -174,7 +174,7 @@ These are universal processes any fleet team would use. Not Forge-specific.
 
 | File | Process | What it does |
 |---|---|---|
-| `p-implement.json` | Feature Implementation | Branch → implement → validate → commit → PR |
+| `p-plan.json` | Plan and Build | Investigate → plan → approve → implement → validate → commit |
 | `p-review.json` | Code Review | Read diff → check correctness → check conventions → verdict |
 | `p-audit.json` | Codebase Audit | Define criteria → scan → classify → create work → report |
 | `p-investigate.json` | Investigation | Frame question → gather evidence → analyze → recommend |

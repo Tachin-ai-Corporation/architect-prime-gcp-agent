@@ -162,11 +162,11 @@ When any Mission completes:
   "intent": "process_execution",
   "title": "Implement user authentication",
   "instruction": "Add JWT-based authentication to the API...",
-  "accept_criteria": "Process 'Feature Implementation' completes all steps successfully.",
+  "accept_criteria": "Process 'Plan and Build' completes all steps successfully.",
   "children": ["w-cp1", "w-cp2", "w-cp3"],
   "depends_on": [],
   "project_id": "proj-auth-v2",
-  "process_id": "p-implement",
+  "process_id": "p-plan",
   "process_version": 1,
   "plan_id": null,
   "delivery_status": "internal"

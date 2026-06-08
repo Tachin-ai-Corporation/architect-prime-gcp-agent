@@ -7,7 +7,7 @@ This guide covers how to write Process definition files for the Culture of Work 
 ## File Location & Naming
 
 - **Directory:** `corekit/config/processes/`
-- **Naming convention:** `p-{name}.json` (e.g., `p-implement.json`, `p-review.json`)
+- **Naming convention:** `p-{name}.json` (e.g., `p-plan.json`, `p-review.json`)
 - **Loading:** Processes are loaded by `loadLocalProcesses()` at brain daemon startup and synced to Firestore at `primes/{id}/processes/{processId}`
 
 ---
