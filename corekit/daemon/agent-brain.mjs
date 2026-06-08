@@ -1963,12 +1963,12 @@ function buildProjectContext(projectId, envelopeContext = null) {
       lines.push(`- ${f.name} — ${f.url || `driveId: ${f.driveId}`}`);
     }
     lines.push('');
-    lines.push('To use a prior artifact: `drive-download <driveId> shared/{missionId}/<filename>`');
-    lines.push('To create new artifacts: write files to shared/ — they auto-publish to Drive on completion.');
+    lines.push(`To use a prior artifact: \`drive-download <driveId> ${CORE_DIR}/shared/{missionId}/<filename>\``);
+    lines.push(`To create new artifacts: write files to ${CORE_DIR}/shared/ — they auto-publish to Drive on completion.`);
     result += lines.join('\n');
   } else if (mergedCtx?.drive_folder?.ref) {
     result += `\n\n📁 Project Drive folder: https://drive.google.com/drive/folders/${mergedCtx.drive_folder.ref}`;
-    result += '\nTo create artifacts: write files to shared/ — they auto-publish to Drive on completion.';
+    result += `\nTo create artifacts: write files to ${CORE_DIR}/shared/ — they auto-publish to Drive on completion.`;
   }
 
   return result;
@@ -2689,7 +2689,7 @@ async function callAgent(agentId, envelope) {
   // Resolve shared workspace path — mission-scoped for checkpoint tasks
   const workspaceId = envelope._missionId || envelope.parent_id || envelope.id;
   const workspaceDirective = workspaceId
-    ? `\n\n## Workspace\nWrite ALL work products to \`shared/${workspaceId}/\` — files here persist across tasks in this mission and are auto-published to Google Drive on completion.\n\nCRITICAL: Write substantial outputs (plans, reports, configs, code) as FILES, not just text responses.\nYour text response should summarize what you did and include Google Drive links to artifacts.\nPrior step outputs are also saved here automatically — check with \`ls shared/${workspaceId}/\`.`
+    ? `\n\n## Workspace\nWrite ALL work products to \`${CORE_DIR}/shared/${workspaceId}/\` — files here persist across tasks in this mission and are auto-published to Google Drive on completion.\n\nCRITICAL: Write substantial outputs (plans, reports, configs, code) as FILES, not just text responses.\nYour text response should summarize what you did and include Google Drive links to artifacts.\nPrior step outputs are also saved here automatically — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
     : '';
 
   const userMessage = [
