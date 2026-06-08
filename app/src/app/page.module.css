@@ -309,6 +309,26 @@
   cursor: not-allowed;
 }
 
+/* Chat button on prime chip */
+.chipChatBtn {
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: #7A8696;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 180ms ease;
+  white-space: nowrap;
+}
+
+.chipChatBtn:hover {
+  color: var(--care-mint);
+  background: rgba(95, 199, 178, 0.08);
+  border-color: rgba(95, 199, 178, 0.2);
+}
+
 /* Delete button on prime chip */
 .chipDeleteBtn {
   padding: 4px 8px;

@@ -204,12 +204,6 @@ function HomeInner() {
   /* ---- Select Prime ---- */
   const selectPrime = useCallback((prime: PrimeInstance) => {
     setSelectedPrimeId((prev) => (prev === prime.id ? null : prime.id));
-    setChatTarget({
-      type: "prime",
-      primeId: prime.id,
-      entityName: prime.name,
-      entityStatus: prime.status,
-    });
   }, []);
 
   /* ---- Select Agent for chat ---- */
@@ -534,6 +528,26 @@ function HomeInner() {
                     id={`upgrade-prime-${p.id}`}
                   >
                     {upgradingPrime === p.id ? "⏳" : "⬆ Upgrade"}
+                  </button>
+                )}
+
+                {/* Chat with Prime button */}
+                {p.status === "online" && (
+                  <button
+                    className={styles.chipChatBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setChatTarget({
+                        type: "prime",
+                        primeId: p.id,
+                        entityName: p.name,
+                        entityStatus: p.status,
+                      });
+                    }}
+                    title={`Chat with ${p.name}`}
+                    id={`chat-prime-${p.id}`}
+                  >
+                    💬
                   </button>
                 )}
 
