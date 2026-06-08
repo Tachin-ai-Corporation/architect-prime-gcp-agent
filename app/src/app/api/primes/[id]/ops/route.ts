@@ -59,6 +59,8 @@ function makeLabel(cmdType: string, args: Record<string, string>, primeId: strin
       return `Dashboard Deploy — ${args.version || "latest"}`;
     case "gateway_restart":
       return `Gateway Restart — ${primeName}`;
+    case "prime_deploy":
+      return `Deploying Prime — ${primeName}`;
     default:
       return cmdType;
   }
@@ -69,7 +71,7 @@ function makeTarget(cmdType: string, args: Record<string, string>): string {
     return args.name || "unknown";
   }
   if (cmdType === "dashboard_deploy") return "dashboard";
-  if (cmdType === "prime_teardown") return "prime";
+  if (cmdType === "prime_teardown" || cmdType === "prime_deploy") return "prime";
   return "prime";
 }
 

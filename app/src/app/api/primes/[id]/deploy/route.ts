@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { primesCol } from "@/lib/firestore";
+import { primesCol, commandsCol } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
 import { seedCoreProcesses } from "@/lib/seed-processes";
+import { FieldValue } from "@google-cloud/firestore";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -60,6 +61,18 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
         { error: "VM creation failed", details: err },
         { status: 500 }
       );
+    }
+
+    // Write a command doc so Operations panel tracks the deploy
+    try {
+      await commandsCol(id).doc().set({
+        type: "prime_deploy",
+        args: { vmName, zone },
+        status: "running",
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      console.warn(`[deploy] Failed to write command doc:`, e);
     }
 
     return NextResponse.json({
