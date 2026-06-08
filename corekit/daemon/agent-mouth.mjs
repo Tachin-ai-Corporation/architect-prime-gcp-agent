@@ -604,7 +604,7 @@ async function pollBrainV3Envelopes() {
     const token = await getAccessToken();
     const ownerEmail = AGENT_USER_EMAIL || process.env.AGENT_ID || '';
 
-    // ── PRIMARY QUERY: delivery_status=pending (efficient: returns only actionable items) ──
+    // ── Query: delivery_status=pending (returns only actionable items) ──
     const pendingQuery = {
       structuredQuery: {
         from: [{ collectionId: 'work' }],
@@ -626,8 +626,7 @@ async function pollBrainV3Envelopes() {
 
     const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
 
-    // Run primary query
-    let primaryResults = [];
+    let results = [];
     try {
       const res = await fetch(queryUrl, {
         method: 'POST',
@@ -636,7 +635,7 @@ async function pollBrainV3Envelopes() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data)) primaryResults = data.filter(r => r.document?.fields);
+        if (Array.isArray(data)) results = data.filter(r => r.document?.fields);
       } else if (!pollBrainV3Envelopes._pendingIndexWarned) {
         const errText = await res.text().catch(() => '');
         log('Brain v3 delivery_status query needs index', { status: res.status, body: errText.slice(0, 300) });
@@ -646,58 +645,17 @@ async function pollBrainV3Envelopes() {
       log('Brain v3 pending query error', { error: err.message });
     }
 
-    // ── FALLBACK: old 3-status queries (migration: catches items without delivery_status field) ──
-    let fallbackResults = [];
-    if (primaryResults.length === 0) {
-      const statuses = ['complete', 'needs_input', 'blocked'];
-      for (const targetStatus of statuses) {
-        try {
-          const query = {
-            structuredQuery: {
-              from: [{ collectionId: 'work' }],
-              where: {
-                compositeFilter: {
-                  op: 'AND',
-                  filters: [
-                    { fieldFilter: { field: { fieldPath: 'owner' }, op: 'EQUAL',
-                      value: { stringValue: ownerEmail } } },
-                    { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL',
-                      value: { stringValue: targetStatus } } },
-                  ]
-                }
-              },
-              orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'DESCENDING' }],
-              limit: 200,
-            },
-          };
-          const res = await fetch(queryUrl, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify(query),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) fallbackResults.push(...data);
-          }
-        } catch {} // Non-critical — primary query is preferred
-      }
-    }
-
-    // Merge: prefer primary results, use fallback only when primary returns nothing
-    const allResults = primaryResults.length > 0 ? primaryResults : fallbackResults.filter(r => r.document?.fields);
-
     // Diagnostic: log every Nth poll cycle to show the poll is alive
     if (!pollBrainV3Envelopes._count) pollBrainV3Envelopes._count = 0;
     pollBrainV3Envelopes._count++;
     if (pollBrainV3Envelopes._count % 60 === 1) { // every ~5 minutes (60 * 5s)
       log('Brain v3 poll heartbeat', { cycle: pollBrainV3Envelopes._count, owner: ownerEmail,
-        primary: primaryResults.length, fallback: fallbackResults.length,
-        primeId: PRIME_ID, delivered_cache: _deliveredEnvelopes.size });
+        results: results.length, primeId: PRIME_ID, delivered_cache: _deliveredEnvelopes.size });
     }
 
     let delivered = 0;
     let skippedDelivered = 0;
-    for (const r of allResults) {
+    for (const r of results) {
       if (!r.document?.fields) continue;
       const f = r.document.fields;
       const envId = f.id?.stringValue;
@@ -705,28 +663,35 @@ async function pollBrainV3Envelopes() {
       const status = f.status?.stringValue;
       const deliveryStatus = f.delivery_status?.stringValue;
       const deliveredAt = f.delivered_at?.timestampValue || f.delivered_at?.stringValue;
+      const parentId = f.parent_id?.stringValue || null;
 
-      // Skip: no output, already delivered (in-memory or Firestore flag), or child envelope
+      // Skip: no output or no ID
       if (!envId || !output) continue;
+      // Skip: already delivered
       if (deliveryStatus === 'delivered') { skippedDelivered++; continue; }
       if (deliveredAt) { _deliveredEnvelopes.add(envId); skippedDelivered++; continue; }
-      // Archived envelopes should never be delivered — stale delivery_status from race condition
+      // Skip: explicitly internal (should never appear in query results, but defense-in-depth)
+      if (deliveryStatus === 'internal') { skippedDelivered++; continue; }
+      // Skip: archived envelopes — stale delivery_status from race condition
       if (status === 'archived') { skippedDelivered++; continue; }
-      // If brain cleared delivered_at (reopened envelope), evict from in-memory cache
-      if (!deliveredAt && _deliveredEnvelopes.has(envId)) {
-        _deliveredEnvelopes.delete(envId);
-        log('Envelope reopened (delivered_at cleared), re-eligible for delivery', { envId });
+      // Skip: child envelopes (C/T) — only top-level M envelopes should be delivered
+      // Exception: intent='ack' or intent='notification' are intentionally deliverable C/T pairs
+      const envIntent = f.intent?.stringValue;
+      if (parentId && envIntent !== 'ack' && envIntent !== 'notification') {
+        log('Skipped child envelope (not top-level)', { envId, type: f.type?.stringValue, parentId });
+        skippedDelivered++;
+        continue;
       }
-      // delivery_status='pending' is the authoritative signal — no parent_id filter needed
+      // Skip: in-memory dedup
+      if (_deliveredEnvelopes.has(envId)) { skippedDelivered++; continue; }
 
       // Mark as delivered immediately to prevent duplicates
       _deliveredEnvelopes.add(envId);
 
-      log('Brain v3 envelope ready', { envId, status, chars: output.length });
+      log('Brain v3 envelope ready', { envId, status, type: f.type?.stringValue, chars: output.length });
 
       // Classify and deliver through the existing pipeline
       try {
-        const envIntent = f.intent?.stringValue;
         if (status === 'needs_input' || status === 'blocked') {
           // For needs_input or blocked, deliver the message directly (escalation/question)
           await deliver(output);
@@ -735,6 +700,10 @@ async function pollBrainV3Envelopes() {
           // Notification envelopes are already human-ready — deliver raw, no LLM rewriting
           await deliver(output, f.source_channel?.stringValue);
           log('Delivered notification raw', { envId, chars: output.length });
+        } else if (envIntent === 'ack') {
+          // Ack envelopes — deliver raw, they're short acknowledgments
+          await deliver(output, f.source_channel?.stringValue);
+          log('Delivered ack', { envId, chars: output.length });
         } else {
           // For complete, run through the full classify pipeline
           const envQuestion = f.instruction?.stringValue || f.context_summary?.stringValue || '';
