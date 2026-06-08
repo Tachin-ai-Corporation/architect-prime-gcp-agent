@@ -59,6 +59,7 @@ export function PrimeProvider({ children }: { children: React.ReactNode }) {
     dwdSignerSA: "",
     dwdClientId: "",
     agentEmailDomain: "",
+    artifactsRootFolderId: "",
   });
   const [sidebarFleet, setSidebarFleet] = useState<Record<string, FleetAgent[]>>({});
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);

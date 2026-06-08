@@ -32,6 +32,13 @@ export async function GET() {
     // This is set during install by deploy/install.sh
     const dwdClientId = dwdConfig?.clientId || process.env.DWD_CLIENT_ID || "";
 
+    // Read artifacts root folder from the first prime doc
+    let artifactsRootFolderId = "";
+    if (hasPrimes) {
+      const firstPrime = primesSnap.docs[0];
+      artifactsRootFolderId = firstPrime.data()?.artifacts_root_folder_id || "";
+    }
+
     return NextResponse.json({
       hasPrimes,
       dwdConfigured: dwdConfig?.configured === true,
@@ -41,6 +48,7 @@ export async function GET() {
       dwdClientId,
       agentEmailDomain: settings?.agentEmailDomain || "",
       adminEmail: settings?.adminEmail || "",
+      artifactsRootFolderId,
     });
   } catch (err) {
     console.error("[api/setup] Error:", err);
@@ -52,6 +60,7 @@ export async function GET() {
       dwdSignerSA: "",
       dwdClientId: "",
       agentEmailDomain: "",
+      artifactsRootFolderId: "",
     });
   }
 }
@@ -93,6 +102,17 @@ export async function POST(req: NextRequest) {
 
     if (Object.keys(updates).length > 0) {
       await db.collection("config").doc("settings").set(updates, { merge: true });
+    }
+
+    // Handle artifacts root folder ID — saved to the prime doc
+    if (typeof body.artifactsRootFolderId === "string") {
+      const primesSnap = await primesCol().limit(1).get();
+      if (!primesSnap.empty) {
+        const primeDoc = primesSnap.docs[0];
+        await primeDoc.ref.update({
+          artifacts_root_folder_id: body.artifactsRootFolderId.trim(),
+        });
+      }
     }
 
     return NextResponse.json({ success: true });

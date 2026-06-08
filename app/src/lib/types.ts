@@ -75,6 +75,7 @@ export interface SetupState {
   dwdSignerSA: string;
   dwdClientId: string;
   agentEmailDomain: string;
+  artifactsRootFolderId: string;
 }
 
 /* ---- Work Envelope types ---- */

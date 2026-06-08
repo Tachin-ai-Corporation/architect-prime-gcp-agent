@@ -38,10 +38,19 @@ function SettingsPageInner() {
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainSaved, setDomainSaved] = useState(false);
 
+  // Artifacts root folder editing state
+  const [artifactsFolder, setArtifactsFolder] = useState(setup.artifactsRootFolderId || "");
+  const [artifactsSaving, setArtifactsSaving] = useState(false);
+  const [artifactsSaved, setArtifactsSaved] = useState(false);
+
   // Sync local state when setup loads from context
   useEffect(() => {
     if (setup.agentEmailDomain) setEmailDomain(setup.agentEmailDomain);
   }, [setup.agentEmailDomain]);
+
+  useEffect(() => {
+    if (setup.artifactsRootFolderId) setArtifactsFolder(setup.artifactsRootFolderId);
+  }, [setup.artifactsRootFolderId]);
 
   const handleSaveDomain = useCallback(async () => {
     setDomainSaving(true);
@@ -59,6 +68,23 @@ function SettingsPageInner() {
     } catch { /* ignore */ }
     setDomainSaving(false);
   }, [emailDomain]);
+
+  const handleSaveArtifactsFolder = useCallback(async () => {
+    setArtifactsSaving(true);
+    setArtifactsSaved(false);
+    try {
+      const res = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artifactsRootFolderId: artifactsFolder.trim() }),
+      });
+      if (res.ok) {
+        setArtifactsSaved(true);
+        setTimeout(() => setArtifactsSaved(false), 2500);
+      }
+    } catch { /* ignore */ }
+    setArtifactsSaving(false);
+  }, [artifactsFolder]);
 
   // DWD test state
   const [dwdTestEmail, setDwdTestEmail] = useState("");
@@ -325,6 +351,76 @@ function SettingsPageInner() {
                   </code>{" "}
                   during hire.
                 </div>
+                </section>
+
+              {/* Artifacts */}
+              <section className={styles.section} id="settings-artifacts">
+                <div className={styles.sectionTitle}>
+                  Artifacts
+                  <span
+                    className={`${styles.badge} ${artifactsFolder ? styles.badgeSuccess : styles.badgeWarning}`}
+                  >
+                    {artifactsFolder ? "Configured" : "Not configured"}
+                  </span>
+                </div>
+                <div className={styles.sectionDesc}>
+                  Configure the Google Drive folder where project artifacts are stored.
+                  Each project gets its own subfolder. Agents auto-publish work products here on mission completion.
+                </div>
+                <div className={styles.fieldRow} style={{ alignItems: "center" }}>
+                  <span className={styles.fieldLabel}>Root Drive Folder ID</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      id="settings-artifacts-folder-input"
+                      className="input"
+                      style={{ width: 320, fontSize: 13, fontFamily: "monospace" }}
+                      placeholder="e.g. 1AbC2dEf3GhI4jKlMnOp..."
+                      value={artifactsFolder}
+                      onChange={(e) => setArtifactsFolder(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Enter") handleSaveArtifactsFolder();
+                      }}
+                    />
+                    <button
+                      id="settings-artifacts-folder-save"
+                      className="btn btn-sm btn-primary"
+                      onClick={handleSaveArtifactsFolder}
+                      disabled={artifactsSaving}
+                    >
+                      {artifactsSaving ? "Saving..." : "Save"}
+                    </button>
+                    {artifactsSaved && (
+                      <span style={{ color: "#3BAA78", fontSize: 12, fontWeight: 500 }}>✓ Saved</span>
+                    )}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: "#566373", marginTop: 4 }}>
+                  Create a folder in{" "}
+                  <a
+                    href="https://drive.google.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "#6B9FE8" }}
+                  >
+                    Google Drive
+                  </a>
+                  , then paste its folder ID here. The ID is the last part of the folder URL:{" "}
+                  <code style={{ fontSize: 10, background: "rgba(32,40,51,0.5)", padding: "1px 4px", borderRadius: 3 }}>
+                    drive.google.com/drive/folders/<strong>folder-id-here</strong>
+                  </code>
+                </div>
+                {artifactsFolder && (
+                  <div style={{ marginTop: 8 }}>
+                    <a
+                      href={`https://drive.google.com/drive/folders/${artifactsFolder}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: "#6B9FE8" }}
+                    >
+                      📁 Open folder in Drive →
+                    </a>
+                  </div>
+                )}
               </section>
             </>
           )}
