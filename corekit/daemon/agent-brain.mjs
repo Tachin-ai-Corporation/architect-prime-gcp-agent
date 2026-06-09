@@ -39,6 +39,9 @@ import { createProcessEngine } from '../corekit/lib/process-engine.mjs';
 import { createScheduler, cronNextFire } from '../corekit/lib/scheduler.mjs';
 import { createApprovalChecker } from '../corekit/lib/approvals.mjs';
 import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
+import { createArtifactManager } from '../corekit/lib/artifacts.mjs';
+import { createNotifier } from '../corekit/lib/notifications.mjs';
+import { createHistoryWriter } from '../corekit/lib/history.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
@@ -79,7 +82,7 @@ const BRAIN_ROUTE = CORTEX_ROUTE;  // classify/decide/synthesize always use cort
 const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
 
 // ---- Artifacts config (loaded from prime Firestore doc at startup) ----
-let ARTIFACTS_ROOT_FOLDER_ID = null;
+// ARTIFACTS_ROOT_FOLDER_ID is now declared in the artifacts wrapper below
 
 // ---- Context forwarding budgets (chars per prior step) ----
 const CTX_DISPATCH_SUCCESS = CONTRACTS.dispatch?.ctx_dispatch_success || 4000;
@@ -759,75 +762,31 @@ function buildUserPrompt(mode, payload) {
 // are now imported from corekit/lib/json-repair.mjs (Phase 0C extraction)
 
 // ---- Gateway HTTP dispatch to agents ----
-// ---- Notification summarizer ----
-// Type-specific summarization for outbound notifications.
-// Some types need LLM to distill raw data; others pass through.
-const SUMMARY_TYPES = {
-  approval_request: {
-    llm: true,
-    maxChars: 1500,
-    prompt: (ctx) => [
-      `You are writing a concise approval request notification for a human reviewer.`,
-      `Summarize the completed work into a clean, self-contained message.`,
-      ``,
-      `RULES:`,
-      `- 3-8 sentences max, under ${ctx.maxChars || 1500} characters`,
-      `- Include ALL relevant URLs, links, and artifact references inline`,
-      `- The reader must NOT need any prior context â€” everything self-contained`,
-      `- State what was done, what the outcome is, and what happens next if approved`,
-      `- NEVER say "see above", "the link from earlier", or reference prior messages`,
-      `- Do NOT include raw command output, JSON blobs, or deployment logs`,
-      `- Do NOT include step numbers, agent names (motor, cerebellum), or internal jargon`,
-      `- Use markdown for readability (bold for key items, links clickable)`,
-      ``,
-      ctx.processName ? `PROCESS: ${ctx.processName}` : '',
-      ctx.title ? `APPROVAL TITLE: ${ctx.title}` : '',
-      ctx.customMessage ? `CUSTOM CONTEXT: ${ctx.customMessage}` : '',
-      ``,
-      `COMPLETED STEPS:`,
-      JSON.stringify(ctx.steps, null, 2),
-    ].filter(Boolean).join('\n'),
-  },
-  status_update: { llm: false },  // Pass through â€” already human-readable
-  error_report: { llm: false },   // Pass through â€” errors should be precise
-};
+// ---- Notification summarizer (via notifications.mjs, Phase 3 extraction) ----
+let _notifier = null;
 
-/**
- * Summarize raw notification data for delivery.
- * @param {string} type - Summary type key (e.g. 'approval_request')
- * @param {string} rawText - Fallback text if LLM is skipped or fails
- * @param {object} context - Type-specific context (steps, title, processName, etc.)
- * @returns {string} Clean, delivery-ready text
- */
-async function summarizeForDelivery(type, rawText, context = {}) {
-  const config = SUMMARY_TYPES[type];
-  if (!config || !config.llm) {
-    // No LLM needed â€” return raw text as-is
-    return rawText;
-  }
-
-  const maxChars = config.maxChars || 1500;
-  const promptText = config.prompt({ ...context, maxChars });
-
-  try {
-    const instruction = 'You are a notification writer. Return ONLY the notification text â€” no JSON, no markdown fences, no preamble.';
-    const content = await summarizeViaVertex(promptText, instruction, { maxTokens: 2048 });
-
-    if (content && content.length > 0) {
-      // Strip any markdown fences or JSON wrapping the LLM might add
-      const cleaned = content.replace(/^```[a-z]*\s*/gi, '').replace(/\s*```$/g, '').trim();
-      log('INFO', `summarizeForDelivery(${type}): ${cleaned.length} chars (from ${JSON.stringify(context.steps || []).length} chars raw)`);
-      return cleaned.substring(0, maxChars);
-    }
-
-    log('WARN', `summarizeForDelivery(${type}): empty response â€” falling back to raw`);
-    return rawText;
-  } catch (e) {
-    log('WARN', `summarizeForDelivery(${type}) error: ${e.message} â€” falling back to raw`);
-    return rawText;
-  }
+function _initNotifier() {
+  _notifier = createNotifier({
+    vertexText: _vtx,
+    firestoreWrite,
+    generateId,
+    cachedReadFile,
+    getGatewayConfig: () => ({ url: GATEWAY_URL, token: GATEWAY_TOKEN, route: BRAIN_ROUTE }),
+    getProjects: () => PROJECTS,
+    logger: log,
+    config: {
+      primeId: PRIME_ID,
+      agentId: AGENT_ID,
+      agentEmail: AGENT_EMAIL,
+      coreDir: CORE_DIR,
+    },
+  });
 }
 
+async function summarizeForDelivery(type, rawText, context) {
+  if (!_notifier) _initNotifier();
+  return _notifier.summarizeForDelivery(type, rawText, context);
+}
 async function callAgent(agentId, envelope) {
   const agentInfo = REGISTRY.agents[agentId];
   if (!agentInfo) {
@@ -1107,32 +1066,10 @@ async function scanRecentMissions(limit = 5) {
   }
 }
 
-// ---- Status update delivery (transient, for Mouth to pick up) ----
+// ---- Status update delivery (via notifications.mjs) ----
 async function deliverStatusUpdate(envelopeId, message) {
-  const statusId = generateId('status');
-  await firestoreWrite('work', statusId, {
-    id: statusId,
-    type: 'T',
-    parent_id: envelopeId,
-    owner: AGENT_EMAIL || AGENT_ID,
-    status: 'complete',
-    intent: 'status_update',
-    instruction: 'Status update',
-    output: message,
-    source_channel: 'system',
-    source_meta: {},
-    created_at: now(),
-    started_at: now(),
-    completed_at: now(),
-    updated_at: now(),
-    children: [],
-    accept_criteria: null,
-    context_summary: null,
-    context_forward: null,
-    error: null,
-    iteration: 0,
-  });
-  log('INFO', `Status update written: ${statusId} â€” ${message.substring(0, 80)}`);
+  if (!_notifier) _initNotifier();
+  await _notifier.writeStatusUpdate(envelopeId, message);
 }
 
 // ---- Periodic envelope archival (via archival.mjs, Phase 2 extraction) ----
@@ -1158,110 +1095,16 @@ async function archiveEnvelopes() {
   await _archiver.sweep();
 }
 
-// ---- Quick ACK generation (lightweight LLM call, mission-aware) ----
-const ACK_FALLBACKS = [
-  'âœ… Got it â€” working on this now.',
-  'ðŸ‘ On it!',
-  'âœ… Received â€” let me look into this.',
-  'ðŸ”› Working on it.',
-];
-
-async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
-  try {
-    // Read a personality snippet from IDENTITY.md (first 500 chars)
-    const identityPaths = [
-      CORE_DIR + `/workspace-${AGENT_ID}/IDENTITY.md`,
-      CORE_DIR + '/workspace/IDENTITY.md',
-    ];
-    let identity = '';
-    for (const p of identityPaths) {
-      const content = cachedReadFile(p);
-      if (content) { identity = content.substring(0, 500); break; }
-    }
-
-    // Build work context from active/blocked missions
-    let workContext = '';
-    if (activeEnvelopes && activeEnvelopes.length > 0) {
-      const summaries = activeEnvelopes.map(e =>
-        `${e.status === 'blocked' ? 'ðŸš« BLOCKED' : 'ðŸ”µ ACTIVE'}: "${(e.instruction || '').substring(0, 80)}"`
-      ).join('\n');
-      workContext = `\nYour current work:\n${summaries}`;
-    }
-
-    // Build recent mission context
-    let recentContext = '';
-    if (recentMissions.length > 0) {
-      const summaries = recentMissions.map(m =>
-        `â€¢ "${m.instruction}" â†’ ${m.status}${m.project_id ? ` [${m.project_id}]` : ''}`
-      ).join('\n');
-      recentContext = `\nYour recent work:\n${summaries}`;
-    }
-
-    // Build project context
-    let projectContext = '';
-    if (Object.keys(PROJECTS).length > 0) {
-      const projectNames = Object.values(PROJECTS)
-        .map(p => `â€¢ ${p.name || p.id}: ${(p.description || '').substring(0, 80)}`)
-        .join('\n');
-      projectContext = `\nProjects you work on:\n${projectNames}`;
-    }
-
-    // Extract the actual current message from the composite intake
-    const ackMessage = extractCurrentMessage(intakeText);
-
-    const systemPrompt = [
-      `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied â€” never robotic. Reference what the person asked about if you can.`,
-      workContext,
-      recentContext,
-      projectContext,
-      `\nIMPORTANT: If the user's message relates to your recent or current work, acknowledge the CONTINUITY â€” say something like "Picking back up on the sync pipeline" or "Taking another look at this." Don't treat it as brand new if you recognize it from recent history.`,
-      `\nYour personality:\n${identity || 'Helpful and professional.'}`,
-    ].filter(Boolean).join('\n');
-
-    const resp = await fetch(GATEWAY_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GATEWAY_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: BRAIN_ROUTE,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `[BRAIN-ORCHESTRATED]\nAcknowledge this message briefly:\n"${ackMessage.substring(0, 300)}"` },
-        ],
-        max_tokens: 60,
-        temperature: 0.9,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-
-    if (resp.ok) {
-      const data = await resp.json();
-      const content = data.choices?.[0]?.message?.content?.trim();
-      if (content && content.length > 2 && content.length < 200) {
-        return content;
-      }
-    }
-  } catch (e) {
-    log('DEBUG', `ACK generation failed (using fallback): ${e.message}`);
-  }
-  // Fallback: random generic ack
-  return ACK_FALLBACKS[Math.floor(Math.random() * ACK_FALLBACKS.length)];
+// ---- Quick ACK + message extraction (via notifications.mjs) ----
+async function generateAck(intakeText, activeEnvelopes, recentMissions) {
+  if (!_notifier) _initNotifier();
+  return _notifier.generateAck(intakeText, activeEnvelopes, recentMissions);
 }
 
-// ---- Extract current message from composite intake ----
-// Ears format: "[Chat messages since...]\ncontext...\n[Current message - respond to this]\nUser: actual message"
 function extractCurrentMessage(intakeText) {
-  if (!intakeText) return intakeText || '';
-  const marker = '[Current message - respond to this]';
-  const idx = intakeText.indexOf(marker);
-  if (idx !== -1) {
-    return intakeText.substring(idx + marker.length).trim();
-  }
-  return intakeText;
+  if (!_notifier) _initNotifier();
+  return _notifier.extractCurrentMessage(intakeText);
 }
-
 // ---- Intake processing (Phase 3: memory + active scan + attach) ----
 async function processIntake(intake) {
   await ensureProjectsLoaded();
@@ -2564,338 +2407,67 @@ function buildEnvelopeContext(envelope, priorResults, memoryResults) {
   return accumulated;
 }
 
-// ---- Shared workspace management (Phase 5) ----
+// ---- Artifacts (via artifacts.mjs, Phase 3 extraction) ----
+let _artifacts = null;
+let ARTIFACTS_ROOT_FOLDER_ID = null; // synced from module for backward compat
+
+function _initArtifacts() {
+  _artifacts = createArtifactManager({
+    firestoreWrite,
+    firestoreRead,
+    firestoreEncode,
+    getProjects: () => PROJECTS,
+    getDefaultProjectId: () => DEFAULT_PROJECT_ID,
+    logger: log,
+    config: {
+      coreDir: CORE_DIR,
+      primeId: PRIME_ID,
+      agentId: AGENT_ID,
+      agentEmail: AGENT_EMAIL,
+      gcpProject: GCP_PROJECT,
+    },
+  });
+}
+
 async function initSharedWorkspace(envelopeId) {
-  try {
-    const { execSync } = await import('child_process');
-    execSync(`mkdir -p ${CORE_DIR}/shared/${envelopeId}`, { timeout: 3000 });
-  } catch (e) {
-    log('WARN', `Failed to init shared workspace for ${envelopeId}: ${e.message}`);
-  }
+  if (!_artifacts) _initArtifacts();
+  await _artifacts.initWorkspace(envelopeId);
 }
 
 async function cleanupSharedWorkspace(envelopeId) {
-  try {
-    const { execSync } = await import('child_process');
-    execSync(`rm -rf ${CORE_DIR}/shared/${envelopeId}`, { timeout: 3000 });
-  } catch (e) {
-    log('WARN', `Failed to cleanup shared workspace for ${envelopeId}: ${e.message}`);
-  }
+  if (!_artifacts) _initArtifacts();
+  await _artifacts.cleanupWorkspace(envelopeId);
 }
 
-// ---- Artifacts: Drive integration ----
-
-/**
- * Load artifacts_root_folder_id from the prime Firestore document.
- * Called at startup and periodically to pick up dashboard config changes.
- */
-async function loadPrimeConfig() {
-  try {
-    const token = await getAuthToken();
-    if (!token || !PRIME_ID) return;
-    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
-    const resp = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const fields = data.fields || {};
-    const rootId = fields.artifacts_root_folder_id?.stringValue || null;
-    if (rootId !== ARTIFACTS_ROOT_FOLDER_ID) {
-      ARTIFACTS_ROOT_FOLDER_ID = rootId;
-      log('INFO', `Artifacts root folder: ${rootId || '(not configured)'}`);
-    }
-  } catch (e) {
-    log('WARN', `loadPrimeConfig error: ${e.message}`);
-  }
-}
-
-/**
- * Ensure a project has a Drive folder. Creates one under the artifacts root if needed.
- * For the agent's "general" project, uses "root" (agent's My Drive).
- * Returns the Drive folder ID or null if not configured.
- */
 async function ensureProjectDriveFolder(projectId) {
-  if (!projectId || !PROJECTS[projectId]) return null;
-  const project = PROJECTS[projectId];
-  const ctx = project.context || {};
-
-  // Already has a Drive folder
-  if (ctx.drive_folder?.ref) return ctx.drive_folder.ref;
-
-  // General project uses agent's My Drive root
-  if (projectId === DEFAULT_PROJECT_ID || projectId.endsWith('/general')) {
-    return 'root';
-  }
-
-  // No artifacts root configured â€” can't provision
-  if (!ARTIFACTS_ROOT_FOLDER_ID) {
-    log('DEBUG', `No artifacts_root_folder_id configured â€” skipping Drive folder for ${projectId}`);
-    return null;
-  }
-
-  try {
-    const { execSync: exec } = await import('child_process');
-    const projName = (project.name || projectId).replace(/["']/g, '');
-
-    // Create project folder under root
-    const mkdirOut = exec(
-      `drive-mkdir "${projName}" --parent ${ARTIFACTS_ROOT_FOLDER_ID}`,
-      { timeout: 30_000, cwd: CORE_DIR, encoding: 'utf8' }
-    ).trim();
-
-    // Parse folder ID from output (drive-mkdir outputs JSON with folderId)
-    let folderId = null;
-    try {
-      const parsed = JSON.parse(mkdirOut);
-      folderId = parsed.folderId || parsed.id || null;
-    } catch {
-      // Fallback: extract folder ID from text output
-      const match = mkdirOut.match(/([a-zA-Z0-9_-]{20,})/);
-      folderId = match ? match[1] : null;
-    }
-
-    if (!folderId) {
-      log('WARN', `Failed to parse Drive folder ID from drive-mkdir output: ${mkdirOut.slice(0, 200)}`);
-      return null;
-    }
-
-    // Update project context with new Drive folder
-    project.context = project.context || {};
-    project.context.drive_folder = {
-      kind: 'drive_folder',
-      ref: folderId,
-      name: `Project: ${projName}`,
-      summary: `Shared artifact storage for ${projName}`,
-      url: `https://drive.google.com/drive/folders/${folderId}`,
-      updatedAt: now(),
-      updatedBy: 'brain',
-    };
-    PROJECTS[projectId] = project;
-
-    // Persist to Firestore
-    const token = await getAuthToken();
-    if (token) {
-      const projUrl = `${FIRESTORE_BASE}/projects/${projectId}?updateMask.fieldPaths=context`;
-      await fetch(projUrl, {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: { context: firestoreEncode(project.context) } }),
-      });
-    }
-
-    log('INFO', `Project Drive folder provisioned: ${projName} â†’ ${folderId}`);
-
-    // Pre-share with fleet agents (best-effort)
-    try {
-      const fleetToken = await getAuthToken();
-      if (fleetToken && PRIME_ID) {
-        const fleetUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/fleet`;
-        const fleetResp = await fetch(fleetUrl, {
-          headers: { 'Authorization': `Bearer ${fleetToken}` },
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (fleetResp.ok) {
-          const fleetData = await fleetResp.json();
-          for (const doc of (fleetData.documents || [])) {
-            const agentEmail = doc.fields?.email?.stringValue;
-            if (agentEmail && agentEmail !== AGENT_EMAIL) {
-              try {
-                exec(`drive-share ${folderId} --email ${agentEmail} --role writer`, { timeout: 15_000, cwd: CORE_DIR });
-                log('DEBUG', `Shared project folder with ${agentEmail}`);
-              } catch { /* best-effort */ }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      log('DEBUG', `Fleet pre-share skipped: ${e.message}`);
-    }
-
-    return folderId;
-  } catch (e) {
-    log('WARN', `ensureProjectDriveFolder failed for ${projectId}: ${e.message}`);
-    return null;
-  }
+  if (!_artifacts) _initArtifacts();
+  return _artifacts.ensureProjectFolder(projectId);
 }
 
-/**
- * Publish artifacts from shared/{missionId}/ to Drive on mission completion.
- * Creates {project-folder}/{prime-name}/{agent-name}/ subfolder structure.
- * Returns array of { name, driveId, url } for each published artifact.
- */
 async function publishArtifacts(envelope) {
-  if (!envelope || envelope.type !== 'M') return [];
-
-  // Check if shared/ has files
-  let files = [];
-  try {
-    const { readdirSync, statSync } = await import('fs');
-    const sharedDir = `${CORE_DIR}/shared/${envelope.id}`;
-    try {
-      files = readdirSync(sharedDir).filter(f => {
-        try {
-          return statSync(`${sharedDir}/${f}`).isFile();
-        } catch { return false; }
-      });
-    } catch {
-      return []; // No shared dir or empty
-    }
-  } catch {
-    return [];
-  }
-
-  if (files.length === 0) return [];
-
-  // Get project Drive folder
-  const projectFolderId = await ensureProjectDriveFolder(envelope.project_id);
-  if (!projectFolderId) {
-    log('DEBUG', `No Drive folder for project ${envelope.project_id} â€” skipping artifact publish`);
-    return [];
-  }
-
-  try {
-    const { execSync: exec } = await import('child_process');
-    const { statSync } = await import('fs');
-
-    // Create prime/agent subfolder structure
-    const primeName = (PRIME_ID || 'unknown').replace(/["']/g, '');
-    const agentName = (AGENT_ID || 'unknown').replace(/["']/g, '');
-
-    let targetFolderId = projectFolderId;
-    if (projectFolderId !== 'root') {
-      // Create {prime-name}/ subfolder
-      try {
-        const primeOut = exec(
-          `drive-mkdir "${primeName}" --parent ${projectFolderId}`,
-          { timeout: 30_000, cwd: CORE_DIR, encoding: 'utf8' }
-        ).trim();
-        const primeParsed = JSON.parse(primeOut).folderId || JSON.parse(primeOut).id;
-        if (primeParsed) {
-          // Create {agent-name}/ subfolder under prime
-          const agentOut = exec(
-            `drive-mkdir "${agentName}" --parent ${primeParsed}`,
-            { timeout: 30_000, cwd: CORE_DIR, encoding: 'utf8' }
-          ).trim();
-          targetFolderId = JSON.parse(agentOut).folderId || JSON.parse(agentOut).id || primeParsed;
-        }
-      } catch (e) {
-        log('WARN', `Subfolder creation failed, publishing to project root: ${e.message}`);
-      }
-    }
-
-    // Upload each file
-    const artifacts = [];
-    for (const file of files) {
-      try {
-        const filePath = `${CORE_DIR}/shared/${envelope.id}/${file}`;
-        const fileSize = statSync(filePath).size;
-        const uploadOut = exec(
-          `drive-upload "${filePath}" ${targetFolderId}`,
-          { timeout: 60_000, cwd: CORE_DIR, encoding: 'utf8' }
-        ).trim();
-
-        let fileId = null, webViewLink = null;
-        try {
-          const parsed = JSON.parse(uploadOut);
-          fileId = parsed.fileId || parsed.id;
-          webViewLink = parsed.webViewLink || parsed.url || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : null);
-        } catch {
-          const match = uploadOut.match(/([a-zA-Z0-9_-]{20,})/);
-          fileId = match ? match[1] : null;
-          webViewLink = fileId ? `https://drive.google.com/file/d/${fileId}/view` : null;
-        }
-
-        if (fileId) {
-          artifacts.push({ name: file, driveId: fileId, url: webViewLink, size: fileSize });
-          log('INFO', `Artifact published: ${file} â†’ ${fileId}`);
-        }
-      } catch (e) {
-        log('WARN', `Failed to upload artifact ${file}: ${e.message}`);
-      }
-    }
-
-    if (artifacts.length === 0) return [];
-
-    // Auto-share with project owner
-    const project = PROJECTS[envelope.project_id];
-    if (project?.owner && project.owner !== AGENT_EMAIL) {
-      try {
-        exec(
-          `drive-share ${targetFolderId} --email ${project.owner} --role reader`,
-          { timeout: 15_000, cwd: CORE_DIR }
-        );
-        log('INFO', `Artifacts shared with project owner: ${project.owner}`);
-      } catch (e) {
-        log('DEBUG', `Auto-share with owner skipped: ${e.message}`);
-      }
-    }
-
-    // Update envelope context with artifact manifest
-    envelope.context = envelope.context || {};
-    envelope.context.artifacts = {
-      kind: 'artifact_manifest',
-      summary: `${artifacts.length} artifact(s) published to Drive`,
-      drive_folder: targetFolderId,
-      drive_url: `https://drive.google.com/drive/folders/${targetFolderId}`,
-      files: artifacts,
-      updatedAt: now(),
-      updatedBy: 'brain',
-    };
-
-    // Also update project context with latest artifacts (merge)
-    if (project) {
-      project.context = project.context || {};
-      const existing = project.context.artifacts?.files || [];
-      project.context.artifacts = {
-        kind: 'artifact_manifest',
-        summary: `${existing.length + artifacts.length} artifact(s) total`,
-        drive_folder: projectFolderId !== 'root' ? projectFolderId : targetFolderId,
-        drive_url: projectFolderId !== 'root' ? `https://drive.google.com/drive/folders/${projectFolderId}` : undefined,
-        files: [...existing, ...artifacts],
-        updatedAt: now(),
-        updatedBy: AGENT_ID,
-      };
-      PROJECTS[envelope.project_id] = project;
-      try {
-        const token = await getAuthToken();
-        if (token) {
-          const projUrl = `${FIRESTORE_BASE}/projects/${envelope.project_id}?updateMask.fieldPaths=context`;
-          await fetch(projUrl, {
-            method: 'PATCH',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: { context: firestoreEncode(project.context) } }),
-          });
-        }
-      } catch (e) {
-        log('WARN', `Failed to update project artifacts context: ${e.message}`);
-      }
-    }
-
-    log('INFO', `Published ${artifacts.length} artifacts to Drive for mission ${envelope.id}`);
-    return artifacts;
-  } catch (e) {
-    log('WARN', `publishArtifacts failed: ${e.message}`);
-    return [];
-  }
+  if (!_artifacts) _initArtifacts();
+  return _artifacts.publish(envelope);
 }
 
-// ---- History ----
-let _historyCounter = 0; // intra-ms tiebreaker
-let _historyLastMs = 0;
-async function writeHistory(envelopeId, prevStatus, newStatus, agent, detail) {
-  const ms = Date.now();
-  if (ms === _historyLastMs) { _historyCounter++; } else { _historyCounter = 0; _historyLastMs = ms; }
-  const historyId = `${ms}-${_historyCounter}`;
-  await firestoreWrite(`work/${envelopeId}/history`, historyId, {
-    seq: ms,
-    prev_status: prevStatus,
-    new_status: newStatus,
-    agent,
-    timestamp: now(),
-    detail: (detail || '').substring(0, 1000),
+async function loadPrimeConfig() {
+  if (!_artifacts) _initArtifacts();
+  await _artifacts.loadConfig();
+  ARTIFACTS_ROOT_FOLDER_ID = _artifacts.getArtifactsRootId();
+}
+
+// ---- History (via history.mjs, Phase 3 extraction) ----
+let _history = null;
+
+function _initHistory() {
+  _history = createHistoryWriter({
+    firestoreWrite,
+    logger: log,
   });
+}
+
+async function writeHistory(envelopeId, prevStatus, newStatus, agent, detail) {
+  if (!_history) _initHistory();
+  await _history.write(envelopeId, prevStatus, newStatus, agent, detail);
 }
 
 // ---- Logging ----
