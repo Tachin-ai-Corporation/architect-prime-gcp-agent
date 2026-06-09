@@ -34,6 +34,7 @@ import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { createClient as createFirestoreClient, firestoreEncode, firestoreDecode } from '../corekit/lib/firestore.mjs';
 import { parseJsonResponse, repairTruncatedJson, extractBalancedJson } from '../corekit/lib/json-repair.mjs';
 import { createVertexText, smartTruncate, summarizeTitle, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
+import { createProjectRegistry } from '../corekit/lib/projects.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
@@ -201,249 +202,96 @@ try {
   log('WARN', 'agent-registry.json not found');
 }
 
-// ---- Project registry (loaded from Firestore, refreshed periodically) ----
-let PROJECTS = {}; // keyed by project id
-let PROJECT_CHILDREN = {}; // parent_id → [child_id, ...]
+// ---- Project registry (via corekit/lib/projects.mjs, Phase 1A extraction) ----
+// NOTE: _projects is initialized later in startupInit() after PRIME_ID/AGENT_ID are set.
+// The globals PROJECTS, DEFAULT_PROJECT_ID, PROJECT_CHILDREN provide backward compat
+// for direct reads throughout the brain.
+let _projects = null; // initialized in startupInit()
+let PROJECTS = {};
+let PROJECT_CHILDREN = {};
 let DEFAULT_PROJECT_ID = null;
-let _projectsLoadedAt = 0;
-const PROJECTS_REFRESH_MS = 60_000;
-const MAX_PROJECT_DEPTH = 4;
 
+function _initProjectRegistry() {
+  _projects = createProjectRegistry({
+    firestore: _db,
+    primeId: PRIME_ID,
+    agentId: AGENT_ID,
+    agentEmail: AGENT_EMAIL,
+    gcpProject: GCP_PROJECT,
+    contracts: CONTRACTS,
+    logger: log,
+    generateId: generateId,
+    writeHistory: writeHistory,
+  });
+}
+
+// Thin wrappers preserving existing call signatures
 async function loadProjects() {
-  try {
-    const token = await getAuthToken();
-    if (!token) return;
-    const url = `${FIRESTORE_BASE}/projects`;
-    const resp = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const projects = {};
-    const childIndex = {};
-    for (const doc of (data.documents || [])) {
-      const p = firestoreDecode(doc.fields || {});
-      if (p.id && p.status !== 'archived') {
-        // Ensure new fields have defaults
-        p.goal = p.goal || '';
-        p.owner = p.owner || '';
-        p.parent_id = p.parent_id || null;
-        p.depends_on = Array.isArray(p.depends_on) ? p.depends_on : [];
-        p.context = p.context || null;
-        projects[p.id] = p;
-        // Build parent→child index
-        if (p.parent_id) {
-          if (!childIndex[p.parent_id]) childIndex[p.parent_id] = [];
-          childIndex[p.parent_id].push(p.id);
-        }
-      }
-    }
-    PROJECTS = projects;
-    PROJECT_CHILDREN = childIndex;
-    _projectsLoadedAt = Date.now();
-    if (Object.keys(projects).length > 0) {
-      log('INFO', `Projects loaded: ${Object.keys(projects).join(', ')}`);
-    }
-  } catch (e) {
-    log('WARN', `Failed to load projects: ${e.message}`);
-  }
+  if (!_projects) _initProjectRegistry();
+  await _projects.load();
+  // Sync globals for backward compat
+  PROJECTS = _projects.getAll();
+  PROJECT_CHILDREN = _projects.getChildren();
+  DEFAULT_PROJECT_ID = _projects.getDefaultId();
 }
 
 async function ensureProjectsLoaded() {
-  if (Date.now() - _projectsLoadedAt > PROJECTS_REFRESH_MS) {
-    await loadProjects();
-  }
+  if (!_projects) _initProjectRegistry();
+  await _projects.ensureLoaded();
+  PROJECTS = _projects.getAll();
+  PROJECT_CHILDREN = _projects.getChildren();
+  DEFAULT_PROJECT_ID = _projects.getDefaultId();
 }
 
-/**
- * Get accumulated project context by traversing parent chain.
- * Most specific (child) wins on key conflicts.
- * NOTE: This is different from buildProjectContext() below which renders text for Cortex.
- */
 function getAccumulatedProjectContext(projectId) {
-  const chain = [];
-  let current = projectId;
-  const visited = new Set();
-  while (current && PROJECTS[current] && !visited.has(current)) {
-    visited.add(current);
-    chain.unshift(current); // root first
-    current = PROJECTS[current].parent_id;
-  }
-  // Merge contexts: root → leaf (leaf wins)
-  let merged = { documentation: [], processes: [], team: {}, configuration: {} };
-  for (const pid of chain) {
-    const ctx = PROJECTS[pid]?.context;
-    if (!ctx) continue;
-    if (ctx.documentation) merged.documentation = [...merged.documentation, ...ctx.documentation];
-    if (ctx.processes) merged.processes = [...merged.processes, ...ctx.processes];
-    if (ctx.team) merged.team = { ...merged.team, ...ctx.team };
-    if (ctx.configuration) merged.configuration = { ...merged.configuration, ...ctx.configuration };
-  }
-  return { chain: chain.map(id => ({ id, name: PROJECTS[id]?.name || id })), context: merged };
+  if (!_projects) return { chain: [], context: {} };
+  return _projects.getAccumulatedContext(projectId);
 }
 
-/**
- * Validate project nesting depth. Rejects nesting beyond MAX_PROJECT_DEPTH.
- */
 function validateProjectDepth(parentId) {
-  let depth = 0;
-  let current = parentId;
-  const visited = new Set();
-  while (current && PROJECTS[current] && !visited.has(current)) {
-    visited.add(current);
-    depth++;
-    current = PROJECTS[current].parent_id;
-  }
-  return depth < MAX_PROJECT_DEPTH;
+  if (!_projects) return true;
+  return _projects.validateDepth(parentId);
 }
 
-/**
- * Check if a project's work is all complete and auto-transition to 'complete'.
- * Called when a Mission completes — checks if the mission's project has all work done.
- */
 async function checkProjectCompletion(projectId) {
-  if (!projectId || !PROJECTS[projectId]) return;
-  const project = PROJECTS[projectId];
-  if (project.status !== 'active') return;
-
-  try {
-    const token = await getAuthToken();
-    if (!token) return;
-
-    // 1. Check sub-projects — all must be complete/archived
-    const childIds = PROJECT_CHILDREN[projectId] || [];
-    for (const childId of childIds) {
-      const child = PROJECTS[childId];
-      if (!child) continue;
-      if (child.status !== 'complete' && child.status !== 'archived') {
-        return; // Still has active children
-      }
-    }
-
-    // 2. Check missions belonging to this project — all must be complete/archived/cancelled
-    const parentPath = `${FIRESTORE_BASE}`;
-    let nextPageToken = null;
-    do {
-      const url = `${parentPath}/work?pageSize=300${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
-      const resp = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!resp.ok) break;
-      const data = await resp.json();
-      for (const doc of (data.documents || [])) {
-        const env = firestoreDecode(doc.fields || {});
-        if (env.type !== 'M' || env.project_id !== projectId) continue;
-        if (env.status !== 'complete' && env.status !== 'archived' && env.status !== 'cancelled' && env.status !== 'failed') {
-          return; // Still has active missions
-        }
-      }
-      nextPageToken = data.nextPageToken;
-    } while (nextPageToken);
-
-    // 3. Check depends_on — all deps must be complete/archived
-    for (const depId of (project.depends_on || [])) {
-      const dep = PROJECTS[depId];
-      if (!dep) continue;
-      if (dep.status !== 'complete' && dep.status !== 'archived') {
-        return; // Dependency not met
-      }
-    }
-
-    // All children, missions, and deps are done — auto-complete
-    log('INFO', `Project ${projectId} all work complete — auto-completing`);
-    project.status = 'complete';
-    project.updated_at = now();
-    const projUrl = `${FIRESTORE_BASE}/projects/${projectId}`;
-    await fetch(projUrl, {
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: firestoreEncode(project) }),
-    });
-
-    // Cascade — check parent project too
-    if (project.parent_id) {
-      await checkProjectCompletion(project.parent_id);
-    }
-  } catch (e) {
-    log('WARN', `checkProjectCompletion error for ${projectId}: ${e.message}`);
-  }
+  if (!_projects) return;
+  await _projects.checkCompletion(projectId);
 }
 
-/**
- * Detect circular dependencies in a depends_on array.
- * Traverses the dependency graph; returns true if adding targetId
- * as a dependent of sourceId would create a cycle.
- */
-function hasCircularDependency(sourceId, targetId, envelopes = {}) {
-  const visited = new Set();
-  const stack = [targetId];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (current === sourceId) return true;
-    if (visited.has(current)) continue;
-    visited.add(current);
-    const env = envelopes[current];
-    if (env && Array.isArray(env.depends_on)) {
-      stack.push(...env.depends_on);
-    }
-  }
-  return false;
+function hasCircularDependency(sourceId, targetId, envelopes) {
+  if (!_projects) return false;
+  return _projects.hasCircularDep(sourceId, targetId, envelopes);
 }
 
-/**
- * Validate that M-type envelopes have a project_id before writing.
- * Logs warning and assigns default if missing.
- */
 function validateMissionProjectId(envelope) {
-  if (envelope.type === 'M' && !envelope.project_id) {
-    log('WARN', `Mission ${envelope.id} missing project_id — assigning default`);
-    envelope.project_id = DEFAULT_PROJECT_ID;
+  if (!_projects) {
+    if (envelope.type === 'M' && !envelope.project_id) {
+      envelope.project_id = DEFAULT_PROJECT_ID;
+    }
+    return envelope;
   }
-  return envelope;
+  return _projects.validateMissionProject(envelope);
 }
 
-/**
- * Create the agent's default project if it doesn't exist.
- */
 async function ensureDefaultProject() {
-  const defaultId = `${AGENT_ID}/general`;
-  DEFAULT_PROJECT_ID = defaultId;
-  if (PROJECTS[defaultId]) {
-    log('DEBUG', `Default project exists: ${defaultId}`);
-    return;
-  }
-  try {
-    const token = await getAuthToken();
-    if (!token) return;
-    const url = `${FIRESTORE_BASE}/projects/${defaultId}`;
-    const body = {
-      fields: {
-        id: { stringValue: defaultId },
-        name: { stringValue: 'General' },
-        goal: { stringValue: 'General workspace for unscoped work' },
-        description: { stringValue: `Default project for ${AGENT_ID}` },
-        owner: { stringValue: AGENT_EMAIL || AGENT_ID },
-        status: { stringValue: 'active' },
-        parent_id: { nullValue: null },
-        depends_on: { arrayValue: { values: [] } },
-        team: { arrayValue: { values: [{ stringValue: PRIME_ID }, { stringValue: AGENT_ID }] } },
-        created_by: { stringValue: AGENT_ID },
-        created_at: { stringValue: now() },
-        updated_at: { stringValue: now() },
-      }
-    };
-    await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    log('INFO', `Default project created: ${defaultId}`);
-    // Reload to pick it up
-    await loadProjects();
-  } catch (e) {
-    log('WARN', `Failed to create default project: ${e.message}`);
-  }
+  if (!_projects) _initProjectRegistry();
+  await _projects.ensureDefault();
+  DEFAULT_PROJECT_ID = _projects.getDefaultId();
+}
+
+function buildProjectContext(projectId, envelopeContext) {
+  if (!_projects) return null;
+  return _projects.buildContext(projectId, envelopeContext, CORE_DIR);
+}
+
+async function checkDependencies(envelope) {
+  if (!_projects) return true;
+  return _projects.checkDependencies(envelope);
+}
+
+async function activateDependents(completedMissionId) {
+  if (!_projects) return;
+  await _projects.activateDependents(completedMissionId);
 }
 
 // ---- Process registry (loaded from local files + Firestore, refreshed periodically) ----
@@ -514,80 +362,6 @@ async function loadProcesses() {
 async function ensureProcessesLoaded() {
   if (Date.now() - _processesLoadedAt > PROCESSES_REFRESH_MS) {
     await loadProcesses();
-  }
-}
-
-// ---- Dependency system (Cluster 1B) ----
-
-/**
- * Check if all depends_on targets for an envelope are complete.
- * Returns true if no deps or all deps are complete/archived.
- */
-async function checkDependencies(envelope) {
-  const deps = envelope.depends_on;
-  if (!Array.isArray(deps) || deps.length === 0) return true;
-  try {
-    const token = await getAuthToken();
-    if (!token) return true; // fail open
-    for (const depId of deps) {
-      const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/work/${depId}`;
-      const resp = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (!resp.ok) continue; // dep not found = don't block
-      const data = await resp.json();
-      const dep = firestoreDecode(data.fields || {});
-      if (dep.status !== 'complete' && dep.status !== 'archived') {
-        return false;
-      }
-    }
-    return true;
-  } catch (e) {
-    log('WARN', `checkDependencies error: ${e.message}`);
-    return true; // fail open
-  }
-}
-
-/**
- * When a Mission completes, scan for other Missions that depend on it.
- * Auto-activate those whose deps are all met.
- */
-async function activateDependents(completedMissionId) {
-  try {
-    const token = await getAuthToken();
-    if (!token) return;
-    // Scan work collection for pending missions with depends_on containing completedMissionId
-    const parentPath = `${FIRESTORE_BASE}`;
-    let nextPageToken = null;
-    do {
-      const url = `${parentPath}/work?pageSize=200${nextPageToken ? '&pageToken=' + nextPageToken : ''}`;
-      const resp = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!resp.ok) break;
-      const data = await resp.json();
-      for (const doc of (data.documents || [])) {
-        const env = firestoreDecode(doc.fields || {});
-        if (env.type !== 'M' || env.status !== 'pending') continue;
-        const deps = env.depends_on;
-        if (!Array.isArray(deps) || !deps.includes(completedMissionId)) continue;
-        // Check if all deps are now met
-        const allMet = await checkDependencies(env);
-        if (allMet) {
-          log('INFO', `Dependency met: activating mission ${env.id} (was waiting on ${completedMissionId})`);
-          env.status = 'active';
-          env.started_at = now();
-          env.updated_at = now();
-          await firestoreWrite('work', env.id, env);
-          await writeHistory(env.id, 'pending', 'active', 'brain', `Dependencies cleared — auto-activated`);
-        }
-      }
-      nextPageToken = data.nextPageToken;
-    } while (nextPageToken);
-  } catch (e) {
-    log('WARN', `activateDependents error: ${e.message}`);
   }
 }
 
@@ -1730,47 +1504,7 @@ function renderContextPacket(ctx) {
   return lines.join('\n');
 }
 
-/**
- * Build full project context for injection into agent dispatches.
- * Merges project-level context with optional envelope-level context.
- * Returns null if no project found.
- */
-function buildProjectContext(projectId, envelopeContext = null) {
-  if (!projectId || !PROJECTS[projectId]) return null;
-  const p = PROJECTS[projectId];
-  const projectCtx = p.context || {};
-  const mergedCtx = mergeContextPackets(projectCtx, envelopeContext);
-
-  const header = [`## Project Context: ${p.name || p.id}`];
-  if (p.description) header.push(`Description: ${p.description}`);
-  header.push('');
-
-  const rendered = renderContextPacket(mergedCtx);
-  if (!rendered && !p.description) return null;
-
-  let result = header.join('\n') + rendered;
-
-  // Inject artifact context for cross-mission access
-  const artifactCtx = mergedCtx?.artifacts;
-  if (artifactCtx && artifactCtx.files && artifactCtx.files.length > 0) {
-    const lines = ['\n\n## Project Artifacts (Google Drive)'];
-    if (artifactCtx.drive_url) lines.push(`📁 Project folder: ${artifactCtx.drive_url}`);
-    lines.push('');
-    lines.push('Prior work has produced these artifacts:');
-    for (const f of artifactCtx.files) {
-      lines.push(`- ${f.name} — ${f.url || `driveId: ${f.driveId}`}`);
-    }
-    lines.push('');
-    lines.push(`To use a prior artifact: \`drive-download <driveId> ${CORE_DIR}/shared/{missionId}/<filename>\``);
-    lines.push(`To create new artifacts: write files to ${CORE_DIR}/shared/ — they auto-publish to Drive on completion.`);
-    result += lines.join('\n');
-  } else if (mergedCtx?.drive_folder?.ref) {
-    result += `\n\n📁 Project Drive folder: https://drive.google.com/drive/folders/${mergedCtx.drive_folder.ref}`;
-    result += `\nTo create artifacts: write files to ${CORE_DIR}/shared/ — they auto-publish to Drive on completion.`;
-  }
-
-  return result;
-}
+// buildProjectContext is now a thin wrapper (L282) delegating to projects.mjs
 
 /**
  * Attempt to backfill null-ref context entries after a motor dispatch creates resources.
@@ -4823,83 +4557,11 @@ async function checkApprovedApprovals() {
   }
 }
 
-// ---- Phase 3C: Context promotion (suggest + approve) ----
+// ---- Phase 3C: Context promotion (via projects.mjs) ----
 
 async function suggestContextPromotions(envelope) {
-  if (!envelope.project_id || !envelope.context) return;
-
-  try {
-    const project = PROJECTS[envelope.project_id];
-    if (!project) return;
-
-    const projectContext = project.context || {};
-    const missionContext = envelope.context || {};
-
-    // Find NEW context entries in mission that aren't in project
-    const newEntries = {};
-    for (const [key, entry] of Object.entries(missionContext)) {
-      if (!projectContext[key] && entry && typeof entry === 'object') {
-        newEntries[key] = entry;
-      }
-    }
-
-    if (Object.keys(newEntries).length === 0) return;
-
-    log('INFO', `Context promotion: ${Object.keys(newEntries).length} new entries from mission ${envelope.id} for project ${envelope.project_id}`);
-
-    const token = await getAuthToken();
-    if (!token) return;
-
-    if (PROJECT_PROMOTION_AUTO) {
-      // Auto-promote: merge directly into project context
-      const projectUrl = `${FIRESTORE_BASE}/projects/${envelope.project_id}`;
-      const merged = mergeContextPackets(projectContext, newEntries);
-      const contextFields = {};
-      for (const [k, v] of Object.entries(merged)) {
-        if (v && typeof v === 'object') {
-          const entryFields = {};
-          if (v.kind) entryFields.kind = { stringValue: v.kind };
-          if (v.ref) entryFields.ref = { stringValue: v.ref };
-          if (v.name) entryFields.name = { stringValue: v.name };
-          if (v.summary) entryFields.summary = { stringValue: v.summary };
-          contextFields[k] = { mapValue: { fields: entryFields } };
-        }
-      }
-      await fetch(`${projectUrl}?updateMask.fieldPaths=context`, {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: {
-          context: { mapValue: { fields: contextFields } },
-        }}),
-      });
-      log('INFO', `Auto-promoted ${Object.keys(newEntries).length} context entries to project ${envelope.project_id}`);
-    } else {
-      // Write promotion candidates for dashboard approval
-      for (const [key, entry] of Object.entries(newEntries)) {
-        const promoId = generateId('promo');
-        const promoUrl = `${FIRESTORE_BASE}/projects/${envelope.project_id}/promotions/${promoId}`;
-        await fetch(promoUrl, {
-          method: 'PATCH',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fields: {
-            key: { stringValue: key },
-            entry: { mapValue: { fields: {
-              ...(entry.kind ? { kind: { stringValue: entry.kind } } : {}),
-              ...(entry.ref ? { ref: { stringValue: entry.ref } } : {}),
-              ...(entry.name ? { name: { stringValue: entry.name } } : {}),
-              ...(entry.summary ? { summary: { stringValue: entry.summary } } : {}),
-            }}},
-            source_mission_id: { stringValue: envelope.id },
-            suggested_at: { stringValue: now() },
-            status: { stringValue: 'pending' },
-          }}),
-        });
-      }
-      log('INFO', `Wrote ${Object.keys(newEntries).length} promotion candidates for project ${envelope.project_id}`);
-    }
-  } catch (e) {
-    log('DEBUG', `Context promotion error: ${e.message}`);
-  }
+  if (!_projects) return;
+  await _projects.suggestContextPromotions(envelope);
 }
 
 function startResponsibilityScheduler() {
