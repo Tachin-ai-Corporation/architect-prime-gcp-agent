@@ -57,11 +57,11 @@
     },
     {
       "title": "Produce audit report",
-      "description": "Produce a structured audit report for ${scope}:\n\n1. **Executive Summary** — Scope, criteria used, overall health assessment (healthy/needs-attention/critical)\n2. **Statistics** — Total files scanned, findings by severity, top violation categories\n3. **Critical & High Findings** — Detail each with location, evidence, impact, and remediation\n4. **Medium & Low Findings** — Summarize patterns rather than listing every instance\n5. **Positive Observations** — What the codebase does well (important for balanced assessment)\n6. **Recommendations** — Prioritized list of actions to improve codebase health\n\nStore the report in project context if project_id is available.\n\nOutput: complete audit report.",
+      "description": "Produce a structured audit report for ${scope}:\n\n1. **Executive Summary** — Scope, criteria used, overall health assessment (healthy/needs-attention/critical)\n2. **Statistics** — Total files scanned, findings by severity, top violation categories\n3. **Critical & High Findings** — Detail each with location, evidence, impact, and remediation\n4. **Medium & Low Findings** — Summarize patterns rather than listing every instance\n5. **Positive Observations** — What the codebase does well (important for balanced assessment)\n6. **Recommendations** — Prioritized list of actions to improve codebase health\n\nStore the report in project context if project_id is available.\n\nWrite the audit report as a markdown file in the shared workspace directory (e.g., `audit_report.md`).\n\nOutput: complete audit report.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Audit report is complete with all sections. Findings match the classified list. Recommendations are specific and prioritized."
+      "accept_criteria": "Audit report written as a file in the shared workspace. Report is complete with all sections. Findings match the classified list. Recommendations are specific and prioritized."
     }
   ],
   "contextTemplate": {},

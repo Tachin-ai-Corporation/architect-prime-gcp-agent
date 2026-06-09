@@ -66,11 +66,11 @@
     },
     {
       "title": "Announce release",
-      "description": "Announce the release of ${version} of ${target}:\n1. Prepare a release summary including:\n   - Version number and what was released\n   - Key changes and new features\n   - Any known issues or caveats\n   - Verification status from the previous step\n2. Post the announcement through available channels (project context, team notifications)\n3. Update project context with the release information if project_id is available\n\nOutput: release announcement content and confirmation of where it was posted.",
+      "description": "Announce the release of ${version} of ${target}:\n1. Prepare a release summary including:\n   - Version number and what was released\n   - Key changes and new features\n   - Any known issues or caveats\n   - Verification status from the previous step\n2. Post the announcement through available channels (project context, team notifications)\n3. Update project context with the release information if project_id is available\n4. Write the release summary as a markdown file in the shared workspace directory (e.g., `release_summary.md`).\n\nOutput: release announcement content and confirmation of where it was posted.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Release announcement prepared with version, changes, and verification status. Announcement posted. Project context updated if applicable."
+      "accept_criteria": "Release summary written as a file in the shared workspace. Announcement prepared with version, changes, and verification status. Announcement posted. Project context updated if applicable."
     }
   ],
   "contextTemplate": {},

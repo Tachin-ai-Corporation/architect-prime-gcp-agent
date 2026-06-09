@@ -49,11 +49,11 @@
     },
     {
       "title": "Produce verification report",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, restart, or change anything.\n\nProduce a structured deployment verification report for ${target} in ${environment}:\n\n1. **Overall Verdict**: One of: `HEALTHY`, `DEGRADED`, or `FAILED`\n   - HEALTHY: All checks pass, deployment is good\n   - DEGRADED: Some non-critical issues detected, service is functional but needs attention\n   - FAILED: Critical issues detected, deployment may need rollback\n\n2. **Health Check Results**: Status of each health check\n3. **Smoke Test Results**: Status of each functional test\n4. **Regression Results**: Any regressions detected\n5. **Action Items**: What needs attention (but do NOT take action)\n\nStore results in project context if project_id is available.\n\nIMPORTANT: Do NOT attempt to fix issues or roll back. Only report the deployment status.",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, restart, or change anything.\n\nProduce a structured deployment verification report for ${target} in ${environment}:\n\n1. **Overall Verdict**: One of: `HEALTHY`, `DEGRADED`, or `FAILED`\n   - HEALTHY: All checks pass, deployment is good\n   - DEGRADED: Some non-critical issues detected, service is functional but needs attention\n   - FAILED: Critical issues detected, deployment may need rollback\n\n2. **Health Check Results**: Status of each health check\n3. **Smoke Test Results**: Status of each functional test\n4. **Regression Results**: Any regressions detected\n5. **Action Items**: What needs attention (but do NOT take action)\n\nStore results in project context if project_id is available.\n\nWrite the verification report as a markdown file in the shared workspace directory (e.g., `deploy_verify_report.md`).\n\nIMPORTANT: Do NOT attempt to fix issues or roll back. Only report the deployment status.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Verification report produced with clear HEALTHY/DEGRADED/FAILED verdict. All check results included. Action items listed if applicable. No systems were modified."
+      "accept_criteria": "Verification report written as a file in the shared workspace. Report has clear HEALTHY/DEGRADED/FAILED verdict. All check results included. Action items listed if applicable. No systems were modified."
     }
   ],
   "contextTemplate": {},

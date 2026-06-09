@@ -43,11 +43,11 @@
     },
     {
       "title": "Produce review verdict",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change any code.\n\nProduce a structured review verdict for ${target}:\n\n1. **Verdict**: One of: `APPROVE`, `REQUEST_CHANGES`, or `REJECT`\n   - APPROVE: No critical issues, code is ready to merge (nits are acceptable)\n   - REQUEST_CHANGES: Issues found that should be fixed before merge\n   - REJECT: Fundamental design or approach problems requiring rework\n\n2. **Summary**: 2-3 sentence overview of the changes and review outcome\n\n3. **Critical Issues**: Must-fix items blocking approval (if any)\n\n4. **Suggestions**: Non-blocking improvements (if any)\n\n5. **Nits**: Minor style/preference items (if any)\n\nFormat the verdict clearly so it can be posted as a review comment.",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change any code.\n\nProduce a structured review verdict for ${target}:\n\n1. **Verdict**: One of: `APPROVE`, `REQUEST_CHANGES`, or `REJECT`\n   - APPROVE: No critical issues, code is ready to merge (nits are acceptable)\n   - REQUEST_CHANGES: Issues found that should be fixed before merge\n   - REJECT: Fundamental design or approach problems requiring rework\n\n2. **Summary**: 2-3 sentence overview of the changes and review outcome\n\n3. **Critical Issues**: Must-fix items blocking approval (if any)\n\n4. **Suggestions**: Non-blocking improvements (if any)\n\n5. **Nits**: Minor style/preference items (if any)\n\nFormat the verdict clearly so it can be posted as a review comment.\n\nWrite the review verdict as a markdown file in the shared workspace directory (e.g., `review_verdict.md`).",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Structured verdict produced with clear APPROVE/REQUEST_CHANGES/REJECT decision. All findings from previous steps incorporated. Verdict is actionable and specific. No files were modified."
+      "accept_criteria": "Review verdict written as a file in the shared workspace. Structured verdict with clear APPROVE/REQUEST_CHANGES/REJECT decision. All findings from previous steps incorporated. Verdict is actionable and specific. No files were modified."
     }
   ],
   "contextTemplate": {},
