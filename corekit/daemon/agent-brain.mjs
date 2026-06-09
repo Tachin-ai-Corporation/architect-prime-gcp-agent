@@ -1808,8 +1808,31 @@ async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, start
 
   log('INFO', `Process "${processName}" ${planFailed ? 'BLOCKED' : 'COMPLETE'}: ${successTasks}/${totalTasks} tasks`);
 
+  // Publish shared workspace artifacts to Drive BEFORE cleanup
+  if (mission.type === 'M') {
+    const artifactLinks = await publishArtifacts(mission);
+    if (artifactLinks && artifactLinks.length > 0) {
+      const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
+      mission.output = (mission.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+      await firestoreWrite('work', mission.id, mission);
+    }
+  }
+
   // Write to memory
   await writeMemory(mission);
+  await cleanupSharedWorkspace(mission.id);
+
+  // Activate dependent missions and fire event responsibilities
+  if (mission.type === 'M') {
+    await activateDependents(mission.id);
+    if (mission.project_id) {
+      await checkProjectCompletion(mission.project_id);
+    }
+    await fireEventResponsibilities('on_complete', {
+      mission_id: mission.id,
+      project_id: mission.project_id,
+    });
+  }
 
   // Context promotion for project-scoped missions
   if (mission.project_id && mission.type === 'M' && mission.context) {
@@ -2691,7 +2714,7 @@ async function callAgent(agentId, envelope) {
   // Resolve shared workspace path — mission-scoped for checkpoint tasks
   const workspaceId = envelope._missionId || envelope.parent_id || envelope.id;
   const workspaceDirective = workspaceId
-    ? `\n\n## Workspace\nWrite ALL work products to \`${CORE_DIR}/shared/${workspaceId}/\` — files here persist across tasks in this mission and are auto-published to Google Drive on completion.\n\nCRITICAL: Write substantial outputs (plans, reports, configs, code) as FILES, not just text responses.\nYour text response should summarize what you did and include Google Drive links to artifacts.\nPrior step outputs are also saved here automatically — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
+    ? `\n\n## Workspace\nWrite ALL work products to \`${CORE_DIR}/shared/${workspaceId}/\` — files here persist across tasks in this mission and are auto-published to Google Drive on completion.\n\nCRITICAL: Write substantial outputs (plans, reports, configs, code) as FILES in the shared workspace, not just text responses.\nYour text response should summarize what you did and reference the filenames you created. Brain will auto-publish them to Drive and share links with the human.\nPrior step outputs are also saved here — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
     : '';
 
   const userMessage = [

@@ -44,11 +44,11 @@
     },
     {
       "title": "Document findings and recommendations",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nProduce a clear investigation report about ${topic}:\n1. **Summary** — What was investigated and why\n2. **Findings** — What was discovered, with evidence\n3. **Root Cause** — Why the issue exists or the answer to the questions\n4. **Evidence Chain** — Commands run and outputs observed (for reproducibility)\n5. **Recommendations** — What should be done next (but do NOT do it)\n6. **Open Questions** — Anything that could not be determined\n\nStore findings in project context if project_id is available.\n\nIMPORTANT: Do NOT attempt to fix, deploy, or change anything. Only document findings and recommend actions.",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nProduce a clear investigation report about ${topic}:\n1. **Summary** — What was investigated and why\n2. **Findings** — What was discovered, with evidence\n3. **Root Cause** — Why the issue exists or the answer to the questions\n4. **Evidence Chain** — Commands run and outputs observed (for reproducibility)\n5. **Recommendations** — What should be done next (but do NOT do it)\n6. **Open Questions** — Anything that could not be determined\n\nWrite the investigation report as a markdown file in the shared workspace directory (e.g., `investigation_report.md`).\nStore findings in project context if project_id is available.\n\nIMPORTANT: Do NOT attempt to fix, deploy, or change anything. Only document findings and recommend actions.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Investigation report is complete with all sections. Findings are backed by evidence. Recommendations are specific and actionable. No systems were modified."
+      "accept_criteria": "Investigation report written as a file in the shared workspace. Report is complete with all sections. Findings are backed by evidence. Recommendations are specific and actionable. No systems were modified."
     }
   ],
   "contextTemplate": {},
