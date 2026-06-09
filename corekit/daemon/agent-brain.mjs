@@ -35,6 +35,10 @@ import { createClient as createFirestoreClient, firestoreEncode, firestoreDecode
 import { parseJsonResponse, repairTruncatedJson, extractBalancedJson } from '../corekit/lib/json-repair.mjs';
 import { createVertexText, smartTruncate, summarizeTitle, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
 
+// Alias: many call sites still use getAuthToken() for direct REST calls.
+// Maps to the cached version from gce-auth.mjs (strictly better).
+const getAuthToken = getGceToken;
+
 // ---- Contracts (loaded first — config depends on it) ----
 const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 let CONTRACTS = {};
@@ -1854,6 +1858,9 @@ function loadResponsibilities() {
 loadResponsibilities();
 
 // ---- Firestore REST client (via corekit/lib/firestore.mjs) ----
+// FIRESTORE_BASE: still used by 27 direct REST call sites in un-extracted code
+// (projects, processes, approvals, etc.). Will be removed when those are extracted.
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`;
 const _db = createFirestoreClient({ projectId: GCP_PROJECT, logger: log });
 
 // Thin wrappers preserving existing (collection, docId) call signature.
