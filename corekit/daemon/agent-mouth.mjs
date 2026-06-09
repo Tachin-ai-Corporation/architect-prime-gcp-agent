@@ -717,7 +717,6 @@ async function pollBrainV3Envelopes() {
 
         await classifyAndDeliver(contextHint + output, envQuestion);
         log('Delivered envelope output', { envId, status: envStatus, intent: envType });
-        }
 
         // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)
         const token2 = await getAccessToken();
