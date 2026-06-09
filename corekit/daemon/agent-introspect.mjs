@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, appendF
 import { join, basename } from 'path';
 import { hostname } from 'os';
 import { execSync } from 'child_process';
+import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 
 // ---- Config ----
 const GCP_PROJECT = process.env.GCP_PROJECT_ID;
@@ -33,25 +34,12 @@ function log(msg, meta = {}) {
   try { appendFileSync(LOG_FILE, line); } catch {}
 }
 
-// ---- GCE Token ----
-let _metaToken = null;
-let _metaExpiry = 0;
-async function getAccessToken() {
-  if (_metaToken && Date.now() < _metaExpiry) return _metaToken;
-  const res = await fetch(
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-    { headers: { 'Metadata-Flavor': 'Google' } }
-  );
-  const data = await res.json();
-  _metaToken = data.access_token;
-  _metaExpiry = Date.now() + (data.expires_in - 120) * 1000;
-  return _metaToken;
-}
+
 
 // ---- Firestore helpers ----
 async function pollForQueries() {
   if (!FIRESTORE_URL || !PRIME_ID || !AGENT_HOSTNAME) return [];
-  const token = await getAccessToken();
+  const token = await getGceToken();
   const parentPath = `primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}`;
   const body = {
     structuredQuery: {
@@ -99,7 +87,7 @@ async function pollForQueries() {
 }
 
 async function writeResult(docPath, result) {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   // Extract relative path from full resource name
   const relPath = docPath.includes('/documents/') ? docPath.split('/documents/')[1] : docPath;
   const url = `${FIRESTORE_URL}/${relPath}?updateMask.fieldPaths=status&updateMask.fieldPaths=result&updateMask.fieldPaths=completedAt`;
@@ -117,7 +105,7 @@ async function writeResult(docPath, result) {
 }
 
 async function writeError(docPath, error) {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   const relPath = docPath.includes('/documents/') ? docPath.split('/documents/')[1] : docPath;
   const url = `${FIRESTORE_URL}/${relPath}?updateMask.fieldPaths=status&updateMask.fieldPaths=error&updateMask.fieldPaths=completedAt`;
   await fetch(url, {

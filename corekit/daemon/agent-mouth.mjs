@@ -19,6 +19,9 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync,
          statSync, openSync, readSync, closeSync } from 'fs';
 import { dirname } from 'path';
 import { hostname as osHostname } from 'os';
+import { getGceToken } from '../corekit/lib/gce-auth.mjs';
+import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
+import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -110,48 +113,14 @@ function log(msg, meta = {}) {
   try { appendFileSync(MOUTH_LOG, line); } catch {}
 }
 
-// ---- GCE Metadata Token ----
-let _metaToken = null, _metaExpiry = 0;
-async function getAccessToken() {
-  if (_metaToken && Date.now() < _metaExpiry) return _metaToken;
-  const res = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-    { headers: { 'Metadata-Flavor': 'Google' } });
-  const data = await res.json();
-  _metaToken = data.access_token;
-  _metaExpiry = Date.now() + (data.expires_in - 120) * 1000;
-  return _metaToken;
-}
-
-// ---- DWD Token ----
-let _dwdToken = null, _dwdExpiry = 0;
+// ---- DWD Token wrapper (delegates to shared lib) ----
 const DWD_SCOPES = 'https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly';
 async function getDwdToken() {
-  if (_dwdToken && Date.now() < _dwdExpiry) return _dwdToken;
-  const metaBase = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default';
-  const mh = { 'Metadata-Flavor': 'Google' };
-  const vmSaEmail = await fetch(`${metaBase}/email`, { headers: mh }).then(r => r.text());
-  const metaTokenData = await fetch(`${metaBase}/token`, { headers: mh }).then(r => r.json());
-  const signerSa = DWD_SIGNER_SA || vmSaEmail;
-  const now = Math.floor(Date.now() / 1000);
-  const claim = JSON.stringify({
-    iss: signerSa, sub: AGENT_USER_EMAIL, scope: DWD_SCOPES,
-    aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600
+  return _getDwdTokenLib({
+    signerServiceAccount: DWD_SIGNER_SA,
+    subjectEmail: AGENT_USER_EMAIL,
+    scopes: DWD_SCOPES,
   });
-  const signRes = await fetch(`https://iam.googleapis.com/v1/projects/-/serviceAccounts/${signerSa}:signJwt`, {
-    method: 'POST', headers: { Authorization: `Bearer ${metaTokenData.access_token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ payload: claim })
-  });
-  if (!signRes.ok) throw new Error(`signJwt failed (${signRes.status})`);
-  const { signedJwt } = await signRes.json();
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signedJwt}`
-  });
-  const tokenData = await tokenRes.json();
-  if (!tokenData.access_token) throw new Error(`DWD failed: ${tokenData.error_description || tokenData.error}`);
-  _dwdToken = tokenData.access_token;
-  _dwdExpiry = Date.now() + 3500_000;
-  return _dwdToken;
 }
 
 // ---- GChat Space Discovery ----
@@ -374,7 +343,7 @@ function fillTemplate(template, vars) {
 }
 
 async function callLLM(systemPrompt, userText, jsonMode = false) {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   const loc = VERTEX_LOCATION;
   const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
   const url = `https://${host}/v1/projects/${VERTEX_PROJECT}/locations/${loc}/publishers/google/models/${LLM_MODEL}:generateContent`;
@@ -422,7 +391,7 @@ async function fireStatusUpdate(type) {
 // DELIVERY
 // ================================================================
 async function deliverToFirestore(text) {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/messages`, {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields: {
@@ -449,7 +418,7 @@ async function deliverToGChat(text) {
 
 async function deliverToFleetFirestore(text) {
   if (!PRIME_ID || !AGENT_HOSTNAME) return;
-  const token = await getAccessToken();
+  const token = await getGceToken();
   const parentPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}/messages`;
   await fetch(parentPath, {
     method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -501,11 +470,10 @@ async function classifyAndDeliver(rawText, overrideQuestion) {
 
     const result = await callLLM(prompt, input, true);
 
-    // Parse JSON response — with fallback
     let parsed;
     try {
-      const jsonMatch = result.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { action: 'deliver', text: rawText };
+      parsed = parseJsonResponse(result);
+      if (parsed.error === 'parse_failed') parsed = { action: 'deliver', text: rawText };
     } catch {
       parsed = { action: 'deliver', text: rawText };
     }
@@ -580,7 +548,7 @@ let taskStartTime = 0;
 async function writeTaskLog(task, status, outputChars, classified, errorMsg) {
   if (!task || !FIRESTORE_URL) return;
   try {
-    const token = await getAccessToken();
+    const token = await getGceToken();
     let agentHostname = '';
     try {
       agentHostname = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/name',
@@ -630,7 +598,7 @@ async function pollBrainV3Envelopes() {
   if (!FIRESTORE_URL || !PRIME_ID) return;
 
   try {
-    const token = await getAccessToken();
+    const token = await getGceToken();
     const ownerEmail = AGENT_USER_EMAIL || process.env.AGENT_ID || '';
 
     // ── Query: delivery_status=pending (returns only actionable items) ──
@@ -742,7 +710,7 @@ async function pollBrainV3Envelopes() {
         log('Delivered envelope output', { envId, status: envStatus, intent: envType });
 
         // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)
-        const token2 = await getAccessToken();
+        const token2 = await getGceToken();
         const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
         const patchRes = await fetch(docPath, {
           method: 'PATCH',

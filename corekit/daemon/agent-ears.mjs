@@ -19,6 +19,8 @@
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { hostname as osHostname } from 'os';
+import { getGceToken } from '../corekit/lib/gce-auth.mjs';
+import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -126,7 +128,7 @@ if (PREPROCESS_ENABLED) {
 
 // ---- LLM Call (Vertex AI, same pattern as mouth) ----
 async function callLLM(systemPrompt, userText) {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   const loc = VERTEX_LOCATION;
   const host = loc === 'global' ? 'aiplatform.googleapis.com' : `${loc}-aiplatform.googleapis.com`;
   const url = `https://${host}/v1/projects/${VERTEX_PROJECT}/locations/${loc}/publishers/google/models/${PREPROCESS_MODEL}:generateContent`;
@@ -186,58 +188,15 @@ async function preprocessMessage(text) {
   }
 }
 
-// ---- GCE Metadata Access Token ----
-let _metaToken = null;
-let _metaExpiry = 0;
-async function getAccessToken() {
-  if (_metaToken && Date.now() < _metaExpiry) return _metaToken;
-  const res = await fetch(
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-    { headers: { 'Metadata-Flavor': 'Google' } }
-  );
-  const data = await res.json();
-  _metaToken = data.access_token;
-  _metaExpiry = Date.now() + (data.expires_in - 120) * 1000;
-  return _metaToken;
-}
-
-// ---- DWD Token (Domain-Wide Delegation) ----
-let _dwdToken = null;
-let _dwdExpiry = 0;
+// ---- DWD Token wrapper (delegates to shared lib) ----
 const DWD_SCOPES = 'https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly';
 
 async function getDwdToken() {
-  if (_dwdToken && Date.now() < _dwdExpiry) return _dwdToken;
-  const metaBase = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default';
-  const mh = { 'Metadata-Flavor': 'Google' };
-  const vmSaEmail = await fetch(`${metaBase}/email`, { headers: mh }).then(r => r.text());
-  const metaTokenData = await fetch(`${metaBase}/token`, { headers: mh }).then(r => r.json());
-  const metaToken = metaTokenData.access_token;
-  const signerSa = DWD_SIGNER_SA || vmSaEmail;
-  const now = Math.floor(Date.now() / 1000);
-  const claim = JSON.stringify({
-    iss: signerSa, sub: AGENT_USER_EMAIL, scope: DWD_SCOPES,
-    aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600
+  return _getDwdTokenLib({
+    signerServiceAccount: DWD_SIGNER_SA,
+    subjectEmail: AGENT_USER_EMAIL,
+    scopes: DWD_SCOPES,
   });
-  const signUrl = `https://iam.googleapis.com/v1/projects/-/serviceAccounts/${signerSa}:signJwt`;
-  const signRes = await fetch(signUrl, {
-    method: 'POST', headers: { Authorization: `Bearer ${metaToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ payload: claim })
-  });
-  if (!signRes.ok) {
-    const err = await signRes.text();
-    throw new Error(`signJwt failed (${signRes.status}): ${err.slice(0, 200)}`);
-  }
-  const { signedJwt } = await signRes.json();
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${signedJwt}`
-  });
-  const tokenData = await tokenRes.json();
-  if (!tokenData.access_token) throw new Error(`DWD token exchange failed: ${tokenData.error_description || tokenData.error}`);
-  _dwdToken = tokenData.access_token;
-  _dwdExpiry = Date.now() + 3500_000;
-  return _dwdToken;
 }
 
 // ---- TASK.json (channel metadata for Mouth) ----
@@ -293,7 +252,7 @@ function fireGateway(messages) {
 
 // ---- Firestore Poller (Prime/Dashboard) ----
 async function pollFirestore() {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   const body = { structuredQuery: { from: [{ collectionId: 'messages' }],
     where: { fieldFilter: { field: { fieldPath: 'processed' }, op: 'EQUAL', value: { booleanValue: false } } },
     limit: 50 } };
@@ -311,7 +270,7 @@ async function pollFirestore() {
 }
 
 async function markFirestoreConsumed(msg) {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   await fetch(`https://firestore.googleapis.com/v1/${msg.id}?updateMask.fieldPaths=processed`, {
     method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields: { processed: { booleanValue: true } } })
@@ -321,7 +280,7 @@ async function markFirestoreConsumed(msg) {
 // ---- Firestore Poller for Fleet Dashboard Messages ----
 async function pollFirestoreDashboard() {
   if (!PRIME_ID || !AGENT_HOSTNAME) return [];
-  const token = await getAccessToken();
+  const token = await getGceToken();
   const body = { structuredQuery: { from: [{ collectionId: 'messages' }],
     where: { fieldFilter: { field: { fieldPath: 'processed' }, op: 'EQUAL', value: { booleanValue: false } } },
     limit: 50 } };
@@ -341,7 +300,7 @@ async function pollFirestoreDashboard() {
 }
 
 async function markFirestoreDashboardConsumed(msg) {
-  const token = await getAccessToken();
+  const token = await getGceToken();
   await fetch(`https://firestore.googleapis.com/v1/${msg.id}?updateMask.fieldPaths=processed`, {
     method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ fields: { processed: { booleanValue: true } } })
@@ -462,7 +421,7 @@ function markGChatConsumed(msg) {
 async function updateFirestoreStatus(status) {
   if (CHANNEL !== 'dashboard') return;
   try {
-    const token = await getAccessToken();
+    const token = await getGceToken();
     await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}?updateMask.fieldPaths=status`, {
       method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: { status: { stringValue: status } } })
@@ -492,7 +451,7 @@ async function checkApprovalResponse(text) {
 
   // Check if there are any pending approvals
   try {
-    const token = await getAccessToken();
+    const token = await getGceToken();
     const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}/approvals:runQuery`;
     const resp = await fetch(queryUrl, {
       method: 'POST',
@@ -671,7 +630,7 @@ async function main() {
         };
 
         try {
-          const token = await getAccessToken();
+          const token = await getGceToken();
           const intakeUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}/intake/${intakeId}`;
           const resp = await fetch(intakeUrl, {
             method: 'PATCH',
