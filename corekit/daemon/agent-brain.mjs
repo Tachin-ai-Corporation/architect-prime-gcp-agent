@@ -36,6 +36,9 @@ import { parseJsonResponse, repairTruncatedJson, extractBalancedJson } from '../
 import { createVertexText, smartTruncate, summarizeTitle, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
 import { createProjectRegistry } from '../corekit/lib/projects.mjs';
 import { createProcessEngine } from '../corekit/lib/process-engine.mjs';
+import { createScheduler, cronNextFire } from '../corekit/lib/scheduler.mjs';
+import { createApprovalChecker } from '../corekit/lib/approvals.mjs';
+import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
@@ -494,32 +497,9 @@ function cachedReadFile(filePath) {
   }
 }
 
-// ---- Responsibility config ----
+// ---- Responsibility config (via scheduler.mjs, Phase 2 extraction) ----
+let _scheduler = null;
 let RESPONSIBILITIES = [];
-function loadResponsibilities() {
-  const files = [
-    CORE_DIR + '/corekit/responsibilities.json',
-    CORE_DIR + '/corekit/responsibilities-job.json',
-  ];
-  const merged = [];
-  const seen = new Set();
-  for (const f of files) {
-    try {
-      const data = JSON.parse(readFileSync(f, 'utf8'));
-      for (const r of (data.responsibilities || [])) {
-        if (!seen.has(r.id)) {
-          seen.add(r.id);
-          merged.push(r);
-        }
-      }
-    } catch { /* file may not exist */ }
-  }
-  RESPONSIBILITIES = merged;
-  if (merged.length > 0) {
-    log('INFO', `Responsibilities loaded: ${merged.map(r => r.id).join(', ')}`);
-  }
-}
-loadResponsibilities();
 
 // ---- Firestore REST client (via corekit/lib/firestore.mjs) ----
 // FIRESTORE_BASE: still used by 27 direct REST call sites in un-extracted code
@@ -1155,132 +1135,27 @@ async function deliverStatusUpdate(envelopeId, message) {
   log('INFO', `Status update written: ${statusId} â€” ${message.substring(0, 80)}`);
 }
 
-// ---- Periodic envelope archival ----
-// Archives: failed (>STALE_CLEANUP_HOURS), complete (>STALE_CLEANUP_HOURS or immediately if child), stale needs_input (>NEEDS_INPUT_TIMEOUT_HOURS), cancelled (>STALE_CLEANUP_HOURS)
-// NOTE: blocked envelopes are NEVER archived â€” they stay alive indefinitely for resumption
+// ---- Periodic envelope archival (via archival.mjs, Phase 2 extraction) ----
+let _archiver = null;
+
+function _initArchiver() {
+  _archiver = createArchivalSweeper({
+    firestoreWrite,
+    firestoreRead,
+    firestoreQuery,
+    logger: log,
+    config: {
+      primeId: PRIME_ID,
+      staleCleanupHours: STALE_CLEANUP_HOURS,
+      archiveAgeDays: ARCHIVE_AGE_DAYS,
+      needsInputTimeoutHours: NEEDS_INPUT_TIMEOUT_HOURS,
+    },
+  });
+}
+
 async function archiveEnvelopes() {
-  log('INFO', 'Running envelope archival sweep...');
-  let totalArchived = 0;
-  try {
-    // 1. Failed envelopes older than STALE_CLEANUP_HOURS
-    const failedCutoff = new Date(Date.now() - STALE_CLEANUP_HOURS * 60 * 60 * 1000).toISOString();
-    const failed = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'failed' } },
-    ]);
-    let failedCount = 0;
-    for (const env of failed) {
-      if (env.created_at && env.created_at < failedCutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'stale_failed', delivery_status: 'delivered', updated_at: now() });
-        failedCount++;
-      }
-    }
-    if (failedCount) log('INFO', `Archived ${failedCount} failed envelopes (>${STALE_CLEANUP_HOURS}h old)`);
-
-    // 2. Complete envelopes: archive children immediately, top-level after STALE_CLEANUP_HOURS
-    const completeCutoff = new Date(Date.now() - STALE_CLEANUP_HOURS * 60 * 60 * 1000).toISOString();
-    const forceArchiveCutoff = new Date(Date.now() - ARCHIVE_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    const complete = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'complete' } },
-    ]);
-    let completeCount = 0;
-    for (const env of complete) {
-      // Child envelopes (have parent_id) never need delivery â€” archive immediately
-      if (env.parent_id) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'child_complete', delivery_status: 'delivered', updated_at: now() });
-        completeCount++;
-        continue;
-      }
-      // Top-level envelopes: require delivery AND memory before archiving
-      if (env.delivery_status === 'pending') {
-        // DO NOT archive â€” mouth hasn't delivered this to the user yet
-        continue;
-      }
-      const envAge = env.completed_at || env.updated_at || env.created_at;
-      if (envAge && envAge < completeCutoff) {
-        if (env.memory_written) {
-          // Memory confirmed written â€” safe to archive
-          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', delivery_status: 'delivered', updated_at: now() });
-          completeCount++;
-        } else if (envAge < forceArchiveCutoff) {
-          // Force-archive very old envelopes even without memory flag (safety fallback)
-          log('WARN', `Force-archiving envelope without memory_written: ${env.id} (age > ${ARCHIVE_AGE_DAYS}d)`);
-          await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered_no_memory', delivery_status: 'delivered', updated_at: now() });
-          completeCount++;
-        }
-      }
-    }
-    if (completeCount) log('INFO', `Archived ${completeCount} complete envelopes (children + >${STALE_CLEANUP_HOURS}h old)`);
-
-    // 3. Stale needs_input envelopes older than NEEDS_INPUT_TIMEOUT_HOURS
-    const needsInputCutoff = new Date(Date.now() - NEEDS_INPUT_TIMEOUT_HOURS * 60 * 60 * 1000).toISOString();
-    const needsInput = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'needs_input' } },
-    ]);
-    let needsInputCount = 0;
-    for (const env of needsInput) {
-      if (env.updated_at && env.updated_at < needsInputCutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'unanswered', delivery_status: 'delivered', updated_at: now() });
-        needsInputCount++;
-        log('WARN', `Archived unanswered needs_input envelope: ${env.id} (last updated ${env.updated_at})`);
-      }
-    }
-
-    // 4. Cancelled envelopes older than STALE_CLEANUP_HOURS
-    const cancelled = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'cancelled' } },
-    ]);
-    let cancelledCount = 0;
-    for (const env of cancelled) {
-      if (env.cancelled_at && env.cancelled_at < failedCutoff) {
-        await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'cancelled', delivery_status: 'delivered', updated_at: now() });
-        cancelledCount++;
-      }
-    }
-    if (cancelledCount) log('INFO', `Archived ${cancelledCount} cancelled envelopes (>${STALE_CLEANUP_HOURS}h old)`);
-
-    // 5. Timed-out envelopes â€” always children, archive immediately (they are terminal)
-    const timedOut = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'timed_out' } },
-    ]);
-    let timedOutCount = 0;
-    for (const env of timedOut) {
-      await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'timed_out', delivery_status: 'delivered', updated_at: now() });
-      timedOutCount++;
-    }
-    if (timedOutCount) log('INFO', `Archived ${timedOutCount} timed_out envelopes`);
-
-    // NOTE: blocked envelopes are NOT archived â€” they persist indefinitely for resumption
-
-    // 6. Orphaned children â€” active/pending C/T whose parent is cancelled/archived
-    const activeChildren = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
-    ]);
-    const pendingChildren = await firestoreQuery('work', [
-      { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
-    ]);
-    let orphanCount = 0;
-    for (const env of [...activeChildren, ...pendingChildren]) {
-      if (!env.parent_id) continue; // Only check children
-      const parent = await firestoreRead('work', env.parent_id);
-      if (!parent || ['cancelled', 'archived', 'failed'].includes(parent.status)) {
-        await firestoreWrite('work', env.id, {
-          ...env,
-          status: 'cancelled',
-          cancelled_at: now(),
-          cancelled_reason: parent ? `Parent ${env.parent_id} is ${parent.status}` : `Parent ${env.parent_id} not found`,
-          updated_at: now(),
-          completed_at: now(),
-        });
-        orphanCount++;
-      }
-    }
-    if (orphanCount) log('INFO', `Cancelled ${orphanCount} orphaned children (parent cancelled/archived/missing)`);
-
-    totalArchived = failedCount + completeCount + needsInputCount + cancelledCount + timedOutCount;
-    log('INFO', `Archival sweep complete: ${totalArchived} total archived, ${orphanCount} orphans cancelled (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled, ${timedOutCount} timed_out)`);
-  } catch (e) {
-    log('WARN', `Archival sweep error: ${e.message}`);
-  }
+  if (!_archiver) _initArchiver();
+  await _archiver.sweep();
 }
 
 // ---- Quick ACK generation (lightweight LLM call, mission-aware) ----
@@ -3300,11 +3175,7 @@ async function main() {
       watchFile(f, { interval: 10000 }, () => {
         log('INFO', `Responsibility config changed: ${f}`);
         loadResponsibilities();
-        // Recalculate next-fire times
-        _respNextFire = {};
-        for (const r of RESPONSIBILITIES) {
-          if (r.enabled) _respNextFire[r.id] = cronNextFire(r.schedule);
-        }
+        if (_scheduler) _scheduler.recalcNextFires();
       });
     }
   }
@@ -3313,537 +3184,69 @@ async function main() {
   await pollIntake();
 }
 
-// ---- Phase 7A: Cron expression parser ----
-function cronMatch(expression, date) {
-  const [minExpr, hourExpr, domExpr, monExpr, dowExpr] = expression.trim().split(/\s+/);
-  const min = date.getUTCMinutes();
-  const hour = date.getUTCHours();
-  const dom = date.getUTCDate();
-  const mon = date.getUTCMonth() + 1;
-  const dow = date.getUTCDay(); // 0=Sun
+// ---- Cron, scheduler, approvals (via scheduler.mjs + approvals.mjs, Phase 2 extraction) ----
+// cronNextFire is imported from scheduler.mjs at file top
+// cronMatch is internal to scheduler.mjs
 
-  return fieldMatches(minExpr, min, 0, 59)
-    && fieldMatches(hourExpr, hour, 0, 23)
-    && fieldMatches(domExpr, dom, 1, 31)
-    && fieldMatches(monExpr, mon, 1, 12)
-    && fieldMatches(dowExpr, dow, 0, 6);
+let _approvalChecker = null;
+
+function _initScheduler() {
+  _scheduler = createScheduler({
+    processEnvelope,
+    generateId,
+    writeHistory,
+    recallMemory,
+    firestoreWrite,
+    ensureProcessesLoaded,
+    getProcesses: () => PROCESSES,
+    processToCheckpointPlan,
+    getDefaultProjectId: () => DEFAULT_PROJECT_ID,
+    logger: log,
+    config: {
+      coreDir: CORE_DIR,
+      primeId: PRIME_ID,
+      agentId: AGENT_ID,
+      agentEmail: AGENT_EMAIL,
+      gcpProject: GCP_PROJECT,
+    },
+  });
 }
 
-function fieldMatches(expr, value, rangeMin, rangeMax) {
-  if (expr === '*') return true;
-  // */N step
-  if (expr.startsWith('*/')) {
-    const step = parseInt(expr.slice(2), 10);
-    return value % step === 0;
-  }
-  // Comma-separated values: 1,5,10
-  const parts = expr.split(',');
-  for (const part of parts) {
-    // Range: 1-5
-    if (part.includes('-')) {
-      const [lo, hi] = part.split('-').map(Number);
-      if (value >= lo && value <= hi) return true;
-    } else {
-      if (parseInt(part, 10) === value) return true;
-    }
-  }
-  return false;
+function _initApprovals() {
+  _approvalChecker = createApprovalChecker({
+    resumeProcessPlan,
+    processEnvelope,
+    recallMemory,
+    firestoreWrite,
+    firestoreRead,
+    writeHistory,
+    logger: log,
+    config: {
+      primeId: PRIME_ID,
+      gcpProject: GCP_PROJECT,
+    },
+  });
 }
 
-function cronNextFire(expression) {
-  // Calculate next fire time by scanning forward minute-by-minute (max 48h)
-  const now_ = new Date();
-  const check = new Date(now_);
-  check.setUTCSeconds(0, 0);
-  check.setUTCMinutes(check.getUTCMinutes() + 1); // start from next minute
-  const maxMs = 48 * 60 * 60 * 1000;
-  while (check.getTime() - now_.getTime() < maxMs) {
-    if (cronMatch(expression, check)) return check;
-    check.setUTCMinutes(check.getUTCMinutes() + 1);
-  }
-  return null; // no match within 48h
-}
-
-// ---- Phase 7A: Responsibility scheduler ----
-const _respLastFired = {}; // id â†’ timestamp
-let _respNextFire = {};    // id â†’ Date
-
-// ---- Phase 3A: Approval gate resume handler ----
-let approvalCheckCount = 0;
-
-async function checkApprovedApprovals() {
-  approvalCheckCount++;
-  // Only check every 5th poll cycle (~15s)
-  if (approvalCheckCount % 5 !== 0) return;
-
-  try {
-    const token = await getAuthToken();
-    if (!token || !PRIME_ID) return;
-
-    // Query for approved or rejected approvals
-    for (const targetStatus of ['approved', 'rejected']) {
-      const queryUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/approvals:runQuery`;
-      const resp = await fetch(queryUrl, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          structuredQuery: {
-            from: [{ collectionId: 'approvals' }],
-            where: {
-              fieldFilter: {
-                field: { fieldPath: 'status' },
-                op: 'EQUAL',
-                value: { stringValue: targetStatus },
-              },
-            },
-            limit: 5,
-          },
-        }),
-      });
-      if (!resp.ok) continue;
-
-      const results = await resp.json();
-      for (const row of results) {
-        if (!row.document) continue;
-        const fields = row.document.fields || {};
-        const approvalId = row.document.name.split('/').pop();
-        const envelopeId = fields.envelopeId?.stringValue;
-        const processed = fields._processed?.booleanValue;
-
-        if (!envelopeId || processed) continue;
-
-        log('INFO', `Approval ${approvalId} ${targetStatus} â€” resuming envelope ${envelopeId}`);
-
-        // Mark approval as processed to avoid re-processing
-        const approvalDocPath = row.document.name.split('/documents/')[1];
-        await fetch(`${FIRESTORE_BASE}/${approvalDocPath}?updateMask.fieldPaths=_processed`, {
-          method: 'PATCH',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fields: { _processed: { booleanValue: true } } }),
-        }).catch(() => {});
-
-        // Load the paused envelope
-        const envDoc = await firestoreRead('work', envelopeId);
-        if (!envDoc || envDoc.status !== 'awaiting_approval') {
-          log('WARN', `Approval ${approvalId}: envelope ${envelopeId} not in awaiting_approval state (${envDoc?.status})`);
-          continue;
-        }
-
-        const meta = envDoc.source_meta || {};
-        const pausedCheckpoints = meta.paused_checkpoints;
-        const pausedCpIndex = meta.paused_checkpoint_index;
-        const pausedTaskIndex = meta.paused_task_index;
-        const pausedAllResults = meta.paused_all_results || [];
-
-        if (!pausedCheckpoints || pausedCpIndex === undefined || pausedTaskIndex === undefined) {
-          log('WARN', `Approval ${approvalId}: missing resume state on envelope`);
-          continue;
-        }
-
-        if (targetStatus === 'rejected') {
-          // Cancel remaining tasks and mark as failed
-          envDoc.status = 'failed';
-          envDoc.output = `Process rejected at approval gate (approval ${approvalId})`;
-          envDoc.error = fields.reason?.stringValue || 'Approval rejected by user';
-          envDoc.completed_at = now();
-          envDoc.updated_at = now();
-          if (!envDoc.parent_id) envDoc.delivery_status = 'pending';
-          await firestoreWrite('work', envelopeId, envDoc);
-          await writeHistory(envelopeId, 'awaiting_approval', 'failed', 'brain', `Approval rejected`);
-          log('INFO', `Envelope ${envelopeId} rejected at approval gate`);
-          continue;
-        }
-
-        // Approved â€” resume execution
-        if (envDoc.process_id) {
-          // Process work: use deterministic resumption (no Cortex loop)
-          log('INFO', `Approved: resuming process plan for ${envelopeId}`);
-          await resumeProcessPlan(envDoc);
-        } else {
-          // Non-process work: resume through Cortex decide loop (legacy)
-          log('INFO', `Resuming checkpoint plan from CP${pausedCpIndex + 1} task ${pausedTaskIndex + 2}`);
-
-          envDoc.status = 'active';
-          envDoc.updated_at = now();
-          // Clean up paused state
-          delete envDoc.source_meta.paused_approval_id;
-          delete envDoc.source_meta.paused_checkpoints;
-          delete envDoc.source_meta.paused_checkpoint_index;
-          delete envDoc.source_meta.paused_task_index;
-          delete envDoc.source_meta.paused_all_results;
-          await firestoreWrite('work', envelopeId, envDoc);
-
-          // Resume processing the envelope through the normal Cortex loop
-          const memory = await recallMemory(envDoc.instruction, {
-            instruction: envDoc.instruction,
-            context_summary: (envDoc.context_summary || '').substring(0, 500),
-          });
-          await processEnvelope(envDoc, memory);
-        }
-      }
-    }
-  } catch (e) {
-    log('DEBUG', `Approval check error: ${e.message}`);
-  }
-}
-
-// ---- Phase 3C: Context promotion (via projects.mjs) ----
-
-async function suggestContextPromotions(envelope) {
-  if (!_projects) return;
-  await _projects.suggestContextPromotions(envelope);
+function loadResponsibilities() {
+  if (!_scheduler) _initScheduler();
+  _scheduler.loadResponsibilities();
+  RESPONSIBILITIES = _scheduler.getResponsibilities();
 }
 
 function startResponsibilityScheduler() {
-  if (RESPONSIBILITIES.length === 0) {
-    log('INFO', 'No responsibilities configured, scheduler idle');
-    return;
-  }
-
-  // Calculate initial next-fire times
-  for (const r of RESPONSIBILITIES) {
-    if (r.enabled) {
-      _respNextFire[r.id] = cronNextFire(r.schedule);
-      const nextStr = _respNextFire[r.id]
-        ? _respNextFire[r.id].toISOString()
-        : 'none (no match in 48h)';
-      log('INFO', `Responsibility ${r.id}: next fire ${nextStr}`);
-    }
-  }
-
-  // Check every 60 seconds
-  setInterval(async () => {
-    const now_ = new Date();
-    for (const r of RESPONSIBILITIES) {
-      if (!r.enabled) continue;
-      const nextFire = _respNextFire[r.id];
-      if (!nextFire || now_ < nextFire) continue;
-
-      // Min spacing check
-      const lastFired = _respLastFired[r.id];
-      const minSpacingMs = (r.min_spacing_minutes || 15) * 60 * 1000;
-      if (lastFired && (now_.getTime() - lastFired) < minSpacingMs) {
-        log('INFO', `Responsibility ${r.id} skipped (min spacing ${r.min_spacing_minutes}m)`);
-        _respNextFire[r.id] = cronNextFire(r.schedule);
-        continue;
-      }
-
-      // Fire!
-      log('INFO', `Responsibility ${r.id} firing: ${r.name}`);
-      _respLastFired[r.id] = now_.getTime();
-      _respNextFire[r.id] = cronNextFire(r.schedule);
-
-      try {
-        await fireResponsibility(r);
-      } catch (e) {
-        log('ERROR', `Responsibility ${r.id} fire failed: ${e.message}`);
-      }
-    }
-  }, 60_000);
+  if (!_scheduler) _initScheduler();
+  _scheduler.start();
 }
 
-async function fireResponsibility(resp) {
-  // Phase 3B: If responsibility has a processRef, execute the process directly
-  if (resp.processRef) {
-    await ensureProcessesLoaded();
-    const process = PROCESSES[resp.processRef];
-    if (process) {
-      log('INFO', `Responsibility ${resp.id}: executing linked process '${process.name}' v${process.version || 1}`);
-
-      // Build parameters: merge process defaults â†’ responsibility overrides
-      const parameters = {};
-      for (const [key, def] of Object.entries(process.parameters || {})) {
-        if (def && typeof def === 'object' && def.default !== undefined) {
-          parameters[key] = def.default;
-        }
-      }
-      Object.assign(parameters, resp.processParameters || {});
-
-      // Validate required parameters
-      const requiredParams = Object.entries(process.parameters || {})
-        .filter(([, def]) => def && typeof def === 'object' && def.required && !def.default)
-        .map(([key]) => key);
-      const missingParams = requiredParams.filter(k => !(k in parameters));
-      if (missingParams.length > 0) {
-        log('WARN', `Responsibility ${resp.id}: process '${process.name}' missing required params: ${missingParams.join(', ')} â€” falling through to normal mission`);
-        // Fall through to normal responsibility firing below
-      } else {
-        // Convert process to checkpoint plan
-        const cpPlan = processToCheckpointPlan(process, parameters);
-        if (cpPlan) {
-          // Create R envelope
-          const respEnvId = generateId('w');
-          const respEnvelope = {
-            id: respEnvId,
-            type: 'R',
-            parent_id: null,
-            owner: AGENT_EMAIL || AGENT_ID,
-            status: 'complete',
-            intent: 'responsibility',
-            title: resp.name || resp.id,
-            instruction: resp.instruction,
-            accept_criteria: resp.context?.success_criteria || null,
-            context_summary: `Process: ${process.name} v${process.version || 1}`,
-            output: `Responsibility ${resp.id} fired at ${now()} â†’ process ${process.id}`,
-            children: [],
-            context_forward: null,
-            error: null,
-            source_channel: 'scheduler',
-            source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, schedule: resp.schedule, process_id: process.id },
-            created_at: now(),
-            started_at: now(),
-            completed_at: now(),
-            updated_at: now(),
-            iteration: 0,
-          };
-          await firestoreWrite('work', respEnvId, respEnvelope);
-
-          // Create M mission with process already loaded
-          const missionId = generateId('w');
-          const missionEnvelope = {
-            id: missionId,
-            type: 'M',
-            parent_id: respEnvId,
-            owner: AGENT_EMAIL || AGENT_ID,
-            status: 'active',
-            intent: 'execute',
-            title: `Execute: ${resp.name || resp.id}`,
-            instruction: resp.instruction,
-            accept_criteria: resp.context?.success_criteria || null,
-            context_summary: `Executing process: ${process.name}`,
-            output: null,
-            children: [],
-            context_forward: null,
-            error: null,
-            source_channel: 'scheduler',
-            source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, fired_at: now(), process_id: process.id },
-            process_id: process.id,
-            process_version: process.version || 1,
-            project_id: resp.project_id || DEFAULT_PROJECT_ID,
-            created_at: now(),
-            started_at: now(),
-            completed_at: null,
-            updated_at: now(),
-            iteration: 0,
-            delivery_status: 'internal',
-            memory_context: null,
-          };
-
-          // Merge process context template
-          if (process.contextTemplate && typeof process.contextTemplate === 'object') {
-            const templateCtx = {};
-            for (const [key, entry] of Object.entries(process.contextTemplate)) {
-              if (entry && typeof entry === 'object') {
-                const processed = { ...entry };
-                if (processed.name) processed.name = processed.name.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-                if (processed.summary) processed.summary = processed.summary.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-                templateCtx[key] = processed;
-              }
-            }
-            missionEnvelope.context = templateCtx;
-          }
-
-          respEnvelope.children.push(missionId);
-          await firestoreWrite('work', respEnvId, respEnvelope);
-          await firestoreWrite('work', missionId, missionEnvelope);
-          await writeHistory(missionId, null, 'active', 'scheduler', `Process ${process.id} from responsibility ${resp.id}`);
-
-          // Increment process execution count
-          try {
-            const token = await getAuthToken();
-            if (token) {
-              const procUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes/${process.id}`;
-              const currentCount = process.execution_count || 0;
-              await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fields: {
-                  execution_count: { integerValue: String(currentCount + 1) },
-                  last_executed_at: { stringValue: now() },
-                }}),
-              });
-            }
-          } catch (e) { log('DEBUG', `Process execution count update failed: ${e.message}`); }
-
-          // Recall memory then execute the checkpoint plan directly
-          const memory = await recallMemory(resp.instruction, {
-            instruction: resp.instruction,
-            context_summary: `Process: ${process.name}`,
-          });
-          missionEnvelope.memory_context = memory;
-          await firestoreWrite('work', missionId, missionEnvelope);
-          await processEnvelope(missionEnvelope, memory);
-
-          log('INFO', `Responsibility ${resp.id} â†’ process ${process.id} execution started`);
-          return;
-        }
-      }
-    } else {
-      log('WARN', `Responsibility ${resp.id}: processRef '${resp.processRef}' not found, falling through to normal mission`);
-    }
-  }
-
-  // Build rich context summary from the responsibility definition
-  const contextParts = [];
-  if (resp.context?.purpose) contextParts.push(`PURPOSE: ${resp.context.purpose}`);
-  if (resp.context?.process?.length) {
-    contextParts.push(`PROCESS:\n${resp.context.process.map((s, i) => `${i + 1}. ${s}`).join('\n')}`);
-  }
-  if (resp.context?.reference_files?.length) {
-    contextParts.push(`REFERENCE FILES: ${resp.context.reference_files.join(', ')}`);
-  }
-  if (resp.context?.success_criteria) {
-    contextParts.push(`SUCCESS CRITERIA: ${resp.context.success_criteria}`);
-  }
-  if (resp.context?.prior_learnings) {
-    contextParts.push(`PRIOR LEARNINGS: ${resp.context.prior_learnings}`);
-  }
-  const contextSummary = contextParts.join('\n\n');
-
-  // Create type=R Responsibility envelope
-  const respEnvId = generateId('w');
-  const respEnvelope = {
-    id: respEnvId,
-    type: 'R',
-    parent_id: null,
-    owner: AGENT_EMAIL || AGENT_ID,
-    status: 'complete', // R is just a container, mark complete immediately
-    intent: 'responsibility',
-    title: resp.name || resp.id,
-    instruction: resp.instruction,
-    accept_criteria: resp.context?.success_criteria || null,
-    context_summary: contextSummary,
-    output: `Responsibility ${resp.id} fired at ${now()}`,
-    children: [],
-    context_forward: null,
-    error: null,
-    source_channel: 'scheduler',
-    source_meta: {
-      responsibility_id: resp.id,
-      responsibility_name: resp.name,
-      schedule: resp.schedule,
-    },
-    created_at: now(),
-    started_at: now(),
-    completed_at: now(),
-    updated_at: now(),
-    iteration: 0,
-  };
-
-  await firestoreWrite('work', respEnvId, respEnvelope);
-  await writeHistory(respEnvId, null, 'complete', 'scheduler', `Responsibility ${resp.id} fired`);
-
-  // Create type=M Mission child â€” this enters the normal Cortex loop
-  const missionId = generateId('w');
-  const missionEnvelope = {
-    id: missionId,
-    type: 'M',
-    parent_id: respEnvId,
-    owner: AGENT_EMAIL || AGENT_ID,
-    status: 'pending',
-    intent: 'execute',
-    title: `Execute: ${resp.name || resp.id}`,
-    instruction: resp.instruction,
-    accept_criteria: resp.context?.success_criteria || null,
-    context_summary: contextSummary,
-    output: null,
-    children: [],
-    context_forward: null,
-    error: null,
-    source_channel: 'scheduler',
-    source_meta: {
-      responsibility_id: resp.id,
-      responsibility_name: resp.name,
-      fired_at: now(),
-    },
-    project_id: resp.project_id || DEFAULT_PROJECT_ID,
-    created_at: now(),
-    started_at: null,
-    completed_at: null,
-    updated_at: now(),
-    iteration: 0,
-    memory_context: null, // Will be recalled during processEnvelope
-  };
-
-  // Track child on R envelope
-  respEnvelope.children.push(missionId);
-  await firestoreWrite('work', respEnvId, respEnvelope);
-
-  await firestoreWrite('work', missionId, missionEnvelope);
-  await writeHistory(missionId, null, 'pending', 'scheduler', `Mission from responsibility ${resp.id}`);
-  log('INFO', `Created R:${respEnvId} â†’ M:${missionId} for responsibility ${resp.id}`);
-
-  // Recall memory with rich context, then process
-  const memory = await recallMemory(resp.instruction, {
-    instruction: resp.instruction,
-    context_summary: contextSummary.substring(0, 500),
-  });
-  missionEnvelope.memory_context = memory;
-  await firestoreWrite('work', missionId, missionEnvelope);
-
-  // Process the mission through the normal Cortex loop
-  await processEnvelope(missionEnvelope, memory);
+async function checkApprovedApprovals() {
+  if (!_approvalChecker) _initApprovals();
+  await _approvalChecker.checkPending();
 }
 
-// ---- Event-triggered responsibilities (1D.1 + 1D.3) ----
-
-/**
- * Fire responsibilities that match a specific event trigger.
- * Scans loaded responsibilities for matching `trigger` field.
- *
- * @param {string} eventType - One of: 'on_complete', 'on_deploy', 'on_failure'
- * @param {object} eventContext - Context about the event (e.g., { mission_id, project_id })
- */
-async function fireEventResponsibilities(eventType, eventContext = {}) {
-  if (!eventType) return;
-
-  let RESPONSIBILITIES = [];
-  try {
-    const respFile = CORE_DIR + '/corekit/responsibilities.json';
-    if (existsSync(respFile)) {
-      RESPONSIBILITIES = JSON.parse(readFileSync(respFile, 'utf8'));
-    }
-  } catch (e) {
-    log('WARN', `Failed to load responsibilities for event trigger: ${e.message}`);
-    return;
-  }
-
-  const matching = RESPONSIBILITIES.filter(r => {
-    if (!r.enabled) return false;
-    if (!r.trigger) return false;
-    return r.trigger === eventType;
-  });
-
-  if (matching.length === 0) return;
-  log('INFO', `Event '${eventType}' triggered â€” ${matching.length} matching responsibilities`);
-
-  for (const resp of matching) {
-    try {
-      // Check min_spacing
-      if (resp.min_spacing_minutes && resp._lastFired) {
-        const elapsed = (Date.now() - new Date(resp._lastFired).getTime()) / 60000;
-        if (elapsed < resp.min_spacing_minutes) {
-          log('INFO', `Event resp ${resp.id}: skipping (${elapsed.toFixed(0)}m since last, min ${resp.min_spacing_minutes}m)`);
-          continue;
-        }
-      }
-
-      // Inject event context into instruction
-      let instruction = resp.instruction || '';
-      if (eventContext.mission_id) {
-        instruction += `\n\nTriggered by event: ${eventType} (mission: ${eventContext.mission_id})`;
-      }
-      if (eventContext.project_id) {
-        instruction += `\nProject: ${eventContext.project_id}`;
-      }
-
-      const eventResp = { ...resp, instruction };
-      await fireResponsibility(eventResp);
-      log('INFO', `Event resp ${resp.id} fired for '${eventType}'`);
-    } catch (e) {
-      log('WARN', `Failed to fire event resp ${resp.id}: ${e.message}`);
-    }
-  }
+async function fireEventResponsibilities(eventType, eventContext) {
+  if (!_scheduler) _initScheduler();
+  await _scheduler.fireEvent(eventType, eventContext);
 }
 
 main().catch(e => {
