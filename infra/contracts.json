@@ -69,5 +69,29 @@
     "context_max_tokens": 2000,
     "promotion_auto": false,
     "archive_completed_after_days": 30
+  },
+  "utility": {
+    "model": "gemini-2.5-flash",
+    "location": "us-central1",
+    "maxTokens": {
+      "summarize": 1024,
+      "title": 60,
+      "schema": 8192,
+      "notification": 2048
+    },
+    "temperature": {
+      "summarize": 0.3,
+      "title": 0.3,
+      "schema": 0.1,
+      "notification": 0.2
+    },
+    "context_budgets": {
+      "agent_step": 8000,
+      "cortex_step": 4000,
+      "dispatch_success": 4000,
+      "dispatch_failure": 3000
+    },
+    "timeout_ms": 30000,
+    "disable_thinking": true
   }
 }

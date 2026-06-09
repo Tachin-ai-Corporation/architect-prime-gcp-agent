@@ -29,6 +29,12 @@
 import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync } from 'fs';
 import { randomBytes } from 'crypto';
 
+// ---- Shared library imports (Phase 0 extraction) ----
+import { getGceToken } from '../corekit/lib/gce-auth.mjs';
+import { createClient as createFirestoreClient, firestoreEncode, firestoreDecode } from '../corekit/lib/firestore.mjs';
+import { parseJsonResponse, repairTruncatedJson, extractBalancedJson } from '../corekit/lib/json-repair.mjs';
+import { createVertexText, smartTruncate, summarizeTitle, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
+
 // ---- Contracts (loaded first — config depends on it) ----
 const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 let CONTRACTS = {};
@@ -72,281 +78,44 @@ const CTX_DISPATCH_FAILURE = CONTRACTS.dispatch?.ctx_dispatch_failure || 3000;
 const CTX_AGENT_STEP = CONTRACTS.dispatch?.ctx_agent_step || 8000;
 const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 
-// ---- Direct Vertex AI summarization ----
 // Brain's own LLM for simple text→text tasks (summarize, compress, rephrase).
+// Now uses the extracted vertex-text.mjs module via createVertexText().
 // Bypasses the brain gateway entirely — no agent routing, no workspace, no tools.
-// Uses GCE metadata server for OAuth2 tokens (same as ears/mouth).
 
-const VERTEX_LOCATION = CONTRACTS.vertex?.location || 'global';
-const VERTEX_API_BASE = `https://${VERTEX_LOCATION === 'global' ? '' : VERTEX_LOCATION + '-'}aiplatform.googleapis.com/v1/projects/${GCP_PROJECT}/locations/${VERTEX_LOCATION}/publishers/google/models`;
+const VERTEX_LOCATION = CONTRACTS.utility?.location || CONTRACTS.vertex?.location || 'global';
 
-/** Cache for GCE metadata OAuth2 token (auto-refreshes when expired) */
-let _gceTokenCache = { token: null, expiresAt: 0 };
+// ---- Initialize utility LLM client (vertex-text.mjs) ----
+const _vtx = createVertexText({
+  projectId: GCP_PROJECT,
+  location: VERTEX_LOCATION,
+  model: CONTRACTS.utility?.model || BRAIN_MODEL,
+  timeoutMs: CONTRACTS.utility?.timeout_ms || 30_000,
+  logger: log,
+});
 
-async function getGceToken() {
-  if (_gceTokenCache.token && Date.now() < _gceTokenCache.expiresAt - 30_000) {
-    return _gceTokenCache.token;
-  }
-  const resp = await fetch(
-    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-    { headers: { 'Metadata-Flavor': 'Google' }, signal: AbortSignal.timeout(5_000) }
-  );
-  if (!resp.ok) throw new Error(`GCE metadata token fetch failed: ${resp.status}`);
-  const data = await resp.json();
-  _gceTokenCache = {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
-  };
-  return _gceTokenCache.token;
-}
+// ---- Thin wrappers preserving existing call signatures ----
+// These delegate to the lib module but keep the brain's call sites unchanged.
 
-/**
- * Direct Vertex AI call for simple text→text summarization.
- * Bypasses the brain gateway. No agent context, no tools.
- *
- * @param {string} text - The text to summarize/transform
- * @param {string} instruction - What to do with the text (e.g. "Summarize in 2 sentences")
- * @param {object} [opts] - Optional overrides
- * @param {number} [opts.maxTokens=1024] - Max output tokens
- * @param {number} [opts.temperature=0.3] - Temperature
- * @returns {Promise<string>} - The summarized/transformed text
- */
 async function summarizeViaVertex(text, instruction, opts = {}) {
-  const model = BRAIN_MODEL;
-  const maxTokens = opts.maxTokens || 1024;
-  const temperature = opts.temperature ?? 0.3;
-
-  log('DEBUG', `summarizeViaVertex: model=${model}, instruction="${instruction.substring(0, 80)}", input=${text.length} chars`);
-
-  try {
-    const token = await getGceToken();
-    const url = `${VERTEX_API_BASE}/${model}:generateContent`;
-
-    const body = {
-      contents: [{ role: 'user', parts: [{ text: `${instruction}\n\n---\n\n${text}` }] }],
-      generationConfig: {
-        maxOutputTokens: maxTokens,
-        temperature: temperature,
-      },
-    };
-    // Disable thinking for trivial summarization — saves tokens and latency
-    if (opts.disableThinking) {
-      body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
-    }
-
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      log('ERROR', `summarizeViaVertex HTTP ${resp.status}: ${errText.substring(0, 200)}`);
-      return null;
-    }
-
-    const data = await resp.json();
-    // Extract the last text part — thinking models put thought in parts[0] and answer in parts[1+]
-    const parts = data.candidates?.[0]?.content?.parts || [];
-    let result = '';
-    for (const part of parts) {
-      if (part.text && !part.thought) result = part.text;
-    }
-    log('DEBUG', `summarizeViaVertex result: ${result.length} chars`);
-    return result.trim();
-  } catch (err) {
-    log('ERROR', `summarizeViaVertex failed: ${err.message}`);
-    return null;
-  }
+  return _vtx.transform(text, instruction, opts);
 }
-
-// ---- Schema enforcement via Gemini structured output ----
-const CORTEX_SCHEMAS = {
-  classify: {
-    type: 'OBJECT',
-    properties: {
-      classification: { type: 'STRING', enum: ['new_mission', 'attach', 'continue', 'cancel'] },
-      instruction:    { type: 'STRING' },
-      intent:         { type: 'STRING' },
-      reasoning:      { type: 'STRING' },
-      attach_to:      { type: 'STRING' },
-      continue_mission: { type: 'STRING' },
-      continue_envelope: { type: 'STRING' },
-      accept_criteria:{ type: 'STRING' },
-      context_summary:{ type: 'STRING' },
-      project_id:     { type: 'STRING' },
-      process_id:     { type: 'STRING' },
-    },
-    required: ['classification', 'reasoning'],
-  },
-  decide: {
-    type: 'OBJECT',
-    properties: {
-      action:     { type: 'STRING', enum: [
-        'checkpoint_plan', 'synthesize', 'synthesize_with_failure',
-        'needs_input', 'blocked', 'follow_process', 'status_update',
-      ]},
-      reasoning:  { type: 'STRING' },
-      checkpoints: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
-        instruction:     { type: 'STRING' },
-        accept_criteria: { type: 'STRING' },
-        tasks: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
-          agent:           { type: 'STRING' },
-          task:            { type: 'STRING' },
-          accept_criteria: { type: 'STRING' },
-        }, required: ['agent', 'task'] }},
-      }, required: ['instruction', 'tasks'] }},
-      synthesis:       { type: 'STRING' },
-      failure_summary: { type: 'STRING' },
-      question:        { type: 'STRING' },
-      what_is_needed:  { type: 'STRING' },
-      blocker:            { type: 'STRING' },
-      blocker_type:       { type: 'STRING' },
-      escalation_message: { type: 'STRING' },
-      processId:  { type: 'STRING' },
-      parameters: { type: 'OBJECT' },
-      message: { type: 'STRING' },
-    },
-    required: ['action'],
-  },
-};
 
 async function enforceSchema(cortexRaw, mode) {
-  const schema = CORTEX_SCHEMAS[mode];
-  if (!schema) return typeof cortexRaw === 'string' ? parseJsonResponse(cortexRaw) : cortexRaw;
-
-  const input = typeof cortexRaw === 'string' ? cortexRaw : JSON.stringify(cortexRaw);
-  const prompt = `Restructure this AI decision into the required JSON schema. Preserve ALL semantic content exactly — do not invent, remove, or modify any decisions, instructions, or reasoning. Only restructure to fit the schema.\n\n---\n${input}`;
-
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const token = await getGceToken();
-      const resp = await fetch(`${VERTEX_API_BASE}/${BRAIN_MODEL}:generateContent`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: schema,
-            maxOutputTokens: 8192,
-            temperature: 0.1,
-          },
-        }),
-        signal: AbortSignal.timeout(15_000),
-      });
-
-      if (!resp.ok) {
-        log('WARN', `enforceSchema attempt ${attempt}: HTTP ${resp.status}`);
-        continue;
-      }
-
-      const data = await resp.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) { log('WARN', `enforceSchema attempt ${attempt}: empty response`); continue; }
-
-      const parsed = JSON.parse(text);
-      log('DEBUG', `enforceSchema OK (attempt ${attempt}): action=${parsed.action || parsed.classification}`);
-      return parsed;
-    } catch (err) {
-      log('WARN', `enforceSchema attempt ${attempt}: ${err.message}`);
-    }
-  }
-
-  log('WARN', `enforceSchema failed 2x, falling back to parseJsonResponse`);
-  return typeof cortexRaw === 'string' ? parseJsonResponse(cortexRaw) : cortexRaw;
+  return _vtx.enforceSchema(cortexRaw, mode);
 }
 
-
-function smartTruncate(text, budget) {
-  if (!text || text.length <= budget) return text;
-  const headBudget = Math.floor(budget * 0.4);
-  const tailBudget = Math.floor(budget * 0.4);
-  const head = text.substring(0, headBudget);
-  const tail = text.substring(text.length - tailBudget);
-  const truncated = text.length - headBudget - tailBudget;
-  return `${head}\n[...${truncated} chars truncated...]\n${tail}`;
-}
-
-/**
- * Summarize text using the brain's direct Vertex AI LLM.
- * Falls back to smartTruncate if the LLM call fails or times out.
- * @param {string} text - Text to summarize
- * @param {number} budget - Max character budget for the result
- * @param {string} prompt - Summarization instruction optimized for context
- * @returns {Promise<string>} Summarized text
- */
 async function smartSummarize(text, budget, prompt) {
-  if (!text || text.length <= budget) return text || '';
-  try {
-    const result = await summarizeViaVertex(text, prompt, { maxTokens: Math.ceil(budget / 3) });
-    if (result && result.length > 0) {
-      // Ensure result fits budget
-      return result.length <= budget ? result : result.substring(0, budget);
-    }
-  } catch (e) {
-    log('WARN', `smartSummarize fallback to truncate: ${e.message}`);
-  }
-  return smartTruncate(text, budget);
+  return _vtx.summarize(text, prompt, { budget });
 }
 
-/**
- * Generate a human-readable title from instruction text.
- * Takes the first sentence (up to maxLen chars), trimming at word boundaries.
- * Used as heuristic fallback when Cortex doesn't provide a title.
- */
-function summarizeTitle(text, maxLen = 80) {
-  if (!text) return 'Untitled';
-  // Strip GChat context framing headers
-  let cleaned = text
-    .replace(/^\[Current message[^\]]*\]\s*/i, '')
-    .replace(/^\[Chat messages since[^\]]*\]\s*/i, '')
-    .replace(/^\[Previous context[^\]]*\]\s*/i, '')
-    .replace(/^(User|Someone|Human):\s*/i, '')
-    .trim();
-  // Strip leading tool-name prefix (e.g. "project-manage update 'tachin-website'")
-  cleaned = cleaned.replace(/^```[^\n]*\n?/, '').trim();
-  // Take first meaningful sentence (split on period, newline, exclamation, question)
-  const firstSentence = cleaned.split(/[.\n!?]/)[0].trim();
-  if (!firstSentence) return cleaned.substring(0, maxLen);
-  if (firstSentence.length <= maxLen) return firstSentence;
-  // Truncate at word boundary
-  const truncated = firstSentence.substring(0, maxLen);
-  const lastSpace = truncated.lastIndexOf(' ');
-  return (lastSpace > maxLen * 0.5 ? truncated.substring(0, lastSpace) : truncated) + '…';
-}
-
-/**
- * Generate a clean title for an M, C, or T envelope using Gemini Flash.
- * Falls back to summarizeTitle() on failure.
- */
 async function generateTitle(text, type = 'mission') {
-  if (!text || text.length < 3) return 'Untitled';
-  const definitions = {
-    mission: 'A MISSION is a strategic goal — the top-level objective being accomplished. ' +
-      'Title it as the outcome or deliverable. 5-12 words.',
-    checkpoint: 'A CHECKPOINT is a milestone or phase within a mission — a meaningful stage of progress. ' +
-      'Title it as the deliverable or verification this phase produces. 5-10 words.',
-    task: 'A TASK is an atomic unit of work — a single action performed by one agent. ' +
-      'Title it as the specific action being taken. 5-10 words.',
-  };
-  const prompt = (definitions[type] || definitions.mission) +
-    '\nNo quotes, no prefixes, no labels. Just the title.';
-  try {
-    const result = await summarizeViaVertex(text.substring(0, 1000), prompt, { maxTokens: 60, temperature: 0.3, disableThinking: true });
-    if (result && result.length > 2 && result.length < 120) {
-      return result.replace(/^["']|["']$/g, '').replace(/^(Mission|Checkpoint|Task):\s*/i, '').trim();
-    }
-  } catch (e) {
-    log('DEBUG', `generateTitle failed: ${e.message}`);
-  }
-  return summarizeTitle(text);
+  return _vtx.generateTitle(text, type);
 }
+
+// smartTruncate and summarizeTitle are now imported directly from vertex-text.mjs
+// parseJsonResponse, repairTruncatedJson, extractBalancedJson are imported from json-repair.mjs
+// CORTEX_SCHEMAS is imported from vertex-text.mjs
+// getGceToken is imported from gce-auth.mjs
 
 /**
  * Create a C→T pair under a parent envelope and return the checkpoint ID.
@@ -2084,161 +1853,26 @@ function loadResponsibilities() {
 }
 loadResponsibilities();
 
-// ---- Firestore REST helpers ----
-const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents`;
+// ---- Firestore REST client (via corekit/lib/firestore.mjs) ----
+const _db = createFirestoreClient({ projectId: GCP_PROJECT, logger: log });
 
-async function getAuthToken() {
-  try {
-    const resp = await fetch(
-      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
-      { headers: { 'Metadata-Flavor': 'Google' } }
-    );
-    const data = await resp.json();
-    return data.access_token;
-  } catch (e) {
-    log('ERROR', `Failed to get auth token: ${e.message}`);
-    return null;
-  }
-}
-
-function firestoreEncode(obj) {
-  const fields = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (v === null || v === undefined) {
-      fields[k] = { nullValue: null };
-    } else if (typeof v === 'string') {
-      fields[k] = { stringValue: v };
-    } else if (typeof v === 'number') {
-      fields[k] = Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
-    } else if (typeof v === 'boolean') {
-      fields[k] = { booleanValue: v };
-    } else if (Array.isArray(v)) {
-      fields[k] = { arrayValue: { values: v.map(item => ({ stringValue: String(item) })) } };
-    } else if (v instanceof Date) {
-      fields[k] = { timestampValue: v.toISOString() };
-    } else if (typeof v === 'object') {
-      fields[k] = { mapValue: { fields: firestoreEncode(v) } };
-    }
-  }
-  return fields;
-}
-
-function firestoreDecode(fields) {
-  const obj = {};
-  for (const [k, v] of Object.entries(fields || {})) {
-    if ('stringValue' in v) obj[k] = v.stringValue;
-    else if ('integerValue' in v) obj[k] = parseInt(v.integerValue);
-    else if ('doubleValue' in v) obj[k] = v.doubleValue;
-    else if ('booleanValue' in v) obj[k] = v.booleanValue;
-    else if ('nullValue' in v) obj[k] = null;
-    else if ('timestampValue' in v) obj[k] = v.timestampValue;
-    else if ('arrayValue' in v) {
-      obj[k] = (v.arrayValue.values || []).map(item => {
-        if ('mapValue' in item) return firestoreDecode(item.mapValue.fields || {});
-        if ('stringValue' in item) return item.stringValue;
-        if ('integerValue' in item) return parseInt(item.integerValue);
-        if ('booleanValue' in item) return item.booleanValue;
-        if ('doubleValue' in item) return item.doubleValue;
-        if ('nullValue' in item) return null;
-        if ('timestampValue' in item) return item.timestampValue;
-        if ('arrayValue' in item) return (item.arrayValue.values || []).map(sub => sub.stringValue || sub.integerValue || '');
-        return '';
-      });
-    } else if ('mapValue' in v) {
-      obj[k] = firestoreDecode(v.mapValue.fields);
-    }
-  }
-  return obj;
-}
+// Thin wrappers preserving existing (collection, docId) call signature.
+// The lib client uses full paths; these prepend the prime scope.
 
 async function firestoreWrite(collection, docId, data) {
-  const token = await getAuthToken();
-  if (!token) return null;
-  // Enforce project_id on all Mission writes
+  // Enforce project_id on all Mission writes (brain-specific guard)
   if (collection === 'work' && data && data.type === 'M') {
     validateMissionProjectId(data);
   }
-  // Guard against Firestore 1MB document limit — truncate oversized output fields
-  if (collection === 'work' && data?.output && typeof data.output === 'string') {
-    const MAX_OUTPUT = 800_000;
-    if (data.output.length > MAX_OUTPUT) {
-      log('WARN', `firestoreWrite: truncating output from ${data.output.length} to ${MAX_OUTPUT} chars for ${docId}`);
-      data.output = data.output.substring(0, MAX_OUTPUT)
-        + `\n\n[TRUNCATED — full output saved to shared workspace / Drive]`;
-    }
-  }
-  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/${collection}/${docId}`;
-  const resp = await fetch(url, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ fields: firestoreEncode(data) }),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    log('ERROR', `Firestore write failed: ${resp.status} ${text}`);
-    return null;
-  }
-  return await resp.json();
+  return _db.write(`primes/${PRIME_ID}/${collection}/${docId}`, data);
 }
 
 async function firestoreRead(collection, docId) {
-  const token = await getAuthToken();
-  if (!token) return null;
-  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/${collection}/${docId}`;
-  const resp = await fetch(url, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-  if (!resp.ok) return null;
-  const doc = await resp.json();
-  return firestoreDecode(doc.fields || {});
+  return _db.read(`primes/${PRIME_ID}/${collection}/${docId}`);
 }
 
 async function firestoreQuery(collection, filters) {
-  const token = await getAuthToken();
-  if (!token) return [];
-  const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
-  const url = `${parentPath}:runQuery`;
-  const structuredQuery = {
-    from: [{ collectionId: collection }],
-    where: {
-      compositeFilter: {
-        op: 'AND',
-        filters: filters.map(f => ({
-          fieldFilter: {
-            field: { fieldPath: f.field },
-            op: f.op,
-            value: f.value,
-          }
-        })),
-      }
-    },
-    orderBy: [{ field: { fieldPath: 'created_at' }, direction: 'ASCENDING' }],
-    limit: 300,
-  };
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ structuredQuery }),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    log('ERROR', `Firestore query failed: ${resp.status} ${text}`);
-    return [];
-  }
-  const results = await resp.json();
-  return results
-    .filter(r => r.document)
-    .map(r => ({
-      id: r.document.name.split('/').pop(),
-      ...firestoreDecode(r.document.fields || {}),
-    }));
+  return _db.query(`primes/${PRIME_ID}`, collection, filters);
 }
 
 // ---- Envelope helpers ----
@@ -2470,168 +2104,8 @@ function buildUserPrompt(mode, payload) {
   return JSON.stringify(payload);
 }
 
-// ---- Response parser (hardened for Phase 2) ----
-function parseJsonResponse(raw) {
-  // Strip markdown fences
-  let cleaned = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
-
-  // Strip legacy Action: blocks that may follow JSON
-  cleaned = cleaned.replace(/\nAction:.*$/s, '');
-
-  // Try bracket-balanced JSON extraction
-  const extracted = extractBalancedJson(cleaned);
-  if (extracted) {
-    try {
-      const parsed = JSON.parse(extracted);
-      if (parsed.action) return parsed;
-    } catch {}
-  }
-
-  // Try greedy regex match
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      return JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      log('WARN', `JSON parse failed (greedy): ${e.message}`);
-      // If greedy match found a { but couldn't parse, try repair
-      const repaired = repairTruncatedJson(jsonMatch[0]);
-      if (repaired) {
-        log('INFO', `JSON repair succeeded — recovered truncated Cortex response`);
-        return repaired;
-      }
-    }
-  }
-
-  // Try repair on the whole cleaned string (truncated JSON without closing braces)
-  const repaired = repairTruncatedJson(cleaned);
-  if (repaired) {
-    log('INFO', `JSON repair succeeded on raw input — recovered truncated Cortex response`);
-    return repaired;
-  }
-
-  // Fallback: try the whole string
-  try {
-    return JSON.parse(cleaned);
-  } catch (e) {
-    log('ERROR', `Could not parse Cortex response: ${raw.substring(0, 300)}`);
-    return { error: 'parse_failed', raw: raw.substring(0, 500) };
-  }
-}
-
-/**
- * Attempt to repair truncated JSON from LLM responses.
- * When Cortex hits its output token limit, the JSON gets cut off mid-field.
- * This function closes open strings, arrays, and objects to recover a parseable structure.
- * The repaired JSON will be missing some fields but the action/checkpoints already
- * emitted will be preserved — better than a total parse_failed.
- */
-function repairTruncatedJson(text) {
-  if (!text || text.length < 10) return null;
-
-  // Find the start of the JSON object
-  const start = text.indexOf('{');
-  if (start === -1) return null;
-
-  let json = text.substring(start);
-
-  // Track state by scanning through the string
-  let inString = false;
-  let escape = false;
-  const stack = []; // tracks open delimiters: '{' or '['
-
-  for (let i = 0; i < json.length; i++) {
-    const ch = json[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"' && !escape) { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') stack.push('{');
-    else if (ch === '[') stack.push('[');
-    else if (ch === '}') { if (stack.length && stack[stack.length-1] === '{') stack.pop(); }
-    else if (ch === ']') { if (stack.length && stack[stack.length-1] === '[') stack.pop(); }
-  }
-
-  // If balanced already, nothing to repair
-  if (stack.length === 0 && !inString) return null;
-
-  // Close open string
-  if (inString) {
-    // Remove the partial string value (likely truncated mid-word)
-    // Find the last complete key-value pair by backing up to last ","
-    const lastComma = json.lastIndexOf(',');
-    const lastColon = json.lastIndexOf(':');
-    if (lastComma > lastColon && lastComma > json.length - 500) {
-      // Truncate at the last comma (dropping the incomplete field)
-      json = json.substring(0, lastComma);
-    } else {
-      // Just close the string
-      json += '"';
-    }
-  }
-
-  // Re-scan after string fix
-  inString = false;
-  escape = false;
-  stack.length = 0;
-  for (let i = 0; i < json.length; i++) {
-    const ch = json[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"' && !escape) { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') stack.push('{');
-    else if (ch === '[') stack.push('[');
-    else if (ch === '}') { if (stack.length && stack[stack.length-1] === '{') stack.pop(); }
-    else if (ch === ']') { if (stack.length && stack[stack.length-1] === '[') stack.pop(); }
-  }
-
-  // Close remaining open delimiters in reverse order
-  let suffix = '';
-  while (stack.length > 0) {
-    const open = stack.pop();
-    suffix += (open === '{') ? '}' : ']';
-  }
-
-  if (!suffix) return null;
-
-  const candidate = json + suffix;
-  try {
-    const parsed = JSON.parse(candidate);
-    // Validate it has the minimum required structure
-    if (parsed.action || parsed.classification) {
-      log('DEBUG', `repairTruncatedJson: closed ${suffix.length} delimiters, recovered action=${parsed.action || parsed.classification}`);
-      return parsed;
-    }
-  } catch (e) {
-    log('DEBUG', `repairTruncatedJson: repair failed: ${e.message}`);
-  }
-  return null;
-}
-
-function extractBalancedJson(text) {
-  const start = text.indexOf('{');
-  if (start === -1) return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (escape) { escape = false; continue; }
-    if (ch === '\\' && inString) { escape = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') depth++;
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        const candidate = text.substring(start, i + 1);
-        return candidate;
-      }
-    }
-  }
-  return null;
-}
+// parseJsonResponse, repairTruncatedJson, extractBalancedJson
+// are now imported from corekit/lib/json-repair.mjs (Phase 0C extraction)
 
 // ---- Gateway HTTP dispatch to agents ----
 // ---- Notification summarizer ----
