@@ -327,7 +327,7 @@ function _initProcessEngine() {
     firestoreWrite,
     firestoreRead,
     firestoreQuery,
-    sendNotification,
+    sendNotification: async () => {}, // engine destructures but doesn't call
     createCT,
     suggestContextPromotions,
     buildProjectContext,
