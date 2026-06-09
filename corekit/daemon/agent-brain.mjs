@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // ============================================================
-// agent-brain.mjs — Brain v3 Orchestration Service
+// agent-brain.mjs â€” Brain v3 Orchestration Service
 //
 // Deterministic orchestration layer between Ears and Mouth.
 // Processes Firestore intake records through the Cortex loop
 // and manages envelopes (the R/C/M/T work hierarchy).
 //
 // Phase 7A: responsibilities, quick ack, cron scheduler
-//   - Responsibility scheduler: cron-triggered R→M envelope creation
+//   - Responsibility scheduler: cron-triggered Râ†’M envelope creation
 //   - Quick ack: immediate delivery when intake is claimed
 //   - Rich context injection: responsibilities carry full process docs
 //
@@ -35,12 +35,13 @@ import { createClient as createFirestoreClient, firestoreEncode, firestoreDecode
 import { parseJsonResponse, repairTruncatedJson, extractBalancedJson } from '../corekit/lib/json-repair.mjs';
 import { createVertexText, smartTruncate, summarizeTitle, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
 import { createProjectRegistry } from '../corekit/lib/projects.mjs';
+import { createProcessEngine } from '../corekit/lib/process-engine.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
 const getAuthToken = getGceToken;
 
-// ---- Contracts (loaded first — config depends on it) ----
+// ---- Contracts (loaded first â€” config depends on it) ----
 const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 let CONTRACTS = {};
 try {
@@ -65,7 +66,7 @@ const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.dispatch?.needs_input_timeout_hours 
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'brain/cortex';
 
-// Brain's own LLM — used ONLY for simple text→text summarization via direct
+// Brain's own LLM â€” used ONLY for simple textâ†’text summarization via direct
 // Vertex AI calls (not through gateway). Classify/decide/synthesize always use
 // cortex through the gateway. See summarizeViaVertex() below.
 const BRAIN_MODEL = CONTRACTS.dispatch?.model || 'gemini-2.5-flash';
@@ -83,9 +84,9 @@ const CTX_DISPATCH_FAILURE = CONTRACTS.dispatch?.ctx_dispatch_failure || 3000;
 const CTX_AGENT_STEP = CONTRACTS.dispatch?.ctx_agent_step || 8000;
 const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 
-// Brain's own LLM for simple text→text tasks (summarize, compress, rephrase).
+// Brain's own LLM for simple textâ†’text tasks (summarize, compress, rephrase).
 // Now uses the extracted vertex-text.mjs module via createVertexText().
-// Bypasses the brain gateway entirely — no agent routing, no workspace, no tools.
+// Bypasses the brain gateway entirely â€” no agent routing, no workspace, no tools.
 
 const VERTEX_LOCATION = CONTRACTS.utility?.location || CONTRACTS.vertex?.location || 'global';
 
@@ -123,8 +124,8 @@ async function generateTitle(text, type = 'mission') {
 // getGceToken is imported from gce-auth.mjs
 
 /**
- * Create a C→T pair under a parent envelope and return the checkpoint ID.
- * Enforces M→C→T hierarchy for all terminal outputs.
+ * Create a Câ†’T pair under a parent envelope and return the checkpoint ID.
+ * Enforces Mâ†’Câ†’T hierarchy for all terminal outputs.
  */
 async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput, taskIntent = 'execute', taskStatus = 'complete', deliveryStatus = 'internal' }) {
   const cpId = generateId('w');
@@ -294,1180 +295,109 @@ async function activateDependents(completedMissionId) {
   await _projects.activateDependents(completedMissionId);
 }
 
-// ---- Process registry (loaded from local files + Firestore, refreshed periodically) ----
-let PROCESSES = {}; // keyed by process id
-let _processesLoadedAt = 0;
-const PROCESSES_REFRESH_MS = 60_000;
+// ---- Process engine (via corekit/lib/process-engine.mjs, Phase 1B extraction) ----
+// NOTE: _engine is initialized lazily because it depends on brain functions
+// (callAgent, writeHistory, etc.) that are defined later in this file.
+let _engine = null;
+let PROCESSES = {}; // synced from engine for backward compat
 
-/** Load standard processes bundled with CoreKit (on-disk JSON files). */
-function loadLocalProcesses() {
-  const localProcs = {};
-  const procDir = CORE_DIR + '/corekit/processes';
-  try {
-    if (!existsSync(procDir)) return localProcs;
-    for (const file of readdirSync(procDir)) {
-      if (!file.endsWith('.json')) continue;
-      try {
-        const p = JSON.parse(readFileSync(`${procDir}/${file}`, 'utf8'));
-        if (p.id && p.status !== 'deprecated') {
-          localProcs[p.id] = p;
-        }
-      } catch (e) {
-        log('WARN', `Failed to parse local process ${file}: ${e.message}`);
-      }
-    }
-  } catch (e) {
-    log('DEBUG', `Local processes dir not found: ${e.message}`);
-  }
-  return localProcs;
+function _initProcessEngine() {
+  _engine = createProcessEngine({
+    firestore: _db,
+    vertexText: _vtx,
+    projects: _projects,
+    agentDispatcher: callAgent,
+    logger: log,
+    config: {
+      coreDir: CORE_DIR,
+      primeId: PRIME_ID,
+      agentId: AGENT_ID,
+      agentEmail: AGENT_EMAIL,
+      gcpProject: GCP_PROJECT,
+    },
+    generateId,
+    writeHistory,
+    recallMemory,
+    firestoreWrite,
+    firestoreRead,
+    firestoreQuery,
+    sendNotification,
+    createCT,
+    suggestContextPromotions,
+    buildProjectContext,
+  });
 }
 
+function _ensureEngine() {
+  if (!_engine) _initProcessEngine();
+}
+
+// Thin wrappers preserving existing call signatures
 async function loadProcesses() {
-  // 1. Load standard processes from local CoreKit files (always available)
-  const localProcs = loadLocalProcesses();
-
-  // 2. Load user-defined processes from Firestore (may override local by ID)
-  const firestoreProcs = {};
-  try {
-    const token = await getAuthToken();
-    if (token) {
-      const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes`;
-      const resp = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        for (const doc of (data.documents || [])) {
-          const p = firestoreDecode(doc.fields || {});
-          if (p.id && p.status !== 'deprecated') {
-            firestoreProcs[p.id] = p;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    log('WARN', `Failed to load Firestore processes: ${e.message}`);
-  }
-
-  // 3. Merge: Firestore overrides local (same ID), local provides baseline
-  PROCESSES = { ...localProcs, ...firestoreProcs };
-  _processesLoadedAt = Date.now();
-  const localCount = Object.keys(localProcs).length;
-  const fsCount = Object.keys(firestoreProcs).length;
-  if (localCount + fsCount > 0) {
-    log('INFO', `Processes loaded: ${Object.keys(PROCESSES).join(', ')} (${localCount} local, ${fsCount} firestore)`);
-  }
+  _ensureEngine();
+  await _engine.loadProcesses();
+  PROCESSES = _engine.getAllProcesses();
 }
 
 async function ensureProcessesLoaded() {
-  if (Date.now() - _processesLoadedAt > PROCESSES_REFRESH_MS) {
-    await loadProcesses();
-  }
+  _ensureEngine();
+  await _engine.ensureLoaded();
+  PROCESSES = _engine.getAllProcesses();
 }
 
-// ---- Plan primitive (Cluster 1C) ----
-
-/**
- * Create a Plan from a process definition. Stores the plan layout without
- * stamping any work envelopes. Plan starts in 'draft' status.
- *
- * @returns {object} The created Plan document
- */
 async function createPlan(processId, parameters, projectId, instruction) {
-  await ensureProcessesLoaded();
-  const process = PROCESSES[processId];
-  if (!process) throw new Error(`Process not found: ${processId}`);
-
-  const cpPlan = processToCheckpointPlan(process, parameters);
-  if (!cpPlan || !cpPlan.checkpoints || cpPlan.checkpoints.length === 0) {
-    throw new Error(`Process '${processId}' produces no checkpoints`);
-  }
-
-  const planId = generateId('plan');
-  const plan = {
-    id: planId,
-    project_id: projectId || DEFAULT_PROJECT_ID,
-    name: `${process.name}: ${(instruction || '').substring(0, 100)}`,
-    process_id: processId,
-    process_version: process.version || 1,
-    parameters,
-    layout: {
-      mission: {
-        instruction: instruction || `Execute process: ${process.name}`,
-        accept_criteria: `Process '${process.name}' completes all steps successfully.`,
-        owner: AGENT_EMAIL || AGENT_ID,
-      },
-      checkpoints: cpPlan.checkpoints.map(cp => ({
-        instruction: cp.instruction,
-        accept_criteria: cp.accept_criteria || '',
-        tasks: (cp.tasks || []).map(t => ({
-          instruction: t.task,
-          accept_criteria: t.accept_criteria || '',
-          agent: t.agent || 'motor',
-        })),
-      })),
-    },
-    mission_id: null,
-    amendments: [],
-    status: 'draft',
-    approved_by: null,
-    approved_at: null,
-    created_at: now(),
-    updated_at: now(),
-  };
-
-  // Write to Firestore
-  const token = await getAuthToken();
-  if (token) {
-    const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
-    await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: firestoreEncode(plan) }),
-    });
-  }
-
-  log('INFO', `Plan created: ${planId} (process: ${processId}, ${cpPlan.checkpoints.length} checkpoints)`);
-  return plan;
+  _ensureEngine();
+  return _engine.createPlan(processId, parameters, projectId, instruction);
 }
 
-/**
- * Approve a Plan. Transitions from 'draft' to 'approved' and records the approver.
- */
 async function approvePlan(planId, approvedBy) {
-  const token = await getAuthToken();
-  if (!token) throw new Error('No auth token');
-
-  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
-  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-  if (!resp.ok) throw new Error(`Plan not found: ${planId}`);
-  const plan = firestoreDecode((await resp.json()).fields || {});
-
-  if (plan.status !== 'draft') {
-    throw new Error(`Plan ${planId} is '${plan.status}', cannot approve`);
-  }
-
-  plan.status = 'approved';
-  plan.approved_by = approvedBy;
-  plan.approved_at = now();
-  plan.updated_at = now();
-
-  await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: firestoreEncode(plan) }),
-  });
-
-  log('INFO', `Plan approved: ${planId} by ${approvedBy}`);
-  return plan;
+  _ensureEngine();
+  return _engine.approvePlan(planId, approvedBy);
 }
 
-/**
- * Stamp a Plan: create the full M→C→T envelope hierarchy from the plan layout
- * and begin execution. Transitions plan to 'executing'.
- */
 async function stampPlan(planId, intake, memoryContext) {
-  const token = await getAuthToken();
-  if (!token) throw new Error('No auth token');
-
-  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
-  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-  if (!resp.ok) throw new Error(`Plan not found: ${planId}`);
-  const plan = firestoreDecode((await resp.json()).fields || {});
-
-  if (plan.status !== 'approved') {
-    throw new Error(`Plan ${planId} is '${plan.status}', must be 'approved' to stamp`);
-  }
-
-  const layout = plan.layout;
-  if (!layout || !layout.checkpoints || layout.checkpoints.length === 0) {
-    throw new Error(`Plan ${planId} has no checkpoints in layout`);
-  }
-
-  // Create Mission envelope
-  const missionId = generateId('w');
-  const mission = {
-    id: missionId,
-    type: 'M',
-    parent_id: null,
-    owner: layout.mission.owner || AGENT_EMAIL || AGENT_ID,
-    status: 'active',
-    intent: 'plan_execution',
-    title: await generateTitle(layout.mission.instruction, 'mission'),
-    instruction: layout.mission.instruction,
-    accept_criteria: layout.mission.accept_criteria,
-    context_summary: `Executing plan: ${plan.name}`,
-    output: null,
-    children: [],
-    context_forward: null,
-    error: null,
-    source_channel: intake?.source || 'plan',
-    source_meta: intake?.source_meta || { plan_id: planId },
-    project_id: plan.project_id || DEFAULT_PROJECT_ID,
-    plan_id: planId,
-    process_id: plan.process_id,
-    process_version: plan.process_version,
-    created_at: now(),
-    started_at: now(),
-    completed_at: null,
-    updated_at: now(),
-    iteration: 0,
-    memory_context: memoryContext || null,
-    delivery_status: 'internal',
-  };
-
-  // Create Checkpoint + Task envelopes
-  const checkpointEnvelopes = [];
-  for (let ci = 0; ci < layout.checkpoints.length; ci++) {
-    const cp = layout.checkpoints[ci];
-    const cpId = generateId('w');
-    const cEnvelope = {
-      id: cpId,
-      type: 'C',
-      parent_id: missionId,
-      owner: AGENT_EMAIL || AGENT_ID,
-      status: 'pending',
-      intent: 'checkpoint',
-      title: await generateTitle(cp.instruction || `Checkpoint ${ci + 1}`, 'checkpoint'),
-      instruction: cp.instruction,
-      accept_criteria: cp.accept_criteria || '',
-      output: null,
-      children: [],
-      context_forward: null,
-      error: null,
-      source_channel: 'plan',
-      source_meta: { plan_id: planId, checkpoint: ci + 1, checkpoint_total: layout.checkpoints.length },
-      project_id: plan.project_id || DEFAULT_PROJECT_ID,
-      plan_id: planId,
-      created_at: now(),
-      started_at: null,
-      completed_at: null,
-      updated_at: now(),
-      iteration: 0,
-    };
-
-    const tEnvelopes = [];
-    for (let ti = 0; ti < (cp.tasks || []).length; ti++) {
-      const task = cp.tasks[ti];
-      const tId = generateId('w');
-      const tEnvelope = {
-        id: tId,
-        type: 'T',
-        parent_id: cpId,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'pending',
-        intent: 'execute',
-        title: await generateTitle(task.instruction || `Task ${ci + 1}.${ti + 1}`, 'task'),
-        instruction: task.instruction,
-        accept_criteria: task.accept_criteria || '',
-        output: null,
-        children: [],
-        context_forward: null,
-        error: null,
-        source_channel: 'plan',
-        source_meta: {
-          plan_id: planId,
-          step_type: 'standard',
-          step_index: ti,
-          checkpoint_index: ci,
-          agent: task.agent || 'motor',
-          optional: false,
-        },
-        project_id: plan.project_id || DEFAULT_PROJECT_ID,
-        plan_id: planId,
-        created_at: now(),
-        started_at: null,
-        completed_at: null,
-        updated_at: now(),
-        iteration: 0,
-      };
-      tEnvelopes.push(tEnvelope);
-      cEnvelope.children.push(tId);
-    }
-
-    checkpointEnvelopes.push({ cEnvelope, tEnvelopes });
-    mission.children.push(cpId);
-  }
-
-  // Write everything to Firestore
-  await firestoreWrite('work', missionId, mission);
-  await writeHistory(missionId, null, 'active', 'brain', `Plan stamped: ${plan.name} (${checkpointEnvelopes.length} checkpoints)`);
-
-  for (const { cEnvelope, tEnvelopes } of checkpointEnvelopes) {
-    await firestoreWrite('work', cEnvelope.id, cEnvelope);
-    await writeHistory(cEnvelope.id, null, 'pending', 'brain', `Checkpoint created (plan: ${planId})`);
-    for (const tEnv of tEnvelopes) {
-      await firestoreWrite('work', tEnv.id, tEnv);
-      await writeHistory(tEnv.id, null, 'pending', 'brain', `Task created (plan: ${planId})`);
-    }
-  }
-
-  // Update plan with mission link
-  plan.mission_id = missionId;
-  plan.status = 'executing';
-  plan.updated_at = now();
-  await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: firestoreEncode(plan) }),
-  });
-
-  log('INFO', `Plan stamped: ${planId} → mission ${missionId} (${checkpointEnvelopes.length} checkpoints, ${checkpointEnvelopes.reduce((s, c) => s + c.tEnvelopes.length, 0)} tasks)`);
-  return { plan, mission, checkpointEnvelopes };
+  _ensureEngine();
+  return _engine.stampPlan(planId, intake, memoryContext);
 }
 
-/**
- * Amend a Plan layout. Records the amendment and updates remaining unstamped work.
- */
 async function amendPlan(planId, reason, changes, amendedBy) {
-  const token = await getAuthToken();
-  if (!token) throw new Error('No auth token');
-
-  const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/plans/${planId}`;
-  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-  if (!resp.ok) throw new Error(`Plan not found: ${planId}`);
-  const plan = firestoreDecode((await resp.json()).fields || {});
-
-  if (plan.status !== 'draft' && plan.status !== 'approved' && plan.status !== 'executing') {
-    throw new Error(`Plan ${planId} is '${plan.status}', cannot amend`);
-  }
-
-  plan.amendments = plan.amendments || [];
-  plan.amendments.push({
-    timestamp: now(),
-    reason,
-    changes: typeof changes === 'string' ? changes : JSON.stringify(changes),
-    amended_by: amendedBy || AGENT_EMAIL || AGENT_ID,
-  });
-  plan.updated_at = now();
-
-  await fetch(url, {
-    method: 'PATCH',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: firestoreEncode(plan) }),
-  });
-
-  log('INFO', `Plan amended: ${planId} — ${reason}`);
-  return plan;
+  _ensureEngine();
+  return _engine.amendPlan(planId, reason, changes, amendedBy);
 }
 
-/**
- * Convert a Process definition into a checkpoint_plan decision payload.
- * Groups steps by checkpointBoundary markers into checkpoints.
- * Substitutes parameters into step titles, descriptions, and context.
- */
-function processToCheckpointPlan(process, parameters = {}) {
-  const steps = process.steps || [];
-  if (steps.length === 0) return null;
-
-  // Substitute parameters in strings
-  function substitute(text) {
-    if (!text || typeof text !== 'string') return text;
-    let result = text;
-    for (const [key, value] of Object.entries(parameters)) {
-      result = result.replace(new RegExp(`\\$\\{${key}\\}|\\{\\{${key}\\}\\}`, 'g'), String(value));
-    }
-    return result;
-  }
-
-  // Expand sub_process references into flat steps (with circular ref protection)
-  function expandSteps(steps, visited = new Set()) {
-    const expanded = [];
-    for (const step of steps) {
-      if (step.sub_process) {
-        if (visited.has(step.sub_process)) {
-          log('WARN', `Circular sub_process reference detected: ${step.sub_process} — skipping`);
-          continue;
-        }
-        const subProc = PROCESSES[step.sub_process];
-        if (!subProc || !subProc.steps) {
-          log('WARN', `Sub-process '${step.sub_process}' not found — skipping`);
-          continue;
-        }
-        visited.add(step.sub_process);
-        expanded.push(...expandSteps(subProc.steps, visited));
-      } else {
-        expanded.push(step);
-      }
-    }
-    return expanded;
-  }
-
-  const expandedSteps = expandSteps(steps);
-
-  // Group steps into checkpoints (split on checkpointBoundary: true)
-  const checkpoints = [];
-  let currentTasks = [];
-  let cpIndex = 1;
-
-  for (let i = 0; i < expandedSteps.length; i++) {
-    const step = expandedSteps[i];
-    const task = {
-      agent: step.agent || 'motor',
-      task: substitute(step.description || step.title),
-      accept_criteria: substitute(step.accept_criteria || ''),
-      intent: step.intent || 'execute',
-      // Carry process metadata for special step types
-      _step_type: step.type || 'standard',
-      _optional: step.optional || false,
-      _specialty: step.specialty || null,
-      _approval_message: substitute(step.approval_message || null),
-    };
-    currentTasks.push(task);
-
-    // Create checkpoint boundary
-    if (step.checkpointBoundary || i === expandedSteps.length - 1) {
-      checkpoints.push({
-        instruction: substitute(step.checkpointBoundary
-          ? `Checkpoint ${cpIndex}: ${step.title || 'Steps ' + (i - currentTasks.length + 2) + '-' + (i + 1)}`
-          : `Process Steps`),
-        accept_criteria: '',
-        tasks: currentTasks,
-      });
-      currentTasks = [];
-      cpIndex++;
-    }
-  }
-
-  return {
-    action: 'checkpoint_plan',
-    checkpoints,
-    process_id: process.id,
-    process_name: process.name,
-    process_version: process.version || 1,
-  };
+function processToCheckpointPlan(process, parameters) {
+  _ensureEngine();
+  return _engine.processToCheckpointPlan(process, parameters);
 }
 
-// ---- Deterministic Process Executor ----
-// Stamps the full M/C/T hierarchy from a process definition and executes
-// tasks sequentially without Cortex decide loop involvement.
-
-/**
- * Execute a process deterministically.
- * Creates the full M → C → T envelope hierarchy upfront, then runs
- * each task sequentially. No Cortex involvement in structure or flow.
- *
- * @param {object|null} intake - The intake that triggered this (null if from decide loop)
- * @param {object} decision - Cortex classify/decide result with process info
- * @param {object} memoryContext - Memory context for agent dispatches
- * @param {string} processId - The process ID to execute
- * @param {object|null} existingEnvelope - If called from decide loop, the existing envelope to use as mission
- */
-async function executeProcess(intake, decision, memoryContext, processId, existingEnvelope = null) {
-  await ensureProcessesLoaded();
-  const process = PROCESSES[processId];
-  if (!process) {
-    log('ERROR', `executeProcess: process '${processId}' not found`);
-    return;
-  }
-
-  const parameters = decision.parameters || {};
-
-  // Validate required parameters
-  const requiredParams = Object.entries(process.parameters || {})
-    .filter(([, def]) => def && typeof def === 'object' && def.required && !def.default)
-    .map(([key]) => key);
-  const missingParams = requiredParams.filter(k => !(k in parameters));
-  if (missingParams.length > 0) {
-    // Auto-fill missing params from intake/decision text when obvious
-    // When called from follow_process (decide loop), intake is null and decision.instruction
-    // may have been stripped by enforceSchema. Fall back to the existing envelope's instruction.
-    const sourceText = decision.instruction || intake?.text || existingEnvelope?.instruction || '';
-    for (const param of [...missingParams]) {
-      if (sourceText && !parameters[param]) {
-        parameters[param] = sourceText;
-        missingParams.splice(missingParams.indexOf(param), 1);
-        log('INFO', `executeProcess: auto-filled parameter '${param}' from intake text (${sourceText.length} chars)`);
-      }
-    }
-    if (missingParams.length > 0) {
-      log('WARN', `executeProcess: missing required parameters after auto-fill: ${missingParams.join(', ')} — falling back to decide loop`);
-      return 'fallback_to_decide';
-    }
-  }
-
-  // Fill defaults for missing optional parameters
-  for (const [key, def] of Object.entries(process.parameters || {})) {
-    if (!(key in parameters) && def && typeof def === 'object' && def.default !== undefined) {
-      parameters[key] = def.default;
-    }
-  }
-
-
-  // Convert process to checkpoint structure
-  const cpPlan = processToCheckpointPlan(process, parameters);
-  if (!cpPlan || !cpPlan.checkpoints || cpPlan.checkpoints.length === 0) {
-    log('ERROR', `executeProcess: process '${processId}' has no steps`);
-    return;
-  }
-
-  log('INFO', `executeProcess: '${process.name}' v${process.version || 1} — ${cpPlan.checkpoints.length} checkpoints, stamping hierarchy`);
-
-  // ---- Step 1: Create or reuse Mission envelope ----
-  let mission;
-  if (existingEnvelope) {
-    mission = existingEnvelope;
-    mission.process_id = processId;
-    mission.process_version = process.version || 1;
-    mission.status = 'active';
-    mission.started_at = mission.started_at || now();
-    mission.updated_at = now();
-  } else {
-    const missionId = generateId('w');
-    // Extract raw user message for source_text preservation
-    const sourceText = intake?.text ? extractCurrentMessage(intake.text) : null;
-    mission = {
-      id: missionId,
-      type: 'M',
-      parent_id: null,
-      owner: AGENT_EMAIL || AGENT_ID,
-      status: 'active',
-      intent: 'process_execution',
-      title: await generateTitle(decision.instruction || process.description || process.name, 'mission'),
-      instruction: decision.instruction || intake?.text || `Execute process: ${process.name}`,
-      accept_criteria: decision.accept_criteria || `Process '${process.name}' completes all steps successfully.`,
-      context_summary: decision.context_summary || process.description || null,
-      output: null,
-      children: [],
-      context_forward: null,
-      error: null,
-      source_channel: intake?.source || 'system',
-      source_meta: intake?.source_meta || {},
-      project_id: decision.project_id || DEFAULT_PROJECT_ID,
-      context: decision.context || null,
-      source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
-      process_id: processId,
-      process_version: process.version || 1,
-      created_at: now(),
-      started_at: now(),
-      completed_at: null,
-      updated_at: now(),
-      iteration: 0,
-      memory_context: memoryContext,
-      delivery_status: 'internal',
-    };
-  }
-
-  // Merge process context template into mission context
-  if (process.contextTemplate && typeof process.contextTemplate === 'object') {
-    const templateCtx = {};
-    for (const [key, entry] of Object.entries(process.contextTemplate)) {
-      if (entry && typeof entry === 'object') {
-        const processed = { ...entry };
-        if (processed.name) processed.name = processed.name.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-        if (processed.summary) processed.summary = processed.summary.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-        templateCtx[key] = processed;
-      }
-    }
-    mission.context = mergeContextPackets(mission.context, templateCtx);
-  }
-
-  // ---- Step 2: Stamp all C and T envelopes upfront ----
-  const checkpointEnvelopes = []; // { cEnvelope, tEnvelopes[] }
-
-  for (let ci = 0; ci < cpPlan.checkpoints.length; ci++) {
-    const cp = cpPlan.checkpoints[ci];
-    const cpId = generateId('w');
-    const cpNum = ci + 1;
-
-    const cEnvelope = {
-      id: cpId,
-      type: 'C',
-      parent_id: mission.id,
-      owner: AGENT_EMAIL || AGENT_ID,
-      status: 'pending',
-      intent: 'checkpoint',
-      title: await generateTitle(cp.instruction || `Checkpoint ${cpNum}`, 'checkpoint'),
-      instruction: cp.instruction || `Checkpoint ${cpNum}`,
-      accept_criteria: cp.accept_criteria || '',
-      output: null,
-      children: [],
-      context_forward: null,
-      error: null,
-      source_channel: mission.source_channel || 'system',
-      source_meta: {},
-      project_id: mission.project_id || null,
-      process_id: processId,
-      created_at: now(),
-      started_at: null,
-      completed_at: null,
-      updated_at: now(),
-      iteration: 0,
-    };
-
-    const tEnvelopes = [];
-    for (let ti = 0; ti < (cp.tasks || []).length; ti++) {
-      const task = cp.tasks[ti];
-      const tId = generateId('w');
-      const taskNum = ti + 1;
-      const stepType = task._step_type || 'standard';
-
-      const tEnvelope = {
-        id: tId,
-        type: 'T',
-        parent_id: cpId,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'pending',
-        intent: stepType === 'approval_gate' ? 'approval_gate' : (task.intent || 'execute'),
-        title: await generateTitle(task.task || `Step ${cpNum}.${taskNum}`, 'task'),
-        instruction: task.task || '',
-        accept_criteria: task.accept_criteria || '',
-        output: null,
-        children: [],
-        context_forward: null,
-        error: null,
-        source_channel: mission.source_channel || 'system',
-        source_meta: {
-          step_type: stepType,
-          step_index: ti,
-          checkpoint_index: ci,
-          agent: task.agent || 'motor',
-          optional: task._optional || false,
-          specialty: task._specialty || null,
-          approval_message: task._approval_message || null,
-        },
-        project_id: mission.project_id || null,
-        process_id: processId,
-        created_at: now(),
-        started_at: null,
-        completed_at: null,
-        updated_at: now(),
-        iteration: 0,
-      };
-
-      tEnvelopes.push(tEnvelope);
-      cEnvelope.children.push(tId);
-    }
-
-    checkpointEnvelopes.push({ cEnvelope, tEnvelopes });
-    mission.children.push(cpId);
-  }
-
-  // ---- Step 3: Write everything to Firestore ----
-  await firestoreWrite('work', mission.id, mission);
-  if (!existingEnvelope) {
-    await writeHistory(mission.id, null, 'active', 'brain', `Process '${process.name}' — stamped full hierarchy`);
-  }
-
-  for (const { cEnvelope, tEnvelopes } of checkpointEnvelopes) {
-    await firestoreWrite('work', cEnvelope.id, cEnvelope);
-    await writeHistory(cEnvelope.id, null, 'pending', 'brain', `Checkpoint created (process: ${process.name})`);
-    for (const tEnv of tEnvelopes) {
-      await firestoreWrite('work', tEnv.id, tEnv);
-      await writeHistory(tEnv.id, null, 'pending', 'brain', `Task created (${tEnv.source_meta.step_type})`);
-    }
-  }
-
-  // Increment process execution count
-  try {
-    const token = await getAuthToken();
-    if (token) {
-      const procUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/processes/${processId}`;
-      const currentCount = process.execution_count || 0;
-      await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
-        method: 'PATCH',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: {
-          execution_count: { integerValue: String(currentCount + 1) },
-          last_executed_at: { stringValue: now() },
-        }}),
-      });
-    }
-  } catch (e) { log('DEBUG', `Process execution count update failed: ${e.message}`); }
-
-  log('INFO', `executeProcess: hierarchy stamped — M:${mission.id}, ${checkpointEnvelopes.length} checkpoints, ${checkpointEnvelopes.reduce((s, c) => s + c.tEnvelopes.length, 0)} tasks`);
-
-  // ---- Pre-flight workspace cleanup ----
-  const processDoc = PROCESSES[processId];
-  const preFlight = processDoc?.pre_flight;
-  if (preFlight) {
-    log('INFO', `Process ${processId}: running pre-flight check`);
-    const preFlightResult = await callAgent('motor', {
-      instruction: `[PRE-FLIGHT CHECK]\n${preFlight}`,
-      accept_criteria: 'Pre-flight checks completed, workspace ready',
-      _missionId: mission.id,
-    });
-    log('INFO', `Process ${processId}: pre-flight ${preFlightResult.success ? 'passed' : 'FAILED'} (${preFlightResult.durationMs}ms)`);
-  }
-
-  // ---- Step 4: Execute the plan ----
-  await runProcessPlan(mission, checkpointEnvelopes, memoryContext);
+async function executeProcess(intake, decision, memoryContext, processId, existingEnvelope) {
+  _ensureEngine();
+  return _engine.execute(intake, decision, memoryContext, processId, existingEnvelope);
 }
 
-/**
- * Mechanical sequential executor for a stamped process plan.
- * Walks through C → T envelopes, dispatches to agents, handles approval gates.
- * No Cortex involvement — purely deterministic.
- *
- * @param {object} mission - The M-envelope
- * @param {Array} checkpointEnvelopes - Array of { cEnvelope, tEnvelopes[] }
- * @param {object} memoryContext - Memory context for agent dispatches
- * @param {number} startCpIndex - Checkpoint index to start from (for resumption)
- * @param {number} startTaskIndex - Task index within the starting checkpoint (for resumption)
- */
-async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, startCpIndex = 0, startTaskIndex = 0) {
-  let allResults = [];
-  let planFailed = false;
-
-  for (let ci = startCpIndex; ci < checkpointEnvelopes.length; ci++) {
-    const { cEnvelope, tEnvelopes } = checkpointEnvelopes[ci];
-    const cpNum = ci + 1;
-    const taskStartIdx = (ci === startCpIndex) ? startTaskIndex : 0;
-
-    // Mark checkpoint active
-    cEnvelope.status = 'active';
-    cEnvelope.started_at = cEnvelope.started_at || now();
-    cEnvelope.updated_at = now();
-    await firestoreWrite('work', cEnvelope.id, cEnvelope);
-    if (taskStartIdx === 0) {
-      await writeHistory(cEnvelope.id, 'pending', 'active', 'brain', `Checkpoint ${cpNum} started`);
-    }
-
-    log('INFO', `Process CP${cpNum}/${checkpointEnvelopes.length}: ${tEnvelopes.length} tasks`);
-
-    let cpFailed = false;
-    let cpResults = [];
-
-    for (let ti = taskStartIdx; ti < tEnvelopes.length; ti++) {
-      const tEnv = tEnvelopes[ti];
-      const taskNum = ti + 1;
-      const stepType = tEnv.source_meta?.step_type || 'standard';
-      const taskAgent = tEnv.source_meta?.agent || 'motor';
-      const isOptional = tEnv.source_meta?.optional || false;
-
-      // ---- Approval Gate ----
-      if (stepType === 'approval_gate') {
-        log('INFO', `Process CP${cpNum} Task ${taskNum}: Approval gate — pausing`);
-
-        const approvalId = generateId('apr');
-
-        // Write approval doc
-        try {
-          const token = await getAuthToken();
-          if (token) {
-            const approvalUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/approvals/${approvalId}`;
-            await fetch(approvalUrl, {
-              method: 'PATCH',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ fields: {
-                envelopeId: { stringValue: mission.id },
-                checkpointId: { stringValue: cEnvelope.id },
-                taskIndex: { integerValue: String(ti) },
-                checkpointIndex: { integerValue: String(ci) },
-                title: { stringValue: (tEnv.title || '').substring(0, 200) },
-                description: { stringValue: tEnv.instruction || tEnv.title || '' },
-                processId: { stringValue: mission.process_id || '' },
-                processName: { stringValue: PROCESSES[mission.process_id]?.name || '' },
-                planId: { stringValue: mission.plan_id || '' },
-                status: { stringValue: 'pending' },
-                requestedAt: { stringValue: now() },
-              }}),
-            });
-          }
-        } catch (e) { log('WARN', `Failed to write approval doc: ${e.message}`); }
-
-        // Mark task as awaiting approval
-        tEnv.status = 'awaiting_approval';
-        tEnv.started_at = now();
-        tEnv.updated_at = now();
-        tEnv.source_meta.approval_id = approvalId;
-        await firestoreWrite('work', tEnv.id, tEnv);
-        await writeHistory(tEnv.id, 'pending', 'awaiting_approval', 'brain', `Approval gate: ${tEnv.title}`);
-
-        // Mark checkpoint as awaiting
-        cEnvelope.status = 'awaiting_approval';
-        cEnvelope.updated_at = now();
-        await firestoreWrite('work', cEnvelope.id, cEnvelope);
-        await writeHistory(cEnvelope.id, 'active', 'awaiting_approval', 'brain', `Paused at approval gate`);
-
-        // Mark mission as awaiting with resume state
-        mission.status = 'awaiting_approval';
-        mission.updated_at = now();
-        mission.source_meta = {
-          ...mission.source_meta,
-          paused_approval_id: approvalId,
-          paused_checkpoint_index: ci,
-          paused_task_index: ti,
-        };
-        await firestoreWrite('work', mission.id, mission);
-        await writeHistory(mission.id, 'active', 'awaiting_approval', 'brain', `Process paused — approval gate`);
-
-        // Build context summary from completed steps
-        const priorSteps = [...allResults, ...cpResults];
-        const rawStepData = priorSteps.map(r => ({
-          step: r.step, agent: r.agent, success: r.success,
-          result: (r.result || '').substring(0, 1500),
-        }));
-
-        // Use custom approval_message from process definition if available
-        const customMessage = tEnv.source_meta?.approval_message || '';
-        const approvalTitle = tEnv.title || tEnv.instruction || 'Approval needed';
-
-        // Basic fallback text (used if LLM summarization fails)
-        const fallbackText = [
-          `⏸ **Approval needed**`,
-          ``,
-          `**${approvalTitle.substring(0, 200)}**`,
-          customMessage ? `\n${customMessage}` : '',
-          ``,
-          `Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
-        ].filter(Boolean).join('\n');
-
-        // LLM summarization for clean, self-contained approval notification
-        const cleanSummary = await summarizeForDelivery('approval_request', fallbackText, {
-          steps: rawStepData,
-          title: approvalTitle,
-          processName: PROCESSES[mission.process_id]?.name || '',
-          customMessage,
-        });
-
-        const notifOutput = [
-          `⏸ **Approval needed**`,
-          ``,
-          cleanSummary,
-          ``,
-          `Reply \`approve\` or \`reject\` here, or use the dashboard.`,
-        ].join('\n');
-
-        // Send notification
-        const notifId = generateId('w');
-        await firestoreWrite('work', notifId, {
-          id: notifId,
-          type: 'T',
-          parent_id: null, // Must be null for Mouth to deliver (it skips child envelopes)
-          owner: AGENT_EMAIL || AGENT_ID,
-          status: 'complete',
-          intent: 'notification',
-          instruction: 'Approval gate notification',
-          output: notifOutput,
-          source_channel: mission.source_channel || 'system',
-          source_meta: { approval_id: approvalId, notification_type: 'approval_gate' },
-          created_at: now(),
-          started_at: now(),
-          completed_at: now(),
-          updated_at: now(),
-          children: [],
-          accept_criteria: null,
-          context_summary: null,
-          context_forward: null,
-          error: null,
-          iteration: 0,
-          delivery_status: 'pending',
-        });
-
-        log('INFO', `Process paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);
-        return; // Exit — approval handler will resume
-      }
-
-      // ---- Standard / spawn_responsibility / delegation task ----
-      log('INFO', `Process CP${cpNum} Task ${taskNum}/${tEnvelopes.length}: ${taskAgent} — ${(tEnv.title || '').substring(0, 60)}`);
-
-      // Mark task active
-      tEnv.status = 'active';
-      tEnv.started_at = now();
-      tEnv.updated_at = now();
-      await firestoreWrite('work', tEnv.id, tEnv);
-      await writeHistory(tEnv.id, 'pending', 'active', 'brain', `Dispatching to ${taskAgent}`);
-
-      // Build instruction with prior results context
-      let instruction = tEnv.instruction || '';
-
-      // Prepend project context
-      if (mission.project_id) {
-        const projCtx = buildProjectContext(mission.project_id, mission.context);
-        if (projCtx) {
-          instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${instruction}`;
-        }
-      }
-
-      // Add prior results for context
-      const priorContext = allResults.length > 0
-        ? (await Promise.all(allResults.map(async r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this agent execution result. Keep key outputs, file paths, resource names, URLs, and error messages. Omit verbose logs and raw command output.')}`))).join('\n\n')
-        : null;
-
-      // Dispatch to agent
-      const dispatchEnvelope = {
-        instruction,
-        accept_criteria: tEnv.accept_criteria || '',
-        context_summary: tEnv.instruction || '',
-        prior_results_context: priorContext,
-        memory_context: typeof memoryContext === 'object' ? memoryContext.recalled : memoryContext,
-        _missionId: mission.id,
-      };
-
-      const result = await callAgent(taskAgent, dispatchEnvelope);
-
-      // Record result
-      const stepResult = {
-        step: `${cpNum}.${taskNum}`,
-        agent: taskAgent,
-        task: (tEnv.title || tEnv.instruction || '').substring(0, 150),
-        result: result.success
-          ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this successful agent execution output. Keep key results, file paths, resource names, and actionable details. Omit verbose logs.')
-          : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_AGENT_STEP, 'Summarize this failed agent output. Keep error details, partial progress, and diagnostic info.')}`,
-        success: result.success,
-        durationMs: result.durationMs,
-      };
-      cpResults.push(stepResult);
-
-      // Update task envelope
-      tEnv.output = result.success
-        ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this task completion output. Keep deliverables, file paths, and key outcomes.')
-        : result.error || 'Task failed';
-      tEnv.status = result.success ? 'complete' : 'failed';
-      tEnv.completed_at = now();
-      tEnv.updated_at = now();
-      if (result.error) tEnv.error = result.error;
-      await firestoreWrite('work', tEnv.id, tEnv);
-      await writeHistory(tEnv.id, 'active', tEnv.status, 'brain',
-        `${taskAgent}: ${result.success ? 'completed' : 'failed'} (${result.durationMs}ms)`);
-
-      log('INFO', `Process CP${cpNum} Task ${taskNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
-
-      // Retry once on failure (for non-optional tasks)
-      if (!result.success && !isOptional) {
-        log('INFO', `Process CP${cpNum} Task ${taskNum}: retrying once`);
-        const retryResult = await callAgent(taskAgent, {
-          ...dispatchEnvelope,
-          instruction: `[RETRY — previous attempt failed: ${result.error}]\n\n${instruction}`,
-          prior_results_context: [
-            priorContext,
-            `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${await smartSummarize(result.output || '', 500, 'Summarize why this attempt failed. Keep error messages and root cause details.')}`,
-          ].filter(Boolean).join('\n\n'),
-        });
-
-        if (retryResult.success) {
-          log('INFO', `Process CP${cpNum} Task ${taskNum}: retry succeeded`);
-          cpResults[cpResults.length - 1] = {
-            ...stepResult,
-            result: await smartSummarize(retryResult.output || '', CTX_AGENT_STEP, 'Summarize this successful retry output. Keep key results and deliverables.'),
-            success: true,
-            durationMs: result.durationMs + retryResult.durationMs,
-          };
-          tEnv.output = await smartSummarize(retryResult.output || '', CTX_AGENT_STEP, 'Summarize this task completion output. Keep deliverables, file paths, and key outcomes.');
-          tEnv.status = 'complete';
-          tEnv.error = null;
-          tEnv.completed_at = now();
-          tEnv.updated_at = now();
-          await firestoreWrite('work', tEnv.id, tEnv);
-          await writeHistory(tEnv.id, 'failed', 'complete', 'brain', `Retry succeeded (${retryResult.durationMs}ms)`);
-        } else {
-          // Hard failure
-          cpFailed = true;
-          break;
-        }
-      }
-    }
-
-    // Mark checkpoint complete/failed
-    allResults.push(...cpResults);
-    cEnvelope.status = cpFailed ? 'failed' : 'complete';
-    cEnvelope.completed_at = now();
-    cEnvelope.updated_at = now();
-    await firestoreWrite('work', cEnvelope.id, cEnvelope);
-    await writeHistory(cEnvelope.id, 'active', cEnvelope.status, 'brain',
-      `Checkpoint ${cpNum} ${cpFailed ? 'failed' : 'complete'} (${cpResults.length} tasks)`);
-
-    log('INFO', `Process CP${cpNum} ${cpFailed ? 'FAILED' : 'complete'} (${cpResults.length} tasks)`);
-
-    // ---- Automatic checkpoint verification ----
-    if (!cpFailed && cpResults.length > 0) {
-      const verifySummary = cpResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${(r.result || '').substring(0, 500)}`).join('\n\n');
-      const verifyInstruction = [
-        `[CHECKPOINT VERIFICATION]`,
-        `The following steps just completed. Verify their work is actually correct — don't just check that commands succeeded, verify the OUTCOMES are what was intended.`,
-        ``,
-        verifySummary,
-        ``,
-        `Check:`,
-        `1. Are the outputs/artifacts actually correct? (e.g., if a URL was generated, fetch it and verify the content)`,
-        `2. Is there stale state from previous runs that might have interfered?`,
-        `3. Do the results match what the step instructions asked for?`,
-        ``,
-        `If everything checks out, respond with VERIFIED and a brief summary.`,
-        `If something is wrong, respond with FAILED and describe exactly what's wrong and what you found.`,
-      ].join('\n');
-
-      log('INFO', `Process CP${cpNum}: running automatic verification`);
-      const verifyResult = await callAgent('motor', {
-        instruction: verifyInstruction,
-        accept_criteria: 'Verification result with evidence',
-        _missionId: mission.id,
-        memory_context: typeof memoryContext === 'object' ? memoryContext.recalled : memoryContext,
-      });
-
-      if (verifyResult.success && verifyResult.output) {
-        const verifyOutput = (verifyResult.output || '').toUpperCase();
-        if (verifyOutput.includes('FAILED') || verifyOutput.includes('INCORRECT') || verifyOutput.includes('WRONG')) {
-          log('WARN', `Process CP${cpNum}: verification FAILED — ${(verifyResult.output || '').substring(0, 200)}`);
-          // Store verification failure in checkpoint and treat as checkpoint failure
-          cEnvelope.status = 'failed';
-          cEnvelope.error = `Verification failed: ${(verifyResult.output || '').substring(0, 500)}`;
-          cEnvelope.updated_at = now();
-          await firestoreWrite('work', cEnvelope.id, cEnvelope);
-          await writeHistory(cEnvelope.id, 'complete', 'failed', 'brain', `Verification failed`);
-          cpFailed = true;
-        } else {
-          log('INFO', `Process CP${cpNum}: verification PASSED`);
-        }
-      }
-    }
-
-    if (cpFailed) {
-      planFailed = true;
-      break;
-    }
-  }
-
-  // ---- Step 5: Auto-complete the mission ----
-  const processName = PROCESSES[mission.process_id]?.name || mission.process_id;
-  const totalTasks = allResults.length;
-  const successTasks = allResults.filter(r => r.success).length;
-
-  if (planFailed) {
-    const failedStep = allResults.find(r => !r.success);
-    mission.output = [
-      `❌ Process "${processName}" failed at step ${failedStep?.step || '?'}.`,
-      '',
-      ...allResults.map((r, i) => `${i + 1}. **${r.task}** (${r.agent}): ${r.success ? '✅' : '❌'} ${(r.result || '').substring(0, 150)}`),
-      '',
-      `Failed: ${failedStep?.result || 'Unknown error'}`,
-    ].join('\n');
-    mission.status = 'blocked';
-    mission.blocker = `Process step failed: ${failedStep?.task || 'unknown'}`;
-    mission.blocker_type = 'task_failure';
-    mission.blocked_at = now();
-  } else {
-    mission.output = [
-      `✅ Process "${processName}" completed successfully (${successTasks}/${totalTasks} tasks).`,
-      '',
-      ...allResults.map((r, i) => `${i + 1}. **${r.task}** (${r.agent}): ✅ ${(r.result || '').substring(0, 150)}`),
-    ].join('\n');
-    mission.status = 'complete';
-    mission.completed_at = now();
-  }
-
-  mission.updated_at = now();
-  if (!mission.parent_id) mission.delivery_status = 'pending';
-  await firestoreWrite('work', mission.id, mission);
-  await writeHistory(mission.id, 'active', mission.status, 'brain',
-    `Process ${planFailed ? 'blocked' : 'complete'}: ${processName} (${successTasks}/${totalTasks} tasks)`);
-
-  log('INFO', `Process "${processName}" ${planFailed ? 'BLOCKED' : 'COMPLETE'}: ${successTasks}/${totalTasks} tasks`);
-
-  // Publish shared workspace artifacts to Drive BEFORE cleanup
-  if (mission.type === 'M') {
-    const artifactLinks = await publishArtifacts(mission);
-    if (artifactLinks && artifactLinks.length > 0) {
-      const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
-      mission.output = (mission.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
-      await firestoreWrite('work', mission.id, mission);
-    }
-  }
-
-  // Write to memory
-  await writeMemory(mission);
-  await cleanupSharedWorkspace(mission.id);
-
-  // Activate dependent missions and fire event responsibilities
-  if (mission.type === 'M') {
-    await activateDependents(mission.id);
-    if (mission.project_id) {
-      await checkProjectCompletion(mission.project_id);
-    }
-    await fireEventResponsibilities('on_complete', {
-      mission_id: mission.id,
-      project_id: mission.project_id,
-    });
-  }
-
-  // Context promotion for project-scoped missions
-  if (mission.project_id && mission.type === 'M' && mission.context) {
-    await suggestContextPromotions(mission);
-  }
+async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, startCpIndex, startTaskIndex) {
+  _ensureEngine();
+  return _engine.runPlan(mission, checkpointEnvelopes, memoryContext, startCpIndex, startTaskIndex);
 }
 
-/**
- * Resume a process plan after an approval gate.
- * Loads the child C/T envelopes from Firestore and continues execution
- * from the task after the approval gate.
- *
- * @param {object} mission - The M-envelope with paused_checkpoint_index/paused_task_index
- */
 async function resumeProcessPlan(mission) {
-  const ci = mission.source_meta?.paused_checkpoint_index;
-  const ti = mission.source_meta?.paused_task_index;
-
-  if (ci === undefined || ti === undefined) {
-    log('ERROR', `resumeProcessPlan: missing resume state on mission ${mission.id}`);
-    return;
-  }
-
-  log('INFO', `resumeProcessPlan: resuming ${mission.id} from CP${ci + 1} task ${ti + 2}`);
-
-  // Clean up paused state
-  delete mission.source_meta.paused_approval_id;
-  delete mission.source_meta.paused_checkpoint_index;
-  delete mission.source_meta.paused_task_index;
-  mission.status = 'active';
-  mission.updated_at = now();
-  await firestoreWrite('work', mission.id, mission);
-  await writeHistory(mission.id, 'awaiting_approval', 'active', 'brain', 'Approval granted — resuming');
-
-  // Load all child envelopes to reconstruct the plan
-  const allChildren = [];
-  for (const childId of (mission.children || [])) {
-    const child = await firestoreRead('work', childId);
-    if (child) allChildren.push(child);
-  }
-
-  // Reconstruct checkpointEnvelopes structure
-  const checkpointEnvelopes = [];
-  for (const cEnv of allChildren.filter(c => c.type === 'C').sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''))) {
-    const tEnvelopes = [];
-    for (const tId of (cEnv.children || [])) {
-      const tEnv = await firestoreRead('work', tId);
-      if (tEnv) tEnvelopes.push(tEnv);
-    }
-    // Sort by created_at to preserve order
-    tEnvelopes.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
-    checkpointEnvelopes.push({ cEnvelope: cEnv, tEnvelopes });
-  }
-
-  if (checkpointEnvelopes.length === 0) {
-    log('ERROR', `resumeProcessPlan: no checkpoint envelopes found for mission ${mission.id}`);
-    return;
-  }
-
-  // Mark the approval gate task as complete
-  if (checkpointEnvelopes[ci] && checkpointEnvelopes[ci].tEnvelopes[ti]) {
-    const approvalTask = checkpointEnvelopes[ci].tEnvelopes[ti];
-    approvalTask.status = 'complete';
-    approvalTask.output = 'Approval granted';
-    approvalTask.completed_at = now();
-    approvalTask.updated_at = now();
-    await firestoreWrite('work', approvalTask.id, approvalTask);
-    await writeHistory(approvalTask.id, 'awaiting_approval', 'complete', 'brain', 'Approval granted');
-  }
-
-  // Recall memory for context
-  const memoryContext = await recallMemory(mission.instruction);
-
-  // Resume from the task AFTER the approval gate
-  await runProcessPlan(mission, checkpointEnvelopes, memoryContext, ci, ti + 1);
+  _ensureEngine();
+  return _engine.resumePlan(mission);
 }
 
 
 
+
+
 /**
- * Merge two context packets (maps of key→entry). Child wins on key collision.
+ * Merge two context packets (maps of keyâ†’entry). Child wins on key collision.
  * Both inputs are { key: { kind, ref, url, name, summary, updatedAt, updatedBy } }
  */
 function mergeContextPackets(parentCtx, childCtx) {
   if (!parentCtx && !childCtx) return {};
   if (!parentCtx) return { ...(childCtx || {}) };
   if (!childCtx) return { ...(parentCtx || {}) };
-  return { ...parentCtx, ...childCtx }; // shallow by key — child overrides
+  return { ...parentCtx, ...childCtx }; // shallow by key â€” child overrides
 }
 
 /**
@@ -1533,7 +463,7 @@ async function backfillContextRefs(envelope, agentOutput) {
         entry.updatedAt = now();
         entry.updatedBy = `backfill`;
         updated = true;
-        log('INFO', `Context backfill: ${key} → ref=${match[1]}`);
+        log('INFO', `Context backfill: ${key} â†’ ref=${match[1]}`);
         break;
       }
     }
@@ -1546,7 +476,7 @@ async function backfillContextRefs(envelope, agentOutput) {
 }
 
 // ---- File read cache (60s TTL) ----
-const _fileCache = new Map(); // path → { content, readAt }
+const _fileCache = new Map(); // path â†’ { content, readAt }
 const FILE_CACHE_TTL_MS = 60_000;
 
 function cachedReadFile(filePath) {
@@ -1669,7 +599,7 @@ async function callCortex(mode, payload) {
   const msg = data.choices?.[0]?.message;
   log('DEBUG', `Cortex response structure: role=${msg?.role}, content_type=${typeof msg?.content}, has_choices=${!!data.choices?.length}`);
 
-  // Extract content — handle both string and array-of-objects formats
+  // Extract content â€” handle both string and array-of-objects formats
   let content = '';
   if (typeof msg?.content === 'string') {
     content = msg.content;
@@ -1689,7 +619,7 @@ async function callCortex(mode, payload) {
 function buildSystemPrompt(mode, payload) {
   const parts = [];
 
-  // 1. Read SOUL.md — core decision-making guidance
+  // 1. Read SOUL.md â€” core decision-making guidance
   const soulPaths = [
     CORE_DIR + '/workspace-cortex/SOUL.md',
     CORE_DIR + '/workspace/SOUL.md',
@@ -1700,10 +630,10 @@ function buildSystemPrompt(mode, payload) {
     if (soulContent) break;
   }
   if (soulContent) {
-    parts.push(`[SOUL — core decision-making guidance]\n${soulContent}`);
+    parts.push(`[SOUL â€” core decision-making guidance]\n${soulContent}`);
   }
 
-  // 2. Read IDENTITY.md — who you are
+  // 2. Read IDENTITY.md â€” who you are
   const identityPaths = [
     CORE_DIR + `/workspace-${AGENT_ID}/IDENTITY.md`,
     CORE_DIR + '/workspace-devops/IDENTITY.md',
@@ -1715,10 +645,10 @@ function buildSystemPrompt(mode, payload) {
     if (identityContent) break;
   }
   if (identityContent) {
-    parts.push(`[IDENTITY — who you are]\n${identityContent}`);
+    parts.push(`[IDENTITY â€” who you are]\n${identityContent}`);
   }
 
-  // 3. Read MEMORY.md — baseline knowledge
+  // 3. Read MEMORY.md â€” baseline knowledge
   const memoryPaths = [
     CORE_DIR + `/workspace-${AGENT_ID}/MEMORY.md`,
     CORE_DIR + '/workspace-devops/MEMORY.md',
@@ -1730,12 +660,12 @@ function buildSystemPrompt(mode, payload) {
     if (memoryContent) break;
   }
   if (memoryContent) {
-    parts.push(`[MEMORY — baseline knowledge]\n${memoryContent}`);
+    parts.push(`[MEMORY â€” baseline knowledge]\n${memoryContent}`);
   }
 
 
   // 4. Agent registry with tool descriptions
-  parts.push(`[AGENT REGISTRY — available agents and their capabilities]\n${JSON.stringify(REGISTRY.agents, null, 2)}`);
+  parts.push(`[AGENT REGISTRY â€” available agents and their capabilities]\n${JSON.stringify(REGISTRY.agents, null, 2)}`);
 
   // 5. Project registry (if any projects exist)
   if (Object.keys(PROJECTS).length > 0) {
@@ -1743,7 +673,7 @@ function buildSystemPrompt(mode, payload) {
       id: p.id, name: p.name, status: p.status, description: p.description,
       context: p.context || {},
     }));
-    parts.push(`[PROJECT REGISTRY — active work streams with context]\nEach project carries context that applies to all missions within it. When classifying or deciding, identify the relevant project and use its context.\n${JSON.stringify(projectSummary, null, 2)}`);
+    parts.push(`[PROJECT REGISTRY â€” active work streams with context]\nEach project carries context that applies to all missions within it. When classifying or deciding, identify the relevant project and use its context.\n${JSON.stringify(projectSummary, null, 2)}`);
   }
 
   // 6. Process registry (if any processes exist)
@@ -1754,7 +684,7 @@ function buildSystemPrompt(mode, payload) {
       step_count: (p.steps || []).length,
       parameters: Object.keys(p.parameters || {}),
     }));
-    parts.push(`[PROCESS REGISTRY — reusable playbooks]\nProcesses are stored, versioned playbooks that define step-by-step workflows. Use the "follow_process" action when work matches an existing process. Available:\n${JSON.stringify(processSummary, null, 2)}`);
+    parts.push(`[PROCESS REGISTRY â€” reusable playbooks]\nProcesses are stored, versioned playbooks that define step-by-step workflows. Use the "follow_process" action when work matches an existing process. Available:\n${JSON.stringify(processSummary, null, 2)}`);
   }
 
   // 6. Mode and JSON constraint
@@ -1773,11 +703,11 @@ function buildUserPrompt(mode, payload) {
       active_envelopes: payload.active_envelopes || [],
       recent_completed_missions: payload.recent_completed_missions || [],
       classification_guidance: {
-        blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
+        blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions â€” use "continue" instead.',
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
         dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as "attach" to add follow-up context to the prior mission. Only create new_mission if the inbound is genuinely different work.',
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
-        required_processes: 'CRITICAL: Projects may define required_processes — activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
+        required_processes: 'CRITICAL: Projects may define required_processes â€” activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
       },
     };
     if (Object.keys(PROJECTS).length > 0) {
@@ -1833,12 +763,12 @@ function buildUserPrompt(mode, payload) {
         parameters: p.parameters || {},
       }));
     }
-    // Task decomposition guidance — enforce checkpoint_plan structure
+    // Task decomposition guidance â€” enforce checkpoint_plan structure
     decidePayload.dispatch_guidance = {
       rule: 'ALL work MUST use checkpoint_plan. One focused task per task entry. Even single-step work is one checkpoint with one task.',
       bad_example: 'Step 1: check health. Step 2: read logs. Step 3: create file.',
-      good_example: 'checkpoint_plan with separate checkpoints for research, implementation, and verification — each containing atomic tasks.',
-      reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The M→C→T hierarchy ensures progress tracking and enables re-planning on failure.',
+      good_example: 'checkpoint_plan with separate checkpoints for research, implementation, and verification â€” each containing atomic tasks.',
+      reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The Mâ†’Câ†’T hierarchy ensures progress tracking and enables re-planning on failure.',
     };
     return JSON.stringify(decidePayload);
   }
@@ -1863,7 +793,7 @@ const SUMMARY_TYPES = {
       `RULES:`,
       `- 3-8 sentences max, under ${ctx.maxChars || 1500} characters`,
       `- Include ALL relevant URLs, links, and artifact references inline`,
-      `- The reader must NOT need any prior context — everything self-contained`,
+      `- The reader must NOT need any prior context â€” everything self-contained`,
       `- State what was done, what the outcome is, and what happens next if approved`,
       `- NEVER say "see above", "the link from earlier", or reference prior messages`,
       `- Do NOT include raw command output, JSON blobs, or deployment logs`,
@@ -1878,8 +808,8 @@ const SUMMARY_TYPES = {
       JSON.stringify(ctx.steps, null, 2),
     ].filter(Boolean).join('\n'),
   },
-  status_update: { llm: false },  // Pass through — already human-readable
-  error_report: { llm: false },   // Pass through — errors should be precise
+  status_update: { llm: false },  // Pass through â€” already human-readable
+  error_report: { llm: false },   // Pass through â€” errors should be precise
 };
 
 /**
@@ -1892,7 +822,7 @@ const SUMMARY_TYPES = {
 async function summarizeForDelivery(type, rawText, context = {}) {
   const config = SUMMARY_TYPES[type];
   if (!config || !config.llm) {
-    // No LLM needed — return raw text as-is
+    // No LLM needed â€” return raw text as-is
     return rawText;
   }
 
@@ -1900,7 +830,7 @@ async function summarizeForDelivery(type, rawText, context = {}) {
   const promptText = config.prompt({ ...context, maxChars });
 
   try {
-    const instruction = 'You are a notification writer. Return ONLY the notification text — no JSON, no markdown fences, no preamble.';
+    const instruction = 'You are a notification writer. Return ONLY the notification text â€” no JSON, no markdown fences, no preamble.';
     const content = await summarizeViaVertex(promptText, instruction, { maxTokens: 2048 });
 
     if (content && content.length > 0) {
@@ -1910,10 +840,10 @@ async function summarizeForDelivery(type, rawText, context = {}) {
       return cleaned.substring(0, maxChars);
     }
 
-    log('WARN', `summarizeForDelivery(${type}): empty response — falling back to raw`);
+    log('WARN', `summarizeForDelivery(${type}): empty response â€” falling back to raw`);
     return rawText;
   } catch (e) {
-    log('WARN', `summarizeForDelivery(${type}) error: ${e.message} — falling back to raw`);
+    log('WARN', `summarizeForDelivery(${type}) error: ${e.message} â€” falling back to raw`);
     return rawText;
   }
 }
@@ -1935,10 +865,10 @@ async function callAgent(agentId, envelope) {
   const context = envelope.context_summary || '';
   const criteria = envelope.accept_criteria || '';
 
-  // Resolve shared workspace path — mission-scoped for checkpoint tasks
+  // Resolve shared workspace path â€” mission-scoped for checkpoint tasks
   const workspaceId = envelope._missionId || envelope.parent_id || envelope.id;
   const workspaceDirective = workspaceId
-    ? `\n\n## Workspace\nWrite ALL work products to \`${CORE_DIR}/shared/${workspaceId}/\`.\nFiles here persist across tasks in this mission and are auto-published on completion.\n\nWrite substantial outputs (plans, reports, configs, code) as FILES in the shared workspace, not just text responses.\nYour text response should summarize what you did and reference the filenames you created.\nPrior step outputs are also saved here — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
+    ? `\n\n## Workspace\nWrite ALL work products to \`${CORE_DIR}/shared/${workspaceId}/\`.\nFiles here persist across tasks in this mission and are auto-published on completion.\n\nWrite substantial outputs (plans, reports, configs, code) as FILES in the shared workspace, not just text responses.\nYour text response should summarize what you did and reference the filenames you created.\nPrior step outputs are also saved here â€” check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
     : '';
 
   const userMessage = [
@@ -1997,13 +927,13 @@ async function callAgent(agentId, envelope) {
     log('INFO', `Agent ${agentId} responded (${content.length} chars, ${durationMs}ms)`);
 
     // Phase 5: Detect semantic failures in agent responses
-    // Cerebellum FAIL verdict — agent returned successfully but the verification failed
+    // Cerebellum FAIL verdict â€” agent returned successfully but the verification failed
     if (content.includes('"verdict"') && content.includes('"FAIL"')) {
-      log('WARN', `Agent ${agentId} returned FAIL verdict — treating as failure`);
+      log('WARN', `Agent ${agentId} returned FAIL verdict â€” treating as failure`);
       return { success: false, output: content, error: 'Verification FAIL verdict', durationMs };
     }
 
-    // Motor tool failure — agent returned successfully but reports the command failed
+    // Motor tool failure â€” agent returned successfully but reports the command failed
     // Only apply to motor-class agents (not memory agents whose stored content may echo error keywords)
     const FAILURE_PATTERN_AGENTS = ['motor', 'verifier'];
     if (FAILURE_PATTERN_AGENTS.includes(agentId)) {
@@ -2015,7 +945,7 @@ async function callAgent(agentId, envelope) {
       ];
       for (const pattern of failurePatterns) {
         if (pattern.test(content)) {
-          log('WARN', `Agent ${agentId} output contains failure pattern: ${pattern} — treating as failure`);
+          log('WARN', `Agent ${agentId} output contains failure pattern: ${pattern} â€” treating as failure`);
           return { success: false, output: content, error: 'Agent reported tool failure', durationMs };
         }
       }
@@ -2128,7 +1058,7 @@ async function writeMemory(envelope) {
         }
       }
     } else {
-      log('WARN', `Memory write returned failure for ${envelope.id}: ${result.error || 'unknown'} — output preview: ${(result.output || '').substring(0, 150)}`);
+      log('WARN', `Memory write returned failure for ${envelope.id}: ${result.error || 'unknown'} â€” output preview: ${(result.output || '').substring(0, 150)}`);
     }
   } catch (e) {
     log('WARN', `Memory write failed: ${e.message}`);
@@ -2138,7 +1068,7 @@ async function writeMemory(envelope) {
 // ---- Active envelope scan: query for in-progress work ----
 async function scanActiveEnvelopes() {
   try {
-    // Query all live statuses — active, waiting, needs_input, blocked
+    // Query all live statuses â€” active, waiting, needs_input, blocked
     const statuses = ['active', 'waiting', 'needs_input', 'blocked'];
     let allEnvelopes = [];
     for (const status of statuses) {
@@ -2222,12 +1152,12 @@ async function deliverStatusUpdate(envelopeId, message) {
     error: null,
     iteration: 0,
   });
-  log('INFO', `Status update written: ${statusId} — ${message.substring(0, 80)}`);
+  log('INFO', `Status update written: ${statusId} â€” ${message.substring(0, 80)}`);
 }
 
 // ---- Periodic envelope archival ----
 // Archives: failed (>STALE_CLEANUP_HOURS), complete (>STALE_CLEANUP_HOURS or immediately if child), stale needs_input (>NEEDS_INPUT_TIMEOUT_HOURS), cancelled (>STALE_CLEANUP_HOURS)
-// NOTE: blocked envelopes are NEVER archived — they stay alive indefinitely for resumption
+// NOTE: blocked envelopes are NEVER archived â€” they stay alive indefinitely for resumption
 async function archiveEnvelopes() {
   log('INFO', 'Running envelope archival sweep...');
   let totalArchived = 0;
@@ -2254,7 +1184,7 @@ async function archiveEnvelopes() {
     ]);
     let completeCount = 0;
     for (const env of complete) {
-      // Child envelopes (have parent_id) never need delivery — archive immediately
+      // Child envelopes (have parent_id) never need delivery â€” archive immediately
       if (env.parent_id) {
         await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'child_complete', delivery_status: 'delivered', updated_at: now() });
         completeCount++;
@@ -2262,13 +1192,13 @@ async function archiveEnvelopes() {
       }
       // Top-level envelopes: require delivery AND memory before archiving
       if (env.delivery_status === 'pending') {
-        // DO NOT archive — mouth hasn't delivered this to the user yet
+        // DO NOT archive â€” mouth hasn't delivered this to the user yet
         continue;
       }
       const envAge = env.completed_at || env.updated_at || env.created_at;
       if (envAge && envAge < completeCutoff) {
         if (env.memory_written) {
-          // Memory confirmed written — safe to archive
+          // Memory confirmed written â€” safe to archive
           await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'delivered', delivery_status: 'delivered', updated_at: now() });
           completeCount++;
         } else if (envAge < forceArchiveCutoff) {
@@ -2308,7 +1238,7 @@ async function archiveEnvelopes() {
     }
     if (cancelledCount) log('INFO', `Archived ${cancelledCount} cancelled envelopes (>${STALE_CLEANUP_HOURS}h old)`);
 
-    // 5. Timed-out envelopes — always children, archive immediately (they are terminal)
+    // 5. Timed-out envelopes â€” always children, archive immediately (they are terminal)
     const timedOut = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'timed_out' } },
     ]);
@@ -2319,9 +1249,9 @@ async function archiveEnvelopes() {
     }
     if (timedOutCount) log('INFO', `Archived ${timedOutCount} timed_out envelopes`);
 
-    // NOTE: blocked envelopes are NOT archived — they persist indefinitely for resumption
+    // NOTE: blocked envelopes are NOT archived â€” they persist indefinitely for resumption
 
-    // 6. Orphaned children — active/pending C/T whose parent is cancelled/archived
+    // 6. Orphaned children â€” active/pending C/T whose parent is cancelled/archived
     const activeChildren = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
     ]);
@@ -2355,10 +1285,10 @@ async function archiveEnvelopes() {
 
 // ---- Quick ACK generation (lightweight LLM call, mission-aware) ----
 const ACK_FALLBACKS = [
-  '✅ Got it — working on this now.',
-  '👍 On it!',
-  '✅ Received — let me look into this.',
-  '🔛 Working on it.',
+  'âœ… Got it â€” working on this now.',
+  'ðŸ‘ On it!',
+  'âœ… Received â€” let me look into this.',
+  'ðŸ”› Working on it.',
 ];
 
 async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
@@ -2378,7 +1308,7 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
     let workContext = '';
     if (activeEnvelopes && activeEnvelopes.length > 0) {
       const summaries = activeEnvelopes.map(e =>
-        `${e.status === 'blocked' ? '🚫 BLOCKED' : '🔵 ACTIVE'}: "${(e.instruction || '').substring(0, 80)}"`
+        `${e.status === 'blocked' ? 'ðŸš« BLOCKED' : 'ðŸ”µ ACTIVE'}: "${(e.instruction || '').substring(0, 80)}"`
       ).join('\n');
       workContext = `\nYour current work:\n${summaries}`;
     }
@@ -2387,7 +1317,7 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
     let recentContext = '';
     if (recentMissions.length > 0) {
       const summaries = recentMissions.map(m =>
-        `• "${m.instruction}" → ${m.status}${m.project_id ? ` [${m.project_id}]` : ''}`
+        `â€¢ "${m.instruction}" â†’ ${m.status}${m.project_id ? ` [${m.project_id}]` : ''}`
       ).join('\n');
       recentContext = `\nYour recent work:\n${summaries}`;
     }
@@ -2396,7 +1326,7 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
     let projectContext = '';
     if (Object.keys(PROJECTS).length > 0) {
       const projectNames = Object.values(PROJECTS)
-        .map(p => `• ${p.name || p.id}: ${(p.description || '').substring(0, 80)}`)
+        .map(p => `â€¢ ${p.name || p.id}: ${(p.description || '').substring(0, 80)}`)
         .join('\n');
       projectContext = `\nProjects you work on:\n${projectNames}`;
     }
@@ -2405,11 +1335,11 @@ async function generateAck(intakeText, activeEnvelopes, recentMissions = []) {
     const ackMessage = extractCurrentMessage(intakeText);
 
     const systemPrompt = [
-      `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied — never robotic. Reference what the person asked about if you can.`,
+      `You are a team member acknowledging an incoming message. Write a BRIEF (1 sentence, max 20 words) acknowledgment. Be natural, warm, and varied â€” never robotic. Reference what the person asked about if you can.`,
       workContext,
       recentContext,
       projectContext,
-      `\nIMPORTANT: If the user's message relates to your recent or current work, acknowledge the CONTINUITY — say something like "Picking back up on the sync pipeline" or "Taking another look at this." Don't treat it as brand new if you recognize it from recent history.`,
+      `\nIMPORTANT: If the user's message relates to your recent or current work, acknowledge the CONTINUITY â€” say something like "Picking back up on the sync pipeline" or "Taking another look at this." Don't treat it as brand new if you recognize it from recent history.`,
       `\nYour personality:\n${identity || 'Helpful and professional.'}`,
     ].filter(Boolean).join('\n');
 
@@ -2477,7 +1407,7 @@ async function processIntake(intake) {
   // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)
   const activeEnvelopes = await scanActiveEnvelopes();
 
-  // (Quick ack moved to after classify — see below)
+  // (Quick ack moved to after classify â€” see below)
 
   // Phase 3+: Dual memory recall
   // First recall: ambient context from raw inbound text (helps classify)
@@ -2528,7 +1458,7 @@ async function processIntake(intake) {
   // Normalize classification
   const classification = decision.classification || 'new_mission';
 
-  // Quick ack — generate text now, inject as C→T after M envelope is created
+  // Quick ack â€” generate text now, inject as Câ†’T after M envelope is created
   let pendingAckText = null;
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent
       && (classification === 'new_mission' || classification === 'continue')) {
@@ -2549,10 +1479,10 @@ async function processIntake(intake) {
     if (processId) {
       await ensureProcessesLoaded();
       if (PROCESSES[processId]) {
-        log('INFO', `Process route: '${processId}' detected — routing to executeProcess`);
+        log('INFO', `Process route: '${processId}' detected â€” routing to executeProcess`);
         const processResult = await executeProcess(intake, decision, memoryContext, processId);
         if (processResult !== 'fallback_to_decide') return;
-        log('INFO', `Process '${processId}' fell back to decide loop — continuing with normal flow`);
+        log('INFO', `Process '${processId}' fell back to decide loop â€” continuing with normal flow`);
       }
     }
   }
@@ -2574,7 +1504,7 @@ async function processIntake(intake) {
       return matched >= 3 && matched / words1.length > 0.4;
     });
     if (duplicate) {
-      log('WARN', `Dedup guard: suppressing new_mission — similar active envelope ${duplicate.id} exists. Forcing attach.`);
+      log('WARN', `Dedup guard: suppressing new_mission â€” similar active envelope ${duplicate.id} exists. Forcing attach.`);
       decision.classification = 'attach';
       decision.attach_to = duplicate.id;
       await handleAttach(intake, decision, memoryContext);
@@ -2621,7 +1551,7 @@ async function processIntake(intake) {
     source_meta: intake.source_meta || {},
     project_id: decision.project_id || DEFAULT_PROJECT_ID,
     context: decision.context || null,
-    source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
+    source_text: sourceText || null, // Raw user message â€” preserved verbatim for child dispatches
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -2637,7 +1567,7 @@ async function processIntake(intake) {
   // Write history entry
   await writeHistory(envelopeId, null, 'pending', 'brain', 'Created from intake ' + intake.id);
 
-  // Inject ack as first C→T under the mission
+  // Inject ack as first Câ†’T under the mission
   if (pendingAckText) {
     await createCT(envelope, {
       checkpointTitle: 'Acknowledge receipt',
@@ -2647,7 +1577,7 @@ async function processIntake(intake) {
       deliveryStatus: 'pending',
     });
     await firestoreWrite('work', envelope.id, envelope);
-    log('INFO', `Ack injected as C→T under ${envelopeId}`);
+    log('INFO', `Ack injected as Câ†’T under ${envelopeId}`);
   }
 
   // Process the envelope (pass memory context to avoid re-recall)
@@ -2657,7 +1587,7 @@ async function processIntake(intake) {
 // ---- Attach handler: follow-up to existing work ----
 async function handleAttach(intake, decision, memoryContext) {
   const targetId = decision.attach_to;
-  log('INFO', `Attach: intake ${intake.id} → target ${targetId}`);
+  log('INFO', `Attach: intake ${intake.id} â†’ target ${targetId}`);
 
   if (!targetId) {
     log('WARN', `Attach missing attach_to field, treating as new_mission`);
@@ -2688,7 +1618,7 @@ async function handleAttach(intake, decision, memoryContext) {
     // Check if this is truly a status query or a new instruction to act on
     const isStatusQuery = /\b(?:status|progress|update|how.{0,10}going|where.{0,10}at|what.{0,10}happening)\b/i.test(intake.text);
     if (isStatusQuery) {
-      // Status check — deliver current status
+      // Status check â€” deliver current status
       const statusMsg = `I'm still working on that. Current task: "${targetEnv.instruction}". Status: ${targetEnv.status}, iteration ${targetEnv.iteration || 0}.`;
       const statusEnvId = generateId('w');
       await firestoreWrite('work', statusEnvId, {
@@ -2716,21 +1646,21 @@ async function handleAttach(intake, decision, memoryContext) {
       log('INFO', `Status check delivered for ${targetId}: ${statusEnvId}`);
       return;
     }
-    // New instruction for active/waiting mission — create linked child task
+    // New instruction for active/waiting mission â€” create linked child task
     log('INFO', `New instruction for ${targetEnv.status} mission ${targetId}, creating child task`);
     return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
   }
 
   // For blocked envelopes, delegate to handleContinue (which knows how to reopen)
   if (targetEnv.status === 'blocked') {
-    log('INFO', `Attach target ${targetId} is blocked — routing to handleContinue`);
+    log('INFO', `Attach target ${targetId} is blocked â€” routing to handleContinue`);
     decision.continue_mission = targetId;
     return handleContinue(intake, decision, memoryContext);
   }
 
   // For failed missions, create a child task linked to the mission
   if (targetEnv.status === 'failed') {
-    log('INFO', `Attach target ${targetId} is failed — creating linked follow-up task`);
+    log('INFO', `Attach target ${targetId} is failed â€” creating linked follow-up task`);
     return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
   }
 
@@ -2777,7 +1707,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
 // ---- Continue handler: resume a blocked mission ----
 async function handleContinue(intake, decision, memoryContext) {
   const targetId = decision.continue_mission || decision.continue_envelope;
-  log('INFO', `Continue: intake ${intake.id} → resuming blocked mission ${targetId}`);
+  log('INFO', `Continue: intake ${intake.id} â†’ resuming blocked mission ${targetId}`);
 
   if (!targetId) {
     log('WARN', `Continue missing continue_mission field, treating as new_mission`);
@@ -2790,7 +1720,7 @@ async function handleContinue(intake, decision, memoryContext) {
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
-  // Only reopen blocked or complete missions (not active — that's an attach/status check)
+  // Only reopen blocked or complete missions (not active â€” that's an attach/status check)
   if (!['blocked', 'complete'].includes(mission.status)) {
     log('WARN', `Continue target ${targetId} is ${mission.status}, treating as attach`);
     return handleAttach(intake, decision, memoryContext);
@@ -2809,23 +1739,23 @@ async function handleContinue(intake, decision, memoryContext) {
   mission.blocker_type = null;
   mission.delivered_at = null;
   mission.delivered_channel = null;
-  mission.delivery_status = 'internal'; // Reset — will become 'pending' when re-completed
+  mission.delivery_status = 'internal'; // Reset â€” will become 'pending' when re-completed
   mission._unblock_attempted = false; // Reset retry cap for new attempt
   mission.updated_at = now();
 
   await firestoreWrite('work', targetId, mission);
   await writeHistory(targetId, prevStatus, 'active', 'brain',
     `Resumed via continue: ${intake.text.substring(0, 100)}`);
-  log('INFO', `Mission ${targetId} reopened from ${prevStatus} → active`);
+  log('INFO', `Mission ${targetId} reopened from ${prevStatus} â†’ active`);
 
-  // Resume processing — Cortex will see the full mission context + new unblock info
+  // Resume processing â€” Cortex will see the full mission context + new unblock info
   await processEnvelope(mission, memoryContext);
 }
 
 // ---- Cancel handler: explicitly abandon work ----
 async function handleCancel(intake, decision) {
   const targetId = decision.cancel_target;
-  log('INFO', `Cancel: intake ${intake.id} → cancelling ${targetId}`);
+  log('INFO', `Cancel: intake ${intake.id} â†’ cancelling ${targetId}`);
 
   if (!targetId) {
     log('WARN', `Cancel missing cancel_target field, ignoring`);
@@ -2857,7 +1787,7 @@ async function handleCancel(intake, decision) {
   await cascadeCancelChildren(targetId);
 
   // Deliver confirmation
-  await deliverStatusUpdate(targetId, `✅ Cancelled mission: "${target.instruction.substring(0, 100)}"`);
+  await deliverStatusUpdate(targetId, `âœ… Cancelled mission: "${target.instruction.substring(0, 100)}"`);
 }
 
 // Cascade-cancel all active/pending children of a cancelled envelope
@@ -2985,15 +1915,15 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
-    // Schema enforcement guarantees action field — no normalization needed
+    // Schema enforcement guarantees action field â€” no normalization needed
     let action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
 
     // Prevent self-unblock runaway: after a self-unblock attempt, only allow
     // resolution actions (synthesize, blocked). If Cortex/enforceSchema returns
-    // checkpoint_plan, it's stalling — force to blocked.
+    // checkpoint_plan, it's stalling â€” force to blocked.
     if (envelope._unblock_attempted && action === 'checkpoint_plan') {
-      log('WARN', `Post-unblock guard: blocking checkpoint_plan after self-unblock — forcing blocked`);
+      log('WARN', `Post-unblock guard: blocking checkpoint_plan after self-unblock â€” forcing blocked`);
       action = 'blocked';
       decision.action = 'blocked';
       decision.blocker = decision.failure_summary || 'Could not resolve failure through alternative approach';
@@ -3001,13 +1931,13 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'synthesize') {
-      // Check for unresolved failures — block premature success synthesis
+      // Check for unresolved failures â€” block premature success synthesis
       // Only count HARD failures (not timeouts) that haven't been superseded by a subsequent success.
-      // Timeouts are soft — they indicate the work may have partially completed, not a real error.
+      // Timeouts are soft â€” they indicate the work may have partially completed, not a real error.
       const lastSuccessIdx = priorResults.map((r, i) => r.success === true ? i : -1).filter(i => i >= 0).pop() ?? -1;
       const hasUnresolvedFail = priorResults.some((r, i) => r.success === false && !r.timedOut && i > lastSuccessIdx);
       if (hasUnresolvedFail && iteration < MAX_ITERATIONS - 1) {
-        log('WARN', `Blocking premature synthesize — unresolved hard failures in prior_results (iteration ${iteration})`);
+        log('WARN', `Blocking premature synthesize â€” unresolved hard failures in prior_results (iteration ${iteration})`);
         priorResults.push({
           agent: 'system',
           result: `[SYSTEM] Synthesize blocked: there are unresolved failures in prior_results. You MUST either: (1) dispatch to investigate/fix the failure, or (2) use "synthesize_with_failure" action with explicit failure details. Plain "synthesize" is not allowed when tasks have failed.`,
@@ -3015,7 +1945,7 @@ async function processEnvelope(envelope, memoryContext) {
         continue;
       }
 
-      // Wrap synthesis in C→T under the mission
+      // Wrap synthesis in Câ†’T under the mission
       await createCT(envelope, {
         checkpointTitle: 'Formulate response',
         taskTitle: 'Synthesize answer',
@@ -3039,7 +1969,7 @@ async function processEnvelope(envelope, memoryContext) {
         // Append artifact links to the output for mouth delivery
         if (artifactLinks && artifactLinks.length > 0) {
           const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
-          envelope.output = (envelope.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+          envelope.output = (envelope.output || '') + `\n\nðŸ“Ž **Artifacts published to Drive:**\n${linkText}`;
           await firestoreWrite('work', envelope.id, envelope);
         }
       }
@@ -3062,7 +1992,7 @@ async function processEnvelope(envelope, memoryContext) {
         });
       }
 
-      // Phase 3C: Context promotion — suggest new context entries for the parent project
+      // Phase 3C: Context promotion â€” suggest new context entries for the parent project
       if (envelope.project_id && envelope.type === 'M' && envelope.context) {
         await suggestContextPromotions(envelope);
       }
@@ -3073,13 +2003,13 @@ async function processEnvelope(envelope, memoryContext) {
     if (action === 'synthesize_with_failure') {
       // Self-unblock attempt: before accepting failure, check if Cortex can find an alternative
       if (!envelope._unblock_attempted && iteration < MAX_ITERATIONS - 2) {
-        log('INFO', `Self-unblock attempt for ${envelope.id} — asking Cortex for alternative approach`);
+        log('INFO', `Self-unblock attempt for ${envelope.id} â€” asking Cortex for alternative approach`);
         envelope._unblock_attempted = true;
         await firestoreWrite('work', envelope.id, envelope);
 
         priorResults.push({
           agent: 'system',
-          result: `[SELF-UNBLOCK CHECK] Before accepting this failure, try to find an alternative approach. Can you resolve this yourself using a different method? If YES: use \"checkpoint_plan\" to try the alternative. If NO — this is a genuine external dependency you cannot work around — use \"blocked\" action with a concrete blocker description. Do NOT use synthesize_with_failure; use \"blocked\" instead.`,
+          result: `[SELF-UNBLOCK CHECK] Before accepting this failure, try to find an alternative approach. Can you resolve this yourself using a different method? If YES: use \"checkpoint_plan\" to try the alternative. If NO â€” this is a genuine external dependency you cannot work around â€” use \"blocked\" action with a concrete blocker description. Do NOT use synthesize_with_failure; use \"blocked\" instead.`,
         });
         continue;
       }
@@ -3088,7 +2018,7 @@ async function processEnvelope(envelope, memoryContext) {
       // Cortex sometimes uses synthesize_with_failure out of habit even when the self-unblock resolved the issue
       const lastSuccessAfterUnblock = priorResults.some((r, i) => r.success === true && i > priorResults.findIndex(x => x.agent === 'system' && x.result?.includes('[SELF-UNBLOCK CHECK]')));
       if (lastSuccessAfterUnblock) {
-        log('INFO', `Self-unblock succeeded for ${envelope.id} — treating synthesize_with_failure as complete (successful dispatch found after unblock)`);
+        log('INFO', `Self-unblock succeeded for ${envelope.id} â€” treating synthesize_with_failure as complete (successful dispatch found after unblock)`);
         envelope.output = decision.synthesis || decision.response;
         envelope.status = 'complete';
         envelope.completed_at = now();
@@ -3100,13 +2030,13 @@ async function processEnvelope(envelope, memoryContext) {
           const artifactLinks = await publishArtifacts(envelope);
           if (artifactLinks && artifactLinks.length > 0) {
             const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
-            envelope.output = (envelope.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+            envelope.output = (envelope.output || '') + `\n\nðŸ“Ž **Artifacts published to Drive:**\n${linkText}`;
           }
         }
 
         await firestoreWrite('work', envelope.id, envelope);
         await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Completed (self-unblock resolved the failure)');
-        log('INFO', `Envelope ${envelope.id} complete (synthesize_with_failure → self-unblock succeeded)`);
+        log('INFO', `Envelope ${envelope.id} complete (synthesize_with_failure â†’ self-unblock succeeded)`);
         await writeMemory(envelope);
         await cleanupSharedWorkspace(envelope.id);
 
@@ -3125,7 +2055,7 @@ async function processEnvelope(envelope, memoryContext) {
       }
 
       if (envelope.type === 'M') {
-        // Missions get blocked status — they stay alive for resumption
+        // Missions get blocked status â€” they stay alive for resumption
         envelope.output = decision.synthesis || decision.response;
         envelope.status = 'blocked';
         envelope.blocker = decision.failure_summary || decision.synthesis || 'Unknown blocker';
@@ -3136,7 +2066,7 @@ async function processEnvelope(envelope, memoryContext) {
         await firestoreWrite('work', envelope.id, envelope);
         await writeHistory(envelope.id, 'active', 'blocked', 'brain',
           `Blocked (self-unblock exhausted): ${(decision.failure_summary || '').substring(0, 200)}`);
-        log('INFO', `Envelope ${envelope.id} BLOCKED (synthesize_with_failure → blocked: ${(decision.failure_summary || '').substring(0, 80)})`);
+        log('INFO', `Envelope ${envelope.id} BLOCKED (synthesize_with_failure â†’ blocked: ${(decision.failure_summary || '').substring(0, 80)})`);
         await writeMemory(envelope);
         // Fire event-triggered responsibilities on failure
         await fireEventResponsibilities('on_failure', {
@@ -3157,7 +2087,7 @@ async function processEnvelope(envelope, memoryContext) {
       const taskArtifactLinks = await publishArtifacts(envelope);
       if (taskArtifactLinks && taskArtifactLinks.length > 0) {
         const linkText = taskArtifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
-        envelope.output = (envelope.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+        envelope.output = (envelope.output || '') + `\n\nðŸ“Ž **Artifacts published to Drive:**\n${linkText}`;
       }
 
       await firestoreWrite('work', envelope.id, envelope);
@@ -3171,7 +2101,7 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'blocked') {
-      // Direct blocked action from Cortex — genuine external dependency confirmed
+      // Direct blocked action from Cortex â€” genuine external dependency confirmed
       envelope.output = decision.escalation_message || decision.blocker_description || decision.blocker || decision.synthesis || decision.response || 'Blocked on external dependency.';
       envelope.status = 'blocked';
       envelope.blocker = decision.blocker || 'Unknown blocker';
@@ -3188,7 +2118,7 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'needs_input') {
-      // Phase 3: Block envelope and ask the human for clarification (ambiguous — needs info)
+      // Phase 3: Block envelope and ask the human for clarification (ambiguous â€” needs info)
       envelope.output = decision.question || decision.message || 'I need more information to proceed.';
       envelope.status = 'needs_input';
       envelope.updated_at = now();
@@ -3200,7 +2130,7 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'follow_process') {
-      // Deterministic process execution — redirect to dedicated executor
+      // Deterministic process execution â€” redirect to dedicated executor
       const processId = decision.processId || decision.process_id;
 
       if (!processId) {
@@ -3211,7 +2141,7 @@ async function processEnvelope(envelope, memoryContext) {
 
       // Guard: prevent re-executing a process that already ran in this envelope
       if (envelope.process_id) {
-        log('WARN', `follow_process: process '${envelope.process_id}' already executed on this envelope — forcing synthesize`);
+        log('WARN', `follow_process: process '${envelope.process_id}' already executed on this envelope â€” forcing synthesize`);
         priorResults.push({
           agent: 'system',
           result: `[SYSTEM] Process '${envelope.process_id}' has already been executed on this envelope. You MUST now synthesize the results. Use action "synthesize" with a summary of what was accomplished.`,
@@ -3226,11 +2156,11 @@ async function processEnvelope(envelope, memoryContext) {
         continue;
       }
 
-      // Hand off to deterministic executor — exits the Cortex decide loop
+      // Hand off to deterministic executor â€” exits the Cortex decide loop
       log('INFO', `follow_process: handing off '${processId}' to executeProcess`);
       const processResult = await executeProcess(null, decision, memoryContext || {}, processId, envelope);
       if (processResult === 'fallback_to_decide') {
-        log('WARN', `follow_process: process '${processId}' fell back to decide — continuing loop`);
+        log('WARN', `follow_process: process '${processId}' fell back to decide â€” continuing loop`);
         priorResults.push({
           agent: 'system',
           result: `[SYSTEM] follow_process '${processId}' failed: missing required parameters. Use checkpoint_plan instead and include the work steps directly, or re-issue follow_process with all required parameters filled in the "parameters" field.`,
@@ -3241,7 +2171,7 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'checkpoint_plan') {
-      // Phase 5: Checkpoint nesting — M → C → T hierarchy
+      // Phase 5: Checkpoint nesting â€” M â†’ C â†’ T hierarchy
       const checkpoints = decision.checkpoints;
       if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
         log('ERROR', `Checkpoint plan has no checkpoints`);
@@ -3341,11 +2271,11 @@ async function processEnvelope(envelope, memoryContext) {
             } catch { /* assume available on error */ }
 
             if (!agentAvailable) {
-              log('INFO', `CP${cpNum} Task ${taskNum}: Optional step skipped — agent '${taskAgent}' unavailable`);
+              log('INFO', `CP${cpNum} Task ${taskNum}: Optional step skipped â€” agent '${taskAgent}' unavailable`);
               cpResults.push({
                 step: `${cpNum}.${taskNum}`,
                 agent: taskAgent,
-                result: '[SKIPPED] Optional step — agent unavailable',
+                result: '[SKIPPED] Optional step â€” agent unavailable',
                 success: true,
                 durationMs: 0,
               });
@@ -3355,7 +2285,7 @@ async function processEnvelope(envelope, memoryContext) {
 
           // ---- Approval Gate: pause checkpoint and notify ----
           if (stepType === 'approval_gate') {
-            log('INFO', `CP${cpNum} Task ${taskNum}: Approval gate — pausing checkpoint`);
+            log('INFO', `CP${cpNum} Task ${taskNum}: Approval gate â€” pausing checkpoint`);
 
             // Write approval request to Firestore
             const approvalId = generateId('apr');
@@ -3400,14 +2330,14 @@ async function processEnvelope(envelope, memoryContext) {
               step: r.step, agent: r.agent, success: r.success,
               result: (r.result || '').substring(0, 1500),
             }));
-            const fallbackNotif = `⏸ **Approval needed**\n\n**${taskDesc.substring(0, 200)}**\n\n${taskCriteria ? `Criteria: ${taskCriteria}\n\n` : ''}Reply \`approve\` or \`reject\` here, or use the dashboard.`;
+            const fallbackNotif = `â¸ **Approval needed**\n\n**${taskDesc.substring(0, 200)}**\n\n${taskCriteria ? `Criteria: ${taskCriteria}\n\n` : ''}Reply \`approve\` or \`reject\` here, or use the dashboard.`;
             const cleanNotif = await summarizeForDelivery('approval_request', fallbackNotif, {
               steps: rawStepData,
               title: taskDesc.substring(0, 200),
               processName: decision.process_name || '',
               customMessage: taskCriteria || '',
             });
-            const notifOutput = `⏸ **Approval needed**\n\n${cleanNotif}\n\nReply \`approve\` or \`reject\` here, or use the dashboard.`;
+            const notifOutput = `â¸ **Approval needed**\n\n${cleanNotif}\n\nReply \`approve\` or \`reject\` here, or use the dashboard.`;
 
             const notifId = generateId('w');
             await firestoreWrite('work', notifId, {
@@ -3450,9 +2380,9 @@ async function processEnvelope(envelope, memoryContext) {
             envelope.updated_at = now();
             await firestoreWrite('work', envelope.id, envelope);
 
-            log('INFO', `Checkpoint paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);
+            log('INFO', `Checkpoint paused at CP${cpNum} task ${taskNum} â€” awaiting approval ${approvalId}`);
 
-            // Exit the entire checkpoint plan — will be resumed by approval handler
+            // Exit the entire checkpoint plan â€” will be resumed by approval handler
             return;
           }
 
@@ -3533,7 +2463,7 @@ async function processEnvelope(envelope, memoryContext) {
           cpEnvelope.updated_at = now();
           await firestoreWrite('work', cpId, cpEnvelope);
 
-          log('INFO', `CP${cpNum} Task ${taskNum}/${cpTasks.length}: ${taskAgent} — ${taskDesc.substring(0, 60)}`);
+          log('INFO', `CP${cpNum} Task ${taskNum}/${cpTasks.length}: ${taskAgent} â€” ${taskDesc.substring(0, 60)}`);
 
           // Prepend project context for checkpoint tasks (all agent types)
           if (envelope.project_id) {
@@ -3676,8 +2606,8 @@ async function processEnvelope(envelope, memoryContext) {
       return;
     }
 
-    // Unknown action — nudge Cortex to use a valid action
-    log('WARN', `Unknown action '${action}' — nudging Cortex`);
+    // Unknown action â€” nudge Cortex to use a valid action
+    log('WARN', `Unknown action '${action}' â€” nudging Cortex`);
     priorResults.push({
       agent: 'system',
       result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update.`,
@@ -3752,7 +2682,7 @@ function buildEnvelopeContext(envelope, priorResults, memoryResults) {
         ...blocks.slice(blocks.length - keepLast),
       ];
       accumulated = pruned.join('\n\n');
-      log('INFO', `Envelope context pruned: ${blocks.length} blocks → ${pruned.length} blocks (${accumulated.length} chars)`);
+      log('INFO', `Envelope context pruned: ${blocks.length} blocks â†’ ${pruned.length} blocks (${accumulated.length} chars)`);
     }
   }
 
@@ -3824,9 +2754,9 @@ async function ensureProjectDriveFolder(projectId) {
     return 'root';
   }
 
-  // No artifacts root configured — can't provision
+  // No artifacts root configured â€” can't provision
   if (!ARTIFACTS_ROOT_FOLDER_ID) {
-    log('DEBUG', `No artifacts_root_folder_id configured — skipping Drive folder for ${projectId}`);
+    log('DEBUG', `No artifacts_root_folder_id configured â€” skipping Drive folder for ${projectId}`);
     return null;
   }
 
@@ -3880,7 +2810,7 @@ async function ensureProjectDriveFolder(projectId) {
       });
     }
 
-    log('INFO', `Project Drive folder provisioned: ${projName} → ${folderId}`);
+    log('INFO', `Project Drive folder provisioned: ${projName} â†’ ${folderId}`);
 
     // Pre-share with fleet agents (best-effort)
     try {
@@ -3946,7 +2876,7 @@ async function publishArtifacts(envelope) {
   // Get project Drive folder
   const projectFolderId = await ensureProjectDriveFolder(envelope.project_id);
   if (!projectFolderId) {
-    log('DEBUG', `No Drive folder for project ${envelope.project_id} — skipping artifact publish`);
+    log('DEBUG', `No Drive folder for project ${envelope.project_id} â€” skipping artifact publish`);
     return [];
   }
 
@@ -4004,7 +2934,7 @@ async function publishArtifacts(envelope) {
 
         if (fileId) {
           artifacts.push({ name: file, driveId: fileId, url: webViewLink, size: fileSize });
-          log('INFO', `Artifact published: ${file} → ${fileId}`);
+          log('INFO', `Artifact published: ${file} â†’ ${fileId}`);
         }
       } catch (e) {
         log('WARN', `Failed to upload artifact ${file}: ${e.message}`);
@@ -4135,7 +3065,7 @@ async function pollIntake() {
         const MAX_RETRIES = 3;
         try {
           if (retryCount >= MAX_RETRIES) {
-            // Exhaust retries — fail the intake permanently
+            // Exhaust retries â€” fail the intake permanently
             await firestoreWrite('intake', intake.id, {
               ...intake,
               status: 'failed',
@@ -4208,7 +3138,7 @@ async function checkWaitingEnvelopes() {
 
       if (!allChildrenDone || childResults.length === 0) continue;
 
-      // All delegated children are done — resume the waiting envelope
+      // All delegated children are done â€” resume the waiting envelope
       log('INFO', `Resuming waiting envelope ${waiting.id}: ${childResults.length} delegation(s) complete`);
 
       // Inject delegation results as context_forward
@@ -4270,7 +3200,7 @@ async function main() {
   // Startup recovery: re-process orphaned active/pending M envelopes
   // When brain restarts mid-processing, envelopes get stuck with no processor
   // IMPORTANT: Only recover missions with NO children (truly orphaned).
-  // Missions with children were already being worked on — reprocessing them
+  // Missions with children were already being worked on â€” reprocessing them
   // from scratch creates duplicate work. Archive stale ones instead.
   try {
     const agentId = AGENT_ID;
@@ -4307,7 +3237,7 @@ async function main() {
           const hasChildren = Array.isArray(env.children) && env.children.length > 0;
 
           if (hasChildren) {
-            // Mission was already being worked on before restart — do NOT reprocess from scratch.
+            // Mission was already being worked on before restart â€” do NOT reprocess from scratch.
             // Check if the children are all done (archive the mission) or still active (let them complete).
             const childStatuses = env.children.map(cid => {
               const child = allDocs.find(d => d.id === cid);
@@ -4316,16 +3246,16 @@ async function main() {
             const allChildrenDone = childStatuses.every(s => s === 'complete' || s === 'archived' || s === 'failed');
 
             if (allChildrenDone) {
-              // All children finished — archive the mission as complete
+              // All children finished â€” archive the mission as complete
               log('INFO', `Recovery: archiving completed mission ${env.id} (${env.children.length} children all done)`);
               await firestoreWrite('work', env.id, {
                 status: 'archived', archived_reason: 'child_complete',
                 delivery_status: 'delivered', updated_at: now(),
               });
-              await writeHistory(env.id, env.status, 'archived', 'brain', 'Archived after restart — all children complete');
+              await writeHistory(env.id, env.status, 'archived', 'brain', 'Archived after restart â€” all children complete');
             } else {
-              // Children still in progress — leave as-is, don't reprocess
-              log('INFO', `Recovery: skipping mission ${env.id} — has ${env.children.length} existing children (${childStatuses.join(', ')})`);
+              // Children still in progress â€” leave as-is, don't reprocess
+              log('INFO', `Recovery: skipping mission ${env.id} â€” has ${env.children.length} existing children (${childStatuses.join(', ')})`);
             }
           } else {
             // Truly orphaned: no children, was created but processing never started
@@ -4435,8 +3365,8 @@ function cronNextFire(expression) {
 }
 
 // ---- Phase 7A: Responsibility scheduler ----
-const _respLastFired = {}; // id → timestamp
-let _respNextFire = {};    // id → Date
+const _respLastFired = {}; // id â†’ timestamp
+let _respNextFire = {};    // id â†’ Date
 
 // ---- Phase 3A: Approval gate resume handler ----
 let approvalCheckCount = 0;
@@ -4482,7 +3412,7 @@ async function checkApprovedApprovals() {
 
         if (!envelopeId || processed) continue;
 
-        log('INFO', `Approval ${approvalId} ${targetStatus} — resuming envelope ${envelopeId}`);
+        log('INFO', `Approval ${approvalId} ${targetStatus} â€” resuming envelope ${envelopeId}`);
 
         // Mark approval as processed to avoid re-processing
         const approvalDocPath = row.document.name.split('/documents/')[1];
@@ -4524,7 +3454,7 @@ async function checkApprovedApprovals() {
           continue;
         }
 
-        // Approved — resume execution
+        // Approved â€” resume execution
         if (envDoc.process_id) {
           // Process work: use deterministic resumption (no Cortex loop)
           log('INFO', `Approved: resuming process plan for ${envelopeId}`);
@@ -4620,7 +3550,7 @@ async function fireResponsibility(resp) {
     if (process) {
       log('INFO', `Responsibility ${resp.id}: executing linked process '${process.name}' v${process.version || 1}`);
 
-      // Build parameters: merge process defaults → responsibility overrides
+      // Build parameters: merge process defaults â†’ responsibility overrides
       const parameters = {};
       for (const [key, def] of Object.entries(process.parameters || {})) {
         if (def && typeof def === 'object' && def.default !== undefined) {
@@ -4635,7 +3565,7 @@ async function fireResponsibility(resp) {
         .map(([key]) => key);
       const missingParams = requiredParams.filter(k => !(k in parameters));
       if (missingParams.length > 0) {
-        log('WARN', `Responsibility ${resp.id}: process '${process.name}' missing required params: ${missingParams.join(', ')} — falling through to normal mission`);
+        log('WARN', `Responsibility ${resp.id}: process '${process.name}' missing required params: ${missingParams.join(', ')} â€” falling through to normal mission`);
         // Fall through to normal responsibility firing below
       } else {
         // Convert process to checkpoint plan
@@ -4654,7 +3584,7 @@ async function fireResponsibility(resp) {
             instruction: resp.instruction,
             accept_criteria: resp.context?.success_criteria || null,
             context_summary: `Process: ${process.name} v${process.version || 1}`,
-            output: `Responsibility ${resp.id} fired at ${now()} → process ${process.id}`,
+            output: `Responsibility ${resp.id} fired at ${now()} â†’ process ${process.id}`,
             children: [],
             context_forward: null,
             error: null,
@@ -4744,7 +3674,7 @@ async function fireResponsibility(resp) {
           await firestoreWrite('work', missionId, missionEnvelope);
           await processEnvelope(missionEnvelope, memory);
 
-          log('INFO', `Responsibility ${resp.id} → process ${process.id} execution started`);
+          log('INFO', `Responsibility ${resp.id} â†’ process ${process.id} execution started`);
           return;
         }
       }
@@ -4803,7 +3733,7 @@ async function fireResponsibility(resp) {
   await firestoreWrite('work', respEnvId, respEnvelope);
   await writeHistory(respEnvId, null, 'complete', 'scheduler', `Responsibility ${resp.id} fired`);
 
-  // Create type=M Mission child — this enters the normal Cortex loop
+  // Create type=M Mission child â€” this enters the normal Cortex loop
   const missionId = generateId('w');
   const missionEnvelope = {
     id: missionId,
@@ -4841,7 +3771,7 @@ async function fireResponsibility(resp) {
 
   await firestoreWrite('work', missionId, missionEnvelope);
   await writeHistory(missionId, null, 'pending', 'scheduler', `Mission from responsibility ${resp.id}`);
-  log('INFO', `Created R:${respEnvId} → M:${missionId} for responsibility ${resp.id}`);
+  log('INFO', `Created R:${respEnvId} â†’ M:${missionId} for responsibility ${resp.id}`);
 
   // Recall memory with rich context, then process
   const memory = await recallMemory(resp.instruction, {
@@ -4885,7 +3815,7 @@ async function fireEventResponsibilities(eventType, eventContext = {}) {
   });
 
   if (matching.length === 0) return;
-  log('INFO', `Event '${eventType}' triggered — ${matching.length} matching responsibilities`);
+  log('INFO', `Event '${eventType}' triggered â€” ${matching.length} matching responsibilities`);
 
   for (const resp of matching) {
     try {
