@@ -175,6 +175,8 @@ const CORTEX_SCHEMAS = {
       intent:         { type: 'STRING' },
       reasoning:      { type: 'STRING' },
       attach_to:      { type: 'STRING' },
+      continue_mission: { type: 'STRING' },
+      continue_envelope: { type: 'STRING' },
       accept_criteria:{ type: 'STRING' },
       context_summary:{ type: 'STRING' },
       project_id:     { type: 'STRING' },
