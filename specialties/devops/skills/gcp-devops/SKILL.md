@@ -54,6 +54,42 @@ gcloud builds triggers create github \
   --project=PROJECT
 ```
 
+## Firebase CLI
+
+The `firebase` CLI is installed on devops VMs. Use it for Firebase Hosting, Firestore, and Functions operations.
+
+### Discovery
+| What | Command |
+|------|---------|
+| Hosting sites | `firebase hosting:sites:list --project=PROJECT` |
+| Hosting channels | `firebase hosting:channel:list --project=PROJECT` |
+| Active deploys | `firebase hosting:releases:list --project=PROJECT --limit=5` |
+| Firestore indexes | `firebase firestore:indexes --project=PROJECT` |
+| Functions list | `firebase functions:list --project=PROJECT` |
+
+### Hosting Operations
+```bash
+# Deploy hosting from a directory
+firebase deploy --only hosting --project=PROJECT
+
+# Deploy to a preview channel
+firebase hosting:channel:deploy CHANNEL_NAME --project=PROJECT
+
+# Roll back to a previous release
+firebase hosting:clone SOURCE_SITE:SOURCE_CHANNEL TARGET_SITE:live --project=PROJECT
+```
+
+### Firestore Operations
+```bash
+# Export Firestore data
+firebase firestore:export gs://BUCKET --project=PROJECT
+
+# Delete a collection (use with extreme caution)
+firebase firestore:delete --all-collections --project=PROJECT
+```
+
+> **Note:** For `gcloud` Firebase operations, use `gcloud firebase` (not `gcloud firebase hosting` — that subcommand doesn't exist). Most Firebase Hosting operations require the `firebase` CLI, not `gcloud`.
+
 ## Safety Rules
 - Always verify before modifying — list resources before deleting/updating
 - Include rollback steps for any destructive operation
