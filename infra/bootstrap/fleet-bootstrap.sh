@@ -69,6 +69,17 @@ if ! command -v node >/dev/null 2>&1; then
   apt-get install -y -qq nodejs
 fi
 
+# ---- 2b) Install Firebase CLI (devops specialty only) ----
+if [[ "${SPECIALTY}" == "devops" ]]; then
+  info "Installing Firebase CLI (devops specialty)..."
+  if ! command -v firebase >/dev/null 2>&1; then
+    npm install -g firebase-tools 2>&1 | tail -3
+    ok "Firebase CLI installed: $(firebase --version 2>/dev/null || echo 'unknown')"
+  else
+    info "Firebase CLI already installed: $(firebase --version)"
+  fi
+fi
+
 # ---- 3) Install CoreKit via manifest ----
 info "Installing CoreKit..."
 mkdir -p "${CORE_DIR}"
