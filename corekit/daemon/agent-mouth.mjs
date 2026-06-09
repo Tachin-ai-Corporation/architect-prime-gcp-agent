@@ -511,17 +511,40 @@ async function classifyAndDeliver(rawText, overrideQuestion) {
     }
 
     const action = parsed.action || 'deliver';
-    const text = parsed.text || rawText;
+
+    // Determine voicing status — distinguish empty LLM response from identical text
+    let finalText, voiceStatus;
+    const llmText = parsed.text || null;
+
+    if (!llmText) {
+      // LLM returned empty/null text — retry with a direct voicing call
+      log('Voicing returned empty text — retrying with direct prompt');
+      try {
+        const retryPrompt = `You are ${AGENT_VOICE_NAME}. Rephrase the following for Google Chat. Keep ALL factual content, links, and data intact. Just make it sound like you (${AGENT_VOICE_NAME}) are talking naturally to a colleague. Return ONLY the rephrased text, no JSON.`;
+        const retryResult = await callLLM(retryPrompt, rawText, false);
+        finalText = (retryResult && retryResult.length > 10) ? retryResult : rawText;
+        voiceStatus = (retryResult && retryResult.length > 10) ? 'retry' : 'passthrough_empty';
+      } catch {
+        finalText = rawText;
+        voiceStatus = 'passthrough_empty';
+      }
+    } else if (llmText === rawText) {
+      finalText = llmText;
+      voiceStatus = 'passthrough_identical';
+    } else {
+      finalText = llmText;
+      voiceStatus = 'yes';
+    }
 
     // Deterministic overrides
     const hasEscalate = /\[ESCALATE\]/i.test(rawText);
     if (hasEscalate && action !== 'escalate') parsed.action = 'escalate';
 
     if (action === 'deliver' || action === 'escalate') {
-      await deliver(text);
-      log('Delivered', { channel: CHANNEL, chars: text.length, action,
-        voiced: text !== rawText ? 'yes' : 'passthrough' });
-      await writeTaskLog(task, 'delivered', text.length, action);
+      await deliver(finalText);
+      log('Delivered', { channel: CHANNEL, chars: finalText.length, action,
+        voiced: voiceStatus });
+      await writeTaskLog(task, 'delivered', finalText.length, action);
     } else {
       log('Suppressed (internal)', { chars: rawText.length });
       await writeTaskLog(task, 'suppressed', 0, 'internal');

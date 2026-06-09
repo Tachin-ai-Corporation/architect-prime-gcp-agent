@@ -36,3 +36,10 @@ Workspace email by human users.
 ## Auth
 All tools authenticate via DWD (Domain-Wide Delegation) using the agent's
 Workspace email. No API keys or OAuth tokens needed.
+
+## Shared Workspace Auto-Publishing
+Files written to `shared/{missionId}/` during mission execution are
+automatically published to Drive by brain on mission completion. Motor
+does NOT need to manually `drive-upload` these files. Use `drive-upload`
+only for files outside the shared workspace or when uploading to a
+specific Drive location requested by the user.

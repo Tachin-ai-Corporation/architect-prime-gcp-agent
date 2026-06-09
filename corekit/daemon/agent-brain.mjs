@@ -2158,6 +2158,15 @@ async function firestoreWrite(collection, docId, data) {
   if (collection === 'work' && data && data.type === 'M') {
     validateMissionProjectId(data);
   }
+  // Guard against Firestore 1MB document limit — truncate oversized output fields
+  if (collection === 'work' && data?.output && typeof data.output === 'string') {
+    const MAX_OUTPUT = 800_000;
+    if (data.output.length > MAX_OUTPUT) {
+      log('WARN', `firestoreWrite: truncating output from ${data.output.length} to ${MAX_OUTPUT} chars for ${docId}`);
+      data.output = data.output.substring(0, MAX_OUTPUT)
+        + `\n\n[TRUNCATED — full output saved to shared workspace / Drive]`;
+    }
+  }
   const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/${collection}/${docId}`;
   const resp = await fetch(url, {
     method: 'PATCH',
@@ -2714,7 +2723,7 @@ async function callAgent(agentId, envelope) {
   // Resolve shared workspace path — mission-scoped for checkpoint tasks
   const workspaceId = envelope._missionId || envelope.parent_id || envelope.id;
   const workspaceDirective = workspaceId
-    ? `\n\n## Workspace\nWrite ALL work products to \`${CORE_DIR}/shared/${workspaceId}/\` — files here persist across tasks in this mission and are auto-published to Google Drive on completion.\n\nCRITICAL: Write substantial outputs (plans, reports, configs, code) as FILES in the shared workspace, not just text responses.\nYour text response should summarize what you did and reference the filenames you created. Brain will auto-publish them to Drive and share links with the human.\nPrior step outputs are also saved here — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
+    ? `\n\n## Workspace\nWrite ALL work products to \`${CORE_DIR}/shared/${workspaceId}/\`.\nFiles here persist across tasks in this mission and are auto-published on completion.\n\nWrite substantial outputs (plans, reports, configs, code) as FILES in the shared workspace, not just text responses.\nYour text response should summarize what you did and reference the filenames you created.\nPrior step outputs are also saved here — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
     : '';
 
   const userMessage = [
@@ -3307,7 +3316,7 @@ async function processIntake(intake) {
   // Quick ack — generate text now, inject as C→T after M envelope is created
   let pendingAckText = null;
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent
-      && classification === 'new_mission') {
+      && (classification === 'new_mission' || classification === 'continue')) {
     const recentMissions = await scanRecentMissions(5);
     pendingAckText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
     intake.quick_ack_sent = true;
@@ -3762,8 +3771,19 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     // Schema enforcement guarantees action field — no normalization needed
-    const action = decision.action;
+    let action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
+
+    // Prevent self-unblock runaway: after a self-unblock attempt, only allow
+    // resolution actions (synthesize, blocked). If Cortex/enforceSchema returns
+    // checkpoint_plan, it's stalling — force to blocked.
+    if (envelope._unblock_attempted && action === 'checkpoint_plan') {
+      log('WARN', `Post-unblock guard: blocking checkpoint_plan after self-unblock — forcing blocked`);
+      action = 'blocked';
+      decision.action = 'blocked';
+      decision.blocker = decision.failure_summary || 'Could not resolve failure through alternative approach';
+      decision.blocker_type = 'task_failure';
+    }
 
     if (action === 'synthesize') {
       // Check for unresolved failures — block premature success synthesis
@@ -3859,11 +3879,33 @@ async function processEnvelope(envelope, memoryContext) {
         envelope.completed_at = now();
         envelope.updated_at = now();
         if (!envelope.parent_id) envelope.delivery_status = 'pending';
+
+        // Publish artifacts BEFORE cleanup
+        if (envelope.type === 'M') {
+          const artifactLinks = await publishArtifacts(envelope);
+          if (artifactLinks && artifactLinks.length > 0) {
+            const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
+            envelope.output = (envelope.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+          }
+        }
+
         await firestoreWrite('work', envelope.id, envelope);
         await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Completed (self-unblock resolved the failure)');
         log('INFO', `Envelope ${envelope.id} complete (synthesize_with_failure → self-unblock succeeded)`);
         await writeMemory(envelope);
         await cleanupSharedWorkspace(envelope.id);
+
+        // Post-completion lifecycle
+        if (envelope.type === 'M') {
+          await activateDependents(envelope.id);
+          if (envelope.project_id) await checkProjectCompletion(envelope.project_id);
+          await fireEventResponsibilities('on_complete', {
+            mission_id: envelope.id, project_id: envelope.project_id,
+          });
+        }
+        if (envelope.project_id && envelope.type === 'M' && envelope.context) {
+          await suggestContextPromotions(envelope);
+        }
         return;
       }
 
@@ -3895,6 +3937,14 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.completed_at = now();
       envelope.updated_at = now();
       if (!envelope.parent_id) envelope.delivery_status = 'pending';
+
+      // Publish artifacts BEFORE cleanup (even for non-mission envelopes)
+      const taskArtifactLinks = await publishArtifacts(envelope);
+      if (taskArtifactLinks && taskArtifactLinks.length > 0) {
+        const linkText = taskArtifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
+        envelope.output = (envelope.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+      }
+
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'complete', 'brain',
         `Synthesized with acknowledged failure: ${(decision.failure_summary || '').substring(0, 200)}`);
