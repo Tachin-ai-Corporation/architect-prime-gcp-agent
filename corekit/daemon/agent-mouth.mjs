@@ -491,14 +491,19 @@ async function classifyAndDeliver(rawText, overrideQuestion) {
   }
 
   try {
-    const prompt = CLASSIFY_PROMPT_TEMPLATE.replace('{agent_name}', AGENT_VOICE_NAME);
-    const input = question ? `HUMAN SAID: ${question}\n\nBRAIN OUTPUT:\n${rawText}` : `BRAIN OUTPUT:\n${rawText}`;
+    const prompt = CLASSIFY_PROMPT_TEMPLATE.replaceAll('{agent_name}', AGENT_VOICE_NAME);
+
+    // Build rich input with conversation context
+    const parts = [];
+    if (question) parts.push(`CONTEXT (what the human asked or what triggered this):\n${question}`);
+    parts.push(`BRAIN OUTPUT:\n${rawText}`);
+    const input = parts.join('\n\n');
+
     const result = await callLLM(prompt, input, true);
 
     // Parse JSON response — with fallback
     let parsed;
     try {
-      // Try extracting JSON from potential markdown wrapping
       const jsonMatch = result.match(/\{[\s\S]*\}/);
       parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { action: 'deliver', text: rawText };
     } catch {
@@ -514,7 +519,8 @@ async function classifyAndDeliver(rawText, overrideQuestion) {
 
     if (action === 'deliver' || action === 'escalate') {
       await deliver(text);
-      log('Delivered', { channel: CHANNEL, chars: text.length, action });
+      log('Delivered', { channel: CHANNEL, chars: text.length, action,
+        voiced: text !== rawText ? 'yes' : 'passthrough' });
       await writeTaskLog(task, 'delivered', text.length, action);
     } else {
       log('Suppressed (internal)', { chars: rawText.length });
@@ -690,25 +696,27 @@ async function pollBrainV3Envelopes() {
 
       log('Brain v3 envelope ready', { envId, status, type: f.type?.stringValue, chars: output.length });
 
-      // Classify and deliver through the existing pipeline
+      // Classify and deliver through the voicing pipeline
+      // ALL envelope types go through LLM voicing — mouth always speaks in the agent's voice
       try {
-        if (status === 'needs_input' || status === 'blocked') {
-          // For needs_input or blocked, deliver the message directly (escalation/question)
-          await deliver(output);
-          log(`Delivered ${status} message`, { envId });
-        } else if (envIntent === 'notification') {
-          // Notification envelopes are already human-ready — deliver raw, no LLM rewriting
-          await deliver(output, f.source_channel?.stringValue);
-          log('Delivered notification raw', { envId, chars: output.length });
-        } else if (envIntent === 'ack') {
-          // Ack envelopes — deliver raw, they're short acknowledgments
-          await deliver(output, f.source_channel?.stringValue);
-          log('Delivered ack', { envId, chars: output.length });
-        } else {
-          // For complete, run through the full classify pipeline
-          const envQuestion = f.instruction?.stringValue || f.context_summary?.stringValue || '';
-          await classifyAndDeliver(output, envQuestion);
-          log('Delivered envelope output', { envId });
+        const envQuestion = f.instruction?.stringValue || f.context_summary?.stringValue || '';
+        const envStatus = status || '';
+        const envType = envIntent || '';
+
+        // Build context prefix so the voicing LLM understands the envelope's nature
+        let contextHint = '';
+        if (envStatus === 'needs_input') {
+          contextHint = '[This is a question or request for the human — the agent needs input to continue]\n\n';
+        } else if (envStatus === 'blocked') {
+          contextHint = '[The agent is blocked and needs help — escalate clearly]\n\n';
+        } else if (envType === 'notification') {
+          contextHint = '[This is a status notification — keep it brief and informational]\n\n';
+        } else if (envType === 'ack') {
+          contextHint = '[This is a quick acknowledgment — keep it very short]\n\n';
+        }
+
+        await classifyAndDeliver(contextHint + output, envQuestion);
+        log('Delivered envelope output', { envId, status: envStatus, intent: envType });
         }
 
         // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)
