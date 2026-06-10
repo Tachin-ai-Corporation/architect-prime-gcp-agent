@@ -877,21 +877,27 @@ async function callAgent(agentId, envelope) {
       return { success: false, output: content, error: 'Verification FAIL verdict', durationMs };
     }
 
-    // Motor tool failure â€” agent returned successfully but reports the command failed
-    // Only apply to motor-class agents (not memory agents whose stored content may echo error keywords)
+    // Motor tool failure — agent returned successfully but reports an infrastructure/auth error.
+    // IMPORTANT: Only catch REAL execution failures (auth, permissions, infra).
+    // Do NOT catch investigation findings where motor reports that a test/check returned
+    // a negative result — that's motor succeeding at its job, not motor failing.
     const FAILURE_PATTERN_AGENTS = ['motor', 'verifier'];
     if (FAILURE_PATTERN_AGENTS.includes(agentId)) {
       const failurePatterns = [
+        // Auth/permission errors — always a real failure
         /\berror\b.*\b(?:DWD|token|auth|permission|denied|unauthorized)\b/i,
-        /\bfailed\b.*\b(?:execute|command|operation)\b/i,
-        /\b(?:command|tool)\b.*\bfailed\b/i,
+        // Non-zero exit only if in the last 500 chars (motor's own status, not quoting logs)
         /exit(?:ed)?\s+(?:with\s+)?(?:code\s+)?[1-9]/i,
       ];
-      for (const pattern of failurePatterns) {
-        if (pattern.test(content)) {
-          log('WARN', `Agent ${agentId} output contains failure pattern: ${pattern} â€” treating as failure`);
-          return { success: false, output: content, error: 'Agent reported tool failure', durationMs };
-        }
+      // Only test exit code pattern against the tail of output (avoid matching quoted log lines)
+      const tail = content.length > 500 ? content.slice(-500) : content;
+      if (failurePatterns[0].test(content)) {
+        log('WARN', `Agent ${agentId} output contains auth/permission failure — treating as failure`);
+        return { success: false, output: content, error: 'Agent reported auth/permission failure', durationMs };
+      }
+      if (failurePatterns[1].test(tail)) {
+        log('WARN', `Agent ${agentId} output ends with non-zero exit code — treating as failure`);
+        return { success: false, output: content, error: 'Agent reported tool failure (exit code)', durationMs };
       }
     }
 
