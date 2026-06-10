@@ -192,6 +192,32 @@ Use this when the task matches a process in the PROCESS REGISTRY (injected in th
 7. **Try to unblock yourself first.** Before reporting `blocked`, attempt at least one alternative approach. Only use `blocked` when you have confirmed the dependency is genuinely external and you cannot work around it.
 8. **Prefer `follow_process` over ad-hoc dispatch.** When work matches a stored process, ALWAYS use `follow_process` instead of improvising multi-step dispatch chains. Processes encode proven workflows — they are better than ad-hoc.
 
+## Workspace Culture
+
+All work happens in a **two-tier workspace** model:
+
+### Shared Workspace (Google Drive Project Folder)
+- The project's Google Drive folder is the **persistent shared workspace** — the source of truth.
+- Source code, configs, documentation, and all project files live here.
+- Changes pushed here persist across missions, agent restarts, and VM replacements.
+- All agents working on the same project can access the shared workspace.
+- **Default**: Unless another source control system (git, etc.) is configured for a project, Drive IS the persistent workspace.
+
+### Local Workspace (VM Disk)
+- `{coreDir}/shared/{missionId}/` is the **ephemeral** local working directory.
+- Used for temporary work within a single mission — downloaded files, edits in progress, staging.
+- **Cleaned up** when the mission ends. Do NOT rely on local workspace for persistence.
+
+### How Agents Work With Workspaces
+1. **Start of mission**: Check the Shared Workspace (Drive) for existing project files using `drive-ls`.
+2. **Pull what you need**: Download files to the local workspace with `drive-download`.
+3. **Work locally**: Edit, build, test using local copies.
+4. **Push changes back**: Upload modified files to Drive with `drive-upload`.
+5. **Organize**: Keep the shared workspace clean — use subfolders (src/, docs/, configs/).
+
+### Access Issues
+If you lack access to a project's shared workspace (permission denied on Drive), this is a legitimate **blocker**. Use `blocked` action with `blocker_type: "access"` and request the specific access needed (write access to the Drive folder). Do NOT work around it by keeping files only on local disk — the shared workspace is required for project continuity.
+
 ## Process Pattern Matching
 
 When classifying or deciding, match incoming work against these patterns. If a process is available in the PROCESS REGISTRY, use it.

@@ -420,9 +420,42 @@ export function createProjectRegistry(config) {
 
     let result = header.join('\n') + rendered;
 
-    // Inject artifact context for cross-mission access
+    // Inject shared workspace (Drive folder) context
+    const driveFolder = mergedCtx?.drive_folder;
     const artifactCtx = mergedCtx?.artifacts;
-    if (artifactCtx && artifactCtx.files && artifactCtx.files.length > 0) {
+    
+    if (driveFolder?.ref) {
+      const folderId = driveFolder.ref;
+      const folderUrl = driveFolder.url || `https://drive.google.com/drive/folders/${folderId}`;
+      const lines = ['\n\n## Shared Workspace (Google Drive)'];
+      lines.push(`📁 **Shared Workspace**: ${folderUrl}`);
+      lines.push(`📂 **Folder ID**: \`${folderId}\``);
+      lines.push('');
+      lines.push('This Drive folder is the **persistent shared workspace** for this project.');
+      lines.push('Source code, configs, docs, and all project files live here.');
+      lines.push('Changes you make here persist across missions and are visible to all agents on this project.');
+      lines.push('');
+      lines.push('**Working with the shared workspace:**');
+      lines.push(`- List contents: \`drive-ls ${folderId}\``);
+      lines.push(`- Download a file: \`drive-download <fileId> ${coreDir}/shared/{missionId}/<filename>\``);
+      lines.push(`- Upload/update a file: \`drive-upload "${coreDir}/shared/{missionId}/<filename>" ${folderId}\``);
+      lines.push(`- Create subfolders: \`drive-mkdir "<name>" --parent ${folderId}\``);
+      lines.push('');
+      lines.push('**Workflow**: Pull files you need → edit locally → push changes back to Drive.');
+      lines.push('Organize the workspace with clear subfolders (e.g. src/, docs/, configs/).');
+      
+      // List existing artifacts if any
+      if (artifactCtx?.files?.length > 0) {
+        lines.push('');
+        lines.push('**Existing files from prior work:**');
+        for (const f of artifactCtx.files) {
+          lines.push(`- ${f.name} — ${f.url || `driveId: ${f.driveId}`}`);
+        }
+      }
+      
+      result += lines.join('\n');
+    } else if (artifactCtx?.files?.length > 0) {
+      // No drive_folder but has artifact files — legacy artifact-only mode
       const lines = ['\n\n## Project Artifacts (Google Drive)'];
       if (artifactCtx.drive_url) lines.push(`📁 Project folder: ${artifactCtx.drive_url}`);
       lines.push('');
@@ -432,11 +465,7 @@ export function createProjectRegistry(config) {
       }
       lines.push('');
       lines.push(`To use a prior artifact: \`drive-download <driveId> ${coreDir}/shared/{missionId}/<filename>\``);
-      lines.push(`To create new artifacts: write files to ${coreDir}/shared/ — they auto-publish to Drive on completion.`);
       result += lines.join('\n');
-    } else if (mergedCtx?.drive_folder?.ref) {
-      result += `\n\n📁 Project Drive folder: https://drive.google.com/drive/folders/${mergedCtx.drive_folder.ref}`;
-      result += `\nTo create artifacts: write files to ${coreDir}/shared/ — they auto-publish to Drive on completion.`;
     }
 
     return result;
