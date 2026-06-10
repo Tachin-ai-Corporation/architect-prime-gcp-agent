@@ -301,6 +301,11 @@ async function activateDependents(completedMissionId) {
   await _projects.activateDependents(completedMissionId);
 }
 
+async function suggestContextPromotions(envelope) {
+  if (!_projects) return;
+  await _projects.suggestContextPromotions(envelope);
+}
+
 // ---- Process engine (via corekit/lib/process-engine.mjs, Phase 1B extraction) ----
 // NOTE: _engine is initialized lazily because it depends on brain functions
 // (callAgent, writeHistory, etc.) that are defined later in this file.
