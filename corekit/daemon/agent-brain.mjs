@@ -2220,9 +2220,9 @@ async function processEnvelope(envelope, memoryContext) {
             }
           }
 
-          // Dispatch to agent
+          // Dispatch to agent — use taskEnvelope.instruction which includes project context
           let result = await callAgent(taskAgent, {
-            instruction: taskDesc,
+            instruction: taskEnvelope.instruction,
             accept_criteria: taskCriteria,
             _missionId: envelope.id,  // mission-scoped shared workspace
             context_summary: [...allResults, ...cpResults].length > 0
@@ -2237,7 +2237,7 @@ async function processEnvelope(envelope, memoryContext) {
           if (!result.success) {
             log('WARN', `CP${cpNum} Task ${taskNum} failed (${taskAgent}): ${result.error}. Retrying...`);
             result = await callAgent(taskAgent, {
-              instruction: `${taskDesc}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
+              instruction: `${taskEnvelope.instruction}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
               accept_criteria: taskCriteria,
               _missionId: envelope.id,
             });
