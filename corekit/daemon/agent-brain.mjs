@@ -1733,8 +1733,22 @@ async function processEnvelope(envelope, memoryContext) {
     }
 
     if (action === 'synthesize_with_failure') {
+      // Check if the most recent work actually failed — if the last N dispatch results
+      // (from the most recent checkpoint plan) are all successful, Cortex is using
+      // synthesize_with_failure due to stale old failures in context. Upgrade to synthesize.
+      const recentDispatches = priorResults.filter(r => r.agent !== 'system' && r.agent !== 'human');
+      const lastPlanStart = priorResults.findLastIndex(r => r.agent === 'system' && r.result?.includes('[SYSTEM] Checkpoint'));
+      const recentWork = lastPlanStart >= 0 ? recentDispatches.filter((_, i) => i >= lastPlanStart) : recentDispatches;
+      const recentAllSucceeded = recentWork.length > 0 && recentWork.every(r => r.success !== false);
+      
+      if (recentAllSucceeded) {
+        log('INFO', `synthesize_with_failure upgrade: recent checkpoint plan fully succeeded — treating as synthesize`);
+        action = 'synthesize';
+        decision.action = 'synthesize';
+        // Fall through to synthesize handler below
+      }
       // Self-unblock attempt: before accepting failure, check if Cortex can find an alternative
-      if (!envelope._unblock_attempted && iteration < MAX_ITERATIONS - 2) {
+      else if (!envelope._unblock_attempted && iteration < MAX_ITERATIONS - 2) {
         log('INFO', `Self-unblock attempt for ${envelope.id} â€” asking Cortex for alternative approach`);
         envelope._unblock_attempted = true;
         envelope._failure_synthesis = decision.synthesis || decision.failure_summary || null;
