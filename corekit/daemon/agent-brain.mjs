@@ -1649,8 +1649,11 @@ async function processEnvelope(envelope, memoryContext) {
       log('WARN', `Post-unblock guard: blocking checkpoint_plan after self-unblock â€” forcing blocked`);
       action = 'blocked';
       decision.action = 'blocked';
-      decision.blocker = decision.failure_summary || 'Could not resolve failure through alternative approach';
+      // Preserve the synthesis from the synthesize_with_failure that triggered self-unblock
+      decision.blocker = decision.failure_summary || envelope._failure_synthesis || 'Could not resolve failure through alternative approach';
       decision.blocker_type = 'task_failure';
+      // Use the original failure synthesis as the output so the user gets useful info
+      decision.escalation_message = envelope._failure_synthesis || decision.failure_summary || decision.blocker;
     }
 
     if (action === 'synthesize') {
@@ -1728,6 +1731,7 @@ async function processEnvelope(envelope, memoryContext) {
       if (!envelope._unblock_attempted && iteration < MAX_ITERATIONS - 2) {
         log('INFO', `Self-unblock attempt for ${envelope.id} â€” asking Cortex for alternative approach`);
         envelope._unblock_attempted = true;
+        envelope._failure_synthesis = decision.synthesis || decision.failure_summary || null;
         await firestoreWrite('work', envelope.id, envelope);
 
         priorResults.push({
