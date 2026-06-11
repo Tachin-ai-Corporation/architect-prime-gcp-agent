@@ -20,7 +20,7 @@ import { readFileSync, existsSync } from 'fs';
  * @param {Date} date - Date to check against (uses UTC components)
  * @returns {boolean} True if the expression matches the date
  */
-function cronMatch(expression, date) {
+export function cronMatch(expression, date) {
   const [minExpr, hourExpr, domExpr, monExpr, dowExpr] = expression.trim().split(/\s+/);
   const min = date.getUTCMinutes();
   const hour = date.getUTCHours();
@@ -45,7 +45,7 @@ function cronMatch(expression, date) {
  * @param {number} _rangeMax - Maximum valid value (unused, kept for clarity)
  * @returns {boolean} True if the expression matches the value
  */
-function fieldMatches(expr, value, _rangeMin, _rangeMax) {
+export function fieldMatches(expr, value, _rangeMin, _rangeMax) {
   if (expr === '*') return true;
   // */N step
   if (expr.startsWith('*/')) {

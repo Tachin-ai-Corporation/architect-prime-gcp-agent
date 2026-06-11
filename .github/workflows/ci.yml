@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check .mjs syntax
+        run: |
+          echo "Checking .mjs files for syntax errors..."
+          find corekit -name "*.mjs" -print0 | xargs -0 -I {} node --check {}
+          echo "All .mjs files pass syntax check."
+
+      - name: Validate JSON configs
+        run: |
+          echo "Validating JSON files..."
+          FAILED=0
+          for f in infra/contracts.json \
+                   $(find corekit/config -name "*.json" 2>/dev/null) \
+                   $(find corekit/config/processes -name "*.json" 2>/dev/null); do
+            if [ -f "$f" ]; then
+              if node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))"; then
+                echo "  ✅ $f"
+              else
+                echo "  ❌ $f"
+                FAILED=1
+              fi
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then exit 1; fi
+          echo "All JSON files valid."
+
+  contracts:
+    name: Contracts Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate contracts
+        run: bash corekit/system/validate-contracts --repo
+
+  manifest-integrity:
+    name: Manifest Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check manifest paths
+        run: node --test test/manifest-integrity.test.mjs
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run unit tests
+        run: node --test test/*.test.mjs
+
+  scope-check:
+    name: Scope Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR scope
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # Extract Scope: block from PR body
+          # Format: ```\nScope:\nglob1\nglob2\n```
+          SCOPE_BLOCK=$(echo "$PR_BODY" | sed -n '/^Scope:$/,/^```$/p' | grep -v '^Scope:$' | grep -v '^```$' | grep -v '^$')
+
+          if [ -z "$SCOPE_BLOCK" ]; then
+            echo "No Scope: block found in PR body — scope check skipped."
+            echo "To enable scope enforcement, add a Scope: block to the PR description."
+            exit 0
+          fi
+
+          echo "Scope globs found:"
+          echo "$SCOPE_BLOCK"
+          echo "---"
+
+          # Get changed files
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED"
+          echo "---"
+
+          # Check each changed file against scope globs
+          VIOLATIONS=""
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            MATCHED=false
+            while IFS= read -r glob; do
+              [ -z "$glob" ] && continue
+              # Use bash pattern matching (convert glob to find-style)
+              if echo "$file" | grep -q "$(echo "$glob" | sed 's/\*\*/.*/' | sed 's/\*/[^\/]*/')"; then
+                MATCHED=true
+                break
+              fi
+            done <<< "$SCOPE_BLOCK"
+            if [ "$MATCHED" = false ]; then
+              VIOLATIONS="$VIOLATIONS\n  ❌ $file"
+            fi
+          done <<< "$CHANGED"
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo ""
+            echo "SCOPE VIOLATION — files changed outside declared scope:"
+            echo -e "$VIOLATIONS"
+            echo ""
+            echo "Either expand the Scope: block or revert out-of-scope changes."
+            exit 1
+          fi
+
+          echo "✅ All changed files are within declared scope."

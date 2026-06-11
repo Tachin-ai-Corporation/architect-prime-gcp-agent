@@ -1,0 +1,7 @@
+# Default owner for all files
+* chill@tachin.ai
+
+# Human-only: CI, contracts, and GitHub config — agents can never own these
+/.github/ chill@tachin.ai
+/infra/contracts.json chill@tachin.ai
+/corekit/daemon/ chill@tachin.ai
