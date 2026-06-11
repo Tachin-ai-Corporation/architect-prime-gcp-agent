@@ -134,4 +134,22 @@ describe('contracts.json', () => {
       assert.ok(!re.test('foo'), 'should not match arbitrary string');
     });
   });
+
+  describe('github coordinates', () => {
+    it('has github section', () => {
+      assert.ok(contracts.github, 'github section should exist');
+    });
+
+    it('has tokenSecret', () => {
+      assert.equal(typeof contracts.github.tokenSecret, 'string', 'tokenSecret should be a string');
+    });
+
+    it('has owner field', () => {
+      assert.equal(typeof contracts.github.owner, 'string', 'owner should be a string');
+    });
+
+    it('has repo field', () => {
+      assert.equal(typeof contracts.github.repo, 'string', 'repo should be a string');
+    });
+  });
 });

@@ -9,6 +9,7 @@ infra/contracts.json corekit/contracts.json
 corekit/system/upgrade-corekit bin/upgrade-corekit
 corekit/system/validate-contracts bin/validate-contracts
 corekit/system/agent-ou-manage bin/agent-ou-manage
+corekit/system/secret-read bin/secret-read
 
 
 # Core tools — gateway

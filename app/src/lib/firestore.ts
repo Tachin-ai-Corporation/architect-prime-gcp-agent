@@ -133,3 +133,24 @@ export interface CommandDoc {
   error?: string;
 }
 
+/* ---- Secrets ---- */
+
+export interface SecretGrant {
+  agentEmail: string;
+  serviceAccount: string;
+  grantedAt: FirebaseFirestore.Timestamp;
+  grantedBy: string;
+}
+
+export interface SecretMetadata {
+  name: string;
+  description: string;
+  secretManagerName: string;
+  createdAt: FirebaseFirestore.Timestamp;
+  createdBy: string;
+  grants: SecretGrant[];
+}
+
+export function secretsCol() {
+  return getDb().collection("config").doc("secrets").collection("items");
+}

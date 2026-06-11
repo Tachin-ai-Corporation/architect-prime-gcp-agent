@@ -93,5 +93,10 @@
     },
     "timeout_ms": 30000,
     "disable_thinking": true
+  },
+  "github": {
+    "owner": "",
+    "repo": "",
+    "tokenSecret": "github-token"
   }
 }

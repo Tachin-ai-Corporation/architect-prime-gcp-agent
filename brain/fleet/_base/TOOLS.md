@@ -4,6 +4,12 @@
 - CoreKit tools: available directly in PATH (e.g., `agent-ask`, `agent-status`)
 - ADC: metadata server tokens available on GCE
 
+## Secrets
+- `secret-read --name <secret-id>` — Read a granted secret value from Secret Manager
+- Use via command substitution only: `TOKEN=$(secret-read --name my-key)`
+- ⚠️ Never echo, log, write to files, MEMORY.md, Drive artifacts, or chat responses
+- Access is IAM-controlled — request grants via the dashboard
+
 ## Web Search & Research (via temporal-research sub-agent)
 When you need current, real-time information from the web, dispatch to your
 `temporal-research` sub-agent. Do NOT call `web-search` or `agent-ask` directly
