@@ -201,6 +201,16 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
     step++;
   }
 
+  // Append ground-truth tool execution log — cannot be fabricated by the LLM
+  if (turnToolCalls.length > 0) {
+    const toolLog = turnToolCalls.map(tc =>
+      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, 200)}) → ${(
+        typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)
+      ).substring(0, 500)}`
+    ).join('\n');
+    text += `\n\n---\n[TOOL EXECUTION LOG]\n${toolLog}\n[END TOOL LOG]`;
+  }
+
   return {
     text,
     toolCalls: turnToolCalls,
@@ -301,6 +311,16 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
     }
 
     step++;
+  }
+
+  // Append ground-truth tool execution log — cannot be fabricated by the LLM
+  if (turnToolCalls.length > 0) {
+    const toolLog = turnToolCalls.map(tc =>
+      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, 200)}) → ${(
+        typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)
+      ).substring(0, 500)}`
+    ).join('\n');
+    text += `\n\n---\n[TOOL EXECUTION LOG]\n${toolLog}\n[END TOOL LOG]`;
   }
 
   return {

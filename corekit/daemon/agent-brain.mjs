@@ -2275,6 +2275,98 @@ async function processEnvelope(envelope, memoryContext) {
             });
           }
 
+          // ---- Cerebellum verification ----
+          // Verify task output against accept_criteria before marking complete.
+          // Skip for: failed tasks, no criteria, cerebellum itself, ack intents.
+          if (result.success && taskCriteria && taskAgent !== 'cerebellum' && taskEnvelope.intent !== 'ack') {
+            try {
+              log('INFO', `CP${cpNum} Task ${taskNum}: dispatching to cerebellum for verification`);
+              const verification = await callAgent('cerebellum', {
+                instruction: [
+                  'Verify the following task output meets the acceptance criteria.',
+                  '',
+                  '## Accept Criteria',
+                  taskCriteria,
+                  '',
+                  '## Task Output',
+                  result.output || '(empty)',
+                ].join('\n'),
+                _missionId: envelope.id,
+              });
+
+              if (verification.success && verification.output) {
+                try {
+                  // Strip markdown fences if present
+                  const cleaned = verification.output.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+                  const verdict = JSON.parse(cleaned);
+                  if (verdict.verdict === 'FAIL') {
+                    const failedChecks = (verdict.checks || []).filter(c => !c.pass);
+                    const failSummary = failedChecks.map(c => `- ${c.criteria}: ${c.evidence}`).join('\n');
+                    log('WARN', `Cerebellum FAIL on CP${cpNum} Task ${taskNum}: ${failSummary}`);
+
+                    // Retry motor with cerebellum's feedback
+                    log('INFO', `CP${cpNum} Task ${taskNum}: retrying ${taskAgent} with cerebellum feedback`);
+                    result = await callAgent(taskAgent, {
+                      instruction: [
+                        taskEnvelope.instruction,
+                        '',
+                        '[VERIFICATION FAILED] An independent verification found issues with your previous output:',
+                        failSummary,
+                        verdict.recommendation ? `\nRecommendation: ${verdict.recommendation}` : '',
+                        '\nPlease re-execute and address the issues above. Use tools to actually run commands — do NOT simulate or assume results.',
+                      ].join('\n'),
+                      accept_criteria: taskCriteria,
+                      _missionId: envelope.id,
+                      memory_context: envelope.memory_context || null,
+                    });
+                    taskEnvelope.output = result.output || result.error;
+
+                    // Re-verify the retry
+                    if (result.success) {
+                      log('INFO', `CP${cpNum} Task ${taskNum}: re-verifying retry output with cerebellum`);
+                      const reVerification = await callAgent('cerebellum', {
+                        instruction: [
+                          'Verify the following RETRY task output meets the acceptance criteria.',
+                          'This is a second attempt after the first failed verification.',
+                          '',
+                          '## Accept Criteria',
+                          taskCriteria,
+                          '',
+                          '## Task Output (Retry)',
+                          result.output || '(empty)',
+                        ].join('\n'),
+                        _missionId: envelope.id,
+                      });
+
+                      if (reVerification.success && reVerification.output) {
+                        try {
+                          const cleanedR = reVerification.output.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+                          const reVerdict = JSON.parse(cleanedR);
+                          if (reVerdict.verdict === 'FAIL') {
+                            const reFailChecks = (reVerdict.checks || []).filter(c => !c.pass);
+                            log('WARN', `Cerebellum FAIL on retry CP${cpNum} Task ${taskNum}: ${reFailChecks.map(c => `${c.criteria}: ${c.evidence}`).join('; ')}`);
+                            result.success = false;
+                            result.error = `Verification failed after retry: ${reFailChecks.map(c => c.evidence).join('; ')}`;
+                          } else {
+                            log('INFO', `Cerebellum ALL_PASS on retry CP${cpNum} Task ${taskNum}`);
+                          }
+                        } catch {
+                          log('WARN', `Cerebellum returned non-JSON on re-verify CP${cpNum} Task ${taskNum}, accepting result`);
+                        }
+                      }
+                    }
+                  } else {
+                    log('INFO', `Cerebellum ALL_PASS on CP${cpNum} Task ${taskNum}`);
+                  }
+                } catch {
+                  log('WARN', `Cerebellum returned non-JSON for CP${cpNum} Task ${taskNum}, skipping verification`);
+                }
+              }
+            } catch (verErr) {
+              log('WARN', `Cerebellum dispatch failed for CP${cpNum} Task ${taskNum}: ${verErr.message}. Continuing without verification.`);
+            }
+          }
+
           // Update task envelope
           taskEnvelope.output = result.output || result.error;
           taskEnvelope.status = result.success ? 'complete' : 'failed';
