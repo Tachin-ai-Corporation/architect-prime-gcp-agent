@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "responsibilities": [
+    {
+      "id": "r-repo-improvement",
+      "name": "Repository Improvement Cycle",
+      "schedule": "0 14 * * 1-5",
+      "enabled": false,
+      "singleton": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Execute the repository improvement cycle: audit the focus area, identify the single highest-value improvement, produce a ranked proposal, and delegate to engineering via the delegation protocol.",
+      "context": {
+        "purpose": "Systematic, canon-compliant improvement of the Architect Prime codebase. Each cycle audits one focus area, proposes one improvement ranked by the BRAIN_CANON rubric, and delegates implementation to an engineer agent.",
+        "process": [
+          "STEP 1 — CANON RE-READ: Read PRODUCT_CANON.md and BRAIN_CANON.md to refresh invariants and quality axes.",
+          "STEP 2 — GATHER CONTEXT: Read prior_learnings from this responsibility. Recall relevant Core Memory entries.",
+          "STEP 3 — AUDIT: Inspect the current focus_area using the repo-audit skill. Read files, check patterns, identify improvement opportunities.",
+          "STEP 4 — RANK: Score each finding against the BRAIN_CANON Part IV rubric. Select the single highest-value improvement.",
+          "STEP 5 — PROPOSE: Create a structured proposal document with scope globs, before/after description, rubric claim, acceptance criteria, and risk notes.",
+          "STEP 6 — APPROVAL GATE: Submit the proposal for operator approval before delegating.",
+          "STEP 7 — DELEGATE: Send the delegation to an engineer agent via the GChat Delegation Protocol with scope globs, acceptance criteria, and process reference.",
+          "STEP 8 — REVIEW: Verify delegation results against both canons. Accept or reject.",
+          "STEP 9 — LEARN: Write learnings to Core Memory and update this responsibility's prior_learnings."
+        ],
+        "reference_files": [
+          "docs/PRODUCT_CANON.md",
+          "docs/BRAIN_CANON.md",
+          "docs/guides/DELEGATION_PROTOCOL.md"
+        ],
+        "success_criteria": "One improvement proposed, ranked by rubric, delegated to engineering, results verified against both canons, learnings recorded.",
+        "prior_learnings": ""
+      },
+      "processRef": null,
+      "processParameters": {
+        "focus_area": "brain"
+      }
+    }
+  ]
+}

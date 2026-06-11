@@ -103,6 +103,19 @@
         "cortex": ["read", "write", "edit", "exec"],
         "deny": ["web-search", "browser", "process"]
       }
+    },
+    {
+      "id": "product-architect",
+      "title": "Product Architect",
+      "specialty": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
+      "emailPattern": "architect-agent-{name}",
+      "workspace": "product-architect",
+      "skills": ["agent-ask", "workspace-drive", "workspace-docs"],
+      "brain": true,
+      "capabilities": {
+        "cortex": ["read", "write", "edit", "exec", "process"],
+        "deny": ["web-search", "browser"]
+      }
     }
   ]
 }

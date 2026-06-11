@@ -1,0 +1,6 @@
+{
+  "id": "repo-audit",
+  "name": "Repository Audit",
+  "version": "1.0.0",
+  "description": "Read-only repo analysis playbook with focus rotation and raw-URL fetch patterns"
+}
