@@ -166,7 +166,7 @@ export function createArtifactManager(deps) {
 
       // Create project folder under root
       const mkdirOut = exec(
-        `drive-mkdir "${projName}" --parent ${_artifactsRootFolderId}`,
+        `${coreDir}/bin/drive-mkdir "${projName}" --parent ${_artifactsRootFolderId}`,
         { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
       ).trim();
 
@@ -227,7 +227,7 @@ export function createArtifactManager(deps) {
               const fleetAgentEmail = doc.fields?.email?.stringValue;
               if (fleetAgentEmail && fleetAgentEmail !== agentEmail) {
                 try {
-                  exec(`drive-share ${folderId} --email ${fleetAgentEmail} --role writer`, { timeout: 15_000, cwd: coreDir });
+                  exec(`${coreDir}/bin/drive-share ${folderId} --email ${fleetAgentEmail} --role writer`, { timeout: 15_000, cwd: coreDir });
                   log('DEBUG', `Shared project folder with ${fleetAgentEmail}`);
                 } catch { /* best-effort */ }
               }
@@ -302,14 +302,14 @@ export function createArtifactManager(deps) {
         // Create {prime-name}/ subfolder
         try {
           const primeOut = exec(
-            `drive-mkdir "${primeName}" --parent ${projectFolderId}`,
+            `${coreDir}/bin/drive-mkdir "${primeName}" --parent ${projectFolderId}`,
             { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
           ).trim();
           const primeParsed = JSON.parse(primeOut).folderId || JSON.parse(primeOut).id;
           if (primeParsed) {
             // Create {agent-name}/ subfolder under prime
             const agentOut = exec(
-              `drive-mkdir "${agentName}" --parent ${primeParsed}`,
+              `${coreDir}/bin/drive-mkdir "${agentName}" --parent ${primeParsed}`,
               { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
             ).trim();
             targetFolderId = JSON.parse(agentOut).folderId || JSON.parse(agentOut).id || primeParsed;
@@ -326,7 +326,7 @@ export function createArtifactManager(deps) {
           const filePath = `${coreDir}/shared/${envelope.id}/${file}`;
           const fileSize = statSync(filePath).size;
           const uploadOut = exec(
-            `drive-upload "${filePath}" ${targetFolderId}`,
+            `${coreDir}/bin/drive-upload "${filePath}" ${targetFolderId}`,
             { timeout: 60_000, cwd: coreDir, encoding: 'utf8' }
           ).trim();
 
@@ -357,7 +357,7 @@ export function createArtifactManager(deps) {
       if (project?.owner && project.owner !== agentEmail) {
         try {
           exec(
-            `drive-share ${targetFolderId} --email ${project.owner} --role reader`,
+            `${coreDir}/bin/drive-share ${targetFolderId} --email ${project.owner} --role reader`,
             { timeout: 15_000, cwd: coreDir }
           );
           log('INFO', `Artifacts shared with project owner: ${project.owner}`);

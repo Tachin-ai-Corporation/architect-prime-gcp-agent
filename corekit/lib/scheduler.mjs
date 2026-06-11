@@ -541,7 +541,8 @@ export function createScheduler(deps) {
     try {
       const respFile = coreDir + '/corekit/responsibilities.json';
       if (existsSync(respFile)) {
-        eventResps = JSON.parse(readFileSync(respFile, 'utf8'));
+        const parsed = JSON.parse(readFileSync(respFile, 'utf8'));
+        eventResps = Array.isArray(parsed) ? parsed : (parsed.responsibilities || []);
       }
     } catch (e) {
       log('WARN', `Failed to load responsibilities for event trigger: ${e.message}`);
