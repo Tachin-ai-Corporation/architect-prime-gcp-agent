@@ -11,7 +11,9 @@ DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[drive-search] [ERROR] $*" >&2; exit 1; }
 QUERY="" MAX=20
 while [[ $# -gt 0 ]]; do
-  case "$1" in --query) QUERY="$2"; shift 2 ;; --max) MAX="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+  case "$1" in --query) QUERY="$2"; shift 2 ;; --max) MAX="$2"; shift 2 ;;
+    *) if [[ -z "$QUERY" && "$1" != -* ]]; then QUERY="$1"; shift
+       else die "Unknown: $1"; fi ;; esac
 done
 [[ -n "$QUERY" ]] || die "Need --query"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"

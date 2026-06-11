@@ -9,7 +9,9 @@ DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[drive-mkdir] [ERROR] $*" >&2; exit 1; }
 NAME="" PARENT=""
 while [[ $# -gt 0 ]]; do
-  case "$1" in --name) NAME="$2"; shift 2 ;; --parent) PARENT="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+  case "$1" in --name) NAME="$2"; shift 2 ;; --parent) PARENT="$2"; shift 2 ;;
+    *) if [[ -z "$NAME" && "$1" != -* ]]; then NAME="$1"; shift
+       else die "Unknown: $1"; fi ;; esac
 done
 [[ -n "$NAME" ]] || die "Need --name"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"

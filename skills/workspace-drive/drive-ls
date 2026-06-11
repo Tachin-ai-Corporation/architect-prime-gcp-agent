@@ -11,7 +11,8 @@ FOLDER="" MAX=20
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --folder) FOLDER="$2"; shift 2 ;; --max) MAX="$2"; shift 2 ;;
-    *) die "Unknown: $1" ;; esac
+    *) if [[ -z "$FOLDER" && "$1" != -* ]]; then FOLDER="$1"; shift
+       else die "Unknown: $1"; fi ;; esac
 done
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 QUERY="trashed=false"
