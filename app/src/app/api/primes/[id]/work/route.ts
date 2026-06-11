@@ -98,8 +98,6 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     // (e.g., active C/T whose parent M was just created and not in our root query)
     const activeSnap = await workCol
       .where("status", "in", ACTIVE_STATUSES)
-      .where("created_at", ">=", cutoff)
-      .orderBy("created_at", "desc")
       .limit(20)
       .get();
 
