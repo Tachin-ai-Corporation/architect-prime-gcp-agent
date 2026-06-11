@@ -104,6 +104,7 @@ export function cronNextFire(expression) {
  * @param {function} deps.writeHistory             - async (envelopeId, prevStatus, newStatus, actor, detail) => void
  * @param {function} deps.recallMemory             - async (query, ctx) => memory
  * @param {function} deps.firestoreWrite           - async (collection, docId, data) => result
+ * @param {function} [deps.firestoreQuery]          - async (collection, filters) => docs[] — for singleton check
  * @param {function} deps.ensureProcessesLoaded    - async () => void
  * @param {function} deps.getProcesses             - () => object — returns current PROCESSES map
  * @param {function} deps.processToCheckpointPlan  - (process, parameters) => plan|null
@@ -118,6 +119,7 @@ export function createScheduler(deps) {
     writeHistory,
     recallMemory,
     firestoreWrite,
+    firestoreQuery,
     ensureProcessesLoaded,
     getProcesses,
     processToCheckpointPlan,
@@ -488,6 +490,23 @@ export function createScheduler(deps) {
           log('INFO', `Responsibility ${r.id} skipped (min spacing ${r.min_spacing_minutes}m)`);
           _respNextFire[r.id] = cronNextFire(r.schedule);
           continue;
+        }
+
+        // Singleton check: skip if non-terminal mission already exists for this responsibility
+        if (r.singleton && firestoreQuery) {
+          try {
+            const active = await firestoreQuery('work', [
+              { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: r.id } },
+            ]);
+            const nonTerminal = active.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
+            if (nonTerminal.length > 0) {
+              log('INFO', `Responsibility ${r.id}: singleton guard — cycle in progress (${nonTerminal[0].id}), sleeping`);
+              _respNextFire[r.id] = cronNextFire(r.schedule);
+              continue;
+            }
+          } catch (e) {
+            log('WARN', `Responsibility ${r.id}: singleton check failed (${e.message}), proceeding with fire`);
+          }
         }
 
         // Fire!

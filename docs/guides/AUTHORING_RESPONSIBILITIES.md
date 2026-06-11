@@ -67,6 +67,7 @@ Both files share the same schema. Prime-only responsibilities are loaded only on
 | `processParameters` | `object \| null` | ✗ | Parameter overrides for the linked process |
 | `project_id` | `string \| null` | ✗ | Project for generated Missions (default: agent's default project) |
 | `trigger` | `string \| null` | ✗ | Event trigger type (see below) |
+| `singleton` | `boolean` | ✗ | If true, skip firing when a non-terminal mission exists for this responsibility |
 
 ---
 
@@ -112,6 +113,25 @@ Prevents rapid re-firing. Even if the cron expression matches multiple times, th
 - Nightly jobs: set to 720–1440 to prevent double-firing across timezone boundaries
 - Monitoring jobs: set to 5–60 for frequent checks
 - Event-triggered: set to the minimum recovery time between events
+
+---
+
+## singleton
+
+When `true`, the scheduler checks Firestore for any non-terminal mission (status `pending`, `active`, or `waiting`) with `source_meta.responsibility_id` matching this responsibility's `id`. If one exists, the firing is skipped and the responsibility sleeps until the next cron tick.
+
+This prevents overlapping executions of long-running responsibilities like improvement cycles.
+
+**Example:**
+```json
+{
+  "id": "r-repo-improvement",
+  "schedule": "0 * * * *",
+  "singleton": true
+}
+```
+
+With `singleton: true` and an hourly schedule, the responsibility fires at most once per hour, but only if the previous cycle has completed.
 
 ---
 

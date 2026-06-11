@@ -28,6 +28,7 @@
 // ============================================================
 import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync } from 'fs';
 import { randomBytes } from 'crypto';
+import { execSync } from 'child_process';
 
 // ---- Shared library imports (Phase 0 extraction) ----
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
@@ -42,6 +43,7 @@ import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
 import { createArtifactManager } from '../corekit/lib/artifacts.mjs';
 import { createNotifier } from '../corekit/lib/notifications.mjs';
 import { createHistoryWriter } from '../corekit/lib/history.mjs';
+import { composeDelegationMarker, composeDelegationResultMarker } from '../corekit/lib/delegation.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
@@ -1133,6 +1135,98 @@ async function processIntake(intake) {
     claimed_at: now(),
   });
 
+  // ---- Delegation early branch ----
+  // If intake has delegation_ref, skip LLM classify entirely.
+  // Create mission deterministically and register as child on parent envelope.
+  const delegationRef = intake.source_meta?.delegation_ref;
+  if (delegationRef) {
+    log('INFO', `Delegation intake detected: ref=${delegationRef} from=${intake.source_meta.delegated_from}`);
+
+    // Dedup: check for existing non-terminal mission with same delegation_ref
+    try {
+      const existing = await firestoreQuery('work', [
+        { field: 'source_meta.delegation_ref', op: 'EQUAL', value: { stringValue: delegationRef } },
+      ]);
+      const active = existing.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
+      if (active.length > 0) {
+        log('INFO', `Delegation dedup: mission ${active[0].id} already in progress for ref ${delegationRef}, skipping`);
+        return;
+      }
+    } catch (e) {
+      log('WARN', `Delegation dedup check failed (${e.message}), proceeding`);
+    }
+
+    // Ref validation: verify parent envelope exists
+    let parentEnvelope = null;
+    try {
+      parentEnvelope = await firestoreRead('work', delegationRef);
+    } catch { /* ignore */ }
+    if (!parentEnvelope) {
+      log('WARN', `Delegation ref ${delegationRef} not found in work collection, treating as normal intake`);
+      // Fall through to normal classify path
+    } else {
+      // Create M envelope deterministically (no LLM classify)
+      const delegationBody = intake.source_meta.delegation_body || intake.text;
+      const delegationProject = intake.source_meta.delegation_project || null;
+      const memoryContext = await recallMemory(delegationBody);
+      const envelopeId = generateId('w');
+
+      const envelope = {
+        id: envelopeId,
+        type: 'M',
+        parent_id: null,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'pending',
+        intent: 'execute',
+        title: `Delegation: ${delegationBody.substring(0, 80)}`,
+        instruction: delegationBody,
+        accept_criteria: null,
+        context_summary: `Delegated from ${intake.source_meta.delegated_from || 'unknown'}`,
+        output: null,
+        children: [],
+        context_forward: null,
+        error: null,
+        source_channel: intake.source,
+        source_meta: {
+          ...(intake.source_meta || {}),
+          delegation_ref: delegationRef,
+          delegated_from: intake.source_meta.delegated_from || null,
+        },
+        project_id: delegationProject !== 'none' ? delegationProject : DEFAULT_PROJECT_ID,
+        context: null,
+        source_text: sourceText || null,
+        created_at: now(),
+        started_at: null,
+        completed_at: null,
+        updated_at: now(),
+        iteration: 0,
+        memory_context: memoryContext,
+        delivery_status: 'internal',
+      };
+
+      await firestoreWrite('work', envelopeId, envelope);
+      await writeHistory(envelopeId, null, 'pending', 'brain', `Delegation from ${intake.source_meta.delegated_from || 'unknown'} (ref: ${delegationRef})`);
+      log('INFO', `Created delegation mission: ${envelopeId} for ref ${delegationRef}`);
+
+      // Register as child on parent envelope (cross-agent Firestore write)
+      try {
+        const updatedChildren = [...(parentEnvelope.children || []), envelopeId];
+        await firestoreWrite('work', delegationRef, {
+          ...parentEnvelope,
+          children: updatedChildren,
+          updated_at: now(),
+        });
+        log('INFO', `Registered ${envelopeId} as child on parent ${delegationRef}`);
+      } catch (e) {
+        log('WARN', `Failed to register child on parent ${delegationRef}: ${e.message}`);
+      }
+
+      // Process the delegation mission
+      await processEnvelope(envelope, memoryContext);
+      return;
+    }
+  }
+
   // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)
   const activeEnvelopes = await scanActiveEnvelopes();
 
@@ -1765,6 +1859,30 @@ async function processEnvelope(envelope, memoryContext) {
           mission_id: envelope.id,
           project_id: envelope.project_id,
         });
+
+        // Delegation result reply: if this mission was delegated from another agent,
+        // send a DELEGATION-RESULT marker back so they see the completion in GChat.
+        // Note: the actual resume mechanism is Firestore children (checkWaitingEnvelopes),
+        // not this GChat message. This is for human readability + summary content.
+        if (envelope.source_meta?.delegation_ref) {
+          const resultMarker = composeDelegationResultMarker({
+            targetEmail: envelope.source_meta.delegated_from || '',
+            ref: envelope.source_meta.delegation_ref,
+            status: envelope.status, // 'complete'
+            missionId: envelope.id,
+            body: (envelope.output || '').substring(0, 500),
+          });
+          try {
+            execSync(`chat-send --stdin`, {
+              input: resultMarker,
+              timeout: 30_000,
+              stdio: ['pipe', 'pipe', 'pipe'],
+            });
+            log('INFO', `Delegation result sent for ref ${envelope.source_meta.delegation_ref}`);
+          } catch (e) {
+            log('WARN', `Failed to send delegation result: ${e.message}`);
+          }
+        }
       }
 
       // Phase 3C: Context promotion — suggest new context entries for the parent project
@@ -2204,11 +2322,105 @@ async function processEnvelope(envelope, memoryContext) {
             continue;
           }
 
-          // ---- Delegation: route through delegation envelope ----
+          // ---- Delegation: cross-agent dispatch via GChat ----
           if (stepType === 'delegation') {
-            log('INFO', `CP${cpNum} Task ${taskNum}: Delegation to '${task._specialty || taskAgent}'`);
-            // Delegation dispatches work the same as standard but tag the intent
-            // The agent receiving it treats it as a delegated work item
+            const delegateSpecialty = task._specialty || taskAgent;
+            log('INFO', `CP${cpNum} Task ${taskNum}: Cross-agent delegation to '${delegateSpecialty}'`);
+
+            // Resolve target agent email by specialty from fleet docs
+            let targetAgentEmail = null;
+            try {
+              const primesSnap = await firestoreQuery('primes', []);
+              for (const prime of primesSnap) {
+                const fleetSnap = await firestoreQuery(`primes/${prime.id}/fleet`, [
+                  { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
+                ]);
+                const onlineAgent = fleetSnap.find(a => a.status === 'online');
+                if (onlineAgent) {
+                  targetAgentEmail = onlineAgent.email;
+                  break;
+                }
+              }
+            } catch (e) {
+              log('WARN', `Delegation: failed to resolve agent for specialty '${delegateSpecialty}': ${e.message}`);
+            }
+
+            if (!targetAgentEmail) {
+              log('ERROR', `Delegation: no online agent found for specialty '${delegateSpecialty}'`);
+              cpResults.push({ step: taskNum, agent: taskAgent, result: `[FAILED] No online agent found for specialty '${delegateSpecialty}'`, success: false });
+              continue;
+            }
+
+            // Create Task envelope with status='waiting' (not active)
+            const taskId = generateId('w');
+            const taskEnvelope = {
+              id: taskId,
+              type: 'T',
+              parent_id: cpId,
+              owner: AGENT_EMAIL || AGENT_ID,
+              status: 'waiting',
+              intent: 'delegation',
+              title: await generateTitle(taskDesc, 'task'),
+              instruction: taskDesc,
+              accept_criteria: taskCriteria,
+              context_summary: null,
+              output: null,
+              children: [],
+              context_forward: null,
+              error: null,
+              source_channel: 'brain',
+              source_meta: {
+                dispatched_by: cpId,
+                checkpoint: cpNum,
+                task_step: taskNum,
+                step_type: 'delegation',
+                delegated_to: delegateSpecialty,
+                target_agent_email: targetAgentEmail,
+              },
+              project_id: envelope.project_id || null,
+              created_at: now(),
+              started_at: now(),
+              completed_at: null,
+              updated_at: now(),
+              iteration: 0,
+            };
+
+            await firestoreWrite('work', taskId, taskEnvelope);
+            await writeHistory(taskId, null, 'waiting', 'brain', `Delegating to ${delegateSpecialty} (${targetAgentEmail})`);
+
+            cpEnvelope.children.push(taskId);
+            cpEnvelope.updated_at = now();
+            await firestoreWrite('work', cpId, cpEnvelope);
+
+            // Compose and send delegation marker via chat-send
+            const marker = composeDelegationMarker({
+              targetEmail: targetAgentEmail,
+              ref: taskId,
+              from: AGENT_EMAIL || AGENT_ID,
+              project: envelope.project_id || 'none',
+              body: taskDesc,
+            });
+
+            try {
+              execSync(`chat-send --stdin`, {
+                input: marker,
+                timeout: 30_000,
+                stdio: ['pipe', 'pipe', 'pipe'],
+              });
+              log('INFO', `Delegation marker sent to ${targetAgentEmail} for ref ${taskId}`);
+            } catch (e) {
+              log('ERROR', `Failed to send delegation marker: ${e.message}`);
+            }
+
+            // Set checkpoint to waiting — checkWaitingEnvelopes() will resume when child completes
+            cpEnvelope.status = 'waiting';
+            cpEnvelope.updated_at = now();
+            await firestoreWrite('work', cpId, cpEnvelope);
+            await writeHistory(cpId, 'active', 'waiting', 'brain', `Waiting for delegation to ${delegateSpecialty}`);
+
+            log('INFO', `CP${cpNum} Task ${taskNum}: delegation sent, checkpoint waiting`);
+            // Don't call callAgent — return and let checkWaitingEnvelopes resume
+            return;
           }
 
           // Create Task envelope under Checkpoint
@@ -2945,6 +3157,7 @@ function _initScheduler() {
     writeHistory,
     recallMemory,
     firestoreWrite,
+    firestoreQuery,
     ensureProcessesLoaded,
     getProcesses: () => PROCESSES,
     processToCheckpointPlan,

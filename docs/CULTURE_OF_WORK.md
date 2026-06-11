@@ -319,6 +319,18 @@ The approval gate is **hierarchical** — it pauses the entire M→C→T stack, 
 
 ---
 
+## Cross-Agent Delegation
+
+Agents delegate work to other agents via the GChat @-Delegation Protocol. The protocol is fully deterministic — marker parsing never touches an LLM. See [DELEGATION_PROTOCOL.md](guides/DELEGATION_PROTOCOL.md) for wire format, mechanics, and guard rails.
+
+Key principles:
+- Delegation markers ride on GChat (humans can watch)
+- Resume is Firestore-only (`checkWaitingEnvelopes()` polls children)
+- Exactly-once: receiver dedup + sender idempotency
+- Singleton responsibilities: at most one cycle alive at any time
+
+---
+
 ## Document Index
 
 ### Primitive References
@@ -334,3 +346,4 @@ The approval gate is **hierarchical** — it pauses the entire M→C→T stack, 
 ### Authoring Guides
 - [Authoring Processes](guides/AUTHORING_PROCESSES.md)
 - [Authoring Responsibilities](guides/AUTHORING_RESPONSIBILITIES.md)
+- [Delegation Protocol](guides/DELEGATION_PROTOCOL.md)

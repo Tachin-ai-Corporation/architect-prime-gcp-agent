@@ -21,6 +21,7 @@ import { dirname } from 'path';
 import { hostname as osHostname } from 'os';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
+import { isDelegationMarker, parseDelegationMarker } from '../corekit/lib/delegation.mjs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -608,6 +609,23 @@ async function main() {
           continue; // Skip normal intake processing
         }
 
+        // ---- Delegation marker detection ----
+        // If message contains [DELEGATION ref:...], flag source_meta so brain
+        // skips LLM classify and creates mission deterministically.
+        let delegationMeta = {};
+        if (isDelegationMarker(cleanedText)) {
+          const parsed = parseDelegationMarker(cleanedText);
+          if (parsed) {
+            log('Delegation marker detected', { ref: parsed.ref, from: parsed.from, project: parsed.project });
+            delegationMeta = {
+              delegation_ref: { stringValue: parsed.ref },
+              delegated_from: { stringValue: parsed.from },
+              delegation_project: { stringValue: parsed.project },
+              delegation_body: { stringValue: parsed.body || '' },
+            };
+          }
+        }
+
         // ---- Brain v3: Write intake record to Firestore ----
         // Brain service picks this up, classifies it, creates envelopes,
         // and orchestrates the Cortex loop deterministically.
@@ -624,6 +642,7 @@ async function main() {
             ...(msg.metadata?.spaceName ? { spaceName: { stringValue: msg.metadata.spaceName } } : {}),
             ...(msg.metadata?.threadName ? { threadName: { stringValue: msg.metadata.threadName } } : {}),
             ...(msg.metadata?.email ? { senderEmail: { stringValue: msg.metadata.email } } : {}),
+            ...delegationMeta,
           } } },
           status: { stringValue: 'pending' },
           created_at: { timestampValue: new Date().toISOString() },
