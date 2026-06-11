@@ -10,6 +10,7 @@ interface WorkTreeProps {
   nodes: TreeNode[];
   onSelectNode: (id: string) => void;
   selectedId: string | null;
+  onLoadTree?: (workId: string) => void;
 }
 
 /* ---- Helpers ---- */
@@ -81,13 +82,15 @@ function TreeNodeRow({
   depth,
   onSelectNode,
   selectedId,
+  onLoadTree,
 }: {
   node: TreeNode;
   depth: number;
   onSelectNode: (id: string) => void;
   selectedId: string | null;
+  onLoadTree?: (workId: string) => void;
 }) {
-  const hasKids = node.children.length > 0;
+  const hasKids = node.children.length > 0 || node.childIds.length > 0;
   const shouldAutoExpand =
     node.status === "active" ||
     node.status === "waiting" ||
@@ -157,9 +160,15 @@ function TreeNodeRow({
   const handleChevClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      setExpanded((prev) => !prev);
+      setExpanded((prev) => {
+        const willExpand = !prev;
+        if (willExpand && node.childIds.length > 0 && node.children.length === 0 && onLoadTree) {
+          onLoadTree(node.id);
+        }
+        return willExpand;
+      });
     },
-    []
+    [node.childIds.length, node.children.length, node.id, onLoadTree]
   );
 
   const handleRowClick = useCallback(() => {
@@ -239,6 +248,7 @@ function TreeNodeRow({
               depth={Math.min(depth + 1, 2)}
               onSelectNode={onSelectNode}
               selectedId={selectedId}
+              onLoadTree={onLoadTree}
             />
           ))}
         </div>
@@ -249,7 +259,7 @@ function TreeNodeRow({
 
 /* ---- Exported WorkTree ---- */
 
-export function WorkTree({ nodes, onSelectNode, selectedId }: WorkTreeProps) {
+export function WorkTree({ nodes, onSelectNode, selectedId, onLoadTree }: WorkTreeProps) {
   if (nodes.length === 0) {
     return (
       <div className={styles.tree}>
@@ -267,6 +277,7 @@ export function WorkTree({ nodes, onSelectNode, selectedId }: WorkTreeProps) {
           depth={0}
           onSelectNode={onSelectNode}
           selectedId={selectedId}
+          onLoadTree={onLoadTree}
         />
       ))}
     </div>

@@ -27,7 +27,7 @@ function WorkPage({ primeId }: { primeId: string }) {
   const selectedAgent = searchParams.get("agent") || null;
 
   /* ---- Data hook ---- */
-  const { current, queue, previous, allEnvelopes, loading } = useWorkEnvelopes(
+  const { current, queue, previous, allEnvelopes, loading, loadTree } = useWorkEnvelopes(
     primeId,
     selectedAgent
   );
@@ -179,6 +179,7 @@ function WorkPage({ primeId }: { primeId: string }) {
                   nodes={filteredEnvelopes.current}
                   onSelectNode={handleSelectNode}
                   selectedId={selectedWorkId}
+                  onLoadTree={loadTree}
                 />
               )}
             </div>
@@ -198,6 +199,7 @@ function WorkPage({ primeId }: { primeId: string }) {
                   nodes={filteredEnvelopes.queue}
                   onSelectNode={handleSelectNode}
                   selectedId={selectedWorkId}
+                  onLoadTree={loadTree}
                 />
               )}
             </div>
@@ -218,6 +220,7 @@ function WorkPage({ primeId }: { primeId: string }) {
                     nodes={filteredPrevSlice}
                     onSelectNode={handleSelectNode}
                     selectedId={selectedWorkId}
+                    onLoadTree={loadTree}
                   />
                   {totalPrevPages > 1 && (
                     <div className={styles.pager}>

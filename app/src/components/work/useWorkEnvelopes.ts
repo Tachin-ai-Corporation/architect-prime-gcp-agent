@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { WorkEnvelope } from "@/lib/types";
 
@@ -23,6 +23,8 @@ export interface UseWorkEnvelopesResult {
   /** @deprecated Use current/queue/previous instead */
   envelopes: WorkEnvelope[];
   loading: boolean;
+  /** Lazy-load the full tree for a completed mission */
+  loadTree: (workId: string) => Promise<void>;
 }
 
 /**
@@ -93,6 +95,7 @@ export function useWorkEnvelopes(
   const [envelopes, setEnvelopes] = useState<WorkEnvelope[]>([]);
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadedTreesRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!primeId) {
@@ -169,5 +172,25 @@ export function useWorkEnvelopes(
     };
   }, [envelopes, agentFilter]);
 
-  return { current, queue, previous, allEnvelopes, envelopes: allEnvelopes, loading };
+  const loadTree = useCallback(async (workId: string) => {
+    if (!primeId || loadedTreesRef.current.has(workId)) return;
+    loadedTreesRef.current.add(workId);
+    try {
+      const data = await api<{ envelopes: WorkEnvelope[] }>(
+        `/api/primes/${primeId}/work/${workId}/tree`
+      );
+      if (data?.envelopes?.length) {
+        setEnvelopes(prev => {
+          const existingIds = new Set(prev.map(e => e.id));
+          const newOnes = data.envelopes.filter(e => !existingIds.has(e.id));
+          return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+        });
+      }
+    } catch (err) {
+      console.error(`[useWorkEnvelopes] loadTree error:`, err);
+      loadedTreesRef.current.delete(workId); // allow retry
+    }
+  }, [primeId]);
+
+  return { current, queue, previous, allEnvelopes, envelopes: allEnvelopes, loading, loadTree };
 }

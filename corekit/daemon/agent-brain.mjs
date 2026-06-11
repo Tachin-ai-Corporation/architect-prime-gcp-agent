@@ -1190,7 +1190,7 @@ async function processIntake(intake) {
   // Quick ack â€” generate text now, inject as Câ†’T after M envelope is created
   let pendingAckText = null;
   if (intake.source && intake.source !== 'brain' && intake.source !== 'system' && !intake.quick_ack_sent
-      && (classification === 'new_mission' || classification === 'continue')) {
+      && (classification === 'new_mission' || classification === 'continue' || classification === 'attach')) {
     const recentMissions = await scanRecentMissions(5);
     pendingAckText = await generateAck(intake.text || '', activeEnvelopes, recentMissions);
     intake.quick_ack_sent = true;
@@ -1236,7 +1236,7 @@ async function processIntake(intake) {
       log('WARN', `Dedup guard: suppressing new_mission â€” similar active envelope ${duplicate.id} exists. Forcing attach.`);
       decision.classification = 'attach';
       decision.attach_to = duplicate.id;
-      await handleAttach(intake, decision, memoryContext);
+      await handleAttach(intake, decision, memoryContext, pendingAckText);
       return;
     }
   }
@@ -1265,13 +1265,13 @@ async function processIntake(intake) {
 
   // Phase 3: Handle attach classification (follow-up to existing work)
   if (classification === 'attach') {
-    await handleAttach(intake, decision, memoryContext);
+    await handleAttach(intake, decision, memoryContext, pendingAckText);
     return;
   }
 
   // Handle continue classification (resume a blocked mission)
   if (classification === 'continue') {
-    await handleContinue(intake, decision, memoryContext);
+    await handleContinue(intake, decision, memoryContext, pendingAckText);
     return;
   }
 
@@ -1336,7 +1336,7 @@ async function processIntake(intake) {
 }
 
 // ---- Attach handler: follow-up to existing work ----
-async function handleAttach(intake, decision, memoryContext) {
+async function handleAttach(intake, decision, memoryContext, pendingAckText = null) {
   const targetId = decision.attach_to;
   log('INFO', `Attach: intake ${intake.id} â†’ target ${targetId}`);
 
@@ -1406,7 +1406,7 @@ async function handleAttach(intake, decision, memoryContext) {
   if (targetEnv.status === 'blocked') {
     log('INFO', `Attach target ${targetId} is blocked â€” routing to handleContinue`);
     decision.continue_mission = targetId;
-    return handleContinue(intake, decision, memoryContext);
+    return handleContinue(intake, decision, memoryContext, pendingAckText);
   }
 
   // For failed missions, create a child task linked to the mission
@@ -1456,7 +1456,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
 }
 
 // ---- Continue handler: resume a blocked mission ----
-async function handleContinue(intake, decision, memoryContext) {
+async function handleContinue(intake, decision, memoryContext, pendingAckText = null) {
   const targetId = decision.continue_mission || decision.continue_envelope;
   log('INFO', `Continue: intake ${intake.id} â†’ resuming blocked mission ${targetId}`);
 
@@ -1506,6 +1506,19 @@ async function handleContinue(intake, decision, memoryContext) {
     consumed_by: targetId,
     consumed_at: now(),
   });
+
+  // Inject ack under the reopened mission (same pattern as new mission ack)
+  if (pendingAckText) {
+    await createCT(mission, {
+      checkpointTitle: 'Acknowledge receipt',
+      taskTitle: 'Write acknowledgment',
+      taskOutput: pendingAckText,
+      taskIntent: 'ack',
+      deliveryStatus: 'pending',
+    });
+    await firestoreWrite('work', mission.id, mission);
+    log('INFO', `Ack injected as C-T under resumed mission ${mission.id}`);
+  }
 
   // Resume processing — Cortex will see the full mission context + new unblock info
   await processEnvelope(mission, memoryContext);
@@ -2294,10 +2307,13 @@ async function processEnvelope(envelope, memoryContext) {
                 _missionId: envelope.id,
               });
 
-              if (verification.success && verification.output) {
+              // Note: callAgent auto-converts cerebellum FAIL verdicts to success=false,
+              // so we check output regardless of the success flag.
+              const verOutput = verification.output || verification.error;
+              if (verOutput) {
                 try {
                   // Strip markdown fences if present
-                  const cleaned = verification.output.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+                  const cleaned = verOutput.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
                   const verdict = JSON.parse(cleaned);
                   if (verdict.verdict === 'FAIL') {
                     const failedChecks = (verdict.checks || []).filter(c => !c.pass);
@@ -2338,9 +2354,10 @@ async function processEnvelope(envelope, memoryContext) {
                         _missionId: envelope.id,
                       });
 
-                      if (reVerification.success && reVerification.output) {
+                      const reVerOutput = reVerification.output || reVerification.error;
+                      if (reVerOutput) {
                         try {
-                          const cleanedR = reVerification.output.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+                          const cleanedR = reVerOutput.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
                           const reVerdict = JSON.parse(cleanedR);
                           if (reVerdict.verdict === 'FAIL') {
                             const reFailChecks = (reVerdict.checks || []).filter(c => !c.pass);

@@ -252,6 +252,7 @@ export default function AgentDeepDivePage({
                         setSelectedWork(e);
                       }}
                       selectedId={selectedWork?.id || null}
+                      onLoadTree={work.loadTree}
                     />
                   </div>
                 )}
@@ -265,6 +266,7 @@ export default function AgentDeepDivePage({
                         setSelectedWork(e);
                       }}
                       selectedId={selectedWork?.id || null}
+                      onLoadTree={work.loadTree}
                     />
                   </div>
                 )}
@@ -278,6 +280,7 @@ export default function AgentDeepDivePage({
                         setSelectedWork(e);
                       }}
                       selectedId={selectedWork?.id || null}
+                      onLoadTree={work.loadTree}
                     />
                   </div>
                 )}
