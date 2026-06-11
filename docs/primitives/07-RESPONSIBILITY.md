@@ -24,7 +24,7 @@ These fields are in the responsibility JSON definition (not the WorkEnvelope):
 | `processRef` | `string \| null` | Process ID to execute (if process-linked) |
 | `processParameters` | `Record<string, unknown> \| null` | Parameter overrides for the linked process |
 | `project_id` | `string \| null` | Project for generated Missions (falls back to default) |
-| `trigger` | `string \| null` | Event trigger: `'on_merge'`, `'on_deploy'`, `'on_failure'`, or `null` |
+| `trigger` | `string \| null` | Event trigger: `'on_complete'`, `'on_failure'`, `'on_merge'` **(not yet implemented)**, `'on_deploy'` **(not yet implemented)**, or `null` |
 
 ### ResponsibilityContext
 
@@ -135,9 +135,10 @@ The `trigger` field enables event-driven responsibilities (in addition to cron-s
 
 | Trigger | Fires When |
 |---------|-----------|
-| `on_merge` | A code merge/PR completes |
-| `on_deploy` | A deployment finishes |
+| `on_complete` | A Mission completes successfully |
 | `on_failure` | A Mission fails |
+| `on_merge` | A code merge/PR completes **(not yet implemented)** |
+| `on_deploy` | A deployment finishes **(not yet implemented)** |
 | `null` | Cron-only (no event trigger) |
 
 Event-driven firing uses `fireEventResponsibilities(eventType)`, which scans all responsibilities with matching `trigger` and fires them (subject to `min_spacing_minutes`).

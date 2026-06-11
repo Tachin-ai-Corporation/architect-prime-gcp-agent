@@ -35,7 +35,7 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 | Machine type | e2-medium (2 vCPU, 4GB RAM) |
 | Image | Ubuntu 22.04 LTS |
 | Disk | 50GB pd-balanced |
-| Gateway port | 18789 (loopback only) |
+| Gateway port | Per `gateway.port` in `contracts.json` (loopback only) |
 | CoreKit directory | `/opt/corekit` |
 
 ## Monitoring Boot Progress

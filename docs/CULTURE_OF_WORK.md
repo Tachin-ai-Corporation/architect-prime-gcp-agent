@@ -213,9 +213,11 @@ Responsibilities are **scheduled or event-triggered work definitions** that prod
 5. If `processRef` is set: the linked process executes deterministically
 6. If no `processRef`: the Mission is dispatched through the normal cortex decide loop
 
-### Event Triggers (Planned)
+### Event Triggers
 
-The `trigger` field enables event-driven responsibilities: `on_merge`, `on_deploy`, `on_failure`. When a matching event occurs, `fireEventResponsibilities(eventType)` fires all responsibilities with that trigger.
+The `trigger` field enables event-driven responsibilities. Implemented triggers: `on_complete` (fires when a mission completes) and `on_failure` (fires when a mission fails). When a matching event occurs, `fireEventResponsibilities(eventType)` fires all responsibilities with that trigger.
+
+Planned triggers (not yet implemented): `on_merge`, `on_deploy`.
 
 See [AUTHORING_RESPONSIBILITIES.md](guides/AUTHORING_RESPONSIBILITIES.md) for the full schema reference.
 

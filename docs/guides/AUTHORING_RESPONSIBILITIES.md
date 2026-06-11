@@ -188,7 +188,7 @@ The `trigger` field enables event-driven responsibilities:
 ```json
 {
   "id": "r-post-deploy-verify",
-  "trigger": "on_deploy",
+  "trigger": "on_failure",
   "schedule": "0 0 31 2 *",
   "min_spacing_minutes": 30,
   "processRef": "p-deploy-verify"
@@ -197,8 +197,9 @@ The `trigger` field enables event-driven responsibilities:
 
 | Trigger Value | Fires When |
 |--------------|-----------|
-| `on_merge` | A code merge or PR is completed |
-| `on_deploy` | A deployment finishes (success or failure) |
+| `on_complete` | A Mission completes successfully |
+| `on_merge` | A code merge or PR is completed **(not yet implemented)** |
+| `on_deploy` | A deployment finishes (success or failure) **(not yet implemented)** |
 | `on_failure` | A Mission fails |
 | `null` | Cron-only (default) |
 
@@ -310,5 +311,5 @@ Before adding a new responsibility:
 - [ ] `processRef` points to an existing process ID (if used)
 - [ ] `processParameters` satisfies the linked process's required parameters
 - [ ] `project_id` is set if the work belongs to a specific project
-- [ ] `trigger` is one of `on_merge`, `on_deploy`, `on_failure`, or `null`
+- [ ] `trigger` is one of `on_complete`, `on_failure`, `on_merge` **(not yet implemented)**, `on_deploy` **(not yet implemented)**, or `null`
 - [ ] Added to the correct config file (`responsibilities.json` for fleet, `responsibilities-prime.json` for prime-only)

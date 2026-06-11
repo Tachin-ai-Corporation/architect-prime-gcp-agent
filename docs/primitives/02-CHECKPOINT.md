@@ -74,8 +74,8 @@ graph LR
 
 When a Checkpoint completes, context from its Tasks is forwarded to the next Checkpoint. This is how later steps know what earlier steps accomplished. The brain daemon manages context budgets:
 
-- Success context: up to `ctx_dispatch_success` chars per prior step (default: 4000)
-- Failure context: up to `ctx_dispatch_failure` chars per prior step (default: 3000)
+- Success context: budget per prior step governed by `utility.context_budgets.dispatch_success` in `contracts.json`
+- Failure context: budget per prior step governed by `utility.context_budgets.dispatch_failure` in `contracts.json`
 
 ---
 

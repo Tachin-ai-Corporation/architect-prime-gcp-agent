@@ -1,160 +1,163 @@
 # Architect Prime — Mission Plan
 
-> **Current version:** `v2026.06.08.2.0`
->
-> This document describes *what Architect Prime is* and *how it works right now*.
-> Implementation plans live in `docs/plans/`. Historical changes live in git.
+> This document describes **what Architect Prime is** and **what it is becoming**.
+> The normative boundaries live in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md); the definition of improvement lives in [`docs/BRAIN_CANON.md`](docs/BRAIN_CANON.md); implementation plans live in [`docs/plans/`](docs/plans/).
 
 ---
 
-## Vision
+## What Architect Prime Is
 
-Architect Prime is a **self-bootstrapping agent factory** built on a native brain gateway and GCP.
+Architect Prime is a **self-bootstrapping agent factory**. It deploys autonomous AI specialist agents into a Google Cloud project, where they operate as named teammates inside Google Workspace — reachable by chat and email, present on calendars, working alongside humans in the channels humans already use.
 
-Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages costs, and tears them down. Humans assign work to agents directly, and agents may delegate to other agents. Prime is the factory that builds and maintains the fleet.
+Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages their cost, and tears them down. Humans assign work to agents directly; agents delegate to each other directly. The factory builds and maintains the fleet — it never sits in the middle of the work.
+
+Everything runs inside the operator's own GCP project: no shared infrastructure, no external runtime dependencies, no API keys. Authentication is Application Default Credentials, Domain-Wide Delegation, and per-agent IAM, end to end.
 
 ---
 
-## Architecture
+## How It Is Organized
 
 ```
 Dashboard (Cloud Run — Next.js)
-    │
-    ├─ REST API (28 endpoints)        → Fleet lifecycle, chat, work, introspect
-    ├─ 18-route hierarchy              → /p/[id]/... (prime-scoped) + /library/... (global)
-    │
+    │  control plane: fleet lifecycle, chat, work trees, introspection,
+    │  projects, processes, plans, secret management
     ▼
 Firestore (state store)
-    ├── primes/{id}/work/{id}          → M/C/T envelope state machine
-    ├── primes/{id}/intake/{id}        → Brain intake queue
-    ├── primes/{id}/fleet/{agent}      → Fleet agent status + health
-    ├── primes/{id}/messages/          → Dashboard ↔ Prime chat
-    ├── primes/{id}/projects/{id}      → Project context (recursive, with depends_on)
-    ├── primes/{id}/processes/{id}     → Stored reusable processes
-    ├── primes/{id}/plans/{id}         → Plan blueprints (draft → approved → executing → complete)
-    └── config/settings                → Agent defaults (email domain, artifacts root folder)
-    │
+    ├── primes/{id}/work/{id}       → M/C/T envelope state machine
+    ├── primes/{id}/intake/{id}     → Brain intake queue
+    ├── primes/{id}/fleet/{agent}   → Fleet agent status + health
+    ├── primes/{id}/messages/       → Dashboard ↔ Prime chat
+    ├── primes/{id}/projects/{id}   → Project context (recursive, with dependencies)
+    ├── primes/{id}/processes/{id}  → Stored reusable processes
+    ├── primes/{id}/plans/{id}      → Plan blueprints (draft → approved → executing → complete)
+    └── config/                     → Settings, secret metadata + grants
     ▼
-Agent VMs (e2-medium, Ubuntu 22.04)
-    ├── agent-ears      (systemd) — Deterministic input: poll, dedup, fire-and-forget
-    ├── agent-brain     (systemd) — Envelope orchestrator: classify, decide, dispatch
-    ├── agent-mouth     (systemd) — Output delivery: JSONL tail + envelope polling
-    ├── agent-introspect(systemd) — Dashboard introspection bus
-    └── brain-gateway   (systemd, port 18789) — 6-agent LLM configuration
-        ├── cortex            — Orchestrator (default)
-        ├── motor             — Execution + Workspace tools
-        ├── prefrontal        — Planning
-        ├── cerebellum        — Verification
-        ├── temporal-research — Web search (Vertex AI grounding)
-        └── temporal-memory   — Memory recall (no external APIs)
+Agent VMs (GCE, host-native — no containers)
+    ├── agent-ears       (systemd) — deterministic input: poll, dedup, fire-and-forget
+    ├── agent-brain      (systemd) — envelope orchestrator: classify, decide, dispatch
+    ├── agent-mouth      (systemd) — output delivery to the channel
+    ├── agent-introspect (systemd) — dashboard introspection bus
+    └── brain-gateway    (systemd) — the cognitive organs:
+        ├── cortex            — the voice: classify, decide, synthesize
+        ├── prefrontal        — the structurer: M→C→T blueprints
+        ├── motor             — the hands: tools, exec, files (the only mutator)
+        ├── cerebellum        — the conscience: independent verification
+        ├── temporal-research — the outside world: search + grounding
+        └── temporal-memory   — internal recall (no external APIs)
 ```
 
-### Cognitive Hierarchy: R → M → C → T
-
-All work flows through four levels. No exceptions.
-
-- **Responsibilities (R):** Cron-scheduled or event-triggered recurring duties. Configured in JSON, hot-reloaded. Support `trigger` events: `on_complete`, `on_deploy`, `on_failure`.
-- **Missions (M):** Multi-checkpoint objectives with definitions of done. Every user request becomes a mission. Always has `project_id`. Supports `depends_on` for dependency management.
-- **Checkpoints (C):** Observable milestones within a mission. Created by prefrontal or brain.
-- **Tasks (T):** Atomic execution steps dispatched to sub-agents. Always nested under a checkpoint.
-
-Additional primitives:
-- **Projects:** Recursive organizational containers (max depth 4) with accumulated context. Every Mission belongs to a project.
-- **Plans:** Unexecuted Mission blueprints. Created via `createPlan()`, approved via `approvePlan()`, stamped into M→C→T via `stampPlan()`. Lifecycle: draft → approved → executing → complete.
-- **Processes:** Reusable templates (6 core: plan, review, audit, investigate, deploy-verify, release). Produce Plans.
-- **Artifacts:** Files produced during Missions, auto-published to Google Drive on completion. Organized as `{root}/{project}/{prime}/{agent}/`. Referenced in project context for cross-mission access.
-
-Full Culture of Work framework documented in [`docs/CULTURE_OF_WORK.md`](docs/CULTURE_OF_WORK.md).
-
-### Brain State Machine
-
-`agent-brain.mjs` is the central orchestrator. It runs a deterministic loop:
-
-1. **Intake → Classify** — Cortex classifies the input (`new_mission`, `attach`, `continue`, `cancel`)
-2. **Quick Ack** — LLM-voiced acknowledgment injected as first C→T under the new mission
-3. **Decide Loop** — Cortex returns structured JSON actions (`dispatch`, `synthesize`, `continue`, `delegate`, etc.)
-4. **Dispatch** — Tasks dispatched to motor/cerebellum/temporal agents via gateway sessions
-5. **Synthesize** — Final response composed and marked for delivery
-6. **Delivery** — `agent-mouth` polls for `delivery_status: 'pending'` envelopes and sends to channel
-
-### I/O Pipeline
-
-- **Ears**: Polls GChat (DWD) or Firestore. Zero LLM calls. Deduplicates. Fire-and-forget gateway POST.
-- **Mouth**: Tails JSONL transcript + polls brain envelopes. LLM classify per output. Delivers to GChat/Firestore.
-- Both are fully independent — crash of one doesn't affect the other.
-
-### Fleet Agent Lifecycle
-
-**Hire:** Dashboard → `fleet-hire` → `fleet-deploy` (SA + IAM + VM) → `fleet-bootstrap.sh` (CoreKit + gateway + services) → `fleet-monitor` (serial console polling) → online
-
-**Fire:** Dashboard → `fleet-fire` → `fleet-teardown` (VM deleted, SA preserved for re-hire)
-
-**Upgrade:** Dashboard → `upgrade-corekit` (manifest re-install + contract validation + service restart)
-
-### Three-Layer Memory
-
-- **Working Memory (`MEMORY.md`):** Agent's RAM. Loaded into every system prompt. Pruned nightly.
-- **Core Memory (Firestore):** Durable facts. Queried via time-windowed reads. Promoted during consolidation.
-- **Deep Truths (`SOUL.md`):** Behavioral firmware. Changes only during nightly consolidation with evidence spanning 3+ sessions.
+Secret material lives only in GCP Secret Manager, managed from the dashboard's Secret Store: humans store secrets, share them with individual agents via per-secret IAM grants on each agent's service account, and rotate or revoke them without touching a VM. Agents read what they are granted at runtime, over ADC, and nothing else.
 
 ---
 
-## Design Principles
+## The Culture of Work
 
-1. **No secrets in repo** — runtime injection via ADC, DWD signJwt, GCP metadata
-2. **Contracts over documentation** — `contracts.json` is the single source of truth; `validate-contracts` enforces it
-3. **Modular manifests** — `install.sh --role prime|fleet --job devops|engineer` chains base + role + job fragments
-4. **Boot stub pattern** — startup scripts as `.sh` files on GitHub, not embedded in JS
-5. **M→C→T always** — every output exists within the mission/checkpoint/task hierarchy
-6. **LLMs think, systems move data** — brain orchestrator is deterministic; LLMs make decisions within structured JSON schemas
-7. **Fail fast at bootstrap** — `validate-contracts` runs before services start
-8. **Idempotent everything** — scripts safely re-runnable; upgrades overwrite manifest files, never delete non-manifest files
-9. **Preserve state across cycles** — SAs and IAM persist across fire/re-hire; STATE.json records role/job
+All work flows through a closed set of eight primitives. The execution spine is **R → M → C → T**:
+
+- **Responsibilities (R):** Recurring duties — cron-scheduled or event-triggered, configured in JSON, hot-reloaded. Singleton responsibilities guarantee at most one live cycle at a time.
+- **Missions (M):** Multi-checkpoint objectives with definitions of done. Every request becomes a mission. Missions are always flat — they never nest — and every mission belongs to a project.
+- **Checkpoints (C):** Observable milestones within a mission, executed strictly in sequence. Verification gates their closure.
+- **Tasks (T):** Atomic steps dispatched to the cognitive organs, always nested under a checkpoint.
+
+Around the spine, four organizing primitives:
+
+- **Projects:** The sole recursive primitive (bounded depth) — organizational containers with accumulated context and dependencies.
+- **Plans:** Unexecuted mission blueprints with a full lifecycle: drafted, approved, stamped into M→C→T.
+- **Processes:** Reusable, parameterized templates that produce plans — the system's repeatable ways of working, including delegation steps and human approval gates.
+- **Artifacts:** Files produced during missions, auto-published to Google Drive and referenced in project context for cross-mission access.
+
+The set is closed. New coordination needs are expressed by composing these eight — never by inventing a ninth. The full framework is documented in [`docs/CULTURE_OF_WORK.md`](docs/CULTURE_OF_WORK.md).
+
+---
+
+## The Cognitive Loop
+
+The brain is a deterministic machine that consults intelligence. It owns the loop; the models own only the judgments inside it.
+
+Every envelope advances through one canonical cycle:
+
+1. **GATHER** — assemble minimum sufficient context: memory recall, and research only when the question needs the outside world. Read-only gathering may fan out in parallel; every fan-out joins before a decision.
+2. **DECIDE** — cortex returns exactly one structured decision from the daemon's legal-move set.
+3. **ACT** — the daemon dispatches: prefrontal to structure, motor to mutate (one pair of hands — mutation is exclusive), temporal organs to fetch, delegation outward to other agents.
+4. **VERIFY** — cerebellum checks results against acceptance criteria, independently of whoever produced them.
+5. **CLOSE or REPEAT** — the daemon applies the transition: advance, complete, ask, fail, or iterate within a bounded count.
+
+One envelope at a time, fully attended; throughput is achieved by hiring more agents, never by making one brain juggle. Where an installed skill covers the work, the skill governs — skill resolution is part of dispatch, across every organ, and improvisation beside an applicable skill is a defect, not a style.
+
+**Input and output are deterministic and independent.** Ears polls the channels, deduplicates, and hands off — zero judgment. Mouth classifies and delivers outputs back to the channel. Either can fail without taking the other down.
+
+**Inter-agent work travels where humans can see it.** Agents delegate to each other over Google Chat with @-mentions: a machine-parseable envelope reference plus a human-readable summary. The conversation is legible to everyone in the room; the state machine resumes from Firestore, never from parsing chat.
+
+---
+
+## Memory
+
+Three layers, three speeds, one discipline:
+
+- **Working Memory (`MEMORY.md`):** The agent's RAM, loaded into every system prompt and pruned relentlessly.
+- **Core Memory (Firestore):** Durable facts, promoted on evidence, retired and superseded as actively as they are added.
+- **Deep Truths (`SOUL.md`):** Behavioral firmware, changed rarely and only on evidence spanning multiple sessions.
+
+Memory exists to make context smaller, not larger. Skills hold what the *system* has learned; memory holds what *one agent* has lived — and proven improvisations are promoted into skills so that learning compounds at fleet level.
+
+---
+
+## The Fleet Lifecycle
+
+- **Hire:** Dashboard → service account + IAM + VM → bootstrap (CoreKit + gateway + services from a boot stub that pulls directly from the repository) → health monitoring → online.
+- **Fire:** VM deleted; service account and IAM preserved, so re-hire is fast and identity is stable.
+- **Upgrade:** Manifest re-install at any git ref, contract validation, service restart — the same path deploys a release to the fleet or a feature branch to a test agent.
+
+Agent capability is layered by manifest: universal tools in the base layer, role tools in the role layer, specialty tools and credential grants in the job layer. What an agent *cannot* do is enforced by manifests, IAM, code ownership, and CI — structure, not promises.
+
+---
+
+## Governing Principles
+
+The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md) (the walls — invariants that must hold) and [`docs/BRAIN_CANON.md`](docs/BRAIN_CANON.md) (the gradient — what better looks like). The shortest possible distillation:
+
+1. **Everything that can be deterministic is deterministic.** LLM calls are reserved for judgment.
+2. **Contracts over documentation.** `infra/contracts.json` is the single source of truth, validated before anything starts.
+3. **No secrets in the repository, on disk images, or in Firestore.** Runtime injection only: ADC, DWD, Secret Store.
+4. **Manifest discipline is absolute.** Files and their manifest entries ship in the same commit.
+5. **R→M→C→T always.** Every output exists within the envelope hierarchy.
+6. **Idempotent everything.** Re-runnable scripts, resumable state, restart as routine.
+7. **Observable by default.** Every transition writes history; every mechanism ships with its telemetry.
+8. **Capability fencing is structural.** Personas reinforce; manifests, IAM, and CI enforce.
 
 ---
 
 ## File Layout
 
 ```
-architect-prime/
-├── app/                    # Dashboard (Cloud Run, Next.js) — 28 API endpoints
-├── infra/                  # Infrastructure — contracts.json, install.sh, bootstraps, manifests
-├── corekit/                # CoreKit Runtime — 50 VM-side scripts grouped by domain
-│   ├── fleet/              # Fleet lifecycle (9 scripts)
-│   ├── chat/               # Google Chat / DWD (3 scripts)
-│   ├── brain/              # Brain tools (11 scripts)
-│   ├── daemon/             # Ears/Mouth/Brain/Introspect services
-│   ├── memory/             # Memory subsystem (3 scripts)
-│   ├── system/             # upgrade-corekit, validate-contracts
-│   └── config/             # Registries, templates, agent-types
-├── brain/                  # Agent Identity — SOUL.md, IDENTITY.md per agent per role
-├── specialties/            # Per-agent-type bundles (8 specialties)
-├── skills/                 # Skill packages (agent-ask, workspace-drive, fleet-*, etc.)
-├── docs/                   # Documentation — Culture of Work, primitives, authoring guides
-│   ├── CULTURE_OF_WORK.md  # Culture of Work framework overview
-│   ├── primitives/         # 8 primitive reference docs (Task → Artifact)
-│   ├── guides/             # Authoring guides (processes, responsibilities)
-│   ├── plans/              # Implementation plans (referenced, not inlined)
-│   └── architecture/       # Design documents
-├── MISSION_PLAN.md         # This document
+.
+├── app/            # Dashboard control plane (Cloud Run, Next.js)
+├── infra/          # contracts.json, install.sh, bootstraps, manifests
+├── corekit/        # VM runtime — daemons, libs, brain tools, fleet/chat/memory/system scripts, config
+├── brain/          # Agent identity workspaces — SOUL.md, IDENTITY.md per role
+├── specialties/    # Per-agent-type bundles — workspace, brain appends, skills, responsibilities
+├── skills/         # Versioned skill packages — the system's codified know-how
+├── docs/           # Culture of Work, primitive references, authoring guides, canons, plans
+├── MISSION_PLAN.md # This document
 └── README.md
 ```
 
----
-
-## Fleet
-
-| Agent | Specialty | VM | Status |
-|-------|-----------|-----|--------|
-| stan | devops | fleet-stan | Online |
-| anora | pm | fleet-anora | Online |
-
-**Prime:** `chucknorris` — `prime-chucknorris`, `us-central1-a`, `architect-prime-beta`
+Six modules, one home for everything. The dashboard never contains runtime logic; the runtime never reaches into the dashboard.
 
 ---
 
-## Plans
+## What Architect Prime Is Becoming
 
-Active and upcoming implementation plans live in [`docs/plans/`](docs/plans/).
+The trajectory, stated as direction rather than schedule:
 
-- [Culture of Work Implementation](docs/plans/CULTURE_IMPLEMENTATION_PLAN.md) — ✅ Complete
+**A system that improves itself.** A Product Architect agent stewards the canons, continuously audits the codebase, and proposes the single highest-value improvement per cycle — ranked by the Brain Canon's rubric, rejected at the Product Canon's walls. Engineering agents implement on branches, deploy to an ephemeral test agent, exercise it with canned missions, QA it through the introspection bus, and open pull requests that carry their evidence. Humans hold the approval gates — on scope before work begins, on merge before code lands — and those gates loosen only as the loop earns it. Every cycle that hires and fires its test agent regression-tests the factory itself.
+
+**A system whose learning compounds.** Skill governance is becoming a deterministic stage of dispatch: when work matches an installed skill, every organ follows the procedure, deviations are recorded, and recurring deviations become skill proposals. Know-how migrates continuously out of prompts and individual memory into versioned, fleet-shared skills — so the system's competence is a property of the repository, not of any one agent.
+
+**A society of agents that humans can read.** Delegation, status, and results flow through the same chat humans inhabit — machine-precise underneath, human-legible on the surface. The fleet grows toward richer specialist collaboration: structured handoffs, layered review, and work trees that show exactly who is doing what for whom, in real time.
+
+**A brain that perceives.** A deterministic vision pipeline is taking shape — ingest, deduplicate, classify, route, analyze through typed lenses, persist — giving agents eyes that follow the same governing principle as everything else: deterministic stages around narrowly scoped judgment.
+
+**A factory that governs itself at scale.** As confidence accumulates, structural self-governance deepens: promotion ladders expressed as git tags, automated auditors that watch for drift, scope-checked CI that makes out-of-bounds change impossible rather than discouraged. The destination is a fleet that proposes, builds, verifies, and ships its own improvements at a cadence no human team could sustain — inside walls no agent can move.
+
+What it is becoming is, deliberately, more of what it is: more deterministic, more attentive, more economical, more honest, and easier to read — a factory whose product, increasingly, is its own next version.
