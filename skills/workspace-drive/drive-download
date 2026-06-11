@@ -12,7 +12,9 @@ FILE_ID="" OUTPUT="" EXPORT_MIME=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --file) FILE_ID="$2"; shift 2 ;; --output) OUTPUT="$2"; shift 2 ;;
-    --mime) EXPORT_MIME="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+    --mime) EXPORT_MIME="$2"; shift 2 ;;
+    *) if [[ -z "$FILE_ID" && "$1" != -* ]]; then FILE_ID="$1"; shift
+       else die "Unknown: $1"; fi ;; esac
 done
 [[ -n "$FILE_ID" ]] || die "Need --file <file_id>"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"

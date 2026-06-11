@@ -14,18 +14,18 @@ Workspace email by human users.
 ## Tools (ALL dispatched to motor)
 
 ### Read
-- `drive-ls [--folder ID] [--max 20]` — list files in a folder
+- `drive-ls [FOLDER_ID] [--max 20]` — list files in a folder
 - `drive-search --query "name contains 'report'"` — search files
 - `drive-search --query "sharedWithMe=true"` — list files shared with you
-- `drive-download --file ID [--output /path]` — download a file
+- `drive-download FILE_ID [--output /path]` — download a file
 
 ### Write
-- `drive-upload --file /path [--name "Name"] [--folder ID]` — upload a file
+- `drive-upload /path/to/file [--name "Name"] [--folder FOLDER_ID]` — upload a file
 - `drive-mkdir --name "Name" [--parent ID]` — create a folder
-- `drive-rename --file ID --name "New Name"` — rename a file
-- `drive-delete --file ID` — trash a file
-- `drive-move --file ID --to FOLDER_ID` — move a file
-- `drive-share --file ID --to anyone --role reader` — share a file
+- `drive-rename FILE_ID --name "New Name"` — rename a file
+- `drive-delete FILE_ID` — trash a file
+- `drive-move FILE_ID --to FOLDER_ID` — move a file
+- `drive-share FILE_ID --to anyone --role reader` — share a file
 
 ## Access & Sharing
 - Files shared with your Workspace email are automatically visible.
