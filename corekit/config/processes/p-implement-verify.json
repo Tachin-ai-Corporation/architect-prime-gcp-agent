@@ -1,0 +1,78 @@
+{
+  "id": "p-implement-verify",
+  "name": "Implement and Verify",
+  "description": "Engineer-side process for the improvement loop. Implements changes within scope globs, runs pre-commit gates, provisions a test agent for live verification, exercises canned test missions, opens a PR, and tears down the test agent. Designed to be invoked via delegation from a product-architect agent.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "scope_globs": {
+      "description": "File patterns the implementation may touch (e.g., 'corekit/lib/scheduler.mjs')",
+      "required": true
+    },
+    "acceptance_criteria": {
+      "description": "Testable criteria from the architect's proposal",
+      "required": true
+    },
+    "proposal_link": {
+      "description": "Drive link to the architect's proposal document",
+      "required": false,
+      "default": ""
+    },
+    "branch_slug": {
+      "description": "Short slug for the branch name (e.g., 'dedup-scheduler')",
+      "required": false,
+      "default": "improvement"
+    }
+  },
+  "steps": [
+    {
+      "title": "Clone repo and implement changes",
+      "description": "Set up the workspace and implement the improvement:\n1. Read the proposal document (${proposal_link}) to understand what to change and why\n2. Clone or fetch the repo into the mission workspace\n3. Create a feature branch: `refactor/IMP-${branch_slug}`\n4. Read all files within scope: ${scope_globs}\n5. Implement the changes strictly within scope globs — do NOT touch files outside scope\n6. Write clear, atomic commits with 'why' not just 'what'\n\nScope constraint: ${scope_globs}\nAcceptance criteria: ${acceptance_criteria}\n\nOutput: list of files changed with a summary of each change.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Changes implemented within scope globs. Feature branch created. All changes committed with clear messages. No files outside scope were modified.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Run pre-commit gates",
+      "description": "Run all pre-commit checks to verify the implementation:\n1. JSON parse: validate all .json files touched\n2. Run `validate-contracts` if contracts.json was changed\n3. Run `node --test test/*.test.mjs` — all tests must pass\n4. Check manifest integrity if manifests were changed\n5. Verify `git diff --staged` shows only in-scope changes\n6. Check for debug artifacts: no console.log, debugger, or TODO added\n\nIf any gate fails, fix the issue and re-run. Do not proceed with failures.\n\nOutput: gate results (pass/fail for each check), test output summary.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "All pre-commit gates pass: tests pass, no out-of-scope changes, no debug artifacts. Gate results documented.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Provision and verify test agent",
+      "description": "Provision a test agent to validate the changes on a live VM:\n1. Push the feature branch to remote: `git push origin refactor/IMP-${branch_slug}`\n2. Hire a test agent: `fleet-hire test-imp --job swe`\n3. Wait for the agent to come online: `fleet-status test-imp`\n4. Upgrade the test agent to the feature branch: `fleet-upgrade test-imp --ref refactor/IMP-${branch_slug}`\n5. Verify the agent is healthy: `fleet-verify test-imp` — repeat until green (max 5 attempts, 60s between)\n\nIf fleet-hire fails, check SA/IAM prerequisites and retry once.\nIf fleet-verify fails after 5 attempts, report blocked.\n\nOutput: test agent name, online status, verification results.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Test agent provisioned and online. Fleet-verify returns green. Agent is running the feature branch code.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Exercise test agent with canned missions",
+      "description": "Send canned test missions to the test agent to validate end-to-end behavior:\n\n**Mission 1 — Simple Q&A:**\nSend a direct question via GChat DM to the test agent. Verify it responds within 5 minutes. Check via `work-log-read` that a mission was created and completed.\n\n**Mission 2 — Process execution:**\nSend a message asking the test agent to run `p-investigate` on a stub topic. Verify the process loads and executes at least the first checkpoint. Check via `work-log-read`.\n\n**Mission 3 — Memory round-trip:**\nSend a message asking the test agent to write a test fact to Core Memory and then read it back. Verify via `work-log-read` that the fact was written and retrieved.\n\nFor each mission:\n- Check `work-log-read --agent test-imp --status complete` for completion\n- Check `task-log-read --agent test-imp` for any errors\n- If a mission fails, fix the code, push, re-upgrade, and retry (max 3 iterations)\n- If still failing after 3 iterations, report blocked with evidence\n\nOutput: mission results (pass/fail for each), evidence from work-log-read.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "All 3 canned missions completed successfully. Evidence collected from work-log-read. Any failures were fixed and re-verified.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Open PR and teardown test agent",
+      "description": "Finalize the implementation:\n1. Open a PR via GitHub API:\n   - Title: 'IMP: ${branch_slug}'\n   - Body: scope block, test-agent evidence (mission IDs from previous step), QA summary\n   - Base branch: main\n   - Head branch: refactor/IMP-${branch_slug}\n2. Confirm CI passes on the PR (check via API, wait up to 10 minutes)\n3. Teardown the test agent: `fleet-fire test-imp`\n   - If fleet-fire fails, retry once, then force-fire — never leave a branch-ref agent standing\n4. Send the `[DELEGATION-RESULT]` reply with:\n   - PR URL\n   - Test agent mission IDs as evidence\n   - QA summary\n   - Status: complete or failed\n\nOutput: PR URL, CI status, teardown confirmation, delegation result sent.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "PR opened with scope block and test evidence. CI green. Test agent torn down. Delegation result sent to the architect agent."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

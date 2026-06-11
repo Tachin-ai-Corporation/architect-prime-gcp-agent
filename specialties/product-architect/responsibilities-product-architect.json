@@ -30,7 +30,7 @@
         "success_criteria": "One improvement proposed, ranked by rubric, delegated to engineering, results verified against both canons, learnings recorded.",
         "prior_learnings": ""
       },
-      "processRef": null,
+      "processRef": "p-repo-improve",
       "processParameters": {
         "focus_area": "brain"
       }
