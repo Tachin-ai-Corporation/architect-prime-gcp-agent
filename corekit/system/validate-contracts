@@ -46,14 +46,12 @@ log "Contracts: ${CONTRACTS}"
 
 # ---- Read contracts ----
 read_contract() {
-  python3 -c "
-import json, sys
-c = json.load(open('$CONTRACTS'))
-keys = '$1'.split('.')
-v = c
-for k in keys:
-    v = v[k]
-print(v)
+  node -e "
+const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
+const keys = '$1'.split('.');
+let v = c;
+for (const k of keys) v = v[k];
+console.log(String(v));
 " 2>/dev/null
 }
 
@@ -181,7 +179,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
 
   C_PROJ_PROMO="$(read_contract 'projects.promotion_auto' 2>/dev/null || echo '')"
   if [[ -n "$C_PROJ_PROMO" ]]; then
-    if [[ "$C_PROJ_PROMO" == "True" || "$C_PROJ_PROMO" == "False" ]]; then
+    if [[ "$C_PROJ_PROMO" == "true" || "$C_PROJ_PROMO" == "false" || "$C_PROJ_PROMO" == "True" || "$C_PROJ_PROMO" == "False" ]]; then
       pass "projects.promotion_auto = ${C_PROJ_PROMO}"
     else
       fail "projects.promotion_auto = '${C_PROJ_PROMO}' (expected boolean)"
@@ -227,7 +225,7 @@ if [[ "$MODE" == "runtime" ]]; then
   BAD_AP=""
   for f in "${CORE_DIR}"/agents/*/agent/auth-profiles.json; do
     [ -f "$f" ] || continue
-    profiles=$(python3 -c "import json; print(len(json.load(open(\"$f\")).get(\"profiles\",{})))" 2>/dev/null || echo "ERR")
+    profiles=$(node -e "const d=JSON.parse(require('fs').readFileSync('$f','utf8'));console.log(Object.keys(d.profiles||{}).length)" 2>/dev/null || echo "ERR")
     [ "$profiles" != "0" ] && BAD_AP="${BAD_AP} $f"
   done
   if [[ -z "$BAD_AP" ]]; then
