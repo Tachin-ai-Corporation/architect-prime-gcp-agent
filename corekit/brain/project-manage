@@ -9,7 +9,8 @@
 #   project-manage update '<id>' '<json>' [--processes <comma-separated-ids>]  # Update project
 #   project-manage archive '<id>'          # Set status to 'archived'
 #   project-manage pause '<id>'            # Set status to 'paused'
-#   project-manage team-add <id> '<json>'  # Add/update team member (email, role, name, type)
+#   project-manage team-add <id> <email> <role> [name] [type]  # Add/update team member (simple)
+#   project-manage team-add <id> '<json>'                      # Add/update team member (JSON)
 #   project-manage team-remove <id> <email># Remove team member by email
 #   project-manage team-list <id>          # List team members in table format
 #
@@ -739,7 +740,23 @@ print(f'Completed project \'{target_id}\'.')
 
   team-add)
     TARGET_ID="${1:?'team-add requires a project id'}"
-    MEMBER_JSON="${2:?'team-add requires a JSON string with at least email and role'}"
+    shift
+    # Support two syntaxes:
+    #   Positional: team-add <projectId> <email> <role> [name] [type]
+    #   JSON:       team-add <projectId> '<json>'
+    if [[ "${1:-}" == "{"* ]]; then
+      MEMBER_JSON="$1"
+    elif [[ -n "${1:-}" && -n "${2:-}" ]]; then
+      MEMBER_EMAIL="$1"
+      MEMBER_ROLE="$2"
+      MEMBER_NAME="${3:-}"
+      MEMBER_TYPE="${4:-agent}"
+      MEMBER_JSON="{\"email\": \"${MEMBER_EMAIL}\", \"role\": \"${MEMBER_ROLE}\", \"name\": \"${MEMBER_NAME}\", \"type\": \"${MEMBER_TYPE}\"}"
+    else
+      echo "Usage: project-manage team-add <projectId> <email> <role> [name] [type]" >&2
+      echo "   or: project-manage team-add <projectId> '<json>'" >&2
+      exit 1
+    fi
     python3 -c "
 import json, sys, subprocess
 from datetime import datetime, timezone
@@ -1070,7 +1087,8 @@ for t in team:
     echo "  complete '<id>'                                   Set project status to 'completed' with timestamp"
     echo "  pause '<id>'                                      Set project status to 'paused'"
     echo "  archive '<id>'                                    Set project status to 'archived'"
-    echo "  team-add '<id>' '<json>'                          Add/update a team member on a project"
+    echo "  team-add <id> <email> <role> [name] [type]       Add team member (simple positional args)"
+    echo "  team-add <id> '<json>'                            Add team member (JSON with email, role)"
     echo "  team-remove '<id>' '<email>'                      Remove a team member by email"
     echo "  team-list '<id>'                                  List team members in table format"
     echo ""

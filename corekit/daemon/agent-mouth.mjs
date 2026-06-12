@@ -747,6 +747,12 @@ async function pollBrainV3Envelopes() {
         skippedDelivered++;
         continue;
       }
+      // Re-deliver: if brain reset delivery_status to 'pending' on a previously-delivered envelope
+      // (e.g., after self-unblock → re-block), clear cache so it gets re-delivered
+      if (_deliveredEnvelopes.has(envId) && deliveryStatus === 'pending') {
+        _deliveredEnvelopes.delete(envId);
+        log('Re-delivering envelope (delivery_status reset to pending)', { envId, status });
+      }
       // Skip: in-memory dedup
       if (_deliveredEnvelopes.has(envId)) { skippedDelivered++; continue; }
 
