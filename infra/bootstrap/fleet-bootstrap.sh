@@ -209,7 +209,8 @@ if [[ -n "${AGENT_USER_EMAIL}" ]]; then
   "agentMention": "${AGENT_MENTION}",
   "projectId": "${GCP_PROJECT_ID}",
   "dwdSignerSa": "${DWD_SIGNER_SA}",
-  "geminiProject": "${GCP_PROJECT_ID}"
+  "geminiProject": "${GCP_PROJECT_ID}",
+  "agentType": "${SPECIALTY}"
 }
 CHATCFG
 fi

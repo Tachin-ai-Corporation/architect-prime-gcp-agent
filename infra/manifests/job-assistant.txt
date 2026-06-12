@@ -2,12 +2,13 @@
 # Assistant specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job assistant
 
-specialties/assistant/workspace/IDENTITY.md workspace-assistant/IDENTITY.md
-specialties/assistant/workspace/SOUL.md workspace-assistant/SOUL.md
-specialties/assistant/workspace/MEMORY.md workspace-assistant/MEMORY.md
+specialties/assistant/workspace/IDENTITY.md workspace/IDENTITY.md
+specialties/assistant/workspace/SOUL.md workspace/SOUL.md
+specialties/assistant/workspace/MEMORY.md workspace/MEMORY.md
 
 # Workspace skills — Google Drive
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+skills/workspace-drive/skill.json skills/workspace-drive/skill.json
 skills/workspace-drive/drive-ls bin/drive-ls
 skills/workspace-drive/drive-search bin/drive-search
 skills/workspace-drive/drive-download bin/drive-download
@@ -20,6 +21,7 @@ skills/workspace-drive/drive-share bin/drive-share
 
 # Workspace skills — Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search
 skills/workspace-gmail/gmail-get bin/gmail-get
 skills/workspace-gmail/gmail-send bin/gmail-send
@@ -28,6 +30,7 @@ skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send
 
 # Workspace skills — Calendar
 skills/workspace-calendar/SKILL.md skills/workspace-calendar/SKILL.md
+skills/workspace-calendar/skill.json skills/workspace-calendar/skill.json
 skills/workspace-calendar/calendar-events bin/calendar-events
 skills/workspace-calendar/calendar-search bin/calendar-search
 skills/workspace-calendar/calendar-create bin/calendar-create
@@ -36,6 +39,7 @@ skills/workspace-calendar/calendar-delete bin/calendar-delete
 
 # Workspace skills — Docs
 skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
+skills/workspace-docs/skill.json skills/workspace-docs/skill.json
 skills/workspace-docs/docs-cat bin/docs-cat
 skills/workspace-docs/docs-create bin/docs-create
 skills/workspace-docs/docs-write bin/docs-write

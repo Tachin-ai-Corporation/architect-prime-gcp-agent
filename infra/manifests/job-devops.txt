@@ -2,9 +2,9 @@
 # DevOps specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job devops
 
-specialties/devops/workspace/IDENTITY.md workspace-devops/IDENTITY.md
-specialties/devops/workspace/SOUL.md workspace-devops/SOUL.md
-specialties/devops/workspace/MEMORY.md workspace-devops/MEMORY.md
+specialties/devops/workspace/IDENTITY.md workspace/IDENTITY.md
+specialties/devops/workspace/SOUL.md workspace/SOUL.md
+specialties/devops/workspace/MEMORY.md workspace/MEMORY.md
 
 # DevOps responsibilities (merged with base by Brain scheduler)
 specialties/devops/responsibilities-devops.json corekit/responsibilities-job.json
@@ -18,9 +18,11 @@ specialties/devops/brain/cerebellum/SOUL_APPEND.md corekit/specialties/devops/br
 # Specialty-specific skills (used by assemble-tools phase 1)
 # Assembled into TOOLS.md alongside standard skills
 specialties/devops/skills/gcp-devops/SKILL.md corekit/specialties/devops/skills/gcp-devops/SKILL.md
+specialties/devops/skills/gcp-devops/skill.json corekit/specialties/devops/skills/gcp-devops/skill.json
 
 # Workspace skills — Google Drive
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+skills/workspace-drive/skill.json skills/workspace-drive/skill.json
 skills/workspace-drive/drive-ls bin/drive-ls
 skills/workspace-drive/drive-search bin/drive-search
 skills/workspace-drive/drive-download bin/drive-download
@@ -33,6 +35,7 @@ skills/workspace-drive/drive-share bin/drive-share
 
 # Workspace skills — Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search
 skills/workspace-gmail/gmail-get bin/gmail-get
 skills/workspace-gmail/gmail-send bin/gmail-send

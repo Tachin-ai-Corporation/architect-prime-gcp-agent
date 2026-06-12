@@ -11,9 +11,6 @@ corekit/system/validate-contracts bin/validate-contracts
 corekit/system/agent-ou-manage bin/agent-ou-manage
 corekit/system/secret-read bin/secret-read
 
-
-# Core tools — gateway
-
 # Chat tools (DWD)
 corekit/chat/dwd-token bin/dwd-token
 corekit/chat/chat-send bin/chat-send
@@ -106,10 +103,6 @@ corekit/config/processes/p-implement-verify.json corekit/processes/p-implement-v
 corekit/daemon/agent-introspect.mjs bin/agent-introspect.mjs
 corekit/daemon/agent-introspect.service corekit/agent-introspect.service
 corekit/daemon/start-agent-introspect bin/start-agent-introspect
-
-# Vertex Claude Proxy — Anthropic Messages API to Vertex AI rawPredict
-
-# Config templates (both needed for render-config)
 
 # Agent runtime skeleton (seed files — no-clobber on upgrade)
 brain/agents/main/agent/auth-profiles.json agents/main/agent/auth-profiles.json?

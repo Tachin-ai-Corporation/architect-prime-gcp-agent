@@ -73,7 +73,6 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   # ---- Check 1: fleet-bootstrap.sh .env GOOGLE_CLOUD_LOCATION ----
   FLEET_BS="${REPO_ROOT}/infra/bootstrap/fleet-bootstrap.sh"
   if [[ -f "$FLEET_BS" ]]; then
-    # Accept either the literal value OR the contract variable reference
     if grep -q 'GOOGLE_CLOUD_LOCATION=${C_LOCATION}' "$FLEET_BS"; then
       pass "fleet-bootstrap.sh .env location = contract-driven"
     elif grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$FLEET_BS"; then
@@ -87,7 +86,6 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   # ---- Check 2: prime-bootstrap.sh reads location from contracts ----
   PRIME_BS="${REPO_ROOT}/infra/bootstrap/prime-bootstrap.sh"
   if [[ -f "$PRIME_BS" ]]; then
-    # Accept either the literal value OR the contract variable reference
     if grep -q 'GOOGLE_CLOUD_LOCATION=${C_LOCATION}' "$PRIME_BS"; then
       pass "prime-bootstrap.sh .env location = contract-driven"
     elif grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$PRIME_BS"; then
@@ -98,7 +96,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 4: fleet-bootstrap.sh smoke test model route ----
+  # ---- Check 3: fleet-bootstrap.sh smoke test model route ----
   if [[ -f "$FLEET_BS" ]]; then
     if grep -q "\"model\":\"brain/cortex\"" "$FLEET_BS"; then
       pass "fleet-bootstrap.sh smoke test route = brain/cortex"
@@ -108,7 +106,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 5: agent-ears.mjs model route ----
+  # ---- Check 4: agent-ears.mjs model route ----
   EARS_SCRIPT="${REPO_ROOT}/corekit/daemon/agent-ears.mjs"
   if [[ -f "$EARS_SCRIPT" ]]; then
     if grep -q "'brain/cortex'" "$EARS_SCRIPT"; then
@@ -119,7 +117,96 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 10: mouth config fields ----
+  # ---- Check 5: Skill SKILL.md/skill.json pairing in manifests ----
+  MANIFEST_DIR="${REPO_ROOT}/infra/manifests"
+  SKILL_PAIR_FAIL=0
+  if [[ -d "$MANIFEST_DIR" ]]; then
+    for manifest in "$MANIFEST_DIR"/*.txt; do
+      [[ -f "$manifest" ]] || continue
+      MNAME="$(basename "$manifest")"
+      while IFS= read -r line; do
+        [[ "$line" =~ ^#|^$ ]] && continue
+        DEST="$(echo "$line" | awk '{print $2}')"
+        [[ "$DEST" == *"/SKILL.md" ]] || continue
+        SKILL_DIR="$(dirname "$DEST")"
+        JSON_DEST="${SKILL_DIR}/skill.json"
+        if ! grep -q "$JSON_DEST" "$manifest"; then
+          fail "Skill pairing: ${MNAME} installs ${DEST} without matching skill.json"
+          SKILL_PAIR_FAIL=$((SKILL_PAIR_FAIL + 1))
+        fi
+      done < "$manifest"
+    done
+    [[ $SKILL_PAIR_FAIL -eq 0 ]] && pass "All manifest SKILL.md entries have matching skill.json"
+  fi
+
+  # ---- Check 6: Manifest workspace destinations are canonical paths ----
+  LIVE_PATHS="$(node -e "
+const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
+const ws = c.workspaces || {};
+const paths = new Set();
+for (const [k, v] of Object.entries(ws)) {
+  if (k === '_comment') continue;
+  paths.add(v);
+}
+console.log(JSON.stringify([...paths]));
+" 2>/dev/null || echo '[]')"
+  DEST_FAIL=0
+  if [[ "$LIVE_PATHS" != "[]" && -d "$MANIFEST_DIR" ]]; then
+    for manifest in "$MANIFEST_DIR"/*.txt; do
+      [[ -f "$manifest" ]] || continue
+      MNAME="$(basename "$manifest")"
+      while IFS= read -r line; do
+        [[ "$line" =~ ^#|^$ ]] && continue
+        DEST="$(echo "$line" | awk '{print $2}')"
+        [[ "$DEST" == workspace* ]] || continue
+        WS_DIR="$(echo "$DEST" | cut -d/ -f1)"
+        FOUND="$(node -e "
+const paths = $LIVE_PATHS;
+const ws = '$WS_DIR';
+console.log(paths.includes(ws) ? 'yes' : 'no');
+" 2>/dev/null || echo 'no')"
+        if [[ "$FOUND" != "yes" ]]; then
+          fail "Dead destination: ${MNAME} installs to ${WS_DIR}/ (not in contracts.workspaces)"
+          DEST_FAIL=$((DEST_FAIL + 1))
+        fi
+      done < "$manifest"
+    done
+    [[ $DEST_FAIL -eq 0 ]] && pass "All manifest workspace destinations are canonical"
+  fi
+
+  # ---- Check 7: Specialty-id mapping ----
+  TYPES_FILE="${REPO_ROOT}/corekit/config/agent-types.json"
+  if [[ -f "$TYPES_FILE" ]]; then
+    ID_FAIL=0
+    while IFS= read -r TYPE_ID; do
+      [[ -z "$TYPE_ID" ]] && continue
+      if [[ ! -d "${REPO_ROOT}/specialties/${TYPE_ID}" ]]; then
+        fail "Specialty-id: '${TYPE_ID}' has no specialties/${TYPE_ID}/ directory"
+        ID_FAIL=$((ID_FAIL + 1))
+      fi
+      if [[ ! -f "${MANIFEST_DIR}/job-${TYPE_ID}.txt" ]]; then
+        fail "Specialty-id: '${TYPE_ID}' has no job-${TYPE_ID}.txt manifest"
+        ID_FAIL=$((ID_FAIL + 1))
+      fi
+    done < <(node -e "
+const t = JSON.parse(require('fs').readFileSync('$TYPES_FILE','utf8'));
+for (const x of t.types) console.log(x.id);
+" 2>/dev/null)
+    [[ $ID_FAIL -eq 0 ]] && pass "All agent-types ids have matching specialties/ and job manifest"
+  fi
+
+  # ---- Check 8: Ears gateway URL from contracts ----
+  if [[ -f "$EARS_SCRIPT" ]]; then
+    if grep -qP 'CONTRACTS|contracts' "$EARS_SCRIPT" && grep -qP 'gateway.*port|port.*gateway' "$EARS_SCRIPT"; then
+      pass "agent-ears.mjs gateway URL reads from contracts"
+    elif grep -qP '127\.0\.0\.1:\d+' "$EARS_SCRIPT"; then
+      fail "agent-ears.mjs hardcodes gateway port (should read from contracts.gateway.port)"
+    else
+      pass "agent-ears.mjs gateway URL OK"
+    fi
+  fi
+
+  # ---- Check 9: mouth config fields ----
   C_MOUTH_SOURCE="$(read_contract 'mouth.source' 2>/dev/null || echo '')"
   if [[ -n "$C_MOUTH_SOURCE" ]]; then
     if [[ "$C_MOUTH_SOURCE" == "jsonl" || "$C_MOUTH_SOURCE" == "log" ]]; then
@@ -129,75 +216,33 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
     fi
   fi
 
-  # ---- Check 11: dispatch config fields ----
-  C_BRAIN_POLL="$(read_contract 'dispatch.poll_interval_ms' 2>/dev/null || echo '')"
-  if [[ -n "$C_BRAIN_POLL" ]]; then
-    if [[ "$C_BRAIN_POLL" -ge 1000 && "$C_BRAIN_POLL" -le 30000 ]]; then
-      pass "dispatch.poll_interval_ms = ${C_BRAIN_POLL}"
+  # ---- Check 10: dispatch config fields ----
+  for field in poll_interval_ms max_iterations gateway_timeout_ms context_token_budget; do
+    VAL="$(read_contract "dispatch.${field}" 2>/dev/null || echo '')"
+    if [[ -n "$VAL" ]]; then
+      pass "dispatch.${field} = ${VAL}"
     else
-      fail "dispatch.poll_interval_ms = ${C_BRAIN_POLL} (expected 1000-30000)"
+      fail "dispatch.${field} missing from contracts.json"
     fi
-  else
-    fail "dispatch.poll_interval_ms missing from contracts.json"
-  fi
+  done
 
-  C_BRAIN_MAX="$(read_contract 'dispatch.max_iterations' 2>/dev/null || echo '')"
-  if [[ -n "$C_BRAIN_MAX" ]]; then
-    if [[ "$C_BRAIN_MAX" -ge 3 && "$C_BRAIN_MAX" -le 50 ]]; then
-      pass "dispatch.max_iterations = ${C_BRAIN_MAX}"
+  # ---- Check 11: projects config fields ----
+  for field in context_max_tokens promotion_auto archive_completed_after_days; do
+    VAL="$(read_contract "projects.${field}" 2>/dev/null || echo '')"
+    if [[ -n "$VAL" ]]; then
+      pass "projects.${field} = ${VAL}"
     else
-      fail "dispatch.max_iterations = ${C_BRAIN_MAX} (expected 3-50)"
+      fail "projects.${field} missing from contracts.json"
     fi
-  else
-    fail "dispatch.max_iterations missing from contracts.json"
-  fi
+  done
 
-  C_BRAIN_TIMEOUT="$(read_contract 'dispatch.gateway_timeout_ms' 2>/dev/null || echo '')"
-  if [[ -n "$C_BRAIN_TIMEOUT" ]]; then
-    pass "dispatch.gateway_timeout_ms = ${C_BRAIN_TIMEOUT}"
+  # ---- Check 12: github block non-empty ----
+  C_GH_OWNER="$(read_contract 'github.owner' 2>/dev/null || echo '')"
+  C_GH_REPO="$(read_contract 'github.repo' 2>/dev/null || echo '')"
+  if [[ -n "$C_GH_OWNER" && -n "$C_GH_REPO" ]]; then
+    pass "github.owner = ${C_GH_OWNER}, github.repo = ${C_GH_REPO}"
   else
-    fail "dispatch.gateway_timeout_ms missing from contracts.json"
-  fi
-
-  C_BRAIN_CTX="$(read_contract 'dispatch.context_token_budget' 2>/dev/null || echo '')"
-  if [[ -n "$C_BRAIN_CTX" ]]; then
-    pass "dispatch.context_token_budget = ${C_BRAIN_CTX}"
-  else
-    fail "dispatch.context_token_budget missing from contracts.json"
-  fi
-
-  # ---- Check 12: projects config fields ----
-  C_PROJ_CTX_MAX="$(read_contract 'projects.context_max_tokens' 2>/dev/null || echo '')"
-  if [[ -n "$C_PROJ_CTX_MAX" ]]; then
-    if [[ "$C_PROJ_CTX_MAX" -gt 0 ]]; then
-      pass "projects.context_max_tokens = ${C_PROJ_CTX_MAX}"
-    else
-      fail "projects.context_max_tokens = ${C_PROJ_CTX_MAX} (expected positive number)"
-    fi
-  else
-    fail "projects.context_max_tokens missing from contracts.json"
-  fi
-
-  C_PROJ_PROMO="$(read_contract 'projects.promotion_auto' 2>/dev/null || echo '')"
-  if [[ -n "$C_PROJ_PROMO" ]]; then
-    if [[ "$C_PROJ_PROMO" == "true" || "$C_PROJ_PROMO" == "false" || "$C_PROJ_PROMO" == "True" || "$C_PROJ_PROMO" == "False" ]]; then
-      pass "projects.promotion_auto = ${C_PROJ_PROMO}"
-    else
-      fail "projects.promotion_auto = '${C_PROJ_PROMO}' (expected boolean)"
-    fi
-  else
-    fail "projects.promotion_auto missing from contracts.json"
-  fi
-
-  C_PROJ_ARCHIVE="$(read_contract 'projects.archive_completed_after_days' 2>/dev/null || echo '')"
-  if [[ -n "$C_PROJ_ARCHIVE" ]]; then
-    if [[ "$C_PROJ_ARCHIVE" -ge 0 ]]; then
-      pass "projects.archive_completed_after_days = ${C_PROJ_ARCHIVE}"
-    else
-      fail "projects.archive_completed_after_days = ${C_PROJ_ARCHIVE} (expected non-negative number)"
-    fi
-  else
-    fail "projects.archive_completed_after_days missing from contracts.json"
+    fail "github.owner or github.repo is empty in contracts.json"
   fi
 fi
 

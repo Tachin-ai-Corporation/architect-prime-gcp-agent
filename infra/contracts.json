@@ -94,9 +94,18 @@
     "timeout_ms": 30000,
     "disable_thinking": true
   },
+  "workspaces": {
+    "_comment": "Canonical workspace directories the daemon reads from. Manifests MUST target these paths.",
+    "cortex": "workspace",
+    "motor": "workspace-motor",
+    "cerebellum": "workspace-cerebellum",
+    "prefrontal": "workspace-prefrontal",
+    "temporal-research": "workspace-temporal-research",
+    "temporal-memory": "workspace-temporal-memory"
+  },
   "github": {
-    "owner": "",
-    "repo": "",
+    "owner": "Tachin-ai-Corporation",
+    "repo": "architect-prime-gcp-agent",
     "tokenSecret": "github-token"
   }
 }

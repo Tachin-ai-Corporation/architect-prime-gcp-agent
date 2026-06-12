@@ -1,6 +1,0 @@
-{
-  "id": "test-fleet",
-  "name": "Fleet Test Missions",
-  "version": "1.0.0",
-  "description": "Canned test missions for validating fleet agent behavior during p-implement-verify"
-}

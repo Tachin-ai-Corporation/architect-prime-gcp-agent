@@ -12,8 +12,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OC_HOST_ROOT="${CORE_ROOT:-/opt/corekit}"
-STATE_FILE="${OC_HOST_ROOT}/corekit/STATE.json"
+CORE_ROOT="${CORE_ROOT:-/opt/corekit}"
+STATE_FILE="${CORE_ROOT}/corekit/STATE.json"
 
 # Simple JSON value reader
 json_value() {
@@ -63,10 +63,14 @@ case "${1:-}" in
       EXISTING_ROLE="$(json_value "role" "$STATE_FILE")"
       EXISTING_JOB="$(json_value "job" "$STATE_FILE")"
     fi
-    # Default job for fleet agents when job is missing from STATE.json
+    # Read agentType from chat-config.json as a source
+    CHAT_CFG_UPGRADE="${CORE_ROOT}/corekit/chat-config.json"
     if [[ "$EXISTING_ROLE" == "fleet" && -z "$EXISTING_JOB" ]]; then
-      EXISTING_JOB="devops"
-      echo "  Defaulting job to 'devops' for fleet role"
+      EXISTING_JOB="$(jq -r '.agentType // empty' "$CHAT_CFG_UPGRADE" 2>/dev/null || true)"
+    fi
+    if [[ "$EXISTING_ROLE" == "fleet" && -z "$EXISTING_JOB" ]]; then
+      echo 'ERROR: Cannot determine agent job/specialty. Check STATE.json or chat-config.json.' >&2
+      exit 1
     fi
     INSTALL_ARGS="--upgrade $ref"
     [[ -n "$EXISTING_ROLE" ]] && INSTALL_ARGS="$INSTALL_ARGS --role $EXISTING_ROLE"
@@ -78,12 +82,12 @@ case "${1:-}" in
     curl -fsSL "${CORE_BASE}/infra/install.sh" | \
       GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}" \
       GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
-      OC_HOST_ROOT="$OC_HOST_ROOT" \
+      CORE_ROOT="$CORE_ROOT" \
       INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
       bash -s -- $INSTALL_ARGS
 
     # ---- Brain module: install/update npm dependencies ----
-    BRAIN_DIR="${OC_HOST_ROOT}/corekit/brain"
+    BRAIN_DIR="${CORE_ROOT}/corekit/brain"
     if [[ -f "${BRAIN_DIR}/package.json" ]]; then
       echo "==> Installing brain module dependencies..."
 
@@ -110,7 +114,7 @@ case "${1:-}" in
 
     # ---- Install/update systemd units from corekit config ----
     UNITS_CHANGED=0
-    for unit_file in "${OC_HOST_ROOT}"/corekit/*.service "${OC_HOST_ROOT}"/corekit/*.timer; do
+    for unit_file in "${CORE_ROOT}"/corekit/*.service "${CORE_ROOT}"/corekit/*.timer; do
       [[ -f "$unit_file" ]] || continue
       UNIT_NAME="$(basename "$unit_file")"
       if ! diff -q "$unit_file" "/etc/systemd/system/${UNIT_NAME}" >/dev/null 2>&1; then
@@ -122,7 +126,7 @@ case "${1:-}" in
     if [[ "$UNITS_CHANGED" -eq 1 ]]; then
       systemctl daemon-reload
       # Enable and start any .timer units
-      for timer_file in "${OC_HOST_ROOT}"/corekit/*.timer; do
+      for timer_file in "${CORE_ROOT}"/corekit/*.timer; do
         [[ -f "$timer_file" ]] || continue
         TIMER_NAME="$(basename "$timer_file")"
         systemctl enable --now "$TIMER_NAME" 2>/dev/null || true
@@ -133,24 +137,24 @@ case "${1:-}" in
     # ---- Fleet agent workspace re-overlay ----
     # install.sh always installs main workspace to workspace/.
     # For fleet agents, re-apply the specialty workspace on top.
-    CHAT_CFG="${OC_HOST_ROOT}/corekit/chat-config.json"
+    CHAT_CFG="${CORE_ROOT}/corekit/chat-config.json"
     if [[ -f "$CHAT_CFG" ]]; then
       # Read agent identity from chat-config (only fleet agents have this)
       AGENT_NAME="$(jq -r '.agentDisplayName // empty' "$CHAT_CFG" 2>/dev/null || true)"
       SPECIALTY_DIR=""
       # Try to find a specialty workspace
-      for d in "${OC_HOST_ROOT}"/workspace-*/; do
+      for d in "${CORE_ROOT}"/workspace-*/; do
         [[ -d "$d" ]] || continue
-        # Use first non-fleet, non-brain specialty found
+        # Use first non-brain specialty found
         bn="$(basename "$d")"
-        [[ "$bn" == "workspace-fleet" ]] && continue
-        [[ "$bn" == "workspace-_brain" ]] && continue
         [[ "$bn" =~ ^workspace-(temporal|prefrontal|motor|cerebellum) ]] && continue
         SPECIALTY_DIR="$d"
         break
       done
-      # Fallback to fleet template
-      [[ -n "$SPECIALTY_DIR" ]] || SPECIALTY_DIR="${OC_HOST_ROOT}/workspace-fleet"
+      # Fallback: if no specialty dir found, workspace/ already has the base from manifests
+      if [[ -z "$SPECIALTY_DIR" ]]; then
+        echo "  No specialty workspace dir found, using manifest-installed workspace/"
+      fi
       if [[ -d "$SPECIALTY_DIR" && -n "$AGENT_NAME" ]]; then
         echo "==> Re-applying fleet workspace from ${SPECIALTY_DIR}"
 
@@ -158,13 +162,13 @@ case "${1:-}" in
         PRESERVE_DIR="/tmp/upgrade-preserve-$$"
         mkdir -p "$PRESERVE_DIR"
         for preserve_file in MEMORY.md TASK.json; do
-          if [[ -f "${OC_HOST_ROOT}/workspace/${preserve_file}" ]]; then
-            cp "${OC_HOST_ROOT}/workspace/${preserve_file}" "$PRESERVE_DIR/"
+          if [[ -f "${CORE_ROOT}/workspace/${preserve_file}" ]]; then
+            cp "${CORE_ROOT}/workspace/${preserve_file}" "$PRESERVE_DIR/"
             echo "  Preserved: ${preserve_file}"
           fi
         done
 
-        rm -f "${OC_HOST_ROOT}/workspace/"*.md 2>/dev/null || true
+        rm -f "${CORE_ROOT}/workspace/"*.md 2>/dev/null || true
         MENTION="$(jq -r '.agentMention // empty' "$CHAT_CFG" 2>/dev/null || true)"
         PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null || true)"
         AGENT_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null || true)"
@@ -176,13 +180,13 @@ case "${1:-}" in
               -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
               -e "s|{{AGENT_USER_EMAIL}}|${AGENT_EMAIL}|g" \
               -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
-              "$f" > "${OC_HOST_ROOT}/workspace/$(basename "$f")"
+              "$f" > "${CORE_ROOT}/workspace/$(basename "$f")"
         done
 
         # Restore preserved files
         for preserve_file in MEMORY.md TASK.json; do
           if [[ -f "$PRESERVE_DIR/${preserve_file}" ]]; then
-            cp "$PRESERVE_DIR/${preserve_file}" "${OC_HOST_ROOT}/workspace/${preserve_file}"
+            cp "$PRESERVE_DIR/${preserve_file}" "${CORE_ROOT}/workspace/${preserve_file}"
             echo "  Restored: ${preserve_file}"
           fi
         done
@@ -192,7 +196,7 @@ case "${1:-}" in
 
         # ---- Sync custom skills from Firestore ----
         # Query per-agent custom skill state and download skill packages
-        CUSTOM_SKILLS_DIR="${OC_HOST_ROOT}/workspace/custom-skills"
+        CUSTOM_SKILLS_DIR="${CORE_ROOT}/workspace/custom-skills"
         GCP_PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo "")"
         PRIME_ID=""
         # Read prime ID from chat-config (fleet agents store their prime's ID)
@@ -314,42 +318,9 @@ except:
           echo "  Skipping custom skills sync (missing GCP_PROJECT or PRIME_ID)"
         fi
 
-        # Also re-overlay brain sub-agent workspaces
-        BRAIN_SRC="${OC_HOST_ROOT}/workspace-_brain"
-        if [[ -d "$BRAIN_SRC" ]]; then
-          echo "==> Re-applying brain sub-agent workspaces"
-          for brain_dir in cortex temporal-research temporal-memory prefrontal motor cerebellum; do
-            src="${BRAIN_SRC}/${brain_dir}"
-            dest="${OC_HOST_ROOT}/workspace-${brain_dir}"
-            if [[ -d "$src" ]]; then
-              mkdir -p "$dest"
-              # Preserve brain sub-agent MEMORY.md
-              if [[ -f "${dest}/MEMORY.md" ]]; then
-                cp "${dest}/MEMORY.md" "/tmp/preserve-${brain_dir}-memory.md"
-              fi
-              rm -f "${dest}/"*.md 2>/dev/null || true
-              for f in "${src}"/*.md; do
-                [[ -f "$f" ]] || continue
-                sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
-                    -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
-                    -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
-                    -e "s|{{AGENT_USER_EMAIL}}|${AGENT_EMAIL}|g" \
-                    -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
-                    "$f" > "${dest}/$(basename "$f")"
-              done
-              # Restore brain sub-agent MEMORY.md
-              if [[ -f "/tmp/preserve-${brain_dir}-memory.md" ]]; then
-                cp "/tmp/preserve-${brain_dir}-memory.md" "${dest}/MEMORY.md"
-                rm -f "/tmp/preserve-${brain_dir}-memory.md"
-                echo "    Restored: ${brain_dir}/MEMORY.md"
-              fi
-            fi
-          done
-          echo "  Brain workspaces restored"
-        fi
 
         # Write identity lockfile if not present
-        IDENTITY_LOCK="${OC_HOST_ROOT}/.identity-lock"
+        IDENTITY_LOCK="${CORE_ROOT}/.identity-lock"
         if [[ -n "$AGENT_EMAIL" && ! -f "$IDENTITY_LOCK" ]]; then
           echo "$AGENT_EMAIL" > "$IDENTITY_LOCK"
           chmod 444 "$IDENTITY_LOCK"
@@ -357,14 +328,17 @@ except:
         fi
 
         # Run assemble-tools to generate per-agent TOOLS.md
-        ASSEMBLE="${OC_HOST_ROOT}/bin/assemble-tools"
+        ASSEMBLE="${CORE_ROOT}/bin/assemble-tools"
         if [[ -x "$ASSEMBLE" ]]; then
           # Determine agent type from chat-config or STATE.json
           AGENT_JOB="$(jq -r '.agentType // empty' "$CHAT_CFG" 2>/dev/null || true)"
           [[ -n "$AGENT_JOB" ]] || AGENT_JOB="$(json_value "job" "$STATE_FILE" 2>/dev/null || true)"
-          [[ -n "$AGENT_JOB" ]] || AGENT_JOB="devops"
+          if [[ -z "$AGENT_JOB" ]]; then
+            echo 'ERROR: Cannot determine agent job/specialty. Check STATE.json or chat-config.json.' >&2
+            exit 1
+          fi
           echo "==> Assembling TOOLS.md (agent type: ${AGENT_JOB})"
-          CORE_ROOT="$OC_HOST_ROOT" "$ASSEMBLE" "$AGENT_JOB" 2>&1 || echo "  (assemble-tools failed)"
+          CORE_ROOT="$CORE_ROOT" "$ASSEMBLE" "$AGENT_JOB" 2>&1 || echo "  (assemble-tools failed)"
         fi
       fi
     fi
@@ -374,19 +348,19 @@ except:
     # We create a central shared directory and symlink it into every workspace
     # so agents can read/write collaborative files (sandbox mode must be off).
     echo "==> Setting up shared workspace architecture..."
-    SHARED_DIR="${OC_HOST_ROOT}/shared"
+    SHARED_DIR="${CORE_ROOT}/shared"
     mkdir -p "$SHARED_DIR"
-    for dir in "${OC_HOST_ROOT}"/workspace*; do
+    for dir in "${CORE_ROOT}"/workspace*; do
       if [[ -d "$dir" ]]; then
         ln -snf "$SHARED_DIR" "$dir/shared"
       fi
     done
 
     # ---- Run contract validation ----
-    VALIDATE="${OC_HOST_ROOT}/bin/validate-contracts"
+    VALIDATE="${CORE_ROOT}/bin/validate-contracts"
     if [[ -x "$VALIDATE" ]]; then
       echo "==> Running contract validation..."
-      if CORE_ROOT="$OC_HOST_ROOT" "$VALIDATE" --runtime 2>&1; then
+      if CORE_ROOT="$CORE_ROOT" "$VALIDATE" --runtime 2>&1; then
         echo "  ✅ Contracts validated"
       else
         echo "  ⚠️  Contract validation found issues"
@@ -422,10 +396,10 @@ except:
     sleep 1
 
     # Install ears + mouth + brain + introspect services
-    EARS_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-ears.service"
-    MOUTH_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-mouth.service"
-    BRAIN_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-brain.service"
-    INTROSPECT_SVC_SRC="${OC_HOST_ROOT}/corekit/agent-introspect.service"
+    EARS_SVC_SRC="${CORE_ROOT}/corekit/agent-ears.service"
+    MOUTH_SVC_SRC="${CORE_ROOT}/corekit/agent-mouth.service"
+    BRAIN_SVC_SRC="${CORE_ROOT}/corekit/agent-brain.service"
+    INTROSPECT_SVC_SRC="${CORE_ROOT}/corekit/agent-introspect.service"
     if [[ -f "$EARS_SVC_SRC" ]]; then
       cp "$EARS_SVC_SRC" /etc/systemd/system/agent-ears.service
     fi

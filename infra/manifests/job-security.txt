@@ -2,12 +2,13 @@
 # Security specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job security
 
-specialties/security/workspace/IDENTITY.md workspace-security/IDENTITY.md
-specialties/security/workspace/SOUL.md workspace-security/SOUL.md
-specialties/security/workspace/MEMORY.md workspace-security/MEMORY.md
+specialties/security/workspace/IDENTITY.md workspace/IDENTITY.md
+specialties/security/workspace/SOUL.md workspace/SOUL.md
+specialties/security/workspace/MEMORY.md workspace/MEMORY.md
 
 # Workspace skills — Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search
 skills/workspace-gmail/gmail-get bin/gmail-get
 skills/workspace-gmail/gmail-send bin/gmail-send

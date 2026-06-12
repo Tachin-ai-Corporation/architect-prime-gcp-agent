@@ -55,6 +55,11 @@ types = json.load(open(sys.argv[2]))['types']
 for t in types:
     if t['id'] == spec:
         print(t['id']); sys.exit(0)
+# Alias match
+for t in types:
+    for alias in t.get('aliases', []):
+        if alias.lower() == spec:
+            print(t['id']); sys.exit(0)
 # Title match
 for t in types:
     if t['title'].lower() == spec:

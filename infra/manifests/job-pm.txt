@@ -2,9 +2,9 @@
 # PM specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job pm
 
-specialties/pm/workspace/IDENTITY.md workspace-pm/IDENTITY.md
-specialties/pm/workspace/SOUL.md workspace-pm/SOUL.md
-specialties/pm/workspace/MEMORY.md workspace-pm/MEMORY.md
+specialties/pm/workspace/IDENTITY.md workspace/IDENTITY.md
+specialties/pm/workspace/SOUL.md workspace/SOUL.md
+specialties/pm/workspace/MEMORY.md workspace/MEMORY.md
 specialties/pm/responsibilities-pm.json corekit/responsibilities-job.json
 
 # Specialty brain SOUL appends
@@ -17,6 +17,7 @@ specialties/pm/skills/meeting-ops/skill.json corekit/specialties/pm/skills/meeti
 
 # Workspace skills — Google Drive
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+skills/workspace-drive/skill.json skills/workspace-drive/skill.json
 skills/workspace-drive/drive-ls bin/drive-ls
 skills/workspace-drive/drive-search bin/drive-search
 skills/workspace-drive/drive-download bin/drive-download
@@ -29,6 +30,7 @@ skills/workspace-drive/drive-share bin/drive-share
 
 # Workspace skills — Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search
 skills/workspace-gmail/gmail-get bin/gmail-get
 skills/workspace-gmail/gmail-send bin/gmail-send
@@ -37,6 +39,7 @@ skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send
 
 # Workspace skills — Docs
 skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
+skills/workspace-docs/skill.json skills/workspace-docs/skill.json
 skills/workspace-docs/docs-cat bin/docs-cat
 skills/workspace-docs/docs-create bin/docs-create
 skills/workspace-docs/docs-write bin/docs-write
@@ -46,6 +49,7 @@ skills/workspace-docs/docs-comments-add bin/docs-comments-add
 
 # Workspace skills — Sheets
 skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
 skills/workspace-sheets/sheets-get bin/sheets-get
 skills/workspace-sheets/sheets-append bin/sheets-append
 skills/workspace-sheets/sheets-update bin/sheets-update

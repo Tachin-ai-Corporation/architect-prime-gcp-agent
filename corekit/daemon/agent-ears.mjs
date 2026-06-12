@@ -35,7 +35,7 @@ try {
   AGENT_HOSTNAME = osHostname().replace(/^fleet-/, '');
 } catch {}
 
-const GATEWAY_URL = 'http://127.0.0.1:18789/v1/chat/completions';
+let GATEWAY_URL;  // set after CONTRACTS load
 const HTTP_TIMEOUT = 600_000;
 
 // Ears-specific config (from contracts or env)
@@ -46,6 +46,7 @@ try {
   CONTRACTS = JSON.parse(readFileSync(CORE_DIR + '/corekit/contracts.json', 'utf8'));
   if (CONTRACTS.ears) EARS_CONFIG = { ...EARS_CONFIG, ...CONTRACTS.ears };
 } catch {}
+GATEWAY_URL = `http://127.0.0.1:${CONTRACTS.gateway?.port || 18789}/v1/chat/completions`;
 
 const POLL_INTERVAL = CHANNEL === 'gchat' ? EARS_CONFIG.gchat_poll_ms : EARS_CONFIG.firestore_poll_ms;
 const DEDUP_WINDOW = EARS_CONFIG.dedup_window_ms;
