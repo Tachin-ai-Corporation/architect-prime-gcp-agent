@@ -192,8 +192,9 @@ export async function revokeSecretAccess(name: string, serviceAccountEmail: stri
 
 /**
  * Derive service account email from agent name and project ID.
- * Convention: fleet-{agentName}-sa@{projectId}.iam.gserviceaccount.com
+ * Convention: fleet-{agentName}@{projectId}.iam.gserviceaccount.com
+ * Must match the SA created by fleet-deploy (corekit/fleet/fleet-deploy).
  */
 export function deriveServiceAccount(agentName: string): string {
-  return `fleet-${agentName}-sa@${projectId()}.iam.gserviceaccount.com`;
+  return `fleet-${agentName}@${projectId()}.iam.gserviceaccount.com`;
 }
