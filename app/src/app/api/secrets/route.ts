@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       description: description || "",
       secretManagerName: `aps-secret-${name}`,
       createdAt: FieldValue.serverTimestamp(),
-      createdBy: auth.session?.user?.email || "unknown",
+      createdBy: (auth.session as { user?: { email?: string } } | null)?.user?.email || "unknown",
       grants: [],
     });
 

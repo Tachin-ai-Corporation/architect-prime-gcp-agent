@@ -76,7 +76,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         agentEmail,
         serviceAccount,
         grantedAt: new Date(),
-        grantedBy: auth.session?.user?.email || "unknown",
+        grantedBy: (auth.session as { user?: { email?: string } } | null)?.user?.email || "unknown",
       }),
     });
 
