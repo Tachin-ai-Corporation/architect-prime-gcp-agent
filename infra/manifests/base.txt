@@ -79,6 +79,7 @@ corekit/lib/archival.mjs corekit/lib/archival.mjs
 corekit/lib/artifacts.mjs corekit/lib/artifacts.mjs
 corekit/lib/notifications.mjs corekit/lib/notifications.mjs
 corekit/lib/history.mjs corekit/lib/history.mjs
+corekit/lib/delegation.mjs corekit/lib/delegation.mjs
 
 # Brain v3 — orchestration service
 corekit/daemon/agent-brain.mjs bin/agent-brain.mjs
