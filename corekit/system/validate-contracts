@@ -74,11 +74,14 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   # ---- Check 1: fleet-bootstrap.sh .env GOOGLE_CLOUD_LOCATION ----
   FLEET_BS="${REPO_ROOT}/infra/bootstrap/fleet-bootstrap.sh"
   if [[ -f "$FLEET_BS" ]]; then
-    if grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$FLEET_BS"; then
+    # Accept either the literal value OR the contract variable reference
+    if grep -q 'GOOGLE_CLOUD_LOCATION=${C_LOCATION}' "$FLEET_BS"; then
+      pass "fleet-bootstrap.sh .env location = contract-driven"
+    elif grep -q "GOOGLE_CLOUD_LOCATION=${C_LOCATION}" "$FLEET_BS"; then
       pass "fleet-bootstrap.sh .env location = ${C_LOCATION}"
     else
       LOC="$(grep 'GOOGLE_CLOUD_LOCATION=' "$FLEET_BS" | head -1 | grep -oP '=\K.*' || echo 'NOT_FOUND')"
-      fail "fleet-bootstrap.sh .env location = '${LOC}' (expected '${C_LOCATION}')"
+      fail "fleet-bootstrap.sh .env location = '${LOC}' (expected contract-driven or '${C_LOCATION}')"
     fi
   fi
 
