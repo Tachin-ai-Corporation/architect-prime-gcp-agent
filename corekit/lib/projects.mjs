@@ -413,10 +413,29 @@ export function createProjectRegistry(config) {
 
     const header = [`## Project Context: ${p.name || p.id}`];
     if (p.description) header.push(`Description: ${p.description}`);
+
+    // Render team members so Cortex knows who to delegate to
+    const team = Array.isArray(p.team) ? p.team : [];
+    if (team.length > 0) {
+      header.push('');
+      header.push('### Team');
+      for (const member of team) {
+        if (typeof member === 'string') {
+          // Legacy string format (just an ID)
+          header.push(`- ${member}`);
+        } else if (member.email) {
+          const parts = [member.name || member.email.split('@')[0]];
+          if (member.role) parts.push(`(${member.role})`);
+          parts.push(`— ${member.email}`);
+          if (member.type) parts.push(`[${member.type}]`);
+          header.push(`- ${parts.join(' ')}`);
+        }
+      }
+    }
     header.push('');
 
     const rendered = renderContextPacket(mergedCtx);
-    if (!rendered && !p.description) return null;
+    if (!rendered && !p.description && team.length === 0) return null;
 
     let result = header.join('\n') + rendered;
 

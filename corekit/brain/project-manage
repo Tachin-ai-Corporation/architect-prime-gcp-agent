@@ -9,6 +9,9 @@
 #   project-manage update '<id>' '<json>' [--processes <comma-separated-ids>]  # Update project
 #   project-manage archive '<id>'          # Set status to 'archived'
 #   project-manage pause '<id>'            # Set status to 'paused'
+#   project-manage team-add <id> '<json>'  # Add/update team member (email, role, name, type)
+#   project-manage team-remove <id> <email># Remove team member by email
+#   project-manage team-list <id>          # List team members in table format
 #
 # The JSON for create must include: id, name, description, context, goal
 # Optional fields: owner (defaults to AGENT_USER_EMAIL), parent_id, depends_on
@@ -734,8 +737,330 @@ print(f'Completed project \'{target_id}\'.')
 "
     ;;
 
+  team-add)
+    TARGET_ID="${1:?'team-add requires a project id'}"
+    MEMBER_JSON="${2:?'team-add requires a JSON string with at least email and role'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+member = json.loads('''$MEMBER_JSON''')
+
+# Validate required fields
+if 'email' not in member or not member['email']:
+    print('ERROR: Team member JSON must include \"email\".', file=sys.stderr)
+    sys.exit(1)
+if 'role' not in member or not member['role']:
+    print('ERROR: Team member JSON must include \"role\".', file=sys.stderr)
+    sys.exit(1)
+
+# Apply defaults
+member.setdefault('type', 'agent')
+member.setdefault('name', '')
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Parse existing team array — may be empty, missing, or contain legacy string entries
+team = existing.get('team', [])
+if not isinstance(team, list):
+    team = []
+
+# Normalize: convert any plain-string entries to map objects
+normalized = []
+for entry in team:
+    if isinstance(entry, str):
+        normalized.append({'email': entry, 'role': 'member', 'name': entry, 'type': 'agent'})
+    elif isinstance(entry, dict):
+        normalized.append(entry)
+    # skip anything else
+team = normalized
+
+# Check for duplicate email — update in place if found
+updated_existing = False
+for i, t in enumerate(team):
+    if t.get('email') == member['email']:
+        team[i] = {**t, **member}
+        updated_existing = True
+        break
+
+if not updated_existing:
+    team.append(member)
+
+existing['team'] = team
+existing['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+def to_firestore(value):
+    if value is None:
+        return {'nullValue': None}
+    if isinstance(value, bool):
+        return {'booleanValue': value}
+    if isinstance(value, int):
+        return {'integerValue': str(value)}
+    if isinstance(value, float):
+        return {'doubleValue': value}
+    if isinstance(value, str):
+        return {'stringValue': value}
+    if isinstance(value, list):
+        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict):
+        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update team: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+action = 'Updated' if updated_existing else 'Added'
+print(f"{action} team member '{member['email']}' on project '{target_id}'.")
+print(f"  Email: {member['email']}")
+print(f"  Role:  {member['role']}")
+print(f"  Name:  {member.get('name', '')}")
+print(f"  Type:  {member.get('type', 'agent')}")
+print(f'Team now has {len(team)} member(s).')
+"
+    ;;
+
+  team-remove)
+    TARGET_ID="${1:?'team-remove requires a project id'}"
+    REMOVE_EMAIL="${2:?'team-remove requires an email address'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+remove_email = '$REMOVE_EMAIL'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Parse existing team array
+team = existing.get('team', [])
+if not isinstance(team, list):
+    team = []
+
+# Normalize string entries
+normalized = []
+for entry in team:
+    if isinstance(entry, str):
+        normalized.append({'email': entry, 'role': 'member', 'name': entry, 'type': 'agent'})
+    elif isinstance(entry, dict):
+        normalized.append(entry)
+team = normalized
+
+original_len = len(team)
+team = [t for t in team if t.get('email') != remove_email]
+
+if len(team) == original_len:
+    print(f"Team member '{remove_email}' not found on project '{target_id}'.")
+    sys.exit(0)
+
+existing['team'] = team
+existing['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+def to_firestore(value):
+    if value is None:
+        return {'nullValue': None}
+    if isinstance(value, bool):
+        return {'booleanValue': value}
+    if isinstance(value, int):
+        return {'integerValue': str(value)}
+    if isinstance(value, float):
+        return {'doubleValue': value}
+    if isinstance(value, str):
+        return {'stringValue': value}
+    if isinstance(value, list):
+        return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict):
+        return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update team: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f"Removed '{remove_email}' from project '{target_id}'.")
+print(f'Team now has {len(team)} member(s).')
+"
+    ;;
+
+  team-list)
+    TARGET_ID="${1:?'team-list requires a project id'}"
+    python3 -c "
+import json, sys, subprocess
+
+target_id = '$TARGET_ID'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field:
+        return field['stringValue']
+    if 'integerValue' in field:
+        return int(field['integerValue'])
+    if 'booleanValue' in field:
+        return field['booleanValue']
+    if 'doubleValue' in field:
+        return field['doubleValue']
+    if 'nullValue' in field:
+        return None
+    if 'mapValue' in field:
+        return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field:
+        return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field:
+        return field['timestampValue']
+    return str(field)
+
+# Parse team
+team_field = fields.get('team')
+if not team_field:
+    print(f'Project \"{target_id}\" has no team members.')
+    sys.exit(0)
+
+team_raw = extract_value(team_field)
+if not isinstance(team_raw, list) or len(team_raw) == 0:
+    print(f'Project \"{target_id}\" has no team members.')
+    sys.exit(0)
+
+# Normalize entries
+team = []
+for entry in team_raw:
+    if isinstance(entry, str):
+        team.append({'email': entry, 'role': 'member', 'name': entry, 'type': 'agent'})
+    elif isinstance(entry, dict):
+        team.append(entry)
+
+if not team:
+    print(f'Project \"{target_id}\" has no team members.')
+    sys.exit(0)
+
+# Compute column widths
+email_w = max(len('EMAIL'), max(len(t.get('email', '')) for t in team))
+role_w  = max(len('ROLE'),  max(len(t.get('role', ''))  for t in team))
+name_w  = max(len('NAME'),  max(len(t.get('name', ''))  for t in team))
+type_w  = max(len('TYPE'),  max(len(t.get('type', ''))  for t in team))
+
+print(f"Team for project '{target_id}' ({len(team)} member(s)):")
+print()
+header = f"  {'EMAIL':<{email_w}}  {'ROLE':<{role_w}}  {'NAME':<{name_w}}  {'TYPE':<{type_w}}"
+print(header)
+print('  ' + '-' * (email_w + role_w + name_w + type_w + 6))
+for t in team:
+    e = t.get('email', '')
+    r = t.get('role', '')
+    n = t.get('name', '')
+    tp = t.get('type', '')
+    print(f'  {e:<{email_w}}  {r:<{role_w}}  {n:<{name_w}}  {tp:<{type_w}}')
+"
+    ;;
+
   help|*)
-    echo "Usage: project-manage <list|get|create|update|complete|pause|archive> [args]"
+    echo "Usage: project-manage <list|get|create|update|complete|pause|archive|team-add|team-remove|team-list> [args]"
     echo ""
     echo "Commands:"
     echo "  list                                             List all projects (id, name, status, goal, owner, etc.)"
@@ -745,6 +1070,9 @@ print(f'Completed project \'{target_id}\'.')
     echo "  complete '<id>'                                   Set project status to 'completed' with timestamp"
     echo "  pause '<id>'                                      Set project status to 'paused'"
     echo "  archive '<id>'                                    Set project status to 'archived'"
+    echo "  team-add '<id>' '<json>'                          Add/update a team member on a project"
+    echo "  team-remove '<id>' '<email>'                      Remove a team member by email"
+    echo "  team-list '<id>'                                  List team members in table format"
     echo ""
     echo "The create JSON MUST include:"
     echo "  id, name, description, context, goal"
@@ -762,6 +1090,11 @@ print(f'Completed project \'{target_id}\'.')
     echo ""
     echo "Update supports changing: goal, owner, parent_id, depends_on, status, name, description, context"
     echo "  When parent_id is changed, existence and max depth (4) are validated."
+    echo ""
+    echo "Team member JSON must include:"
+    echo '  { "email": "...", "role": "...", "name": "...", "type": "agent|human" }'
+    echo "  Required: email, role.  Optional: name (default: ''), type (default: 'agent')"
+    echo "  If email already exists on the team, the entry is updated in place."
     echo ""
     echo "Context entries use the Context Packet schema:"
     echo '  { "key": { "kind": "sheet|drive_folder|doc|...", "ref": "id", "name": "...", "summary": "..." } }'

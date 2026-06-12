@@ -24,12 +24,13 @@ Human-readable result summary.
 
 ### Sender Side (Delegating Agent)
 
-1. Brain encounters `stepType === 'delegation'` in checkpoint plan
-2. Resolves target agent by specialty from fleet docs
+1. Brain encounters delegation (process step `type: 'delegation'` OR Cortex `action: 'delegate'`)
+2. Resolves target agent from project team members or fleet docs by specialty
 3. Composes marker via `composeDelegationMarker()`
-4. Sends via `chat-send` (DWD — appears as the agent in GChat)
-5. Sets task envelope `status: 'waiting'`
-6. `checkWaitingEnvelopes()` polls children for completion
+4. Creates output envelope with `delivery_target: <targetEmail>` and `delivery_status: 'pending'`
+5. Mouth picks up the envelope and delivers to target agent's GChat DM via DWD
+6. Sets task envelope `status: 'waiting'`
+7. `checkWaitingEnvelopes()` polls children for completion
 
 ### Receiver Side (Delegated Agent)
 
@@ -43,10 +44,28 @@ Human-readable result summary.
 ### Completion
 
 1. Delegated mission reaches `status: 'complete'` or `'failed'`
-2. Brain sends `[DELEGATION-RESULT]` reply via `chat-send`
-3. Delegator's `checkWaitingEnvelopes()` detects child completion via Firestore
-4. Injects `[DELEGATION RESULTS]` as `context_forward` on the waiting envelope
-5. Resumes processing with full delegation results in context
+2. Brain creates `[DELEGATION-RESULT]` output envelope with `delivery_status: 'pending'`
+3. Mouth delivers the result to the delegator's GChat DM via DWD
+4. Delegator's `checkWaitingEnvelopes()` detects child completion via Firestore
+5. Injects `[DELEGATION RESULTS]` as `context_forward` on the waiting envelope
+6. Resumes processing with full delegation results in context
+
+## Project Team Members
+
+Delegation targets are resolved from the project's `team` array:
+
+```json
+{
+  "team": [
+    {"email": "swe-agent-bobby@tachin.ag", "role": "engineer", "name": "Bobby", "type": "agent"},
+    {"email": "chill@tachin.ai", "role": "owner", "name": "Chill", "type": "human"}
+  ]
+}
+```
+
+Managed via `project-manage team-add/team-remove`. Cortex sees team members in project context and uses them to select delegation targets.
+
+Fallback: If no suitable team member is found, brain falls back to fleet-wide specialty lookup.
 
 ## Guard Rails
 

@@ -28,7 +28,7 @@
 // ============================================================
 import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { execSync } from 'child_process';
+// child_process import removed — delegation now uses output envelopes, not execSync('chat-send')
 
 // ---- Shared library imports (Phase 0 extraction) ----
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
@@ -1861,9 +1861,9 @@ async function processEnvelope(envelope, memoryContext) {
         });
 
         // Delegation result reply: if this mission was delegated from another agent,
-        // send a DELEGATION-RESULT marker back so they see the completion in GChat.
+        // create an output envelope for Mouth to deliver the DELEGATION-RESULT marker.
         // Note: the actual resume mechanism is Firestore children (checkWaitingEnvelopes),
-        // not this GChat message. This is for human readability + summary content.
+        // not this message. This is for human readability + summary content.
         if (envelope.source_meta?.delegation_ref) {
           const resultMarker = composeDelegationResultMarker({
             targetEmail: envelope.source_meta.delegated_from || '',
@@ -1873,14 +1873,27 @@ async function processEnvelope(envelope, memoryContext) {
             body: (envelope.output || '').substring(0, 500),
           });
           try {
-            execSync(`chat-send --stdin`, {
-              input: resultMarker,
-              timeout: 30_000,
-              stdio: ['pipe', 'pipe', 'pipe'],
+            const resultOutputId = generateId('w');
+            await firestoreWrite('work', resultOutputId, {
+              id: resultOutputId,
+              type: 'T',
+              parent_id: envelope.id,
+              owner: AGENT_EMAIL || AGENT_ID,
+              status: 'complete',
+              intent: 'delegation_result',
+              title: `Delegation result for ${envelope.source_meta.delegation_ref}`,
+              instruction: 'Deliver delegation result marker',
+              output: resultMarker,
+              delivery_status: 'pending',
+              delivery_target: envelope.source_meta.delegated_from || null,
+              source_channel: 'brain',
+              source_meta: { delegation_ref: envelope.source_meta.delegation_ref },
+              created_at: now(),
+              updated_at: now(),
             });
-            log('INFO', `Delegation result sent for ref ${envelope.source_meta.delegation_ref}`);
+            log('INFO', `Delegation result envelope created: ${resultOutputId} for ref ${envelope.source_meta.delegation_ref}`);
           } catch (e) {
-            log('WARN', `Failed to send delegation result: ${e.message}`);
+            log('WARN', `Failed to create delegation result envelope: ${e.message}`);
           }
         }
       }
@@ -2076,6 +2089,97 @@ async function processEnvelope(envelope, memoryContext) {
         continue;
       }
       return processResult;
+    }
+
+    if (action === 'delegate') {
+      // Canon-compliant delegation: Cortex decides to delegate work to a project teammate.
+      // Brain creates delegation envelope + output for Mouth delivery. Motor never communicates.
+      const targetEmail = decision.target_email;
+      const delegateInstruction = decision.instruction || '';
+      const delegateCriteria = decision.accept_criteria || '';
+      const delegateProjectId = decision.project_id || envelope.project_id || null;
+
+      if (!targetEmail) {
+        log('ERROR', 'delegate: missing target_email');
+        priorResults.push({ agent: 'system', result: '[SYSTEM] delegate requires a target_email. Check project team members for available agents.' });
+        continue;
+      }
+
+      log('INFO', `Cortex delegate: target=${targetEmail} project=${delegateProjectId}`);
+
+      // Create Task envelope with status='waiting'
+      const delegTaskId = generateId('w');
+      const delegTaskEnvelope = {
+        id: delegTaskId,
+        type: 'T',
+        parent_id: envelope.id,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'waiting',
+        intent: 'delegation',
+        title: await generateTitle(delegateInstruction, 'task'),
+        instruction: delegateInstruction,
+        accept_criteria: delegateCriteria,
+        context_summary: null,
+        output: null,
+        children: [],
+        context_forward: null,
+        error: null,
+        source_channel: 'brain',
+        source_meta: {
+          step_type: 'delegation',
+          delegated_to: targetEmail,
+          target_agent_email: targetEmail,
+        },
+        project_id: delegateProjectId,
+        created_at: now(),
+        started_at: now(),
+        completed_at: null,
+        updated_at: now(),
+        iteration: 0,
+      };
+
+      await firestoreWrite('work', delegTaskId, delegTaskEnvelope);
+      await writeHistory(delegTaskId, null, 'waiting', 'brain', `Delegating to ${targetEmail}`);
+
+      // Compose delegation marker as output envelope for Mouth
+      const delegMarker = composeDelegationMarker({
+        targetEmail,
+        ref: delegTaskId,
+        from: AGENT_EMAIL || AGENT_ID,
+        project: delegateProjectId || 'none',
+        body: delegateInstruction,
+      });
+
+      const delegOutputId = generateId('w');
+      await firestoreWrite('work', delegOutputId, {
+        id: delegOutputId,
+        type: 'T',
+        parent_id: delegTaskId,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'complete',
+        intent: 'delegation_send',
+        title: `Delegation to ${targetEmail}`,
+        instruction: delegateInstruction,
+        output: delegMarker,
+        delivery_status: 'pending',
+        delivery_target: targetEmail,
+        source_channel: 'brain',
+        created_at: now(),
+        updated_at: now(),
+      });
+
+      log('INFO', `Delegation output envelope created: ${delegOutputId} → ${targetEmail}`);
+
+      // Set mission to waiting
+      envelope.children = envelope.children || [];
+      envelope.children.push(delegTaskId);
+      envelope.status = 'waiting';
+      envelope.updated_at = now();
+      await firestoreWrite('work', envelope.id, envelope);
+      await writeHistory(envelope.id, 'active', 'waiting', 'brain', `Waiting for delegation to ${targetEmail}`);
+
+      log('INFO', `Mission ${envelope.id} waiting for delegation to ${targetEmail}`);
+      return;
     }
 
     if (action === 'checkpoint_plan') {
@@ -2392,7 +2496,8 @@ async function processEnvelope(envelope, memoryContext) {
             cpEnvelope.updated_at = now();
             await firestoreWrite('work', cpId, cpEnvelope);
 
-            // Compose and send delegation marker via chat-send
+            // Compose delegation marker as output envelope for Mouth delivery
+            // Canon: Brain creates output, Mouth delivers. No direct chat-send.
             const marker = composeDelegationMarker({
               targetEmail: targetAgentEmail,
               ref: taskId,
@@ -2401,16 +2506,24 @@ async function processEnvelope(envelope, memoryContext) {
               body: taskDesc,
             });
 
-            try {
-              execSync(`chat-send --stdin`, {
-                input: marker,
-                timeout: 30_000,
-                stdio: ['pipe', 'pipe', 'pipe'],
-              });
-              log('INFO', `Delegation marker sent to ${targetAgentEmail} for ref ${taskId}`);
-            } catch (e) {
-              log('ERROR', `Failed to send delegation marker: ${e.message}`);
-            }
+            const delegOutputId = generateId('w');
+            await firestoreWrite('work', delegOutputId, {
+              id: delegOutputId,
+              type: 'T',
+              parent_id: taskId,
+              owner: AGENT_EMAIL || AGENT_ID,
+              status: 'complete',
+              intent: 'delegation_send',
+              title: `Delegation to ${delegateSpecialty}`,
+              instruction: taskDesc,
+              output: marker,
+              delivery_status: 'pending',
+              delivery_target: targetAgentEmail,
+              source_channel: 'brain',
+              created_at: now(),
+              updated_at: now(),
+            });
+            log('INFO', `Delegation output envelope created: ${delegOutputId} → ${targetAgentEmail} for ref ${taskId}`);
 
             // Set checkpoint to waiting — checkWaitingEnvelopes() will resume when child completes
             cpEnvelope.status = 'waiting';

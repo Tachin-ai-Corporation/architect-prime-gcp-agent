@@ -416,6 +416,72 @@ async function deliverToGChat(text) {
   }
 }
 
+/**
+ * Deliver a message to a specific agent's GChat DM via DWD.
+ * Canon B-9: Mouth is the single point of all outbound communication.
+ * Used for delegation markers and delegation results.
+ */
+async function deliverToTargetGChat(text, targetEmail) {
+  const token = await getDwdToken();
+  const formatted = convertToGChatMarkdown(text);
+
+  // Find or create DM space with target agent
+  // Google Chat API: spaces.findDirectMessage for existing DMs
+  try {
+    const findRes = await fetch(
+      `${CHAT_API}/spaces:findDirectMessage?name=users/${encodeURIComponent(targetEmail)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    let dmSpace = null;
+    if (findRes.ok) {
+      const findData = await findRes.json();
+      dmSpace = findData.name;
+    }
+
+    // If no existing DM, set up a new one
+    if (!dmSpace) {
+      const setupRes = await fetch(`${CHAT_API}/spaces:setup`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spaceType: 'DIRECT_MESSAGE',
+          memberships: [
+            { member: { name: `users/${AGENT_USER_EMAIL}`, type: 'HUMAN' } },
+            { member: { name: `users/${targetEmail}`, type: 'HUMAN' } },
+          ],
+        }),
+      });
+      if (setupRes.ok) {
+        const setupData = await setupRes.json();
+        dmSpace = setupData.name;
+      } else {
+        const err = await setupRes.text().catch(() => '');
+        log('DM setup failed, falling back to own space', { targetEmail, status: setupRes.status, body: err.slice(0, 200) });
+        // Fall back to own space
+        await deliverToGChat(text);
+        return;
+      }
+    }
+
+    // Send to DM space
+    const res = await fetch(`${CHAT_API}/${dmSpace}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: formatted }),
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => '');
+      log('DM delivery error, falling back to own space', { targetEmail, status: res.status, body: err.slice(0, 200) });
+      await deliverToGChat(text);
+    } else {
+      log('Delivered to target DM', { targetEmail, chars: text.length });
+    }
+  } catch (err) {
+    log('DM delivery exception, falling back to own space', { targetEmail, error: err.message });
+    await deliverToGChat(text);
+  }
+}
+
 async function deliverToFleetFirestore(text) {
   if (!PRIME_ID || !AGENT_HOSTNAME) return;
   const token = await getGceToken();
@@ -672,9 +738,11 @@ async function pollBrainV3Envelopes() {
       // Skip: archived envelopes — stale delivery_status from race condition
       if (status === 'archived') { skippedDelivered++; continue; }
       // Skip: child envelopes (C/T) — only top-level M envelopes should be delivered
-      // Exception: intent='ack' or intent='notification' are intentionally deliverable C/T pairs
+      // Exception: intent='ack', 'notification', 'delegation_send', 'delegation_result'
+      // are intentionally deliverable C/T pairs
       const envIntent = f.intent?.stringValue;
-      if (parentId && envIntent !== 'ack' && envIntent !== 'notification') {
+      if (parentId && envIntent !== 'ack' && envIntent !== 'notification'
+          && envIntent !== 'delegation_send' && envIntent !== 'delegation_result') {
         log('Skipped child envelope (not top-level)', { envId, type: f.type?.stringValue, parentId });
         skippedDelivered++;
         continue;
@@ -706,8 +774,21 @@ async function pollBrainV3Envelopes() {
           contextHint = '[This is a quick acknowledgment — keep it very short]\n\n';
         }
 
-        await classifyAndDeliver(contextHint + output, envQuestion);
-        log('Delivered envelope output', { envId, status: envStatus, intent: envType });
+        // Delegation envelopes: deliver directly without voicing — markers are pre-formatted
+        const deliveryTarget = f.delivery_target?.stringValue;
+        if (deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result')) {
+          if (CHANNEL === 'gchat') {
+            await deliverToTargetGChat(output, deliveryTarget);
+            log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
+          } else {
+            await deliver(output);
+            log('Delivered delegation envelope via default channel', { envId, intent: envIntent });
+          }
+        } else {
+          // Standard voicing pipeline for non-delegation envelopes
+          await classifyAndDeliver(contextHint + output, envQuestion);
+          log('Delivered envelope output', { envId, status: envStatus, intent: envType });
+        }
 
         // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)
         const token2 = await getGceToken();

@@ -35,6 +35,7 @@ export const CORTEX_SCHEMAS = {
       action:     { type: 'STRING', enum: [
         'checkpoint_plan', 'synthesize', 'synthesize_with_failure',
         'needs_input', 'blocked', 'follow_process', 'status_update',
+        'delegate',
       ]},
       reasoning:  { type: 'STRING' },
       checkpoints: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
@@ -56,6 +57,10 @@ export const CORTEX_SCHEMAS = {
       processId:  { type: 'STRING' },
       parameters: { type: 'OBJECT' },
       message: { type: 'STRING' },
+      target_email:    { type: 'STRING' },  // delegate action: target agent email
+      instruction:     { type: 'STRING' },  // delegate action: task instruction
+      accept_criteria: { type: 'STRING' },  // delegate action: how to verify
+      project_id:      { type: 'STRING' },  // delegate action: project context
     },
     required: ['action'],
   },

@@ -90,7 +90,7 @@ How the organs work together. This is the intended shape of every thought the sy
 | **Prefrontal** | Judgment | Turn intent into structure: M→C→T blueprints | Executes; decides; freelances beyond the blueprint schema |
 | **Temporal-Memory** | Judgment, read-only | Recall what the agent already knows | Touches external APIs; invents facts |
 | **Temporal-Research** | Judgment, read-only | Bring in what the world knows: search + fetch | Mutates state; substitutes for memory |
-| **Motor** | Judgment + effects | Act: tools, exec, files — the only mutator | Verifies its own work; runs two hands at once per envelope |
+| **Motor** | Judgment + effects | Act: tools, exec, files — the only mutator | Verifies its own work; runs two hands at once per envelope; sends messages or communicates with agents/humans |
 | **Cerebellum** | Judgment, read-only | Verify results against accept criteria, independently | Verifies anything it produced; executes fixes |
 | **Mouth** | Deterministic + filter | Classify and deliver outputs to the channel | Originates content; bypasses the classify filter |
 
@@ -113,7 +113,7 @@ The daemon owns the loop; cortex owns only the choice. One cycle, one decision, 
 
 ### B-11 · Decisions are choices among daemon-defined legal moves
 
-For every envelope state, the daemon defines the closed set of legal moves — dispatch, continue, synthesize, delegate, ask (`needs_input`), fail — and their required parameters. Cortex selects and parameterizes; it never invents a move, a state, or a transition. Malformed or illegal decisions are rejected at the schema boundary and handled deterministically (repair, retry within budget, fall back) — never executed on faith.
+For every envelope state, the daemon defines the closed set of legal moves — dispatch, continue, synthesize, **delegate** (via output envelope → Mouth delivery, never direct chat-send), ask (`needs_input`), fail — and their required parameters. Cortex selects and parameterizes; it never invents a move, a state, or a transition. Malformed or illegal decisions are rejected at the schema boundary and handled deterministically (repair, retry within budget, fall back) — never executed on faith.
 **Better looks like:** the legal-move table readable straight from daemon code; decision schemas that get stricter over time; rejected decisions that leave a clean trace.
 **Worse looks like:** free-text decisions; a "misc" action; the daemon honoring fields the schema never defined.
 

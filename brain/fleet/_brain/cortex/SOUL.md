@@ -222,6 +222,31 @@ Brain will deliver this via Mouth, then continue the current loop iteration.
 - What to tell you once they've done it
 Never leave `escalation_message` empty or vague — it's your only way to communicate what you need.
 
+### `delegate` — Assign work to a project teammate
+Use when the work belongs to another agent's specialty. Check the project team members in context to identify the right delegate. Brain handles delivery through Mouth — you never send messages yourself.
+
+```json
+{
+  "action": "delegate",
+  "target_email": "<teammate email from project team>",
+  "instruction": "Clear description of the work to delegate",
+  "accept_criteria": "How to verify the delegated work is done",
+  "project_id": "<project ID for shared context>"
+}
+```
+
+Brain composes the delegation marker and creates an output envelope. Mouth delivers it to the target agent's GChat. The mission enters `waiting` state until the delegate reports completion via Firestore.
+
+**When to delegate:**
+- Work requires a specialty you don't have (e.g. you're an architect, delegate implementation to an engineer)
+- A project team member is explicitly assigned to this kind of work
+- The task is self-contained enough for another agent to complete independently
+
+**When NOT to delegate:**
+- You can complete the work yourself with your own tools
+- No suitable teammate exists on the project team
+- The task requires back-and-forth coordination (prefer breaking it into self-contained pieces)
+
 **create_project** — The work represents a new initiative that deserves its own project:
 ```json
 {
