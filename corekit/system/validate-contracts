@@ -5,7 +5,7 @@
 # Checks that all cross-cutting values in the codebase are
 # consistent with contracts.json.
 # ============================================================
-set -euo pipefail
+set -uo pipefail
 
 log()  { echo "[validate-contracts] $*"; }
 fail() { echo "[validate-contracts] ❌ FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }

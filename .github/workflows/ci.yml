@@ -50,9 +50,7 @@ jobs:
         with:
           python-version: '3.x'
       - name: Validate contracts
-        run: |
-          python3 --version
-          bash -x corekit/system/validate-contracts --repo
+        run: bash corekit/system/validate-contracts --repo
 
   manifest-integrity:
     name: Manifest Integrity
