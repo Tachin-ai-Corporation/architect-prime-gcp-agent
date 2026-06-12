@@ -3,7 +3,7 @@
   "name": "Security Analyst",
   "version": "1.0.0",
   "description": "IAM auditing, policy compliance, vulnerability assessment, security monitoring, incident investigation",
-  "base_skills": ["agent-ask", "workspace-gmail"],
+  "base_skills": ["web-search", "workspace-gmail"],
   "specialty_skills": ["iam-audit"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

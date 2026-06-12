@@ -1,4 +1,4 @@
-# Skill: agent-ask
+# Skill: web-search
 
 ## What this skill does
 Answers questions using real-time knowledge from Google Search via Vertex AI grounding.
@@ -9,9 +9,9 @@ Dispatch to the `temporal-research` sub-agent when you need current, real-time
 information from the web. This is the ONLY sanctioned web-search path.
 
 ## How it works
-Invoked via `exec agent-ask "<question>"` by the temporal-research sub-agent.
+Invoked via `exec web-search "<question>"` by the temporal-research sub-agent.
 Uses Vertex AI with Google Search grounding (model and region read from contracts.json).
-**Do NOT call agent-ask directly from Cortex** — route web research through
+**Do NOT call web-search directly from Cortex** — route web research through
 the temporal-research pipeline step in your dispatch plan.
 
 ## Behavior

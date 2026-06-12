@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# agent-ask — Conversational Q&A using Vertex AI Gemini
+# web-search — Conversational Q&A using Vertex AI Gemini
 #
 # The fundamental agent skill. Every agent gets this.
 # Provides real-time conversational ability with Google Search
@@ -14,8 +14,8 @@
 # Those are separate skills invoked by the brain via exec.
 #
 # Usage:
-#   agent-ask "What is the latest GKE pricing?"
-#   echo "question" | agent-ask --stdin
+#   web-search "What is the latest GKE pricing?"
+#   echo "question" | web-search --stdin
 #
 # Environment:
 #   AGENT_ID     — Agent identifier (default: prime)
@@ -47,8 +47,8 @@ BUILD_PROMPT="${CORE_DIR}/bin/build-system-prompt"
 CHAT_CONFIG="${CORE_DIR}/corekit/chat-config.json"
 
 # ---- HELPERS ----
-die() { echo "[agent-ask] [ERROR] $*" >&2; exit 1; }
-log() { echo "[agent-ask] $*" >&2; }
+die() { echo "[web-search] [ERROR] $*" >&2; exit 1; }
+log() { echo "[web-search] $*" >&2; }
 
 # ---- Get access token ----
 get_token() {
@@ -71,12 +71,12 @@ case "${1:-}" in
     QUESTION="$(cat)"
     ;;
   --help|-h)
-    echo "Usage: agent-ask <question>"
-    echo "       echo 'question' | agent-ask --stdin"
+    echo "Usage: web-search <question>"
+    echo "       echo 'question' | web-search --stdin"
     exit 0
     ;;
   "")
-    die "No question provided. Usage: agent-ask <question>"
+    die "No question provided. Usage: web-search <question>"
     ;;
   *)
     QUESTION="$1"

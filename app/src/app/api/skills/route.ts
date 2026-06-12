@@ -30,7 +30,7 @@ const CACHE_TTL = 5 * 60 * 1000;
 /* Static list of skill IDs — these are the known skill packages in the repo.
  * When the public skill registry is built (Phase 4), this will become dynamic. */
 const CORE_SKILLS = [
-  "agent-ask",
+  "web-search",
   "workspace-drive",
   "workspace-gmail",
   "workspace-calendar",

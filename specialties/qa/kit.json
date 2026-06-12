@@ -3,7 +3,7 @@
   "name": "QA Engineer",
   "version": "1.0.0",
   "description": "Quality assurance, test planning, regression testing, defect tracking, coverage analysis",
-  "base_skills": ["agent-ask"],
+  "base_skills": ["web-search"],
   "specialty_skills": ["test-runner"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

@@ -6,7 +6,7 @@
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
       "workspace": "devops",
-      "skills": ["agent-ask", "workspace-drive", "workspace-gmail", "gcp-devops"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "gcp-devops"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],
@@ -19,7 +19,7 @@
       "specialty": "Full-stack development, code review, debugging, API design, architecture, testing",
       "emailPattern": "swe-agent-{name}",
       "workspace": "engineer",
-      "skills": ["agent-ask"],
+      "skills": ["web-search"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],
@@ -32,7 +32,7 @@
       "specialty": "Test planning, test automation, regression testing, performance testing, quality gates",
       "emailPattern": "qa-agent-{name}",
       "workspace": "qa",
-      "skills": ["agent-ask"],
+      "skills": ["web-search"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],
@@ -45,7 +45,7 @@
       "specialty": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
       "emailPattern": "pm-agent-{name}",
       "workspace": "pm",
-      "skills": ["agent-ask", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec"],
@@ -58,7 +58,7 @@
       "specialty": "Budget tracking, cost analysis, financial reporting, forecasting, vendor management",
       "emailPattern": "finance-agent-{name}",
       "workspace": "finance",
-      "skills": ["agent-ask", "workspace-gmail", "workspace-sheets"],
+      "skills": ["web-search", "workspace-gmail", "workspace-sheets"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec"],
@@ -71,7 +71,7 @@
       "specialty": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
       "emailPattern": "data-agent-{name}",
       "workspace": "data",
-      "skills": ["agent-ask", "workspace-sheets"],
+      "skills": ["web-search", "workspace-sheets"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],
@@ -84,7 +84,7 @@
       "specialty": "IAM audit, compliance, vulnerability assessment, security architecture, incident response",
       "emailPattern": "security-agent-{name}",
       "workspace": "security",
-      "skills": ["agent-ask", "workspace-gmail"],
+      "skills": ["web-search", "workspace-gmail"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "exec"],
@@ -97,7 +97,7 @@
       "specialty": "Scheduling, communications, admin tasks, document drafting, information gathering",
       "emailPattern": "assistant-agent-{name}",
       "workspace": "assistant",
-      "skills": ["agent-ask", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec"],
@@ -110,7 +110,7 @@
       "specialty": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
       "emailPattern": "architect-agent-{name}",
       "workspace": "product-architect",
-      "skills": ["agent-ask", "workspace-drive", "workspace-docs"],
+      "skills": ["web-search", "workspace-drive", "workspace-docs"],
       "brain": true,
       "capabilities": {
         "cortex": ["read", "write", "edit", "exec", "process"],

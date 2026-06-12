@@ -1,12 +1,12 @@
 ---
 name: corekit-script
-description: Use when creating/editing CoreKit scripts in corekit/{brain,fleet,chat,daemon,memory,dashboard,system}/ — agent-ask, agent-ears, agent-mouth, fleet-deploy, responsibility-manage, or any VM-side tool.
+description: Use when creating/editing CoreKit scripts in corekit/{brain,fleet,chat,daemon,memory,dashboard,system}/ — web-search, agent-ears, agent-mouth, fleet-deploy, responsibility-manage, or any VM-side tool.
 ---
 # CoreKit Script Development
 
 ## Directory Layout
 Scripts live under `corekit/` grouped by domain:
-- `corekit/brain/` — agent-ask, agent-status, assemble-tools, brain-telemetry-read, brain-telemetry-write, responsibility-manage, project-manage, task-log-read, task-log-write
+- `corekit/brain/` — web-search, agent-status, assemble-tools, brain-telemetry-read, brain-telemetry-write, responsibility-manage, project-manage, task-log-read, task-log-write
 - `corekit/fleet/` — fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-verify, fleet-upgrade, fleet-monitor, fleet-status, fleet-health-check
 - `corekit/chat/` — chat-send, chat-read, dwd-token
 - `corekit/daemon/` — agent-ears.mjs, agent-mouth.mjs, agent-brain.mjs, agent-brain.service, start-agent-ears, start-agent-mouth, ears-health-check, mouth-health-check

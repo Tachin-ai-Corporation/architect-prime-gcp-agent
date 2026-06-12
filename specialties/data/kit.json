@@ -3,7 +3,7 @@
   "name": "Data Engineer",
   "version": "1.0.0",
   "description": "BigQuery operations, data pipelines, ETL, schema management, data quality, cost optimization",
-  "base_skills": ["agent-ask", "workspace-sheets"],
+  "base_skills": ["web-search", "workspace-sheets"],
   "specialty_skills": ["bq-ops"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

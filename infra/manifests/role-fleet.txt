@@ -28,7 +28,7 @@ brain/fleet/_brain/cerebellum/IDENTITY.md workspace-_brain/cerebellum/IDENTITY.m
 skills/workspace-drive/ws-token bin/ws-token
 
 # Skills (shared by all fleet agents)
-skills/agent-ask/SKILL.md skills/agent-ask/SKILL.md
+skills/web-search/SKILL.md skills/web-search/SKILL.md
 
 # Memory — Core Memory + Deep Truths + nightly consolidation
 corekit/memory/core-memory-read bin/core-memory-read

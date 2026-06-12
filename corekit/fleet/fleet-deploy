@@ -589,7 +589,7 @@ echo "  DWD-signer SA (${DWD_SIGNER_SA})."
 echo
 echo "============================================================"
 
-# Structured output for agent-ask async skill callback
+# Structured output for web-search async skill callback
 echo
 echo "DEPLOY_RESULT_JSON_START"
 echo "{"

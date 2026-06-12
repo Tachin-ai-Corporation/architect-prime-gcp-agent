@@ -3,7 +3,7 @@
   "name": "Finance Analyst",
   "version": "1.0.0",
   "description": "GCP billing analysis, budget tracking, cost anomaly detection, financial reporting, vendor management",
-  "base_skills": ["agent-ask", "workspace-gmail", "workspace-sheets"],
+  "base_skills": ["web-search", "workspace-gmail", "workspace-sheets"],
   "specialty_skills": ["billing-ops"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

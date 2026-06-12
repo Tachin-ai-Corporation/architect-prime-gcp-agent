@@ -34,8 +34,8 @@ corekit/config/responsibilities-prime.json corekit/responsibilities-job.json
 
 
 # Skills (Prime-only skills)
-skills/agent-ask/SKILL.md skills/agent-ask/SKILL.md
-skills/agent-ask/skill.json skills/agent-ask/skill.json
+skills/web-search/SKILL.md skills/web-search/SKILL.md
+skills/web-search/skill.json skills/web-search/skill.json
 skills/fleet-hire/SKILL.md skills/fleet-hire/SKILL.md
 skills/fleet-hire/skill.json skills/fleet-hire/skill.json
 skills/fleet-fire/SKILL.md skills/fleet-fire/SKILL.md

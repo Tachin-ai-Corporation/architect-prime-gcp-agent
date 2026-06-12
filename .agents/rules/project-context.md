@@ -59,7 +59,7 @@ The Skills page categorizes tools by agent "body part". The introspect daemon (`
 | **Ears** | 👂 | `agent-ears*`, `ears-*`, `chat-*`, `dwd-token`, `ws-token` | Input pipeline, polling, DWD auth, chat I/O |
 | **Mouth** | 🗣️ | `agent-mouth*`, `mouth-*` | Output pipeline, response classification, delivery |
 | **Brain** | 🧠 | `agent-brain*`, `brain-telemetry-*`, `assemble-tools`, `agent-introspect*` | Orchestration daemon, telemetry, tool assembly |
-| **Cortex** | 🔮 | `agent-ask`, `agent-status` | Decision layer — reasoning tools the cortex agent uses |
+| **Cortex** | 🔮 | `web-search`, `agent-status` | Decision layer — reasoning tools the cortex agent uses |
 | **Motor** | ⚡ | `responsibility-manage`, `project-manage`, `task-log-*`, `fleet-*`, `work-log-read`, `drive-*`, `gmail-*`, `calendar-*`, `docs-*`, `sheets-*` | Execution layer — all tools Motor uses to DO things |
 | **Memory** | 💾 | `core-memory-*`, `update-deep-truths`, `session-summary` | Temporal-memory tools |
 | **Config** | ⚙️ | `upgrade-*`, `validate-contracts`, `*.md`, `*.json`, `*.tmpl` | System config & base functions: brain/fleet infra |

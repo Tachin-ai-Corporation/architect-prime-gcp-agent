@@ -3,7 +3,7 @@
   "name": "Product Architect",
   "version": "1.0.0",
   "description": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
-  "base_skills": ["agent-ask"],
+  "base_skills": ["web-search"],
   "specialty_skills": ["project-ops", "repo-audit"],
   "brain_appends": ["cortex", "cerebellum"]
 }

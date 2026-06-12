@@ -245,7 +245,7 @@ docs/BRAIN_CANON.md        # what better looks like — the gradient (ranking fi
   "specialty": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
   "emailPattern": "architect-agent-{name}",
   "workspace": "product-architect",
-  "skills": ["agent-ask", "workspace-drive", "workspace-docs"],
+  "skills": ["web-search", "workspace-drive", "workspace-docs"],
   "brain": true,
   "capabilities": { "cortex": ["read", "write", "edit", "exec", "process"], "deny": ["web-search", "browser"] }
 }

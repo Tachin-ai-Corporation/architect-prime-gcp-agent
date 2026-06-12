@@ -1,7 +1,7 @@
 # TOOLS (Fleet Agent)
 
 - Workspace: `/opt/corekit/workspace`
-- CoreKit tools: available directly in PATH (e.g., `agent-ask`, `agent-status`)
+- CoreKit tools: available directly in PATH (e.g., `web-search`, `agent-status`)
 - ADC: metadata server tokens available on GCE
 
 ## Secrets
@@ -12,9 +12,9 @@
 
 ## Web Search & Research (via temporal-research sub-agent)
 When you need current, real-time information from the web, dispatch to your
-`temporal-research` sub-agent. Do NOT call `web-search` or `agent-ask` directly
+`temporal-research` sub-agent. Do NOT call `web-search` directly
 — they are denied. All web research goes through the sub-agent, which has:
-- `agent-ask` — Vertex AI grounded search (Google Search) for finding information
+- `web-search` — Vertex AI grounded search (Google Search) for finding information
 - `web-fetch` — Fetch and extract content from specific URLs (text or HTML)
 
 ## Workspace Skills

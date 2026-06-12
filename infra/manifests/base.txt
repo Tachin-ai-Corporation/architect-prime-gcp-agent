@@ -31,7 +31,7 @@ corekit/daemon/ears-health-check bin/ears-health-check
 corekit/daemon/mouth-health-check bin/mouth-health-check
 
 # Brain tools
-skills/agent-ask/agent-ask bin/agent-ask
+skills/web-search/web-search bin/web-search
 corekit/brain/web-fetch bin/web-fetch
 corekit/brain/agent-status bin/agent-status
 corekit/brain/skill-author bin/skill-author

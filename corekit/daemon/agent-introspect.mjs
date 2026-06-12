@@ -184,7 +184,7 @@ function handleSkills() {
         //                     agent-introspect*, start-agent-introspect
         //
         //  cortex  - Decision layer: the agent's main reasoning tools
-        //            Matches: agent-ask, agent-status
+        //            Matches: web-search, agent-status
         //
         //  motor   - Execution layer: all tools Motor sub-agent uses to DO things
         //            Matches: responsibility-manage, project-manage, task-log-*,
@@ -208,7 +208,7 @@ function handleSkills() {
         else if (f === 'responsibility-manage' || f === 'project-manage' || f === 'task-log-write' || f === 'task-log-read') category = 'motor';
         else if (f.startsWith('fleet-') || f === 'command-runner' || f === 'discover-models') category = 'motor';
         else if (f.startsWith('drive-') || f.startsWith('gmail-') || f.startsWith('calendar-') || f.startsWith('docs-') || f.startsWith('sheets-')) category = 'motor';
-        else if (f === 'agent-ask' || f === 'agent-status') category = 'cortex';
+        else if (f === 'web-search' || f === 'agent-status') category = 'cortex';
         else if (f.startsWith('core-memory-') || f === 'update-deep-truths' || f === 'session-summary') category = 'memory';
         else if (f.startsWith('chat-') || f === 'dwd-token' || f === 'ws-token') category = 'ears';
         else if (f.startsWith('upgrade-') || f === 'validate-contracts' || f === 'render-config' || f === 'oc' || f === 'agent-ou-manage') category = 'config';

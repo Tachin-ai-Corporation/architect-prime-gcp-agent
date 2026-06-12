@@ -38,7 +38,7 @@ declare -A AGENT_WORKSPACES=(
 
 # ---- Determine skill list for this agent type ----
 if [[ "$AGENT_TYPE" == "prime" ]]; then
-  SKILLS="agent-ask fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade memory-consolidate"
+  SKILLS="web-search fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade memory-consolidate"
 elif [[ -f "$TYPES_FILE" ]]; then
   SKILLS="$(python3 -c "
 import json, sys
@@ -46,12 +46,12 @@ spec = '$AGENT_TYPE'
 types = json.load(open('$TYPES_FILE'))['types']
 for t in types:
     if t['id'] == spec:
-        print(' '.join(t.get('skills', ['agent-ask'])))
+        print(' '.join(t.get('skills', ['web-search'])))
         sys.exit(0)
-print('agent-ask')
-" 2>/dev/null || echo "agent-ask")"
+print('web-search')
+" 2>/dev/null || echo "web-search")"
 else
-  SKILLS="agent-ask"
+  SKILLS="web-search"
 fi
 
 # ---- Collect all skill packages with their metadata ----

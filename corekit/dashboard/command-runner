@@ -6,7 +6,7 @@
 # and executes them on the HOST OS (not inside the container).
 #
 # This is the single execution path for all fleet/upgrade
-# operations — both dashboard buttons and chat (via agent-ask)
+# operations — both dashboard buttons and chat (via web-search)
 # write commands here.
 #
 # Supported commands:

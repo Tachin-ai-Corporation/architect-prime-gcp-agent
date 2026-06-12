@@ -17,7 +17,7 @@ interface RouteContext {
  * The VM startup script:
  *   1. Reads all config from VM metadata attributes
  *   2. Downloads install.sh (manifest-based CoreKit installer)
- *   3. Installs CoreKit (agent-ask, brain-exec, etc.)
+ *   3. Installs CoreKit (web-search, brain-exec, etc.)
  *   4. Writes prime-config.json with the Prime ID + project
  *   5. Installs agent-ears + agent-mouth as systemd services
  *   6. agent-ears starts polling → agent ready

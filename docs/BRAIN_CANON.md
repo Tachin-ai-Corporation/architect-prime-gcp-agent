@@ -155,6 +155,8 @@ A skill is a solved problem, written down: distilled, versioned procedure that a
 **Better looks like:** recurring work migrating out of prompts and memory into skills; the same task performed identically by different agents because they follow the same procedure; a fix shipped as a skill version bump instead of a behavioral patch on one agent; tools documented within their governing skill.
 **Worse looks like:** procedure pasted into system prompts or Core Memory instead of referenced from a skill; two agents solving the same problem two ways; know-how that dies with the agent that discovered it; a corekit tool that exists without a skill documenting its usage.
 
+**The daemon boundary:** Daemon functions — tools, modules, and capabilities that exist to run the pipeline itself — are invisible to brain agents. Brain agents discover tools exclusively through installed skills; the `runCommand` surface exposes nothing that a skill does not govern. A daemon tool appearing in a brain agent's context is a B-16 violation: it invites improvisation where procedure should govern, and couples agents to implementation details they must not depend on.
+
 ### B-17 · Where a skill exists, skill use is enforced — across every organ
 
 Skill consultation is a structural step in the loop, not an organ's discretionary choice. Before ACT — and during DECIDE and planning — the brain resolves the work at hand against the installed skill set; an applicable skill is injected into the acting organ's context, and from that moment **the procedure governs**. Improvising beside an applicable skill is a violation of this canon, not a style preference. Enforcement is universal:
