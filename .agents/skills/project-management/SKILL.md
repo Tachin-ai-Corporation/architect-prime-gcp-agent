@@ -33,7 +33,10 @@ project-manage team-list <id>                          # List team members
 - `type` (optional, default: agent): `agent` or `human`
 
 ## Project Document Schema
-Key fields: `id`, `name`, `description`, `goal`, `status`, `owner`, `context`, `team`, `standardProcesses`, `created_at`, `updated_at`
+Key fields: `id`, `name`, `description`, `goal`, `status`, `owner`, `gchat_space_id`, `context`, `team`, `standardProcesses`, `created_at`, `updated_at`
+
+- `owner` (string, email): Project owner for escalation. Defaults to creator. Should be a human.
+- `gchat_space_id` (string): Primary GChat space ID for project communications (e.g. `AAQAXN-eJIQ`)
 
 Status lifecycle: `active` → `completed` | `paused` | `archived`
 
@@ -43,7 +46,7 @@ The `context` field is a map of key-value pairs for shared project knowledge. Ea
 - `ref`, `url`, `name`, `summary`
 
 ## Cortex Integration
-Cortex sees project context in every decide call. Uses team members to identify delegation targets. Should dispatch motor with `project-manage update` to persist discovered knowledge.
+Cortex sees project context in every decide call. Uses team members to identify delegation targets. Dispatch motor to persist discovered knowledge back to the project.
 
 ## Examples
 ```bash

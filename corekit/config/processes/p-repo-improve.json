@@ -1,13 +1,13 @@
 {
   "id": "p-repo-improve",
   "name": "Repository Improvement Cycle",
-  "description": "Product-architect-side process for the continuous improvement loop. Audits the codebase against PRODUCT_CANON.md and BRAIN_CANON.md, proposes the single highest-value improvement ranked by the rubric, and delegates implementation to an engineer agent via the GChat Delegation Protocol.",
+  "description": "Audit the codebase against canon, propose the single highest-value improvement, delegate implementation to engineering, and verify the result.",
   "status": "active",
-  "version": 1,
+  "version": 2,
   "visibility": "standard",
   "parameters": {
     "focus_area": {
-      "description": "Audit focus area rotation: brain, lib, daemon, or infra",
+      "description": "Audit focus area: brain, lib, daemon, or infra",
       "required": false,
       "default": "brain"
     },
@@ -19,57 +19,57 @@
   },
   "steps": [
     {
-      "title": "Re-read canon documents",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify any files.\n\nRe-read both canon documents to refresh invariants and quality axes:\n1. Read `docs/PRODUCT_CANON.md` — the walls. Note all invariants.\n2. Read `docs/BRAIN_CANON.md` — the gradient. Note the Part IV rubric axes and protected properties.\n3. Recall Core Memory for any prior improvement learnings: `core-memory-read --category architecture --limit 10`\n4. Read the responsibility's prior_learnings: `responsibility-manage show --id r-repo-improvement`\n\nOutput: Summary of invariants, rubric axes, and prior learnings.",
+      "title": "Understand current standards",
+      "description": "Review the product and brain canon documents. Recall any prior improvement learnings from memory and responsibility history.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Both PRODUCT_CANON.md and BRAIN_CANON.md were read. Invariants and rubric axes are summarized. Prior learnings reviewed."
+      "accept_criteria": "Canon invariants and quality axes are understood. Prior learnings reviewed."
     },
     {
-      "title": "Audit focus area for improvements",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify any files.\n\nAudit the ${focus_area} area of the codebase:\n1. List files in the focus area using `find` or `ls`\n2. Read key files in the area — look for:\n   - Code duplication or unnecessary complexity\n   - Inconsistent patterns across modules\n   - Missing error handling or observability\n   - Structural inefficiencies\n   - Divergence from canonical patterns\n3. Cross-reference with contracts.json, manifests, and tests\n4. For each finding, score against BRAIN_CANON Part IV rubric:\n   - Which axis improves? (efficiency, structure, logic clarity, cleanness)\n   - By what measure? (quantitative or structural)\n   - Are determinism, idempotency, observability, testability untouched?\n5. Rank findings by impact × feasibility. Select the single highest-value improvement.\n\nFocus areas: brain=corekit/brain/**, lib=corekit/lib/**, daemon=corekit/daemon/**, infra=infra/**+corekit/config/**\n\nOutput: Ranked findings list with the top improvement identified.",
+      "title": "Audit the focus area",
+      "description": "Inspect the current focus area of the codebase. Identify gaps, inefficiencies, structural issues, or canon violations. Score findings by impact and feasibility. Select the single highest-value improvement.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Focus area audited with at least 3 files inspected. Findings ranked by rubric. Single highest-value improvement identified with axis, measure, and protected-property confirmation. No files were modified.",
+      "accept_criteria": "Focus area audited. Findings ranked. Single highest-value improvement selected with clear justification.",
       "checkpointBoundary": true
     },
     {
-      "title": "Create improvement proposal",
-      "description": "Create a structured improvement proposal for the selected finding:\n1. **Title**: Clear one-line description of the improvement\n2. **Scope**: Exact file globs affected (e.g., `corekit/lib/scheduler.mjs`)\n3. **Before/After**: What the code looks like now vs. what it should look like\n4. **Rubric Claim**:\n   - Axis: which quality axis improves\n   - Measure: quantitative or structural improvement description\n   - Protected properties: confirm determinism, idempotency, observability, testability are untouched\n5. **Acceptance Criteria**: Testable criteria for the engineer (e.g., 'all tests pass', 'function X accepts parameter Y')\n6. **Risk Notes**: Any risks, especially for changes touching daemons or brain agents\n7. **Engineer Blueprint**: M→C→T outline showing the checkpoint plan for the engineer\n\nWrite the proposal as a markdown document and upload to Drive via `drive-upload`.\n\nOutput: Drive link to the proposal document, title, and scope summary.",
+      "title": "Write improvement proposal",
+      "description": "Create a structured proposal: what to change, why it matters, expected impact, scope, acceptance criteria, risk notes, and an implementation outline for the engineer.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Proposal document created with all required sections. Rubric claim is complete with axis, measure, and protected-property confirmation. Scope globs are specific. Acceptance criteria are testable without human judgment. Document uploaded to Drive.",
+      "accept_criteria": "Proposal document created with scope, justification, acceptance criteria, and implementation outline.",
       "checkpointBoundary": true
     },
     {
-      "title": "Approval gate: proceed with delegation?",
-      "description": "Improvement proposal is complete. Human approval required before delegating to engineering.",
+      "title": "Get approval",
+      "description": "Present the proposal for operator approval before proceeding with implementation.",
       "type": "approval_gate",
-      "approval_message": "🏗️ **Improvement proposed**: Review the proposal above. Approve to delegate implementation to an engineer agent, or reject to skip this cycle.",
+      "approval_message": "🏗️ **Improvement proposed**: Review the proposal above. Approve to delegate implementation to an engineer, or reject to skip this cycle.",
       "agent": "motor",
       "intent": "approval_gate",
-      "accept_criteria": "Human has reviewed the proposal and approved or rejected."
+      "accept_criteria": "Operator has approved or rejected the proposal."
     },
     {
-      "title": "Delegate to engineer agent",
-      "description": "Delegate the approved improvement to an engineer agent via the GChat Delegation Protocol:\n- Include the Drive link to the proposal document\n- Specify the exact scope globs from the proposal\n- Include the acceptance criteria\n- Direct the engineer to run process `p-implement-verify`\n- Require in the report-back: PR URL, test results, and QA summary\n\nThe delegation marker will be sent via GChat. The checkpoint will enter 'waiting' status until the engineer completes.",
+      "title": "Delegate implementation",
+      "description": "Delegate the approved improvement to an engineer on the project team. Provide the proposal, scope, and acceptance criteria.",
       "agent": "motor",
       "type": "delegation",
       "specialty": "swe",
       "intent": "delegation",
-      "accept_criteria": "Delegation sent to engineer agent. Engineer's mission created and registered as child.",
+      "accept_criteria": "Delegation sent to engineer. Implementation work initiated.",
       "checkpointBoundary": true
     },
     {
-      "title": "Review delegation results and close",
-      "description": "Review the engineer's delegation results:\n1. Verify the PR was opened and CI is green\n2. Check that changes are within the approved scope globs\n3. Verify against PRODUCT_CANON.md — no invariant violations\n4. Verify against BRAIN_CANON.md — rubric claim delivered\n5. If results pass both canons:\n   - Record learnings: `core-memory-write --fact \"<key learning>\" --category patterns`\n   - Update prior_learnings: `responsibility-manage update --id r-repo-improvement --prior-learnings \"<updated learnings>\"`\n6. If results fail verification, document what went wrong and why\n\nOutput: Verification report with canon compliance status, learnings recorded.",
+      "title": "Verify and learn",
+      "description": "Review the engineer's work against canon standards. Verify the improvement was delivered as proposed. Record what was learned for future improvement cycles.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Delegation results verified against both canons. Learnings written to Core Memory. Responsibility prior_learnings updated."
+      "accept_criteria": "Results verified against canon. Learnings recorded for future cycles."
     }
   ],
   "contextTemplate": {},

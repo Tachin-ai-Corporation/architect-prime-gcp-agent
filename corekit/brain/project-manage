@@ -874,12 +874,17 @@ if result.returncode != 0:
     sys.exit(1)
 
 action = 'Updated' if updated_existing else 'Added'
-print(f"{action} team member '{member['email']}' on project '{target_id}'.")
-print(f"  Email: {member['email']}")
-print(f"  Role:  {member['role']}")
-print(f"  Name:  {member.get('name', '')}")
-print(f"  Type:  {member.get('type', 'agent')}")
-print(f'Team now has {len(team)} member(s).')
+team_count = len(team)
+m_email = member['email']
+m_role = member['role']
+m_name = member['name']
+m_type = member['type']
+print(f'{action} team member {m_email} on project {target_id}.')
+print(f'  Email: {m_email}')
+print(f'  Role:  {m_role}')
+print(f'  Name:  {m_name}')
+print(f'  Type:  {m_type}')
+print(f'Team now has {team_count} member(s).')
 "
     ;;
 
@@ -1057,21 +1062,25 @@ if not team:
     sys.exit(0)
 
 # Compute column widths
-email_w = max(len('EMAIL'), max(len(t.get('email', '')) for t in team))
-role_w  = max(len('ROLE'),  max(len(t.get('role', ''))  for t in team))
-name_w  = max(len('NAME'),  max(len(t.get('name', ''))  for t in team))
-type_w  = max(len('TYPE'),  max(len(t.get('type', ''))  for t in team))
+def gf(t, k):
+    return t[k] if k in t else ''
 
-print(f"Team for project '{target_id}' ({len(team)} member(s)):")
+email_w = max(len('EMAIL'), max(len(gf(t, 'email')) for t in team))
+role_w  = max(len('ROLE'),  max(len(gf(t, 'role'))  for t in team))
+name_w  = max(len('NAME'),  max(len(gf(t, 'name'))  for t in team))
+type_w  = max(len('TYPE'),  max(len(gf(t, 'type'))  for t in team))
+
+team_count = len(team)
+print(f'Team for project {target_id} ({team_count} member(s)):')
 print()
-header = f"  {'EMAIL':<{email_w}}  {'ROLE':<{role_w}}  {'NAME':<{name_w}}  {'TYPE':<{type_w}}"
+header = f\"  {'EMAIL':<{email_w}}  {'ROLE':<{role_w}}  {'NAME':<{name_w}}  {'TYPE':<{type_w}}\"
 print(header)
 print('  ' + '-' * (email_w + role_w + name_w + type_w + 6))
 for t in team:
-    e = t.get('email', '')
-    r = t.get('role', '')
-    n = t.get('name', '')
-    tp = t.get('type', '')
+    e = gf(t, 'email')
+    r = gf(t, 'role')
+    n = gf(t, 'name')
+    tp = gf(t, 'type')
     print(f'  {e:<{email_w}}  {r:<{role_w}}  {n:<{name_w}}  {tp:<{type_w}}')
 "
     ;;
