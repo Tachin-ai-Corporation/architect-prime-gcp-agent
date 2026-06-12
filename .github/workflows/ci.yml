@@ -51,13 +51,12 @@ jobs:
           node-version: '20'
       - name: Validate contracts
         run: |
-          echo "=== node version ==="
-          node --version
-          echo "=== validate-contracts output ==="
+          echo '```' >> $GITHUB_STEP_SUMMARY
           set +e
-          bash corekit/system/validate-contracts --repo 2>&1
-          RC=$?
-          echo "=== exit code: $RC ==="
+          bash corekit/system/validate-contracts --repo 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          RC=${PIPESTATUS[0]}
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Exit code: $RC" >> $GITHUB_STEP_SUMMARY
           exit $RC
 
   manifest-integrity:
