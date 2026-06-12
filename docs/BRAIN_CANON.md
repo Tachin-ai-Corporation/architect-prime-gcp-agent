@@ -163,7 +163,7 @@ Skill consultation is a structural step in the loop, not an organ's discretionar
 
 | Organ | Skill obligation |
 |---|---|
-| **Cortex** | Decisions route work down the skill path when one applies; synthesis reports which skills governed the work |
+| **Cortex** | Decisions route work down the skill path when one applies; references skills by name in dispatch instructions — never embeds tool syntax in decisions or SOUL docs; synthesis reports which skills governed the work |
 | **Prefrontal** | Blueprints reference applicable skills in their steps — plans compose procedures, they do not re-derive them |
 | **Motor** | Executes by the skill's procedure, including its safety rules and stop conditions; deviation requires a recorded reason |
 | **Cerebellum** | Verifies against the skill's own checks and expected outcomes — the procedure defines what "done correctly" means |
@@ -171,7 +171,7 @@ Skill consultation is a structural step in the loop, not an organ's discretionar
 | **Temporal-Memory** | Recall supplements skills with lived context; it never overrides a current skill version with a remembered older one |
 | **Brain daemon** | Owns the resolution step: skill lookup is part of dispatch, deterministic, and skippable by no one |
 
-Deviation is permitted only when the skill demonstrably does not cover the case — and that deviation, with its reason, is recorded. Repeated deviation in the same domain is not a pattern to tolerate; it is a skill gap, and a skill gap is an improvement proposal.
+Deviation is permitted only when the skill demonstrably does not cover the case — and that deviation, with its reason, is recorded. Repeated deviation in the same domain is not a pattern to tolerate; it is a skill gap, and a skill gap is an improvement proposal. Specific tool syntax — command names, argument formats, flag values — lives exclusively in skill documents, never in SOUL files, IDENTITY files, or workspace documentation. SOUL files teach cognitive patterns; skills teach procedures.
 **Better looks like:** a rising fraction of actions executed under skill governance; organ prompts shrinking because procedure lives in the skill; deviations that are rare, reasoned, recorded — and that turn into skill updates.
 **Worse looks like:** an organ freelancing beside an installed, applicable skill; skill lookup performed only after failure; a skill that exists but that nothing in the loop forces anyone to find.
 

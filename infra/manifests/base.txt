@@ -55,6 +55,10 @@ corekit/brain/config.mjs corekit/brain/config.mjs
 corekit/brain/context.mjs corekit/brain/context.mjs
 corekit/brain/health.mjs corekit/brain/health.mjs
 
+# Skills (universal — every agent type)
+skills/skill-introspect/SKILL.md skills/skill-introspect/SKILL.md
+skills/skill-introspect/skill.json skills/skill-introspect/skill.json
+
 # Config
 corekit/README.md corekit/README.md
 corekit/exec-approvals.json exec-approvals.json

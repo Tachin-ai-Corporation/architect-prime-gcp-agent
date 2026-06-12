@@ -38,7 +38,7 @@ declare -A AGENT_WORKSPACES=(
 
 # ---- Determine skill list for this agent type ----
 if [[ "$AGENT_TYPE" == "prime" ]]; then
-  SKILLS="web-search fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade memory-consolidate"
+  SKILLS="web-search fleet-hire fleet-fire fleet-status fleet-verify fleet-upgrade memory-consolidate skill-introspect"
 elif [[ -f "$TYPES_FILE" ]]; then
   SKILLS="$(python3 -c "
 import json, sys

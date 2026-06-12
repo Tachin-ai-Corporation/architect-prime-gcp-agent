@@ -1,0 +1,13 @@
+{
+  "id": "skill-introspect",
+  "name": "Skill Introspection",
+  "version": "1.0.0",
+  "description": "Discover and read installed skills — what tools exist and how to use them",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "meta",
+  "agent_part": "cortex",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When you need to know what skills are available, what tools motor can use, or exact tool syntax for a dispatch instruction"
+}
