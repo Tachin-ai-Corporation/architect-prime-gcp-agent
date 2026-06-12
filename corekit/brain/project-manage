@@ -954,7 +954,7 @@ original_len = len(team)
 team = [t for t in team if t.get('email') != remove_email]
 
 if len(team) == original_len:
-    print(f"Team member '{remove_email}' not found on project '{target_id}'.")
+    print(f'Team member {remove_email} not found on project {target_id}.')
     sys.exit(0)
 
 existing['team'] = team
