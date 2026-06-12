@@ -17,9 +17,10 @@ CONFIG_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --repo) MODE="repo"; shift ;;
     --runtime) MODE="runtime"; shift ;;
     --file) CONFIG_FILE="$2"; shift 2 ;;
-    --help|-h) echo "Usage: validate-contracts [--runtime] [--file <config.json>]"; exit 0 ;;
+    --help|-h) echo "Usage: validate-contracts [--repo|--runtime] [--file <config.json>]"; exit 0 ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
