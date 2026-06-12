@@ -990,8 +990,9 @@ if result.returncode != 0:
     print(f'ERROR: Failed to update team: {result.stderr}', file=sys.stderr)
     sys.exit(1)
 
-print(f"Removed '{remove_email}' from project '{target_id}'.")
-print(f'Team now has {len(team)} member(s).')
+print(f'Removed {remove_email} from project {target_id}.')
+team_count = len(team)
+print(f'Team now has {team_count} member(s).')
 "
     ;;
 
