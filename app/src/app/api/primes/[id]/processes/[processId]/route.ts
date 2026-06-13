@@ -96,3 +96,50 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ error: "Failed to update process" }, { status: 500 });
   }
 }
+
+/**
+ * PATCH /api/primes/[id]/processes/[processId] — Subscribe/unsubscribe agent
+ * Body: { action: "subscribe" | "unsubscribe", email: string }
+ */
+export async function PATCH(req: NextRequest, ctx: RouteContext) {
+  try {
+    const { id, processId } = await ctx.params;
+    const body = await req.json();
+    const { action, email } = body;
+
+    if (!action || !email) {
+      return NextResponse.json(
+        { error: "Missing required fields: action, email" },
+        { status: 400 },
+      );
+    }
+
+    if (action !== "subscribe" && action !== "unsubscribe") {
+      return NextResponse.json(
+        { error: "action must be 'subscribe' or 'unsubscribe'" },
+        { status: 400 },
+      );
+    }
+
+    const docRef = processesCol(id).doc(processId);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return NextResponse.json({ error: "Process not found" }, { status: 404 });
+    }
+
+    const { FieldValue } = await import("firebase-admin/firestore");
+
+    if (action === "subscribe") {
+      await docRef.update({ subscribers: FieldValue.arrayUnion(email) });
+    } else {
+      await docRef.update({ subscribers: FieldValue.arrayRemove(email) });
+    }
+
+    const updated = await docRef.get();
+    return NextResponse.json({ process: { id: updated.id, ...updated.data() } });
+  } catch (err) {
+    console.error(`[api/primes/processes/detail] PATCH error:`, err);
+    return NextResponse.json({ error: "Failed to update subscription" }, { status: 500 });
+  }
+}

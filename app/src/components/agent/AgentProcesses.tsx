@@ -87,20 +87,26 @@ export function AgentProcesses({ primeId, agentEmail }: AgentProcessesProps) {
   );
 
   const handleToggleSubscribe = useCallback(
-    (processId: string) => {
+    async (processId: string) => {
       const current = subscriptionOverrides[processId] ??
         isSubscribed(
           processes.find((p) => p.id === processId)!,
           agentEmail,
         );
-      // TODO: call subscribe/unsubscribe API when it exists
-      console.log("TODO: subscribe", processId, agentEmail);
+      // Optimistic update
       setSubscriptionOverrides((prev) => ({
         ...prev,
         [processId]: !current,
       }));
+      // Call subscribe/unsubscribe API
+      const action = current ? "unsubscribe" : "subscribe";
+      await api(`/api/primes/${primeId}/processes/${processId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, email: agentEmail }),
+      });
     },
-    [subscriptionOverrides, processes, agentEmail],
+    [subscriptionOverrides, processes, agentEmail, primeId],
   );
 
   /* ---- Sorted list: subscribed first ---- */
