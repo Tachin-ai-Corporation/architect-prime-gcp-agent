@@ -110,30 +110,19 @@ export default function AgentDeepDivePage({
 
   return (
     <div className={styles.agentPage}>
-      {/* ---- Header ---- */}
+      {/* ---- Header (with mini card tabs) ---- */}
       <AgentHeader
         primeId={id}
         agentName={agent}
         status={agentData?.status}
         specialty={agentData?.specialty}
         email={agentData?.email}
+        tabs={TABS as unknown as { key: string; label: string; icon: string }[]}
+        activeTab={activeTab}
+        onTabClick={(key) => handleTabClick(key as TabKey)}
       />
 
-      {/* ---- Tab Bar (desktop) ---- */}
-      <div className={styles.tabBar}>
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            className={`${styles.tab} ${activeTab === tab.key ? styles.tabActive : ""}`}
-            onClick={() => handleTabClick(tab.key)}
-          >
-            <span className={styles.tabIcon}>{tab.icon}</span>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ---- Tab Dropdown (mobile) ---- */}
+      {/* ---- Tab Dropdown (mobile only) ---- */}
       <div className={styles.tabDropdownWrap}>
         <select
           className={styles.tabDropdown}

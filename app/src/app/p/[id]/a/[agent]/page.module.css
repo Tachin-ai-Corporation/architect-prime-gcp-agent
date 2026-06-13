@@ -8,53 +8,8 @@
   background: var(--bg-primary);
 }
 
-/* ---- Tab Bar ---- */
-.tabBar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0 var(--space-6);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-  flex-shrink: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
+/* ---- (tabs moved to AgentHeader) ---- */
 
-.tabBar::-webkit-scrollbar {
-  display: none;
-}
-
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease;
-  white-space: nowrap;
-  margin-bottom: -1px;
-}
-
-.tab:hover {
-  color: var(--text-secondary);
-}
-
-.tabActive {
-  color: var(--signal-aqua);
-  border-bottom-color: var(--network-teal);
-  font-weight: 600;
-}
-
-.tabIcon {
-  font-size: 14px;
-}
 
 /* ---- Tab Content Area ---- */
 .tabContentArea {
@@ -336,10 +291,6 @@
 }
 
 @media (max-width: 640px) {
-  .tabBar {
-    display: none;
-  }
-
   .tabDropdownWrap {
     display: block;
   }

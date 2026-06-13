@@ -3,15 +3,33 @@
 import Link from "next/link";
 import styles from "./AgentHeader.module.css";
 
+interface Tab {
+  key: string;
+  label: string;
+  icon: string;
+}
+
 interface AgentHeaderProps {
   primeId: string;
   agentName: string;
   status?: string;
   specialty?: string;
   email?: string;
+  tabs?: Tab[];
+  activeTab?: string;
+  onTabClick?: (key: string) => void;
 }
 
-export function AgentHeader({ primeId, agentName, status, specialty, email }: AgentHeaderProps) {
+export function AgentHeader({
+  primeId,
+  agentName,
+  status,
+  specialty,
+  email,
+  tabs,
+  activeTab,
+  onTabClick,
+}: AgentHeaderProps) {
   const badgeClass = status
     ? `badge badge-${status}`
     : "badge badge-offline";
@@ -33,6 +51,23 @@ export function AgentHeader({ primeId, agentName, status, specialty, email }: Ag
           </div>
         </div>
       </div>
+
+      {/* ---- Mini Card Tabs ---- */}
+      {tabs && tabs.length > 0 && (
+        <div className={styles.miniTabs}>
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={`${styles.miniTab} ${activeTab === tab.key ? styles.miniTabActive : ""}`}
+              onClick={() => onTabClick?.(tab.key)}
+            >
+              <span className={styles.miniTabIcon}>{tab.icon}</span>
+              <span className={styles.miniTabLabel}>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className={styles.actions}>
         <Link href={`/p/${primeId}`} className="btn btn-ghost btn-sm">
           ← Hub
