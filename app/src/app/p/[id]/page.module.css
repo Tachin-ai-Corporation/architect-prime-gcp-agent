@@ -1,153 +1,473 @@
-/* ---- Prime Hub ---- */
+/* ---- Prime Deep Dive Page ---- */
+/* Mirrors fleet agent page styles with fleet link card additions */
 
-.hubPage {
+.agentPage {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: var(--space-6);
-  max-width: 960px;
-  margin: 0 auto;
-  animation: fadeIn var(--duration-page) var(--ease-premium);
+  overflow: hidden;
+  background: var(--bg-primary);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
+/* ---- (tabs moved to AgentHeader) ---- */
+
+
+/* ---- Tab Content Area ---- */
+.tabContentArea {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
+}
+
+/* ---- Overview Tab ---- */
+.overviewWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* -- Hero Banner -- */
+.hero {
+  position: relative;
+  padding: 36px 32px 28px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: rgba(32, 40, 51, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: heroFadeIn 600ms var(--ease-premium, ease-out) both;
+}
+
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ---- Header ---- */
-.header {
+.heroAccent {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+}
+
+.heroGlow {
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  height: 250px;
+  border-radius: 50%;
+  opacity: 0.12;
+  pointer-events: none;
+  filter: blur(60px);
+}
+
+.heroGlyph {
+  font-size: 64px;
+  line-height: 1;
+  margin-bottom: 12px;
+  position: relative;
+  z-index: 1;
+  animation: glyphFloat 4s ease-in-out infinite;
+}
+
+@keyframes glyphFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.heroName {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 4px;
+  position: relative;
+  z-index: 1;
+}
+
+.heroId {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 1;
+}
+
+/* -- Section Headings -- */
+.sectionHeading {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.primeName {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-.zoneTag {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  background: var(--bg-tertiary);
-  padding: 2px 10px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-subtle);
-}
-
-/* ---- NavCard Grid ---- */
-.navGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-4);
-}
-
-@media (max-width: 720px) {
-  .navGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 480px) {
-  .navGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ---- Fleet Strip ---- */
-.fleetSection {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.fleetTitle {
+  gap: var(--space-2);
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  margin-bottom: var(--space-3);
 }
 
-.fleetStrip {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  padding-bottom: var(--space-2);
+.sectionIcon {
+  font-size: 15px;
 }
 
-.agentChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
+/* -- Organ Grid (3×2) -- */
+.organGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+.organCard {
   background: var(--charcoal);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  text-decoration: none;
-  transition:
-    border-color var(--duration-hover) var(--ease-standard),
-    color var(--duration-hover) var(--ease-standard),
-    background var(--duration-hover) var(--ease-standard);
+  border-top: 3px solid var(--organ-accent, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.agentChip:hover {
-  border-color: var(--border-accent);
+.organCard:hover {
+  border-color: var(--organ-accent, var(--border-subtle));
+  box-shadow: 0 0 0 1px var(--organ-accent, transparent);
+}
+
+.organCardDisabled {
+  composes: organCard;
+  opacity: 0.38;
+  cursor: default;
+  pointer-events: none;
+}
+
+.organCardExpanded {
+  box-shadow: 0 0 0 1px var(--organ-accent, transparent);
+}
+
+.organHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.organIcon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.organLabel {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-primary);
-  background: var(--bg-elevated);
 }
 
-.chipDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+.organExpandIcon {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  transition: transform 200ms ease;
+}
+
+.organExpandIconOpen {
+  transform: rotate(180deg);
+}
+
+.organRole {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-3);
+  line-height: 1.4;
+}
+
+.organPreview {
+  position: relative;
+  max-height: 140px;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: var(--space-3);
+  background: var(--graphite);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.organPreview::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: linear-gradient(transparent, var(--graphite));
+  pointer-events: none;
+}
+
+.organFull {
+  max-height: none;
+  overflow: visible;
+}
+
+.organFull::after {
+  display: none;
+}
+
+.organEmptyHint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  padding: var(--space-2) 0;
+}
+
+/* -- Two Column Grid (Identity + Memory) -- */
+.twoColGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.twoColCard {
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+}
+
+.twoColCardTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-3);
+}
+
+/* ---- Identity preview ---- */
+.identityPre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--graphite);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ---- Fleet Link Card ---- */
+.fleetLinkCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.fleetLinkCard:hover {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 1px var(--border-accent);
+}
+
+.fleetLinkIcon {
+  font-size: 32px;
+  line-height: 1;
   flex-shrink: 0;
 }
 
-.chipDotOnline {
-  background: var(--status-success);
+.fleetLinkBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.chipDotOffline {
-  background: var(--status-neutral);
+.fleetLinkTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
-.chipDotDeploying {
-  background: var(--status-warning);
-  animation: pulse 2s infinite;
-}
-
-.chipDotError {
-  background: var(--status-error);
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
-}
-
-/* ---- Empty state ---- */
-.emptyFleet {
+.fleetLinkDesc {
   font-size: 13px;
   color: var(--text-tertiary);
-  font-style: italic;
 }
 
-/* ---- Loading ---- */
-.loading {
-  display: flex;
+.fleetLinkBadge {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 300px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: rgba(34, 211, 238, 0.12);
+  color: #22d3ee;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+}
+
+.fleetLinkArrow {
+  font-size: 18px;
   color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: transform 160ms ease;
+}
+
+.fleetLinkCard:hover .fleetLinkArrow {
+  transform: translateX(4px);
+  color: var(--text-secondary);
+}
+
+/* ---- Work Tab ---- */
+.workTabContent {
+  position: relative;
+}
+
+.workSection {
+  margin-bottom: var(--space-5);
+}
+
+.workSectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Chat Tab ---- */
+.chatTabContent {
+  height: calc(100vh - 220px);
+  min-height: 400px;
+}
+
+/* ---- Shared States ---- */
+.loadingPulse {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  padding: var(--space-5);
+  text-align: center;
+  animation: fadePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes fadePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.emptyHint {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  padding: var(--space-3) 0;
+}
+
+/* ---- Loading Skeleton ---- */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.skeletonLine {
+  height: 14px;
+  background: linear-gradient(
+    90deg,
+    rgba(86, 99, 115, 0.08) 0%,
+    rgba(86, 99, 115, 0.16) 50%,
+    rgba(86, 99, 115, 0.08) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.skeletonLine:nth-child(1) { width: 65%; }
+.skeletonLine:nth-child(2) { width: 85%; }
+.skeletonLine:nth-child(3) { width: 55%; }
+.skeletonLine:nth-child(4) { width: 75%; height: 60px; }
+.skeletonLine:nth-child(5) { width: 45%; }
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---- Responsive Mobile Tab Dropdown ---- */
+.tabDropdownWrap {
+  display: none;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.tabDropdown {
+  width: 100%;
+  padding: 10px 14px;
   font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  appearance: none;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237A8696' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+.tabDropdown:focus {
+  outline: none;
+  border-color: var(--network-teal);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .organGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .twoColGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tabContentArea {
+    padding: var(--space-4);
+  }
+}
+
+@media (max-width: 640px) {
+  .tabDropdownWrap {
+    display: block;
+  }
+
+  .organGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tabContentArea {
+    padding: var(--space-3);
+  }
 }
