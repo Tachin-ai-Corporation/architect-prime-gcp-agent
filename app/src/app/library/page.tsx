@@ -22,8 +22,8 @@ export default function LibraryPage() {
         />
         <NavCard
           icon="🎭"
-          title="Agent Types"
-          description="Explore agent specialties — DevOps, Engineer, QA, PM, and more"
+          title="Roles"
+          description="Fleet class roster — brain layers, skills, and duties each role receives at hire"
           href="/library/agent-types"
         />
         <NavCard

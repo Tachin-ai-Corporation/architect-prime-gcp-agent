@@ -23,6 +23,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   skills: "Skills",
   brain: "Brain",
   library: "Library",
+  "agent-types": "Roles",
 };
 
 /* Segments that are structural labels only — not clickable */

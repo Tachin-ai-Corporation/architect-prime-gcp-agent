@@ -49,7 +49,7 @@ function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => vo
 }
 
 const TABS = [
-  { key: "overview", label: "Overview", icon: "📊" },
+  { key: "overview", label: "Persona", icon: "🎭" },
   { key: "work", label: "Work", icon: "📋" },
   { key: "brain", label: "Brain", icon: "🧠" },
   { key: "skills", label: "Skills", icon: "⚡" },
@@ -64,12 +64,12 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 const BRAIN_ORGANS = [
-  { key: "cortex", label: "Cortex", icon: "🧠", filePath: "SOUL.md", role: "the voice: classify, decide, synthesize", accent: "var(--signal-aqua)" },
-  { key: "prefrontal", label: "Prefrontal", icon: "🏗️", filePath: "workspace-prefrontal/SOUL.md", role: "the structurer: M→C→T blueprints", accent: "#a78bfa" },
-  { key: "motor", label: "Motor", icon: "⚡", filePath: "workspace-motor/SOUL.md", role: "the hands: tools, exec, files", accent: "#fbbf24" },
-  { key: "cerebellum", label: "Cerebellum", icon: "🔄", filePath: "workspace-cerebellum/SOUL.md", role: "the conscience: independent verification", accent: "#2dd4bf" },
-  { key: "temporal-memory", label: "Temporal-Memory", icon: "💾", filePath: "workspace-temporal-memory/SOUL.md", role: "internal recall, no external APIs", accent: "#818cf8" },
-  { key: "temporal-research", label: "Temporal-Research", icon: "🔍", filePath: "workspace-temporal-research/SOUL.md", role: "external info: grounding + fetch", accent: "#38bdf8" },
+  { key: "cortex", label: "Cortex", icon: "🧠", filePath: "SOUL.md", role: "Classify intakes, choose decisions, synthesize outcomes", accent: "var(--signal-aqua)" },
+  { key: "prefrontal", label: "Prefrontal", icon: "🏗️", filePath: "workspace-prefrontal/SOUL.md", role: "Turn intent into structure: M→C→T blueprints", accent: "#a78bfa" },
+  { key: "motor", label: "Motor", icon: "⚡", filePath: "workspace-motor/SOUL.md", role: "Act: tools, exec, files — the only mutator", accent: "#fbbf24" },
+  { key: "cerebellum", label: "Cerebellum", icon: "🔄", filePath: "workspace-cerebellum/SOUL.md", role: "Verify results against accept criteria, independently", accent: "#2dd4bf" },
+  { key: "temporal-memory", label: "Temporal-Memory", icon: "💾", filePath: "workspace-temporal-memory/SOUL.md", role: "Recall what the agent already knows", accent: "#818cf8" },
+  { key: "temporal-research", label: "Temporal-Research", icon: "🔍", filePath: "workspace-temporal-research/SOUL.md", role: "Bring in what the world knows: search + fetch", accent: "#38bdf8" },
 ];
 
 /** Specialty → visual theme (same as API route THEMES) */

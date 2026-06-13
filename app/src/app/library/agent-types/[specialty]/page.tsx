@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useMemo } from "react";
 import Link from "next/link";
+import { FilePreviewGrid } from "@/components/agent/FilePreviewCard";
+import type { FileCardItem } from "@/components/agent/FilePreviewCard";
 import styles from "./page.module.css";
 
 /* ---- Types ---- */
@@ -77,28 +79,24 @@ interface SpecialtyDetail {
   workspaceFiles: WorkspaceFile[];
 }
 
-/* ---- Organ accent class map ---- */
-const ORGAN_ACCENT: Record<string, string> = {
-  cortex:              styles.brainAccentCortex,
-  prefrontal:          styles.brainAccentPrefrontal,
-  motor:               styles.brainAccentMotor,
-  cerebellum:          styles.brainAccentCerebellum,
-  "temporal-memory":   styles.brainAccentTemporalMemory,
-  "temporal-research": styles.brainAccentTemporalResearch,
+/* ---- Organ accent color map ---- */
+const ORGAN_ACCENTS: Record<string, string> = {
+  cortex:              "var(--signal-aqua, #38bdf8)",
+  prefrontal:          "#a78bfa",
+  motor:               "#fbbf24",
+  cerebellum:          "#2dd4bf",
+  "temporal-memory":   "#818cf8",
+  "temporal-research": "#38bdf8",
 };
 
-/* ---- File icon map ---- */
-const FILE_ICONS: Record<string, string> = {
-  "IDENTITY.md": "🪪",
-  "SOUL.md": "💎",
-  "MEMORY.md": "🧬",
-};
+/* ---- Tabs ---- */
+const TABS = [
+  { key: "brain", label: "Brain", icon: "🧠" },
+  { key: "responsibilities", label: "Responsibilities", icon: "📋" },
+  { key: "skills", label: "Skills", icon: "🛠" },
+] as const;
 
-/* ---- Format bytes ---- */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
-}
+type TabKey = (typeof TABS)[number]["key"];
 
 /* ---- Page ---- */
 export default function AgentTypeDetailPage({
@@ -111,12 +109,8 @@ export default function AgentTypeDetailPage({
   const [data, setData] = useState<SpecialtyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  /* Collapsible section states */
-  const [soulOpen, setSoulOpen] = useState(false);
-  const [expandedBrain, setExpandedBrain] = useState<Record<string, boolean>>({});
+  const [activeTab, setActiveTab] = useState<TabKey>("brain");
   const [expandedResp, setExpandedResp] = useState<string | null>(null);
-  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
 
   /* ---- Fetch ---- */
   useEffect(() => {
@@ -139,6 +133,38 @@ export default function AgentTypeDetailPage({
     })();
     return () => { cancelled = true; };
   }, [specialty]);
+
+  /* ---- Build brain cards for FilePreviewGrid ---- */
+  const brainCards: FileCardItem[] = useMemo(() => {
+    if (!data) return [];
+    const items: FileCardItem[] = [];
+
+    // SOUL.md card
+    if (data.soulContent) {
+      items.push({
+        key: "soul",
+        label: "SOUL.md",
+        icon: "💎",
+        role: "Identity and soul — shared behavioral firmware",
+        accent: "var(--signal-aqua, #38bdf8)",
+        content: data.soulContent,
+      });
+    }
+
+    // Organ cards
+    for (const organ of (data.organs || [])) {
+      items.push({
+        key: organ.key,
+        label: organ.label,
+        icon: organ.icon,
+        role: organ.role,
+        accent: ORGAN_ACCENTS[organ.key] || "var(--border-subtle)",
+        content: organ.exists ? organ.content : null,
+      });
+    }
+
+    return items;
+  }, [data]);
 
   /* ---- Loading ---- */
   if (loading) {
@@ -164,7 +190,6 @@ export default function AgentTypeDetailPage({
   }
 
   const organCount = (data.organs || []).filter((o) => o.exists).length;
-  const workspaceFileCount = data.workspaceFiles.filter((f) => f.exists).length;
 
   return (
     <div className={styles.shell} id="agent-type-detail-page">
@@ -174,7 +199,7 @@ export default function AgentTypeDetailPage({
       </Link>
 
       {/* ================================================================
-         Section 1: Hero Banner
+         Hero Banner
          ================================================================ */}
       <div className={styles.hero}>
         <div
@@ -210,133 +235,37 @@ export default function AgentTypeDetailPage({
             <span className={styles.heroStatValue}>{data.responsibilities.length}</span>
             <span className={styles.heroStatLabel}>duties</span>
           </span>
-          <span className={styles.heroStat}>
-            <span className={styles.heroStatIcon}>📁</span>
-            <span className={styles.heroStatValue}>{workspaceFileCount}</span>
-            <span className={styles.heroStatLabel}>workspace files</span>
-          </span>
         </div>
       </div>
 
       {/* ================================================================
-         Section 2: Identity & Soul
+         Tab Navigation
          ================================================================ */}
-      <div className={styles.section}>
-        <div className={styles.sectionCard}>
-          <div
-            className={styles.sectionHeader}
-            onClick={() => setSoulOpen(!soulOpen)}
+      <div className={styles.tabBar}>
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`${styles.tab} ${activeTab === tab.key ? styles.tabActive : ""}`}
+            onClick={() => setActiveTab(tab.key)}
           >
-            <span className={styles.sectionIcon}>💎</span>
-            <span className={styles.sectionTitle}>Identity &amp; Soul</span>
-            <span className={styles.sectionCount}>
-              {data.soulContent ? `${(data.soulContent.match(/\n/g) || []).length + 1} lines` : "—"}
-            </span>
-            <span className={`${styles.sectionChevron} ${soulOpen ? styles.sectionChevronOpen : ""}`}>
-              ▼
-            </span>
-          </div>
-          {soulOpen && (
-            <div className={styles.sectionBody}>
-              <div className={styles.soulContainer}>
-                {data.soulContent || "No SOUL.md found for this specialty."}
-              </div>
-            </div>
-          )}
-        </div>
+            <span className={styles.tabIcon}>{tab.icon}</span>
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* ================================================================
-         Section 3: Brain Architecture
+         Tab Content
          ================================================================ */}
-      <div className={styles.section}>
-        <div className={styles.sectionCard}>
-          <div className={styles.sectionHeaderStatic}>
-            <span className={styles.sectionIcon}>🧠</span>
-            <span className={styles.sectionTitle}>Brain Architecture</span>
-            <span className={styles.sectionCount}>{organCount} / 6 organs</span>
-          </div>
-          <div className={styles.sectionBody}>
-            <div className={styles.brainGrid}>
-              {(data.organs || []).map((organ) => {
-                const accentClass = ORGAN_ACCENT[organ.key] || "";
-                const isExpanded = expandedBrain[organ.key] || false;
+      <div className={styles.tabContent}>
+        {/* ---- Brain Tab ---- */}
+        {activeTab === "brain" && (
+          <FilePreviewGrid items={brainCards} columns={3} />
+        )}
 
-                if (!organ.exists) {
-                  return (
-                    <div
-                      key={organ.key}
-                      className={`${styles.brainColumn} ${styles.brainColumnDisabled} ${accentClass}`}
-                    >
-                      <div className={styles.brainColumnHeaderDisabled}>
-                        <span className={styles.brainIcon}>{organ.icon}</span>
-                        <span className={styles.brainPartName}>{organ.label}</span>
-                        <span className={styles.brainPartDisabledLabel}>Not configured</span>
-                      </div>
-                    </div>
-                  );
-                }
-
-                const preview = organ.content.slice(0, 500);
-                const hasMore = organ.content.length > 500;
-
-                return (
-                  <div key={organ.key} className={`${styles.brainColumn} ${accentClass}`}>
-                    <div
-                      className={styles.brainColumnHeader}
-                      onClick={() =>
-                        setExpandedBrain((prev) => ({
-                          ...prev,
-                          [organ.key]: !prev[organ.key],
-                        }))
-                      }
-                    >
-                      <span className={styles.brainIcon}>{organ.icon}</span>
-                      <span className={styles.brainPartName}>{organ.label}</span>
-                      {organ.sourceType === "base-brain" && (
-                        <span className={styles.organBaseTag}>base</span>
-                      )}
-                      <span className={styles.organNature}>{organ.nature}</span>
-                      {hasMore && (
-                        <span
-                          className={`${styles.brainExpandIcon} ${isExpanded ? styles.brainExpandIconOpen : ""}`}
-                        >
-                          ▼
-                        </span>
-                      )}
-                    </div>
-                    {organ.role && (
-                      <div className={styles.organRole}>{organ.role}</div>
-                    )}
-                    {isExpanded ? (
-                      <div className={styles.brainContent}>{organ.content}</div>
-                    ) : (
-                      <div className={styles.brainPreview}>
-                        {preview}
-                        {hasMore && <div className={styles.brainFade} />}
-                      </div>
-                    )}
-                    {organ.never && (
-                      <div className={styles.organNever}>⚠ Never: {organ.never}</div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ================================================================
-         Section 4: Responsibilities
-         ================================================================ */}
-      <div className={styles.section}>
-        <div className={styles.sectionCard}>
-          <div className={styles.sectionHeaderStatic}>
-            <span className={styles.sectionIcon}>📋</span>
-            <span className={styles.sectionTitle}>Responsibilities</span>
-            <span className={styles.sectionCount}>{data.responsibilities.length} duties</span>
-          </div>
+        {/* ---- Responsibilities Tab ---- */}
+        {activeTab === "responsibilities" && (
           <div className={styles.sectionBody}>
             {data.responsibilities.length > 0 ? (
               <table className={styles.respTable}>
@@ -416,147 +345,66 @@ export default function AgentTypeDetailPage({
                 </tbody>
               </table>
             ) : (
-              <div className={styles.noData}>No responsibilities defined for this specialty.</div>
+              <div className={styles.noData}>No responsibilities defined for this role.</div>
             )}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* ================================================================
-         Section 5: Skills
-         ================================================================ */}
-      <div className={styles.section}>
-        <div className={styles.sectionCard}>
-          <div className={styles.sectionHeaderStatic}>
-            <span className={styles.sectionIcon}>🛠</span>
-            <span className={styles.sectionTitle}>Specialty Skills</span>
-            <span className={styles.sectionCount}>{data.skills.length} skills</span>
-          </div>
+        {/* ---- Skills Tab ---- */}
+        {activeTab === "skills" && (
           <div className={styles.sectionBody}>
             {data.skills.length > 0 ? (
               <div className={styles.skillsGrid}>
-                {data.skills.map((skill) => {
-                  const isExp = expandedSkill === skill.id;
-                  return (
-                    <div
-                      key={skill.id}
-                      className={styles.skillCard}
-                      onClick={() => setExpandedSkill(isExp ? null : skill.id)}
-                    >
-                      <div className={styles.skillCardHeader}>
-                        <span className={styles.skillName}>{skill.name}</span>
-                        {skill.version && (
-                          <span className={styles.skillVersion}>v{skill.version}</span>
-                        )}
-                      </div>
-                      <div className={styles.skillDesc}>{skill.description}</div>
-                      <div className={styles.skillMeta}>
-                        {skill.category && (
-                          <span className={`${styles.skillChip} ${styles.skillChipCategory}`}>
-                            {skill.category}
-                          </span>
-                        )}
-                        {skill.agent_part && (
-                          <span className={`${styles.skillChip} ${styles.skillChipPart}`}>
-                            {skill.agent_part}
-                          </span>
-                        )}
-                      </div>
-                      {isExp && skill.skillMdContent && (
-                        <div className={styles.skillExpanded}>
-                          <div className={styles.skillMdContent}>{skill.skillMdContent}</div>
-                        </div>
+                {data.skills.map((skill) => (
+                  <div key={skill.id} className={styles.skillCard}>
+                    <div className={styles.skillCardHeader}>
+                      <span className={styles.skillName}>{skill.name}</span>
+                      {skill.version && (
+                        <span className={styles.skillVersion}>v{skill.version}</span>
                       )}
                     </div>
-                  );
-                })}
+                    <div className={styles.skillDesc}>{skill.description}</div>
+                    <div className={styles.skillMeta}>
+                      {skill.category && (
+                        <span className={`${styles.skillChip} ${styles.skillChipCategory}`}>
+                          {skill.category}
+                        </span>
+                      )}
+                      {skill.agent_part && (
+                        <span className={`${styles.skillChip} ${styles.skillChipPart}`}>
+                          {skill.agent_part}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className={styles.noData}>No specialty skills configured.</div>
             )}
-          </div>
-        </div>
-      </div>
 
-      {/* ================================================================
-         Section 6: Workspace Files
-         ================================================================ */}
-      <div className={styles.section}>
-        <div className={styles.sectionCard}>
-          <div className={styles.sectionHeaderStatic}>
-            <span className={styles.sectionIcon}>📁</span>
-            <span className={styles.sectionTitle}>Workspace Files</span>
-            <span className={styles.sectionCount}>{workspaceFileCount} files</span>
-          </div>
-          <div className={styles.sectionBody}>
-            <div className={styles.wsFileList}>
-              {data.workspaceFiles.map((file) => (
-                <div
-                  key={file.name}
-                  className={`${styles.wsFile} ${!file.exists ? styles.wsFileMissing : ""}`}
-                >
-                  <span className={styles.wsFileIcon}>{FILE_ICONS[file.name] || "📄"}</span>
-                  <div className={styles.wsFileInfo}>
-                    <div className={styles.wsFileName}>{file.name}</div>
-                    {file.exists && file.preview && (
-                      <div className={styles.wsFilePreview}>
-                        {file.preview.replace(/\n/g, " ").trim()}
-                      </div>
-                    )}
-                    {!file.exists && (
-                      <div className={styles.wsFilePreview}>Not present in workspace</div>
-                    )}
-                  </div>
-                  {file.exists && (
-                    <span className={styles.wsFileSize}>{formatBytes(file.sizeBytes)}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ================================================================
-         Section 7: Deployment Info
-         ================================================================ */}
-      <div className={styles.section}>
-        <div className={styles.sectionCard}>
-          <div className={styles.sectionHeaderStatic}>
-            <span className={styles.sectionIcon}>🚀</span>
-            <span className={styles.sectionTitle}>Deployment Kit</span>
-          </div>
-          <div className={styles.sectionBody}>
-            <div className={styles.deployPath}>
-              <div className={styles.deployLabel}>Kit Manifest</div>
-              <div className={styles.deployValue}>
-                specialties/{data.id}/kit.json
-              </div>
-            </div>
-
-            {/* All skills combined */}
-            <div className={styles.skillsList}>
-              <div className={styles.deployLabel} style={{ width: "100%", marginTop: 16, marginBottom: 4 }}>
-                Base Skills
-              </div>
-              {data.base_skills.map((s) => (
-                <span key={s} className={styles.deploySkillTag}>{s}</span>
-              ))}
-            </div>
-            {data.specialty_skills.length > 0 && (
+            {/* Base + specialty skill tags */}
+            <div style={{ marginTop: 24 }}>
+              <div className={styles.deployLabel}>Base Skills</div>
               <div className={styles.skillsList}>
-                <div className={styles.deployLabel} style={{ width: "100%", marginTop: 12, marginBottom: 4 }}>
-                  Specialty Skills
-                </div>
-                {data.specialty_skills.map((s) => (
-                  <span key={s} className={`${styles.deploySkillTag} ${styles.deploySkillTagSpecialty}`}>{s}</span>
+                {data.base_skills.map((s) => (
+                  <span key={s} className={styles.deploySkillTag}>{s}</span>
                 ))}
               </div>
-            )}
+              {data.specialty_skills.length > 0 && (
+                <>
+                  <div className={styles.deployLabel} style={{ marginTop: 16 }}>Specialty Skills</div>
+                  <div className={styles.skillsList}>
+                    {data.specialty_skills.map((s) => (
+                      <span key={s} className={`${styles.deploySkillTag} ${styles.deploySkillTagSpecialty}`}>{s}</span>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
-
