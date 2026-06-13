@@ -152,6 +152,7 @@ interface SkillManifest {
   category?: string;
   agent_part?: string;
   version?: string;
+  origin?: string;
   skillMdContent?: string;
 }
 
@@ -262,6 +263,28 @@ export async function GET(
 
     // ---- Skills ----
     const skills: SkillManifest[] = [];
+
+    // Base skills: skills/{id}/ at repo root
+    for (const skillId of kit.base_skills) {
+      const [manifest, skillMd] = await Promise.all([
+        ghJson<SkillManifest>(`skills/${skillId}/skill.json`),
+        ghText(`skills/${skillId}/SKILL.md`),
+      ]);
+      if (manifest) {
+        skills.push({
+          id: manifest.id || skillId,
+          name: manifest.name || skillId,
+          description: manifest.description || "",
+          category: manifest.category,
+          agent_part: manifest.agent_part,
+          version: manifest.version,
+          origin: "base",
+          skillMdContent: skillMd || undefined,
+        });
+      }
+    }
+
+    // Specialty skills: specialties/{type}/skills/{id}/
     for (const skillId of kit.specialty_skills) {
       const [manifest, skillMd] = await Promise.all([
         ghJson<SkillManifest>(`${base}/skills/${skillId}/skill.json`),
@@ -275,6 +298,7 @@ export async function GET(
           category: manifest.category,
           agent_part: manifest.agent_part,
           version: manifest.version,
+          origin: "specialty",
           skillMdContent: skillMd || undefined,
         });
       }

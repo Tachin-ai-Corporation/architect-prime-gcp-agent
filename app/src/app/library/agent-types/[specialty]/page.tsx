@@ -50,6 +50,7 @@ interface SkillManifest {
   category?: string;
   agent_part?: string;
   version?: string;
+  origin?: string;
   skillMdContent?: string;
 }
 
@@ -79,15 +80,17 @@ interface SpecialtyDetail {
   workspaceFiles: WorkspaceFile[];
 }
 
-/* ---- Organ accent color map ---- */
-const ORGAN_ACCENTS: Record<string, string> = {
-  cortex:              "var(--signal-aqua, #38bdf8)",
-  prefrontal:          "#a78bfa",
-  motor:               "#fbbf24",
-  cerebellum:          "#2dd4bf",
-  "temporal-memory":   "#818cf8",
-  "temporal-research": "#38bdf8",
+/* ---- Organ display metadata ---- */
+const ORGAN_META: Record<string, { icon: string; accent: string; label: string }> = {
+  cortex:              { icon: "🧠", accent: "var(--signal-aqua, #38bdf8)", label: "Cortex" },
+  prefrontal:          { icon: "🏗️", accent: "#a78bfa", label: "Prefrontal" },
+  motor:               { icon: "⚡", accent: "#fbbf24", label: "Motor" },
+  cerebellum:          { icon: "🔄", accent: "#2dd4bf", label: "Cerebellum" },
+  "temporal-memory":   { icon: "💾", accent: "#818cf8", label: "Temporal-Memory" },
+  "temporal-research": { icon: "🔍", accent: "#38bdf8", label: "Temporal-Research" },
 };
+
+const ORGAN_ORDER = ["cortex", "prefrontal", "motor", "cerebellum", "temporal-memory", "temporal-research"];
 
 /* ---- Tabs ---- */
 const TABS = [
@@ -155,7 +158,7 @@ export default function AgentTypeDetailPage({
         label: organ.label,
         icon: organ.icon,
         role: organ.role,
-        accent: ORGAN_ACCENTS[organ.key] || "var(--border-subtle)",
+        accent: ORGAN_META[organ.key]?.accent || "var(--border-subtle)",
         content: organ.exists ? organ.content : null,
       });
     }
@@ -201,29 +204,38 @@ export default function AgentTypeDetailPage({
     });
   }, [data]);
 
-  /* ---- Build skill cards ---- */
-  const skillCards: FileCardItem[] = useMemo(() => {
+  /* ---- Skills grouped by organ ---- */
+  const skillsByOrgan = useMemo(() => {
     if (!data) return [];
-    return data.skills.map((s) => {
-      const lines: string[] = [];
-      lines.push(s.description);
-      if (s.version) lines.push(`\nVersion: ${s.version}`);
-      if (s.category) lines.push(`Category: ${s.category}`);
-      if (s.agent_part) lines.push(`Agent Part: ${s.agent_part}`);
-      if (s.skillMdContent) {
-        lines.push("\n--- SKILL.md ---");
-        lines.push(s.skillMdContent);
-      }
+    const skills = data.skills;
+    if (skills.length === 0) return [];
 
-      return {
+    const grouped: Record<string, SkillManifest[]> = {};
+    for (const s of skills) {
+      const part = s.agent_part || "motor";
+      if (!grouped[part]) grouped[part] = [];
+      grouped[part].push(s);
+    }
+
+    const sections: { organ: string; meta: typeof ORGAN_META[string]; cards: FileCardItem[] }[] = [];
+    const allParts = new Set([...ORGAN_ORDER, ...Object.keys(grouped)]);
+
+    for (const part of allParts) {
+      const partSkills = grouped[part];
+      if (!partSkills || partSkills.length === 0) continue;
+      const meta = ORGAN_META[part] || { icon: "🔧", accent: "#566373", label: part };
+      const cards: FileCardItem[] = partSkills.map((s) => ({
         key: s.id,
         label: s.name,
-        icon: "🛠",
-        role: s.description.slice(0, 80),
-        accent: "#a78bfa",
-        content: lines.join("\n"),
-      };
-    });
+        icon: meta.icon,
+        role: s.description.slice(0, 100),
+        accent: meta.accent,
+        content: s.skillMdContent || s.description,
+      }));
+      sections.push({ organ: part, meta, cards });
+    }
+
+    return sections;
   }, [data]);
 
   /* ---- Loading ---- */
@@ -303,9 +315,23 @@ export default function AgentTypeDetailPage({
         )}
 
         {activeTab === "skills" && (
-          skillCards.length > 0
-            ? <FilePreviewGrid items={skillCards} columns={3} />
-            : <div className={styles.noData}>No specialty skills configured.</div>
+          skillsByOrgan.length > 0
+            ? (
+              <div className={styles.organSections}>
+                {skillsByOrgan.map(({ organ, meta, cards }) => (
+                  <div key={organ} className={styles.organSection}>
+                    <div className={styles.organHeader}>
+                      <span className={styles.organAccentBar} style={{ background: meta.accent }} />
+                      <span className={styles.organIcon}>{meta.icon}</span>
+                      <span className={styles.organLabel}>{meta.label}</span>
+                      <span className={styles.organCount}>{cards.length} skill{cards.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    <FilePreviewGrid items={cards} columns={3} />
+                  </div>
+                ))}
+              </div>
+            )
+            : <div className={styles.noData}>No skills configured for this role.</div>
         )}
       </div>
     </div>

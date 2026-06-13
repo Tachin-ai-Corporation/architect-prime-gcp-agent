@@ -608,7 +608,54 @@
 }
 
 /* ================================================================
-   Section 5: Skills
+   Organ-grouped skill sections
+   ================================================================ */
+.organSections {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.organSection {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.organHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.organAccentBar {
+  width: 3px;
+  height: 20px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.organIcon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.organLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary, #E6EBF0);
+  letter-spacing: 0.01em;
+}
+
+.organCount {
+  font-size: 12px;
+  color: var(--text-tertiary, #566373);
+  margin-left: auto;
+}
+
+/* ================================================================
+   Section 5: Skills (legacy, kept for reference)
    ================================================================ */
 .skillsGrid {
   display: grid;

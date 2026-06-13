@@ -143,115 +143,101 @@ function encodeMap(obj) {
 // ---- Introspection handlers ----
 
 function handleSkills() {
-  const tools = [];
+  // ---- Determine agent specialty from chat-config.json ----
+  let specialty = '';
+  const chatConfigPath = join(COREKIT_DIR, 'chat-config.json');
+  if (existsSync(chatConfigPath)) {
+    try {
+      const cfg = JSON.parse(readFileSync(chatConfigPath, 'utf8'));
+      specialty = cfg.specialty || '';
+    } catch {}
+  }
 
-  // Scan bin directory for installed scripts
-  if (existsSync(BIN_DIR)) {
-    const files = readdirSync(BIN_DIR);
-    for (const f of files) {
-      const fullPath = join(BIN_DIR, f);
-      try {
-        const st = statSync(fullPath);
-        if (!st.isFile()) continue;
+  // ---- Scan all skill directories (mirrors assemble-tools) ----
+  const skills = [];
 
-        // Read first 5 lines for description comment
-        let description = '';
-        let category = 'custom';
+  /**
+   * Read a single skill directory and push canonical data.
+   * @param {string} skillId - skill identifier
+   * @param {string} skillDir - absolute path to skill directory
+   * @param {string} origin - 'base' | 'specialty' | 'custom'
+   */
+  function collectSkill(skillId, skillDir, origin) {
+    const skillJsonPath = join(skillDir, 'skill.json');
+    const skillMdPath = join(skillDir, 'SKILL.md');
+
+    // Must have at least SKILL.md to be a valid skill
+    if (!existsSync(skillMdPath)) return;
+
+    let manifest = {};
+    if (existsSync(skillJsonPath)) {
+      try { manifest = JSON.parse(readFileSync(skillJsonPath, 'utf8')); } catch {}
+    }
+
+    let skillMdContent = '';
+    try { skillMdContent = readFileSync(skillMdPath, 'utf8'); } catch {}
+
+    skills.push({
+      id: manifest.id || skillId,
+      name: manifest.name || skillId,
+      version: manifest.version || '',
+      description: manifest.description || '',
+      agent_part: manifest.agent_part || 'motor',
+      category: manifest.category || '',
+      origin,
+      scripts: manifest.scripts || [],
+      when_to_use: manifest.when_to_use || '',
+      skillMdContent,
+    });
+  }
+
+  // 1. Base skills: /opt/corekit/skills/{id}/
+  if (existsSync(SKILLS_DIR)) {
+    try {
+      for (const d of readdirSync(SKILLS_DIR)) {
+        const skillDir = join(SKILLS_DIR, d);
         try {
-          const head = readFileSync(fullPath, 'utf8').split('\n').slice(0, 10);
-          for (const line of head) {
-            const commentMatch = line.match(/^#\s*(.+)/) || line.match(/^\/\/\s*(.+)/);
-            if (commentMatch && !commentMatch[1].startsWith('!') && !commentMatch[1].startsWith('=')) {
-              const text = commentMatch[1].trim();
-              // Skip shebang-like and header lines
-              if (text.startsWith('/') || text.startsWith('infra/') || text.startsWith('corekit/')) continue;
-              if (!description) description = text;
-            }
+          if (statSync(skillDir).isDirectory()) {
+            collectSkill(d, skillDir, 'base');
           }
         } catch {}
-
-        // ---- Body-Part Category Reference ----
-        // When adding new tools, assign them to the correct body part:
-        //
-        //  ears    - Input pipeline: polling, preprocessing, DWD auth, chat I/O
-        //            Matches: agent-ears*, start-agent-ears, ears-*, chat-*, dwd-token, ws-token
-        //
-        //  mouth   - Output pipeline: response classification, delivery, status updates
-        //            Matches: agent-mouth*, start-agent-mouth, mouth-*
-        //
-        //  brain   - Orchestration: envelope daemon, telemetry, tool assembly, introspect
-        //            Matches: agent-brain*, start-agent-brain, brain-telemetry-*, assemble-tools,
-        //                     agent-introspect*, start-agent-introspect
-        //
-        //  cortex  - Decision layer: the agent's main reasoning tools
-        //            Matches: web-search, agent-status
-        //
-        //  motor   - Execution layer: all tools Motor sub-agent uses to DO things
-        //            Matches: responsibility-manage, project-manage, task-log-*,
-        //                     fleet-*, command-runner, discover-models,
-        //                     drive-*, gmail-*, calendar-*, docs-*, sheets-*
-        //
-        //  memory  - Temporal-memory: long-term memory read/write/retire, deep truths
-        //            Matches: core-memory-*, update-deep-truths, session-summary
-        //
-        //  config  - System config & base functions: CoreKit/fleet infra tools
-        //            Matches: upgrade-*, validate-contracts, agent-ou-manage,
-        //                     *.md, *.json, *.tmpl, *.sh
-        //
-        //  custom  - Fallback for uncategorized tools (anything not matched above)
-        //
-        // Categorize by agent body part
-        if (f.startsWith('agent-ears') || f.startsWith('start-agent-ears') || f.startsWith('ears-') || f === 'ears-health-check') category = 'ears';
-        else if (f.startsWith('agent-mouth') || f.startsWith('start-agent-mouth') || f.startsWith('mouth-') || f === 'mouth-health-check') category = 'mouth';
-        else if (f === 'agent-brain.mjs' || f === 'start-agent-brain' || f === 'assemble-tools' || f === 'brain-telemetry-write' || f === 'brain-telemetry-read') category = 'brain';
-        else if (f === 'agent-introspect.mjs' || f === 'start-agent-introspect') category = 'brain';
-        else if (f === 'responsibility-manage' || f === 'project-manage' || f === 'task-log-write' || f === 'task-log-read') category = 'motor';
-        else if (f.startsWith('fleet-') || f === 'command-runner' || f === 'discover-models') category = 'motor';
-        else if (f.startsWith('drive-') || f.startsWith('gmail-') || f.startsWith('calendar-') || f.startsWith('docs-') || f.startsWith('sheets-')) category = 'motor';
-        else if (f === 'web-search' || f === 'agent-status') category = 'cortex';
-        else if (f.startsWith('core-memory-') || f === 'update-deep-truths' || f === 'session-summary') category = 'memory';
-        else if (f.startsWith('chat-') || f === 'dwd-token' || f === 'ws-token') category = 'ears';
-        else if (f.startsWith('upgrade-') || f === 'validate-contracts' || f === 'render-config' || f === 'oc' || f === 'agent-ou-manage') category = 'config';
-        else if (f.endsWith('.md') || f.endsWith('.json') || f.endsWith('.tmpl') || f.endsWith('.sh')) category = 'config';
-
-        tools.push({
-          name: f,
-          category,
-          description: description || '',
-          sizeBytes: st.size,
-        });
-      } catch {}
-    }
+      }
+    } catch {}
   }
 
-  // Scan skills directory for skill packs
-  const skillPacks = [];
-  if (existsSync(SKILLS_DIR)) {
-    const dirs = readdirSync(SKILLS_DIR);
-    for (const d of dirs) {
-      const skillDir = join(SKILLS_DIR, d);
+  // 2. Specialty skills: /opt/corekit/corekit/specialties/{specialty}/skills/{id}/
+  if (specialty) {
+    const specSkillsDir = join(COREKIT_DIR, 'specialties', specialty, 'skills');
+    if (existsSync(specSkillsDir)) {
       try {
-        const st = statSync(skillDir);
-        if (!st.isDirectory()) continue;
-        const skillMd = join(skillDir, 'SKILL.md');
-        let skillDescription = '';
-        if (existsSync(skillMd)) {
-          const content = readFileSync(skillMd, 'utf8');
-          // Extract description from YAML frontmatter or first paragraph
-          const descMatch = content.match(/description:\s*(.+)/) || content.match(/^#\s*.+\n+(.+)/m);
-          if (descMatch) skillDescription = descMatch[1].trim();
+        for (const d of readdirSync(specSkillsDir)) {
+          const skillDir = join(specSkillsDir, d);
+          try {
+            if (statSync(skillDir).isDirectory()) {
+              collectSkill(d, skillDir, 'specialty');
+            }
+          } catch {}
         }
-        const fileCount = readdirSync(skillDir).length;
-        skillPacks.push({
-          name: d,
-          description: skillDescription,
-          files: fileCount,
-        });
       } catch {}
     }
   }
 
-  return { tools, skillPacks, binDir: BIN_DIR, skillsDir: SKILLS_DIR };
+  // 3. Custom per-agent skills: /opt/corekit/workspace/custom-skills/{id}/
+  const customSkillsDir = join(CORE_DIR, 'workspace', 'custom-skills');
+  if (existsSync(customSkillsDir)) {
+    try {
+      for (const d of readdirSync(customSkillsDir)) {
+        const skillDir = join(customSkillsDir, d);
+        try {
+          if (statSync(skillDir).isDirectory()) {
+            collectSkill(d, skillDir, 'custom');
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return { skills };
 }
 
 function handleStatus() {

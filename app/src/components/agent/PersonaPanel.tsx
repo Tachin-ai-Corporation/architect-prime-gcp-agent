@@ -23,6 +23,16 @@ const BRAIN_ORGANS = [
   { key: "temporal-research", label: "Temporal-Research", icon: "🔍", filePath: "workspace-temporal-research/SOUL.md", role: "Bring in what the world knows: search + fetch", accent: "#38bdf8" },
 ];
 
+/* ---- Organ accent map for skill cards ---- */
+const ORGAN_ACCENTS: Record<string, { icon: string; accent: string; label: string }> = {
+  cortex:              { icon: "🧠", accent: "var(--signal-aqua, #38bdf8)", label: "Cortex" },
+  prefrontal:          { icon: "🏗️", accent: "#a78bfa", label: "Prefrontal" },
+  motor:               { icon: "⚡", accent: "#fbbf24", label: "Motor" },
+  cerebellum:          { icon: "🔄", accent: "#2dd4bf", label: "Cerebellum" },
+  "temporal-memory":   { icon: "💾", accent: "#818cf8", label: "Temporal-Memory" },
+  "temporal-research": { icon: "🔍", accent: "#38bdf8", label: "Temporal-Research" },
+};
+
 /* ---- Types ---- */
 interface Responsibility {
   id: string;
@@ -41,21 +51,21 @@ interface BrainConfig {
   [key: string]: unknown;
 }
 
-interface SkillTool {
+interface IntrospectSkill {
+  id: string;
   name: string;
+  version: string;
   description: string;
-}
-
-interface Skill {
-  name: string;
-  description: string;
-  version?: string;
-  tools: SkillTool[];
-  source: string;
+  agent_part: string;
+  category: string;
+  origin: string;
+  scripts: string[];
+  when_to_use: string;
+  skillMdContent: string;
 }
 
 interface SkillData {
-  skills: Skill[];
+  skills: IntrospectSkill[];
 }
 
 /* ---- Sub-tabs ---- */
@@ -66,6 +76,9 @@ const SUB_TABS = [
 ] as const;
 
 type SubTabKey = (typeof SUB_TABS)[number]["key"];
+
+/* ---- Organ display order ---- */
+const ORGAN_ORDER = ["cortex", "prefrontal", "motor", "cerebellum", "temporal-memory", "temporal-research"];
 
 /* ---- Props ---- */
 interface PersonaPanelProps {
@@ -138,30 +151,48 @@ export function PersonaPanel({ primeId, agentName, workspaceFiles, workspaceLoad
     });
   }, [brainConfig]);
 
-  /* ---- Skill cards ---- */
-  const skillCards: FileCardItem[] = useMemo(() => {
+  /* ---- Skills grouped by organ ---- */
+  const skillsByOrgan: { organ: string; meta: typeof ORGAN_ACCENTS[string]; cards: FileCardItem[] }[] = useMemo(() => {
     const skills = skillData?.skills || [];
-    return skills.map((s) => {
-      const lines: string[] = [];
-      lines.push(s.description);
-      if (s.version) lines.push(`\nVersion: ${s.version}`);
-      lines.push(`Source: ${s.source}`);
-      if (s.tools.length > 0) {
-        lines.push(`\n--- Tools (${s.tools.length}) ---`);
-        for (const t of s.tools) {
-          lines.push(`• ${t.name}: ${t.description}`);
-        }
-      }
+    if (skills.length === 0) return [];
 
-      return {
-        key: s.name,
+    // Group by agent_part
+    const grouped: Record<string, IntrospectSkill[]> = {};
+    for (const s of skills) {
+      const part = s.agent_part || "motor";
+      if (!grouped[part]) grouped[part] = [];
+      grouped[part].push(s);
+    }
+
+    // Build sections in canonical organ order, then any extras
+    const sections: { organ: string; meta: typeof ORGAN_ACCENTS[string]; cards: FileCardItem[] }[] = [];
+    const allParts = new Set([...ORGAN_ORDER, ...Object.keys(grouped)]);
+
+    for (const part of allParts) {
+      const partSkills = grouped[part];
+      if (!partSkills || partSkills.length === 0) continue;
+
+      const meta = ORGAN_ACCENTS[part] || { icon: "🔧", accent: "#566373", label: part };
+
+      const cards: FileCardItem[] = partSkills.map((s) => ({
+        key: s.id,
         label: s.name,
-        icon: "🛠",
-        role: s.description.slice(0, 80),
-        accent: s.source === "installed" ? "#a78bfa" : "#566373",
-        content: lines.join("\n"),
-      };
-    });
+        icon: meta.icon,
+        role: s.description.slice(0, 100),
+        accent: meta.accent,
+        content: s.skillMdContent || [
+          s.description,
+          s.version ? `\nVersion: ${s.version}` : "",
+          s.category ? `Category: ${s.category}` : "",
+          s.when_to_use ? `\nWhen to use: ${s.when_to_use}` : "",
+          s.scripts.length > 0 ? `\nScripts: ${s.scripts.join(", ")}` : "",
+        ].filter(Boolean).join("\n"),
+      }));
+
+      sections.push({ organ: part, meta, cards });
+    }
+
+    return sections;
   }, [skillData]);
 
   /* ---- Loading skeleton ---- */
@@ -204,8 +235,25 @@ export function PersonaPanel({ primeId, agentName, workspaceFiles, workspaceLoad
         )}
         {subTab === "skills" && (
           skillsLoading ? skeleton : (
-            skillCards.length > 0
-              ? <FilePreviewGrid items={skillCards} columns={3} />
+            skillsByOrgan.length > 0
+              ? (
+                <div className={styles.organSections}>
+                  {skillsByOrgan.map(({ organ, meta, cards }) => (
+                    <div key={organ} className={styles.organSection}>
+                      <div className={styles.organHeader}>
+                        <span
+                          className={styles.organAccentBar}
+                          style={{ background: meta.accent }}
+                        />
+                        <span className={styles.organIcon}>{meta.icon}</span>
+                        <span className={styles.organLabel}>{meta.label}</span>
+                        <span className={styles.organCount}>{cards.length} skill{cards.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      <FilePreviewGrid items={cards} columns={3} />
+                    </div>
+                  ))}
+                </div>
+              )
               : <div className={styles.empty}>No skills installed</div>
           )
         )}
