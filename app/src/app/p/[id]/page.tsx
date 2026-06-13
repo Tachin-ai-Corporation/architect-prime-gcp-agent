@@ -1,11 +1,9 @@
 "use client";
 
-import { use, useState, useEffect, useMemo } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrime } from "@/contexts/PrimeContext";
 import { BrainInspector } from "@/components/agent/BrainInspector";
-import { SkillInventory } from "@/components/agent/SkillInventory";
-import { ResponsibilityList } from "@/components/agent/ResponsibilityList";
 import { MemoryViewer } from "@/components/agent/MemoryViewer";
 import { AgentProjects } from "@/components/agent/AgentProjects";
 import { AgentPlans } from "@/components/agent/AgentPlans";
@@ -13,8 +11,7 @@ import { AgentProcesses } from "@/components/agent/AgentProcesses";
 import { FleetPanel } from "@/components/fleet/FleetPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
-import { FilePreviewGrid } from "@/components/agent/FilePreviewCard";
-import type { FileCardItem } from "@/components/agent/FilePreviewCard";
+import { PersonaPanel } from "@/components/agent/PersonaPanel";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import styles from "./page.module.css";
 
@@ -35,29 +32,15 @@ const TABS = [
   { key: "overview", label: "Persona", icon: "🎭" },
   { key: "work", label: "Work", icon: "📋" },
   { key: "brain", label: "Brain", icon: "🧠" },
-  { key: "skills", label: "Skills", icon: "⚡" },
   { key: "fleet", label: "Fleet", icon: "👥" },
   { key: "projects", label: "Projects", icon: "📁" },
   { key: "plans", label: "Plans", icon: "🗺️" },
   { key: "processes", label: "Processes", icon: "⚙️" },
-  { key: "responsibilities", label: "Responsibilities", icon: "📌" },
   { key: "memory", label: "Memory", icon: "💾" },
   { key: "chat", label: "Chat", icon: "💬" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
-
-const BRAIN_ORGANS = [
-  { key: "cortex", label: "Cortex", icon: "🧠", filePath: "SOUL.md", role: "Classify intakes, choose decisions, synthesize outcomes", accent: "var(--signal-aqua)" },
-  { key: "prefrontal", label: "Prefrontal", icon: "🏗️", filePath: "workspace-prefrontal/SOUL.md", role: "Turn intent into structure: M→C→T blueprints", accent: "#a78bfa" },
-  { key: "motor", label: "Motor", icon: "⚡", filePath: "workspace-motor/SOUL.md", role: "Act: tools, exec, files — the only mutator", accent: "#fbbf24" },
-  { key: "cerebellum", label: "Cerebellum", icon: "🔄", filePath: "workspace-cerebellum/SOUL.md", role: "Verify results against accept criteria, independently", accent: "#2dd4bf" },
-  { key: "temporal-memory", label: "Temporal-Memory", icon: "💾", filePath: "workspace-temporal-memory/SOUL.md", role: "Recall what the agent already knows", accent: "#818cf8" },
-  { key: "temporal-research", label: "Temporal-Research", icon: "🔍", filePath: "workspace-temporal-research/SOUL.md", role: "Bring in what the world knows: search + fetch", accent: "#38bdf8" },
-];
-
-/** Prime theme */
-const PRIME_THEME = { glyph: "🧠", accent: "#22d3ee", name: "Prime Agent" };
 
 export default function PrimeDeepDivePage({
   params,
@@ -72,7 +55,7 @@ export default function PrimeDeepDivePage({
   const prime = primes.find((p) => p.id === id);
   const fleet = (sidebarFleet[id] || []).filter((a) => a.status !== "removed");
 
-  /* ---- Introspection target: the prime VM registers as prime-{name} ---- */
+  /* ---- Introspection target ---- */
   const agentName = `prime-${id}`;
   const agentEmail = `prime-${id}@system`;
 
@@ -86,7 +69,6 @@ export default function PrimeDeepDivePage({
     type: "workspace",
     autoFetch: activeTab === "overview",
   });
-
 
   /* ---- Hash-based tab switching ---- */
   useEffect(() => {
@@ -105,23 +87,6 @@ export default function PrimeDeepDivePage({
     setActiveTab(key);
     window.location.hash = key;
   };
-
-  /* ---- Overview tab: build unified card items ---- */
-  const overviewCards: FileCardItem[] = useMemo(() => {
-    const files = overviewData?.files || {};
-    return [
-      { key: "identity", label: "IDENTITY.md", icon: "📄", role: "agent identity and persona", accent: "var(--signal-aqua)", content: files["IDENTITY.md"] ?? null },
-      { key: "memory", label: "MEMORY.md", icon: "🧠", role: "working memory", accent: "#818cf8", content: files["MEMORY.md"] ?? null },
-      ...BRAIN_ORGANS.map((organ) => ({
-        key: organ.key,
-        label: organ.label,
-        icon: organ.icon,
-        role: organ.role,
-        accent: organ.accent,
-        content: files[organ.filePath] ?? null,
-      })),
-    ];
-  }, [overviewData]);
 
   if (loading) {
     return <div className={styles.loadingPulse}>Loading…</div>;
@@ -188,7 +153,7 @@ export default function PrimeDeepDivePage({
         <div className={styles.mainContent}>
         {/* Overview */}
         {activeTab === "overview" && (() => {
-          const theme = PRIME_THEME;
+          const theme = { glyph: "🧠", accent: "#22d3ee", name: "Prime Agent" };
           return (
           <div className={styles.overviewWrap}>
             {/* ── Hero Banner ── */}
@@ -208,12 +173,13 @@ export default function PrimeDeepDivePage({
               <div className={styles.heroId}>prime · {prime.zone}</div>
             </div>
 
-            {/* ── All workspace files ── */}
-            {overviewLoading ? (
-              <LoadingSkeleton />
-            ) : (
-              <FilePreviewGrid items={overviewCards} columns={3} />
-            )}
+            {/* ── Persona sub-tabs ── */}
+            <PersonaPanel
+              primeId={id}
+              agentName={agentName}
+              workspaceFiles={overviewData?.files || {}}
+              workspaceLoading={overviewLoading}
+            />
           </div>
           );
         })()}
@@ -221,11 +187,6 @@ export default function PrimeDeepDivePage({
         {/* Brain */}
         {activeTab === "brain" && (
           <BrainInspector primeId={id} agentName={agentName} />
-        )}
-
-        {/* Skills */}
-        {activeTab === "skills" && (
-          <SkillInventory primeId={id} agentName={agentName} />
         )}
 
         {/* Fleet */}
@@ -247,12 +208,6 @@ export default function PrimeDeepDivePage({
         {activeTab === "processes" && (
           <AgentProcesses primeId={id} agentEmail={agentEmail} />
         )}
-
-        {/* Responsibilities */}
-        {activeTab === "responsibilities" && (
-          <ResponsibilityList primeId={id} agentName={agentName} />
-        )}
-
         {/* Memory */}
         {activeTab === "memory" && (
           <MemoryViewer primeId={id} agentName={agentName} />

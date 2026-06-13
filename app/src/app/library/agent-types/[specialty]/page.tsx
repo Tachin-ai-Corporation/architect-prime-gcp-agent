@@ -110,7 +110,6 @@ export default function AgentTypeDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("brain");
-  const [expandedResp, setExpandedResp] = useState<string | null>(null);
 
   /* ---- Fetch ---- */
   useEffect(() => {
@@ -134,12 +133,11 @@ export default function AgentTypeDetailPage({
     return () => { cancelled = true; };
   }, [specialty]);
 
-  /* ---- Build brain cards for FilePreviewGrid ---- */
+  /* ---- Build brain cards ---- */
   const brainCards: FileCardItem[] = useMemo(() => {
     if (!data) return [];
     const items: FileCardItem[] = [];
 
-    // SOUL.md card
     if (data.soulContent) {
       items.push({
         key: "soul",
@@ -151,7 +149,6 @@ export default function AgentTypeDetailPage({
       });
     }
 
-    // Organ cards
     for (const organ of (data.organs || [])) {
       items.push({
         key: organ.key,
@@ -164,6 +161,69 @@ export default function AgentTypeDetailPage({
     }
 
     return items;
+  }, [data]);
+
+  /* ---- Build responsibility cards ---- */
+  const respCards: FileCardItem[] = useMemo(() => {
+    if (!data) return [];
+    return data.responsibilities.map((r) => {
+      const lines: string[] = [];
+      lines.push(`Schedule: ${r.schedule}`);
+      lines.push(`Enabled: ${r.enabled ? "yes" : "no"}`);
+      if (r.min_spacing_minutes) lines.push(`Min spacing: ${r.min_spacing_minutes} min`);
+      lines.push("");
+      lines.push("--- Instruction ---");
+      lines.push(r.instruction);
+      if (r.context?.purpose) {
+        lines.push("");
+        lines.push("--- Purpose ---");
+        lines.push(r.context.purpose);
+      }
+      if (r.context?.process && r.context.process.length > 0) {
+        lines.push("");
+        lines.push("--- Process Steps ---");
+        r.context.process.forEach((step, i) => lines.push(`${i + 1}. ${step}`));
+      }
+      if (r.context?.success_criteria) {
+        lines.push("");
+        lines.push("--- Success Criteria ---");
+        lines.push(r.context.success_criteria);
+      }
+
+      return {
+        key: r.id,
+        label: r.name,
+        icon: r.enabled ? "📋" : "⏸️",
+        role: r.schedule,
+        accent: r.enabled ? "#2dd4bf" : "#566373",
+        content: lines.join("\n"),
+      };
+    });
+  }, [data]);
+
+  /* ---- Build skill cards ---- */
+  const skillCards: FileCardItem[] = useMemo(() => {
+    if (!data) return [];
+    return data.skills.map((s) => {
+      const lines: string[] = [];
+      lines.push(s.description);
+      if (s.version) lines.push(`\nVersion: ${s.version}`);
+      if (s.category) lines.push(`Category: ${s.category}`);
+      if (s.agent_part) lines.push(`Agent Part: ${s.agent_part}`);
+      if (s.skillMdContent) {
+        lines.push("\n--- SKILL.md ---");
+        lines.push(s.skillMdContent);
+      }
+
+      return {
+        key: s.id,
+        label: s.name,
+        icon: "🛠",
+        role: s.description.slice(0, 80),
+        accent: "#a78bfa",
+        content: lines.join("\n"),
+      };
+    });
   }, [data]);
 
   /* ---- Loading ---- */
@@ -189,8 +249,6 @@ export default function AgentTypeDetailPage({
     );
   }
 
-  const organCount = (data.organs || []).filter((o) => o.exists).length;
-
   return (
     <div className={styles.shell} id="agent-type-detail-page">
       {/* ---- Back link ---- */}
@@ -198,9 +256,7 @@ export default function AgentTypeDetailPage({
         <span className={styles.backArrow}>←</span> Back to roster
       </Link>
 
-      {/* ================================================================
-         Hero Banner
-         ================================================================ */}
+      {/* ---- Hero Banner ---- */}
       <div className={styles.hero}>
         <div
           className={styles.heroAccent}
@@ -211,36 +267,15 @@ export default function AgentTypeDetailPage({
           style={{ background: data.accent }}
         />
         <div className={styles.heroBadge}>v{data.version}</div>
-
         <div className={styles.heroGlyph}>{data.glyph}</div>
         <h1 className={styles.heroName} style={{ color: data.accent }}>
           {data.name}
         </h1>
         <div className={styles.heroId}>{data.id}</div>
         <div className={styles.heroDesc}>{data.description}</div>
-
-        <div className={styles.heroStats}>
-          <span className={styles.heroStat}>
-            <span className={styles.heroStatIcon}>🧠</span>
-            <span className={styles.heroStatValue}>{organCount}/6</span>
-            <span className={styles.heroStatLabel}>organs</span>
-          </span>
-          <span className={styles.heroStat}>
-            <span className={styles.heroStatIcon}>🛠</span>
-            <span className={styles.heroStatValue}>{data.skills.length}</span>
-            <span className={styles.heroStatLabel}>skills</span>
-          </span>
-          <span className={styles.heroStat}>
-            <span className={styles.heroStatIcon}>📋</span>
-            <span className={styles.heroStatValue}>{data.responsibilities.length}</span>
-            <span className={styles.heroStatLabel}>duties</span>
-          </span>
-        </div>
       </div>
 
-      {/* ================================================================
-         Tab Navigation
-         ================================================================ */}
+      {/* ---- Tab Navigation ---- */}
       <div className={styles.tabBar}>
         {TABS.map((tab) => (
           <button
@@ -255,154 +290,22 @@ export default function AgentTypeDetailPage({
         ))}
       </div>
 
-      {/* ================================================================
-         Tab Content
-         ================================================================ */}
+      {/* ---- Tab Content ---- */}
       <div className={styles.tabContent}>
-        {/* ---- Brain Tab ---- */}
         {activeTab === "brain" && (
           <FilePreviewGrid items={brainCards} columns={3} />
         )}
 
-        {/* ---- Responsibilities Tab ---- */}
         {activeTab === "responsibilities" && (
-          <div className={styles.sectionBody}>
-            {data.responsibilities.length > 0 ? (
-              <table className={styles.respTable}>
-                <thead>
-                  <tr>
-                    <th className={styles.respTableHead} style={{ width: 28 }}></th>
-                    <th className={styles.respTableHead}>Name</th>
-                    <th className={styles.respTableHead}>Schedule</th>
-                    <th className={styles.respTableHead}>Instruction</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.responsibilities.map((resp) => {
-                    const isExp = expandedResp === resp.id;
-                    return (
-                      <>
-                        <tr
-                          key={resp.id}
-                          className={styles.respRow}
-                          onClick={() => setExpandedResp(isExp ? null : resp.id)}
-                        >
-                          <td className={styles.respCell}>
-                            <span
-                              className={`${styles.respDot} ${resp.enabled ? styles.respDotEnabled : styles.respDotDisabled}`}
-                            />
-                          </td>
-                          <td className={styles.respCell}>
-                            <span className={styles.respName}>{resp.name}</span>
-                          </td>
-                          <td className={styles.respCell}>
-                            <span className={styles.respCron}>{resp.schedule}</span>
-                          </td>
-                          <td className={styles.respCell}>
-                            <span className={styles.respInstruction}>{resp.instruction}</span>
-                          </td>
-                        </tr>
-                        {isExp && resp.context && (
-                          <tr key={`${resp.id}-detail`}>
-                            <td colSpan={4} className={styles.respExpanded}>
-                              {resp.context.purpose && (
-                                <>
-                                  <div className={styles.respExpandedTitle}>Purpose</div>
-                                  <div className={styles.respExpandedText}>{resp.context.purpose}</div>
-                                </>
-                              )}
-                              {resp.context.process && resp.context.process.length > 0 && (
-                                <>
-                                  <div className={styles.respExpandedTitle}>Process Steps</div>
-                                  <div className={styles.respStepList}>
-                                    {resp.context.process.map((step, i) => (
-                                      <div key={i} className={styles.respStep}>
-                                        <span className={styles.respStepNum}>{i + 1}</span>
-                                        {step}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </>
-                              )}
-                              {resp.context.success_criteria && (
-                                <>
-                                  <div className={styles.respExpandedTitle}>Success Criteria</div>
-                                  <div className={styles.respExpandedText}>{resp.context.success_criteria}</div>
-                                </>
-                              )}
-                              {resp.context.prior_learnings && (
-                                <>
-                                  <div className={styles.respExpandedTitle}>Prior Learnings</div>
-                                  <div className={styles.respExpandedText}>{resp.context.prior_learnings}</div>
-                                </>
-                              )}
-                            </td>
-                          </tr>
-                        )}
-                      </>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : (
-              <div className={styles.noData}>No responsibilities defined for this role.</div>
-            )}
-          </div>
+          respCards.length > 0
+            ? <FilePreviewGrid items={respCards} columns={3} />
+            : <div className={styles.noData}>No responsibilities defined for this role.</div>
         )}
 
-        {/* ---- Skills Tab ---- */}
         {activeTab === "skills" && (
-          <div className={styles.sectionBody}>
-            {data.skills.length > 0 ? (
-              <div className={styles.skillsGrid}>
-                {data.skills.map((skill) => (
-                  <div key={skill.id} className={styles.skillCard}>
-                    <div className={styles.skillCardHeader}>
-                      <span className={styles.skillName}>{skill.name}</span>
-                      {skill.version && (
-                        <span className={styles.skillVersion}>v{skill.version}</span>
-                      )}
-                    </div>
-                    <div className={styles.skillDesc}>{skill.description}</div>
-                    <div className={styles.skillMeta}>
-                      {skill.category && (
-                        <span className={`${styles.skillChip} ${styles.skillChipCategory}`}>
-                          {skill.category}
-                        </span>
-                      )}
-                      {skill.agent_part && (
-                        <span className={`${styles.skillChip} ${styles.skillChipPart}`}>
-                          {skill.agent_part}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className={styles.noData}>No specialty skills configured.</div>
-            )}
-
-            {/* Base + specialty skill tags */}
-            <div style={{ marginTop: 24 }}>
-              <div className={styles.deployLabel}>Base Skills</div>
-              <div className={styles.skillsList}>
-                {data.base_skills.map((s) => (
-                  <span key={s} className={styles.deploySkillTag}>{s}</span>
-                ))}
-              </div>
-              {data.specialty_skills.length > 0 && (
-                <>
-                  <div className={styles.deployLabel} style={{ marginTop: 16 }}>Specialty Skills</div>
-                  <div className={styles.skillsList}>
-                    {data.specialty_skills.map((s) => (
-                      <span key={s} className={`${styles.deploySkillTag} ${styles.deploySkillTagSpecialty}`}>{s}</span>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          skillCards.length > 0
+            ? <FilePreviewGrid items={skillCards} columns={3} />
+            : <div className={styles.noData}>No specialty skills configured.</div>
         )}
       </div>
     </div>

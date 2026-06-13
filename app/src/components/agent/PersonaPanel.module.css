@@ -1,0 +1,89 @@
+/* PersonaPanel.module.css */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ---- Sub-tab bar ---- */
+.subTabBar {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--charcoal, #2B3440);
+  border-radius: var(--radius-lg, 12px);
+  border: 1px solid var(--border-subtle, rgba(86, 99, 115, 0.28));
+}
+
+.subTab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-tertiary, #566373);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.subTab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary, #AEB8C4);
+}
+
+.subTabActive {
+  background: var(--graphite, #1E252E);
+  color: var(--text-primary, #E6EBF0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.subTabIcon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* ---- Content area ---- */
+.content {
+  min-height: 200px;
+}
+
+/* ---- Empty state ---- */
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-tertiary, #566373);
+  font-size: 14px;
+  font-style: italic;
+}
+
+/* ---- Skeleton ---- */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 0;
+}
+
+.skeletonLine {
+  height: 20px;
+  background: var(--charcoal, #2B3440);
+  border-radius: 6px;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeletonLine:nth-child(1) { width: 80%; }
+.skeletonLine:nth-child(2) { width: 60%; }
+.skeletonLine:nth-child(3) { width: 40%; }
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.2; }
+}
