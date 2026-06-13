@@ -204,7 +204,8 @@ function HomeInner() {
   /* ---- Select Prime ---- */
   const selectPrime = useCallback((prime: PrimeInstance) => {
     setSelectedPrimeId((prev) => (prev === prime.id ? null : prime.id));
-  }, []);
+    router.push(`/p/${prime.id}`);
+  }, [router]);
 
   /* ---- Select Agent for chat ---- */
   const selectAgentChat = useCallback((primeId: string, agent: FleetAgent) => {
