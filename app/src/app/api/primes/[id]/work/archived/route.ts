@@ -26,21 +26,22 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const db = getDb();
     const workCol = db.collection("primes").doc(id).collection("work");
 
-    const DONE_STATUSES = [
+    const DONE_STATUSES = new Set([
       "complete",
       "failed",
       "cancelled",
       "archived",
       "rejected",
       "timed_out",
-    ];
+    ]);
 
-    // Build query — root envelopes only, terminal statuses, ordered by completed_at desc
+    // Build query — root envelopes only, ordered by created_at desc
+    // Note: Firestore doesn't support two `in` filters, so we filter status client-side
+    // Using created_at to reuse existing composite index (type + created_at)
     let query = workCol
       .where("type", "in", ["M", "R"])
-      .where("status", "in", DONE_STATUSES)
-      .orderBy("completed_at", "desc")
-      .limit(limit + 1); // +1 to detect hasMore
+      .orderBy("created_at", "desc")
+      .limit((limit + 1) * 3); // over-fetch to account for client-side status filter
 
     // Cursor pagination: startAfter a specific document
     if (startAfterDocId) {
@@ -80,6 +81,9 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
         plan_id: d.plan_id ?? null,
       };
     });
+
+    // Filter to terminal statuses only (client-side since Firestore doesn't allow two `in` clauses)
+    envelopes = envelopes.filter((e) => DONE_STATUSES.has(e.status));
 
     // Agent filter (client-side — match short name against owner)
     if (agentFilter) {

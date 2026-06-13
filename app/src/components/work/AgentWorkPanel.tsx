@@ -98,12 +98,14 @@ export function AgentWorkPanel({ primeId, agentFilter }: AgentWorkPanelProps) {
     [primeId, agentFilter]
   );
 
-  /* ---- Archived: auto-fetch on tab switch ---- */
+  /* ---- Archived: auto-fetch on tab switch (once) ---- */
+  const archivedFetchedRef = useRef(false);
   useEffect(() => {
-    if (activeTab === "archived" && archivedEnvelopes.length === 0 && !archivedLoading) {
+    if (activeTab === "archived" && !archivedFetchedRef.current && !archivedLoading) {
+      archivedFetchedRef.current = true;
       fetchArchived("", null, false);
     }
-  }, [activeTab, archivedEnvelopes.length, archivedLoading, fetchArchived]);
+  }, [activeTab, archivedLoading, fetchArchived]);
 
   /* ---- Archived: debounced search ---- */
   const handleSearchChange = useCallback(
