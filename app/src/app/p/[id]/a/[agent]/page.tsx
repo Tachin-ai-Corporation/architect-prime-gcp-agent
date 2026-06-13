@@ -12,11 +12,8 @@ import { AgentPlans } from "@/components/agent/AgentPlans";
 import { AgentProcesses } from "@/components/agent/AgentProcesses";
 import { LiveIndicator } from "@/components/LiveIndicator";
 import { ChatPanel } from "@/components/ChatPanel";
-import { WorkTree } from "@/components/work/WorkTree";
-import { WorkDetail } from "@/components/work/WorkDetail";
-import { useWorkEnvelopes } from "@/components/work/useWorkEnvelopes";
+import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
 import { useIntrospect } from "@/hooks/useIntrospect";
-import type { WorkEnvelope } from "@/lib/types";
 import styles from "./page.module.css";
 
 /* ---- Skeleton helper ---- */
@@ -96,7 +93,6 @@ export default function AgentDeepDivePage({
   const { id, agent } = use(params);
   const { primes, sidebarFleet } = usePrime();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [selectedWork, setSelectedWork] = useState<WorkEnvelope | null>(null);
 
   /* ---- Resolve agent metadata from PrimeContext ---- */
   const prime = primes.find((p) => p.id === id);
@@ -113,9 +109,6 @@ export default function AgentDeepDivePage({
     type: "workspace",
     autoFetch: activeTab === "overview",
   });
-
-  /* ---- Work tab: use existing work hook ---- */
-  const work = useWorkEnvelopes(id, agent);
 
   /* ---- Hash-based tab switching ---- */
   useEffect(() => {
@@ -348,67 +341,7 @@ export default function AgentDeepDivePage({
 
         {/* Work */}
         {activeTab === "work" && (
-          <div className={styles.workTabContent}>
-            {work.loading ? (
-              <div className={styles.loadingPulse}>Loading work envelopes…</div>
-            ) : (
-              <>
-                {work.current.length > 0 && (
-                  <div className={styles.workSection}>
-                    <h3 className={styles.workSectionTitle}>Currently Working On</h3>
-                    <WorkTree
-                      nodes={work.current}
-                      onSelectNode={(id) => {
-                        const e = work.allEnvelopes.find((w) => w.id === id) || null;
-                        setSelectedWork(e);
-                      }}
-                      selectedId={selectedWork?.id || null}
-                      onLoadTree={work.loadTree}
-                    />
-                  </div>
-                )}
-                {work.queue.length > 0 && (
-                  <div className={styles.workSection}>
-                    <h3 className={styles.workSectionTitle}>In Queue</h3>
-                    <WorkTree
-                      nodes={work.queue}
-                      onSelectNode={(id) => {
-                        const e = work.allEnvelopes.find((w) => w.id === id) || null;
-                        setSelectedWork(e);
-                      }}
-                      selectedId={selectedWork?.id || null}
-                      onLoadTree={work.loadTree}
-                    />
-                  </div>
-                )}
-                {work.previous.length > 0 && (
-                  <div className={styles.workSection}>
-                    <h3 className={styles.workSectionTitle}>Previous Work</h3>
-                    <WorkTree
-                      nodes={work.previous.slice(0, 10)}
-                      onSelectNode={(id) => {
-                        const e = work.allEnvelopes.find((w) => w.id === id) || null;
-                        setSelectedWork(e);
-                      }}
-                      selectedId={selectedWork?.id || null}
-                      onLoadTree={work.loadTree}
-                    />
-                  </div>
-                )}
-                {work.current.length === 0 && work.queue.length === 0 && work.previous.length === 0 && (
-                  <div className={styles.emptyHint}>No work envelopes found for {agent}</div>
-                )}
-              </>
-            )}
-            {selectedWork && (
-              <WorkDetail
-                envelope={selectedWork}
-                allEnvelopes={work.allEnvelopes}
-                primeId={id}
-                onClose={() => setSelectedWork(null)}
-              />
-            )}
-          </div>
+          <AgentWorkPanel primeId={id} agentFilter={agent} />
         )}
 
         {/* Chat */}

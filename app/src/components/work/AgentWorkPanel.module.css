@@ -1,0 +1,359 @@
+/* ============================================
+   AgentWorkPanel.module.css
+   4-tab work panel for agent pages
+   ============================================ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Needs input pill ---- */
+.needsPill {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(214, 168, 58, 0.16);
+  color: #D6A83A;
+  font-weight: 600;
+  font-size: 11px;
+  margin-bottom: 12px;
+  animation: warmGlow 3s ease-in-out infinite;
+}
+@keyframes warmGlow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 5px rgba(214, 168, 58, 0.08); }
+}
+
+/* ---- Tabs ---- */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid rgba(86, 99, 115, 0.28);
+  margin-bottom: 24px;
+}
+
+.tab {
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #AEB8C4;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: #E6EBF0;
+}
+
+.tabOn {
+  color: #8FD8E6;
+  border-bottom-color: #1F9A9B;
+  font-weight: 600;
+}
+
+/* ---- Tab badges ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.badgeTeal {
+  background: rgba(31, 154, 155, 0.18);
+  color: #1F9A9B;
+}
+
+.badgeSlate {
+  background: rgba(86, 99, 115, 0.2);
+  color: #566373;
+}
+
+.badgeAmber {
+  background: rgba(214, 168, 58, 0.16);
+  color: #D6A83A;
+}
+
+/* ---- Tab body ---- */
+.tabBody {
+  display: none;
+}
+
+.tabBodyVis {
+  display: block;
+}
+
+/* ---- Empty state ---- */
+.empty {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.emptyIcon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.2;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #AEB8C4;
+  margin-bottom: 4px;
+}
+
+.emptySub {
+  font-size: 13px;
+  color: #566373;
+}
+
+/* ---- Pager ---- */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 0;
+}
+
+.pgBtn {
+  padding: 7px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid rgba(86, 99, 115, 0.28);
+  color: #AEB8C4;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pgBtn:hover:not(:disabled) {
+  border-color: rgba(143, 216, 230, 0.48);
+  color: #E6EBF0;
+  background: rgba(143, 216, 230, 0.04);
+}
+
+.pgBtn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+.pgInfo {
+  font-size: 12px;
+  color: #566373;
+  padding: 0 8px;
+}
+
+/* ---- Loading ---- */
+.loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: #AEB8C4;
+  font-size: 14px;
+}
+
+.loadingDots {
+  display: inline-block;
+  animation: fadeText 1.5s ease-in-out infinite;
+}
+
+@keyframes fadeText {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ============================================
+   Archived Work Tab
+   ============================================ */
+
+/* ---- Search bar ---- */
+.archiveSearch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(49, 59, 71, 0.5);
+  border: 1px solid rgba(86, 99, 115, 0.28);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  transition: border-color 160ms ease;
+}
+
+.archiveSearch:focus-within {
+  border-color: rgba(143, 216, 230, 0.4);
+}
+
+.archiveSearchIcon {
+  font-size: 14px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.archiveSearchInput {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: #E6EBF0;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.archiveSearchInput::placeholder {
+  color: #566373;
+}
+
+/* ---- Archive list ---- */
+.archiveList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.archiveRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  color: #E6EBF0;
+  transition: background 120ms ease;
+  width: 100%;
+}
+
+.archiveRow:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ---- Status dots ---- */
+.archiveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotDone {
+  background: #3BAA78;
+}
+
+.dotFailed {
+  background: #D84F45;
+}
+
+.dotCancelled {
+  background: #566373;
+  opacity: 0.5;
+}
+
+.dotNeutral {
+  background: #7A8696;
+}
+
+/* ---- Archive row cells ---- */
+.archiveType {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #566373;
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.archiveTitle {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #E6EBF0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.archiveOwner {
+  font-size: 12px;
+  color: #566373;
+  font-family: 'JetBrains Mono', monospace;
+  width: 80px;
+  flex-shrink: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archiveDate {
+  font-size: 12px;
+  color: #566373;
+  width: 120px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.archiveDuration {
+  font-size: 12px;
+  color: #566373;
+  font-family: 'JetBrains Mono', monospace;
+  width: 60px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* ---- Loading / Load More ---- */
+.archiveLoading {
+  text-align: center;
+  padding: 20px;
+  color: #AEB8C4;
+  font-size: 13px;
+}
+
+.archiveLoadMore {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0 8px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .tabs {
+    overflow-x: auto;
+  }
+
+  .archiveOwner,
+  .archiveDuration {
+    display: none;
+  }
+
+  .archiveDate {
+    width: 90px;
+    font-size: 11px;
+  }
+}
