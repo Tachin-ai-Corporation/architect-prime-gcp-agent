@@ -159,21 +159,36 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
     if [[ -f "$CHAT_CFG" ]]; then
       TPL_NAME="$(jq -r '.agentDisplayName // .agentFirstName // empty' "$CHAT_CFG" 2>/dev/null)"
       TPL_SPECIALTY="$(jq -r '.agentType // empty' "$CHAT_CFG" 2>/dev/null)"
+      TPL_SPECIALTY="${TPL_SPECIALTY:-$EXISTING_JOB}"
       TPL_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null)"
       TPL_PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null)"
       TPL_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
       if [[ -n "$TPL_NAME" ]]; then
         echo "==> Rendering workspace templates (agent: ${TPL_NAME}, specialty: ${TPL_SPECIALTY})"
+        # Escape sed-special chars in values
+        TPL_NAME_ESC="${TPL_NAME//&/\\&}"
+        TPL_SPECIALTY_ESC="${TPL_SPECIALTY//&/\\&}"
+        TPL_EMAIL_ESC="${TPL_EMAIL//&/\\&}"
+        TPL_PROJECT_ESC="${TPL_PROJECT//&/\\&}"
         for f in "${CORE_ROOT}"/workspace*/*.md; do
           [[ -f "$f" ]] || continue
           sed -i \
-            -e "s/{{AGENT_NAME}}/${TPL_NAME}/g" \
-            -e "s/{{SPECIALTY}}/${TPL_SPECIALTY}/g" \
-            -e "s/{{PROJECT_ID}}/${TPL_PROJECT}/g" \
-            -e "s/{{AGENT_USER_EMAIL}}/${TPL_EMAIL}/g" \
-            -e "s/{{DEPLOY_TIMESTAMP}}/${TPL_TS}/g" \
+            -e "s|{{AGENT_NAME}}|${TPL_NAME_ESC}|g" \
+            -e "s|{{SPECIALTY}}|${TPL_SPECIALTY_ESC}|g" \
+            -e "s|{{PROJECT_ID}}|${TPL_PROJECT_ESC}|g" \
+            -e "s|{{AGENT_USER_EMAIL}}|${TPL_EMAIL_ESC}|g" \
+            -e "s|{{DEPLOY_TIMESTAMP}}|${TPL_TS}|g" \
             "$f"
         done
+      fi
+
+      # Backfill agentType into chat-config if missing
+      if [[ -n "$TPL_SPECIALTY" ]] && [[ -f "$CHAT_CFG" ]]; then
+        EXISTING_TYPE=$(jq -r '.agentType // empty' "$CHAT_CFG" 2>/dev/null)
+        if [[ -z "$EXISTING_TYPE" ]]; then
+          jq --arg t "$TPL_SPECIALTY" '.agentType = $t' "$CHAT_CFG" > "${CHAT_CFG}.tmp" && mv "${CHAT_CFG}.tmp" "$CHAT_CFG"
+          echo "  Backfilled agentType=${TPL_SPECIALTY} into chat-config.json"
+        fi
       fi
 
       # Read agent identity for downstream blocks

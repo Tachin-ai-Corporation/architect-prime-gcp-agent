@@ -53,7 +53,7 @@ skills/memory-consolidate/skill.json skills/memory-consolidate/skill.json
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md
 brain/prime/cortex/SOUL.md workspace/SOUL.md
 brain/prime/cortex/TOOLS.md workspace/TOOLS.md
-brain/prime/cortex/MEMORY.md workspace/MEMORY.md
+brain/prime/cortex/MEMORY.md workspace/MEMORY.md?
 brain/prime/cortex/checkpoint/progress.json workspace/checkpoint/progress.json?
 
 

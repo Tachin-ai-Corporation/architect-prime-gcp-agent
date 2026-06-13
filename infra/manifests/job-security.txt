@@ -4,7 +4,7 @@
 
 specialties/security/workspace/IDENTITY.md workspace/IDENTITY.md
 specialties/security/workspace/SOUL.md workspace/SOUL.md
-specialties/security/workspace/MEMORY.md workspace/MEMORY.md
+specialties/security/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Workspace skills — Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md

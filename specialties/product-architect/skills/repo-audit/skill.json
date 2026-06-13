@@ -2,5 +2,12 @@
   "id": "repo-audit",
   "name": "Repository Audit",
   "version": "1.0.0",
-  "description": "Read-only repo analysis playbook with focus rotation and raw-URL fetch patterns"
+  "description": "Read-only repo analysis playbook with focus rotation and raw-URL fetch patterns",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "analysis",
+  "agent_part": "motor",
+  "scripts": [],
+  "dependencies": [],
+  "when_to_use": "When auditing the repository — analyzing code structure, checking canon compliance, reviewing manifests and contracts"
 }

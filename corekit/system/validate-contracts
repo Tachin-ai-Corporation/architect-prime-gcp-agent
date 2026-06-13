@@ -252,7 +252,6 @@ for (const x of t.types) console.log(x.id);
     VALID_IDS=$(node -e "
 const t = JSON.parse(require('fs').readFileSync('$TYPES_FILE','utf8'));
 const ids = t.types.map(x => x.id);
-t.types.forEach(x => (x.aliases||[]).forEach(a => ids.push(a)));
 console.log(JSON.stringify(ids));
 " 2>/dev/null || echo '[]')
     for pfile in "$PROCESS_DIR"/*.json; do
@@ -279,6 +278,62 @@ findSpecialties(d);
 " 2>/dev/null)
     done
     [[ $PROC_FAIL -eq 0 ]] && pass "All process specialty values are valid agent-types ids"
+  fi
+
+  # ---- Check 14: Tri-source skill consistency ----
+  # Verify: agent-types skills[] ↔ specialty dir ↔ manifest install lines
+  if [[ -f "$TYPES_FILE" ]]; then
+    TRI_FAIL=0
+    MANIFEST_DIR="${REPO_ROOT}/infra/manifests"
+    SPEC_DIR="${REPO_ROOT}/specialties"
+    while IFS= read -r type_id; do
+      [[ -z "$type_id" ]] && continue
+      JOB_MANIFEST="${MANIFEST_DIR}/job-${type_id}.txt"
+      TYPE_SPEC_DIR="${SPEC_DIR}/${type_id}/skills"
+
+      # 14a: Every specialty skill dir must have a manifest install line
+      if [[ -d "$TYPE_SPEC_DIR" ]]; then
+        for skill_dir in "$TYPE_SPEC_DIR"/*/; do
+          [[ -d "$skill_dir" ]] || continue
+          SKILL_ID="$(basename "$skill_dir")"
+          if [[ -f "$JOB_MANIFEST" ]]; then
+            if ! grep -q "skills/${SKILL_ID}/skill.json" "$JOB_MANIFEST" 2>/dev/null; then
+              fail "Tri-source: specialty skill ${type_id}/${SKILL_ID} has no skill.json install in job-${type_id}.txt"
+              TRI_FAIL=$((TRI_FAIL + 1))
+            fi
+          fi
+        done
+      fi
+
+      # 14b: Every non-base skill in agent-types skills[] must be installable
+      BASE_SKILLS="web-search skill-introspect memory-consolidate"
+      ROLE_MANIFEST="${MANIFEST_DIR}/role-fleet.txt"
+      AT_SKILLS=$(node -e "
+const t = JSON.parse(require('fs').readFileSync('$TYPES_FILE','utf8'));
+const typ = t.types.find(x => x.id === '$type_id');
+if (typ && typ.skills) typ.skills.forEach(s => console.log(s));
+" 2>/dev/null)
+      while IFS= read -r skill_name; do
+        [[ -z "$skill_name" ]] && continue
+        echo "$BASE_SKILLS" | grep -qw "$skill_name" && continue
+        FOUND_IN_MANIFEST=0
+        for mf in "$ROLE_MANIFEST" "$JOB_MANIFEST"; do
+          [[ -f "$mf" ]] || continue
+          if grep -q "skills/${skill_name}/" "$mf" 2>/dev/null; then
+            FOUND_IN_MANIFEST=1
+            break
+          fi
+        done
+        if [[ $FOUND_IN_MANIFEST -eq 0 ]]; then
+          fail "Tri-source: agent-types ${type_id} lists skill '${skill_name}' but no manifest installs it"
+          TRI_FAIL=$((TRI_FAIL + 1))
+        fi
+      done <<< "$AT_SKILLS"
+    done < <(node -e "
+const t = JSON.parse(require('fs').readFileSync('$TYPES_FILE','utf8'));
+t.types.forEach(x => console.log(x.id));
+" 2>/dev/null)
+    [[ $TRI_FAIL -eq 0 ]] && pass "Tri-source skill consistency verified across all agent types"
   fi
 fi
 

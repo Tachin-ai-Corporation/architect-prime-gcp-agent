@@ -4,7 +4,7 @@
 
 specialties/pm/workspace/IDENTITY.md workspace/IDENTITY.md
 specialties/pm/workspace/SOUL.md workspace/SOUL.md
-specialties/pm/workspace/MEMORY.md workspace/MEMORY.md
+specialties/pm/workspace/MEMORY.md workspace/MEMORY.md?
 specialties/pm/responsibilities-pm.json corekit/responsibilities-job.json
 
 # Specialty brain SOUL appends

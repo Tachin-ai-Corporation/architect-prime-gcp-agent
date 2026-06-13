@@ -4,7 +4,7 @@
 
 specialties/devops/workspace/IDENTITY.md workspace/IDENTITY.md
 specialties/devops/workspace/SOUL.md workspace/SOUL.md
-specialties/devops/workspace/MEMORY.md workspace/MEMORY.md
+specialties/devops/workspace/MEMORY.md workspace/MEMORY.md?
 
 # DevOps responsibilities (merged with base by Brain scheduler)
 specialties/devops/responsibilities-devops.json corekit/responsibilities-job.json

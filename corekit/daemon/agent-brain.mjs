@@ -625,7 +625,6 @@ function buildSystemPrompt(mode, payload) {
 
   // 2. Read IDENTITY.md â€” who you are
   const identityPaths = [
-    CORE_DIR + `/workspace-${AGENT_ID}/IDENTITY.md`,
     CORE_DIR + '/workspace/IDENTITY.md',
   ];
   let identityContent = null;
@@ -639,7 +638,6 @@ function buildSystemPrompt(mode, payload) {
 
   // 3. Read MEMORY.md â€” baseline knowledge
   const memoryPaths = [
-    CORE_DIR + `/workspace-${AGENT_ID}/MEMORY.md`,
     CORE_DIR + '/workspace/MEMORY.md',
   ];
   let memoryContent = null;

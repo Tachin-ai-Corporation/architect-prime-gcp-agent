@@ -239,14 +239,19 @@ find "${CORE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
 # ---- Render workspace templates ----
 echo "==> Rendering workspace templates"
+# Escape sed-special chars in values
+TPL_NAME_ESC="${AGENT_DISPLAY_NAME//&/\\&}"
+TPL_SPECIALTY_ESC="${SPECIALTY//&/\\&}"
+TPL_EMAIL_ESC="${AGENT_USER_EMAIL//&/\\&}"
+TPL_PROJECT_ESC="${GCP_PROJECT_ID//&/\\&}"
 for f in "${CORE_ROOT}"/workspace*/*.md; do
   [[ -f "$f" ]] || continue
   sed -i \
-    -e "s/{{AGENT_NAME}}/${AGENT_DISPLAY_NAME}/g" \
-    -e "s/{{SPECIALTY}}/${SPECIALTY}/g" \
-    -e "s/{{PROJECT_ID}}/${GCP_PROJECT_ID}/g" \
-    -e "s/{{AGENT_USER_EMAIL}}/${AGENT_USER_EMAIL}/g" \
-    -e "s/{{DEPLOY_TIMESTAMP}}/$(date -u +%Y-%m-%dT%H:%M:%SZ)/g" \
+    -e "s|{{AGENT_NAME}}|${TPL_NAME_ESC}|g" \
+    -e "s|{{SPECIALTY}}|${TPL_SPECIALTY_ESC}|g" \
+    -e "s|{{PROJECT_ID}}|${TPL_PROJECT_ESC}|g" \
+    -e "s|{{AGENT_USER_EMAIL}}|${TPL_EMAIL_ESC}|g" \
+    -e "s|{{DEPLOY_TIMESTAMP}}|$(date -u +%Y-%m-%dT%H:%M:%SZ)|g" \
     "$f"
 done
 

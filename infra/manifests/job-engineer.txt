@@ -4,7 +4,7 @@
 
 specialties/engineer/workspace/IDENTITY.md workspace/IDENTITY.md
 specialties/engineer/workspace/SOUL.md workspace/SOUL.md
-specialties/engineer/workspace/MEMORY.md workspace/MEMORY.md
+specialties/engineer/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Engineer responsibilities (merged with base by Brain scheduler)
 specialties/engineer/responsibilities-engineer.json corekit/responsibilities-job.json

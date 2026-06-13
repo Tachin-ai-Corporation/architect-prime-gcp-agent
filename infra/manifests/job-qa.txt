@@ -4,7 +4,7 @@
 
 specialties/qa/workspace/IDENTITY.md workspace/IDENTITY.md
 specialties/qa/workspace/SOUL.md workspace/SOUL.md
-specialties/qa/workspace/MEMORY.md workspace/MEMORY.md
+specialties/qa/workspace/MEMORY.md workspace/MEMORY.md?
 
 # QA responsibilities
 specialties/qa/responsibilities-qa.json corekit/responsibilities-job.json

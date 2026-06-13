@@ -4,7 +4,7 @@
 
 specialties/assistant/workspace/IDENTITY.md workspace/IDENTITY.md
 specialties/assistant/workspace/SOUL.md workspace/SOUL.md
-specialties/assistant/workspace/MEMORY.md workspace/MEMORY.md
+specialties/assistant/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Workspace skills — Google Drive
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md

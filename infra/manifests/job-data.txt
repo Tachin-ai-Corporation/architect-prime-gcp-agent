@@ -4,7 +4,7 @@
 
 specialties/data/workspace/IDENTITY.md workspace/IDENTITY.md
 specialties/data/workspace/SOUL.md workspace/SOUL.md
-specialties/data/workspace/MEMORY.md workspace/MEMORY.md
+specialties/data/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Workspace skills — Sheets
 skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
