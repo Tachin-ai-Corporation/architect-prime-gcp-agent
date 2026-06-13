@@ -37,19 +37,7 @@ export default function PrimeHubPage({
         ? "badge badge-deploying"
         : "badge badge-offline";
 
-  /* Status dot helper for fleet chips */
-  const dotClass = (status: string) => {
-    switch (status) {
-      case "online":
-        return styles.chipDotOnline;
-      case "deploying":
-        return styles.chipDotDeploying;
-      case "error":
-        return styles.chipDotError;
-      default:
-        return styles.chipDotOffline;
-    }
-  };
+
 
   return (
     <div className={styles.hubPage}>
@@ -108,30 +96,7 @@ export default function PrimeHubPage({
         />
       </div>
 
-      {/* ---- Fleet Chip Strip ---- */}
-      <div className={styles.fleetSection}>
-        <div className={styles.fleetTitle}>Fleet Agents</div>
-        {fleet.length === 0 ? (
-          <div className={styles.emptyFleet}>
-            No agents deployed yet. Visit Fleet to hire your first agent.
-          </div>
-        ) : (
-          <div className={styles.fleetStrip}>
-            {fleet.map((agent) => (
-              <Link
-                key={agent.name}
-                href={`/p/${id}/a/${agent.name}`}
-                className={styles.agentChip}
-              >
-                <span
-                  className={`${styles.chipDot} ${dotClass(agent.status)}`}
-                />
-                {agent.name}
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
+
     </div>
   );
 }
