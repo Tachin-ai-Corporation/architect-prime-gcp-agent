@@ -101,6 +101,15 @@ bash infra/deploy/uninstall.sh
 
 ---
 
+## Version History
+
+| Version | Date | Summary |
+|---------|------|---------|
+| v2026.06.13.5.0 | 2026-06-13 | Dashboard UI redesign: sidebar navigation for Prime/Fleet agent pages, AgentWorkPanel (4-tab work view with archived search), FleetPanel inline in Prime, enlarged chat input |
+| v2026.06.08.2.0 | 2026-06-08 | Brain v3 envelope orchestration, 6-organ cognitive architecture, Culture of Work primitives |
+
+---
+
 ## License
 
 MIT License. See [LICENSE](LICENSE).

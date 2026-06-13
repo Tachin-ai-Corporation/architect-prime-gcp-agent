@@ -20,7 +20,8 @@ Everything runs inside the operator's own GCP project: no shared infrastructure,
 ```
 Dashboard (Cloud Run — Next.js)
     │  control plane: fleet lifecycle, chat, work trees, introspection,
-    │  projects, processes, plans, secret management
+    │  projects, processes, plans, secret management, sidebar-navigated
+    │  agent deep-dive (shared AgentWorkPanel, FleetPanel, ChatPanel)
     ▼
 Firestore (state store)
     ├── primes/{id}/work/{id}       → M/C/T envelope state machine
