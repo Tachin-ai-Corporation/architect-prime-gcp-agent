@@ -184,7 +184,6 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            rows={1}
           />
           <button
             id="chat-panel-send"
