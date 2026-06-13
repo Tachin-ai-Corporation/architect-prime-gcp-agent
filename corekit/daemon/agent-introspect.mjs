@@ -316,6 +316,7 @@ function handleConfig() {
 
 function handleWorkspace() {
   const workspaces = {};
+  const files = {};  // flat map: "workspace-motor/SOUL.md" → content
   if (existsSync(CORE_DIR)) {
     const entries = readdirSync(CORE_DIR);
     for (const e of entries) {
@@ -324,18 +325,26 @@ function handleWorkspace() {
       try {
         const st = statSync(wsDir);
         if (!st.isDirectory()) continue;
-        const files = readdirSync(wsDir)
+        const wsFiles = readdirSync(wsDir)
           .filter(f => f.endsWith('.md') || f.endsWith('.json'))
           .map(f => {
             const fp = join(wsDir, f);
             const fst = statSync(fp);
+            // Read .md content (capped at 8KB to stay safe)
+            let content = undefined;
+            if (f.endsWith('.md') && fst.size < 8192) {
+              try { content = readFileSync(fp, 'utf8'); } catch {}
+            }
+            // Build flat key: "workspace" dir → "SOUL.md", others → "workspace-motor/SOUL.md"
+            const flatKey = e === 'workspace' ? f : `${e}/${f}`;
+            if (content !== undefined) files[flatKey] = content;
             return { name: f, sizeBytes: fst.size };
           });
-        workspaces[e] = files;
+        workspaces[e] = wsFiles;
       } catch {}
     }
   }
-  return { workspaces };
+  return { workspaces, files };
 }
 
 function handleBrainConfig() {

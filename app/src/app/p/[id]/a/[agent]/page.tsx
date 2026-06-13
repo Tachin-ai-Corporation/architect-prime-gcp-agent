@@ -86,6 +86,7 @@ export default function AgentDeepDivePage({
 
   /* ---- Overview tab: introspect status + identity ---- */
   const { data: overviewData, loading: overviewLoading } = useIntrospect<{
+    workspaces?: Record<string, { name: string; sizeBytes: number }[]>;
     files?: Record<string, string>;
   }>({
     primeId: id,
