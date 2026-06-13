@@ -3,7 +3,7 @@
 # Installed by: infra/install.sh --role fleet
 # Then a job-specific manifest is layered on top.
 
-# Fleet workspace template (fallback if no job-specific workspace)
+# Fleet workspace seeds (job manifest overwrites IDENTITY; assemble-tools overwrites TOOLS)
 brain/fleet/_base/IDENTITY.md workspace/IDENTITY.md
 brain/fleet/_base/TOOLS.md workspace/TOOLS.md
 

@@ -77,6 +77,26 @@ case "${1:-}" in
     [[ -n "$EXISTING_JOB" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $EXISTING_JOB"
     echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${EXISTING_JOB:-none}"
 
+    # ---- Legacy migration: remove stale workspace-{specialty}/ dirs ----
+    # Allowlist: only dirs in contracts.workspaces survive
+    if [[ -f "${CORE_ROOT}/corekit/contracts.json" ]]; then
+      ALLOWED_WS=$(node -e "
+const c = JSON.parse(require('fs').readFileSync('${CORE_ROOT}/corekit/contracts.json','utf8'));
+const ws = c.workspaces || {};
+for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); }
+" 2>/dev/null)
+      if [[ -n "$ALLOWED_WS" ]]; then
+        for d in "${CORE_ROOT}"/workspace-*/; do
+          [[ -d "$d" ]] || continue
+          bn=$(basename "$d")
+          if ! echo "$ALLOWED_WS" | grep -qx "$bn"; then
+            echo "  Removing legacy workspace dir: $bn"
+            rm -rf "$d"
+          fi
+        done
+      fi
+    fi
+
     # Model snapshot logic removed (model configs are kept in agent workspaces)
 
     curl -fsSL "${CORE_BASE}/infra/install.sh" | \
@@ -134,65 +154,32 @@ case "${1:-}" in
       done
     fi
 
-    # ---- Fleet agent workspace re-overlay ----
-    # install.sh always installs main workspace to workspace/.
-    # For fleet agents, re-apply the specialty workspace on top.
+    # ---- Render workspace templates ----
     CHAT_CFG="${CORE_ROOT}/corekit/chat-config.json"
     if [[ -f "$CHAT_CFG" ]]; then
-      # Read agent identity from chat-config (only fleet agents have this)
-      AGENT_NAME="$(jq -r '.agentDisplayName // empty' "$CHAT_CFG" 2>/dev/null || true)"
-      SPECIALTY_DIR=""
-      # Try to find a specialty workspace
-      for d in "${CORE_ROOT}"/workspace-*/; do
-        [[ -d "$d" ]] || continue
-        # Use first non-brain specialty found
-        bn="$(basename "$d")"
-        [[ "$bn" =~ ^workspace-(temporal|prefrontal|motor|cerebellum) ]] && continue
-        SPECIALTY_DIR="$d"
-        break
-      done
-      # Fallback: if no specialty dir found, workspace/ already has the base from manifests
-      if [[ -z "$SPECIALTY_DIR" ]]; then
-        echo "  No specialty workspace dir found, using manifest-installed workspace/"
-      fi
-      if [[ -d "$SPECIALTY_DIR" && -n "$AGENT_NAME" ]]; then
-        echo "==> Re-applying fleet workspace from ${SPECIALTY_DIR}"
-
-        # Preserve agent-generated files that should survive upgrades
-        PRESERVE_DIR="/tmp/upgrade-preserve-$$"
-        mkdir -p "$PRESERVE_DIR"
-        for preserve_file in MEMORY.md TASK.json; do
-          if [[ -f "${CORE_ROOT}/workspace/${preserve_file}" ]]; then
-            cp "${CORE_ROOT}/workspace/${preserve_file}" "$PRESERVE_DIR/"
-            echo "  Preserved: ${preserve_file}"
-          fi
-        done
-
-        rm -f "${CORE_ROOT}/workspace/"*.md 2>/dev/null || true
-        MENTION="$(jq -r '.agentMention // empty' "$CHAT_CFG" 2>/dev/null || true)"
-        PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null || true)"
-        AGENT_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null || true)"
-        SPECIALTY="$(basename "$SPECIALTY_DIR" | sed 's/workspace-//')"
-        for f in "${SPECIALTY_DIR}"/*.md; do
+      TPL_NAME="$(jq -r '.agentDisplayName // .agentFirstName // empty' "$CHAT_CFG" 2>/dev/null)"
+      TPL_SPECIALTY="$(jq -r '.agentType // empty' "$CHAT_CFG" 2>/dev/null)"
+      TPL_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null)"
+      TPL_PROJECT="$(jq -r '.projectId // empty' "$CHAT_CFG" 2>/dev/null)"
+      TPL_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      if [[ -n "$TPL_NAME" ]]; then
+        echo "==> Rendering workspace templates (agent: ${TPL_NAME}, specialty: ${TPL_SPECIALTY})"
+        for f in "${CORE_ROOT}"/workspace*/*.md; do
           [[ -f "$f" ]] || continue
-          sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
-              -e "s|{{SPECIALTY}}|${SPECIALTY}|g" \
-              -e "s|{{PROJECT_ID}}|${PROJECT}|g" \
-              -e "s|{{AGENT_USER_EMAIL}}|${AGENT_EMAIL}|g" \
-              -e "s|{{DEPLOY_TIMESTAMP}}|$(date -Is)|g" \
-              "$f" > "${CORE_ROOT}/workspace/$(basename "$f")"
+          sed -i \
+            -e "s/{{AGENT_NAME}}/${TPL_NAME}/g" \
+            -e "s/{{SPECIALTY}}/${TPL_SPECIALTY}/g" \
+            -e "s/{{PROJECT_ID}}/${TPL_PROJECT}/g" \
+            -e "s/{{AGENT_USER_EMAIL}}/${TPL_EMAIL}/g" \
+            -e "s/{{DEPLOY_TIMESTAMP}}/${TPL_TS}/g" \
+            "$f"
         done
+      fi
 
-        # Restore preserved files
-        for preserve_file in MEMORY.md TASK.json; do
-          if [[ -f "$PRESERVE_DIR/${preserve_file}" ]]; then
-            cp "$PRESERVE_DIR/${preserve_file}" "${CORE_ROOT}/workspace/${preserve_file}"
-            echo "  Restored: ${preserve_file}"
-          fi
-        done
-        rm -rf "$PRESERVE_DIR" 2>/dev/null || true
-
-        echo "  Fleet workspace restored for: ${AGENT_NAME}"
+      # Read agent identity for downstream blocks
+      AGENT_NAME="$(jq -r '.agentDisplayName // empty' "$CHAT_CFG" 2>/dev/null || true)"
+      AGENT_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null || true)"
+      if [[ -n "$AGENT_NAME" ]]; then
 
         # ---- Sync custom skills from Firestore ----
         # Query per-agent custom skill state and download skill packages

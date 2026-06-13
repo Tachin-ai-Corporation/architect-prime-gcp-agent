@@ -237,6 +237,19 @@ info "Final permissions sweep..."
 find "${CORE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${CORE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
+# ---- Render workspace templates ----
+echo "==> Rendering workspace templates"
+for f in "${CORE_ROOT}"/workspace*/*.md; do
+  [[ -f "$f" ]] || continue
+  sed -i \
+    -e "s/{{AGENT_NAME}}/${AGENT_DISPLAY_NAME}/g" \
+    -e "s/{{SPECIALTY}}/${SPECIALTY}/g" \
+    -e "s/{{PROJECT_ID}}/${GCP_PROJECT_ID}/g" \
+    -e "s/{{AGENT_USER_EMAIL}}/${AGENT_USER_EMAIL}/g" \
+    -e "s/{{DEPLOY_TIMESTAMP}}/$(date -u +%Y-%m-%dT%H:%M:%SZ)/g" \
+    "$f"
+done
+
 # ---- 12) Run assemble-tools for this agent type ----
 ASSEMBLE="${CORE_DIR}/bin/assemble-tools"
 if [[ -x "$ASSEMBLE" ]]; then

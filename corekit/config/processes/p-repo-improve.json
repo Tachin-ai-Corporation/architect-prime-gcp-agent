@@ -58,7 +58,7 @@
       "description": "Delegate the approved improvement to an engineer on the project team. Provide the proposal, scope, and acceptance criteria.",
       "agent": "motor",
       "type": "delegation",
-      "specialty": "swe",
+      "specialty": "engineer",
       "intent": "delegation",
       "accept_criteria": "Delegation sent to engineer. Implementation work initiated.",
       "checkpointBoundary": true

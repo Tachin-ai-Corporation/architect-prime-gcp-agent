@@ -244,6 +244,42 @@ for (const x of t.types) console.log(x.id);
   else
     fail "github.owner or github.repo is empty in contracts.json"
   fi
+
+  # ---- Check 13: Process specialty values ∈ agent-types ids ----
+  PROCESS_DIR="${REPO_ROOT}/corekit/config/processes"
+  if [[ -d "$PROCESS_DIR" && -f "$TYPES_FILE" ]]; then
+    PROC_FAIL=0
+    VALID_IDS=$(node -e "
+const t = JSON.parse(require('fs').readFileSync('$TYPES_FILE','utf8'));
+const ids = t.types.map(x => x.id);
+t.types.forEach(x => (x.aliases||[]).forEach(a => ids.push(a)));
+console.log(JSON.stringify(ids));
+" 2>/dev/null || echo '[]')
+    for pfile in "$PROCESS_DIR"/*.json; do
+      [[ -f "$pfile" ]] || continue
+      PNAME="$(basename "$pfile")"
+      while IFS= read -r spec_val; do
+        [[ -z "$spec_val" ]] && continue
+        FOUND=$(node -e "
+const ids = $VALID_IDS;
+console.log(ids.includes('$spec_val') ? 'yes' : 'no');
+" 2>/dev/null || echo 'no')
+        if [[ "$FOUND" != "yes" ]]; then
+          fail "Process specialty: ${PNAME} references specialty '${spec_val}' not in agent-types ids"
+          PROC_FAIL=$((PROC_FAIL + 1))
+        fi
+      done < <(node -e "
+const d = JSON.parse(require('fs').readFileSync('$pfile','utf8'));
+function findSpecialties(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  if (obj.specialty) console.log(obj.specialty);
+  for (const v of Object.values(obj)) findSpecialties(v);
+}
+findSpecialties(d);
+" 2>/dev/null)
+    done
+    [[ $PROC_FAIL -eq 0 ]] && pass "All process specialty values are valid agent-types ids"
+  fi
 fi
 
 # ============================================================
@@ -308,6 +344,20 @@ if [[ "$MODE" == "runtime" ]]; then
     else
       fail "bin/ dir permissions = ${BIN_PERMS} (expected 755 — root umask bug?)"
     fi
+  fi
+
+  # ---- Check 7: No unrendered {{}} placeholders in workspace (fleet only) ----
+  if [[ -f "${CORE_DIR}/corekit/chat-config.json" ]]; then
+    PLACEHOLDER_FAIL=0
+    for f in "${CORE_DIR}"/workspace*/*.md; do
+      [[ -f "$f" ]] || continue
+      if grep -qP '\{\{[A-Z_]+\}\}' "$f"; then
+        BDIR=$(basename "$(dirname "$f")")
+        fail "Unrendered placeholder in ${BDIR}/$(basename $f)"
+        PLACEHOLDER_FAIL=$((PLACEHOLDER_FAIL + 1))
+      fi
+    done
+    [[ $PLACEHOLDER_FAIL -eq 0 ]] && pass "All workspace .md files have rendered templates"
   fi
 fi
 

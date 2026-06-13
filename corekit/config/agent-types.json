@@ -5,7 +5,7 @@
       "title": "DevOps Engineer",
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-gmail", "gcp-devops", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "skill-introspect", "memory-consolidate"],
       "brain": true
     },
     {
@@ -13,8 +13,8 @@
       "aliases": ["swe", "software engineer"],
       "title": "Software Engineer",
       "specialty": "Full-stack development, code review, debugging, API design, architecture, testing",
-      "emailPattern": "swe-agent-{name}",
-      "skills": ["web-search", "git-ops", "code-review", "skill-introspect", "memory-consolidate"],
+      "emailPattern": "engineer-agent-{name}",
+      "skills": ["web-search", "skill-introspect", "memory-consolidate"],
       "brain": true
     },
     {
@@ -70,7 +70,7 @@
       "title": "Product Architect",
       "specialty": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
       "emailPattern": "architect-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-docs", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "skill-introspect", "memory-consolidate"],
       "brain": true
     }
   ]
