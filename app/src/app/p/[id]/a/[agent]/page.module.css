@@ -26,45 +26,74 @@
   gap: var(--space-5);
 }
 
-/* -- Status Bar -- */
-.statusBar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  background: var(--charcoal);
-  border: 1px solid var(--border-subtle);
+/* -- Hero Banner -- */
+.hero {
+  position: relative;
+  padding: 36px 32px 28px;
   border-radius: var(--radius-lg);
-  flex-wrap: wrap;
+  overflow: hidden;
+  background: rgba(32, 40, 51, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: heroFadeIn 600ms var(--ease-premium, ease-out) both;
 }
 
-.statusBarLeft {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-.overviewSpecialty {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--care-mint);
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  background: rgba(95, 199, 178, 0.10);
-  border: 1px solid rgba(95, 199, 178, 0.20);
+.heroAccent {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
 }
 
-.statusBarMeta {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  font-size: 13px;
+.heroGlow {
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  height: 250px;
+  border-radius: 50%;
+  opacity: 0.12;
+  pointer-events: none;
+  filter: blur(60px);
+}
+
+.heroGlyph {
+  font-size: 64px;
+  line-height: 1;
+  margin-bottom: 12px;
+  position: relative;
+  z-index: 1;
+  animation: glyphFloat 4s ease-in-out infinite;
+}
+
+@keyframes glyphFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.heroName {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 4px;
+  position: relative;
+  z-index: 1;
+}
+
+.heroId {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
   color: var(--text-tertiary);
-}
-
-.statusBarMeta a {
-  color: var(--signal-aqua);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  position: relative;
+  z-index: 1;
 }
 
 /* -- Section Headings -- */
@@ -454,15 +483,6 @@
 
   .organGrid {
     grid-template-columns: 1fr;
-  }
-
-  .statusBar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .statusBarMeta {
-    margin-left: 0;
   }
 
   .tabContentArea {

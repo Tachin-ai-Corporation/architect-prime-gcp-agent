@@ -68,6 +68,20 @@ const BRAIN_ORGANS = [
   { key: "temporal-research", label: "Temporal-Research", icon: "🔍", filePath: "workspace-temporal-research/SOUL.md", role: "external info: grounding + fetch", accent: "#38bdf8" },
 ];
 
+/** Specialty → visual theme (same as API route THEMES) */
+const SPECIALTY_THEMES: Record<string, { glyph: string; accent: string; name: string }> = {
+  devops:              { glyph: "⚙️", accent: "#38bdf8", name: "DevOps Engineer" },
+  engineer:            { glyph: "🧪", accent: "#a78bfa", name: "Software Engineer" },
+  swe:                 { glyph: "🧪", accent: "#a78bfa", name: "Software Engineer" },
+  qa:                  { glyph: "🧭", accent: "#2dd4bf", name: "QA Engineer" },
+  pm:                  { glyph: "🗂️", accent: "#fbbf24", name: "Project Manager" },
+  finance:             { glyph: "📊", accent: "#34d399", name: "Finance Analyst" },
+  data:                { glyph: "🧮", accent: "#818cf8", name: "Data Analyst" },
+  security:            { glyph: "🛡️", accent: "#fb7185", name: "Security Engineer" },
+  assistant:           { glyph: "🎯", accent: "#94a3b8", name: "Assistant" },
+  "product-architect": { glyph: "📐", accent: "#f472b6", name: "Product Architect" },
+};
+
 
 export default function AgentDeepDivePage({
   params,
@@ -162,32 +176,57 @@ export default function AgentDeepDivePage({
       {/* ---- Tab Content ---- */}
       <div className={styles.tabContentArea}>
         {/* Overview */}
-        {activeTab === "overview" && (
+        {activeTab === "overview" && (() => {
+          const theme = SPECIALTY_THEMES[agentData?.specialty || ""] || { glyph: "🤖", accent: "#94a3b8", name: agentData?.specialty || "Agent" };
+          return (
           <div className={styles.overviewWrap}>
-            {/* ── Section 1: Status Bar ── */}
-            <div className={styles.statusBar}>
-              <div className={styles.statusBarLeft}>
-                <LiveIndicator
-                  lastUpdated={Date.now()}
-                  loading={overviewLoading}
-                  stale={agentData?.status !== "online"}
-                />
-                <span className={`badge badge-${agentData?.status || "offline"}`}>
-                  {agentData?.status || "unknown"}
-                </span>
-                {agentData?.specialty && (
-                  <span className={styles.overviewSpecialty}>{agentData.specialty}</span>
-                )}
-              </div>
-              {prime && (
-                <div className={styles.statusBarMeta}>
-                  <span>Prime: <Link href={`/p/${id}`}>{prime.name}</Link></span>
-                  <span>Zone: {prime.zone}</span>
-                </div>
-              )}
+            {/* ── Hero Banner ── */}
+            <div className={styles.hero}>
+              <div
+                className={styles.heroAccent}
+                style={{ background: `linear-gradient(90deg, ${theme.accent}, ${theme.accent}44)` }}
+              />
+              <div
+                className={styles.heroGlow}
+                style={{ background: theme.accent }}
+              />
+              <div className={styles.heroGlyph}>{theme.glyph}</div>
+              <h2 className={styles.heroName} style={{ color: theme.accent }}>
+                {theme.name}
+              </h2>
+              <div className={styles.heroId}>{agentData?.specialty || "unknown"}</div>
             </div>
 
-            {/* ── Section 2: Brain Architecture ── */}
+            {/* ── Identity + Working Memory ── */}
+            <div>
+              <h3 className={styles.sectionHeading}>
+                <span className={styles.sectionIcon}>📄</span> Identity &amp; Working Memory
+              </h3>
+              <div className={styles.twoColGrid}>
+                <div className={styles.twoColCard}>
+                  <h4 className={styles.twoColCardTitle}>IDENTITY.md</h4>
+                  {overviewLoading ? (
+                    <LoadingSkeleton />
+                  ) : identityMd ? (
+                    <pre className={styles.identityPre}>{identityMd}</pre>
+                  ) : (
+                    <div className={styles.emptyHint}>No IDENTITY.md found</div>
+                  )}
+                </div>
+                <div className={styles.twoColCard}>
+                  <h4 className={styles.twoColCardTitle}>MEMORY.md</h4>
+                  {overviewLoading ? (
+                    <LoadingSkeleton />
+                  ) : memoryMd ? (
+                    <pre className={styles.identityPre}>{memoryMd}</pre>
+                  ) : (
+                    <div className={styles.emptyHint}>No MEMORY.md found</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Brain Architecture ── */}
             <div>
               <h3 className={styles.sectionHeading}>
                 <span className={styles.sectionIcon}>🧬</span> Brain Architecture
@@ -239,67 +278,9 @@ export default function AgentDeepDivePage({
                 </div>
               )}
             </div>
-
-            {/* ── Section 3: Identity + Working Memory ── */}
-            <div>
-              <h3 className={styles.sectionHeading}>
-                <span className={styles.sectionIcon}>📄</span> Identity &amp; Working Memory
-              </h3>
-              <div className={styles.twoColGrid}>
-                <div className={styles.twoColCard}>
-                  <h4 className={styles.twoColCardTitle}>IDENTITY.md</h4>
-                  {overviewLoading ? (
-                    <LoadingSkeleton />
-                  ) : identityMd ? (
-                    <pre className={styles.identityPre}>{identityMd}</pre>
-                  ) : (
-                    <div className={styles.emptyHint}>No IDENTITY.md found</div>
-                  )}
-                </div>
-                <div className={styles.twoColCard}>
-                  <h4 className={styles.twoColCardTitle}>MEMORY.md</h4>
-                  {overviewLoading ? (
-                    <LoadingSkeleton />
-                  ) : memoryMd ? (
-                    <pre className={styles.identityPre}>{memoryMd}</pre>
-                  ) : (
-                    <div className={styles.emptyHint}>No MEMORY.md found</div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Section 4: Active Work ── */}
-            <div>
-              <h3 className={styles.sectionHeading}>
-                <span className={styles.sectionIcon}>📋</span> Active Work
-              </h3>
-              <div className={styles.overviewWorkCard}>
-                {work.loading ? (
-                  <div className={styles.loadingPulse}>Loading…</div>
-                ) : work.current.length > 0 ? (
-                  <div className={styles.overviewWorkList}>
-                    {work.current.slice(0, 5).map((w) => (
-                      <div key={w.id} className={styles.overviewWorkItem}>
-                        <span className={`badge badge-${w.status}`}>{w.status}</span>
-                        <span className={styles.overviewWorkTitle}>{w.title || w.type}</span>
-                      </div>
-                    ))}
-                    {work.current.length > 5 && (
-                      <button
-                        className={styles.overviewMoreBtn}
-                        onClick={() => handleTabClick("work")}
-                      >
-                        +{work.current.length - 5} more →
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className={styles.emptyHint}>No active work</div>
-                )}
-              </div>
-            </div>
           </div>
+          );
+        })()
         )}
 
         {/* Brain */}
