@@ -10,6 +10,7 @@ import { MemoryViewer } from "@/components/agent/MemoryViewer";
 import { AgentProjects } from "@/components/agent/AgentProjects";
 import { AgentPlans } from "@/components/agent/AgentPlans";
 import { AgentProcesses } from "@/components/agent/AgentProcesses";
+import { FleetPanel } from "@/components/fleet/FleetPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkTree } from "@/components/work/WorkTree";
 import { WorkDetail } from "@/components/work/WorkDetail";
@@ -305,19 +306,7 @@ export default function PrimeDeepDivePage({
 
         {/* Fleet */}
         {activeTab === "fleet" && (
-          <div className={styles.overviewWrap}>
-            <Link href={`/p/${id}/fleet`} className={styles.fleetLinkCard}>
-              <span className={styles.fleetLinkIcon}>👥</span>
-              <div className={styles.fleetLinkBody}>
-                <span className={styles.fleetLinkTitle}>Manage Fleet</span>
-                <span className={styles.fleetLinkDesc}>
-                  View and manage all fleet agents for this prime
-                </span>
-              </div>
-              <span className={styles.fleetLinkBadge}>{fleet.length}</span>
-              <span className={styles.fleetLinkArrow}>→</span>
-            </Link>
-          </div>
+          <FleetPanel primeId={id} />
         )}
 
         {/* Projects */}
