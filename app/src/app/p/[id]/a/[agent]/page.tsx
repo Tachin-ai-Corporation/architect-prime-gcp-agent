@@ -286,8 +286,7 @@ export default function AgentDeepDivePage({
             </div>
           </div>
           );
-        })()
-        )}
+        })()}
 
         {/* Brain */}
         {activeTab === "brain" && (

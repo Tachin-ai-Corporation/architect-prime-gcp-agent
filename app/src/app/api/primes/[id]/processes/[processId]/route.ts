@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processesCol } from "@/lib/firestore";
+import { FieldValue } from "@google-cloud/firestore";
 
 interface RouteContext {
   params: Promise<{ id: string; processId: string }>;
@@ -127,8 +128,6 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     if (!doc.exists) {
       return NextResponse.json({ error: "Process not found" }, { status: 404 });
     }
-
-    const { FieldValue } = await import("firebase-admin/firestore");
 
     if (action === "subscribe") {
       await docRef.update({ subscribers: FieldValue.arrayUnion(email) });
