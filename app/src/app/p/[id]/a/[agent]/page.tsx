@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePrime } from "@/contexts/PrimeContext";
 import { BrainInspector } from "@/components/agent/BrainInspector";
@@ -13,6 +13,8 @@ import { AgentProcesses } from "@/components/agent/AgentProcesses";
 import { LiveIndicator } from "@/components/LiveIndicator";
 import { ChatPanel } from "@/components/ChatPanel";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
+import { FilePreviewGrid } from "@/components/agent/FilePreviewCard";
+import type { FileCardItem } from "@/components/agent/FilePreviewCard";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import styles from "./page.module.css";
 
@@ -128,19 +130,22 @@ export default function AgentDeepDivePage({
     window.location.hash = key;
   };
 
-  /* ---- Overview tab content ---- */
-  const identityMd = overviewData?.files?.["IDENTITY.md"] || null;
-  const memoryMd = overviewData?.files?.["MEMORY.md"] || null;
-  const [expandedOrgans, setExpandedOrgans] = useState<Set<string>>(new Set());
-
-  const toggleOrgan = (key: string) => {
-    setExpandedOrgans((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  /* ---- Overview tab: build unified card items ---- */
+  const overviewCards: FileCardItem[] = useMemo(() => {
+    const files = overviewData?.files || {};
+    return [
+      { key: "identity", label: "IDENTITY.md", icon: "📄", role: "agent identity and persona", accent: "var(--signal-aqua)", content: files["IDENTITY.md"] ?? null },
+      { key: "memory", label: "MEMORY.md", icon: "🧠", role: "working memory", accent: "#818cf8", content: files["MEMORY.md"] ?? null },
+      ...BRAIN_ORGANS.map((organ) => ({
+        key: organ.key,
+        label: organ.label,
+        icon: organ.icon,
+        role: organ.role,
+        accent: organ.accent,
+        content: files[organ.filePath] ?? null,
+      })),
+    ];
+  }, [overviewData]);
 
   return (
     <div className={styles.agentPage}>
@@ -219,87 +224,12 @@ export default function AgentDeepDivePage({
               <div className={styles.heroId}>{agentData?.specialty || "unknown"}</div>
             </div>
 
-            {/* ── Identity + Working Memory ── */}
-            <div>
-              <h3 className={styles.sectionHeading}>
-                <span className={styles.sectionIcon}>📄</span> Identity &amp; Working Memory
-              </h3>
-              <div className={styles.twoColGrid}>
-                <div className={styles.twoColCard}>
-                  <h4 className={styles.twoColCardTitle}>IDENTITY.md</h4>
-                  {overviewLoading ? (
-                    <LoadingSkeleton />
-                  ) : identityMd ? (
-                    <pre className={styles.identityPre}>{identityMd}</pre>
-                  ) : (
-                    <div className={styles.emptyHint}>No IDENTITY.md found</div>
-                  )}
-                </div>
-                <div className={styles.twoColCard}>
-                  <h4 className={styles.twoColCardTitle}>MEMORY.md</h4>
-                  {overviewLoading ? (
-                    <LoadingSkeleton />
-                  ) : memoryMd ? (
-                    <pre className={styles.identityPre}>{memoryMd}</pre>
-                  ) : (
-                    <div className={styles.emptyHint}>No MEMORY.md found</div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Brain Architecture ── */}
-            <div>
-              <h3 className={styles.sectionHeading}>
-                <span className={styles.sectionIcon}>🧬</span> Brain Architecture
-              </h3>
-              {overviewLoading ? (
-                <LoadingSkeleton />
-              ) : (
-                <div className={styles.organGrid}>
-                  {BRAIN_ORGANS.map((organ) => {
-                    const content = overviewData?.files?.[organ.filePath] ?? null;
-                    const isExpanded = expandedOrgans.has(organ.key);
-                    const hasContent = content !== null;
-
-                    return (
-                      <div
-                        key={organ.key}
-                        className={
-                          hasContent
-                            ? `${styles.organCard}${isExpanded ? ` ${styles.organCardExpanded}` : ""}`
-                            : styles.organCardDisabled
-                        }
-                        style={{ "--organ-accent": organ.accent } as React.CSSProperties}
-                        onClick={() => hasContent && toggleOrgan(organ.key)}
-                      >
-                        <div className={styles.organHeader}>
-                          <span className={styles.organIcon}>{organ.icon}</span>
-                          <span className={styles.organLabel}>{organ.label}</span>
-                          {hasContent && (
-                            <span
-                              className={`${styles.organExpandIcon}${isExpanded ? ` ${styles.organExpandIconOpen}` : ""}`}
-                            >
-                              ▾
-                            </span>
-                          )}
-                        </div>
-                        <div className={styles.organRole}>{organ.role}</div>
-                        {hasContent ? (
-                          <pre
-                            className={`${styles.organPreview}${isExpanded ? ` ${styles.organFull}` : ""}`}
-                          >
-                            {isExpanded ? content : content.slice(0, 400)}
-                          </pre>
-                        ) : (
-                          <div className={styles.organEmptyHint}>Not found on agent</div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {/* ── All workspace files ── */}
+            {overviewLoading ? (
+              <LoadingSkeleton />
+            ) : (
+              <FilePreviewGrid items={overviewCards} columns={3} />
+            )}
           </div>
           );
         })()}
