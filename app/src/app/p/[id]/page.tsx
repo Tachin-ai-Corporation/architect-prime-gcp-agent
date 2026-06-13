@@ -58,7 +58,7 @@ const BRAIN_ORGANS = [
 ];
 
 /** Prime theme */
-const PRIME_THEME = { glyph: "🧠", accent: "#22d3ee", name: "Prime Orchestrator" };
+const PRIME_THEME = { glyph: "🧠", accent: "#22d3ee", name: "Prime Agent" };
 
 export default function PrimeDeepDivePage({
   params,
