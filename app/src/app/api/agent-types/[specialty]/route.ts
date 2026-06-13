@@ -5,15 +5,93 @@ const GH_RAW =
 
 /** Theme data per specialty */
 const THEMES: Record<string, { glyph: string; accent: string }> = {
-  devops:    { glyph: "⚙️", accent: "#38bdf8" },
-  engineer:  { glyph: "🧪", accent: "#a78bfa" },
-  qa:        { glyph: "🧭", accent: "#2dd4bf" },
-  pm:        { glyph: "🗂️", accent: "#fbbf24" },
-  finance:   { glyph: "📊", accent: "#34d399" },
-  data:      { glyph: "🧮", accent: "#818cf8" },
-  security:  { glyph: "🛡️", accent: "#fb7185" },
-  assistant: { glyph: "🎯", accent: "#94a3b8" },
+  devops:             { glyph: "⚙️", accent: "#38bdf8" },
+  engineer:           { glyph: "🧪", accent: "#a78bfa" },
+  qa:                 { glyph: "🧭", accent: "#2dd4bf" },
+  pm:                 { glyph: "🗂️", accent: "#fbbf24" },
+  finance:            { glyph: "📊", accent: "#34d399" },
+  data:               { glyph: "🧮", accent: "#818cf8" },
+  security:           { glyph: "🛡️", accent: "#fb7185" },
+  assistant:          { glyph: "🎯", accent: "#94a3b8" },
+  "product-architect": { glyph: "📐", accent: "#f472b6" },
 };
+
+/**
+ * Canon B-9 organ metadata — the single source of truth for organ display.
+ * nature: deterministic | judgment | judgment+effects | etc.
+ */
+const CANON_ORGANS: {
+  key: string;
+  label: string;
+  icon: string;
+  nature: string;
+  role: string;
+  never: string;
+  sourceType: "specialty-append" | "base-brain";
+  /** Path pattern — {specialty} is replaced at runtime */
+  repoPath: string;
+}[] = [
+  {
+    key: "cortex",
+    label: "Cortex",
+    icon: "🧠",
+    nature: "Judgment",
+    role: "Classify intakes, choose decisions, synthesize outcomes",
+    never: "Executes tools; holds the loop; verifies itself",
+    sourceType: "specialty-append",
+    repoPath: "specialties/{specialty}/brain/cortex/SOUL_APPEND.md",
+  },
+  {
+    key: "prefrontal",
+    label: "Prefrontal",
+    icon: "🏗️",
+    nature: "Judgment",
+    role: "Turn intent into structure: M→C→T blueprints",
+    never: "Executes; decides; freelances beyond the blueprint schema",
+    sourceType: "base-brain",
+    repoPath: "brain/fleet/_brain/prefrontal/SOUL.md",
+  },
+  {
+    key: "motor",
+    label: "Motor",
+    icon: "⚡",
+    nature: "Judgment + effects",
+    role: "Act: tools, exec, files — the only mutator",
+    never: "Verifies its own work; runs two hands at once; sends messages",
+    sourceType: "specialty-append",
+    repoPath: "specialties/{specialty}/brain/motor/SOUL_APPEND.md",
+  },
+  {
+    key: "cerebellum",
+    label: "Cerebellum",
+    icon: "🔄",
+    nature: "Judgment, read-only",
+    role: "Verify results against accept criteria, independently",
+    never: "Verifies anything it produced; executes fixes",
+    sourceType: "specialty-append",
+    repoPath: "specialties/{specialty}/brain/cerebellum/SOUL_APPEND.md",
+  },
+  {
+    key: "temporal-memory",
+    label: "Temporal-Memory",
+    icon: "💾",
+    nature: "Judgment, read-only",
+    role: "Recall what the agent already knows",
+    never: "Touches external APIs; invents facts",
+    sourceType: "base-brain",
+    repoPath: "brain/fleet/_brain/temporal-memory/SOUL.md",
+  },
+  {
+    key: "temporal-research",
+    label: "Temporal-Research",
+    icon: "🔍",
+    nature: "Judgment, read-only",
+    role: "Bring in what the world knows: search + fetch",
+    never: "Mutates state; substitutes for memory",
+    sourceType: "base-brain",
+    repoPath: "brain/fleet/_brain/temporal-research/SOUL.md",
+  },
+];
 
 /* ---- Helpers ---- */
 
@@ -77,8 +155,14 @@ interface SkillManifest {
   skillMdContent?: string;
 }
 
-interface BrainAppend {
-  part: string;
+interface OrganDetail {
+  key: string;
+  label: string;
+  icon: string;
+  nature: string;
+  role: string;
+  never: string;
+  sourceType: "specialty-append" | "base-brain";
   exists: boolean;
   content: string;
 }
@@ -94,7 +178,7 @@ interface WorkspaceFile {
  * GET /api/agent-types/[specialty]
  *
  * Returns full detail for a single specialty by fetching files from GitHub raw.
- * Works on Cloud Run (no filesystem dependency).
+ * Now includes all 6 canon B-9 organs with role/never metadata.
  */
 export async function GET(
   _request: Request,
@@ -118,38 +202,45 @@ export async function GET(
 
     const theme = THEMES[kit.id] || { glyph: "🔹", accent: "#94a3b8" };
 
-    // ---- Parallel fetches for all content ----
-    const BRAIN_PARTS = ["cortex", "motor", "cerebellum"];
+    // ---- Parallel fetches ----
     const WORKSPACE_FILES = ["IDENTITY.md", "SOUL.md", "MEMORY.md"];
 
     const [
       soulContent,
       respData,
-      ...brainAndWorkspace
+      ...organAndWorkspace
     ] = await Promise.all([
-      // SOUL.md
+      // SOUL.md (specialty workspace)
       ghText(`${base}/workspace/SOUL.md`),
       // Responsibilities
       ghJson<{ responsibilities: Responsibility[] }>(`${base}/responsibilities-${specialty}.json`),
-      // Brain appends (3)
-      ...BRAIN_PARTS.map((part) => ghText(`${base}/brain/${part}/SOUL_APPEND.md`)),
+      // All 6 organs
+      ...CANON_ORGANS.map((org) =>
+        ghText(org.repoPath.replace("{specialty}", specialty))
+      ),
       // Workspace files (3)
       ...WORKSPACE_FILES.map((name) => ghText(`${base}/workspace/${name}`)),
     ]);
 
-    // Parse brain appends (indices 0-2 of brainAndWorkspace)
-    const brainAppends: BrainAppend[] = BRAIN_PARTS.map((part, i) => {
-      const content = brainAndWorkspace[i] as string | null;
+    // Parse organs (indices 0-5 of organAndWorkspace)
+    const organs: OrganDetail[] = CANON_ORGANS.map((org, i) => {
+      const content = organAndWorkspace[i] as string | null;
       return {
-        part,
+        key: org.key,
+        label: org.label,
+        icon: org.icon,
+        nature: org.nature,
+        role: org.role,
+        never: org.never,
+        sourceType: org.sourceType,
         exists: content !== null,
         content: content || "",
       };
     });
 
-    // Parse workspace files (indices 3-5 of brainAndWorkspace)
+    // Parse workspace files (indices 6-8 of organAndWorkspace)
     const workspaceFiles: WorkspaceFile[] = WORKSPACE_FILES.map((name, i) => {
-      const content = brainAndWorkspace[BRAIN_PARTS.length + i] as string | null;
+      const content = organAndWorkspace[CANON_ORGANS.length + i] as string | null;
       return {
         name,
         exists: content !== null,
@@ -169,7 +260,7 @@ export async function GET(
       context: r.context,
     }));
 
-    // ---- Skills (fetch each specialty skill's metadata + content) ----
+    // ---- Skills ----
     const skills: SkillManifest[] = [];
     for (const skillId of kit.specialty_skills) {
       const [manifest, skillMd] = await Promise.all([
@@ -190,6 +281,11 @@ export async function GET(
     }
 
     // ---- Assemble response ----
+    // Keep backwards-compatible brainAppends for any legacy consumers
+    const brainAppends = organs
+      .filter((o) => o.sourceType === "specialty-append")
+      .map((o) => ({ part: o.key, exists: o.exists, content: o.content }));
+
     return NextResponse.json({
       specialty: {
         id: kit.id,
@@ -204,6 +300,7 @@ export async function GET(
         totalSkills: kit.base_skills.length + kit.specialty_skills.length,
         soulContent: soulContent || "",
         brainAppends,
+        organs,
         responsibilities,
         skills,
         workspaceFiles,

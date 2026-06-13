@@ -418,10 +418,61 @@
   pointer-events: none;
 }
 
-/* Brain part accent colors */
+/* Brain organ accent colors */
 .brainAccentCortex { border-top: 3px solid var(--signal-aqua); }
+.brainAccentPrefrontal { border-top: 3px solid #b48eff; }
 .brainAccentMotor { border-top: 3px solid var(--care-mint); }
 .brainAccentCerebellum { border-top: 3px solid var(--amber); }
+.brainAccentTemporalMemory { border-top: 3px solid #ff8fa3; }
+.brainAccentTemporalResearch { border-top: 3px solid #ffc46b; }
+
+/* Organ card metadata */
+.organNature {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--slate);
+  background: rgba(86, 99, 115, 0.15);
+  border: 1px solid rgba(86, 99, 115, 0.18);
+  white-space: nowrap;
+}
+
+.organRole {
+  padding: 0 16px 8px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--slate);
+  line-height: 1.45;
+}
+
+.organNever {
+  padding: 8px 16px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: rgba(255, 120, 120, 0.75);
+  background: rgba(255, 80, 80, 0.04);
+  border-top: 1px solid rgba(255, 80, 80, 0.10);
+}
+
+.organBaseTag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--radius-full);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--slate);
+  background: rgba(86, 99, 115, 0.10);
+  border: 1px solid rgba(86, 99, 115, 0.14);
+  opacity: 0.7;
+}
 
 /* ================================================================
    Section 4: Responsibilities

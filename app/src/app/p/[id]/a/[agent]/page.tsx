@@ -59,6 +59,16 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
+const BRAIN_ORGANS = [
+  { key: "cortex", label: "Cortex", icon: "🧠", filePath: "SOUL.md", role: "the voice: classify, decide, synthesize", accent: "var(--signal-aqua)" },
+  { key: "prefrontal", label: "Prefrontal", icon: "🏗️", filePath: "workspace-prefrontal/SOUL.md", role: "the structurer: M→C→T blueprints", accent: "#a78bfa" },
+  { key: "motor", label: "Motor", icon: "⚡", filePath: "workspace-motor/SOUL.md", role: "the hands: tools, exec, files", accent: "#fbbf24" },
+  { key: "cerebellum", label: "Cerebellum", icon: "🔄", filePath: "workspace-cerebellum/SOUL.md", role: "the conscience: independent verification", accent: "#2dd4bf" },
+  { key: "temporal-memory", label: "Temporal-Memory", icon: "💾", filePath: "workspace-temporal-memory/SOUL.md", role: "internal recall, no external APIs", accent: "#818cf8" },
+  { key: "temporal-research", label: "Temporal-Research", icon: "🔍", filePath: "workspace-temporal-research/SOUL.md", role: "external info: grounding + fetch", accent: "#38bdf8" },
+];
+
+
 export default function AgentDeepDivePage({
   params,
 }: {
@@ -107,6 +117,17 @@ export default function AgentDeepDivePage({
 
   /* ---- Overview tab content ---- */
   const identityMd = overviewData?.files?.["IDENTITY.md"] || null;
+  const memoryMd = overviewData?.files?.["MEMORY.md"] || null;
+  const [expandedOrgans, setExpandedOrgans] = useState<Set<string>>(new Set());
+
+  const toggleOrgan = (key: string) => {
+    setExpandedOrgans((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   return (
     <div className={styles.agentPage}>
@@ -141,17 +162,15 @@ export default function AgentDeepDivePage({
       <div className={styles.tabContentArea}>
         {/* Overview */}
         {activeTab === "overview" && (
-          <div className={styles.overviewGrid}>
-            <div className={styles.overviewCard}>
-              <h3 className={styles.overviewCardTitle}>
-                Status
+          <div className={styles.overviewWrap}>
+            {/* ── Section 1: Status Bar ── */}
+            <div className={styles.statusBar}>
+              <div className={styles.statusBarLeft}>
                 <LiveIndicator
                   lastUpdated={Date.now()}
                   loading={overviewLoading}
                   stale={agentData?.status !== "online"}
                 />
-              </h3>
-              <div className={styles.overviewStatus}>
                 <span className={`badge badge-${agentData?.status || "offline"}`}>
                   {agentData?.status || "unknown"}
                 </span>
@@ -160,46 +179,124 @@ export default function AgentDeepDivePage({
                 )}
               </div>
               {prime && (
-                <div className={styles.overviewMeta}>
+                <div className={styles.statusBarMeta}>
                   <span>Prime: <Link href={`/p/${id}`}>{prime.name}</Link></span>
                   <span>Zone: {prime.zone}</span>
                 </div>
               )}
             </div>
-            <div className={styles.overviewCard}>
-              <h3 className={styles.overviewCardTitle}>Identity</h3>
+
+            {/* ── Section 2: Brain Architecture ── */}
+            <div>
+              <h3 className={styles.sectionHeading}>
+                <span className={styles.sectionIcon}>🧬</span> Brain Architecture
+              </h3>
               {overviewLoading ? (
                 <LoadingSkeleton />
-              ) : identityMd ? (
-                <pre className={styles.identityPre}>{identityMd}</pre>
               ) : (
-                <div className={styles.emptyHint}>No IDENTITY.md found</div>
+                <div className={styles.organGrid}>
+                  {BRAIN_ORGANS.map((organ) => {
+                    const content = overviewData?.files?.[organ.filePath] ?? null;
+                    const isExpanded = expandedOrgans.has(organ.key);
+                    const hasContent = content !== null;
+
+                    return (
+                      <div
+                        key={organ.key}
+                        className={
+                          hasContent
+                            ? `${styles.organCard}${isExpanded ? ` ${styles.organCardExpanded}` : ""}`
+                            : styles.organCardDisabled
+                        }
+                        style={{ "--organ-accent": organ.accent } as React.CSSProperties}
+                        onClick={() => hasContent && toggleOrgan(organ.key)}
+                      >
+                        <div className={styles.organHeader}>
+                          <span className={styles.organIcon}>{organ.icon}</span>
+                          <span className={styles.organLabel}>{organ.label}</span>
+                          {hasContent && (
+                            <span
+                              className={`${styles.organExpandIcon}${isExpanded ? ` ${styles.organExpandIconOpen}` : ""}`}
+                            >
+                              ▾
+                            </span>
+                          )}
+                        </div>
+                        <div className={styles.organRole}>{organ.role}</div>
+                        {hasContent ? (
+                          <pre
+                            className={`${styles.organPreview}${isExpanded ? ` ${styles.organFull}` : ""}`}
+                          >
+                            {isExpanded ? content : content.slice(0, 400)}
+                          </pre>
+                        ) : (
+                          <div className={styles.organEmptyHint}>Not found on agent</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
-            <div className={styles.overviewCard}>
-              <h3 className={styles.overviewCardTitle}>Active Work</h3>
-              {work.loading ? (
-                <div className={styles.loadingPulse}>Loading…</div>
-              ) : work.current.length > 0 ? (
-                <div className={styles.overviewWorkList}>
-                  {work.current.slice(0, 3).map((w) => (
-                    <div key={w.id} className={styles.overviewWorkItem}>
-                      <span className={`badge badge-${w.status}`}>{w.status}</span>
-                      <span className={styles.overviewWorkTitle}>{w.title || w.type}</span>
-                    </div>
-                  ))}
-                  {work.current.length > 3 && (
-                    <button
-                      className={styles.overviewMoreBtn}
-                      onClick={() => handleTabClick("work")}
-                    >
-                      +{work.current.length - 3} more →
-                    </button>
+
+            {/* ── Section 3: Identity + Working Memory ── */}
+            <div>
+              <h3 className={styles.sectionHeading}>
+                <span className={styles.sectionIcon}>📄</span> Identity &amp; Working Memory
+              </h3>
+              <div className={styles.twoColGrid}>
+                <div className={styles.twoColCard}>
+                  <h4 className={styles.twoColCardTitle}>IDENTITY.md</h4>
+                  {overviewLoading ? (
+                    <LoadingSkeleton />
+                  ) : identityMd ? (
+                    <pre className={styles.identityPre}>{identityMd}</pre>
+                  ) : (
+                    <div className={styles.emptyHint}>No IDENTITY.md found</div>
                   )}
                 </div>
-              ) : (
-                <div className={styles.emptyHint}>No active work</div>
-              )}
+                <div className={styles.twoColCard}>
+                  <h4 className={styles.twoColCardTitle}>MEMORY.md</h4>
+                  {overviewLoading ? (
+                    <LoadingSkeleton />
+                  ) : memoryMd ? (
+                    <pre className={styles.identityPre}>{memoryMd}</pre>
+                  ) : (
+                    <div className={styles.emptyHint}>No MEMORY.md found</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section 4: Active Work ── */}
+            <div>
+              <h3 className={styles.sectionHeading}>
+                <span className={styles.sectionIcon}>📋</span> Active Work
+              </h3>
+              <div className={styles.overviewWorkCard}>
+                {work.loading ? (
+                  <div className={styles.loadingPulse}>Loading…</div>
+                ) : work.current.length > 0 ? (
+                  <div className={styles.overviewWorkList}>
+                    {work.current.slice(0, 5).map((w) => (
+                      <div key={w.id} className={styles.overviewWorkItem}>
+                        <span className={`badge badge-${w.status}`}>{w.status}</span>
+                        <span className={styles.overviewWorkTitle}>{w.title || w.type}</span>
+                      </div>
+                    ))}
+                    {work.current.length > 5 && (
+                      <button
+                        className={styles.overviewMoreBtn}
+                        onClick={() => handleTabClick("work")}
+                      >
+                        +{work.current.length - 5} more →
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className={styles.emptyHint}>No active work</div>
+                )}
+              </div>
             </div>
           </div>
         )}

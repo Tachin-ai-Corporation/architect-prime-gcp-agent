@@ -5,6 +5,18 @@ import Link from "next/link";
 import styles from "./page.module.css";
 
 /* ---- Types ---- */
+interface OrganDetail {
+  key: string;
+  label: string;
+  icon: string;
+  nature: string;
+  role: string;
+  never: string;
+  sourceType: "specialty-append" | "base-brain";
+  exists: boolean;
+  content: string;
+}
+
 interface BrainAppend {
   part: string;
   exists: boolean;
@@ -59,16 +71,20 @@ interface SpecialtyDetail {
   totalSkills: number;
   soulContent: string;
   brainAppends: BrainAppend[];
+  organs: OrganDetail[];
   responsibilities: Responsibility[];
   skills: SkillManifest[];
   workspaceFiles: WorkspaceFile[];
 }
 
-/* ---- Brain part display config ---- */
-const BRAIN_META: Record<string, { icon: string; accentClass: string }> = {
-  cortex:      { icon: "🧠", accentClass: styles.brainAccentCortex },
-  motor:       { icon: "⚡", accentClass: styles.brainAccentMotor },
-  cerebellum:  { icon: "🔄", accentClass: styles.brainAccentCerebellum },
+/* ---- Organ accent class map ---- */
+const ORGAN_ACCENT: Record<string, string> = {
+  cortex:              styles.brainAccentCortex,
+  prefrontal:          styles.brainAccentPrefrontal,
+  motor:               styles.brainAccentMotor,
+  cerebellum:          styles.brainAccentCerebellum,
+  "temporal-memory":   styles.brainAccentTemporalMemory,
+  "temporal-research": styles.brainAccentTemporalResearch,
 };
 
 /* ---- File icon map ---- */
@@ -147,7 +163,7 @@ export default function AgentTypeDetailPage({
     );
   }
 
-  const brainAppendCount = data.brainAppends.filter((b) => b.exists).length;
+  const organCount = (data.organs || []).filter((o) => o.exists).length;
   const workspaceFileCount = data.workspaceFiles.filter((f) => f.exists).length;
 
   return (
@@ -181,8 +197,8 @@ export default function AgentTypeDetailPage({
         <div className={styles.heroStats}>
           <span className={styles.heroStat}>
             <span className={styles.heroStatIcon}>🧠</span>
-            <span className={styles.heroStatValue}>{brainAppendCount}</span>
-            <span className={styles.heroStatLabel}>brain layers</span>
+            <span className={styles.heroStatValue}>{organCount}/6</span>
+            <span className={styles.heroStatLabel}>organs</span>
           </span>
           <span className={styles.heroStat}>
             <span className={styles.heroStatIcon}>🛠</span>
@@ -238,45 +254,49 @@ export default function AgentTypeDetailPage({
           <div className={styles.sectionHeaderStatic}>
             <span className={styles.sectionIcon}>🧠</span>
             <span className={styles.sectionTitle}>Brain Architecture</span>
-            <span className={styles.sectionCount}>{brainAppendCount} / 3 layers</span>
+            <span className={styles.sectionCount}>{organCount} / 6 organs</span>
           </div>
           <div className={styles.sectionBody}>
             <div className={styles.brainGrid}>
-              {data.brainAppends.map((ba) => {
-                const meta = BRAIN_META[ba.part] || { icon: "🔷", accentClass: "" };
-                const isExpanded = expandedBrain[ba.part] || false;
+              {(data.organs || []).map((organ) => {
+                const accentClass = ORGAN_ACCENT[organ.key] || "";
+                const isExpanded = expandedBrain[organ.key] || false;
 
-                if (!ba.exists) {
+                if (!organ.exists) {
                   return (
                     <div
-                      key={ba.part}
-                      className={`${styles.brainColumn} ${styles.brainColumnDisabled} ${meta.accentClass}`}
+                      key={organ.key}
+                      className={`${styles.brainColumn} ${styles.brainColumnDisabled} ${accentClass}`}
                     >
                       <div className={styles.brainColumnHeaderDisabled}>
-                        <span className={styles.brainIcon}>{meta.icon}</span>
-                        <span className={styles.brainPartName}>{ba.part}</span>
+                        <span className={styles.brainIcon}>{organ.icon}</span>
+                        <span className={styles.brainPartName}>{organ.label}</span>
                         <span className={styles.brainPartDisabledLabel}>Not configured</span>
                       </div>
                     </div>
                   );
                 }
 
-                const preview = ba.content.slice(0, 500);
-                const hasMore = ba.content.length > 500;
+                const preview = organ.content.slice(0, 500);
+                const hasMore = organ.content.length > 500;
 
                 return (
-                  <div key={ba.part} className={`${styles.brainColumn} ${meta.accentClass}`}>
+                  <div key={organ.key} className={`${styles.brainColumn} ${accentClass}`}>
                     <div
                       className={styles.brainColumnHeader}
                       onClick={() =>
                         setExpandedBrain((prev) => ({
                           ...prev,
-                          [ba.part]: !prev[ba.part],
+                          [organ.key]: !prev[organ.key],
                         }))
                       }
                     >
-                      <span className={styles.brainIcon}>{meta.icon}</span>
-                      <span className={styles.brainPartName}>{ba.part}</span>
+                      <span className={styles.brainIcon}>{organ.icon}</span>
+                      <span className={styles.brainPartName}>{organ.label}</span>
+                      {organ.sourceType === "base-brain" && (
+                        <span className={styles.organBaseTag}>base</span>
+                      )}
+                      <span className={styles.organNature}>{organ.nature}</span>
                       {hasMore && (
                         <span
                           className={`${styles.brainExpandIcon} ${isExpanded ? styles.brainExpandIconOpen : ""}`}
@@ -285,13 +305,19 @@ export default function AgentTypeDetailPage({
                         </span>
                       )}
                     </div>
+                    {organ.role && (
+                      <div className={styles.organRole}>{organ.role}</div>
+                    )}
                     {isExpanded ? (
-                      <div className={styles.brainContent}>{ba.content}</div>
+                      <div className={styles.brainContent}>{organ.content}</div>
                     ) : (
                       <div className={styles.brainPreview}>
                         {preview}
                         {hasMore && <div className={styles.brainFade} />}
                       </div>
+                    )}
+                    {organ.never && (
+                      <div className={styles.organNever}>⚠ Never: {organ.never}</div>
                     )}
                   </div>
                 );
