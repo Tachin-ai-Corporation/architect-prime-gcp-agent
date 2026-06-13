@@ -39,7 +39,7 @@ and contain ONLY verified facts from motor output:
 1. **What failed**: Exact error message from motor output (quote it)
 2. **What's needed**: Specific permission, access, or resource required
 3. **Verified identity**: The actual service account email (from `gcloud iam service-accounts list`)
-   or the actual Workspace identity (from IDENTITY.md `{{AGENT_USER_EMAIL}}`)
+   or the actual Workspace identity (from IDENTITY.md — your Workspace email)
 4. **Exact fix command**: A `gcloud` command the user can run, using the VERIFIED identities
 5. **What I'll do next**: What you will attempt once unblocked
 
