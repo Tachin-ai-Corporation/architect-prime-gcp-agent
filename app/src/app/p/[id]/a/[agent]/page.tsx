@@ -8,6 +8,9 @@ import { BrainInspector } from "@/components/agent/BrainInspector";
 import { SkillInventory } from "@/components/agent/SkillInventory";
 import { ResponsibilityList } from "@/components/agent/ResponsibilityList";
 import { MemoryViewer } from "@/components/agent/MemoryViewer";
+import { AgentProjects } from "@/components/agent/AgentProjects";
+import { AgentPlans } from "@/components/agent/AgentPlans";
+import { AgentProcesses } from "@/components/agent/AgentProcesses";
 import { LiveIndicator } from "@/components/LiveIndicator";
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkTree } from "@/components/work/WorkTree";
@@ -51,6 +54,9 @@ const TABS = [
   { key: "overview", label: "Overview", icon: "📊" },
   { key: "brain", label: "Brain", icon: "🧠" },
   { key: "skills", label: "Skills", icon: "⚡" },
+  { key: "projects", label: "Projects", icon: "📁" },
+  { key: "plans", label: "Plans", icon: "🗺️" },
+  { key: "processes", label: "Processes", icon: "⚙️" },
   { key: "responsibilities", label: "Responsibilities", icon: "📌" },
   { key: "memory", label: "Memory", icon: "💾" },
   { key: "work", label: "Work", icon: "📋" },
@@ -291,6 +297,21 @@ export default function AgentDeepDivePage({
         {/* Skills */}
         {activeTab === "skills" && (
           <SkillInventory primeId={id} agentName={agent} />
+        )}
+
+        {/* Projects */}
+        {activeTab === "projects" && (
+          <AgentProjects primeId={id} agentEmail={agentData?.email || ""} />
+        )}
+
+        {/* Plans */}
+        {activeTab === "plans" && (
+          <AgentPlans primeId={id} agentEmail={agentData?.email || ""} />
+        )}
+
+        {/* Processes */}
+        {activeTab === "processes" && (
+          <AgentProcesses primeId={id} agentEmail={agentData?.email || ""} />
         )}
 
         {/* Responsibilities */}

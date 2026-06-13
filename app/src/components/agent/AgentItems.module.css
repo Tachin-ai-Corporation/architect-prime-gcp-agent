@@ -1,0 +1,348 @@
+/* ============================================
+   AgentItems — Shared CSS Module
+   Agent tab · 1health Design System
+   Used by AgentProjects, AgentPlans, AgentProcesses
+   ============================================ */
+
+/* ---- Loading ---- */
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 20px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(143, 216, 230, 0.2);
+  border-top-color: var(--network-teal);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.pulse {
+  animation: pulseAnim 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseAnim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ---- Error ---- */
+.errorState {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(216, 79, 69, 0.08);
+  border: 1px solid rgba(216, 79, 69, 0.2);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.errorMsg {
+  flex: 1;
+  color: var(--status-error);
+}
+
+.retryBtn {
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(216, 79, 69, 0.3);
+  background: transparent;
+  color: var(--status-error);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.retryBtn:hover {
+  background: rgba(216, 79, 69, 0.1);
+}
+
+/* ---- Empty ---- */
+.emptyState {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.emptyIcon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+/* ---- Filter Bar ---- */
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: var(--space-4);
+  padding: 3px;
+  background: var(--graphite);
+  border-radius: var(--radius-sm);
+  width: fit-content;
+}
+
+.filterBtn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.filterBtn:hover {
+  color: var(--text-secondary);
+}
+
+.filterBtnActive {
+  background: var(--charcoal);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* ---- Item Grid ---- */
+.itemGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+/* ---- Item List (vertical stack) ---- */
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---- Item Card ---- */
+.itemCard {
+  padding: 18px 20px;
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard),
+    opacity var(--duration-hover) var(--ease-standard);
+}
+
+.itemCard:hover {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.18), 0 0 20px rgba(143, 216, 230, 0.08);
+}
+
+.itemCardHighlighted {
+  border-color: var(--signal-aqua);
+  box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.25), 0 0 24px rgba(143, 216, 230, 0.1);
+}
+
+.itemCardHighlighted:hover {
+  border-color: var(--signal-aqua);
+  box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.35), 0 0 30px rgba(143, 216, 230, 0.15);
+}
+
+.itemCardDimmed {
+  opacity: 0.65;
+}
+
+.itemCardDimmed:hover {
+  opacity: 0.85;
+}
+
+/* ---- Card Header ---- */
+.cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Card Goal / Description ---- */
+.cardGoal {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin-bottom: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* ---- Card Meta ---- */
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-wrap: wrap;
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---- Status Badge ---- */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.statusActive {
+  background: rgba(59, 170, 120, 0.12);
+  color: var(--status-success);
+}
+
+.statusComplete,
+.statusCompleted {
+  background: rgba(143, 216, 230, 0.1);
+  color: var(--signal-aqua);
+}
+
+.statusPaused {
+  background: rgba(214, 168, 58, 0.12);
+  color: var(--status-warning);
+}
+
+.statusArchived {
+  background: rgba(86, 99, 115, 0.2);
+  color: var(--text-tertiary);
+}
+
+.statusDraft {
+  background: rgba(86, 99, 115, 0.2);
+  color: var(--text-secondary);
+}
+
+.statusApproved {
+  background: rgba(59, 170, 120, 0.12);
+  color: var(--status-success);
+}
+
+.statusExecuting {
+  background: rgba(31, 154, 155, 0.15);
+  color: var(--network-teal);
+}
+
+.statusAbandoned {
+  background: rgba(216, 79, 69, 0.1);
+  color: var(--status-error);
+}
+
+.statusDeprecated {
+  background: rgba(86, 99, 115, 0.2);
+  color: var(--text-tertiary);
+}
+
+/* ---- Assigned / Subscribed Badge ---- */
+.assignedBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  background: rgba(31, 154, 155, 0.15);
+  color: var(--network-teal);
+}
+
+/* ---- Subscribe Button ---- */
+.subscribeBtn {
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.subscribeBtn:hover {
+  border-color: var(--network-teal);
+  color: var(--network-teal);
+  background: rgba(31, 154, 155, 0.08);
+}
+
+.subscribeBtnActive {
+  border-color: var(--network-teal);
+  color: var(--network-teal);
+  background: rgba(31, 154, 155, 0.1);
+}
+
+.subscribeBtnActive:hover {
+  border-color: var(--status-error);
+  color: var(--status-error);
+  background: rgba(216, 79, 69, 0.08);
+}
+
+/* ---- Badges Row ---- */
+.badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ---- Version Badge ---- */
+.versionBadge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.04em;
+  background: rgba(143, 216, 230, 0.1);
+  color: var(--signal-aqua);
+}
