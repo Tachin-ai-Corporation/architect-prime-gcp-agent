@@ -2,19 +2,153 @@
 
 .agentPage {
   height: 100%;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   background: var(--bg-primary);
 }
 
-/* ---- (tabs moved to AgentHeader) ---- */
+/* ---- Page Layout (sidebar + content) ---- */
+.pageLayout {
+  display: flex;
+  height: 100%;
+}
 
+/* ---- Left Sidebar ---- */
+.sidebar {
+  width: 240px;
+  min-width: 240px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 26, 33, 0.95);
+  border-right: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
 
-/* ---- Tab Content Area ---- */
-.tabContentArea {
+.sidebarIdentity {
+  padding: 24px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.sidebarAvatar {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--network-teal), var(--trust-blue));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+  margin-bottom: 4px;
+}
+
+.sidebarName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  word-break: break-word;
+}
+
+.sidebarEmail {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', monospace;
+  word-break: break-all;
+}
+
+.sidebarStatus {
+  margin-top: 2px;
+}
+
+.sidebarSpecialty {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--care-mint);
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(95, 199, 178, 0.10);
+  border: 1px solid rgba(95, 199, 178, 0.20);
+}
+
+.sidebarDivider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 16px 8px;
+  flex-shrink: 0;
+}
+
+/* ---- Sidebar Nav ---- */
+.sidebarNav {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px 16px;
+  gap: 2px;
+}
+
+.sidebarNavGroup {
+  margin-bottom: 8px;
+}
+
+.sidebarNavItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  cursor: pointer;
+  transition: all 160ms ease;
+  text-align: left;
+  width: 100%;
+}
+
+.sidebarNavItem:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebarNavItemActive {
+  color: var(--signal-aqua);
+  background: rgba(34, 211, 238, 0.08);
+  border-left-color: var(--signal-aqua);
+  font-weight: 600;
+}
+
+.sidebarNavItemActive:hover {
+  background: rgba(34, 211, 238, 0.12);
+}
+
+.sidebarNavIcon {
+  font-size: 15px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.sidebarNavLabel {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ---- Main Content Area ---- */
+.mainContent {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   padding: var(--space-5) var(--space-6);
 }
@@ -329,7 +463,7 @@
 
 /* ---- Chat Tab ---- */
 .chatTabContent {
-  height: calc(100vh - 220px);
+  height: calc(100vh - 60px);
   min-height: 400px;
 }
 
@@ -431,7 +565,7 @@
   border-color: rgba(143, 216, 230, 0.35);
 }
 
-/* ---- Responsive Mobile Tab Dropdown ---- */
+/* ---- Mobile Tab Dropdown (hidden on desktop) ---- */
 .tabDropdownWrap {
   display: none;
   padding: var(--space-3) var(--space-4);
@@ -463,6 +597,14 @@
 
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
+  .sidebar {
+    display: none;
+  }
+
+  .tabDropdownWrap {
+    display: block;
+  }
+
   .organGrid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -471,21 +613,17 @@
     grid-template-columns: 1fr;
   }
 
-  .tabContentArea {
+  .mainContent {
     padding: var(--space-4);
   }
 }
 
 @media (max-width: 640px) {
-  .tabDropdownWrap {
-    display: block;
-  }
-
   .organGrid {
     grid-template-columns: 1fr;
   }
 
-  .tabContentArea {
+  .mainContent {
     padding: var(--space-3);
   }
 }

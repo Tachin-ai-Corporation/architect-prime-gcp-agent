@@ -3,7 +3,6 @@
 import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrime } from "@/contexts/PrimeContext";
-import { AgentHeader } from "@/components/agent/AgentHeader";
 import { BrainInspector } from "@/components/agent/BrainInspector";
 import { SkillInventory } from "@/components/agent/SkillInventory";
 import { ResponsibilityList } from "@/components/agent/ResponsibilityList";
@@ -34,6 +33,7 @@ function LoadingSkeleton() {
 
 const TABS = [
   { key: "overview", label: "Overview", icon: "📊" },
+  { key: "work", label: "Work", icon: "📋" },
   { key: "brain", label: "Brain", icon: "🧠" },
   { key: "skills", label: "Skills", icon: "⚡" },
   { key: "fleet", label: "Fleet", icon: "👥" },
@@ -42,7 +42,6 @@ const TABS = [
   { key: "processes", label: "Processes", icon: "⚙️" },
   { key: "responsibilities", label: "Responsibilities", icon: "📌" },
   { key: "memory", label: "Memory", icon: "💾" },
-  { key: "work", label: "Work", icon: "📋" },
   { key: "chat", label: "Chat", icon: "💬" },
 ] as const;
 
@@ -138,35 +137,55 @@ export default function PrimeDeepDivePage({
 
   return (
     <div className={styles.agentPage}>
-      {/* ---- Header (with mini card tabs) ---- */}
-      <AgentHeader
-        primeId={id}
-        agentName={prime.name}
-        status={prime.status}
-        specialty="prime"
-        email={agentEmail}
-        tabs={TABS as unknown as { key: string; label: string; icon: string }[]}
-        activeTab={activeTab}
-        onTabClick={(key) => handleTabClick(key as TabKey)}
-      />
+      <div className={styles.pageLayout}>
+        {/* ---- Left Sidebar ---- */}
+        <div className={styles.sidebar}>
+          <div className={styles.sidebarIdentity}>
+            <div className={styles.sidebarAvatar}>
+              {prime.name.charAt(0).toUpperCase()}
+            </div>
+            <div className={styles.sidebarName}>{prime.name}</div>
+            <div className={styles.sidebarEmail}>{agentEmail}</div>
+            <div className={styles.sidebarStatus}>
+              <span className={`badge badge-${prime.status}`}>
+                {prime.status}
+              </span>
+            </div>
+            <div className={styles.sidebarSpecialty}>prime</div>
+          </div>
+          <div className={styles.sidebarDivider} />
+          <nav className={styles.sidebarNav}>
+            {TABS.map((tab, i) => (
+              <button
+                key={tab.key}
+                className={`${styles.sidebarNavItem}${activeTab === tab.key ? ` ${styles.sidebarNavItemActive}` : ""}`}
+                onClick={() => handleTabClick(tab.key)}
+                style={i === 2 ? { marginTop: 8 } : undefined}
+              >
+                <span className={styles.sidebarNavIcon}>{tab.icon}</span>
+                <span className={styles.sidebarNavLabel}>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
 
-      {/* ---- Tab Dropdown (mobile only) ---- */}
-      <div className={styles.tabDropdownWrap}>
-        <select
-          className={styles.tabDropdown}
-          value={activeTab}
-          onChange={(e) => handleTabClick(e.target.value as TabKey)}
-        >
-          {TABS.map((tab) => (
-            <option key={tab.key} value={tab.key}>
-              {tab.icon} {tab.label}
-            </option>
-          ))}
-        </select>
-      </div>
+        {/* ---- Mobile Tab Dropdown ---- */}
+        <div className={styles.tabDropdownWrap}>
+          <select
+            className={styles.tabDropdown}
+            value={activeTab}
+            onChange={(e) => handleTabClick(e.target.value as TabKey)}
+          >
+            {TABS.map((tab) => (
+              <option key={tab.key} value={tab.key}>
+                {tab.icon} {tab.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {/* ---- Tab Content ---- */}
-      <div className={styles.tabContentArea}>
+        {/* ---- Main Content ---- */}
+        <div className={styles.mainContent}>
         {/* Overview */}
         {activeTab === "overview" && (() => {
           const theme = PRIME_THEME;
@@ -404,6 +423,7 @@ export default function PrimeDeepDivePage({
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   );

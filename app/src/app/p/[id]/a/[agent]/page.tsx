@@ -3,7 +3,6 @@
 import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrime } from "@/contexts/PrimeContext";
-import { AgentHeader } from "@/components/agent/AgentHeader";
 import { BrainInspector } from "@/components/agent/BrainInspector";
 import { SkillInventory } from "@/components/agent/SkillInventory";
 import { ResponsibilityList } from "@/components/agent/ResponsibilityList";
@@ -52,6 +51,7 @@ function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => vo
 
 const TABS = [
   { key: "overview", label: "Overview", icon: "📊" },
+  { key: "work", label: "Work", icon: "📋" },
   { key: "brain", label: "Brain", icon: "🧠" },
   { key: "skills", label: "Skills", icon: "⚡" },
   { key: "projects", label: "Projects", icon: "📁" },
@@ -59,7 +59,6 @@ const TABS = [
   { key: "processes", label: "Processes", icon: "⚙️" },
   { key: "responsibilities", label: "Responsibilities", icon: "📌" },
   { key: "memory", label: "Memory", icon: "💾" },
-  { key: "work", label: "Work", icon: "📋" },
   { key: "chat", label: "Chat", icon: "💬" },
 ] as const;
 
@@ -152,35 +151,59 @@ export default function AgentDeepDivePage({
 
   return (
     <div className={styles.agentPage}>
-      {/* ---- Header (with mini card tabs) ---- */}
-      <AgentHeader
-        primeId={id}
-        agentName={agent}
-        status={agentData?.status}
-        specialty={agentData?.specialty}
-        email={agentData?.email}
-        tabs={TABS as unknown as { key: string; label: string; icon: string }[]}
-        activeTab={activeTab}
-        onTabClick={(key) => handleTabClick(key as TabKey)}
-      />
+      <div className={styles.pageLayout}>
+        {/* ---- Left Sidebar ---- */}
+        <div className={styles.sidebar}>
+          <div className={styles.sidebarIdentity}>
+            <div className={styles.sidebarAvatar}>
+              {agent.charAt(0).toUpperCase()}
+            </div>
+            <div className={styles.sidebarName}>{agent}</div>
+            {agentData?.email && (
+              <div className={styles.sidebarEmail}>{agentData.email}</div>
+            )}
+            <div className={styles.sidebarStatus}>
+              <span className={`badge badge-${agentData?.status || "offline"}`}>
+                {agentData?.status || "unknown"}
+              </span>
+            </div>
+            {agentData?.specialty && (
+              <div className={styles.sidebarSpecialty}>{agentData.specialty}</div>
+            )}
+          </div>
+          <div className={styles.sidebarDivider} />
+          <nav className={styles.sidebarNav}>
+            {TABS.map((tab, i) => (
+              <button
+                key={tab.key}
+                className={`${styles.sidebarNavItem}${activeTab === tab.key ? ` ${styles.sidebarNavItemActive}` : ""}`}
+                onClick={() => handleTabClick(tab.key)}
+                style={i === 2 ? { marginTop: 8 } : undefined}
+              >
+                <span className={styles.sidebarNavIcon}>{tab.icon}</span>
+                <span className={styles.sidebarNavLabel}>{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
 
-      {/* ---- Tab Dropdown (mobile only) ---- */}
-      <div className={styles.tabDropdownWrap}>
-        <select
-          className={styles.tabDropdown}
-          value={activeTab}
-          onChange={(e) => handleTabClick(e.target.value as TabKey)}
-        >
-          {TABS.map((tab) => (
-            <option key={tab.key} value={tab.key}>
-              {tab.icon} {tab.label}
-            </option>
-          ))}
-        </select>
-      </div>
+        {/* ---- Mobile Tab Dropdown ---- */}
+        <div className={styles.tabDropdownWrap}>
+          <select
+            className={styles.tabDropdown}
+            value={activeTab}
+            onChange={(e) => handleTabClick(e.target.value as TabKey)}
+          >
+            {TABS.map((tab) => (
+              <option key={tab.key} value={tab.key}>
+                {tab.icon} {tab.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      {/* ---- Tab Content ---- */}
-      <div className={styles.tabContentArea}>
+        {/* ---- Main Content ---- */}
+        <div className={styles.mainContent}>
         {/* Overview */}
         {activeTab === "overview" && (() => {
           const theme = SPECIALTY_THEMES[agentData?.specialty || ""] || { glyph: "🤖", accent: "#94a3b8", name: agentData?.specialty || "Agent" };
@@ -401,6 +424,7 @@ export default function AgentDeepDivePage({
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   );
