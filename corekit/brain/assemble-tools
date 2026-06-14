@@ -131,7 +131,7 @@ echo "Collected ${#SKILL_ENTRIES[@]} skill packages"
 # Execution agents get full SKILL.md content for their skills
 # Planning agents get a skill index only
 
-for agent in cortex motor cerebellum temporal-research prefrontal; do
+for agent in cortex motor cerebellum temporal-research temporal-memory prefrontal; do
   WS="${AGENT_WORKSPACES[$agent]:-}"
   if [[ -z "$WS" || ! -d "$WS" ]]; then
     continue

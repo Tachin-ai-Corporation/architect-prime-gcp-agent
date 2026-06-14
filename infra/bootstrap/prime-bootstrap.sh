@@ -348,7 +348,14 @@ for dir in "${CORE_DIR}"/workspace*; do
   fi
 done
 
-# ---- 12d) Final permissions sweep ----
+# ---- 12d) Run assemble-tools for prime ----
+ASSEMBLE="${CORE_DIR}/bin/assemble-tools"
+if [[ -x "$ASSEMBLE" ]]; then
+  info "Assembling TOOLS.md for prime..."
+  CORE_DIR="${CORE_DIR}" "$ASSEMBLE" "prime" || warn "assemble-tools failed"
+fi
+
+# ---- 12e) Final permissions sweep ----
 info "Final permissions sweep..."
 find "${CORE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${CORE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
