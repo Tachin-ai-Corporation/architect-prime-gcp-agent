@@ -8,8 +8,6 @@ import { Breadcrumb } from "./Breadcrumb";
 import { OperationsFeed, useOperations } from "./OperationsFeed";
 import styles from "./Shell.module.css";
 
-
-
 export function Shell({ children }: { children: React.ReactNode }) {
   const { primes, versionInfo, setup } = usePrime();
   const pathname = usePathname();

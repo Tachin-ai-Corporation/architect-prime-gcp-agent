@@ -132,7 +132,6 @@ function TreeNodeRow({
   const tagClass = node.type === "M" ? `${styles.tag} ${styles.mTag}` : styles.tag;
 
   // Meta pieces
-  const metaParts: string[] = [];
   const metaJsx: React.ReactNode[] = [];
 
   if (node.owner) metaJsx.push(<span key="owner" title={node.owner}>{formatAgentDisplayName(node.owner)}</span>);

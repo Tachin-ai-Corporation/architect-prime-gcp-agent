@@ -200,19 +200,18 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
   }, [modelsData]);
 
   /* ---- Slot model lookup ---- */
-  const getSlotModel = (slot: string): string => {
+  /** Resolve the model for a slot. When includePending=true (default), pending UI changes take priority. */
+  const resolveSlotModel = (slot: string, includePending = true): string => {
     // 1. Check pending changes first
-    if (pendingChanges[slot]) return pendingChanges[slot];
+    if (includePending && pendingChanges[slot]) return pendingChanges[slot];
 
     // 2. Live config from introspection
     if (liveConfig) {
-      // Daemon slots (ears/mouth/brain) read from daemonModels
       if (DAEMON_KEYS.has(slot)) {
         const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
         return dm || "gemini-2.5-flash"; // daemon default
       }
-      const override = liveConfig.slots[slot];
-      return override || liveConfig.default || "—";
+      return liveConfig.slots[slot] || liveConfig.default || "—";
     }
 
     // 3. Fallback to Firestore assignments (for Prime)
@@ -231,34 +230,10 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
     return "—";
   };
 
-  /** Get slot model WITHOUT pending changes (for comparison) */
-  const getSlotModelWithoutPending = (slot: string): string => {
-    if (liveConfig) {
-      if (DAEMON_KEYS.has(slot)) {
-        const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
-        return dm || "gemini-2.5-flash";
-      }
-      return liveConfig.slots[slot] || liveConfig.default || "—";
-    }
-    if (modelsData) {
-      const override = modelsData.assignments?.overrides?.[slot];
-      if (override) {
-        const catalogModel = modelsData.models.find((m) => m.id === override);
-        return catalogModel ? toBrainModelId(catalogModel.id, catalogModel.provider) : override;
-      }
-      const defaultModel = modelsData.assignments?.default || modelsData.currentModel;
-      if (defaultModel) {
-        const catalogModel = modelsData.models.find((m) => m.id === defaultModel);
-        return catalogModel ? toBrainModelId(catalogModel.id, catalogModel.provider) : defaultModel;
-      }
-    }
-    return "—";
-  };
-
   /* ---- Handle model selection in picker (UI only) ---- */
   const handleSelectModel = (slot: string, model: ModelInfo) => {
     const brainModelId = toBrainModelId(model.id, model.provider);
-    const currentModel = getSlotModelWithoutPending(slot);
+    const currentModel = resolveSlotModel(slot, false);
 
     if (brainModelId === currentModel) {
       // Deselect: remove from pending
@@ -476,7 +451,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
       <div className={styles.sectionLabel} id="brain-daemon-section">Daemon Services</div>
       <div className={styles.grid} id="brain-daemon-grid">
         {DAEMON_SLOTS.map(({ key, label, desc, icon }) => {
-          const modelId = getSlotModel(key);
+          const modelId = resolveSlotModel(key);
           const isPending = !!pendingChanges[key];
           const displayModel = modelId === "—" ? "—" : getDisplayName(modelId, modelsData?.models || []);
           const shortId = modelId === "—" ? "" : stripPrefix(modelId);
@@ -511,7 +486,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
       <div className={styles.sectionLabel} id="brain-agents-section">Brain Agents</div>
       <div className={styles.grid} id="brain-slot-grid">
         {SLOTS.map(({ key, label, desc, icon }) => {
-          const modelId = getSlotModel(key);
+          const modelId = resolveSlotModel(key);
           const isPending = !!pendingChanges[key];
           const displayModel = modelId === "—" ? "—" : getDisplayName(modelId, modelsData?.models || []);
           const shortId = modelId === "—" ? "" : (DAEMON_KEYS.has(key) ? modelId : stripPrefix(modelId));
@@ -610,7 +585,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
                   <div className={styles.providerLabel}>Available Models</div>
                   {availableModels.map((m) => {
                     const brainModelId = toBrainModelId(m.id, m.provider);
-                    const currentModel = getSlotModelWithoutPending(pickerSlot);
+                    const currentModel = resolveSlotModel(pickerSlot, false);
                     const isCurrent = brainModelId === currentModel;
                     const isPendingSelection = pendingChanges[pickerSlot] === brainModelId;
 

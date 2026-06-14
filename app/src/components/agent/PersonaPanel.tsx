@@ -78,7 +78,7 @@ const SUB_TABS = [
 type SubTabKey = (typeof SUB_TABS)[number]["key"];
 
 /* ---- Organ display order ---- */
-const ORGAN_ORDER = ["cortex", "prefrontal", "motor", "cerebellum", "temporal-memory", "temporal-research"];
+const ORGAN_ORDER = BRAIN_ORGANS.map((o) => o.key);
 
 /* ---- Props ---- */
 interface PersonaPanelProps {

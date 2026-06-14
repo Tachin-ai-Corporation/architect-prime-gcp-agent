@@ -316,18 +316,7 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
                   <span className={styles.mv}>{duration}</span>
                 </>
               )}
-              {(envelope as any).depends_on?.length > 0 && (
-                <>
-                  <span className={styles.mk}>Depends On</span>
-                  <span className={styles.mv}>{(envelope as any).depends_on.join(", ")}</span>
-                </>
-              )}
-              {(envelope as any).plan_id && (
-                <>
-                  <span className={styles.mk}>Plan</span>
-                  <span className={styles.mv}>{(envelope as any).plan_id}</span>
-                </>
-              )}
+
               <span className={styles.mk}>ID</span>
               <span className={`${styles.mv} ${styles.mvId}`}>{envelope.id}</span>
               {envelope.depends_on && envelope.depends_on.length > 0 && (

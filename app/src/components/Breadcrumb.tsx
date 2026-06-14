@@ -102,4 +102,3 @@ export function Breadcrumb({ inline }: { inline?: boolean } = {}) {
     </nav>
   );
 }
-

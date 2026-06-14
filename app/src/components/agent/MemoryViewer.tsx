@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import { MarkdownMessage } from "@/components/MarkdownMessage";
 import styles from "./MemoryViewer.module.css";
@@ -40,9 +40,7 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
     }
   }, [data, loading]);
 
-  const handleRefresh = useCallback(() => {
-    refresh();
-  }, [refresh]);
+
 
   /* ---- Loading ---- */
   if (loading && !didInitRef.current) {
@@ -59,7 +57,7 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
     return (
       <div className={styles.error}>
         <span className={styles.errorMsg}>⚠ {error}</span>
-        <button className={styles.retryBtn} onClick={handleRefresh}>
+        <button className={styles.retryBtn} onClick={refresh}>
           Retry
         </button>
       </div>
@@ -81,7 +79,7 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
           <span className={styles.timestamp} />
           <button
             className={styles.refreshBtn}
-            onClick={handleRefresh}
+            onClick={refresh}
             disabled={loading}
           >
             <span className={styles.refreshIcon}>↻</span>
@@ -108,7 +106,7 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
         </span>
         <button
           className={styles.refreshBtn}
-          onClick={handleRefresh}
+          onClick={refresh}
           disabled={loading}
         >
           <span className={styles.refreshIcon}>↻</span>

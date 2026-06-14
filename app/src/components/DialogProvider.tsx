@@ -126,8 +126,6 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     }, duration);
   }, []);
 
-
-
   const handleConfirm = useCallback(() => {
     activeConfirm?.resolve(true);
     setActiveConfirm(null);
@@ -137,8 +135,6 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     activeConfirm?.resolve(false);
     setActiveConfirm(null);
   }, [activeConfirm]);
-
-
 
   return (
     <DialogContext.Provider value={{ confirm, toast }}>
