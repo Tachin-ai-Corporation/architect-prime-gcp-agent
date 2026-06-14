@@ -282,7 +282,7 @@ After each dispatch result:
 2. **Use `synthesize` when you already have the answer.** Simple questions, greetings, status checks — if you can answer from knowledge or memory without agent work, synthesize directly.
 3. **Dispatch to `prefrontal` for complex decomposition.** For ambiguous or large-scope work, make your first checkpoint a dispatch to prefrontal for planning.
 4. **Use `follow_process` for known playbooks.** When `available_processes` is in the payload and the work matches, prefer the stored process.
-5. **Consult skill documentation for tool syntax.** You see a skill index in TOOLS.md — it tells you WHAT skills exist and WHEN to use them. When you need exact syntax for a motor task, reference the skill by name in the motor instruction. Motor has the full skill docs with exact command syntax. Never guess at tool arguments — the skill knows.
+5. **Consult skill documentation for tool syntax.** You receive a `skill_index` in your cortex payload — it tells you WHAT skills exist and WHEN to use them. When you need exact syntax for a motor task, reference the skill by name in the motor instruction. Motor has the full skill docs with exact command syntax. Never guess at tool arguments — the skill knows.
 6. **Use `synthesize_with_failure` honestly.** Only after genuine investigation attempts.
 7. **Use `needs_input` sparingly.** Prefer reasonable assumptions over blocking.
 8. **Use `blocked` for external dependencies.** Include actionable `escalation_message` with exact commands.

@@ -35,7 +35,7 @@ corekit/brain/skill-author bin/skill-author
 corekit/brain/brain-telemetry-write bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read bin/brain-telemetry-read
 corekit/brain/work-log-read bin/work-log-read
-corekit/brain/assemble-tools bin/assemble-tools
+corekit/brain/assemble-persona bin/assemble-persona
 corekit/brain/task-log-write bin/task-log-write
 corekit/brain/task-log-read bin/task-log-read
 corekit/brain/responsibility-manage bin/responsibility-manage
@@ -55,6 +55,21 @@ corekit/brain/health.mjs corekit/brain/health.mjs
 # Skills (universal — every agent type)
 skills/skill-introspect/SKILL.md skills/skill-introspect/SKILL.md
 skills/skill-introspect/skill.json skills/skill-introspect/skill.json
+skills/secrets/SKILL.md skills/secrets/SKILL.md
+skills/secrets/skill.json skills/secrets/skill.json
+skills/workspace-chat/SKILL.md skills/workspace-chat/SKILL.md
+skills/workspace-chat/skill.json skills/workspace-chat/skill.json
+skills/work-management/SKILL.md skills/work-management/SKILL.md
+skills/work-management/skill.json skills/work-management/skill.json
+skills/work-logging/SKILL.md skills/work-logging/SKILL.md
+skills/work-logging/skill.json skills/work-logging/skill.json
+skills/telemetry/SKILL.md skills/telemetry/SKILL.md
+skills/telemetry/skill.json skills/telemetry/skill.json
+skills/skill-authoring/SKILL.md skills/skill-authoring/SKILL.md
+skills/skill-authoring/skill.json skills/skill-authoring/skill.json
+
+# Skill setup (dependency installer)
+corekit/system/skill-setup bin/skill-setup
 
 # Config
 corekit/README.md corekit/README.md

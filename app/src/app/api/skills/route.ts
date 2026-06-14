@@ -9,7 +9,7 @@ interface SkillManifest {
   author: string;
   origin: "core" | "specialty" | "learned";
   category: string;
-  agent_part: string;
+  agent_part: string | string[];
   scripts: string[];
   dependencies: string[];
   when_to_use: string;

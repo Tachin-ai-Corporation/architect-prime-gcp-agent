@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# assemble-persona — Append specialty behavioral guidance to sub-agent SOULs
+#
+# Merges specialty-specific SOUL_APPEND.md files into sub-agent workspace
+# SOUL.md files. This shapes HOW each brain organ thinks within its
+# specialty — domain expertise, safety boundaries, dispatch patterns.
+#
+# Usage: assemble-persona [agent-type]
+set -euo pipefail
+
+AGENT_TYPE="${1:-prime}"
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+SPECIALTIES_DIR="${CORE_DIR}/corekit/specialties"
+
+declare -A AGENT_WORKSPACES=(
+  [cortex]="${CORE_DIR}/workspace"
+  [motor]="${CORE_DIR}/workspace-motor"
+  [cerebellum]="${CORE_DIR}/workspace-cerebellum"
+  [temporal-research]="${CORE_DIR}/workspace-temporal-research"
+  [temporal-memory]="${CORE_DIR}/workspace-temporal-memory"
+  [prefrontal]="${CORE_DIR}/workspace-prefrontal"
+)
+
+SPEC_BRAIN_DIR="${SPECIALTIES_DIR}/${AGENT_TYPE}/brain"
+APPEND_COUNT=0
+
+if [[ -d "$SPEC_BRAIN_DIR" ]]; then
+  for sub in cortex motor prefrontal cerebellum temporal-memory temporal-research; do
+    APPEND_FILE="${SPEC_BRAIN_DIR}/${sub}/SOUL_APPEND.md"
+    SUB_SOUL="${AGENT_WORKSPACES[$sub]:-${CORE_DIR}/workspace-${sub}}/SOUL.md"
+    if [[ -f "$APPEND_FILE" && -f "$SUB_SOUL" ]]; then
+      printf '\n---\n\n' >> "$SUB_SOUL"
+      cat "$APPEND_FILE" >> "$SUB_SOUL"
+      APPEND_COUNT=$((APPEND_COUNT + 1))
+      echo "  Appended ${sub} specialty SOUL from ${APPEND_FILE}"
+    fi
+  done
+fi
+
+echo "Specialty SOUL appends: ${APPEND_COUNT} applied"
+echo "Persona assembly complete for: ${AGENT_TYPE}"

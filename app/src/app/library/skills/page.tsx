@@ -36,7 +36,7 @@ interface SkillManifest {
   author: string;
   origin: "core" | "specialty" | "learned";
   category: string;
-  agent_part: string;
+  agent_part: string | string[];
   when_to_use: string;
 }
 
@@ -54,7 +54,7 @@ interface SkillProposal {
   skill_id: string;
   name: string;
   description: string;
-  agent_part: string;
+  agent_part: string | string[];
   category: string;
   origin: string;
   type: "new" | "improvement";
@@ -431,7 +431,7 @@ function SkillsPage() {
             s.name.toLowerCase().includes(q) ||
             s.id.toLowerCase().includes(q) ||
             s.description.toLowerCase().includes(q) ||
-            s.agent_part.toLowerCase().includes(q) ||
+            (Array.isArray(s.agent_part) ? s.agent_part.join(' ') : s.agent_part).toLowerCase().includes(q) ||
             s.category.toLowerCase().includes(q)
         )
       : catalog;
@@ -465,10 +465,12 @@ function SkillsPage() {
   const perAgentPartCounts = useMemo(() => {
     const counts: Record<string, { total: number; installed: number }> = {};
     for (const s of catalog) {
-      const part = s.agent_part || "motor";
-      if (!counts[part]) counts[part] = { total: 0, installed: 0 };
-      counts[part].total++;
-      if (allInstalledSkillIds.has(s.id)) counts[part].installed++;
+      const parts = Array.isArray(s.agent_part) ? s.agent_part : [s.agent_part || "motor"];
+      for (const part of parts) {
+        if (!counts[part]) counts[part] = { total: 0, installed: 0 };
+        counts[part].total++;
+        if (allInstalledSkillIds.has(s.id)) counts[part].installed++;
+      }
     }
     return counts;
   }, [catalog, allInstalledSkillIds]);
@@ -798,8 +800,8 @@ function SkillsPage() {
                             <div className={styles.skillCardTop}>
                               <div className={styles.skillCardName}>{skill.name}</div>
                               <div className={styles.skillCardBadges}>
-                                <span className={styles.partBadge} title={`Routes to ${skill.agent_part}`}>
-                                  {PART_ICONS[skill.agent_part] || "📦"} {PART_LABELS[skill.agent_part] || skill.agent_part}
+                                <span className={styles.partBadge} title={`Routes to ${Array.isArray(skill.agent_part) ? skill.agent_part.join(', ') : skill.agent_part}`}>
+                                  {(Array.isArray(skill.agent_part) ? skill.agent_part : [skill.agent_part]).map(p => (PART_ICONS[p] || "📦") + ' ' + (PART_LABELS[p] || p)).join(', ')}
                                 </span>
                                 <span className={`${styles.originBadge} ${styles[`origin_${skill.origin}`] || ""}`}>
                                   {skill.origin}
@@ -904,7 +906,7 @@ function SkillsPage() {
                 )}
 
                 <div className={styles.proposalMeta}>
-                  {PART_ICONS[proposal.agent_part] || "📦"} {proposal.agent_part} · {proposal.category} · by {proposal.proposed_by}
+                  {(Array.isArray(proposal.agent_part) ? proposal.agent_part : [proposal.agent_part]).map(p => (PART_ICONS[p] || "📦") + ' ' + p).join(', ')} · {proposal.category} · by {proposal.proposed_by}
                 </div>
 
                 <div className={styles.proposalActions}>

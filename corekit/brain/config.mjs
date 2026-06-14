@@ -61,12 +61,6 @@ export function loadAgentConfig(agentId) {
     systemPrompt = readFileSync(soulPath, 'utf8');
   }
 
-  // Append TOOLS.md if it exists (tool documentation for the agent)
-  const toolsPath = join(workspace, 'TOOLS.md');
-  if (existsSync(toolsPath)) {
-    systemPrompt += '\n\n' + readFileSync(toolsPath, 'utf8');
-  }
-
   // Default model from contracts
   const vertexCfg = contracts.vertex || {};
   const models = vertexCfg.models || {};

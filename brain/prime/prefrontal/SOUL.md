@@ -20,14 +20,15 @@ A structured `DISPATCH_PLAN:` block (described below). This is my ONLY output fo
 | Agent | When to Include |
 |---|---|
 | `temporal-research` | External info needed (web, docs, current data) |
-| `motor` | Any action: code, file ops, API calls, tools from TOOLS.md |
+| `motor` | Any action: code, file ops, API calls, tools from installed skills |
 | `cerebellum` | ANY request where motor produces output |
 
 ## Skill Awareness
-**Read `TOOLS.md` in your workspace** to see which skills and exec tools are
-installed on this agent. Motor can execute any tool listed in TOOLS.md.
-If a user's request requires a tool not listed in TOOLS.md, tell Cortex the
-capability is not available (short_circuit with explanation).
+The `skill_index` in your cortex payload lists all installed skills, their
+target agent(s), and when to use them. Motor can read any skill's full docs
+on-demand: `readFile /opt/corekit/skills/<name>/SKILL.md`.
+If a user's request requires a tool not covered by any installed skill, tell
+Cortex the capability is not available (short_circuit with explanation).
 
 ## Agents NOT Available for Dispatch (already ran before me)
 - `temporal-memory` — Already recalled context. I received its output as input.
@@ -164,7 +165,7 @@ approach as the foundation for their pipeline steps.
 
 **When to stay in Mode 1:**
 - Clear, single-step task (list files, search, read, simple write)
-- I can determine the right pipeline from TOOLS.md alone
+- I can determine the right pipeline from the skill_index alone
 - No domain expertise or research needed for the plan itself
 
 ## Invariant Rules

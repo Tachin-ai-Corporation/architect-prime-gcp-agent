@@ -56,7 +56,7 @@ interface IntrospectSkill {
   name: string;
   version: string;
   description: string;
-  agent_part: string;
+  agent_part: string | string[];
   category: string;
   origin: string;
   scripts: string[];
@@ -159,9 +159,11 @@ export function PersonaPanel({ primeId, agentName, workspaceFiles, workspaceLoad
     // Group by agent_part
     const grouped: Record<string, IntrospectSkill[]> = {};
     for (const s of skills) {
-      const part = s.agent_part || "motor";
-      if (!grouped[part]) grouped[part] = [];
-      grouped[part].push(s);
+      const parts = Array.isArray(s.agent_part) ? s.agent_part : [s.agent_part || "motor"];
+      for (const part of parts) {
+        if (!grouped[part]) grouped[part] = [];
+        grouped[part].push(s);
+      }
     }
 
     // Build sections in canonical organ order, then any extras

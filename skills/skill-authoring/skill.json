@@ -1,0 +1,13 @@
+{
+  "id": "skill-authoring",
+  "name": "Skill Authoring",
+  "version": "1.0.0",
+  "description": "Create and modify skill packages — SKILL.md, skill.json, and scripts",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "meta",
+  "agent_part": ["motor"],
+  "scripts": ["skill-author"],
+  "requires": {},
+  "when_to_use": "When creating new skills or modifying existing skill packages"
+}

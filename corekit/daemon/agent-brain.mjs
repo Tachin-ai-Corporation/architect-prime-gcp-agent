@@ -207,6 +207,52 @@ try {
   log('WARN', 'agent-registry.json not found');
 }
 
+// ---- Skill index (runtime discovery, replaces static TOOLS.md) ----
+function buildSkillIndex() {
+  const index = [];
+  const skillsDirs = [CORE_DIR + '/skills'];
+
+  // Determine specialty from chat-config.json
+  let specialty = '';
+  try {
+    const cfg = JSON.parse(readFileSync(CORE_DIR + '/corekit/chat-config.json', 'utf8'));
+    specialty = cfg.specialty || '';
+  } catch {}
+  if (specialty) {
+    skillsDirs.push(CORE_DIR + '/corekit/specialties/' + specialty + '/skills');
+  }
+
+  // Also scan custom per-agent skills
+  const customDir = CORE_DIR + '/workspace/custom-skills';
+  if (existsSync(customDir)) {
+    skillsDirs.push(customDir);
+  }
+
+  for (const dir of skillsDirs) {
+    if (!existsSync(dir)) continue;
+    let entries;
+    try { entries = readdirSync(dir); } catch { continue; }
+    for (const name of entries) {
+      const skillDir = dir + '/' + name;
+      const jsonPath = skillDir + '/skill.json';
+      if (!existsSync(jsonPath)) continue;
+      try {
+        const manifest = JSON.parse(readFileSync(jsonPath, 'utf8'));
+        index.push({
+          id: manifest.id || name,
+          name: manifest.name || name,
+          agent_parts: Array.isArray(manifest.agent_part) ? manifest.agent_part : [manifest.agent_part || 'motor'],
+          when_to_use: manifest.when_to_use || '',
+          category: manifest.category || '',
+        });
+      } catch {}
+    }
+  }
+  return index;
+}
+
+let SKILL_INDEX = buildSkillIndex();
+
 // ---- Project registry (via corekit/lib/projects.mjs, Phase 1A extraction) ----
 // NOTE: _projects is initialized later in startupInit() after PRIME_ID/AGENT_ID are set.
 // The globals PROJECTS, DEFAULT_PROJECT_ID, PROJECT_CHILDREN provide backward compat
@@ -692,6 +738,7 @@ function buildUserPrompt(mode, payload) {
         required_processes: 'CRITICAL: Projects may define required_processes â€” activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
       },
     };
+    classifyPayload.skill_index = SKILL_INDEX;
     if (Object.keys(PROJECTS).length > 0) {
       classifyPayload.project_registry = Object.values(PROJECTS).map(p => {
         const entry = {
@@ -726,6 +773,7 @@ function buildUserPrompt(mode, payload) {
       pending_intake_count: payload.pending_intake_count || 0,
       pending_queue: payload.pending_queue || [],
     };
+    decidePayload.skill_index = SKILL_INDEX;
     // Inject project context if envelope is scoped to a project
     const envProjectId = payload.envelope?.project_id;
     if (envProjectId && PROJECTS[envProjectId]) {

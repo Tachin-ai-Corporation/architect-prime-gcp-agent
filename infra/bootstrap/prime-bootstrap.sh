@@ -348,11 +348,17 @@ for dir in "${CORE_DIR}"/workspace*; do
   fi
 done
 
-# ---- 12d) Run assemble-tools for prime ----
-ASSEMBLE="${CORE_DIR}/bin/assemble-tools"
+# ---- 12d) Run assemble-persona for prime ----
+ASSEMBLE="${CORE_DIR}/bin/assemble-persona"
 if [[ -x "$ASSEMBLE" ]]; then
-  info "Assembling TOOLS.md for prime..."
-  CORE_DIR="${CORE_DIR}" "$ASSEMBLE" "prime" || warn "assemble-tools failed"
+  info "Assembling persona for prime..."
+  CORE_DIR="${CORE_DIR}" "$ASSEMBLE" "prime" || warn "assemble-persona failed"
+fi
+
+# ---- 12e) Install skill dependencies ----
+SKILL_SETUP="${CORE_DIR}/bin/skill-setup"
+if [[ -x "$SKILL_SETUP" ]]; then
+  "$SKILL_SETUP" --all || warn "skill-setup had errors"
 fi
 
 # ---- 12e) Final permissions sweep ----

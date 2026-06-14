@@ -154,7 +154,7 @@ function handleSkills() {
     } catch {}
   }
 
-  // ---- Scan all skill directories (mirrors assemble-tools) ----
+  // ---- Scan all skill directories (mirrors assemble-persona) ----
   const skills = [];
 
   /**
@@ -183,7 +183,7 @@ function handleSkills() {
       name: manifest.name || skillId,
       version: manifest.version || '',
       description: manifest.description || '',
-      agent_part: manifest.agent_part || 'motor',
+      agent_part: Array.isArray(manifest.agent_part) ? manifest.agent_part : [manifest.agent_part || 'motor'],
       category: manifest.category || '',
       origin,
       scripts: manifest.scripts || [],

@@ -1,0 +1,13 @@
+{
+  "id": "work-logging",
+  "name": "Work & Task Logging",
+  "version": "1.0.0",
+  "description": "Read and write work logs and task logs for mission history",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "work",
+  "agent_part": ["motor"],
+  "scripts": ["task-log-write", "task-log-read", "work-log-read"],
+  "requires": {},
+  "when_to_use": "When recording work history, reviewing past task output, or reading mission logs"
+}

@@ -6,8 +6,8 @@
   "author": "architect-prime",
   "origin": "core",
   "category": "fleet",
-  "agent_part": "motor",
+  "agent_part": ["motor"],
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When verifying, pinging, or checking if a fleet agent is online"
 }

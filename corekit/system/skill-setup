@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+# ============================================================
+# skill-setup — Install VM dependencies declared in skill.json
+#
+# Reads skill.json `requires` fields and installs missing deps.
+# Handles: apt, npm, pip packages and bin existence checks.
+# Runs optional setup.sh in skill directory.
+#
+# Usage:
+#   skill-setup <skill-name>   Install deps for one skill
+#   skill-setup --all          Install deps for all installed skills
+#
+# Idempotent. Runs as root.
+# ============================================================
+set -euo pipefail
+
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+SKILLS_DIR="${CORE_DIR}/skills"
+COREKIT_DIR="${CORE_DIR}/corekit"
+SPECIALTIES_DIR="${COREKIT_DIR}/specialties"
+
+info()  { echo "[skill-setup] $*"; }
+warn()  { echo "[skill-setup] WARN: $*" >&2; }
+error() { echo "[skill-setup] ERROR: $*" >&2; }
+
+# ---- Determine specialty from chat-config.json ----
+SPECIALTY=""
+CHAT_CFG="${COREKIT_DIR}/chat-config.json"
+if [[ -f "$CHAT_CFG" ]]; then
+  SPECIALTY="$(python3 -c "import json; print(json.load(open('$CHAT_CFG')).get('specialty',''))" 2>/dev/null || true)"
+fi
+
+# ---- Setup a single skill ----
+setup_skill() {
+  local skill_id="$1"
+  local skill_dir="$2"
+  local skill_json="${skill_dir}/skill.json"
+
+  if [[ ! -f "$skill_json" ]]; then
+    return 0
+  fi
+
+  local has_requires
+  has_requires="$(python3 -c "
+import json, sys
+d = json.load(open('$skill_json'))
+sys.exit(0 if 'requires' in d else 1)
+" 2>/dev/null && echo "yes" || echo "no")"
+
+  if [[ "$has_requires" != "yes" ]]; then
+    # Check for setup.sh even without requires
+    if [[ -x "${skill_dir}/setup.sh" ]]; then
+      info "${skill_id}: running setup.sh"
+      (cd "$skill_dir" && ./setup.sh) || warn "${skill_id}: setup.sh failed"
+    fi
+    return 0
+  fi
+
+  info "${skill_id}: checking dependencies..."
+
+  # ---- apt packages ----
+  local apt_pkgs
+  apt_pkgs="$(python3 -c "
+import json
+d = json.load(open('$skill_json'))
+pkgs = d.get('requires',{}).get('apt',[])
+print(' '.join(pkgs) if pkgs else '')
+" 2>/dev/null || true)"
+
+  if [[ -n "$apt_pkgs" ]]; then
+    local missing_apt=""
+    for pkg in $apt_pkgs; do
+      if ! dpkg -s "$pkg" &>/dev/null; then
+        missing_apt="${missing_apt} ${pkg}"
+      fi
+    done
+    if [[ -n "$missing_apt" ]]; then
+      info "${skill_id}: installing apt packages:${missing_apt}"
+      apt-get update -qq 2>/dev/null || true
+      apt-get install -y -qq $missing_apt || warn "${skill_id}: apt install failed for:${missing_apt}"
+    fi
+  fi
+
+  # ---- npm packages ----
+  local npm_pkgs
+  npm_pkgs="$(python3 -c "
+import json
+d = json.load(open('$skill_json'))
+pkgs = d.get('requires',{}).get('npm',[])
+print(' '.join(pkgs) if pkgs else '')
+" 2>/dev/null || true)"
+
+  if [[ -n "$npm_pkgs" ]]; then
+    for pkg in $npm_pkgs; do
+      # Check if already installed globally
+      if ! npm list -g "$pkg" &>/dev/null; then
+        info "${skill_id}: installing npm package: ${pkg}"
+        npm install -g "$pkg" 2>&1 | tail -3 || warn "${skill_id}: npm install failed for: ${pkg}"
+      fi
+    done
+  fi
+
+  # ---- pip packages ----
+  local pip_pkgs
+  pip_pkgs="$(python3 -c "
+import json
+d = json.load(open('$skill_json'))
+pkgs = d.get('requires',{}).get('pip',[])
+print(' '.join(pkgs) if pkgs else '')
+" 2>/dev/null || true)"
+
+  if [[ -n "$pip_pkgs" ]]; then
+    for pkg in $pip_pkgs; do
+      if ! python3 -c "import importlib; importlib.import_module('${pkg%%[>=<]*}')" &>/dev/null; then
+        info "${skill_id}: installing pip package: ${pkg}"
+        pip3 install --quiet "$pkg" || warn "${skill_id}: pip install failed for: ${pkg}"
+      fi
+    done
+  fi
+
+  # ---- bin checks (verify only) ----
+  local bin_checks
+  bin_checks="$(python3 -c "
+import json
+d = json.load(open('$skill_json'))
+bins = d.get('requires',{}).get('bin',[])
+print(' '.join(bins) if bins else '')
+" 2>/dev/null || true)"
+
+  if [[ -n "$bin_checks" ]]; then
+    for bin in $bin_checks; do
+      if ! command -v "$bin" &>/dev/null; then
+        warn "${skill_id}: required binary not found: ${bin}"
+      fi
+    done
+  fi
+
+  # ---- Optional setup.sh ----
+  if [[ -x "${skill_dir}/setup.sh" ]]; then
+    info "${skill_id}: running setup.sh"
+    (cd "$skill_dir" && ./setup.sh) || warn "${skill_id}: setup.sh failed"
+  fi
+}
+
+# ---- Collect all skill directories ----
+setup_all() {
+  local count=0
+
+  # Base skills
+  if [[ -d "$SKILLS_DIR" ]]; then
+    for skill_dir in "$SKILLS_DIR"/*/; do
+      [[ -d "$skill_dir" ]] || continue
+      local skill_id
+      skill_id="$(basename "$skill_dir")"
+      setup_skill "$skill_id" "$skill_dir"
+      count=$((count + 1))
+    done
+  fi
+
+  # Specialty skills
+  if [[ -n "$SPECIALTY" ]]; then
+    local spec_skills_dir="${SPECIALTIES_DIR}/${SPECIALTY}/skills"
+    if [[ -d "$spec_skills_dir" ]]; then
+      for skill_dir in "$spec_skills_dir"/*/; do
+        [[ -d "$skill_dir" ]] || continue
+        local skill_id
+        skill_id="$(basename "$skill_dir")"
+        setup_skill "$skill_id" "$skill_dir"
+        count=$((count + 1))
+      done
+    fi
+  fi
+
+  # Custom per-agent skills
+  local custom_dir="${CORE_DIR}/workspace/custom-skills"
+  if [[ -d "$custom_dir" ]]; then
+    for skill_dir in "$custom_dir"/*/; do
+      [[ -d "$skill_dir" ]] || continue
+      local skill_id
+      skill_id="$(basename "$skill_dir")"
+      setup_skill "$skill_id" "$skill_dir"
+      count=$((count + 1))
+    done
+  fi
+
+  info "Checked ${count} skill directories"
+}
+
+# ---- Main ----
+if [[ "${1:-}" == "--all" ]]; then
+  setup_all
+elif [[ -n "${1:-}" ]]; then
+  SKILL_ID="$1"
+  # Search for skill directory
+  FOUND=""
+  for search_dir in "$SKILLS_DIR" "${SPECIALTIES_DIR}/${SPECIALTY}/skills" "${CORE_DIR}/workspace/custom-skills"; do
+    if [[ -d "${search_dir}/${SKILL_ID}" ]]; then
+      FOUND="${search_dir}/${SKILL_ID}"
+      break
+    fi
+  done
+  if [[ -z "$FOUND" ]]; then
+    error "Skill not found: ${SKILL_ID}"
+    exit 1
+  fi
+  setup_skill "$SKILL_ID" "$FOUND"
+else
+  echo "Usage: skill-setup <skill-name> | skill-setup --all"
+  exit 1
+fi

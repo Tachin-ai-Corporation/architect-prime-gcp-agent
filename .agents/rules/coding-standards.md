@@ -12,7 +12,6 @@
 ## Workspace files (brain/)
 - SOUL.md = identity + turn protocol + decision rules
 - IDENTITY.md = who the agent is, 1-2 paragraphs
-- TOOLS.md = available tools and usage patterns
 - MEMORY.md = working memory, curated, < 2000 chars
 - Keep workspace files focused — no overlap between files
 

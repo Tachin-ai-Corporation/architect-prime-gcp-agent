@@ -150,7 +150,7 @@ interface SkillManifest {
   name: string;
   description: string;
   category?: string;
-  agent_part?: string;
+  agent_part?: string | string[];
   version?: string;
   origin?: string;
   skillMdContent?: string;

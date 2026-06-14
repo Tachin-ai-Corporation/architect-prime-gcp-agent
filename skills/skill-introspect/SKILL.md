@@ -1,23 +1,26 @@
 # Skill Introspection
 
 ## Overview
-You see a **skill index** in your TOOLS.md — a table of skill names and when to use them. Each skill is fully documented with exact tool syntax, examples, and usage patterns. Motor, cerebellum, and temporal-research agents have the full skill documentation injected into their context.
+Skills are the single source of truth for tool documentation (Canon B-16).
+You discover what's available from the `skill_index` in your cortex payload,
+then read specific skill docs on-demand.
 
 ## How Skills Work
-- **Your view (cortex/prefrontal):** Skill index — name, target agent, when to use
-- **Motor's view:** Full SKILL.md with exact command syntax, arguments, examples
-- **Skill files on disk:** `/opt/corekit/skills/<skill-name>/SKILL.md`
+- **Cortex/Prefrontal**: Receive `skill_index` in every classify/decide payload
+  — a structured table of skill name, target agent(s), and when to use
+- **All agents**: Can read any skill's full docs on-demand:
+  `readFile /opt/corekit/skills/<name>/SKILL.md`
+- **Skill files on disk**: `/opt/corekit/skills/<name>/SKILL.md`
 
 ## How to Use Skills in Dispatch
-When dispatching motor to use a tool governed by a skill:
-1. Reference the skill by name in your instruction — e.g. "Use the project-management skill to add a team member"
-2. Motor has the full docs and knows the exact syntax — you don't need to specify command arguments
-3. If you need to understand a skill's capabilities before deciding, dispatch motor to read the skill: `readFile /opt/corekit/skills/<name>/SKILL.md`
+1. Check `skill_index` in your payload to find the right skill
+2. Reference the skill by name in your dispatch instruction
+3. The execution agent reads the SKILL.md for exact syntax
 
 ## Discovering Skills
-- Your TOOLS.md skill index shows all installed skills for this agent type
-- Custom skills may be installed at `/opt/corekit/workspace/custom-skills/`
-- Each skill's `SKILL.md` is the authoritative reference for its tools
+- `skill_index` in cortex payload shows all installed skills
+- Custom skills may be at `/opt/corekit/workspace/custom-skills/`
+- List all: `ls /opt/corekit/skills/`
 
 ## Key Principle
-Never guess at tool syntax. Skills are the single source of truth for tool usage. If you don't know how a tool works, the skill documentation tells you.
+Never guess at tool syntax. Skills are the single source of truth.

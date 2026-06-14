@@ -48,7 +48,7 @@ interface SkillManifest {
   name: string;
   description: string;
   category?: string;
-  agent_part?: string;
+  agent_part?: string | string[];
   version?: string;
   origin?: string;
   skillMdContent?: string;
@@ -212,9 +212,11 @@ export default function AgentTypeDetailPage({
 
     const grouped: Record<string, SkillManifest[]> = {};
     for (const s of skills) {
-      const part = s.agent_part || "motor";
-      if (!grouped[part]) grouped[part] = [];
-      grouped[part].push(s);
+      const parts = Array.isArray(s.agent_part) ? s.agent_part : [s.agent_part || "motor"];
+      for (const part of parts) {
+        if (!grouped[part]) grouped[part] = [];
+        grouped[part].push(s);
+      }
     }
 
     const sections: { organ: string; meta: typeof ORGAN_META[string]; cards: FileCardItem[] }[] = [];

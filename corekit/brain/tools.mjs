@@ -17,7 +17,7 @@ const BIN_DIR = process.env.BIN_DIR || '/opt/corekit/bin';
 
 export const runCommand = {
   name: 'runCommand',
-  description: `Execute a shell command on the agent's host. Available tools are documented in your installed skills — use skill documentation for exact syntax, do not guess arguments. Core tools in PATH: responsibility-manage, project-manage, process-manage, agent-status, brain-telemetry-read, task-log-read, work-log-read. Workspace tools (Drive, Gmail, Calendar, Docs, Sheets) are skill-documented. For any tool, read its SKILL.md first.`,
+  description: `Execute a shell command on the agent's host. Available tools are documented in installed skills at /opt/corekit/skills/<name>/SKILL.md — read the relevant skill before using a tool.`,
   schema: {
     type: 'object',
     properties: {

@@ -70,16 +70,6 @@ if ! command -v node >/dev/null 2>&1; then
   apt-get install -y -qq nodejs
 fi
 
-# ---- 2b) Install Firebase CLI (devops specialty only) ----
-if [[ "${SPECIALTY}" == "devops" ]]; then
-  info "Installing Firebase CLI (devops specialty)..."
-  if ! command -v firebase >/dev/null 2>&1; then
-    npm install -g firebase-tools 2>&1 | tail -3
-    ok "Firebase CLI installed: $(firebase --version 2>/dev/null || echo 'unknown')"
-  else
-    info "Firebase CLI already installed: $(firebase --version)"
-  fi
-fi
 
 # ---- 3) Install CoreKit via manifest ----
 info "Installing CoreKit..."
@@ -256,11 +246,17 @@ for f in "${CORE_ROOT}"/workspace*/*.md; do
     "$f"
 done
 
-# ---- 12) Run assemble-tools for this agent type ----
-ASSEMBLE="${CORE_DIR}/bin/assemble-tools"
+# ---- 12) Run assemble-persona for this agent type ----
+ASSEMBLE="${CORE_DIR}/bin/assemble-persona"
 if [[ -x "$ASSEMBLE" ]]; then
-  info "Assembling TOOLS.md for fleet specialty: ${SPECIALTY}"
-  CORE_ROOT="${CORE_ROOT}" "$ASSEMBLE" "${SPECIALTY}" || warn "assemble-tools failed"
+  info "Assembling persona for fleet specialty: ${SPECIALTY}"
+  CORE_DIR="${CORE_DIR}" "$ASSEMBLE" "${SPECIALTY}" || warn "assemble-persona failed"
+fi
+
+# ---- 12e) Install skill dependencies ----
+SKILL_SETUP="${CORE_DIR}/bin/skill-setup"
+if [[ -x "$SKILL_SETUP" ]]; then
+  "$SKILL_SETUP" --all || warn "skill-setup had errors"
 fi
 
 # ---- 13) Install agent-ears, agent-mouth, agent-brain, agent-introspect as systemd services ----
