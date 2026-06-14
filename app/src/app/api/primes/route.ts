@@ -42,12 +42,12 @@ export async function POST(req: NextRequest) {
 
     const id = name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
-    // Check if exists — allow re-creation if previous teardown left a zombie doc
+    // Check if exists — only block if Prime is actively alive
     const existing = await primesCol().doc(id).get();
     if (existing.exists) {
       const existingStatus = existing.data()?.status;
-      const terminalStatuses = ["removed", "tearing_down", "error"];
-      if (!terminalStatuses.includes(existingStatus)) {
+      const activeStatuses = ["online", "deploying"];
+      if (activeStatuses.includes(existingStatus)) {
         return NextResponse.json(
           { error: `Prime '${name}' already exists (status: ${existingStatus})` },
           { status: 409 }
