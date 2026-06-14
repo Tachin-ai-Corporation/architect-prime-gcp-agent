@@ -42,13 +42,37 @@ export async function POST(req: NextRequest) {
 
     const id = name.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 
-    // Check if exists
+    // Check if exists — allow re-creation if previous teardown left a zombie doc
     const existing = await primesCol().doc(id).get();
     if (existing.exists) {
-      return NextResponse.json(
-        { error: `Prime '${name}' already exists` },
-        { status: 409 }
-      );
+      const existingStatus = existing.data()?.status;
+      const terminalStatuses = ["removed", "tearing_down", "error"];
+      if (!terminalStatuses.includes(existingStatus)) {
+        return NextResponse.json(
+          { error: `Prime '${name}' already exists (status: ${existingStatus})` },
+          { status: 409 }
+        );
+      }
+      // Clean up the zombie doc and its subcollections before re-creating
+      console.log(`[deploy] Cleaning up zombie prime doc '${id}' (status: ${existingStatus})`);
+      const primeRef = primesCol().doc(id);
+      const subcollections = [
+        "fleet", "commands", "work", "work_archive", "intake",
+        "messages", "projects", "processes", "approvals", "plans",
+        "skill-proposals", "dispatch-log",
+      ];
+      for (const sub of subcollections) {
+        try {
+          const snap = await primeRef.collection(sub).limit(100).get();
+          if (!snap.empty) {
+            const batch = primeRef.firestore.batch();
+            snap.docs.forEach((doc) => batch.delete(doc.ref));
+            await batch.commit();
+          }
+        } catch {}
+      }
+      await primeRef.delete();
+      console.log(`[deploy] Zombie doc '${id}' cleaned up`);
     }
 
     const now = FieldValue.serverTimestamp();

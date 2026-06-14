@@ -54,37 +54,43 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     console.log(`[teardown] Command logged: ${cmdRef.id} for prime ${id}`);
 
     // Delete the VM via Compute Engine REST API
-    const token = await getAccessToken();
-    const deleteResult = await deleteVM(token, projectId, zone, vmName);
+    // Always continue to Firestore cleanup even if this fails
+    let vmDeleted = false;
+    try {
+      const token = await getAccessToken();
+      const deleteResult = await deleteVM(token, projectId, zone, vmName);
 
-    if (!deleteResult.ok) {
-      const err = await deleteResult.text();
-      // 404 = VM already deleted, treat as success
-      if (deleteResult.status === 404) {
+      if (deleteResult.ok) {
+        vmDeleted = true;
+        console.log(`[teardown] VM ${vmName} deletion initiated`);
+      } else if (deleteResult.status === 404) {
+        // VM already deleted — treat as success
+        vmDeleted = true;
         console.log(`[teardown] VM ${vmName} already deleted (404)`);
       } else {
-        console.error(`[teardown] VM deletion failed: ${err}`);
-        await primesCol().doc(id).update({ status: "error" });
-        return NextResponse.json(
-          { error: "VM deletion failed", details: err },
-          { status: 500 }
-        );
+        const errText = await deleteResult.text();
+        console.error(`[teardown] VM deletion failed (${deleteResult.status}): ${errText}`);
+        // Continue with Firestore cleanup — don't leave orphaned docs
       }
+    } catch (vmErr) {
+      console.error(`[teardown] VM deletion error:`, vmErr);
+      // Continue with Firestore cleanup
     }
 
-    // Mark operation complete before deleting the doc
-    await cmdRef.update({
-      status: "complete",
-      result: `VM ${vmName} deleted`,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    console.log(`[teardown] VM deleted: ${vmName} (command ${cmdRef.id})`);
-
-    // Delete subcollections then the prime doc itself
+    // Delete all subcollections then the prime doc itself
     const primeRef = primesCol().doc(id);
-    const subcollections = ["fleet", "commands", "work", "work_archive", "intake", "messages"];
+    const subcollections = [
+      "fleet", "commands", "work", "work_archive", "intake",
+      "messages", "projects", "processes", "approvals", "plans",
+      "skill-proposals", "dispatch-log",
+    ];
     for (const sub of subcollections) {
-      await deleteCollection(primeRef.collection(sub));
+      try {
+        await deleteCollection(primeRef.collection(sub));
+      } catch (subErr) {
+        console.error(`[teardown] Failed to delete subcollection ${sub}:`, subErr);
+        // Continue cleaning other subcollections
+      }
     }
     await primeRef.delete();
     console.log(`[teardown] Firestore doc and subcollections deleted for prime ${id}`);
@@ -94,14 +100,20 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       status: "removed",
       vmName,
       zone,
-      message: `VM ${vmName} deletion is queued. Billing will stop within 1-2 minutes.`,
+      vmDeleted,
+      message: vmDeleted
+        ? `VM ${vmName} deleted. Firestore cleaned. Billing stops within 1-2 minutes.`
+        : `VM ${vmName} deletion failed but Firestore cleaned. Check GCE console for orphaned VM.`,
     });
   } catch (err) {
     console.error(`[teardown] Error:`, err);
-    await primesCol().doc(id).update({ status: "error" }).catch(() => {});
+    // Best-effort: try to delete the doc anyway so re-deploy isn't blocked
+    try {
+      await primesCol().doc(id).delete();
+      console.log(`[teardown] Cleaned up prime doc ${id} despite error`);
+    } catch {}
     // Try to update the command status to failed
     try {
-      // cmdRef may not be defined if error happened before it was created
       if (cmdRef) {
         await cmdRef.update({
           status: "failed",
