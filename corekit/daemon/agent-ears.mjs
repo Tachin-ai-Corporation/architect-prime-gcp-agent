@@ -308,12 +308,31 @@ async function markFirestoreDashboardConsumed(msg) {
 // ---- GChat Poller (Fleet) ----
 let _gchatSpaces = [];
 let _gchatLastDiscovery = 0;
-let _gchatHighWater = '1970-01-01T00:00:00.000000Z';
+// Default to current time — a fresh agent never processes old messages
+let _gchatHighWater = new Date().toISOString().replace('Z', '000Z');
 const _gchatSeen = new Map();
-const _stateDir = '/tmp/agent-ears-state';
+// Persist under /var/lib (survives reboots) not /tmp (ephemeral)
+const _stateDir = '/var/lib/agent-ears-state';
 try { mkdirSync(_stateDir, { recursive: true }); } catch {}
-try { _gchatHighWater = readFileSync(`${_stateDir}/highwater`, 'utf8').trim(); } catch {}
-try { const s = JSON.parse(readFileSync(`${_stateDir}/seen.json`, 'utf8')); for (const k of Object.keys(s)) _gchatSeen.set(k, true); } catch {}
+// Also check legacy /tmp location for in-place upgrades
+const _legacyStateDir = '/tmp/agent-ears-state';
+try {
+  const hw = readFileSync(`${_stateDir}/highwater`, 'utf8').trim();
+  if (hw) _gchatHighWater = hw;
+} catch {
+  // Fall back to legacy /tmp path
+  try {
+    const hw = readFileSync(`${_legacyStateDir}/highwater`, 'utf8').trim();
+    if (hw) _gchatHighWater = hw;
+  } catch {}
+}
+try {
+  let s;
+  try { s = JSON.parse(readFileSync(`${_stateDir}/seen.json`, 'utf8')); } catch {
+    s = JSON.parse(readFileSync(`${_legacyStateDir}/seen.json`, 'utf8'));
+  }
+  for (const k of Object.keys(s)) _gchatSeen.set(k, true);
+} catch {}
 
 async function discoverSpaces() {
   if (Date.now() - _gchatLastDiscovery < 300_000 && _gchatSpaces.length > 0) return;
