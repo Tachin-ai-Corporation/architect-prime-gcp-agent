@@ -1,4 +1,6 @@
 // corekit/brain/index.mjs — Brain Gateway HTTP Server
+// Original module
+// Used by agent-brain.mjs (gateway consumer) and agent-ears.mjs (liveness pre-flight)
 //
 // Listens on port 18789, implements the exact same API contract that
 // agent-brain.mjs and agent-ears.mjs expect:
@@ -15,13 +17,12 @@
 import { createServer } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { initRouter } from './router.mjs';
+import { initRouter, getProviderStatus } from './router.mjs';
 import { runAgentTurnSync } from './loop.mjs';
 import { loadAgentConfig, getBrainConfig, getContracts } from './config.mjs';
 import { getFilteredTools } from './tools.mjs';
-import { getSession, appendMessage, clearSession, listSessions } from './context.mjs';
+import { listSessions } from './context.mjs';
 import { handleHealth } from './health.mjs';
-import { getProviderStatus } from './router.mjs';
 
 // ---- Read body helper ----
 function readBody(req) {

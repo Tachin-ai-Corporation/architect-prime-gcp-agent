@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-// agent-introspect.mjs — Agent Introspection Service
+// corekit/daemon/agent-introspect.mjs — Agent Introspection Service
+// Original module
+// Used by dashboard (polls Firestore for introspection queries)
+//
 // Polls Firestore for introspection queries, reads local filesystem, writes results.
 // Runs alongside ears/mouth/brain.
 
@@ -33,8 +36,6 @@ function log(msg, meta = {}) {
   process.stderr.write(line);
   try { appendFileSync(LOG_FILE, line); } catch {}
 }
-
-
 
 // ---- Firestore helpers ----
 async function pollForQueries() {
@@ -335,67 +336,37 @@ function handleWorkspace() {
 
 function handleBrainConfig() {
   const contractsPath = join(COREKIT_DIR, 'contracts.json');
-  
-  let defaultModel = '';
-  const slots = {};
 
-  if (existsSync(contractsPath)) {
-    try {
-      const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
-      const models = contracts?.vertex?.models || {};
-      defaultModel = models.cortex || '';
-      slots.cortex = models.cortex || null;
-      // Map subagent model to each known subagent ID
-      const subagentIds = contracts?.agents?.subagentIds || ['temporal-research', 'temporal-memory', 'prefrontal', 'motor', 'cerebellum'];
-      for (const id of subagentIds) {
-        slots[id] = models.subagent || models.cortex || null;
-      }
-    } catch (err) {
-      return { error: `Failed to parse contracts.json: ${err.message}`, default: '', slots: {} };
-    }
-  } else {
+  if (!existsSync(contractsPath)) {
     return { error: 'No contracts.json config file found', default: '', slots: {} };
   }
 
-  // Read contracts.json for ears/mouth/brain daemon models
-  const daemonModels = {};
-  if (existsSync(contractsPath)) {
-    try {
-      const contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
-      daemonModels.ears = contracts?.ears?.preprocess?.model || null;
-      daemonModels.mouth = contracts?.mouth?.model || null;
-      // Brain daemon uses the Cortex gateway route — its LLM is whatever Cortex is set to
-      daemonModels.brain = contracts?.dispatch?.model || null;
-    } catch {}
+  let contracts;
+  try {
+    contracts = JSON.parse(readFileSync(contractsPath, 'utf8'));
+  } catch (err) {
+    return { error: `Failed to parse contracts.json: ${err.message}`, default: '', slots: {} };
   }
 
-  // Read responsibilities (same query to avoid extra introspection roundtrip)
-  const responsibilities = [];
-  const respFiles = [
-    join(COREKIT_DIR, 'responsibilities.json'),
-    join(COREKIT_DIR, 'responsibilities-job.json'),
-  ];
-  for (const respPath of respFiles) {
-    if (!existsSync(respPath)) continue;
-    try {
-      const data = JSON.parse(readFileSync(respPath, 'utf8'));
-      for (const r of (data.responsibilities || [])) {
-        responsibilities.push({
-          id: r.id || 'unknown',
-          name: r.name || r.id || 'Unnamed',
-          schedule: r.schedule || '',
-          enabled: r.enabled !== false,
-          min_spacing_minutes: r.min_spacing_minutes || 0,
-          instruction: (r.instruction || '').substring(0, 200),
-          has_process: !!(r.context?.process?.length),
-          process_steps: r.context?.process?.length || 0,
-          source: basename(respPath),
-        });
-      }
-    } catch {}
+  const models = contracts?.vertex?.models || {};
+  const defaultModel = models.cortex || '';
+  const slots = { cortex: models.cortex || null };
+
+  // Map subagent model to each known subagent ID
+  const subagentIds = contracts?.agents?.subagentIds || ['temporal-research', 'temporal-memory', 'prefrontal', 'motor', 'cerebellum'];
+  for (const id of subagentIds) {
+    slots[id] = models.subagent || models.cortex || null;
   }
 
-  return { default: defaultModel, slots, daemonModels, responsibilities };
+  // Daemon models (ears/mouth/brain)
+  const daemonModels = {
+    ears: contracts?.ears?.preprocess?.model || null,
+    mouth: contracts?.mouth?.model || null,
+    // Brain daemon uses the Cortex gateway route — its LLM is whatever Cortex is set to
+    brain: contracts?.dispatch?.model || null,
+  };
+
+  return { default: defaultModel, slots, daemonModels, responsibilities: readResponsibilityEntries() };
 }
 
 function handleSetModel(params) {
@@ -448,8 +419,8 @@ function handleSetModel(params) {
   }
 }
 
-// ---- handleResponsibilities ----
-function handleResponsibilities() {
+// ---- Shared: read responsibility entries from config files ----
+function readResponsibilityEntries() {
   const results = [];
   const possibleFiles = [
     join(COREKIT_DIR, 'responsibilities.json'),
@@ -459,8 +430,7 @@ function handleResponsibilities() {
     if (!existsSync(filePath)) continue;
     try {
       const data = JSON.parse(readFileSync(filePath, 'utf8'));
-      const responsibilities = data.responsibilities || [];
-      for (const r of responsibilities) {
+      for (const r of (data.responsibilities || [])) {
         results.push({
           id: r.id || 'unknown',
           name: r.name || r.id || 'Unnamed',
@@ -477,7 +447,12 @@ function handleResponsibilities() {
       log('Error reading responsibilities file', { path: filePath, error: err.message });
     }
   }
-  return { responsibilities: results };
+  return results;
+}
+
+// ---- handleResponsibilities ----
+function handleResponsibilities() {
+  return { responsibilities: readResponsibilityEntries() };
 }
 
 // ---- handleSetResponsibilityEnabled ----
@@ -536,10 +511,7 @@ function processQuery(type, params = {}) {
 async function tick() {
   try {
     // Write health file
-    try {
-      const { writeFileSync: wfs } = await import('fs');
-      wfs('/var/run/agent-introspect-last-poll', String(Date.now()));
-    } catch {}
+    try { writeFileSync('/var/run/agent-introspect-last-poll', String(Date.now())); } catch {}
 
     let needsRestart = false;
     const queries = await pollForQueries();

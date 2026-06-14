@@ -93,12 +93,8 @@ try {
   GATEWAY_TOKEN = readFileSync(CORE_DIR + '/.gateway-token', 'utf8').trim();
 } catch {}
 
-// Gateway route from contracts.json
-let GATEWAY_ROUTE = 'brain/cortex';
-try {
-  const contracts = JSON.parse(readFileSync(CORE_DIR + '/corekit/contracts.json', 'utf8'));
-  GATEWAY_ROUTE = contracts.agents?.gatewayRoute || GATEWAY_ROUTE;
-} catch {}
+// Gateway route from contracts
+const GATEWAY_ROUTE = CONTRACTS.agents?.gatewayRoute || 'brain/cortex';
 
 // TASK.json path (for mouth tracking)
 const TASK_JSON = CORE_DIR + '/workspace/TASK.json';

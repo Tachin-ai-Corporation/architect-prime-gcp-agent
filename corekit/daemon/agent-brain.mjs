@@ -28,16 +28,15 @@
 // ============================================================
 import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync } from 'fs';
 import { randomBytes } from 'crypto';
-// child_process import removed — delegation now uses output envelopes, not execSync('chat-send')
 
 // ---- Shared library imports (Phase 0 extraction) ----
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { createClient as createFirestoreClient, firestoreEncode, firestoreDecode } from '../corekit/lib/firestore.mjs';
-import { parseJsonResponse, repairTruncatedJson, extractBalancedJson } from '../corekit/lib/json-repair.mjs';
-import { createVertexText, smartTruncate, summarizeTitle, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
+import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
+import { createVertexText, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
 import { createProjectRegistry } from '../corekit/lib/projects.mjs';
 import { createProcessEngine } from '../corekit/lib/process-engine.mjs';
-import { createScheduler, cronNextFire } from '../corekit/lib/scheduler.mjs';
+import { createScheduler } from '../corekit/lib/scheduler.mjs';
 import { createApprovalChecker } from '../corekit/lib/approvals.mjs';
 import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
 import { createArtifactManager } from '../corekit/lib/artifacts.mjs';
@@ -126,10 +125,7 @@ async function generateTitle(text, type = 'mission') {
   return _vtx.generateTitle(text, type);
 }
 
-// smartTruncate and summarizeTitle are now imported directly from vertex-text.mjs
-// parseJsonResponse, repairTruncatedJson, extractBalancedJson are imported from json-repair.mjs
-// CORTEX_SCHEMAS is imported from vertex-text.mjs
-// getGceToken is imported from gce-auth.mjs
+
 
 /**
  * Create a Câ†’T pair under a parent envelope and return the checkpoint ID.
@@ -3253,9 +3249,7 @@ async function main() {
   await pollIntake();
 }
 
-// ---- Cron, scheduler, approvals (via scheduler.mjs + approvals.mjs, Phase 2 extraction) ----
-// cronNextFire is imported from scheduler.mjs at file top
-// cronMatch is internal to scheduler.mjs
+// ---- Cron, scheduler, approvals (via scheduler.mjs + approvals.mjs) ----
 
 let _approvalChecker = null;
 

@@ -499,11 +499,9 @@ async function deliverToFleetFirestore(text) {
 async function deliver(text, sourceChannel) {
   if (CHANNEL === 'gchat') {
     await deliverToGChat(text);
-    // Also deliver to Firestore for dashboard visibility
-    if (sourceChannel === 'dashboard' || true) {
-      try { await deliverToFleetFirestore(text); } catch (err) {
-        log('Fleet Firestore delivery failed (non-critical)', { error: err.message });
-      }
+    // Also deliver to fleet Firestore for dashboard visibility
+    try { await deliverToFleetFirestore(text); } catch (err) {
+      log('Fleet Firestore delivery failed (non-critical)', { error: err.message });
     }
   } else {
     await deliverToFirestore(text);
