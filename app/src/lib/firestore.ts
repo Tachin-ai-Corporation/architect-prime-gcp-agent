@@ -1,4 +1,13 @@
+// lib/firestore.ts — Server-side Firestore client + collection helpers + doc types
+// Original module
+// Used by all API routes for Firestore access
+//
+// Singleton pattern: getDb() creates one Firestore client per process.
+// Collection helpers provide typed access to the document hierarchy.
+
 import { Firestore } from "@google-cloud/firestore";
+
+// ---- Singleton ----
 
 let _db: Firestore | null = null;
 
@@ -17,7 +26,7 @@ export function getDb(): Firestore {
   return _db;
 }
 
-/* ---- Collection helpers ---- */
+// ---- Collection helpers ----
 
 export function primesCol() {
   return getDb().collection("primes");
@@ -35,8 +44,16 @@ export function fleetMessagesCol(primeId: string, agentName: string) {
   return getDb().collection("primes").doc(primeId).collection("fleet").doc(agentName).collection("messages");
 }
 
-export function projectsCol() {
-  return getDb().collection("projects");
+export function fleetSkillsCol(primeId: string, agentName: string) {
+  return getDb().collection("primes").doc(primeId).collection("fleet").doc(agentName).collection("skills");
+}
+
+export function commandsCol(primeId: string) {
+  return getDb().collection("primes").doc(primeId).collection("commands");
+}
+
+export function approvalsCol(primeId: string) {
+  return getDb().collection("primes").doc(primeId).collection("approvals");
 }
 
 export function processesCol(primeId: string) {
@@ -47,7 +64,23 @@ export function plansCol(primeId: string) {
   return getDb().collection("primes").doc(primeId).collection("plans");
 }
 
-/* ---- Types ---- */
+export function skillProposalsCol(primeId: string) {
+  return getDb().collection("primes").doc(primeId).collection("skill-proposals");
+}
+
+export function projectsCol() {
+  return getDb().collection("projects");
+}
+
+export function promotionsCol(projectId: string) {
+  return getDb().collection("projects").doc(projectId).collection("promotions");
+}
+
+export function secretsCol() {
+  return getDb().collection("config").doc("secrets").collection("items");
+}
+
+// ---- Document types ----
 
 export interface PrimeDoc {
   id: string;
@@ -93,28 +126,6 @@ export interface ActionRequired {
   instructions: string[];
 }
 
-/* ---- Commands ---- */
-
-export function commandsCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("commands");
-}
-
-export function approvalsCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("approvals");
-}
-
-export function promotionsCol(projectId: string) {
-  return getDb().collection("projects").doc(projectId).collection("promotions");
-}
-
-export function fleetSkillsCol(primeId: string, agentName: string) {
-  return getDb().collection("primes").doc(primeId).collection("fleet").doc(agentName).collection("skills");
-}
-
-export function skillProposalsCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("skill-proposals");
-}
-
 export type CommandType =
   | "fleet_deploy"
   | "fleet_teardown"
@@ -133,8 +144,6 @@ export interface CommandDoc {
   error?: string;
 }
 
-/* ---- Secrets ---- */
-
 export interface SecretGrant {
   agentEmail: string;
   serviceAccount: string;
@@ -149,8 +158,4 @@ export interface SecretMetadata {
   createdAt: FirebaseFirestore.Timestamp;
   createdBy: string;
   grants: SecretGrant[];
-}
-
-export function secretsCol() {
-  return getDb().collection("config").doc("secrets").collection("items");
 }

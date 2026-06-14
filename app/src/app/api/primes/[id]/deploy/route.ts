@@ -28,7 +28,6 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
 
-
   try {
     // Get Prime config from Firestore
     const doc = await primesCol().doc(id).get();

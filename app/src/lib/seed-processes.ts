@@ -1,10 +1,10 @@
-/**
- * seed-processes.ts — Idempotent seeder for core processes
- *
- * Called at Prime deploy time and fleet hire time.
- * Seeds p-plan and p-investigate into primes/{id}/processes/
- * if they don't exist or are outdated.
- */
+// lib/seed-processes.ts — Idempotent seeder for core processes (p-plan, p-investigate)
+// Original module
+// Used by api/primes/[id]/deploy and api/primes/[id]/fleet/hire
+//
+// Seeds core process definitions into primes/{id}/processes/
+// at deploy time and fleet hire time. Skips if already at current version.
+
 import { processesCol } from "./firestore";
 
 const CORE_PROCESS_VERSION = 1;

@@ -156,8 +156,7 @@ async function deleteVM(
 async function deleteCollection(collectionRef: FirebaseFirestore.CollectionReference) {
   const batchSize = 100;
   let deleted = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  for (;;) {
     const snapshot = await collectionRef.limit(batchSize).get();
     if (snapshot.empty) break;
     const batch = collectionRef.firestore.batch();

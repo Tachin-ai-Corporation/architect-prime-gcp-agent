@@ -5,14 +5,15 @@ const GH_RAW =
 
 /** Theme data per specialty */
 const THEMES: Record<string, { glyph: string; accent: string }> = {
-  devops:    { glyph: "⚙️", accent: "#38bdf8" },
-  engineer:  { glyph: "🧪", accent: "#a78bfa" },
-  qa:        { glyph: "🧭", accent: "#2dd4bf" },
-  pm:        { glyph: "🗂️", accent: "#fbbf24" },
-  finance:   { glyph: "📊", accent: "#34d399" },
-  data:      { glyph: "🧮", accent: "#818cf8" },
-  security:  { glyph: "🛡️", accent: "#fb7185" },
-  assistant: { glyph: "🎯", accent: "#94a3b8" },
+  devops:              { glyph: "⚙️", accent: "#38bdf8" },
+  engineer:            { glyph: "🧪", accent: "#a78bfa" },
+  qa:                  { glyph: "🧭", accent: "#2dd4bf" },
+  pm:                  { glyph: "🗂️", accent: "#fbbf24" },
+  finance:             { glyph: "📊", accent: "#34d399" },
+  data:                { glyph: "🧮", accent: "#818cf8" },
+  security:            { glyph: "🛡️", accent: "#fb7185" },
+  assistant:           { glyph: "🎯", accent: "#94a3b8" },
+  "product-architect": { glyph: "📐", accent: "#f472b6" },
 };
 
 const SPECIALTY_IDS = Object.keys(THEMES);

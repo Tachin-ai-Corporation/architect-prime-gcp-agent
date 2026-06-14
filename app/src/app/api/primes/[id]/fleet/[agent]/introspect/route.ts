@@ -104,8 +104,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     const data = doc.data()!;
 
-    // Decode Firestore map values to plain objects
-    const result = data.status === "complete" ? decodeFirestoreValue(data.result) : null;
+    const result = data.status === "complete" ? (data.result ?? null) : null;
 
     return NextResponse.json({
       queryId,
@@ -125,9 +124,3 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function decodeFirestoreValue(val: any): any {
-  if (val === null || val === undefined) return null;
-  // Already decoded by Firestore SDK — just return as-is
-  return val;
-}

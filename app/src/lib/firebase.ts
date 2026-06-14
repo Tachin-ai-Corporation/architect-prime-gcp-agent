@@ -1,3 +1,7 @@
+// lib/firebase.ts — Client-side Firebase Firestore singleton
+// Original module
+// Used by dashboard client components for real-time Firestore access
+
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 

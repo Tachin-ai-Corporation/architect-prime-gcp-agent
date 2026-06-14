@@ -1,8 +1,9 @@
-/**
- * Secret Manager REST API helper.
- * Uses Google Auth Library (ADC) for authentication.
- * No @google-cloud/secret-manager dependency — direct REST calls.
- */
+// lib/secret-manager.ts — Secret Manager REST API helper (ADC auth, no SDK dependency)
+// Original module
+// Used by api/secrets/ routes for CRUD + IAM grant/revoke
+//
+// Direct REST calls to secretmanager.googleapis.com — avoids pulling
+// in the @google-cloud/secret-manager SDK for 6 simple operations.
 
 import { GoogleAuth } from "google-auth-library";
 

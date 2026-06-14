@@ -132,6 +132,24 @@ async function pollCloudBuild(
   }
 }
 
+/* ---- Deploy steps helper ---- */
+
+/** Parse raw deploy steps into normalized OperationSteps + progress percentage. */
+function parseDeploySteps(deploySteps: unknown[]): { steps: OperationStep[]; progress: number } {
+  const steps = deploySteps.map((s: any) => ({
+    id: s.id,
+    label: s.label,
+    status: s.status,
+    timestamp: s.timestamp || "",
+    ...(s.detail ? { detail: s.detail } : {}),
+  }));
+  const completed = deploySteps.filter(
+    (s: any) => s.status === "done" || s.status === "skipped",
+  ).length;
+  const progress = Math.round((completed / deploySteps.length) * 100);
+  return { steps, progress };
+}
+
 /* ---- GET handler ---- */
 
 /**
@@ -168,20 +186,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
           try {
             const fleetSnap = await fleetCol(primeId).doc(args.name).get();
             if (fleetSnap.exists) {
-              const fleetData = fleetSnap.data();
-              const deploySteps = fleetData?.deploySteps;
+              const deploySteps = fleetSnap.data()?.deploySteps;
               if (Array.isArray(deploySteps) && deploySteps.length > 0) {
-                steps = deploySteps.map((s) => ({
-                  id: s.id,
-                  label: s.label,
-                  status: s.status,
-                  timestamp: s.timestamp || "",
-                  ...(s.detail ? { detail: s.detail } : {}),
-                }));
-                const completed = deploySteps.filter(
-                  (s) => s.status === "done" || s.status === "skipped",
-                ).length;
-                progress = Math.round((completed / deploySteps.length) * 100);
+                ({ steps, progress } = parseDeploySteps(deploySteps));
               }
             }
           } catch (e) {
@@ -197,17 +204,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
               const primeData = primeSnap.data();
               const deploySteps = primeData?.deploySteps;
               if (Array.isArray(deploySteps) && deploySteps.length > 0) {
-                steps = deploySteps.map((s) => ({
-                  id: s.id,
-                  label: s.label,
-                  status: s.status,
-                  timestamp: s.timestamp || "",
-                  ...(s.detail ? { detail: s.detail } : {}),
-                }));
-                const completed = deploySteps.filter(
-                  (s) => s.status === "done" || s.status === "skipped",
-                ).length;
-                progress = Math.round((completed / deploySteps.length) * 100);
+                ({ steps, progress } = parseDeploySteps(deploySteps));
 
                 // Auto-complete the command when prime is online
                 if (primeData?.status === "online") {

@@ -47,14 +47,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const agentEmail = email;
-
     // Create fleet doc immediately for instant dashboard feedback
     await fleetCol(id).doc(name).set(
       {
         name,
         specialty,
-        email: agentEmail,
+        email,
         status: "deploying",
         vm: `fleet-${name}`,
         zone: "us-central1-a",
@@ -68,7 +66,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const cmdRef = commandsCol(id).doc();
     await cmdRef.set({
       type: "fleet_deploy",
-      args: { name, specialty, email: agentEmail },
+      args: { name, specialty, email },
       status: "pending",
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -84,7 +82,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         command: "fleet_deploy",
         agent: name,
         specialty,
-        email: agentEmail,
+        email,
       },
       { status: 201 }
     );

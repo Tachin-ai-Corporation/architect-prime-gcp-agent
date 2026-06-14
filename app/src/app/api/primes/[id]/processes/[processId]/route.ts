@@ -48,10 +48,6 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     const now = new Date().toISOString();
     const newVersion = (existingData.version || 1) + 1;
 
-    // Deep merge steps if provided (replace array)
-    if (body.steps && Array.isArray(body.steps)) {
-      // Steps are replaced wholesale — they're an ordered list
-    }
 
     // Deep merge parameters at key level if provided
     if (body.parameters && typeof body.parameters === "object") {

@@ -1,4 +1,8 @@
-/* ---- Shared types for Architect Prime dashboard ---- */
+// lib/types.ts — Shared TypeScript interfaces for the dashboard
+// Original module
+// Used by dashboard components and API routes
+
+/* ---- Prime & Fleet types ---- */
 
 export interface PrimeInstance {
   id: string;
@@ -131,10 +135,10 @@ export interface Project {
   status: 'active' | 'complete' | 'paused' | 'archived';
   parent_id: string | null;
   depends_on: string[];
-  team: string[];              // prime/agent IDs with access
-  created_by: string;          // who created this project
-  drive_folder_id?: string;    // Google Drive folder ID
-  drive_url?: string;          // Google Drive folder URL
+  team: string[];
+  created_by: string;
+  drive_folder_id?: string;
+  drive_url?: string;
   context: {
     documentation: string[];
     processes: string[];
@@ -170,4 +174,3 @@ export interface Plan {
   created_at: string;
   updated_at: string;
 }
-

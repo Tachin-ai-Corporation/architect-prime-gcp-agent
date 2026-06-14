@@ -1,7 +1,15 @@
+// lib/auth.ts — NextAuth configuration with Google OAuth + domain restriction
+// Original module
+// Used by all API routes (via require-auth.ts) and middleware.ts
+
 import GoogleProvider from "next-auth/providers/google";
 import type { NextAuthOptions } from "next-auth";
 
+// ---- Constants ----
+
 const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || "";
+
+// ---- Public API ----
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -27,9 +35,7 @@ export const authOptions: NextAuthOptions = {
       // Enforce domain restriction server-side (hd param is only a UI hint)
       if (ALLOWED_DOMAIN) {
         const hd = (profile as Record<string, unknown>)?.hd as string | undefined;
-        if (hd !== ALLOWED_DOMAIN) {
-          return false;
-        }
+        if (hd !== ALLOWED_DOMAIN) return false;
       }
       return true;
     },
