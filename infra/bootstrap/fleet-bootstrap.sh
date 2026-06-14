@@ -15,6 +15,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 trap 'echo; echo "[ERROR] Line $LINENO failed: $BASH_COMMAND"; echo "Log: $LOG_FILE"; exit 1' ERR
 
 info(){ echo -e "\n==> $*\n"; }
+ok()  { echo -e "\n[ OK ] $*\n"; }
 warn(){ echo -e "\n[WARN] $*\n"; }
 
 # ---- Read config from VM metadata ----
