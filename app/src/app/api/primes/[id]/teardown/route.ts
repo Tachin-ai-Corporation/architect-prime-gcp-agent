@@ -10,10 +10,9 @@ interface RouteContext {
 /**
  * POST /api/primes/[id]/teardown — Tear down a Prime VM
  *
- * Deletes the GCE VM and disk. Preserves the Firestore document
- * (messages, fleet history) for audit. Sets status to "removed".
- *
- * The Prime can be re-deployed later via POST /api/primes/[id]/deploy.
+ * Deletes the GCE VM and disk, then deletes the Firestore document
+ * and its subcollections. This is a full teardown — redeployment
+ * goes through the standard onboarding flow.
  */
 export async function POST(_req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
@@ -73,19 +72,22 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       }
     }
 
-    // Mark as removed (preserve doc for re-deploy and audit)
-    await primesCol().doc(id).update({
-      status: "removed",
-      removedAt: new Date().toISOString(),
-    });
-
-    // Mark operation complete
+    // Mark operation complete before deleting the doc
     await cmdRef.update({
       status: "complete",
       result: `VM ${vmName} deleted`,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    console.log(`[teardown] Complete: ${vmName} (command ${cmdRef.id})`);
+    console.log(`[teardown] VM deleted: ${vmName} (command ${cmdRef.id})`);
+
+    // Delete subcollections then the prime doc itself
+    const primeRef = primesCol().doc(id);
+    const subcollections = ["fleet", "commands", "work", "work_archive", "intake", "messages"];
+    for (const sub of subcollections) {
+      await deleteCollection(primeRef.collection(sub));
+    }
+    await primeRef.delete();
+    console.log(`[teardown] Firestore doc and subcollections deleted for prime ${id}`);
 
     return NextResponse.json({
       success: true,
@@ -146,4 +148,24 @@ async function deleteVM(
       },
     }
   );
+}
+
+/**
+ * Delete all documents in a Firestore collection (batch delete).
+ */
+async function deleteCollection(collectionRef: FirebaseFirestore.CollectionReference) {
+  const batchSize = 100;
+  let deleted = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const snapshot = await collectionRef.limit(batchSize).get();
+    if (snapshot.empty) break;
+    const batch = collectionRef.firestore.batch();
+    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+    deleted += snapshot.size;
+  }
+  if (deleted > 0) {
+    console.log(`[teardown] Deleted ${deleted} docs from ${collectionRef.path}`);
+  }
 }
