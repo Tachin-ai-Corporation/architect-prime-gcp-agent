@@ -34,8 +34,6 @@ const TABS: { id: SettingsTab; label: string; icon: string }[] = [
   { id: "system", label: "System", icon: "🖥️" },
 ];
 
-
-
 function SettingsPageInner() {
   const { setup, versionInfo, primes, sidebarFleet } = usePrime();
   const dialog = useDialog();
@@ -264,8 +262,6 @@ function SettingsPageInner() {
   const [buildStatus, setBuildStatus] = useState<string | null>(null);
 
   const firstPrimeId = primes.length > 0 ? primes[0].id : null;
-
-
 
   // Clipboard
   const [copied, setCopied] = useState("");

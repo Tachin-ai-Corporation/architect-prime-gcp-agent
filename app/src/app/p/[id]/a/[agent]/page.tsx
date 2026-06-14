@@ -1,49 +1,17 @@
 "use client";
 
 import { use, useState, useEffect } from "react";
-import Link from "next/link";
 import { usePrime } from "@/contexts/PrimeContext";
 import { BrainInspector } from "@/components/agent/BrainInspector";
 import { MemoryViewer } from "@/components/agent/MemoryViewer";
 import { AgentProjects } from "@/components/agent/AgentProjects";
 import { AgentPlans } from "@/components/agent/AgentPlans";
 import { AgentProcesses } from "@/components/agent/AgentProcesses";
-import { LiveIndicator } from "@/components/LiveIndicator";
 import { ChatPanel } from "@/components/ChatPanel";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
 import { PersonaPanel } from "@/components/agent/PersonaPanel";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import styles from "./page.module.css";
-
-/* ---- Skeleton helper ---- */
-function LoadingSkeleton() {
-  return (
-    <div className={styles.skeleton}>
-      <div className={styles.skeletonLine} />
-      <div className={styles.skeletonLine} />
-      <div className={styles.skeletonLine} />
-      <div className={styles.skeletonLine} />
-      <div className={styles.skeletonLine} />
-    </div>
-  );
-}
-
-function ErrorState({ message, onRetry }: { message?: string; onRetry?: () => void }) {
-  return (
-    <div className={styles.errorState}>
-      <div className={styles.errorIcon}>⚠️</div>
-      <div className={styles.errorTitle}>Failed to load</div>
-      <div className={styles.errorDesc}>
-        {message || "The agent may be offline or the introspection request timed out."}
-      </div>
-      {onRetry && (
-        <button className={styles.errorRetryBtn} onClick={onRetry}>
-          ↻ Retry
-        </button>
-      )}
-    </div>
-  );
-}
 
 const TABS = [
   { key: "overview", label: "Persona", icon: "🎭" },

@@ -456,8 +456,8 @@ function ProjectDetailView({
         <div className={styles.detailTitleRow}>
           <h1 className={styles.pgTitle}>{project.name}</h1>
           <StatusBadge status={project.status} />
-          {(project as any).owner && (
-            <span className={styles.detailOwner}>{(project as any).owner}</span>
+          {project.owner && (
+            <span className={styles.detailOwner}>{project.owner}</span>
           )}
         </div>
 
@@ -472,28 +472,28 @@ function ProjectDetailView({
         )}
 
         {/* Goal */}
-        {(project as any).goal && (
-          <div className={styles.detailGoal}>{(project as any).goal}</div>
+        {project.goal && (
+          <div className={styles.detailGoal}>{project.goal}</div>
         )}
 
         {/* Parent link */}
-        {(project as any).parent_id && (
+        {project.parent_id && (
           <div style={{ marginBottom: 8 }}>
             <Link
-              href={`/projects?project=${(project as any).parent_id}`}
+              href={`/projects?project=${project.parent_id}`}
               className={styles.detailParentLink}
             >
-              ↑ Parent: {(project as any).parent_id}
+              ↑ Parent: {project.parent_id}
             </Link>
           </div>
         )}
 
         {/* Depends on */}
-        {(project as any).depends_on?.length > 0 && (
+        {project.depends_on?.length > 0 && (
           <div className={styles.depSection}>
             <div className={styles.depSectionLabel}>Depends On</div>
             <div className={styles.depChips}>
-              {(project as any).depends_on.map((dep: string) => (
+              {project.depends_on.map((dep) => (
                 <Link
                   key={dep}
                   href={`/projects?project=${dep}`}
@@ -507,10 +507,10 @@ function ProjectDetailView({
         )}
 
         {/* Drive folder */}
-        {(project as any).drive_url && (
+        {project.drive_url && (
           <div style={{ marginBottom: 8 }}>
             <a
-              href={(project as any).drive_url}
+              href={project.drive_url}
               target="_blank"
               rel="noopener noreferrer"
               style={{ fontSize: 13, color: "var(--care-mint)", textDecoration: "none" }}

@@ -670,8 +670,6 @@ function HomeInner() {
                             </div>
                           )}
 
-
-
                           {/* Upgrade button */}
                           {agent.status === "online" && (
                             <div className={styles.agentFooter}>
