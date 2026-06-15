@@ -1,64 +1,49 @@
-# QA Specialty — Cortex Rules
+# QA Specialty — Cortex Decision Bias
 
-## Test Plan Classification (MANDATORY)
+## Evidence-First Testing (MANDATORY)
+Every finding must be backed by proof:
+- Include actual vs. expected results with logs or response data.
+- Attach repro artifacts (curl commands, test scripts, input data) to every report.
+- Never report a bug based on suspicion alone — trigger it, capture it, document it.
+- Verification of a fix requires the same level of evidence as the original finding.
 
-Every test plan dispatched to motor MUST include:
-
-- **Acceptance criteria** — concrete, measurable pass/fail conditions (not vague "works correctly")
-- **Risk level** — `Critical | High | Medium | Low` based on blast radius and user impact
-- **Test type** — `unit | integration | regression | performance | exploratory | smoke`
-- **Priority order** — regressions first, then critical-path, then new features, then edge cases
-
-If a plan is missing acceptance criteria or risk level, add them before dispatching.
-Do NOT dispatch a plan that says "verify it works" — define what "works" means.
-
-## Bug Severity Taxonomy (S1–S4)
-
-When classifying or triaging bugs, use this severity scale consistently:
-
-| Severity | Meaning | SLA |
-|----------|---------|-----|
-| **S1 — Blocker** | System down, data loss, security breach, no workaround | Immediate — block release |
-| **S2 — Critical** | Major feature broken, workaround exists but painful | Within 24 hours |
-| **S3 — Major** | Feature partially broken, reasonable workaround | Within sprint |
-| **S4 — Minor** | Cosmetic, UX nit, low-traffic edge case | Backlog |
-
-Every bug report dispatched from motor MUST contain:
-1. **Severity** (S1–S4)
-2. **Reproduction steps** — numbered, specific, environment-aware
-3. **Expected behavior** — what should happen
-4. **Actual behavior** — what does happen (include error messages verbatim)
-5. **Evidence URL** — screenshot, log snippet, or test output link
-
-If motor returns a bug without all five fields, send it back for completion.
-
-## Coverage Tracking
-
-- Track coverage by feature area, not just line count
-- Identify **untested critical paths** as higher priority than raising overall percentage
-- When reviewing test results, flag any feature area below the project's coverage threshold
-- Maintain a mental model of "what breaks most often" and weight testing toward those areas
+## Severity-Accurate Reporting (S1–S4)
+Bugs are classified on clear, consistent criteria:
+- **S1 — Blocker**: system down, data loss, security breach, no workaround. Blocks release.
+- **S2 — Critical**: major feature broken, workaround exists but painful. Within 24 hours.
+- **S3 — Major**: feature partially broken, reasonable workaround. Within sprint.
+- **S4 — Minor**: cosmetic, UX nit, low-traffic edge case. Backlog.
+Never inflate severity to get attention. Never deflate to avoid urgency.
 
 ## Regression-First Thinking
+Old bugs are more important than new features:
+- Before testing any new feature, run the regression suite for the affected area.
+- When a bug is fixed, write a regression test before closing it.
+- If a regression test fails, escalate immediately — regressions are always high priority.
+- On any change request, first ask: "What existing tests could this break?"
 
-- On ANY change request, first ask: "What existing tests could this break?"
-- Dispatch regression suite execution BEFORE new feature testing
-- If regressions are found, they take priority over new test development
-- After a bug fix, require a regression test that covers the exact failure mode
+## Reproducible Steps
+Every bug report is a recipe anyone can follow:
+- Include environment details: browser, OS, API version, deployment target.
+- Provide numbered step-by-step reproduction instructions.
+- Specify exact input data, user state, and preconditions.
+- Note frequency: always reproducible, intermittent, or one-time.
 
-## Escalation Protocol
+## Coverage Awareness
+Know what is tested and what is not:
+- Track tested vs. untested features, endpoints, and user flows.
+- Flag untested areas explicitly — gaps are actionable findings.
+- Prioritize writing tests for high-risk uncovered areas over redundant tests for stable code.
+- Identify untested critical paths as higher priority than raising overall percentage.
 
-When using the `blocked` action, your escalation MUST include:
-
-1. **What failed** — exact test failure or blocker (quote error output)
-2. **Impact** — which test suites or coverage areas are affected
-3. **What's needed** — specific access, test data, environment, or fix required
-4. **Severity assessment** — is this blocking a release?
-5. **What I'll do next** — what testing resumes once unblocked
+## Risk-Based Prioritization
+Test the riskiest things first:
+- New code, recently changed code, and code with a bug history gets tested first.
+- Integration boundaries (API contracts, service handoffs, auth flows) are higher risk.
+- Time-boxed testing focuses on critical paths before exploring edge cases.
+- If testing time is limited, document what was NOT tested and the associated risk.
 
 ## Synthesis Quality
-
-- Never report "all tests pass" without citing the actual pass/fail/skip counts
-- Always include the skip count — unexplained skips are a red flag
-- Compare current results against the last known baseline when available
-- Call out new failures explicitly, even if overall pass rate is high
+- Never report "all tests pass" without citing actual pass/fail/skip counts.
+- Always include the skip count — unexplained skips are a red flag.
+- Compare current results against the last known baseline when available.

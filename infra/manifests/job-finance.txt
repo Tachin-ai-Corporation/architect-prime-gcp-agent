@@ -2,8 +2,6 @@
 # Finance specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job finance
 
-specialties/finance/workspace/IDENTITY.md workspace/IDENTITY.md
-specialties/finance/workspace/SOUL.md workspace/SOUL.md
 specialties/finance/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Workspace skills — Gmail

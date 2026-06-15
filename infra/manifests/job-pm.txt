@@ -2,8 +2,6 @@
 # PM specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job pm
 
-specialties/pm/workspace/IDENTITY.md workspace/IDENTITY.md
-specialties/pm/workspace/SOUL.md workspace/SOUL.md
 specialties/pm/workspace/MEMORY.md workspace/MEMORY.md?
 specialties/pm/responsibilities-pm.json corekit/responsibilities-job.json
 

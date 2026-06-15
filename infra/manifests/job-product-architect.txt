@@ -2,8 +2,6 @@
 # Product Architect specialty — canon stewardship, repo audit, improvement planning
 # Installed by: infra/install.sh --role fleet --job product-architect
 
-specialties/product-architect/workspace/IDENTITY.md workspace/IDENTITY.md
-specialties/product-architect/workspace/SOUL.md workspace/SOUL.md
 specialties/product-architect/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Product Architect responsibilities (merged with base by Brain scheduler)

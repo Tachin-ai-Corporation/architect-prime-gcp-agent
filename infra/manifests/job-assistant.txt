@@ -2,8 +2,6 @@
 # Assistant specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job assistant
 
-specialties/assistant/workspace/IDENTITY.md workspace/IDENTITY.md
-specialties/assistant/workspace/SOUL.md workspace/SOUL.md
 specialties/assistant/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Workspace skills — Google Drive

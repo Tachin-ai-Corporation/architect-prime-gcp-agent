@@ -1,111 +1,50 @@
 # DevOps Specialty — Cerebellum Verification Rules
 
-## Post-Deploy HTTP Probe (MANDATORY)
-
-After any Cloud Run or Cloud Functions deployment, REFUSE to mark the deployment
-as successful until motor has performed an HTTP health check:
-
-```bash
-# Cloud Run — verify the service URL responds
-curl -s -o /dev/null -w "%{http_code}" $SERVICE_URL/health
-# Expected: 200 (or the service's documented health endpoint)
-
-# Cloud Functions — verify the function is ACTIVE
-gcloud functions describe $FUNCTION_NAME --region=$REGION --format="value(state)"
-# Expected: ACTIVE
-```
-
-- If the probe returns a non-2xx status, mark deployment as **FAILED**
-- If the probe times out (>10s), mark deployment as **DEGRADED** and retry once
-- If no health endpoint exists, verify the service description shows status READY:
-  `gcloud run services describe $SERVICE --region=$REGION --format="value(status.conditions[0].status)"`
+## Post-Deploy Verification (MANDATORY)
+After any deployment, refuse to mark it successful until an actual health check passes:
+- HTTP endpoint must return 2xx status.
+- If no health endpoint exists, verify the service description shows status READY.
+- If the probe returns non-2xx, mark deployment as FAILED.
+- If the probe times out (>10s), mark as DEGRADED and retry once.
 
 ## IAM Propagation Wait
+IAM changes take time to propagate in GCP:
+- Wait 30 seconds before testing a new permission.
+- If verification fails after the wait, retry once after another 30 seconds.
+- If still failing after 60 total seconds, report as a genuine permission issue.
+- Never mark an IAM change as successful based solely on command exit code.
 
-IAM changes take time to propagate in GCP. After any IAM modification:
+## Build Completion Verification
+When a Cloud Build is triggered, verify it completes successfully:
+- Build status must be SUCCESS (not just submitted).
+- Build logs should not contain ERROR or FATAL entries.
+- Build artifacts were pushed to the registry (if applicable).
+- Flag if build duration is >2x historical average.
 
-- **Wait 30 seconds** before testing the new permission
-- Motor should execute: `sleep 30` between the IAM change and the verification step
-- If verification fails after the wait, retry once after another 30 seconds
-- If it still fails after 60 total seconds, report as a genuine permission issue
-
-Do NOT mark an IAM change as successful based solely on the command exit code.
-Always verify with an actual operation that exercises the new permission.
-
-## Cloud Build Status Polling
-
-When motor triggers a Cloud Build, verify it completes successfully:
-
-```bash
-# Get the build ID from the trigger output
-gcloud builds describe $BUILD_ID --project=$PROJECT --format="value(status)"
-# Expected: SUCCESS
-
-# If status is WORKING or QUEUED, poll again (motor should wait 30s between polls)
-# Maximum 10 polls (5 minutes total) before reporting as TIMEOUT
-```
-
-### Build Verification Checklist
-- [ ] Build status is SUCCESS (not just submitted)
-- [ ] Build logs do not contain ERROR or FATAL entries
-- [ ] Build artifacts were pushed to Artifact Registry (if applicable)
-- [ ] Build duration is within expected range (flag if >2x historical average)
-
-## Service Health Checks
-
+## Service Health Before Completion
 Before marking any infrastructure mission as complete, verify service health:
-
-### Cloud Run
-```bash
-gcloud run services describe $SERVICE --region=$REGION --project=$PROJECT \
-  --format="value(status.conditions[0].status,status.conditions[0].type)"
-# Expected: True Ready
-```
-
-### Compute Engine
-```bash
-gcloud compute instances describe $INSTANCE --zone=$ZONE --project=$PROJECT \
-  --format="value(status)"
-# Expected: RUNNING
-```
-
-### Cloud SQL
-```bash
-gcloud sql instances describe $INSTANCE --project=$PROJECT --format="value(state)"
-# Expected: RUNNABLE
-```
+- Cloud Run: service status is Ready.
+- Compute Engine: instance status is RUNNING.
+- Cloud SQL: instance state is RUNNABLE.
 
 ## Endpoint Verification
-
 After deploying or modifying any service with an external endpoint:
-
-1. **Verify DNS resolution** (if custom domain): `nslookup $DOMAIN`
-2. **Verify HTTPS**: `curl -s -o /dev/null -w "%{http_code}" https://$ENDPOINT`
-3. **Verify response time**: Flag if response time > 5 seconds
-4. **Verify expected content**: Check response body contains expected markers
-
-If any endpoint check fails, mark the mission as incomplete and report the failure.
+1. Verify DNS resolution (if custom domain).
+2. Verify HTTPS returns 2xx.
+3. Flag if response time > 5 seconds.
+4. Verify response body contains expected markers.
 
 ## Rollback Verification
-
-When a rollback is executed (deploying a previous revision):
-
-1. **Verify the rollback target exists**: `gcloud run revisions list --service=$SERVICE`
-2. **Verify traffic shifted**: `gcloud run services describe $SERVICE --format=json | jq '.status.traffic'`
-3. **Run the HTTP probe** on the rolled-back service
-4. **Compare behavior** to pre-rollback state if baseline data is available
-
-A rollback is NOT complete until the rolled-back service passes the same health
-checks as a fresh deployment.
+When a rollback is executed:
+1. Verify the rollback target exists.
+2. Verify traffic shifted to the correct revision.
+3. Run the health probe on the rolled-back service.
+A rollback is not complete until it passes the same health checks as a fresh deployment.
 
 ## Error Pattern Detection
-
 Flag these patterns as verification failures:
-
-| Pattern | Detection | Action |
-|---------|-----------|--------|
-| Deploy succeeded but service unhealthy | HTTP probe returns non-2xx | Mark FAILED, escalate |
-| IAM granted but permission still denied | Test operation fails after 60s wait | Report propagation issue |
-| Build completed but no artifact | Artifact Registry list shows no new image | Mark FAILED |
-| Service running but wrong revision | Describe shows unexpected revision name | Flag configuration drift |
-| Quota exhausted during deploy | Error contains "quota" or "RESOURCE_EXHAUSTED" | Report with current quota usage |
+- Deploy succeeded but service unhealthy → mark FAILED, escalate.
+- IAM granted but permission still denied after 60s → report propagation issue.
+- Build completed but no artifact → mark FAILED.
+- Service running but wrong revision → flag configuration drift.
+- Quota exhausted during deploy → report with current quota usage.

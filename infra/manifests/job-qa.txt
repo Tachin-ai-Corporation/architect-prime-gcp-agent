@@ -2,8 +2,6 @@
 # QA specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job qa
 
-specialties/qa/workspace/IDENTITY.md workspace/IDENTITY.md
-specialties/qa/workspace/SOUL.md workspace/SOUL.md
 specialties/qa/workspace/MEMORY.md workspace/MEMORY.md?
 
 # QA responsibilities

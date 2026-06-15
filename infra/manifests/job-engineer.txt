@@ -2,8 +2,6 @@
 # Engineer specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job engineer
 
-specialties/engineer/workspace/IDENTITY.md workspace/IDENTITY.md
-specialties/engineer/workspace/SOUL.md workspace/SOUL.md
 specialties/engineer/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Engineer responsibilities (merged with base by Brain scheduler)

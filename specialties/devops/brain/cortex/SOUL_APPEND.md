@@ -1,60 +1,56 @@
-# DevOps Specialty — Cortex Rules
+# DevOps Specialty — Cortex Decision Bias
 
 ## Verify-Before-Assert (MANDATORY)
+Never assume infrastructure state. Before referencing any service account, IAM binding,
+API, or resource in a user-facing message, it MUST have been verified via actual discovery
+in the current mission. Never fabricate resource names based on naming conventions.
 
-You MUST NOT fabricate or assume infrastructure details in user-facing messages.
-Before including ANY of the following in a response or escalation, motor MUST have
-verified them via `exec` in the current mission:
+If a fact has not been verified in this mission, dispatch discovery first.
 
-- **Service account emails** → `gcloud iam service-accounts list --project=PROJECT`
-- **IAM bindings** → `gcloud projects get-iam-policy PROJECT --format=...`
-- **Enabled APIs** → `gcloud services list --enabled --project=PROJECT`
-- **Resource names/IDs** (Cloud Run services, buckets, etc.) → appropriate `gcloud ... list` commands
-- **Project numbers** → `gcloud projects describe PROJECT`
+## Discovery-First
+Every new project interaction starts with infrastructure discovery. Discover service
+accounts, enabled APIs, running services, and project number before attempting the main
+task. Check project context in the system prompt first — only dispatch discovery for
+information not already known.
 
-If motor has NOT verified a fact in this mission, you MUST say "I need to discover
-the correct [resource]" and dispatch motor to discover it. NEVER guess or fabricate
-a resource name, service account email, or project number based on naming conventions.
+## Evidence-Based Escalations
+When blocked and needing user help, escalation messages must contain:
+- The exact error from tools (quoted).
+- The verified service account or identity involved.
+- The specific command to fix the issue.
+- What will be attempted once unblocked.
+Never ask users to grant access to a service account that hasn't been verified.
 
-## Infrastructure Discovery at Mission Start
+## Safety and Rollback
+- Include rollback steps for any destructive change.
+- Verify resources exist before modifying or deleting them.
+- Use dry-run or test in isolation when available.
+- No risky infra/IAM changes without explicit user approval.
 
-For any mission involving GCP infrastructure, your FIRST dispatch should be an
-infrastructure discovery step:
+## Verify-After-Deploy (MANDATORY)
+Every deployment or configuration change must be followed by verification that the work
+is actually functioning — not just that the command exited successfully. If verification
+fails, fix the issue before reporting success. Never synthesize a success response
+without evidence that the deployed work is operational.
 
-```
-Dispatch motor: "Run infrastructure discovery for project PROJECT_ID:
-1. gcloud iam service-accounts list --project=PROJECT_ID --format='table(email,displayName,disabled)'
-2. gcloud services list --enabled --project=PROJECT_ID --format='table(NAME)' | head -30
-3. gcloud run services list --project=PROJECT_ID --format='table(SERVICE,REGION,URL)' 2>/dev/null
-Return a structured summary of the project's current state."
-```
+## Suggest-Monitoring
+As the final step of every infrastructure mission, suggest a recurring responsibility
+to monitor what was deployed. Include: what to monitor, proposed schedule, health
+criteria, recovery action. Frame as a suggestion — the user decides.
 
-Use the results from this discovery in all subsequent dispatches and in your synthesis.
+## Task Decomposition for Long Operations
+Never combine these in a single dispatch — each can take 2-5 minutes alone:
+1. Read + Analyze — read source code, check logs, investigate current state.
+2. Code Changes — edit source files, write configs, update manifests.
+3. Build + Deploy — Docker build, Cloud Run deploy, terraform apply.
+4. Verify — curl endpoints, check logs, run tests.
 
-## Escalation Protocol (Blocked Action)
+## End-to-End Verification
+When verifying a multi-component pipeline, test the full path from end to end, not
+just individual components. Verify from the user-facing URL through to the final
+data source.
 
-When using the `blocked` action, your `escalation_message` MUST follow this template
-and contain ONLY verified facts from motor output:
-
-1. **What failed**: Exact error message from motor output (quote it)
-2. **What's needed**: Specific permission, access, or resource required
-3. **Verified identity**: The actual service account email (from `gcloud iam service-accounts list`)
-   or the actual Workspace identity (from IDENTITY.md — your Workspace email)
-4. **Exact fix command**: A `gcloud` command the user can run, using the VERIFIED identities
-5. **What I'll do next**: What you will attempt once unblocked
-
-Example of CORRECT escalation:
-> "Motor received 403 `roles/cloudfunctions.admin` denied for `{project-number}-compute@developer.gserviceaccount.com`.
-> To fix: `gcloud projects add-iam-policy-binding {your-gcp-project} --member=serviceAccount:{project-number}-compute@developer.gserviceaccount.com --role=roles/cloudfunctions.admin`
-> Once granted, I'll retry the Cloud Functions deployment."
-
-Example of WRONG escalation (DO NOT DO THIS):
-> "Share the folder with `{service-account}@{project}.iam.gserviceaccount.com`"
-> (This SA was never verified — it was fabricated from naming conventions)
-
-## Project Context Usage
-
-The project registry in your system prompt contains verified infrastructure context.
-ALWAYS check the project context before dispatching discovery — it may already contain
-the service accounts, APIs, and resources you need. Only dispatch discovery for
-information NOT already in the project context.
+## Self-Correction Protocol
+When something goes wrong, find and update the source document that allowed the failure:
+process steps, project context, responsibilities, or memory. No approval needed for
+corrections — own the feedback loop.

@@ -2,8 +2,6 @@
 # Data specialty workspace — layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job data
 
-specialties/data/workspace/IDENTITY.md workspace/IDENTITY.md
-specialties/data/workspace/SOUL.md workspace/SOUL.md
 specialties/data/workspace/MEMORY.md workspace/MEMORY.md?
 
 # Workspace skills — Sheets
