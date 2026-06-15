@@ -12,6 +12,7 @@
 #   ws-token --scope drive      → Drive file access
 #   ws-token --scope docs       → Docs + Drive scopes
 #   ws-token --scope sheets     → Sheets + Drive scopes
+#   ws-token --scope slides     → Slides + Drive scopes
 #   ws-token --scope contacts   → Contacts read-only
 #   ws-token --scope all        → All Workspace scopes
 #
@@ -34,8 +35,9 @@ SCOPE_CALENDAR="https://www.googleapis.com/auth/calendar https://www.googleapis.
 SCOPE_DRIVE="https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file"
 SCOPE_DOCS="https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/drive.file"
 SCOPE_SHEETS="https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file"
+SCOPE_SLIDES="https://www.googleapis.com/auth/presentations https://www.googleapis.com/auth/drive.file"
 SCOPE_CONTACTS="https://www.googleapis.com/auth/contacts.readonly"
-SCOPE_ALL="$SCOPE_GMAIL $SCOPE_CALENDAR $SCOPE_DRIVE $SCOPE_DOCS $SCOPE_SHEETS $SCOPE_CONTACTS"
+SCOPE_ALL="$SCOPE_GMAIL $SCOPE_CALENDAR $SCOPE_DRIVE $SCOPE_DOCS $SCOPE_SHEETS $SCOPE_SLIDES $SCOPE_CONTACTS"
 
 # ---- Parse args ----
 SCOPE_NAME=""
@@ -43,7 +45,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --scope)  SCOPE_NAME="$2"; shift 2 ;;
     --help|-h)
-      echo "Usage: ws-token --scope <gmail|calendar|drive|docs|sheets|contacts|all>"
+      echo "Usage: ws-token --scope <gmail|calendar|drive|docs|sheets|slides|contacts|all>"
       echo "Prints an access token to stdout."
       echo "Requires AGENT_USER_EMAIL to be set."
       exit 0
@@ -61,9 +63,10 @@ case "$SCOPE_NAME" in
   drive)    SCOPES="$SCOPE_DRIVE" ;;
   docs)     SCOPES="$SCOPE_DOCS" ;;
   sheets)   SCOPES="$SCOPE_SHEETS" ;;
+  slides)   SCOPES="$SCOPE_SLIDES" ;;
   contacts) SCOPES="$SCOPE_CONTACTS" ;;
   all)      SCOPES="$SCOPE_ALL" ;;
-  *) die "Unknown scope: $SCOPE_NAME. Use gmail|calendar|drive|docs|sheets|contacts|all" ;;
+  *) die "Unknown scope: $SCOPE_NAME. Use gmail|calendar|drive|docs|sheets|slides|contacts|all" ;;
 esac
 
 # ---- Resolve user email ----

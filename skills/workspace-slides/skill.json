@@ -1,0 +1,13 @@
+{
+  "id": "workspace-slides",
+  "name": "Google Slides",
+  "version": "1.0.0",
+  "description": "Create, read, edit, and manage Google Slides presentations",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "workspace",
+  "agent_part": "motor",
+  "scripts": ["slides-create", "slides-get", "slides-update", "slides-add-slide", "slides-duplicate"],
+  "requires": {},
+  "when_to_use": "When creating, reading, or editing Google Slides presentations — layouts, text, images, shapes, formatting"
+}

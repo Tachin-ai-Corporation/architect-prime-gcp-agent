@@ -72,6 +72,15 @@
       "emailPattern": "architect-agent-{name}",
       "skills": ["web-search", "skill-introspect", "memory-consolidate", "project-ops", "repo-audit"],
       "brain": true
+    },
+    {
+      "id": "designer",
+      "aliases": ["creative", "brand"],
+      "title": "Designer",
+      "specialty": "Branding, design systems, visual concepts, pixel-perfect implementation across Slides, Docs, and HTML/CSS",
+      "emailPattern": "designer-agent-{name}",
+      "skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "skill-introspect", "memory-consolidate", "design-ops"],
+      "brain": true
     }
   ]
 }

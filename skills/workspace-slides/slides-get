@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# slides-get — Read a Google Slides presentation's content
+# Brain agent: motor (READ)
+# Usage: slides-get <presentation_id> [--slide INDEX]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+SLIDES_API="https://slides.googleapis.com/v1/presentations"
+die() { echo "[slides-get] [ERROR] $*" >&2; exit 1; }
+PRES_ID="" SLIDE_INDEX=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --slide) SLIDE_INDEX="$2"; shift 2 ;; -*) die "Unknown: $1" ;; *) PRES_ID="$1"; shift ;; esac
+done
+[[ -n "$PRES_ID" ]] || die "Usage: slides-get <presentation_id> [--slide INDEX]"
+TOKEN="$("$WS_TOKEN" --scope slides)" || die "Auth failed"
+HTTP_CODE=$(curl -s -o /tmp/slides-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" "${SLIDES_API}/${PRES_ID}")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"presentationId\":\"${PRES_ID}\",\"message\":\"Presentation access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Slides API returned HTTP ${HTTP_CODE}"
+python3 -c "
+import json, sys
+pres = json.load(open('/tmp/slides-response.json'))
+slides = pres.get('slides', [])
+slide_index = ${SLIDE_INDEX:--1}
+result = {
+    'presentationId': pres.get('presentationId', ''),
+    'title': pres.get('title', ''),
+    'slideCount': len(slides),
+}
+if slide_index >= 0:
+    if slide_index >= len(slides):
+        result['error'] = f'Slide index {slide_index} out of range (0-{len(slides)-1})'
+        result['slides'] = []
+    else:
+        s = slides[slide_index]
+        result['slides'] = [{
+            'index': slide_index,
+            'objectId': s.get('objectId', ''),
+            'pageElements': len(s.get('pageElements', [])),
+            'layout': s.get('slideProperties', {}).get('layoutObjectId', '')
+        }]
+else:
+    result['slides'] = [{
+        'index': i,
+        'objectId': s.get('objectId', ''),
+        'pageElements': len(s.get('pageElements', [])),
+        'layout': s.get('slideProperties', {}).get('layoutObjectId', '')
+    } for i, s in enumerate(slides)]
+print(json.dumps(result, indent=2))
+"

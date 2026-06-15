@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# slides-create — Create a new Google Slides presentation
+# Brain agent: motor (WRITE)
+# Usage: slides-create --title "My Deck" [--folder FOLDER_ID]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+SLIDES_API="https://slides.googleapis.com/v1/presentations"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[slides-create] [ERROR] $*" >&2; exit 1; }
+TITLE="" FOLDER=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --title) TITLE="$2"; shift 2 ;; --folder) FOLDER="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+done
+[[ -n "$TITLE" ]] || die "Need --title"
+TOKEN="$("$WS_TOKEN" --scope slides)" || die "Auth failed"
+HTTP_CODE=$(curl -s -o /tmp/slides-response.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "{\"title\":\"${TITLE}\"}" "$SLIDES_API")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Slides create denied for ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Slides create failed with HTTP ${HTTP_CODE}"
+PRES_ID=$(python3 -c "import json; print(json.load(open('/tmp/slides-response.json'))['presentationId'])")
+if [[ -n "$FOLDER" ]]; then
+  curl -sf -X PATCH -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files/${PRES_ID}?addParents=${FOLDER}&removeParents=root" > /dev/null 2>&1
+fi
+python3 -c "
+import json; d = json.load(open('/tmp/slides-response.json'))
+print(json.dumps({'status':'created','presentationId':d['presentationId'],'title':d['title'],'link':'https://docs.google.com/presentation/d/'+d['presentationId']}, indent=2))
+"
