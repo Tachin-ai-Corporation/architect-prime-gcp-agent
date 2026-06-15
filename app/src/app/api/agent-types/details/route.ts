@@ -3,20 +3,15 @@ import { NextResponse } from "next/server";
 const GH_RAW =
   "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/main";
 
-/** Theme data per specialty */
-const THEMES: Record<string, { glyph: string; accent: string }> = {
-  devops:              { glyph: "⚙️", accent: "#38bdf8" },
-  engineer:            { glyph: "🧪", accent: "#a78bfa" },
-  qa:                  { glyph: "🧭", accent: "#2dd4bf" },
-  pm:                  { glyph: "🗂️", accent: "#fbbf24" },
-  finance:             { glyph: "📊", accent: "#34d399" },
-  data:                { glyph: "🧮", accent: "#818cf8" },
-  security:            { glyph: "🛡️", accent: "#fb7185" },
-  assistant:           { glyph: "🎯", accent: "#94a3b8" },
-  "product-architect": { glyph: "📐", accent: "#f472b6" },
-};
+/** Default theme for types without explicit glyph/accent */
+const DEFAULT_THEME = { glyph: "🔹", accent: "#94a3b8" };
 
-const SPECIALTY_IDS = Object.keys(THEMES);
+interface AgentType {
+  id: string;
+  title: string;
+  glyph?: string;
+  accent?: string;
+}
 
 interface KitJson {
   id: string;
@@ -51,18 +46,35 @@ async function ghJson<T>(path: string): Promise<T | null> {
 /**
  * GET /api/agent-types/details
  *
- * Fetches kit.json + responsibilities from GitHub raw for all 8 specialties.
- * Works on Cloud Run (no filesystem dependency).
+ * Fetches kit.json + responsibilities from GitHub raw for ALL specialties.
+ * Specialty list is driven by agent-types.json — no hardcoded list.
  */
 export async function GET() {
   try {
+    // Fetch the canonical agent type list — single source of truth
+    const agentTypesData = await ghJson<{ types: AgentType[] }>(
+      "corekit/config/agent-types.json"
+    );
+    if (!agentTypesData?.types?.length) {
+      return NextResponse.json(
+        { error: "Failed to load agent-types.json" },
+        { status: 500 }
+      );
+    }
+
+    const agentTypes = agentTypesData.types;
+
     // Fetch all kit.json files in parallel
     const kitResults = await Promise.all(
-      SPECIALTY_IDS.map(async (id) => {
+      agentTypes.map(async (agentType) => {
+        const id = agentType.id;
         const kit = await ghJson<KitJson>(`specialties/${id}/kit.json`);
         if (!kit) return null;
 
-        const theme = THEMES[id] || { glyph: "🔹", accent: "#94a3b8" };
+        const theme = {
+          glyph: agentType.glyph || DEFAULT_THEME.glyph,
+          accent: agentType.accent || DEFAULT_THEME.accent,
+        };
 
         // Fetch responsibilities
         const respData = await ghJson<{ responsibilities: ResponsibilityEntry[] }>(
@@ -93,7 +105,7 @@ export async function GET() {
       })
     );
 
-    // Filter out any that failed to load, maintain THEMES order
+    // Filter out any that failed to load
     const specialties = kitResults.filter(Boolean);
 
     return NextResponse.json({ specialties });

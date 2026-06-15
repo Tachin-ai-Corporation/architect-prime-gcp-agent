@@ -3,6 +3,8 @@
     {
       "id": "devops",
       "title": "DevOps Engineer",
+      "glyph": "⚙️",
+      "accent": "#38bdf8",
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
       "skills": ["web-search", "workspace-drive", "workspace-gmail", "skill-introspect", "memory-consolidate", "gcp-devops"],
@@ -12,6 +14,8 @@
       "id": "engineer",
       "aliases": ["swe", "software engineer"],
       "title": "Software Engineer",
+      "glyph": "🧪",
+      "accent": "#a78bfa",
       "specialty": "Full-stack development, code review, debugging, API design, architecture, testing",
       "emailPattern": "engineer-agent-{name}",
       "skills": ["web-search", "skill-introspect", "memory-consolidate", "git-ops", "code-review"],
@@ -20,6 +24,8 @@
     {
       "id": "qa",
       "title": "QA Engineer",
+      "glyph": "🧭",
+      "accent": "#2dd4bf",
       "specialty": "Test planning, test automation, regression testing, performance testing, quality gates",
       "emailPattern": "qa-agent-{name}",
       "skills": ["web-search", "skill-introspect", "memory-consolidate", "test-runner"],
@@ -28,6 +34,8 @@
     {
       "id": "pm",
       "title": "Project Manager",
+      "glyph": "🗂️",
+      "accent": "#fbbf24",
       "specialty": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
       "emailPattern": "pm-agent-{name}",
       "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets", "skill-introspect", "memory-consolidate", "meeting-ops"],
@@ -36,6 +44,8 @@
     {
       "id": "finance",
       "title": "Finance Analyst",
+      "glyph": "📊",
+      "accent": "#34d399",
       "specialty": "Budget tracking, cost analysis, financial reporting, forecasting, vendor management",
       "emailPattern": "finance-agent-{name}",
       "skills": ["web-search", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "billing-ops"],
@@ -44,6 +54,8 @@
     {
       "id": "data",
       "title": "Data Engineer",
+      "glyph": "🧮",
+      "accent": "#818cf8",
       "specialty": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
       "emailPattern": "data-agent-{name}",
       "skills": ["web-search", "workspace-sheets", "skill-introspect", "memory-consolidate", "bq-ops"],
@@ -52,6 +64,8 @@
     {
       "id": "security",
       "title": "Security Engineer",
+      "glyph": "🛡️",
+      "accent": "#fb7185",
       "specialty": "IAM audit, compliance, vulnerability assessment, security architecture, incident response",
       "emailPattern": "security-agent-{name}",
       "skills": ["web-search", "workspace-gmail", "skill-introspect", "memory-consolidate", "iam-audit"],
@@ -60,6 +74,8 @@
     {
       "id": "assistant",
       "title": "Executive Assistant",
+      "glyph": "🎯",
+      "accent": "#94a3b8",
       "specialty": "Scheduling, communications, admin tasks, document drafting, information gathering",
       "emailPattern": "assistant-agent-{name}",
       "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "skill-introspect", "memory-consolidate", "calendar-email-ops"],
@@ -68,6 +84,8 @@
     {
       "id": "product-architect",
       "title": "Product Architect",
+      "glyph": "📐",
+      "accent": "#f472b6",
       "specialty": "Product standards stewardship, codebase architecture analysis, improvement planning, engineering delegation, drift prevention",
       "emailPattern": "architect-agent-{name}",
       "skills": ["web-search", "skill-introspect", "memory-consolidate", "project-ops", "codebase-audit"],
@@ -77,6 +95,8 @@
       "id": "designer",
       "aliases": ["creative", "brand"],
       "title": "Designer",
+      "glyph": "🎨",
+      "accent": "#e879f9",
       "specialty": "Branding, design systems, visual concepts, pixel-perfect implementation across Slides, Docs, and HTML/CSS",
       "emailPattern": "designer-agent-{name}",
       "skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "skill-introspect", "memory-consolidate", "design-ops"],

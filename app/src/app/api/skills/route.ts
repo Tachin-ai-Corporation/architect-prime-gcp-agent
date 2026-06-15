@@ -20,6 +20,7 @@ interface AgentType {
   title: string;
   specialty: string;
   skills: string[];
+  glyph?: string;
 }
 
 const GITHUB_RAW =
@@ -97,6 +98,7 @@ async function loadCatalog(): Promise<{ skills: SkillManifest[]; agentTypes: Age
     title: t.title,
     specialty: t.specialty,
     skills: t.skills || [],
+    glyph: t.glyph || "🔹",
   }));
 
   const results = await Promise.all(fetches);

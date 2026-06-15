@@ -26,20 +26,16 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
-/** Specialty → visual theme */
-const SPECIALTY_THEMES: Record<string, { glyph: string; accent: string; name: string }> = {
-  devops:              { glyph: "⚙️", accent: "#38bdf8", name: "DevOps Engineer" },
-  engineer:            { glyph: "🧪", accent: "#a78bfa", name: "Software Engineer" },
-  swe:                 { glyph: "🧪", accent: "#a78bfa", name: "Software Engineer" },
-  qa:                  { glyph: "🧭", accent: "#2dd4bf", name: "QA Engineer" },
-  pm:                  { glyph: "🗂️", accent: "#fbbf24", name: "Project Manager" },
-  finance:             { glyph: "📊", accent: "#34d399", name: "Finance Analyst" },
-  data:                { glyph: "🧮", accent: "#818cf8", name: "Data Analyst" },
-  security:            { glyph: "🛡️", accent: "#fb7185", name: "Security Engineer" },
-  assistant:           { glyph: "🎯", accent: "#94a3b8", name: "Assistant" },
-  "product-architect": { glyph: "📐", accent: "#f472b6", name: "Product Architect" },
-};
+/** Default theme for unknown specialties */
+const DEFAULT_THEME = { glyph: "🤖", accent: "#94a3b8", name: "Agent" };
 
+interface AgentTypeTheme {
+  id: string;
+  title: string;
+  glyph: string;
+  accent: string;
+  aliases?: string[];
+}
 
 export default function AgentDeepDivePage({
   params,
@@ -49,6 +45,25 @@ export default function AgentDeepDivePage({
   const { id, agent } = use(params);
   const { primes, sidebarFleet } = usePrime();
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [themeMap, setThemeMap] = useState<Record<string, { glyph: string; accent: string; name: string }>>({});
+
+  /* ---- Fetch agent types for theming ---- */
+  useEffect(() => {
+    fetch("/api/agent-types")
+      .then((r) => r.json())
+      .then((data) => {
+        const map: Record<string, { glyph: string; accent: string; name: string }> = {};
+        for (const t of data.types || []) {
+          const entry = { glyph: t.glyph || "🔹", accent: t.accent || "#94a3b8", name: t.title };
+          map[t.id] = entry;
+          for (const alias of t.aliases || []) {
+            map[alias] = entry;
+          }
+        }
+        setThemeMap(map);
+      })
+      .catch(() => {});
+  }, []);
 
   /* ---- Resolve agent metadata from PrimeContext ---- */
   const prime = primes.find((p) => p.id === id);
@@ -141,7 +156,7 @@ export default function AgentDeepDivePage({
         <div className={styles.mainContent}>
         {/* Overview */}
         {activeTab === "overview" && (() => {
-          const theme = SPECIALTY_THEMES[agentData?.specialty || ""] || { glyph: "🤖", accent: "#94a3b8", name: agentData?.specialty || "Agent" };
+          const theme = themeMap[agentData?.specialty || ""] || DEFAULT_THEME;
           return (
           <div className={styles.overviewWrap}>
             {/* ── Hero Banner ── */}

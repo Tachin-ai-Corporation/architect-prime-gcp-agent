@@ -3,18 +3,16 @@ import { NextResponse } from "next/server";
 const GH_RAW =
   "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/main";
 
-/** Theme data per specialty */
-const THEMES: Record<string, { glyph: string; accent: string }> = {
-  devops:             { glyph: "⚙️", accent: "#38bdf8" },
-  engineer:           { glyph: "🧪", accent: "#a78bfa" },
-  qa:                 { glyph: "🧭", accent: "#2dd4bf" },
-  pm:                 { glyph: "🗂️", accent: "#fbbf24" },
-  finance:            { glyph: "📊", accent: "#34d399" },
-  data:               { glyph: "🧮", accent: "#818cf8" },
-  security:           { glyph: "🛡️", accent: "#fb7185" },
-  assistant:          { glyph: "🎯", accent: "#94a3b8" },
-  "product-architect": { glyph: "📐", accent: "#f472b6" },
-};
+/** Default theme for types without explicit glyph/accent */
+const DEFAULT_THEME = { glyph: "🔹", accent: "#94a3b8" };
+
+interface AgentType {
+  id: string;
+  title: string;
+  glyph?: string;
+  accent?: string;
+  aliases?: string[];
+}
 
 /**
  * Canon B-9 organ metadata — the single source of truth for organ display.
@@ -188,9 +186,18 @@ export async function GET(
   try {
     const { specialty } = await params;
 
-    // Validate specialty name
-    if (!/^[a-z0-9-]+$/.test(specialty) || !THEMES[specialty]) {
+    // Validate specialty name format
+    if (!/^[a-z0-9-]+$/.test(specialty)) {
       return NextResponse.json({ error: "Invalid specialty" }, { status: 400 });
+    }
+
+    // Fetch agent-types.json for validation and theme data
+    const agentTypesData = await ghJson<{ types: AgentType[] }>(
+      "corekit/config/agent-types.json"
+    );
+    const agentType = agentTypesData?.types?.find((t) => t.id === specialty);
+    if (!agentType) {
+      return NextResponse.json({ error: "Unknown specialty" }, { status: 404 });
     }
 
     const base = `specialties/${specialty}`;
@@ -201,7 +208,10 @@ export async function GET(
       return NextResponse.json({ error: "kit.json not found" }, { status: 404 });
     }
 
-    const theme = THEMES[kit.id] || { glyph: "🔹", accent: "#94a3b8" };
+    const theme = {
+      glyph: agentType.glyph || DEFAULT_THEME.glyph,
+      accent: agentType.accent || DEFAULT_THEME.accent,
+    };
 
     // ---- Parallel fetches ----
     const WORKSPACE_FILES = ["IDENTITY.md", "SOUL.md", "MEMORY.md"];

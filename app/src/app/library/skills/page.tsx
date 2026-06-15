@@ -23,6 +23,7 @@ interface AgentType {
   title: string;
   specialty: string;
   skills: string[];
+  glyph?: string;
 }
 
 /* ---- Brain function metadata ---- */
@@ -35,12 +36,6 @@ const BRAIN_PARTS: Record<string, { label: string; icon: string; desc: string; o
   "temporal-memory":  { label: "Memory",   icon: "💾", desc: "Memory — consolidation and recall",     order: 6 },
 };
 
-/* ---- Agent role metadata ---- */
-const ROLE_ICONS: Record<string, string> = {
-  devops: "🛠️", engineer: "💻", qa: "🧪", pm: "📊",
-  finance: "💰", data: "📈", security: "🔒", assistant: "📝",
-  "product-architect": "🏗️",
-};
 
 /* ---- Category badge colors ---- */
 const CATEGORY_COLORS: Record<string, string> = {
@@ -239,7 +234,7 @@ export default function SkillsLibraryPage() {
             desc = "Available to all agent roles";
           } else {
             const at = agentTypes.find((t) => t.id === groupKey);
-            icon = ROLE_ICONS[groupKey] || "👤";
+            icon = at?.glyph || "👤";
             label = at?.title || groupKey;
             desc = at?.specialty || "";
           }
@@ -341,7 +336,7 @@ export default function SkillsLibraryPage() {
                     <div className={styles.popupParts}>
                       {roles.map((role) => (
                         <span key={role.id} className={styles.popupRoleChip}>
-                          {ROLE_ICONS[role.id] || "👤"} {role.title}
+                          {(agentTypes.find(t => t.id === role.id)?.glyph) || "👤"} {role.title}
                         </span>
                       ))}
                     </div>

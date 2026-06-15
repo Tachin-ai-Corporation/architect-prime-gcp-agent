@@ -24,12 +24,15 @@ export async function GET() {
 
     // Return simplified list for the hire modal
     const types = (data.types || []).map(
-      (t: { id: string; title: string; specialty: string; emailPattern: string; skills: string[] }) => ({
+      (t: { id: string; title: string; specialty: string; emailPattern: string; skills: string[]; glyph?: string; accent?: string; aliases?: string[] }) => ({
         id: t.id,
         title: t.title,
         specialty: t.specialty,
         emailPattern: t.emailPattern,
         skills: t.skills,
+        glyph: t.glyph || "🔹",
+        accent: t.accent || "#94a3b8",
+        aliases: t.aliases || [],
       })
     );
 
