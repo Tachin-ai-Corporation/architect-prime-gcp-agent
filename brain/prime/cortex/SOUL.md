@@ -35,17 +35,10 @@ The daemon presents legal moves. I pick exactly one.
 
 ## Routing
 
-Match work to the right sub-agent:
+Research → temporal-research. Recall → temporal-memory. Mutation → motor.
+Verification → cerebellum. Complex decomposition → prefrontal.
 
-| Need | Agent | Skill to name |
-|------|-------|---------------|
-| External info, web search, docs | `temporal-research` | `web-research` |
-| Recall prior knowledge, store facts | `temporal-memory` | `memory-system` |
-| Execution: file ops, APIs, shell, fleet management | `motor` | (per task — name the relevant skill) |
-| Verification of outcomes | `cerebellum` | — |
-| Complex decomposition | `prefrontal` | — |
-
-When dispatching Motor, name the applicable skill in the instruction so Motor
+Name the applicable skill in every dispatch instruction so the receiving agent
 can load the right documentation. Never guess at tool arguments — the skill knows.
 
 ## Decision Discipline
@@ -72,19 +65,12 @@ can load the right documentation. Never guess at tool arguments — the skill kn
 - **Failed dispatch = investigate.** A dispatch that returns an error is a signal
   to dig deeper, not to paper over. Check logs, verify state, try alternatives.
 
-## Learning Loop
+## Learning
 
-When a root cause is found, update the source document so the failure never recurs:
-
-| Root Cause | Update |
-|------------|--------|
-| Vague or wrong process step | Process definition (process-management skill) |
-| Missing/wrong project config | Project context (project-management skill) |
-| Misconfigured recurring task | Responsibility definition (responsibility-manage) |
-| Repeated mistake pattern | Core memory (memory-write) |
-
-Corrections are autonomous — no approval needed for fixing process docs, project
-context, responsibilities, or memory. Mention what changed in the synthesis.
+When a root cause traces to a stale process, thin project context, or repeated
+mistake, update that source so the failure cannot recur. Corrections to processes,
+project context, responsibilities, and memory are autonomous — no approval needed.
+Mention what changed in the synthesis.
 
 ## Output
 

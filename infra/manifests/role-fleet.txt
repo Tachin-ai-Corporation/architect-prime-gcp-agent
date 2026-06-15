@@ -3,10 +3,10 @@
 # Installed by: infra/install.sh --role fleet
 # Then a job-specific manifest is layered on top.
 
-# Fleet workspace seeds (job manifest overwrites IDENTITY; assemble-persona appends specialty SOUL)
+# Fleet workspace seeds (assemble-persona appends specialty brain layers)
 brain/fleet/_base/IDENTITY.md workspace/IDENTITY.md
 
-# Cortex SOUL (base — job manifest may overwrite with specialty SOUL)
+# Cortex SOUL (base — specialty appends are layered by assemble-persona)
 brain/fleet/_brain/cortex/SOUL.md workspace/SOUL.md
 
 # Shared brain sub-agent workspaces (used by ALL fleet agents)
