@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.06.15.1.0)
+## Current State (v2026.06.15.2.0)
 6 brain agents in gateway multi-agent configuration, coordinated by the `agent-brain.service` state machine. Brain daemon builds `skill_index` deterministically at startup and injects into cortex payloads. System prompt = SOUL.md only (no TOOLS.md injection). `assemble-persona` handles specialty SOUL appends at bootstrap.
 
 ### Agent Inventory
