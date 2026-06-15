@@ -60,7 +60,24 @@ Without `on`/`off`, flips the current state.
 
 Manages projects stored in Firestore (`projects/` collection).
 Projects support hierarchy (parent/child, max depth 4), team management,
-and standard process linking.
+standard process linking, and automatic Drive folder provisioning.
+
+#### Drive Folder Provisioning (built-in)
+
+When a mission runs for a project, the brain daemon auto-provisions a Google Drive
+folder hierarchy under the installation's artifacts root folder (configured in
+Settings → General → Artifacts):
+
+```
+{artifacts_root_folder}/
+  └── {project-name}/
+      └── {prime-or-agent-name}/
+          └── {agent-name}/     (per-agent workspace)
+```
+
+The root folder ID is stored in `config/settings.artifacts_root_folder_id` (app-level,
+shared across all primes and fleet agents). Per-project folders are tracked in
+`projects/{id}.context.drive_folder` as a context entry.
 
 #### Subcommands
 

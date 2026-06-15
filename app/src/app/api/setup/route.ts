@@ -30,11 +30,20 @@ export async function GET() {
     // This is set during install by deploy/install.sh
     const dwdClientId = dwdConfig?.clientId || process.env.DWD_CLIENT_ID || "";
 
-    // Read artifacts root folder from the first prime doc
-    let artifactsRootFolderId = "";
-    if (hasPrimes) {
-      const firstPrime = primesSnap.docs[0];
-      artifactsRootFolderId = firstPrime.data()?.artifacts_root_folder_id || "";
+    // Read artifacts root folder from app-level settings
+    let artifactsRootFolderId = settings?.artifacts_root_folder_id || "";
+
+    // Migration: if not in config/settings yet, check legacy per-prime location
+    if (!artifactsRootFolderId && hasPrimes) {
+      const legacyId = primesSnap.docs[0].data()?.artifacts_root_folder_id;
+      if (legacyId) {
+        artifactsRootFolderId = legacyId;
+        // Migrate to config/settings so it survives prime teardown
+        await getDb().collection("config").doc("settings").set(
+          { artifacts_root_folder_id: legacyId }, { merge: true }
+        );
+        console.log(`[setup] Migrated artifacts_root_folder_id to config/settings`);
+      }
     }
 
     return NextResponse.json({
@@ -65,8 +74,8 @@ export async function GET() {
 
 /**
  * POST /api/setup — Save setup settings.
- * Supports: agentEmailDomain, adminEmail
- * Auto-captures admin email from IAP header if not explicitly provided.
+ * Supports: agentEmailDomain, adminEmail, artifactsRootFolderId
+ * All settings saved to config/settings (app-level, survives prime teardown).
  */
 export async function POST(req: NextRequest) {
   const auth = await requireAuth();
@@ -82,6 +91,9 @@ export async function POST(req: NextRequest) {
     }
     if (typeof body.adminEmail === "string") {
       updates.adminEmail = body.adminEmail.trim();
+    }
+    if (typeof body.artifactsRootFolderId === "string") {
+      updates.artifacts_root_folder_id = body.artifactsRootFolderId.trim();
     }
 
     // Auto-capture admin email from IAP if not already set
@@ -102,16 +114,7 @@ export async function POST(req: NextRequest) {
       await db.collection("config").doc("settings").set(updates, { merge: true });
     }
 
-    // Handle artifacts root folder ID — saved to the prime doc
-    if (typeof body.artifactsRootFolderId === "string") {
-      const primesSnap = await primesCol().limit(1).get();
-      if (!primesSnap.empty) {
-        const primeDoc = primesSnap.docs[0];
-        await primeDoc.ref.update({
-          artifacts_root_folder_id: body.artifactsRootFolderId.trim(),
-        });
-      }
-    }
+
 
     return NextResponse.json({ success: true });
   } catch (err) {

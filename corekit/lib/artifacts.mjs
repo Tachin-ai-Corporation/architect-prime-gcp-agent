@@ -60,14 +60,14 @@ export function createArtifactManager(deps) {
   // =========================================================================
 
   /**
-   * Load artifacts_root_folder_id from the prime Firestore document.
+   * Load artifacts_root_folder_id from the app-level config/settings doc.
    * Called at startup and periodically to pick up dashboard config changes.
    */
   async function loadConfig() {
     try {
       const token = await getGceToken();
-      if (!token || !primeId) return;
-      const url = `${FIRESTORE_BASE}/primes/${primeId}`;
+      if (!token) return;
+      const url = `${FIRESTORE_BASE}/config/settings`;
       const resp = await fetch(url, {
         headers: { 'Authorization': `Bearer ${token}` },
         signal: AbortSignal.timeout(10_000),
