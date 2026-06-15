@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.15.3.0 | 2026-06-15 | Product-architect abstracted: removed all Architect Prime project context from role definition, renamed repo-audit→codebase-audit, discovery-driven auditing, empty responsibilities (configured at runtime) |
 | v2026.06.15.2.0 | 2026-06-15 | Designer agent role (10th specialty), workspace-slides core skill (5 Slides API tools), DWD scopes fixed in dashboard + docs (was only showing chat scopes, now all 18) |
 | v2026.06.15.1.0 | 2026-06-15 | SOUL + Skills canon audit: persona layer cognition-only (prefrontal refactored, cortex genericized, -2.5k lines), skills library normalized (daemon boundary, metadata, templates, validate enhanced), agent-types.json drift fixed |
 | v2026.06.14.3.0 | 2026-06-14 | App-level artifacts config (survives teardown), Skills Library rewrite (pure catalog, brain function + agent role grouping, auto-discovery, search, click-to-popup) |
