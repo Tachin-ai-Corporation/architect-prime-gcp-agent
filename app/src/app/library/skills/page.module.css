@@ -29,8 +29,17 @@
   margin: 0;
 }
 
+/* ---- Controls row ---- */
+.controls {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
 /* ---- Search ---- */
 .searchBar {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -38,7 +47,6 @@
   background: var(--charcoal);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  margin-bottom: 28px;
   transition: border-color var(--duration-hover) var(--ease-standard);
 }
 
@@ -403,4 +411,56 @@
   padding: 5px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
+}
+
+/* ---- Group Toggle ---- */
+.groupToggle {
+  display: flex;
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.toggleBtn {
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 150ms ease;
+}
+
+.toggleBtn:hover {
+  color: var(--text-secondary);
+  background: rgba(143, 216, 230, 0.04);
+}
+
+.toggleActive {
+  color: var(--signal-aqua);
+  background: rgba(143, 216, 230, 0.1);
+}
+
+/* ---- Role Chip (popup) ---- */
+.popupRoleChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--care-mint);
+  background: rgba(95, 199, 178, 0.08);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+}
+
+@media (max-width: 640px) {
+  .controls {
+    flex-direction: column;
+  }
 }

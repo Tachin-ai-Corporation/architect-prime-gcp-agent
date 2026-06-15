@@ -18,32 +18,46 @@ interface SkillManifest {
   when_to_use: string;
 }
 
-/* ---- Brain function grouping ---- */
+interface AgentType {
+  id: string;
+  title: string;
+  specialty: string;
+  skills: string[];
+}
+
+/* ---- Brain function metadata ---- */
 const BRAIN_PARTS: Record<string, { label: string; icon: string; desc: string; order: number }> = {
-  motor:              { label: "Motor",             icon: "⚡", desc: "Execution — runs tools and scripts",       order: 1 },
-  cortex:             { label: "Cortex",            icon: "🧠", desc: "Decision — classifies and dispatches",     order: 2 },
-  prefrontal:         { label: "Prefrontal",        icon: "📋", desc: "Planning — checkpoint decomposition",      order: 3 },
-  cerebellum:         { label: "Cerebellum",        icon: "🔬", desc: "Refinement — output quality checks",       order: 4 },
-  "temporal-research":{ label: "Research",           icon: "🔍", desc: "Research — web search and retrieval",      order: 5 },
-  "temporal-memory":  { label: "Memory",             icon: "💾", desc: "Memory — consolidation and recall",        order: 6 },
+  motor:              { label: "Motor",    icon: "⚡", desc: "Execution — runs tools and scripts",  order: 1 },
+  cortex:             { label: "Cortex",   icon: "🧠", desc: "Decision — classifies and dispatches", order: 2 },
+  prefrontal:         { label: "Prefrontal", icon: "📋", desc: "Planning — checkpoint decomposition", order: 3 },
+  cerebellum:         { label: "Cerebellum", icon: "🔬", desc: "Refinement — output quality checks",  order: 4 },
+  "temporal-research":{ label: "Research", icon: "🔍", desc: "Research — web search and retrieval",   order: 5 },
+  "temporal-memory":  { label: "Memory",   icon: "💾", desc: "Memory — consolidation and recall",     order: 6 },
 };
 
-/* ---- Category display for badges ---- */
-const CATEGORY_COLORS: Record<string, string> = {
-  workspace:     "var(--network-teal)",
-  fleet:         "var(--signal-aqua)",
-  work:          "var(--care-mint)",
-  meta:          "var(--text-secondary)",
-  search:        "#c4a7e7",
-  memory:        "#f5a97f",
-  security:      "#ed8796",
-  introspection: "#7dc4e4",
+/* ---- Agent role metadata ---- */
+const ROLE_ICONS: Record<string, string> = {
+  devops: "🛠️", engineer: "💻", qa: "🧪", pm: "📊",
+  finance: "💰", data: "📈", security: "🔒", assistant: "📝",
+  "product-architect": "🏗️",
 };
+
+/* ---- Category badge colors ---- */
+const CATEGORY_COLORS: Record<string, string> = {
+  workspace: "var(--network-teal)", fleet: "var(--signal-aqua)",
+  work: "var(--care-mint)", meta: "var(--text-secondary)",
+  search: "#c4a7e7", memory: "#f5a97f",
+  security: "#ed8796", introspection: "#7dc4e4",
+};
+
+type GroupMode = "brain" | "role";
 
 export default function SkillsLibraryPage() {
   const [catalog, setCatalog] = useState<SkillManifest[]>([]);
+  const [agentTypes, setAgentTypes] = useState<AgentType[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [groupMode, setGroupMode] = useState<GroupMode>("brain");
   const [selectedSkill, setSelectedSkill] = useState<SkillManifest | null>(null);
 
   /* ---- Fetch catalog ---- */
@@ -53,13 +67,12 @@ export default function SkillsLibraryPage() {
       const res = await fetch("/api/skills");
       const data = await res.json();
       if (data?.skills) setCatalog(data.skills);
-    } catch {}
+      if (data?.agentTypes) setAgentTypes(data.agentTypes);
+    } catch { /* noop */ }
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchCatalog();
-  }, [fetchCatalog]);
+  useEffect(() => { fetchCatalog(); }, [fetchCatalog]);
 
   /* ---- Filter by search ---- */
   const filteredCatalog = useMemo(() => {
@@ -76,7 +89,19 @@ export default function SkillsLibraryPage() {
     );
   }, [catalog, search]);
 
-  /* ---- Group by brain function (agent_part) ---- */
+  /* ---- Build role→skill lookup ---- */
+  const skillToRoles = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const at of agentTypes) {
+      for (const sid of at.skills) {
+        if (!map[sid]) map[sid] = [];
+        map[sid].push(at.id);
+      }
+    }
+    return map;
+  }, [agentTypes]);
+
+  /* ---- Group by brain function ---- */
   const groupedByPart = useMemo(() => {
     const groups: Record<string, SkillManifest[]> = {};
     for (const skill of filteredCatalog) {
@@ -87,11 +112,39 @@ export default function SkillsLibraryPage() {
       }
     }
     return Object.entries(groups).sort(([a], [b]) => {
-      const oa = BRAIN_PARTS[a]?.order ?? 99;
-      const ob = BRAIN_PARTS[b]?.order ?? 99;
-      return oa - ob;
+      return (BRAIN_PARTS[a]?.order ?? 99) - (BRAIN_PARTS[b]?.order ?? 99);
     });
   }, [filteredCatalog]);
+
+  /* ---- Group by agent role ---- */
+  const groupedByRole = useMemo(() => {
+    // Build map: roleId → skills
+    const groups: Record<string, SkillManifest[]> = {};
+    const skillMap = new Map(filteredCatalog.map((s) => [s.id, s]));
+
+    for (const at of agentTypes) {
+      const roleSkills: SkillManifest[] = [];
+      for (const sid of at.skills) {
+        const skill = skillMap.get(sid);
+        if (skill) roleSkills.push(skill);
+      }
+      if (roleSkills.length > 0) groups[at.id] = roleSkills;
+    }
+
+    // "Unassigned" — skills not in any role
+    const assignedIds = new Set(agentTypes.flatMap((at) => at.skills));
+    const unassigned = filteredCatalog.filter((s) => !assignedIds.has(s.id));
+    if (unassigned.length > 0) groups["_unassigned"] = unassigned;
+
+    // Sort: roles alphabetically, unassigned last
+    return Object.entries(groups).sort(([a], [b]) => {
+      if (a === "_unassigned") return 1;
+      if (b === "_unassigned") return -1;
+      const at = agentTypes.find((t) => t.id === a);
+      const bt = agentTypes.find((t) => t.id === b);
+      return (at?.title || a).localeCompare(bt?.title || b);
+    });
+  }, [filteredCatalog, agentTypes]);
 
   /* ---- Close popup on escape ---- */
   useEffect(() => {
@@ -102,30 +155,55 @@ export default function SkillsLibraryPage() {
     return () => window.removeEventListener("keydown", handleEsc);
   }, []);
 
+  /* ---- Get role info for a skill ---- */
+  const getRolesForSkill = (skillId: string): AgentType[] => {
+    const roleIds = skillToRoles[skillId] || [];
+    return roleIds.map((id) => agentTypes.find((at) => at.id === id)!).filter(Boolean);
+  };
+
+  const activeGroups = groupMode === "brain" ? groupedByPart : groupedByRole;
+
   return (
     <div className={styles.shell} id="skills-library-page">
       {/* ---- Header ---- */}
       <div className={styles.header}>
         <h1 className={styles.title}>📚 Skill Library</h1>
         <p className={styles.subtitle}>
-          {catalog.length} skills across {Object.keys(BRAIN_PARTS).length} brain functions
+          {catalog.length} skills · {agentTypes.length} agent roles · {Object.keys(BRAIN_PARTS).length} brain functions
         </p>
       </div>
 
-      {/* ---- Search ---- */}
-      <div className={styles.searchBar}>
-        <span className={styles.searchIcon}>🔍</span>
-        <input
-          type="text"
-          className={styles.searchInput}
-          placeholder="Search skills by name, category, or brain function…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          id="skills-search"
-        />
-        {search && (
-          <button className={styles.searchClear} onClick={() => setSearch("")}>✕</button>
-        )}
+      {/* ---- Controls: search + group toggle ---- */}
+      <div className={styles.controls}>
+        <div className={styles.searchBar}>
+          <span className={styles.searchIcon}>🔍</span>
+          <input
+            type="text"
+            className={styles.searchInput}
+            placeholder="Search skills…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            id="skills-search"
+          />
+          {search && (
+            <button className={styles.searchClear} onClick={() => setSearch("")}>✕</button>
+          )}
+        </div>
+
+        <div className={styles.groupToggle} id="group-mode-toggle">
+          <button
+            className={`${styles.toggleBtn} ${groupMode === "brain" ? styles.toggleActive : ""}`}
+            onClick={() => setGroupMode("brain")}
+          >
+            🧠 Brain Function
+          </button>
+          <button
+            className={`${styles.toggleBtn} ${groupMode === "role" ? styles.toggleActive : ""}`}
+            onClick={() => setGroupMode("role")}
+          >
+            👤 Agent Role
+          </button>
+        </div>
       </div>
 
       {/* ---- Loading ---- */}
@@ -143,16 +221,37 @@ export default function SkillsLibraryPage() {
         </div>
       )}
 
-      {/* ---- Brain function groups ---- */}
-      {!loading && groupedByPart.map(([part, skills]) => {
-        const meta = BRAIN_PARTS[part] || { label: part, icon: "📦", desc: "", order: 99 };
+      {/* ---- Grouped sections ---- */}
+      {!loading && activeGroups.map(([groupKey, skills]) => {
+        let icon: string;
+        let label: string;
+        let desc: string;
+
+        if (groupMode === "brain") {
+          const meta = BRAIN_PARTS[groupKey] || { label: groupKey, icon: "📦", desc: "", order: 99 };
+          icon = meta.icon;
+          label = meta.label;
+          desc = meta.desc;
+        } else {
+          if (groupKey === "_unassigned") {
+            icon = "📦";
+            label = "Shared / Unassigned";
+            desc = "Available to all agent roles";
+          } else {
+            const at = agentTypes.find((t) => t.id === groupKey);
+            icon = ROLE_ICONS[groupKey] || "👤";
+            label = at?.title || groupKey;
+            desc = at?.specialty || "";
+          }
+        }
+
         return (
-          <section key={part} className={styles.partSection} id={`part-${part}`}>
+          <section key={groupKey} className={styles.partSection} id={`group-${groupKey}`}>
             <div className={styles.partHeader}>
-              <span className={styles.partIcon}>{meta.icon}</span>
+              <span className={styles.partIcon}>{icon}</span>
               <div className={styles.partInfo}>
-                <span className={styles.partName}>{meta.label}</span>
-                <span className={styles.partDesc}>{meta.desc}</span>
+                <span className={styles.partName}>{label}</span>
+                <span className={styles.partDesc}>{desc}</span>
               </div>
               <span className={styles.partCount}>{skills.length}</span>
             </div>
@@ -231,6 +330,24 @@ export default function SkillsLibraryPage() {
                   })}
                 </div>
               </div>
+
+              {/* Agent roles this skill is assigned to */}
+              {(() => {
+                const roles = getRolesForSkill(selectedSkill.id);
+                if (roles.length === 0) return null;
+                return (
+                  <div className={styles.popupSection}>
+                    <div className={styles.popupLabel}>Agent Roles</div>
+                    <div className={styles.popupParts}>
+                      {roles.map((role) => (
+                        <span key={role.id} className={styles.popupRoleChip}>
+                          {ROLE_ICONS[role.id] || "👤"} {role.title}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {selectedSkill.scripts && selectedSkill.scripts.length > 0 && (
                 <div className={styles.popupSection}>
