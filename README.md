@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.14.3.0 | 2026-06-14 | App-level artifacts config (survives teardown), Skills Library rewrite (pure catalog, brain function + agent role grouping, auto-discovery, search, click-to-popup) |
 | v2026.06.14.2.0 | 2026-06-14 | Resilient Prime teardown (always cleans Firestore), zombie doc auto-cleanup on deploy, ears highwater defaults to now with /var/lib persistence |
 | v2026.06.14.1.0 | 2026-06-14 | Eliminate TOOLS.md: skills as single source of truth, brain daemon skill index, assemble-persona, skill-setup, 6 new skill packages, agent_part arrays |
 | v2026.06.13.5.0 | 2026-06-13 | Dashboard UI redesign: sidebar navigation for Prime/Fleet agent pages, AgentWorkPanel (4-tab work view with archived search), FleetPanel inline in Prime, enlarged chat input |
