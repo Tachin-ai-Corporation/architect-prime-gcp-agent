@@ -1,5 +1,11 @@
 # Skill: Meeting Operations
 
+## What this skill does
+Meeting management procedures — notes extraction, action item tracking, agenda preparation, status report templates
+
+## When to use
+When processing meeting notes, extracting action items, preparing agendas, or writing status reports
+
 Use these procedures when processing meeting notes, managing action items, or writing status reports.
 
 ## Meeting Notes Processing

@@ -1,5 +1,11 @@
 # Skill: Code Review Operations
 
+## What this skill does
+Code review procedures — diff analysis, code smell detection, coverage checks, security scanning
+
+## When to use
+When reviewing code changes — analyzing diffs, checking quality, scanning for issues
+
 Use these procedures when performing code review tasks via `exec`.
 
 ## Diff Analysis

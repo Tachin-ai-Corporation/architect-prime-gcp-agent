@@ -1,5 +1,11 @@
 # Skill: Test Runner Operations
 
+## What this skill does
+Test execution procedures — npm test, pytest, go test, coverage collection, regression diffing, flaky detection
+
+## When to use
+When running test suites, collecting coverage, or analyzing test results
+
 Use these procedures when running tests and collecting results via `exec`.
 
 ## Test Execution

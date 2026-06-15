@@ -1,5 +1,11 @@
 # Skill: GCP Billing Operations
 
+## What this skill does
+GCP billing procedures — cost breakdown, budget tracking, trend analysis, anomaly detection, monthly summaries
+
+## When to use
+When analyzing GCP billing data, tracking budgets, or generating cost reports
+
 Use these procedures when performing GCP billing analysis tasks via `exec`.
 
 ## Cost Breakdown Discovery

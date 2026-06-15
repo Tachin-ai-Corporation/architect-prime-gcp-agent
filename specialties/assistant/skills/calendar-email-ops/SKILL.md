@@ -1,5 +1,11 @@
 # Skill: Calendar & Email Operations
 
+## What this skill does
+Procedures for calendar management, email drafting, scheduling, and follow-up tracking
+
+## When to use
+When managing calendar events, drafting emails, scheduling meetings, or tracking follow-ups
+
 Use these procedures when managing calendar events, composing emails, or tracking follow-ups.
 
 ## Calendar Operations

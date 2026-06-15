@@ -1,5 +1,11 @@
 # Skill: IAM Security Audit Operations
 
+## What this skill does
+IAM audit procedures — policy dump, service account keys, public resources, role recommendations, org policies
+
+## When to use
+When auditing IAM policies, service accounts, firewall rules, or organization security posture
+
 Use these procedures when performing IAM security audits via `exec`.
 
 ## IAM Policy Dump

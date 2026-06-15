@@ -1,5 +1,11 @@
 # Skill: GCP DevOps Operations
 
+## What this skill does
+GCP infrastructure procedures — service accounts, IAM, Cloud Run, Cloud Build
+
+## When to use
+When performing GCP infrastructure tasks via gcloud CLI
+
 Use these procedures when performing GCP infrastructure tasks via `exec`.
 
 ## Infrastructure Discovery

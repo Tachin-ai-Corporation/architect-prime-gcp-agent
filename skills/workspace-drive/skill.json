@@ -7,7 +7,7 @@
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": ["drive-delete", "drive-download", "drive-ls", "drive-mkdir", "drive-move", "drive-rename", "drive-search", "drive-share", "drive-upload"],
   "requires": {},
   "when_to_use": "When working with files in Google Drive — listing, uploading, downloading, organizing, or sharing"
 }

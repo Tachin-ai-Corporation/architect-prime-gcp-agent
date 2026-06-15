@@ -1,4 +1,10 @@
-# Project Operations Skill
+# Skill: Project Operations
+
+## What this skill does
+Procedures for managing projects, processes, and plans using CoreKit tools
+
+## When to use
+When managing projects, processes, or improvement plans — creating projects, adding team members, defining processes, tracking progress
 
 Procedures for managing projects, processes, and improvement plans using CoreKit motor tools.
 

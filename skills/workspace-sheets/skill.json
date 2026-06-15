@@ -7,7 +7,7 @@
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": ["sheets-append", "sheets-get", "sheets-update"],
   "requires": {},
   "when_to_use": "When reading from or writing to Google Sheets spreadsheets"
 }

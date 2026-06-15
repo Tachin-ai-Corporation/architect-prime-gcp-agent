@@ -95,8 +95,10 @@ if [[ "$ACTION" == "list-parts" ]]; then
   echo "  motor            — Execution tools (Drive, Gmail, shell commands, fleet ops)"
   echo "  cerebellum       — Verification and validation tools"
   echo "  temporal-research — Web search and URL fetching tools"
+  echo "  temporal-memory  — Memory recall and consolidation tools"
   echo "  cortex           — Decision and classification tools (rare)"
   echo "  prefrontal       — Planning tools (rare)"
+  echo "  all              — Universal (visible to all brain parts)"
   exit 0
 fi
 
@@ -129,6 +131,22 @@ if [[ "$ACTION" == "validate" ]]; then
       motor|cerebellum|temporal-research|temporal-memory|cortex|prefrontal|all) ;;
       *) echo "FAIL: Invalid agent_part: $part"; ERRORS=$((ERRORS + 1)) ;;
     esac
+
+    # Validate scripts resolve to files (warn only — corekit-backed tools may not be co-located)
+    scripts="$(python3 -c "import json; s=json.load(open('${VALIDATE_DIR}/skill.json')).get('scripts',[]); [print(x) for x in s]" 2>/dev/null)"
+    if [[ -n "$scripts" ]]; then
+      while IFS= read -r script; do
+        if [[ ! -f "${VALIDATE_DIR}/${script}" ]] && [[ ! -f "${CORE_DIR}/bin/${script}" ]]; then
+          echo "WARN: Script '${script}' not found in skill dir or bin/"
+        fi
+      done <<< "$scripts"
+    fi
+
+    # Check for deprecated 'dependencies' field (should be 'requires')
+    has_deps="$(python3 -c "import json; d=json.load(open('${VALIDATE_DIR}/skill.json')); print('yes' if 'dependencies' in d else 'no')" 2>/dev/null)"
+    if [[ "$has_deps" == "yes" ]]; then
+      echo "WARN: skill.json uses 'dependencies' — should be 'requires'"
+    fi
   fi
 
   # Check SKILL.md exists
@@ -140,6 +158,11 @@ if [[ "$ACTION" == "validate" ]]; then
     lines="$(wc -l < "${VALIDATE_DIR}/SKILL.md")"
     if [[ "$lines" -lt 5 ]]; then
       echo "WARN: SKILL.md is very short ($lines lines)"
+    fi
+
+    # Check for required heading structure
+    if ! grep -q '^# ' "${VALIDATE_DIR}/SKILL.md"; then
+      echo "WARN: SKILL.md missing top-level heading (# Skill: ...)"
     fi
   fi
 
@@ -171,8 +194,8 @@ if [[ "$ACTION" == "create" ]]; then
 
   # Validate agent_part
   case "$PART" in
-    motor|cerebellum|temporal-research|cortex|prefrontal) ;;
-    *) echo "ERROR: Invalid --agent-part: $PART (use: motor, cerebellum, temporal-research, cortex, prefrontal)"; exit 1 ;;
+    motor|cerebellum|temporal-research|temporal-memory|cortex|prefrontal|all) ;;
+    *) echo "ERROR: Invalid --agent-part: $PART (use: motor, cerebellum, temporal-research, temporal-memory, cortex, prefrontal, all)"; exit 1 ;;
   esac
 
   # Set defaults
@@ -196,7 +219,7 @@ skill = {
     'category': '$CAT',
     'agent_part': '$PART',
     'scripts': [],
-    'dependencies': [],
+    'requires': {},
     'when_to_use': '''$WHEN'''
 }
 

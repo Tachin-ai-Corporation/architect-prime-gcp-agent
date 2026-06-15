@@ -1,9 +1,10 @@
----
-name: memory-consolidate
-description: "Nightly consolidation of working memory, Core Memory reconciliation, and Deep Truths lifecycle management. Runs on the schedule defined in the responsibility config."
----
+# Skill: Memory Consolidation
 
-# Memory Consolidation — Nightly Skill
+## What this skill does
+Nightly consolidation of working memory, Core Memory reconciliation, and Deep Truths lifecycle management. Runs on the schedule defined in the responsibility config.
+
+## When to use
+Automatically triggered by nightly cron — do not invoke manually.
 
 You are executing the nightly memory consolidation responsibility.
 This is the agent's "sleep cycle" — processing the day's experiences across all three memory layers.

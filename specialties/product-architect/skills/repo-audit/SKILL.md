@@ -1,4 +1,10 @@
-# Repository Audit Skill
+# Skill: Repository Audit
+
+## What this skill does
+Read-only repo analysis playbook with focus rotation and raw-URL fetch patterns
+
+## When to use
+When auditing the repository — analyzing code structure, checking canon compliance, reviewing manifests and contracts
 
 Read-only repository analysis playbook for identifying improvement opportunities. Uses focus rotation to prevent fixation and raw-URL fetch patterns for deep inspection.
 

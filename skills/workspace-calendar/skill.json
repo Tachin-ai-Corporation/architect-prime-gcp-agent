@@ -7,7 +7,7 @@
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": ["calendar-create", "calendar-delete", "calendar-events", "calendar-search", "calendar-update"],
   "requires": {},
   "when_to_use": "When managing calendar events — listing, creating, updating, or deleting meetings"
 }

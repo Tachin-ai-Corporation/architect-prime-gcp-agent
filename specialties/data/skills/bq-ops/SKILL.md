@@ -1,5 +1,11 @@
 # Skill: BigQuery Operations
 
+## What this skill does
+BigQuery procedures — table discovery, query execution, schema management, data loading, exports
+
+## When to use
+When performing BigQuery operations via bq CLI — queries, schema changes, data loading, exports
+
 Use these procedures when performing BigQuery tasks via `exec`.
 
 ## Table Discovery

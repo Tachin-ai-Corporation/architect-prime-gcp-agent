@@ -1,5 +1,11 @@
 # Skill: Git Workflow Operations
 
+## What this skill does
+Git workflow procedures — branching, commits, pre-commit checks, PR templates, merge conflicts
+
+## When to use
+When performing git workflow operations — branching, committing, creating PRs, resolving conflicts
+
 Use these procedures when performing git workflow tasks via `exec`.
 
 ## Feature Branch Management

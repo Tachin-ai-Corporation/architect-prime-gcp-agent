@@ -7,7 +7,7 @@
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": ["docs-cat", "docs-comments-add", "docs-comments-list", "docs-create", "docs-find-replace", "docs-write"],
   "requires": {},
   "when_to_use": "When creating, reading, editing, or commenting on Google Docs"
 }

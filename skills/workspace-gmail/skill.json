@@ -7,7 +7,7 @@
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": ["gmail-draft-create", "gmail-draft-send", "gmail-get", "gmail-search", "gmail-send"],
   "requires": {},
   "when_to_use": "When sending, reading, searching, or drafting emails"
 }
