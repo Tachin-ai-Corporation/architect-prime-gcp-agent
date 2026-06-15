@@ -68,9 +68,9 @@
     {
       "id": "product-architect",
       "title": "Product Architect",
-      "specialty": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
+      "specialty": "Product standards stewardship, codebase architecture analysis, improvement planning, engineering delegation, drift prevention",
       "emailPattern": "architect-agent-{name}",
-      "skills": ["web-search", "skill-introspect", "memory-consolidate", "project-ops", "repo-audit"],
+      "skills": ["web-search", "skill-introspect", "memory-consolidate", "project-ops", "codebase-audit"],
       "brain": true
     },
     {

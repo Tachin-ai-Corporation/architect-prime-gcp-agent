@@ -26,7 +26,7 @@ Procedures for managing projects, processes, and improvement plans using CoreKit
 project-manage create --name "Improvement: <title>" --description "<scope and goals>"
 
 # 2. Link process (if using a defined process)
-project-manage update --id <project-id> --process-ref p-repo-improve
+project-manage update --id <project-id> --process-ref <process-ref>
 ```
 
 ### Propose an Improvement Plan
@@ -48,10 +48,10 @@ project-manage update --id <project-id> --process-ref p-repo-improve
 responsibility-manage list
 
 # Update prior_learnings after a cycle completes
-responsibility-manage update --id r-repo-improvement --prior-learnings "<new learnings>"
+responsibility-manage update --id <responsibility-id> --prior-learnings "<new learnings>"
 
 # Enable/disable a responsibility
-responsibility-manage update --id r-repo-improvement --enabled true
+responsibility-manage update --id <responsibility-id> --enabled true
 ```
 
 ### Track Delegation Progress

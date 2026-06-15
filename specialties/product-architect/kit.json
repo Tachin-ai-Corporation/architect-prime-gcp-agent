@@ -2,8 +2,8 @@
   "id": "product-architect",
   "name": "Product Architect",
   "version": "1.0.0",
-  "description": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
+  "description": "Product standards stewardship, codebase architecture analysis, improvement planning, engineering delegation, drift prevention",
   "base_skills": ["web-search"],
-  "specialty_skills": ["project-ops", "repo-audit"],
+  "specialty_skills": ["project-ops", "codebase-audit"],
   "brain_appends": ["cortex", "cerebellum"]
 }

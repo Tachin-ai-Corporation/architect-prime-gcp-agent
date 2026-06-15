@@ -1,55 +1,49 @@
 # Product Architect Specialty — Cerebellum Verification Rules
 
-## Canon Compliance Gates (ALL MUST PASS)
+## Standards Compliance Gates (ALL MUST PASS)
 
-Before approving any product architect mission as complete, verify ALL of the following.
-If motor output does not contain evidence for each gate, the mission is NOT complete.
+Before approving any product architect mission as complete, verify ALL of the
+following. If evidence is missing for any gate, the mission is NOT complete.
 
-### Gate 1: Canon Re-Read
-- Motor output MUST show that both `PRODUCT_CANON.md` and `BRAIN_CANON.md` were read in this mission.
-- Look for: file read operations or explicit references to canon content.
-- If the agent proposed changes without re-reading the canons, REJECT.
+### Gate 1: Standards Consulted
+- The agent MUST have read the project's architecture standards documents
+  in this mission.
+- Look for: file read operations or explicit references to standards content.
+- If the agent proposed changes without consulting standards, REJECT.
 
 ### Gate 2: No Invariant Violations
-- The proposal MUST NOT violate any PRODUCT_CANON invariant.
-- Check each invariant against the proposal scope. Common violations:
-  - Adding primitives beyond the canonical set.
-  - Moving logic across the deterministic/LLM boundary in the wrong direction.
-  - Introducing shared infrastructure between agents.
-  - Putting secrets outside the Secret Store.
-  - Bypassing contracts.json.
+- The proposal MUST NOT violate any of the project's declared invariants.
+- Check each invariant listed in the project's standards against the proposal scope.
 - If any invariant is at risk, REJECT with the specific invariant cited.
 
-### Gate 3: Rubric Claim Present
-- The proposal MUST include a rubric claim per BRAIN_CANON Part IV:
-  - Which axis improves (efficiency, structure, logic clarity, cleanness).
+### Gate 3: Quality Claim Present
+- The proposal MUST include a quality improvement claim:
+  - Which quality dimension improves.
   - By what measure (quantitative or structural).
-  - Confirmation that determinism, idempotency, observability, and testability are untouched.
-- If the rubric claim is missing or incomplete, REJECT.
+  - Confirmation that the project's protected properties are untouched.
+- If the quality claim is missing or incomplete, REJECT.
 
 ### Gate 4: Scope Specification
-- The proposal MUST include explicit scope globs (e.g., `corekit/lib/scheduler.mjs`).
+- The proposal MUST include explicit scope globs.
 - Acceptance criteria MUST be testable without human judgment.
 - If scope is vague (e.g., "improve the codebase"), REJECT.
 
 ### Gate 5: Read-Only Compliance
 - The product architect MUST NOT have written to source files directly.
-- All implementation MUST flow through delegation or be explicitly flagged as documentation-only.
-- If motor output shows writes to `.mjs`, `.js`, `.ts`, `.json` source files, REJECT.
+- All implementation MUST flow through delegation.
+- If motor output shows writes to source code files, REJECT.
 - Exception: MEMORY.md, plan documents, and Drive artifacts are allowed.
 
 ## Delegation Result Review
 
-When verifying delegation results:
-
-### Gate 6: Results Against Canon
-- The delegation output MUST be checked against both canons.
-- PR changes must not introduce invariant violations.
-- The improvement must deliver on its rubric claim.
+### Gate 6: Results Against Standards
+- The delegation output MUST be checked against the project's standards.
+- Changes must not introduce invariant violations.
+- The improvement must deliver on its quality claim.
 
 ### Gate 7: Evidence Chain
 - The delegation result MUST include:
-  - PR URL (or equivalent code change reference).
+  - Code change reference (PR URL or equivalent).
   - Test results (pass count, zero failures).
   - Confirmation that scope was respected (no out-of-scope changes).
 
@@ -59,9 +53,9 @@ Structure your verification output as:
 
 ```
 ## Verification Summary
-- Canon Re-Read: ✅ PASS (both canons read)
+- Standards Consulted: ✅ PASS
 - Invariants: ✅ NO VIOLATIONS
-- Rubric Claim: ✅ PRESENT (axis: X, measure: Y)
+- Quality Claim: ✅ PRESENT (dimension: X, measure: Y)
 - Protected Properties: ✅ CONFIRMED UNTOUCHED
 - Scope: ✅ SPECIFIED (N files/globs)
 - Read-Only: ✅ COMPLIANT

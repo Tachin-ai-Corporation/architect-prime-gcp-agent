@@ -1,25 +1,4 @@
 {
   "version": 1,
-  "responsibilities": [
-    {
-      "id": "r-repo-improvement",
-      "name": "Continuous Repo Improvement",
-      "schedule": "0 * * * *",
-      "enabled": true,
-      "singleton": true,
-      "min_spacing_minutes": 55,
-      "instruction": "Run one full repo improvement cycle using the p-repo-improve process.",
-      "context": {
-        "purpose": "Systematic, canon-compliant improvement of the Architect Prime codebase. Each cycle audits one focus area, proposes one improvement, and delegates implementation to engineering.",
-        "success_criteria": "One improvement proposed, delegated to engineering, results verified against canon, learnings recorded.",
-        "prior_learnings": ""
-      },
-      "processRef": "p-repo-improve",
-      "processParameters": {
-        "focus_area": "brain"
-      },
-      "project_id": "proj-self-improvement",
-      "trigger": null
-    }
-  ]
+  "responsibilities": []
 }

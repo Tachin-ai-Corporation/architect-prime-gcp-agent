@@ -1,5 +1,5 @@
 # infra/manifests/job-product-architect.txt
-# Product Architect specialty — canon stewardship, repo audit, improvement planning
+# Product Architect specialty — standards stewardship, codebase audit, improvement planning
 # Installed by: infra/install.sh --role fleet --job product-architect
 
 specialties/product-architect/workspace/MEMORY.md workspace/MEMORY.md?
@@ -14,9 +14,5 @@ specialties/product-architect/brain/cerebellum/SOUL_APPEND.md corekit/specialtie
 # Skills
 specialties/product-architect/skills/project-ops/SKILL.md corekit/specialties/product-architect/skills/project-ops/SKILL.md
 specialties/product-architect/skills/project-ops/skill.json corekit/specialties/product-architect/skills/project-ops/skill.json
-specialties/product-architect/skills/repo-audit/SKILL.md corekit/specialties/product-architect/skills/repo-audit/SKILL.md
-specialties/product-architect/skills/repo-audit/skill.json corekit/specialties/product-architect/skills/repo-audit/skill.json
-
-# Canon documents (available to all agents but especially important for product architect)
-docs/PRODUCT_CANON.md corekit/docs/PRODUCT_CANON.md
-docs/BRAIN_CANON.md corekit/docs/BRAIN_CANON.md
+specialties/product-architect/skills/codebase-audit/SKILL.md corekit/specialties/product-architect/skills/codebase-audit/SKILL.md
+specialties/product-architect/skills/codebase-audit/skill.json corekit/specialties/product-architect/skills/codebase-audit/skill.json
