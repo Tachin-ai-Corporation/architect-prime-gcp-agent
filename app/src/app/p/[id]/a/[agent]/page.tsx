@@ -16,7 +16,7 @@ import styles from "./page.module.css";
 const TABS = [
   { key: "overview", label: "Persona", icon: "🎭" },
   { key: "work", label: "Work", icon: "📋" },
-  { key: "brain", label: "Brain", icon: "🧠" },
+  { key: "brain", label: "Models", icon: "🧠" },
   { key: "projects", label: "Projects", icon: "📁" },
   { key: "plans", label: "Plans", icon: "🗺️" },
   { key: "processes", label: "Processes", icon: "⚙️" },

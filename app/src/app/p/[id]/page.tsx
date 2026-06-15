@@ -31,7 +31,7 @@ function LoadingSkeleton() {
 const TABS = [
   { key: "overview", label: "Persona", icon: "🎭" },
   { key: "work", label: "Work", icon: "📋" },
-  { key: "brain", label: "Brain", icon: "🧠" },
+  { key: "brain", label: "Models", icon: "🧠" },
   { key: "fleet", label: "Fleet", icon: "👥" },
   { key: "projects", label: "Projects", icon: "📁" },
   { key: "plans", label: "Plans", icon: "🗺️" },
