@@ -11,42 +11,39 @@ interface SkillManifest {
   category: string;
   agent_part: string | string[];
   scripts: string[];
-  dependencies: string[];
+  requires: Record<string, string>;
   when_to_use: string;
 }
 
 const GITHUB_RAW =
   "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/main";
+const GITHUB_API =
+  "https://api.github.com/repos/Tachin-ai-Corporation/architect-prime-gcp-agent/contents";
 
 /* 5-minute cache */
 let catalogCache: { skills: SkillManifest[]; ts: number } | null = null;
 const CACHE_TTL = 5 * 60 * 1000;
 
 /**
- * GET /api/skills — Returns the full skill catalog from repo skill.json manifests.
- * Fetches skill.json from each known skill directory in the repo.
+ * List subdirectories in a repo path via GitHub Contents API.
+ * Returns an array of directory names.
  */
-
-/* Static list of skill IDs — these are the known skill packages in the repo.
- * When the public skill registry is built (Phase 4), this will become dynamic. */
-const CORE_SKILLS = [
-  "web-search",
-  "workspace-drive",
-  "workspace-gmail",
-  "workspace-calendar",
-  "workspace-docs",
-  "workspace-sheets",
-  "fleet-hire",
-  "fleet-fire",
-  "fleet-status",
-  "fleet-upgrade",
-  "fleet-verify",
-  "memory-consolidate",
-];
-
-const SPECIALTY_SKILLS: { type: string; id: string }[] = [
-  { type: "devops", id: "gcp-devops" },
-];
+async function listRepoDirs(path: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${GITHUB_API}/${path}`, {
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "architect-prime-dashboard",
+      },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    const items = (await res.json()) as { name: string; type: string }[];
+    return items.filter((i) => i.type === "dir").map((i) => i.name);
+  } catch {
+    return [];
+  }
+}
 
 async function fetchSkillJson(path: string): Promise<SkillManifest | null> {
   try {
@@ -61,6 +58,10 @@ async function fetchSkillJson(path: string): Promise<SkillManifest | null> {
   }
 }
 
+/**
+ * Build the full skill catalog by discovering all skill directories in the repo.
+ * Scans skills and specialties directories for skill.json manifests.
+ */
 async function loadCatalog(): Promise<SkillManifest[]> {
   if (catalogCache && Date.now() - catalogCache.ts < CACHE_TTL) {
     return catalogCache.skills;
@@ -68,14 +69,19 @@ async function loadCatalog(): Promise<SkillManifest[]> {
 
   const fetches: Promise<SkillManifest | null>[] = [];
 
-  // Core skills
-  for (const id of CORE_SKILLS) {
-    fetches.push(fetchSkillJson(`skills/${id}/skill.json`));
+  // Discover core skills
+  const coreDirs = await listRepoDirs("skills");
+  for (const dir of coreDirs) {
+    fetches.push(fetchSkillJson(`skills/${dir}/skill.json`));
   }
 
-  // Specialty skills
-  for (const { type, id } of SPECIALTY_SKILLS) {
-    fetches.push(fetchSkillJson(`specialties/${type}/skills/${id}/skill.json`));
+  // Discover specialty skills
+  const specialtyTypes = await listRepoDirs("specialties");
+  for (const type of specialtyTypes) {
+    const skillDirs = await listRepoDirs(`specialties/${type}/skills`);
+    for (const dir of skillDirs) {
+      fetches.push(fetchSkillJson(`specialties/${type}/skills/${dir}/skill.json`));
+    }
   }
 
   const results = await Promise.all(fetches);
@@ -85,6 +91,10 @@ async function loadCatalog(): Promise<SkillManifest[]> {
   return skills;
 }
 
+/**
+ * GET /api/skills — Returns the full skill catalog from repo.
+ * Auto-discovers all skill packages — no hardcoded list.
+ */
 export async function GET() {
   try {
     const skills = await loadCatalog();
