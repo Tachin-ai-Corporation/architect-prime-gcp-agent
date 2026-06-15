@@ -1,50 +1,16 @@
 # Skill: work-logging
 
 ## What this skill does
-Read and write task lifecycle records and work envelope logs.
+Read task lifecycle records and work envelope logs.
 Used for mission history, agent activity dashboards, and readback.
 
 ## When to use
-When you need to record task outcomes, review what agents have done,
-or query recent mission history from Firestore.
+When you need to review what agents have done or query recent mission
+history from Firestore.
 
 ---
 
 ## Tools
-
-### task-log-write
-
-Write a task lifecycle record to Firestore. Typically called internally
-by `agent-mouth` after delivering output or on timeout — **not usually
-invoked directly by Motor.**
-
-```
-exec task-log-write <taskId> <agentId> <channel> <status> \
-  <startedAt> <durationMs> <outputChars> <classified> \
-  [text] [error]
-```
-
-**Arguments:**
-| Arg | Description |
-|-----|-------------|
-| `taskId` | Unique task identifier |
-| `agentId` | Agent that performed the task |
-| `channel` | Communication channel |
-| `status` | `delivered`, `timed_out`, or `error` |
-| `startedAt` | ISO timestamp when task started |
-| `durationMs` | Execution duration in milliseconds |
-| `outputChars` | Character count of output |
-| `classified` | `external`, `internal`, or `unknown` |
-| `text` | Optional task text (truncated to 500 chars) |
-| `error` | Optional error message |
-
-**Writes to:**
-- Prime: `/primes/{primeId}/tasks/{taskId}`
-- Fleet: `/primes/{primeId}/fleet/{agentName}/tasks/{taskId}`
-
-**Error handling:** Never fails fatally — logs a warning and exits 0.
-
----
 
 ### task-log-read
 

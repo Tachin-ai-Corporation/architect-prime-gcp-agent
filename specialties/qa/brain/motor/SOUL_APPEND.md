@@ -98,5 +98,3 @@ When running a regression suite:
 - **Never modify production data** during testing without explicit approval
 - **Never skip tests silently** — every skip must have a documented reason
 - **Never mark a failing test as passing** — report the truth
-- **Always preserve evidence** for failed tests before cleanup
-- **Report flaky tests** — if a test passes on retry, note both outcomes

@@ -8,6 +8,6 @@
   "category": "workflow",
   "agent_part": "motor",
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When processing meeting notes, extracting action items, preparing agendas, or writing status reports"
 }

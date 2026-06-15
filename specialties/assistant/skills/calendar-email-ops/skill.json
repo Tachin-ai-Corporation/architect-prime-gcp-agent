@@ -8,6 +8,6 @@
   "category": "productivity",
   "agent_part": "motor",
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When managing calendar events, drafting emails, scheduling meetings, or tracking follow-ups"
 }

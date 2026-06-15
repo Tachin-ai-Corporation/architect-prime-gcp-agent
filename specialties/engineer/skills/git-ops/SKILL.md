@@ -6,8 +6,8 @@ Use these procedures when performing git workflow tasks via `exec`.
 
 | What | Command |
 |------|---------|
-| Create feature branch | `git checkout -b feat/TICKET-description main` |
-| Create fix branch | `git checkout -b fix/TICKET-description main` |
+| Create feature branch | `git checkout -b feat/<short-description> main` |
+| Create fix branch | `git checkout -b fix/<short-description> main` |
 | List branches | `git branch -a --sort=-committerdate` |
 | Switch branch | `git checkout BRANCH_NAME` |
 | Update from main | `git fetch origin && git rebase origin/main` |
@@ -15,10 +15,10 @@ Use these procedures when performing git workflow tasks via `exec`.
 | Delete remote branch | `git push origin --delete BRANCH_NAME` |
 
 ### Branch Naming Convention
-- `feat/TICKET-short-description` — new features
-- `fix/TICKET-short-description` — bug fixes
-- `chore/TICKET-short-description` — maintenance, deps, config
-- `refactor/TICKET-short-description` — code restructuring
+- `feat/<short-description>` — new features
+- `fix/<short-description>` — bug fixes
+- `chore/<short-description>` — maintenance, deps, config
+- `refactor/<short-description>` — code restructuring
 
 ## Commit Message Formatting
 
@@ -101,7 +101,6 @@ Brief description of what this PR does.
 - [ ] No regressions
 
 ## Related
-- Ticket: TICKET-ID
 - Depends on: #PR_NUMBER (if applicable)
 EOF
 ```

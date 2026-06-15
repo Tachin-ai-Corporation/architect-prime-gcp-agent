@@ -24,5 +24,4 @@ Reads recent messages from a Chat space.
 
 ## Important
 - Uses Domain-Wide Delegation (DWD) for authentication
-- Motor sends messages; other agents MUST NOT use chat-send directly
-- Cortex dispatches communication through Mouth, not Motor
+- Outbound messages are delivered by Mouth, not Motor. `chat-send` and `chat-read` are system tools used by the delivery pipeline. Agents reference this skill to understand message formatting, but do not invoke chat-send directly.

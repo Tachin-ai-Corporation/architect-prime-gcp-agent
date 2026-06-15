@@ -8,6 +8,6 @@
   "category": "testing",
   "agent_part": "motor",
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When running test suites, collecting coverage, or analyzing test results"
 }

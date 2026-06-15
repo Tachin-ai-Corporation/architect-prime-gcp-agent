@@ -8,6 +8,6 @@
   "category": "analysis",
   "agent_part": "motor",
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When auditing the repository — analyzing code structure, checking canon compliance, reviewing manifests and contracts"
 }

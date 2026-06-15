@@ -1,6 +1,6 @@
 ---
 name: memory-consolidate
-description: "Nightly consolidation of working memory, Core Memory reconciliation, and Deep Truths lifecycle management. Runs at 2am CT (08:00 UTC) via the responsibility scheduler."
+description: "Nightly consolidation of working memory, Core Memory reconciliation, and Deep Truths lifecycle management. Runs on the schedule defined in the responsibility config."
 ---
 
 # Memory Consolidation — Nightly Skill
@@ -83,7 +83,7 @@ For entries that need updating (the fact changed, not disappeared):
 exec core-memory-write --fact "<updated fact>" --category <cat> --supersedes <old-id>
 ```
 
-**Maximum 5 retirement/supersede operations per run.**
+**Maximum 5 retirement/supersede operations per run** (enforced by the tool).
 Always provide a specific reason — never bulk-retire without justification.
 
 ## Phase 4: Promote New Facts (Step 8)
@@ -101,7 +101,7 @@ Categories: `architecture`, `operations`, `iam`, `decisions`, `patterns`, `error
 - Are NOT already in Core Memory (check Step 4 results first)
 - Are NOT transient (task status, current debugging focus, session-specific notes)
 
-**Maximum 5 writes per run.** If a fact supersedes an existing entry:
+**Maximum 5 writes per run** (enforced by the tool). If a fact supersedes an existing entry:
 ```
 exec core-memory-write --fact "<updated fact>" --category <cat> --supersedes <existing-id>
 ```
@@ -159,7 +159,7 @@ exec update-deep-truths --remove "Exact text"     # remove (with reason in repor
 ```
 
 ### Governance
-- Maximum **10 Deep Truths** total (enforced by the script)
+- Maximum **10 Deep Truths** total (enforced by the tool)
 - Maximum **2 changes** per consolidation run
 - Every addition **MUST** include justification + cited Core Memory IDs in the report
 - Every removal **MUST** include the reason + what changed in the report

@@ -124,9 +124,9 @@ if [[ "$ACTION" == "validate" ]]; then
     done
 
     # Validate agent_part value
-    part="$(python3 -c "import json; print(json.load(open('${VALIDATE_DIR}/skill.json')).get('agent_part',''))" 2>/dev/null)"
+    part="$(python3 -c "import json; v=json.load(open('${VALIDATE_DIR}/skill.json')).get('agent_part',''); print(v if isinstance(v,str) else v[0] if v else '')" 2>/dev/null)"
     case "$part" in
-      motor|cerebellum|temporal-research|cortex|prefrontal) ;;
+      motor|cerebellum|temporal-research|temporal-memory|cortex|prefrontal|all) ;;
       *) echo "FAIL: Invalid agent_part: $part"; ERRORS=$((ERRORS + 1)) ;;
     esac
   fi

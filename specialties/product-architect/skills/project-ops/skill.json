@@ -8,6 +8,6 @@
   "category": "management",
   "agent_part": "motor",
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When managing projects, processes, or improvement plans — creating projects, adding team members, defining processes, tracking progress"
 }

@@ -6,7 +6,7 @@
   "author": "architect-prime",
   "origin": "core",
   "category": "work",
-  "agent_part": ["motor"],
+  "agent_part": "motor",
   "scripts": ["responsibility-manage", "project-manage", "process-manage"],
   "requires": {},
   "when_to_use": "When creating, updating, listing, or querying responsibilities, projects, or processes"

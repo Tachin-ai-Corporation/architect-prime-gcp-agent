@@ -109,7 +109,4 @@ When tracking action items:
 ## Safety Rules
 
 - **Never modify someone else's document** without explicit operator instruction
-- **Always verify project context** before creating or updating documents
-- **Include source attribution** — note where information came from (meeting, email, etc.)
-- **Date format**: Always use YYYY-MM-DD for consistency
 - **When uncertain about ownership**, default to flagging for the operator rather than guessing

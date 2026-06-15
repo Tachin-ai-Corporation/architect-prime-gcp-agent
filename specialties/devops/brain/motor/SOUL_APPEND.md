@@ -28,8 +28,3 @@ When errors occur, follow this pattern:
 - **Quota exceeded**: Report quota name + current usage.
 - **Resource not found**: Verify the name, check correct project/region.
 
-## Safety Rules
-- Always verify before modifying: list resources before deleting/updating.
-- Include rollback plan for any destructive operation.
-- Never fabricate resource names — always discover them first.
-- Test in isolation when possible (use dry-run flags where available).

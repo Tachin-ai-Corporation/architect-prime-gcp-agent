@@ -5,7 +5,7 @@
       "title": "DevOps Engineer",
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-gmail", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "skill-introspect", "memory-consolidate", "gcp-devops"],
       "brain": true
     },
     {
@@ -14,7 +14,7 @@
       "title": "Software Engineer",
       "specialty": "Full-stack development, code review, debugging, API design, architecture, testing",
       "emailPattern": "engineer-agent-{name}",
-      "skills": ["web-search", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "skill-introspect", "memory-consolidate", "git-ops", "code-review"],
       "brain": true
     },
     {
@@ -22,7 +22,7 @@
       "title": "QA Engineer",
       "specialty": "Test planning, test automation, regression testing, performance testing, quality gates",
       "emailPattern": "qa-agent-{name}",
-      "skills": ["web-search", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "skill-introspect", "memory-consolidate", "test-runner"],
       "brain": true
     },
     {
@@ -30,7 +30,7 @@
       "title": "Project Manager",
       "specialty": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
       "emailPattern": "pm-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets", "skill-introspect", "memory-consolidate", "meeting-ops"],
       "brain": true
     },
     {
@@ -38,7 +38,7 @@
       "title": "Finance Analyst",
       "specialty": "Budget tracking, cost analysis, financial reporting, forecasting, vendor management",
       "emailPattern": "finance-agent-{name}",
-      "skills": ["web-search", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "billing-ops"],
       "brain": true
     },
     {
@@ -46,7 +46,7 @@
       "title": "Data Engineer",
       "specialty": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
       "emailPattern": "data-agent-{name}",
-      "skills": ["web-search", "workspace-sheets", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "workspace-sheets", "skill-introspect", "memory-consolidate", "bq-ops"],
       "brain": true
     },
     {
@@ -54,7 +54,7 @@
       "title": "Security Engineer",
       "specialty": "IAM audit, compliance, vulnerability assessment, security architecture, incident response",
       "emailPattern": "security-agent-{name}",
-      "skills": ["web-search", "workspace-gmail", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "workspace-gmail", "skill-introspect", "memory-consolidate", "iam-audit"],
       "brain": true
     },
     {
@@ -62,7 +62,7 @@
       "title": "Executive Assistant",
       "specialty": "Scheduling, communications, admin tasks, document drafting, information gathering",
       "emailPattern": "assistant-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "skill-introspect", "memory-consolidate", "calendar-email-ops"],
       "brain": true
     },
     {
@@ -70,7 +70,7 @@
       "title": "Product Architect",
       "specialty": "Product canon stewardship, repo architecture audit, improvement planning, engineering delegation, drift prevention",
       "emailPattern": "architect-agent-{name}",
-      "skills": ["web-search", "skill-introspect", "memory-consolidate"],
+      "skills": ["web-search", "skill-introspect", "memory-consolidate", "project-ops", "repo-audit"],
       "brain": true
     }
   ]

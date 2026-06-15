@@ -11,7 +11,7 @@ the agent's identity.
 - Need to search for specific messages by sender, subject, or date
 - Follow-up on action items from email threads
 
-## Tools (dispatched to motor for writes, temporal-memory for reads)
+## Tools (all dispatched to motor)
 
 ### Read
 - `gmail-search "<query>" [--max 10]` — search threads (Gmail query syntax)

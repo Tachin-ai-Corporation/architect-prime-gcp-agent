@@ -6,7 +6,7 @@
   "author": "architect-prime",
   "origin": "core",
   "category": "workspace",
-  "agent_part": ["motor"],
+  "agent_part": "motor",
   "scripts": ["chat-send", "chat-read"],
   "requires": {},
   "when_to_use": "When you need to send or read Google Chat messages"

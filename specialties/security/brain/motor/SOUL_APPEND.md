@@ -137,10 +137,3 @@ RECOMMENDED REMEDIATION (requires human approval):
 
 Never execute remediation commands. Always return them as recommendations.
 
-## Safety Rules
-
-- **Never modify IAM, firewall, org policies, or any GCP resource state**
-- **Always verify resource names** via `list` commands before `describe` commands
-- **Quote exact output** in your findings — do not paraphrase error messages
-- **Limit log queries** to 50 entries with `--limit=50` to avoid overwhelming output
-- **Use `--format=json`** for evidence that will be diffed or compared later

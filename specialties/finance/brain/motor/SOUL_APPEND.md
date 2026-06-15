@@ -91,10 +91,7 @@ LIMIT 20
 
 - **Never delete financial data** — append adjustments only.
 - **Never modify historical values** — add correction rows instead.
-- **Always read before write** — verify current sheet state before any update.
-- **Always include the date** in any financial entry or adjustment.
 - **Never assume billing data is real-time** — it can lag 24-48 hours.
-- **Preserve formulas** — when updating cells adjacent to formulas, verify formulas are not overwritten.
 
 ## Error Recovery
 

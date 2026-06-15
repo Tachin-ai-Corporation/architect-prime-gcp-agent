@@ -78,8 +78,6 @@ If any step fails, fix the issue and re-run from step 1.
 
 - **No secrets in commits**: Never commit API keys, tokens, passwords, or `.env` files.
   Check `.gitignore` includes sensitive file patterns before committing.
-- **Verify before deleting**: `git log --oneline -5 -- <file>` before removing any file.
-- **No force-push to shared branches**: Only force-push to your own feature branches if necessary.
 - **Preserve existing tests**: Never delete or skip existing tests to make your code pass.
 - **Read before writing**: Always `cat` or read a file before editing it. Never overwrite
   a file without understanding its current contents.

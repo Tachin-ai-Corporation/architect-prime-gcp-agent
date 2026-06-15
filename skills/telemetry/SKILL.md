@@ -1,7 +1,7 @@
 # Skill: telemetry
 
 ## What this skill does
-Read and write brain dispatch telemetry, and check/set agent activity status.
+Read brain dispatch telemetry and check/set agent activity status.
 Used for debugging, performance monitoring, and agent health dashboards.
 
 ## When to use
@@ -44,36 +44,6 @@ exec brain-telemetry-read --last 50 --agent motor
 # Only failures, as JSON
 exec brain-telemetry-read --failures --json
 ```
-
----
-
-### brain-telemetry-write
-
-Write a dispatch telemetry event to Firestore. Typically called internally
-by `brain-exec` after each sub-agent dispatch — **not usually invoked
-directly by Motor.**
-
-```
-exec brain-telemetry-write <agent_id> <task> <start_ns> <end_ns> <output_bytes> <exit_code> [error_type]
-```
-
-**Arguments:**
-| Arg | Description |
-|-----|-------------|
-| `agent_id` | Agent that was dispatched |
-| `task` | Task description (truncated to 200 chars) |
-| `start_ns` | Start time in nanoseconds |
-| `end_ns` | End time in nanoseconds |
-| `output_bytes` | Byte count of agent output |
-| `exit_code` | Process exit code |
-| `error_type` | Optional error classification |
-
-**Writes to:** `/primes/{primeId}/dispatch-log/{auto-id}`
-
-**Notes:**
-- Telemetry events are retained for 7 days
-- Nightly memory consolidation prunes old entries
-- Never fails fatally — logs warning and exits 0 on error
 
 ---
 

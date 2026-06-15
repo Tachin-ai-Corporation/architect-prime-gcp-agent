@@ -6,7 +6,7 @@
   "author": "architect-prime",
   "origin": "core",
   "category": "memory",
-  "agent_part": ["temporal-memory"],
+  "agent_part": "temporal-memory",
   "scripts": [],
   "requires": {},
   "when_to_use": "Automatically triggered by nightly cron — do not invoke manually"

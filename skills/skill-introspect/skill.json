@@ -6,7 +6,7 @@
   "author": "architect-prime",
   "origin": "core",
   "category": "meta",
-  "agent_part": ["cortex"],
+  "agent_part": "all",
   "scripts": [],
   "requires": {},
   "when_to_use": "When you need to know what skills are available, what tools motor can use, or exact tool syntax for a dispatch instruction"

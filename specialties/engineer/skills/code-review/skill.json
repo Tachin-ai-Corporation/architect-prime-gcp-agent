@@ -8,6 +8,6 @@
   "category": "quality",
   "agent_part": "motor",
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When reviewing code changes — analyzing diffs, checking quality, scanning for issues"
 }

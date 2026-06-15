@@ -8,6 +8,6 @@
   "category": "workflow",
   "agent_part": "motor",
   "scripts": [],
-  "dependencies": [],
+  "requires": {},
   "when_to_use": "When performing git workflow operations — branching, committing, creating PRs, resolving conflicts"
 }

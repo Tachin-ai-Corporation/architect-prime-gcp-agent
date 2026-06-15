@@ -74,11 +74,8 @@ Only proceed with load after all 5 checks pass.
 
 ## Safety Rules
 
-- **Never DROP TABLE without explicit user confirmation** — report the table name, row count, and size first.
-- **Never DELETE FROM without a WHERE clause** — always scope deletes.
 - **Never overwrite production data without a backup** — create a snapshot or copy first.
-- **Always verify dataset and table existence** before attempting operations on them.
-- **Quote project, dataset, and table names** in backtick format for BQ SQL: `` `project.dataset.table` ``.
+- **Escalate before destructive operations** — DROP TABLE and unscoped DELETE require explicit user confirmation. Report table name, row count, and size before proceeding.
 
 ## Error Recovery
 

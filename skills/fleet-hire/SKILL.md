@@ -14,7 +14,7 @@ fleet-hire --name <name> --specialty <specialty>
 
 ### Arguments
 - `--name` — Agent name, lowercase, no spaces (e.g. "stan", "anora", "quinn")
-- `--specialty` — Agent type: devops, swe, qa, pm, finance, data, security
+- `--specialty` — Agent type (see agent-types.json for available types and aliases)
 
 ### Example
 ```
