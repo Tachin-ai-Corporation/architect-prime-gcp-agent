@@ -408,8 +408,11 @@ async function pollGChat() {
         // Echo filter: skip own messages to prevent re-ingestion loops.
         // Mouth posts delegation markers and voiced output to GChat spaces;
         // ears must never treat those as new inbound work.
-        const senderEmail = msg.sender?.name?.replace('users/', '') || '';
-        if (senderEmail && senderEmail === AGENT_USER_EMAIL) continue;
+        // GChat API returns sender.name as 'users/{numericId}', not email,
+        // so match on displayName (set as AGENT_DISPLAY_NAME at boot).
+        const senderDisplayName = msg.sender?.displayName || '';
+        const agentDisplayName = process.env.AGENT_DISPLAY_NAME || '';
+        if (agentDisplayName && senderDisplayName === agentDisplayName) continue;
 
         const text = msg.text || msg.argumentText || '';
         if (!text || (AGENT_MENTION && !text.includes(AGENT_MENTION))) continue;
