@@ -427,7 +427,7 @@ async function pollGChat() {
         const priorMsgs = allMsgs.slice(contextStart, i);
         const composite = buildContextualMessage(msg, priorMsgs);
 
-        messages.push({ text: composite, id: msg.name, timestamp: ct, metadata: { space, email: AGENT_USER_EMAIL } });
+        messages.push({ text: composite, rawText: text, id: msg.name, timestamp: ct, metadata: { space, email: AGENT_USER_EMAIL } });
       }
     } catch (err) { log('Chat poll error', { space, error: err.message }); }
   }
@@ -644,7 +644,9 @@ async function main() {
         // Only check the CURRENT message for delegation markers, not context.
         // Context lines from prior messages may contain old delegation markers
         // that should not trigger delegation processing.
-        const currentMsgText = cleanMentionText(msg.text || msg.argumentText || '');
+        // Use rawText (original message only) for delegation detection,
+        // NOT msg.text which is the composite with context from prior messages.
+        const currentMsgText = cleanMentionText(msg.rawText || msg.text || '');
         let delegationMeta = {};
         if (isDelegationMarker(currentMsgText)) {
           const parsed = parseDelegationMarker(currentMsgText);
