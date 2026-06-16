@@ -10,6 +10,7 @@
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { getGceToken } from './gce-auth.mjs';
+import { smartTruncate } from './vertex-text.mjs';
 import { firestoreEncode, firestoreDecode } from './firestore.mjs';
 
 /**
@@ -1058,7 +1059,7 @@ export function createProcessEngine(deps) {
 
         // Add prior results for context
         const priorContext = allResults.length > 0
-          ? (await Promise.all(allResults.map(async r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this agent execution result. Keep key outputs, file paths, resource names, URLs, and error messages. Omit verbose logs and raw command output.')}`))).join('\n\n')
+          ? allResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
           : null;
 
         // Dispatch to agent
@@ -1079,8 +1080,8 @@ export function createProcessEngine(deps) {
           agent: taskAgent,
           task: (tEnv.title || tEnv.instruction || '').substring(0, 150),
           result: result.success
-            ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this successful agent execution output. Keep key results, file paths, resource names, and actionable details. Omit verbose logs.')
-            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_AGENT_STEP, 'Summarize this failed agent output. Keep error details, partial progress, and diagnostic info.')}`,
+            ? smartTruncate(result.output || '', CTX_AGENT_STEP)
+            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
           success: result.success,
           durationMs: result.durationMs,
         };
@@ -1088,7 +1089,7 @@ export function createProcessEngine(deps) {
 
         // Update task envelope
         tEnv.output = result.success
-          ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this task completion output. Keep deliverables, file paths, and key outcomes.')
+          ? smartTruncate(result.output || '', CTX_AGENT_STEP)
           : result.error || 'Task failed';
         tEnv.status = result.success ? 'complete' : 'failed';
         tEnv.completed_at = now();
@@ -1108,7 +1109,7 @@ export function createProcessEngine(deps) {
             instruction: `[RETRY — previous attempt failed: ${result.error}]\n\n${instruction}`,
             prior_results_context: [
               priorContext,
-              `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${await smartSummarize(result.output || '', 500, 'Summarize why this attempt failed. Keep error messages and root cause details.')}`,
+              `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${smartTruncate(result.output || '', 500)}`,
             ].filter(Boolean).join('\n\n'),
           });
 
@@ -1116,11 +1117,11 @@ export function createProcessEngine(deps) {
             log('INFO', `Process CP${cpNum} Task ${taskNum}: retry succeeded`);
             cpResults[cpResults.length - 1] = {
               ...stepResult,
-              result: await smartSummarize(retryResult.output || '', CTX_AGENT_STEP, 'Summarize this successful retry output. Keep key results and deliverables.'),
+              result: smartTruncate(retryResult.output || '', CTX_AGENT_STEP),
               success: true,
               durationMs: result.durationMs + retryResult.durationMs,
             };
-            tEnv.output = await smartSummarize(retryResult.output || '', CTX_AGENT_STEP, 'Summarize this task completion output. Keep deliverables, file paths, and key outcomes.');
+            tEnv.output = smartTruncate(retryResult.output || '', CTX_AGENT_STEP);
             tEnv.status = 'complete';
             tEnv.error = null;
             tEnv.completed_at = now();

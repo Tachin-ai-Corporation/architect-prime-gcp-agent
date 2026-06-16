@@ -33,7 +33,7 @@ import { randomBytes } from 'crypto';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { createClient as createFirestoreClient, firestoreEncode, firestoreDecode } from '../corekit/lib/firestore.mjs';
 import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
-import { createVertexText, CORTEX_SCHEMAS } from '../corekit/lib/vertex-text.mjs';
+import { createVertexText, CORTEX_SCHEMAS, smartTruncate } from '../corekit/lib/vertex-text.mjs';
 import { createProjectRegistry } from '../corekit/lib/projects.mjs';
 import { createProcessEngine } from '../corekit/lib/process-engine.mjs';
 import { createScheduler } from '../corekit/lib/scheduler.mjs';
@@ -2492,7 +2492,8 @@ async function processEnvelope(envelope, memoryContext) {
           const taskNum = ti + 1;
           const taskAgent = task.agent;
           const taskDesc = task.task || task.instruction || '';
-          const taskCriteria = task.accept_criteria || '';
+          const taskCriteria = task.accept_criteria
+            || `Task "${(task.task || task.brief_part || '').substring(0, 60)}" completed with evidence of meaningful work. No unresolved errors in tool output.`;
           const stepType = task._step_type || 'standard';
           const isOptional = task._optional === true;
 
@@ -2845,10 +2846,10 @@ async function processEnvelope(envelope, memoryContext) {
             accept_criteria: taskCriteria,
             _missionId: envelope.id,  // mission-scoped shared workspace
             context_summary: [...allResults, ...cpResults].length > 0
-              ? (await Promise.all([...allResults, ...cpResults].map(async r => `Step ${r.step} (${r.agent}): ${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this prior step result briefly. Keep key outputs and state changes.')}`))).join('\n')
+              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
               : undefined,
             prior_results_context: [...allResults, ...cpResults].length > 0
-              ? (await Promise.all([...allResults, ...cpResults].map(async r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${await smartSummarize(r.result || '', CTX_AGENT_STEP, 'Summarize this completed step. Keep deliverables, changes made, and any issues encountered.')}`))).join('\n\n')
+              ? [...allResults, ...cpResults].map(r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
               : undefined,
             memory_context: envelope.memory_context || null,
           });
@@ -2862,6 +2863,25 @@ async function processEnvelope(envelope, memoryContext) {
               _missionId: envelope.id,
               memory_context: envelope.memory_context || null,
             });
+          }
+
+          // ---- Evidence floor: flag suspiciously shallow motor completions ----
+          if (result.success && taskAgent === 'motor') {
+            const rText = result.output || result.text || '';
+            const toolLog = rText.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/)?.[1] || '';
+            const toolCount = (toolLog.match(/\[TOOL\]/g) || []).length;
+            const hasWrites = /writeFile|drive-upload|drive-mkdir|git commit/i.test(toolLog);
+            const hasErrors = /ERROR:|No such file|command not found|Permission denied/i.test(toolLog);
+            const durationMs = result.durationMs || 0;
+
+            if (durationMs < 8000 && toolCount <= 2 && !hasWrites) {
+              log('WARN', `Evidence floor: motor CP${cpNum} T${taskNum} completed in ${durationMs}ms with ${toolCount} tools, no writes — flagging`);
+              result.output = (result.output || '') + '\n[EVIDENCE WARNING: Task completed very quickly with minimal tool usage and no write operations. Verify that meaningful work was performed.]';
+            }
+            if (hasErrors && !/\[WARNING: One or more tool calls returned errors/.test(rText)) {
+              log('WARN', `Evidence floor: motor CP${cpNum} T${taskNum} reported SUCCESS but tool log contains errors`);
+              result.output = (result.output || '') + '\n[EVIDENCE WARNING: Tool execution log contains errors despite SUCCESS status.]';
+            }
           }
 
           // ---- Cerebellum verification ----
@@ -2988,8 +3008,8 @@ async function processEnvelope(envelope, memoryContext) {
             agent: taskAgent,
             task: taskDesc.substring(0, 200),
             result: result.success
-              ? await smartSummarize(result.output || '', CTX_AGENT_STEP, 'Summarize this checkpoint task result. Keep key outputs, file paths, and resource names.')
-              : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${await smartSummarize(result.output || '(no output)', CTX_AGENT_STEP, 'Summarize this failed task output. Keep error details and partial progress.')}`,
+              ? smartTruncate(result.output || '', CTX_AGENT_STEP)
+              : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_DISPATCH_FAILURE)}`,
             success: result.success,
             durationMs: result.durationMs,
           };
@@ -3445,16 +3465,30 @@ async function main() {
             const allChildrenDone = childStatuses.every(s => s === 'complete' || s === 'archived' || s === 'failed');
 
             if (allChildrenDone) {
-              // All children finished â€” archive the mission as complete
-              log('INFO', `Recovery: archiving completed mission ${env.id} (${env.children.length} children all done)`);
+              log('INFO', `Recovery: archiving completed mission ${env.id}`);
               await firestoreWrite('work', env.id, {
                 status: 'archived', archived_reason: 'child_complete',
                 delivery_status: 'delivered', updated_at: now(),
               });
-              await writeHistory(env.id, env.status, 'archived', 'brain', 'Archived after restart â€” all children complete');
+              await writeHistory(env.id, env.status, 'archived', 'brain', 'Archived after restart — all children complete');
             } else {
-              // Children still in progress â€” leave as-is, don't reprocess
-              log('INFO', `Recovery: skipping mission ${env.id} â€” has ${env.children.length} existing children (${childStatuses.join(', ')})`);
+              const activeChildren = childStatuses.filter(s => s === 'active' || s === 'pending');
+              if (activeChildren.length > 0) {
+                log('INFO', `Recovery: mission ${env.id} has ${activeChildren.length} active children — ensuring parent active`);
+                if (env.status !== 'active') {
+                  await firestoreWrite('work', env.id, { status: 'active', updated_at: now() });
+                }
+              } else {
+                log('INFO', `Recovery: resuming mission ${env.id} — all children terminal, needs re-planning`);
+                try {
+                  await firestoreWrite('work', env.id, { status: 'active', updated_at: now() });
+                  await writeHistory(env.id, env.status, 'active', 'brain', 'Resumed after restart — children terminal, re-planning');
+                  const memory = await recallMemory(env.instruction);
+                  await processEnvelope(env, memory);
+                } catch (e) {
+                  log('ERROR', `Recovery resume failed for ${env.id}: ${e.message}`);
+                }
+              }
             }
           } else {
             // Truly orphaned: no children, was created but processing never started

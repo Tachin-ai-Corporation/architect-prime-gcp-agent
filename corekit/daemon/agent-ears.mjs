@@ -696,8 +696,9 @@ async function main() {
         const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         log('Received', { text: msg.text.slice(0, 100), taskId });
 
-        // LLM Preprocess: repair Chat-mangled text (gchat channel only)
-        const cleanedText = await preprocessMessage(msg.text);
+        // Only preprocess long or noisy messages — short direct mentions pass through
+        const needsPreprocess = msg.text && (msg.text.length > 500 || /\n.*\n.*\n/s.test(msg.text));
+        const cleanedText = needsPreprocess ? await preprocessMessage(msg.text) : msg.text;
         if (cleanedText !== msg.text) {
           log('Preprocessed text changed', {
             original: msg.text.slice(0, 100),

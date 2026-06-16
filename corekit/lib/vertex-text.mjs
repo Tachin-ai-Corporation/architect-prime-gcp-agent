@@ -253,12 +253,9 @@ export function createVertexText(config) {
    */
   async function generateTitleFn(text, type = 'mission') {
     if (!text || text.length < 3) return 'Untitled';
-    const definitions = {
-      mission: 'A MISSION is a strategic goal — the top-level objective being accomplished. Title it as the outcome or deliverable. 5-12 words.',
-      checkpoint: 'A CHECKPOINT is a milestone or phase within a mission — a meaningful stage of progress. Title it as the deliverable or verification this phase produces. 5-10 words.',
-      task: 'A TASK is an atomic unit of work — a single action performed by one agent. Title it as the specific action being taken. 5-10 words.',
-    };
-    const prompt = (definitions[type] || definitions.mission) + '\nNo quotes, no prefixes, no labels. Just the title.';
+    // Only missions need LLM-quality titles; checkpoints/tasks use deterministic path
+    if (type !== 'mission') return summarizeTitle(text);
+    const prompt = 'A MISSION is a strategic goal — the top-level objective being accomplished. Title it as the outcome or deliverable. 5-12 words.\nNo quotes, no prefixes, no labels. Just the title.';
     try {
       const result = await _callVertex(text.substring(0, 1000), prompt, { maxTokens: 60, temperature: 0.3, disableThinking: true });
       if (result && result.length > 2 && result.length < 120) {
@@ -271,17 +268,61 @@ export function createVertexText(config) {
   }
 
   /**
-   * Enforce a JSON schema on raw Cortex output using Gemini structured output.
-   * Makes up to 2 attempts, then falls back to parseJsonResponse.
+   * Validate a parsed object against known schema requirements.
+   * Returns { valid: true } or { valid: false, reason }.
+   *
+   * @param {object} parsed - Parsed JSON object
+   * @param {string} schemaName - Schema name: 'classify', 'decide', or 'analyze'
+   * @returns {{ valid: boolean, reason?: string }}
+   */
+  function validateSchema(parsed, schemaName) {
+    if (!parsed || typeof parsed !== 'object') return { valid: false, reason: 'not an object' };
+    if (schemaName === 'classify') {
+      const allowed = ['new_mission', 'attach', 'continue', 'cancel'];
+      if (!allowed.includes(parsed.classification)) return { valid: false, reason: `classification missing or invalid: ${parsed.classification}` };
+      if (typeof parsed.reasoning !== 'string' || !parsed.reasoning) return { valid: false, reason: 'reasoning missing' };
+      return { valid: true };
+    }
+    if (schemaName === 'decide') {
+      const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate'];
+      if (!allowed.includes(parsed.action)) return { valid: false, reason: `action missing or invalid: ${parsed.action}` };
+      return { valid: true };
+    }
+    if (schemaName === 'analyze') {
+      if (typeof parsed.objective !== 'string' || !parsed.objective) return { valid: false, reason: 'objective missing' };
+      if (!Array.isArray(parsed.parts)) return { valid: false, reason: 'parts missing or not array' };
+      return { valid: true };
+    }
+    return { valid: false, reason: `unknown schema: ${schemaName}` };
+  }
+
+  /**
+   * Enforce a JSON schema on raw Cortex output.
+   * Tries deterministic parse+validate first (free). On failure, falls back to
+   * Gemini structured output (up to 2 attempts), then parseJsonResponse.
    *
    * @param {string|object} raw - Raw Cortex response (string or parsed object)
-   * @param {string} schemaName - Schema name: 'classify' or 'decide'
+   * @param {string} schemaName - Schema name: 'classify', 'decide', or 'analyze'
    * @returns {Promise<object>} Parsed and schema-conforming object
    */
   async function enforceSchemaFn(raw, schemaName) {
     const schema = CORTEX_SCHEMAS[schemaName];
     if (!schema) return typeof raw === 'string' ? parseJsonResponse(raw) : raw;
 
+    // Fast path: deterministic parse + validate (no LLM call)
+    try {
+      const parsed = typeof raw === 'object' ? raw : parseJsonResponse(raw);
+      const check = validateSchema(parsed, schemaName);
+      if (check.valid) {
+        log('DEBUG', `enforceSchema OK (deterministic): action=${parsed.action || parsed.classification}`);
+        return parsed;
+      }
+      log('DEBUG', `enforceSchema deterministic invalid: ${check.reason}`);
+    } catch (e) {
+      log('DEBUG', `enforceSchema deterministic parse failed: ${e.message}`);
+    }
+
+    // Slow path: Flash LLM structured-output coercion
     const input = typeof raw === 'string' ? raw : JSON.stringify(raw);
     const prompt = `Restructure this AI decision into the required JSON schema. Preserve ALL semantic content exactly — do not invent, remove, or modify any decisions, instructions, or reasoning.\n\n---\n${input}`;
 
