@@ -700,6 +700,8 @@ function buildSystemPrompt(mode, payload) {
     const projectSummary = Object.values(PROJECTS).map(p => ({
       id: p.id, name: p.name, status: p.status, description: p.description,
       context: p.context || {},
+      team: (p.team || []).map(m => ({ email: m.email, role: m.role, name: m.name, type: m.type })),
+      gchat_space_id: p.gchat_space_id || null,
     }));
     parts.push(`[PROJECT REGISTRY â€” active work streams with context]\nEach project carries context that applies to all missions within it. When classifying or deciding, identify the relevant project and use its context.\n${JSON.stringify(projectSummary, null, 2)}`);
   }
@@ -1926,6 +1928,8 @@ async function processEnvelope(envelope, memoryContext) {
               output: resultMarker,
               delivery_status: 'pending',
               delivery_target: envelope.source_meta.delegated_from || null,
+              delivery_space_id: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null,
+              project_id: envelope.project_id || null,
               source_channel: 'brain',
               source_meta: { delegation_ref: envelope.source_meta.delegation_ref },
               created_at: now(),
@@ -2203,6 +2207,8 @@ async function processEnvelope(envelope, memoryContext) {
         output: delegMarker,
         delivery_status: 'pending',
         delivery_target: targetEmail,
+        delivery_space_id: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id) || null,
+        project_id: delegateProjectId,
         source_channel: 'brain',
         created_at: now(),
         updated_at: now(),

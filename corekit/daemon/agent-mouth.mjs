@@ -417,69 +417,88 @@ async function deliverToGChat(text) {
 }
 
 /**
- * Deliver a message to a specific agent's GChat DM via DWD.
- * Canon B-9: Mouth is the single point of all outbound communication.
- * Used for delegation markers and delegation results.
+ * Ensure a user is a member of a GChat space. If not, add them.
+ * Used before posting delegations to a project space.
  */
-async function deliverToTargetGChat(text, targetEmail) {
+async function ensureSpaceMember(spaceName, userEmail, token) {
+  try {
+    // List members and check if user is already present
+    const listRes = await fetch(
+      `${CHAT_API}/${spaceName}/members`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) }
+    );
+    if (listRes.ok) {
+      const data = await listRes.json();
+      const found = (data.memberships || []).some(m =>
+        m.member?.name === `users/${userEmail}`
+      );
+      if (found) return true;
+    }
+
+    // Add as member
+    const addRes = await fetch(`${CHAT_API}/${spaceName}/members`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        member: { name: `users/${userEmail}`, type: 'HUMAN' },
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (addRes.ok) {
+      log('Added agent to space', { spaceName, userEmail });
+      return true;
+    }
+    const err = await addRes.text().catch(() => '');
+    log('WARN', 'Failed to add agent to space', { spaceName, userEmail, status: addRes.status, body: err.slice(0, 200) });
+    return false;
+  } catch (err) {
+    log('WARN', 'ensureSpaceMember exception', { spaceName, userEmail, error: err.message });
+    return false;
+  }
+}
+
+/**
+ * Deliver a delegation message to the project's shared GChat space.
+ * Canon B-9: Mouth is the single point of all outbound communication.
+ * Agents do not DM or email each other — all delegation flows through shared spaces.
+ *
+ * @param {string} text - The delegation marker text
+ * @param {string} targetEmail - Target agent's email
+ * @param {string|null} deliverySpaceId - Project's GChat space ID (e.g. 'AAQA2JEusfs')
+ */
+async function deliverDelegation(text, targetEmail, deliverySpaceId) {
   const token = await getDwdToken();
   const formatted = convertToGChatMarkdown(text);
 
-  // Find or create DM space with target agent
-  // Google Chat API: spaces.findDirectMessage for existing DMs
-  try {
-    const findRes = await fetch(
-      `${CHAT_API}/spaces:findDirectMessage?name=users/${encodeURIComponent(targetEmail)}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    let dmSpace = null;
-    if (findRes.ok) {
-      const findData = await findRes.json();
-      dmSpace = findData.name;
-    }
+  // If we have a project space, deliver there
+  if (deliverySpaceId) {
+    const spaceName = `spaces/${deliverySpaceId}`;
 
-    // If no existing DM, set up a new one
-    if (!dmSpace) {
-      const setupRes = await fetch(`${CHAT_API}/spaces:setup`, {
+    // Ensure target agent is in the space before posting
+    await ensureSpaceMember(spaceName, targetEmail, token);
+
+    try {
+      const res = await fetch(`${CHAT_API}/${spaceName}/messages`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          spaceType: 'DIRECT_MESSAGE',
-          memberships: [
-            { member: { name: `users/${AGENT_USER_EMAIL}`, type: 'HUMAN' } },
-            { member: { name: `users/${targetEmail}`, type: 'HUMAN' } },
-          ],
-        }),
+        body: JSON.stringify({ text: formatted }),
+        signal: AbortSignal.timeout(15_000),
       });
-      if (setupRes.ok) {
-        const setupData = await setupRes.json();
-        dmSpace = setupData.name;
-      } else {
-        const err = await setupRes.text().catch(() => '');
-        log('DM setup failed, falling back to own space', { targetEmail, status: setupRes.status, body: err.slice(0, 200) });
-        // Fall back to own space
-        await deliverToGChat(text);
+      if (res.ok) {
+        log('Delivered delegation to project space', { targetEmail, spaceName, chars: text.length });
         return;
       }
-    }
-
-    // Send to DM space
-    const res = await fetch(`${CHAT_API}/${dmSpace}/messages`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: formatted }),
-    });
-    if (!res.ok) {
       const err = await res.text().catch(() => '');
-      log('DM delivery error, falling back to own space', { targetEmail, status: res.status, body: err.slice(0, 200) });
-      await deliverToGChat(text);
-    } else {
-      log('Delivered to target DM', { targetEmail, chars: text.length });
+      log('WARN', 'Project space delivery failed, falling back to own space', { spaceName, status: res.status, body: err.slice(0, 200) });
+    } catch (err) {
+      log('WARN', 'Project space delivery exception, falling back', { spaceName, error: err.message });
     }
-  } catch (err) {
-    log('DM delivery exception, falling back to own space', { targetEmail, error: err.message });
-    await deliverToGChat(text);
+  } else {
+    log('WARN', 'No project space for delegation, falling back to own space', { targetEmail });
   }
+
+  // Fallback: own space (not ideal but prevents silent loss)
+  await deliverToGChat(text);
 }
 
 async function deliverToFleetFirestore(text) {
@@ -780,10 +799,11 @@ async function pollBrainV3Envelopes() {
 
         // Delegation envelopes: deliver directly without voicing — markers are pre-formatted
         const deliveryTarget = f.delivery_target?.stringValue;
+        const deliverySpaceId = f.delivery_space_id?.stringValue || null;
         if (deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result')) {
           if (CHANNEL === 'gchat') {
-            await deliverToTargetGChat(output, deliveryTarget);
-            log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
+            await deliverDelegation(output, deliveryTarget, deliverySpaceId);
+            log('Delivered delegation envelope to target', { envId, target: deliveryTarget, spaceId: deliverySpaceId, intent: envIntent });
           } else {
             await deliver(output);
             log('Delivered delegation envelope via default channel', { envId, intent: envIntent });
