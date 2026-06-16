@@ -1,20 +1,15 @@
-/**
- * channel.mjs — Channel addressing primitives and delivery.
- *
- * Pure core: makeAddress, serializeAddress, parseAddress, addressKey.
- * Effectful edge: deliverToAddress, ensureSpaceMember, discoverSpaces.
- *
- * Single home for all channel logic — replaces duplicated discovery and
- * routing code in agent-ears.mjs and agent-mouth.mjs.
- */
+// corekit/lib/channel.mjs — Channel addressing primitives and delivery
+// Extracted from agent-ears.mjs / agent-mouth.mjs
+// Used by ears (Gmail/GChat polling) and mouth (GChat delivery)
+//
+// Single home for all channel logic, ensuring stable addressing.
+// Every message carries an immutable Address stamped at ingestion,
+// carried through cognition untouched, and obeyed at delivery.
 
-import { readFileSync } from 'fs';
-
-// ---- Constants ----
+// ---- Config & Initialization ----
 
 const CHAT_API = 'https://chat.googleapis.com/v1';
 
-// Contracts injected at init
 let CONTRACTS = {};
 let FIRESTORE_URL = '';
 let PRIME_ID = '';
@@ -22,6 +17,12 @@ let AGENT_HOSTNAME = '';
 
 /**
  * Initialize module with runtime config. Call once at daemon startup.
+ *
+ * @param {object} params
+ * @param {object} params.contracts - contracts configuration
+ * @param {string} params.firestoreUrl - Firestore API base URL
+ * @param {string} params.primeId - Prime ID
+ * @param {string} params.agentHostname - Agent hostname
  */
 export function initChannel({ contracts, firestoreUrl, primeId, agentHostname }) {
   CONTRACTS = contracts || {};
@@ -30,16 +31,17 @@ export function initChannel({ contracts, firestoreUrl, primeId, agentHostname })
   AGENT_HOSTNAME = agentHostname || '';
 }
 
-// ========================================================================
-// Pure core — unit-testable, zero side effects
-// ========================================================================
+// ---- Pure Helpers ----
 
 /**
  * Create a channel Address.
  *
- * @param {"gchat"|"dashboard"} channel
- * @param {{ space?: string, thread?: string, fleet_agent?: string|null }} opts
- * @returns {{ channel: string, space?: string, thread?: string, fleet_agent?: string|null }}
+ * @param {"gchat"|"dashboard"} channel - destination channel
+ * @param {object} [opts={}] - configuration options
+ * @param {string} [opts.space] - GChat space name
+ * @param {string} [opts.thread] - GChat thread name
+ * @param {string|null} [opts.fleet_agent] - fleet agent identifier
+ * @returns {object} Address object
  */
 export function makeAddress(channel, opts = {}) {
   if (channel === 'gchat') {
@@ -58,6 +60,9 @@ export function makeAddress(channel, opts = {}) {
 /**
  * Serialize an Address into Firestore mapValue fields.
  * Stored under source_meta.address on intake and envelope documents.
+ *
+ * @param {object} addr - Address object to serialize
+ * @returns {object} Firestore mapValue
  */
 export function serializeAddress(addr) {
   if (!addr) return {};
@@ -76,12 +81,12 @@ export function serializeAddress(addr) {
 }
 
 /**
- * Parse an Address from Firestore source_meta (already-decoded fields object).
+ * Parse an Address from Firestore source_meta.
  * Handles both the new address sub-map and legacy flat fields.
  *
- * @param {object} sourceMeta — decoded source_meta fields object
- * @param {string} sourceChannel — 'gchat' | 'dashboard' | 'firestore' fallback
- * @returns {{ channel: string, space?: string, thread?: string, fleet_agent?: string|null }}
+ * @param {object} sourceMeta - decoded source_meta fields object
+ * @param {string} sourceChannel - 'gchat' | 'dashboard' | 'firestore' fallback
+ * @returns {object} Address object
  */
 export function parseAddress(sourceMeta, sourceChannel) {
   if (!sourceMeta) return makeAddress(sourceChannel === 'gchat' ? 'gchat' : 'dashboard');
@@ -114,7 +119,11 @@ export function parseAddress(sourceMeta, sourceChannel) {
 }
 
 /**
- * Stable string key for an Address — used for cursor maps and dedup.
+ * Generate a stable string key for an Address.
+ * Used for cursor maps and deduplication.
+ *
+ * @param {object} addr - Address object
+ * @returns {string} Address key
  */
 export function addressKey(addr) {
   if (!addr) return 'unknown';
@@ -123,8 +132,10 @@ export function addressKey(addr) {
 }
 
 /**
- * Convert GChat markdown: basic transformations for Chat API.
- * Moves from the Mouth daemon to the shared lib.
+ * Convert text to basic GChat markdown.
+ *
+ * @param {string} text - source text
+ * @returns {string} converted text
  */
 export function toGChatMarkdown(text) {
   if (!text) return '';
@@ -136,16 +147,13 @@ export function toGChatMarkdown(text) {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');          // strip links
 }
 
-// ========================================================================
-// Effectful edge — network I/O, used by daemons
-// ========================================================================
+// ---- Effectful Edge API ----
 
 /**
  * Discover all Chat spaces visible to the agent.
- * Returns an array of space resource names (e.g. 'spaces/AAAA').
  *
- * @param {string} token — DWD bearer token
- * @returns {Promise<string[]>}
+ * @param {string} token - DWD bearer token
+ * @returns {Promise<string[]>} list of space resource names
  */
 export async function discoverSpaces(token) {
   const res = await fetch(`${CHAT_API}/spaces?pageSize=100`, {
@@ -157,11 +165,11 @@ export async function discoverSpaces(token) {
 }
 
 /**
- * Resolve the agent's own Chat user resource ID (e.g. 'users/12345').
- * Used for stable echo filtering — keys on numeric user ID, not display name.
+ * Resolve the agent's own Chat user resource ID.
+ * Used for stable echo filtering.
  *
- * @param {string} token — DWD bearer token
- * @returns {Promise<string|null>}
+ * @param {string} token - DWD bearer token
+ * @returns {Promise<string|null>} user ID or null
  */
 export async function resolveAgentUserId(token) {
   try {
@@ -175,12 +183,13 @@ export async function resolveAgentUserId(token) {
 }
 
 /**
- * Ensure a user is a member of a GChat space. Used for delegation delivery.
+ * Ensure a user is a member of a GChat space.
+ * Used for delegation delivery.
  *
- * @param {string} spaceName — e.g. 'spaces/AAQA2JEusfs'
- * @param {string} userEmail — Workspace email to admit
- * @param {string} token — DWD bearer token
- * @returns {Promise<boolean>}
+ * @param {string} spaceName - space resource name
+ * @param {string} userEmail - Workspace email to admit
+ * @param {string} token - DWD bearer token
+ * @returns {Promise<boolean>} true if member or successfully admitted
  */
 export async function ensureSpaceMember(spaceName, userEmail, token) {
   try {
@@ -217,11 +226,15 @@ export async function ensureSpaceMember(spaceName, userEmail, token) {
 
 /**
  * Deliver text to a resolved Address.
- * Single delivery primitive — replaces duplicated delivery logic in Mouth and Ears.
+ * Single delivery primitive used by Mouth and Ears.
  *
- * @param {object} addr — Address object
- * @param {string} text — message text (will be GChat-markdown-converted for gchat)
- * @param {{ token: string, deliveryTarget?: string, replyInThread?: boolean, log?: Function }} opts
+ * @param {object} addr - Address object
+ * @param {string} text - message text
+ * @param {object} [opts={}] - options
+ * @param {string} [opts.token] - auth/DWD bearer token
+ * @param {string} [opts.deliveryTarget] - delegation target email
+ * @param {boolean} [opts.replyInThread] - whether to reply in thread
+ * @param {Function} [opts.log] - logging function
  * @returns {Promise<boolean>} true if delivered successfully
  */
 export async function deliverToAddress(addr, text, opts = {}) {
@@ -229,7 +242,7 @@ export async function deliverToAddress(addr, text, opts = {}) {
 
   if (addr.channel === 'gchat') {
     if (!addr.space) {
-      log('ERROR', 'deliverToAddress: no space on gchat address — dropping', { addr });
+      log('ERROR: deliverToAddress: no space on gchat address — dropping', { addr });
       return false;
     }
 
@@ -239,13 +252,14 @@ export async function deliverToAddress(addr, text, opts = {}) {
     }
 
     const body = { text: toGChatMarkdown(text) };
+    let url = `${CHAT_API}/${addr.space}/messages`;
     // Thread reply when the origin was threaded
     if (addr.thread && replyInThread) {
       body.thread = { name: addr.thread };
-      body.messageReplyOption = 'REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD';
+      url += '?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD';
     }
 
-    const res = await fetch(`${CHAT_API}/${addr.space}/messages`, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -256,7 +270,7 @@ export async function deliverToAddress(addr, text, opts = {}) {
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      log('ERROR', 'deliverToAddress: GChat POST failed', {
+      log('ERROR: deliverToAddress: GChat POST failed', {
         status: res.status, space: addr.space, error: errText.slice(0, 200),
       });
       return false;
@@ -288,17 +302,18 @@ export async function deliverToAddress(addr, text, opts = {}) {
     return res.ok;
   }
 
-  log('ERROR', 'deliverToAddress: unknown channel', { channel: addr.channel });
+  log('ERROR: deliverToAddress: unknown channel', { channel: addr.channel });
   return false;
 }
 
 /**
- * Mirror a gchat reply to fleet Firestore for dashboard visibility.
+ * Mirror a GChat reply to fleet Firestore for dashboard visibility.
  * This is an observability write, not a reply destination.
  *
- * @param {string} text
- * @param {string} token — GCE auth token (not DWD)
- * @param {{ log?: Function }} opts
+ * @param {string} text - message text
+ * @param {string} token - GCE auth token
+ * @param {object} [opts={}] - options
+ * @param {Function} [opts.log] - logging function
  */
 export async function mirrorToDashboard(text, token, opts = {}) {
   const { log = () => {} } = opts;
@@ -321,6 +336,7 @@ export async function mirrorToDashboard(text, token, opts = {}) {
       }),
     });
   } catch (err) {
-    log('WARN', 'Dashboard mirror failed', { error: err.message });
+    log('WARN: Dashboard mirror failed', { error: err.message });
   }
 }
+
