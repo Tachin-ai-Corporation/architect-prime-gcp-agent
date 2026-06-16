@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# session-summary — Extract human-visible conversation summary from cortex sessions
+# session-summary — Extract recent completed work from Firestore envelopes
 #
-# Produces a readable summary of recent cortex conversations by extracting
-# user questions and assistant final responses from JSONL session transcripts.
+# The brain gateway doesn't persist session transcripts to disk,
+# so this tool queries Firestore for recently completed Mission envelopes
+# to produce a summary of recent agent activity.
 #
 # Usage:
 #   session-summary [--hours 24] [--limit 20]
 #
-# Output: Plain text summary of recent conversations, suitable for memory consolidation.
-# Only includes user messages and final assistant text (no tool calls, no intermediate output).
+# Output: Plain text summary of recent completed missions, suitable for memory consolidation.
 
 set -euo pipefail
 
@@ -23,89 +23,107 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-CORE_DIR="${CORE_DIR:-/opt/corekit}"
-# Brain gateway writes sessions to agents/main/sessions/ (not agents/cortex/sessions/)
-SESSION_DIR="${CORE_DIR}/agents/main/sessions"
-if [[ ! -d "$SESSION_DIR" ]]; then
-  SESSION_DIR="${CORE_DIR}/agents/cortex/sessions"
+# ── Resolve Prime ID + credentials ────────────────────────────
+PRIME_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//' | sed 's/^fleet-//')
 fi
 
-# Find JSONL files modified within the time window
-CUTOFF=$(date -d "-${HOURS} hours" +%s 2>/dev/null || date -v-${HOURS}H +%s 2>/dev/null || echo "0")
+PROJECT_ID=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "architect-prime-beta")
 
-python3 - "$SESSION_DIR" "$CUTOFF" "$LIMIT" <<'PYEOF'
-import json, sys, os, glob
+TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-session_dir = sys.argv[1]
-cutoff = int(sys.argv[2])
-limit = int(sys.argv[3])
+# ── Compute cutoff timestamp ────────────────────────────────────
+SINCE_TIMESTAMP=$(date -u -d "-${HOURS} hours" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
+  || date -u -v-${HOURS}H +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
 
-# Find recent JSONL files
-jsonl_files = sorted(glob.glob(os.path.join(session_dir, "*.jsonl")),
-                     key=os.path.getmtime, reverse=True)
+if [[ -z "$SINCE_TIMESTAMP" ]]; then
+  echo "Warning: could not compute cutoff timestamp" >&2
+  exit 0
+fi
 
-conversations = []
-for fpath in jsonl_files:
-    if os.path.getmtime(fpath) < cutoff:
-        continue
-    if fpath.endswith("sessions.json"):
-        continue
+# Auto-detect fleet agent context
+AGENT_ID="${AGENT_ID:-}"
+OWNER="${AGENT_ID}"
+if [[ -z "$OWNER" ]]; then
+  # Try to get agent email from identity lock
+  if [[ -f "/opt/corekit/workspace/.identity-lock" ]]; then
+    OWNER=$(cat /opt/corekit/workspace/.identity-lock)
+  fi
+fi
 
-    turns = []
-    with open(fpath) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except:
-                continue
-            if entry.get("type") != "message":
-                continue
-            msg = entry.get("message", {})
-            role = msg.get("role", "")
-            content = msg.get("content", "")
+# ── Build Firestore query for recent completed missions ─────────
+PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}"
 
-            # Extract text from content
-            text = ""
-            if isinstance(content, str):
-                text = content
-            elif isinstance(content, list):
-                text_parts = [c.get("text", "") for c in content
-                              if isinstance(c, dict) and c.get("type") == "text"]
-                text = "\n".join(t for t in text_parts if t)
+QUERY_BODY=$(cat <<EOF
+{
+  "structuredQuery": {
+    "from": [{"collectionId": "work"}],
+    "where": {
+      "compositeFilter": {
+        "op": "AND",
+        "filters": [
+          {"fieldFilter": {"field": {"fieldPath": "status"}, "op": "EQUAL", "value": {"stringValue": "complete"}}},
+          {"fieldFilter": {"field": {"fieldPath": "type"}, "op": "EQUAL", "value": {"stringValue": "M"}}},
+          {"fieldFilter": {"field": {"fieldPath": "completed_at"}, "op": "GREATER_THAN_OR_EQUAL", "value": {"stringValue": "${SINCE_TIMESTAMP}"}}}
+        ]
+      }
+    },
+    "orderBy": [{"field": {"fieldPath": "completed_at"}, "direction": "DESCENDING"}],
+    "limit": ${LIMIT}
+  }
+}
+EOF
+)
 
-            if not text.strip():
-                continue
+# ── Execute query ───────────────────────────────────────────────
+RESPONSE=$(curl -sf \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -X POST "https://firestore.googleapis.com/v1/${PARENT}:runQuery" \
+  -d "${QUERY_BODY}" 2>&1)
 
-            if role == "user":
-                turns.append(("User", text.strip()[:500]))
-            elif role == "assistant":
-                # Only keep if it's a text-only response (no tool calls in same content)
-                has_tools = False
-                if isinstance(content, list):
-                    has_tools = any(c.get("type") == "toolCall" for c in content if isinstance(c, dict))
-                if not has_tools:
-                    turns.append(("Agent", text.strip()[:500]))
+# ── Format output ───────────────────────────────────────────────
+python3 <<'PYEOF'
+import json, sys
 
-    if turns:
-        conversations.append((os.path.basename(fpath), turns))
-
-if not conversations:
-    print("No recent conversations found.")
+try:
+    results = json.loads(sys.stdin.read())
+except:
+    print("No recent sessions found.")
     sys.exit(0)
 
-# Output summary
-total_turns = 0
-for fname, turns in conversations:
-    print(f"--- Session: {fname} ---")
-    for role, text in turns[-limit:]:
-        print(f"{role}: {text}")
-        print()
-        total_turns += 1
-    if total_turns >= limit:
-        break
+if not isinstance(results, list):
+    results = [results]
 
-print(f"--- {total_turns} turns from {len(conversations)} sessions ---")
+count = 0
+for entry in results:
+    doc = entry.get("document")
+    if not doc:
+        continue
+    fields = doc.get("fields", {})
+    instruction = fields.get("instruction", {}).get("stringValue", "?")
+    output = fields.get("output", {}).get("stringValue", "")
+    completed = fields.get("completed_at", {}).get("stringValue", "?")
+    title = fields.get("title", {}).get("stringValue", "")
+
+    count += 1
+    display = title if title else instruction[:200]
+    print(f"--- Mission {count}: {display} ---")
+    print(f"  Completed: {completed}")
+    if instruction:
+        print(f"  Request: {instruction[:300]}")
+    if output:
+        print(f"  Result: {output[:300]}")
+    print()
+
+if count == 0:
+    print("No recent completed missions found.")
+else:
+    print(f"--- {count} completed missions in the last specified hours ---")
 PYEOF
+echo "$RESPONSE" | python3 /dev/stdin 2>/dev/null || echo "No recent sessions found."
