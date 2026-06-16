@@ -366,11 +366,16 @@ function cleanMentionText(text) {
 function buildContextualMessage(targetMsg, priorMsgs) {
   const cleanTarget = cleanMentionText(targetMsg.text || targetMsg.argumentText || '');
 
-  // Build context preamble from prior messages
+  // Build context preamble from prior messages, excluding agent's own
+  const agentDisplayName = process.env.AGENT_DISPLAY_NAME || '';
   const contextLines = [];
   for (const m of priorMsgs) {
     const text = m.text || m.argumentText || '';
     if (!text.trim()) continue;
+    // Skip agent's own messages in context — prevents old delegation
+    // markers and voiced output from polluting the context window.
+    const senderName = m.sender?.displayName || '';
+    if (agentDisplayName && senderName === agentDisplayName) continue;
     const sender = getSenderName(m);
     contextLines.push(`${sender}: ${text}`);
   }
@@ -636,11 +641,13 @@ async function main() {
         }
 
         // ---- Delegation marker detection ----
-        // If message contains [DELEGATION ref:...], flag source_meta so brain
-        // skips LLM classify and creates mission deterministically.
+        // Only check the CURRENT message for delegation markers, not context.
+        // Context lines from prior messages may contain old delegation markers
+        // that should not trigger delegation processing.
+        const currentMsgText = cleanMentionText(msg.text || msg.argumentText || '');
         let delegationMeta = {};
-        if (isDelegationMarker(cleanedText)) {
-          const parsed = parseDelegationMarker(cleanedText);
+        if (isDelegationMarker(currentMsgText)) {
+          const parsed = parseDelegationMarker(currentMsgText);
           if (parsed) {
             log('Delegation marker detected', { ref: parsed.ref, from: parsed.from, project: parsed.project });
             delegationMeta = {
