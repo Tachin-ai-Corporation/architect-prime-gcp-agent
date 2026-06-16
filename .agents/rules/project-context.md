@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native brain gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.15.3.0)
+## Current Architecture (v2026.06.16.2)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -14,7 +14,15 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
-- **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. M→C→T hierarchy enforced for ALL output (acks, synthesize responses) via `createCT()` helper. LLM-definition-based title generation for missions, checkpoints, and tasks. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Contextual ack with recent mission history + project awareness. Motor timeout detection (`timed_out` status) with cortex `continue` action for re-dispatching timed-out tasks. Process step type dispatch (standard/delegation/spawn_responsibility/approval_gate/optional). Approval gate polling and resume. Responsibility→process linking via processRef (auto-execute, skip Cortex decide).
+- **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. M→C→T hierarchy enforced for ALL output (acks, synthesize responses) via `createCT()` helper. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Contextual ack with recent mission history + project awareness. Motor timeout detection (`timed_out` status) with cortex `continue` action for re-dispatching timed-out tasks. Process step type dispatch (standard/delegation/spawn_responsibility/approval_gate/optional). Approval gate polling and resume. Responsibility→process linking via processRef (auto-execute, skip Cortex decide).
+- **Flash Load & Execution Quality (v2026.06.16.2)**:
+  - **Parse-first enforceSchema**: `enforceSchemaFn` validates Opus JSON deterministically (parseJsonResponse + field/enum validation) before calling Flash. Flash LLM call is now a rare repair path, not universal. Saves ~3 Flash calls per mission turn.
+  - **Deterministic titles**: `generateTitle` uses `summarizeTitle` (pure JS, no LLM) for checkpoints and tasks. LLM titles reserved for missions only. Saves ~10 Flash calls per mission.
+  - **Context fidelity**: Prior results and failure context forwarded via `smartTruncate` (deterministic head+tail) instead of `smartSummarize` (LLM). Preserves raw error messages, file paths, and tool output that LLM summarization was destroying.
+  - **Evidence floor**: After motor returns, deterministic check flags suspiciously shallow completions (fast + few tools + no writes) with `[EVIDENCE WARNING]` annotation for cerebellum.
+  - **Mandatory accept_criteria**: Tasks without explicit criteria get a default, ensuring cerebellum verification never silently skips.
+  - **LoopGuard**: Detects stuck motor loops (duplicate tool calls or consecutive errors). Nudge at 3/5, terminate at 5/8.
+  - **Orphan resume**: Startup recovery resumes missions with terminal children (re-enters processEnvelope for Cortex re-planning) instead of skipping them.
 - **Prime role: infrastructure only** — fleet management (hire/fire/upgrade/monitor), visibility, delegation. ZERO Google Workspace tools. Prime's skills will be progressively exposed through the dashboard for manual triggering.
 - **Tool ownership boundaries:**
   - Prime Motor has fleet lifecycle tools only (fleet-deploy, fleet-hire, fleet-fire, fleet-status, fleet-upgrade, fleet-verify)
@@ -39,7 +47,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - CoreKit tools shared with Prime via manifest system
 
 ### I/O Architecture (Ears + Mouth)
-- Ears polls channel (Firestore or GChat), deduplicates, repairs Chat-mangled text via Gemini Flash preprocessor, detects approval gate responses in GChat (intercepts approve/reject replies), writes TASK.json, fires gateway POST (non-blocking)
+- Ears polls channel (Firestore or GChat), deduplicates, repairs Chat-mangled text via Gemini Flash preprocessor (gated to messages >500 chars or multi-line — short direct mentions skip preprocessing), detects approval gate responses in GChat (intercepts approve/reject replies), writes TASK.json, fires gateway POST (non-blocking)
 - **GChat context window**: when @mention detected, ears includes prior N messages (default 5) from the space as `[Chat messages since your last reply - for context]` preamble with sender names
 - Mouth v2 tails JSONL session transcript (`/opt/corekit/corekit/brain/agents/{agentId}/sessions/{sessionId}.jsonl`) — structurally detects final responses vs intermediate tool output
 - Turn state machine: IDLE → WORKING → ACKED → UPDATED → DONE
