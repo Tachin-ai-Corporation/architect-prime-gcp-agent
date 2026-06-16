@@ -3616,6 +3616,7 @@ function loadResponsibilities() {
 
 function startResponsibilityScheduler() {
   if (!_scheduler) _initScheduler();
+  loadResponsibilities(); // Must load before start() — start() exits early if RESPONSIBILITIES is empty
   _scheduler.start();
 }
 
