@@ -18,7 +18,7 @@
       "route": "brain/temporal-memory",
       "model": "gemini-2.5-flash",
       "intents": ["recall", "write"],
-      "tools": ["memory_search", "core-memory-read", "core-memory-write", "core-memory-retire"],
+      "tools": ["core-memory-read", "core-memory-write", "core-memory-retire", "session-summary", "update-deep-truths"],
       "description": "Memory recall and storage. Searches long-term memory by query, reads/writes core identity facts.",
       "constraints": "Memory only. No external APIs.",
       "max_tokens": 8192,

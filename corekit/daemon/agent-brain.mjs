@@ -26,8 +26,9 @@
 // Run:
 //   node agent-brain.mjs
 // ============================================================
-import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync } from 'fs';
+import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
+import { execFileSync } from 'child_process';
 
 // ---- Shared library imports (Phase 0 extraction) ----
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
@@ -1156,41 +1157,63 @@ async function recallMemory(query, context = {}) {
   }
 }
 
-// ---- Memory: write completed work via temporal-memory agent ----
+// ---- Memory: write completed work deterministically ----
+// Deterministic write to both core_memory (Firestore via script) and MEMORY.md (local).
+// Previous approach dispatched to temporal-memory LLM which silently dropped the write.
 async function writeMemory(envelope) {
   try {
-    const summary = [
-      `Request: ${envelope.instruction}`,
-      `Type: ${envelope.type}`,
-      `Result: ${(envelope.output || '').substring(0, 1500)}`,
-      `Envelope: ${envelope.id}`,
-      `Completed: ${envelope.completed_at}`,
-    ].join('\n');
+    const instruction = (envelope.instruction || '').substring(0, 200);
+    const result = (envelope.output || '').substring(0, 200);
+    const fact = `Completed ${envelope.type}: ${instruction}. Result: ${result}`;
+    const category = 'operations';
+    const tags = `mission,${envelope.type},auto`;
 
-    log('INFO', `Memory write: envelope ${envelope.id}`);
-    const result = await callAgent('temporal-memory', {
-      instruction: `Store this completed work in memory:\n${summary}`,
-      accept_criteria: 'Acknowledge storage',
-    });
-    log('INFO', `Memory write: ${result.success ? 'OK' : 'failed'} (${result.durationMs}ms)`);
+    log('INFO', `Memory write: envelope ${envelope.id} — deterministic`);
 
-    // Mark envelope as memory-reconciled so archival knows it's safe to archive.
-    // IMPORTANT: Use targeted updateMask to avoid overwriting delivered_at set by mouth.
-    if (result.success) {
-      const token = await getAuthToken();
-      if (token) {
-        const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/work/${envelope.id}?updateMask.fieldPaths=memory_written`;
-        const patchResp = await fetch(url, {
-          method: 'PATCH',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fields: { memory_written: { booleanValue: true } } }),
-        });
-        if (!patchResp.ok) {
-          log('ERROR', `memory_written PATCH failed for ${envelope.id}: ${patchResp.status}`);
-        }
+    // 1. Write to Firestore core_memory via script
+    const scriptPath = `${CORE_DIR}/bin/core-memory-write`;
+    if (existsSync(scriptPath)) {
+      try {
+        execFileSync(scriptPath, [
+          '--fact', fact,
+          '--category', category,
+          '--tags', tags,
+          '--source', 'brain-auto',
+        ], { timeout: 15000, stdio: 'pipe', env: { ...process.env, CORE_DIR } });
+        log('INFO', `Memory write: core_memory OK for ${envelope.id}`);
+      } catch (scriptErr) {
+        log('WARN', `Memory write: core-memory-write failed for ${envelope.id}: ${scriptErr.message}`);
       }
     } else {
-      log('WARN', `Memory write returned failure for ${envelope.id}: ${result.error || 'unknown'} â€” output preview: ${(result.output || '').substring(0, 150)}`);
+      log('WARN', `Memory write: core-memory-write not found at ${scriptPath}`);
+    }
+
+    // 2. Append one-line summary to MEMORY.md (working memory accumulates during the day)
+    const memoryPath = `${CORE_DIR}/workspace/MEMORY.md`;
+    if (existsSync(memoryPath)) {
+      const currentSize = readFileSync(memoryPath, 'utf8').length;
+      if (currentSize < 3000) { // Size guard — prevent unbounded growth
+        const datestamp = new Date().toISOString().substring(0, 10);
+        const oneLiner = `- [${datestamp}] ${envelope.type}: ${instruction.substring(0, 120)}\n`;
+        appendFileSync(memoryPath, oneLiner);
+        log('INFO', `Memory write: MEMORY.md appended (${currentSize + oneLiner.length} chars)`);
+      } else {
+        log('INFO', `Memory write: MEMORY.md at ${currentSize} chars, skipping append (await consolidation)`);
+      }
+    }
+
+    // 3. Mark envelope as memory-written (for archival)
+    const token = await getAuthToken();
+    if (token) {
+      const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/work/${envelope.id}?updateMask.fieldPaths=memory_written`;
+      const patchResp = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { memory_written: { booleanValue: true } } }),
+      });
+      if (!patchResp.ok) {
+        log('ERROR', `memory_written PATCH failed for ${envelope.id}: ${patchResp.status}`);
+      }
     }
   } catch (e) {
     log('WARN', `Memory write failed: ${e.message}`);

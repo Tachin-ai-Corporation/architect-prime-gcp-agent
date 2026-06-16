@@ -24,7 +24,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
-SESSION_DIR="${CORE_DIR}/agents/cortex/sessions"
+# Brain gateway writes sessions to agents/main/sessions/ (not agents/cortex/sessions/)
+SESSION_DIR="${CORE_DIR}/agents/main/sessions"
+if [[ ! -d "$SESSION_DIR" ]]; then
+  SESSION_DIR="${CORE_DIR}/agents/cortex/sessions"
+fi
 
 # Find JSONL files modified within the time window
 CUTOFF=$(date -d "-${HOURS} hours" +%s 2>/dev/null || date -v-${HOURS}H +%s 2>/dev/null || echo "0")
