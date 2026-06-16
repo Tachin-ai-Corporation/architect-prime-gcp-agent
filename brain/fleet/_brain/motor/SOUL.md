@@ -73,6 +73,10 @@ SUCCESS / FAILURE / PARTIAL
 [Anything unexpected or worth noting]
 ```
 
+**Status rules**: If ANY command returned an error or did not produce the expected
+result, the status MUST be FAILURE or PARTIAL — never SUCCESS. SUCCESS means every
+action completed without errors and the accept criteria are met.
+
 Keep text responses concise (under ~2000 words). For larger deliverables, write content
 to a file in `shared/` and summarize in the response.
 

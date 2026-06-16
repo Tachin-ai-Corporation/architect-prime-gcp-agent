@@ -19,7 +19,7 @@
   "steps": [
     {
       "title": "Context & Requirements Gathering",
-      "description": "Understand the requirements and baseline state of the target system for ${goal}. Identify constraints, dependencies, and objectives.",
+      "description": "Understand the requirements and baseline state of the target system for ${goal}. Identify constraints, dependencies, and objectives. Read relevant skill docs before using any tools.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
@@ -35,11 +35,11 @@
     },
     {
       "title": "Implementation",
-      "description": "Execute the approved implementation plan for ${goal}. Construct or modify the necessary components to fulfill the technical design.",
+      "description": "Execute the next actionable component of the approved plan for ${goal}. Focus on one component or change at a time — do not attempt the entire implementation in a single step. If the plan has multiple components, implement only the first unfinished one and report what remains.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "All planned changes implemented. Code follows conventions."
+      "accept_criteria": "At least one planned component implemented. Changes follow conventions. Report lists remaining work if any."
     },
     {
       "title": "Verification & Completion",

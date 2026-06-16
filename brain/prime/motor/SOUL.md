@@ -62,6 +62,10 @@ SUCCESS / FAILURE / PARTIAL
 [Anything unexpected or worth noting]
 ```
 
+**Status rules**: If ANY command returned an error or did not produce the expected
+result, the status MUST be FAILURE or PARTIAL — never SUCCESS. SUCCESS means every
+action completed without errors and the accept criteria are met.
+
 ## Advisory Mode
 
 Sometimes Cortex spawns me during a **planning round** — before the execution

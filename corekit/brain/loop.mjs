@@ -7,6 +7,25 @@ import { getGoogleClient, getAnthropicClient, parseModel } from './router.mjs';
 import { toGoogleSchema } from './tools.mjs';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
+// ---- Retry with exponential backoff for rate-limited model calls ----
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 2000;
+
+async function retryWithBackoff(fn, label) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const is429 = err?.status === 429 || err?.code === 429
+        || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED');
+      if (!is429 || attempt === MAX_RETRIES) throw err;
+      const delay = BASE_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
+      console.log(`[loop] ${label}: 429 rate limited, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
 // ---- Skill catalog for execution agents (Layer D) ----
 const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';
 
@@ -157,15 +176,18 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
     const googleMessages = convertMessagesToGoogle(localHistory);
 
     console.log(`[loop] Calling Google Gemini ${modelId} (step ${step}/${maxSteps})...`);
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: googleMessages,
-      config: {
-        systemInstruction: systemPrompt,
-        tools: googleTools,
-        temperature: 0.2,
-      }
-    });
+    const response = await retryWithBackoff(
+      () => ai.models.generateContent({
+        model: modelId,
+        contents: googleMessages,
+        config: {
+          systemInstruction: systemPrompt,
+          tools: googleTools,
+          temperature: 0.2,
+        }
+      }),
+      `Google ${modelId} step ${step}`
+    );
 
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts || [];
@@ -242,6 +264,13 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
       ).substring(0, 500)}`
     ).join('\n');
     text += `\n\n---\n[TOOL EXECUTION LOG]\n${toolLog}\n[END TOOL LOG]`;
+
+    // Detect tool errors that motor may have masked as SUCCESS
+    const hasToolErrors = turnToolCalls.some(tc =>
+      typeof tc.result === 'string' && tc.result.startsWith('ERROR:'));
+    if (hasToolErrors && /SUCCESS/i.test(text)) {
+      text += '\n[WARNING: One or more tool calls returned errors. Verify status accuracy.]';
+    }
   }
 
   return {
@@ -279,13 +308,16 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
     const anthropicMessages = convertMessagesToAnthropic(localHistory);
 
     console.log(`[loop] Calling Anthropic Claude ${modelId} (step ${step}/${maxSteps})...`);
-    const response = await client.messages.create({
-      model: modelId,
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: anthropicMessages,
-      tools: anthropicTools,
-    });
+    const response = await retryWithBackoff(
+      () => client.messages.create({
+        model: modelId,
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: anthropicMessages,
+        tools: anthropicTools,
+      }),
+      `Anthropic ${modelId} step ${step}`
+    );
 
     const textBlock = response.content.find(b => b.type === 'text');
     const stepText = textBlock ? textBlock.text : '';
@@ -360,6 +392,13 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
       ).substring(0, 500)}`
     ).join('\n');
     text += `\n\n---\n[TOOL EXECUTION LOG]\n${toolLog}\n[END TOOL LOG]`;
+
+    // Detect tool errors that motor may have masked as SUCCESS
+    const hasToolErrors = turnToolCalls.some(tc =>
+      typeof tc.result === 'string' && tc.result.startsWith('ERROR:'));
+    if (hasToolErrors && /SUCCESS/i.test(text)) {
+      text += '\n[WARNING: One or more tool calls returned errors. Verify status accuracy.]';
+    }
   }
 
   return {
