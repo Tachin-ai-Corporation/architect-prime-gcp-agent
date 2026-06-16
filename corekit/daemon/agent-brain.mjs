@@ -2015,12 +2015,12 @@ async function processEnvelope(envelope, memoryContext) {
       await createCT(envelope, {
         checkpointTitle: 'Formulate response',
         taskTitle: 'Synthesize answer',
-        taskOutput: decision.synthesis || decision.response,
+        taskOutput: decision.synthesis || decision.response || decision.message,
         taskIntent: 'synthesize',
         deliveryStatus: 'internal',
       });
 
-      envelope.output = decision.synthesis || decision.response;
+      envelope.output = decision.synthesis || decision.response || decision.message;
       envelope.status = 'complete';
       envelope.completed_at = now();
       envelope.updated_at = now();
@@ -2132,7 +2132,7 @@ async function processEnvelope(envelope, memoryContext) {
       else if (!envelope._unblock_attempted && iteration < MAX_ITERATIONS - 2) {
         log('INFO', `Self-unblock attempt for ${envelope.id} — asking Cortex for alternative approach`);
         envelope._unblock_attempted = true;
-        envelope._failure_synthesis = decision.synthesis || decision.failure_summary || null;
+        envelope._failure_synthesis = decision.synthesis || decision.failure_summary || decision.message || null;
         await firestoreWrite('work', envelope.id, envelope);
 
         priorResults.push({
@@ -2147,7 +2147,7 @@ async function processEnvelope(envelope, memoryContext) {
       const lastSuccessAfterUnblock = priorResults.some((r, i) => r.success === true && i > priorResults.findIndex(x => x.agent === 'system' && x.result?.includes('[SELF-UNBLOCK CHECK]')));
       if (lastSuccessAfterUnblock) {
         log('INFO', `Self-unblock succeeded for ${envelope.id} — treating synthesize_with_failure as complete (successful dispatch found after unblock)`);
-        envelope.output = decision.synthesis || decision.response;
+        envelope.output = decision.synthesis || decision.response || decision.message;
         envelope.status = 'complete';
         envelope.completed_at = now();
         envelope.updated_at = now();
@@ -2187,9 +2187,9 @@ async function processEnvelope(envelope, memoryContext) {
 
       if (envelope.type === 'M') {
         // Missions get blocked status — they stay alive for resumption
-        envelope.output = decision.synthesis || decision.response;
+        envelope.output = decision.synthesis || decision.response || decision.message;
         envelope.status = 'blocked';
-        envelope.blocker = decision.failure_summary || decision.synthesis || 'Unknown blocker';
+        envelope.blocker = decision.failure_summary || decision.synthesis || decision.message || 'Unknown blocker';
         envelope.blocker_type = decision.blocker_type || 'other';
         envelope.blocked_at = now();
         envelope.updated_at = now();
@@ -2211,7 +2211,7 @@ async function processEnvelope(envelope, memoryContext) {
       }
 
       // Non-mission envelopes (tasks) still complete normally with failure
-      envelope.output = decision.synthesis || decision.response;
+      envelope.output = decision.synthesis || decision.response || decision.message;
       envelope.status = 'complete';
       envelope.completed_at = now();
       envelope.updated_at = now();
@@ -2239,7 +2239,7 @@ async function processEnvelope(envelope, memoryContext) {
 
     if (action === 'blocked') {
       // Direct blocked action from Cortex — genuine external dependency confirmed
-      envelope.output = decision.escalation_message || decision.blocker_description || decision.blocker || decision.synthesis || decision.response || 'Blocked on external dependency.';
+      envelope.output = decision.escalation_message || decision.blocker_description || decision.blocker || decision.synthesis || decision.response || decision.message || 'Blocked on external dependency.';
       envelope.status = 'blocked';
       envelope.blocker = decision.blocker || 'Unknown blocker';
       envelope.blocker_type = decision.blocker_type || 'other';

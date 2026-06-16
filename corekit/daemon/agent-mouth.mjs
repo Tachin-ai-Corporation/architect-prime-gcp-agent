@@ -639,8 +639,28 @@ async function pollBrainV3Envelopes() {
       const deliveredAt = f.delivered_at?.timestampValue || f.delivered_at?.stringValue;
       const parentId = f.parent_id?.stringValue || null;
 
-      // Skip: no output or no ID
-      if (!envId || !output) continue;
+      // Skip: no ID
+      if (!envId) continue;
+      // Skip: no output (log a warning and mark as delivered to avoid infinite polling)
+      if (!output) {
+        log('WARN', `Envelope ${envId} has no output — skipping delivery and marking delivered`, { envId });
+        try {
+          const token2 = await getGceToken();
+          const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
+          await fetch(docPath, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token2}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: {
+              delivered_at: { timestampValue: new Date().toISOString() },
+              delivered_channel: { stringValue: CHANNEL },
+              delivery_status: { stringValue: 'delivered' },
+            } }),
+          });
+        } catch (err) {
+          log('Failed to mark empty output envelope delivered', { envId, error: err.message });
+        }
+        continue;
+      }
       // Skip: already delivered
       if (deliveryStatus === 'delivered') { skippedDelivered++; continue; }
       if (deliveredAt) { _deliveredEnvelopes.add(envId); skippedDelivered++; continue; }
