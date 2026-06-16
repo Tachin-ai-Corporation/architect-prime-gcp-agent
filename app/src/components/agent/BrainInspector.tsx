@@ -119,7 +119,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
   const [applyResult, setApplyResult] = useState<string | null>(null);
 
   // Responsibility toggle state
-  const [togglingResp, setTogglingResp] = useState<string | null>(null);
+
 
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 
@@ -328,62 +328,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
   };
 
   /* ---- Toggle responsibility enabled/disabled ---- */
-  const handleToggleResp = async (respId: string, currentEnabled: boolean) => {
-    if (!primeId || !agentName) return;
-    setTogglingResp(respId);
 
-    // Optimistic UI update
-    if (liveConfig?.responsibilities) {
-      setLiveConfig({
-        ...liveConfig,
-        responsibilities: liveConfig.responsibilities.map((r) =>
-          r.id === respId ? { ...r, enabled: !currentEnabled } : r
-        ),
-      });
-    }
-
-    try {
-      const submit = await api<{ queryId: string }>(
-        `/api/primes/${primeId}/fleet/${agentName}/introspect`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "set_responsibility_enabled",
-            params: { id: respId, enabled: !currentEnabled },
-          }),
-        }
-      );
-
-      if (submit?.queryId) {
-        // Poll for result (max 10 attempts × 2s)
-        for (let i = 0; i < 10; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const poll = await api<{ status: string; result?: { success: boolean; message?: string; error?: string }; error?: string }>(
-            `/api/primes/${primeId}/fleet/${agentName}/introspect?queryId=${submit.queryId}`
-          );
-
-          if (poll?.status === "complete") {
-            if (!poll.result?.success) {
-              // Revert optimistic update
-              fetchLiveConfig(agentName);
-            }
-            break;
-          }
-          if (poll?.status === "error") {
-            fetchLiveConfig(agentName);
-            break;
-          }
-        }
-      } else {
-        fetchLiveConfig(agentName);
-      }
-    } catch {
-      // Revert on error
-      fetchLiveConfig(agentName);
-    }
-    setTogglingResp(null);
-  };
 
   return (
     <div className={styles.wrapper}>
@@ -516,51 +461,6 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
           );
         })}
       </div>
-
-      {/* ---- Responsibilities Section ---- */}
-      <div className={styles.sectionLabel} id="brain-responsibilities-section">Responsibilities</div>
-      {loadingLive ? (
-        <div className={styles.respLoading}>
-          <span className={styles.livePulse} /> Scanning responsibilities…
-        </div>
-      ) : liveConfig?.responsibilities && liveConfig.responsibilities.length > 0 ? (
-        <div className={styles.respGrid}>
-          {liveConfig.responsibilities.map((r) => (
-            <div
-              key={r.id}
-              className={`${styles.respCard} ${!r.enabled ? styles.respCardDisabled : ""}`}
-              id={`resp-${r.id}`}
-            >
-              <div className={styles.respCardHeader}>
-                <span className={`${styles.respDot} ${r.enabled ? styles.respDotOn : styles.respDotOff}`} />
-                <span className={styles.respCardName}>{r.name}</span>
-                {!r.enabled && <span className={styles.respPausedBadge}>paused</span>}
-                <code className={styles.respSchedule}>{r.schedule}</code>
-                <button
-                  className={`${styles.respToggle} ${r.enabled ? styles.respToggleOn : ""}`}
-                  onClick={() => handleToggleResp(r.id, r.enabled)}
-                  disabled={togglingResp === r.id}
-                  title={r.enabled ? "Pause responsibility" : "Resume responsibility"}
-                  aria-label={r.enabled ? `Pause ${r.name}` : `Resume ${r.name}`}
-                  id={`resp-toggle-${r.id}`}
-                />
-              </div>
-              <div className={styles.respCardDesc}>{r.instruction}</div>
-              <div className={styles.respCardMeta}>
-                {r.has_process && (
-                  <span className={styles.respProcess}>{r.process_steps} steps</span>
-                )}
-                {r.min_spacing_minutes > 0 && (
-                  <span>min {Math.round(r.min_spacing_minutes / 60)}h spacing</span>
-                )}
-                <span className={styles.respSource}>{r.source}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : !loadingLive && liveConfig ? (
-        <div className={styles.respEmpty}>No responsibilities configured for this agent</div>
-      ) : null}
 
       {/* ---- Model Picker Modal ---- */}
       {pickerSlot && (
