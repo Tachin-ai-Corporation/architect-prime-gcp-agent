@@ -26,6 +26,54 @@ async function retryWithBackoff(fn, label) {
   }
 }
 
+// ---- Loop guard: detect stuck tool-calling loops ----
+const DUPLICATE_NUDGE = 3;
+const DUPLICATE_TERMINATE = 5;
+const ERROR_NUDGE = 5;
+const ERROR_TERMINATE = 8;
+const ERROR_PATTERNS = ['ERROR:', 'No such file', 'command not found',
+  'Permission denied', 'not found', 'ENOENT'];
+
+class LoopGuard {
+  constructor() {
+    this.callCounts = new Map();
+    this.consecutiveErrors = 0;
+    this.nudgedDuplicate = false;
+    this.nudgedErrors = false;
+  }
+
+  check(toolName, args, result) {
+    const sig = `${toolName}:${JSON.stringify(args)}`;
+    const count = (this.callCounts.get(sig) || 0) + 1;
+    this.callCounts.set(sig, count);
+
+    const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+    const isError = ERROR_PATTERNS.some(p => resultStr.includes(p));
+    if (isError) { this.consecutiveErrors++; }
+    else { this.consecutiveErrors = 0; this.nudgedErrors = false; }
+
+    if (count >= DUPLICATE_TERMINATE) {
+      return { action: 'terminate',
+        message: `[LOOP DETECTED] You called ${toolName} with the same arguments ${count} times. The result is not changing. Stopping — report FAILURE with what you observed.` };
+    }
+    if (count >= DUPLICATE_NUDGE && !this.nudgedDuplicate) {
+      this.nudgedDuplicate = true;
+      return { action: 'nudge',
+        message: `[WARNING] You've called ${toolName} with identical arguments ${count} times and the result hasn't changed. Stop retrying and either try a different approach or report FAILURE.` };
+    }
+    if (this.consecutiveErrors >= ERROR_TERMINATE) {
+      return { action: 'terminate',
+        message: `[LOOP DETECTED] ${this.consecutiveErrors} consecutive tool calls returned errors. Stopping — report FAILURE with what you observed.` };
+    }
+    if (this.consecutiveErrors >= ERROR_NUDGE && !this.nudgedErrors) {
+      this.nudgedErrors = true;
+      return { action: 'nudge',
+        message: `[WARNING] ${this.consecutiveErrors} consecutive tool calls have returned errors. If the task cannot be completed, report FAILURE with what you've observed.` };
+    }
+    return { action: 'ok' };
+  }
+}
+
 // ---- Skill catalog for execution agents (Layer D) ----
 const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';
 
@@ -172,6 +220,8 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
     if (catalog) systemPrompt = systemPrompt + catalog;
   }
 
+  const guard = new LoopGuard();
+
   while (step < maxSteps) {
     const googleMessages = convertMessagesToGoogle(localHistory);
 
@@ -251,6 +301,19 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
         id: sc.id,
         content: toolResult
       });
+
+      // Loop guard: detect stuck loops
+      const guardResult = guard.check(sc.name, sc.args, toolResult);
+      if (guardResult.action === 'terminate') {
+        console.log(`[loop] Loop guard: TERMINATING — ${guardResult.message}`);
+        text += `\n\n${guardResult.message}`;
+        step = maxSteps;
+        break;
+      }
+      if (guardResult.action === 'nudge') {
+        console.log(`[loop] Loop guard: nudge injected`);
+        localHistory.push({ role: 'user', content: guardResult.message });
+      }
     }
 
     step++;
@@ -303,6 +366,8 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
     const catalog = getSkillCatalog();
     if (catalog) systemPrompt = systemPrompt + catalog;
   }
+
+  const guard = new LoopGuard();
 
   while (step < maxSteps) {
     const anthropicMessages = convertMessagesToAnthropic(localHistory);
@@ -379,6 +444,19 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
         id: sc.id,
         content: toolResult
       });
+
+      // Loop guard: detect stuck loops
+      const guardResult = guard.check(sc.name, sc.args, toolResult);
+      if (guardResult.action === 'terminate') {
+        console.log(`[loop] Loop guard: TERMINATING — ${guardResult.message}`);
+        text += `\n\n${guardResult.message}`;
+        step = maxSteps;
+        break;
+      }
+      if (guardResult.action === 'nudge') {
+        console.log(`[loop] Loop guard: nudge injected`);
+        localHistory.push({ role: 'user', content: guardResult.message });
+      }
     }
 
     step++;
