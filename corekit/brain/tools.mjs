@@ -17,7 +17,7 @@ const BIN_DIR = process.env.BIN_DIR || '/opt/corekit/bin';
 
 export const runCommand = {
   name: 'runCommand',
-  description: `Execute a shell command on the agent's host. Available tools are documented in installed skills at /opt/corekit/skills/<name>/SKILL.md — read the relevant skill before using a tool.`,
+  description: `Execute a shell command on the agent's host. You MUST read the relevant SKILL.md with readFile before your first use of any command. Skill docs: /opt/corekit/skills/<id>/SKILL.md. Never guess at command syntax.`,
   schema: {
     type: 'object',
     properties: {

@@ -277,6 +277,15 @@ function buildSkillIndex() {
 
 let SKILL_INDEX = buildSkillIndex();
 
+// Format the full skill index as a readable catalog for execution agents
+function formatSkillCatalog(skillIndex) {
+  if (!skillIndex?.length) return '';
+  const entries = skillIndex.map(s =>
+    `- ${s.name} (${s.id}): ${s.when_to_use || s.category || ''}`
+  );
+  return `\n\n[AVAILABLE SKILLS]\nRead the SKILL.md before using any tool: readFile /opt/corekit/skills/<id>/SKILL.md\n${entries.join('\n')}\n[END AVAILABLE SKILLS]`;
+}
+
 // ---- Project registry (via corekit/lib/projects.mjs, Phase 1A extraction) ----
 // NOTE: _projects is initialized later in startupInit() after PRIME_ID/AGENT_ID are set.
 // The globals PROJECTS, DEFAULT_PROJECT_ID, PROJECT_CHILDREN provide backward compat
@@ -921,12 +930,14 @@ function buildUserPrompt(mode, payload) {
         rule: 'The Brief decomposes the work into parts. Commit one typed step per Brief part using checkpoint_plan. Each task should set step_type and brief_part.',
         step_types: 'standard (local work via motor/research), delegation (teammate — set target_email), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)',
         sequencing: 'Independent parts fan out within a checkpoint. Dependent parts serialize via checkpoint boundaries.',
+        skill_guidance: 'When writing task instructions for motor, name the relevant skills from skill_index that the task will need. Motor will read the SKILL.md for exact syntax.',
       };
     } else {
       // No Brief (non-execution-bound or analysis failed) — fall back to checkpoint_plan guidance
       decidePayload.dispatch_guidance = {
         rule: 'ALL work MUST use checkpoint_plan. One focused task per task entry. Even single-step work is one checkpoint with one task.',
-        reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The Mâ†’Câ†’T hierarchy ensures progress tracking and enables re-planning on failure.',
+        reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The M→C→T hierarchy ensures progress tracking and enables re-planning on failure.',
+        skill_guidance: 'When writing task instructions for motor, name the relevant skills from skill_index that the task will need. Motor will read the SKILL.md for exact syntax.',
       };
     }
     return JSON.stringify(decidePayload);
@@ -2633,7 +2644,7 @@ async function processEnvelope(envelope, memoryContext) {
             log('INFO', `CP${cpNum} Task ${taskNum}: Spawning responsibility via motor`);
 
             const respResult = await callAgent('motor', {
-              instruction: `Create a new responsibility using the responsibility-manage tool:\n\nresponsibility-manage create --name "${taskDesc.replace(/"/g, '\\"')}" --instruction "${(taskCriteria || taskDesc).replace(/"/g, '\\"')}"\n\nThis is a process step of type 'spawn_responsibility'.`,
+              instruction: `Create a new responsibility using the responsibility-manage tool:\n\nresponsibility-manage create --name "${taskDesc.replace(/"/g, '\\"')}" --instruction "${(taskCriteria || taskDesc).replace(/"/g, '\\"')}"\n\nThis is a process step of type 'spawn_responsibility'.${formatSkillCatalog(SKILL_INDEX)}`,
               accept_criteria: 'Responsibility created successfully',
               _missionId: envelope.id,
             });
@@ -2824,8 +2835,13 @@ async function processEnvelope(envelope, memoryContext) {
           }
 
           // Dispatch to agent — use taskEnvelope.instruction which includes project context
+          // Layer A: Inject full skill catalog for execution agents
+          const skillCatalog = (taskAgent === 'motor' || taskAgent === 'temporal-research')
+            ? formatSkillCatalog(SKILL_INDEX)
+            : '';
+
           let result = await callAgent(taskAgent, {
-            instruction: taskEnvelope.instruction,
+            instruction: taskEnvelope.instruction + skillCatalog,
             accept_criteria: taskCriteria,
             _missionId: envelope.id,  // mission-scoped shared workspace
             context_summary: [...allResults, ...cpResults].length > 0
@@ -2841,7 +2857,7 @@ async function processEnvelope(envelope, memoryContext) {
           if (!result.success) {
             log('WARN', `CP${cpNum} Task ${taskNum} failed (${taskAgent}): ${result.error}. Retrying...`);
             result = await callAgent(taskAgent, {
-              instruction: `${taskEnvelope.instruction}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
+              instruction: `${taskEnvelope.instruction}${skillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
               accept_criteria: taskCriteria,
               _missionId: envelope.id,
               memory_context: envelope.memory_context || null,

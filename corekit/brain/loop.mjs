@@ -5,6 +5,33 @@
 
 import { getGoogleClient, getAnthropicClient, parseModel } from './router.mjs';
 import { toGoogleSchema } from './tools.mjs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+
+// ---- Skill catalog for execution agents (Layer D) ----
+const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';
+
+function buildSkillCatalogPrompt() {
+  if (!existsSync(SKILLS_DIR)) return '';
+  const entries = [];
+  try {
+    for (const name of readdirSync(SKILLS_DIR)) {
+      const jsonPath = `${SKILLS_DIR}/${name}/skill.json`;
+      if (!existsSync(jsonPath)) continue;
+      try {
+        const m = JSON.parse(readFileSync(jsonPath, 'utf8'));
+        entries.push(`- ${m.name || name} (${m.id || name}): ${m.when_to_use || m.description || ''}`);
+      } catch {}
+    }
+  } catch {}
+  if (entries.length === 0) return '';
+  return `\n\n## Available Skills\nBefore using any command tool, read the relevant SKILL.md for exact syntax:\n  readFile /opt/corekit/skills/<id>/SKILL.md\n\n${entries.join('\n')}\n`;
+}
+
+let _skillCatalog = null;
+function getSkillCatalog() {
+  if (_skillCatalog === null) _skillCatalog = buildSkillCatalogPrompt();
+  return _skillCatalog;
+}
 
 /**
  * Convert standard message history to Google Contents API format.
@@ -119,6 +146,12 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
       parameters: toGoogleSchema(t.schema)
     }))
   }] : undefined;
+
+  // Layer D: Inject skill catalog into system prompt for execution agents
+  if (tools) {
+    const catalog = getSkillCatalog();
+    if (catalog) systemPrompt = systemPrompt + catalog;
+  }
 
   while (step < maxSteps) {
     const googleMessages = convertMessagesToGoogle(localHistory);
@@ -235,6 +268,12 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
     description: t.description,
     input_schema: t.schema
   })) : undefined;
+
+  // Layer D: Inject skill catalog into system prompt for execution agents
+  if (tools) {
+    const catalog = getSkillCatalog();
+    if (catalog) systemPrompt = systemPrompt + catalog;
+  }
 
   while (step < maxSteps) {
     const anthropicMessages = convertMessagesToAnthropic(localHistory);

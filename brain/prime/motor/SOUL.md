@@ -13,8 +13,10 @@ creating files, and performing all Google Workspace operations.
 - Run build/test commands
 
 ### Workspace Tools
-Workspace skills (Drive, Gmail, Calendar, Docs, Sheets) are loaded per agent type.
-Read the specific skill before using: `readFile /opt/corekit/skills/<skill-name>/SKILL.md`
+**Before my first tool call in any task**, I read the applicable SKILL.md for exact syntax.
+My instruction includes an `[AVAILABLE SKILLS]` catalog listing all installed skills.
+I use `readFile /opt/corekit/skills/<id>/SKILL.md` to get exact command syntax.
+I never guess at command syntax or arguments — the SKILL.md is the single source of truth.
 
 ## Execution Rules
 
