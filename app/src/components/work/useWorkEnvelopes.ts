@@ -11,7 +11,7 @@ export interface TreeNode extends Omit<WorkEnvelope, 'children'> {
 }
 
 /* ---- Active status set (roots that go into "current") ---- */
-const ACTIVE_STATUSES = new Set<string>(["active", "waiting", "needs_input", "awaiting_approval"]);
+const ACTIVE_STATUSES = new Set<string>(["active", "waiting", "needs_input", "awaiting_approval", "blocked"]);
 const DONE_STATUSES = new Set<string>(["complete", "failed", "cancelled"]);
 
 /* ---- Return shape ---- */
@@ -140,10 +140,24 @@ export function useWorkEnvelopes(
     const queueTrees: TreeNode[] = [];
     const previousTrees: TreeNode[] = [];
 
+    const hasActiveDescendant = (node: TreeNode): boolean => {
+      for (const child of node.children) {
+        if (ACTIVE_STATUSES.has(child.status) || child.status === "pending") {
+          return true;
+        }
+        if (hasActiveDescendant(child)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     for (const root of trees) {
       // Only M-type (or R-type) roots should be top-level buckets.
       // C/T without a known parent also land here.
       if (ACTIVE_STATUSES.has(root.status)) {
+        currentTrees.push(root);
+      } else if (root.type === "R" && hasActiveDescendant(root)) {
         currentTrees.push(root);
       } else if (root.status === "pending" || root.status === "planned") {
         queueTrees.push(root);

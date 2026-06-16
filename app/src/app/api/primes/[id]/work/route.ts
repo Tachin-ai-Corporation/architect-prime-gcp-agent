@@ -6,7 +6,7 @@ interface RouteContext {
 }
 
 /** Status sets */
-const ACTIVE_STATUSES = ["active", "waiting", "needs_input", "awaiting_approval"];
+const ACTIVE_STATUSES = ["active", "waiting", "needs_input", "awaiting_approval", "blocked"];
 
 /**
  * GET /api/primes/[id]/work — List work envelopes for a Prime
@@ -41,12 +41,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     const roots = rootSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
-    // Phase 2: For active roots, fetch full descendant tree via getAll()
+    // Phase 2: For active/R roots, fetch full descendant tree via getAll()
     const allEnvelopes: any[] = [...roots];
     const seenIds = new Set(roots.map(r => r.id));
 
     for (const root of roots) {
-      if (!ACTIVE_STATUSES.includes(root.status)) continue;
+      if (!ACTIVE_STATUSES.includes(root.status) && root.type !== "R") continue;
 
       // Level 1: root.children → C envelopes
       const childIds: string[] = root.children || [];

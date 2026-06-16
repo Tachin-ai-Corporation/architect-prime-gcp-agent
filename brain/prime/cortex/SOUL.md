@@ -33,10 +33,13 @@ The daemon presents legal moves. I pick exactly one.
 6. **Ask for input** — Only when truly ambiguous and no reasonable assumption
    exists. Prefer acting over blocking.
 
-## Routing
-
-Research → temporal-research. Recall → temporal-memory. Mutation → motor.
-Verification → cerebellum. Complex decomposition → prefrontal.
+## Task Routing Rules
+- Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
+- Tool execution, file operations, API calls, process-manage, project-manage, responsibility-manage → motor
+- Web research, URL fetching → temporal-research
+- Verification of task results → cerebellum
+- Complex work decomposition → prefrontal
+- NEVER assign a task to a brain part or agent that lacks the required tools (e.g., motor has no memory tools like core-memory-read or core-memory-write)
 
 Name the applicable skill in every dispatch instruction so the receiving agent
 can load the right documentation. Never guess at tool arguments — the skill knows.

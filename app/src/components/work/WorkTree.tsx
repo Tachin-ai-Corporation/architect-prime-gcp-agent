@@ -17,7 +17,7 @@ interface WorkTreeProps {
 
 /** Check if a node or any descendant is active/waiting. */
 function hasActiveDescendant(node: TreeNode): boolean {
-  if (node.status === "active" || node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval") {
+  if (node.status === "active" || node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval" || node.status === "blocked") {
     return true;
   }
   for (const child of node.children) {
@@ -96,6 +96,7 @@ function TreeNodeRow({
     node.status === "waiting" ||
     node.status === "needs_input" ||
     node.status === "awaiting_approval" ||
+    node.status === "blocked" ||
     hasActiveDescendant(node);
   const [expanded, setExpanded] = useState(shouldAutoExpand);
 
@@ -110,13 +111,15 @@ function TreeNodeRow({
         ? "active"
         : node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval"
           ? "waiting"
-          : node.status === "failed" || node.status === "rejected"
-            ? "failed"
-            : node.status === "planned"
-              ? "planned"
-              : node.status === "timed_out"
-                ? "timedout"
-                : "pending";
+          : node.status === "blocked"
+            ? "blocked"
+            : node.status === "failed" || node.status === "rejected"
+              ? "failed"
+              : node.status === "planned"
+                ? "planned"
+                : node.status === "timed_out"
+                  ? "timedout"
+                  : "pending";
 
   // Label class
   const labelClass =
@@ -124,9 +127,11 @@ function TreeNodeRow({
       ? styles.activeL
       : node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval"
         ? styles.waitingL
-        : node.status === "complete"
-          ? styles.doneL
-          : "";
+        : node.status === "blocked"
+          ? styles.blockedL
+          : node.status === "complete"
+            ? styles.doneL
+            : "";
 
   // Type tag
   const tagClass = node.type === "M" ? `${styles.tag} ${styles.mTag}` : styles.tag;
@@ -144,7 +149,7 @@ function TreeNodeRow({
     if (el) metaJsx.push(<span key="elapsed" className={styles.live}>{el} elapsed</span>);
   }
 
-  if ((node.status === "waiting" || node.status === "needs_input") && node.blocked_at) {
+  if ((node.status === "waiting" || node.status === "needs_input" || node.status === "blocked") && node.blocked_at) {
     const wt = elapsedSince(node.blocked_at);
     if (wt) metaJsx.push(<span key="wait" className={styles.warn}>⚡ {wt}</span>);
   }
@@ -176,9 +181,9 @@ function TreeNodeRow({
 
   // Determine waiting callout text
   const waitingText =
-    (node.status === "waiting" || node.status === "needs_input") && node.blocker
+    (node.status === "waiting" || node.status === "needs_input" || node.status === "blocked") && node.blocker
       ? node.blocker
-      : (node.status === "waiting" || node.status === "needs_input") && node.output
+      : (node.status === "waiting" || node.status === "needs_input" || node.status === "blocked") && node.output
         ? node.output
         : null;
 

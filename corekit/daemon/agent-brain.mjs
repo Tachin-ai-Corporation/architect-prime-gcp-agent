@@ -822,7 +822,13 @@ function buildSystemPrompt(mode, payload) {
 
 
   // 4. Agent registry with tool descriptions
-  parts.push(`[AGENT REGISTRY â€” available agents and their capabilities]\n${JSON.stringify(REGISTRY.agents, null, 2)}`);
+  // Structured agent capabilities summary — more scannable than raw JSON
+  const agentSummary = Object.entries(REGISTRY.agents).map(([name, a]) => {
+    const tools = (a.tools || []).join(', ') || 'none';
+    const intents = (a.intents || []).join(', ');
+    return `  - ${name} (intents: ${intents})\n    Description: ${a.description || ''}\n    Tools: [${tools}]\n    Constraints: ${a.constraints || 'none'}`;
+  }).join('\n\n');
+  parts.push(`[AGENT CAPABILITIES — route tasks to the correct brain part]\n${agentSummary}`);
 
   // 5. Project registry (if any projects exist)
   if (Object.keys(PROJECTS).length > 0) {

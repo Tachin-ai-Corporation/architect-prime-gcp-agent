@@ -38,7 +38,7 @@ export function AgentWorkPanel({ primeId, agentFilter }: AgentWorkPanelProps) {
 
   /* ---- Computed ---- */
   const needsInputCount = useMemo(
-    () => allEnvelopes.filter((e) => e.status === "needs_input" || e.status === "waiting").length,
+    () => allEnvelopes.filter((e) => e.status === "needs_input" || e.status === "waiting" || e.status === "blocked").length,
     [allEnvelopes]
   );
 
