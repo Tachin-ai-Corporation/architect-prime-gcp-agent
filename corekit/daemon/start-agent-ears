@@ -29,6 +29,7 @@ if [ -f "$CONFIG" ]; then
   AGENT_MENTION="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentMention',''))" 2>/dev/null)"
   [ -z "$AGENT_USER_EMAIL" ] && AGENT_USER_EMAIL="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentUserEmail',''))" 2>/dev/null)"
   [ -z "$DWD_SIGNER_SA" ] && DWD_SIGNER_SA="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('dwdSignerSa',''))" 2>/dev/null)"
+  [ -z "$AGENT_DISPLAY_NAME" ] && AGENT_DISPLAY_NAME="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentDisplayName',''))" 2>/dev/null)"
 fi
 
 # Fallback: read PRIME_ID from GCE instance metadata
@@ -57,5 +58,6 @@ export AGENT_USER_EMAIL
 export AGENT_MENTION
 export DWD_SIGNER_SA
 export PRIME_ID
+export AGENT_DISPLAY_NAME="${AGENT_DISPLAY_NAME:-}"
 
 exec stdbuf -oL node "${CORE_DIR}/bin/agent-ears.mjs"
