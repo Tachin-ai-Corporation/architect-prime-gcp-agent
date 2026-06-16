@@ -43,6 +43,7 @@ import { createArtifactManager } from '../corekit/lib/artifacts.mjs';
 import { createNotifier } from '../corekit/lib/notifications.mjs';
 import { createHistoryWriter } from '../corekit/lib/history.mjs';
 import { composeDelegationMarker, composeDelegationResultMarker } from '../corekit/lib/delegation.mjs';
+import { makeAddress } from '../corekit/lib/channel.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
@@ -125,13 +126,35 @@ async function generateTitle(text, type = 'mission') {
   return _vtx.generateTitle(text, type);
 }
 
-
+/**
+ * Build a delivery Address from decoded source_meta and source_channel.
+ * Brain-local counterpart of parseAddress() — works with decoded JS objects
+ * (no Firestore stringValue wrappers) since the brain's in-memory envelopes
+ * are fully decoded by firestoreDecode.
+ */
+function addressFromMeta(sourceMeta, sourceChannel) {
+  if (!sourceMeta) return makeAddress(sourceChannel === 'gchat' ? 'gchat' : 'dashboard');
+  // New canonical path: source_meta.address (already decoded sub-object)
+  const addr = sourceMeta.address;
+  if (addr && addr.channel) {
+    if (addr.channel === 'gchat') {
+      return makeAddress('gchat', { space: addr.space || null, thread: addr.thread || null });
+    }
+    return makeAddress('dashboard', { fleet_agent: addr.fleet_agent ?? null });
+  }
+  // Legacy fallback: flat fields on source_meta
+  const space = sourceMeta.spaceName || sourceMeta.space || null;
+  const thread = sourceMeta.threadName || null;
+  if (space) return makeAddress('gchat', { space, thread });
+  if (sourceChannel === 'gchat') return makeAddress('gchat');
+  return makeAddress('dashboard');
+}
 
 /**
  * Create a Câ†’T pair under a parent envelope and return the checkpoint ID.
  * Enforces Mâ†’Câ†’T hierarchy for all terminal outputs.
  */
-async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput, taskIntent = 'execute', taskStatus = 'complete', deliveryStatus = 'internal' }) {
+async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput, taskIntent = 'execute', taskStatus = 'complete', deliveryStatus = 'internal', deliveryAddress = null }) {
   const cpId = generateId('w');
   const tId = generateId('w');
   const cpEnvelope = {
@@ -161,6 +184,7 @@ async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput
     completed_at: taskStatus === 'complete' ? now() : null,
     updated_at: now(), iteration: 0,
     delivery_status: deliveryStatus,
+    ...(deliveryAddress ? { delivery_address: deliveryAddress } : {}),
   };
   await firestoreWrite('work', cpId, cpEnvelope);
   await firestoreWrite('work', tId, tEnvelope);
@@ -648,6 +672,101 @@ async function callCortex(mode, payload) {
   return enforceSchema(content, mode);
 }
 
+// ---- Prefrontal: work decomposition (the Brief) ----
+async function callPrefrontal(payload) {
+  const prefrontalConfig = REGISTRY.agents?.prefrontal || {};
+  const route = prefrontalConfig.route || 'brain/prefrontal';
+  const maxTokens = prefrontalConfig.max_tokens || 32768;
+  const temperature = prefrontalConfig.temperature ?? 0.6;
+  const topP = prefrontalConfig.top_p ?? 0.95;
+
+  // Build system prompt: prefrontal SOUL + process/project context
+  const sysParts = [];
+  const soulPaths = [
+    CORE_DIR + '/workspace-prefrontal/SOUL.md',
+    CORE_DIR + '/workspace/prefrontal/SOUL.md',
+  ];
+  for (const p of soulPaths) {
+    const soul = cachedReadFile(p);
+    if (soul) { sysParts.push(`[SOUL — analytical decomposition guidance]\n${soul}`); break; }
+  }
+  if (Object.keys(PROCESSES).length > 0) {
+    sysParts.push(`[PROCESS REGISTRY — known playbooks]\n${JSON.stringify(
+      Object.values(PROCESSES).map(p => ({ id: p.id, name: p.name, description: (p.description || '').substring(0, 200) })),
+      null, 2
+    )}`);
+  }
+  const envProjectId = payload.envelope?.project_id;
+  if (envProjectId && PROJECTS[envProjectId]) {
+    const proj = PROJECTS[envProjectId];
+    sysParts.push(`[PROJECT CONTEXT]\n${JSON.stringify({
+      id: proj.id, name: proj.name, description: proj.description,
+      context: proj.context || {},
+      team: (proj.team || []).map(m => ({ email: m.email, role: m.role, name: m.name, type: m.type })),
+    }, null, 2)}`);
+  }
+  sysParts.push('You MUST respond with exactly one JSON block and nothing else.');
+  const systemPrompt = sysParts.join('\n\n');
+
+  // Build user prompt: instruction + memory + accumulated context
+  const analyzePayload = {
+    mode: 'analyze',
+    instruction: payload.envelope?.instruction || '',
+    context_summary: payload.envelope?.context_summary || '',
+    memory: payload.memory || {},
+    prior_results: payload.prior_results || [],
+  };
+  const userPrompt = `[BRAIN-ORCHESTRATED]\n${JSON.stringify(analyzePayload)}`;
+
+  log('INFO', `Calling Prefrontal: analyze (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
+  const start = Date.now();
+
+  const resp = await fetch(GATEWAY_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${GATEWAY_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: route,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      max_tokens: maxTokens,
+      temperature,
+      top_p: topP,
+    }),
+    signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
+  });
+
+  const durationMs = Date.now() - start;
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    log('ERROR', `Prefrontal HTTP error: ${resp.status} ${text.substring(0, 200)}`);
+    return null;
+  }
+
+  const data = await resp.json();
+  const msg = data.choices?.[0]?.message;
+  let content = '';
+  if (typeof msg?.content === 'string') {
+    content = msg.content;
+  } else if (Array.isArray(msg?.content)) {
+    content = msg.content.filter(c => c.type === 'text').map(c => c.text || '').join('\n');
+  }
+
+  log('INFO', `Prefrontal responded (${content.length} chars, ${durationMs}ms)`);
+
+  const brief = await enforceSchema(content, 'analyze');
+  if (brief && brief.parts) {
+    const owners = brief.parts.reduce((acc, p) => { acc[p.ownership] = (acc[p.ownership] || 0) + 1; return acc; }, {});
+    log('INFO', `Brief: ${brief.parts.length} parts (${Object.entries(owners).map(([k, v]) => `${k}=${v}`).join(', ')}), process_match=${brief.process_match || 'none'}`);
+  }
+  return brief;
+}
+
 function buildSystemPrompt(mode, payload) {
   const parts = [];
 
@@ -795,13 +914,21 @@ function buildUserPrompt(mode, payload) {
         parameters: p.parameters || {},
       }));
     }
-    // Task decomposition guidance â€” enforce checkpoint_plan structure
-    decidePayload.dispatch_guidance = {
-      rule: 'ALL work MUST use checkpoint_plan. One focused task per task entry. Even single-step work is one checkpoint with one task.',
-      bad_example: 'Step 1: check health. Step 2: read logs. Step 3: create file.',
-      good_example: 'checkpoint_plan with separate checkpoints for research, implementation, and verification â€” each containing atomic tasks.',
-      reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The Mâ†’Câ†’T hierarchy ensures progress tracking and enables re-planning on failure.',
-    };
+    // Inject Brief from ANALYZE phase when present
+    if (payload.brief) {
+      decidePayload.brief = payload.brief;
+      decidePayload.dispatch_guidance = {
+        rule: 'The Brief decomposes the work into parts. Commit one typed step per Brief part using checkpoint_plan. Each task should set step_type and brief_part.',
+        step_types: 'standard (local work via motor/research), delegation (teammate — set target_email), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)',
+        sequencing: 'Independent parts fan out within a checkpoint. Dependent parts serialize via checkpoint boundaries.',
+      };
+    } else {
+      // No Brief (non-execution-bound or analysis failed) — fall back to checkpoint_plan guidance
+      decidePayload.dispatch_guidance = {
+        rule: 'ALL work MUST use checkpoint_plan. One focused task per task entry. Even single-step work is one checkpoint with one task.',
+        reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The Mâ†’Câ†’T hierarchy ensures progress tracking and enables re-planning on failure.',
+      };
+    }
     return JSON.stringify(decidePayload);
   }
   return JSON.stringify(payload);
@@ -1462,6 +1589,7 @@ async function processIntake(intake) {
       taskOutput: pendingAckText,
       taskIntent: 'ack',
       deliveryStatus: 'pending',
+      deliveryAddress: addressFromMeta(intake.source_meta, intake.source),
     });
     await firestoreWrite('work', envelope.id, envelope);
     log('INFO', `Ack injected as Câ†’T under ${envelopeId}`);
@@ -1787,6 +1915,32 @@ async function processEnvelope(envelope, memoryContext) {
     // Store accumulated context back on envelope
     envelope._accumulated_context = envelopeContext;
 
+    // ---- ANALYZE: prefrontal decomposes work into a Brief (first iteration only) ----
+    let brief = envelope._brief || null;
+    if (!brief && iteration === 1 && !envelope._processActive) {
+      brief = await callPrefrontal({
+        envelope: {
+          id: envelope.id,
+          type: envelope.type,
+          instruction: envelope.instruction,
+          accept_criteria: envelope.accept_criteria,
+          context_summary: envelope.context_summary,
+          project_id: envelope.project_id,
+        },
+        memory,
+        prior_results: priorResults,
+      });
+      if (brief) {
+        envelope._brief = brief;
+        // Process match short-circuit: if the Brief identifies a stored process,
+        // inject it as a prior result so cortex sees the recommendation
+        if (brief.process_match && PROCESSES[brief.process_match]) {
+          log('INFO', `Brief recommends process: ${brief.process_match}`);
+        }
+      }
+    }
+
+    // ---- DECIDE: cortex commits a plan from the Brief ----
     let decision = await callCortex('decide', {
       envelope: {
         id: envelope.id,
@@ -1801,6 +1955,7 @@ async function processEnvelope(envelope, memoryContext) {
       iteration,
       pending_intake_count: queueInfo.count,
       pending_queue: queueInfo.queue,
+      brief,
     });
 
     if (decision.error) {
@@ -1869,7 +2024,10 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.status = 'complete';
       envelope.completed_at = now();
       envelope.updated_at = now();
-      if (!envelope.parent_id) envelope.delivery_status = 'pending';
+      if (!envelope.parent_id) {
+        envelope.delivery_status = 'pending';
+        envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
+      }
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Synthesized response');
       log('INFO', `Envelope ${envelope.id} complete (synthesize)`);
@@ -1929,6 +2087,11 @@ async function processEnvelope(envelope, memoryContext) {
               delivery_status: 'pending',
               delivery_target: envelope.source_meta.delegated_from || null,
               delivery_space_id: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null,
+              delivery_address: makeAddress('gchat', {
+                space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id)
+                  ? `spaces/${PROJECTS[envelope.project_id].gchat_space_id}`
+                  : null,
+              }),
               project_id: envelope.project_id || null,
               source_channel: 'brain',
               source_meta: { delegation_ref: envelope.source_meta.delegation_ref },
@@ -1988,7 +2151,10 @@ async function processEnvelope(envelope, memoryContext) {
         envelope.status = 'complete';
         envelope.completed_at = now();
         envelope.updated_at = now();
-        if (!envelope.parent_id) envelope.delivery_status = 'pending';
+        if (!envelope.parent_id) {
+          envelope.delivery_status = 'pending';
+          envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
+        }
 
         // Publish artifacts BEFORE cleanup
         if (envelope.type === 'M') {
@@ -2027,7 +2193,10 @@ async function processEnvelope(envelope, memoryContext) {
         envelope.blocker_type = decision.blocker_type || 'other';
         envelope.blocked_at = now();
         envelope.updated_at = now();
-        if (!envelope.parent_id) envelope.delivery_status = 'pending';
+        if (!envelope.parent_id) {
+          envelope.delivery_status = 'pending';
+          envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
+        }
         await firestoreWrite('work', envelope.id, envelope);
         await writeHistory(envelope.id, 'active', 'blocked', 'brain',
           `Blocked (self-unblock exhausted): ${(decision.failure_summary || '').substring(0, 200)}`);
@@ -2046,7 +2215,10 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.status = 'complete';
       envelope.completed_at = now();
       envelope.updated_at = now();
-      if (!envelope.parent_id) envelope.delivery_status = 'pending';
+      if (!envelope.parent_id) {
+        envelope.delivery_status = 'pending';
+        envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
+      }
 
       // Publish artifacts BEFORE cleanup (even for non-mission envelopes)
       const taskArtifactLinks = await publishArtifacts(envelope);
@@ -2073,7 +2245,10 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.blocker_type = decision.blocker_type || 'other';
       envelope.blocked_at = now();
       envelope.updated_at = now();
-      if (!envelope.parent_id) envelope.delivery_status = 'pending';
+      if (!envelope.parent_id) {
+        envelope.delivery_status = 'pending';
+        envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
+      }
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'blocked', 'brain',
         `Blocked: ${(decision.blocker || '').substring(0, 200)}`);
@@ -2087,7 +2262,10 @@ async function processEnvelope(envelope, memoryContext) {
       envelope.output = decision.question || decision.message || 'I need more information to proceed.';
       envelope.status = 'needs_input';
       envelope.updated_at = now();
-      if (!envelope.parent_id) envelope.delivery_status = 'pending';
+      if (!envelope.parent_id) {
+        envelope.delivery_status = 'pending';
+        envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
+      }
       await firestoreWrite('work', envelope.id, envelope);
       await writeHistory(envelope.id, 'active', 'needs_input', 'brain', `Needs: ${decision.what_is_needed || 'clarification'}`);
       log('INFO', `Envelope ${envelope.id} needs_input (ambiguous)`);
@@ -2208,6 +2386,11 @@ async function processEnvelope(envelope, memoryContext) {
         delivery_status: 'pending',
         delivery_target: targetEmail,
         delivery_space_id: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id) || null,
+        delivery_address: makeAddress('gchat', {
+          space: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id)
+            ? `spaces/${PROJECTS[delegateProjectId].gchat_space_id}`
+            : null,
+        }),
         project_id: delegateProjectId,
         source_channel: 'brain',
         created_at: now(),
@@ -2420,6 +2603,7 @@ async function processEnvelope(envelope, memoryContext) {
               error: null,
               iteration: 0,
               delivery_status: envelope.parent_id ? 'internal' : 'pending',
+              ...(envelope.parent_id ? {} : { delivery_address: addressFromMeta(envelope.source_meta, envelope.source_channel) }),
             });
 
             // Record partial results so far
@@ -2565,6 +2749,11 @@ async function processEnvelope(envelope, memoryContext) {
               output: marker,
               delivery_status: 'pending',
               delivery_target: targetAgentEmail,
+              delivery_address: makeAddress('gchat', {
+                space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id)
+                  ? `spaces/${PROJECTS[envelope.project_id].gchat_space_id}`
+                  : null,
+              }),
               source_channel: 'brain',
               created_at: now(),
               updated_at: now(),

@@ -70,10 +70,11 @@ How the organs work together. This is the intended shape of every thought the sy
                                       │
                  ┌────────────────────┼──────────────────────────┐
                  ▼                    ▼                          ▼
-              CORTEX             PREFRONTAL                 CEREBELLUM
-              the voice:         the structurer:            the conscience:
-              classify, decide,  M→C→T blueprints           independent
-              synthesize                                    verification
+               CORTEX             PREFRONTAL                 CEREBELLUM
+               the voice:         the analyst:               the conscience:
+               classify,          decompose & assess         independent
+               commit the plan,   → the Brief                verification
+               synthesize
                  │
         ┌────────┴─────────┐                MOTOR — the hands:
         ▼                  ▼                tools, exec, files
@@ -86,8 +87,8 @@ How the organs work together. This is the intended shape of every thought the sy
 |---|---|---|---|
 | **Ears** | Deterministic | Sense: poll, dedup, preprocess, hand off | Judges, replies, blocks on the brain |
 | **Brain daemon** | Deterministic | Own the loop: state, stamping, dispatch, transitions | Generates content; outsources control flow |
-| **Cortex** | Judgment | Classify intakes, choose decisions, synthesize outcomes | Executes tools; holds the loop; verifies itself |
-| **Prefrontal** | Judgment | Turn intent into structure: M→C→T blueprints | Executes; decides; freelances beyond the blueprint schema |
+| **Cortex** | Judgment | Classify intakes, commit the plan from the Brief, synthesize outcomes | Executes tools; holds the loop; verifies itself |
+| **Prefrontal** | Judgment | Decompose and assess execution-bound work into a Brief | Executes; commits or selects a move; judges the turn as simple or complex; freelances beyond the Brief schema |
 | **Temporal-Memory** | Judgment, read-only | Recall what the agent already knows | Touches external APIs; invents facts |
 | **Temporal-Research** | Judgment, read-only | Bring in what the world knows: search + fetch | Mutates state; substitutes for memory |
 | **Motor** | Judgment + effects | Act: tools, exec, files — the only mutator | Verifies its own work; runs two hands at once per envelope; sends messages or communicates with agents/humans |
@@ -97,17 +98,18 @@ How the organs work together. This is the intended shape of every thought the sy
 **Better looks like:** each organ's prompt shrinking as its role sharpens; work moving toward the organ whose job it is.
 **Worse looks like:** cortex shelling out; motor self-certifying; research used where recall sufficed; an organ acquiring a second job.
 
-### B-10 · The iteration loop: gather → decide → act → verify → close-or-repeat
+### B-10 · The iteration loop: gather → analyze → decide → act → verify → close-or-repeat
 
 Every active envelope advances through one canonical cycle, daemon-owned end to end:
 
 1. **GATHER** — assemble minimum sufficient context: temporal-memory recall, and temporal-research when (and only when) the question needs the outside world. Parallel-eligible (B-12).
-2. **DECIDE** — cortex returns exactly one structured decision from the legal-move set (B-11).
-3. **ACT** — the daemon dispatches per the decision: prefrontal to structure, motor to mutate, temporal organs to fetch, delegation outward.
-4. **VERIFY** — cerebellum checks results against accept criteria; verification is independent of execution by construction.
-5. **CLOSE or REPEAT** — the daemon applies the transition: advance the checkpoint, complete the envelope, raise `needs_input`, fail, or iterate. The iteration counter increments here and only here, bounded by the contract cap.
+2. **ANALYZE** — for any intake that requires execution, prefrontal decomposes the work into a **Brief**: the work broken into its true parts, each annotated with its nature (local or a teammate's specialty), its risk, its dependencies, its unknowns, and any matching stored process. Analysis is unconditional for work and judges nothing about the turn as a whole — it is the step that reveals the work's shape. Prefrontal proposes; it does not commit a move.
+3. **DECIDE** — cortex commits exactly one plan from the legal-move set (B-11), assembling the Brief's parts into an ordered set of typed steps: local execution, delegation, approval gate, ask, follow-process.
+4. **ACT** — the daemon dispatches per step: motor to mutate, temporal organs to fetch, delegation outward, approval gates to the operator.
+5. **VERIFY** — cerebellum checks results against accept criteria; verification is independent of execution by construction.
+6. **CLOSE or REPEAT** — the daemon applies the transition: advance the checkpoint, complete the envelope, raise `needs_input`, fail, or iterate. The iteration counter increments here and only here, bounded by the contract cap.
 
-The daemon owns the loop; cortex owns only the choice. One cycle, one decision, one transition — an envelope's history reads as a sequence of these cycles.
+The daemon owns the loop; prefrontal owns the decomposition; cortex owns the commitment. One cycle, one plan, one transition — an envelope's history reads as a sequence of these cycles.
 **Better looks like:** more envelopes closing in fewer cycles; cycles whose GATHER shrinks because memory sharpened; the same outcome with a skipped step (deterministic marker ⇒ no classify).
 **Worse looks like:** multiple decisions per cycle; acting before deciding; iterating without the counter; a cycle that cannot be replayed from its history.
 

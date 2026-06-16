@@ -46,6 +46,9 @@
     "dedup_window_ms": 300000,
     "cooldown_ms": 2000,
     "gchat_context_messages": 5,
+    "max_pages_per_poll": 5,
+    "new_space_seed": "now",
+    "mention_match": "annotation",
     "preprocess": {
       "enabled": true,
       "model": "gemini-2.5-flash",
@@ -60,10 +63,14 @@
     "temperature": 0.1,
     "fallback": "deliver_raw",
     "source": "jsonl",
+    "dashboard_visibility_mirror": true,
     "status_updates": {
       "enabled": true,
       "schedule_ms": [10000, 300000, 600000, 1800000, 7200000]
     }
+  },
+  "chat": {
+    "reply_in_thread": true
   },
   "projects": {
     "context_max_tokens": 2000,

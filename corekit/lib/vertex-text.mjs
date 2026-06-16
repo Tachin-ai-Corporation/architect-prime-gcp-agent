@@ -1,14 +1,15 @@
 // corekit/lib/vertex-text.mjs — Vertex AI text utility layer
 // Extracted from agent-brain.mjs Phase 0D
+// Used by brain (agent-brain.mjs) and temporal organs
+//
 // Provides LLM-powered text summarization, title generation, and schema
 // enforcement via direct Vertex AI calls (no gateway, no agent routing).
 
+// Shared corekit libraries
 import { getGceToken } from './gce-auth.mjs';
 import { parseJsonResponse } from './json-repair.mjs';
 
 // ---- Schema definitions for Cortex output enforcement ----
-// These define the required JSON structure for classify and decide responses.
-// Exported so the brain daemon can reference them for prompt construction.
 
 /** @type {Record<string, object>} */
 export const CORTEX_SCHEMAS = {
@@ -29,6 +30,23 @@ export const CORTEX_SCHEMAS = {
     },
     required: ['classification', 'reasoning'],
   },
+  analyze: {
+    type: 'OBJECT',
+    properties: {
+      objective:     { type: 'STRING' },
+      parts: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        id:          { type: 'STRING' },
+        summary:     { type: 'STRING' },
+        ownership:   { type: 'STRING', enum: ['local', 'teammate'] },
+        specialty:   { type: 'STRING' },
+        risk:        { type: 'STRING', enum: ['none', 'mutating', 'destructive_or_public'] },
+        depends_on:  { type: 'ARRAY', items: { type: 'STRING' } },
+        unknowns:    { type: 'ARRAY', items: { type: 'STRING' } },
+      }, required: ['id', 'summary', 'ownership', 'risk'] }},
+      process_match: { type: 'STRING' },
+    },
+    required: ['objective', 'parts'],
+  },
   decide: {
     type: 'OBJECT',
     properties: {
@@ -45,6 +63,8 @@ export const CORTEX_SCHEMAS = {
           agent:           { type: 'STRING' },
           task:            { type: 'STRING' },
           accept_criteria: { type: 'STRING' },
+          step_type:       { type: 'STRING', enum: ['standard', 'delegation', 'approval_gate', 'ask'] },
+          brief_part:      { type: 'STRING' },
         }, required: ['agent', 'task'] }},
       }, required: ['instruction', 'tasks'] }},
       synthesis:       { type: 'STRING' },
@@ -57,14 +77,16 @@ export const CORTEX_SCHEMAS = {
       processId:  { type: 'STRING' },
       parameters: { type: 'OBJECT' },
       message: { type: 'STRING' },
-      target_email:    { type: 'STRING' },  // delegate action: target agent email
-      instruction:     { type: 'STRING' },  // delegate action: task instruction
-      accept_criteria: { type: 'STRING' },  // delegate action: how to verify
-      project_id:      { type: 'STRING' },  // delegate action: project context
+      target_email:    { type: 'STRING' },
+      instruction:     { type: 'STRING' },
+      accept_criteria: { type: 'STRING' },
+      project_id:      { type: 'STRING' },
     },
     required: ['action'],
   },
 };
+
+// ---- Pure helpers ----
 
 /**
  * Truncate text using head/tail strategy, preserving context from both ends.
@@ -96,24 +118,22 @@ export function smartTruncate(text, budget) {
  */
 export function summarizeTitle(text, maxLen = 80) {
   if (!text) return 'Untitled';
-  // Strip GChat context framing headers
   let cleaned = text
     .replace(/^\[Current message[^\]]*\]\s*/i, '')
     .replace(/^\[Chat messages since[^\]]*\]\s*/i, '')
     .replace(/^\[Previous context[^\]]*\]\s*/i, '')
     .replace(/^(User|Someone|Human):\s*/i, '')
     .trim();
-  // Strip leading tool-name prefix (e.g. "project-manage update 'tachin-website'")
   cleaned = cleaned.replace(/^```[^\n]*\n?/, '').trim();
-  // Take first meaningful sentence (split on period, newline, exclamation, question)
   const firstSentence = cleaned.split(/[.\n!?]/)[0].trim();
   if (!firstSentence) return cleaned.substring(0, maxLen);
   if (firstSentence.length <= maxLen) return firstSentence;
-  // Truncate at word boundary
   const truncated = firstSentence.substring(0, maxLen);
   const lastSpace = truncated.lastIndexOf(' ');
   return (lastSpace > maxLen * 0.5 ? truncated.substring(0, lastSpace) : truncated) + '…';
 }
+
+// ---- Client factory ----
 
 /**
  * Create a Vertex AI text utility client.
@@ -160,7 +180,6 @@ export function createVertexText(config) {
           temperature: temperature,
         },
       };
-      // Disable thinking for trivial summarization — saves tokens and latency
       if (opts.disableThinking) {
         body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
       }
@@ -182,7 +201,6 @@ export function createVertexText(config) {
       }
 
       const data = await resp.json();
-      // Extract the last text part — thinking models put thought in parts[0] and answer in parts[1+]
       const parts = data.candidates?.[0]?.content?.parts || [];
       let result = '';
       for (const part of parts) {
@@ -236,15 +254,11 @@ export function createVertexText(config) {
   async function generateTitleFn(text, type = 'mission') {
     if (!text || text.length < 3) return 'Untitled';
     const definitions = {
-      mission: 'A MISSION is a strategic goal — the top-level objective being accomplished. ' +
-        'Title it as the outcome or deliverable. 5-12 words.',
-      checkpoint: 'A CHECKPOINT is a milestone or phase within a mission — a meaningful stage of progress. ' +
-        'Title it as the deliverable or verification this phase produces. 5-10 words.',
-      task: 'A TASK is an atomic unit of work — a single action performed by one agent. ' +
-        'Title it as the specific action being taken. 5-10 words.',
+      mission: 'A MISSION is a strategic goal — the top-level objective being accomplished. Title it as the outcome or deliverable. 5-12 words.',
+      checkpoint: 'A CHECKPOINT is a milestone or phase within a mission — a meaningful stage of progress. Title it as the deliverable or verification this phase produces. 5-10 words.',
+      task: 'A TASK is an atomic unit of work — a single action performed by one agent. Title it as the specific action being taken. 5-10 words.',
     };
-    const prompt = (definitions[type] || definitions.mission) +
-      '\nNo quotes, no prefixes, no labels. Just the title.';
+    const prompt = (definitions[type] || definitions.mission) + '\nNo quotes, no prefixes, no labels. Just the title.';
     try {
       const result = await _callVertex(text.substring(0, 1000), prompt, { maxTokens: 60, temperature: 0.3, disableThinking: true });
       if (result && result.length > 2 && result.length < 120) {

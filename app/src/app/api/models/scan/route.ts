@@ -308,16 +308,14 @@ async function probeModel(
       });
       if (res.status === 200 || res.status === 429) return res.status;
 
-      if (model.tier === "preview") {
-        const globalUrl = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${model.id}:generateContent`;
-        const gRes = await fetch(globalUrl, {
-          method: "POST", headers, body,
-          signal: AbortSignal.timeout(timeout),
-        });
-        if (gRes.status === 200 || gRes.status === 429) return gRes.status;
-        return gRes.status || res.status;
-      }
-      return res.status;
+      // Regional 404 → try global endpoint (some GA models like gemini-3.5-flash are global-only)
+      const globalUrl = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${model.id}:generateContent`;
+      const gRes = await fetch(globalUrl, {
+        method: "POST", headers, body,
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (gRes.status === 200 || gRes.status === 429) return gRes.status;
+      return gRes.status || res.status;
     }
 
     // anthropic-raw

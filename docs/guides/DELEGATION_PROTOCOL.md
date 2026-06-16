@@ -28,7 +28,7 @@ Human-readable result summary.
 2. Resolves target agent from project team members or fleet docs by specialty
 3. Composes marker via `composeDelegationMarker()`
 4. Creates output envelope with `delivery_target: <targetEmail>` and `delivery_status: 'pending'`
-5. Mouth picks up the envelope and delivers to target agent's GChat DM via DWD
+5. Mouth picks up the envelope and delivers to the **shared project space** via DWD
 6. Sets task envelope `status: 'waiting'`
 7. `checkWaitingEnvelopes()` polls children for completion
 
@@ -45,7 +45,7 @@ Human-readable result summary.
 
 1. Delegated mission reaches `status: 'complete'` or `'failed'`
 2. Brain creates `[DELEGATION-RESULT]` output envelope with `delivery_status: 'pending'`
-3. Mouth delivers the result to the delegator's GChat DM via DWD
+3. Mouth delivers the result to the **shared project space** via DWD
 4. Delegator's `checkWaitingEnvelopes()` detects child completion via Firestore
 5. Injects `[DELEGATION RESULTS]` as `context_forward` on the waiting envelope
 6. Resumes processing with full delegation results in context

@@ -61,10 +61,10 @@
     "prefrontal": {
       "route": "brain/prefrontal",
       "model": "gemini-3.1-pro-preview",
-      "intents": ["plan"],
+      "intents": ["analyze"],
       "tools": [],
-      "description": "Deep planning specialist. Decomposes complex tasks into checkpoint plans or sequential task plans. Also designs responsibility process documentation.",
-      "constraints": "Plans only. Never executes.",
+      "description": "Work decomposition and assessment. Breaks execution-bound work into typed parts with ownership, risk, dependencies, and process matches. Produces the Brief.",
+      "constraints": "Proposes only. Never commits, decides, or executes.",
       "max_tokens": 32768,
       "temperature": 0.6,
       "top_p": 0.95

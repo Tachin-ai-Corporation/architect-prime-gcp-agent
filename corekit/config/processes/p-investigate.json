@@ -3,7 +3,7 @@
   "name": "Investigation",
   "description": "Structured investigation process for diagnosing issues, understanding system behavior, or answering questions. Gathers evidence, analyzes findings, and documents results. This process is READ-ONLY — it examines systems but NEVER modifies, deploys, or fixes anything.",
   "status": "active",
-  "version": 1,
+  "version": 3,
   "visibility": "standard",
   "parameters": {
     "topic": {
@@ -18,37 +18,37 @@
   },
   "steps": [
     {
-      "title": "Frame the question and define scope",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nFrame the investigation of ${topic}:\n1. Recall memory for any prior work, incidents, or decisions related to this topic\n2. Check project context for relevant infrastructure, services, and configuration\n3. Restate the question precisely — what exactly are we trying to find out?\n4. Define the scope: what systems, time ranges, and data sources are relevant?\n5. List specific hypotheses to test or questions to answer\n6. Identify what evidence would confirm or refute each hypothesis\n\nOutput: precise question statement, investigation scope, hypotheses, and evidence plan.",
+      "title": "Scope & Framing",
+      "description": "⚠️ READ-ONLY STEP\n\nEstablish the precise question and scope of the investigation for ${topic}. Frame the target questions and boundaries of analysis. Formulate initial working hypotheses to guide the query.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Question is precisely framed. Scope is defined. At least 2 hypotheses identified with evidence criteria. No systems were modified."
+      "accept_criteria": "Question is precisely framed. Scope is defined. Initial hypotheses identified."
     },
     {
-      "title": "Gather evidence from primary sources",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nGather evidence for investigating ${topic}:\n1. Check logs (journalctl, tail, cat — never write or restart services)\n2. Read configuration files and source code\n3. Query infrastructure state (gcloud, firebase, curl — read-only commands only)\n4. Check documentation, commit history, and external references\n5. Record exact findings: commands run, outputs observed, error messages, timestamps\n6. For each hypothesis, note what evidence supports or contradicts it\n\nDo NOT attempt to fix anything you find — only document it.\n\nOutput: evidence log with exact commands, outputs, and findings per hypothesis.",
+      "title": "Evidence Gathering",
+      "description": "⚠️ READ-ONLY STEP\n\nCollect the necessary data, logs, code paths, or configuration states related to the in-scope systems for ${topic}. Avoid making any modifications to the system.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Evidence gathered from at least 2 independent sources. All findings documented with exact commands and outputs. Evidence mapped to hypotheses. No systems were modified.",
+      "accept_criteria": "Evidence gathered and findings documented.",
       "checkpointBoundary": true
     },
     {
-      "title": "Analyze findings and identify root cause",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nAnalyze the evidence gathered about ${topic}:\n1. Evaluate each hypothesis against the collected evidence\n2. Identify the root cause — explain the 'why' not just the 'what'\n3. If initial evidence is insufficient, gather additional evidence (read-only only)\n4. Cross-reference findings from different sources for consistency\n5. Distinguish clearly between confirmed facts and remaining hypotheses\n6. Identify any gaps in understanding that could not be resolved\n\nOutput: root cause analysis with supporting evidence chain.",
+      "title": "Diagnostic Analysis",
+      "description": "⚠️ READ-ONLY STEP\n\nEvaluate the collected evidence for ${topic} against the hypotheses to identify the root cause or answer. Differentiate between confirmed facts and unresolved questions.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Root cause or answer identified with supporting evidence. Analysis explains the 'why' not just the 'what'. Facts vs hypotheses clearly distinguished. No systems were modified."
+      "accept_criteria": "Root cause or answer identified with supporting evidence. Facts vs hypotheses clearly distinguished."
     },
     {
-      "title": "Document findings and recommendations",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, deploy, or change anything.\n\nProduce a clear investigation report about ${topic}:\n1. **Summary** — What was investigated and why\n2. **Findings** — What was discovered, with evidence\n3. **Root Cause** — Why the issue exists or the answer to the questions\n4. **Evidence Chain** — Commands run and outputs observed (for reproducibility)\n5. **Recommendations** — What should be done next (but do NOT do it)\n6. **Open Questions** — Anything that could not be determined\n\nWrite the investigation report as a markdown file in the shared workspace directory (e.g., `investigation_report.md`).\nStore findings in project context if project_id is available.\n\nIMPORTANT: Do NOT attempt to fix, deploy, or change anything. Only document findings and recommend actions.",
+      "title": "Summary & Recommendation",
+      "description": "⚠️ READ-ONLY STEP\n\nFormulate the final conclusion of the investigation for ${topic}, summarizing the findings and outlining recommendations or next steps. Do not implement any changes.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Investigation report written as a file in the shared workspace. Report is complete with all sections. Findings are backed by evidence. Recommendations are specific and actionable. No systems were modified."
+      "accept_criteria": "Report is complete with findings, root cause, evidence, and recommendations."
     }
   ],
   "contextTemplate": {},

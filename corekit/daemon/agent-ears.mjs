@@ -22,6 +22,7 @@ import { hostname as osHostname } from 'os';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
 import { isDelegationMarker, parseDelegationMarker } from '../corekit/lib/delegation.mjs';
+import { makeAddress, serializeAddress, discoverSpaces as _discoverSpacesLib, resolveAgentUserId } from '../corekit/lib/channel.mjs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -52,6 +53,10 @@ const POLL_INTERVAL = CHANNEL === 'gchat' ? EARS_CONFIG.gchat_poll_ms : EARS_CON
 const DEDUP_WINDOW = EARS_CONFIG.dedup_window_ms;
 const COOLDOWN_MS = EARS_CONFIG.cooldown_ms;
 const CONTEXT_WINDOW = EARS_CONFIG.gchat_context_messages || 5;
+const MAX_PAGES_PER_POLL = EARS_CONFIG.max_pages_per_poll || 5;
+const NEW_SPACE_SEED = EARS_CONFIG.new_space_seed || 'now';
+const MENTION_MATCH = EARS_CONFIG.mention_match || 'annotation';
+const CHAT_CONFIG = CONTRACTS.chat || {};
 
 // Preprocessing config (LLM-based message repair for gchat)
 const PREPROCESS_CFG = EARS_CONFIG.preprocess || {};
@@ -308,22 +313,27 @@ async function markFirestoreDashboardConsumed(msg) {
 // ---- GChat Poller (Fleet) ----
 let _gchatSpaces = [];
 let _gchatLastDiscovery = 0;
-// Default to current time — a fresh agent never processes old messages
-let _gchatHighWater = new Date().toISOString().replace('Z', '000Z');
+let _gchatCursors = {};  // { [spaceName]: highWaterTimestamp }
 const _gchatSeen = new Map();
+let _agentUserId = null;  // resolved at boot — 'users/12345'
 // Persist under /var/lib (survives reboots) not /tmp (ephemeral)
 const _stateDir = '/var/lib/agent-ears-state';
 try { mkdirSync(_stateDir, { recursive: true }); } catch {}
 // Also check legacy /tmp location for in-place upgrades
 const _legacyStateDir = '/tmp/agent-ears-state';
 try {
-  const hw = readFileSync(`${_stateDir}/highwater`, 'utf8').trim();
-  if (hw) _gchatHighWater = hw;
+  const raw = readFileSync(`${_stateDir}/cursors.json`, 'utf8');
+  _gchatCursors = JSON.parse(raw);
+  log('Loaded per-space cursors', { spaces: Object.keys(_gchatCursors).length });
 } catch {
-  // Fall back to legacy /tmp path
+  // Legacy: try old highwater file, seed all known spaces to that value
   try {
-    const hw = readFileSync(`${_legacyStateDir}/highwater`, 'utf8').trim();
-    if (hw) _gchatHighWater = hw;
+    const hw = readFileSync(`${_stateDir}/highwater`, 'utf8').trim();
+    if (hw) {
+      log('Migrating legacy highwater to per-space cursors', { highwater: hw });
+      // Will be populated per-space on first poll
+      _gchatCursors.__legacy = hw;
+    }
   } catch {}
 }
 try {
@@ -336,14 +346,27 @@ try {
 
 async function discoverSpaces() {
   if (Date.now() - _gchatLastDiscovery < 300_000 && _gchatSpaces.length > 0) return;
-  try {
-    const token = await getDwdToken();
-    const res = await fetch(`${CHAT_API}/spaces?pageSize=100`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    _gchatSpaces = (data.spaces || []).map(s => s.name).filter(Boolean);
-    _gchatLastDiscovery = Date.now();
-    log('Discovered spaces', { count: _gchatSpaces.length });
-  } catch (err) { log('Space discovery error', { error: err.message }); }
+  const token = await getDwdToken();
+  _gchatSpaces = await _discoverSpacesLib(token);
+  _gchatLastDiscovery = Date.now();
+  log('Discovered spaces', { count: _gchatSpaces.length });
+
+  // Seed cursors for newly-discovered spaces
+  for (const sp of _gchatSpaces) {
+    if (!_gchatCursors[sp]) {
+      _gchatCursors[sp] = NEW_SPACE_SEED === 'now' ? new Date().toISOString() : '';
+      log('Seeded cursor for new space', { space: sp, seed: _gchatCursors[sp] ? 'now' : 'epoch' });
+    }
+  }
+  // Apply legacy highwater to spaces that don't have cursors yet
+  if (_gchatCursors.__legacy) {
+    for (const sp of _gchatSpaces) {
+      if (!_gchatCursors[sp] || _gchatCursors[sp] === '') {
+        _gchatCursors[sp] = _gchatCursors.__legacy;
+      }
+    }
+    delete _gchatCursors.__legacy;
+  }
 }
 
 function getSenderName(msg) {
@@ -374,8 +397,10 @@ function buildContextualMessage(targetMsg, priorMsgs) {
     if (!text.trim()) continue;
     // Skip agent's own messages in context — prevents old delegation
     // markers and voiced output from polluting the context window.
+    const mSenderId = m.sender?.name || '';
+    if (_agentUserId && mSenderId === _agentUserId) continue;
     const senderName = m.sender?.displayName || '';
-    if (agentDisplayName && senderName === agentDisplayName) continue;
+    if (!_agentUserId && agentDisplayName && senderName === agentDisplayName) continue;
     const sender = getSenderName(m);
     contextLines.push(`${sender}: ${text}`);
   }
@@ -399,36 +424,74 @@ async function pollGChat() {
   const messages = [];
   for (const space of _gchatSpaces) {
     try {
-      const res = await fetch(`${CHAT_API}/${space}/messages?pageSize=10&orderBy=createTime%20desc`,
-        { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      const allMsgs = (data.messages || []).reverse(); // chronological order
+      const spaceCursor = _gchatCursors[space] || '';
+      let pageToken = null;
+      let pagesPolled = 0;
 
-      for (let i = 0; i < allMsgs.length; i++) {
-        const msg = allMsgs[i];
-        const ct = msg.createTime || '';
-        if (ct <= _gchatHighWater) continue;
-        if (_gchatSeen.has(msg.name)) continue;
+      do {
+        let url = `${CHAT_API}/${space}/messages?pageSize=25&orderBy=createTime%20desc`;
+        if (pageToken) url += `&pageToken=${pageToken}`;
 
-        // Echo filter: skip own messages to prevent re-ingestion loops.
-        // Mouth posts delegation markers and voiced output to GChat spaces;
-        // ears must never treat those as new inbound work.
-        // GChat API returns sender.name as 'users/{numericId}', not email,
-        // so match on displayName (set as AGENT_DISPLAY_NAME at boot).
-        const senderDisplayName = msg.sender?.displayName || '';
-        const agentDisplayName = process.env.AGENT_DISPLAY_NAME || '';
-        if (agentDisplayName && senderDisplayName === agentDisplayName) continue;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) break;
+        const data = await res.json();
+        const pageMsgs = (data.messages || []).reverse();
+        pageToken = data.nextPageToken || null;
+        pagesPolled++;
 
-        const text = msg.text || msg.argumentText || '';
-        if (!text || (AGENT_MENTION && !text.includes(AGENT_MENTION))) continue;
+        for (let i = 0; i < pageMsgs.length; i++) {
+          const msg = pageMsgs[i];
+          const ct = msg.createTime || '';
+          if (ct <= spaceCursor) continue;
+          if (_gchatSeen.has(msg.name)) continue;
 
-        // Gather prior messages as context (up to CONTEXT_WINDOW)
-        const contextStart = Math.max(0, i - CONTEXT_WINDOW);
-        const priorMsgs = allMsgs.slice(contextStart, i);
-        const composite = buildContextualMessage(msg, priorMsgs);
+          // Stable echo filter
+          const senderUserId = msg.sender?.name || '';
+          if (_agentUserId && senderUserId === _agentUserId) continue;
+          const senderDisplayName = msg.sender?.displayName || '';
+          const agentDisplayName = process.env.AGENT_DISPLAY_NAME || '';
+          if (!_agentUserId && agentDisplayName && senderDisplayName === agentDisplayName) continue;
 
-        messages.push({ text: composite, rawText: text, id: msg.name, timestamp: ct, metadata: { space, email: AGENT_USER_EMAIL } });
-      }
+          const text = msg.text || msg.argumentText || '';
+          if (!text) continue;
+
+          // Annotation-based mention detection
+          let mentioned = false;
+          if (MENTION_MATCH === 'annotation' && msg.annotations) {
+            for (const ann of msg.annotations) {
+              if (ann.type === 'USER_MENTION' && ann.userMention?.user?.name === _agentUserId) {
+                mentioned = true;
+                break;
+              }
+            }
+          }
+          if (!mentioned && AGENT_MENTION && text.includes(AGENT_MENTION)) mentioned = true;
+          if (!mentioned && (AGENT_MENTION || _agentUserId)) continue;
+
+          // Build context from prior messages in this page
+          const contextStart = Math.max(0, i - CONTEXT_WINDOW);
+          const priorMsgs = pageMsgs.slice(contextStart, i);
+          const composite = buildContextualMessage(msg, priorMsgs);
+
+          const threadName = msg.thread?.name || null;
+          messages.push({
+            text: composite,
+            rawText: text,
+            id: msg.name,
+            timestamp: ct,
+            metadata: {
+              space,
+              thread: threadName,
+              senderEmail: msg.sender?.name || msg.sender?.displayName || 'unknown',
+              email: AGENT_USER_EMAIL,
+            },
+          });
+        }
+
+        // Stop paginating if we've drained all new messages
+        if (pageMsgs.length === 0 || !pageToken) break;
+      } while (pagesPolled < MAX_PAGES_PER_POLL);
+
     } catch (err) { log('Chat poll error', { space, error: err.message }); }
   }
   return messages;
@@ -440,8 +503,11 @@ function markGChatConsumed(msg) {
     const keys = [..._gchatSeen.keys()];
     for (let i = 0; i < keys.length - 200; i++) _gchatSeen.delete(keys[i]);
   }
-  if (msg.timestamp > _gchatHighWater) _gchatHighWater = msg.timestamp;
-  try { writeFileSync(`${_stateDir}/highwater`, _gchatHighWater); } catch {}
+  const msgSpace = msg.metadata?.space;
+  if (msgSpace && (!_gchatCursors[msgSpace] || msg.timestamp > _gchatCursors[msgSpace])) {
+    _gchatCursors[msgSpace] = msg.timestamp;
+  }
+  try { writeFileSync(`${_stateDir}/cursors.json`, JSON.stringify(_gchatCursors)); } catch {}
   try {
     const obj = {};
     for (const [k] of _gchatSeen) obj[k] = true;
@@ -553,6 +619,14 @@ async function main() {
   // Health checks
   if (CHANNEL === 'gchat') {
     try { await getDwdToken(); log('DWD healthcheck OK'); } catch (err) { log('DWD healthcheck FAILED', { error: err.message }); process.exit(1); }
+    // Resolve agent user ID for stable echo filtering
+    try {
+      const bootToken = await getDwdToken();
+      _agentUserId = await resolveAgentUserId(bootToken);
+      log('Agent user ID resolved', { userId: _agentUserId });
+    } catch (err) {
+      log('Agent user ID resolution failed — falling back to displayName echo filter', { error: err.message });
+    }
   }
 
   await updateFirestoreStatus('online');
@@ -676,8 +750,14 @@ async function main() {
             primeId: { stringValue: PRIME_ID },
             ...(msg.metadata?.spaceName ? { spaceName: { stringValue: msg.metadata.spaceName } } : {}),
             ...(msg.metadata?.threadName ? { threadName: { stringValue: msg.metadata.threadName } } : {}),
-            ...(msg.metadata?.email ? { senderEmail: { stringValue: msg.metadata.email } } : {}),
+            ...(msg.metadata?.senderEmail ? { senderEmail: { stringValue: msg.metadata.senderEmail } } : {}),
             ...delegationMeta,
+            address: serializeAddress(makeAddress(
+              CHANNEL === 'gchat' ? 'gchat' : 'dashboard',
+              CHANNEL === 'gchat'
+                ? { space: msg.metadata?.space || null, thread: msg.metadata?.thread || null }
+                : { fleet_agent: osHostname().replace(/^fleet-/, '') }
+            )),
           } } },
           status: { stringValue: 'pending' },
           created_at: { timestampValue: new Date().toISOString() },

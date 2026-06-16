@@ -22,6 +22,7 @@ import { hostname as osHostname } from 'os';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
 import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
+import { parseAddress, deliverToAddress, mirrorToDashboard, initChannel, toGChatMarkdown, discoverSpaces } from '../corekit/lib/channel.mjs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -82,6 +83,12 @@ const STATUS_SCHEDULE = MOUTH_CFG.status_updates?.schedule_ms
   || [10_000, 300_000, 600_000, 1_800_000, 7_200_000];
 const DELIVERY_TIMEOUT = 600_000;
 
+const CHAT_CONFIG = CONTRACTS.chat || {};
+const REPLY_IN_THREAD = CHAT_CONFIG.reply_in_thread !== false;  // default true
+const DASHBOARD_MIRROR = CONTRACTS.mouth?.dashboard_visibility_mirror !== false;  // default true
+
+initChannel({ contracts: CONTRACTS, firestoreUrl: FIRESTORE_URL, primeId: PRIME_ID, agentHostname: AGENT_HOSTNAME });
+
 // ---- Prompts (loaded from files) ----
 const SCRIPT_DIR = dirname(new URL(import.meta.url).pathname);
 function loadPrompt(name) {
@@ -123,39 +130,7 @@ async function getDwdToken() {
   });
 }
 
-// ---- GChat Space Discovery ----
-let _gchatSpaces = [], _gchatLastDiscovery = 0;
-async function getGChatSpace() {
-  if (Date.now() - _gchatLastDiscovery < 300_000 && _gchatSpaces.length > 0) return _gchatSpaces[0];
-  try {
-    const token = await getDwdToken();
-    const res = await fetch(`${CHAT_API}/spaces?pageSize=100`, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    _gchatSpaces = (data.spaces || []).map(s => s.name).filter(Boolean);
-    _gchatLastDiscovery = Date.now();
-  } catch (err) { log('Space discovery error', { error: err.message }); }
-  return _gchatSpaces[0] || null;
-}
-
-// ---- GChat Markdown ----
-function convertToGChatMarkdown(text) {
-  if (!text) return text;
-  const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/g);
-  return parts.map((part, i) => {
-    if (i % 2 === 1) return part;
-    let c = part;
-    c = c.replace(/^####\s+(.+)$/gm, '▸ *$1*');
-    c = c.replace(/^###\s+(.+)$/gm, '▸ *$1*');
-    c = c.replace(/^##\s+(.+)$/gm, '═ *$1*');
-    c = c.replace(/^#\s+(.+)$/gm, '◆ *$1*');
-    c = c.replace(/\*\*([^*]+?)\*\*/g, '*$1*');
-    c = c.replace(/__([^_]+?)__/g, '_$1_');
-    c = c.replace(/^(?:---+|\*\*\*+|___+)\s*$/gm, '─────────────────────');
-    c = c.replace(/^>\s?(.*)$/gm, '▎ $1');
-    c = c.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
-    return c;
-  }).join('');
-}
+// GChat space discovery and markdown conversion now in channel.mjs
 
 // ================================================================
 // JSONL TAILER
@@ -383,159 +358,78 @@ async function fireStatusUpdate(type) {
       : "Still on it — this one's taking a bit longer.";
   }
 
-  await deliver(updateText);
+  // Status updates use a default address (v2 legacy path)
+  const statusAddr = await buildDefaultAddress();
+  await deliver(updateText, statusAddr);
   log('Status update sent', { type, text: updateText.slice(0, 60) });
+}
+
+// ================================================================
+// DEFAULT ADDRESS (legacy v2 fallback)
+// ================================================================
+async function buildDefaultAddress() {
+  if (CHANNEL === 'gchat') {
+    try {
+      const token = await getDwdToken();
+      const spaces = await discoverSpaces(token);
+      if (spaces.length > 0) return { channel: 'gchat', space: spaces[0], thread: null };
+    } catch (err) {
+      log('Default address space discovery failed', { error: err.message });
+    }
+    return { channel: 'gchat', space: null, thread: null };
+  }
+  return { channel: 'dashboard', fleet_agent: AGENT_HOSTNAME || null };
 }
 
 // ================================================================
 // DELIVERY
 // ================================================================
-async function deliverToFirestore(text) {
-  const token = await getGceToken();
-  await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}/messages`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: {
-      text: { stringValue: text }, sender: { stringValue: 'prime' },
-      timestamp: { timestampValue: new Date().toISOString() }, processed: { booleanValue: true }
-    } })
-  });
-}
-
-async function deliverToGChat(text) {
-  const token = await getDwdToken();
-  const space = await getGChatSpace();
-  if (!space) { log('No space to deliver to'); return; }
-  const formatted = convertToGChatMarkdown(text);
-  const res = await fetch(`${CHAT_API}/${space}/messages`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: formatted })
-  });
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    log('GChat deliver error', { status: res.status, body: err.slice(0, 200) });
-  }
-}
-
 /**
- * Ensure a user is a member of a GChat space. If not, add them.
- * Used before posting delegations to a project space.
- */
-async function ensureSpaceMember(spaceName, userEmail, token) {
-  try {
-    // List members and check if user is already present
-    const listRes = await fetch(
-      `${CHAT_API}/${spaceName}/members`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) }
-    );
-    if (listRes.ok) {
-      const data = await listRes.json();
-      const found = (data.memberships || []).some(m =>
-        m.member?.name === `users/${userEmail}`
-      );
-      if (found) return true;
-    }
-
-    // Add as member
-    const addRes = await fetch(`${CHAT_API}/${spaceName}/members`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        member: { name: `users/${userEmail}`, type: 'HUMAN' },
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (addRes.ok) {
-      log('Added agent to space', { spaceName, userEmail });
-      return true;
-    }
-    const err = await addRes.text().catch(() => '');
-    log('WARN', 'Failed to add agent to space', { spaceName, userEmail, status: addRes.status, body: err.slice(0, 200) });
-    return false;
-  } catch (err) {
-    log('WARN', 'ensureSpaceMember exception', { spaceName, userEmail, error: err.message });
-    return false;
-  }
-}
-
-/**
- * Deliver a delegation message to the project's shared GChat space.
+ * Deliver a delegation message to the target agent via an Address.
  * Canon B-9: Mouth is the single point of all outbound communication.
- * Agents do not DM or email each other — all delegation flows through shared spaces.
  *
  * @param {string} text - The delegation marker text
+ * @param {object} addr - Channel Address
  * @param {string} targetEmail - Target agent's email
- * @param {string|null} deliverySpaceId - Project's GChat space ID (e.g. 'AAQA2JEusfs')
  */
-async function deliverDelegation(text, targetEmail, deliverySpaceId) {
+async function deliverDelegation(text, addr, targetEmail) {
   const token = await getDwdToken();
-  const formatted = convertToGChatMarkdown(text);
-
-  // If we have a project space, deliver there
-  if (deliverySpaceId) {
-    const spaceName = `spaces/${deliverySpaceId}`;
-
-    // Ensure target agent is in the space before posting
-    await ensureSpaceMember(spaceName, targetEmail, token);
-
-    try {
-      const res = await fetch(`${CHAT_API}/${spaceName}/messages`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: formatted }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (res.ok) {
-        log('Delivered delegation to project space', { targetEmail, spaceName, chars: text.length });
-        return;
-      }
-      const err = await res.text().catch(() => '');
-      log('WARN', 'Project space delivery failed, falling back to own space', { spaceName, status: res.status, body: err.slice(0, 200) });
-    } catch (err) {
-      log('WARN', 'Project space delivery exception, falling back', { spaceName, error: err.message });
-    }
-  } else {
-    log('WARN', 'No project space for delegation, falling back to own space', { targetEmail });
-  }
-
-  // Fallback: own space (not ideal but prevents silent loss)
-  await deliverToGChat(text);
-}
-
-async function deliverToFleetFirestore(text) {
-  if (!PRIME_ID || !AGENT_HOSTNAME) return;
-  const token = await getGceToken();
-  const parentPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}/messages`;
-  await fetch(parentPath, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: {
-      text: { stringValue: text }, sender: { stringValue: AGENT_HOSTNAME },
-      timestamp: { timestampValue: new Date().toISOString() }, processed: { booleanValue: true }
-    } })
+  await deliverToAddress(addr, text, {
+    token,
+    deliveryTarget: targetEmail,
+    replyInThread: false,  // delegations are flat space messages
+    log,
   });
-  log('Delivered to fleet Firestore', { agent: AGENT_HOSTNAME, chars: text.length });
 }
 
-async function deliver(text, sourceChannel) {
-  if (CHANNEL === 'gchat') {
-    await deliverToGChat(text);
-    // Also deliver to fleet Firestore for dashboard visibility
-    try { await deliverToFleetFirestore(text); } catch (err) {
-      log('Fleet Firestore delivery failed (non-critical)', { error: err.message });
+async function deliver(text, addr) {
+  const token = addr?.channel === 'gchat' ? await getDwdToken() : await getGceToken();
+  await deliverToAddress(addr, text, {
+    token,
+    replyInThread: REPLY_IN_THREAD,
+    log,
+  });
+
+  // Dashboard visibility mirror — observability, not a reply destination
+  if (addr?.channel === 'gchat' && DASHBOARD_MIRROR) {
+    try {
+      const gceToken = await getGceToken();
+      await mirrorToDashboard(text, gceToken, { log });
+    } catch (err) {
+      log('Dashboard mirror failed', { error: err.message });
     }
-  } else {
-    await deliverToFirestore(text);
   }
 }
 
 // ================================================================
 // FINAL RESPONSE — LLM CLASSIFY + DELIVER
 // ================================================================
-async function classifyAndDeliver(rawText, overrideQuestion) {
+async function classifyAndDeliver(rawText, overrideQuestion, addr) {
   const task = readTaskJson();
   const question = overrideQuestion || task?.text || turn.originalQuestion || '';
 
   if (!LLM_ENABLED) {
-    await deliver(rawText);
+    await deliver(rawText, addr);
     log('Delivered raw (LLM disabled)', { chars: rawText.length });
     await writeTaskLog(task, 'delivered', rawText.length, 'raw');
     markTaskComplete(task?.taskId);
@@ -592,7 +486,7 @@ async function classifyAndDeliver(rawText, overrideQuestion) {
     if (hasEscalate && action !== 'escalate') parsed.action = 'escalate';
 
     if (action === 'deliver' || action === 'escalate') {
-      await deliver(finalText);
+      await deliver(finalText, addr);
       log('Delivered', { channel: CHANNEL, chars: finalText.length, action,
         voiced: voiceStatus });
       await writeTaskLog(task, 'delivered', finalText.length, action);
@@ -602,7 +496,7 @@ async function classifyAndDeliver(rawText, overrideQuestion) {
     }
   } catch (err) {
     log('Classify error — delivering raw', { error: err.message });
-    await deliver(rawText);
+    await deliver(rawText, addr);
     await writeTaskLog(task, 'delivered', rawText.length, 'fallback');
   }
 
@@ -797,20 +691,37 @@ async function pollBrainV3Envelopes() {
           contextHint = '[This is a quick acknowledgment — keep it very short]\n\n';
         }
 
+        // Resolve delivery address from envelope
+        const deliveryAddr = f.delivery_address?.mapValue?.fields;
+        let addr = null;
+        if (deliveryAddr) {
+          const ch = deliveryAddr.channel?.stringValue || 'gchat';
+          if (ch === 'gchat') {
+            addr = { channel: 'gchat', space: deliveryAddr.space?.stringValue || null, thread: deliveryAddr.thread?.stringValue || null };
+          } else {
+            addr = { channel: 'dashboard', fleet_agent: deliveryAddr.fleet_agent?.stringValue || null };
+          }
+        }
+        if (!addr) {
+          // Legacy fallback: try source_meta, then fall back to first space
+          const sourceMeta = f.source_meta?.mapValue?.fields;
+          if (sourceMeta) {
+            addr = parseAddress(sourceMeta, CHANNEL);
+          }
+        }
+        if (!addr || (addr.channel === 'gchat' && !addr.space)) {
+          log('No delivery_address on envelope — constructing default', { envId });
+          addr = await buildDefaultAddress();
+        }
+
         // Delegation envelopes: deliver directly without voicing — markers are pre-formatted
         const deliveryTarget = f.delivery_target?.stringValue;
-        const deliverySpaceId = f.delivery_space_id?.stringValue || null;
         if (deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result')) {
-          if (CHANNEL === 'gchat') {
-            await deliverDelegation(output, deliveryTarget, deliverySpaceId);
-            log('Delivered delegation envelope to target', { envId, target: deliveryTarget, spaceId: deliverySpaceId, intent: envIntent });
-          } else {
-            await deliver(output);
-            log('Delivered delegation envelope via default channel', { envId, intent: envIntent });
-          }
+          await deliverDelegation(output, addr, deliveryTarget);
+          log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
         } else {
           // Standard voicing pipeline for non-delegation envelopes
-          await classifyAndDeliver(contextHint + output, envQuestion);
+          await classifyAndDeliver(contextHint + output, envQuestion, addr);
           log('Delivered envelope output', { envId, status: envStatus, intent: envType });
         }
 
@@ -895,7 +806,8 @@ async function main() {
       if (turn.status !== 'IDLE' && turn.status !== 'DONE' && checkFinalResponse()) {
         log('Final response confirmed', { chars: turn.candidateFinal.length,
           agents: turn.dispatchedAgents, elapsed_s: Math.floor((Date.now() - turn.startedAt) / 1000) });
-        await classifyAndDeliver(turn.candidateFinal);
+        const v2Addr = await buildDefaultAddress();
+        await classifyAndDeliver(turn.candidateFinal, undefined, v2Addr);
         turn.status = 'DONE';
         try { writeFileSync('/var/run/agent-mouth-last-delivery', String(Date.now())); } catch {}
         setTimeout(() => resetTurn(), 500);
@@ -924,7 +836,8 @@ async function main() {
       if (turn.status !== 'IDLE' && turn.status !== 'DONE' && turn.startedAt
           && Date.now() - turn.startedAt > DELIVERY_TIMEOUT) {
         log('Turn timeout', { elapsed_s: DELIVERY_TIMEOUT / 1000 });
-        await deliver("⚠ I'm still working on this, but it's taking longer than expected. I'll follow up when I'm done.");
+        const timeoutAddr = await buildDefaultAddress();
+        await deliver("⚠ I'm still working on this, but it's taking longer than expected. I'll follow up when I'm done.", timeoutAddr);
         const task = readTaskJson();
         await writeTaskLog(task, 'timed_out', 0, 'timeout', 'delivery timeout');
         markTaskComplete(task?.taskId);
