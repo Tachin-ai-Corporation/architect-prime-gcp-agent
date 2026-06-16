@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.16.3 | 2026-06-16 | Brain-Part Skill Visibility & Dashboard Work Refactoring: structured scannable capabilities in system prompt, explicit cortex routing rules, R-type active container bucketing, and blocked status current-trees display |
 | v2026.06.16.2 | 2026-06-16 | Flash Load & Execution Quality: parse-first enforceSchema, deterministic titles, context fidelity (smartTruncate), evidence floor, mandatory accept_criteria, orphan resume, ears preprocess gate, LoopGuard, dashboard responsibilities → Persona |
 | v2026.06.15.3.0 | 2026-06-15 | Product-architect abstracted: removed all Architect Prime project context from role definition, renamed repo-audit→codebase-audit, discovery-driven auditing, empty responsibilities (configured at runtime) |
 | v2026.06.15.2.0 | 2026-06-15 | Designer agent role (10th specialty), workspace-slides core skill (5 Slides API tools), DWD scopes fixed in dashboard + docs (was only showing chat scopes, now all 18) |

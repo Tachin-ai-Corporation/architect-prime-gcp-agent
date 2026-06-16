@@ -3,18 +3,22 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native brain gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.16.2)
+## Current Architecture (v2026.06.16.3)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
 - **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, introspect queries, config
 - **Compute Engine VMs** — One per Prime + one per fleet agent
-- **Brain Gateway** — Host-native AI brain gateway on each VM (Gemini 3.1 Pro via Vertex AI ADC)
+- **Brain Gateway** — Host-native AI brain gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC)
 - **Google Chat** — Agent-to-human communication via DWD
 
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
 - **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. M→C→T hierarchy enforced for ALL output (acks, synthesize responses) via `createCT()` helper. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Contextual ack with recent mission history + project awareness. Motor timeout detection (`timed_out` status) with cortex `continue` action for re-dispatching timed-out tasks. Process step type dispatch (standard/delegation/spawn_responsibility/approval_gate/optional). Approval gate polling and resume. Responsibility→process linking via processRef (auto-execute, skip Cortex decide).
+- **Brain-Part Skill Visibility & Dashboard Work Refactoring (v2026.06.16.3)**:
+  - **Structured Agent Registry**: The raw JSON registry dump in the Cortex system prompt has been replaced with a clean, scannable format, making agent capabilities and tool constraints highly visible.
+  - **Explicit Task Routing Rules**: Added rules in Prime and Fleet Cortex `SOUL.md` files mapping memory tasks to `temporal-memory` only, mutations to `motor`, research to `temporal-research`, verification to `cerebellum`, and decomposition to `prefrontal`, strictly forbidding assigning tasks to agents lacking the required tools.
+  - **Dashboard Work Tab Classification**: Refactored `useWorkEnvelopes.ts` and `/api/primes/[id]/work` to properly classify R-type containers under "In Progress" when they have active/pending descendant child missions, and added `"blocked"` status to `ACTIVE_STATUSES` so blocked work is kept in "In Progress" with a crimson pulsing visual indicator.
 - **Flash Load & Execution Quality (v2026.06.16.2)**:
   - **Parse-first enforceSchema**: `enforceSchemaFn` validates Opus JSON deterministically (parseJsonResponse + field/enum validation) before calling Flash. Flash LLM call is now a rare repair path, not universal. Saves ~3 Flash calls per mission turn.
   - **Deterministic titles**: `generateTitle` uses `summarizeTitle` (pure JS, no LLM) for checkpoints and tasks. LLM titles reserved for missions only. Saves ~10 Flash calls per mission.
