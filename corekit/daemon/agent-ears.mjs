@@ -404,6 +404,13 @@ async function pollGChat() {
         const ct = msg.createTime || '';
         if (ct <= _gchatHighWater) continue;
         if (_gchatSeen.has(msg.name)) continue;
+
+        // Echo filter: skip own messages to prevent re-ingestion loops.
+        // Mouth posts delegation markers and voiced output to GChat spaces;
+        // ears must never treat those as new inbound work.
+        const senderEmail = msg.sender?.name?.replace('users/', '') || '';
+        if (senderEmail && senderEmail === AGENT_USER_EMAIL) continue;
+
         const text = msg.text || msg.argumentText || '';
         if (!text || (AGENT_MENTION && !text.includes(AGENT_MENTION))) continue;
 

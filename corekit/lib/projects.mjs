@@ -241,6 +241,11 @@ export function createProjectRegistry(config) {
     const project = PROJECTS[projectId];
     if (project.status !== 'active') return;
 
+    // Only auto-complete projects that explicitly opt in.
+    // Active projects are ongoing work streams — completing all current
+    // missions doesn't mean the project is done.
+    if (!project.auto_complete) return;
+
     try {
       const token = await getAuthToken();
       if (!token) return;
