@@ -344,6 +344,13 @@ function ProjectDetailView({
         setLocalContext(data.project.context ?? {});
         setLinkedProcessIds(data.project.standardProcesses ?? []);
         setLoading(false);
+
+        // Fetch all processes for the prime that owns this project
+        const primeId = data.project.created_by || "chuck";
+        const procData = await api<{ processes: ProcessSummary[] }>(`/api/primes/${primeId}/processes`);
+        if (!cancelled && procData?.processes) {
+          setAllProcesses(procData.processes);
+        }
       } else if (!cancelled) {
         setLoading(false);
       }
