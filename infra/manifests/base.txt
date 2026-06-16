@@ -67,6 +67,8 @@ skills/telemetry/SKILL.md skills/telemetry/SKILL.md
 skills/telemetry/skill.json skills/telemetry/skill.json
 skills/skill-authoring/SKILL.md skills/skill-authoring/SKILL.md
 skills/skill-authoring/skill.json skills/skill-authoring/skill.json
+skills/delegation/SKILL.md skills/delegation/SKILL.md
+skills/delegation/skill.json skills/delegation/skill.json
 
 # Skill setup (dependency installer)
 corekit/system/skill-setup bin/skill-setup
