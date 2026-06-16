@@ -124,7 +124,7 @@ RESPONSE=$(curl -sf \
   -d "${QUERY_BODY}" 2>&1)
 
 # ── Format output ───────────────────────────────────────────────
-python3 <<'PYEOF'
+echo "$RESPONSE" | python3 -c '
 import json, sys
 
 try:
@@ -154,9 +154,10 @@ for entry in results:
     source = fields.get("source", {}).get("stringValue", "?")
     created = fields.get("createdAt", {}).get("stringValue", "?")
     status = fields.get("status", {}).get("stringValue", "?")
+    doc_id = doc.get("name", "").split("/")[-1]
 
     count += 1
-    print(f"[{cat}] {fact}")
+    print(f"[{cat}] ({doc_id}) {fact}")
     print(f"  confidence: {confidence} | source: {source} | status: {status}")
     print(f"  created: {created}")
     print()
@@ -165,5 +166,4 @@ if count == 0:
     print("No core memory entries found.")
 else:
     print(f"--- {count} entries ---")
-PYEOF
-echo "$RESPONSE" | python3 /dev/stdin 2>/dev/null || echo "No results found."
+' 2>/dev/null || echo "No results found."

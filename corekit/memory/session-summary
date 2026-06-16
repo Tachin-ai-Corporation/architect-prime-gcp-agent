@@ -43,20 +43,11 @@ SINCE_TIMESTAMP=$(date -u -d "-${HOURS} hours" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null
 
 if [[ -z "$SINCE_TIMESTAMP" ]]; then
   echo "Warning: could not compute cutoff timestamp" >&2
+  echo "No recent sessions found."
   exit 0
 fi
 
-# Auto-detect fleet agent context
-AGENT_ID="${AGENT_ID:-}"
-OWNER="${AGENT_ID}"
-if [[ -z "$OWNER" ]]; then
-  # Try to get agent email from identity lock
-  if [[ -f "/opt/corekit/workspace/.identity-lock" ]]; then
-    OWNER=$(cat /opt/corekit/workspace/.identity-lock)
-  fi
-fi
-
-# ── Build Firestore query for recent completed missions ─────────
+# ── Build Firestore query — simple filter, no orderBy (avoids composite index) ──
 PARENT="projects/${PROJECT_ID}/databases/(default)/documents/primes/${PRIME_ID}"
 
 QUERY_BODY=$(cat <<EOF
@@ -68,12 +59,10 @@ QUERY_BODY=$(cat <<EOF
         "op": "AND",
         "filters": [
           {"fieldFilter": {"field": {"fieldPath": "status"}, "op": "EQUAL", "value": {"stringValue": "complete"}}},
-          {"fieldFilter": {"field": {"fieldPath": "type"}, "op": "EQUAL", "value": {"stringValue": "M"}}},
-          {"fieldFilter": {"field": {"fieldPath": "completed_at"}, "op": "GREATER_THAN_OR_EQUAL", "value": {"stringValue": "${SINCE_TIMESTAMP}"}}}
+          {"fieldFilter": {"field": {"fieldPath": "type"}, "op": "EQUAL", "value": {"stringValue": "M"}}}
         ]
       }
     },
-    "orderBy": [{"field": {"fieldPath": "completed_at"}, "direction": "DESCENDING"}],
     "limit": ${LIMIT}
   }
 }
@@ -88,7 +77,7 @@ RESPONSE=$(curl -sf \
   -d "${QUERY_BODY}" 2>&1)
 
 # ── Format output ───────────────────────────────────────────────
-python3 <<'PYEOF'
+echo "$RESPONSE" | python3 -c '
 import json, sys
 
 try:
@@ -100,11 +89,27 @@ except:
 if not isinstance(results, list):
     results = [results]
 
-count = 0
+# Filter by cutoff and sort client-side
+cutoff = "'"${SINCE_TIMESTAMP}"'"
+filtered = []
 for entry in results:
     doc = entry.get("document")
     if not doc:
         continue
+    fields = doc.get("fields", {})
+    completed = fields.get("completed_at", {}).get("stringValue", "")
+    if completed >= cutoff:
+        filtered.append(entry)
+
+# Sort by completed_at descending
+filtered.sort(
+    key=lambda e: e.get("document", {}).get("fields", {}).get("completed_at", {}).get("stringValue", ""),
+    reverse=True,
+)
+
+count = 0
+for entry in filtered:
+    doc = entry["document"]
     fields = doc.get("fields", {})
     instruction = fields.get("instruction", {}).get("stringValue", "?")
     output = fields.get("output", {}).get("stringValue", "")
@@ -124,6 +129,5 @@ for entry in results:
 if count == 0:
     print("No recent completed missions found.")
 else:
-    print(f"--- {count} completed missions in the last specified hours ---")
-PYEOF
-echo "$RESPONSE" | python3 /dev/stdin 2>/dev/null || echo "No recent sessions found."
+    print(f"--- {count} completed missions in the last {'"${HOURS}"'} hours ---")
+' 2>/dev/null || echo "No recent sessions found."
