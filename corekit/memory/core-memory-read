@@ -110,7 +110,6 @@ QUERY_BODY=$(cat <<EOF
   "structuredQuery": {
     "from": [{"collectionId": "core_memory"}],
     ${WHERE_CLAUSE}
-    "orderBy": [{"field":{"fieldPath":"createdAt"},"direction":"DESCENDING"}],
     "limit": ${LIMIT}
   }
 }
@@ -136,6 +135,12 @@ except:
 
 if not isinstance(results, list):
     results = [results]
+
+# Sort client-side by createdAt descending (orderBy removed from query to avoid composite index)
+results.sort(
+    key=lambda e: e.get("document", {}).get("fields", {}).get("createdAt", {}).get("stringValue", ""),
+    reverse=True,
+)
 
 count = 0
 for entry in results:
