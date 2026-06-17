@@ -2708,6 +2708,52 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
 
       // Guard: prevent re-executing a process that already ran in this envelope
       if (envelope.process_id) {
+        const forceKey = '_follow_process_force_count';
+        envelope[forceKey] = (envelope[forceKey] || 0) + 1;
+
+        if (envelope[forceKey] >= 2) {
+          // Cortex is stuck in a loop — force-complete the mission with process results
+          log('WARN', `follow_process: process '${envelope.process_id}' already executed — Cortex stuck (${envelope[forceKey]}x), force-completing mission`);
+
+          // Build synthesis from child results
+          const childResults = priorResults
+            .filter(r => r.agent && r.agent !== 'system')
+            .map(r => `${r.agent}: ${toStr(r.result).substring(0, 500)}`)
+            .join('\n\n');
+          const synthesis = childResults || envelope.output || 'Process completed but Cortex could not synthesize results.';
+
+          await createCT(envelope, {
+            checkpointTitle: 'Force-synthesize (stuck loop)',
+            taskTitle: 'Auto-synthesize after process completion',
+            taskOutput: synthesis,
+            taskIntent: 'synthesize',
+            deliveryStatus: 'internal',
+            ctKey: `force-synth-${envelope.id}-${iteration}`,
+          });
+
+          envelope.output = synthesis;
+          envelope.status = 'complete';
+          envelope.completed_at = now();
+          envelope.updated_at = now();
+          if (!envelope.parent_id) {
+            envelope.delivery_status = 'pending';
+            envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
+          }
+          await firestoreWrite('work', envelope.id, envelope);
+          await writeHistory(envelope.id, 'active', 'complete', 'brain', 'Force-synthesized: Cortex stuck in follow_process loop');
+          log('INFO', `Envelope ${envelope.id} force-completed (stuck follow_process loop)`);
+
+          if (envelope.type === 'M') {
+            const artifactLinks = await publishArtifacts(envelope);
+            if (artifactLinks && artifactLinks.length > 0) {
+              const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
+              envelope.output = (envelope.output || '') + `\n\n📌 **Artifacts published to Drive:**\n${linkText}`;
+              await firestoreWrite('work', envelope.id, envelope);
+            }
+          }
+          return;
+        }
+
         log('WARN', `follow_process: process '${envelope.process_id}' already executed on this envelope — forcing synthesize`);
         priorResults.push({
           agent: 'system',
