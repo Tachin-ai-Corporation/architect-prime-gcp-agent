@@ -239,7 +239,7 @@ function convertMessagesToAnthropic(messages) {
 /**
  * Execute tool-calling loop using Google GenAI SDK.
  */
-async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSteps }) {
+async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95 }) {
   const ai = getGoogleClient();
   const localHistory = [...messages];
   let step = 0;
@@ -274,7 +274,9 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
         config: {
           systemInstruction: systemPrompt,
           tools: googleTools,
-          temperature: 0.2,
+          temperature,
+          maxOutputTokens: maxTokens,
+          topP,
         }
       }),
       `Google ${modelId} step ${step}`
@@ -388,7 +390,7 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
 /**
  * Execute tool-calling loop using Anthropic Messages SDK.
  */
-async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, maxSteps }) {
+async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95 }) {
   const client = getAnthropicClient();
   const localHistory = [...messages];
   let step = 0;
@@ -413,14 +415,22 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
   while (step < maxSteps) {
     const anthropicMessages = convertMessagesToAnthropic(localHistory);
 
+    // CP9: Prompt caching — structure system as content block with cache_control if enabled
+    const promptCachingEnabled = false; // TODO: gate via contracts vertex.anthropic_prompt_caching
+    const systemPayload = promptCachingEnabled
+      ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
+      : systemPrompt;
+
     console.log(`[loop] Calling Anthropic Claude ${modelId} (step ${step}/${maxSteps})...`);
     const response = await retryWithBackoff(
       () => client.messages.create({
         model: modelId,
-        max_tokens: 4096,
-        system: systemPrompt,
+        max_tokens: maxTokens,
+        system: systemPayload,
         messages: anthropicMessages,
         tools: anthropicTools,
+        temperature,
+        top_p: topP,
       }),
       `Anthropic ${modelId} step ${step}`
     );
@@ -537,13 +547,16 @@ export async function runAgentTurnSync({
   messages,
   tools,
   maxSteps = 12,
+  maxTokens = 8192,
+  temperature = 0.3,
+  topP = 0.95,
 }) {
   const { prefix, modelId } = parseModel(modelString);
 
   if (prefix === 'vertex-anthropic') {
-    return await runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, maxSteps });
+    return await runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens, temperature, topP });
   } else {
-    return await runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSteps });
+    return await runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens, temperature, topP });
   }
 }
 

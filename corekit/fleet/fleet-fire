@@ -103,7 +103,9 @@ for doc in data.get('documents', []):
 
 if [[ -n "$EXISTING_CMD" ]]; then
   cat <<DEDUP
-Teardown for '${NAME}' already queued (${EXISTING_CMD}). Skipping duplicate.
+STATUS: IN_PROGRESS
+command_id: ${EXISTING_CMD}
+Teardown for '${NAME}' is already in progress. Do NOT retry — poll fleet-status to monitor.
 DEDUP
   exit 0
 fi
@@ -133,10 +135,11 @@ urllib.request.urlopen(req)
 
 # ---- PRINT RESULT ----
 cat <<RESULT
+STATUS: ACCEPTED
+command_id: ${CMD_ID}
 Tearing down agent '${NAME}'. This takes 1-2 minutes.
-
-Command queued: ${CMD_ID}
 The command-runner daemon will execute fleet-teardown on this VM.
+Poll fleet-status --name ${NAME} at 30-second intervals until status is 'fired'.
 
 After teardown completes:
 - VM deleted, billing stops immediately

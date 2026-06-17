@@ -1046,25 +1046,15 @@ export function createProcessEngine(deps) {
         // Build instruction with prior results context
         let instruction = tEnv.instruction || '';
 
-        // Prepend project context
-        if (mission.project_id) {
-          const buildProjCtx = _buildProjCtx || (projects ? (pid, ctx) => projects.buildContext(pid, ctx, coreDir) : null);
-          if (buildProjCtx) {
-            const projCtx = buildProjCtx(mission.project_id, mission.context);
-            if (projCtx) {
-              instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${instruction}`;
-            }
-          }
-        }
-
         // Add prior results for context
         const priorContext = allResults.length > 0
           ? allResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
           : null;
 
         // Dispatch to agent
+        const buildProjCtx = _buildProjCtx || (projects ? (pid, ctx) => projects.buildContext(pid, ctx, coreDir) : null);
         const dispatchProjCtx = mission.project_id
-          ? ((_buildProjCtx || (projects ? (pid, ctx) => projects.buildContext(pid, ctx, coreDir) : null))?.(mission.project_id, mission.context) || null)
+          ? (buildProjCtx?.(mission.project_id, mission.context) || null)
           : null;
         const dispatchEnvelope = {
           instruction,

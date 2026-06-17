@@ -130,6 +130,13 @@ async function generateTitle(text, type = 'mission') {
   return _vtx.generateTitle(text, type);
 }
 
+// Coerce LLM output fields to string — Cortex/synthesize/motor may return objects
+function toStr(v) {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  return typeof v === 'object' ? (v.instruction || v.text || JSON.stringify(v)) : String(v);
+}
+
 /**
  * Build a delivery Address from decoded source_meta and source_channel.
  * Brain-local counterpart of parseAddress() — works with decoded JS objects
@@ -675,7 +682,7 @@ async function recordStep(envelope, stepKey, result) {
     ts: now(),
     durationMs: result.durationMs || 0,
     outputHash: result.output
-      ? createHash('sha256').update(result.output).digest('hex').substring(0, 8)
+      ? createHash('sha256').update(toStr(result.output)).digest('hex').substring(0, 8)
       : null,
   };
   envelope.step_ledger = ledger;
@@ -1771,7 +1778,7 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
     targetEnv.delivered_channel = null;
     targetEnv.updated_at = now();
     await firestoreWrite('work', targetId, targetEnv);
-    await writeHistory(targetId, 'needs_input', 'active', 'brain', `Resumed with: ${intake.text.substring(0, 100)}`);
+    await writeHistory(targetId, 'needs_input', 'active', 'brain', `Resumed with: ${toStr(intake.text).substring(0, 100)}`);
     await processEnvelope(targetEnv, memoryContext);
     return;
   }
@@ -1828,6 +1835,7 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
 
   // For complete or other statuses, treat as a new follow-up task
   log('INFO', `Attach target ${targetId} is ${targetEnv.status}, creating follow-up task`);
+  log('WARN', `[TELEMETRY] classify_cascade: attach→complete_fallback→new_mission (${targetId})`);
   return processIntakeAsNewTask(intake, decision, memoryContext);
 }
 
@@ -1836,13 +1844,15 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
   const envelopeId = generateId('w');
   const envelope = {
     id: envelopeId,
-    type: 'T',
+    type: 'M',
     parent_id: parentId || null,
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
+    delivery_status: 'pending',
     intent: decision.intent || 'decide',
-    title: await generateTitle(decision.instruction || stripChatFraming(intake.text), 'task'),
+    title: await generateTitle(decision.instruction || stripChatFraming(intake.text), 'mission'),
     instruction: decision.instruction || stripChatFraming(intake.text),
+    source_text: intake.text || '',
     accept_criteria: decision.accept_criteria || null,
     context_summary: decision.context_summary || null,
     output: null,
@@ -1861,7 +1871,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
   };
 
   await firestoreWrite('work', envelopeId, envelope);
-  log('INFO', `Created envelope: ${envelopeId} (type=T, fallback from attach)`);
+  log('INFO', `Created envelope: ${envelopeId} (type=M, fallback from intake)`);
   await writeHistory(envelopeId, null, 'pending', 'brain', 'Created from intake ' + intake.id);
   await processEnvelope(envelope, memoryContext);
 }
@@ -1873,19 +1883,32 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
 
   if (!targetId) {
     log('WARN', `Continue missing continue_mission field, treating as new_mission`);
+    log('WARN', `[TELEMETRY] classify_cascade: continue→missing_target→new_mission`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
   const mission = await firestoreRead('work', targetId);
   if (!mission) {
     log('WARN', `Continue target ${targetId} not found, treating as new_mission`);
+    log('WARN', `[TELEMETRY] classify_cascade: continue→not_found→new_mission (${targetId})`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
   // Only reopen blocked or complete missions (not active â€” that's an attach/status check)
   if (!['blocked', 'complete'].includes(mission.status)) {
-    log('WARN', `Continue target ${targetId} is ${mission.status}, treating as attach`);
-    return handleAttach(intake, decision, memoryContext);
+    // Active target — check for stale claim and resume instead of cascading
+    const claimAge = mission.claimed_at ? (Date.now() - mission.claimed_at) : Infinity;
+    if (claimAge > CLAIM_STALE_MS) {
+      log('INFO', `Reclaiming stale active envelope ${targetId} (claim age: ${claimAge}ms)`);
+      mission.claimed_by = AGENT_ID;
+      mission.claimed_at = Date.now();
+      mission.context_forward = toStr(intake.text);
+      mission.updated_at = now();
+      await firestoreWrite('work', targetId, mission);
+      return processEnvelope(mission, memoryContext);
+    }
+    log('WARN', `[TELEMETRY] classify_cascade: continue→active_busy→attach (${targetId}, status=${mission.status})`);
+    return handleAttach(intake, { ...decision, attach_to: targetId }, memoryContext);
   }
 
   const prevStatus = mission.status;
@@ -1907,7 +1930,7 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
 
   await firestoreWrite('work', targetId, mission);
   await writeHistory(targetId, prevStatus, 'active', 'brain',
-    `Resumed via continue: ${intake.text.substring(0, 100)}`);
+    `Resumed via continue: ${toStr(intake.text).substring(0, 100)}`);
   log('INFO', `Mission ${targetId} reopened from ${prevStatus} → active`);
 
   // Mark intake as consumed BEFORE processing — prevents re-processing if processEnvelope throws
@@ -1971,7 +1994,7 @@ async function handleCancel(intake, decision) {
   await cascadeCancelChildren(targetId);
 
   // Deliver confirmation
-  await deliverStatusUpdate(targetId, `✅ Cancelled mission: "${target.instruction.substring(0, 100)}"`);
+  await deliverStatusUpdate(targetId, `✅ Cancelled mission: "${toStr(target.instruction).substring(0, 100)}"`);
 }
 
 // Cascade-cancel all active/pending children of a cancelled envelope
@@ -3283,14 +3306,19 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
 
           // ---- Evidence floor: flag suspiciously shallow motor completions ----
           if (result.success && taskAgent === 'motor') {
-            const rText = result.output || result.text || '';
+            const rText = toStr(result.output) || result.text || '';
             const toolLog = rText.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/)?.[1] || '';
             const toolCount = (toolLog.match(/\[TOOL\]/g) || []).length;
             const hasWrites = /writeFile|drive-upload|drive-mkdir|git commit/i.test(toolLog);
             const hasErrors = /ERROR:|No such file|command not found|Permission denied/i.test(toolLog);
             const durationMs = result.durationMs || 0;
 
-            if (durationMs < 8000 && toolCount <= 2 && !hasWrites) {
+            // Skip evidence floor for fleet lifecycle operations
+            const EVIDENCE_FLOOR_EXCLUDE = CONTRACTS.dispatch?.evidence_floor_exclude_skills
+              || ['fleet-fire', 'fleet-hire', 'fleet-upgrade', 'fleet-verify', 'fleet-status', 'fleet-deploy'];
+            const isFleetLifecycle = EVIDENCE_FLOOR_EXCLUDE.some(s => taskDesc.toLowerCase().includes(s));
+
+            if (durationMs < 8000 && toolCount <= 2 && !hasWrites && !isFleetLifecycle) {
               log('WARN', `Evidence floor: motor CP${cpNum} T${taskNum} completed in ${durationMs}ms with ${toolCount} tools, no writes — flagging`);
               result.output = (result.output || '') + '\n[EVIDENCE WARNING: Task completed very quickly with minimal tool usage and no write operations. Verify that meaningful work was performed.]';
             }
@@ -3582,9 +3610,7 @@ function buildEnvelopeContext(envelope, priorResults, memoryResults) {
     if (latest.agent && latest.agent !== 'system') {
       blockParts.push(`Decision: dispatch to ${latest.agent}`);
       if (latest.task) blockParts.push(`Task: ${latest.task}`);
-      const resultStr = typeof latest.result === 'string'
-        ? latest.result.substring(0, 2000)
-        : JSON.stringify(latest.result || '').substring(0, 2000);
+      const resultStr = toStr(latest.result).substring(0, 2000);
       blockParts.push(`Result: ${resultStr}`);
     } else if (latest.agent === 'human') {
       blockParts.push(`Human input: ${(latest.result || '').substring(0, 500)}`);
@@ -3814,7 +3840,7 @@ async function checkWaitingEnvelopes() {
 
       // Inject delegation results as context_forward
       const delegationSummary = childResults.map((r, i) =>
-        `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${r.result.substring(0, 500)}`
+        `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${toStr(r.result).substring(0, 500)}`
       ).join('\n\n');
 
       waiting.status = 'active';

@@ -18,7 +18,7 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { initRouter, getProviderStatus } from './router.mjs';
-import { runAgentTurnSync } from './loop.mjs';
+import { runAgentTurnSyncWithFallback } from './loop.mjs';
 import { loadAgentConfig, getBrainConfig, getContracts } from './config.mjs';
 import { getFilteredTools } from './tools.mjs';
 import { listSessions } from './context.mjs';
@@ -156,12 +156,16 @@ const server = createServer(async (req, res) => {
       const chatMessages = messages.filter(m => m.role !== 'system');
 
       // Run inference (non-streaming — agent-brain.mjs doesn't use streaming)
-      const result = await runAgentTurnSync({
+      const result = await runAgentTurnSyncWithFallback({
         modelString: agentConfig.model,
+        fallbackModel: agentConfig.fallbackModel,
         systemPrompt,
         messages: chatMessages,
         tools,
         maxSteps: agentConfig.maxSteps,
+        maxTokens: maxTokens || agentConfig.maxTokens || 8192,
+        temperature: temperature ?? agentConfig.temperature ?? 0.3,
+        topP: topP ?? agentConfig.topP ?? 0.95,
       });
 
       console.log(`[brain] #${rid} completed (${result.text.length} chars, ${result.usage?.totalTokens || '?'} tokens)`);

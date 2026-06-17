@@ -8,7 +8,8 @@
       "cortex": "vertex-anthropic/claude-opus-4-6",
       "cortexFallback": "vertex-google/gemini-2.5-pro",
       "subagent": "vertex-google/gemini-2.5-flash"
-    }
+    },
+    "anthropic_prompt_caching": false
   },
   "agents": {
     "defaultId": "cortex",
@@ -17,7 +18,8 @@
   "gateway": {
     "port": 18789,
     "timeoutSeconds": 180,
-    "bind": "loopback"
+    "bind": "loopback",
+    "forward_gen_params": true
   },
   "env": {
     "GOOGLE_GENAI_USE_VERTEXAI": "True",
@@ -41,7 +43,11 @@
     "needs_input_timeout_hours": 72,
     "step_ledger_enabled": true,
     "checkpoint_resume_enabled": true,
-    "claim_stale_ms": 600000
+    "claim_stale_ms": 600000,
+    "evidence_floor_exclude_skills": [
+      "fleet-fire", "fleet-hire", "fleet-upgrade", "fleet-verify",
+      "fleet-status", "fleet-deploy"
+    ]
   },
   "ears": {
     "firestore_poll_ms": 3000,
@@ -102,6 +108,7 @@
       "dispatch_failure": 3000
     },
     "timeout_ms": 30000,
+    "enforce_schema_timeout_ms": 8000,
     "disable_thinking": true
   },
   "workspaces": {

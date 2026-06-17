@@ -317,10 +317,26 @@ export function createVertexText(config) {
         log('DEBUG', `enforceSchema OK (deterministic): action=${parsed.action || parsed.classification}`);
         return parsed;
       }
-      log('DEBUG', `enforceSchema deterministic invalid: ${check.reason}`);
+      log('INFO', `enforceSchema deterministic invalid: ${check.reason} | action=${parsed?.action || 'none'}`);
     } catch (e) {
-      log('DEBUG', `enforceSchema deterministic parse failed: ${e.message}`);
+      log('INFO', `enforceSchema deterministic parse failed: ${e.message}`);
     }
+
+    // Fast-exit: valid JSON with minimum required fields — skip Flash LLM coercion.
+    // The daemon's own legality checks downstream catch illegal actions.
+    try {
+      const parsed = typeof raw === 'object' ? raw : parseJsonResponse(raw);
+      if (parsed) {
+        if (schemaName === 'decide' && parsed.action) {
+          log('INFO', `enforceSchema fast-exit: valid JSON with action=${parsed.action}`);
+          return parsed;
+        }
+        if (schemaName === 'classify' && (parsed.classification || parsed.action)) {
+          log('INFO', `enforceSchema fast-exit: valid JSON with classification`);
+          return parsed;
+        }
+      }
+    } catch (_) { /* not parseable — proceed to LLM coercion */ }
 
     // Slow path: Flash LLM structured-output coercion
     const input = typeof raw === 'string' ? raw : JSON.stringify(raw);
@@ -341,7 +357,7 @@ export function createVertexText(config) {
               temperature: 0.1,
             },
           }),
-          signal: AbortSignal.timeout(15_000),
+          signal: AbortSignal.timeout(8000),
         });
 
         if (!resp.ok) {
