@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.17.3 | 2026-06-17 | Deployment Resilience: strip literal backslash-r from tools.mjs (gateway crash loop), add /snap/bin to command-runner PATH (gcloud unreachable → exit 127), inject GCP_PROJECT_ID/PRIME_ID env into bootstrap service heredoc |
 | v2026.06.17.2 | 2026-06-17 | Knowledge Layer Hardening: full project context + source_text to motor, process selection by intent_keywords, hallucinated skill path guards, semantic stuck detection, firebase-hosting-diagnostics skill, p-memory-consolidate process, structured telemetry |
 | v2026.06.17.1 | 2026-06-17 | Idempotency & replay-safety hardening (step ledger, durable claims, checkpoint resume, idempotent createCT) + neural gateway rename (brain-gateway → neural-gateway everywhere) |
 | v2026.06.16.3 | 2026-06-16 | Brain-Part Skill Visibility & Dashboard Work Refactoring: structured scannable capabilities in system prompt, explicit cortex routing rules, R-type active container bucketing, and blocked status current-trees display |

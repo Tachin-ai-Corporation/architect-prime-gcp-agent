@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.17.2)
+## Current Architecture (v2026.06.17.3)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -18,6 +18,10 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Brain-Part Skill Visibility & Dashboard Work Refactoring (v2026.06.16.3)**:
   - **Structured Agent Registry**: The raw JSON registry dump in the Cortex system prompt has been replaced with a clean, scannable format, making agent capabilities and tool constraints highly visible.
   - **Explicit Task Routing Rules**: Added rules in Prime and Fleet Cortex `SOUL.md` files mapping memory tasks to `temporal-memory` only, mutations to `motor`, research to `temporal-research`, verification to `cerebellum`, and decomposition to `prefrontal`, strictly forbidding assigning tasks to agents lacking the required tools.
+- **Deployment Resilience (v2026.06.17.3)**:
+  - **tools.mjs CRLF fix**: Subagent edits introduced literal `\r` (backslash-r) two-character sequences at the end of 73 lines. Node.js ESM parser treated these as invalid tokens → gateway crash loop (restart counter 500+). Stripped and committed.
+  - **command-runner PATH**: `gcloud` on Ubuntu snap lives at `/snap/bin/gcloud`. The command-runner systemd service `PATH` didn't include `/snap/bin` → all fleet deploy/teardown commands failed with exit 127. Fixed in both the live service and `prime-bootstrap.sh` heredoc.
+  - **command-runner env injection**: Template `.service` files lack `GCP_PROJECT_ID`/`PRIME_ID` (injected at bootstrap time via heredoc). Manual service installation during hotfix recovery must read these from VM metadata and inject into the unit file.
 - **Knowledge Layer Hardening (v2026.06.17.2)**:
   - **Full project context to Motor**: `_projectContext` and `_sourceText` flow as first-class fields through all 3 motor dispatch paths (checkpoint, resume, process-engine). Motor's user message now includes `## Project Context` and `## Original User Request` sections, giving motor the full operational map (hosting rewrites, bucket names, service URLs) and the user's raw request.
   - **Process selection by intent**: `intent_keywords` arrays on process definitions (p-investigate, p-plan) surfaced in Cortex decide payload. DevOps Cortex SOUL adds "Diagnostic Intent Detection" section to prefer p-investigate for symptom/bug reports.
