@@ -1756,7 +1756,7 @@ async function processIntake(intake) {
 
 // ---- Attach handler: follow-up to existing work ----
 async function handleAttach(intake, decision, memoryContext, pendingAckText = null) {
-  const targetId = decision.attach_to;
+  const targetId = decision.attach_to || decision.attach_to_mission || decision.continue_mission;
   log('INFO', `Attach: intake ${intake.id} â†’ target ${targetId}`);
 
   if (!targetId) {
@@ -1851,7 +1851,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     status: 'pending',
     delivery_status: 'pending',
     intent: decision.intent || 'decide',
-    title: await generateTitle(decision.instruction || stripChatFraming(intake.text), 'mission'),
+    title: await generateTitle(stripChatFraming(intake.text) || decision.instruction || 'Untitled', 'mission'),
     instruction: decision.instruction || stripChatFraming(intake.text),
     source_text: intake.text || '',
     accept_criteria: decision.accept_criteria || null,
