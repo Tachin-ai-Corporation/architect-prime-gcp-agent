@@ -82,6 +82,32 @@ req = urllib.request.Request(url, data=body, method='PATCH',
 urllib.request.urlopen(req)
 " 2>/dev/null || log "Warning: could not update fleet doc"
 
+# ---- DEDUP CHECK: skip if pending/running teardown already exists ----
+EXISTING_CMD="$(python3 -c "
+import json, urllib.request
+token = '$TOKEN'
+url = '${FIRESTORE_URL}/primes/${PRIME_ID}/commands'
+url += '?orderBy=createdAt&pageSize=20'
+req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token})
+data = json.loads(urllib.request.urlopen(req).read())
+for doc in data.get('documents', []):
+    f = doc.get('fields', {})
+    t = f.get('type', {}).get('stringValue', '')
+    s = f.get('status', {}).get('stringValue', '')
+    a = f.get('args', {}).get('mapValue', {}).get('fields', {})
+    n = a.get('name', {}).get('stringValue', '')
+    if t == 'fleet_teardown' and n == '$NAME' and s in ('pending', 'running'):
+        print(doc['name'].split('/')[-1])
+        break
+" 2>/dev/null)" || true
+
+if [[ -n "$EXISTING_CMD" ]]; then
+  cat <<DEDUP
+Teardown for '${NAME}' already queued (${EXISTING_CMD}). Skipping duplicate.
+DEDUP
+  exit 0
+fi
+
 # ---- WRITE COMMAND TO QUEUE ----
 CMD_ID="cmd-teardown-${NAME}-$(date +%s)"
 log "Queuing fleet_teardown command: ${CMD_ID}"
