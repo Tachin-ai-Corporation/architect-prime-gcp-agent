@@ -40,6 +40,21 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       await fleetRef.update({ status: "tearing_down" });
     }
 
+    // Dedup: skip if there's already a pending/running teardown for this agent
+    const existing = await commandsCol(id)
+      .where("type", "==", "fleet_teardown")
+      .where("args.name", "==", name)
+      .where("status", "in", ["pending", "running"])
+      .limit(1)
+      .get();
+
+    if (!existing.empty) {
+      return NextResponse.json(
+        { id: existing.docs[0].id, command: "fleet_teardown", agent: name, deduplicated: true },
+        { status: 200 }
+      );
+    }
+
     // Write command to queue
     const cmdRef = commandsCol(id).doc();
     await cmdRef.set({
