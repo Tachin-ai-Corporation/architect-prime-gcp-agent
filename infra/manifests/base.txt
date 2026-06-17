@@ -69,6 +69,8 @@ skills/skill-authoring/SKILL.md skills/skill-authoring/SKILL.md
 skills/skill-authoring/skill.json skills/skill-authoring/skill.json
 skills/delegation/SKILL.md skills/delegation/SKILL.md
 skills/delegation/skill.json skills/delegation/skill.json
+skills/verification/SKILL.md skills/verification/SKILL.md
+skills/verification/skill.json skills/verification/skill.json
 
 # Skill setup (dependency installer)
 corekit/system/skill-setup bin/skill-setup
@@ -91,6 +93,7 @@ corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs
 corekit/lib/process-engine.mjs corekit/lib/process-engine.mjs
+corekit/lib/verdict.mjs corekit/lib/verdict.mjs
 corekit/lib/scheduler.mjs corekit/lib/scheduler.mjs
 corekit/lib/approvals.mjs corekit/lib/approvals.mjs
 corekit/lib/archival.mjs corekit/lib/archival.mjs

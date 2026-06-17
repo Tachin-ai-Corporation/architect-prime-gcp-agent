@@ -1,0 +1,10 @@
+{
+  "id": "verification",
+  "name": "Task Verification",
+  "version": 1,
+  "origin": "core",
+  "category": "verification",
+  "agent_part": "cerebellum",
+  "scripts": ["report_pass", "report_fail"],
+  "when_to_use": "When dispatched to verify a task output against acceptance criteria"
+}

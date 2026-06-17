@@ -92,7 +92,9 @@ export function loadAgentConfig(agentId) {
     systemPrompt,
     maxSteps: needsTools ? (agentOverrides.maxSteps || maxSteps) : 1,
     workspace,
-    allowedTools: needsTools ? (agentOverrides.allowedTools || null) : [],
+    allowedTools: agentId === 'cerebellum'
+      ? ['readFile', 'report_pass', 'report_fail']
+      : needsTools ? (agentOverrides.allowedTools || null) : [],
   };
 }
 

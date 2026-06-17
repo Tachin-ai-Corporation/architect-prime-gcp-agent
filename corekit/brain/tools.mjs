@@ -127,6 +127,63 @@ export const listDirTool = {
   },
 };
 
+// ---- Verdict Tools (cerebellum only) ----
+
+export const reportPass = {
+  name: 'report_pass',
+  description: 'Report that all acceptance criteria are satisfied. Call this tool exactly once when every criterion has concrete supporting evidence.',
+  schema: {
+    type: 'object',
+    properties: {
+      reasoning: { type: 'string', description: 'Brief summary of why the work passes' },
+      checks: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            criterion: { type: 'string' },
+            pass: { type: 'boolean' },
+            evidence: { type: 'string' },
+          },
+          required: ['criterion', 'pass', 'evidence'],
+        },
+      },
+    },
+    required: ['reasoning', 'checks'],
+  },
+  execute: async ({ reasoning, checks }) => {
+    return { verdict: 'PASS', reasoning, checks };
+  },
+};
+
+export const reportFail = {
+  name: 'report_fail',
+  description: 'Report that one or more acceptance criteria are NOT satisfied. Call this tool exactly once when any criterion lacks evidence or is contradicted.',
+  schema: {
+    type: 'object',
+    properties: {
+      reasoning: { type: 'string', description: 'Summary of what failed and why' },
+      checks: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            criterion: { type: 'string' },
+            pass: { type: 'boolean' },
+            evidence: { type: 'string' },
+          },
+          required: ['criterion', 'pass', 'evidence'],
+        },
+      },
+      recommendation: { type: 'string', description: 'Specific action to fix the failure' },
+    },
+    required: ['reasoning', 'checks', 'recommendation'],
+  },
+  execute: async ({ reasoning, checks, recommendation }) => {
+    return { verdict: 'FAIL', reasoning, checks, recommendation };
+  },
+};
+
 // ---- Helper: Convert standard schema to Google uppercase type schema ----
 export function toGoogleSchema(schema) {
   if (!schema) return undefined;
@@ -158,6 +215,8 @@ export function getAllTools() {
     readFile: readFileTool,
     writeFile: writeFileTool,
     listDir: listDirTool,
+    report_pass: reportPass,
+    report_fail: reportFail,
   };
 }
 

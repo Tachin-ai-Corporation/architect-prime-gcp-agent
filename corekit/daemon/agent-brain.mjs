@@ -45,6 +45,7 @@ import { createNotifier } from '../corekit/lib/notifications.mjs';
 import { createHistoryWriter } from '../corekit/lib/history.mjs';
 import { composeDelegationMarker, composeDelegationResultMarker } from '../corekit/lib/delegation.mjs';
 import { makeAddress } from '../corekit/lib/channel.mjs';
+import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
@@ -3337,6 +3338,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
               const verification = await callAgent('cerebellum', {
                 instruction: [
                   'Verify the following task output meets the acceptance criteria.',
+                  'Read the verification SKILL.md before rendering your verdict.',
                   '',
                   '## Accept Criteria',
                   taskCriteria,
@@ -3347,77 +3349,71 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
                 _missionId: envelope.id,
               });
 
-              // Note: callAgent auto-converts cerebellum FAIL verdicts to success=false,
-              // so we check output regardless of the success flag.
-              const verOutput = verification.output || verification.error;
-              if (verOutput) {
-                try {
-                  // Strip markdown fences if present
-                  const cleaned = verOutput.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
-                  const verdict = JSON.parse(cleaned);
-                  if (verdict.verdict === 'FAIL') {
-                    const failedChecks = (verdict.checks || []).filter(c => !c.pass);
-                    const failSummary = failedChecks.map(c => `- ${c.criteria}: ${c.evidence}`).join('\n');
-                    log('WARN', `Cerebellum FAIL on CP${cpNum} Task ${taskNum}: ${failSummary}`);
+              const verdict = extractVerdict(verification.output);
 
-                    // Retry motor with cerebellum's feedback
-                    log('INFO', `CP${cpNum} Task ${taskNum}: retrying ${taskAgent} with cerebellum feedback`);
-                    result = await callAgent(taskAgent, {
-                      instruction: [
-                        taskEnvelope.instruction,
-                        '',
-                        '[VERIFICATION FAILED] An independent verification found issues with your previous output:',
-                        failSummary,
-                        verdict.recommendation ? `\nRecommendation: ${verdict.recommendation}` : '',
-                        '\nPlease re-execute and address the issues above. Use tools to actually run commands — do NOT simulate or assume results.',
-                      ].join('\n'),
-                      accept_criteria: taskCriteria,
-                      _missionId: envelope.id,
-                      memory_context: envelope.memory_context || null,
-                    });
-                    taskEnvelope.output = result.output || result.error;
+              if (verdict === 'FAIL') {
+                const failSummary = extractFailSummary(verification.output);
+                const recommendation = extractFailRecommendation(verification.output);
+                log('WARN', `Cerebellum FAIL on CP${cpNum} Task ${taskNum}: ${failSummary}`);
 
-                    // Re-verify the retry
-                    if (result.success) {
-                      log('INFO', `CP${cpNum} Task ${taskNum}: re-verifying retry output with cerebellum`);
-                      const reVerification = await callAgent('cerebellum', {
-                        instruction: [
-                          'Verify the following RETRY task output meets the acceptance criteria.',
-                          'This is a second attempt after the first failed verification.',
-                          '',
-                          '## Accept Criteria',
-                          taskCriteria,
-                          '',
-                          '## Task Output (Retry)',
-                          result.output || '(empty)',
-                        ].join('\n'),
-                        _missionId: envelope.id,
-                      });
+                // Retry motor with cerebellum's feedback
+                log('INFO', `CP${cpNum} Task ${taskNum}: retrying ${taskAgent} with cerebellum feedback`);
+                result = await callAgent(taskAgent, {
+                  instruction: [
+                    taskEnvelope.instruction,
+                    '',
+                    '[VERIFICATION FAILED] An independent verification found issues with your previous output:',
+                    failSummary,
+                    recommendation ? `\nRecommendation: ${recommendation}` : '',
+                    '\nPlease re-execute and address the issues above. Use tools to actually run commands — do NOT simulate or assume results.',
+                  ].join('\n'),
+                  accept_criteria: taskCriteria,
+                  _missionId: envelope.id,
+                  memory_context: envelope.memory_context || null,
+                });
+                taskEnvelope.output = result.output || result.error;
 
-                      const reVerOutput = reVerification.output || reVerification.error;
-                      if (reVerOutput) {
-                        try {
-                          const cleanedR = reVerOutput.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
-                          const reVerdict = JSON.parse(cleanedR);
-                          if (reVerdict.verdict === 'FAIL') {
-                            const reFailChecks = (reVerdict.checks || []).filter(c => !c.pass);
-                            log('WARN', `Cerebellum FAIL on retry CP${cpNum} Task ${taskNum}: ${reFailChecks.map(c => `${c.criteria}: ${c.evidence}`).join('; ')}`);
-                            result.success = false;
-                            result.error = `Verification failed after retry: ${reFailChecks.map(c => c.evidence).join('; ')}`;
-                          } else {
-                            log('INFO', `Cerebellum ALL_PASS on retry CP${cpNum} Task ${taskNum}`);
-                          }
-                        } catch {
-                          log('WARN', `Cerebellum returned non-JSON on re-verify CP${cpNum} Task ${taskNum}, accepting result`);
-                        }
-                      }
-                    }
+                // Re-verify the retry
+                if (result.success) {
+                  log('INFO', `CP${cpNum} Task ${taskNum}: re-verifying retry output with cerebellum`);
+                  const reVerification = await callAgent('cerebellum', {
+                    instruction: [
+                      'Verify the following RETRY task output meets the acceptance criteria.',
+                      'This is a second attempt after the first failed verification.',
+                      'Read the verification SKILL.md before rendering your verdict.',
+                      '',
+                      '## Accept Criteria',
+                      taskCriteria,
+                      '',
+                      '## Task Output (Retry)',
+                      result.output || '(empty)',
+                    ].join('\n'),
+                    _missionId: envelope.id,
+                  });
+
+                  const reVerdict = extractVerdict(reVerification.output);
+                  if (reVerdict === 'FAIL') {
+                    const reFailSummary = extractFailSummary(reVerification.output);
+                    log('WARN', `Cerebellum FAIL on retry CP${cpNum} Task ${taskNum}: ${reFailSummary}`);
+                    result.success = false;
+                    result.error = `Verification failed after retry: ${reFailSummary}`;
+                  } else if (reVerdict === 'PASS') {
+                    log('INFO', `Cerebellum PASS on retry CP${cpNum} Task ${taskNum}`);
                   } else {
-                    log('INFO', `Cerebellum ALL_PASS on CP${cpNum} Task ${taskNum}`);
+                    // No verdict tool called on retry — flag for review, don't reject
+                    log('WARN', `[TELEMETRY] verification_no_verdict: CP${cpNum} Task ${taskNum} (retry) — cerebellum did not call verdict tool`);
+                    log('WARN', `Cerebellum did not render verdict on retry CP${cpNum} Task ${taskNum} — accepting result`);
                   }
-                } catch {
-                  log('WARN', `Cerebellum returned non-JSON for CP${cpNum} Task ${taskNum}, skipping verification`);
                 }
+              } else if (verdict === 'PASS') {
+                log('INFO', `Cerebellum PASS on CP${cpNum} Task ${taskNum}`);
+              } else {
+                // No verdict tool called — escalate, don't silently accept or reject
+                log('WARN', `[TELEMETRY] verification_no_verdict: CP${cpNum} Task ${taskNum} — cerebellum did not call verdict tool`);
+                log('WARN', `Cerebellum did not render a verdict tool for CP${cpNum} Task ${taskNum} — flagging for review`);
+                // Mark as needs_review: don't fail the task, but note it was unverified
+                taskEnvelope.needs_review = true;
+                taskEnvelope.review_reason = 'Cerebellum did not render verdict via tool call';
               }
             } catch (verErr) {
               log('WARN', `Cerebellum dispatch failed for CP${cpNum} Task ${taskNum}: ${verErr.message}. Continuing without verification.`);

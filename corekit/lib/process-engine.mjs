@@ -12,6 +12,7 @@ import { readFileSync, existsSync, readdirSync } from 'fs';
 import { getGceToken } from './gce-auth.mjs';
 import { smartTruncate } from './vertex-text.mjs';
 import { firestoreEncode, firestoreDecode } from './firestore.mjs';
+import { extractVerdict, extractFailRecommendation } from './verdict.mjs';
 
 /**
  * Create a process engine instance.
@@ -1145,42 +1146,41 @@ export function createProcessEngine(deps) {
       // ---- Automatic checkpoint verification ----
       if (!cpFailed && cpResults.length > 0) {
         const verifySummary = cpResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${(r.result || '').substring(0, 500)}`).join('\n\n');
-        const verifyInstruction = [
-          `[CHECKPOINT VERIFICATION]`,
-          `The following steps just completed. Verify their work is actually correct — don't just check that commands succeeded, verify the OUTCOMES are what was intended.`,
-          ``,
-          verifySummary,
-          ``,
-          `Check:`,
-          `1. Are the outputs/artifacts actually correct? (e.g., if a URL was generated, fetch it and verify the content)`,
-          `2. Is there stale state from previous runs that might have interfered?`,
-          `3. Do the results match what the step instructions asked for?`,
-          ``,
-          `If everything checks out, respond with VERIFIED and a brief summary.`,
-          `If something is wrong, respond with FAILED and describe exactly what's wrong and what you found.`,
-        ].join('\n');
 
         log('INFO', `Process CP${cpNum}: running automatic verification`);
-        const verifyResult = await agentDispatcher('motor', {
-          instruction: verifyInstruction,
-          accept_criteria: 'Verification result with evidence',
+        const verifyResult = await agentDispatcher('cerebellum', {
+          instruction: [
+            `[CHECKPOINT VERIFICATION]`,
+            `Verify the following completed checkpoint against the acceptance criteria.`,
+            `Read the verification SKILL.md before rendering your verdict.`,
+            ``,
+            `## Acceptance Criteria`,
+            cEnvelope.accept_criteria || 'All tasks completed successfully with correct outcomes.',
+            ``,
+            `## Task Results`,
+            verifySummary,
+          ].join('\n'),
+          accept_criteria: 'Verification verdict rendered via report_pass or report_fail tool',
           _missionId: mission.id,
-          memory_context: typeof memoryContext === 'object' ? memoryContext.recalled : memoryContext,
         });
 
         if (verifyResult.success && verifyResult.output) {
-          const verifyOutput = (verifyResult.output || '').toUpperCase();
-          if (verifyOutput.includes('FAILED') || verifyOutput.includes('INCORRECT') || verifyOutput.includes('WRONG')) {
-            log('WARN', `Process CP${cpNum}: verification FAILED — ${(verifyResult.output || '').substring(0, 200)}`);
-            // Store verification failure in checkpoint and treat as checkpoint failure
+          const verdict = extractVerdict(verifyResult.output);
+          if (verdict === 'FAIL') {
+            const recommendation = extractFailRecommendation(verifyResult.output);
+            log('WARN', `Process CP${cpNum}: verification FAIL`);
             cEnvelope.status = 'failed';
-            cEnvelope.error = `Verification failed: ${(verifyResult.output || '').substring(0, 500)}`;
+            cEnvelope.error = `Verification failed: ${recommendation}`;
             cEnvelope.updated_at = now();
             await firestoreWrite('work', cEnvelope.id, cEnvelope);
             await writeHistory(cEnvelope.id, 'complete', 'failed', 'brain', `Verification failed`);
             cpFailed = true;
+          } else if (verdict === 'PASS') {
+            log('INFO', `Process CP${cpNum}: verification PASS`);
           } else {
-            log('INFO', `Process CP${cpNum}: verification PASSED`);
+            // No verdict tool called — flag for review, don't fail the checkpoint
+            log('WARN', `[TELEMETRY] verification_no_verdict: Process CP${cpNum} — cerebellum did not call verdict tool. Continuing.`);
+            log('WARN', `Process CP${cpNum}: verification inconclusive — cerebellum did not render verdict tool`);
           }
         }
       }
