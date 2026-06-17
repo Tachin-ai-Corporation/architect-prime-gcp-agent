@@ -395,6 +395,8 @@ User=root
 Environment=CORE_ROOT=${CORE_ROOT}
 Environment=GCP_PROJECT_ID=${GCP_PROJECT_ID}
 Environment=PRIME_ID=${PRIME_ID}
+Environment=AGENT_ID=${AGENT_ID:-prime}
+Environment=PATH=/snap/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=POLL_INTERVAL=5
 ExecStart=${CORE_DIR}/bin/command-runner
 Restart=always
