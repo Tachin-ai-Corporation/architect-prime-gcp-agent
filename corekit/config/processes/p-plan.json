@@ -5,6 +5,7 @@
   "status": "active",
   "version": 4,
   "visibility": "standard",
+  "intent_keywords": ["build", "create", "implement", "design", "plan", "set up", "deploy", "launch", "add", "develop", "configure", "install"],
   "parameters": {
     "goal": {
       "description": "What to plan and build — feature, project, or multi-step task",

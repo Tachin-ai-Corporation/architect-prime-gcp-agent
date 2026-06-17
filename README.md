@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.17.2 | 2026-06-17 | Knowledge Layer Hardening: full project context + source_text to motor, process selection by intent_keywords, hallucinated skill path guards, semantic stuck detection, firebase-hosting-diagnostics skill, p-memory-consolidate process, structured telemetry |
 | v2026.06.17.1 | 2026-06-17 | Idempotency & replay-safety hardening (step ledger, durable claims, checkpoint resume, idempotent createCT) + neural gateway rename (brain-gateway → neural-gateway everywhere) |
 | v2026.06.16.3 | 2026-06-16 | Brain-Part Skill Visibility & Dashboard Work Refactoring: structured scannable capabilities in system prompt, explicit cortex routing rules, R-type active container bucketing, and blocked status current-trees display |
 | v2026.06.16.2 | 2026-06-16 | Flash Load & Execution Quality: parse-first enforceSchema, deterministic titles, context fidelity (smartTruncate), evidence floor, mandatory accept_criteria, orphan resume, ears preprocess gate, LoopGuard, dashboard responsibilities → Persona |

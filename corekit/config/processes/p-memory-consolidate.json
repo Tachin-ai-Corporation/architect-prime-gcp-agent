@@ -1,0 +1,69 @@
+{
+  "id": "p-memory-consolidate",
+  "name": "Memory Consolidation",
+  "description": "Nightly memory consolidation cycle: prune working memory, reconcile long-term Core Memory, review Deep Truths. Mirrors the r-memory-consolidation responsibility's 10-step procedure as a first-class process.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "intent_keywords": ["memory", "consolidation", "consolidate", "prune", "nightly"],
+  "parameters": {},
+  "steps": [
+    {
+      "step": 1,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Pre-flight check: Verify workspace/MEMORY.md exists. If it does NOT exist, create it with the standard template header ('# Working Memory\\n\\n_Last consolidated: never_\\n\\n## Current Focus\\n\\n## Active Context\\n\\n## Open Items\\n'), verify with wc -c, and report 'Clean baseline — MEMORY.md created from template. No prior working memory to consolidate.' If MEMORY.md DOES exist, read it and report its character count and a 2-line summary of its contents.",
+      "accept_criteria": "MEMORY.md existence verified. If created from template: file exists and is under 200 chars. If already exists: character count reported."
+    },
+    {
+      "step": 2,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Gather sessions: Run `session-summary --hours 24 --limit 20` to extract a digest of recent conversations and completed work from the last 24 hours. Report the number of sessions found and a brief summary of activity themes.",
+      "accept_criteria": "Session summary output captured. Number of sessions reported."
+    },
+    {
+      "step": 3,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Gather Core Memory: Run `core-memory-read --since 30d --limit 20` to pull recent long-term storage. Then run `core-memory-read --category architecture`, `core-memory-read --category operations`, `core-memory-read --category decisions`, `core-memory-read --category patterns`, `core-memory-read --category errors` to see the full knowledge base. Identify entries that may be outdated or contradicted by recent work.",
+      "accept_criteria": "Core Memory entries retrieved and listed. Any potentially stale entries flagged with reasoning."
+    },
+    {
+      "step": 4,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Triage and reconcile: Based on MEMORY.md (step 1), sessions (step 2), and Core Memory (step 3), classify every MEMORY.md entry: ACTIVE (keep), COMPLETED (prune), STALE (prune), PROMOTE (worthy of Core Memory). For Core Memory, identify: CONTRADICTED (wrong based on recent evidence), OUTDATED (changed versions/endpoints), REDUNDANT (duplicates), STALE (not recalled in weeks). Write a triage report file to the workspace.",
+      "accept_criteria": "Triage report produced with classifications for each entry. Specific entries identified for retirement and promotion."
+    },
+    {
+      "step": 5,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Execute retirements: For each Core Memory entry identified as CONTRADICTED, OUTDATED, REDUNDANT, or STALE in the triage report, run `core-memory-retire --id <entry-id> --reason \"<specific reason>\"`. For entries needing updates, use `core-memory-write --fact \"<updated fact>\" --category <cat> --supersedes <old-id>`. Maximum 5 retirement/supersede operations.",
+      "accept_criteria": "Retirement operations completed. Each retirement logged with ID, reason, and result.",
+      "checkpointBoundary": true
+    },
+    {
+      "step": 6,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Execute promotions: For each PROMOTE item from the triage, write to Core Memory via `core-memory-write --fact \"<fact>\" --category <cat> --tags \"t1,t2\"`. Only promote facts that appeared in multiple sessions, were confirmed by the operator, or represent stable patterns. Maximum 5 writes.",
+      "accept_criteria": "Promotion operations completed. Each promotion logged with fact, category, and result."
+    },
+    {
+      "step": 7,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Rewrite MEMORY.md: Keep only ACTIVE items from the triage. Format as: '## Current Focus' (what the agent is working on), '## Active Context' (operational state, environment notes), '## Open Items' (unresolved blockers). The result MUST be under 2,000 characters. Use exec tool to write the file. Verify with wc -c.",
+      "accept_criteria": "MEMORY.md rewritten. Character count verified under 2,000. Only active items retained."
+    },
+    {
+      "step": 8,
+      "agent": "motor",
+      "intent": "execute",
+      "task": "Deep Truths review and consolidation report: Check if any promoted or long-standing Core Memory facts qualify as Deep Truths. Rules: evidence must span 3+ sessions, fact stable in Core Memory for 7+ days, must cite 2+ Core Memory entries. Use `update-deep-truths --add \"<truth>\"` or `--remove \"<text>\"` if warranted (max 2 changes). Produce a structured consolidation report covering: items triaged, retirements, promotions, Deep Truth changes, final MEMORY.md character count.",
+      "accept_criteria": "Consolidation report produced. Deep Truths reviewed (changes optional). Final MEMORY.md character count under 2,000."
+    }
+  ]
+}

@@ -3,70 +3,79 @@
 // Exposes CoreKit scripts as simplified tool objects for direct vendor SDKs.
 // Removes Vercel AI SDK wrappers entirely.
 
-import { exec as execCb } from 'node:child_process';
-import { promisify } from 'node:util';
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
-
-const execAsync = promisify(execCb);
-
-const TOOL_TIMEOUT = 120_000; // 2 minutes per tool call
-const BIN_DIR = process.env.BIN_DIR || '/opt/corekit/bin';
-
-// ---- Standard Tools definition ----
-
-export const runCommand = {
-  name: 'runCommand',
-  description: `Execute a shell command on the agent's host. You MUST read the relevant SKILL.md with readFile before your first use of any command. Skill docs: /opt/corekit/skills/<id>/SKILL.md. Never guess at command syntax.`,
-  schema: {
-    type: 'object',
-    properties: {
-      command: { type: 'string', description: 'Shell command to execute. Use CoreKit scripts for agent capabilities.' },
-    },
-    required: ['command'],
-  },
-  execute: async ({ command }) => {
-    try {
-      const { stdout, stderr } = await execAsync(command, {
-        cwd: process.env.WORKSPACE || '/opt/corekit/workspace',
-        timeout: TOOL_TIMEOUT,
-        maxBuffer: 1024 * 1024,
-        env: { ...process.env, PATH: `${BIN_DIR}:${process.env.PATH}` },
-      });
-      const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : '')).trim();
-      return { result: output || '(no output)' };
-    } catch (err) {
-      return { error: `ERROR: ${err.message}${err.stderr ? `\nSTDERR: ${err.stderr}` : ''}` };
-    }
-  },
-};
-
-export const readFileTool = {
-  name: 'readFile',
-  description: 'Read the contents of a file from the agent workspace or filesystem.',
-  schema: {
-    type: 'object',
-    properties: {
-      path: { type: 'string', description: 'Absolute or workspace-relative file path' },
-      startLine: { type: 'number', description: 'Start line (1-indexed)' },
-      endLine: { type: 'number', description: 'End line (1-indexed, inclusive)' },
-    },
-    required: ['path'],
-  },
-  execute: async ({ path, startLine, endLine }) => {
-    try {
-      const content = readFileSync(path, 'utf8');
-      if (startLine || endLine) {
-        const lines = content.split('\n');
-        const start = (startLine || 1) - 1;
-        const end = endLine || lines.length;
-        return { result: lines.slice(start, end).join('\n') };
-      }
-      return { result: content };
-    } catch (err) {
-      return { error: `ERROR: ${err.message}` };
-    }
-  },
+import { exec as execCb } from 'node:child_process';\r
+import { promisify } from 'node:util';\r
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';\r
+import { join } from 'node:path';\r
+\r
+const execAsync = promisify(execCb);\r
+\r
+const TOOL_TIMEOUT = 120_000; // 2 minutes per tool call\r
+const BIN_DIR = process.env.BIN_DIR || '/opt/corekit/bin';\r
+const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';\r
+\r
+// ---- Standard Tools definition ----\r
+\r
+export const runCommand = {\r
+  name: 'runCommand',\r
+  description: `Execute a shell command on the agent's host. You MUST read the relevant SKILL.md with readFile before your first use of any command. Skill docs: /opt/corekit/skills/<id>/SKILL.md. Never guess at command syntax.`,\r
+  schema: {\r
+    type: 'object',\r
+    properties: {\r
+      command: { type: 'string', description: 'Shell command to execute. Use CoreKit scripts for agent capabilities.' },\r
+    },\r
+    required: ['command'],\r
+  },\r
+  execute: async ({ command }) => {\r
+    try {\r
+      const { stdout, stderr } = await execAsync(command, {\r
+        cwd: process.env.WORKSPACE || '/opt/corekit/workspace',\r
+        timeout: TOOL_TIMEOUT,\r
+        maxBuffer: 1024 * 1024,\r
+        env: { ...process.env, PATH: `${BIN_DIR}:${process.env.PATH}` },\r
+      });\r
+      const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : '')).trim();\r
+      return { result: output || '(no output)' };\r
+    } catch (err) {\r
+      return { error: `ERROR: ${err.message}${err.stderr ? `\nSTDERR: ${err.stderr}` : ''}` };\r
+    }\r
+  },\r
+};\r
+\r
+export const readFileTool = {\r
+  name: 'readFile',\r
+  description: 'Read the contents of a file from the agent workspace or filesystem.',\r
+  schema: {\r
+    type: 'object',\r
+    properties: {\r
+      path: { type: 'string', description: 'Absolute or workspace-relative file path' },\r
+      startLine: { type: 'number', description: 'Start line (1-indexed)' },\r
+      endLine: { type: 'number', description: 'End line (1-indexed, inclusive)' },\r
+    },\r
+    required: ['path'],\r
+  },\r
+  execute: async ({ path, startLine, endLine }) => {\r
+    try {\r
+      const content = readFileSync(path, 'utf8');\r
+      if (startLine || endLine) {\r
+        const lines = content.split('\n');\r
+        const start = (startLine || 1) - 1;\r
+        const end = endLine || lines.length;\r
+        return { result: lines.slice(start, end).join('\n') };\r
+      }\r
+      return { result: content };\r
+    } catch (err) {\r
+      if (err.code === 'ENOENT' && path.includes('/skills/')) {\r
+        try {\r
+          const available = readdirSync(SKILLS_DIR)\r
+            .filter(d => existsSync(join(SKILLS_DIR, d, 'SKILL.md')))\r
+            .join(', ');\r
+          return { error: `ERROR: Skill not found at ${path}. Available skills: [${available}]. Use: readFile ${SKILLS_DIR}/<id>/SKILL.md` };\r
+        } catch {}\r
+      }\r
+      return { error: `ERROR: ${err.message}` };\r
+    }\r
+  },\r
 };
 
 export const writeFileTool = {

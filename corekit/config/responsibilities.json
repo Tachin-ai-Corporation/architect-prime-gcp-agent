@@ -7,6 +7,7 @@
       "schedule": "0 8 * * *",
       "enabled": true,
       "min_spacing_minutes": 720,
+      "processRef": "p-memory-consolidate",
       "instruction": "Execute the nightly memory consolidation cycle: prune working memory of completed and stale entries, reconcile long-term Core Memory by retiring outdated facts and promoting durable new ones, and review Deep Truths for behavioral updates.",
       "context": {
         "purpose": "MEMORY.md is the agent's working scratchpad — loaded into every Cortex prompt as baseline knowledge. It accumulates freely during the day but must be pruned nightly to stay under 2,000 characters. Core Memory in Firestore is the long-term archive — facts that survive across days and weeks. It must also be actively pruned: stale entries retired, contradicted facts superseded, and only genuinely stable new facts promoted. Deep Truths in SOUL.md are behavioral constraints loaded into every prompt — they change rarely and only with strong multi-session evidence.",

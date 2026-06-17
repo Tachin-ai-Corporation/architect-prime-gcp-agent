@@ -13,6 +13,14 @@ accounts, enabled APIs, running services, and project number before attempting t
 task. Check project context in the system prompt first — only dispatch discovery for
 information not already known.
 
+## Diagnostic Intent Detection
+When the user describes a symptom, bug, or asks "why isn't X working" / "X is not being
+served" / "diagnose this" — prefer `p-investigate` over `p-plan`. Investigation processes
+are purpose-built for evidence-gathering and hypothesis-testing. Plan processes are for
+building new things. If the user's message contains diagnostic keywords — "not working",
+"isn't served", "why", "diagnose", "broken", "failing", "debug", "error", "investigate" —
+that is strong signal for `follow_process` with `p-investigate`.
+
 ## Evidence-Based Escalations
 When blocked and needing user help, escalation messages must contain:
 - The exact error from tools (quoted).

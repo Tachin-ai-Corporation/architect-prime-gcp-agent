@@ -1063,6 +1063,9 @@ export function createProcessEngine(deps) {
           : null;
 
         // Dispatch to agent
+        const dispatchProjCtx = mission.project_id
+          ? ((_buildProjCtx || (projects ? (pid, ctx) => projects.buildContext(pid, ctx, coreDir) : null))?.(mission.project_id, mission.context) || null)
+          : null;
         const dispatchEnvelope = {
           instruction,
           accept_criteria: tEnv.accept_criteria || '',
@@ -1070,6 +1073,8 @@ export function createProcessEngine(deps) {
           prior_results_context: priorContext,
           memory_context: typeof memoryContext === 'object' ? memoryContext.recalled : memoryContext,
           _missionId: mission.id,
+          _projectContext: dispatchProjCtx,
+          _sourceText: mission.source_text || null,
         };
 
         const result = await agentDispatcher(taskAgent, dispatchEnvelope);

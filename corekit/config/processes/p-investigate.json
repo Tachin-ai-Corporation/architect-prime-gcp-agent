@@ -5,6 +5,7 @@
   "status": "active",
   "version": 3,
   "visibility": "standard",
+  "intent_keywords": ["not working", "broken", "failing", "diagnose", "debug", "why", "error", "investigate", "isn't", "not served", "not accessible", "404", "timeout"],
   "parameters": {
     "topic": {
       "description": "What to investigate — issue, question, or behavior to understand",

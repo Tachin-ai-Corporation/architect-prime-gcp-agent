@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.17.1)
+## Current Architecture (v2026.06.17.2)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -18,6 +18,14 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Brain-Part Skill Visibility & Dashboard Work Refactoring (v2026.06.16.3)**:
   - **Structured Agent Registry**: The raw JSON registry dump in the Cortex system prompt has been replaced with a clean, scannable format, making agent capabilities and tool constraints highly visible.
   - **Explicit Task Routing Rules**: Added rules in Prime and Fleet Cortex `SOUL.md` files mapping memory tasks to `temporal-memory` only, mutations to `motor`, research to `temporal-research`, verification to `cerebellum`, and decomposition to `prefrontal`, strictly forbidding assigning tasks to agents lacking the required tools.
+- **Knowledge Layer Hardening (v2026.06.17.2)**:
+  - **Full project context to Motor**: `_projectContext` and `_sourceText` flow as first-class fields through all 3 motor dispatch paths (checkpoint, resume, process-engine). Motor's user message now includes `## Project Context` and `## Original User Request` sections, giving motor the full operational map (hosting rewrites, bucket names, service URLs) and the user's raw request.
+  - **Process selection by intent**: `intent_keywords` arrays on process definitions (p-investigate, p-plan) surfaced in Cortex decide payload. DevOps Cortex SOUL adds "Diagnostic Intent Detection" section to prefer p-investigate for symptom/bug reports.
+  - **Hallucinated path guard**: `readFile` on nonexistent skill paths lists available skills. Both skill catalogs (gateway-side `buildSkillCatalogPrompt` and brain-side `formatSkillCatalog`) emit exact `→ readFile <path>` per skill with "Do NOT guess skill paths."
+  - **Semantic stuck detection**: LoopGuard enhanced with per-tool-name counters (nudge at 8 calls regardless of args), structured `[STUCK REPORT]` JSON on terminate, and `getMetrics()` export.
+  - **firebase-hosting-diagnostics skill**: 6-step diagnostic procedure codifying Drive→sync→GCS→proxy→Firebase Hosting pipeline investigation.
+  - **p-memory-consolidate process**: 8-step dedicated process for nightly memory consolidation with pre-flight bootstrap (step 1 creates MEMORY.md template if missing). Wired to `r-memory-consolidation` via `processRef`.
+  - **Structured telemetry**: `[TELEMETRY] motor_dispatch` and `[TELEMETRY] process_selected` structured log lines for observing motor stuck rate, timeout rate, project context injection status, and process selection.
 - **Idempotency & Replay-Safety Hardening (v2026.06.17.1)**:
   - **Step Ledger**: Deterministic step keys (SHA-256 of `[envId, iteration, action, target]`) recorded in a `step_ledger` field on each envelope. Before every dispatch, the brain checks the ledger and skips already-completed steps — preventing duplicate work on replay.
   - **Durable Claim**: `claimed_by` / `claimed_at_ms` fields on envelopes provide a Firestore-backed processing lock that survives daemon restarts. Stale claims auto-cleared on startup.
@@ -32,7 +40,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Context fidelity**: Prior results and failure context forwarded via `smartTruncate` (deterministic head+tail) instead of `smartSummarize` (LLM). Preserves raw error messages, file paths, and tool output that LLM summarization was destroying.
   - **Evidence floor**: After motor returns, deterministic check flags suspiciously shallow completions (fast + few tools + no writes) with `[EVIDENCE WARNING]` annotation for cerebellum.
   - **Mandatory accept_criteria**: Tasks without explicit criteria get a default, ensuring cerebellum verification never silently skips.
-  - **LoopGuard**: Detects stuck motor loops (duplicate tool calls or consecutive errors). Nudge at 3/5, terminate at 5/8.
+  - **LoopGuard**: Detects stuck motor loops. Duplicate tool calls: nudge at 3, terminate at 5. Consecutive errors: nudge at 5, terminate at 8. Semantic stuck detection: nudge at 8 same-tool calls even with different args. Structured `[STUCK REPORT]` JSON on terminate. `getMetrics()` export for telemetry.
   - **Orphan resume**: Startup recovery resumes missions with terminal children (re-enters processEnvelope for Cortex re-planning) instead of skipping them.
 - **Prime role: infrastructure only** — fleet management (hire/fire/upgrade/monitor), visibility, delegation. ZERO Google Workspace tools. Prime's skills will be progressively exposed through the dashboard for manual triggering.
 - **Tool ownership boundaries:**

@@ -7,7 +7,7 @@
   "origin": "specialty",
   "category": "infrastructure",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": ["gcloud", "gsutil", "firebase", "docker"],
   "requires": {},
   "when_to_use": "When performing GCP infrastructure tasks via gcloud CLI"
 }

@@ -300,10 +300,11 @@ let SKILL_INDEX = buildSkillIndex();
 // Format the full skill index as a readable catalog for execution agents
 function formatSkillCatalog(skillIndex) {
   if (!skillIndex?.length) return '';
+  const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';
   const entries = skillIndex.map(s =>
-    `- ${s.name} (${s.id}): ${s.when_to_use || s.category || ''}`
+    `- ${s.name} (${s.id}): ${s.when_to_use || s.category || ''}\n  → readFile ${SKILLS_DIR}/${s.id}/SKILL.md`
   );
-  return `\n\n[AVAILABLE SKILLS]\nRead the SKILL.md before using any tool: readFile /opt/corekit/skills/<id>/SKILL.md\n${entries.join('\n')}\n[END AVAILABLE SKILLS]`;
+  return `\n\n[AVAILABLE SKILLS]\nBefore using any command tool, read the relevant SKILL.md:\n${entries.join('\n')}\n\nDo NOT guess skill paths. Only the paths listed above exist.\n[END AVAILABLE SKILLS]`;
 }
 
 // ---- Project registry (via corekit/lib/projects.mjs, Phase 1A extraction) ----
@@ -1030,6 +1031,7 @@ function buildUserPrompt(mode, payload) {
         id: p.id, name: p.name, description: (p.description || '').substring(0, 200),
         step_count: (p.steps || []).length,
         parameters: p.parameters || {},
+        intent_keywords: p.intent_keywords || [],
       }));
     }
     // Inject Brief from ANALYZE phase when present
@@ -1110,6 +1112,8 @@ async function callAgent(agentId, envelope) {
     `[BRAIN-ORCHESTRATED]`,
     instruction,
     workspaceDirective,
+    envelope._projectContext ? `\n## Project Context\n${envelope._projectContext}` : '',
+    envelope._sourceText ? `\n## Original User Request\n${envelope._sourceText}` : '',
     context ? `\n## Context\n${context}` : '',
     criteria ? `\n## Acceptance Criteria\n${criteria}` : '',
     envelope.prior_results_context ? `\n## Prior Work\n${envelope.prior_results_context}` : '',
@@ -2135,19 +2139,32 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
       const skillCatalog = (taskAgent === 'motor' || taskAgent === 'temporal-research')
         ? formatSkillCatalog(SKILL_INDEX) : '';
 
+      // Inject project context for resume path (matches checkpoint dispatch at L3218)
+      let resumeInstruction = taskDesc;
+      if (envelope.project_id) {
+        const projCtx = buildProjectContext(envelope.project_id, envelope.context);
+        if (projCtx) {
+          resumeInstruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${resumeInstruction}`;
+        }
+      }
+
       let result = await callAgent(taskAgent, {
-        instruction: taskDesc + skillCatalog,
+        instruction: resumeInstruction + skillCatalog,
         accept_criteria: taskCriteria,
         _missionId: envelope.id,
+        _projectContext: envelope.project_id ? buildProjectContext(envelope.project_id, envelope.context) : null,
+        _sourceText: envelope.source_text || null,
         memory_context: envelope.memory_context || null,
       });
 
       // Single retry on failure
       if (!result.success) {
         result = await callAgent(taskAgent, {
-          instruction: `${taskDesc}${skillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again.`,
+          instruction: `${resumeInstruction}${skillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again.`,
           accept_criteria: taskCriteria,
           _missionId: envelope.id,
+          _projectContext: envelope.project_id ? buildProjectContext(envelope.project_id, envelope.context) : null,
+          _sourceText: envelope.source_text || null,
           memory_context: envelope.memory_context || null,
         });
       }
@@ -2684,6 +2701,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
 
       // Hand off to deterministic executor — exits the Cortex decide loop
       log('INFO', `follow_process: handing off '${processId}' to executeProcess`);
+      // Telemetry: process selection
+      log('INFO', `[TELEMETRY] process_selected: ${JSON.stringify({ processId, missionId: envelope.id, projectId: envelope.project_id || null, iteration })}`);
       const processResult = await executeProcess(null, decision, memoryContext || {}, processId, envelope);
       if (processResult === 'fallback_to_decide') {
         log('WARN', `follow_process: process '${processId}' fell back to decide — continuing loop`);
@@ -3229,10 +3248,17 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
             ? formatSkillCatalog(SKILL_INDEX)
             : '';
 
+          // Build project context once for reuse in dispatch and retry
+          const dispatchProjCtx = envelope.project_id
+            ? buildProjectContext(envelope.project_id, envelope.context)
+            : null;
+
           let result = await callAgent(taskAgent, {
             instruction: taskEnvelope.instruction + skillCatalog,
             accept_criteria: taskCriteria,
             _missionId: envelope.id,  // mission-scoped shared workspace
+            _projectContext: dispatchProjCtx,
+            _sourceText: envelope.source_text || null,
             context_summary: [...allResults, ...cpResults].length > 0
               ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
               : undefined,
@@ -3249,6 +3275,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
               instruction: `${taskEnvelope.instruction}${skillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
               accept_criteria: taskCriteria,
               _missionId: envelope.id,
+              _projectContext: dispatchProjCtx,
+              _sourceText: envelope.source_text || null,
               memory_context: envelope.memory_context || null,
             });
           }
@@ -3420,6 +3448,20 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
 
           log('INFO', `CP${cpNum} Task ${taskNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
 
+          // Telemetry: motor dispatch metrics
+          if (taskAgent === 'motor') {
+            const rText = result.output || '';
+            const stuckReport = rText.match(/\[STUCK REPORT\]\s*({[^}]+})/)?.[1] || null;
+            const toolLogMatch = rText.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/);
+            const toolCount = toolLogMatch ? (toolLogMatch[1].match(/\[TOOL\]/g) || []).length : 0;
+            log('INFO', `[TELEMETRY] motor_dispatch: ${JSON.stringify({
+              missionId: envelope.id, checkpoint: cpNum, task: taskNum,
+              success: result.success, durationMs: result.durationMs,
+              toolCount, stuck: !!stuckReport,
+              projectContextInjected: !!dispatchProjCtx,
+              sourceTextInjected: !!(envelope.source_text),
+            })}`);
+          }
           if (!result.success) {
             cpFailed = true;
             break;

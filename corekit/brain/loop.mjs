@@ -37,9 +37,12 @@ const ERROR_PATTERNS = ['ERROR:', 'No such file', 'command not found',
 class LoopGuard {
   constructor() {
     this.callCounts = new Map();
+    this.toolNameCounts = new Map();
     this.consecutiveErrors = 0;
     this.nudgedDuplicate = false;
     this.nudgedErrors = false;
+    this._nudgedSemantic = false;
+    this._terminated = false;
   }
 
   check(toolName, args, result) {
@@ -47,14 +50,25 @@ class LoopGuard {
     const count = (this.callCounts.get(sig) || 0) + 1;
     this.callCounts.set(sig, count);
 
+    const nameCount = (this.toolNameCounts.get(toolName) || 0) + 1;
+    this.toolNameCounts.set(toolName, nameCount);
+
     const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
     const isError = ERROR_PATTERNS.some(p => resultStr.includes(p));
     if (isError) { this.consecutiveErrors++; }
     else { this.consecutiveErrors = 0; this.nudgedErrors = false; }
 
     if (count >= DUPLICATE_TERMINATE) {
+      this._terminated = true;
+      const argsStr = JSON.stringify(args);
+      const report = JSON.stringify({
+        stuck_tool: toolName,
+        stuck_args: argsStr.length > 200 ? argsStr.substring(0, 200) + '…' : argsStr,
+        total_calls: this._totalCalls(),
+        unique_signatures: this.callCounts.size,
+      });
       return { action: 'terminate',
-        message: `[LOOP DETECTED] You called ${toolName} with the same arguments ${count} times. The result is not changing. Stopping — report FAILURE with what you observed.` };
+        message: `[LOOP DETECTED] You called ${toolName} with the same arguments ${count} times. The result is not changing. Stopping — report FAILURE with what you observed.\n[STUCK REPORT] ${report}` };
     }
     if (count >= DUPLICATE_NUDGE && !this.nudgedDuplicate) {
       this.nudgedDuplicate = true;
@@ -62,6 +76,7 @@ class LoopGuard {
         message: `[WARNING] You've called ${toolName} with identical arguments ${count} times and the result hasn't changed. Stop retrying and either try a different approach or report FAILURE.` };
     }
     if (this.consecutiveErrors >= ERROR_TERMINATE) {
+      this._terminated = true;
       return { action: 'terminate',
         message: `[LOOP DETECTED] ${this.consecutiveErrors} consecutive tool calls returned errors. Stopping — report FAILURE with what you observed.` };
     }
@@ -70,7 +85,30 @@ class LoopGuard {
       return { action: 'nudge',
         message: `[WARNING] ${this.consecutiveErrors} consecutive tool calls have returned errors. If the task cannot be completed, report FAILURE with what you've observed.` };
     }
+    if (nameCount >= 8 && !this._nudgedSemantic) {
+      this._nudgedSemantic = true;
+      return { action: 'nudge',
+        message: `[WARNING] You have called ${toolName} ${nameCount} times this turn (with varying arguments). You may be stuck in a semantic loop. Consider a completely different strategy or report FAILURE.` };
+    }
     return { action: 'ok' };
+  }
+
+  _totalCalls() {
+    let n = 0;
+    for (const c of this.callCounts.values()) n += c;
+    return n;
+  }
+
+  getMetrics() {
+    let duplicateCalls = 0;
+    for (const c of this.callCounts.values()) { if (c > 1) duplicateCalls += c; }
+    return {
+      totalCalls: this._totalCalls(),
+      uniqueSignatures: this.callCounts.size,
+      duplicateCalls,
+      consecutiveErrors: this.consecutiveErrors,
+      terminated: this._terminated,
+    };
   }
 }
 
@@ -91,7 +129,10 @@ function buildSkillCatalogPrompt() {
     }
   } catch {}
   if (entries.length === 0) return '';
-  return `\n\n## Available Skills\nBefore using any command tool, read the relevant SKILL.md for exact syntax:\n  readFile /opt/corekit/skills/<id>/SKILL.md\n\n${entries.join('\n')}\n`;
+  return `\n\n## Available Skills\nBefore using any command tool, read the relevant SKILL.md:\n${entries.map(e => {
+    const id = e.match(/- .*?\(([^)]+)\)/)?.[1] || '';
+    return `${e}\n  → readFile ${SKILLS_DIR}/${id}/SKILL.md`;
+  }).join('\n')}\n\nDo NOT guess skill paths. Only the paths listed above exist.\n`;
 }
 
 let _skillCatalog = null;
