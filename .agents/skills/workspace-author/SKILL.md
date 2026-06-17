@@ -23,6 +23,6 @@ description: Use when creating/editing any agent workspace file — SOUL.md, IDE
 - For fleet specialty workspace: include specialty-aware identity and capabilities
 
 ## How workspaces are loaded
-The brain gateway reads workspace files natively from the mounted workspace directory.
+The neural gateway reads workspace files natively from the mounted workspace directory.
 System prompt = SOUL.md only. Skill documentation is accessed on-demand via `readFile /opt/corekit/skills/<name>/SKILL.md`.
 `assemble-persona` appends specialty-specific SOUL sections during bootstrap.

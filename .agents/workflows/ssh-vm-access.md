@@ -22,7 +22,7 @@ echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=architect-prime-be
 
 Example (gateway status check):
 ```powershell
-echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo systemctl status agent-brain-gateway"
+echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo systemctl status agent-neural-gateway"
 ```
 
 ## Common commands
@@ -30,11 +30,11 @@ echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=arc
 Substitute into the `--command=` pattern above:
 
 ```bash
-# Brain Gateway status
-sudo systemctl status agent-brain-gateway
+# Neural Gateway status
+sudo systemctl status agent-neural-gateway
 
-# Brain Gateway logs
-sudo journalctl -u agent-brain-gateway --no-pager -n 50
+# Neural Gateway logs
+sudo journalctl -u agent-neural-gateway --no-pager -n 50
 
 # Agent ears logs
 sudo journalctl -u agent-ears --no-pager -n 20

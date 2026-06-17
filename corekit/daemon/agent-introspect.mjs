@@ -534,9 +534,9 @@ async function tick() {
     // This will kill this process (running inside the container),
     // but systemd RestartAlways will bring us back.
     if (needsRestart) {
-      log('Restarting agent-brain-gateway service (deferred from set_model)...');
+      log('Restarting agent-neural-gateway service (deferred from set_model)...');
       try {
-        execSync('systemctl restart agent-brain-gateway', { timeout: 15000, stdio: 'pipe' });
+        execSync('systemctl restart agent-neural-gateway', { timeout: 15000, stdio: 'pipe' });
       } catch (err) {
         log('Gateway restart error', { error: err.message });
       }

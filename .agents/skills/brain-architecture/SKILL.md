@@ -1,6 +1,6 @@
 ---
 name: brain-architecture
-description: Use when working on the brain agent system — creating/editing agent workspace files, updating agent-registry.json, modifying bootstrap config agent definitions, or brain gateway configuration. Also for agent routing and intent classification.
+description: Use when working on the brain agent system — creating/editing agent workspace files, updating agent-registry.json, modifying bootstrap config agent definitions, or neural gateway configuration. Also for agent routing and intent classification.
 ---
 # Brain Architecture Implementation
 
@@ -54,6 +54,6 @@ description: Use when working on the brain agent system — creating/editing age
 
 ## Gateway Integration Points
 - Gateway API: `POST http://localhost:18789/v1/chat/completions` with `model: "brain"` or `model: "brain/<agentId>"`
-- `agent-ears` bridges input channels → brain gateway (fire-and-forget POST)
+- `agent-ears` bridges input channels → neural gateway (fire-and-forget POST)
 - `agent-mouth` bridges gateway output → delivery channel (GChat or Firestore)
 - Fleet tools (`fleet-deploy`, etc.) available via VM execution on PATH

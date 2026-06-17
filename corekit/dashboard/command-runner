@@ -198,8 +198,8 @@ handle_upgrade_corekit() {
 }
 
 handle_gateway_restart() {
-  log "Executing: systemctl restart agent-brain-gateway"
-  systemctl restart agent-brain-gateway 2>&1
+  log "Executing: systemctl restart agent-neural-gateway"
+  systemctl restart agent-neural-gateway 2>&1
   log "Gateway restarted."
 }
 
@@ -313,7 +313,7 @@ handle_set_model() {
 
   if [[ $dm_exit -eq 0 ]]; then
     log "Restarting gateway..."
-    systemctl restart agent-brain-gateway 2>&1
+    systemctl restart agent-neural-gateway 2>&1
     log "Model updated. Gateway restarted."
   fi
   return $dm_exit

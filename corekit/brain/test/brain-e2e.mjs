@@ -19,7 +19,7 @@ if (!project) {
   process.exit(1);
 }
 
-describe('Brain gateway e2e', () => {
+describe('Neural gateway e2e', () => {
 
   it('GET /healthz returns ok', async () => {
     const res = await fetch(`http://127.0.0.1:${PORT}/healthz`);

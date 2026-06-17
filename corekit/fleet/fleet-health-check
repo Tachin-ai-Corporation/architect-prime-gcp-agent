@@ -223,7 +223,7 @@ print(cf)
 
     RESTART_OK=false
     if gcloud compute ssh "$VM" --zone="$ZONE" --quiet \
-        --command="sudo systemctl restart agent-brain-gateway 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
+        --command="sudo systemctl restart agent-neural-gateway 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
       RESTART_OK=true
     fi
 

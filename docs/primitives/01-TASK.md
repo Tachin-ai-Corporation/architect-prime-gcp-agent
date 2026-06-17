@@ -86,7 +86,7 @@ stateDiagram-v2
 
 ## Dispatch
 
-The brain daemon dispatches Tasks to agents via HTTP calls to the brain gateway:
+The brain daemon dispatches Tasks to agents via HTTP calls to the neural gateway:
 
 1. Task is activated by the process executor (`runProcessPlan`)
 2. `callAgent(agentId, payload)` sends the instruction to the target agent

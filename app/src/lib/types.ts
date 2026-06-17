@@ -114,6 +114,29 @@ export interface WorkEnvelope {
   project_id?: string | null;
   delivery_status?: string | null;
   plan_id?: string | null;
+  // Idempotency & replay-safety fields (CP2-CP5)
+  step_ledger?: Record<string, StepLedgerEntry>;
+  claimed_by?: string | null;
+  claimed_at_ms?: number | null;
+  _cp_progress?: CheckpointProgress | null;
+}
+
+/** Step ledger entry — records a completed dispatch step for replay dedup */
+export interface StepLedgerEntry {
+  status: 'complete' | 'failed';
+  agent: string;
+  ts: string;
+  durationMs: number;
+  outputHash: string | null;
+}
+
+/** Checkpoint plan resume state — persisted for crash recovery */
+export interface CheckpointProgress {
+  checkpointIndex: number;
+  taskIndex: number;
+  allResults: Array<Record<string, unknown>>;
+  checkpoints?: Array<Record<string, unknown>>;
+  decision?: Record<string, unknown>;
 }
 
 export interface WorkHistoryEntry {

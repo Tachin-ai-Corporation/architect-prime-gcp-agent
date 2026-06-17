@@ -97,7 +97,7 @@ export function loadAgentConfig(agentId) {
 }
 
 /**
- * Get the brain gateway config.
+ * Get the neural gateway config.
  */
 export function getBrainConfig() {
   const contracts = getContracts();

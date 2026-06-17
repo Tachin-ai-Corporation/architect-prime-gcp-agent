@@ -52,7 +52,7 @@ Agent VMs (GCE, host-native under systemd — no containers)
     ├── agent-brain      — envelope orchestrator: classify, decide, dispatch
     ├── agent-mouth      — output delivery to the channel
     ├── agent-introspect — dashboard introspection bus
-    └── brain-gateway    — cognitive organs: cortex, prefrontal, motor,
+    └── neural-gateway    — cognitive organs: cortex, prefrontal, motor,
                            cerebellum, temporal-research, temporal-memory
 ```
 
@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.17.1 | 2026-06-17 | Idempotency & replay-safety hardening (step ledger, durable claims, checkpoint resume, idempotent createCT) + neural gateway rename (brain-gateway → neural-gateway everywhere) |
 | v2026.06.16.3 | 2026-06-16 | Brain-Part Skill Visibility & Dashboard Work Refactoring: structured scannable capabilities in system prompt, explicit cortex routing rules, R-type active container bucketing, and blocked status current-trees display |
 | v2026.06.16.2 | 2026-06-16 | Flash Load & Execution Quality: parse-first enforceSchema, deterministic titles, context fidelity (smartTruncate), evidence floor, mandatory accept_criteria, orphan resume, ears preprocess gate, LoopGuard, dashboard responsibilities → Persona |
 | v2026.06.15.3.0 | 2026-06-15 | Product-architect abstracted: removed all Architect Prime project context from role definition, renamed repo-audit→codebase-audit, discovery-driven auditing, empty responsibilities (configured at runtime) |

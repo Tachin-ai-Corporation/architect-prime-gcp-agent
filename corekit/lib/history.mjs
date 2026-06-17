@@ -29,23 +29,35 @@ export function createHistoryWriter(deps) {
    * Each record gets a unique ID based on `{ms}-{counter}` where counter
    * increments within the same millisecond to prevent collisions.
    *
+   * CP4: Optional logicalKey parameter for replay dedup. When provided,
+   * uses the logical key as the document ID instead of the timestamp-based
+   * key. Firestore PATCH is upsert semantics, so replaying the same
+   * logical transition produces an overwrite rather than a duplicate.
+   *
    * @param {string}      envelopeId - Envelope ID (parent document)
    * @param {string|null} prevStatus - Previous status (null for creation)
    * @param {string}      newStatus  - New status being transitioned to
    * @param {string}      agent      - Agent or system that triggered the transition
    * @param {string}      detail     - Human-readable description (truncated to 1000 chars)
+   * @param {string}      [logicalKey] - Optional dedup key for replay-safe writes
    */
-  async function write(envelopeId, prevStatus, newStatus, agent, detail) {
-    const ms = Date.now();
-    if (ms === _historyLastMs) {
-      _historyCounter++;
+  async function write(envelopeId, prevStatus, newStatus, agent, detail, logicalKey) {
+    let historyId;
+    if (logicalKey) {
+      // CP4: Use logical key as doc ID — replay-safe (Firestore PATCH = upsert)
+      historyId = logicalKey;
     } else {
-      _historyCounter = 0;
-      _historyLastMs = ms;
+      const ms = Date.now();
+      if (ms === _historyLastMs) {
+        _historyCounter++;
+      } else {
+        _historyCounter = 0;
+        _historyLastMs = ms;
+      }
+      historyId = `${ms}-${_historyCounter}`;
     }
-    const historyId = `${ms}-${_historyCounter}`;
     await firestoreWrite(`work/${envelopeId}/history`, historyId, {
-      seq: ms,
+      seq: Date.now(),
       prev_status: prevStatus,
       new_status: newStatus,
       agent,

@@ -226,6 +226,16 @@ for (const x of t.types) console.log(x.id);
     fi
   done
 
+  # ---- Check 10b: idempotency config fields (CP6) ----
+  for field in step_ledger_enabled checkpoint_resume_enabled claim_stale_ms; do
+    VAL="$(read_contract "dispatch.${field}" 2>/dev/null || echo '')"
+    if [[ -n "$VAL" ]]; then
+      pass "dispatch.${field} = ${VAL}"
+    else
+      warn "dispatch.${field} missing from contracts.json (defaults will apply)"
+    fi
+  done
+
   # ---- Check 11: projects config fields ----
   for field in context_max_tokens promotion_auto archive_completed_after_days; do
     VAL="$(read_contract "projects.${field}" 2>/dev/null || echo '')"
@@ -344,10 +354,10 @@ if [[ "$MODE" == "runtime" ]]; then
   log "Checking runtime state..."
 
   # ---- Check 1: Gateway service active ----
-  if systemctl is-active --quiet agent-brain-gateway 2>/dev/null; then
-    pass "agent-brain-gateway service active"
+  if systemctl is-active --quiet agent-neural-gateway 2>/dev/null; then
+    pass "agent-neural-gateway service active"
   else
-    fail "agent-brain-gateway service not active"
+    fail "agent-neural-gateway service not active"
   fi
 
   # ---- Check 2: Gateway health ----

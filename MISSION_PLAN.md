@@ -38,7 +38,7 @@ Agent VMs (GCE, host-native — no containers)
     ├── agent-brain      (systemd) — envelope orchestrator: classify, decide, dispatch
     ├── agent-mouth      (systemd) — output delivery to the channel
     ├── agent-introspect (systemd) — dashboard introspection bus
-    └── brain-gateway    (systemd) — the cognitive organs:
+    └── neural-gateway    (systemd) — the cognitive organs:
         ├── cortex            — the voice: classify, decide, synthesize
         ├── prefrontal        — the structurer: M→C→T blueprints
         ├── motor             — the hands: tools, exec, files (the only mutator)

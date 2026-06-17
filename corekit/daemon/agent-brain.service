@@ -1,6 +1,6 @@
 [Unit]
 Description=Agent Brain v3 Orchestration Service
-After=network-online.target agent-brain-gateway.service
+After=network-online.target agent-neural-gateway.service
 Wants=network-online.target
 
 [Service]

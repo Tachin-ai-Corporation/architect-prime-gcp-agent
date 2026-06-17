@@ -33,7 +33,7 @@ echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-p
 echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-brain --no-pager -n 80 --since '2026-06-12 19:00'"
 
 # Gateway logs — shows LLM calls, tool use, step progression for motor/cortex
-echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-brain-gateway --no-pager -n 50"
+echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-neural-gateway --no-pager -n 50"
 
 # Ears logs — shows inbound message pickup from GChat/Firestore
 echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -50 /var/log/agent-ears.log"
@@ -42,7 +42,7 @@ echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-p
 echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -50 /var/log/agent-mouth.log"
 
 # Service status — check if daemons are running or crash-looping
-echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo systemctl status agent-brain agent-brain-gateway agent-ears agent-mouth --no-pager"
+echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo systemctl status agent-brain agent-neural-gateway agent-ears agent-mouth --no-pager"
 ```
 
 ### What to Look For in Brain Logs

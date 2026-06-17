@@ -1,15 +1,15 @@
 # Architect Prime — Project Context
 
 ## What this project is
-Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native brain gateway, and Google Chat identity) that collaborate with humans via Google Chat.
+Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.16.3)
+## Current Architecture (v2026.06.17.1)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
 - **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, introspect queries, config
 - **Compute Engine VMs** — One per Prime + one per fleet agent
-- **Brain Gateway** — Host-native AI brain gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC)
+- **Neural Gateway** — Host-native AI neural gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC)
 - **Google Chat** — Agent-to-human communication via DWD
 
 ### Prime VM Architecture
@@ -18,6 +18,13 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Brain-Part Skill Visibility & Dashboard Work Refactoring (v2026.06.16.3)**:
   - **Structured Agent Registry**: The raw JSON registry dump in the Cortex system prompt has been replaced with a clean, scannable format, making agent capabilities and tool constraints highly visible.
   - **Explicit Task Routing Rules**: Added rules in Prime and Fleet Cortex `SOUL.md` files mapping memory tasks to `temporal-memory` only, mutations to `motor`, research to `temporal-research`, verification to `cerebellum`, and decomposition to `prefrontal`, strictly forbidding assigning tasks to agents lacking the required tools.
+- **Idempotency & Replay-Safety Hardening (v2026.06.17.1)**:
+  - **Step Ledger**: Deterministic step keys (SHA-256 of `[envId, iteration, action, target]`) recorded in a `step_ledger` field on each envelope. Before every dispatch, the brain checks the ledger and skips already-completed steps — preventing duplicate work on replay.
+  - **Durable Claim**: `claimed_by` / `claimed_at_ms` fields on envelopes provide a Firestore-backed processing lock that survives daemon restarts. Stale claims auto-cleared on startup.
+  - **Idempotent createCT**: All C→T pair creation uses a `ctKey` for dedup — replaying a crash-interrupted synthesis or ack never creates duplicate envelopes.
+  - **Checkpoint Resume**: `_cp_progress` persisted after each task step. On crash recovery, `processEnvelope` detects saved progress and resumes from the last completed step via `executeCheckpointPlanResume()`.
+  - **Feature flags**: `dispatch.step_ledger_enabled`, `dispatch.checkpoint_resume_enabled`, `dispatch.claim_stale_ms` in contracts.json (all default-enabled).
+- **Neural Gateway Rename (v2026.06.17.1)**: `agent-brain-gateway` systemd service renamed to `agent-neural-gateway` across all code, bootstrap scripts, service files, and documentation.
   - **Dashboard Work Tab Classification**: Refactored `useWorkEnvelopes.ts` and `/api/primes/[id]/work` to properly classify R-type containers under "In Progress" when they have active/pending descendant child missions, and added `"blocked"` status to `ACTIVE_STATUSES` so blocked work is kept in "In Progress" with a crimson pulsing visual indicator.
 - **Flash Load & Execution Quality (v2026.06.16.2)**:
   - **Parse-first enforceSchema**: `enforceSchemaFn` validates Opus JSON deterministically (parseJsonResponse + field/enum validation) before calling Flash. Flash LLM call is now a rare repair path, not universal. Saves ~3 Flash calls per mission turn.
@@ -45,7 +52,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - Legacy `message-daemon.mjs` and `channel-respond` are deleted
 
 ### Fleet VM Architecture
-- Single brain gateway per VM with specialty-specific workspace (identity fragment + shared SOUL_PROTOCOL.md composed at bootstrap) + brain sub-agents
+- Single neural gateway per VM with specialty-specific workspace (identity fragment + shared SOUL_PROTOCOL.md composed at bootstrap) + brain sub-agents
 - Same `agent-ears.mjs` + `agent-mouth.mjs` + `agent-introspect.mjs` as Prime (CHANNEL=gchat) — built-in DWD, fire-and-forget input, strict LLM output classification
 - Introspect daemon reads real VM filesystem (bin/, skills/, workspace/) and responds to Firestore queries from the dashboard
 - CoreKit tools shared with Prime via manifest system

@@ -385,9 +385,9 @@ except:
     sync
     sleep 1
 
-    # Restart brain gateway service
-    echo "==> Restarting brain gateway service..."
-    systemctl restart agent-brain-gateway 2>/dev/null || true
+    # Restart neural gateway service
+    echo "==> Restarting neural gateway service..."
+    systemctl restart agent-neural-gateway 2>/dev/null || true
 
     # Kill ALL orphaned daemon/ears/mouth node processes on the host.
     pkill -f 'message-daemon.mjs' 2>/dev/null || true

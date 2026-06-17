@@ -1,6 +1,6 @@
 [Unit]
 Description=Agent Mouth — Output Classification and Delivery
-After=network-online.target agent-brain-gateway.service
+After=network-online.target agent-neural-gateway.service
 Wants=network-online.target
 
 [Service]

@@ -22,7 +22,7 @@
 - IDs: lowercase, kebab-case
 - Even segment counts only (collection/document pairs) — odd segments cause 400 errors
 
-## Brain Gateway configuration
+## Neural Gateway configuration
 - Config: `/opt/corekit/corekit/config.json`
 - Agent workspaces at `/opt/corekit/workspace` (cortex) or `/opt/corekit/workspace-{agent}` (sub-agents)
 - Gateway API: `POST http://localhost:18789/v1/chat/completions` with Bearer token auth

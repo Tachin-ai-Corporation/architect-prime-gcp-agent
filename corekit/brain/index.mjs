@@ -1,4 +1,4 @@
-// corekit/brain/index.mjs — Brain Gateway HTTP Server
+// corekit/brain/index.mjs — Neural Gateway HTTP Server
 // Original module
 // Used by agent-brain.mjs (gateway consumer) and agent-ears.mjs (liveness pre-flight)
 //

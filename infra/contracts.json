@@ -38,7 +38,10 @@
     "archive_age_days": 7,
     "archive_interval_ms": 3600000,
     "context_token_budget": 400000,
-    "needs_input_timeout_hours": 72
+    "needs_input_timeout_hours": 72,
+    "step_ledger_enabled": true,
+    "checkpoint_resume_enabled": true,
+    "claim_stale_ms": 600000
   },
   "ears": {
     "firestore_poll_ms": 3000,

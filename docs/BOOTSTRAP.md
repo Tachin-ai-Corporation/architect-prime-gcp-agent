@@ -23,7 +23,7 @@ All complexity is in `prime-bootstrap.sh` — a standalone bash script with no J
 | 5 | Generate agent configuration `config.json` files | ~2s |
 | 6 | Vertex AI model discovery + config validation | ~10s |
 | 7 | Write `prime-config.json` + identity lockfile | ~1s |
-| 8 | Write, enable and start `agent-brain-gateway` systemd service | ~2s |
+| 8 | Write, enable and start `agent-neural-gateway` systemd service | ~2s |
 | 9 | Install and start `agent-ears` + `agent-mouth` + `agent-brain` + `agent-introspect` services | ~2s |
 
 **Total: ~3-5 minutes from VM creation to `PRIME VM SETUP COMPLETE`**
@@ -52,7 +52,7 @@ grep "startup-script:" ... | grep "==>"
 # ==> Installing Node.js & npm...
 # ==> Installing CoreKit...
 # ==> Running npm install...
-# ==> Starting agent-brain-gateway...
+# ==> Starting agent-neural-gateway...
 # ==> Starting agent-ears + agent-mouth + agent-brain + agent-introspect...
 #   PRIME VM SETUP COMPLETE
 ```
@@ -62,9 +62,9 @@ grep "startup-script:" ... | grep "==>"
 ```bash
 gcloud compute ssh prime-<name> --zone=us-central1-a --project=<project>
 
-# Check agent-brain-gateway service
-sudo systemctl status agent-brain-gateway
-sudo journalctl -u agent-brain-gateway --no-pager -n 50
+# Check agent-neural-gateway service
+sudo systemctl status agent-neural-gateway
+sudo journalctl -u agent-neural-gateway --no-pager -n 50
 
 # Check agent-ears
 sudo systemctl status agent-ears
@@ -98,7 +98,7 @@ To modify the bootstrap:
 |------|---------|
 | `infra/bootstrap/prime-bootstrap.sh` | Full VM setup script (standalone bash) |
 | `app/src/app/api/primes/[id]/deploy/route.ts` | Deploy API with boot stub |
-| `corekit/brain/index.mjs` | Node.js native brain gateway |
+| `corekit/brain/index.mjs` | Node.js native neural gateway |
 | `corekit/daemon/agent-ears.mjs` | Deterministic input processing |
 | `corekit/daemon/agent-mouth.mjs` | Output classification + delivery |
 | `corekit/daemon/agent-brain.mjs` | Brain v3 orchestration daemon |

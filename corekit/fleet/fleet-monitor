@@ -218,7 +218,7 @@ while [[ $ELAPSED -lt $MAX_WAIT ]]; do
   if [[ $ELAPSED -ge $SSH_FALLBACK_AT ]]; then
     log "No serial milestones after ${ELAPSED}s — SSH-checking gateway health..."
     GW_STATUS="$(gcloud compute ssh "$FLEET_VM" --zone="$ZONE" --project="$PROJECT" \
-      --command="sudo systemctl is-active agent-brain-gateway 2>/dev/null || echo 'inactive'" \
+      --command="sudo systemctl is-active agent-neural-gateway 2>/dev/null || echo 'inactive'" \
       --ssh-flag="-o ConnectTimeout=${SSH_TIMEOUT}" \
       --ssh-flag="-o StrictHostKeyChecking=no" \
       2>/dev/null || echo "SSH_FAILED")"

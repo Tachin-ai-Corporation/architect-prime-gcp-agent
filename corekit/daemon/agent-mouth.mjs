@@ -2,7 +2,7 @@
 // ============================================================
 // agent-mouth.mjs v2 — JSONL-Native Output Processing
 //
-// Tails the brain gateway's JSONL session transcript to detect final
+// Tails the neural gateway's JSONL session transcript to detect final
 // agent responses structurally. Replaces log-file scraping.
 //
 // Features:

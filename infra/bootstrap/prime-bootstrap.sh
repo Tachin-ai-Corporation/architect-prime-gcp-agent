@@ -137,8 +137,8 @@ all_steps = [
     ("corekit", "CoreKit installed", "pending"),
     ("contracts", "Contracts loaded", "pending"),
     ("brain_deps", "Brain dependencies installed", "pending"),
-    ("brain_gateway", "Brain gateway started", "pending"),
-    ("brain_ready", "Brain gateway ready", "pending"),
+    ("neural_gateway", "Neural gateway started", "pending"),
+    ("neural_ready", "Neural gateway ready", "pending"),
     ("services", "Systemd services installed", "pending"),
     ("command_runner", "Command runner started", "pending"),
     ("online", "Prime online", "pending"),
@@ -268,10 +268,10 @@ json.dump(agent_config, open('${AGENT_DIR}/config.json', 'w'), indent=2)
 done
 
 # ---- 9) Start brain as systemd service ----
-info "Starting brain gateway service..."
-cat > /etc/systemd/system/agent-brain-gateway.service <<UNIT
+info "Starting neural gateway service..."
+cat > /etc/systemd/system/agent-neural-gateway.service <<UNIT
 [Unit]
-Description=Architect Prime Brain Gateway
+Description=Architect Prime Neural Gateway
 After=network.target
 
 [Service]
@@ -293,20 +293,20 @@ WantedBy=multi-user.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now agent-brain-gateway
+systemctl enable --now agent-neural-gateway
 
-write_deploy_step "brain_gateway" "Brain gateway started" "active" "Waiting for healthz..."
+write_deploy_step "neural_gateway" "Neural gateway started" "active" "Waiting for healthz..."
 
-# ---- 10) Wait for brain gateway readiness ----
-info "Waiting for brain gateway..."
+# ---- 10) Wait for neural gateway readiness ----
+info "Waiting for neural gateway..."
 WAITED=0
 until curl -sf http://127.0.0.1:${C_GATEWAY_PORT}/healthz > /dev/null 2>&1; do
   sleep 2; WAITED=$((WAITED+2))
-  [[ $WAITED -ge 60 ]] && { echo "[ERROR] Brain gateway did not start within 60s"; exit 1; }
+  [[ $WAITED -ge 60 ]] && { echo "[ERROR] Neural gateway did not start within 60s"; exit 1; }
 done
-info "Brain gateway is ready (took ~${WAITED}s)."
+info "Neural gateway is ready (took ~${WAITED}s)."
 
-write_deploy_step "brain_ready" "Brain gateway ready" "done" "Took ~${WAITED}s"
+write_deploy_step "neural_ready" "Neural gateway ready" "done" "Took ~${WAITED}s"
 
 # ---- 11) Warm-up probe (pre-warm ADC tokens) ----
 info "Running warm-up probe..."

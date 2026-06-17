@@ -27,7 +27,7 @@
 //   node agent-brain.mjs
 // ============================================================
 import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync, writeFileSync } from 'fs';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 
 // ---- Shared library imports (Phase 0 extraction) ----
@@ -72,6 +72,9 @@ const STALE_CLEANUP_HOURS = CONTRACTS.dispatch?.stale_cleanup_hours || 24;
 const ARCHIVE_AGE_DAYS = CONTRACTS.dispatch?.archive_age_days || 7;
 const ARCHIVE_INTERVAL_MS = CONTRACTS.dispatch?.archive_interval_ms || 1 * 60 * 60 * 1000; // 1h default
 const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.dispatch?.needs_input_timeout_hours || 72;
+const STEP_LEDGER_ENABLED = CONTRACTS.dispatch?.step_ledger_enabled !== false; // default true
+const CHECKPOINT_RESUME_ENABLED = CONTRACTS.dispatch?.checkpoint_resume_enabled !== false; // default true
+const CLAIM_STALE_MS = CONTRACTS.dispatch?.claim_stale_ms || 600_000; // 10 min
 const LOG_FILE = '/tmp/agent-brain.log';
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'brain/cortex';
 
@@ -95,7 +98,7 @@ const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 
 // Brain's own LLM for simple textâ†’text tasks (summarize, compress, rephrase).
 // Now uses the extracted vertex-text.mjs module via createVertexText().
-// Bypasses the brain gateway entirely â€” no agent routing, no workspace, no tools.
+// Bypasses the neural gateway entirely — no agent routing, no workspace, no tools.
 
 const VERTEX_LOCATION = CONTRACTS.utility?.location || CONTRACTS.vertex?.location || 'global';
 
@@ -152,10 +155,25 @@ function addressFromMeta(sourceMeta, sourceChannel) {
 }
 
 /**
- * Create a Câ†’T pair under a parent envelope and return the checkpoint ID.
- * Enforces Mâ†’Câ†’T hierarchy for all terminal outputs.
+ * Create a C→T pair under a parent envelope and return the checkpoint ID.
+ * Enforces M→C→T hierarchy for all terminal outputs.
+ * CP4: idempotent via ctKey — if a C envelope with matching ct_key already
+ * exists under this parent, returns the existing ID (no duplicate creation).
  */
-async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput, taskIntent = 'execute', taskStatus = 'complete', deliveryStatus = 'internal', deliveryAddress = null }) {
+async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput, taskIntent = 'execute', taskStatus = 'complete', deliveryStatus = 'internal', deliveryAddress = null, ctKey = null }) {
+  // CP4: idempotent dedup — check if this CT pair already exists
+  if (ctKey && parentEnvelope.children?.length > 0) {
+    for (const childId of parentEnvelope.children) {
+      try {
+        const existing = await firestoreRead('work', childId);
+        if (existing?.type === 'C' && existing?.source_meta?.ct_key === ctKey) {
+          log('INFO', `createCT dedup: ct_key=${ctKey} already exists as ${childId}, skipping`);
+          return childId;
+        }
+      } catch { /* child may not exist */ }
+    }
+  }
+
   const cpId = generateId('w');
   const tId = generateId('w');
   const cpEnvelope = {
@@ -166,7 +184,8 @@ async function createCT(parentEnvelope, { checkpointTitle, taskTitle, taskOutput
     instruction: checkpointTitle, accept_criteria: null,
     context_summary: null, output: null,
     children: [tId], context_forward: null, error: null,
-    source_channel: 'brain', source_meta: {},
+    source_channel: 'brain',
+    source_meta: ctKey ? { ct_key: ctKey } : {},
     project_id: parentEnvelope.project_id || null,
     created_at: now(), started_at: now(),
     completed_at: taskStatus === 'complete' ? now() : null,
@@ -619,6 +638,89 @@ function generateId(prefix = 'w') {
 
 function now() {
   return new Date().toISOString();
+}
+
+// ---- Idempotency: step-key derivation (CP2) ----
+// Deterministic step key: SHA-256 hash of [envId, iteration, action, target]
+// Stable across replays — same inputs always produce the same key
+function deriveStepKey(envId, iteration, action, target = '') {
+  const input = `${envId}|${iteration}|${action}|${target}`;
+  return createHash('sha256').update(input).digest('hex').substring(0, 16);
+}
+
+// Check if a dispatch step has already been recorded in the envelope's step ledger
+function isStepComplete(envelope, stepKey) {
+  if (!STEP_LEDGER_ENABLED) return false;
+  const ledger = envelope.step_ledger || {};
+  const entry = ledger[stepKey];
+  return entry?.status === 'complete' || entry?.status === 'failed';
+}
+
+// Get a previously recorded step result (for skip-on-replay)
+function getStepResult(envelope, stepKey) {
+  if (!STEP_LEDGER_ENABLED) return null;
+  const ledger = envelope.step_ledger || {};
+  return ledger[stepKey] || null;
+}
+
+// Record a completed dispatch step in the envelope's step ledger
+// Persists to Firestore atomically with the envelope update
+async function recordStep(envelope, stepKey, result) {
+  if (!STEP_LEDGER_ENABLED) return;
+  const ledger = envelope.step_ledger || {};
+  ledger[stepKey] = {
+    status: result.success ? 'complete' : 'failed',
+    agent: result.agent || 'unknown',
+    ts: now(),
+    durationMs: result.durationMs || 0,
+    outputHash: result.output
+      ? createHash('sha256').update(result.output).digest('hex').substring(0, 8)
+      : null,
+  };
+  envelope.step_ledger = ledger;
+  await firestoreWrite('work', envelope.id, envelope);
+}
+
+// ---- Idempotency: durable claim (CP3) ----
+// Firestore-backed processing lock — survives daemon restarts.
+// The local `processing` boolean remains as belt-and-suspenders.
+async function claimEnvelope(envelopeId) {
+  const claimId = `${AGENT_ID}-${Date.now()}`;
+  try {
+    const env = await firestoreRead('work', envelopeId);
+    if (!env) return claimId; // New or missing envelope — claim freely
+    if (env.claimed_by) {
+      // Check if the existing claim is stale
+      const claimAge = Date.now() - (env.claimed_at_ms || 0);
+      if (claimAge < CLAIM_STALE_MS) {
+        log('WARN', `Claim conflict: ${envelopeId} claimed by ${env.claimed_by} (${Math.round(claimAge / 1000)}s ago)`);
+        return null; // Another instance has a valid claim
+      }
+      log('INFO', `Reclaiming stale envelope ${envelopeId} (claimed ${Math.round(claimAge / 1000)}s ago by ${env.claimed_by})`);
+    }
+    await firestoreWrite('work', envelopeId, {
+      ...env,
+      claimed_by: claimId,
+      claimed_at_ms: Date.now(),
+    });
+    return claimId;
+  } catch (e) {
+    log('WARN', `Claim attempt failed for ${envelopeId}: ${e.message}`);
+    return claimId; // Proceed anyway — belt-and-suspenders with local guard
+  }
+}
+
+async function releaseClaim(envelopeId, claimId) {
+  try {
+    const env = await firestoreRead('work', envelopeId);
+    if (env && env.claimed_by === claimId) {
+      env.claimed_by = null;
+      env.claimed_at_ms = null;
+      await firestoreWrite('work', envelopeId, env);
+    }
+  } catch (e) {
+    log('WARN', `Claim release failed for ${envelopeId}: ${e.message}`);
+  }
 }
 
 // ---- Gateway HTTP dispatch ----
@@ -1630,6 +1732,7 @@ async function processIntake(intake) {
       taskIntent: 'ack',
       deliveryStatus: 'pending',
       deliveryAddress: addressFromMeta(intake.source_meta, intake.source),
+      ctKey: `ack-${envelope.id}`,
     });
     await firestoreWrite('work', envelope.id, envelope);
     log('INFO', `Ack injected as Câ†’T under ${envelopeId}`);
@@ -1819,6 +1922,7 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
       taskOutput: pendingAckText,
       taskIntent: 'ack',
       deliveryStatus: 'pending',
+      ctKey: `ack-resume-${mission.id}`,
     });
     await firestoreWrite('work', mission.id, mission);
     log('INFO', `Ack injected as C-T under resumed mission ${mission.id}`);
@@ -1905,19 +2009,257 @@ async function cascadeCancelChildren(parentId) {
   if (cancelCount > 0) log('INFO', `Cascade-cancelled ${cancelCount} children of ${parentId}`);
 }
 
+// ---- CP5: Checkpoint plan resume (crash recovery) ----
+// When the daemon crashes mid-checkpoint-plan, this function re-enters plan
+// execution from the saved _cp_progress state, skipping analyze/decide.
+async function executeCheckpointPlanResume(envelope, progress, memory) {
+  const { checkpointIndex, taskIndex, allResults: savedResults, checkpoints, decision } = progress;
+  if (!checkpoints || checkpoints.length === 0) {
+    log('WARN', `CP5 resume: no checkpoints in progress state for ${envelope.id}, falling through to normal processing`);
+    envelope._cp_progress = null;
+    await firestoreWrite('work', envelope.id, envelope);
+    return;
+  }
+
+  log('INFO', `CP5 resume: ${checkpoints.length} checkpoints, resuming from CP${checkpointIndex + 1} task ${taskIndex}`);
+
+  // Reconstruct the prior results from saved state
+  let allResults = savedResults || [];
+  let planFailed = false;
+
+  // Resume from the saved checkpoint index
+  for (let ci = checkpointIndex; ci < checkpoints.length; ci++) {
+    const cp = checkpoints[ci];
+    const cpNum = ci + 1;
+    const cpInstruction = cp.instruction || `Checkpoint ${cpNum}`;
+    const cpTasks = cp.tasks || [];
+
+    // Determine starting task index — only skip tasks for the first resumed checkpoint
+    const startTi = (ci === checkpointIndex) ? taskIndex : 0;
+
+    if (startTi >= cpTasks.length) {
+      log('INFO', `CP5 resume: all tasks in CP${cpNum} already complete, skipping`);
+      continue;
+    }
+
+    // Find or create the checkpoint envelope
+    let cpId = null;
+    let cpEnvelope = null;
+    for (const childId of (envelope.children || [])) {
+      try {
+        const child = await firestoreRead('work', childId);
+        if (child?.type === 'C' && child?.source_meta?.checkpoint === cpNum) {
+          cpId = childId;
+          cpEnvelope = child;
+          break;
+        }
+      } catch { /* child may not exist */ }
+    }
+
+    if (!cpId) {
+      // Checkpoint envelope doesn't exist yet — create it
+      cpId = generateId('w');
+      cpEnvelope = {
+        id: cpId, type: 'C', parent_id: envelope.id,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'active', intent: 'checkpoint',
+        title: cpInstruction.substring(0, 100),
+        instruction: cpInstruction,
+        accept_criteria: cp.accept_criteria || '',
+        context_summary: null, output: null,
+        children: [], context_forward: null, error: null,
+        source_channel: 'brain',
+        source_meta: { dispatched_by: envelope.id, checkpoint: cpNum, checkpoint_total: checkpoints.length, resumed: true },
+        project_id: envelope.project_id || null,
+        created_at: now(), started_at: now(), completed_at: null,
+        updated_at: now(), iteration: 0,
+      };
+      await firestoreWrite('work', cpId, cpEnvelope);
+      envelope.children = envelope.children || [];
+      envelope.children.push(cpId);
+      await firestoreWrite('work', envelope.id, envelope);
+      await writeHistory(cpId, null, 'active', 'brain', `CP5 resume: checkpoint ${cpNum} created`);
+    }
+
+    // Execute remaining tasks
+    let cpResults = [];
+    let cpFailed = false;
+
+    for (let ti = startTi; ti < cpTasks.length; ti++) {
+      const task = cpTasks[ti];
+      const taskNum = ti + 1;
+      const taskAgent = task.agent;
+      const taskDesc = task.task || task.instruction || '';
+
+      if (!taskAgent) continue;
+
+      // CP2: Step-ledger dedup
+      const taskStepKey = deriveStepKey(envelope.id, cpNum, 'cp_task', `${ci}.${ti}.${taskAgent}`);
+      if (isStepComplete(envelope, taskStepKey)) {
+        const prev = getStepResult(envelope, taskStepKey);
+        log('INFO', `CP5+CP2 resume dedup: CP${cpNum} Task ${taskNum} already recorded, skipping`);
+        cpResults.push({
+          step: `${cpNum}.${taskNum}`, agent: taskAgent,
+          task: taskDesc.substring(0, 200),
+          result: `[REPLAYED] ${prev?.status}`,
+          success: prev?.status === 'complete',
+          durationMs: prev?.durationMs || 0,
+        });
+        continue;
+      }
+
+      // Dispatch to agent (simplified — no cerebellum verification on resume)
+      const taskCriteria = task.accept_criteria
+        || `Task "${(task.task || '').substring(0, 60)}" completed. No unresolved errors.`;
+
+      const taskId = generateId('w');
+      await firestoreWrite('work', taskId, {
+        id: taskId, type: 'T', parent_id: cpId,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'active', intent: task.intent || 'execute',
+        title: taskDesc.substring(0, 100), instruction: taskDesc,
+        accept_criteria: taskCriteria,
+        context_summary: allResults.length > 0
+          ? allResults.map(r => `Step ${r.step} (${r.agent}): ${(r.result || '').substring(0, 200)}`).join('\n')
+          : null,
+        output: null, children: [], context_forward: null, error: null,
+        source_channel: 'brain',
+        source_meta: { dispatched_by: cpId, checkpoint: cpNum, task_step: taskNum, resumed: true },
+        project_id: envelope.project_id || null,
+        created_at: now(), started_at: now(), completed_at: null,
+        updated_at: now(), iteration: 0,
+      });
+      cpEnvelope.children.push(taskId);
+      await firestoreWrite('work', cpId, cpEnvelope);
+
+      const skillCatalog = (taskAgent === 'motor' || taskAgent === 'temporal-research')
+        ? formatSkillCatalog(SKILL_INDEX) : '';
+
+      let result = await callAgent(taskAgent, {
+        instruction: taskDesc + skillCatalog,
+        accept_criteria: taskCriteria,
+        _missionId: envelope.id,
+        memory_context: envelope.memory_context || null,
+      });
+
+      // Single retry on failure
+      if (!result.success) {
+        result = await callAgent(taskAgent, {
+          instruction: `${taskDesc}${skillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again.`,
+          accept_criteria: taskCriteria,
+          _missionId: envelope.id,
+          memory_context: envelope.memory_context || null,
+        });
+      }
+
+      // Update task envelope
+      await firestoreWrite('work', taskId, {
+        output: result.output || result.error,
+        status: result.success ? 'complete' : 'failed',
+        error: result.error, completed_at: now(), updated_at: now(),
+      });
+
+      cpResults.push({
+        step: `${cpNum}.${taskNum}`, agent: taskAgent,
+        task: taskDesc.substring(0, 200),
+        result: result.success ? smartTruncate(result.output || '', CTX_AGENT_STEP) : `[FAILED] ${result.error}`,
+        success: result.success, durationMs: result.durationMs,
+      });
+
+      // CP2: Record step + CP5: Update progress
+      await recordStep(envelope, taskStepKey, { ...result, agent: taskAgent });
+      envelope._cp_progress = {
+        checkpointIndex: ci, taskIndex: ti + 1,
+        allResults: [...allResults, ...cpResults],
+        checkpoints, decision,
+      };
+      await firestoreWrite('work', envelope.id, envelope);
+
+      if (!result.success) { cpFailed = true; break; }
+    }
+
+    // Mark checkpoint complete/failed
+    cpEnvelope.status = cpFailed ? 'failed' : 'complete';
+    cpEnvelope.output = cpFailed ? `Failed at task ${cpResults.length}` : `Complete: ${cpResults.length} tasks`;
+    cpEnvelope.completed_at = now();
+    cpEnvelope.updated_at = now();
+    await firestoreWrite('work', cpId, cpEnvelope);
+
+    allResults.push(...cpResults);
+    if (cpFailed) { planFailed = true; break; }
+  }
+
+  // Clear resume state — plan completed (or failed)
+  envelope._cp_progress = null;
+
+  // Synthesize or escalate — feed results to cortex by re-entering the decide loop
+  const priorResults = allResults.map(r => ({
+    agent: r.agent, task: r.task, result: r.result,
+    success: r.success, durationMs: r.durationMs,
+    checkpoint_step: r.step,
+  }));
+
+  if (planFailed) {
+    priorResults.push({
+      agent: 'system',
+      result: '[SYSTEM] Checkpoint plan failed during crash-recovery resume. Use "synthesize_with_failure" or "needs_input" to handle.',
+    });
+  }
+
+  // Store results and let cortex synthesize
+  envelope.context_forward = `[CHECKPOINT PLAN RESULTS (resumed after crash)]\n${allResults.map(r => `${r.step} (${r.agent}): ${r.success ? 'OK' : 'FAIL'} — ${(r.result || '').substring(0, 200)}`).join('\n')}`;
+  envelope.updated_at = now();
+  await firestoreWrite('work', envelope.id, envelope);
+
+  // Re-enter the normal cortex loop for synthesis
+  await _processEnvelopeInner(envelope, memory, null);
+}
+
 // ---- Envelope processing (Phase 3: memory-enriched Cortex loop) ----
 async function processEnvelope(envelope, memoryContext) {
   log('INFO', `Processing envelope: ${envelope.id} (type=${envelope.type}, status=${envelope.status})`);
 
+  // CP3: Durable claim — prevents concurrent processing across restarts
+  const claimId = await claimEnvelope(envelope.id);
+  if (!claimId) {
+    log('WARN', `Skipping envelope ${envelope.id} — claimed by another processor`);
+    return;
+  }
+
+  try {
+    await _processEnvelopeInner(envelope, memoryContext, claimId);
+  } finally {
+    // CP3: Release claim on completion (success or failure)
+    await releaseClaim(envelope.id, claimId);
+  }
+}
+
+async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   // Use passed memory context, or recall fresh if not provided
   const memory = memoryContext || await recallMemory(envelope.instruction);
 
   // Phase 5: Initialize shared workspace for this envelope
   await initSharedWorkspace(envelope.id);
 
+  // CP5: Checkpoint resume — if we crashed mid-checkpoint-plan, resume from
+  // the last completed step instead of re-running analyze/decide
+  if (CHECKPOINT_RESUME_ENABLED && envelope._cp_progress) {
+    const progress = envelope._cp_progress;
+    log('INFO', `CP5 resume: envelope ${envelope.id} resuming checkpoint plan from CP${progress.checkpointIndex + 1} task ${progress.taskIndex}`);
+    // Restore the decide loop state and re-enter checkpoint execution
+    envelope.status = 'active';
+    envelope.updated_at = now();
+    await firestoreWrite('work', envelope.id, envelope);
+    await writeHistory(envelope.id, 'active', 'active', 'brain', `Resuming from CP${progress.checkpointIndex + 1} task ${progress.taskIndex} (crash recovery)`);
+
+    // Execute the remaining checkpoint plan using the saved state
+    await executeCheckpointPlanResume(envelope, progress, memory);
+    return;
+  }
+
   // Mark active
   envelope.status = 'active';
-  envelope.started_at = now();
+  envelope.started_at = envelope.started_at || now();
   envelope.updated_at = now();
   await firestoreWrite('work', envelope.id, envelope);
   await writeHistory(envelope.id, 'pending', 'active', 'brain', 'Processing started');
@@ -2058,6 +2400,7 @@ async function processEnvelope(envelope, memoryContext) {
         taskOutput: decision.synthesis || decision.response || decision.message,
         taskIntent: 'synthesize',
         deliveryStatus: 'internal',
+        ctKey: `synth-${envelope.id}-${iteration}`,
       });
 
       envelope.output = decision.synthesis || decision.response || decision.message;
@@ -2529,6 +2872,22 @@ async function processEnvelope(envelope, memoryContext) {
           if (!taskAgent) {
             log('WARN', `Checkpoint ${cpNum} task ${taskNum} missing agent, skipping`);
             cpResults.push({ step: `${cpNum}.${taskNum}`, agent: 'unknown', result: '[SKIPPED]', success: false });
+            continue;
+          }
+
+          // CP2: Step-ledger dedup — skip if this step was already executed
+          const taskStepKey = deriveStepKey(envelope.id, cpNum, 'cp_task', `${ci}.${ti}.${taskAgent}`);
+          if (isStepComplete(envelope, taskStepKey)) {
+            const prev = getStepResult(envelope, taskStepKey);
+            log('INFO', `CP2 dedup: CP${cpNum} Task ${taskNum} already recorded (${prev?.status}), skipping dispatch`);
+            cpResults.push({
+              step: `${cpNum}.${taskNum}`,
+              agent: taskAgent,
+              task: taskDesc.substring(0, 200),
+              result: `[REPLAYED] Step already completed (${prev?.status})`,
+              success: prev?.status === 'complete',
+              durationMs: prev?.durationMs || 0,
+            });
             continue;
           }
 
@@ -3044,6 +3403,21 @@ async function processEnvelope(envelope, memoryContext) {
           };
           cpResults.push(stepResult);
 
+          // CP2: Record step in ledger for replay dedup
+          await recordStep(envelope, taskStepKey, { ...result, agent: taskAgent });
+
+          // CP5: Persist checkpoint progress for crash recovery
+          if (CHECKPOINT_RESUME_ENABLED) {
+            envelope._cp_progress = {
+              checkpointIndex: ci,
+              taskIndex: ti + 1, // next task to execute on resume
+              allResults: [...allResults, ...cpResults],
+              checkpoints,
+              decision,
+            };
+            await firestoreWrite('work', envelope.id, envelope);
+          }
+
           log('INFO', `CP${cpNum} Task ${taskNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
 
           if (!result.success) {
@@ -3099,6 +3473,13 @@ async function processEnvelope(envelope, memoryContext) {
       }
 
       log('INFO', `Checkpoint plan ${planFailed ? 'FAILED' : 'complete'}: ${checkpoints.length} checkpoints, ${allResults.length} total tasks. Consulting Cortex.`);
+
+      // CP5: Clear checkpoint progress — plan completed (or failed and will be replanned)
+      if (envelope._cp_progress) {
+        envelope._cp_progress = null;
+        await firestoreWrite('work', envelope.id, envelope);
+      }
+
       continue; // Loop back to Cortex for synthesize decision
     }
 
@@ -3448,8 +3829,28 @@ async function main() {
   // Startup recovery: re-process orphaned active/pending M envelopes
   // When brain restarts mid-processing, envelopes get stuck with no processor
   // IMPORTANT: Only recover missions with NO children (truly orphaned).
-  // Missions with children were already being worked on â€” reprocessing them
+  // Missions with children were already being worked on — reprocessing them
   // from scratch creates duplicate work. Archive stale ones instead.
+  // CP3: Clear stale claims from previous process instances
+  log('INFO', `Idempotency config: step_ledger=${STEP_LEDGER_ENABLED}, checkpoint_resume=${CHECKPOINT_RESUME_ENABLED}, claim_stale_ms=${CLAIM_STALE_MS}`);
+  try {
+    // On restart, ALL claims from this agent's previous process are stale
+    const claimedEnvs = await firestoreQuery('work', [
+      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+    ]);
+    const staleClaimed = claimedEnvs.filter(e => e.claimed_by);
+    if (staleClaimed.length > 0) {
+      log('INFO', `Recovery: clearing ${staleClaimed.length} stale claims from previous process`);
+      for (const sc of staleClaimed) {
+        sc.claimed_by = null;
+        sc.claimed_at_ms = null;
+        await firestoreWrite('work', sc.id, sc);
+      }
+    }
+  } catch (e) {
+    log('WARN', `Startup recovery: failed to clear stale claims: ${e.message}`);
+  }
+
   try {
     const agentId = AGENT_ID;
     const token = await getAuthToken();

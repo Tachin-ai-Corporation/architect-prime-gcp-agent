@@ -1,6 +1,6 @@
 [Unit]
 Description=Agent Introspect — Filesystem Introspection Service
-After=network-online.target agent-brain-gateway.service
+After=network-online.target agent-neural-gateway.service
 Wants=network-online.target
 
 [Service]

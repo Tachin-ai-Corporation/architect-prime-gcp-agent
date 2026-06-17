@@ -189,7 +189,7 @@ async function createVM(
  *
  * This is a thin boot stub — it downloads the real bootstrap script
  * from GitHub and executes it. All the heavy lifting (Node.js installation,
- * brain gateway setup, agent-ears, agent-mouth) is in infra/bootstrap/prime-bootstrap.sh.
+ * neural gateway setup, agent-ears, agent-mouth) is in infra/bootstrap/prime-bootstrap.sh.
  *
  * Why: embedding 230 lines of bash inside a JS template literal
  * caused 5 consecutive deploy failures due to escape conflicts
