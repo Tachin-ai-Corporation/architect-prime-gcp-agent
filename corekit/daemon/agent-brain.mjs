@@ -1046,7 +1046,10 @@ function buildUserPrompt(mode, payload) {
     if (payload.brief) {
       decidePayload.brief = payload.brief;
       decidePayload.dispatch_guidance = {
-        rule: 'The Brief decomposes the work into parts. Commit one typed step per Brief part using checkpoint_plan. Each task should set step_type and brief_part.',
+        rule: 'To commit work from the Brief, use checkpoint_plan. You may provide a full checkpoints array OR just a goal + constraints — prefrontal will structure the detailed plan if you omit checkpoints.',
+        minimal_form: '{ action: "checkpoint_plan", goal: "...", constraints: "..." } — prefrontal structures the plan',
+        full_form: '{ action: "checkpoint_plan", checkpoints: [...] } — you provide the full structure',
+        preference: 'Use the minimal form unless you have specific structural requirements.',
         step_types: 'standard (local work via motor/research), delegation (teammate — set target_email), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)',
         sequencing: 'Independent parts fan out within a checkpoint. Dependent parts serialize via checkpoint boundaries.',
         skill_guidance: 'When writing task instructions for motor, name the relevant skills from skill_index that the task will need. Motor will read the SKILL.md for exact syntax.',
@@ -1843,6 +1846,9 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
 // ---- Helper: create new task from intake when attach falls through ----
 async function processIntakeAsNewTask(intake, decision, memoryContext, parentId = null) {
   const envelopeId = generateId('w');
+  const _titleInput = (decision.instruction && decision.instruction.length > 100)
+    ? decision.instruction
+    : stripChatFraming(intake.text) || decision.instruction || 'Untitled';
   const envelope = {
     id: envelopeId,
     type: 'M',
@@ -1851,7 +1857,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     status: 'pending',
     delivery_status: 'pending',
     intent: decision.intent || 'decide',
-    title: await generateTitle(stripChatFraming(intake.text) || decision.instruction || 'Untitled', 'mission'),
+    title: await generateTitle(_titleInput, 'mission'),
     instruction: decision.instruction || stripChatFraming(intake.text),
     source_text: intake.text || '',
     accept_criteria: decision.accept_criteria || null,
@@ -2884,11 +2890,94 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     }
 
     if (action === 'checkpoint_plan') {
-      // Phase 5: Checkpoint nesting — M → C → T hierarchy
-      const checkpoints = decision.checkpoints;
-      if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
-        log('ERROR', `Checkpoint plan has no checkpoints`);
-        priorResults.push({ agent: 'system', result: '[SYSTEM] checkpoint_plan requires a non-empty "checkpoints" array.' });
+      // ---- extractCheckpoints: robust plan structure normalization (CP2) ----
+      function extractCheckpoints(d) {
+        // Already normalized by normalizeDecision in enforceSchema, but belt-and-suspenders
+        const raw = d.checkpoints
+          || d.plan?.checkpoints
+          || d.checkpoint_plan?.checkpoints;
+        if (!Array.isArray(raw) || raw.length === 0) return null;
+
+        // If raw is a flat array of tasks (no .tasks nesting), wrap in one checkpoint
+        if (raw[0] && raw[0].agent && !raw[0].tasks) {
+          return [{ instruction: d.instruction || d.goal || 'Execute plan', tasks: raw }];
+        }
+
+        // Normalize: ensure each checkpoint has a tasks array with valid entries
+        return raw.map((cp, i) => ({
+          instruction: cp.instruction || cp.title || cp.description || `Checkpoint ${i + 1}`,
+          accept_criteria: cp.accept_criteria || '',
+          tasks: (Array.isArray(cp.tasks) ? cp.tasks : (cp.steps || [])).filter(t => {
+            // Validate task has agent and instruction
+            if (!t.agent || typeof t.agent !== 'string') {
+              log('WARN', `Checkpoint ${i + 1}: skipping task without agent field`);
+              return false;
+            }
+            return true;
+          }).map(t => ({
+            ...t,
+            task: toStr(t.task || t.instruction || t.description || ''),
+          })),
+        })).filter(cp => cp.tasks.length > 0); // Drop checkpoints with zero valid tasks
+      }
+
+      // Try cortex-provided inline structure first
+      let checkpoints = extractCheckpoints(decision);
+
+      // CP4: If cortex didn't provide a valid structure, dispatch to prefrontal
+      if (!checkpoints || checkpoints.length === 0) {
+        const planGoal = decision.goal || decision.instruction || decision.reasoning || envelope.instruction;
+        log('INFO', `Checkpoint plan: no valid inline structure — dispatching to prefrontal for structuring`);
+
+        try {
+          const planResult = await callAgent('prefrontal', {
+            instruction: [
+              '[PLAN STRUCTURING]',
+              'Read the plan-structuring SKILL.md, then structure a checkpoint/task plan for this goal.',
+              '',
+              '## Goal',
+              planGoal,
+              '',
+              envelope._brief ? `## Brief\n${JSON.stringify(envelope._brief)}` : '',
+              '',
+              `## Skill Index\n${formatSkillCatalog(SKILL_INDEX)}`,
+              '',
+              decision.constraints ? `## Constraints\n${decision.constraints}` : '',
+              priorResults.length > 0 ? `## Prior Results\n${priorResults.map(r =>
+                `${r.step || r.agent}: ${(toStr(r.result) || '').substring(0, 200)}`
+              ).join('\n')}` : '',
+            ].filter(Boolean).join('\n'),
+            _missionId: envelope.id,
+          });
+
+          if (planResult.success && planResult.output) {
+            try {
+              const planParsed = parseJsonResponse(planResult.output);
+              checkpoints = extractCheckpoints(planParsed);
+              if (checkpoints && checkpoints.length > 0) {
+                log('INFO', `Prefrontal structured ${checkpoints.length} checkpoints, ${checkpoints.reduce((s, c) => s + c.tasks.length, 0)} total tasks`);
+              }
+            } catch (e) {
+              log('WARN', `Prefrontal plan structuring returned non-parseable output: ${e.message}`);
+            }
+          }
+        } catch (e) {
+          log('WARN', `Prefrontal plan structuring dispatch failed: ${e.message}`);
+        }
+      }
+
+      // Telemetry: plan structuring source
+      const planSource = checkpoints ? (decision.checkpoints ? 'cortex_inline' : 'prefrontal') : 'none';
+      log('INFO', `[TELEMETRY] plan_structuring: ${JSON.stringify({
+        source: planSource,
+        checkpoints: checkpoints?.length || 0,
+        tasks: checkpoints?.reduce((s, c) => s + c.tasks.length, 0) || 0,
+        missionId: envelope.id,
+      })}`);
+
+      if (!checkpoints || checkpoints.length === 0) {
+        log('ERROR', `Checkpoint plan has no valid checkpoints (even after prefrontal structuring)`);
+        priorResults.push({ agent: 'system', result: '[SYSTEM] checkpoint_plan failed to produce a valid plan structure. Try follow_process instead, or provide checkpoints with at least one task per checkpoint.' });
         continue;
       }
 

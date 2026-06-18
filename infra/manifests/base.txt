@@ -71,6 +71,8 @@ skills/delegation/SKILL.md skills/delegation/SKILL.md
 skills/delegation/skill.json skills/delegation/skill.json
 skills/verification/SKILL.md skills/verification/SKILL.md
 skills/verification/skill.json skills/verification/skill.json
+skills/plan-structuring/SKILL.md skills/plan-structuring/SKILL.md
+skills/plan-structuring/skill.json skills/plan-structuring/skill.json
 
 # Skill setup (dependency installer)
 corekit/system/skill-setup bin/skill-setup

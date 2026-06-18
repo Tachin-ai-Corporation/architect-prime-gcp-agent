@@ -1,0 +1,10 @@
+{
+  "id": "plan-structuring",
+  "name": "Checkpoint Plan Structuring",
+  "version": 1,
+  "origin": "core",
+  "category": "planning",
+  "agent_part": "prefrontal",
+  "scripts": [],
+  "when_to_use": "When the brain daemon asks prefrontal to structure a checkpoint plan from a goal and Brief"
+}

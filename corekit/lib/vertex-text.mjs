@@ -297,6 +297,51 @@ export function createVertexText(config) {
   }
 
   /**
+   * Normalize known field-name aliases in a Cortex response.
+   * Pure function — no LLM calls. Runs before validateSchema so that
+   * common Cortex field drift (move→action, plan.checkpoints→checkpoints)
+   * passes the deterministic path with zero Flash calls.
+   *
+   * @param {object} parsed - Parsed Cortex JSON
+   * @returns {object} The same object, mutated in place
+   */
+  function normalizeDecision(parsed) {
+    if (!parsed || typeof parsed !== 'object') return parsed;
+
+    // Action aliases: cortex often returns "move" instead of "action"
+    if (parsed.move && !parsed.action) {
+      parsed.action = parsed.move;
+      log('DEBUG', `normalizeDecision: move → action (${parsed.action})`);
+    }
+
+    // Classify aliases: cortex returns attach_to_mission instead of attach_to
+    if (parsed.attach_to_mission && !parsed.attach_to) {
+      parsed.attach_to = parsed.attach_to_mission;
+      log('DEBUG', 'normalizeDecision: attach_to_mission → attach_to');
+    }
+    if (parsed.continue_to && !parsed.continue_mission) {
+      parsed.continue_mission = parsed.continue_to;
+      log('DEBUG', 'normalizeDecision: continue_to → continue_mission');
+    }
+
+    // Checkpoint nesting aliases: cortex nests checkpoints at varying depths
+    if (!parsed.checkpoints) {
+      if (parsed.plan?.checkpoints) {
+        parsed.checkpoints = parsed.plan.checkpoints;
+        log('DEBUG', 'normalizeDecision: plan.checkpoints → checkpoints');
+      } else if (parsed.checkpoint_plan?.checkpoints) {
+        parsed.checkpoints = parsed.checkpoint_plan.checkpoints;
+        log('DEBUG', 'normalizeDecision: checkpoint_plan.checkpoints → checkpoints');
+      } else if (parsed.steps && Array.isArray(parsed.steps)) {
+        parsed.checkpoints = parsed.steps;
+        log('DEBUG', 'normalizeDecision: steps → checkpoints');
+      }
+    }
+
+    return parsed;
+  }
+
+  /**
    * Enforce a JSON schema on raw Cortex output.
    * Tries deterministic parse+validate first (free). On failure, falls back to
    * Gemini structured output (up to 2 attempts), then parseJsonResponse.
@@ -309,9 +354,10 @@ export function createVertexText(config) {
     const schema = CORTEX_SCHEMAS[schemaName];
     if (!schema) return typeof raw === 'string' ? parseJsonResponse(raw) : raw;
 
-    // Fast path: deterministic parse + validate (no LLM call)
+    // Fast path: deterministic parse + normalize + validate (no LLM call)
     try {
       const parsed = typeof raw === 'object' ? raw : parseJsonResponse(raw);
+      normalizeDecision(parsed);
       const check = validateSchema(parsed, schemaName);
       if (check.valid) {
         log('DEBUG', `enforceSchema OK (deterministic): action=${parsed.action || parsed.classification}`);
