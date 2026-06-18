@@ -324,6 +324,10 @@ export function createVertexText(config) {
       if (!Array.isArray(parsed.parts)) return { valid: false, reason: 'parts missing or not array' };
       return { valid: true };
     }
+    if (schemaName === 'plan') {
+      if (!Array.isArray(parsed.checkpoints)) return { valid: false, reason: 'checkpoints missing or not array' };
+      return { valid: true };
+    }
     return { valid: false, reason: `unknown schema: ${schemaName}` };
   }
 
