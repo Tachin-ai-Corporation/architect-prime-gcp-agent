@@ -1,42 +1,44 @@
-# Skill: fleet-hire
+# Skill: Fleet Hire
 
-## What this skill does
-Deploys a new fleet agent. Creates the VM, service account, and all infrastructure. Returns in seconds — the actual deployment runs in background (3-5 minutes).
+## When to Use
+When hiring, deploying, creating, or spinning up a new fleet agent inside the GCP infrastructure.
 
-## When to use
-- User asks to hire, deploy, create, or spin up a new agent
-- User says something like "I need a devops agent" or "hire a pm named anora"
+## Commands
 
-## Command
-```
-fleet-hire --name <name> --specialty <specialty>
-```
+### Write
+- `fleet-hire --name <name> --specialty <specialty>` — Deploy a new fleet agent VM, service account, and infrastructure.
+  Output: Deployment status JSON containing VM setup info.
 
-### Arguments
-- `--name` — Agent name, lowercase, no spaces (e.g. "stan", "anora", "quinn")
-- `--specialty` — Agent type (see agent-types.json for available types and aliases)
+## Procedures
 
-### Example
-```
-fleet-hire --name anora --specialty pm
-```
-
-## Hiring flow
-1. If the user hasn't specified a specialty, show available types by running:
+### Deploy a new fleet agent
+1. Read `/opt/corekit/corekit/agent-types.json` if the user hasn't specified a specialty to see all valid types.
+2. Run the deployment command:
+   ```bash
+   fleet-hire --name anora --specialty pm
    ```
-   cat /opt/corekit/corekit/agent-types.json
-   ```
-2. Once you have **name** and **specialty**, run `fleet-hire` immediately
-3. The output includes the admin setup instructions — share these with the user
+3. Verify: Ensure the command returns a success confirmation JSON.
+4. Walk the user through G Workspace setup:
+   - Create the Workspace user at `https://admin.google.com/ac/users` (name must match output).
+   - Add the email to the project's Google Chat space.
+   - Send `@FirstName LastName hello` in Chat to verify connectivity.
 
-## After hiring — walk the user through setup
-The output from `fleet-hire` contains exact names and email. Always share these steps:
+## Error Recovery
 
-1. **Create the Workspace user** at https://admin.google.com/ac/users → Add new user
-   - First Name, Last Name, and Email come from the output
-   - ⚠️ Names MUST match exactly (including capitalization and hyphens)
-2. **Add the email to the Google Chat space**
-3. **Verify** by sending `@FirstName LastName hello` in Chat
+| Error / Symptom | Likely Cause | Recovery |
+|-----------------|-------------|----------|
+| `400 invalidArgument` | Alphanumeric or casing violations in name, or invalid specialty | Ensure the name is lowercase, alphanumeric, and check `agent-types.json` for the exact specialty key. |
+| GCP VM creation fails | CPU or IP address quota exceeded in GCP project | Ask the user to check and increase GCE quotas in the GCP Console. |
+| `409 conflict` | Agent with that name already exists | Pick a unique name for the new agent and retry the command. |
 
-Be warm and helpful — you're onboarding a new team member, not running a script.
-Use the agent's name naturally: "I'll get anora set up for you!"
+## Examples
+
+### Example: Hiring a PM agent named 'anora'
+```
+Task: "Hire a pm named anora"
+
+Step 1: fleet-hire --name anora --specialty pm
+→ Result: {"status":"deploying","agent":"anora","specialty":"pm","vmStatus":"creating","email":"anora-pm@domain.com"}
+
+Outcome: Deployment started. VM is being provisioned in GCE.
+```

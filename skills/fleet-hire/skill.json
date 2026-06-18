@@ -1,13 +1,15 @@
 {
   "id": "fleet-hire",
   "name": "Fleet Hire",
-  "version": "1.0.0",
-  "description": "Deploy a new fleet agent — creates VM, service account, and infrastructure",
+  "version": 2,
+  "description": "Deploy a new fleet agent — creates VM, service account, and infrastructure.",
   "author": "architect-prime",
   "origin": "core",
   "category": "fleet",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": [
+    "fleet-hire"
+  ],
   "requires": {},
-  "when_to_use": "When hiring, deploying, creating, or spinning up a new fleet agent"
+  "when_to_use": "When hiring, deploying, creating, or spinning up a new fleet agent."
 }
