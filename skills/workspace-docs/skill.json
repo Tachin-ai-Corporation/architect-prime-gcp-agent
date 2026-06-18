@@ -1,13 +1,20 @@
 {
   "id": "workspace-docs",
   "name": "Google Docs",
-  "version": "1.0.0",
-  "description": "Create, read, write, and annotate Google Docs",
+  "version": 2,
+  "description": "Create, read, write, and annotate Google Docs.",
   "author": "architect-prime",
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": ["docs-cat", "docs-comments-add", "docs-comments-list", "docs-create", "docs-find-replace", "docs-write"],
+  "scripts": [
+    "docs-cat",
+    "docs-comments-add",
+    "docs-comments-list",
+    "docs-create",
+    "docs-find-replace",
+    "docs-write"
+  ],
   "requires": {},
-  "when_to_use": "When creating, reading, editing, or commenting on Google Docs"
+  "when_to_use": "When a task involves creating, reading, editing, or commenting on Google Docs."
 }
