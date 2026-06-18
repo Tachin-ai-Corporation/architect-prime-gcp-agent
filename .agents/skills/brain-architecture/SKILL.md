@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.06.18.2.0)
+## Current State (v2026.06.18.3.0)
 6 brain agents in gateway multi-agent configuration, coordinated by the `agent-brain.service` state machine. Brain daemon builds `skill_index` deterministically at startup and injects into cortex payloads with `intent_keywords` for process selection. System prompt = SOUL.md only (no TOOLS.md injection). `assemble-persona` handles specialty SOUL appends at bootstrap. Motor dispatches receive full project context (`_projectContext`) and raw user request (`_sourceText`) as first-class user message sections. LoopGuard provides duplicate detection, semantic stuck detection, and structured `[STUCK REPORT]` output.
 
 ### Agent Inventory

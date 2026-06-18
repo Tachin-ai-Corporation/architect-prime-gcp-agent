@@ -192,7 +192,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         taskAgent = task.agent;
         taskDesc = toStr(task.task || task.instruction || '');
         taskCriteria = task.accept_criteria
-          || `Task "${(task.task || task.brief_part || '').substring(0, 60)}" completed with evidence of meaningful work. No unresolved errors in tool output.`;
+          || `Task "${toStr(task.task || task.brief_part || '').substring(0, 60)}" completed with evidence of meaningful work. No unresolved errors in tool output.`;
         stepType = task._step_type || 'standard';
         isOptional = task._optional === true;
       }

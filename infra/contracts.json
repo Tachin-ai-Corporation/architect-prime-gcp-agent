@@ -9,7 +9,7 @@
       "cortexFallback": "vertex-google/gemini-2.5-pro",
       "subagent": "vertex-google/gemini-2.5-flash"
     },
-    "anthropic_prompt_caching": false
+    "anthropic_prompt_caching": true
   },
   "agents": {
     "defaultId": "cortex",
