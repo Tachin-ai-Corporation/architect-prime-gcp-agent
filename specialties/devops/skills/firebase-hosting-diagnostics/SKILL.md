@@ -8,71 +8,39 @@ A file exists in the Drive source (or GCS bucket) but is NOT accessible at the e
 - gcloud CLI authenticated with project access
 - gsutil available on PATH
 
-## Diagnostic Procedure
+## Commands
 
-### Step 1 — Check Source (Google Drive)
-Verify the file exists in the source Drive folder:
-```bash
-drive-ls <drive_sync_folder_id>
-```
-Look for the expected filename. If the file is in a subdirectory (e.g. `/public/`), list that subfolder.
+### Read
+- `gsutil` — Read bucket object lists and verify file statuses in Google Cloud Storage.
+- `gcloud` — Retrieve service state and logs for the sync-service and proxy-service Cloud Run instances.
+- `curl` — Query proxy endpoints and user-facing URLs to verify HTTP response codes and headers.
+- `firebase` — Run Firebase CLI commands to query hosting sites, releases, and channels.
 
-### Step 2 — Check Sync Service
-Verify the sync-service Cloud Run instance is running and has processed the file:
-```bash
-gcloud run services describe sync-service --project=<gcp_project_id> --region=us-central1 --format='value(status.url)'
-gcloud run services logs read sync-service --project=<gcp_project_id> --region=us-central1 --limit=50
-```
-Look for recent sync events mentioning the filename. Check for errors.
+## Procedures
 
-### Step 3 — Check GCS Bucket
-Verify the file landed in the GCS bucket:
-```bash
-gsutil ls gs://<bucket-name>/public/
-gsutil stat gs://<bucket-name>/public/<filename>
-```
-The bucket name is typically `<gcp_project_id>-assets` or specified in project context.
-If the file is NOT in the bucket, the sync-service failed to transfer it.
+### Diagnostic Walkthrough
+1. **Check Source (Google Drive):** Run `drive-ls <drive_sync_folder_id>` to check if the file exists in the source Drive folder.
+2. **Check Sync Service:** Check logs and URLs for the sync-service Cloud Run instance:
+   ```bash
+   gcloud run services describe sync-service --project=<gcp_project_id> --region=us-central1 --format='value(status.url)'
+   gcloud run services logs read sync-service --project=<gcp_project_id> --region=us-central1 --limit=50
+   ```
+3. **Check GCS Bucket:** Run `gsutil ls gs://<bucket-name>/public/` and `gsutil stat gs://<bucket-name>/public/<filename>` to verify the file is stored in GCS.
+4. **Check Proxy Service:** Get proxy service URL and test proxy access using `curl -v <proxy-service-url>/public/<filename>`.
+5. **Check Firebase Hosting Configuration:** Run `cat firebase.json` to verify the rewrite rules route requests correctly to the proxy.
+6. **End-to-End Verification:** Run `curl -v https://<target_domain>/public/<filename>` to test the full URL path from the user-facing domain.
 
-### Step 4 — Check Proxy Service
-Verify the proxy-service can serve the file from GCS:
-```bash
-# Get proxy service URL
-gcloud run services describe proxy-service --project=<gcp_project_id> --region=us-central1 --format='value(status.url)'
+## Error Recovery
 
-# Test direct proxy access
-curl -v <proxy-service-url>/public/<filename>
-```
-Check for 200 OK with content, 404 (file not in bucket), or 500 (proxy misconfiguration).
-
-### Step 5 — Check Firebase Hosting Configuration
-Verify the hosting rewrite rules route requests to the proxy:
-```bash
-# Check firebase.json rewrites
-cat firebase.json
-# Or check via project context: firebase_hosting_rewrites field
-```
-The rewrite should map `/public/**` to the proxy-service Cloud Run backend.
-
-### Step 6 — End-to-End Verification
-Test the full URL path from the user-facing domain:
-```bash
-curl -v https://<target_domain>/public/<filename>
-curl -v https://<gcp_project_id>.web.app/public/<filename>
-```
-Compare headers and response with the direct proxy test from Step 4.
-
-## Common Failure Modes
-
-| Symptom | Likely Cause | Fix |
-|---------|-------------|-----|
-| File in Drive but not in GCS | Sync-service not running or watch expired | Check sync-service logs, renew watch |
-| File in GCS but proxy returns 404 | Proxy not configured for that path prefix | Check proxy rewrite rules |
-| Proxy works but hosting returns 404 | Firebase rewrite missing or incorrect | Update firebase.json rewrites |
-| Everything works but wrong content | CDN cache stale | Clear Firebase Hosting cache |
-| Sync-service 403 on Drive API | Service account missing Drive permissions | Grant Drive access to SA |
+| Error / Symptom | Likely Cause | Recovery |
+|-----------------|-------------|----------|
+| File in Drive but not in GCS | Sync-service not running or watch expired | Check sync-service logs using `gcloud run services logs read` and renew the directory watch. |
+| File in GCS but proxy returns 404 | Proxy not configured for that path prefix | Check proxy rewrite rules in configuration, and verify GCS bucket name resolution. |
+| Proxy works but hosting returns 404 | Firebase rewrite missing or incorrect | Update `firebase.json` rewrites and run `firebase deploy --only hosting` to apply them. |
+| Everything works but wrong content | CDN cache stale | Clear Firebase Hosting cache or perform a force reload of the page. |
+| Sync-service 403 on Drive API | Service account missing Drive permissions | Grant Google Drive read/write access to the sync-service service account email. |
 
 ## Safety
 - This is a READ-ONLY diagnostic procedure — no modifications
 - All commands are safe to run in production
-- Do not modify firebase.json or Cloud Run configs without user approval
+- Do not modify `firebase.json` or Cloud Run configs without user approval

@@ -1,10 +1,16 @@
 {
   "id": "firebase-hosting-diagnostics",
   "name": "Firebase Hosting Pipeline Diagnostics",
-  "version": 1,
+  "version": 2,
+  "description": "Diagnose why a file in the Drive-to-sync-to-GCS-to-proxy-to-hosting pipeline is not being served.",
   "origin": "specialty",
   "category": "diagnostics",
   "agent_part": "motor",
-  "when_to_use": "When diagnosing why a file in the Drive-to-sync-to-GCS-to-proxy-to-hosting pipeline is not being served at its expected URL",
-  "scripts": ["gsutil", "gcloud", "curl", "firebase"]
+  "when_to_use": "When diagnosing why a file in the Drive-to-sync-to-GCS-to-proxy-to-hosting pipeline is not being served at its expected URL.",
+  "scripts": [
+    "gsutil",
+    "gcloud",
+    "curl",
+    "firebase"
+  ]
 }
