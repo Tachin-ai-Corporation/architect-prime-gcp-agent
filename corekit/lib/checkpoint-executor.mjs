@@ -78,9 +78,10 @@ export async function executeCheckpoints(checkpoints, opts) {
     startCpIndex = 0,
     startTaskIndex = 0,
     savedResults = [],
+    buildProjectContext,
   } = opts;
 
-  const _requiredDeps = { dispatchAgent, envelope, firestoreWrite, writeHistory, log, generateId };
+  const _requiredDeps = { dispatchAgent, envelope, firestoreWrite, writeHistory, log, generateId, buildProjectContext };
   for (const [name, val] of Object.entries(_requiredDeps)) {
     if (val === undefined) {
       throw new Error(`[checkpoint-executor] Missing required dependency: "${name}". Check the opts passed to executeCheckpoints().`);
