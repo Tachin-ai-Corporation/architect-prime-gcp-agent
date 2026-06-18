@@ -1,23 +1,47 @@
 # Skill: Google Slides
 
-## What this skill does
-Create, read, edit, and manage Google Slides presentations.
+## When to Use
+When creating, reading, or editing Google Slides presentations — including creating new slides, updating layouts, inserting text or shapes, and batch-processing formatting requests.
 
-## When to use
-When creating, reading, or editing Google Slides presentations — layouts, text, images, shapes, formatting.
-
-## Tools (dispatched to motor for writes, motor for reads)
+## Commands
 
 ### Read
-- `slides-get <presentation_id> [--slide INDEX]` — read presentation metadata and slide summary
+- `slides-get <presentation_id> [--slide INDEX]` — Read presentation metadata and slide layout/structure summary.
+  Output: JSON detailing slides, page elements, and layout information.
 
 ### Write
-- `slides-create --title "Name" [--folder FOLDER_ID]` — create a new presentation
-- `slides-update <presentation_id> --requests '<JSON array>'` — batch update (generic workhorse)
-- `slides-add-slide <presentation_id> [--layout LAYOUT_TYPE] [--index INSERT_INDEX]` — add a new slide
-- `slides-duplicate <presentation_id> --slide-id <SLIDE_OBJECT_ID>` — duplicate a slide
+- `slides-create --title <title> [--folder FOLDER_ID]` — Create a new empty Google Slides presentation.
+  Output: JSON containing the presentation ID and a direct web link.
+- `slides-update <presentation_id> --requests <JSON>` — Batch update a presentation using Slides API request objects.
+  Output: API batchUpdate response details.
+- `slides-add-slide <presentation_id> [--layout LAYOUT_TYPE] [--index INSERT_INDEX]` — Add a new slide with a specific layout.
+  Output: Status confirmation and new slide ID.
+- `slides-duplicate <presentation_id> --slide-id <SLIDE_OBJECT_ID>` — Duplicate an existing slide page.
+  Output: Status confirmation and duplicated slide ID.
 
-## Tool Details
+## Procedures
+
+### Create a new presentation and add slides
+1. Run `slides-create --title "Project Pitch"` to create an empty deck. Note the presentation ID.
+2. Run `slides-add-slide <presentation_id> --layout TITLE` to insert the title slide at index 0.
+3. Run `slides-add-slide <presentation_id> --layout TITLE_AND_BODY --index 1` to insert a content slide.
+4. Verify: Run `slides-get <presentation_id>` and confirm that slideCount is 3 (including the default initial slide).
+
+### Replace text placeholders in a presentation
+1. Resolve the presentation ID.
+2. Formulate a JSON batch update array containing one or more `replaceAllText` requests (e.g. `[{"replaceAllText":{"containsText":{"text":"{{PROJECT_NAME}}"},"replaceText":"Architect Prime"}}]`).
+3. Run `slides-update <presentation_id> --requests '<json_array>'` to apply the updates.
+4. Verify: Run `slides-get <presentation_id> --slide 0` or check the presentation manually to confirm replacement.
+
+### Insert text boxes or shapes on a slide
+1. Retrieve the presentation ID and target slide's object ID (via `slides-get`).
+2. Construct a batch update payload using `createShape` (to create a `TEXT_BOX`) and `insertText`.
+3. Run `slides-update <presentation_id> --requests '<json_array>'`.
+4. Verify: Confirm the API returns a success response with the new element IDs.
+
+---
+
+## Detailed Tool Reference
 
 ### slides-create
 Create a new empty presentation.
@@ -235,7 +259,3 @@ Use these request objects with `slides-update --requests`. Multiple requests can
 - Sizes and positions use EMU (English Metric Units): 1 inch = 914400 EMU, 1 pt = 12700 EMU.
 - When combining multiple requests, they execute in array order — create elements before styling them.
 - Use `slides-get` first to discover objectIds of existing elements before updating them.
-
-## Auth
-All tools authenticate via DWD using the agent's Workspace email.
-No API keys or OAuth tokens needed.
