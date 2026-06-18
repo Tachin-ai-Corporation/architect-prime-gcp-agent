@@ -1,52 +1,34 @@
 # Skill: Codebase Audit
 
-## What this skill does
-Read-only codebase analysis with discovery-driven focus rotation.
+## When to Use
+When auditing a codebase — including analyzing code structure, checking standards compliance, reviewing architecture, and identifying quality improvements.
 
-## When to use
-When auditing a codebase — analyzing code structure, checking standards
-compliance, reviewing architecture and contracts.
+## Commands
 
-## Audit Protocol
+No custom corekit scripts are governed directly by this skill.
 
-### Step 1: Read Standards (MANDATORY)
+## Procedures
 
-Before any analysis, read the project's architecture standards and invariant
-documents. Check the project context for their locations — do not assume
-file paths.
+### Perform a codebase audit cycle
+1. **Read Standards:** Locate and read the project's architecture standards and invariant documents from the project context.
+2. **Gather Context:** Query recent task logs or Core Memory entries to review prior audit history.
+3. **Discover Module Structure:** Run a directory search or structure check to locate key files and identify major subsystems.
+4. **Inspect Focus Area:** Select a subsystem to audit. Inspect key files, checking for code smells, invariants compliance, complexity, and duplicate patterns.
+5. **Cross-Reference:** Check cross-cutting concerns such as configuration locations, manifests, test coverage, and documentation files.
+6. **Rank Findings:** Score findings against the quality rubric and select the single highest-value finding for the improvement proposal.
+7. Verify: Check that the final report cites specific files and line numbers, and has a clear z-score or improvement measure.
 
-### Step 2: Gather Context
+## Error Recovery
 
-Review prior learnings from the active audit responsibility (if one exists).
-Recall relevant Core Memory entries about the project's architecture and
-patterns.
+| Error / Symptom | Likely Cause | Recovery |
+|-----------------|-------------|----------|
+| Missing architecture standards file | Context path is incorrect or file is deleted | Run a repository search for "invariant" or "standard" files, or default to standard core codebase guidelines if none exist. |
+| Search queries match huge generated/compiled files | Glob patterns are too broad | Filter your searches by explicitly excluding build/distribution directories (e.g., `!**/dist/*`, `!**/node_modules/*`). |
+| Ambiguous context or focus area | No clear record of previous audit rotation | Check the last 10 task logs using `task-log-read` to identify which modules were recently edited or audited. |
 
-### Step 3: Discover Module Structure
+---
 
-Do not assume directory layout. Discover the project's structure:
-- Examine the top-level directories and key configuration files.
-- Identify the major subsystems and their boundaries.
-- Check for architecture documentation within the project.
-
-### Step 4: Inspect Focus Area
-
-Rotate through the project's subsystems systematically. For each focus area:
-1. Read key files in the subsystem.
-2. Check for: code duplication, unclear naming, missing error handling,
-   inconsistent patterns, unnecessary complexity.
-3. Verify compliance with the project's declared invariants.
-4. Assess against the project's quality dimensions.
-
-### Step 5: Cross-Reference
-
-After inspecting the focus area, check cross-cutting concerns:
-- Are configuration values centralized as the project requires?
-- Are deployment manifests consistent with the codebase?
-- Is there test coverage for the inspected modules?
-- Is documentation consistent with the code?
-
-### Step 6: Rank Findings
-
+## Rubric Format
 For each finding, score against the project's quality rubric:
 
 ```
@@ -58,13 +40,8 @@ Risk: <low | medium | high>
 Scope: <file globs>
 ```
 
-Select the single highest-value finding for the improvement proposal.
-
-## Important Constraints
-
+## Safety Rules
 - **READ-ONLY**: This skill is strictly observational. Do not modify any files.
-- **Single improvement per cycle**: Propose exactly one improvement, the
-  highest-value one.
+- **Single improvement per cycle**: Propose exactly one improvement, the highest-value one.
 - **Evidence-based**: Every finding must cite specific files and line numbers.
-- **Standards-compliant**: Every proposal must pass the project's standards
-  filters before being submitted.
+- **Standards-compliant**: Every proposal must pass the project's standards filters before being submitted.

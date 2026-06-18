@@ -1,13 +1,13 @@
 {
   "id": "codebase-audit",
   "name": "Codebase Audit",
-  "version": "1.0.0",
-  "description": "Read-only codebase analysis with discovery-driven focus rotation",
+  "version": 2,
+  "description": "Read-only codebase analysis with discovery-driven focus rotation.",
   "author": "architect-prime",
   "origin": "specialty",
   "category": "analysis",
   "agent_part": "motor",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When auditing a codebase — analyzing code structure, checking standards compliance, reviewing architecture and contracts"
+  "when_to_use": "When auditing a codebase — analyzing code structure, checking standards compliance, reviewing architecture and contracts."
 }
