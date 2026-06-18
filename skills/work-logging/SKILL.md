@@ -1,82 +1,29 @@
-# Skill: work-logging
+# Skill: Work & Task Logging
 
-## What this skill does
-Read task lifecycle records and work envelope logs.
-Used for mission history, agent activity dashboards, and readback.
+## When to Use
+When recording work history, reviewing past task output, or reading mission logs and agent activity from Firestore.
 
-## When to use
-When you need to review what agents have done or query recent mission
-history from Firestore.
+## Commands
 
----
+### Read
+- `task-log-read [--last <n>] [--agent <name>] [--task <taskId>]` — Read recent task records from Firestore.
+  Output: JSON array of task records containing status, agent, and output details.
+- `work-log-read [--hours <n>] [--owner <name>] [--status <status>] [--type <type>] [--min-steps <n>] [--limit <n>] [--json] [--verbose]` — Query recent work envelopes (missions, checkpoints, responsibilities) from Firestore.
+  Output: Table or JSON representation of work envelopes including dispatches, outcomes, and timestamps.
 
-## Tools
+## Procedures
 
-### task-log-read
+### Query an agent's recent task history
+1. Identify the agent name (e.g., `stan`).
+2. Run `task-log-read --agent stan --last 10` to view the last 10 task records for that agent.
+3. Verify: Check that the output contains a JSON list of tasks executed by the specified agent.
 
-Read recent task records from Firestore.
+### Inspect completed work envelopes
+1. Define the timeframe (e.g., last 48 hours).
+2. Run `work-log-read --hours 48 --status complete` to list all completed envelopes.
+3. Verify: Confirm the output displays a list of completed missions or responsibilities with completion status.
 
-```
-exec task-log-read [--last N] [--agent <name>] [--task <taskId>]
-```
-
-**Flags:**
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--last N` | `5` | Show last N tasks |
-| `--agent <name>` | — | Filter by fleet agent name (e.g. `stan`) |
-| `--task <taskId>` | — | Get a specific task by ID |
-
-**Output:** JSON array of task records on stdout.
-
-**Examples:**
-```bash
-# Last 5 tasks (default)
-exec task-log-read --last 5
-
-# Last 10 from a specific fleet agent
-exec task-log-read --last 10 --agent stan
-
-# Lookup a specific task
-exec task-log-read --task t-1234567890-abc123
-```
-
----
-
-### work-log-read
-
-Query recent work envelopes (missions, checkpoints, responsibilities)
-from Firestore. Shows what agents were dispatched, outcomes, and timing.
-
-```
-exec work-log-read [OPTIONS]
-```
-
-**Flags:**
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--hours N` | `24` | Look back N hours |
-| `--owner <name>` | — | Filter by agent owner (e.g. `stan`, `anora`) |
-| `--status <status>` | — | Filter: `complete`, `failed`, `active`, `pending` |
-| `--type <type>` | — | Filter by envelope type: `M` (mission), `C` (child), `R` (responsibility) |
-| `--min-steps N` | `0` | Only show envelopes with N+ child dispatches |
-| `--limit N` | `50` | Max results |
-| `--json` | — | Output as JSON array |
-| `--verbose` | — | Include result/instruction text in output |
-
-**Reads from:** `/primes/{primeId}/work/`
-
-**Examples:**
-```bash
-# Last 24h, all agents, table format
-exec work-log-read --hours 24
-
-# Stan's completed work, last 48h
-exec work-log-read --hours 48 --owner stan --status complete
-
-# Missions only, JSON output
-exec work-log-read --hours 24 --type M --json
-
-# Multi-step work with full details
-exec work-log-read --hours 24 --min-steps 3 --verbose
-```
+### Retrieve details for a specific task
+1. Obtain the target task ID (e.g., `t-1234567890-abc123`).
+2. Run `task-log-read --task t-1234567890-abc123` to query its detailed record.
+3. Verify: Ensure the output details match the requested task ID and show the execution log.
