@@ -1,13 +1,15 @@
 {
   "id": "fleet-fire",
   "name": "Fleet Fire",
-  "version": "1.0.0",
-  "description": "Decommission a fleet agent — deletes VM and stops billing",
+  "version": 2,
+  "description": "Decommission a fleet agent — deletes VM and stops billing.",
   "author": "architect-prime",
   "origin": "core",
   "category": "fleet",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": [
+    "fleet-fire"
+  ],
   "requires": {},
-  "when_to_use": "When firing, removing, tearing down, or deleting a fleet agent"
+  "when_to_use": "When firing, removing, tearing down, or deleting a fleet agent."
 }
