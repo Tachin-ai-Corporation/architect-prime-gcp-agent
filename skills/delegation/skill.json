@@ -1,13 +1,13 @@
 {
   "id": "delegation",
   "name": "Cross-Agent Delegation",
-  "version": "1.0.0",
-  "description": "Delegate work to teammate agents on shared projects via the brain delegate action",
+  "version": 2,
+  "description": "Delegate work to teammate agents on shared projects via the brain delegate action.",
   "author": "architect-prime",
   "origin": "core",
   "category": "work",
   "agent_part": "cortex",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When work should be assigned to a teammate agent instead of done locally"
+  "when_to_use": "When work should be assigned to a teammate agent instead of done locally."
 }

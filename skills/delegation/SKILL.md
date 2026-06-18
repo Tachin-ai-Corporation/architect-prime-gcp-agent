@@ -1,47 +1,41 @@
-# Skill: delegation
+# Skill: Cross-Agent Delegation
 
-## What this skill does
-Cross-agent delegation — assigning work to a teammate agent on a shared project.
-Delegation is a **brain-level action**, not a motor tool. Cortex outputs
-`action: "delegate"` and the brain daemon handles the rest.
+## When to Use
+When work should be assigned to a teammate agent on a shared project instead of done locally (e.g., when the work belongs to another agent's specialty or role).
 
-## When to delegate
-- The work belongs to another agent's specialty (devops → stan, design → dot)
-- The project team structure assigns specific roles
-- You're the project lead and need to distribute work
+## Commands
 
-## How to delegate
+No executable commands are governed directly by this skill (cortex-only action).
 
-In the cortex **decide** response, use:
+## Procedures
 
-```json
-{
-  "action": "delegate",
-  "target_email": "devops-agent-stan@tachin.ag",
-  "instruction": "Investigate the sync-service health and report status",
-  "accept_criteria": "Report with service status, last sync timestamp, and any errors",
-  "project_id": "tachin-website"
-}
-```
+### Delegate a task to a project teammate
+1. Retrieve the project configuration and locate the `team` array.
+2. Find the target agent's role and email (e.g., `devops-agent-stan@tachin.ag` for devops).
+3. In your cortex `decide` response, format a delegation action:
+   ```json
+   {
+     "action": "delegate",
+     "target_email": "devops-agent-stan@tachin.ag",
+     "instruction": "Investigate the sync-service health and report status",
+     "accept_criteria": "Report with status and any logs",
+     "project_id": "project-123"
+   }
+   ```
+4. Verify: Ensure the brain daemon creates the delegation envelope and outputs a `[DELEGATION]` message to the project's shared space.
 
-### Required fields
-- `target_email` — The target agent's **full email** from the project `team` array.
-  Always use the exact email shown in the team roster (e.g. `devops-agent-stan@tachin.ag`).
-  Never guess, shorten, or construct email addresses.
-- `instruction` — Clear description of the work to delegate.
+### Handle delegation completion
+1. Wait for the target agent to deliver a `[DELEGATION-RESULT]` message in the shared project space.
+2. The brain daemon will automatically resume your mission with the target's output.
+3. Verify: Check that the incoming result satisfies the delegation's acceptance criteria before proceeding.
 
-### Optional fields
-- `accept_criteria` — How to verify the delegated work is done.
-- `project_id` — The project this delegation belongs to (auto-filled from envelope if omitted).
+## Error Recovery
 
-## What happens after delegation
-1. Brain creates a delegation task envelope (`status: waiting`)
-2. Mouth composes a `[DELEGATION]` marker and delivers it to the **project's shared GChat space**
-3. Before delivery, Mouth verifies the target agent is a member of the space (adds them if not)
-4. Target agent's ears picks up the delegation from the shared space
-5. Target agent's brain creates a mission and executes the work
-6. When complete, target agent sends a `[DELEGATION-RESULT]` marker back to the project space
-7. Delegating agent's brain auto-resumes the waiting mission
+| Error / Symptom | Likely Cause | Recovery |
+|-----------------|-------------|----------|
+| Target agent not found | Email address is malformed or guessed | Always copy the exact email from the project registry `team` roster; do not shorten or invent email addresses. |
+| Target agent lacks space membership | Target is not in the project GChat space | Mouth will auto-add them before delivering. If it fails, ask the user to manually add the agent to the space. |
+| Delegation fails to dispatch | Invalid project ID | Verify that the `project_id` field in the delegation payload matches an active project in Firestore. |
 
 ## Communication rules
 
