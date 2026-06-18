@@ -76,6 +76,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     startCpIndex = 0,
     startTaskIndex = 0,
     savedResults = [],
+    buildProjectContext,
   } = opts;
 
   const STEP_LEDGER_ENABLED = contracts.dispatch?.step_ledger_enabled !== false;

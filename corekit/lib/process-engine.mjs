@@ -906,6 +906,7 @@ export function createProcessEngine(deps) {
       startCpIndex,
       startTaskIndex,
       savedResults: [],
+      buildProjectContext: _buildProjCtx,
     });
 
     if (execResult.paused) {

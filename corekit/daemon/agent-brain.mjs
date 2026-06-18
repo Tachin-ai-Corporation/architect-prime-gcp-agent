@@ -2239,6 +2239,7 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
     startCpIndex: checkpointIndex,
     startTaskIndex: taskIndex,
     savedResults,
+    buildProjectContext,
   });
 
   if (execResult.paused) {
@@ -2373,6 +2374,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     CTX_AGENT_STEP,
     CTX_DISPATCH_FAILURE,
     CONTRACTS,
+    buildProjectContext,
     MAX_ITERATIONS,
     REGISTRY,
     executeCheckpoints,

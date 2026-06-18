@@ -28,7 +28,8 @@ export async function handleCheckpointPlan(ctx, deps) {
     firestoreRead,
     firestoreQuery,
     generateId,
-    REGISTRY
+    REGISTRY,
+    buildProjectContext,
   } = deps;
 
   // Try cortex-provided inline structure first
@@ -136,6 +137,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     startCpIndex: 0,
     startTaskIndex: 0,
     savedResults: [],
+    buildProjectContext,
   });
 
   if (execResult.paused) {
