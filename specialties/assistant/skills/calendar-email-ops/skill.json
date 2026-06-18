@@ -1,13 +1,13 @@
 {
   "id": "calendar-email-ops",
   "name": "Calendar & Email Operations",
-  "version": "1.0.0",
-  "description": "Procedures for calendar management, email drafting, scheduling, and follow-up tracking",
+  "version": 2,
+  "description": "Procedures for calendar management, email drafting, scheduling, and follow-up tracking.",
   "author": "architect-prime",
   "origin": "specialty",
   "category": "productivity",
   "agent_part": "motor",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When managing calendar events, drafting emails, scheduling meetings, or tracking follow-ups"
+  "when_to_use": "When managing calendar events, drafting emails, scheduling meetings, or tracking follow-ups."
 }
