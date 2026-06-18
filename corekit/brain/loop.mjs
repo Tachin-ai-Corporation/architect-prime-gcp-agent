@@ -377,6 +377,13 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
         console.log(`[loop] Loop guard: nudge injected`);
         localHistory.push({ role: 'user', content: guardResult.message });
       }
+
+      // Phase 4.10: Terminal tool execution checks (report_pass/report_fail)
+      if (sc.name === 'report_pass' || sc.name === 'report_fail') {
+        console.log(`[loop] Terminal tool ${sc.name} executed. Exiting turn loop.`);
+        step = maxSteps;
+        break;
+      }
     }
 
     step++;
@@ -527,6 +534,13 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
       if (guardResult.action === 'nudge') {
         console.log(`[loop] Loop guard: nudge injected`);
         localHistory.push({ role: 'user', content: guardResult.message });
+      }
+
+      // Phase 4.10: Terminal tool execution checks (report_pass/report_fail)
+      if (sc.name === 'report_pass' || sc.name === 'report_fail') {
+        console.log(`[loop] Terminal tool ${sc.name} executed. Exiting turn loop.`);
+        step = maxSteps;
+        break;
       }
     }
 

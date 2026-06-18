@@ -1,4 +1,7 @@
 // Action handler: checkpoint_plan
+import fs from 'node:fs';
+import path from 'node:path';
+
 export async function handleCheckpointPlan(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
   const {
@@ -41,10 +44,19 @@ export async function handleCheckpointPlan(ctx, deps) {
     log('INFO', `Checkpoint plan: no valid inline structure — dispatching to prefrontal for structuring`);
 
     try {
+      let skillDoc = '';
+      try {
+        skillDoc = fs.readFileSync(path.join(CORE_DIR, 'skills', 'plan-structuring', 'SKILL.md'), 'utf8');
+      } catch (err) {
+        log('WARN', `Failed to read plan-structuring SKILL.md: ${err.message}`);
+      }
+
       const planResult = await callAgent('prefrontal', {
         instruction: [
           '[PLAN STRUCTURING]',
-          'Read the plan-structuring SKILL.md, then structure a checkpoint/task plan for this goal.',
+          'Structure a checkpoint/task plan for the goal using the provided plan-structuring skill instructions.',
+          '',
+          skillDoc ? `## Plan Structuring Skill Instructions\n${skillDoc}` : '',
           '',
           '## Goal',
           planGoal,
