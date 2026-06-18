@@ -1,14 +1,48 @@
 # Skill: Code Review Operations
 
-## What this skill does
-Code review procedures — diff analysis, code smell detection, coverage checks, security scanning
+## When to Use
+When reviewing code changes — including analyzing pull requests, checking test coverage, detecting code smells, scanning for hardcoded secrets, and generating code review checklists.
 
-## When to use
-When reviewing code changes — analyzing diffs, checking quality, scanning for issues
+## Commands
 
-Use these procedures when performing code review tasks via `exec`.
+No custom corekit scripts are governed by this skill.
 
-## Diff Analysis
+## Procedures
+
+### Perform a complete pull request review
+1. Check the changed files and statistics:
+   ```bash
+   git diff origin/main...HEAD --stat
+   ```
+2. Scan the changed files for hardcoded secrets and debug leftovers:
+   ```bash
+   # Scan for hardcoded keys or passwords
+   grep -rn "api[_-]key\|api[_-]secret\|password" --include="*.ts" --include="*.py" .
+   # Scan for console.log or print statements
+   grep -rn "console\.log\|print(" --include="*.ts" --include="*.py" .
+   ```
+3. Run test coverage checks (e.g. `npx jest --coverage` or `python -m pytest --cov`).
+4. Generate the structured review checklist (detailing Passes, Warnings, Blockers, and Metrics).
+5. Verify: Ensure the final checklist is outputted with specific file paths and line numbers for warnings or blockers.
+
+### Scan codebase for security concerns
+1. Scan for private keys and AWS-style keys:
+   ```bash
+   grep -rn "BEGIN.*PRIVATE KEY" .
+   grep -rn "AKIA[0-9A-Z]\{16\}" .
+   ```
+2. Check for committed `.env` files:
+   ```bash
+   git ls-files | grep -i "\.env"
+   ```
+3. Run dependency audits (e.g. `npm audit` or `pip audit`).
+4. Verify: Report any found secrets or vulnerable dependencies as blockers.
+
+---
+
+## Code Review Reference
+
+### Diff Analysis
 
 | What | Command |
 |------|---------|
@@ -20,104 +54,16 @@ Use these procedures when performing code review tasks via `exec`.
 | Diff ignore whitespace | `git diff origin/main...HEAD -w` |
 | Show additions only | `git diff origin/main...HEAD --diff-filter=A --name-only` |
 
-### Diff Triage
-1. Run `--stat` first to understand scope
-2. Prioritize review of files with most changes
-3. Check new files (`--diff-filter=A`) for missing tests
-4. Check deleted files (`--diff-filter=D`) for orphaned references
-
-## Code Smell Detection
-
-### Grep Patterns for Common Smells
+### Code Smell Detection Patterns
 ```bash
 # TODO/FIXME/HACK left in code
 grep -rn "TODO\|FIXME\|HACK\|XXX" --include="*.ts" --include="*.py" --include="*.go" .
 
-# Console.log / print statements (debug leftovers)
-grep -rn "console\.log\|console\.debug\|print(" --include="*.ts" --include="*.py" .
-
-# Magic numbers (numeric literals outside of constants)
-grep -rn "[^a-zA-Z_0-9]\([0-9]\{3,\}\)" --include="*.ts" --include="*.py" .
-
 # Empty catch blocks
 grep -rn "catch.*{" -A1 --include="*.ts" --include="*.js" . | grep -B1 "^.*}$"
-
-# Long functions (files with dense logic)
-wc -l $(git diff origin/main...HEAD --name-only --diff-filter=AM) | sort -rn | head -20
-
-# Duplicate code indicators — repeated string literals
-grep -roh '"[^"]\{20,\}"' --include="*.ts" --include="*.py" . | sort | uniq -c | sort -rn | head -10
 ```
 
-## Test Coverage Checks
-
-### JavaScript/TypeScript
-```bash
-# Run coverage
-npx jest --coverage --coverageReporters=text 2>&1
-
-# Coverage for changed files only
-npx jest --coverage --changedSince=origin/main --coverageReporters=text 2>&1
-
-# Check coverage threshold
-npx jest --coverage --coverageThreshold='{"global":{"branches":80,"functions":80,"lines":80}}' 2>&1
-```
-
-### Python
-```bash
-# Run coverage
-python -m pytest --cov=. --cov-report=term-missing 2>&1
-
-# Coverage for specific module
-python -m pytest --cov=MODULE_NAME --cov-report=term-missing 2>&1
-```
-
-### Go
-```bash
-# Run coverage
-go test -cover ./... 2>&1
-
-# Detailed coverage report
-go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out
-```
-
-## Security Scanning
-
-### Secrets Detection
-```bash
-# Hardcoded API keys / tokens
-grep -rn "api[_-]key\|api[_-]secret\|apikey\|apiSecret" --include="*.ts" --include="*.py" --include="*.go" --include="*.json" -i .
-
-# AWS-style keys
-grep -rn "AKIA[0-9A-Z]\{16\}" .
-
-# Generic secrets
-grep -rn "password\s*=\s*['\"]" --include="*.ts" --include="*.py" --include="*.go" -i .
-
-# Private keys
-grep -rn "BEGIN.*PRIVATE KEY" .
-
-# Hardcoded IPs
-grep -rn "[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}" --include="*.ts" --include="*.py" --include="*.go" . | grep -v "0\.0\.0\.0\|127\.0\.0\.1\|localhost"
-
-# .env files committed
-git ls-files | grep -i "\.env"
-```
-
-### Dependency Audit
-```bash
-# Node
-npm audit 2>&1
-
-# Python
-pip audit 2>&1 || safety check 2>&1
-
-# Go
-go list -m -json all | grep -i "Vulns" 2>&1
-```
-
-## Review Checklist Format
-
+### Review Checklist Format
 Use this format to structure review output:
 
 ```markdown
