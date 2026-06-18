@@ -1,13 +1,19 @@
 {
   "id": "workspace-gmail",
   "name": "Gmail",
-  "version": "1.0.0",
-  "description": "Search, read, send, and draft emails via Gmail",
+  "version": 2,
+  "description": "Search, read, send, and draft emails via Gmail.",
   "author": "architect-prime",
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": ["gmail-draft-create", "gmail-draft-send", "gmail-get", "gmail-search", "gmail-send"],
+  "scripts": [
+    "gmail-draft-create",
+    "gmail-draft-send",
+    "gmail-get",
+    "gmail-search",
+    "gmail-send"
+  ],
   "requires": {},
-  "when_to_use": "When sending, reading, searching, or drafting emails"
+  "when_to_use": "When a task involves sending, reading, searching, or drafting emails in Gmail."
 }
