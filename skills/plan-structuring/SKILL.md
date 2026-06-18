@@ -1,19 +1,26 @@
-# Checkpoint Plan Structuring
+# Skill: Checkpoint Plan Structuring
 
-## Purpose
-Transform a goal + Brief into a structured checkpoint/task plan that the
-brain daemon can validate and execute.
+## When to Use
+When the brain daemon asks the prefrontal organ to structure a checkpoint plan from a goal and Brief.
 
-## Input
-You receive:
-- A **goal** (what cortex decided needs to happen)
-- A **Brief** (the parts you already decomposed in the analyze phase)
-- A **skill index** (what skills are available to motor)
-- Optional **constraints** from cortex (sequencing, risk gates, dependencies)
-- Optional **prior results** (what has already been accomplished)
+## Commands
 
-## Output
-Return a JSON object with a `checkpoints` array. Each checkpoint contains:
+No executable commands are governed directly by this skill (prefrontal-only planning).
+
+## Procedures
+
+### Structure a checkpoint and task plan
+1. Read the input goal, Brief parts, and available skill index.
+2. Define checkpoints based on risk boundaries, specialty handoffs, or verification checkpoints.
+3. For each checkpoint, define the `instruction` and `accept_criteria`.
+4. Decompose each checkpoint into atomic tasks, identifying the target `agent`, task instructions (referencing specific skills), and task `accept_criteria`.
+5. Format the plan into the final JSON structure containing `checkpoints` and `tasks`.
+6. Verify: Ensure the output plan conforms strictly to the schema, has no missing fields, and does not contain execution commands.
+
+---
+
+## Output Schema
+Return a JSON object with a `checkpoints` array:
 
 ```json
 {
@@ -38,8 +45,7 @@ Return a JSON object with a `checkpoints` array. Each checkpoint contains:
 ## Rules
 
 ### Task atomicity
-Each task must be completable within motor's step budget (~50 tool calls,
-300s timeout). If a task would require more, split it.
+Each task must be completable within motor's step budget (~50 tool calls, 300s timeout). If a task would require more, split it.
 
 ### Checkpoint boundaries
 A new checkpoint starts when:
@@ -49,13 +55,11 @@ A new checkpoint starts when:
 - An approval gate is required
 
 ### Skill references
-When writing motor task instructions, name the specific skill(s) motor
-should consult.
+When writing motor task instructions, name the specific skill(s) motor should consult.
 
 ### One-task plans are valid
 A simple request yields one checkpoint with one task.
 
-### What you never do
-- Execute. You have no tools.
-- Decide. Cortex already decided this needs a plan. You structure it.
-- Judge scope. If cortex said "plan this," plan it.
+### Constraints
+- Do not execute tasks directly.
+- Do not decide goal feasibility; cortex handles decisions.

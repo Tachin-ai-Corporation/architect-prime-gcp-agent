@@ -1,10 +1,12 @@
 {
   "id": "plan-structuring",
   "name": "Checkpoint Plan Structuring",
-  "version": 1,
+  "version": 2,
+  "description": "Transform a goal and Brief into a structured checkpoint and task plan for execution.",
   "origin": "core",
   "category": "planning",
   "agent_part": "prefrontal",
   "scripts": [],
-  "when_to_use": "When the brain daemon asks prefrontal to structure a checkpoint plan from a goal and Brief"
+  "requires": {},
+  "when_to_use": "When the brain daemon asks prefrontal to structure a checkpoint plan from a goal and Brief."
 }
