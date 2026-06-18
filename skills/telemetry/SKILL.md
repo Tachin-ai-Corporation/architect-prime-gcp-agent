@@ -1,83 +1,31 @@
-# Skill: telemetry
+# Skill: Brain Telemetry & Agent Status
 
-## What this skill does
-Read brain dispatch telemetry and check/set agent activity status.
-Used for debugging, performance monitoring, and agent health dashboards.
+## When to Use
+When checking agent health, reading brain dispatch metrics, debugging dispatch failures, or updating agent activity state in Firestore or status logs.
 
-## When to use
-When checking agent health, reading brain dispatch metrics, debugging
-dispatch failures, or updating agent activity state.
+## Commands
 
----
+### Read
+- `brain-telemetry-read [--last <n>] [--agent <id>] [--failures] [--json]` — Query recent brain dispatch telemetry events from Firestore.
+  Output: Table or JSON list of dispatch events (times, duration, success/fail details).
+- `agent-status get [--field <name>]` — Read the agent's current activity state from `workspace/STATUS.json`.
+  Output: Full status JSON or the value of the requested field.
 
-## Tools
+### Write
+- `agent-status set <state> [detail] [task]` — Write/update the agent's activity state.
+  Output: Status confirmation. (Valid states: `idle`, `classifying`, `planning`, `dispatching`, `synthesizing`, `responding`).
 
-### brain-telemetry-read
+## Procedures
 
-Query recent brain dispatch telemetry events from Firestore.
+### Inspect recent dispatch failures
+1. Run `brain-telemetry-read --failures --last 10` to query the last 10 failed dispatches.
+2. Verify: Ensure the output contains details about the failed task and its error message or exit code.
 
-```
-exec brain-telemetry-read [--last N] [--agent <id>] [--failures] [--json]
-```
+### Check current agent state
+1. Run `agent-status get --field state` to fetch the status state.
+2. Verify: Ensure the output displays the correct active state (e.g., `planning` or `idle`).
 
-**Flags:**
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--last N` | `20` | Number of recent events to show |
-| `--agent <id>` | — | Filter by agent ID (e.g. `motor`, `temporal-research`) |
-| `--failures` | — | Show only failed dispatches |
-| `--json` | — | Output as JSON array |
-
-**Reads from:** `/primes/{primeId}/dispatch-log/`
-
-**Output fields:** `agentId`, `task`, `startedAt`, `durationMs`, `outputBytes`,
-`exitCode`, `success`, `error`, `callerAgent`
-
-**Examples:**
-```bash
-# Last 20 events, table format
-exec brain-telemetry-read
-
-# Last 50 events for motor agent
-exec brain-telemetry-read --last 50 --agent motor
-
-# Only failures, as JSON
-exec brain-telemetry-read --failures --json
-```
-
----
-
-### agent-status
-
-Read or write the agent's current activity state. Maintains
-`workspace/STATUS.json` for daemons and dashboards to query.
-
-#### Set status
-```
-exec agent-status set <state> [detail] [task]
-```
-
-**States:** `idle`, `classifying`, `planning`, `dispatching`, `synthesizing`, `responding`
-
-**Examples:**
-```bash
-exec agent-status set dispatching "temporal-research" "Search for Bears news"
-exec agent-status set idle
-```
-
-#### Get status
-```
-exec agent-status get
-exec agent-status get --field <name>
-```
-
-Returns the full STATUS.json or a single field value.
-
-**Examples:**
-```bash
-# Full status JSON
-exec agent-status get
-
-# Just the current state
-exec agent-status get --field state
-```
+### Set agent state to active or idle
+1. To set the state during a task, run `agent-status set dispatching "Running research task" "t-123"`.
+2. To clear the state when finished, run `agent-status set idle`.
+3. Verify: Run `agent-status get` and confirm the JSON matches the newly set state.

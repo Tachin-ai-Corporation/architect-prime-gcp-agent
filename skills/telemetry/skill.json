@@ -1,13 +1,16 @@
 {
   "id": "telemetry",
   "name": "Brain Telemetry & Agent Status",
-  "version": "1.0.0",
-  "description": "Read brain telemetry data and check agent health status",
+  "version": 2,
+  "description": "Read brain telemetry data and check agent health status.",
   "author": "architect-prime",
   "origin": "core",
   "category": "introspection",
   "agent_part": "motor",
-  "scripts": ["brain-telemetry-read", "agent-status"],
+  "scripts": [
+    "brain-telemetry-read",
+    "agent-status"
+  ],
   "requires": {},
-  "when_to_use": "When checking agent health, reading brain performance metrics, or writing telemetry data"
+  "when_to_use": "When checking agent health, reading brain performance metrics, or writing telemetry data."
 }
