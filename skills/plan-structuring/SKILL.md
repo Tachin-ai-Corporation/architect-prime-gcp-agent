@@ -44,6 +44,17 @@ Return a JSON object with a `checkpoints` array:
 
 ## Rules
 
+### Valid task agents
+The `agent` field MUST be exactly one of:
+- `motor` — executes tools, runs commands, reads/writes files
+- `temporal-research` — web search and external information retrieval
+- `temporal-memory` — internal knowledge and memory recall
+
+No other values are valid. Common mistakes:
+- `exec` is NOT an agent — it's a skill name. Use `motor` with the exec skill.
+- `system` / `System` is NOT an agent.
+- `cortex`, `prefrontal`, `cerebellum` are organ names, not task agents.
+
 ### Task atomicity
 Each task must be completable within motor's step budget (~50 tool calls, 300s timeout). If a task would require more, split it.
 

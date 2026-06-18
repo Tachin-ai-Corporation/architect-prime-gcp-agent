@@ -638,6 +638,12 @@ const _db = createFirestoreClient({ projectId: GCP_PROJECT, logger: log });
 // The lib client uses full paths; these prepend the prime scope.
 
 async function firestoreWrite(collection, docId, data) {
+  // Invariant check: M-type envelope with parent_id should be C-type
+  if (collection === 'work' && data && data.type === 'M' && data.parent_id) {
+    log('ERROR', `Invariant violation: M-type envelope ${data.id} has parent_id ${data.parent_id}. Correcting to type C.`);
+    data.type = 'C';
+    data.delivery_status = 'internal';
+  }
   // Enforce project_id on all Mission writes (brain-specific guard)
   if (collection === 'work' && data && data.type === 'M') {
     validateMissionProjectId(data);
@@ -1356,6 +1362,12 @@ async function completeEnvelope(envelope, opts) {
     skipCleanup = false,
   } = opts;
 
+  if (envelope.type === 'M' && envelope.parent_id) {
+    log('ERROR', `Invariant violation: M-type envelope ${envelope.id} has parent_id ${envelope.parent_id}. Correcting to type C.`);
+    envelope.type = 'C';
+    envelope.delivery_status = 'internal';
+  }
+
   // Step 1: Set envelope fields
   envelope.output = output;
   envelope.status = status;
@@ -1991,11 +2003,11 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     : stripChatFraming(intake.text) || decision.instruction || 'Untitled';
   const envelope = {
     id: envelopeId,
-    type: 'M',
+    type: parentId ? 'C' : 'M',
     parent_id: parentId || null,
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'pending',
-    delivery_status: 'pending',
+    delivery_status: parentId ? 'internal' : 'pending',
     intent: decision.intent || 'decide',
     title: await generateTitle(_titleInput, 'mission'),
     instruction: decision.instruction || stripChatFraming(intake.text),
@@ -2288,6 +2300,29 @@ async function processEnvelope(envelope, memoryContext) {
   } finally {
     // CP3: Release claim on completion (success or failure)
     await releaseClaim(envelope.id, claimId);
+  }
+
+  // At the end of processEnvelope, after the child is terminal:
+  if (envelope.parent_id && ['blocked', 'failed', 'complete'].includes(envelope.status)) {
+    try {
+      const parent = await firestoreRead('work', envelope.parent_id);
+      if (parent && parent.status === 'active') {
+        // Append child result to parent's context so cortex sees it on next iteration
+        const childSummary = `[CHILD RESULT] ${envelope.id} (${envelope.status}): ${toStr(envelope.output).substring(0, 500)}`;
+        if (!parent.context_forward) parent.context_forward = '';
+        parent.context_forward += '\n' + childSummary;
+        parent.updated_at = now();
+        await firestoreWrite('work', parent.id, parent);
+        await writeHistory(parent.id, parent.status, parent.status, 'brain',
+          `Child ${envelope.id} reached ${envelope.status}`);
+        log('INFO', `Propagated child ${envelope.id} (${envelope.status}) to parent ${parent.id}`);
+
+        // Re-process parent so cortex can decide what to do
+        await processEnvelope(parent, envelope.memory_context || null);
+      }
+    } catch (err) {
+      log('WARN', `Failed to propagate child ${envelope.id} status to parent ${envelope.parent_id}: ${err.message}`);
+    }
   }
 }
 
@@ -2932,20 +2967,19 @@ async function main() {
       } while (nextPageToken);
 
       log('INFO', `Startup recovery: scanned ${allDocs.length} work docs`);
-      const orphaned = allDocs.filter(e => e.type === 'M' && (e.owner || '').includes(agentId) &&
+      const orphaned = allDocs.filter(e => (e.type === 'M' || (e.type === 'C' && e.parent_id && e.intent !== 'checkpoint')) &&
+        (e.owner || '').includes(agentId) &&
         (e.status === 'active' || e.status === 'pending'));
       if (orphaned.length > 0) {
-        log('INFO', `Startup recovery: found ${orphaned.length} orphaned M envelope(s)`);
+        log('INFO', `Startup recovery: found ${orphaned.length} orphaned envelope(s)`);
         for (const env of orphaned) {
           const hasChildren = Array.isArray(env.children) && env.children.length > 0;
 
           if (hasChildren) {
             // Mission was already being worked on before restart â€” do NOT reprocess from scratch.
             // Check if the children are all done (archive the mission) or still active (let them complete).
-            const childStatuses = env.children.map(cid => {
-              const child = allDocs.find(d => d.id === cid);
-              return child?.status || 'unknown';
-            });
+            const childObjects = env.children.map(cid => allDocs.find(d => d.id === cid)).filter(Boolean);
+            const childStatuses = childObjects.map(child => child.status || 'unknown');
             const allChildrenDone = childStatuses.every(s => s === 'complete' || s === 'archived' || s === 'failed');
 
             if (allChildrenDone) {
@@ -2956,17 +2990,20 @@ async function main() {
               });
               await writeHistory(env.id, env.status, 'archived', 'brain', 'Archived after restart — all children complete');
             } else {
-              const activeChildren = childStatuses.filter(s => s === 'active' || s === 'pending');
-              if (activeChildren.length > 0) {
-                log('INFO', `Recovery: mission ${env.id} has ${activeChildren.length} active children — ensuring parent active`);
+              const activeChildMissions = childObjects.filter(child =>
+                (child.type === 'M' || (child.type === 'C' && child.intent !== 'checkpoint')) &&
+                (child.status === 'active' || child.status === 'pending')
+              );
+              if (activeChildMissions.length > 0) {
+                log('INFO', `Recovery: mission ${env.id} has ${activeChildMissions.length} active child missions — ensuring parent active`);
                 if (env.status !== 'active') {
                   await firestoreWrite('work', env.id, { status: 'active', updated_at: now() });
                 }
               } else {
-                log('INFO', `Recovery: resuming mission ${env.id} — all children terminal, needs re-planning`);
+                log('INFO', `Recovery: resuming mission ${env.id} — checkpoints active/pending or children terminal, resuming execution`);
                 try {
                   await firestoreWrite('work', env.id, { status: 'active', updated_at: now() });
-                  await writeHistory(env.id, env.status, 'active', 'brain', 'Resumed after restart — children terminal, re-planning');
+                  await writeHistory(env.id, env.status, 'active', 'brain', 'Resumed after restart — resuming execution thread');
                   const memory = await recallMemory(env.instruction);
                   await processEnvelope(env, memory);
                 } catch (e) {

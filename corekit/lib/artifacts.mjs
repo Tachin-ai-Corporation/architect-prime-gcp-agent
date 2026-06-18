@@ -147,6 +147,7 @@ export function createArtifactManager(deps) {
     const ctx = project.context || {};
 
     // Already has a Drive folder
+    if (project.drive_folder_id) return project.drive_folder_id;
     if (ctx.drive_folder?.ref) return ctx.drive_folder.ref;
 
     // General project uses agent's My Drive root

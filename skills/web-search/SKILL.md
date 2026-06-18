@@ -8,8 +8,8 @@ When the task requires fetching real-time information or search results from the
 ### Read
 - `web-search "<question>"` — Search Google with Vertex AI grounding to get real-time answers.
   Output: Grounded answer with search citations and source URLs.
-- `web-fetch "<url>"` — Extract raw text content from a specific web page.
-  Output: Markdown-formatted text of the page.
+- `web-fetch --url "<url>" [--format text|html] [--max <bytes>] [--timeout <seconds>]` — Extract content from a specific web page. Default format is `text` (readable). Use `html` for raw markup.
+  Output: Extracted text or HTML content of the page.
 
 ## Important Notes
 - **Read-Only:** This is a read-only skill — it does not modify any state or infrastructure.
@@ -24,5 +24,5 @@ When the task requires fetching real-time information or search results from the
 
 ### Extract documentation or article details
 1. Run `web-search "<topic>"` to discover the relevant URL, or start with a known URL.
-2. Run `web-fetch "<url>"` to retrieve the webpage contents.
+2. Run `web-fetch --url "<url>"` to retrieve the webpage contents.
 3. Verify: Check that the output contains the page text, rather than navigation headers or error pages.

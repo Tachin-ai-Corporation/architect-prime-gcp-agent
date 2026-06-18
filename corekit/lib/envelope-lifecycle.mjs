@@ -71,6 +71,12 @@ export function createLifecycleHandler(deps) {
       skipCleanup = false,
     } = opts;
 
+    if (envelope.type === 'M' && envelope.parent_id) {
+      log('ERROR', `Invariant violation: M-type envelope ${envelope.id} has parent_id ${envelope.parent_id}. Correcting to type C.`);
+      envelope.type = 'C';
+      envelope.delivery_status = 'internal';
+    }
+
     // ---- Step 1: Set envelope fields ----
     envelope.output = output;
     envelope.status = status;

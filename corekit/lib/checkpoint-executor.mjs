@@ -12,6 +12,8 @@ import { extractVerdict, extractFailSummary, extractFailRecommendation } from '.
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 
+const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
+
 function deriveStepKey(envId, cpNum, action, target = '') {
   const hash = createHash('sha256');
   hash.update(`${envId}:${cpNum}:${action}:${target}`);
@@ -76,8 +78,14 @@ export async function executeCheckpoints(checkpoints, opts) {
     startCpIndex = 0,
     startTaskIndex = 0,
     savedResults = [],
-    buildProjectContext,
   } = opts;
+
+  const _requiredDeps = { dispatchAgent, envelope, firestoreWrite, writeHistory, log, generateId };
+  for (const [name, val] of Object.entries(_requiredDeps)) {
+    if (val === undefined) {
+      throw new Error(`[checkpoint-executor] Missing required dependency: "${name}". Check the opts passed to executeCheckpoints().`);
+    }
+  }
 
   const STEP_LEDGER_ENABLED = contracts.dispatch?.step_ledger_enabled !== false;
   const CHECKPOINT_RESUME_ENABLED = contracts.dispatch?.checkpoint_resume_enabled !== false;
@@ -601,6 +609,24 @@ export async function executeCheckpoints(checkpoints, opts) {
         prior_results_context: priorContext,
         memory_context: envelope.memory_context || null,
       };
+
+      if (!VALID_TASK_AGENTS.has(taskAgent)) {
+        const msg = `Invalid task agent "${taskAgent}" — must be one of: ${[...VALID_TASK_AGENTS].join(', ')}`;
+        log('WARN', `[checkpoint-executor] ${msg}`);
+        cpResults.push({
+          step: `${cpNum}.${taskNum}`,
+          agent: taskAgent,
+          task: taskDesc.substring(0, 200),
+          result: msg,
+          success: false,
+          durationMs: 0,
+        });
+        if (!isOptional) {
+          cpFailed = true;
+          break;
+        }
+        continue;
+      }
 
       let result = await dispatchAgent(taskAgent, dispatchPayload);
 
