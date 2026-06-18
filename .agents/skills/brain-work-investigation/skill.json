@@ -1,0 +1,15 @@
+{
+  "id": "brain-work-investigation",
+  "name": "Brain and Work Investigation",
+  "version": 1,
+  "description": "Investigate brain activity, decision loops, and work envelopes across Cortex, Prefrontal, Motor, and Cerebellum.",
+  "origin": "custom",
+  "category": "diagnostics",
+  "agent_part": "any",
+  "scripts": [
+    "scripts/query-tree.py",
+    "scripts/query-blocked.py"
+  ],
+  "requires": {},
+  "when_to_use": "When auditing, debugging, or reporting on the brain daemon's decision loops or tracing work envelope hierarchies and blocked missions."
+}
