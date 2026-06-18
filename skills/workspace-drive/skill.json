@@ -1,13 +1,23 @@
 {
   "id": "workspace-drive",
   "name": "Google Drive",
-  "version": "1.0.0",
-  "description": "List, search, upload, download, organize, and share files in Google Drive",
+  "version": 2,
+  "description": "Interact with Google Drive — list, search, download, upload, create folders, rename, move, delete, and share files.",
   "author": "architect-prime",
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
-  "scripts": ["drive-delete", "drive-download", "drive-ls", "drive-mkdir", "drive-move", "drive-rename", "drive-search", "drive-share", "drive-upload"],
+  "scripts": [
+    "drive-delete",
+    "drive-download",
+    "drive-ls",
+    "drive-mkdir",
+    "drive-move",
+    "drive-rename",
+    "drive-search",
+    "drive-share",
+    "drive-upload"
+  ],
   "requires": {},
-  "when_to_use": "When working with files in Google Drive — listing, uploading, downloading, organizing, or sharing"
+  "when_to_use": "When a task involves files in Google Drive — listing, searching, downloading, uploading, organizing, or sharing."
 }
