@@ -1,0 +1,336 @@
+/* ============================================
+   FleetVisualization — Agent Grid + SVG Lines
+   ============================================ */
+
+/* ---- SVG Connection Layer ---- */
+.connectionLayer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.pulseDot {
+  fill: #1F9A9B;
+  filter: drop-shadow(0 0 4px rgba(31, 154, 155, 0.5));
+}
+
+/* ---- Agent Section ---- */
+.agentSection {
+  padding: 32px 0 8px 0;
+  animation: sectionExpand 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  width: 100%;
+}
+
+@keyframes sectionExpand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    max-height: 600px;
+    transform: translateY(0);
+  }
+}
+
+.agentGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 8px;
+}
+
+.agentCard {
+  --prox: 0;
+  width: 210px;
+  min-width: 210px;
+  background: rgba(49, 59, 71, 0.4);
+  border: 1px solid rgba(86, 99, 115, calc(0.18 + var(--prox) * 0.22));
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 80ms ease, background 80ms ease;
+  animation: cardIn 400ms ease backwards;
+  position: relative;
+  overflow: hidden;
+  transform: translateY(calc(var(--prox) * -4px)) scale(calc(1 + var(--prox) * 0.025));
+  box-shadow: 0 calc(var(--prox) * 10px) calc(var(--prox) * 28px) rgba(31, 154, 155, calc(var(--prox) * 0.15));
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.agentCard:hover {
+  border-color: rgba(86, 99, 115, 0.4);
+}
+
+.agentCard::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% -20%, rgba(31, 154, 155, 0.04), transparent 70%);
+  opacity: 0;
+  transition: opacity 300ms;
+  pointer-events: none;
+}
+
+.agentCardOnline::before {
+  opacity: 1;
+}
+
+.agentCardActive {
+  border-color: rgba(143, 216, 230, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.15), 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.agentHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agentAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(31, 154, 155, 0.25), rgba(143, 216, 230, 0.12));
+  color: #8FD8E6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.agentName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #E6EBF0;
+}
+
+.agentMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #7A8696;
+  margin-top: 2px;
+}
+
+.specialtyBadge {
+  background: rgba(86, 99, 115, 0.18);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 10px;
+  color: #AEB8C4;
+}
+
+/* Agent card footer (chat + upgrade buttons) */
+.agentFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(86, 99, 115, 0.12);
+}
+
+.agentChatBtn {
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--signal-aqua);
+  background: rgba(143, 216, 230, 0.06);
+  border: 1px solid rgba(143, 216, 230, 0.18);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.agentChatBtn:hover {
+  background: rgba(143, 216, 230, 0.12);
+  border-color: rgba(143, 216, 230, 0.35);
+}
+
+.agentUpgradeBtn {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--care-mint);
+  background: rgba(95, 199, 178, 0.06);
+  border: 1px solid rgba(95, 199, 178, 0.18);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.agentUpgradeBtn:hover {
+  background: rgba(95, 199, 178, 0.12);
+  border-color: rgba(95, 199, 178, 0.35);
+}
+
+.agentUpgradeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Deploy Progress ---- */
+.deploySection {
+  margin: 8px 0 4px;
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(86, 99, 115, 0.15);
+}
+
+.deployBar {
+  height: 4px;
+  background: rgba(86, 99, 115, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.deployBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #1F9A9B, #5FC7B2);
+  border-radius: 2px;
+  transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.deployBarFailed {
+  background: linear-gradient(90deg, #D6A83A, #D84F45);
+}
+
+.deployInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.deployPct {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1F9A9B;
+  flex-shrink: 0;
+}
+
+.deployStep {
+  font-size: 11px;
+  color: #AEB8C4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Action Required Badge ---- */
+.actionBadge {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #d6a83a;
+  line-height: 1;
+  transition: transform 120ms ease;
+  animation: actionPulse 2s ease-in-out infinite;
+}
+.actionBadge:hover {
+  transform: scale(1.2);
+}
+@keyframes actionPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ---- Status Dots (shared) ---- */
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.statusOnline {
+  background: #1F9A9B;
+  box-shadow: 0 0 10px rgba(31, 154, 155, 0.4);
+}
+
+.statusDeploying {
+  background: #D6A83A;
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+.statusError {
+  background: #D84F45;
+}
+
+.statusOffline {
+  background: #566373;
+  opacity: 0.5;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ---- Hire Card ---- */
+.hireCard {
+  --prox: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 210px;
+  min-width: 210px;
+  min-height: 90px;
+  padding: 14px;
+  background: rgba(95, 199, 178, 0.04);
+  backdrop-filter: blur(12px);
+  border: 1px dashed rgba(95, 199, 178, calc(0.25 + var(--prox) * 0.3));
+  border-radius: 14px;
+  cursor: pointer;
+  transition: border-color 80ms ease, background 80ms ease;
+  transform: translateY(calc(var(--prox) * -3px)) scale(calc(1 + var(--prox) * 0.02));
+  box-shadow: 0 calc(var(--prox) * 6px) calc(var(--prox) * 20px) rgba(95, 199, 178, calc(var(--prox) * 0.1));
+}
+
+.hireCard:hover {
+  border-color: rgba(95, 199, 178, 0.55);
+  background: rgba(95, 199, 178, 0.08);
+}
+
+.hireCardIcon {
+  font-size: 22px;
+  font-weight: 300;
+  color: var(--care-mint);
+  line-height: 1;
+}
+
+.hireCardText {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--care-mint);
+  letter-spacing: 0.3px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .agentGrid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+  }
+}

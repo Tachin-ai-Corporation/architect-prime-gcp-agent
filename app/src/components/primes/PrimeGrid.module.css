@@ -1,0 +1,179 @@
+/* ============================================
+   PrimeGrid — Prime Chips + Status
+   ============================================ */
+
+/* ---- Prime Row (expandable) ---- */
+.primeRow {
+  margin-bottom: 8px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.primeChip {
+  --prox: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  min-width: 180px;
+  padding: 14px 20px;
+  background: rgba(49, 59, 71, 0.5);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(86, 99, 115, calc(0.18 + var(--prox) * 0.25));
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 80ms ease, background 80ms ease;
+  position: relative;
+  text-align: left;
+  transform: translateY(calc(var(--prox) * -3px)) scale(calc(1 + var(--prox) * 0.015));
+  box-shadow: 0 calc(var(--prox) * 8px) calc(var(--prox) * 24px) rgba(31, 154, 155, calc(var(--prox) * 0.12));
+}
+
+.primeChip:hover {
+  border-color: rgba(86, 99, 115, 0.35);
+  background: rgba(49, 59, 71, 0.7);
+}
+
+.primeChipSelected {
+  border-color: rgba(31, 154, 155, 0.4);
+  background: rgba(31, 154, 155, 0.06);
+  box-shadow:
+    0 0 20px rgba(31, 154, 155, 0.08),
+    inset 0 0 16px rgba(31, 154, 155, 0.03);
+}
+
+.primeChipSelected:hover {
+  border-color: rgba(31, 154, 155, 0.5);
+}
+
+.chipName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #E6EBF0;
+  letter-spacing: -0.01em;
+}
+
+.chipMeta {
+  font-size: 11px;
+  color: #7A8696;
+  font-weight: 500;
+}
+
+.chipSpacer {
+  flex: 1;
+}
+
+/* Upgrade button on prime chip */
+.chipUpgradeBtn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--care-mint);
+  background: rgba(95, 199, 178, 0.08);
+  border: 1px solid rgba(95, 199, 178, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 180ms ease;
+  white-space: nowrap;
+}
+
+.chipUpgradeBtn:hover {
+  background: rgba(95, 199, 178, 0.15);
+  border-color: rgba(95, 199, 178, 0.4);
+}
+
+.chipUpgradeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Chat button on prime chip */
+.chipChatBtn {
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: #7A8696;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 180ms ease;
+  white-space: nowrap;
+}
+
+.chipChatBtn:hover {
+  color: var(--care-mint);
+  background: rgba(95, 199, 178, 0.08);
+  border-color: rgba(95, 199, 178, 0.2);
+}
+
+/* Delete button on prime chip */
+.chipDeleteBtn {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: #7A8696;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 180ms ease;
+  white-space: nowrap;
+}
+
+.chipDeleteBtn:hover {
+  color: #D84F45;
+  background: rgba(216, 79, 69, 0.08);
+  border-color: rgba(216, 79, 69, 0.25);
+}
+
+.chipDeleteBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chipExpandIcon {
+  font-size: 12px;
+  color: #566373;
+  transition: transform 200ms ease;
+  flex-shrink: 0;
+}
+
+.chipExpandIconOpen {
+  transform: rotate(90deg);
+}
+
+/* ---- Status Dots ---- */
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.statusOnline {
+  background: #1F9A9B;
+  box-shadow: 0 0 10px rgba(31, 154, 155, 0.4);
+}
+
+.statusDeploying {
+  background: #D6A83A;
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+.statusError {
+  background: #D84F45;
+}
+
+.statusOffline {
+  background: #566373;
+  opacity: 0.5;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}

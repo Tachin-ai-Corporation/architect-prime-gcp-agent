@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { GH_RAW_BASE } from "@/lib/github";
 
-const GH_RAW =
-  "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/main";
+const GH_RAW = `${GH_RAW_BASE}/main`;
 
 /** Default theme for types without explicit glyph/accent */
 const DEFAULT_THEME = { glyph: "🔹", accent: "#94a3b8" };

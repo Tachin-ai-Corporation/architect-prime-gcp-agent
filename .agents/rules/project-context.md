@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.17.9)
+## Current Architecture (v2026.06.17.10)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -92,6 +92,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - Agents never call delivery tools directly — mouth handles all outbound
 - Ears and mouth are fully independent systemd services — crash/restart of one doesn't affect the other
 - **Dashboard**: Living Agent Graph home screen — interactive network topology with prime chip selector (deploy chip as last inline element), SVG connection lines + pulse dots, glassmorphic agent cards with text nav labels (Work/Brain/Skills, unified for Prime and Fleet). 18-route hierarchical navigation: Home → Prime Hub (/p/[id]) → Agent Deep Dive (/p/[id]/a/[agent]). Prime and Fleet agent pages share unified sidebar layout (240px fixed sidebar with avatar, name, email, status, specialty + vertical nav; tabs: Overview/Work/Brain/Skills/Fleet†/Projects/Plans/Processes/Responsibilities/Memory/Chat; responsive — sidebar hidden <768px with dropdown fallback). AgentWorkPanel component (shared by both pages): 4 sub-tabs (In Progress/Queue/Recent Work/Archived) with badge counts, WorkTree rendering, WorkDetail modal, paginated archived work with search (`/api/primes/[id]/work/archived`). FleetPanel component embedded inline in Prime's Fleet tab (agent cards + hire modal + upgrade/fire actions). ChatPanel with large lower-third input area (shift+enter for newlines). Breadcrumb trail in header (replaces flat nav). LiveIndicator component shows data freshness. BrainInspector component (extracted 700+ line model management UI). Settings page: 4 tabs (General/Integration/Security/System). 1health design system (Graphite/Charcoal/Teal/Aqua).
+  - **Dashboard Refactor (v2026.06.17.10)**: 6-phase overhaul for scalability and code cleanliness. Removed duplicate type declarations and consolidated types. Removed hardcoded owner/repo references with unified environment configuration fallback. Decomposed the home dashboard into modular components (`OnboardingFlow`, `PrimeGrid`, `FleetVisualization`, `HireModal`). Added `VerdictCard` and `InternalsPanel` for detailed cerebellum verification reporting and step-by-step processing introspection, aligned with the brain daemon's data structures. Added global APIs for approvals, telemetry (LLM token usage), and contracts. Unified MCP skill display with connection type, tool schema code blocks, and styled status badges.
 
 ### Skills / Body-Part Categorization
 The Skills page categorizes tools by agent "body part". The introspect daemon (`agent-introspect.mjs`) assigns categories by filename pattern. When adding new tools, follow the naming conventions below so they auto-categorize correctly:

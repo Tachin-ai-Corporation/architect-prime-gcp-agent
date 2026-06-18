@@ -7,8 +7,11 @@ import { MemoryViewer } from "@/components/agent/MemoryViewer";
 import { AgentProjects } from "@/components/agent/AgentProjects";
 import { AgentPlans } from "@/components/agent/AgentPlans";
 import { AgentProcesses } from "@/components/agent/AgentProcesses";
+import { ContractsViewer } from "@/components/agent/ContractsViewer";
+import { CostDashboard } from "@/components/agent/CostDashboard";
 import { ChatPanel } from "@/components/ChatPanel";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
+import { ApprovalQueue } from "@/components/work/ApprovalQueue";
 import { PersonaPanel } from "@/components/agent/PersonaPanel";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import styles from "./page.module.css";
@@ -17,6 +20,9 @@ const TABS = [
   { key: "overview", label: "Persona", icon: "🎭" },
   { key: "work", label: "Work", icon: "📋" },
   { key: "brain", label: "Models", icon: "🧠" },
+  { key: "costs", label: "Costs", icon: "💰" },
+  { key: "contracts", label: "Contracts", icon: "📄" },
+  { key: "approvals", label: "Approvals", icon: "✋" },
   { key: "projects", label: "Projects", icon: "📁" },
   { key: "plans", label: "Plans", icon: "🗺️" },
   { key: "processes", label: "Processes", icon: "⚙️" },
@@ -228,6 +234,21 @@ export default function AgentDeepDivePage({
               inline
             />
           </div>
+        )}
+
+        {/* Costs — LLM token usage per mission and per organ */}
+        {activeTab === "costs" && (
+          <CostDashboard primeId={id} agentName={agent} />
+        )}
+
+        {/* Contracts — contracts.json viewer (read-only) */}
+        {activeTab === "contracts" && (
+          <ContractsViewer primeId={id} />
+        )}
+
+        {/* Approvals — pending approval queue */}
+        {activeTab === "approvals" && (
+          <ApprovalQueue primeId={id} />
         )}
         </div>
       </div>

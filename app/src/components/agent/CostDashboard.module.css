@@ -1,0 +1,197 @@
+.container {
+  padding: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px;
+  color: #667788;
+  font-size: 14px;
+}
+
+.retry {
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d0d8e0;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---- Summary cards ---- */
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: #e0e0e0;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.statLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #667788;
+}
+
+/* ---- Sections ---- */
+
+.section {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.sectionTitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8899aa;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* ---- Organ grid ---- */
+
+.organGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.organRow {
+  display: grid;
+  grid-template-columns: 16px 120px 70px 1fr 120px 70px;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.organDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.organName {
+  color: #d0d8e0;
+  font-weight: 500;
+}
+
+.organCalls {
+  color: #667788;
+  font-size: 12px;
+}
+
+.organTokens {
+  color: #8899aa;
+  font-size: 12px;
+}
+
+.organBar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.organBarFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.organCost {
+  text-align: right;
+  color: #d0d8e0;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+}
+
+/* ---- Mission cards ---- */
+
+.missionCard {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.missionHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: #d0d8e0;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.missionHeader:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.missionTitle {
+  flex: 1;
+  text-align: left;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.missionMeta {
+  color: #667788;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.missionCost {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 12px;
+  color: #e6a700;
+  white-space: nowrap;
+}
+
+.chevron {
+  font-size: 11px;
+  color: #667788;
+}
+
+.missionBody {
+  padding: 0 14px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.organDetail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GH_RAW_BASE, GH_API_BASE } from "@/lib/github";
 
 /* ---- Types ---- */
 interface SkillManifest {
@@ -23,10 +24,8 @@ interface AgentType {
   glyph?: string;
 }
 
-const GITHUB_RAW =
-  "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/main";
-const GITHUB_API =
-  "https://api.github.com/repos/Tachin-ai-Corporation/architect-prime-gcp-agent/contents";
+const GITHUB_RAW = GH_RAW_BASE + "/main";
+const GITHUB_API = GH_API_BASE + "/contents";
 
 /* 5-minute cache */
 let catalogCache: { skills: SkillManifest[]; agentTypes: AgentType[]; ts: number } | null = null;

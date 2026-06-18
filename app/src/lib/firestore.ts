@@ -1,4 +1,5 @@
 // lib/firestore.ts — Server-side Firestore client + collection helpers + doc types
+import type { DeployStep, ActionRequired } from './types';
 // Original module
 // Used by all API routes for Firestore access
 //
@@ -85,7 +86,7 @@ export function secretsCol() {
 export interface PrimeDoc {
   id: string;
   name: string;
-  status: "online" | "offline" | "deploying" | "error";
+  status: "online" | "offline" | "deploying" | "tearing_down" | "removed" | "error";
   zone: string;
   vmName: string;
   coreRef: string;
@@ -112,19 +113,7 @@ export interface FleetDoc {
   actionRequired?: ActionRequired | null;
 }
 
-export interface DeployStep {
-  id: string;
-  label: string;
-  status: "done" | "active" | "pending" | "failed" | "skipped";
-  timestamp: string;
-  detail?: string;
-}
-
-export interface ActionRequired {
-  type: string;
-  title: string;
-  instructions: string[];
-}
+// DeployStep and ActionRequired imported from ./types
 
 export type CommandType =
   | "fleet_deploy"

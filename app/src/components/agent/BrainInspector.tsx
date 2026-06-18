@@ -79,7 +79,7 @@ const DAEMON_KEYS: Set<string> = new Set(DAEMON_SLOTS.map(s => s.key));
    Model naming helpers
    ================================================================ */
 
-/** Strip prefix: "google-vertex/gemini-3.1-pro-preview" → "gemini-3.1-pro-preview" */
+/** Strip prefix: "vertex-google/gemini-2.5-pro" → "gemini-2.5-pro" */
 function stripPrefix(brainModelId: string): string {
   const slash = brainModelId.indexOf("/");
   return slash >= 0 ? brainModelId.slice(slash + 1) : brainModelId;
@@ -89,9 +89,7 @@ function stripPrefix(brainModelId: string): string {
 function toBrainModelId(modelId: string, provider: string): string {
   if (modelId.includes("/")) return modelId; // already prefixed
   if (provider === "anthropic") return `vertex-anthropic/${modelId}`;
-  if (provider === "google")    return `vertex-google/${modelId}`;
-  // MaaS: embed publisher so SDK gets "meta/llama-...", "xai/grok-...", etc.
-  return `vertex-maas/${provider}/${modelId}`;
+  return `vertex-google/${modelId}`;
 }
 
 /** Find display name from model catalog */

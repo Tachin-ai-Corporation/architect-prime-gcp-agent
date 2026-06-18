@@ -1,0 +1,149 @@
+/* ============================================
+   OnboardingFlow — Loading + First-time Setup
+   ============================================ */
+
+/* ---- Loading State ---- */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  background: var(--bg-primary);
+}
+
+.loadingCard {
+  text-align: center;
+  padding: 48px;
+}
+
+.loadingLogo {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  margin: 0 auto 16px;
+  object-fit: contain;
+}
+
+.loadingText {
+  font-size: 16px;
+  font-weight: 500;
+  color: #AEB8C4;
+  letter-spacing: -0.01em;
+}
+
+.loadingDots::after {
+  content: '';
+  animation: dots 1.5s steps(4, end) infinite;
+}
+
+@keyframes dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+/* ---- Onboarding ---- */
+.onboarding {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 24px;
+  background: var(--bg-primary);
+}
+
+.onboardingCard {
+  width: 100%;
+  max-width: 640px;
+  background: #313B47;
+  border: 1px solid rgba(86, 99, 115, 0.25);
+  border-radius: 16px;
+  padding: 48px 40px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+}
+
+.onboardingHero {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.onboardingLogo {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  margin: 0 auto 20px;
+  object-fit: contain;
+}
+
+.onboardingTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #E6EBF0;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+.onboardingSubtitle {
+  font-size: 14px;
+  color: #AEB8C4;
+  line-height: 1.6;
+}
+
+/* Steps */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.step {
+  display: flex;
+  gap: 16px;
+  opacity: 0.6;
+}
+
+.step.active {
+  opacity: 1;
+}
+
+.stepNumber {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(86, 99, 115, 0.3);
+  color: #AEB8C4;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step.active .stepNumber {
+  background: #246B8F;
+  color: white;
+}
+
+.stepContent {
+  flex: 1;
+}
+
+.stepTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #E6EBF0;
+  margin-bottom: 4px;
+}
+
+.stepDesc {
+  font-size: 13px;
+  color: #AEB8C4;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.stepAction {
+  margin-top: 8px;
+}

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { GH_RAW_BASE } from "@/lib/github";
 
-const GITHUB_RAW_URL =
-  "https://raw.githubusercontent.com/Tachin-ai-Corporation/architect-prime-gcp-agent/main/corekit/config/agent-types.json";
+const GITHUB_RAW_URL = `${GH_RAW_BASE}/main/corekit/config/agent-types.json`;
 
 /**
  * GET /api/agent-types -- Return available agent types for hiring

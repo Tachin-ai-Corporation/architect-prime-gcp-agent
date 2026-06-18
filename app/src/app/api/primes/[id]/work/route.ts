@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firestore";
+import { ACTIVE_STATUSES_ARRAY } from "@/lib/types";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-/** Status sets */
-const ACTIVE_STATUSES = ["active", "waiting", "needs_input", "awaiting_approval", "blocked"];
+
 
 /**
  * GET /api/primes/[id]/work — List work envelopes for a Prime
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const seenIds = new Set(roots.map(r => r.id));
 
     for (const root of roots) {
-      if (!ACTIVE_STATUSES.includes(root.status) && root.type !== "R") continue;
+      if (!ACTIVE_STATUSES_ARRAY.includes(root.status) && root.type !== "R") continue;
 
       // Level 1: root.children → C envelopes
       const childIds: string[] = root.children || [];
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     // Phase 3: Safety net — catch any active orphans not yet in our results
     // (e.g., active C/T whose parent M was just created and not in our root query)
     const activeSnap = await workCol
-      .where("status", "in", ACTIVE_STATUSES)
+      .where("status", "in", ACTIVE_STATUSES_ARRAY)
       .limit(20)
       .get();
 

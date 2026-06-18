@@ -3,6 +3,8 @@
 import { useEffect, useCallback } from "react";
 import styles from "./WorkDetail.module.css";
 import { WorkRespondForm } from "./WorkRespondForm";
+import { VerdictCard } from "./VerdictCard";
+import { InternalsPanel } from "./InternalsPanel";
 import type { WorkEnvelope } from "@/lib/types";
 import { formatAgentDisplayName } from "@/components/AgentChip";
 
@@ -69,6 +71,7 @@ function statusLabel(status: string): string {
     case "complete": return "Complete";
     case "waiting":
     case "needs_input": return "Needs input";
+    case "needs_review": return "Needs Review";
     case "failed": return "Failed";
     case "cancelled": return "Cancelled";
     case "blocked": return "Blocked";
@@ -87,6 +90,7 @@ function statusChipClass(status: string): string {
     case "complete": return styles.chipDone;
     case "waiting":
     case "needs_input":
+    case "needs_review":
     case "awaiting_approval": return styles.chipWait;
     case "failed":
     case "rejected":
@@ -103,6 +107,7 @@ function dotColor(status: string): string {
     case "active": return "#1F9A9B";
     case "waiting":
     case "needs_input":
+    case "needs_review":
     case "awaiting_approval": return "#D6A83A";
     case "failed":
     case "rejected":
@@ -274,6 +279,9 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
             </div>
           )}
 
+          {/* Verdict card — parse cerebellum report_pass/report_fail from output */}
+          {envelope.output && <VerdictCard output={envelope.output} />}
+
           {/* Output */}
           {envelope.output && envelope.status !== "waiting" && envelope.status !== "needs_input" && (
             <div className={styles.mSec}>
@@ -281,6 +289,9 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
               <div className={styles.mBlock}>{envelope.output}</div>
             </div>
           )}
+
+          {/* Internals — step ledger, claim state, checkpoint progress */}
+          <InternalsPanel envelope={envelope} />
 
           {/* Error */}
           {envelope.error && (

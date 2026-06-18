@@ -240,3 +240,93 @@
   color: var(--text-tertiary);
   line-height: 1.35;
 }
+
+/* ---- MCP Section ---- */
+
+.mcpHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 12px 8px;
+  margin-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.mcpIcon { font-size: 16px; }
+
+.mcpTitle {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.mcpCount {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(155, 89, 182, 0.15);
+  color: #9B59B6;
+}
+
+.badgeMcp {
+  background: rgba(155, 89, 182, 0.12) !important;
+  color: #9B59B6 !important;
+}
+
+.badgeMcpConnected {
+  background: rgba(59, 170, 120, 0.12) !important;
+  color: #3BAA78 !important;
+}
+
+.badgeMcpDisconnected {
+  background: rgba(102, 119, 136, 0.12) !important;
+  color: #667788 !important;
+}
+
+.badgeMcpError {
+  background: rgba(216, 79, 69, 0.12) !important;
+  color: #D84F45 !important;
+}
+
+.mcpUrl {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-tertiary);
+  padding: 4px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Schema display ---- */
+
+.schemaDetails {
+  margin-top: 4px;
+}
+
+.schemaSummary {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.schemaSummary:hover {
+  color: var(--signal-aqua);
+}
+
+.schemaCode {
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-tertiary);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin-top: 4px;
+  overflow-x: auto;
+  max-height: 150px;
+  line-height: 1.4;
+}

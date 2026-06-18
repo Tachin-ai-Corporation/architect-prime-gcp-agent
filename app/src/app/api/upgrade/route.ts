@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/require-auth";
 import { commandsCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
-
-const GH_OWNER = "Tachin-ai-Corporation";
-const GH_REPO = "architect-prime-gcp-agent";
+import { GH_OWNER, GH_REPO } from "@/lib/github";
 
 /**
  * Extract version from commit message.

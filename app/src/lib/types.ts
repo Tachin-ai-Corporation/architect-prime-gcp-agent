@@ -89,7 +89,7 @@ export interface WorkEnvelope {
   type: 'R' | 'M' | 'C' | 'T';
   parent_id: string | null;
   owner: string;
-  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived' | 'awaiting_approval' | 'planned' | 'rejected' | 'timed_out';
+  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived' | 'awaiting_approval' | 'planned' | 'rejected' | 'timed_out' | 'needs_review';
   intent: string;
   title?: string;
   instruction: string;
@@ -197,3 +197,13 @@ export interface Plan {
   created_at: string;
   updated_at: string;
 }
+
+/* ---- Active status constants ---- */
+
+/** Canonical set of statuses considered "active" for work tree display */
+export const ACTIVE_STATUSES = new Set<string>([
+  'active', 'waiting', 'needs_input', 'awaiting_approval', 'blocked', 'needs_review', 'timed_out',
+]);
+
+/** Array version for Firestore `in` queries (max 30) */
+export const ACTIVE_STATUSES_ARRAY = [...ACTIVE_STATUSES];

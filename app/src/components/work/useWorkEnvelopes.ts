@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { api } from "@/lib/api";
 import type { WorkEnvelope } from "@/lib/types";
+import { ACTIVE_STATUSES } from "@/lib/types";
 
 /* ---- TreeNode: WorkEnvelope + recursive children ---- */
 export interface TreeNode extends Omit<WorkEnvelope, 'children'> {
@@ -10,8 +11,6 @@ export interface TreeNode extends Omit<WorkEnvelope, 'children'> {
   children: TreeNode[];
 }
 
-/* ---- Active status set (roots that go into "current") ---- */
-const ACTIVE_STATUSES = new Set<string>(["active", "waiting", "needs_input", "awaiting_approval", "blocked"]);
 const DONE_STATUSES = new Set<string>(["complete", "failed", "cancelled"]);
 
 /* ---- Return shape ---- */

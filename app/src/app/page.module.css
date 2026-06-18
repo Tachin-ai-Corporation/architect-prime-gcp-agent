@@ -1,157 +1,9 @@
 /* ============================================
-   Home Page — Vertical Prime List
+   Home Page — Shell Layout + Modals
    1health Design System
    ============================================ */
 
-/* ---- Loading State ---- */
-.loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100%;
-  background: var(--bg-primary);
-}
-
-.loadingCard {
-  text-align: center;
-  padding: 48px;
-}
-
-.loadingLogo {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  margin: 0 auto 16px;
-  object-fit: contain;
-}
-
-.loadingText {
-  font-size: 16px;
-  font-weight: 500;
-  color: #AEB8C4;
-  letter-spacing: -0.01em;
-}
-
-.loadingDots::after {
-  content: '';
-  animation: dots 1.5s steps(4, end) infinite;
-}
-
-@keyframes dots {
-  0% { content: ''; }
-  25% { content: '.'; }
-  50% { content: '..'; }
-  75% { content: '...'; }
-}
-
-/* ---- Onboarding ---- */
-.onboarding {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100%;
-  padding: 24px;
-  background: var(--bg-primary);
-}
-
-.onboardingCard {
-  width: 100%;
-  max-width: 640px;
-  background: #313B47;
-  border: 1px solid rgba(86, 99, 115, 0.25);
-  border-radius: 16px;
-  padding: 48px 40px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
-}
-
-.onboardingHero {
-  text-align: center;
-  margin-bottom: 40px;
-}
-
-.onboardingLogo {
-  width: 64px;
-  height: 64px;
-  border-radius: 14px;
-  margin: 0 auto 20px;
-  object-fit: contain;
-}
-
-.onboardingTitle {
-  font-size: 24px;
-  font-weight: 700;
-  color: #E6EBF0;
-  letter-spacing: -0.02em;
-  margin-bottom: 8px;
-}
-
-.onboardingSubtitle {
-  font-size: 14px;
-  color: #AEB8C4;
-  line-height: 1.6;
-}
-
-/* Steps */
-.steps {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.step {
-  display: flex;
-  gap: 16px;
-  opacity: 0.6;
-}
-
-.step.active {
-  opacity: 1;
-}
-
-.stepNumber {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: rgba(86, 99, 115, 0.3);
-  color: #AEB8C4;
-  font-size: 14px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.step.active .stepNumber {
-  background: #246B8F;
-  color: white;
-}
-
-.stepContent {
-  flex: 1;
-}
-
-.stepTitle {
-  font-size: 15px;
-  font-weight: 600;
-  color: #E6EBF0;
-  margin-bottom: 4px;
-}
-
-.stepDesc {
-  font-size: 13px;
-  color: #AEB8C4;
-  line-height: 1.5;
-  margin-bottom: 12px;
-}
-
-.stepAction {
-  margin-top: 8px;
-}
-
-/* ============================================
-   Home Shell — Vertical List Layout
-   ============================================ */
+/* ---- Home Shell — Vertical List Layout ---- */
 
 .homeShell {
   height: 100%;
@@ -220,466 +72,6 @@
   padding: 24px 28px 32px;
   scrollbar-width: thin;
   scrollbar-color: rgba(86, 99, 115, 0.2) transparent;
-}
-
-/* ---- Prime Row (expandable) ---- */
-.primeRow {
-  margin-bottom: 8px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.primeChip {
-  --prox: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: fit-content;
-  min-width: 180px;
-  padding: 14px 20px;
-  background: rgba(49, 59, 71, 0.5);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(86, 99, 115, calc(0.18 + var(--prox) * 0.25));
-  border-radius: 12px;
-  cursor: pointer;
-  transition: border-color 80ms ease, background 80ms ease;
-  position: relative;
-  text-align: left;
-  transform: translateY(calc(var(--prox) * -3px)) scale(calc(1 + var(--prox) * 0.015));
-  box-shadow: 0 calc(var(--prox) * 8px) calc(var(--prox) * 24px) rgba(31, 154, 155, calc(var(--prox) * 0.12));
-}
-
-.primeChip:hover {
-  border-color: rgba(86, 99, 115, 0.35);
-  background: rgba(49, 59, 71, 0.7);
-}
-
-.primeChipSelected {
-  border-color: rgba(31, 154, 155, 0.4);
-  background: rgba(31, 154, 155, 0.06);
-  box-shadow:
-    0 0 20px rgba(31, 154, 155, 0.08),
-    inset 0 0 16px rgba(31, 154, 155, 0.03);
-}
-
-.primeChipSelected:hover {
-  border-color: rgba(31, 154, 155, 0.5);
-}
-
-.chipName {
-  font-size: 14px;
-  font-weight: 600;
-  color: #E6EBF0;
-  letter-spacing: -0.01em;
-}
-
-.chipMeta {
-  font-size: 11px;
-  color: #7A8696;
-  font-weight: 500;
-}
-
-.chipSpacer {
-  flex: 1;
-}
-
-/* Upgrade button on prime chip */
-.chipUpgradeBtn {
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--care-mint);
-  background: rgba(95, 199, 178, 0.08);
-  border: 1px solid rgba(95, 199, 178, 0.2);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 180ms ease;
-  white-space: nowrap;
-}
-
-.chipUpgradeBtn:hover {
-  background: rgba(95, 199, 178, 0.15);
-  border-color: rgba(95, 199, 178, 0.4);
-}
-
-.chipUpgradeBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Chat button on prime chip */
-.chipChatBtn {
-  padding: 4px 8px;
-  font-size: 13px;
-  line-height: 1;
-  color: #7A8696;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 180ms ease;
-  white-space: nowrap;
-}
-
-.chipChatBtn:hover {
-  color: var(--care-mint);
-  background: rgba(95, 199, 178, 0.08);
-  border-color: rgba(95, 199, 178, 0.2);
-}
-
-/* Delete button on prime chip */
-.chipDeleteBtn {
-  padding: 4px 8px;
-  font-size: 12px;
-  line-height: 1;
-  color: #7A8696;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 180ms ease;
-  white-space: nowrap;
-}
-
-.chipDeleteBtn:hover {
-  color: #D84F45;
-  background: rgba(216, 79, 69, 0.08);
-  border-color: rgba(216, 79, 69, 0.25);
-}
-
-.chipDeleteBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.chipExpandIcon {
-  font-size: 12px;
-  color: #566373;
-  transition: transform 200ms ease;
-  flex-shrink: 0;
-}
-
-.chipExpandIconOpen {
-  transform: rotate(90deg);
-}
-
-/* ---- Status Dots ---- */
-.statusDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-.statusOnline {
-  background: #1F9A9B;
-  box-shadow: 0 0 10px rgba(31, 154, 155, 0.4);
-}
-
-.statusDeploying {
-  background: #D6A83A;
-  animation: statusPulse 1.5s ease-in-out infinite;
-}
-
-.statusError {
-  background: #D84F45;
-}
-
-.statusOffline {
-  background: #566373;
-  opacity: 0.5;
-}
-
-@keyframes statusPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
-
-/* ---- SVG Connection Layer ---- */
-.connectionLayer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.pulseDot {
-  fill: #1F9A9B;
-  filter: drop-shadow(0 0 4px rgba(31, 154, 155, 0.5));
-}
-
-/* ============================================
-   Agent Grid (below selected prime)
-   ============================================ */
-
-.agentSection {
-  padding: 32px 0 8px 0;
-  animation: sectionExpand 250ms cubic-bezier(0.16, 1, 0.3, 1);
-  width: 100%;
-}
-
-@keyframes sectionExpand {
-  from {
-    opacity: 0;
-    max-height: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    max-height: 600px;
-    transform: translateY(0);
-  }
-}
-
-.agentGrid {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-  padding: 0 8px;
-}
-
-.agentCard {
-  --prox: 0;
-  width: 210px;
-  min-width: 210px;
-  background: rgba(49, 59, 71, 0.4);
-  border: 1px solid rgba(86, 99, 115, calc(0.18 + var(--prox) * 0.22));
-  border-radius: 14px;
-  padding: 14px 16px;
-  cursor: pointer;
-  transition: border-color 80ms ease, background 80ms ease;
-  animation: cardIn 400ms ease backwards;
-  position: relative;
-  overflow: hidden;
-  transform: translateY(calc(var(--prox) * -4px)) scale(calc(1 + var(--prox) * 0.025));
-  box-shadow: 0 calc(var(--prox) * 10px) calc(var(--prox) * 28px) rgba(31, 154, 155, calc(var(--prox) * 0.15));
-}
-
-@keyframes cardIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-}
-
-.agentCard:hover {
-  border-color: rgba(86, 99, 115, 0.4);
-}
-
-.agentCard::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(ellipse at 50% -20%, rgba(31, 154, 155, 0.04), transparent 70%);
-  opacity: 0;
-  transition: opacity 300ms;
-  pointer-events: none;
-}
-
-.agentCardOnline::before {
-  opacity: 1;
-}
-
-.agentCardActive {
-  border-color: rgba(143, 216, 230, 0.4) !important;
-  box-shadow: 0 0 0 1px rgba(143, 216, 230, 0.15), 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.agentHeader {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.agentAvatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(31, 154, 155, 0.25), rgba(143, 216, 230, 0.12));
-  color: #8FD8E6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.agentName {
-  font-size: 14px;
-  font-weight: 600;
-  color: #E6EBF0;
-}
-
-.agentMeta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: #7A8696;
-  margin-top: 2px;
-}
-
-.specialtyBadge {
-  background: rgba(86, 99, 115, 0.18);
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-weight: 500;
-  font-size: 10px;
-  color: #AEB8C4;
-}
-
-/* Agent card footer (chat + upgrade buttons) */
-.agentFooter {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(86, 99, 115, 0.12);
-}
-
-.agentChatBtn {
-  padding: 3px 8px;
-  font-size: 13px;
-  line-height: 1;
-  color: var(--signal-aqua);
-  background: rgba(143, 216, 230, 0.06);
-  border: 1px solid rgba(143, 216, 230, 0.18);
-  border-radius: 5px;
-  cursor: pointer;
-  transition: all 180ms ease;
-}
-
-.agentChatBtn:hover {
-  background: rgba(143, 216, 230, 0.12);
-  border-color: rgba(143, 216, 230, 0.35);
-}
-
-.agentUpgradeBtn {
-  padding: 3px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--care-mint);
-  background: rgba(95, 199, 178, 0.06);
-  border: 1px solid rgba(95, 199, 178, 0.18);
-  border-radius: 5px;
-  cursor: pointer;
-  transition: all 180ms ease;
-}
-
-.agentUpgradeBtn:hover {
-  background: rgba(95, 199, 178, 0.12);
-  border-color: rgba(95, 199, 178, 0.35);
-}
-
-.agentUpgradeBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ---- Deploy Progress ---- */
-.deploySection {
-  margin: 8px 0 4px;
-  padding: 8px 0 0;
-  border-top: 1px solid rgba(86, 99, 115, 0.15);
-}
-
-.deployBar {
-  height: 4px;
-  background: rgba(86, 99, 115, 0.2);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.deployBarFill {
-  height: 100%;
-  background: linear-gradient(90deg, #1F9A9B, #5FC7B2);
-  border-radius: 2px;
-  transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.deployBarFailed {
-  background: linear-gradient(90deg, #D6A83A, #D84F45);
-}
-
-.deployInfo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 5px;
-}
-
-.deployPct {
-  font-size: 11px;
-  font-weight: 600;
-  color: #1F9A9B;
-  flex-shrink: 0;
-}
-
-.deployStep {
-  font-size: 11px;
-  color: #AEB8C4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* ---- Action Required Badge + Modal ---- */
-.actionBadge {
-  background: none;
-  border: none;
-  padding: 0 2px;
-  font-size: 12px;
-  cursor: pointer;
-  color: #d6a83a;
-  line-height: 1;
-  transition: transform 120ms ease;
-  animation: actionPulse 2s ease-in-out infinite;
-}
-.actionBadge:hover {
-  transform: scale(1.2);
-}
-@keyframes actionPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.actionModalHeader {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.actionModalIcon {
-  font-size: 20px;
-  color: #d6a83a;
-}
-.actionModalAgent {
-  font-size: 12px;
-  color: #7A8696;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(86, 99, 115, 0.2);
-}
-.actionModalAgent strong {
-  color: #AEB8C4;
-}
-.actionModalSteps {
-  margin: 0 0 8px;
-  padding-left: 20px;
-  color: #AEB8C4;
-  line-height: 1.7;
-  font-size: 13px;
-}
-.actionModalSteps li {
-  margin-bottom: 8px;
 }
 
 /* ---- Floating Chat Overlay ---- */
@@ -776,51 +168,7 @@
 }
 
 /* ============================================
-   Hire Card
-   ============================================ */
-
-.hireCard {
-  --prox: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 210px;
-  min-width: 210px;
-  min-height: 90px;
-  padding: 14px;
-  background: rgba(95, 199, 178, 0.04);
-  backdrop-filter: blur(12px);
-  border: 1px dashed rgba(95, 199, 178, calc(0.25 + var(--prox) * 0.3));
-  border-radius: 14px;
-  cursor: pointer;
-  transition: border-color 80ms ease, background 80ms ease;
-  transform: translateY(calc(var(--prox) * -3px)) scale(calc(1 + var(--prox) * 0.02));
-  box-shadow: 0 calc(var(--prox) * 6px) calc(var(--prox) * 20px) rgba(95, 199, 178, calc(var(--prox) * 0.1));
-}
-
-.hireCard:hover {
-  border-color: rgba(95, 199, 178, 0.55);
-  background: rgba(95, 199, 178, 0.08);
-}
-
-.hireCardIcon {
-  font-size: 22px;
-  font-weight: 300;
-  color: var(--care-mint);
-  line-height: 1;
-}
-
-.hireCardText {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--care-mint);
-  letter-spacing: 0.3px;
-}
-
-/* ============================================
-   Modals
+   Modals (Deploy, Action, Delete)
    ============================================ */
 
 .modalOverlay {
@@ -877,10 +225,39 @@
   line-height: 1.4;
 }
 
-/* ============================================
-   Delete Prime Modal
-   ============================================ */
+/* ---- Action Required Modal ---- */
+.actionModalHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.actionModalIcon {
+  font-size: 20px;
+  color: #d6a83a;
+}
+.actionModalAgent {
+  font-size: 12px;
+  color: #7A8696;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(86, 99, 115, 0.2);
+}
+.actionModalAgent strong {
+  color: #AEB8C4;
+}
+.actionModalSteps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  color: #AEB8C4;
+  line-height: 1.7;
+  font-size: 13px;
+}
+.actionModalSteps li {
+  margin-bottom: 8px;
+}
 
+/* ---- Delete Prime Modal ---- */
 .deleteModalHeader {
   display: flex;
   align-items: center;
@@ -969,10 +346,7 @@
   box-shadow: 0 4px 16px rgba(216, 79, 69, 0.15);
 }
 
-/* ============================================
-   Responsive
-   ============================================ */
-
+/* ---- Responsive ---- */
 @media (max-width: 768px) {
   .homeTopRow {
     padding: 16px 16px 12px;
@@ -991,10 +365,5 @@
 
   .chatResizeHandle {
     display: none;
-  }
-
-  .agentGrid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 10px;
   }
 }

@@ -3,6 +3,7 @@ import { primesCol, commandsCol } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
 import { seedCoreProcesses } from "@/lib/seed-processes";
 import { FieldValue } from "@google-cloud/firestore";
+import { GH_OWNER, GH_REPO } from "@/lib/github";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -152,8 +153,8 @@ async function createVM(
         { key: "prime_id", value: primeId },
         { key: "agent_id", value: "prime" },
         { key: "core_ref", value: "main" },
-        { key: "gh_owner", value: "Tachin-ai-Corporation" },
-        { key: "gh_repo", value: "architect-prime-gcp-agent" },
+        { key: "gh_owner", value: GH_OWNER },
+        { key: "gh_repo", value: GH_REPO },
         { key: "gcp_project_id", value: projectId },
       ],
     },
@@ -204,8 +205,8 @@ const STARTUP_SCRIPT = [
   'META="http://metadata.google.internal/computeMetadata/v1"',
   'MH="Metadata-Flavor: Google"',
   'CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo main)"',
-  'GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo Tachin-ai-Corporation)"',
-  'GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo architect-prime-gcp-agent)"',
+  `GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo ${GH_OWNER})"`,
+  `GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo ${GH_REPO})"`,
   '',
   '# Download and run the real bootstrap',
   'SCRIPT_URL="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}/infra/bootstrap/prime-bootstrap.sh"',

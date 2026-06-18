@@ -1,0 +1,167 @@
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  color: #667788;
+  font-size: 14px;
+}
+
+.emptyIcon {
+  color: #3BAA78;
+  font-size: 18px;
+}
+
+.queue {
+  padding: 8px 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px 12px;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(230, 167, 0, 0.15);
+  color: #e6a700;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.headerLabel {
+  color: #8899aa;
+  font-size: 13px;
+}
+
+/* ---- Card ---- */
+
+.card {
+  margin: 0 16px 12px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(230, 167, 0, 0.15);
+  background: rgba(230, 167, 0, 0.04);
+  transition: border-color 0.15s;
+}
+
+.card:hover {
+  border-color: rgba(230, 167, 0, 0.3);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.typeChip {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #8899aa;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner {
+  font-size: 12px;
+  color: #8899aa;
+}
+
+.criteria {
+  font-size: 13px;
+  color: #b0bec5;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.criteria strong {
+  color: #8899aa;
+}
+
+.output {
+  font-size: 12px;
+  color: #8899aa;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+  max-height: 80px;
+  overflow: hidden;
+}
+
+.cardBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.time {
+  font-size: 12px;
+  color: #667788;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.approveBtn, .rejectBtn {
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid;
+}
+
+.approveBtn {
+  background: rgba(59, 170, 120, 0.15);
+  border-color: rgba(59, 170, 120, 0.3);
+  color: #3BAA78;
+}
+
+.approveBtn:hover:not(:disabled) {
+  background: rgba(59, 170, 120, 0.25);
+}
+
+.rejectBtn {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #8899aa;
+}
+
+.rejectBtn:hover:not(:disabled) {
+  border-color: rgba(216, 79, 69, 0.3);
+  color: #D84F45;
+}
+
+.approveBtn:disabled, .rejectBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

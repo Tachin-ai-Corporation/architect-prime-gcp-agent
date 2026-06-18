@@ -1,0 +1,139 @@
+.panel {
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: none;
+  color: #8899aa;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.trigger:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.icon {
+  font-size: 10px;
+  width: 14px;
+}
+
+.label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 11px;
+}
+
+.badges {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #8899aa;
+}
+
+.body {
+  padding: 0 14px 14px;
+}
+
+.section {
+  margin-top: 12px;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8899aa;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.gk {
+  color: #8899aa;
+}
+
+.gv {
+  color: #d0d8e0;
+  word-break: break-all;
+}
+
+/* ---- Ledger table ---- */
+
+.ledgerTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ledgerTable th {
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #667788;
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+}
+
+.ledgerTable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  color: #b0bec5;
+  vertical-align: top;
+}
+
+.stepKey {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 11px;
+  color: #8899aa;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusDone {
+  color: #3BAA78;
+  font-weight: 600;
+}
+
+.statusFail {
+  color: #D84F45;
+  font-weight: 600;
+}
+
+.rowFail td {
+  background: rgba(216, 79, 69, 0.05);
+}
+
+.cellTime {
+  font-size: 11px;
+  color: #667788;
+  white-space: nowrap;
+}

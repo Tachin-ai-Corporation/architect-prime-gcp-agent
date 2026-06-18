@@ -1,0 +1,107 @@
+.card {
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 12px 0;
+  border: 1px solid;
+}
+
+.cardPass {
+  background: rgba(59, 170, 120, 0.08);
+  border-color: rgba(59, 170, 120, 0.3);
+}
+
+.cardFail {
+  background: rgba(216, 79, 69, 0.08);
+  border-color: rgba(216, 79, 69, 0.3);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.badge {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.cardPass .badge { color: #3BAA78; }
+.cardFail .badge { color: #D84F45; }
+
+.score {
+  font-size: 13px;
+  color: #8899aa;
+}
+
+.toggle {
+  margin-left: auto;
+  font-size: 12px;
+  color: #8899aa;
+}
+
+.reasoning {
+  font-size: 13px;
+  color: #b0bec5;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.checksTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.checksTable th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #8899aa;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.thStatus {
+  width: 28px;
+}
+
+.checksTable td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: top;
+}
+
+.tdStatus {
+  text-align: center;
+  font-weight: 700;
+}
+
+.rowPass .tdStatus { color: #3BAA78; }
+.rowFail .tdStatus { color: #D84F45; }
+
+.evidence {
+  color: #8899aa;
+  font-size: 12px;
+  max-width: 300px;
+  word-break: break-word;
+}
+
+.recommendation {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(230, 167, 0, 0.08);
+  border: 1px solid rgba(230, 167, 0, 0.2);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #e0e0e0;
+  line-height: 1.5;
+}
+
+.recommendation strong {
+  color: #e6a700;
+}

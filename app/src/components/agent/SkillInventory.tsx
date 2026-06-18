@@ -11,6 +11,8 @@ import styles from "./SkillInventory.module.css";
 export interface SkillTool {
   name: string;
   description: string;
+  input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
 }
 
 export interface Skill {
@@ -18,7 +20,12 @@ export interface Skill {
   description: string;
   version?: string;
   tools: SkillTool[];
-  source: string; // 'installed' | 'builtin'
+  source: string; // 'installed' | 'builtin' | 'mcp'
+  // MCP fields — populated when source is 'mcp'
+  mcp_server?: string;
+  mcp_status?: 'connected' | 'disconnected' | 'error';
+  mcp_url?: string;
+  connection_type?: 'local' | 'remote' | 'stdio';
 }
 
 export interface SkillData {
@@ -74,12 +81,35 @@ export function SkillInventory({ primeId, agentName }: SkillInventoryProps) {
     );
   }
 
+  /* ---- Separate MCP servers from regular skills ---- */
+  const regularSkills = skills.filter((s) => s.source !== 'mcp');
+  const mcpSkills = skills.filter((s) => s.source === 'mcp');
+
   /* ---- Grid ---- */
   return (
-    <div className={styles.grid}>
-      {skills.map((skill) => (
-        <SkillCard key={skill.name} skill={skill} />
-      ))}
+    <div>
+      {/* Regular skills */}
+      <div className={styles.grid}>
+        {regularSkills.map((skill) => (
+          <SkillCard key={skill.name} skill={skill} />
+        ))}
+      </div>
+
+      {/* MCP Connections */}
+      {mcpSkills.length > 0 && (
+        <>
+          <div className={styles.mcpHeader}>
+            <span className={styles.mcpIcon}>🔌</span>
+            <span className={styles.mcpTitle}>MCP Servers</span>
+            <span className={styles.mcpCount}>{mcpSkills.length}</span>
+          </div>
+          <div className={styles.grid}>
+            {mcpSkills.map((skill) => (
+              <SkillCard key={skill.name} skill={skill} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -117,11 +147,31 @@ function SkillCard({ skill }: { skill: Skill }) {
         </span>
         <span
           className={`${styles.badge} ${
-            skill.source === "builtin" ? styles.badgeBuiltin : styles.badgeInstalled
+            skill.source === "builtin" ? styles.badgeBuiltin
+            : skill.source === "mcp" ? styles.badgeMcp
+            : styles.badgeInstalled
           }`}
         >
           {skill.source}
         </span>
+        {/* MCP server status indicator */}
+        {skill.mcp_status && (
+          <span
+            className={`${styles.badge} ${
+              skill.mcp_status === 'connected' ? styles.badgeMcpConnected
+              : skill.mcp_status === 'error' ? styles.badgeMcpError
+              : styles.badgeMcpDisconnected
+            }`}
+          >
+            {skill.mcp_status === 'connected' ? '●' : skill.mcp_status === 'error' ? '●' : '○'}
+            {' '}{skill.mcp_status}
+          </span>
+        )}
+        {skill.connection_type && (
+          <span className={styles.badge}>
+            {skill.connection_type}
+          </span>
+        )}
       </div>
 
       {/* Tool list toggle */}
@@ -144,11 +194,27 @@ function SkillCard({ skill }: { skill: Skill }) {
                   {tool.description && (
                     <span className={styles.toolDesc}>{tool.description}</span>
                   )}
+                  {/* D6.1: Schema display */}
+                  {tool.input_schema && Object.keys(tool.input_schema).length > 0 && (
+                    <details className={styles.schemaDetails}>
+                      <summary className={styles.schemaSummary}>Schema</summary>
+                      <pre className={styles.schemaCode}>
+                        {JSON.stringify(tool.input_schema, null, 2)}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </>
+      )}
+
+      {/* MCP server URL */}
+      {skill.mcp_url && (
+        <div className={styles.mcpUrl} title={skill.mcp_url}>
+          {skill.mcp_server || skill.mcp_url}
+        </div>
       )}
     </div>
   );

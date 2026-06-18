@@ -18,6 +18,7 @@ export interface ProcessSummary {
   execution_count: number;
   steps: { title: string; agent?: string }[];
   subscribers?: string[];
+  intent_keywords?: string[];
   created_at: string;
 }
 
@@ -186,6 +187,17 @@ export function AgentProcesses({ primeId, agentEmail }: AgentProcessesProps) {
             {/* Description */}
             {proc.description && (
               <div className={styles.cardGoal}>{proc.description}</div>
+            )}
+
+            {/* Intent keywords — drives cortex process selection */}
+            {proc.intent_keywords && proc.intent_keywords.length > 0 && (
+              <div className={styles.cardMeta} style={{ flexWrap: 'wrap', gap: '4px' }}>
+                {proc.intent_keywords.map((kw, i) => (
+                  <span key={i} className={styles.versionBadge} style={{ fontSize: '11px' }}>
+                    {kw}
+                  </span>
+                ))}
+              </div>
             )}
 
             {/* Meta */}

@@ -1,0 +1,57 @@
+/* ============================================
+   HireModal — Agent Hiring Dialog
+   ============================================ */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  width: 420px;
+  max-width: 92%;
+  background: #313B47;
+  border: 1px solid rgba(86, 99, 115, 0.3);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+}
+
+.modalTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #E6EBF0;
+  margin-bottom: 20px;
+}
+
+.modalField {
+  margin-bottom: 16px;
+}
+
+.modalLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #AEB8C4;
+  margin-bottom: 6px;
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.modalHint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  line-height: 1.4;
+}
