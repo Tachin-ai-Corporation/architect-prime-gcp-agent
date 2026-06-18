@@ -1,13 +1,13 @@
 {
   "id": "design-ops",
   "name": "Design Operations",
-  "version": "1.0.0",
-  "description": "Design system creation, brand guideline enforcement, visual concept development, and cross-medium design coordination",
+  "version": 2,
+  "description": "Design system creation, brand guideline enforcement, visual concept development, and cross-medium design coordination.",
   "author": "architect-prime",
   "origin": "specialty",
   "category": "design",
   "agent_part": "motor",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When creating brand guidelines, design systems, visual concepts, or coordinating design across Slides/Docs/HTML"
+  "when_to_use": "When creating brand guidelines, design systems, visual concepts, or coordinating design across Slides/Docs/HTML."
 }
