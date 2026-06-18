@@ -1,14 +1,56 @@
 # Skill: Git Workflow Operations
 
-## What this skill does
-Git workflow procedures — branching, commits, pre-commit checks, PR templates, merge conflicts
+## When to Use
+When performing git workflow operations including feature branch management, conventional commits, pre-commit checks, pulling upstream updates, and resolving merge conflicts.
 
-## When to use
-When performing git workflow operations — branching, committing, creating PRs, resolving conflicts
+## Commands
 
-Use these procedures when performing git workflow tasks via `exec`.
+No custom corekit scripts are governed by this skill. Standard `git` commands are used directly.
 
-## Feature Branch Management
+## Procedures
+
+### Feature branch creation and sync
+1. Ensure you are on the latest main branch:
+   ```bash
+   git checkout main && git fetch origin && git rebase origin/main
+   ```
+2. Create and switch to your feature branch:
+   ```bash
+   git checkout -b feat/<short-description>
+   ```
+3. Regularly sync with main:
+   ```bash
+   git fetch origin && git rebase origin/main
+   ```
+4. Verify: Run `git branch` and confirm you are on your feature branch and it is up to date.
+
+### Code commit and verification
+1. Run pre-commit quality checks (e.g. `npm run lint` or `ruff check .`).
+2. Stage modified files using `git add <file1> <file2>`.
+3. Commit with a conventional commit message (e.g. `feat(auth): add token validation`).
+4. Verify: Run `git log -1` and confirm your commit is listed with the correct conventional format.
+
+### Resolving merge conflicts
+1. Identify the conflict files:
+   ```bash
+   git diff --name-only --diff-filter=U
+   ```
+2. Open conflict files and edit to resolve standard conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).
+3. Stage the resolved files:
+   ```bash
+   git add <resolved_file>
+   ```
+4. Continue the rebase:
+   ```bash
+   git rebase --continue
+   ```
+5. Verify: Ensure the rebase finishes cleanly with no outstanding conflicts.
+
+---
+
+## Git Workflow Reference
+
+### Feature Branch Management
 
 | What | Command |
 |------|---------|
@@ -20,22 +62,9 @@ Use these procedures when performing git workflow tasks via `exec`.
 | Delete local branch | `git branch -d BRANCH_NAME` |
 | Delete remote branch | `git push origin --delete BRANCH_NAME` |
 
-### Branch Naming Convention
-- `feat/<short-description>` — new features
-- `fix/<short-description>` — bug fixes
-- `chore/<short-description>` — maintenance, deps, config
-- `refactor/<short-description>` — code restructuring
-
-## Commit Message Formatting
-
+### Commit Message Formatting
 Use conventional commits format:
-```
-<type>(<scope>): <subject>
-
-<body>
-
-<footer>
-```
+`<type>(<scope>): <subject>`
 
 | Type | When |
 |------|------|
@@ -48,125 +77,13 @@ Use conventional commits format:
 | `chore` | Build, deps, config changes |
 | `perf` | Performance improvement |
 
-### Commit Commands
-```bash
-# Stage specific files
-git add FILE1 FILE2
+## Error Recovery
 
-# Commit with conventional message
-git commit -m "feat(auth): add OAuth2 token refresh"
-
-# Amend last commit (unpushed only)
-git commit --amend --no-edit
-```
-
-## Pre-Commit Checks
-
-Run before every commit. Fail fast — stop on first error.
-
-```bash
-# Lint
-npm run lint 2>&1 || echo "LINT FAILED"
-
-# Format check
-npm run format:check 2>&1 || echo "FORMAT FAILED"
-
-# Type check (TypeScript)
-npx tsc --noEmit 2>&1 || echo "TYPE CHECK FAILED"
-
-# Unit tests
-npm test 2>&1 || echo "TESTS FAILED"
-```
-
-For Python projects:
-```bash
-ruff check . 2>&1 || echo "LINT FAILED"
-ruff format --check . 2>&1 || echo "FORMAT FAILED"
-mypy . 2>&1 || echo "TYPE CHECK FAILED"
-pytest --tb=short 2>&1 || echo "TESTS FAILED"
-```
-
-## PR Description Template
-
-```bash
-# Push branch and create PR
-git push -u origin BRANCH_NAME
-
-# PR body template (use with gh cli or API)
-cat <<'EOF'
-## Summary
-Brief description of what this PR does.
-
-## Changes
-- Change 1
-- Change 2
-
-## Testing
-- [ ] Unit tests pass
-- [ ] Manual testing done
-- [ ] No regressions
-
-## Related
-- Depends on: #PR_NUMBER (if applicable)
-EOF
-```
-
-## Merge Conflict Resolution
-
-```bash
-# 1. Fetch latest
-git fetch origin
-
-# 2. Rebase onto target
-git rebase origin/main
-
-# 3. If conflicts, list them
-git diff --name-only --diff-filter=U
-
-# 4. After resolving each file
-git add RESOLVED_FILE
-
-# 5. Continue rebase
-git rebase --continue
-
-# 6. If rebase is unrecoverable
-git rebase --abort
-```
-
-## Stale Branch Cleanup
-
-```bash
-# List branches merged into main
-git branch --merged main
-
-# List branches older than 30 days
-git for-each-ref --sort=committerdate --format='%(committerdate:short) %(refname:short)' refs/heads/
-
-# Prune remote tracking branches
-git remote prune origin
-
-# Delete merged branches (excluding main/master/develop)
-git branch --merged main | grep -vE '(main|master|develop)' | xargs -r git branch -d
-```
-
-## Git Log Analysis
-
-```bash
-# Recent commits (compact)
-git log --oneline -20
-
-# Commits by author in last 7 days
-git log --author="NAME" --since="7 days ago" --oneline
-
-# Files changed in last N commits
-git diff --stat HEAD~N
-
-# Commit frequency by day
-git log --format='%ad' --date=short | sort | uniq -c | sort -rn | head -20
-
-# Find large files in history
-git rev-list --objects --all | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' | sed -n 's/^blob //p' | sort -rnk2 | head -20
-```
+| Error / Symptom | Likely Cause | Recovery |
+|-----------------|-------------|----------|
+| `git rebase` fails with conflict | Changes in your branch conflict with commits on target branch | Run `git diff --name-only --diff-filter=U` to identify conflict files. Resolve conflicts, run `git add <file>`, and then run `git rebase --continue`. |
+| `git push` rejected (non-fast-forward) | Remote branch has newer commits not present locally | Run `git fetch origin` followed by `git rebase origin/main` (or origin/feature-branch) to sync before pushing. |
+| Commits made on incorrect branch | Edits committed directly to main instead of a feature branch | Run `git branch temp-branch`, reset main to upstream state: `git reset --hard origin/main`, then switch to the temp branch: `git checkout temp-branch`. |
 
 ## Safety Rules
 - Never force-push to `main`, `master`, or `develop`
