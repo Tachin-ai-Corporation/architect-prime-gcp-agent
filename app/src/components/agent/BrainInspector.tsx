@@ -27,7 +27,7 @@ interface ModelsData {
 
 /** Live config from agent VM via introspection */
 interface LiveBrainConfig {
-  default: string; // e.g. "google-vertex/gemini-3.1-pro-preview"
+  default: string; // e.g. "vertex-anthropic/claude-opus-4-6" or "vertex-google/gemini-2.5-pro"
   slots: Record<string, string | null>; // per-agent overrides (null = inherits default)
   daemonModels?: { ears?: string | null; mouth?: string | null; brain?: string | null };
   responsibilities?: Responsibility[];
@@ -54,23 +54,19 @@ interface BrainInspectorProps {
   agentName: string; // the raw agent name as it appears in the fleet
 }
 
-/* ================================================================
-   Constants
-   ================================================================ */
+interface SlotDef {
+  key: string;
+  label: string;
+  desc: string;
+  icon: string;
+  defaultModel: string;
+  tools: string[];
+}
 
 const DAEMON_SLOTS = [
   { key: "ears", label: "Ears", desc: "Input preprocessor", icon: "👂" },
   { key: "mouth", label: "Mouth", desc: "Output voicing", icon: "🗣️" },
   { key: "brain", label: "Brain", desc: "Orchestrator daemon", icon: "🧠" },
-] as const;
-
-const SLOTS = [
-  { key: "cortex", label: "Cortex", desc: "Plan executor", icon: "🧩" },
-  { key: "prefrontal", label: "Prefrontal", desc: "Planner", icon: "🎯" },
-  { key: "temporal-research", label: "Temporal Research", desc: "Researcher", icon: "🔬" },
-  { key: "temporal-memory", label: "Temporal Memory", desc: "Memory", icon: "💾" },
-  { key: "motor", label: "Motor", desc: "Executor", icon: "⚡" },
-  { key: "cerebellum", label: "Cerebellum", desc: "Verifier", icon: "✅" },
 ] as const;
 
 const DAEMON_KEYS: Set<string> = new Set(DAEMON_SLOTS.map(s => s.key));
@@ -119,13 +115,38 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
   // Responsibility toggle state
 
 
+  const [slots, setSlots] = useState<SlotDef[]>([]);
+  const [defaultDaemonModel, setDefaultDaemonModel] = useState("gemini-2.5-flash");
+
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
+
+  /* ---- Fetch brain config details (slots and defaults) ---- */
+  const fetchBrainConfig = useCallback(async () => {
+    if (!primeId) return;
+    try {
+      const data = await api<{ slots: SlotDef[]; defaultDaemonModel: string }>(
+        `/api/primes/${primeId}/brain-config?agent=${agentName || "cortex"}`
+      );
+      if (data?.slots) {
+        setSlots(data.slots);
+      }
+      if (data?.defaultDaemonModel) {
+        setDefaultDaemonModel(data.defaultDaemonModel);
+      }
+    } catch (err) {
+      console.error("[BrainInspector] Failed to fetch brain config slots:", err);
+    }
+  }, [primeId, agentName]);
+
+  useEffect(() => {
+    fetchBrainConfig();
+  }, [fetchBrainConfig]);
 
   /* ---- Fetch model catalog from Firestore ---- */
   const fetchModelCatalog = useCallback(async () => {
     if (!primeId) return;
     setLoadingModels(true);
-    const res = await api<ModelsData>(`/api/primes/${primeId}/models`);
+    const res = await api<ModelsData>(`/api/models?primeId=${primeId}`);
     if (res) setModelsData(res);
     setLoadingModels(false);
   }, [primeId]);
@@ -207,7 +228,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
     if (liveConfig) {
       if (DAEMON_KEYS.has(slot)) {
         const dm = liveConfig.daemonModels?.[slot as keyof NonNullable<LiveBrainConfig["daemonModels"]>];
-        return dm || "gemini-2.5-flash"; // daemon default
+        return dm || defaultDaemonModel; // daemon default
       }
       return liveConfig.slots[slot] || liveConfig.default || "—";
     }
@@ -258,7 +279,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
       const overrides: Record<string, string> = {};
       const daemonOverrides: Record<string, string> = {};
 
-      for (const slot of SLOTS) {
+      for (const slot of slots) {
         const pending = pendingChanges[slot.key];
         if (pending) {
           overrides[slot.key] = pending;
@@ -428,7 +449,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
       {/* ---- Brain Agents Section ---- */}
       <div className={styles.sectionLabel} id="brain-agents-section">Brain Agents</div>
       <div className={styles.grid} id="brain-slot-grid">
-        {SLOTS.map(({ key, label, desc, icon }) => {
+        {slots.map(({ key, label, desc, icon }) => {
           const modelId = resolveSlotModel(key);
           const isPending = !!pendingChanges[key];
           const displayModel = modelId === "—" ? "—" : getDisplayName(modelId, modelsData?.models || []);
@@ -466,7 +487,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" id="brain-picker-modal">
             <div className={styles.modalHeader}>
               <h2 className={styles.modalTitle}>
-                Select model for {[...DAEMON_SLOTS, ...SLOTS].find((s) => s.key === pickerSlot)?.label}
+                Select model for {[...DAEMON_SLOTS, ...slots].find((s) => s.key === pickerSlot)?.label}
               </h2>
               <button className={styles.modalClose} onClick={() => setPickerSlot(null)} aria-label="Close">✕</button>
             </div>

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
 
@@ -337,10 +337,13 @@ async function probeModel(
 
 /* ---- Route handler ---- */
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
     const auth = await requireAuth();
     if (!auth.authenticated) return auth.response;
+
+    const url = new URL(req.url);
+    const primeId = url.searchParams.get("primeId");
 
     const projectId = process.env.GCP_PROJECT_ID!;
     const location = process.env.GCP_REGION || "us-central1";
@@ -434,14 +437,21 @@ export async function POST() {
     // Write to project-level config
     await db.collection("config").doc("models").set(scanData, { merge: true });
 
-    // Also write to each Prime's config for backward compat with Brain page
-    const primesSnap = await db.collection("primes").get();
-    const primeWrites = primesSnap.docs.map((doc) =>
-      db.collection("primes").doc(doc.id)
+    if (primeId) {
+      // Write specifically to the requested Prime's config settings
+      await db.collection("primes").doc(primeId)
         .collection("config").doc("settings")
-        .set(scanData, { merge: true })
-    );
-    await Promise.all(primeWrites);
+        .set(scanData, { merge: true });
+    } else {
+      // Also write to each Prime's config for backward compat with Brain page
+      const primesSnap = await db.collection("primes").get();
+      const primeWrites = primesSnap.docs.map((doc) =>
+        db.collection("primes").doc(doc.id)
+          .collection("config").doc("settings")
+          .set(scanData, { merge: true })
+      );
+      await Promise.all(primeWrites);
+    }
 
     return NextResponse.json({
       models: results,

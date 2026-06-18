@@ -13,10 +13,13 @@ interface OnboardingFlowProps {
   onDeployed: () => void;
 }
 
+const DEFAULT_ZONE = process.env.NEXT_PUBLIC_DEFAULT_ZONE || "us-central1-a";
+const ZONES = Array.from(new Set([DEFAULT_ZONE, "us-central1-a", "us-east1-b", "us-west1-a", "europe-west1-b", "us-east5-a"]));
+
 export function OnboardingFlow({ setup, onDeployed }: OnboardingFlowProps) {
   const dialog = useDialog();
   const [newPrimeName, setNewPrimeName] = useState("");
-  const [newPrimeZone, setNewPrimeZone] = useState("us-central1-a");
+  const [newPrimeZone, setNewPrimeZone] = useState(DEFAULT_ZONE);
   const [deploying, setDeploying] = useState(false);
   const [copied, setCopied] = useState("");
 
@@ -87,10 +90,9 @@ export function OnboardingFlow({ setup, onDeployed }: OnboardingFlowProps) {
                     onChange={(e) => setNewPrimeZone(e.target.value)}
                     style={{ width: 180 }}
                   >
-                    <option value="us-central1-a">us-central1-a</option>
-                    <option value="us-east1-b">us-east1-b</option>
-                    <option value="us-west1-a">us-west1-a</option>
-                    <option value="europe-west1-b">europe-west1-b</option>
+                    {ZONES.map((z) => (
+                      <option key={z} value={z}>{z}</option>
+                    ))}
                   </select>
                 </div>
                 <button

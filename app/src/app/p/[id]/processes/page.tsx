@@ -41,6 +41,7 @@ interface ProcessSummary {
   created_by: string;
   created_at: string;
   steps: StepDef[];
+  intent_keywords?: string[];
 }
 
 interface ProcessDetail extends ProcessSummary {
@@ -221,6 +222,7 @@ function ProcessDetailView({
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [editIntentKeywords, setEditIntentKeywords] = useState("");
   const [editSteps, setEditSteps] = useState<StepDef[]>([]);
   const [editParams, setEditParams] = useState<ParamDef[]>([]);
   const [saving, setSaving] = useState(false);
@@ -246,6 +248,7 @@ function ProcessDetailView({
     if (!process) return;
     setEditName(process.name);
     setEditDesc(process.description);
+    setEditIntentKeywords((process.intent_keywords || []).join(", "));
     setEditSteps(process.steps.map((s) => ({ ...s })));
     // Convert parameters record to array
     const paramArr: ParamDef[] = Object.entries(process.parameters || {}).map(([key, param]) => ({
@@ -320,6 +323,7 @@ function ProcessDetailView({
       body: JSON.stringify({
         name: editName.trim(),
         description: editDesc,
+        intent_keywords: editIntentKeywords.split(",").map((k) => k.trim()).filter(Boolean),
         steps: editSteps,
         parameters: parametersObj,
       }),
@@ -330,7 +334,7 @@ function ProcessDetailView({
     }
     setIsEditing(false);
     setSaving(false);
-  }, [process, editName, editDesc, editSteps, editParams, primeId, processId]);
+  }, [process, editName, editDesc, editIntentKeywords, editSteps, editParams, primeId, processId]);
 
   /* ---- Deprecate ---- */
   const handleDeprecate = useCallback(async () => {
@@ -403,15 +407,41 @@ function ProcessDetailView({
         </div>
 
         {isEditing ? (
-          <textarea
-            className={`${styles.fieldTextarea} ${styles.editDescTextarea}`}
-            value={editDesc}
-            onChange={(e) => setEditDesc(e.target.value)}
-            rows={3}
-            placeholder="Process description"
-          />
+          <>
+            <textarea
+              className={`${styles.fieldTextarea} ${styles.editDescTextarea}`}
+              value={editDesc}
+              onChange={(e) => setEditDesc(e.target.value)}
+              rows={3}
+              placeholder="Process description"
+            />
+            <div style={{ marginTop: 12, marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 12, color: "#AEB8C4", marginBottom: 4 }}>
+                Intent Keywords (comma-separated, matches user prompt to auto-route this process)
+              </label>
+              <input
+                type="text"
+                className={styles.fieldInput}
+                value={editIntentKeywords}
+                onChange={(e) => setEditIntentKeywords(e.target.value)}
+                placeholder="e.g. build, compile, deploy, snapshot"
+              />
+            </div>
+          </>
         ) : (
-          <div className={styles.detailDesc}>{process.description}</div>
+          <>
+            <div className={styles.detailDesc}>{process.description}</div>
+            {process.intent_keywords && process.intent_keywords.length > 0 && (
+              <div style={{ marginTop: 12, marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontSize: 12, color: "#AEB8C4" }}>Intent keywords:</span>
+                {process.intent_keywords.map((k) => (
+                  <span key={k} style={{ background: "#2A3644", color: "#AEB8C4", padding: "2px 8px", borderRadius: 4, fontSize: 11 }}>
+                    {k}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         <div className={styles.detailMetaRow}>
@@ -708,6 +738,7 @@ function CreateProcessModal({
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [intentKeywords, setIntentKeywords] = useState("");
   const [steps, setSteps] = useState<StepDef[]>([{ ...BLANK_STEP }]);
   const [params, setParams] = useState<typeof BLANK_PARAM[]>([]);
   const [creating, setCreating] = useState(false);
@@ -759,15 +790,17 @@ function CreateProcessModal({
         id: id.trim(),
         name: name.trim(),
         description,
+        intent_keywords: intentKeywords.split(",").map((k) => k.trim()).filter(Boolean),
         steps,
         parameters: Object.keys(parametersObj).length > 0 ? parametersObj : undefined,
       }),
     });
     if (result?.process) {
       onCreated(result.process);
+      onClose();
     }
     setCreating(false);
-  }, [id, name, description, steps, params, primeId, onCreated]);
+  }, [id, name, description, intentKeywords, steps, params, primeId, onCreated, onClose]);
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -801,6 +834,14 @@ function CreateProcessModal({
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
             placeholder="What does this process do?"
+          />
+
+          <label className={styles.fieldLabel}>Intent Keywords (comma-separated)</label>
+          <input
+            className={styles.fieldInput}
+            value={intentKeywords}
+            onChange={(e) => setIntentKeywords(e.target.value)}
+            placeholder="e.g. deploy, build, compile, snapshot"
           />
 
           {/* ---- Step Builder ---- */}

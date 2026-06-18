@@ -56,6 +56,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const process = {
       name: body.name,
       description: body.description,
+      intent_keywords: body.intent_keywords || [],
       steps: body.steps,
       status: "active",
       version: 1,

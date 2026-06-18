@@ -13,6 +13,9 @@ import { usePrime } from "@/contexts/PrimeContext";
 import { api } from "@/lib/api";
 import type { PrimeInstance, FleetAgent } from "@/lib/types";
 
+const DEFAULT_ZONE = process.env.NEXT_PUBLIC_DEFAULT_ZONE || "us-central1-a";
+const ZONES = Array.from(new Set([DEFAULT_ZONE, "us-central1-a", "us-east1-b", "us-west1-a", "europe-west1-b", "us-east5-a"]));
+
 function HomeInner() {
   const dialog = useDialog();
   const router = useRouter();
@@ -22,7 +25,7 @@ function HomeInner() {
   const [selectedPrimeId, setSelectedPrimeId] = useState<string | null>(null);
   const [showDeploy, setShowDeploy] = useState(false);
   const [newPrimeName, setNewPrimeName] = useState("");
-  const [newPrimeZone, setNewPrimeZone] = useState("us-central1-a");
+  const [newPrimeZone, setNewPrimeZone] = useState(DEFAULT_ZONE);
   const [deploying, setDeploying] = useState(false);
   const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
   const [chatWidth, setChatWidth] = useState(420);
@@ -391,10 +394,9 @@ function HomeInner() {
                 value={newPrimeZone}
                 onChange={(e) => setNewPrimeZone(e.target.value)}
               >
-                <option value="us-central1-a">us-central1-a</option>
-                <option value="us-east1-b">us-east1-b</option>
-                <option value="us-west1-a">us-west1-a</option>
-                <option value="europe-west1-b">europe-west1-b</option>
+                {ZONES.map((z) => (
+                  <option key={z} value={z}>{z}</option>
+                ))}
               </select>
             </div>
             <div className={styles.modalActions}>
