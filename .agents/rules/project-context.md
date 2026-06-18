@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.17.3)
+## Current Architecture (v2026.06.17.9)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -30,6 +30,17 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **firebase-hosting-diagnostics skill**: 6-step diagnostic procedure codifying Drive→sync→GCS→proxy→Firebase Hosting pipeline investigation.
   - **p-memory-consolidate process**: 8-step dedicated process for nightly memory consolidation with pre-flight bootstrap (step 1 creates MEMORY.md template if missing). Wired to `r-memory-consolidation` via `processRef`.
   - **Structured telemetry**: `[TELEMETRY] motor_dispatch` and `[TELEMETRY] process_selected` structured log lines for observing motor stuck rate, timeout rate, project context injection status, and process selection.
+- **Brain Daemon Overhaul (v2026.06.17.9)**:
+  - **completeEnvelope()**: Unified lifecycle function for all terminal state transitions (complete, blocked, needs_input, failed). Replaces 7 inline ceremony sites. Lives in `corekit/lib/envelope-lifecycle.mjs` (standalone factory) and inline in `agent-brain.mjs` (closure-scoped).
+  - **Action dispatch table**: 4 handlers extracted to named functions (synthesize, blocked, needs_input, status_update) with `ACTION_HANDLERS` dispatch table. 4 larger handlers (swf, follow_process, delegate, checkpoint_plan) remain inline.
+  - **Guard enforcement**: Generalized `_activeGuard` mechanism — guards specify `forbidden` action and `fallback` override, enforced one-shot per iteration. Applied to premature-synthesize and follow_process already-executed guards.
+  - **priorResults budget**: Configurable via `dispatch.prior_results_max` contract (default 25). Keeps last 60%, summarizes older entries. Prevents unbounded context growth.
+  - **SWF state machine**: `_swf_state` enum (null → awaiting_unblock → unblock_attempted) replaces implicit boolean + string search.
+  - **LLM cost telemetry**: Per-call `[TELEMETRY] llm_usage` and per-mission `[TELEMETRY] mission_total` with input/output/cached token counts.
+  - **toStr sweep**: 25 `.substring()` sites wrapped with `toStr()` for type safety on LLM/Firestore-origin fields.
+  - **New modules**: `corekit/lib/` now contains: `envelope-lifecycle.mjs`, `checkpoint-executor.mjs`, `plan-utils.mjs`, `agent-output.mjs`, `to-str.mjs`, `verdict.mjs` (preexisting).
+  - **Process engine hardening**: No-verdict path (cerebellum returns text without calling verdict tool) now continues with telemetry warning instead of implicit fallthrough.
+  - **Cerebellum E2E tests**: `tests/cerebellum-verdict.test.mjs` — 8 tests covering verdict extraction, motor failure detection, plan extraction.
 - **Idempotency & Replay-Safety Hardening (v2026.06.17.1)**:
   - **Step Ledger**: Deterministic step keys (SHA-256 of `[envId, iteration, action, target]`) recorded in a `step_ledger` field on each envelope. Before every dispatch, the brain checks the ledger and skips already-completed steps — preventing duplicate work on replay.
   - **Durable Claim**: `claimed_by` / `claimed_at_ms` fields on envelopes provide a Firestore-backed processing lock that survives daemon restarts. Stale claims auto-cleared on startup.

@@ -56,7 +56,7 @@ Agent VMs (GCE, host-native under systemd — no containers)
                            cerebellum, temporal-research, temporal-memory
 ```
 
-The brain is a deterministic state machine that consults intelligence. It owns the loop; the models own only the judgments inside it. All work flows through the **R→M→C→T** envelope hierarchy (Responsibility → Mission → Checkpoint → Task). Models, ports, agent IDs, and all cross-cutting values live in [`infra/contracts.json`](infra/contracts.json) — the single source of truth, validated at bootstrap and upgrade.
+The brain is a deterministic state machine that consults intelligence. It owns the loop; the models own only the judgments inside it. All work flows through the **R→M→C→T** envelope hierarchy (Responsibility → Mission → Checkpoint → Task). Models, ports, agent IDs, and all cross-cutting values live in [`infra/contracts.json`](infra/contracts.json) — the single source of truth, validated at bootstrap and upgrade. The brain daemon decomposes action handling through a dispatch table, enforces iteration guards against cortex non-compliance, and budgets prior-results to prevent unbounded context growth. Completion ceremonies are centralized in a single `completeEnvelope()` lifecycle function. LLM cost telemetry tracks per-call and per-mission token usage.
 
 For the full cognitive architecture, see [Brain Canon](docs/BRAIN_CANON.md). For governing invariants, see [Product Canon](docs/PRODUCT_CANON.md).
 
@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.17.9 | 2026-06-17 | Brain Daemon Overhaul (Phases 1-5): completeEnvelope extraction (7 ceremony sites → 1), action dispatch table, guard enforcement, priorResults budget, SWF state machine, LLM cost telemetry, toStr type-safety sweep (25 sites), process engine verification hardening, shared modules (plan-utils, agent-output, checkpoint-executor, to-str, envelope-lifecycle), cerebellum E2E tests (8/8 passing) |
 | v2026.06.17.3 | 2026-06-17 | Deployment Resilience: strip literal backslash-r from tools.mjs (gateway crash loop), add /snap/bin to command-runner PATH (gcloud unreachable → exit 127), inject GCP_PROJECT_ID/PRIME_ID env into bootstrap service heredoc |
 | v2026.06.17.2 | 2026-06-17 | Knowledge Layer Hardening: full project context + source_text to motor, process selection by intent_keywords, hallucinated skill path guards, semantic stuck detection, firebase-hosting-diagnostics skill, p-memory-consolidate process, structured telemetry |
 | v2026.06.17.1 | 2026-06-17 | Idempotency & replay-safety hardening (step ledger, durable claims, checkpoint resume, idempotent createCT) + neural gateway rename (brain-gateway → neural-gateway everywhere) |
