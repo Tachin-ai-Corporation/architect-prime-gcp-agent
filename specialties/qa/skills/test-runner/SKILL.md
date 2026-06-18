@@ -1,14 +1,39 @@
 # Skill: Test Runner Operations
 
-## What this skill does
-Test execution procedures — npm test, pytest, go test, coverage collection, regression diffing, flaky detection
+## When to Use
+When running test suites, collecting code coverage metrics, analyzing test logs, or detecting flaky tests across Node.js, Python, or Go environments.
 
-## When to use
-When running test suites, collecting coverage, or analyzing test results
+## Commands
 
-Use these procedures when running tests and collecting results via `exec`.
+No custom corekit scripts are governed directly by this skill.
 
-## Test Execution
+## Procedures
+
+### Run test suite and check coverage
+1. Identify the project type (Node.js, Python, or Go).
+2. Run the appropriate test command with coverage collection flags:
+   - Node: `npx jest --coverage --coverageReporters=text 2>&1`
+   - Python: `python -m pytest --cov=. --cov-report=term-missing 2>&1`
+   - Go: `go test -coverprofile=coverage.out ./... 2>&1`
+3. Verify: Check that the test runner outputs a coverage summary containing percentages for statements, branches, functions, and lines.
+
+### Troubleshoot a failing test
+1. Retrieve the names or files of failing tests from the build output.
+2. Run only the failed test(s) with verbose output redirected:
+   - Jest: `npx jest path/to/failed.test.ts --verbose 2>&1`
+   - Pytest: `python -m pytest path/to/failed.py -v --tb=short 2>&1`
+3. Verify: Inspect the stack trace and error message details to identify the cause of the failure.
+
+### Detect flaky tests
+1. Run the test suite multiple times in a loop or using runner repeat features:
+   - Go: `go test ./... -count=5 -v 2>&1`
+   - Pytest: `python -m pytest --count=5 -x 2>&1`
+   - Node: Run in a loop: `for i in {1..5}; do npm test 2>&1; done`
+2. Verify: Compare the outcomes of each run. If a test passes in some runs and fails in others, flag it as a flaky test.
+
+---
+
+## Environment Reference
 
 ### Node.js / JavaScript / TypeScript
 ```bash
@@ -18,14 +43,8 @@ npm test 2>&1
 # Run specific test file
 npx jest PATH/TO/TEST.test.ts 2>&1
 
-# Run tests matching pattern
-npx jest --testNamePattern="pattern" 2>&1
-
-# Run with verbose output
-npx jest --verbose 2>&1
-
-# Run only changed tests
-npx jest --changedSince=origin/main 2>&1
+# Jest built-in coverage
+npx jest --coverage --coverageReporters=text 2>&1
 ```
 
 ### Python
@@ -36,14 +55,8 @@ python -m pytest -v 2>&1
 # Run specific test file
 python -m pytest tests/test_module.py -v 2>&1
 
-# Run tests matching pattern
-python -m pytest -k "pattern" -v 2>&1
-
-# Run with short traceback
-python -m pytest --tb=short 2>&1
-
-# Run last failed
-python -m pytest --lf -v 2>&1
+# Collect coverage
+python -m pytest --cov=. --cov-report=term-missing 2>&1
 ```
 
 ### Go
@@ -51,157 +64,8 @@ python -m pytest --lf -v 2>&1
 # Run all tests
 go test ./... -v 2>&1
 
-# Run specific package
-go test ./pkg/NAME -v 2>&1
-
-# Run tests matching pattern
-go test ./... -run "TestPattern" -v 2>&1
-
-# Run with race detection
-go test ./... -race 2>&1
-
-# Run with timeout
-go test ./... -timeout 120s 2>&1
-```
-
-## Coverage Collection
-
-### Node.js (nyc / jest)
-```bash
-# Jest built-in coverage
-npx jest --coverage --coverageReporters=text 2>&1
-
-# With nyc
-npx nyc npm test 2>&1
-
-# Coverage summary only
-npx jest --coverage --coverageReporters=text-summary 2>&1
-
-# JSON output for parsing
-npx jest --coverage --coverageReporters=json --coverageDirectory=./coverage 2>&1
-```
-
-### Python (coverage.py)
-```bash
-# Collect coverage
-python -m pytest --cov=. --cov-report=term-missing 2>&1
-
-# Coverage with threshold check
-python -m pytest --cov=. --cov-fail-under=80 2>&1
-
-# HTML report
-python -m pytest --cov=. --cov-report=html 2>&1
-
-# JSON report for parsing
-python -m pytest --cov=. --cov-report=json 2>&1
-```
-
-### Go
-```bash
 # Basic coverage
 go test -cover ./... 2>&1
-
-# Coverage profile
-go test -coverprofile=coverage.out ./... 2>&1
-
-# Coverage by function
-go tool cover -func=coverage.out
-
-# Coverage percentage only
-go test -cover ./... 2>&1 | grep -oP 'coverage: \K[0-9.]+%'
-```
-
-## Structured Result Output
-
-Collect test results in a standard format for reporting:
-
-```bash
-# Jest JSON output
-npx jest --json --outputFile=test-results.json 2>&1
-
-# Pytest JUnit XML
-python -m pytest --junitxml=test-results.xml 2>&1
-
-# Go JSON output
-go test ./... -json 2>&1 > test-results.json
-
-# Parse summary from Jest JSON
-cat test-results.json | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-print(f\"Tests: {d['numPassedTests']} passed, {d['numFailedTests']} failed, {d['numTotalTests']} total\")
-print(f\"Suites: {d['numPassedTestSuites']} passed, {d['numFailedTestSuites']} failed\")
-print(f\"Time: {d['testResults'][0]['perfStats']['runtime'] if d['testResults'] else 0}ms\")
-"
-```
-
-## Screenshot and Log Collection
-
-```bash
-# Capture test output to file
-npm test 2>&1 | tee test-output.log
-
-# Capture stderr separately
-npm test > test-stdout.log 2> test-stderr.log
-
-# Tail last N lines of failure output
-npm test 2>&1 | tail -50
-
-# Extract failed test names from Jest output
-npx jest 2>&1 | grep "FAIL\|●" | head -20
-
-# Extract failed test names from pytest
-python -m pytest 2>&1 | grep "FAILED\|ERROR" | head -20
-```
-
-## Regression Diff: Current vs Baseline
-
-```bash
-# Save baseline results
-npm test 2>&1 > baseline-results.txt
-
-# Run current tests
-npm test 2>&1 > current-results.txt
-
-# Diff results
-diff baseline-results.txt current-results.txt || echo "REGRESSION DETECTED"
-
-# Compare coverage numbers
-# 1. Save baseline coverage
-npx jest --coverage --coverageReporters=json --coverageDirectory=./baseline-coverage 2>&1
-# 2. Run current coverage
-npx jest --coverage --coverageReporters=json --coverageDirectory=./current-coverage 2>&1
-# 3. Compare
-python3 -c "
-import json
-with open('baseline-coverage/coverage-summary.json') as f: base = json.load(f)
-with open('current-coverage/coverage-summary.json') as f: curr = json.load(f)
-for metric in ['lines', 'statements', 'functions', 'branches']:
-    b = base['total'][metric]['pct']
-    c = curr['total'][metric]['pct']
-    delta = c - b
-    flag = '⬇️' if delta < 0 else '✅'
-    print(f'{flag} {metric}: {b}% → {c}% ({delta:+.1f}%)')
-"
-```
-
-## Flaky Test Detection
-
-```bash
-# Run tests N times, collect results
-for i in $(seq 1 5); do
-  echo "=== Run $i ==="
-  npm test 2>&1 | grep -E "PASS|FAIL" | sort
-done | tee flaky-check.log
-
-# Count pass/fail per test across runs
-grep -E "PASS|FAIL" flaky-check.log | sort | uniq -c | sort -rn
-
-# Pytest repeat plugin
-python -m pytest --count=5 -x 2>&1
-
-# Go test with count
-go test ./... -count=5 -v 2>&1
 ```
 
 ## Safety Rules
@@ -210,4 +74,3 @@ go test ./... -count=5 -v 2>&1
 - Never modify test files during a test run — read-only analysis
 - Save results to files for comparison, not just stdout
 - Report exact test names and file paths for failures
-- Use `--format=json` or structured output when chaining commands
