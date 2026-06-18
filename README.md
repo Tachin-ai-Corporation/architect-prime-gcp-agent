@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.18.4.0 | 2026-06-18 | Skill Library Upgrade: upgraded all 36 skills to meet or exceed Grade 3, with 5 workspace/fleet skills at Grade 5 (`workspace-drive`, `workspace-gmail`, `workspace-docs`, `fleet-fire`, `fleet-hire`) and 12 skills at Grade 4, ensuring 0 errors and 0 warnings under `validate-skills.mjs`.
 | v2026.06.18.3.3 | 2026-06-18 | GitHub Coordinates & Version Upgrade Fix: changed github.ts to lazy-resolve coordinates and base URLs via runtime functions to prevent Next.js startup crashes, updated 8 API route handlers to use dynamic getters, wrapped coordinate lookups in try/catch to return structured error details, auto-detected repository owner/repo in install.sh from git remote, and propagated coordinates during VM creation and dashboard upgrades.
 | v2026.06.18.3.2 | 2026-06-18 | Final Gaps Decomposition: decomposed processes page into modular subcomponents (StepEditor, ParamEditor, ProcessDetailView, ProcessListView, CreateProcessModal) (Item 1), shared projects components on the global page (Item 2), extracted home page modals (Item 3), and decoupled presentation maps from brain-config API (Item 4).
 | v2026.06.18.3.1 | 2026-06-18 | CI & Validation Fixes: fixed SyntaxError due to missing closing brace in agent-brain.mjs, converted validate-contracts script to use relative paths in repo mode for cross-platform compatibility, and added firebase-hosting-diagnostics skill files to job-devops manifest.
