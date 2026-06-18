@@ -1,41 +1,47 @@
 # Skill: Meeting Operations
 
-## What this skill does
-Meeting management procedures — notes extraction, action item tracking, agenda preparation, status report templates
+## When to Use
+When processing meeting notes, extracting action items, preparing agendas, or writing status reports.
 
-## When to use
-When processing meeting notes, extracting action items, preparing agendas, or writing status reports
+## Commands
 
-Use these procedures when processing meeting notes, managing action items, or writing status reports.
+No custom corekit scripts are governed directly by this skill (handled via workspace tools).
 
-## Meeting Notes Processing
+## Procedures
 
-When you receive meeting notes (raw text, email, or transcription), extract:
+### Extract action items from meeting notes
+1. Read the raw notes or transcription in full.
+2. Identify all statements that imply commitment, assignment, decision, or blocker.
+3. Format each element according to the tracking table format:
+   - Action items: `- [ ] [OWNER] Task description (due: DATE)`
+   - Decisions: `✅ DECISION: Description`
+   - Blockers: `🚫 BLOCKER: Description (owner: NAME)`
+   - Follow-ups: `📋 FOLLOW-UP: Topic (by: DATE)`
+4. Group the action items by owner for reporting.
+5. Verify: Write them to the project's action item tracker Sheet or document.
 
-| Element | Format | Example |
-|---------|--------|---------|
-| **Action items** | `- [ ] [OWNER] Task description (due: DATE)` | `- [ ] [Alice] Deploy staging env (due: 2026-06-01)` |
-| **Decisions** | `✅ DECISION: Description` | `✅ DECISION: Use Cloud Run for new API service` |
-| **Blockers** | `🚫 BLOCKER: Description (owner: NAME)` | `🚫 BLOCKER: Missing GCS write permissions (owner: Ops)` |
-| **Follow-ups** | `📋 FOLLOW-UP: Topic (by: DATE)` | `📋 FOLLOW-UP: Review cost estimates (by: Friday)` |
+### Compile and publish status reports
+1. Query active milestoness and project status from Sheets or logs.
+2. Format the report using the periodic status report markdown template.
+3. List completed tasks under Highlights, update the Milestones table, list any active Blockers, and outline new Action Items.
+4. Verify: Ensure all dates follow the `YYYY-MM-DD` format and verify that no blocker is listed without an owner.
 
-### Extraction Procedure
-1. Read the raw notes in full
-2. Identify all statements that imply commitment, assignment, or decision
-3. Format each as structured action items using the template above
-4. Group by owner for reporting
-5. Write to the project's action item tracker (Sheets) if available
+### Action item management and tracking
+1. Check the tracking Sheet for current items using `sheets-read --range "Action Items!A:F"`.
+2. Append new items using `sheets-append --range "Action Items!A:F" --values "[[...]]"`.
+3. Check for overdue items (items past due date → flag as `⚠️ OVERDUE`, items with no owner → flag as `❓ UNOWNED`, items older than 14 days with no update → flag as `🔴 STALE`).
+4. Verify: Update the status column using `sheets-update` when a task is completed.
 
-## Status Report Template
+---
 
-Use this template for all weekly/periodic status reports:
+## Detailed Reference
 
+### Status Report Template
 ```markdown
 # Status Report — [Project Name] — [Date]
 
 ## Highlights
 - Key accomplishment 1
-- Key accomplishment 2
 
 ## Milestones
 
@@ -52,37 +58,9 @@ Use this template for all weekly/periodic status reports:
 
 ## Next Week
 - Planned activity 1
-- Planned activity 2
 ```
 
-## Action Item Management
-
-### Creating action items
-```
-Format: - [ ] [OWNER] Description (due: YYYY-MM-DD) — Source: [meeting/request/review]
-```
-
-### Tracking commands
-When using Google Sheets for tracking:
-- Read existing items: `sheets-read --range "Action Items!A:F"`
-- Append new items: `sheets-append --range "Action Items!A:F" --values "[...]"`
-- Update status: `sheets-update --range "Action Items!E{ROW}" --values "[\"Done\"]"`
-
-### Overdue detection
-- Items past due date → flag as `⚠️ OVERDUE`
-- Items with no owner → flag as `❓ UNOWNED`
-- Items older than 14 days with no update → flag as `🔴 STALE`
-
-## Agenda Preparation
-
-### Pre-meeting checklist
-1. Review previous meeting's action items
-2. Check for unresolved blockers
-3. Identify items needing decisions
-4. Prepare status summary for each workstream
-5. List new topics from recent communications
-
-### Agenda format
+### Agenda Preparation Template
 ```markdown
 # Meeting Agenda — [Date] [Time]
 
@@ -91,7 +69,6 @@ When using Google Sheets for tracking:
 
 ## Status Updates (15 min)
 - [Workstream 1]: Brief update
-- [Workstream 2]: Brief update
 
 ## Discussion Items (20 min)
 1. [Topic] — Presenter: [NAME] — Decision needed: [Y/N]
