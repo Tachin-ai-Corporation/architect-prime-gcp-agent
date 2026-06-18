@@ -1,16 +1,17 @@
-# Skill: fleet-verify
+# Skill: Fleet Verify
 
-## What this skill does
-Pings a fleet agent to check if it's alive and responding.
+## When to Use
+When verifying, pinging, or checking if a deployed fleet agent is online, alive, and responding to dispatches.
 
-## When to use
-- User asks to verify, ping, or check if an agent is online
-- User says "is stan alive?" or "check on anora"
+## Commands
 
-## Command
-```
-fleet-verify --name <name>
-```
+### Read
+- `fleet-verify --name <name>` — Ping the specified fleet agent to check responsiveness.
+  Output: Verification status confirmation showing if the agent is reachable.
 
-### Arguments
-- `--name` — Agent name to verify (e.g. "stan", "anora")
+## Procedures
+
+### Verify a fleet agent's responsiveness
+1. Identify the name of the fleet agent to verify (e.g., `stan`).
+2. Run `fleet-verify --name stan`.
+3. Verify: Ensure the command returns a success response confirming that the agent is online and responding.
