@@ -84,6 +84,37 @@ export const CORTEX_SCHEMAS = {
     },
     required: ['action'],
   },
+  plan: {
+    type: 'OBJECT',
+    properties: {
+      checkpoints: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            instruction:     { type: 'STRING' },
+            accept_criteria: { type: 'STRING' },
+            tasks: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  agent:           { type: 'STRING' },
+                  task:            { type: 'STRING' },
+                  accept_criteria: { type: 'STRING' },
+                  step_type:       { type: 'STRING', enum: ['standard', 'delegation', 'approval_gate', 'ask'] },
+                  brief_part:      { type: 'STRING' },
+                },
+                required: ['agent', 'task']
+              }
+            }
+          },
+          required: ['instruction', 'tasks']
+        }
+      }
+    },
+    required: ['checkpoints']
+  }
 };
 
 // ---- Pure helpers ----

@@ -13,6 +13,8 @@ import { getGceToken } from './gce-auth.mjs';
 import { smartTruncate } from './vertex-text.mjs';
 import { firestoreEncode, firestoreDecode } from './firestore.mjs';
 import { extractVerdict, extractFailRecommendation } from './verdict.mjs';
+import { executeCheckpoints } from './checkpoint-executor.mjs';
+import { toStr } from './to-str.mjs';
 
 /**
  * Create a process engine instance.
@@ -781,8 +783,8 @@ export function createProcessEngine(deps) {
           owner: agentEmail || agentId,
           status: 'pending',
           intent: stepType === 'approval_gate' ? 'approval_gate' : (task.intent || 'execute'),
-          title: await vertexText.generateTitle(task.task || `Step ${cpNum}.${taskNum}`, 'task'),
-          instruction: task.task || '',
+          title: await vertexText.generateTitle(toStr(task.task) || `Step ${cpNum}.${taskNum}`, 'task'),
+          instruction: toStr(task.task) || '',
           accept_criteria: task.accept_criteria || '',
           output: null,
           children: [],
@@ -878,323 +880,40 @@ export function createProcessEngine(deps) {
    * @param {number} [startTaskIndex=0] - Task index within the starting checkpoint (for resumption)
    */
   async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, startCpIndex = 0, startTaskIndex = 0) {
-    let allResults = [];
-    let planFailed = false;
+    const execResult = await executeCheckpoints(checkpointEnvelopes, {
+      dispatchAgent: agentDispatcher,
+      envelope: mission,
+      log,
+      writeHistory,
+      firestoreWrite,
+      firestoreRead,
+      firestoreQuery,
+      generateId,
+      contracts: {},
+      skillIndex: '',
+      PROJECTS: {},
+      addressFromMeta: null,
+      summarizeForDelivery: _summarizeDelivery,
+      smartSummarize,
+      getAuthToken,
+      FIRESTORE_BASE,
+      PRIME_ID: primeId,
+      AGENT_EMAIL: agentEmail,
+      AGENT_ID: agentId,
+      CORE_DIR: coreDir,
+      CTX_AGENT_STEP,
+      CTX_DISPATCH_FAILURE: 3000,
+      startCpIndex,
+      startTaskIndex,
+      savedResults: [],
+    });
 
-    for (let ci = startCpIndex; ci < checkpointEnvelopes.length; ci++) {
-      const { cEnvelope, tEnvelopes } = checkpointEnvelopes[ci];
-      const cpNum = ci + 1;
-      const taskStartIdx = (ci === startCpIndex) ? startTaskIndex : 0;
-
-      // Mark checkpoint active
-      cEnvelope.status = 'active';
-      cEnvelope.started_at = cEnvelope.started_at || now();
-      cEnvelope.updated_at = now();
-      await firestoreWrite('work', cEnvelope.id, cEnvelope);
-      if (taskStartIdx === 0) {
-        await writeHistory(cEnvelope.id, 'pending', 'active', 'brain', `Checkpoint ${cpNum} started`);
-      }
-
-      log('INFO', `Process CP${cpNum}/${checkpointEnvelopes.length}: ${tEnvelopes.length} tasks`);
-
-      let cpFailed = false;
-      let cpResults = [];
-
-      for (let ti = taskStartIdx; ti < tEnvelopes.length; ti++) {
-        const tEnv = tEnvelopes[ti];
-        const taskNum = ti + 1;
-        const stepType = tEnv.source_meta?.step_type || 'standard';
-        const taskAgent = tEnv.source_meta?.agent || 'motor';
-        const isOptional = tEnv.source_meta?.optional || false;
-
-        // ---- Approval Gate ----
-        if (stepType === 'approval_gate') {
-          log('INFO', `Process CP${cpNum} Task ${taskNum}: Approval gate — pausing`);
-
-          const approvalId = generateId('apr');
-
-          // Write approval doc
-          try {
-            const token = await getAuthToken();
-            if (token && FIRESTORE_BASE) {
-              const approvalUrl = `${FIRESTORE_BASE}/primes/${primeId}/approvals/${approvalId}`;
-              await fetch(approvalUrl, {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fields: {
-                  envelopeId: { stringValue: mission.id },
-                  checkpointId: { stringValue: cEnvelope.id },
-                  taskIndex: { integerValue: String(ti) },
-                  checkpointIndex: { integerValue: String(ci) },
-                  title: { stringValue: (tEnv.title || '').substring(0, 200) },
-                  description: { stringValue: tEnv.instruction || tEnv.title || '' },
-                  processId: { stringValue: mission.process_id || '' },
-                  processName: { stringValue: PROCESSES[mission.process_id]?.name || '' },
-                  planId: { stringValue: mission.plan_id || '' },
-                  status: { stringValue: 'pending' },
-                  requestedAt: { stringValue: now() },
-                }}),
-              });
-            }
-          } catch (e) { log('WARN', `Failed to write approval doc: ${e.message}`); }
-
-          // Mark task as awaiting approval
-          tEnv.status = 'awaiting_approval';
-          tEnv.started_at = now();
-          tEnv.updated_at = now();
-          tEnv.source_meta.approval_id = approvalId;
-          await firestoreWrite('work', tEnv.id, tEnv);
-          await writeHistory(tEnv.id, 'pending', 'awaiting_approval', 'brain', `Approval gate: ${tEnv.title}`);
-
-          // Mark checkpoint as awaiting
-          cEnvelope.status = 'awaiting_approval';
-          cEnvelope.updated_at = now();
-          await firestoreWrite('work', cEnvelope.id, cEnvelope);
-          await writeHistory(cEnvelope.id, 'active', 'awaiting_approval', 'brain', `Paused at approval gate`);
-
-          // Mark mission as awaiting with resume state
-          mission.status = 'awaiting_approval';
-          mission.updated_at = now();
-          mission.source_meta = {
-            ...mission.source_meta,
-            paused_approval_id: approvalId,
-            paused_checkpoint_index: ci,
-            paused_task_index: ti,
-          };
-          await firestoreWrite('work', mission.id, mission);
-          await writeHistory(mission.id, 'active', 'awaiting_approval', 'brain', `Process paused — approval gate`);
-
-          // Build context summary from completed steps
-          const priorSteps = [...allResults, ...cpResults];
-          const rawStepData = priorSteps.map(r => ({
-            step: r.step, agent: r.agent, success: r.success,
-            result: (r.result || '').substring(0, 1500),
-          }));
-
-          // Use custom approval_message from process definition if available
-          const customMessage = tEnv.source_meta?.approval_message || '';
-          const approvalTitle = tEnv.title || tEnv.instruction || 'Approval needed';
-
-          // Basic fallback text (used if LLM summarization fails)
-          const fallbackText = [
-            `⏸ **Approval needed**`,
-            ``,
-            `**${approvalTitle.substring(0, 200)}**`,
-            customMessage ? `\n${customMessage}` : '',
-            ``,
-            `Approve or reject from the dashboard, or reply \`approve\` / \`reject\` here.`,
-          ].filter(Boolean).join('\n');
-
-          // LLM summarization for clean, self-contained approval notification
-          let cleanSummary = fallbackText;
-          if (_summarizeDelivery) {
-            cleanSummary = await _summarizeDelivery('approval_request', fallbackText, {
-              steps: rawStepData,
-              title: approvalTitle,
-              processName: PROCESSES[mission.process_id]?.name || '',
-              customMessage,
-            });
-          }
-
-          const notifOutput = [
-            `⏸ **Approval needed**`,
-            ``,
-            cleanSummary,
-            ``,
-            `Reply \`approve\` or \`reject\` here, or use the dashboard.`,
-          ].join('\n');
-
-          // Send notification
-          const notifId = generateId('w');
-          await firestoreWrite('work', notifId, {
-            id: notifId,
-            type: 'T',
-            parent_id: null, // Must be null for Mouth to deliver (it skips child envelopes)
-            owner: agentEmail || agentId,
-            status: 'complete',
-            intent: 'notification',
-            instruction: 'Approval gate notification',
-            output: notifOutput,
-            source_channel: mission.source_channel || 'system',
-            source_meta: { approval_id: approvalId, notification_type: 'approval_gate' },
-            created_at: now(),
-            started_at: now(),
-            completed_at: now(),
-            updated_at: now(),
-            children: [],
-            accept_criteria: null,
-            context_summary: null,
-            context_forward: null,
-            error: null,
-            iteration: 0,
-            delivery_status: 'pending',
-          });
-
-          log('INFO', `Process paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);
-          return; // Exit — approval handler will resume
-        }
-
-        // ---- Standard / spawn_responsibility / delegation task ----
-        log('INFO', `Process CP${cpNum} Task ${taskNum}/${tEnvelopes.length}: ${taskAgent} — ${(tEnv.title || '').substring(0, 60)}`);
-
-        // Mark task active
-        tEnv.status = 'active';
-        tEnv.started_at = now();
-        tEnv.updated_at = now();
-        await firestoreWrite('work', tEnv.id, tEnv);
-        await writeHistory(tEnv.id, 'pending', 'active', 'brain', `Dispatching to ${taskAgent}`);
-
-        // Build instruction with prior results context
-        let instruction = tEnv.instruction || '';
-
-        // Add prior results for context
-        const priorContext = allResults.length > 0
-          ? allResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
-          : null;
-
-        // Dispatch to agent
-        const buildProjCtx = _buildProjCtx || (projects ? (pid, ctx) => projects.buildContext(pid, ctx, coreDir) : null);
-        const dispatchProjCtx = mission.project_id
-          ? (buildProjCtx?.(mission.project_id, mission.context) || null)
-          : null;
-        const dispatchEnvelope = {
-          instruction,
-          accept_criteria: tEnv.accept_criteria || '',
-          context_summary: tEnv.instruction || '',
-          prior_results_context: priorContext,
-          memory_context: typeof memoryContext === 'object' ? memoryContext.recalled : memoryContext,
-          _missionId: mission.id,
-          _projectContext: dispatchProjCtx,
-          _sourceText: mission.source_text || null,
-        };
-
-        const result = await agentDispatcher(taskAgent, dispatchEnvelope);
-
-        // Record result
-        const stepResult = {
-          step: `${cpNum}.${taskNum}`,
-          agent: taskAgent,
-          task: (tEnv.title || tEnv.instruction || '').substring(0, 150),
-          result: result.success
-            ? smartTruncate(result.output || '', CTX_AGENT_STEP)
-            : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_AGENT_STEP)}`,
-          success: result.success,
-          durationMs: result.durationMs,
-        };
-        cpResults.push(stepResult);
-
-        // Update task envelope
-        tEnv.output = result.success
-          ? smartTruncate(result.output || '', CTX_AGENT_STEP)
-          : result.error || 'Task failed';
-        tEnv.status = result.success ? 'complete' : 'failed';
-        tEnv.completed_at = now();
-        tEnv.updated_at = now();
-        if (result.error) tEnv.error = result.error;
-        await firestoreWrite('work', tEnv.id, tEnv);
-        await writeHistory(tEnv.id, 'active', tEnv.status, 'brain',
-          `${taskAgent}: ${result.success ? 'completed' : 'failed'} (${result.durationMs}ms)`);
-
-        log('INFO', `Process CP${cpNum} Task ${taskNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
-
-        // Retry once on failure (for non-optional tasks)
-        if (!result.success && !isOptional) {
-          log('INFO', `Process CP${cpNum} Task ${taskNum}: retrying once`);
-          const retryResult = await agentDispatcher(taskAgent, {
-            ...dispatchEnvelope,
-            instruction: `[RETRY — previous attempt failed: ${result.error}]\n\n${instruction}`,
-            prior_results_context: [
-              priorContext,
-              `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${smartTruncate(result.output || '', 500)}`,
-            ].filter(Boolean).join('\n\n'),
-          });
-
-          if (retryResult.success) {
-            log('INFO', `Process CP${cpNum} Task ${taskNum}: retry succeeded`);
-            cpResults[cpResults.length - 1] = {
-              ...stepResult,
-              result: smartTruncate(retryResult.output || '', CTX_AGENT_STEP),
-              success: true,
-              durationMs: result.durationMs + retryResult.durationMs,
-            };
-            tEnv.output = smartTruncate(retryResult.output || '', CTX_AGENT_STEP);
-            tEnv.status = 'complete';
-            tEnv.error = null;
-            tEnv.completed_at = now();
-            tEnv.updated_at = now();
-            await firestoreWrite('work', tEnv.id, tEnv);
-            await writeHistory(tEnv.id, 'failed', 'complete', 'brain', `Retry succeeded (${retryResult.durationMs}ms)`);
-          } else {
-            // Hard failure
-            cpFailed = true;
-            break;
-          }
-        }
-      }
-
-      // Mark checkpoint complete/failed
-      allResults.push(...cpResults);
-      cEnvelope.status = cpFailed ? 'failed' : 'complete';
-      cEnvelope.completed_at = now();
-      cEnvelope.updated_at = now();
-      await firestoreWrite('work', cEnvelope.id, cEnvelope);
-      await writeHistory(cEnvelope.id, 'active', cEnvelope.status, 'brain',
-        `Checkpoint ${cpNum} ${cpFailed ? 'failed' : 'complete'} (${cpResults.length} tasks)`);
-
-      log('INFO', `Process CP${cpNum} ${cpFailed ? 'FAILED' : 'complete'} (${cpResults.length} tasks)`);
-
-      // ---- Automatic checkpoint verification ----
-      if (!cpFailed && cpResults.length > 0) {
-        const verifySummary = cpResults.map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${(r.result || '').substring(0, 500)}`).join('\n\n');
-
-        log('INFO', `Process CP${cpNum}: running automatic verification`);
-        const verifyResult = await agentDispatcher('cerebellum', {
-          instruction: [
-            `[CHECKPOINT VERIFICATION]`,
-            `Verify the following completed checkpoint against the acceptance criteria.`,
-            `Read the verification SKILL.md before rendering your verdict.`,
-            ``,
-            `## Acceptance Criteria`,
-            cEnvelope.accept_criteria || 'All tasks completed successfully with correct outcomes.',
-            ``,
-            `## Task Results`,
-            verifySummary,
-          ].join('\n'),
-          accept_criteria: 'Verification verdict rendered via report_pass or report_fail tool',
-          _missionId: mission.id,
-        });
-
-        if (verifyResult.success && verifyResult.output) {
-          const verdict = extractVerdict(verifyResult.output);
-
-          // Phase 5.4: Handle missing verdict (no tool called)
-          if (!verdict) {
-            log('WARN', `[TELEMETRY] verification_no_verdict checkpoint=${(cEnvelope.accept_criteria || cEnvelope.instruction || '').substring(0, 80)} — cerebellum returned text without calling verdict tool`);
-            log('WARN', `Process CP${cpNum}: verification inconclusive — no verdict tool called, continuing`);
-            // Don't fail, don't pass — continue to next checkpoint with this one flagged
-            continue;
-          }
-
-          if (verdict === 'FAIL') {
-            const recommendation = extractFailRecommendation(verifyResult.output);
-            log('WARN', `Process CP${cpNum}: verification FAIL`);
-            cEnvelope.status = 'failed';
-            cEnvelope.error = `Verification failed: ${recommendation}`;
-            cEnvelope.updated_at = now();
-            await firestoreWrite('work', cEnvelope.id, cEnvelope);
-            await writeHistory(cEnvelope.id, 'complete', 'failed', 'brain', `Verification failed`);
-            cpFailed = true;
-          } else if (verdict === 'PASS') {
-            log('INFO', `Process CP${cpNum}: verification PASS`);
-          }
-        }
-      }
-
-      if (cpFailed) {
-        planFailed = true;
-        break;
-      }
+    if (execResult.paused) {
+      return;
     }
+
+    const allResults = execResult.results;
+    const planFailed = !execResult.success;
 
     // ---- Step 5: Auto-complete the mission ----
     const processName = PROCESSES[mission.process_id]?.name || mission.process_id;

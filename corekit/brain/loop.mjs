@@ -6,6 +6,26 @@
 import { getGoogleClient, getAnthropicClient, parseModel } from './router.mjs';
 import { toGoogleSchema } from './tools.mjs';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
+let contractsPath = join(CORE_DIR, 'corekit', 'contracts.json');
+if (!existsSync(contractsPath)) {
+  contractsPath = join(__dirname, '..', '..', 'infra', 'contracts.json');
+}
+
+let CONTRACTS = {};
+try {
+  if (existsSync(contractsPath)) {
+    CONTRACTS = JSON.parse(readFileSync(contractsPath, 'utf8'));
+  }
+} catch (e) {
+  console.log('[loop] WARN: contracts.json not loaded: ' + e.message);
+}
 
 // ---- Retry with exponential backoff for rate-limited model calls ----
 const MAX_RETRIES = 3;
@@ -416,7 +436,7 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
     const anthropicMessages = convertMessagesToAnthropic(localHistory);
 
     // CP9: Prompt caching — structure system as content block with cache_control if enabled
-    const promptCachingEnabled = false; // TODO: gate via contracts vertex.anthropic_prompt_caching
+    const promptCachingEnabled = CONTRACTS.vertex?.anthropic_prompt_caching === true;
     const systemPayload = promptCachingEnabled
       ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
       : systemPrompt;

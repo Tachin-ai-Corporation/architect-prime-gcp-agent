@@ -47,6 +47,18 @@ import { composeDelegationMarker, composeDelegationResultMarker } from '../corek
 import { makeAddress } from '../corekit/lib/channel.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
+import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
+import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
+import {
+  handleSynthesize,
+  handleBlocked,
+  handleNeedsInput,
+  handleStatusUpdate,
+  handleSynthesizeWithFailure,
+  handleFollowProcess,
+  handleDelegate,
+  handleCheckpointPlan
+} from './actions/index.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
 // Maps to the cached version from gce-auth.mjs (strictly better).
@@ -2060,7 +2072,7 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   mission.delivered_at = null;
   mission.delivered_channel = null;
   mission.delivery_status = 'internal'; // Reset â€” will become 'pending' when re-completed
-  mission._unblock_attempted = false; // Reset retry cap for new attempt
+  mission._swf_state = null; // Reset retry cap for new attempt
   mission.updated_at = now();
 
   await firestoreWrite('work', targetId, mission);
@@ -2165,7 +2177,6 @@ async function cascadeCancelChildren(parentId) {
         // Recurse for grandchildren
         await cascadeCancelChildren(child.id);
       }
-    }
     nextPageToken = data.nextPageToken || null;
   } while (nextPageToken);
   if (cancelCount > 0) log('INFO', `Cascade-cancelled ${cancelCount} children of ${parentId}`);
@@ -2185,187 +2196,56 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
 
   log('INFO', `CP5 resume: ${checkpoints.length} checkpoints, resuming from CP${checkpointIndex + 1} task ${taskIndex}`);
 
-  // Reconstruct the prior results from saved state
-  let allResults = savedResults || [];
-  let planFailed = false;
+  // Phase 4.3: LLM cost telemetry — per-mission token accumulator for resume path
+  const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, callCount: 0 };
 
-  // Resume from the saved checkpoint index
-  for (let ci = checkpointIndex; ci < checkpoints.length; ci++) {
-    const cp = checkpoints[ci];
-    const cpNum = ci + 1;
-    const cpInstruction = cp.instruction || `Checkpoint ${cpNum}`;
-    const cpTasks = cp.tasks || [];
-
-    // Determine starting task index — only skip tasks for the first resumed checkpoint
-    const startTi = (ci === checkpointIndex) ? taskIndex : 0;
-
-    if (startTi >= cpTasks.length) {
-      log('INFO', `CP5 resume: all tasks in CP${cpNum} already complete, skipping`);
-      continue;
+  const dispatchAgent = async (agentId, payload) => {
+    const res = await callAgent(agentId, payload);
+    if (res?.usage) {
+      const u = res.usage;
+      _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
+      _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
+      _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
+      _tokenUsage.callCount++;
+      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} duration=${res.durationMs || 0}ms`);
     }
+    return res;
+  };
 
-    // Find or create the checkpoint envelope
-    let cpId = null;
-    let cpEnvelope = null;
-    for (const childId of (envelope.children || [])) {
-      try {
-        const child = await firestoreRead('work', childId);
-        if (child?.type === 'C' && child?.source_meta?.checkpoint === cpNum) {
-          cpId = childId;
-          cpEnvelope = child;
-          break;
-        }
-      } catch { /* child may not exist */ }
-    }
+  const execResult = await executeCheckpoints(checkpoints, {
+    dispatchAgent,
+    envelope,
+    log,
+    writeHistory,
+    firestoreWrite,
+    firestoreRead,
+    firestoreQuery,
+    generateId,
+    contracts: CONTRACTS,
+    skillIndex: formatSkillCatalog(SKILL_INDEX),
+    PROJECTS,
+    addressFromMeta,
+    summarizeForDelivery,
+    smartSummarize,
+    getAuthToken,
+    FIRESTORE_BASE,
+    PRIME_ID,
+    AGENT_EMAIL,
+    AGENT_ID,
+    CORE_DIR,
+    CTX_AGENT_STEP,
+    CTX_DISPATCH_FAILURE,
+    startCpIndex: checkpointIndex,
+    startTaskIndex: taskIndex,
+    savedResults,
+  });
 
-    if (!cpId) {
-      // Checkpoint envelope doesn't exist yet — create it
-      cpId = generateId('w');
-      cpEnvelope = {
-        id: cpId, type: 'C', parent_id: envelope.id,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'active', intent: 'checkpoint',
-        title: cpInstruction.substring(0, 100),
-        instruction: cpInstruction,
-        accept_criteria: cp.accept_criteria || '',
-        context_summary: null, output: null,
-        children: [], context_forward: null, error: null,
-        source_channel: 'brain',
-        source_meta: { dispatched_by: envelope.id, checkpoint: cpNum, checkpoint_total: checkpoints.length, resumed: true },
-        project_id: envelope.project_id || null,
-        created_at: now(), started_at: now(), completed_at: null,
-        updated_at: now(), iteration: 0,
-      };
-      await firestoreWrite('work', cpId, cpEnvelope);
-      envelope.children = envelope.children || [];
-      envelope.children.push(cpId);
-      await firestoreWrite('work', envelope.id, envelope);
-      await writeHistory(cpId, null, 'active', 'brain', `CP5 resume: checkpoint ${cpNum} created`);
-    }
-
-    // Execute remaining tasks
-    let cpResults = [];
-    let cpFailed = false;
-
-    for (let ti = startTi; ti < cpTasks.length; ti++) {
-      const task = cpTasks[ti];
-      const taskNum = ti + 1;
-      const taskAgent = task.agent;
-      const taskDesc = task.task || task.instruction || '';
-
-      if (!taskAgent) continue;
-
-      // CP2: Step-ledger dedup
-      const taskStepKey = deriveStepKey(envelope.id, cpNum, 'cp_task', `${ci}.${ti}.${taskAgent}`);
-      if (isStepComplete(envelope, taskStepKey)) {
-        const prev = getStepResult(envelope, taskStepKey);
-        log('INFO', `CP5+CP2 resume dedup: CP${cpNum} Task ${taskNum} already recorded, skipping`);
-        cpResults.push({
-          step: `${cpNum}.${taskNum}`, agent: taskAgent,
-          task: taskDesc.substring(0, 200),
-          result: `[REPLAYED] ${prev?.status}`,
-          success: prev?.status === 'complete',
-          durationMs: prev?.durationMs || 0,
-        });
-        continue;
-      }
-
-      // Dispatch to agent (simplified — no cerebellum verification on resume)
-      const taskCriteria = task.accept_criteria
-        || `Task "${(task.task || '').substring(0, 60)}" completed. No unresolved errors.`;
-
-      const taskId = generateId('w');
-      await firestoreWrite('work', taskId, {
-        id: taskId, type: 'T', parent_id: cpId,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'active', intent: task.intent || 'execute',
-        title: taskDesc.substring(0, 100), instruction: taskDesc,
-        accept_criteria: taskCriteria,
-        context_summary: allResults.length > 0
-          ? allResults.map(r => `Step ${r.step} (${r.agent}): ${toStr(r.result).substring(0, 200)}`).join('\n')
-          : null,
-        output: null, children: [], context_forward: null, error: null,
-        source_channel: 'brain',
-        source_meta: { dispatched_by: cpId, checkpoint: cpNum, task_step: taskNum, resumed: true },
-        project_id: envelope.project_id || null,
-        created_at: now(), started_at: now(), completed_at: null,
-        updated_at: now(), iteration: 0,
-      });
-      cpEnvelope.children.push(taskId);
-      await firestoreWrite('work', cpId, cpEnvelope);
-
-      const skillCatalog = (taskAgent === 'motor' || taskAgent === 'temporal-research')
-        ? formatSkillCatalog(SKILL_INDEX) : '';
-
-      // Inject project context for resume path (matches checkpoint dispatch at L3218)
-      let resumeInstruction = taskDesc;
-      if (envelope.project_id) {
-        const projCtx = buildProjectContext(envelope.project_id, envelope.context);
-        if (projCtx) {
-          resumeInstruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${resumeInstruction}`;
-        }
-      }
-
-      let result = await callAgent(taskAgent, {
-        instruction: resumeInstruction + skillCatalog,
-        accept_criteria: taskCriteria,
-        _missionId: envelope.id,
-        _projectContext: envelope.project_id ? buildProjectContext(envelope.project_id, envelope.context) : null,
-        _sourceText: envelope.source_text || null,
-        memory_context: envelope.memory_context || null,
-      });
-
-      // Single retry on failure
-      if (!result.success) {
-        result = await callAgent(taskAgent, {
-          instruction: `${resumeInstruction}${skillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again.`,
-          accept_criteria: taskCriteria,
-          _missionId: envelope.id,
-          _projectContext: envelope.project_id ? buildProjectContext(envelope.project_id, envelope.context) : null,
-          _sourceText: envelope.source_text || null,
-          memory_context: envelope.memory_context || null,
-        });
-      }
-
-      // Update task envelope
-      await firestoreWrite('work', taskId, {
-        output: result.output || result.error,
-        status: result.success ? 'complete' : 'failed',
-        error: result.error, completed_at: now(), updated_at: now(),
-      });
-
-      cpResults.push({
-        step: `${cpNum}.${taskNum}`, agent: taskAgent,
-        task: taskDesc.substring(0, 200),
-        result: result.success ? smartTruncate(result.output || '', CTX_AGENT_STEP) : `[FAILED] ${result.error}`,
-        success: result.success, durationMs: result.durationMs,
-      });
-
-      // CP2: Record step + CP5: Update progress
-      await recordStep(envelope, taskStepKey, { ...result, agent: taskAgent });
-      envelope._cp_progress = {
-        checkpointIndex: ci, taskIndex: ti + 1,
-        allResults: [...allResults, ...cpResults],
-        checkpoints, decision,
-      };
-      await firestoreWrite('work', envelope.id, envelope);
-
-      if (!result.success) { cpFailed = true; break; }
-    }
-
-    // Mark checkpoint complete/failed
-    cpEnvelope.status = cpFailed ? 'failed' : 'complete';
-    cpEnvelope.output = cpFailed ? `Failed at task ${cpResults.length}` : `Complete: ${cpResults.length} tasks`;
-    cpEnvelope.completed_at = now();
-    cpEnvelope.updated_at = now();
-    await firestoreWrite('work', cpId, cpEnvelope);
-
-    allResults.push(...cpResults);
-    if (cpFailed) { planFailed = true; break; }
+  if (execResult.paused) {
+    return;
   }
 
-  // Clear resume state — plan completed (or failed)
-  envelope._cp_progress = null;
+  const allResults = execResult.results;
+  const planFailed = !execResult.success;
 
   // Synthesize or escalate — feed results to cortex by re-entering the decide loop
   const priorResults = allResults.map(r => ({
@@ -2458,81 +2338,45 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
 
   let _activeGuard = null; // Phase 3.2: guard enforcement state
 
-  // Phase 2.2: Named action handlers
-  // Defined inside _processEnvelopeInner to close over module-scoped functions.
-  // Returns { exit: true } to end the loop, or { continue: true, priorResultsAppend, activeGuard } to continue.
-
-  async function handleSynthesize(ctx) {
-    const { decision, priorResults, iteration, _tokenUsage } = ctx;
-    // Check for unresolved failures — block premature success synthesis
-    const lastSuccessIdx = priorResults.map((r, i) => r.success === true ? i : -1).filter(i => i >= 0).pop() ?? -1;
-    const hasUnresolvedFail = priorResults.some((r, i) => r.success === false && !r.timedOut && i > lastSuccessIdx);
-    if (hasUnresolvedFail && iteration < MAX_ITERATIONS - 1) {
-      log('WARN', `Blocking premature synthesize — unresolved hard failures in prior_results (iteration ${iteration})`);
-      return {
-        continue: true,
-        priorResultsAppend: [{
-          agent: 'system',
-          result: `[SYSTEM] Synthesize blocked: there are unresolved failures in prior_results. You MUST either: (1) dispatch to investigate/fix the failure, or (2) use "synthesize_with_failure" action with explicit failure details. Plain "synthesize" is not allowed when tasks have failed.`,
-        }],
-        activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration },
-      };
-    }
-
-    // Wrap synthesis in C→T under the mission
-    await createCT(envelope, {
-      checkpointTitle: 'Formulate response',
-      taskTitle: 'Synthesize answer',
-      taskOutput: decision.synthesis || decision.response || decision.message,
-      taskIntent: 'synthesize',
-      deliveryStatus: 'internal',
-      ctKey: `synth-${envelope.id}-${iteration}`,
-    });
-
-    envelope.output = decision.synthesis || decision.response || decision.message;
-    await completeEnvelope(envelope, {
-      status: 'complete',
-      output: decision.synthesis || decision.response || decision.message,
-      historyDetail: 'Synthesized response',
-      tokenUsage: _tokenUsage,
-    });
-    return { exit: true };
-  }
-
-  async function handleBlocked(ctx) {
-    const { decision, _tokenUsage } = ctx;
-    await completeEnvelope(envelope, {
-      status: 'blocked',
-      output: decision.escalation_message || decision.blocker_description || decision.blocker || decision.synthesis || decision.response || decision.message || 'Blocked on external dependency.',
-      blocker: decision.blocker || 'Unknown blocker',
-      blockerType: decision.blocker_type || 'other',
-      historyDetail: `Blocked: ${toStr(decision.blocker).substring(0, 200)}`,
-      tokenUsage: _tokenUsage,
-    });
-    return { exit: true };
-  }
-
-  async function handleNeedsInput(ctx) {
-    const { decision, _tokenUsage } = ctx;
-    await completeEnvelope(envelope, {
-      status: 'needs_input',
-      output: decision.question || decision.message || 'I need more information to proceed.',
-      historyDetail: `Needs: ${decision.what_is_needed || 'clarification'}`,
-      skipArtifacts: true,
-      skipMemory: true,
-      skipCleanup: true,
-      tokenUsage: _tokenUsage,
-    });
-    return { exit: true };
-  }
-
-  async function handleStatusUpdate(ctx) {
-    const { decision } = ctx;
-    const message = decision.message || 'Working on it...';
-    await deliverStatusUpdate(envelope.id, message);
-    log('INFO', `Status update sent for envelope ${envelope.id}`);
-    return { continue: true };
-  }
+  // Phase 2.2: Dependencies for action handlers (Dependency Injection)
+  const deps = {
+    log,
+    now,
+    toStr,
+    firestoreWrite,
+    firestoreRead,
+    firestoreQuery,
+    generateId,
+    writeHistory,
+    completeEnvelope,
+    createCT,
+    deliverStatusUpdate,
+    executeProcess,
+    ensureProcessesLoaded,
+    PROCESSES,
+    PROJECTS,
+    generateTitle,
+    callAgent,
+    enforceSchema,
+    formatSkillCatalog,
+    SKILL_INDEX,
+    addressFromMeta,
+    summarizeForDelivery,
+    smartSummarize,
+    getAuthToken,
+    FIRESTORE_BASE,
+    PRIME_ID,
+    AGENT_EMAIL,
+    AGENT_ID,
+    CORE_DIR,
+    CTX_AGENT_STEP,
+    CTX_DISPATCH_FAILURE,
+    CONTRACTS,
+    MAX_ITERATIONS,
+    REGISTRY,
+    executeCheckpoints,
+    extractCheckpoints,
+  };
 
   // Phase 2.3: Action dispatch table
   const ACTION_HANDLERS = {
@@ -2540,8 +2384,10 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     blocked: handleBlocked,
     needs_input: handleNeedsInput,
     status_update: handleStatusUpdate,
-    // synthesize_with_failure, follow_process, delegate, checkpoint_plan
-    // remain inline until Phase 2.5 completes shared executor extraction
+    synthesize_with_failure: handleSynthesizeWithFailure,
+    follow_process: handleFollowProcess,
+    delegate: handleDelegate,
+    checkpoint_plan: handleCheckpointPlan,
   };
 
   while (iteration < MAX_ITERATIONS) {
@@ -2643,7 +2489,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     // Prevent self-unblock runaway: after a self-unblock attempt, only allow
     // resolution actions (synthesize, blocked). If Cortex/enforceSchema returns
     // checkpoint_plan, it's stalling — force to blocked.
-    if (envelope._unblock_attempted && action === 'checkpoint_plan') {
+    if ((envelope._swf_state === 'awaiting_unblock' || envelope._swf_state === 'unblock_attempted') && action === 'checkpoint_plan') {
       log('WARN', `Post-unblock guard: blocking checkpoint_plan after self-unblock — forcing blocked`);
       action = 'blocked';
       decision.action = 'blocked';
@@ -2667,1066 +2513,27 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       _activeGuard = null; // One-shot: guard expires after one check
     }
 
-    // Phase 2.3: Dispatch table lookup for extracted handlers
+    // Phase 2.3: Dispatch table lookup for all 8 action handlers
     if (ACTION_HANDLERS[action]) {
-      const actionResult = await ACTION_HANDLERS[action]({ envelope, decision, priorResults, memoryResults: memory, iteration, _activeGuard, _tokenUsage });
-      if (actionResult.exit) return;
-      if (actionResult.activeGuard) _activeGuard = actionResult.activeGuard;
-      if (actionResult.priorResultsAppend) priorResults.push(...actionResult.priorResultsAppend);
-      continue;
-    }
-
-    if (action === 'synthesize_with_failure') {
-      // Phase 3.4: Explicit state machine for synthesize_with_failure
-      // States: null → 'awaiting_unblock' → 'unblock_attempted'
-      const swfState = envelope._swf_state || null;
-
-      // State 1: Check if recent work actually succeeded (stale failure in context)
-      const recentDispatches = priorResults.filter(r => r.agent !== 'system' && r.agent !== 'human');
-      const lastPlanStart = priorResults.findLastIndex(r => r.agent === 'system' && r.result?.includes('[SYSTEM] Checkpoint'));
-      const recentWork = lastPlanStart >= 0 ? recentDispatches.filter((_, i) => i >= lastPlanStart) : recentDispatches;
-      const recentAllSucceeded = recentWork.length > 0 && recentWork.every(r => r.success !== false);
-
-      if (recentAllSucceeded) {
-        log('INFO', `swf[upgrade]: recent work all succeeded — upgrading to synthesize`);
-        action = 'synthesize';
-        decision.action = 'synthesize';
-        // Fall through to synthesize handler
-      }
-      // State 2: First failure — attempt self-unblock
-      else if (swfState === null && iteration < MAX_ITERATIONS - 2) {
-        log('INFO', `swf[null→awaiting_unblock]: self-unblock attempt for ${envelope.id}`);
-        envelope._swf_state = 'awaiting_unblock';
-        envelope._failure_synthesis = decision.synthesis || decision.failure_summary || decision.message || null;
-        await firestoreWrite('work', envelope.id, envelope);
-
-        priorResults.push({
-          agent: 'system',
-          result: `[SELF-UNBLOCK CHECK] Before accepting this failure, try to find an alternative approach. Can you resolve this yourself using a different method? If YES: use "checkpoint_plan" to try the alternative. If NO — this is a genuine external dependency you cannot work around — use "blocked" action with a concrete blocker description. Do NOT use synthesize_with_failure; use "blocked" instead.`,
-        });
-        continue;
-      }
-      // State 3: After self-unblock — check if new work succeeded
-      else if (swfState === 'awaiting_unblock') {
-        // Check if any dispatch succeeded since the unblock was injected
-        const hasPostUnblockSuccess = recentDispatches.some(r => r.success === true);
-        if (hasPostUnblockSuccess) {
-          log('INFO', `swf[awaiting_unblock→complete]: self-unblock succeeded`);
-          envelope._swf_state = 'unblock_attempted';
-          await completeEnvelope(envelope, {
-            status: 'complete',
-            output: decision.synthesis || decision.response || decision.message,
-            historyDetail: 'Completed (self-unblock resolved the failure)',
-            tokenUsage: _tokenUsage,
-          });
-          return;
-        }
-        // Self-unblock didn't produce success — fall through to terminal state
-        log('INFO', `swf[awaiting_unblock→terminal]: self-unblock did not resolve failure`);
-        envelope._swf_state = 'unblock_attempted';
-      }
-
-      // Terminal state: accept the failure
-      if (envelope.type === 'M') {
-        await completeEnvelope(envelope, {
-          status: 'blocked',
-          output: decision.synthesis || decision.response || decision.message,
-          blocker: decision.failure_summary || decision.synthesis || decision.message || 'Unknown blocker',
-          blockerType: decision.blocker_type || 'other',
-          historyDetail: `Blocked (self-unblock exhausted): ${toStr(decision.failure_summary).substring(0, 200)}`,
-          tokenUsage: _tokenUsage,
-        });
-        return;
-      }
-
-      // Non-mission: complete with failure acknowledgment
-      await completeEnvelope(envelope, {
-        status: 'complete',
-        output: decision.synthesis || decision.response || decision.message,
-        historyDetail: `Synthesized with acknowledged failure: ${toStr(decision.failure_summary).substring(0, 200)}`,
-        tokenUsage: _tokenUsage,
-      });
-      return;
-    }
-
-    if (action === 'follow_process') {
-      // Deterministic process execution — redirect to dedicated executor
-      const processId = decision.processId || decision.process_id;
-
-      if (!processId) {
-        log('ERROR', 'follow_process: missing processId');
-        priorResults.push({ agent: 'system', result: '[SYSTEM] follow_process requires a processId.' });
-        continue;
-      }
-
-      // Guard: prevent re-executing a process that already ran in this envelope
-      if (envelope.process_id) {
-        const forceKey = '_follow_process_force_count';
-        envelope[forceKey] = (envelope[forceKey] || 0) + 1;
-
-        if (envelope[forceKey] >= 2) {
-          // Cortex is stuck in a loop — force-complete the mission with process results
-          log('WARN', `follow_process: process '${envelope.process_id}' already executed — Cortex stuck (${envelope[forceKey]}x), force-completing mission`);
-
-          // Build synthesis from child results
-          const childResults = priorResults
-            .filter(r => r.agent && r.agent !== 'system')
-            .map(r => `${r.agent}: ${toStr(r.result).substring(0, 500)}`)
-            .join('\n\n');
-          const synthesis = childResults || envelope.output || 'Process completed but Cortex could not synthesize results.';
-
-          await createCT(envelope, {
-            checkpointTitle: 'Force-synthesize (stuck loop)',
-            taskTitle: 'Auto-synthesize after process completion',
-            taskOutput: synthesis,
-            taskIntent: 'synthesize',
-            deliveryStatus: 'internal',
-            ctKey: `force-synth-${envelope.id}-${iteration}`,
-          });
-
-          envelope.output = synthesis;
-          await completeEnvelope(envelope, {
-            status: 'complete',
-            output: synthesis,
-            historyDetail: 'Force-synthesized: Cortex stuck in follow_process loop',
-            tokenUsage: _tokenUsage,
-          });
-          return;
-        }
-
-        log('WARN', `follow_process: process '${envelope.process_id}' already executed on this envelope — forcing synthesize`);
-        priorResults.push({
-          agent: 'system',
-          result: `[SYSTEM] Process '${envelope.process_id}' has already been executed on this envelope. You MUST now synthesize the results. Use action "synthesize" with a summary of what was accomplished.`,
-        });
-        _activeGuard = { forbidden: 'follow_process', fallback: 'synthesize', injectedAt: iteration };
-        continue;
-      }
-
-      await ensureProcessesLoaded();
-      if (!PROCESSES[processId]) {
-        log('ERROR', `follow_process: process '${processId}' not found`);
-        priorResults.push({ agent: 'system', result: `[SYSTEM] Process '${processId}' not found. Available processes: ${Object.keys(PROCESSES).join(', ') || 'none'}` });
-        continue;
-      }
-
-      // Hand off to deterministic executor — exits the Cortex decide loop
-      log('INFO', `follow_process: handing off '${processId}' to executeProcess`);
-      // Telemetry: process selection
-      log('INFO', `[TELEMETRY] process_selected: ${JSON.stringify({ processId, missionId: envelope.id, projectId: envelope.project_id || null, iteration })}`);
-      const processResult = await executeProcess(null, decision, memoryContext || {}, processId, envelope);
-      if (processResult === 'fallback_to_decide') {
-        log('WARN', `follow_process: process '${processId}' fell back to decide — continuing loop`);
-        priorResults.push({
-          agent: 'system',
-          result: `[SYSTEM] follow_process '${processId}' failed: missing required parameters. Use checkpoint_plan instead and include the work steps directly, or re-issue follow_process with all required parameters filled in the "parameters" field.`,
-        });
-        continue;
-      }
-      return processResult;
-    }
-
-    if (action === 'delegate') {
-      // Canon-compliant delegation: Cortex decides to delegate work to a project teammate.
-      // Brain creates delegation envelope + output for Mouth delivery. Motor never communicates.
-      const targetEmail = decision.target_email;
-      const delegateInstruction = decision.instruction || '';
-      const delegateCriteria = decision.accept_criteria || '';
-      const delegateProjectId = decision.project_id || envelope.project_id || null;
-
-      if (!targetEmail) {
-        log('ERROR', 'delegate: missing target_email');
-        priorResults.push({ agent: 'system', result: '[SYSTEM] delegate requires a target_email. Check project team members for available agents.' });
-        continue;
-      }
-
-      log('INFO', `Cortex delegate: target=${targetEmail} project=${delegateProjectId}`);
-
-      // Create Task envelope with status='waiting'
-      const delegTaskId = generateId('w');
-      const delegTaskEnvelope = {
-        id: delegTaskId,
-        type: 'T',
-        parent_id: envelope.id,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'waiting',
-        intent: 'delegation',
-        title: await generateTitle(delegateInstruction, 'task'),
-        instruction: delegateInstruction,
-        accept_criteria: delegateCriteria,
-        context_summary: null,
-        output: null,
-        children: [],
-        context_forward: null,
-        error: null,
-        source_channel: 'brain',
-        source_meta: {
-          step_type: 'delegation',
-          delegated_to: targetEmail,
-          target_agent_email: targetEmail,
-        },
-        project_id: delegateProjectId,
-        created_at: now(),
-        started_at: now(),
-        completed_at: null,
-        updated_at: now(),
-        iteration: 0,
-      };
-
-      await firestoreWrite('work', delegTaskId, delegTaskEnvelope);
-      await writeHistory(delegTaskId, null, 'waiting', 'brain', `Delegating to ${targetEmail}`);
-
-      // Compose delegation marker as output envelope for Mouth
-      const delegMarker = composeDelegationMarker({
-        targetEmail,
-        ref: delegTaskId,
-        from: AGENT_EMAIL || AGENT_ID,
-        project: delegateProjectId || 'none',
-        body: delegateInstruction,
-      });
-
-      const delegOutputId = generateId('w');
-      await firestoreWrite('work', delegOutputId, {
-        id: delegOutputId,
-        type: 'T',
-        parent_id: delegTaskId,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'complete',
-        intent: 'delegation_send',
-        title: `Delegation to ${targetEmail}`,
-        instruction: delegateInstruction,
-        output: delegMarker,
-        delivery_status: 'pending',
-        delivery_target: targetEmail,
-        delivery_space_id: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id) || null,
-        delivery_address: makeAddress('gchat', {
-          space: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id)
-            ? `spaces/${PROJECTS[delegateProjectId].gchat_space_id}`
-            : null,
-        }),
-        project_id: delegateProjectId,
-        source_channel: 'brain',
-        created_at: now(),
-        updated_at: now(),
-      });
-
-      log('INFO', `Delegation output envelope created: ${delegOutputId} → ${targetEmail}`);
-
-      // Set mission to waiting
-      envelope.children = envelope.children || [];
-      envelope.children.push(delegTaskId);
-      envelope.status = 'waiting';
-      envelope.updated_at = now();
-      await firestoreWrite('work', envelope.id, envelope);
-      await writeHistory(envelope.id, 'active', 'waiting', 'brain', `Waiting for delegation to ${targetEmail}`);
-
-      log('INFO', `Mission ${envelope.id} waiting for delegation to ${targetEmail}`);
-      return;
-    }
-
-    if (action === 'checkpoint_plan') {
-      // ---- extractCheckpoints: robust plan structure normalization (CP2) ----
-      function extractCheckpoints(d) {
-        // Already normalized by normalizeDecision in enforceSchema, but belt-and-suspenders
-        const raw = d.checkpoints
-          || d.plan?.checkpoints
-          || d.checkpoint_plan?.checkpoints;
-        if (!Array.isArray(raw) || raw.length === 0) return null;
-
-        // If raw is a flat array of tasks (no .tasks nesting), wrap in one checkpoint
-        if (raw[0] && raw[0].agent && !raw[0].tasks) {
-          return [{ instruction: d.instruction || d.goal || 'Execute plan', tasks: raw }];
-        }
-
-        // Normalize: ensure each checkpoint has a tasks array with valid entries
-        return raw.map((cp, i) => ({
-          instruction: cp.instruction || cp.title || cp.description || `Checkpoint ${i + 1}`,
-          accept_criteria: cp.accept_criteria || '',
-          tasks: (Array.isArray(cp.tasks) ? cp.tasks : (cp.steps || [])).filter(t => {
-            // Validate task has agent and instruction
-            if (!t.agent || typeof t.agent !== 'string') {
-              log('WARN', `Checkpoint ${i + 1}: skipping task without agent field`);
-              return false;
-            }
-            return true;
-          }).map(t => ({
-            ...t,
-            task: toStr(t.task || t.instruction || t.description || ''),
-          })),
-        })).filter(cp => cp.tasks.length > 0); // Drop checkpoints with zero valid tasks
-      }
-
-      // Try cortex-provided inline structure first
-      let checkpoints = extractCheckpoints(decision);
-
-      // CP4: If cortex didn't provide a valid structure, dispatch to prefrontal
-      if (!checkpoints || checkpoints.length === 0) {
-        const planGoal = decision.goal || decision.instruction || decision.reasoning || envelope.instruction;
-        log('INFO', `Checkpoint plan: no valid inline structure — dispatching to prefrontal for structuring`);
-
-        try {
-          const planResult = await callAgent('prefrontal', {
-            instruction: [
-              '[PLAN STRUCTURING]',
-              'Read the plan-structuring SKILL.md, then structure a checkpoint/task plan for this goal.',
-              '',
-              '## Goal',
-              planGoal,
-              '',
-              envelope._brief ? `## Brief\n${JSON.stringify(envelope._brief)}` : '',
-              '',
-              `## Skill Index\n${formatSkillCatalog(SKILL_INDEX)}`,
-              '',
-              decision.constraints ? `## Constraints\n${decision.constraints}` : '',
-              priorResults.length > 0 ? `## Prior Results\n${priorResults.map(r =>
-                `${r.step || r.agent}: ${(toStr(r.result) || '').substring(0, 200)}`
-              ).join('\n')}` : '',
-            ].filter(Boolean).join('\n'),
-            _missionId: envelope.id,
-          });
-
-          if (planResult.success && planResult.output) {
-            try {
-              const planParsed = parseJsonResponse(planResult.output);
-              checkpoints = extractCheckpoints(planParsed);
-              if (checkpoints && checkpoints.length > 0) {
-                log('INFO', `Prefrontal structured ${checkpoints.length} checkpoints, ${checkpoints.reduce((s, c) => s + c.tasks.length, 0)} total tasks`);
-              }
-            } catch (e) {
-              log('WARN', `Prefrontal plan structuring returned non-parseable output: ${e.message}`);
-            }
-          }
-        } catch (e) {
-          log('WARN', `Prefrontal plan structuring dispatch failed: ${e.message}`);
-        }
-      }
-
-      // Telemetry: plan structuring source
-      const planSource = checkpoints ? (decision.checkpoints ? 'cortex_inline' : 'prefrontal') : 'none';
-      log('INFO', `[TELEMETRY] plan_structuring: ${JSON.stringify({
-        source: planSource,
-        checkpoints: checkpoints?.length || 0,
-        tasks: checkpoints?.reduce((s, c) => s + c.tasks.length, 0) || 0,
-        missionId: envelope.id,
-      })}`);
-
-      if (!checkpoints || checkpoints.length === 0) {
-        log('ERROR', `Checkpoint plan has no valid checkpoints (even after prefrontal structuring)`);
-        priorResults.push({ agent: 'system', result: '[SYSTEM] checkpoint_plan failed to produce a valid plan structure. Try follow_process instead, or provide checkpoints with at least one task per checkpoint.' });
-        continue;
-      }
-
-      log('INFO', `Checkpoint plan received: ${checkpoints.length} checkpoints`);
-
-      let allResults = []; // Accumulated results across all checkpoints
-      let planFailed = false;
-
-      for (let ci = 0; ci < checkpoints.length; ci++) {
-        const cp = checkpoints[ci];
-        const cpNum = ci + 1;
-        const cpInstruction = cp.instruction || `Checkpoint ${cpNum}`;
-        const cpCriteria = cp.accept_criteria || '';
-        const cpTasks = cp.tasks || [];
-
-        // Create Checkpoint envelope
-        const cpId = generateId('w');
-        const cpEnvelope = {
-          id: cpId,
-          type: 'C',
-          parent_id: envelope.id,
-          owner: AGENT_EMAIL || AGENT_ID,
-          status: 'active',
-          intent: 'checkpoint',
-          title: await generateTitle(cpInstruction, 'checkpoint'),
-          instruction: cpInstruction,
-          accept_criteria: cpCriteria,
-          context_summary: allResults.length > 0
-            ? `Prior checkpoints:\n${allResults.map(r => `Step ${r.step} (${r.agent}): ${toStr(r.result).substring(0, 200)}`).join('\n')}`
-            : envelope.context_summary || null,
-          output: null,
-          children: [],
-          context_forward: null,
-          error: null,
-          source_channel: 'brain',
-          source_meta: { dispatched_by: envelope.id, checkpoint: cpNum, checkpoint_total: checkpoints.length },
-          project_id: envelope.project_id || null,
-          created_at: now(),
-          started_at: now(),
-          completed_at: null,
-          updated_at: now(),
-          iteration: 0,
-        };
-
-        await firestoreWrite('work', cpId, cpEnvelope);
-        await writeHistory(cpId, null, 'active', 'brain', `Checkpoint ${cpNum}/${checkpoints.length}: ${cpInstruction.substring(0, 60)}`);
-        // Note: shared workspace is mission-scoped (shared/{envelope.id}/), initialized in processEnvelope
-
-        // Track checkpoint on parent mission
-        envelope.children.push(cpId);
-        envelope.updated_at = now();
-        await firestoreWrite('work', envelope.id, envelope);
-
-        log('INFO', `Checkpoint ${cpNum}/${checkpoints.length}: ${cpInstruction.substring(0, 60)} (${cpTasks.length} tasks)`);
-
-        // Execute tasks within this checkpoint
-        let cpResults = [];
-        let cpFailed = false;
-
-        for (let ti = 0; ti < cpTasks.length; ti++) {
-          const task = cpTasks[ti];
-          const taskNum = ti + 1;
-          const taskAgent = task.agent;
-          const taskDesc = task.task || task.instruction || '';
-          const taskCriteria = task.accept_criteria
-            || `Task "${(task.task || task.brief_part || '').substring(0, 60)}" completed with evidence of meaningful work. No unresolved errors in tool output.`;
-          const stepType = task._step_type || 'standard';
-          const isOptional = task._optional === true;
-
-          if (!taskAgent) {
-            log('WARN', `Checkpoint ${cpNum} task ${taskNum} missing agent, skipping`);
-            cpResults.push({ step: `${cpNum}.${taskNum}`, agent: 'unknown', result: '[SKIPPED]', success: false });
-            continue;
-          }
-
-          // CP2: Step-ledger dedup — skip if this step was already executed
-          const taskStepKey = deriveStepKey(envelope.id, cpNum, 'cp_task', `${ci}.${ti}.${taskAgent}`);
-          if (isStepComplete(envelope, taskStepKey)) {
-            const prev = getStepResult(envelope, taskStepKey);
-            log('INFO', `CP2 dedup: CP${cpNum} Task ${taskNum} already recorded (${prev?.status}), skipping dispatch`);
-            cpResults.push({
-              step: `${cpNum}.${taskNum}`,
-              agent: taskAgent,
-              task: taskDesc.substring(0, 200),
-              result: `[REPLAYED] Step already completed (${prev?.status})`,
-              success: prev?.status === 'complete',
-              durationMs: prev?.durationMs || 0,
-            });
-            continue;
-          }
-
-          // ---- Optional step: skip if agent unavailable ----
-          if (isOptional) {
-            // Check if the target agent is online (for fleet agents)
-            let agentAvailable = true;
-            try {
-              const token = await getAuthToken();
-              if (token && PRIME_ID) {
-                const fleetUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/fleet/${taskAgent}`;
-                const fleetResp = await fetch(fleetUrl, {
-                  headers: { 'Authorization': `Bearer ${token}` },
-                  signal: AbortSignal.timeout(3000),
-                });
-                if (fleetResp.ok) {
-                  const fleetDoc = await fleetResp.json();
-                  const fleetStatus = fleetDoc.fields?.status?.stringValue;
-                  agentAvailable = fleetStatus === 'online';
-                }
-              }
-            } catch { /* assume available on error */ }
-
-            if (!agentAvailable) {
-              log('INFO', `CP${cpNum} Task ${taskNum}: Optional step skipped — agent '${taskAgent}' unavailable`);
-              cpResults.push({
-                step: `${cpNum}.${taskNum}`,
-                agent: taskAgent,
-                result: '[SKIPPED] Optional step — agent unavailable',
-                success: true,
-                durationMs: 0,
-              });
-              continue;
-            }
-          }
-
-          // ---- Approval Gate: pause checkpoint and notify ----
-          if (stepType === 'approval_gate') {
-            log('INFO', `CP${cpNum} Task ${taskNum}: Approval gate — pausing checkpoint`);
-
-            // Write approval request to Firestore
-            const approvalId = generateId('apr');
-            try {
-              const token = await getAuthToken();
-              if (token) {
-                const approvalUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/approvals/${approvalId}`;
-                await fetch(approvalUrl, {
-                  method: 'PATCH',
-                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ fields: {
-                    envelopeId: { stringValue: envelope.id },
-                    checkpointId: { stringValue: cpId },
-                    taskIndex: { integerValue: String(ti) },
-                    checkpointIndex: { integerValue: String(ci) },
-                    title: { stringValue: taskDesc.substring(0, 200) },
-                    description: { stringValue: taskCriteria || taskDesc },
-                    processId: { stringValue: envelope.process_id || '' },
-                    processName: { stringValue: decision.process_name || '' },
-                    planId: { stringValue: envelope.plan_id || '' },
-                    status: { stringValue: 'pending' },
-                    requestedAt: { stringValue: now() },
-                  }}),
-                });
-              }
-            } catch (e) { log('WARN', `Failed to write approval doc: ${e.message}`); }
-
-            // Mark checkpoint as awaiting approval
-            cpEnvelope.status = 'awaiting_approval';
-            cpEnvelope.source_meta = {
-              ...cpEnvelope.source_meta,
-              approval_id: approvalId,
-              approval_task_index: ti,
-            };
-            cpEnvelope.updated_at = now();
-            await firestoreWrite('work', cpId, cpEnvelope);
-            await writeHistory(cpId, 'active', 'awaiting_approval', 'brain',
-              `Approval gate: ${taskDesc.substring(0, 60)}`);
-
-            // Send notification via mouth (creates a deliverable envelope)
-            const rawStepData = cpResults.map(r => ({
-              step: r.step, agent: r.agent, success: r.success,
-              result: toStr(r.result).substring(0, 1500),
-            }));
-            const fallbackNotif = `🔔 **Approval needed**\n\n**${taskDesc.substring(0, 200)}**\n\n${taskCriteria ? `Criteria: ${taskCriteria}\n\n` : ''}Reply \`approve\` or \`reject\` here, or use the dashboard.`;
-            const cleanNotif = await summarizeForDelivery('approval_request', fallbackNotif, {
-              steps: rawStepData,
-              title: taskDesc.substring(0, 200),
-              processName: decision.process_name || '',
-              customMessage: taskCriteria || '',
-            });
-            const notifOutput = `🔔 **Approval needed**\n\n${cleanNotif}\n\nReply \`approve\` or \`reject\` here, or use the dashboard.`;
-
-            const notifId = generateId('w');
-            await firestoreWrite('work', notifId, {
-              id: notifId,
-              type: 'T',
-              parent_id: envelope.id,
-              owner: AGENT_EMAIL || AGENT_ID,
-              status: 'complete',
-              intent: 'notification',
-              instruction: 'Approval gate notification',
-              output: notifOutput,
-              source_channel: envelope.source_channel || 'system',
-              source_meta: { approval_id: approvalId, notification_type: 'approval_gate' },
-              created_at: now(),
-              started_at: now(),
-              completed_at: now(),
-              updated_at: now(),
-              children: [],
-              accept_criteria: null,
-              context_summary: null,
-              context_forward: null,
-              error: null,
-              iteration: 0,
-              delivery_status: envelope.parent_id ? 'internal' : 'pending',
-              ...(envelope.parent_id ? {} : { delivery_address: addressFromMeta(envelope.source_meta, envelope.source_channel) }),
-            });
-
-            // Record partial results so far
-            allResults.push(...cpResults);
-
-            // Store resume state on the envelope so approval handler can continue
-            envelope.source_meta = {
-              ...envelope.source_meta,
-              paused_approval_id: approvalId,
-              paused_checkpoint_index: ci,
-              paused_task_index: ti,
-              paused_checkpoints: checkpoints,
-              paused_all_results: allResults,
-            };
-            envelope.status = 'awaiting_approval';
-            envelope.updated_at = now();
-            await firestoreWrite('work', envelope.id, envelope);
-
-            log('INFO', `Checkpoint paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);
-
-            // Exit the entire checkpoint plan — will be resumed by approval handler
-            return;
-          }
-
-          // ---- Spawn Responsibility: create a responsibility entry ----
-          if (stepType === 'spawn_responsibility') {
-            log('INFO', `CP${cpNum} Task ${taskNum}: Spawning responsibility via motor`);
-
-            const respResult = await callAgent('motor', {
-              instruction: `Create a new responsibility using the responsibility-manage tool:\n\nresponsibility-manage create --name "${taskDesc.replace(/"/g, '\\"')}" --instruction "${(taskCriteria || taskDesc).replace(/"/g, '\\"')}"\n\nThis is a process step of type 'spawn_responsibility'.${formatSkillCatalog(SKILL_INDEX)}`,
-              accept_criteria: 'Responsibility created successfully',
-              _missionId: envelope.id,
-            });
-
-            cpResults.push({
-              step: `${cpNum}.${taskNum}`,
-              agent: 'motor',
-              task: `[spawn_responsibility] ${taskDesc.substring(0, 150)}`,
-              result: respResult.success
-                ? await smartSummarize(respResult.output || '', CTX_AGENT_STEP, 'Summarize this responsibility creation result. Keep the responsibility name and config details.')
-                : `[FAILED] ${respResult.error}`,
-              success: respResult.success,
-              durationMs: respResult.durationMs,
-            });
-
-            if (!respResult.success && !isOptional) {
-              cpFailed = true;
-              break;
-            }
-            continue;
-          }
-
-          // ---- Delegation: cross-agent dispatch via GChat ----
-          if (stepType === 'delegation') {
-            const delegateSpecialty = task._specialty || taskAgent;
-            log('INFO', `CP${cpNum} Task ${taskNum}: Cross-agent delegation to '${delegateSpecialty}'`);
-
-            // Resolve target agent email by specialty from fleet docs
-            let targetAgentEmail = null;
-            try {
-              const primesSnap = await firestoreQuery('primes', []);
-              for (const prime of primesSnap) {
-                const fleetSnap = await firestoreQuery(`primes/${prime.id}/fleet`, [
-                  { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
-                ]);
-                const onlineAgent = fleetSnap.find(a => a.status === 'online');
-                if (onlineAgent) {
-                  targetAgentEmail = onlineAgent.email;
-                  break;
-                }
-              }
-            } catch (e) {
-              log('WARN', `Delegation: failed to resolve agent for specialty '${delegateSpecialty}': ${e.message}`);
-            }
-
-            if (!targetAgentEmail) {
-              log('ERROR', `Delegation: no online agent found for specialty '${delegateSpecialty}'`);
-              cpResults.push({ step: taskNum, agent: taskAgent, result: `[FAILED] No online agent found for specialty '${delegateSpecialty}'`, success: false });
-              continue;
-            }
-
-            // Create Task envelope with status='waiting' (not active)
-            const taskId = generateId('w');
-            const taskEnvelope = {
-              id: taskId,
-              type: 'T',
-              parent_id: cpId,
-              owner: AGENT_EMAIL || AGENT_ID,
-              status: 'waiting',
-              intent: 'delegation',
-              title: await generateTitle(taskDesc, 'task'),
-              instruction: taskDesc,
-              accept_criteria: taskCriteria,
-              context_summary: null,
-              output: null,
-              children: [],
-              context_forward: null,
-              error: null,
-              source_channel: 'brain',
-              source_meta: {
-                dispatched_by: cpId,
-                checkpoint: cpNum,
-                task_step: taskNum,
-                step_type: 'delegation',
-                delegated_to: delegateSpecialty,
-                target_agent_email: targetAgentEmail,
-              },
-              project_id: envelope.project_id || null,
-              created_at: now(),
-              started_at: now(),
-              completed_at: null,
-              updated_at: now(),
-              iteration: 0,
-            };
-
-            await firestoreWrite('work', taskId, taskEnvelope);
-            await writeHistory(taskId, null, 'waiting', 'brain', `Delegating to ${delegateSpecialty} (${targetAgentEmail})`);
-
-            cpEnvelope.children.push(taskId);
-            cpEnvelope.updated_at = now();
-            await firestoreWrite('work', cpId, cpEnvelope);
-
-            // Compose delegation marker as output envelope for Mouth delivery
-            // Canon: Brain creates output, Mouth delivers. No direct chat-send.
-            const marker = composeDelegationMarker({
-              targetEmail: targetAgentEmail,
-              ref: taskId,
-              from: AGENT_EMAIL || AGENT_ID,
-              project: envelope.project_id || 'none',
-              body: taskDesc,
-            });
-
-            const delegOutputId = generateId('w');
-            await firestoreWrite('work', delegOutputId, {
-              id: delegOutputId,
-              type: 'T',
-              parent_id: taskId,
-              owner: AGENT_EMAIL || AGENT_ID,
-              status: 'complete',
-              intent: 'delegation_send',
-              title: `Delegation to ${delegateSpecialty}`,
-              instruction: taskDesc,
-              output: marker,
-              delivery_status: 'pending',
-              delivery_target: targetAgentEmail,
-              delivery_address: makeAddress('gchat', {
-                space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id)
-                  ? `spaces/${PROJECTS[envelope.project_id].gchat_space_id}`
-                  : null,
-              }),
-              source_channel: 'brain',
-              created_at: now(),
-              updated_at: now(),
-            });
-            log('INFO', `Delegation output envelope created: ${delegOutputId} → ${targetAgentEmail} for ref ${taskId}`);
-
-            // Set checkpoint to waiting — checkWaitingEnvelopes() will resume when child completes
-            cpEnvelope.status = 'waiting';
-            cpEnvelope.updated_at = now();
-            await firestoreWrite('work', cpId, cpEnvelope);
-            await writeHistory(cpId, 'active', 'waiting', 'brain', `Waiting for delegation to ${delegateSpecialty}`);
-
-            log('INFO', `CP${cpNum} Task ${taskNum}: delegation sent, checkpoint waiting`);
-            // Don't call callAgent — return and let checkWaitingEnvelopes resume
-            return;
-          }
-
-          // Create Task envelope under Checkpoint
-          const taskId = generateId('w');
-          const taskEnvelope = {
-            id: taskId,
-            type: 'T',
-            parent_id: cpId,
-            owner: AGENT_EMAIL || AGENT_ID,
-            status: 'active',
-            intent: stepType === 'delegation' ? 'delegation' : (task.intent || 'execute'),
-            title: await generateTitle(taskDesc, 'task'),
-            instruction: taskDesc,
-            accept_criteria: taskCriteria,
-            context_summary: [...allResults, ...cpResults].length > 0
-              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${toStr(r.result).substring(0, 300)}`).join('\n')
-              : null,
-            output: null,
-            children: [],
-            context_forward: null,
-            error: null,
-            source_channel: 'brain',
-            source_meta: {
-              dispatched_by: cpId,
-              checkpoint: cpNum,
-              task_step: taskNum,
-              step_type: stepType,
-              ...(stepType === 'delegation' ? { delegated_to: task._specialty || taskAgent } : {}),
-            },
-            project_id: envelope.project_id || null,
-            created_at: now(),
-            started_at: now(),
-            completed_at: null,
-            updated_at: now(),
-            iteration: 0,
-          };
-
-          await firestoreWrite('work', taskId, taskEnvelope);
-          await writeHistory(taskId, null, 'active', 'brain', `CP${cpNum} Task ${taskNum}: ${taskAgent}`);
-
-          cpEnvelope.children.push(taskId);
-          cpEnvelope.updated_at = now();
-          await firestoreWrite('work', cpId, cpEnvelope);
-
-          log('INFO', `CP${cpNum} Task ${taskNum}/${cpTasks.length}: ${taskAgent} — ${taskDesc.substring(0, 60)}`);
-
-          // Prepend project context for checkpoint tasks (all agent types)
-          if (envelope.project_id) {
-            const projCtx = buildProjectContext(envelope.project_id, envelope.context);
-            if (projCtx) {
-              taskEnvelope.instruction = `[PROJECT CONTEXT]\n${projCtx}\n[END PROJECT CONTEXT]\n\n${taskEnvelope.instruction}`;
-            }
-          }
-
-          // Dispatch to agent — use taskEnvelope.instruction which includes project context
-          // Layer A: Inject full skill catalog for execution agents
-          const skillCatalog = (taskAgent === 'motor' || taskAgent === 'temporal-research')
-            ? formatSkillCatalog(SKILL_INDEX)
-            : '';
-
-          // Build project context once for reuse in dispatch and retry
-          const dispatchProjCtx = envelope.project_id
-            ? buildProjectContext(envelope.project_id, envelope.context)
-            : null;
-
-          let result = await callAgent(taskAgent, {
-            instruction: taskEnvelope.instruction + skillCatalog,
-            accept_criteria: taskCriteria,
-            _missionId: envelope.id,  // mission-scoped shared workspace
-            _projectContext: dispatchProjCtx,
-            _sourceText: envelope.source_text || null,
-            context_summary: [...allResults, ...cpResults].length > 0
-              ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
-              : undefined,
-            prior_results_context: [...allResults, ...cpResults].length > 0
-              ? [...allResults, ...cpResults].map(r => `## Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
-              : undefined,
-            memory_context: envelope.memory_context || null,
-          });
-
-          // Retry once on failure
-          if (!result.success) {
-            log('WARN', `CP${cpNum} Task ${taskNum} failed (${taskAgent}): ${result.error}. Retrying...`);
-            result = await callAgent(taskAgent, {
-              instruction: `${taskEnvelope.instruction}${skillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
-              accept_criteria: taskCriteria,
-              _missionId: envelope.id,
-              _projectContext: dispatchProjCtx,
-              _sourceText: envelope.source_text || null,
-              memory_context: envelope.memory_context || null,
-            });
-          }
-
-          // Phase 4.3: LLM cost telemetry — dispatched agent call
-          if (result?.usage) {
-            const u = result.usage;
-            _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
-            _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
-            _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
-            _tokenUsage.callCount++;
-            log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${taskAgent} model=${REGISTRY.agents?.[taskAgent]?.route || taskAgent} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} duration=${result.durationMs || 0}ms`);
-          }
-
-          // ---- Evidence floor: flag suspiciously shallow motor completions ----
-          if (result.success && taskAgent === 'motor') {
-            const rText = toStr(result.output) || result.text || '';
-            const toolLog = rText.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/)?.[1] || '';
-            const toolCount = (toolLog.match(/\[TOOL\]/g) || []).length;
-            const hasWrites = /writeFile|drive-upload|drive-mkdir|git commit/i.test(toolLog);
-            const hasErrors = /ERROR:|No such file|command not found|Permission denied/i.test(toolLog);
-            const durationMs = result.durationMs || 0;
-
-            // Skip evidence floor for fleet lifecycle operations
-            const EVIDENCE_FLOOR_EXCLUDE = CONTRACTS.dispatch?.evidence_floor_exclude_skills
-              || ['fleet-fire', 'fleet-hire', 'fleet-upgrade', 'fleet-verify', 'fleet-status', 'fleet-deploy'];
-            const isFleetLifecycle = EVIDENCE_FLOOR_EXCLUDE.some(s => taskDesc.toLowerCase().includes(s));
-
-            if (durationMs < 8000 && toolCount <= 2 && !hasWrites && !isFleetLifecycle) {
-              log('WARN', `Evidence floor: motor CP${cpNum} T${taskNum} completed in ${durationMs}ms with ${toolCount} tools, no writes — flagging`);
-              result.output = (result.output || '') + '\n[EVIDENCE WARNING: Task completed very quickly with minimal tool usage and no write operations. Verify that meaningful work was performed.]';
-            }
-            if (hasErrors && !/\[WARNING: One or more tool calls returned errors/.test(rText)) {
-              log('WARN', `Evidence floor: motor CP${cpNum} T${taskNum} reported SUCCESS but tool log contains errors`);
-              result.output = (result.output || '') + '\n[EVIDENCE WARNING: Tool execution log contains errors despite SUCCESS status.]';
-            }
-          }
-
-          // ---- Cerebellum verification ----
-          // Verify task output against accept_criteria before marking complete.
-          // Skip for: failed tasks, no criteria, cerebellum itself, ack intents.
-          if (result.success && taskCriteria && taskAgent !== 'cerebellum' && taskEnvelope.intent !== 'ack') {
-            try {
-              log('INFO', `CP${cpNum} Task ${taskNum}: dispatching to cerebellum for verification`);
-              const verification = await callAgent('cerebellum', {
-                instruction: [
-                  'Verify the following task output meets the acceptance criteria.',
-                  'Read the verification SKILL.md before rendering your verdict.',
-                  '',
-                  '## Accept Criteria',
-                  taskCriteria,
-                  '',
-                  '## Task Output',
-                  result.output || '(empty)',
-                ].join('\n'),
-                _missionId: envelope.id,
-              });
-
-              const verdict = extractVerdict(verification.output);
-
-              if (verdict === 'FAIL') {
-                const failSummary = extractFailSummary(verification.output);
-                const recommendation = extractFailRecommendation(verification.output);
-                log('WARN', `Cerebellum FAIL on CP${cpNum} Task ${taskNum}: ${failSummary}`);
-
-                // Retry motor with cerebellum's feedback
-                log('INFO', `CP${cpNum} Task ${taskNum}: retrying ${taskAgent} with cerebellum feedback`);
-                result = await callAgent(taskAgent, {
-                  instruction: [
-                    taskEnvelope.instruction,
-                    '',
-                    '[VERIFICATION FAILED] An independent verification found issues with your previous output:',
-                    failSummary,
-                    recommendation ? `\nRecommendation: ${recommendation}` : '',
-                    '\nPlease re-execute and address the issues above. Use tools to actually run commands — do NOT simulate or assume results.',
-                  ].join('\n'),
-                  accept_criteria: taskCriteria,
-                  _missionId: envelope.id,
-                  memory_context: envelope.memory_context || null,
-                });
-                taskEnvelope.output = result.output || result.error;
-
-                // Re-verify the retry
-                if (result.success) {
-                  log('INFO', `CP${cpNum} Task ${taskNum}: re-verifying retry output with cerebellum`);
-                  const reVerification = await callAgent('cerebellum', {
-                    instruction: [
-                      'Verify the following RETRY task output meets the acceptance criteria.',
-                      'This is a second attempt after the first failed verification.',
-                      'Read the verification SKILL.md before rendering your verdict.',
-                      '',
-                      '## Accept Criteria',
-                      taskCriteria,
-                      '',
-                      '## Task Output (Retry)',
-                      result.output || '(empty)',
-                    ].join('\n'),
-                    _missionId: envelope.id,
-                  });
-
-                  const reVerdict = extractVerdict(reVerification.output);
-                  if (reVerdict === 'FAIL') {
-                    const reFailSummary = extractFailSummary(reVerification.output);
-                    log('WARN', `Cerebellum FAIL on retry CP${cpNum} Task ${taskNum}: ${reFailSummary}`);
-                    result.success = false;
-                    result.error = `Verification failed after retry: ${reFailSummary}`;
-                  } else if (reVerdict === 'PASS') {
-                    log('INFO', `Cerebellum PASS on retry CP${cpNum} Task ${taskNum}`);
-                  } else {
-                    // No verdict tool called on retry — flag for review, don't reject
-                    log('WARN', `[TELEMETRY] verification_no_verdict: CP${cpNum} Task ${taskNum} (retry) — cerebellum did not call verdict tool`);
-                    log('WARN', `Cerebellum did not render verdict on retry CP${cpNum} Task ${taskNum} — accepting result`);
-                  }
-                }
-              } else if (verdict === 'PASS') {
-                log('INFO', `Cerebellum PASS on CP${cpNum} Task ${taskNum}`);
-              } else {
-                // No verdict tool called — escalate, don't silently accept or reject
-                log('WARN', `[TELEMETRY] verification_no_verdict: CP${cpNum} Task ${taskNum} — cerebellum did not call verdict tool`);
-                log('WARN', `Cerebellum did not render a verdict tool for CP${cpNum} Task ${taskNum} — flagging for review`);
-                // Mark as needs_review: don't fail the task, but note it was unverified
-                taskEnvelope.needs_review = true;
-                taskEnvelope.review_reason = 'Cerebellum did not render verdict via tool call';
-              }
-            } catch (verErr) {
-              log('WARN', `Cerebellum dispatch failed for CP${cpNum} Task ${taskNum}: ${verErr.message}. Continuing without verification.`);
-            }
-          }
-
-          // Update task envelope
-          taskEnvelope.output = result.output || result.error;
-          taskEnvelope.status = result.success ? 'complete' : 'failed';
-          taskEnvelope.error = result.error;
-          taskEnvelope.completed_at = now();
-          taskEnvelope.updated_at = now();
-          await firestoreWrite('work', taskId, taskEnvelope);
-          await writeHistory(taskId, 'active', taskEnvelope.status, taskAgent,
-            result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
-
-          // Persist task output as file in shared/ for cross-task access
-          if (result.success && result.output && result.output.length > 200) {
-            try {
-              const taskTitle = taskEnvelope.title || `task-${cpNum}-${taskNum}`;
-              const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-              const { writeFileSync: wfs } = await import('fs');
-              wfs(`${CORE_DIR}/shared/${envelope.id}/${slug}.md`, result.output);
-              log('INFO', `Task output saved to shared/${envelope.id}/${slug}.md (${result.output.length} chars)`);
-            } catch (e) {
-              log('WARN', `Failed to save task output to shared/: ${e.message}`);
-            }
-          }
-
-          const stepResult = {
-            step: `${cpNum}.${taskNum}`,
-            agent: taskAgent,
-            task: taskDesc.substring(0, 200),
-            result: result.success
-              ? smartTruncate(result.output || '', CTX_AGENT_STEP)
-              : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_DISPATCH_FAILURE)}`,
-            success: result.success,
-            durationMs: result.durationMs,
-          };
-          cpResults.push(stepResult);
-
-          // CP2: Record step in ledger for replay dedup
-          await recordStep(envelope, taskStepKey, { ...result, agent: taskAgent });
-
-          // CP5: Persist checkpoint progress for crash recovery
-          if (CHECKPOINT_RESUME_ENABLED) {
-            envelope._cp_progress = {
-              checkpointIndex: ci,
-              taskIndex: ti + 1, // next task to execute on resume
-              allResults: [...allResults, ...cpResults],
-              checkpoints,
-              decision,
-            };
-            await firestoreWrite('work', envelope.id, envelope);
-          }
-
-          log('INFO', `CP${cpNum} Task ${taskNum} ${result.success ? 'completed' : 'FAILED'} (${result.durationMs}ms)`);
-
-          // Telemetry: motor dispatch metrics
-          if (taskAgent === 'motor') {
-            const rText = result.output || '';
-            const stuckReport = rText.match(/\[STUCK REPORT\]\s*({[^}]+})/)?.[1] || null;
-            const toolLogMatch = rText.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/);
-            const toolCount = toolLogMatch ? (toolLogMatch[1].match(/\[TOOL\]/g) || []).length : 0;
-            log('INFO', `[TELEMETRY] motor_dispatch: ${JSON.stringify({
-              missionId: envelope.id, checkpoint: cpNum, task: taskNum,
-              success: result.success, durationMs: result.durationMs,
-              toolCount, stuck: !!stuckReport,
-              projectContextInjected: !!dispatchProjCtx,
-              sourceTextInjected: !!(envelope.source_text),
-            })}`);
-          }
-          if (!result.success) {
-            cpFailed = true;
-            break;
-          }
-        }
-
-        // Mark checkpoint complete or failed
-        cpEnvelope.status = cpFailed ? 'failed' : 'complete';
-        cpEnvelope.output = cpFailed ? `Checkpoint failed at task ${cpResults.length}/${cpTasks.length}` : `Checkpoint complete: ${cpResults.length} tasks`;
-        cpEnvelope.completed_at = now();
-        cpEnvelope.updated_at = now();
-        await firestoreWrite('work', cpId, cpEnvelope);
-        await writeHistory(cpId, 'active', cpEnvelope.status, 'brain',
-          cpFailed ? `Failed at task ${cpResults.length}` : `Complete (${cpResults.length} tasks)`);
-        // Note: shared workspace cleanup happens at mission level, not per-checkpoint
-
-        allResults.push(...cpResults);
-
-        log('INFO', `Checkpoint ${cpNum} ${cpFailed ? 'FAILED' : 'complete'} (${cpResults.length} tasks)`);
-
-        if (cpFailed) {
-          planFailed = true;
-          break;
-        }
-      }
-
-      // Feed all results back to Cortex for synthesis
-      priorResults.push(...allResults.map(r => ({
-        agent: r.agent,
-        task: r.task,
-        result: r.result,
-        success: r.success,
-        durationMs: r.durationMs,
-        checkpoint_step: r.step,
-      })));
-
-      if (planFailed) {
-        const replanCount = (envelope._replan_count = (envelope._replan_count || 0) + 1);
-        const MAX_REPLANS = 3;
-        if (replanCount >= MAX_REPLANS) {
-          priorResults.push({
-            agent: 'system',
-            result: `[SYSTEM] Checkpoint plan failed ${replanCount} times. You MUST use "synthesize_with_failure" or "needs_input" to escalate. No more checkpoint_plan allowed.`,
-          });
+      const ctx = { envelope, decision, priorResults, memoryResults: memory, iteration, _activeGuard, _tokenUsage };
+      let actionResult = await ACTION_HANDLERS[action](ctx, deps);
+
+      // Handle delegation to another handler (e.g. synthesize_with_failure -> synthesize)
+      if (actionResult?.delegateAction) {
+        action = actionResult.delegateAction;
+        if (ACTION_HANDLERS[action]) {
+          ctx.decision.action = action;
+          actionResult = await ACTION_HANDLERS[action](ctx, deps);
         } else {
-          priorResults.push({
-            agent: 'system',
-            result: `[SYSTEM] Checkpoint failed (attempt ${replanCount}/${MAX_REPLANS}). Return a NEW checkpoint_plan with adjusted approach, or use "needs_input" to escalate a hard blocker.`,
-          });
+          log('ERROR', `Delegated action handler '${action}' not found`);
+          continue;
         }
       }
 
-      log('INFO', `Checkpoint plan ${planFailed ? 'FAILED' : 'complete'}: ${checkpoints.length} checkpoints, ${allResults.length} total tasks. Consulting Cortex.`);
-
-      // CP5: Clear checkpoint progress — plan completed (or failed and will be replanned)
-      if (envelope._cp_progress) {
-        envelope._cp_progress = null;
-        await firestoreWrite('work', envelope.id, envelope);
-      }
-
-      continue; // Loop back to Cortex for synthesize decision
+      if (actionResult?.exit) return;
+      if (actionResult?.activeGuard) _activeGuard = actionResult.activeGuard;
+      if (actionResult?.priorResultsAppend) priorResults.push(...actionResult.priorResultsAppend);
+      continue;
     }
 
     // Unknown action — nudge Cortex. Table-dispatched actions (synthesize, blocked, needs_input, status_update)
