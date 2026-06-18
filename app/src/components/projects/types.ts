@@ -9,6 +9,10 @@ export interface ProjectSummary {
   description: string;
   parent_id: string | null;
   depends_on: string[];
+  team?: string[];
+  created_by?: string;
+  drive_folder_id?: string;
+  drive_url?: string;
   missionCount: number;
   completedMissions: number;
   participants: string[];

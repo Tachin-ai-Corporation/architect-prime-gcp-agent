@@ -8,7 +8,7 @@ import type { ProjectSummary } from "./types";
 import styles from "@/app/p/[id]/projects/page.module.css";
 
 interface CreateProjectModalProps {
-  primeId: string;
+  primeId?: string;
   onClose: () => void;
   onCreated: (proj: ProjectSummary) => void;
 }

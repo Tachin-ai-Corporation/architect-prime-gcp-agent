@@ -20,7 +20,7 @@ const KIND_ICONS: Record<string, string> = {
 };
 
 interface ProjectDetailViewProps {
-  primeId: string;
+  primeId?: string;
   projectId: string;
 }
 
@@ -33,6 +33,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
   const [contextDirty, setContextDirty] = useState(false);
   const [localContext, setLocalContext] = useState<Record<string, ContextEntry>>({});
   const [saving, setSaving] = useState(false);
+  const [resolvedPrimeId, setResolvedPrimeId] = useState<string | null>(null);
 
   /* ---- Standard Processes state ---- */
   const [allProcesses, setAllProcesses] = useState<ProcessSummary[]>([]);
@@ -55,6 +56,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
         setDesc(data.project.description);
         setLocalContext(data.project.context ?? {});
         setLinkedProcessIds(data.project.standardProcesses ?? []);
+        setResolvedPrimeId(primeId || data.project.created_by || "chuck");
         setLoading(false);
       } else if (!cancelled) {
         setLoading(false);
@@ -65,15 +67,16 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
 
   /* ---- Fetch all processes for linking ---- */
   useEffect(() => {
+    if (!resolvedPrimeId) return;
     let cancelled = false;
     (async () => {
-      const data = await api<{ processes: ProcessSummary[] }>(`/api/primes/${primeId}/processes`);
+      const data = await api<{ processes: ProcessSummary[] }>(`/api/primes/${resolvedPrimeId}/processes`);
       if (!cancelled && data?.processes) {
         setAllProcesses(data.processes);
       }
     })();
     return () => { cancelled = true; };
-  }, [primeId]);
+  }, [resolvedPrimeId]);
 
   /* ---- Fetch pending promotions ---- */
   useEffect(() => {
@@ -89,12 +92,16 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
       }
     })();
     return () => { cancelled = true; };
-  }, [primeId, projectId]);
+  }, [projectId]);
 
   /* ---- Back nav ---- */
   const handleBack = useCallback(() => {
-    router.push(`/projects`);
-  }, [router]);
+    if (primeId) {
+      router.push(`/p/${primeId}/projects`);
+    } else {
+      router.push(`/projects`);
+    }
+  }, [primeId, router]);
 
   /* ---- Context change ---- */
   const handleContextChange = useCallback((ctx: Record<string, ContextEntry>) => {
@@ -194,7 +201,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
         {project.parent_id && (
           <div style={{ marginBottom: 8 }}>
             <Link
-              href={`/projects?project=${project.parent_id}`}
+              href={primeId ? `/p/${primeId}/projects?project=${project.parent_id}` : `/projects?project=${project.parent_id}`}
               className={styles.detailParentLink}
             >
               ↑ Parent: {project.parent_id}
@@ -210,7 +217,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
               {project.depends_on.map((dep: string) => (
                 <Link
                   key={dep}
-                  href={`/projects?project=${dep}`}
+                  href={primeId ? `/p/${primeId}/projects?project=${dep}` : `/projects?project=${dep}`}
                   className={styles.depChip}
                 >
                   ⛓ {dep}

@@ -9,12 +9,12 @@ import { LoadingScreen, OnboardingFlow } from "@/components/onboarding/Onboardin
 import { PrimeChip, ChatTarget } from "@/components/primes/PrimeGrid";
 import { FleetVisualization, ConnectionLine } from "@/components/fleet/FleetVisualization";
 import { HireModal } from "@/components/fleet/HireModal";
+import { DeployPrimeModal } from "@/components/primes/DeployPrimeModal";
+import { ConfirmDeleteModal } from "@/components/primes/ConfirmDeleteModal";
+import { ActionRequiredModal } from "@/components/fleet/ActionRequiredModal";
 import { usePrime } from "@/contexts/PrimeContext";
 import { api } from "@/lib/api";
 import type { PrimeInstance, FleetAgent } from "@/lib/types";
-
-const DEFAULT_ZONE = process.env.NEXT_PUBLIC_DEFAULT_ZONE || "us-central1-a";
-const ZONES = Array.from(new Set([DEFAULT_ZONE, "us-central1-a", "us-east1-b", "us-west1-a", "europe-west1-b", "us-east5-a"]));
 
 function HomeInner() {
   const dialog = useDialog();
@@ -24,8 +24,6 @@ function HomeInner() {
   /* ---- State ---- */
   const [selectedPrimeId, setSelectedPrimeId] = useState<string | null>(null);
   const [showDeploy, setShowDeploy] = useState(false);
-  const [newPrimeName, setNewPrimeName] = useState("");
-  const [newPrimeZone, setNewPrimeZone] = useState(DEFAULT_ZONE);
   const [deploying, setDeploying] = useState(false);
   const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
   const [chatWidth, setChatWidth] = useState(420);
@@ -175,20 +173,19 @@ function HomeInner() {
   }, []);
 
   /* ---- Deploy Prime ---- */
-  const handleDeploy = async () => {
-    if (!newPrimeName.trim()) return;
+  const handleDeploy = async (name: string, zone: string) => {
     setDeploying(true);
 
     const result = await api<{ id: string; name: string }>("/api/primes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newPrimeName, zone: newPrimeZone }),
+      body: JSON.stringify({ name, zone }),
     });
 
     if (result) {
       api(`/api/primes/${result.id}/deploy`, { method: "POST" });
       dialog.toast({
-        message: `Deploying Prime "${result.name}" in ${newPrimeZone}…`,
+        message: `Deploying Prime "${result.name}" in ${zone}…`,
         variant: "success",
         duration: 5000,
       });
@@ -197,7 +194,6 @@ function HomeInner() {
 
     setShowDeploy(false);
     setDeploying(false);
-    setNewPrimeName("");
   };
 
   /* ---- Upgrade CoreKit (Prime) ---- */
@@ -371,47 +367,11 @@ function HomeInner() {
 
       {/* ---- Deploy Modal ---- */}
       {showDeploy && (
-        <div className={styles.modalOverlay} onClick={() => setShowDeploy(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalTitle}>Deploy New Prime</div>
-            <div className={styles.modalField}>
-              <label className={styles.modalLabel} htmlFor="deploy-prime-name">Instance Name</label>
-              <input
-                id="deploy-prime-name"
-                className="input"
-                placeholder="e.g. charlie"
-                autoFocus
-                value={newPrimeName}
-                onChange={(e) => setNewPrimeName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleDeploy(); }}
-              />
-            </div>
-            <div className={styles.modalField}>
-              <label className={styles.modalLabel} htmlFor="deploy-prime-zone">Zone</label>
-              <select
-                id="deploy-prime-zone"
-                className="input"
-                value={newPrimeZone}
-                onChange={(e) => setNewPrimeZone(e.target.value)}
-              >
-                {ZONES.map((z) => (
-                  <option key={z} value={z}>{z}</option>
-                ))}
-              </select>
-            </div>
-            <div className={styles.modalActions}>
-              <button className="btn btn-ghost" onClick={() => setShowDeploy(false)}>Cancel</button>
-              <button
-                id="deploy-prime-submit"
-                className="btn btn-primary"
-                onClick={handleDeploy}
-                disabled={!newPrimeName.trim() || deploying}
-              >
-                {deploying ? "Deploying…" : "Deploy"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DeployPrimeModal
+          onClose={() => setShowDeploy(false)}
+          onDeploy={handleDeploy}
+          deploying={deploying}
+        />
       )}
 
       {/* ---- Hire Agent Modal ---- */}
@@ -425,79 +385,23 @@ function HomeInner() {
 
       {/* ---- Action Required Modal ---- */}
       {actionModal && (
-        <div className={styles.modalOverlay} onClick={() => setActionModal(null)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.actionModalHeader}>
-              <span className={styles.actionModalIcon}>⚠</span>
-              <span className={styles.modalTitle} style={{ marginBottom: 0 }}>
-                {actionModal.action.title}
-              </span>
-            </div>
-            <div className={styles.actionModalAgent}>
-              Agent: <strong>{actionModal.agentName}</strong>
-            </div>
-            <ol className={styles.actionModalSteps}>
-              {actionModal.action.instructions.map((inst, idx) => (
-                <li key={idx}>{inst}</li>
-              ))}
-            </ol>
-            <div className={styles.modalActions}>
-              <button className="btn" onClick={() => setActionModal(null)}>Close</button>
-              <button
-                className="btn btn-primary"
-                onClick={() => handleConfirmSetup(actionModal.primeId, actionModal.agentName)}
-              >
-                ✓ Done — I completed these steps
-              </button>
-            </div>
-          </div>
-        </div>
+        <ActionRequiredModal
+          agentName={actionModal.agentName}
+          action={actionModal.action}
+          onClose={() => setActionModal(null)}
+          onConfirm={() => handleConfirmSetup(actionModal.primeId, actionModal.agentName)}
+        />
       )}
 
       {/* ---- Delete Prime Confirmation Modal ---- */}
       {deleteConfirm && (
-        <div className={styles.modalOverlay} onClick={() => setDeleteConfirm(null)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.deleteModalHeader}>
-              <span className={styles.deleteModalIcon}>🗑</span>
-              <span className={styles.modalTitle} style={{ marginBottom: 0 }}>
-                Delete Prime
-              </span>
-            </div>
-            <div className={styles.deleteModalPrime}>
-              Prime: <strong>{deleteConfirm.primeName}</strong>
-            </div>
-            {!deleteConfirm.canDelete ? (
-              <div className={styles.deleteBlockNotice}>
-                <div className={styles.deleteBlockTitle}>⚠ Cannot delete — active fleet agents</div>
-                <div className={styles.deleteBlockDesc}>
-                  All fleet agents must be fired before deleting this Prime.
-                </div>
-                <div className={styles.deleteBlockAgents}>
-                  {deleteConfirm.activeFleet.map(name => (
-                    <span key={name} className={styles.deleteBlockAgent}>{name}</span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className={styles.deleteWarning}>
-                This will permanently delete the VM and stop all billing. The Prime can be re-deployed later.
-              </div>
-            )}
-            <div className={styles.modalActions}>
-              <button className="btn btn-ghost" onClick={() => setDeleteConfirm(null)}>Cancel</button>
-              {deleteConfirm.canDelete && (
-                <button
-                  id="confirm-delete-prime"
-                  className={`btn ${styles.deleteConfirmBtn}`}
-                  onClick={confirmDeletePrime}
-                >
-                  Delete Prime
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <ConfirmDeleteModal
+          primeName={deleteConfirm.primeName}
+          activeFleet={deleteConfirm.activeFleet}
+          canDelete={deleteConfirm.canDelete}
+          onClose={() => setDeleteConfirm(null)}
+          onConfirm={confirmDeletePrime}
+        />
       )}
     </div>
   );

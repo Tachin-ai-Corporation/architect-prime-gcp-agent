@@ -5,24 +5,6 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-const ICON_MAP: Record<string, string> = {
-  cortex: "🧩",
-  prefrontal: "🎯",
-  "temporal-research": "🔬",
-  "temporal-memory": "💾",
-  motor: "⚡",
-  cerebellum: "✅",
-};
-
-const LABEL_MAP: Record<string, string> = {
-  cortex: "Cortex",
-  prefrontal: "Prefrontal",
-  "temporal-research": "Temporal Research",
-  "temporal-memory": "Temporal Memory",
-  motor: "Motor",
-  cerebellum: "Cerebellum",
-};
-
 export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
     const { id: primeId } = await ctx.params;
@@ -64,9 +46,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
       return {
         key,
-        label: LABEL_MAP[key] || key.charAt(0).toUpperCase() + key.slice(1),
         desc,
-        icon: ICON_MAP[key] || "🔸",
         defaultModel: data.model || "",
         tools: data.tools || [],
       };

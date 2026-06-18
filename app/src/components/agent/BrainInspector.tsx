@@ -56,12 +56,30 @@ interface BrainInspectorProps {
 
 interface SlotDef {
   key: string;
-  label: string;
+  label?: string;
   desc: string;
-  icon: string;
+  icon?: string;
   defaultModel: string;
   tools: string[];
 }
+
+const ORGAN_ICONS: Record<string, string> = {
+  cortex: "🧩",
+  prefrontal: "🎯",
+  "temporal-research": "🔬",
+  "temporal-memory": "💾",
+  motor: "⚡",
+  cerebellum: "✅",
+};
+
+const ORGAN_LABELS: Record<string, string> = {
+  cortex: "Cortex",
+  prefrontal: "Prefrontal",
+  "temporal-research": "Temporal Research",
+  "temporal-memory": "Temporal Memory",
+  motor: "Motor",
+  cerebellum: "Cerebellum",
+};
 
 const DAEMON_SLOTS = [
   { key: "ears", label: "Ears", desc: "Input preprocessor", icon: "👂" },
@@ -454,6 +472,8 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
           const isPending = !!pendingChanges[key];
           const displayModel = modelId === "—" ? "—" : getDisplayName(modelId, modelsData?.models || []);
           const shortId = modelId === "—" ? "" : (DAEMON_KEYS.has(key) ? modelId : stripPrefix(modelId));
+          const resolvedLabel = ORGAN_LABELS[key] || label || key.charAt(0).toUpperCase() + key.slice(1);
+          const resolvedIcon = ORGAN_ICONS[key] || icon || "🔸";
 
           return (
             <button
@@ -463,8 +483,8 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
               id={`brain-slot-${key}`}
               disabled={loadingLive}
             >
-              <span className={styles.slotIcon}>{icon}</span>
-              <span className={styles.slotLabel}>{label}</span>
+              <span className={styles.slotIcon}>{resolvedIcon}</span>
+              <span className={styles.slotLabel}>{resolvedLabel}</span>
               <span className={styles.slotDesc}>{desc}</span>
               {loadingLive ? (
                 <span className={styles.slotModelLoading}>scanning…</span>
@@ -487,7 +507,11 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" id="brain-picker-modal">
             <div className={styles.modalHeader}>
               <h2 className={styles.modalTitle}>
-                Select model for {[...DAEMON_SLOTS, ...slots].find((s) => s.key === pickerSlot)?.label}
+                Select model for {(() => {
+                  const s = [...DAEMON_SLOTS, ...slots].find((s) => s.key === pickerSlot);
+                  if (!s) return "";
+                  return ORGAN_LABELS[s.key] || s.label || s.key.charAt(0).toUpperCase() + s.key.slice(1);
+                })()}
               </h2>
               <button className={styles.modalClose} onClick={() => setPickerSlot(null)} aria-label="Close">✕</button>
             </div>

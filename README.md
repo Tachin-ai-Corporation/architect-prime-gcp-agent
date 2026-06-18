@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.18.3.2 | 2026-06-18 | Final Gaps Decomposition: decomposed processes page into modular subcomponents (StepEditor, ParamEditor, ProcessDetailView, ProcessListView, CreateProcessModal) (Item 1), shared projects components on the global page (Item 2), extracted home page modals (Item 3), and decoupled presentation maps from brain-config API (Item 4).
 | v2026.06.18.3.1 | 2026-06-18 | CI & Validation Fixes: fixed SyntaxError due to missing closing brace in agent-brain.mjs, converted validate-contracts script to use relative paths in repo mode for cross-platform compatibility, and added firebase-hosting-diagnostics skill files to job-devops manifest.
 | v2026.06.18.3.0 | 2026-06-18 | Second Audit Gaps Resolution: fixed potential fallback criteria crash in checkpoint-executor.mjs via toStr() (Gap 1), corrected github.ts to fail closed in production while permitting local/build defaults (Gap 3), and enabled prompt caching (anthropic_prompt_caching) in contracts.json (Gap 5).
 | v2026.06.18.2.0 | 2026-06-18 | Dashboard Audit Gaps Resolution: unified model scan routes under global endpoint /api/models/scan?primeId=... and deleted legacy prime route (D1.4), decomposed settings/page.tsx into 5 distinct tab components under components/settings/ (Issue 2) and restored DWDGuide for onboarding, decomposed projects/page.tsx into modular components under components/projects/ (Issue 3), and verified clean compilation (no tsc errors).

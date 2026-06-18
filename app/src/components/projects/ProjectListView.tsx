@@ -10,7 +10,8 @@ import type { ProjectSummary } from "./types";
 import styles from "@/app/p/[id]/projects/page.module.css";
 
 interface ProjectListViewProps {
-  primeId: string;
+  primeId?: string;
+  teamFilter?: string | null;
 }
 
 function truncate(text: string, max: number): string {
@@ -18,7 +19,7 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + "…" : text;
 }
 
-export function ProjectListView({ primeId }: ProjectListViewProps) {
+export function ProjectListView({ primeId, teamFilter }: ProjectListViewProps) {
   const router = useRouter();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,20 +30,26 @@ export function ProjectListView({ primeId }: ProjectListViewProps) {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const data = await api<{ projects: ProjectSummary[] }>(`/api/projects`);
+      const filter = primeId || teamFilter;
+      const url = filter ? `/api/projects?team=${encodeURIComponent(filter)}` : `/api/projects`;
+      const data = await api<{ projects: ProjectSummary[] }>(url);
       if (!cancelled) {
         setProjects(data?.projects ?? []);
         setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [primeId]);
+  }, [primeId, teamFilter]);
 
   const handleSelectProject = useCallback(
     (projectId: string) => {
-      router.push(`/projects?project=${projectId}`);
+      if (primeId) {
+        router.push(`/p/${primeId}/projects?project=${projectId}`);
+      } else {
+        router.push(`/projects?project=${projectId}`);
+      }
     },
-    [router]
+    [primeId, router]
   );
 
   /* Build hierarchy: top-level + children map */
@@ -90,7 +97,7 @@ export function ProjectListView({ primeId }: ProjectListViewProps) {
       {/* Parent link */}
       {proj.parent_id && (
         <Link
-          href={`/projects?project=${proj.parent_id}`}
+          href={primeId ? `/p/${primeId}/projects?project=${proj.parent_id}` : `/projects?project=${proj.parent_id}`}
           className={styles.parentLink}
           onClick={(e) => e.stopPropagation()}
         >
@@ -117,7 +124,7 @@ export function ProjectListView({ primeId }: ProjectListViewProps) {
           {proj.depends_on.map((dep) => (
             <Link
               key={dep}
-              href={`/projects?project=${dep}`}
+              href={primeId ? `/p/${primeId}/projects?project=${dep}` : `/projects?project=${dep}`}
               className={styles.depChip}
               onClick={(e) => e.stopPropagation()}
             >
@@ -163,6 +170,11 @@ export function ProjectListView({ primeId }: ProjectListViewProps) {
       <div className={styles.pgHeader}>
         <h1 className={styles.pgTitle}>Projects</h1>
         <span className={styles.countPill}>{projects.length} total</span>
+        {teamFilter && (
+          <span className={styles.countPill} style={{ marginLeft: 4 }}>
+            team: {teamFilter}
+          </span>
+        )}
       </div>
       <div className={styles.pgSub}>
         Manage project context, track missions, and coordinate agents
