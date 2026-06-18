@@ -1166,6 +1166,15 @@ export function createProcessEngine(deps) {
 
         if (verifyResult.success && verifyResult.output) {
           const verdict = extractVerdict(verifyResult.output);
+
+          // Phase 5.4: Handle missing verdict (no tool called)
+          if (!verdict) {
+            log('WARN', `[TELEMETRY] verification_no_verdict checkpoint=${(cEnvelope.accept_criteria || cEnvelope.instruction || '').substring(0, 80)} — cerebellum returned text without calling verdict tool`);
+            log('WARN', `Process CP${cpNum}: verification inconclusive — no verdict tool called, continuing`);
+            // Don't fail, don't pass — continue to next checkpoint with this one flagged
+            continue;
+          }
+
           if (verdict === 'FAIL') {
             const recommendation = extractFailRecommendation(verifyResult.output);
             log('WARN', `Process CP${cpNum}: verification FAIL`);
@@ -1177,10 +1186,6 @@ export function createProcessEngine(deps) {
             cpFailed = true;
           } else if (verdict === 'PASS') {
             log('INFO', `Process CP${cpNum}: verification PASS`);
-          } else {
-            // No verdict tool called — flag for review, don't fail the checkpoint
-            log('WARN', `[TELEMETRY] verification_no_verdict: Process CP${cpNum} — cerebellum did not call verdict tool. Continuing.`);
-            log('WARN', `Process CP${cpNum}: verification inconclusive — cerebellum did not render verdict tool`);
           }
         }
       }

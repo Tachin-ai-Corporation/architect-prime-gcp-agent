@@ -226,15 +226,54 @@ for (const x of t.types) console.log(x.id);
     fi
   done
 
-  # ---- Check 10b: idempotency config fields (CP6) ----
-  for field in step_ledger_enabled checkpoint_resume_enabled claim_stale_ms; do
+  # ---- Check 10b: idempotency config fields (fail closed) ----
+  for field in step_ledger_enabled checkpoint_resume_enabled; do
     VAL="$(read_contract "dispatch.${field}" 2>/dev/null || echo '')"
-    if [[ -n "$VAL" ]]; then
-      pass "dispatch.${field} = ${VAL}"
+    if [[ "$VAL" == "true" || "$VAL" == "false" ]]; then
+      pass "dispatch.${field} = ${VAL} (boolean)"
     else
-      warn "dispatch.${field} missing from contracts.json (defaults will apply)"
+      fail "dispatch.${field} = '${VAL}' (expected boolean: true/false)"
     fi
   done
+
+  # claim_stale_ms: must be number ≥ 60000
+  CSM="$(read_contract 'dispatch.claim_stale_ms' 2>/dev/null || echo '')"
+  if [[ "$CSM" =~ ^[0-9]+$ ]] && [[ "$CSM" -ge 60000 ]]; then
+    pass "dispatch.claim_stale_ms = ${CSM} (≥ 60000)"
+  else
+    fail "dispatch.claim_stale_ms = '${CSM}' (expected number ≥ 60000)"
+  fi
+
+  # prior_results_max: optional number ≥ 10
+  PRM="$(read_contract 'dispatch.prior_results_max' 2>/dev/null || echo '')"
+  if [[ -z "$PRM" ]]; then
+    pass "dispatch.prior_results_max not set (optional, default 25)"
+  elif [[ "$PRM" =~ ^[0-9]+$ ]] && [[ "$PRM" -ge 10 ]]; then
+    pass "dispatch.prior_results_max = ${PRM} (≥ 10)"
+  else
+    fail "dispatch.prior_results_max = '${PRM}' (expected number ≥ 10)"
+  fi
+
+  # evidence_floor_exclude_skills: must be array
+  EFES="$(node -e "
+const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
+const v = c.dispatch?.evidence_floor_exclude_skills;
+if (!Array.isArray(v)) { console.log('NOT_ARRAY'); process.exit(1); }
+console.log(v.length);
+" 2>/dev/null || echo 'NOT_ARRAY')"
+  if [[ "$EFES" != "NOT_ARRAY" ]]; then
+    pass "dispatch.evidence_floor_exclude_skills is array (${EFES} entries)"
+  else
+    fail "dispatch.evidence_floor_exclude_skills missing or not an array"
+  fi
+
+  # ---- Check 10c: utility enforce_schema tunables ----
+  ESTO="$(read_contract 'utility.enforce_schema_timeout_ms' 2>/dev/null || echo '')"
+  if [[ "$ESTO" =~ ^[0-9]+$ ]] && [[ "$ESTO" -ge 1000 ]]; then
+    pass "utility.enforce_schema_timeout_ms = ${ESTO}"
+  else
+    fail "utility.enforce_schema_timeout_ms = '${ESTO}' (expected number ≥ 1000)"
+  fi
 
   # ---- Check 11: projects config fields ----
   for field in context_max_tokens promotion_auto archive_completed_after_days; do

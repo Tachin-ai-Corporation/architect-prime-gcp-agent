@@ -109,6 +109,7 @@
     },
     "timeout_ms": 30000,
     "enforce_schema_timeout_ms": 8000,
+    "enforce_schema_max_attempts": 2,
     "disable_thinking": true
   },
   "workspaces": {
