@@ -1,13 +1,15 @@
 {
   "id": "fleet-upgrade",
   "name": "Fleet Upgrade",
-  "version": "1.0.0",
-  "description": "Upgrade a fleet agent's CoreKit to the latest version",
+  "version": 2,
+  "description": "Upgrade a fleet agent's CoreKit to the latest version.",
   "author": "architect-prime",
   "origin": "core",
   "category": "fleet",
   "agent_part": "motor",
-  "scripts": [],
+  "scripts": [
+    "fleet-upgrade"
+  ],
   "requires": {},
-  "when_to_use": "When upgrading, updating, or patching a fleet agent's tools"
+  "when_to_use": "When upgrading, updating, or patching a fleet agent's tools."
 }

@@ -1,16 +1,17 @@
-# Skill: fleet-upgrade
+# Skill: Fleet Upgrade
 
-## What this skill does
-Upgrades a fleet agent's CoreKit to the latest version. Returns in seconds — the actual upgrade runs in background.
+## When to Use
+When upgrading, updating, or patching a deployed fleet agent's CoreKit installation to the latest version.
 
-## When to use
-- User asks to upgrade, update, or patch an agent
-- User says "upgrade stan" or "update anora's corekit"
+## Commands
 
-## Command
-```
-fleet-upgrade --name <name>
-```
+### Write
+- `fleet-upgrade --name <name>` — Trigger a background upgrade process for the specified agent.
+  Output: Status confirmation indicating that the upgrade has been triggered.
 
-### Arguments
-- `--name` — Agent name to upgrade (e.g. "stan", "anora")
+## Procedures
+
+### Upgrade a fleet agent
+1. Identify the name of the fleet agent to upgrade (e.g., `stan`).
+2. Run `fleet-upgrade --name stan`.
+3. Verify: Wait 30 seconds, then run `fleet-status --name stan` and check that the agent's CoreKit version is updated and its status is healthy.
