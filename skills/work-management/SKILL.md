@@ -1,16 +1,43 @@
-# Skill: work-management
+# Skill: Culture of Work Tools
 
-## What this skill does
-CRUD operations for responsibilities, projects, and processes — the core
-R/M/C/T (Responsibility → Mission → Checkpoint → Task) infrastructure.
+## When to Use
+When creating, updating, listing, or querying responsibilities, projects, or processes in the R/M/C/T architecture.
 
-## When to use
-When Cortex dispatches you to create, update, list, query, or remove
-responsibilities, projects, or processes.
+## Commands
+
+### Write
+- `responsibility-manage` — Manage responsibility configurations.
+  - Subcommands: `list`, `create '<json>'`, `update '<id>' '<json>'`, `remove '<id>'`, `toggle '<id>' [on|off]`.
+  - Output: Status or configuration JSON.
+- `project-manage` — Manage project details and teams in Firestore.
+  - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `complete '<id>'`, `pause '<id>'`, `archive '<id>'`, `team-add '<id>' '<json>'`, `team-remove '<id>' '<email>'`, `team-list '<id>'`.
+  - Output: Status confirmation, team lists, or project JSON.
+- `process-manage` — Manage deterministic process definitions in Firestore.
+  - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `deprecate '<id>'`.
+  - Output: Status, version updates, or process JSON.
+
+## Procedures
+
+### Create a new project and add team members
+1. Define the project details in a JSON string (with fields like `id`, `name`, `description`, `goal`, `context`).
+2. Run `project-manage create '<json>'` to create the project.
+3. Add team members by running `project-manage team-add <project_id> "<member_email>" "<role>"`.
+4. Verify: Run `project-manage team-list <project_id>` and confirm the team members are added.
+
+### Create and update a responsibility
+1. Define a responsibility config as a JSON string containing `id`, `name`, `schedule`, and `instruction`.
+2. Run `responsibility-manage create '<json>'` to add it.
+3. Verify: Run `responsibility-manage list` and check that the responsibility ID appears.
+4. Update the responsibility by running `responsibility-manage update '<id>' '<partial-json>'`.
+
+### Create a process definition
+1. Format process steps as a JSON array of step objects, including `title` and `description`.
+2. Run `process-manage create '<json>'` specifying `id`, `name`, `description`, and `steps`.
+3. Verify: Run `process-manage list` and confirm the process is listed.
 
 ---
 
-## Tools
+## Detailed Tool Reference
 
 ### responsibility-manage
 
