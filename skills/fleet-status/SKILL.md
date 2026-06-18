@@ -1,19 +1,21 @@
-# Skill: fleet-status
+# Skill: Fleet Status
 
-## What this skill does
-Shows the current status of deployed fleet agents. Reads live data from Firestore — always gives current state.
-
-## When to use
-- User asks about fleet status, active agents, or "who is deployed"
-- User asks "how's anora doing?" or "what agents do we have?"
+## When to Use
+When checking the live status of deployed fleet agents, active agents, or agent health metrics.
 
 ## Commands
-```
-fleet-status                   # All agents summary
-fleet-status --name <name>     # Single agent detailed view
-fleet-status --json            # Machine-readable JSON output
-fleet-status --name <name> --json
-```
 
-## Output
-Shows deploy progress steps, current status, and any actions still required.
+### Read
+- `fleet-status` [--name <name>] [--json] — Query live status and health records of deployed fleet agents from Firestore.
+  Output: Table or JSON representation of agent status, details, and active tasks.
+
+## Procedures
+
+### List all active fleet agents
+1. Run `fleet-status` to get a summary table of all deployed fleet agents.
+2. Verify: Ensure the output list displays status details (e.g., active, idle, offline) for each agent in the fleet.
+
+### Inspect a specific agent's details
+1. Identify the name of the fleet agent (e.g., `anora`).
+2. Run `fleet-status --name anora` to fetch details.
+3. Verify: Confirm the output displays active dispatches, deploy progress steps, and recent task history for the specific agent.
