@@ -38,6 +38,19 @@ IMAGE_REPO="${IMAGE_REPO:-us-docker.pkg.dev/${PROJECT_ID}/architect-prime}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 APP_VERSION="${APP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')}"
 
+# Auto-detect GitHub coordinates from local git remote if available
+GIT_REMOTE_URL="$(git remote get-url origin 2>/dev/null || echo '')"
+GH_OWNER_DEFAULT="Tachin-ai-Corporation"
+GH_REPO_DEFAULT="architect-prime-gcp-agent"
+
+if [[ "$GIT_REMOTE_URL" =~ github\.com[:/]([^/]+)/([^/.]+)(\.git)? ]]; then
+  GH_OWNER_DEFAULT="${BASH_REMATCH[1]}"
+  GH_REPO_DEFAULT="${BASH_REMATCH[2]}"
+fi
+
+GH_OWNER="${GH_OWNER:-$GH_OWNER_DEFAULT}"
+GH_REPO="${GH_REPO:-$GH_REPO_DEFAULT}"
+
 # Derived
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${IMAGE_REPO}/control-plane:${IMAGE_TAG}"
@@ -52,6 +65,7 @@ echo "║  Project:  ${PROJECT_ID}"
 echo "║  Region:   ${REGION}"
 echo "║  Service:  ${SERVICE_NAME}"
 echo "║  Image:    ${IMAGE}"
+echo "║  GitHub:   ${GH_OWNER}/${GH_REPO}"
 echo "╚════════════════════════════════════════════════════════╝"
 echo
 
@@ -248,7 +262,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
   --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production,DWD_CLIENT_ID=${DWD_CLIENT_ID},APP_VERSION=${APP_VERSION},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},NEXTAUTH_SECRET=${NEXTAUTH_SECRET},ALLOWED_DOMAIN=${ALLOWED_DOMAIN},NEXTAUTH_URL=WILL_BE_SET_AFTER_DEPLOY" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production,DWD_CLIENT_ID=${DWD_CLIENT_ID},APP_VERSION=${APP_VERSION},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},NEXTAUTH_SECRET=${NEXTAUTH_SECRET},ALLOWED_DOMAIN=${ALLOWED_DOMAIN},NEXTAUTH_URL=WILL_BE_SET_AFTER_DEPLOY,GH_OWNER=${GH_OWNER},GH_REPO=${GH_REPO}" \
   --set-secrets="GOOGLE_CLIENT_SECRET=dashboard-oauth-secret:latest" \
   --memory=512Mi \
   --cpu=1 \

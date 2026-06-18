@@ -3,7 +3,7 @@ import { primesCol, commandsCol } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
 import { seedCoreProcesses } from "@/lib/seed-processes";
 import { FieldValue } from "@google-cloud/firestore";
-import { GH_OWNER, GH_REPO } from "@/lib/github";
+import { getGitHubOwner, getGitHubRepo } from "@/lib/github";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -84,7 +84,8 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   } catch (err) {
     console.error(`[deploy] Error:`, err);
     await primesCol().doc(id).update({ status: "error" }).catch(() => {});
-    return NextResponse.json({ error: "Deploy failed" }, { status: 500 });
+    const errMsg = err instanceof Error ? err.message : "Deploy failed";
+    return NextResponse.json({ error: errMsg }, { status: 500 });
   }
 }
 
@@ -119,6 +120,10 @@ async function createVM(
   const machineType = `zones/${zone}/machineTypes/e2-medium`;
   const sourceImage = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts";
 
+  const ghOwner = getGitHubOwner();
+  const ghRepo = getGitHubRepo();
+  const startupScript = getStartupScript(ghOwner, ghRepo);
+
   // Get the project number for the default compute SA
   const projRes = await fetch(
     `https://cloudresourcemanager.googleapis.com/v1/projects/${projectId}`,
@@ -149,12 +154,12 @@ async function createVM(
     ],
     metadata: {
       items: [
-        { key: "startup-script", value: STARTUP_SCRIPT },
+        { key: "startup-script", value: startupScript },
         { key: "prime_id", value: primeId },
         { key: "agent_id", value: "prime" },
         { key: "core_ref", value: "main" },
-        { key: "gh_owner", value: GH_OWNER },
-        { key: "gh_repo", value: GH_REPO },
+        { key: "gh_owner", value: ghOwner },
+        { key: "gh_repo", value: ghRepo },
         { key: "gcp_project_id", value: projectId },
       ],
     },
@@ -196,23 +201,25 @@ async function createVM(
  * caused 5 consecutive deploy failures due to escape conflicts
  * (JS template → bash → python heredocs). Never again.
  */
-const STARTUP_SCRIPT = [
-  '#!/usr/bin/env bash',
-  'set -euo pipefail',
-  'exec > >(tee -a /var/log/prime-setup.log) 2>&1',
-  '',
-  '# Read repo coordinates from VM metadata',
-  'META="http://metadata.google.internal/computeMetadata/v1"',
-  'MH="Metadata-Flavor: Google"',
-  'CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo main)"',
-  `GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo ${GH_OWNER})"`,
-  `GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo ${GH_REPO})"`,
-  '',
-  '# Download and run the real bootstrap',
-  'SCRIPT_URL="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}/infra/bootstrap/prime-bootstrap.sh"',
-  'echo "==> Downloading bootstrap from: ${SCRIPT_URL}"',
-  'curl -fsSL "${SCRIPT_URL}" -o /tmp/prime-bootstrap.sh',
-  'chmod +x /tmp/prime-bootstrap.sh',
-  'exec bash /tmp/prime-bootstrap.sh',
-].join('\n');
+function getStartupScript(ghOwner: string, ghRepo: string): string {
+  return [
+    '#!/usr/bin/env bash',
+    'set -euo pipefail',
+    'exec > >(tee -a /var/log/prime-setup.log) 2>&1',
+    '',
+    '# Read repo coordinates from VM metadata',
+    'META="http://metadata.google.internal/computeMetadata/v1"',
+    'MH="Metadata-Flavor: Google"',
+    'CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo main)"',
+    `GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo ${ghOwner})"`,
+    `GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo ${ghRepo})"`,
+    '',
+    '# Download and run the real bootstrap',
+    'SCRIPT_URL="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}/infra/bootstrap/prime-bootstrap.sh"',
+    'echo "==> Downloading bootstrap from: ${SCRIPT_URL}"',
+    'curl -fsSL "${SCRIPT_URL}" -o /tmp/prime-bootstrap.sh',
+    'chmod +x /tmp/prime-bootstrap.sh',
+    'exec bash /tmp/prime-bootstrap.sh',
+  ].join('\n');
+}
 

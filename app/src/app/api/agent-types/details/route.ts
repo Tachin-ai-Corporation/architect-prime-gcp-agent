@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { GH_RAW_BASE } from "@/lib/github";
+import { getGitHubRawBase } from "@/lib/github";
 
-const GH_RAW = `${GH_RAW_BASE}/main`;
+const getGhRaw = () => `${getGitHubRawBase()}/main`;
 
 /** Default theme for types without explicit glyph/accent */
 const DEFAULT_THEME = { glyph: "🔹", accent: "#94a3b8" };
@@ -33,7 +33,7 @@ interface ResponsibilityEntry {
 /** Fetch JSON from GitHub, return null on failure */
 async function ghJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${GH_RAW}/${path}`, {
+    const res = await fetch(`${getGhRaw()}/${path}`, {
       next: { revalidate: 300 },
     });
     if (!res.ok) return null;

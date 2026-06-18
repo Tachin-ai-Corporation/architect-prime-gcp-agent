@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { GH_RAW_BASE } from "@/lib/github";
-
-const GITHUB_RAW_URL = `${GH_RAW_BASE}/main/corekit/config/agent-types.json`;
+import { getGitHubRawBase } from "@/lib/github";
 
 /**
  * GET /api/agent-types -- Return available agent types for hiring
@@ -12,7 +10,8 @@ const GITHUB_RAW_URL = `${GH_RAW_BASE}/main/corekit/config/agent-types.json`;
  */
 export async function GET() {
   try {
-    const res = await fetch(GITHUB_RAW_URL, {
+    const githubRawUrl = `${getGitHubRawBase()}/main/corekit/config/agent-types.json`;
+    const res = await fetch(githubRawUrl, {
       next: { revalidate: 300 }, // Cache for 5 minutes
     });
 

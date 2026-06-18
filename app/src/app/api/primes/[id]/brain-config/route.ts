@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GH_RAW_BASE } from "@/lib/github";
+import { getGitHubRawBase } from "@/lib/github";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -12,7 +12,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const agent = url.searchParams.get("agent") || "cortex";
 
     // 1. Fetch contracts.json for default subagent model
-    const contractsUrl = `${GH_RAW_BASE}/main/infra/contracts.json`;
+    const contractsUrl = `${getGitHubRawBase()}/main/infra/contracts.json`;
     let defaultDaemonModel = "gemini-2.5-flash";
     try {
       const contractsRes = await fetch(contractsUrl, { next: { revalidate: 300 } });
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     // 2. Fetch agent registry based on target agentName
     const registryName = agent === "prime" ? "agent-registry-prime.json" : "agent-registry.json";
-    const registryUrl = `${GH_RAW_BASE}/main/corekit/config/${registryName}`;
+    const registryUrl = `${getGitHubRawBase()}/main/corekit/config/${registryName}`;
     const registryRes = await fetch(registryUrl, { next: { revalidate: 300 } });
     if (!registryRes.ok) {
       throw new Error(`Failed to fetch ${registryName}: ${registryRes.status}`);

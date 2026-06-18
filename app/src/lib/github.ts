@@ -1,6 +1,6 @@
 // lib/github.ts — Central GitHub configuration
 // All GitHub coordinates come from environment variables.
-// Fails closed: missing vars throw at startup in production runtime, never silently default.
+// Fails closed: missing vars throw at runtime in production, never silently default.
 
 function resolveEnv(name: string, fallback: string): string {
   const value = process.env[name];
@@ -15,8 +15,19 @@ function resolveEnv(name: string, fallback: string): string {
   return value;
 }
 
-export const GH_OWNER = resolveEnv("GH_OWNER", "Tachin-ai-Corporation");
-export const GH_REPO = resolveEnv("GH_REPO", "architect-prime-gcp-agent");
+export function getGitHubOwner(): string {
+  return resolveEnv("GH_OWNER", "Tachin-ai-Corporation");
+}
 
-export const GH_RAW_BASE = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}`;
-export const GH_API_BASE = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}`;
+export function getGitHubRepo(): string {
+  return resolveEnv("GH_REPO", "architect-prime-gcp-agent");
+}
+
+export function getGitHubRawBase(): string {
+  return `https://raw.githubusercontent.com/${getGitHubOwner()}/${getGitHubRepo()}`;
+}
+
+export function getGitHubApiBase(): string {
+  return `https://api.github.com/repos/${getGitHubOwner()}/${getGitHubRepo()}`;
+}
+

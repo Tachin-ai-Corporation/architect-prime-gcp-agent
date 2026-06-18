@@ -3,7 +3,7 @@
 // Returns the parsed contracts data for the ContractsViewer component.
 
 import { NextResponse, NextRequest } from "next/server";
-import { GH_RAW_BASE } from "@/lib/github";
+import { getGitHubRawBase } from "@/lib/github";
 
 export async function GET(req: NextRequest) {
   const primeId = req.nextUrl.searchParams.get("primeId");
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   try {
     // Read contracts.json from the repository (canonical source)
     // The daemon validates this at bootstrap, so the repo version is authoritative.
-    const url = `${GH_RAW_BASE}/main/infra/contracts.json`;
+    const url = `${getGitHubRawBase()}/main/infra/contracts.json`;
     const res = await fetch(url, {
       next: { revalidate: 300 }, // Cache for 5 minutes
     });

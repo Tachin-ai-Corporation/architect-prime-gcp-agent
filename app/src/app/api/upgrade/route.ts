@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/require-auth";
 import { commandsCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
-import { GH_OWNER, GH_REPO } from "@/lib/github";
+import { getGitHubOwner, getGitHubRepo } from "@/lib/github";
 
 /**
  * Extract version from commit message.
@@ -37,8 +37,8 @@ function extractVersion(commitMessage: string): string {
 export async function GET() {
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
-    const ghOwner = process.env.GH_OWNER || GH_OWNER;
-    const ghRepo = process.env.GH_REPO || GH_REPO;
+    const ghOwner = process.env.GH_OWNER || getGitHubOwner();
+    const ghRepo = process.env.GH_REPO || getGitHubRepo();
     const deployedCommit = process.env.APP_COMMIT || "";
 
     let stableTagSha = "";
@@ -114,8 +114,9 @@ export async function GET() {
     });
   } catch (err) {
     console.error("[api/upgrade] GET error:", err);
+    const errMsg = err instanceof Error ? err.message : "Failed to check version";
     return NextResponse.json(
-      { error: "Failed to check version" },
+      { error: errMsg },
       { status: 500 }
     );
   }
@@ -142,8 +143,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
-    const ghOwner = process.env.GH_OWNER || GH_OWNER;
-    const ghRepo = process.env.GH_REPO || GH_REPO;
+    const ghOwner = process.env.GH_OWNER || getGitHubOwner();
+    const ghRepo = process.env.GH_REPO || getGitHubRepo();
     const region = process.env.REGION || "us-central1";
     const serviceName = process.env.SERVICE_NAME || "architect-prime";
     const image = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane:latest`;
@@ -203,6 +204,8 @@ export async function POST(req: NextRequest) {
       ...(nextAuthSecret ? [`NEXTAUTH_SECRET=${nextAuthSecret}`] : []),
       ...(allowedDomain ? [`ALLOWED_DOMAIN=${allowedDomain}`] : []),
       ...(nextAuthUrl ? [`NEXTAUTH_URL=${nextAuthUrl}`] : []),
+      `GH_OWNER=${ghOwner}`,
+      `GH_REPO=${ghRepo}`,
     ].join(",");
 
     // Submit Cloud Build: clone → build → push → deploy
@@ -314,8 +317,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("[api/upgrade] POST error:", err);
+    const errMsg = err instanceof Error ? err.message : "Failed to trigger upgrade";
     return NextResponse.json(
-      { success: false, error: "Failed to trigger upgrade" },
+      { success: false, error: errMsg },
       { status: 500 }
     );
   }

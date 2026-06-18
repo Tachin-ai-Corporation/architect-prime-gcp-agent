@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { GH_RAW_BASE, GH_API_BASE } from "@/lib/github";
+import { getGitHubRawBase, getGitHubApiBase } from "@/lib/github";
 
 /* ---- Types ---- */
 interface SkillManifest {
@@ -24,8 +24,8 @@ interface AgentType {
   glyph?: string;
 }
 
-const GITHUB_RAW = GH_RAW_BASE + "/main";
-const GITHUB_API = GH_API_BASE + "/contents";
+const getGitHubRaw = () => `${getGitHubRawBase()}/main`;
+const getGitHubApi = () => `${getGitHubApiBase()}/contents`;
 
 /* 5-minute cache */
 let catalogCache: { skills: SkillManifest[]; agentTypes: AgentType[]; ts: number } | null = null;
@@ -36,7 +36,7 @@ const CACHE_TTL = 5 * 60 * 1000;
  */
 async function listRepoDirs(path: string): Promise<string[]> {
   try {
-    const res = await fetch(`${GITHUB_API}/${path}`, {
+    const res = await fetch(`${getGitHubApi()}/${path}`, {
       headers: {
         Accept: "application/vnd.github.v3+json",
         "User-Agent": "architect-prime-dashboard",
@@ -53,7 +53,7 @@ async function listRepoDirs(path: string): Promise<string[]> {
 
 async function fetchJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${GITHUB_RAW}/${path}`, {
+    const res = await fetch(`${getGitHubRaw()}/${path}`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 300 },
     });
