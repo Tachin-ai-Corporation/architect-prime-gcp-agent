@@ -79,9 +79,9 @@ VM startup scripts are ~10-line stubs that curl bash from GitHub. Bootstrap chan
 
 ## V. The Culture of Work
 
-### C-14 · The eight primitives are a closed set
-Task, Checkpoint, Mission, Project, Process, Plan, Responsibility, Artifact. The set is closed. New coordination needs are expressed by composing these — adding a ninth primitive requires a canon amendment, not a clever PR.
-**Violation looks like:** a new envelope type; a "Sprint"/"Epic"/"Ticket" object in Firestore; a parallel work-tracking structure beside `primes/{id}/work`.
+### C-14 · The nine primitives are a closed set
+Responsibility → Mission → Checkpoint → Task form the execution spine. Project, Process, Plan, Artifact, and Skill are the supporting cast. These nine cover all structured work and all codified procedure; inventing new envelope types, work abstractions, or knowledge containers is forbidden without a canon amendment.
+**Violation looks like:** a new envelope type; a "Sprint"/"Epic"/"Ticket" object in Firestore; a parallel work-tracking structure beside `primes/{id}/work`; a knowledge container outside Skills.
 
 ### C-15 · R→M→C→T is the execution spine; no exceptions
 All executable work flows Responsibility (optional wrapper) → Mission → Checkpoint → Task. Missions are always flat — they never nest other Missions. Projects are the **sole** recursive primitive, max depth 4. Every Mission has a `project_id`; never null.

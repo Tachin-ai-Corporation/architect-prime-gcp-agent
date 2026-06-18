@@ -159,6 +159,21 @@ A skill is a solved problem, written down: distilled, versioned procedure that a
 
 **The daemon boundary:** Daemon functions — tools, modules, and capabilities that exist to run the pipeline itself — are invisible to brain agents. Brain agents discover tools exclusively through installed skills; the `runCommand` surface exposes nothing that a skill does not govern. A daemon tool appearing in a brain agent's context is a B-16 violation: it invites improvisation where procedure should govern, and couples agents to implementation details they must not depend on.
 
+**The five layers of a complete skill:** A skill's SKILL.md serves five distinct moments in the organ's execution. Not every skill needs all five — a single-command skill needs Layers 1–2 and an error table; a multi-command workflow skill needs all five.
+
+| Layer | Name | What it contains | When the organ reads it |
+|-------|------|-----------------|------------------------|
+| 1 | **Header** | What the skill does, when to use it | Before deciding whether to read further |
+| 2 | **Command Reference** | Exact syntax: command name, arguments, flags, output format | Before the first tool call |
+| 3 | **Procedures** | Multi-step workflows for the 3–5 most common tasks | Instead of reasoning from scratch on the 80% case |
+| 4 | **Error Recovery** | Failure-mode table: symptom → cause → recovery action | When a command fails, instead of retrying blindly |
+| 5 | **Examples** | 2–3 concrete task→tool-sequence→output pairs | To anchor chain-of-thought on a known-good pattern |
+
+A skill with only Layers 1–2 is a reference manual — it tells the organ what tools exist but not how to use them for real work. A skill with Layers 1–5 is a training program — it teaches the organ the procedure, the failure modes, and the patterns that experienced practitioners follow. The difference is measurable: per-skill telemetry (success rate, stuck rate, tool count) distinguishes reference-manual skills from training-program skills. The goal is for every high-traffic skill to reach Layer 4 or 5.
+
+See `docs/primitives/09-SKILL.md` for the full primitive definition and `docs/guides/SKILL_STANDARD.md` for the completeness grading criteria.
+
+
 ### B-17 · Where a skill exists, skill use is enforced — across every organ
 
 Skill consultation is a structural step in the loop, not an organ's discretionary choice. Before ACT — and during DECIDE and planning — the brain resolves the work at hand against the installed skill set; an applicable skill is injected into the acting organ's context, and from that moment **the procedure governs**. Improvising beside an applicable skill is a violation of this canon, not a style preference. Enforcement is universal:
