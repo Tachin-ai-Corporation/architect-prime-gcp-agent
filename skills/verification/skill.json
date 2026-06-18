@@ -1,10 +1,15 @@
 {
   "id": "verification",
   "name": "Task Verification",
-  "version": 1,
+  "version": 2,
+  "description": "Verify task outputs against acceptance criteria to render structured pass or fail verdicts.",
   "origin": "core",
   "category": "verification",
   "agent_part": "cerebellum",
-  "scripts": ["report_pass", "report_fail"],
-  "when_to_use": "When dispatched to verify a task output against acceptance criteria"
+  "scripts": [
+    "report_pass",
+    "report_fail"
+  ],
+  "requires": {},
+  "when_to_use": "When dispatched to verify a task output against acceptance criteria."
 }
