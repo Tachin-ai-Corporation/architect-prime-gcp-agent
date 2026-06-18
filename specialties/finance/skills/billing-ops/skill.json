@@ -1,13 +1,13 @@
 {
   "id": "billing-ops",
   "name": "GCP Billing Operations",
-  "version": "1.0.0",
-  "description": "GCP billing procedures — cost breakdown, budget tracking, trend analysis, anomaly detection, monthly summaries",
+  "version": 2,
+  "description": "GCP billing procedures — cost breakdown, budget tracking, trend analysis, anomaly detection, monthly summaries.",
   "author": "architect-prime",
   "origin": "specialty",
   "category": "finance",
   "agent_part": "motor",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When analyzing GCP billing data, tracking budgets, or generating cost reports"
+  "when_to_use": "When analyzing GCP billing data, tracking budgets, or generating cost reports."
 }
