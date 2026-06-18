@@ -1,38 +1,28 @@
-# Skill: web-search
+# Skill: Vertex AI Grounding Search
 
-## What this skill does
-Answers questions using real-time knowledge from Google Search via Vertex AI grounding.
-Also fetches and extracts content from specific URLs.
-This is a read-only skill — it does not modify any state or infrastructure.
+## When to Use
+When the task requires fetching real-time information or search results from the web, or retrieving raw text content from a specific URL.
 
-## When to use
-Dispatch to the `temporal-research` sub-agent when you need current, real-time
-information from the web. This is the ONLY sanctioned web-search path.
+## Commands
 
-## Tools
+### Read
+- `web-search "<question>"` — Search Google with Vertex AI grounding to get real-time answers.
+  Output: Grounded answer with search citations and source URLs.
+- `web-fetch "<url>"` — Extract raw text content from a specific web page.
+  Output: Markdown-formatted text of the page.
 
-### web-search
-```
-exec web-search "<question>"
-```
+## Important Notes
+- **Read-Only:** This is a read-only skill — it does not modify any state or infrastructure.
+- **Routing:** Do not call `web-search` directly from Cortex; always route research through a `temporal-research` sub-agent.
 
-Uses Vertex AI with Google Search grounding (model and region read from contracts.json).
-**Do NOT call web-search directly from Cortex** — route web research through
-the temporal-research pipeline step in your dispatch plan.
+## Procedures
 
-### web-fetch
-Fetch and extract content from a specific URL.
+### Research a current topic
+1. Define the specific question or topic of interest.
+2. Run `web-search "<question>"` to fetch real-time information.
+3. Verify: Ensure the output contains grounded answers and includes source citations.
 
-```
-exec web-fetch "<url>"
-```
-
-Returns the text content of the page. Useful for reading specific articles,
-documentation pages, or API responses found via web-search.
-
-## Behavior
-- Answer accurately and concisely
-- Use markdown formatting sparingly (bold, bullet points)
-- Keep responses under 3800 characters (truncated to fit Chat limit)
-- If you don't know something, say so honestly
-- Include source citations when available from grounding
+### Extract documentation or article details
+1. Run `web-search "<topic>"` to discover the relevant URL, or start with a known URL.
+2. Run `web-fetch "<url>"` to retrieve the webpage contents.
+3. Verify: Check that the output contains the page text, rather than navigation headers or error pages.
