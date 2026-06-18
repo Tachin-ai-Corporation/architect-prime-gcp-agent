@@ -1,13 +1,13 @@
 {
   "id": "bq-ops",
   "name": "BigQuery Operations",
-  "version": "1.0.0",
-  "description": "BigQuery procedures — table discovery, query execution, schema management, data loading, exports",
+  "version": 2,
+  "description": "BigQuery procedures — table discovery, query execution, schema management, data loading, exports.",
   "author": "architect-prime",
   "origin": "specialty",
   "category": "data",
   "agent_part": "motor",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When performing BigQuery operations via bq CLI — queries, schema changes, data loading, exports"
+  "when_to_use": "When performing BigQuery operations via bq CLI — queries, schema changes, data loading, exports."
 }
