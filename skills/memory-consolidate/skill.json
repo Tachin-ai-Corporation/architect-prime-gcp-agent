@@ -1,13 +1,13 @@
 {
   "id": "memory-consolidate",
   "name": "Memory Consolidation",
-  "version": "1.0.0",
-  "description": "Nightly consolidation of working memory, core memory reconciliation, and deep truths lifecycle",
+  "version": 2,
+  "description": "Nightly consolidation of working memory, core memory reconciliation, and deep truths lifecycle.",
   "author": "architect-prime",
   "origin": "core",
   "category": "memory",
   "agent_part": "temporal-memory",
   "scripts": [],
   "requires": {},
-  "when_to_use": "Automatically triggered by nightly cron — do not invoke manually"
+  "when_to_use": "Automatically triggered by nightly cron — do not invoke manually."
 }
