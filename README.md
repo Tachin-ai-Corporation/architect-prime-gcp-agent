@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.18.4.2 | 2026-06-18 | Upgrade Script Self-Overwrite Protection: Added a self-cloning pre-execution check to `upgrade-corekit` that copies the script to `/tmp/upgrade-corekit` and runs it from there, preventing shell offset corruption when the script file on disk is overwritten during upgrades. |
 | v2026.06.18.4.1 | 2026-06-18 | Command Runner & Manifest Fix: Fixed command-runner crashloop and brain daemon startup failures on VM upgrade by adding missing brain overhaul libraries and action handlers to base.txt manifest and updating upgrade-corekit to preserve/restore GCP_PROJECT_ID and PRIME_ID in command-runner.service on upgrade. |
 | v2026.06.18.4.0 | 2026-06-18 | Skill Library Upgrade: upgraded all 36 skills to meet or exceed Grade 3, with 5 workspace/fleet skills at Grade 5 (`workspace-drive`, `workspace-gmail`, `workspace-docs`, `fleet-fire`, `fleet-hire`) and 12 skills at Grade 4, ensuring 0 errors and 0 warnings under `validate-skills.mjs`.
 | v2026.06.18.3.3 | 2026-06-18 | GitHub Coordinates & Version Upgrade Fix: changed github.ts to lazy-resolve coordinates and base URLs via runtime functions to prevent Next.js startup crashes, updated 8 API route handlers to use dynamic getters, wrapped coordinate lookups in try/catch to return structured error details, auto-detected repository owner/repo in install.sh from git remote, and propagated coordinates during VM creation and dashboard upgrades.

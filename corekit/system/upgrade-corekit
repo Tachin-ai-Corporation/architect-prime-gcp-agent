@@ -11,6 +11,13 @@
 # ============================================================
 set -euo pipefail
 
+# Prevent shell self-overwrite syntax offset corruption during git pulls/upgrades by running from /tmp
+if [[ "$(readlink -f "${BASH_SOURCE[0]}")" != "/tmp/upgrade-corekit" ]]; then
+  cp "$(readlink -f "${BASH_SOURCE[0]}")" /tmp/upgrade-corekit
+  chmod +x /tmp/upgrade-corekit
+  exec /tmp/upgrade-corekit "$@"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CORE_ROOT="${CORE_ROOT:-/opt/corekit}"
 STATE_FILE="${CORE_ROOT}/corekit/STATE.json"
