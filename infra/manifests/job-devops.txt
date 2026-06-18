@@ -16,6 +16,8 @@ specialties/devops/brain/cerebellum/SOUL_APPEND.md corekit/specialties/devops/br
 # Specialty-specific skills (discovered by brain daemon at runtime)
 specialties/devops/skills/gcp-devops/SKILL.md corekit/specialties/devops/skills/gcp-devops/SKILL.md
 specialties/devops/skills/gcp-devops/skill.json corekit/specialties/devops/skills/gcp-devops/skill.json
+specialties/devops/skills/firebase-hosting-diagnostics/SKILL.md corekit/specialties/devops/skills/firebase-hosting-diagnostics/SKILL.md
+specialties/devops/skills/firebase-hosting-diagnostics/skill.json corekit/specialties/devops/skills/firebase-hosting-diagnostics/skill.json
 
 # Workspace skills — Google Drive
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md

@@ -34,7 +34,8 @@ else
   # Find repo root (walk up from script location looking for .git)
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   REPO_ROOT="$(cd "$SCRIPT_DIR" && while [[ ! -d .git ]] && [[ "$PWD" != "/" ]]; do cd ..; done; pwd)"
-  CONTRACTS="${REPO_ROOT}/infra/contracts.json"
+  cd "$REPO_ROOT"
+  CONTRACTS="infra/contracts.json"
 fi
 
 if [[ ! -f "$CONTRACTS" ]]; then
@@ -51,8 +52,11 @@ read_contract() {
 const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
 const keys = '$1'.split('.');
 let v = c;
-for (const k of keys) v = v[k];
-console.log(String(v));
+for (const k of keys) {
+  if (v === undefined || v === null) { v = undefined; break; }
+  v = v[k];
+}
+if (v !== undefined && v !== null) console.log(String(v));
 " 2>/dev/null
 }
 
@@ -71,7 +75,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   log "Checking repo files..."
 
   # ---- Check 1: fleet-bootstrap.sh .env GOOGLE_CLOUD_LOCATION ----
-  FLEET_BS="${REPO_ROOT}/infra/bootstrap/fleet-bootstrap.sh"
+  FLEET_BS="infra/bootstrap/fleet-bootstrap.sh"
   if [[ -f "$FLEET_BS" ]]; then
     if grep -q 'GOOGLE_CLOUD_LOCATION=${C_LOCATION}' "$FLEET_BS"; then
       pass "fleet-bootstrap.sh .env location = contract-driven"
@@ -84,7 +88,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   fi
 
   # ---- Check 2: prime-bootstrap.sh reads location from contracts ----
-  PRIME_BS="${REPO_ROOT}/infra/bootstrap/prime-bootstrap.sh"
+  PRIME_BS="infra/bootstrap/prime-bootstrap.sh"
   if [[ -f "$PRIME_BS" ]]; then
     if grep -q 'GOOGLE_CLOUD_LOCATION=${C_LOCATION}' "$PRIME_BS"; then
       pass "prime-bootstrap.sh .env location = contract-driven"
@@ -107,7 +111,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   fi
 
   # ---- Check 4: agent-ears.mjs model route ----
-  EARS_SCRIPT="${REPO_ROOT}/corekit/daemon/agent-ears.mjs"
+  EARS_SCRIPT="corekit/daemon/agent-ears.mjs"
   if [[ -f "$EARS_SCRIPT" ]]; then
     if grep -q "'brain/cortex'" "$EARS_SCRIPT"; then
       pass "agent-ears.mjs route = brain/cortex"
@@ -118,7 +122,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   fi
 
   # ---- Check 5: Skill SKILL.md/skill.json pairing in manifests ----
-  MANIFEST_DIR="${REPO_ROOT}/infra/manifests"
+  MANIFEST_DIR="infra/manifests"
   SKILL_PAIR_FAIL=0
   if [[ -d "$MANIFEST_DIR" ]]; then
     for manifest in "$MANIFEST_DIR"/*.txt; do
@@ -175,12 +179,12 @@ console.log(paths.includes(ws) ? 'yes' : 'no');
   fi
 
   # ---- Check 7: Specialty-id mapping ----
-  TYPES_FILE="${REPO_ROOT}/corekit/config/agent-types.json"
+  TYPES_FILE="corekit/config/agent-types.json"
   if [[ -f "$TYPES_FILE" ]]; then
     ID_FAIL=0
     while IFS= read -r TYPE_ID; do
       [[ -z "$TYPE_ID" ]] && continue
-      if [[ ! -d "${REPO_ROOT}/specialties/${TYPE_ID}" ]]; then
+      if [[ ! -d "specialties/${TYPE_ID}" ]]; then
         fail "Specialty-id: '${TYPE_ID}' has no specialties/${TYPE_ID}/ directory"
         ID_FAIL=$((ID_FAIL + 1))
       fi
@@ -295,7 +299,7 @@ console.log(v.length);
   fi
 
   # ---- Check 13: Process specialty values ∈ agent-types ids ----
-  PROCESS_DIR="${REPO_ROOT}/corekit/config/processes"
+  PROCESS_DIR="corekit/config/processes"
   if [[ -d "$PROCESS_DIR" && -f "$TYPES_FILE" ]]; then
     PROC_FAIL=0
     VALID_IDS=$(node -e "
@@ -333,8 +337,8 @@ findSpecialties(d);
   # Verify: agent-types skills[] ↔ specialty dir ↔ manifest install lines
   if [[ -f "$TYPES_FILE" ]]; then
     TRI_FAIL=0
-    MANIFEST_DIR="${REPO_ROOT}/infra/manifests"
-    SPEC_DIR="${REPO_ROOT}/specialties"
+    MANIFEST_DIR="infra/manifests"
+    SPEC_DIR="specialties"
     while IFS= read -r type_id; do
       [[ -z "$type_id" ]] && continue
       JOB_MANIFEST="${MANIFEST_DIR}/job-${type_id}.txt"

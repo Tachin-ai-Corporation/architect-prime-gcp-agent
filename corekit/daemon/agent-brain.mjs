@@ -2177,6 +2177,7 @@ async function cascadeCancelChildren(parentId) {
         // Recurse for grandchildren
         await cascadeCancelChildren(child.id);
       }
+    }
     nextPageToken = data.nextPageToken || null;
   } while (nextPageToken);
   if (cancelCount > 0) log('INFO', `Cascade-cancelled ${cancelCount} children of ${parentId}`);
