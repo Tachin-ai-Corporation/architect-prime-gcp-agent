@@ -4,8 +4,8 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.06.18.4.0)
-6 brain agents in gateway multi-agent configuration, coordinated by the `agent-brain.service` state machine. Brain daemon builds `skill_index` deterministically at startup and injects into cortex payloads with `intent_keywords` for process selection. System prompt = SOUL.md only (no TOOLS.md injection). `assemble-persona` handles specialty SOUL appends at bootstrap. Motor dispatches receive full project context (`_projectContext`) and raw user request (`_sourceText`) as first-class user message sections. LoopGuard provides duplicate detection, semantic stuck detection, and structured `[STUCK REPORT]` output. Completed full skill library upgrade: all 36 skills are validated at Grade >= 3, with workspace-drive, workspace-gmail, workspace-docs, fleet-fire, and fleet-hire at Grade 5.
+## Current State (v2026.06.18.4.1)
+6 brain agents in gateway multi-agent configuration, coordinated by the `agent-brain.service` state machine. Brain daemon builds `skill_index` deterministically at startup and injects into cortex payloads with `intent_keywords` for process selection. System prompt = SOUL.md only (no TOOLS.md injection). `assemble-persona` handles specialty SOUL appends at bootstrap. Motor dispatches receive full project context (`_projectContext`) and raw user request (`_sourceText`) as first-class user message sections. LoopGuard provides duplicate detection, semantic stuck detection, and structured `[STUCK REPORT]` output. Completed full skill library upgrade: all 36 skills are validated at Grade >= 3, with workspace-drive, workspace-gmail, workspace-docs, fleet-fire, and fleet-hire at Grade 5. Fixed command-runner crashloop and brain daemon startup failures on VM upgrade by adding missing brain overhaul libraries and action handlers to base.txt manifest and updating upgrade-corekit to preserve/restore GCP_PROJECT_ID and PRIME_ID in command-runner.service on upgrade.
 
 ### Agent Inventory
 

@@ -137,8 +137,63 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
     for unit_file in "${CORE_ROOT}"/corekit/*.service "${CORE_ROOT}"/corekit/*.timer; do
       [[ -f "$unit_file" ]] || continue
       UNIT_NAME="$(basename "$unit_file")"
+      
+      # Determine if we need to update/re-install the unit
+      NEEDS_INSTALL=0
       if ! diff -q "$unit_file" "/etc/systemd/system/${UNIT_NAME}" >/dev/null 2>&1; then
-        cp "$unit_file" "/etc/systemd/system/${UNIT_NAME}"
+        NEEDS_INSTALL=1
+      elif [[ "$UNIT_NAME" == "command-runner.service" ]]; then
+        # If it is command-runner.service, also check if it lacks GCP_PROJECT_ID/PRIME_ID
+        if ! grep -q "GCP_PROJECT_ID" "/etc/systemd/system/${UNIT_NAME}" 2>/dev/null; then
+          NEEDS_INSTALL=1
+        fi
+      fi
+
+      if [[ "$NEEDS_INSTALL" -eq 1 ]]; then
+        # For command-runner.service, resolve and inject GCP_PROJECT_ID and PRIME_ID
+        if [[ "$UNIT_NAME" == "command-runner.service" ]]; then
+          OLD_PROJECT_ID=""
+          OLD_PRIME_ID=""
+          OLD_CORE_ROOT=""
+          OLD_AGENT_ID=""
+          if [[ -f "/etc/systemd/system/${UNIT_NAME}" ]]; then
+            OLD_PROJECT_ID=$(grep "GCP_PROJECT_ID=" "/etc/systemd/system/${UNIT_NAME}" | cut -d= -f3 | tr -d '"' || echo "")
+            OLD_PRIME_ID=$(grep "PRIME_ID=" "/etc/systemd/system/${UNIT_NAME}" | cut -d= -f3 | tr -d '"' || echo "")
+            OLD_CORE_ROOT=$(grep "CORE_ROOT=" "/etc/systemd/system/${UNIT_NAME}" | cut -d= -f3 | tr -d '"' || echo "")
+            OLD_AGENT_ID=$(grep "AGENT_ID=" "/etc/systemd/system/${UNIT_NAME}" | cut -d= -f3 | tr -d '"' || echo "")
+          fi
+
+          if [[ -z "$OLD_PROJECT_ID" ]]; then
+            OLD_PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo "")"
+          fi
+          if [[ -z "$OLD_PRIME_ID" ]]; then
+            if [[ -f "$STATE_FILE" ]]; then
+              OLD_PRIME_ID="$(json_value "primeId" "$STATE_FILE" 2>/dev/null || true)"
+            fi
+          fi
+          if [[ -z "$OLD_CORE_ROOT" ]]; then
+            OLD_CORE_ROOT="$CORE_ROOT"
+          fi
+
+          cp "$unit_file" "/etc/systemd/system/${UNIT_NAME}"
+          
+          # Inject preserved/resolved env vars right under [Service]
+          if [[ -n "$OLD_PROJECT_ID" ]]; then
+            sed -i "/\[Service\]/a Environment=GCP_PROJECT_ID=${OLD_PROJECT_ID}" "/etc/systemd/system/${UNIT_NAME}"
+          fi
+          if [[ -n "$OLD_PRIME_ID" ]]; then
+            sed -i "/\[Service\]/a Environment=PRIME_ID=${OLD_PRIME_ID}" "/etc/systemd/system/${UNIT_NAME}"
+          fi
+          if [[ -n "$OLD_CORE_ROOT" ]]; then
+            sed -i "/\[Service\]/a Environment=CORE_ROOT=${OLD_CORE_ROOT}" "/etc/systemd/system/${UNIT_NAME}"
+          fi
+          if [[ -n "$OLD_AGENT_ID" ]]; then
+            sed -i "/\[Service\]/a Environment=AGENT_ID=${OLD_AGENT_ID}" "/etc/systemd/system/${UNIT_NAME}"
+          fi
+        else
+          cp "$unit_file" "/etc/systemd/system/${UNIT_NAME}"
+        fi
+        
         echo "  Installed: ${UNIT_NAME}"
         UNITS_CHANGED=1
       fi
