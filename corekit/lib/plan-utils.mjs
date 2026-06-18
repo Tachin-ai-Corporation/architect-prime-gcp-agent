@@ -29,8 +29,8 @@ export function extractCheckpoints(d, log = () => {}) {
   return raw.map((cp, i) => ({
     instruction: cp.instruction || cp.title || cp.description || `Checkpoint ${i + 1}`,
     accept_criteria: cp.accept_criteria || '',
-    tasks: (Array.isArray(cp.tasks) ? cp.tasks : (cp.steps || [])).filter(t => {
-      // Validate task has agent and instruction
+    tasks: (Array.isArray(cp.tasks) ? cp.tasks : (cp.steps || cp.parts || [])).filter(t => {
+      // Validate task has agent and instruction (or task)
       if (!t.agent || typeof t.agent !== 'string') {
         log('WARN', `Checkpoint ${i + 1}: skipping task without agent field`);
         return false;
