@@ -1,26 +1,20 @@
-# Skill Introspection
+# Skill: Skill Introspection
 
-## Overview
-Skills are the single source of truth for tool documentation (Canon B-16).
-You discover what's available from the `skill_index` in your cortex payload,
-then read specific skill docs on-demand.
+## When to Use
+When you need to know what skills are available, what tools motor can use, or exact tool syntax for a dispatch instruction.
 
-## How Skills Work
-- **Cortex/Prefrontal**: Receive `skill_index` in every classify/decide payload
-  — a structured table of skill name, target agent(s), and when to use
-- **All agents**: Can read any skill's full docs on-demand:
-  `readFile /opt/corekit/skills/<name>/SKILL.md`
-- **Skill files on disk**: `/opt/corekit/skills/<name>/SKILL.md`
+## Commands
 
-## How to Use Skills in Dispatch
-1. Check `skill_index` in your payload to find the right skill
-2. Reference the skill by name in your dispatch instruction
-3. The execution agent reads the SKILL.md for exact syntax
+No executable commands are governed directly by this skill.
 
-## Discovering Skills
-- `skill_index` in cortex payload shows all installed skills
-- Custom skills may be at `/opt/corekit/workspace/custom-skills/`
-- List all: `ls /opt/corekit/skills/`
+## Procedures
 
-## Key Principle
-Never guess at tool syntax. Skills are the single source of truth.
+### Discover and read skill documentation
+1. Check the `skill_index` in the cortex payload to find matching skills.
+2. Read the full documentation of a specific skill using `readFile` on `/opt/corekit/skills/<name>/SKILL.md`.
+3. Verify: Confirm the target skill's commands and procedures are correctly understood before executing or dispatching the task.
+
+## Key Principles
+- **Single Source of Truth:** Skills are the single source of truth for tool documentation (Canon B-16).
+- **No Guessing:** Never guess at tool syntax. Refer to the specific skill's SKILL.md.
+- **Paths:** Core skills reside in `/opt/corekit/skills/<name>/` and custom/staging skills may reside in `/opt/corekit/workspace/custom-skills/`.
