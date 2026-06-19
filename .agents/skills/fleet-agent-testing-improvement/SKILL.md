@@ -38,11 +38,11 @@ To test a specific fleet agent skill (e.g., `workspace-drive`, `web-search`, or 
    - The corresponding GChat space ID is `spaces/AAQA2JEusfs`.
 
 ### B. Inject message using Domain-Wide Delegation (DWD)
-Run `chat-send` via SSH on `prime-chuck` to send a message. Impersonate another team member (e.g., Archie) to issue a command that mentions the target agent.
+Run `chat-send` via SSH on `fleet-archie` to send a message as Archie. Archie's VM has a properly configured DWD signer SA, so impersonation works correctly.
 
 ```powershell
-# SSH to prime-chuck and send a GChat mention trigger
-echo y | gcloud compute ssh prime-chuck --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="CORE_DIR=/opt/corekit AGENT_USER_EMAIL=product-architect-agent-archie@tachin.ag CHAT_SPACE_ID=spaces/AAQA2JEusfs /opt/corekit/bin/chat-send '@Devops-Agent Stan please search Google Drive for the website asset folder and verify its contents.'"
+# SSH to fleet-archie and send a GChat mention trigger (as Archie)
+echo y | gcloud compute ssh fleet-archie --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="CORE_DIR=/opt/corekit AGENT_USER_EMAIL=product-architect-agent-archie@tachin.ag CHAT_SPACE_ID=spaces/AAQA2JEusfs /opt/corekit/bin/chat-send '@Devops-Agent Stan please search Google Drive for the website asset folder and verify its contents.'"
 ```
 
 ---

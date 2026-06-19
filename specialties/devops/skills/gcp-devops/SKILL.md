@@ -49,6 +49,34 @@ When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Clou
 | `403 Forbidden` / Permission Denied | Service account or user lacks IAM permission | Verify the target project ID is correct and check that the agent's account has the required IAM roles assigned. |
 | Container image not found | Image does not exist in Artifact Registry or is inaccessible | Check Artifact Registry using `gcloud artifacts docker images list`, build/push the image again with `docker`, and check repository access permissions. |
 
+## Firestore Document Querying
+
+**Important:** `gcloud firestore` does NOT support direct document reads. Use the Firestore REST API via `curl` instead.
+
+### Get an access token (on GCE VMs)
+```bash
+TOKEN=$(curl -sf -H 'Metadata-Flavor: Google' \
+  http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+```
+
+### List documents in a collection
+```bash
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/PROJECT/databases/(default)/documents"
+curl -s -H "Authorization: Bearer $TOKEN" "$FIRESTORE_URL/COLLECTION_PATH" | python3 -m json.tool
+```
+
+### Get a single document
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "$FIRESTORE_URL/COLLECTION_PATH/DOC_ID" | python3 -m json.tool
+```
+
+### Example: List all fleet agents
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "$FIRESTORE_URL/primes/chuck/fleet" | python3 -m json.tool
+```
+
 ## Infrastructure Discovery
 Key commands for discovering current state before making modifications:
 
@@ -60,6 +88,7 @@ Key commands for discovering current state before making modifications:
 | Cloud Run services | `gcloud run services list --project=PROJECT` |
 | Cloud Build triggers | `gcloud builds triggers list --project=PROJECT` |
 | Project number | `gcloud projects describe PROJECT --format="value(projectNumber)"` |
+| Firestore documents | `curl -s -H "Authorization: Bearer $TOKEN" "https://firestore.googleapis.com/v1/projects/PROJECT/databases/(default)/documents/COLLECTION"` |
 
 ## Safety Rules
 - Always verify before modifying — list resources before deleting/updating

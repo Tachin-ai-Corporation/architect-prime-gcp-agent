@@ -389,8 +389,9 @@ except:
 
 
         # Write identity lockfile if not present
+        # Skip if email is a template variable (contains $ or lacks @)
         IDENTITY_LOCK="${CORE_ROOT}/.identity-lock"
-        if [[ -n "$AGENT_EMAIL" && ! -f "$IDENTITY_LOCK" ]]; then
+        if [[ -n "$AGENT_EMAIL" && ! -f "$IDENTITY_LOCK" && "$AGENT_EMAIL" == *@* && "$AGENT_EMAIL" != *'$'* ]]; then
           echo "$AGENT_EMAIL" > "$IDENTITY_LOCK"
           chmod 444 "$IDENTITY_LOCK"
           echo "  Identity lock written: ${AGENT_EMAIL}"
