@@ -167,6 +167,10 @@ setup_all() {
         skill_id="$(basename "$skill_dir")"
         setup_skill "$skill_id" "$skill_dir"
         count=$((count + 1))
+        # Create symlink under SKILLS_DIR so standard path /opt/corekit/skills/id works
+        if [[ -d "$SKILLS_DIR" ]]; then
+          ln -snf "$skill_dir" "${SKILLS_DIR}/${skill_id}"
+        fi
       done
     fi
   fi
@@ -180,6 +184,10 @@ setup_all() {
       skill_id="$(basename "$skill_dir")"
       setup_skill "$skill_id" "$skill_dir"
       count=$((count + 1))
+      # Create symlink under SKILLS_DIR so standard path /opt/corekit/skills/id works
+      if [[ -d "$SKILLS_DIR" ]]; then
+        ln -snf "$skill_dir" "${SKILLS_DIR}/${skill_id}"
+      fi
     done
   fi
 
