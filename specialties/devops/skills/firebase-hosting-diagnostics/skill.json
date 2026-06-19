@@ -12,5 +12,15 @@
     "gcloud",
     "curl",
     "firebase"
-  ]
+  ],
+  "requires": {
+    "npm": [
+      "firebase-tools"
+    ],
+    "bin": [
+      "gsutil",
+      "gcloud",
+      "curl"
+    ]
+  }
 }

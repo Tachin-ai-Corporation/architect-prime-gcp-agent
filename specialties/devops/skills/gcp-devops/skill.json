@@ -13,6 +13,14 @@
     "firebase",
     "docker"
   ],
-  "requires": {},
+  "requires": {
+    "npm": [
+      "firebase-tools"
+    ],
+    "bin": [
+      "gcloud",
+      "gsutil"
+    ]
+  },
   "when_to_use": "When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Cloud Build) using CLI tools."
 }

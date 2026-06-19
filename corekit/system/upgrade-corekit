@@ -436,6 +436,13 @@ except:
       fi
     fi
 
+    # ---- Run skill setup ----
+    SKILL_SETUP="${CORE_ROOT}/bin/skill-setup"
+    if [[ -x "$SKILL_SETUP" ]]; then
+      echo "==> Running skill dependency setup..."
+      "$SKILL_SETUP" --all || echo "  ⚠️  Skill setup had errors"
+    fi
+
     # ---- Restart services ----
     echo "==> Managing services..."
 
