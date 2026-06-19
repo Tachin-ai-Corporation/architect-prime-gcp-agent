@@ -489,6 +489,21 @@ except:
     if [[ -f "$INTROSPECT_SVC_SRC" ]]; then
       cp "$INTROSPECT_SVC_SRC" /etc/systemd/system/agent-introspect.service
     fi
+
+    # Inject AGENT_ID into brain + gateway services (fleet agents need this for core-memory-read etc.)
+    CHAT_CFG="${CORE_ROOT}/corekit/chat-config.json"
+    if [[ -f "$CHAT_CFG" ]]; then
+      _AID="$(python3 -c "import json; print(json.load(open('${CHAT_CFG}')).get('agentId',''))" 2>/dev/null || true)"
+      if [[ -n "$_AID" ]]; then
+        for _svc in agent-brain agent-neural-gateway; do
+          _svc_file="/etc/systemd/system/${_svc}.service"
+          if [[ -f "$_svc_file" ]] && ! grep -q "AGENT_ID=" "$_svc_file"; then
+            sed -i "/\[Service\]/a Environment=AGENT_ID=${_AID}" "$_svc_file"
+          fi
+        done
+      fi
+    fi
+
     systemctl daemon-reload
 
     # Enable and start ears + mouth + brain + introspect

@@ -153,6 +153,7 @@ Environment=BRAIN_PORT=${C_GATEWAY_PORT}
 Environment=CONTRACTS_PATH=${CONTRACTS}
 Environment=AGENTS_DIR=${CORE_DIR}
 Environment=WORKSPACE_BASE=${CORE_DIR}
+Environment=AGENT_ID=${AGENT_ID}
 ExecStart=/usr/bin/node index.mjs
 Restart=always
 RestartSec=3
