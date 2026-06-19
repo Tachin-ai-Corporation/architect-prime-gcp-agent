@@ -16,6 +16,21 @@ const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';
 
 // ---- Standard Tools definition ----
 
+const getFirebaseToken = async () => {
+  if (process.env.FIREBASE_TOKEN) return process.env.FIREBASE_TOKEN;
+  try {
+    const res = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', {
+      headers: { 'Metadata-Flavor': 'Google' },
+      signal: AbortSignal.timeout(500)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.access_token;
+    }
+  } catch {}
+  return null;
+};
+
 export const runCommand = {
   name: 'runCommand',
   description: `Execute a shell command on the agent's host. You MUST read the relevant SKILL.md with readFile before your first use of any command. Skill docs: /opt/corekit/skills/<id>/SKILL.md. Never guess at command syntax.`,
@@ -28,11 +43,20 @@ export const runCommand = {
   },
   execute: async ({ command }) => {
     try {
+      const env = { 
+        ...process.env, 
+        PATH: `${BIN_DIR}:${process.env.PATH}`,
+        NODE_OPTIONS: '--dns-result-order=ipv4first'
+      };
+      const token = await getFirebaseToken();
+      if (token) {
+        env.FIREBASE_TOKEN = token;
+      }
       const { stdout, stderr } = await execAsync(command, {
         cwd: process.env.WORKSPACE || '/opt/corekit/workspace',
         timeout: TOOL_TIMEOUT,
         maxBuffer: 1024 * 1024,
-        env: { ...process.env, PATH: `${BIN_DIR}:${process.env.PATH}` },
+        env,
       });
       const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : '')).trim();
       return { result: output || '(no output)' };
