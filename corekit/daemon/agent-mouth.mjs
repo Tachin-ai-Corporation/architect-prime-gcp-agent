@@ -661,9 +661,9 @@ async function pollBrainV3Envelopes() {
         }
         continue;
       }
-      // Skip: already delivered
+      // Skip: already delivered (but NOT if brain explicitly reset delivery_status to pending for re-delivery)
       if (deliveryStatus === 'delivered') { skippedDelivered++; continue; }
-      if (deliveredAt) { _deliveredEnvelopes.add(envId); skippedDelivered++; continue; }
+      if (deliveredAt && deliveryStatus !== 'pending') { _deliveredEnvelopes.add(envId); skippedDelivered++; continue; }
       // Skip: explicitly internal (should never appear in query results, but defense-in-depth)
       if (deliveryStatus === 'internal') { skippedDelivered++; continue; }
       // Skip: archived envelopes — stale delivery_status from race condition
