@@ -6,9 +6,15 @@
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 
 const execAsync = promisify(execCb);
+
+const resolvePath = (p) => {
+  if (isAbsolute(p)) return p;
+  const workspace = process.env.WORKSPACE || '/opt/corekit/workspace';
+  return join(workspace, p);
+};
 
 const TOOL_TIMEOUT = 120_000; // 2 minutes per tool call
 const BIN_DIR = process.env.BIN_DIR || '/opt/corekit/bin';
@@ -80,7 +86,8 @@ export const readFileTool = {
   },
   execute: async ({ path, startLine, endLine }) => {
     try {
-      const content = readFileSync(path, 'utf8');
+      const resolvedPath = resolvePath(path);
+      const content = readFileSync(resolvedPath, 'utf8');
       if (startLine || endLine) {
         const lines = content.split('\n');
         const start = (startLine || 1) - 1;
@@ -115,7 +122,8 @@ export const writeFileTool = {
   },
   execute: async ({ path, content }) => {
     try {
-      writeFileSync(path, content, 'utf8');
+      const resolvedPath = resolvePath(path);
+      writeFileSync(resolvedPath, content, 'utf8');
       return { result: `Written ${content.length} bytes to ${path}` };
     } catch (err) {
       return { error: `ERROR: ${err.message}` };
@@ -135,8 +143,9 @@ export const listDirTool = {
   },
   execute: async ({ path }) => {
     try {
-      const entries = readdirSync(path).map(name => {
-        const fullPath = join(path, name);
+      const resolvedPath = resolvePath(path);
+      const entries = readdirSync(resolvedPath).map(name => {
+        const fullPath = join(resolvedPath, name);
         try {
           const stat = statSync(fullPath);
           return `${stat.isDirectory() ? 'd' : '-'} ${name}${stat.isDirectory() ? '/' : ''} (${stat.size}b)`;
