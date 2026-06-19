@@ -273,7 +273,7 @@ export function createProcessEngine(deps) {
       const step = expandedSteps[i];
       const task = {
         agent: step.agent || 'motor',
-        task: substitute(step.description || step.title),
+        task: substitute(step.description || step.task || step.title),
         accept_criteria: substitute(step.accept_criteria || ''),
         intent: step.intent || 'execute',
         // Carry process metadata for special step types
