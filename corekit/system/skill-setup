@@ -27,7 +27,7 @@ error() { echo "[skill-setup] ERROR: $*" >&2; }
 SPECIALTY=""
 CHAT_CFG="${COREKIT_DIR}/chat-config.json"
 if [[ -f "$CHAT_CFG" ]]; then
-  SPECIALTY="$(python3 -c "import json; print(json.load(open('$CHAT_CFG')).get('specialty',''))" 2>/dev/null || true)"
+  SPECIALTY="$(python3 -c "import json; cfg=json.load(open('$CHAT_CFG')); print(cfg.get('specialty','') or cfg.get('agentType',''))" 2>/dev/null || true)"
 fi
 
 # ---- Setup a single skill ----

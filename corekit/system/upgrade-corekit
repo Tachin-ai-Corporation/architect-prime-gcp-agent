@@ -73,7 +73,7 @@ case "${1:-}" in
     # Read agentType from chat-config.json as a source
     CHAT_CFG_UPGRADE="${CORE_ROOT}/corekit/chat-config.json"
     if [[ "$EXISTING_ROLE" == "fleet" && -z "$EXISTING_JOB" ]]; then
-      EXISTING_JOB="$(jq -r '.agentType // empty' "$CHAT_CFG_UPGRADE" 2>/dev/null || true)"
+      EXISTING_JOB="$(jq -r '.agentType // .specialty // empty' "$CHAT_CFG_UPGRADE" 2>/dev/null || true)"
     fi
     if [[ "$EXISTING_ROLE" == "fleet" && -z "$EXISTING_JOB" ]]; then
       echo 'ERROR: Cannot determine agent job/specialty. Check STATE.json or chat-config.json.' >&2
@@ -244,12 +244,17 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
         done
       fi
 
-      # Backfill agentType into chat-config if missing
+      # Backfill agentType and specialty into chat-config if missing
       if [[ -n "$TPL_SPECIALTY" ]] && [[ -f "$CHAT_CFG" ]]; then
         EXISTING_TYPE=$(jq -r '.agentType // empty' "$CHAT_CFG" 2>/dev/null)
+        EXISTING_SPEC=$(jq -r '.specialty // empty' "$CHAT_CFG" 2>/dev/null)
         if [[ -z "$EXISTING_TYPE" ]]; then
           jq --arg t "$TPL_SPECIALTY" '.agentType = $t' "$CHAT_CFG" > "${CHAT_CFG}.tmp" && mv "${CHAT_CFG}.tmp" "$CHAT_CFG"
           echo "  Backfilled agentType=${TPL_SPECIALTY} into chat-config.json"
+        fi
+        if [[ -z "$EXISTING_SPEC" ]]; then
+          jq --arg t "$TPL_SPECIALTY" '.specialty = $t' "$CHAT_CFG" > "${CHAT_CFG}.tmp" && mv "${CHAT_CFG}.tmp" "$CHAT_CFG"
+          echo "  Backfilled specialty=${TPL_SPECIALTY} into chat-config.json"
         fi
       fi
 

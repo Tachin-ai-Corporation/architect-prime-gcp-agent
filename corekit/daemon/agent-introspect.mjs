@@ -150,7 +150,7 @@ function handleSkills() {
   if (existsSync(chatConfigPath)) {
     try {
       const cfg = JSON.parse(readFileSync(chatConfigPath, 'utf8'));
-      specialty = cfg.specialty || '';
+      specialty = cfg.specialty || cfg.agentType || '';
     } catch {}
   }
 
@@ -295,7 +295,7 @@ function handleConfig() {
     agentHostname: AGENT_HOSTNAME,
     primeId: PRIME_ID,
     email: chatConfig?.agentUserEmail || '',
-    specialty: chatConfig?.specialty || '',
+    specialty: chatConfig?.specialty || chatConfig?.agentType || '',
     ocVersion,
     contracts: contracts ? { ears: contracts.ears, versioning: contracts.versioning } : null,
   };

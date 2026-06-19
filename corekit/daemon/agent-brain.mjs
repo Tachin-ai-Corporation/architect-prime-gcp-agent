@@ -281,7 +281,7 @@ function buildSkillIndex() {
   let specialty = '';
   try {
     const cfg = JSON.parse(readFileSync(CORE_DIR + '/corekit/chat-config.json', 'utf8'));
-    specialty = cfg.specialty || '';
+    specialty = cfg.specialty || cfg.agentType || '';
   } catch {}
   if (specialty) {
     skillsDirs.push(CORE_DIR + '/corekit/specialties/' + specialty + '/skills');
