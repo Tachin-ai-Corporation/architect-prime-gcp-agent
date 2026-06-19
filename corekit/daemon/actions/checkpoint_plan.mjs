@@ -38,6 +38,25 @@ export async function handleCheckpointPlan(ctx, deps) {
   // Try cortex-provided inline structure first
   let checkpoints = extractCheckpoints(decision);
 
+  // Validate agent types for inline checkpoints
+  if (checkpoints && checkpoints.length > 0) {
+    const validAgents = ['motor', 'temporal-research', 'temporal-memory'];
+    let hasInvalidAgent = false;
+    for (const cp of checkpoints) {
+      for (const t of cp.tasks) {
+        if (!validAgents.includes(t.agent)) {
+          log('WARN', `Checkpoint plan: Cortex inline plan contains invalid agent '${t.agent}'. Rejecting inline plan to force prefrontal structuring.`);
+          hasInvalidAgent = true;
+          break;
+        }
+      }
+      if (hasInvalidAgent) break;
+    }
+    if (hasInvalidAgent) {
+      checkpoints = null;
+    }
+  }
+
   // CP4: If cortex didn't provide a valid structure, dispatch to prefrontal
   if (!checkpoints || checkpoints.length === 0) {
     const planGoal = decision.goal || decision.instruction || decision.reasoning || envelope.instruction;
