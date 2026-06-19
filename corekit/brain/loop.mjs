@@ -133,26 +133,52 @@ class LoopGuard {
 }
 
 // ---- Skill catalog for execution agents (Layer D) ----
-const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';
-
 function buildSkillCatalogPrompt() {
-  if (!existsSync(SKILLS_DIR)) return '';
-  const entries = [];
+  const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
+  const skillsDirs = [join(CORE_DIR, 'skills')];
+
+  // Determine specialty from chat-config.json
+  let specialty = '';
   try {
-    for (const name of readdirSync(SKILLS_DIR)) {
-      const jsonPath = `${SKILLS_DIR}/${name}/skill.json`;
+    const cfg = JSON.parse(readFileSync(join(CORE_DIR, 'corekit', 'chat-config.json'), 'utf8'));
+    specialty = cfg.specialty || cfg.agentType || '';
+  } catch {}
+  if (specialty) {
+    skillsDirs.push(join(CORE_DIR, 'corekit', 'specialties', specialty, 'skills'));
+  }
+
+  // Also scan custom per-agent skills
+  const customDir = join(CORE_DIR, 'workspace', 'custom-skills');
+  if (existsSync(customDir)) {
+    skillsDirs.push(customDir);
+  }
+
+  const entries = [];
+  for (const dir of skillsDirs) {
+    if (!existsSync(dir)) continue;
+    let files;
+    try { files = readdirSync(dir); } catch { continue; }
+    for (const name of files) {
+      const skillDir = join(dir, name);
+      const jsonPath = join(skillDir, 'skill.json');
       if (!existsSync(jsonPath)) continue;
       try {
         const m = JSON.parse(readFileSync(jsonPath, 'utf8'));
-        entries.push(`- ${m.name || name} (${m.id || name}): ${m.when_to_use || m.description || ''}`);
+        entries.push({
+          name: m.name || name,
+          id: m.id || name,
+          when_to_use: m.when_to_use || m.description || '',
+          path: join(skillDir, 'SKILL.md'),
+        });
       } catch {}
     }
-  } catch {}
+  }
+
   if (entries.length === 0) return '';
-  return `\n\n## Available Skills\nBefore using any command tool, read the relevant SKILL.md:\n${entries.map(e => {
-    const id = e.match(/- .*?\(([^)]+)\)/)?.[1] || '';
-    return `${e}\n  → readFile ${SKILLS_DIR}/${id}/SKILL.md`;
-  }).join('\n')}\n\nDo NOT guess skill paths. Only the paths listed above exist.\n`;
+  const lines = entries.map(e =>
+    `- ${e.name} (${e.id}): ${e.when_to_use}\n  → readFile ${e.path}`
+  );
+  return `\n\n## Available Skills\nBefore using any command tool, read the relevant SKILL.md:\n${lines.join('\n')}\n\nDo NOT guess skill paths. Only the paths listed above exist.\n`;
 }
 
 let _skillCatalog = null;

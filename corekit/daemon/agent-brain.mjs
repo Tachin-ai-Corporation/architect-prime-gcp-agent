@@ -309,6 +309,7 @@ function buildSkillIndex() {
           agent_parts: Array.isArray(manifest.agent_part) ? manifest.agent_part : [manifest.agent_part || 'motor'],
           when_to_use: manifest.when_to_use || '',
           category: manifest.category || '',
+          path: skillDir + '/SKILL.md',
         });
       } catch {}
     }
@@ -321,9 +322,8 @@ let SKILL_INDEX = buildSkillIndex();
 // Format the full skill index as a readable catalog for execution agents
 function formatSkillCatalog(skillIndex) {
   if (!skillIndex?.length) return '';
-  const SKILLS_DIR = process.env.SKILLS_DIR || '/opt/corekit/skills';
   const entries = skillIndex.map(s =>
-    `- ${s.name} (${s.id}): ${s.when_to_use || s.category || ''}\n  → readFile ${SKILLS_DIR}/${s.id}/SKILL.md`
+    `- ${s.name} (${s.id}): ${s.when_to_use || s.category || ''}\n  → readFile ${s.path}`
   );
   return `\n\n[AVAILABLE SKILLS]\nBefore using any command tool, read the relevant SKILL.md:\n${entries.join('\n')}\n\nDo NOT guess skill paths. Only the paths listed above exist.\n[END AVAILABLE SKILLS]`;
 }
