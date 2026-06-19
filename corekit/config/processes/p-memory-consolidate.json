@@ -26,8 +26,8 @@
       "step": 3,
       "agent": "motor",
       "intent": "execute",
-      "description": "Gather Core Memory (recent): Run `core-memory-read --since 30d --limit 20` to pull recent long-term storage. Report the number of entries found.",
-      "accept_criteria": "core-memory-read --since 30d output captured. Entry count reported.",
+      "description": "Gather Core Memory (recent): Run `core-memory-read --limit 20` to pull recent long-term storage. Report the number of entries found. If the output is empty or says 'No entries found', report '0 entries' — this is normal for new agents.",
+      "accept_criteria": "core-memory-read command executed. Entry count reported (0 is acceptable).",
       "checkpointBoundary": true
     },
     {
