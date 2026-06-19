@@ -20,7 +20,7 @@ export async function handleSynthesizeWithFailure(ctx, deps) {
   else if (swfState === null && iteration < MAX_ITERATIONS - 2) {
     log('INFO', `swf[null→awaiting_unblock]: self-unblock attempt for ${envelope.id}`);
     envelope._swf_state = 'awaiting_unblock';
-    envelope._failure_synthesis = decision.synthesis || decision.failure_summary || decision.message || decision.instruction || null;
+    envelope._failure_synthesis = decision.synthesis || decision.content || decision.failure_summary || decision.message || decision.instruction || null;
     await firestoreWrite('work', envelope.id, envelope);
 
     return {
@@ -40,7 +40,7 @@ export async function handleSynthesizeWithFailure(ctx, deps) {
       envelope._swf_state = 'unblock_attempted';
       await completeEnvelope(envelope, {
         status: 'complete',
-        output: decision.synthesis || decision.response || decision.message || decision.instruction || '',
+        output: decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '',
         historyDetail: 'Completed (self-unblock resolved the failure)',
         tokenUsage: _tokenUsage,
       });
@@ -55,8 +55,8 @@ export async function handleSynthesizeWithFailure(ctx, deps) {
   if (envelope.type === 'M') {
     await completeEnvelope(envelope, {
       status: 'blocked',
-      output: decision.synthesis || decision.response || decision.message || decision.instruction || '',
-      blocker: decision.failure_summary || decision.synthesis || decision.message || decision.instruction || 'Unknown blocker',
+      output: decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '',
+      blocker: decision.failure_summary || decision.synthesis || decision.content || decision.message || decision.instruction || 'Unknown blocker',
       blockerType: decision.blocker_type || 'other',
       historyDetail: `Blocked (self-unblock exhausted): ${toStr(decision.failure_summary).substring(0, 200)}`,
       tokenUsage: _tokenUsage,
@@ -67,7 +67,7 @@ export async function handleSynthesizeWithFailure(ctx, deps) {
   // Non-mission: complete with failure acknowledgment
   await completeEnvelope(envelope, {
     status: 'complete',
-    output: decision.synthesis || decision.response || decision.message || decision.instruction || '',
+    output: decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '',
     historyDetail: `Synthesized with acknowledged failure: ${toStr(decision.failure_summary).substring(0, 200)}`,
     tokenUsage: _tokenUsage,
   });

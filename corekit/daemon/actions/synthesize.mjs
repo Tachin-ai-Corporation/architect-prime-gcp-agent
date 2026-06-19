@@ -22,16 +22,16 @@ export async function handleSynthesize(ctx, deps) {
   await createCT(envelope, {
     checkpointTitle: 'Formulate response',
     taskTitle: 'Synthesize answer',
-    taskOutput: decision.synthesis || decision.response || decision.message || decision.instruction || '',
+    taskOutput: decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '',
     taskIntent: 'synthesize',
     deliveryStatus: 'internal',
     ctKey: `synth-${envelope.id}-${iteration}`,
   });
 
-  envelope.output = decision.synthesis || decision.response || decision.message || decision.instruction || '';
+  envelope.output = decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '';
   await completeEnvelope(envelope, {
     status: 'complete',
-    output: decision.synthesis || decision.response || decision.message || decision.instruction || '',
+    output: decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '',
     historyDetail: 'Synthesized response',
     tokenUsage: _tokenUsage,
   });
