@@ -480,6 +480,8 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
         // Use streaming to avoid the Anthropic SDK's 10-minute non-streaming
         // timeout. stream().finalMessage() returns the same Message object as
         // create() once the full response is collected.
+        // Note: Claude Opus 4.6+ rejects requests with both temperature and
+        // top_p. Only send temperature.
         const stream = client.messages.stream({
           model: modelId,
           max_tokens: maxTokens,
@@ -487,7 +489,6 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
           messages: anthropicMessages,
           tools: anthropicTools,
           temperature,
-          top_p: topP,
         });
         return await stream.finalMessage();
       },
