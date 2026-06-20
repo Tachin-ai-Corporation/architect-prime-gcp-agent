@@ -112,7 +112,7 @@ exports.syncAll = async (req, res) => {
     }
     
     // For Drive webhooks, the folderId is typically passed in the channel token
-    const folderId = req.body.folderId || req.query.folderId || req.headers['x-goog-channel-token'];
+    const folderId = req.body.folderId || req.query.folderId || req.headers['x-goog-channel-token'] || process.env.DRIVE_FOLDER_ID;
     if (!folderId) {
       return res.status(400).send('Bad Request: Missing "folderId" parameter.');
     }
