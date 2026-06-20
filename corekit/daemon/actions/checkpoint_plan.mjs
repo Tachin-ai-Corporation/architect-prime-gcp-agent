@@ -204,7 +204,25 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
+  // Dedup spin guard: if ALL tasks were replayed (no new work done),
+  // cortex is looping with redundant plans. Force synthesize.
+  const allReplayed = allResults.length > 0 && allResults.every(r =>
+    typeof r.result === 'string' && r.result.startsWith('[REPLAYED]')
+  );
+  if (allReplayed && !planFailed) {
+    log('WARN', `[checkpoint-executor] All ${allResults.length} tasks were deduped (replayed). Forcing synthesize.`);
+    priorResultsAppend.push({
+      agent: 'system',
+      result: `[SYSTEM] All checkpoint tasks were already completed in previous iterations — no new work was done. You MUST "synthesize" your answer now using the results already gathered. Do NOT create another checkpoint_plan.`,
+    });
+  }
+
   log('INFO', `Checkpoint plan ${planFailed ? 'FAILED' : 'complete'}: ${checkpoints.length} checkpoints, ${allResults.length} total tasks. Consulting Cortex.`);
 
-  return { continue: true, priorResultsAppend };
+  // Return guard as part of action result so the main decide loop enforces it
+  const result = { continue: true, priorResultsAppend };
+  if (allReplayed && !planFailed) {
+    result.activeGuard = { forbidden: 'checkpoint_plan', fallback: 'synthesize', injectedAt: iteration, context: {} };
+  }
+  return result;
 }

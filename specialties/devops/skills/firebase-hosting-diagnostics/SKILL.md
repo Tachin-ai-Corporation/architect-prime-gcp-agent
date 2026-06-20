@@ -14,7 +14,11 @@ A file exists in the Drive source (or GCS bucket) but is NOT accessible at the e
 - `gsutil` — Read bucket object lists and verify file statuses in Google Cloud Storage.
 - `gcloud` — Retrieve service state and logs for the sync-service and proxy-service Cloud Run instances.
 - `curl` — Query proxy endpoints and user-facing URLs to verify HTTP response codes and headers.
-- `firebase` — Run Firebase CLI commands to query hosting sites, releases, and channels.
+- `firebase hosting:sites:list --project=<project>` — List all hosting sites for a project.
+- `firebase hosting:channel:list --project=<project> --site=<site>` — List deployment channels for a site.
+- `cat firebase.json` — Read the local Firebase config to check rewrite rules.
+
+⚠️ **Invalid commands** — Do NOT use `firebase hosting:get-config`, `firebase hosting:get`, `firebase hosting:releases`, or `firebase hosting:sites:get`. These do not exist in the Firebase CLI.
 
 ## Procedures
 
