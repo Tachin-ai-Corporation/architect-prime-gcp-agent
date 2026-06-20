@@ -59,3 +59,14 @@ project-manage team-list proj-self-improvement
 # Update project context (deep-merge)
 project-manage update proj-self-improvement '{"context": {"deploy_target": {"kind": "convention", "summary": "Deploy to us-central1"}}}'
 ```
+
+### ⚠️ Shell Escaping Rules
+The JSON argument must be wrapped in **single quotes**. Inside the JSON, use **only double quotes**:
+```bash
+# ✅ CORRECT — single quotes around JSON, double quotes inside
+project-manage update my-project '{"context": {"key": {"kind": "convention", "summary": "value here"}}}'
+
+# ❌ WRONG — special characters like arrows, parentheses break shell parsing
+project-manage update my-project '{"context": {"info": "value (with parens) → arrows"}}'
+```
+**Avoid** these characters in JSON string values: `→`, `()`, `\`, backticks. Use plain ASCII: `to`, `for`, dashes instead.
