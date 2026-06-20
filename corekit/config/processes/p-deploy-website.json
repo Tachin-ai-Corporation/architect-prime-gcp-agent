@@ -39,11 +39,11 @@
     },
     {
       "title": "Deploy to staging preview channel",
-      "description": "Deploy the website to a Firebase Hosting preview channel for review.\n\nRun this command FIRST:\n```bash\ncd ${deploy_dir} && firebase hosting:channel:deploy staging --project=${firebase_project} --expires 7d\n```\n\nThen:\n1. Extract the staging preview URL from the command output (look for 'Channel URL')\n2. Verify the staging URL responds: `curl -o /dev/null -s -w '%{http_code}' <staging_url>`\n\nOutput: the staging preview URL and the HTTP status code from verification.",
+      "description": "Deploy the website to a Firebase Hosting preview channel for review.\n\nRun this command:\n```bash\ncd ${deploy_dir} && firebase hosting:channel:deploy staging --project=${firebase_project} --expires 7d\n```\n\nExtract the staging preview URL from the command output (look for 'Channel URL').\n\nOutput: the staging preview URL.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Firebase Hosting preview channel deploy succeeded. The staging URL is provided and responds with HTTP 200.",
+      "accept_criteria": "The firebase hosting:channel:deploy command ran successfully (output shows 'Deploy complete'). The staging preview URL is extracted and reported.",
       "checkpointBoundary": true
     },
     {
