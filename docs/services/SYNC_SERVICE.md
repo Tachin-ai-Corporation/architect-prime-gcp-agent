@@ -14,11 +14,20 @@ Google Drive            →  sync-service  →  GCS Bucket              →  pro
 
 ### How It Works
 
-1. **Drive Watch**: The sync-service registers a [Drive API push notification channel](https://developers.google.com/drive/api/reference/rest/v3/changes/watch) on the root website folder
-2. **Change Detection**: When a file is added, updated, or deleted in the Drive folder, Google sends a push notification to the sync-service
-3. **GCS Sync**: The sync-service downloads the changed file from Drive and uploads it to the `tachin-website-assets` GCS bucket under the `public/` prefix
-4. **Proxy Service**: The proxy-service Cloud Run instance serves files from the GCS bucket
-5. **Firebase Hosting**: Firebase rewrites route requests through the proxy to serve the synced content
+1. **Drive Watch**: On startup, the sync-service auto-registers a [Drive API `files.watch()`](https://developers.google.com/drive/api/reference/rest/v3/files/watch) channel on the root website folder, pointing notifications to its own `/sync-all` endpoint
+2. **Change Detection**: When a file is added, updated, or deleted in the Drive folder, Google sends an HTTP POST notification to the sync-service's `/sync-all` endpoint
+3. **Full Sync**: The sync-service traverses the entire Drive folder tree, syncing files from **subdirectories only** (root-level files are ignored by design) to the `tachin-website-assets` GCS bucket under the `public/` prefix
+4. **Deletion Reconciliation**: Files in GCS that no longer exist in Drive subfolders are automatically deleted
+5. **Proxy Service**: The proxy-service Cloud Run instance serves files from the GCS bucket
+6. **Firebase Hosting**: Firebase rewrites route requests through the proxy to serve the synced content
+
+### ⚠️ Root Files Are Ignored
+
+The sync-service **only syncs files in subdirectories** (e.g., `public/`, `images/`). Files placed directly in the root Drive folder are intentionally skipped. To sync a file, place it in a subfolder.
+
+### Expected Latency
+
+Drive push notifications have a built-in delay of ~60-90 seconds. Combined with potential Cloud Run cold starts, end-to-end sync typically takes **60-90 seconds**.
 
 ## Infrastructure
 
@@ -28,6 +37,14 @@ Google Drive            →  sync-service  →  GCS Bucket              →  pro
 | proxy-service | Cloud Run | `https://proxy-service-85486025845.us-central1.run.app` | tachin-website |
 | GCS Bucket | Cloud Storage | `gs://tachin-website-assets` | tachin-website |
 | Firebase Hosting | Hosting | `https://tachin-website.web.app` | tachin-website |
+| Drive Root Folder | Google Drive | `1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV` | — |
+| Drive Public Folder | Google Drive | `1mdirwpy-ecggSAh6dExXVfFSTSBv7FJt` | — |
+
+### Service Account
+
+`drive-sync-sa@tachin-website.iam.gserviceaccount.com` — used by the Cloud Run service. Needs:
+- Google Drive read access to the root folder
+- `roles/storage.objectAdmin` on the GCS bucket
 
 ### Environment Variables (sync-service)
 
@@ -37,29 +54,43 @@ Google Drive            →  sync-service  →  GCS Bucket              →  pro
 | `GCS_BUCKET_NAME` | `tachin-website-assets` | Target GCS bucket |
 | `GCS_PREFIX` | `public` | Prefix for synced files in GCS |
 | `FIREBASE_PROJECT` | `tachin-website` | Firebase project ID |
+| `SERVICE_URL` | `https://sync-service-m32774wz2q-uc.a.run.app` | Self-URL for Drive watch registration |
 
 ### Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/sync-all` | POST | Receives Drive webhook notifications; traverses folder tree and syncs to GCS |
 | `/renew-watch` | POST | Re-registers the Drive API watch channel (call when watch expires) |
+| `/health` | GET | Health check endpoint |
+| `/syncService` | POST | Legacy: sync a single file by `fileId` |
+| `/pubsub/drive-event` | POST | Pub/Sub push handler (triggers syncAll) |
+
+### Source Code
+
+Source code is version-controlled in the architect-prime repo at `services/sync-service/`.
 
 ## ⚠️ Important: Drive Watch Expiration
 
-The Drive API watch channel expires every **~24 hours**. When it expires, the sync service stops receiving change notifications. The `/renew-watch` endpoint must be called periodically.
+The Drive API watch channel expires every **~24 hours**. The sync-service auto-registers the watch on startup, but if the Cloud Run instance scales to zero and no requests arrive, the watch may not be renewed.
 
 ### Automated Watch Renewal
 - A nightly responsibility (`r-sync-health-nightly`) checks the watch status at 2:00 AM CT
 - If the watch is expired, the health check process (`p-sync-health-check`) automatically renews it
 
+### Manual Watch Renewal
+```bash
+curl -X POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch
+```
+
 ## Relationship to Full Website Deploy
 
 | | Sync Service | Full Website Deploy (`p-deploy-website`) |
 |---|---|---|
-| **Scope** | Individual file changes in Drive | Complete rebuild from Drive to Firebase Hosting |
+| **Scope** | Individual file changes in Drive subfolders | Complete rebuild from Drive to Firebase Hosting |
 | **Trigger** | Automatic (Drive push notification) | Manual (GChat request or process invocation) |
-| **Pipeline** | Drive → GCS → proxy → Hosting | Drive → download → firebase deploy |
-| **Speed** | Near-instant (~seconds) | Minutes (full download + deploy cycle) |
+| **Pipeline** | Drive → sync-service → GCS → proxy → Hosting | Drive → download → firebase deploy |
+| **Speed** | ~60-90 seconds | Minutes (full download + deploy cycle) |
 | **Use Case** | Day-to-day content updates | Initial deployment, major restructuring, disaster recovery |
 
 ## Monitoring
@@ -99,8 +130,18 @@ curl -X POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch
 
 | Symptom | Likely Cause | Fix |
 |---------|-------------|-----|
-| File in Drive but not on live site | Watch expired | Call `/renew-watch` endpoint |
+| File in Drive subfolder but not in GCS | Watch expired | Call `/renew-watch` endpoint |
+| File in Drive root but not in GCS | By design | Move file to a subfolder (e.g., `public/`) |
 | Sync-service returning 503 | Cloud Run instance cold start | Wait 30s, retry |
 | File in GCS but 404 on site | Proxy rewrite misconfigured | Check firebase.json rewrites |
 | Watch renewal returns error | Service account permissions | Verify SA has Drive API access |
 | Stale content on live site | CDN cache | Clear Firebase Hosting cache |
+| Sync takes >2 minutes | Drive notification delay + cold start | Normal; check logs for processing time |
+
+## Change Log
+
+| Date | Change |
+|------|--------|
+| 2026-06-20 | **Fixed watch address bug**: changed from Pub/Sub topic URL to sync-service Cloud Run URL. Added auto-registration on startup. |
+| 2026-06-20 | Added source code to `services/sync-service/` in the repo |
+| 2026-06-20 | Created nightly health monitoring (`r-sync-health-nightly` + `p-sync-health-check`) |
