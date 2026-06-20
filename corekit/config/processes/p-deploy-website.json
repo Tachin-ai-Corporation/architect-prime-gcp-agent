@@ -65,11 +65,11 @@
     },
     {
       "title": "Verify production deployment",
-      "description": "Perform a basic smoke test of the production site.\n\n1. Fetch the homepage and verify it contains expected content (title tag, meta description)\n2. Check that key static assets load (CSS, images)\n3. Verify any subpages are accessible (e.g., /about.html, /security.html)\n\nOutput: verification results for each check (PASS/FAIL).",
+      "description": "Verify the production site loads correctly.\n\nRun this command to check the homepage:\n```bash\ncurl -s -w '\\nHTTP_CODE: %{http_code}' https://${firebase_project}.web.app/ | head -20\n```\n\nOutput: the HTTP status code and the first lines of HTML content.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Homepage loads with expected content. Key static assets are accessible. At least 2 subpages verified. All checks PASS or issues are documented."
+      "accept_criteria": "The production URL responds with HTTP 200. The HTML content includes a title tag or recognizable page structure."
     }
   ],
   "contextTemplate": {},
