@@ -38,11 +38,11 @@
     },
     {
       "title": "Verify Drive watch is active",
-      "description": "Check if the Drive API watch channel is still active by examining the sync-service logs for the most recent watch registration.\n\nRun this command:\n```bash\ngcloud run services logs read sync-service --project=${gcp_project} --region=${region} --limit=30 2>&1 | grep -E 'watch|expir|renew|channel'\n```\n\nThe watch channel expires every ~24 hours. If the logs show the watch expired or no recent renewal, the sync is broken.\n\nOutput: whether the watch is active or expired, and the last renewal timestamp.",
+      "description": "Check if the Drive API watch channel is still active by examining the sync-service logs for the most recent watch registration.\n\nRun this command to check watch registration logs:\n```bash\ngcloud logging read 'resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"sync-service\" AND textPayload:\"watch\"' --project=${gcp_project} --freshness=24h --limit=10 --format='value(textPayload)'\n```\n\nLook for:\n- `Auto-registering Drive watch on startup...` — watch was registered\n- `Using webhook address: https://sync-service-....run.app/sync-all` — correct notification address\n- `Watch registration returned 200` — registration succeeded\n\n⚠️ The webhook address MUST be the sync-service's own Cloud Run URL + /sync-all, NOT a Pub/Sub topic URL.\n\nThe watch channel expires every ~24 hours. If no registration in the last 24h, the watch may be expired.\n\nOutput: whether the watch is active or expired, the webhook address, and the last registration timestamp.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "The Drive watch status is determined — either active (recent renewal found) or expired (no renewal in logs or expiration timestamp in the past).",
+      "accept_criteria": "The Drive watch status is determined — either active (recent registration found with correct webhook address) or expired (no registration in logs within 24h).",
       "checkpointBoundary": true
     },
     {
