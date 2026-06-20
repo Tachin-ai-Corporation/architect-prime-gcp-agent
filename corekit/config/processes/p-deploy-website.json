@@ -1,0 +1,79 @@
+{
+  "id": "p-deploy-website",
+  "name": "Deploy Website",
+  "description": "Deploy a static website from Google Drive to Firebase Hosting. Downloads the site content from a Drive folder, deploys to a staging preview channel for approval, then promotes to production after owner sign-off.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "drive_folder_id": {
+      "description": "Google Drive folder ID containing the website files",
+      "required": true
+    },
+    "firebase_project": {
+      "description": "Firebase project ID for hosting deployment",
+      "required": true
+    },
+    "deploy_dir": {
+      "description": "Local directory to stage the website files",
+      "required": false,
+      "default": "/tmp/website-deploy"
+    }
+  },
+  "steps": [
+    {
+      "title": "Download website content from Google Drive",
+      "description": "Download all website files from the Google Drive folder to the local deploy directory.\n\n1. Clean the deploy directory if it already exists: `rm -rf ${deploy_dir} && mkdir -p ${deploy_dir}`\n2. Read the `workspace-drive` SKILL.md to understand available tools\n3. Use `drive-download-folder ${drive_folder_id} --output ${deploy_dir}` to recursively download all files and subdirectories\n4. Verify the download with `ls -R ${deploy_dir}` and confirm files were downloaded\n\n⚠️ Do NOT use parallel `drive-download` calls — always use `drive-download-folder` for recursive downloads.\n\nOutput: list of all downloaded files and total count.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Files are downloaded to the deploy directory. The output lists all files and confirms a non-zero count. No download errors occurred."
+    },
+    {
+      "title": "Create Firebase Hosting configuration",
+      "description": "Create the `firebase.json` configuration file in the deploy directory.\n\n1. Write `firebase.json` to ${deploy_dir}:\n   ```json\n   {\n     \"hosting\": {\n       \"public\": \".\",\n       \"ignore\": [\"firebase.json\", \"**/.*\", \"**/node_modules/**\"],\n       \"headers\": [{ \"source\": \"**\", \"headers\": [{ \"key\": \"Cache-Control\", \"value\": \"max-age=3600\" }] }]\n     }\n   }\n   ```\n2. Verify the file was created: `cat ${deploy_dir}/firebase.json`\n\nOutput: the created firebase.json content.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "firebase.json exists in the deploy directory with valid hosting configuration pointing public to the current directory."
+    },
+    {
+      "title": "Deploy to staging preview channel",
+      "description": "Deploy the website to a Firebase Hosting preview channel for review.\n\n1. Read the `gcp-devops` SKILL.md for the Firebase Hosting deployment procedure\n2. Deploy to the 'staging' preview channel:\n   ```bash\n   cd ${deploy_dir} && firebase hosting:channel:deploy staging --project=${firebase_project} --expires 7d\n   ```\n3. Extract the staging preview URL from the command output\n4. Verify the staging URL responds with `curl -o /dev/null -s -w '%{http_code}' <staging_url>`\n\nOutput: the staging preview URL and the HTTP status code from verification.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Firebase Hosting preview channel deploy succeeded. The staging URL is provided and responds with HTTP 200.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Request owner approval",
+      "description": "Report the staging URL to the owner and request approval before promoting to production.\n\nSend a message with:\n- The staging preview URL\n- A summary of what was deployed (file count, folder structure)\n- A request for the owner to review and approve for production deployment\n\n⚠️ STOP HERE and wait for owner approval. Do NOT proceed to production deployment without explicit approval.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "The staging URL and deployment summary have been reported. The message clearly requests owner approval before proceeding.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Deploy to production",
+      "description": "After receiving owner approval, deploy to the live production site.\n\n1. Deploy to production:\n   ```bash\n   cd ${deploy_dir} && firebase deploy --only hosting --project=${firebase_project}\n   ```\n2. Extract the production Hosting URL from the command output\n3. Verify the production URL responds: `curl -o /dev/null -s -w '%{http_code}' <production_url>`\n\nOutput: the production URL and HTTP status code.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Firebase Hosting production deployment succeeded. The production URL is provided and responds with HTTP 200."
+    },
+    {
+      "title": "Verify production deployment",
+      "description": "Perform a basic smoke test of the production site.\n\n1. Fetch the homepage and verify it contains expected content (title tag, meta description)\n2. Check that key static assets load (CSS, images)\n3. Verify any subpages are accessible (e.g., /about.html, /security.html)\n\nOutput: verification results for each check (PASS/FAIL).",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Homepage loads with expected content. Key static assets are accessible. At least 2 subpages verified. All checks PASS or issues are documented."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}
