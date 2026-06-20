@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.19.4.0 | 2026-06-19 | Skill System Cleanup: restructured skill-introspect to cortex-only "Agent Capabilities", created read-my-skills (all brain parts) and memory-recall (temporal-memory) skills, deleted workspace-chat (daemon capability not skill), merged work-logging into work-management "Culture of Work Tools", moved telemetry and skill-authoring to prime-only, renamed web-search to "Web Search & Fetch", removed Gmail from devops. Fleet skill count reduced from 20 to 13. |
 | v2026.06.18.4.3 | 2026-06-18 | Checkpoint Executor dependency injection fix: passed buildProjectContext dependency to executeCheckpoints in agent-brain, process-engine, and checkpoint_plan action to resolve daemon runtime crash loops (ReferenceError: buildProjectContext is not defined) when processing projects. |
 | v2026.06.18.4.2 | 2026-06-18 | Upgrade Script Self-Overwrite Protection: Added a self-cloning pre-execution check to `upgrade-corekit` that copies the script to `/tmp/upgrade-corekit` and runs it from there, preventing shell offset corruption when the script file on disk is overwritten during upgrades. |
 | v2026.06.18.4.1 | 2026-06-18 | Command Runner & Manifest Fix: Fixed command-runner crashloop and brain daemon startup failures on VM upgrade by adding missing brain overhaul libraries and action handlers to base.txt manifest and updating upgrade-corekit to preserve/restore GCP_PROJECT_ID and PRIME_ID in command-runner.service on upgrade. |
