@@ -1,6 +1,9 @@
 const { google } = require('googleapis');
 const crypto = require('crypto');
 
+const PUBLIC_FOLDER_ID = process.env.DRIVE_PUBLIC_FOLDER_ID || '1mdirwpy-ecggSAh6dExXVfFSTSBv7FJt';
+const ROOT_FOLDER_ID = process.env.DRIVE_FOLDER_ID || '1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV';
+
 async function registerWatch(req, res) {
   try {
     const auth = new google.auth.GoogleAuth({
@@ -8,30 +11,45 @@ async function registerWatch(req, res) {
     });
     const drive = google.drive({ version: 'v3', auth });
 
-    const folderId = process.env.DRIVE_FOLDER_ID || '1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV';
-    const channelId = crypto.randomUUID();
-    // Drive files.watch() sends raw HTTP POST notifications to the address.
-    // Must point to the sync-service's own /sync-all endpoint (NOT a Pub/Sub topic URL).
     const serviceUrl = process.env.SERVICE_URL || 'https://sync-service-m32774wz2q-uc.a.run.app';
     const address = `${serviceUrl}/sync-all`;
 
-    console.log(`Registering watch for folder: ${folderId}`);
-    console.log(`Using channel ID: ${channelId}`);
-    console.log(`Using webhook address: ${address}`);
+    // Register watches on BOTH the root folder AND the public subfolder.
+    // files.watch() only detects changes to the watched item itself, NOT its children.
+    // Watching the public subfolder ensures notifications fire when files are added to /public/.
+    const foldersToWatch = [
+      { id: ROOT_FOLDER_ID, label: 'root' },
+      { id: PUBLIC_FOLDER_ID, label: 'public' }
+    ];
 
-    const response = await drive.files.watch({
-      fileId: folderId,
-      supportsAllDrives: true,
-      requestBody: {
-        id: channelId,
-        type: 'web_hook',
-        address: address,
-        token: folderId
+    const results = [];
+    for (const folder of foldersToWatch) {
+      const channelId = crypto.randomUUID();
+      console.log(`Registering watch for ${folder.label} folder: ${folder.id}`);
+      console.log(`Using channel ID: ${channelId}`);
+      console.log(`Using webhook address: ${address}`);
+
+      try {
+        const response = await drive.files.watch({
+          fileId: folder.id,
+          supportsAllDrives: true,
+          requestBody: {
+            id: channelId,
+            type: 'web_hook',
+            address: address,
+            // Pass ROOT folder ID as token so sync-all traverses from root
+            token: ROOT_FOLDER_ID
+          }
+        });
+        console.log(`Watch registered for ${folder.label}:`, response.data);
+        results.push({ folder: folder.label, ...response.data });
+      } catch (err) {
+        console.error(`Watch registration failed for ${folder.label}:`, err.message);
+        results.push({ folder: folder.label, error: err.message });
       }
-    });
+    }
 
-    console.log('Success:', response.data);
-    res.status(200).send(response.data);
+    res.status(200).send(results);
   } catch (error) {
     console.error('Error:', error.message);
     if (error.response && error.response.data) {
