@@ -134,6 +134,7 @@ corekit/config/processes/p-repo-improve.json corekit/processes/p-repo-improve.js
 corekit/config/processes/p-implement-verify.json corekit/processes/p-implement-verify.json
 corekit/config/processes/p-memory-consolidate.json corekit/processes/p-memory-consolidate.json
 corekit/config/processes/p-deploy-website.json corekit/processes/p-deploy-website.json
+corekit/config/processes/p-sync-health-check.json corekit/processes/p-sync-health-check.json
 
 # Introspect — filesystem introspection service (Firestore bus)
 corekit/daemon/agent-introspect.mjs bin/agent-introspect.mjs

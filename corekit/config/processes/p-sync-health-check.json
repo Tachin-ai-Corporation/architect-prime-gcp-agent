@@ -1,0 +1,77 @@
+{
+  "id": "p-sync-health-check",
+  "name": "Sync Service Health Check",
+  "description": "Verify the tachin-website sync-service pipeline is healthy. Checks Cloud Run status, Drive watch expiration, GCS bucket freshness, and end-to-end connectivity.",
+  "version": 1,
+  "status": "active",
+  "changelog": "v1 — initial process",
+  "parameters": {
+    "gcp_project": {
+      "description": "GCP project ID for the sync service",
+      "required": false,
+      "default": "tachin-website"
+    },
+    "region": {
+      "description": "Cloud Run region",
+      "required": false,
+      "default": "us-central1"
+    },
+    "gcs_bucket": {
+      "description": "GCS bucket name for synced assets",
+      "required": false,
+      "default": "tachin-website-assets"
+    },
+    "sync_service_url": {
+      "description": "URL of the sync-service Cloud Run instance",
+      "required": false,
+      "default": "https://sync-service-85486025845.us-central1.run.app"
+    }
+  },
+  "steps": [
+    {
+      "title": "Check sync-service Cloud Run status",
+      "description": "Verify the sync-service Cloud Run instance is running and healthy.\n\nRun this command:\n```bash\ngcloud run services describe sync-service --project=${gcp_project} --region=${region} --format='value(status.conditions[0].status)'\n```\n\nAlso check recent logs for errors:\n```bash\ngcloud run services logs read sync-service --project=${gcp_project} --region=${region} --limit=10 2>&1 | tail -15\n```\n\nOutput: the service status (True/False) and any errors from recent logs.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "The sync-service Cloud Run status is reported. Recent logs are checked for errors."
+    },
+    {
+      "title": "Verify Drive watch is active",
+      "description": "Check if the Drive API watch channel is still active by examining the sync-service logs for the most recent watch registration.\n\nRun this command:\n```bash\ngcloud run services logs read sync-service --project=${gcp_project} --region=${region} --limit=30 2>&1 | grep -E 'watch|expir|renew|channel'\n```\n\nThe watch channel expires every ~24 hours. If the logs show the watch expired or no recent renewal, the sync is broken.\n\nOutput: whether the watch is active or expired, and the last renewal timestamp.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "The Drive watch status is determined — either active (recent renewal found) or expired (no renewal in logs or expiration timestamp in the past).",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Renew watch if expired",
+      "description": "If the Drive watch was found to be expired or no recent renewal was found, renew it.\n\nRun this command:\n```bash\ncurl -X POST ${sync_service_url}/renew-watch 2>&1\n```\n\nIf the watch was still active, report that no renewal was needed.\n\nOutput: the renewal response or confirmation that no renewal was needed.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Either the watch was renewed (response shows success) or it was confirmed still active and no renewal was needed."
+    },
+    {
+      "title": "Check GCS bucket freshness",
+      "description": "Verify the GCS bucket has files and check the most recently modified file.\n\nRun these commands:\n```bash\ngsutil ls gs://${gcs_bucket}/public/ | wc -l\ngsutil ls -l gs://${gcs_bucket}/public/ | sort -k2 | tail -5\n```\n\nOutput: total file count and the 5 most recently modified files.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "The GCS bucket file count is reported. The most recently modified files are listed with timestamps."
+    },
+    {
+      "title": "Report health status",
+      "description": "Compile a health report summarizing all checks.\n\nThe report should include:\n- Sync-service Cloud Run status (healthy/unhealthy)\n- Drive watch status (active/expired/renewed)\n- GCS bucket file count and freshness\n- Overall verdict: HEALTHY, DEGRADED, or FAILED\n\nOutput: the structured health report.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "A structured health report is produced with an overall HEALTHY/DEGRADED/FAILED verdict."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}
