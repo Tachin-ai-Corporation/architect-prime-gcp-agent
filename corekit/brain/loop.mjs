@@ -351,6 +351,16 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
 
     console.log(`[loop] Google model returned ${stepCalls.length} tool call(s):`, stepCalls.map(tc => tc.name));
 
+    // Serialize parallel tool calls: execute only the first, discard the rest.
+    // Gemini may return N function calls in one turn, but the Vertex API throws
+    // 400 "function response parts != function call parts" if any execution
+    // fails or the history reconstruction drifts. Executing one at a time is
+    // safer and the model will re-issue remaining calls on subsequent turns.
+    if (stepCalls.length > 1) {
+      console.log(`[loop] Serializing: executing only first of ${stepCalls.length} parallel tool calls`);
+      stepCalls.length = 1;
+    }
+
     localHistory.push({
       role: 'assistant',
       content: stepText || null,
@@ -515,6 +525,12 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
     }
 
     console.log(`[loop] Anthropic model returned ${stepCalls.length} tool call(s):`, stepCalls.map(tc => tc.name));
+
+    // Serialize parallel tool calls (same rationale as Google path)
+    if (stepCalls.length > 1) {
+      console.log(`[loop] Serializing: executing only first of ${stepCalls.length} parallel tool calls`);
+      stepCalls.length = 1;
+    }
 
     localHistory.push({
       role: 'assistant',
