@@ -34,7 +34,33 @@ When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Clou
 3. Run `gcloud run deploy SERVICE_NAME --image=REGION-docker.pkg.dev/PROJECT/REPO/IMAGE:TAG --region=REGION --project=PROJECT`.
 4. Verify: Confirm deployment returns successfully and the service URL responds.
 
-### Deploy to Firebase Hosting preview channel
+### Deploy to Firebase Hosting (staging → approval → production)
+1. Prepare the deploy directory with all static files (e.g., from `drive-download-folder`).
+2. Create `firebase.json` in the deploy directory if it doesn't exist:
+   ```bash
+   cat > /path/to/deploy-dir/firebase.json << 'EOF'
+   {
+     "hosting": {
+       "public": ".",
+       "ignore": ["firebase.json", "**/node_modules/**"],
+       "headers": [{ "source": "**", "headers": [{ "key": "Cache-Control", "value": "max-age=3600" }] }]
+     }
+   }
+   EOF
+   ```
+3. Deploy to a **staging preview channel** first:
+   ```bash
+   cd /path/to/deploy-dir && firebase hosting:channel:deploy staging --project=PROJECT
+   ```
+4. Verify the staging URL works — the command output includes the preview URL.
+5. **STOP and report the staging URL** to the owner for approval. Do NOT proceed to production without explicit approval.
+6. After approval, deploy to production:
+   ```bash
+   cd /path/to/deploy-dir && firebase deploy --only hosting --project=PROJECT
+   ```
+7. Verify: Confirm the live site URL responds correctly.
+
+### Deploy to Firebase Hosting preview channel (standalone)
 1. Deploy hosting configuration using:
    ```bash
    firebase hosting:channel:deploy CHANNEL_NAME --project=PROJECT
@@ -48,6 +74,9 @@ When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Clou
 | API not enabled | The targeted API is disabled in the project | Run `gcloud services enable SERVICE_NAME.googleapis.com --project=PROJECT` to activate it. |
 | `403 Forbidden` / Permission Denied | Service account or user lacks IAM permission | Verify the target project ID is correct and check that the agent's account has the required IAM roles assigned. |
 | Container image not found | Image does not exist in Artifact Registry or is inaccessible | Check Artifact Registry using `gcloud artifacts docker images list`, build/push the image again with `docker`, and check repository access permissions. |
+| `firebase.json` not found | Missing hosting config in deploy directory | Create `firebase.json` with `{"hosting":{"public":"."}}` in the deploy directory. |
+| `Error: No site found` | Firebase Hosting not initialized for the project | Run `firebase hosting:sites:list --project=PROJECT` to check. Create a site with `firebase hosting:sites:create SITE_ID --project=PROJECT` if needed. |
+| Hosting deploy shows 0 files | `public` path in `firebase.json` is wrong | Ensure `firebase.json`'s `hosting.public` points to the directory containing the files (use `.` if `firebase.json` is in the same dir as the files). |
 
 ## Firestore Document Querying
 
