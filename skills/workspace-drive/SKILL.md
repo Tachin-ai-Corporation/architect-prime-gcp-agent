@@ -16,6 +16,9 @@ When a task involves files in Google Drive — listing, searching, downloading, 
   - `'<folderId>' in parents` (files inside a specific folder)
 - `drive-download FILE_ID [--output PATH]` — Download a binary file from Google Drive to a local path.
   Output: Download confirmation details and local path.
+- `drive-download-folder FOLDER_ID [--output /path/to/dir]` — Recursively download an entire folder, preserving directory structure.
+  Google Workspace docs are exported as PDF. Max depth: 10 levels.
+  Output: JSON summary with file/folder counts and output directory.
 
 ### Write
 - `drive-upload PATH [--name NAME] [--folder FOLDER_ID]` — Upload a local file to a Google Drive folder.
@@ -40,6 +43,14 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 4. Run `drive-download <FILE_ID> --output /tmp/<filename>` using the file ID from search.
 5. Verify: Check that local file size > 0 and file exists.
    *Note: For Google native documents (Docs, Sheets, Slides), do not download them; read their content directly using their respective specialty tools (e.g. `docs-cat` or sheet read scripts).*
+
+### Download an entire folder recursively
+1. Run `drive-download-folder FOLDER_ID --output /path/to/local/dir` to download all files and subfolders.
+2. The script preserves directory structure, handles Google Workspace doc export (→ PDF), and limits recursion to 10 levels.
+3. Verify: Check the JSON summary output for `files`, `folders`, and `failed` counts.
+4. *Alternative (manual)*: If you need selective downloads, use `drive-ls FOLDER_ID` to list children, then `drive-download` each file individually.
+
+> ⚠️ **IMPORTANT**: When downloading multiple files, always download them **one at a time** (sequentially). Never issue parallel `drive-download` tool calls — the gateway cannot handle multiple simultaneous tool responses and will crash with a 400 error.
 
 ### Upload a file to a specific folder
 1. Run `drive-search --query "name contains '<folderName>' and mimeType = 'application/vnd.google-apps.folder'"` to get the folder's ID.

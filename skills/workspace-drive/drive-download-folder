@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# drive-download-folder — Recursively download an entire Google Drive folder
+# Usage: drive-download-folder FOLDER_ID [--output /path/to/dir]
+# Downloads all files (including subfolders) preserving directory structure.
+# Google Workspace docs (Docs/Sheets/Slides) are exported as PDF.
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-download-folder] [ERROR] $*" >&2; exit 1; }
+
+FOLDER_ID="" OUTPUT_DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output) OUTPUT_DIR="$2"; shift 2 ;;
+    *) if [[ -z "$FOLDER_ID" && "$1" != -* ]]; then FOLDER_ID="$1"; shift
+       else die "Unknown: $1"; fi ;; esac
+done
+[[ -n "$FOLDER_ID" ]] || die "Need FOLDER_ID"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+[[ -n "$OUTPUT_DIR" ]] || OUTPUT_DIR="/tmp/drive-folder-${FOLDER_ID}"
+mkdir -p "$OUTPUT_DIR"
+
+TOTAL_FILES=0 TOTAL_FOLDERS=0 FAILED=0
+
+download_folder() {
+  local fid="$1" local_dir="$2" depth="$3"
+  [[ "$depth" -gt 10 ]] && { echo "[drive-download-folder] [WARN] Max depth 10 reached, skipping"; return; }
+
+  # List all children
+  local page_token="" all_items="[]"
+  while true; do
+    local url="${DRIVE_API}/files?q='${fid}'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100&supportsAllDrives=true"
+    [[ -n "$page_token" ]] && url="${url}&pageToken=${page_token}"
+    local resp
+    resp=$(curl -sf -H "Authorization: Bearer ${TOKEN}" "$url") || { echo "[drive-download-folder] [ERROR] Failed to list folder ${fid}"; return; }
+    local items
+    items=$(echo "$resp" | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get('files',[])))")
+    all_items=$(python3 -c "import json,sys; a=json.loads(sys.argv[1]); b=json.loads(sys.argv[2]); print(json.dumps(a+b))" "$all_items" "$items")
+    page_token=$(echo "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin).get('nextPageToken',''))" 2>/dev/null || echo "")
+    [[ -n "$page_token" ]] || break
+  done
+
+  local count
+  count=$(echo "$all_items" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+
+  # Process each item
+  local i=0
+  while [[ $i -lt $count ]]; do
+    local name mime item_id
+    name=$(echo "$all_items" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i]['name'])" 2>/dev/null)
+    mime=$(echo "$all_items" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i]['mimeType'])" 2>/dev/null)
+    item_id=$(echo "$all_items" | python3 -c "import json,sys; print(json.load(sys.stdin)[$i]['id'])" 2>/dev/null)
+
+    if [[ "$mime" == "application/vnd.google-apps.folder" ]]; then
+      # Recurse into subfolder
+      echo "[drive-download-folder] 📁 ${local_dir}/${name}/"
+      mkdir -p "${local_dir}/${name}"
+      TOTAL_FOLDERS=$((TOTAL_FOLDERS + 1))
+      download_folder "$item_id" "${local_dir}/${name}" $((depth + 1))
+    elif echo "$mime" | grep -q "google-apps"; then
+      # Google Workspace doc — export as PDF
+      local out_path="${local_dir}/${name}.pdf"
+      echo "[drive-download-folder] 📄 ${out_path} (export)"
+      local enc_mime
+      enc_mime=$(python3 -c "import urllib.parse; print(urllib.parse.quote('application/pdf'))")
+      if curl -sf -H "Authorization: Bearer ${TOKEN}" \
+        "${DRIVE_API}/files/${item_id}/export?mimeType=${enc_mime}&supportsAllDrives=true" -o "$out_path"; then
+        TOTAL_FILES=$((TOTAL_FILES + 1))
+      else
+        echo "[drive-download-folder] [WARN] Export failed: ${name}"
+        FAILED=$((FAILED + 1))
+      fi
+    else
+      # Regular file — direct download
+      local out_path="${local_dir}/${name}"
+      echo "[drive-download-folder] 📄 ${out_path}"
+      if curl -sf -H "Authorization: Bearer ${TOKEN}" \
+        "${DRIVE_API}/files/${item_id}?alt=media&supportsAllDrives=true" -o "$out_path"; then
+        TOTAL_FILES=$((TOTAL_FILES + 1))
+      else
+        echo "[drive-download-folder] [WARN] Download failed: ${name}"
+        FAILED=$((FAILED + 1))
+      fi
+    fi
+    i=$((i + 1))
+  done
+}
+
+echo "[drive-download-folder] Downloading folder ${FOLDER_ID} → ${OUTPUT_DIR}"
+download_folder "$FOLDER_ID" "$OUTPUT_DIR" 0
+
+echo ""
+echo "{\"status\":\"complete\",\"output_dir\":\"${OUTPUT_DIR}\",\"files\":${TOTAL_FILES},\"folders\":${TOTAL_FOLDERS},\"failed\":${FAILED}}"

@@ -10,6 +10,7 @@ skills/workspace-drive/skill.json skills/workspace-drive/skill.json
 skills/workspace-drive/drive-ls bin/drive-ls
 skills/workspace-drive/drive-search bin/drive-search
 skills/workspace-drive/drive-download bin/drive-download
+skills/workspace-drive/drive-download-folder bin/drive-download-folder
 skills/workspace-drive/drive-upload bin/drive-upload
 skills/workspace-drive/drive-mkdir bin/drive-mkdir
 skills/workspace-drive/drive-rename bin/drive-rename
