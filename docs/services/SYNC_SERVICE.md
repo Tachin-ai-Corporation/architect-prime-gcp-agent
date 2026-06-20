@@ -14,8 +14,8 @@ Google Drive            →  sync-service  →  GCS Bucket              →  pro
 
 ### How It Works
 
-1. **Drive Watch**: On startup, the sync-service auto-registers a [Drive API `files.watch()`](https://developers.google.com/drive/api/reference/rest/v3/files/watch) channel on the root website folder, pointing notifications to its own `/sync-all` endpoint
-2. **Change Detection**: When a file is added, updated, or deleted in the Drive folder, Google sends an HTTP POST notification to the sync-service's `/sync-all` endpoint
+1. **Drive Watch**: On startup, the sync-service auto-registers [Drive API `files.watch()`](https://developers.google.com/drive/api/reference/rest/v3/files/watch) channels on **both** the root website folder AND the `public/` subfolder, pointing notifications to its own `/sync-all` endpoint. ⚠️ `files.watch()` only monitors the watched item itself — NOT its children. That's why both folders must be watched individually.
+2. **Change Detection**: When a file is added, updated, or deleted in a watched folder, Google sends an HTTP POST notification to the sync-service's `/sync-all` endpoint
 3. **Full Sync**: The sync-service traverses the entire Drive folder tree, syncing files from **subdirectories only** (root-level files are ignored by design) to the `tachin-website-assets` GCS bucket under the `public/` prefix
 4. **Deletion Reconciliation**: Files in GCS that no longer exist in Drive subfolders are automatically deleted
 5. **Proxy Service**: The proxy-service Cloud Run instance serves files from the GCS bucket

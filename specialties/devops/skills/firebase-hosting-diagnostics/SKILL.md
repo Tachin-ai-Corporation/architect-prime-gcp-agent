@@ -41,6 +41,7 @@ A file exists in the Drive source (or GCS bucket) but is NOT accessible at the e
    ```bash
    curl -X POST https://<sync_service_url>/renew-watch
    ```
+   ⚠️ **Critical**: Drive `files.watch()` only watches the item itself — NOT its children. A watch on the root folder will NOT fire when files are added to subfolders like `/public/`. The sync-service must register watches on EACH subfolder individually. If the watch log only shows one folder registration (root), the watch is incomplete.
 3. **Check GCS Bucket:** Run `gsutil ls gs://<bucket-name>/public/` and `gsutil stat gs://<bucket-name>/public/<filename>` to verify the file is stored in GCS.
 3b. **Manually trigger sync-all if file missing from GCS:** If the file is in Drive but not in GCS, manually trigger a full sync:
    ```bash
@@ -85,6 +86,7 @@ No special auth is needed when running on a GCE VM with the correct service acco
 |-----------------|-------------|----------|
 | File in Drive but not in GCS | Sync-service not running or watch expired | Check sync-service logs using `gcloud run services logs read` and renew the directory watch. |
 | Watch registered but no notifications arrive | Watch address points to wrong URL (e.g., Pub/Sub topic instead of Cloud Run) | Check watch registration logs. The address must be the sync-service's own URL + /sync-all endpoint, NOT a Pub/Sub topic URL. |
+| Watch on root folder but subfolder changes ignored | `files.watch()` only watches the item itself, NOT children | Register watches on each subfolder individually (e.g., both root AND `/public/`). The sync-service `watchHandler.js` should register dual watches. |
 | Files in Drive subfolders sync, but root files don't | By design — sync-service ignores root-level files | Move files to a subdirectory (e.g., public/) for sync to work. Root files are intentionally skipped. |
 | File in GCS but proxy returns 404 | Proxy not configured for that path prefix | Check proxy rewrite rules in configuration, and verify GCS bucket name resolution. |
 | Proxy works but hosting returns 404 | Firebase rewrite missing or incorrect | Update `firebase.json` rewrites and run `firebase deploy --only hosting` to apply them. |
