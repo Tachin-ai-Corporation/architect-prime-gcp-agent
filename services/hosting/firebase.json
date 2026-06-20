@@ -1,0 +1,19 @@
+{
+  "hosting": {
+    "public": "hosting_public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/public/**",
+        "run": {
+          "serviceId": "proxy-service",
+          "region": "us-central1"
+        }
+      }
+    ]
+  }
+}
