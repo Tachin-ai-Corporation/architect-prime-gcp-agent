@@ -24,7 +24,7 @@ Google Drive            →  sync-service  →  GCS Bucket              →  pro
 
 | Component | Type | URL | Project |
 |-----------|------|-----|---------|
-| sync-service | Cloud Run | `https://sync-service-85486025845.us-central1.run.app` | tachin-website |
+| sync-service | Cloud Run | `https://sync-service-m32774wz2q-uc.a.run.app` | tachin-website |
 | proxy-service | Cloud Run | `https://proxy-service-85486025845.us-central1.run.app` | tachin-website |
 | GCS Bucket | Cloud Storage | `gs://tachin-website-assets` | tachin-website |
 | Firebase Hosting | Hosting | `https://tachin-website.web.app` | tachin-website |
@@ -92,7 +92,7 @@ gcloud run services logs read sync-service --project=tachin-website --region=us-
 gsutil ls gs://tachin-website-assets/public/
 
 # Renew watch manually
-curl -X POST https://sync-service-85486025845.us-central1.run.app/renew-watch
+curl -X POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch
 ```
 
 ## Troubleshooting

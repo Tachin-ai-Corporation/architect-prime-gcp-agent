@@ -24,7 +24,7 @@
     "sync_service_url": {
       "description": "URL of the sync-service Cloud Run instance",
       "required": false,
-      "default": "https://sync-service-85486025845.us-central1.run.app"
+      "default": "https://sync-service-m32774wz2q-uc.a.run.app"
     }
   },
   "steps": [

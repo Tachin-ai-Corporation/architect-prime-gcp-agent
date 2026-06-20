@@ -14,7 +14,7 @@
         "gcp_project": "tachin-website",
         "region": "us-central1",
         "gcs_bucket": "tachin-website-assets",
-        "sync_service_url": "https://sync-service-85486025845.us-central1.run.app"
+        "sync_service_url": "https://sync-service-m32774wz2q-uc.a.run.app"
       },
       "project_id": "tachin-website",
       "context": {
