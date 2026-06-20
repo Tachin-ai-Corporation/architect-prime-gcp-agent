@@ -1,13 +1,13 @@
 {
   "id": "skill-introspect",
-  "name": "Skill Introspection",
-  "version": 2,
-  "description": "Discover and read installed skills — what tools exist and how to use them.",
+  "name": "Agent Capabilities",
+  "version": 3,
+  "description": "Cortex-level awareness of the agent's full capability set — what this agent can do across all brain parts.",
   "author": "architect-prime",
   "origin": "core",
   "category": "meta",
-  "agent_part": "all",
+  "agent_part": "cortex",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When you need to know what skills are available, what tools motor can use, or exact tool syntax for a dispatch instruction."
+  "when_to_use": "During classify and decide — to understand what this agent is capable of before choosing an action or dispatching work."
 }

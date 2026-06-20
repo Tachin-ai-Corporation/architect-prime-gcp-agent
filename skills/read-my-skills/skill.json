@@ -1,0 +1,13 @@
+{
+  "id": "read-my-skills",
+  "name": "Read My Skills",
+  "version": 2,
+  "description": "Read the SKILL.md documentation for skills assigned to your brain part.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "meta",
+  "agent_part": "all",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "When you need exact tool syntax, command flags, or procedures for a skill assigned to your agent part. Read the SKILL.md before executing."
+}

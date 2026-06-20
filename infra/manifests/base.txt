@@ -55,18 +55,14 @@ corekit/brain/health.mjs corekit/brain/health.mjs
 # Skills (universal — every agent type)
 skills/skill-introspect/SKILL.md skills/skill-introspect/SKILL.md
 skills/skill-introspect/skill.json skills/skill-introspect/skill.json
+skills/read-my-skills/SKILL.md skills/read-my-skills/SKILL.md
+skills/read-my-skills/skill.json skills/read-my-skills/skill.json
 skills/secrets/SKILL.md skills/secrets/SKILL.md
 skills/secrets/skill.json skills/secrets/skill.json
-skills/workspace-chat/SKILL.md skills/workspace-chat/SKILL.md
-skills/workspace-chat/skill.json skills/workspace-chat/skill.json
 skills/work-management/SKILL.md skills/work-management/SKILL.md
 skills/work-management/skill.json skills/work-management/skill.json
-skills/work-logging/SKILL.md skills/work-logging/SKILL.md
-skills/work-logging/skill.json skills/work-logging/skill.json
-skills/telemetry/SKILL.md skills/telemetry/SKILL.md
-skills/telemetry/skill.json skills/telemetry/skill.json
-skills/skill-authoring/SKILL.md skills/skill-authoring/SKILL.md
-skills/skill-authoring/skill.json skills/skill-authoring/skill.json
+skills/memory-recall/SKILL.md skills/memory-recall/SKILL.md
+skills/memory-recall/skill.json skills/memory-recall/skill.json
 skills/delegation/SKILL.md skills/delegation/SKILL.md
 skills/delegation/skill.json skills/delegation/skill.json
 skills/verification/SKILL.md skills/verification/SKILL.md

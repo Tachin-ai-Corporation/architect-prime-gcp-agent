@@ -2,7 +2,7 @@
   "id": "work-management",
   "name": "Culture of Work Tools",
   "version": 2,
-  "description": "Manage responsibilities, projects, and processes — the R/M/C/T infrastructure.",
+  "description": "Manage responsibilities, projects, and processes — the R/M/C/T infrastructure. Read work and task logs.",
   "author": "architect-prime",
   "origin": "core",
   "category": "work",
@@ -10,7 +10,10 @@
   "scripts": [
     "responsibility-manage",
     "project-manage",
-    "process-manage"
+    "process-manage",
+    "work-log-read",
+    "task-log-read",
+    "task-log-write"
   ],
   "requires": {},
   "when_to_use": "When creating, updating, listing, or querying responsibilities, projects, or processes."

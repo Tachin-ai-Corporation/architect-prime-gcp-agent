@@ -1,4 +1,4 @@
-# Skill: Vertex AI Grounding Search
+# Skill: Web Search & Fetch
 
 ## When to Use
 When the task requires fetching real-time information or search results from the web, or retrieving raw text content from a specific URL.

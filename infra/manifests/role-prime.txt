@@ -48,6 +48,10 @@ skills/fleet-upgrade/SKILL.md skills/fleet-upgrade/SKILL.md
 skills/fleet-upgrade/skill.json skills/fleet-upgrade/skill.json
 skills/memory-consolidate/SKILL.md skills/memory-consolidate/SKILL.md
 skills/memory-consolidate/skill.json skills/memory-consolidate/skill.json
+skills/telemetry/SKILL.md skills/telemetry/SKILL.md
+skills/telemetry/skill.json skills/telemetry/skill.json
+skills/skill-authoring/SKILL.md skills/skill-authoring/SKILL.md
+skills/skill-authoring/skill.json skills/skill-authoring/skill.json
 
 # Prime brain workspaces (cortex + 5 sub-agents)
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md

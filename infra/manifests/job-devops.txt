@@ -31,12 +31,3 @@ skills/workspace-drive/drive-rename bin/drive-rename
 skills/workspace-drive/drive-delete bin/drive-delete
 skills/workspace-drive/drive-move bin/drive-move
 skills/workspace-drive/drive-share bin/drive-share
-
-# Workspace skills — Gmail
-skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
-skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
-skills/workspace-gmail/gmail-search bin/gmail-search
-skills/workspace-gmail/gmail-get bin/gmail-get
-skills/workspace-gmail/gmail-send bin/gmail-send
-skills/workspace-gmail/gmail-draft-create bin/gmail-draft-create
-skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send

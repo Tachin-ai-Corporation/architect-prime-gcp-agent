@@ -1,20 +1,49 @@
-# Skill: Skill Introspection
+# Skill: Agent Capabilities
 
 ## When to Use
-When you need to know what skills are available, what tools motor can use, or exact tool syntax for a dispatch instruction.
+During classify and decide phases — to understand what this agent can do before choosing an action or dispatching work.
 
-## Commands
+## This Agent's Capabilities
 
-No executable commands are governed directly by this skill.
+### Infrastructure & DevOps
+Tools for GCP infrastructure, Firestore, Cloud Run, Cloud Build, service accounts, and Firebase Hosting.
+Brain part: **motor** via specialty skills.
 
-## Procedures
+### Web Research
+Real-time web search and URL content extraction via Vertex AI grounding.
+Brain part: **temporal-research**.
 
-### Discover and read skill documentation
-1. Check the `skill_index` in the cortex payload to find matching skills.
-2. Read the full documentation of a specific skill using `readFile` on `/opt/corekit/skills/<name>/SKILL.md`.
-3. Verify: Confirm the target skill's commands and procedures are correctly understood before executing or dispatching the task.
+### Memory
+Three-layer memory system — Working Memory (MEMORY.md), Core Memory (Firestore), Deep Truths (SOUL.md). Recall and consolidation.
+Brain part: **temporal-memory**.
+
+### Google Workspace
+Access to Drive, Gmail, Docs, Sheets, Calendar, Slides — varies by agent specialty.
+Brain part: **motor**.
+
+### Work Management
+Responsibilities, projects, processes — the R/M/C/T architecture. Work logs and task logs.
+Brain part: **motor**.
+
+### Verification
+Task-level pass/fail verdicts with evidence.
+Brain part: **cerebellum**.
+
+### Planning
+Checkpoint plan structuring — breaking goals into checkpoints and tasks.
+Brain part: **prefrontal**.
+
+### Delegation
+Cross-agent delegation via shared project spaces.
+Brain part: **cortex** (action: delegate).
+
+## How to Use This
+
+1. **During classify**: Know what's possible so you classify correctly. If the user asks for something within these capabilities, it's actionable work.
+2. **During decide**: Match the task to the right brain part and skill. Name the relevant skill in task instructions so motor/research/memory knows what to read.
+3. **Don't guess tool syntax** — that's the executing agent's job. They will read the SKILL.md for exact commands.
 
 ## Key Principles
-- **Single Source of Truth:** Skills are the single source of truth for tool documentation (Canon B-16).
-- **No Guessing:** Never guess at tool syntax. Refer to the specific skill's SKILL.md.
-- **Paths:** Core skills reside in `/opt/corekit/skills/<name>/` and custom/staging skills may reside in `/opt/corekit/workspace/custom-skills/`.
+- This is a **capability catalog**, not tool documentation.
+- Each brain part reads its own skill docs via the "Read My Skills" skill.
+- The `skill_index` in your payload lists all installed skills with their agent_part assignments.

@@ -3,7 +3,7 @@
   "name": "DevOps Engineer",
   "version": "1.0.0",
   "description": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
-  "base_skills": ["web-search", "workspace-drive", "workspace-gmail"],
+  "base_skills": ["web-search", "workspace-drive"],
   "specialty_skills": ["gcp-devops"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

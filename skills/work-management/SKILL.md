@@ -1,9 +1,15 @@
 # Skill: Culture of Work Tools
 
 ## When to Use
-When creating, updating, listing, or querying responsibilities, projects, or processes in the R/M/C/T architecture.
+When creating, updating, listing, or querying responsibilities, projects, or processes in the R/M/C/T architecture. Also for reading work and task logs.
 
 ## Commands
+
+### Read
+- `task-log-read [--last <n>] [--agent <name>] [--task <taskId>]` — Read recent task records from Firestore.
+  Output: JSON array of task records containing status, agent, and output details.
+- `work-log-read [--hours <n>] [--owner <name>] [--status <status>] [--type <type>] [--min-steps <n>] [--limit <n>] [--json] [--verbose]` — Query recent work envelopes (missions, checkpoints, responsibilities) from Firestore.
+  Output: Table or JSON representation of work envelopes including dispatches, outcomes, and timestamps.
 
 ### Write
 - `responsibility-manage` — Manage responsibility configurations.
@@ -34,6 +40,16 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
 1. Format process steps as a JSON array of step objects, including `title` and `description`.
 2. Run `process-manage create '<json>'` specifying `id`, `name`, `description`, and `steps`.
 3. Verify: Run `process-manage list` and confirm the process is listed.
+
+### Query an agent's recent task history
+1. Identify the agent name (e.g., `stan`).
+2. Run `task-log-read --agent stan --last 10` to view the last 10 task records for that agent.
+3. Verify: Check that the output contains a JSON list of tasks executed by the specified agent.
+
+### Inspect completed work envelopes
+1. Define the timeframe (e.g., last 48 hours).
+2. Run `work-log-read --hours 48 --status complete` to list all completed envelopes.
+3. Verify: Confirm the output displays a list of completed missions or responsibilities with completion status.
 
 ---
 

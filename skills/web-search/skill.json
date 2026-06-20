@@ -1,6 +1,6 @@
 {
   "id": "web-search",
-  "name": "Vertex AI Grounding Search",
+  "name": "Web Search & Fetch",
   "version": 2,
   "description": "Real-time web search and URL content extraction via Vertex AI grounding.",
   "author": "architect-prime",
