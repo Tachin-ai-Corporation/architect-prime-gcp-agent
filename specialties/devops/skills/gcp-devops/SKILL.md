@@ -137,6 +137,12 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 ### Freshness flag
 Use `--freshness=DURATION` instead of manual timestamp math. Accepted values: `1h`, `6h`, `1d`, `7d`, etc. This is simpler and less error-prone than computing RFC3339 timestamps.
 
+### Common Invalid Commands
+⚠️ The following commands do NOT exist and will fail:
+- `gcloud run services call` — does not exist. To invoke a Cloud Run service, use `curl -X POST <service-url>/<path>` instead.
+- `gcloud run services logs` — use `gcloud run services logs read SERVICE --project=PROJECT --region=REGION` (note the `read` subcommand).
+- `gcloud logging read` with `$(date -d ...)` timestamp math — fragile and error-prone. Use `--freshness=1h` instead.
+
 ## Infrastructure Discovery
 Key commands for discovering current state before making modifications:
 
