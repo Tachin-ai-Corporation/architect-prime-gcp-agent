@@ -30,7 +30,7 @@ download_folder() {
   # List all children
   local page_token="" all_items="[]"
   while true; do
-    local url="${DRIVE_API}/files?q='${fid}'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100&supportsAllDrives=true"
+    local url="${DRIVE_API}/files?q='${fid}'+in+parents+and+trashed=false&fields=files(id,name,mimeType)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true"
     [[ -n "$page_token" ]] && url="${url}&pageToken=${page_token}"
     local resp
     resp=$(curl -sf -H "Authorization: Bearer ${TOKEN}" "$url") || { echo "[drive-download-folder] [ERROR] Failed to list folder ${fid}"; return; }
