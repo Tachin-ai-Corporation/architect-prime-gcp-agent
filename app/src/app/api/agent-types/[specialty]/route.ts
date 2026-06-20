@@ -113,6 +113,51 @@ async function ghJson<T>(path: string): Promise<T | null> {
   }
 }
 
+/**
+ * Parse a manifest file to extract unique skill IDs and their repo paths.
+ * Matches lines like:
+ *   skills/<id>/skill.json skills/<id>/skill.json
+ *   specialties/<type>/skills/<id>/skill.json corekit/specialties/<type>/skills/<id>/skill.json
+ */
+function extractSkillsFromManifest(
+  manifestText: string,
+  origin: "universal" | "fleet" | "specialty"
+): { id: string; repoDir: string; origin: string }[] {
+  const skills: { id: string; repoDir: string; origin: string }[] = [];
+  const seen = new Set<string>();
+
+  for (const line of manifestText.split("\n")) {
+    const trimmed = line.trim();
+    // Skip comments and blank lines
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    // Match: skills/<id>/skill.json  (base/fleet universal skills)
+    const baseMatch = trimmed.match(/^skills\/([a-z0-9-]+)\/skill\.json\s/);
+    if (baseMatch) {
+      const id = baseMatch[1];
+      if (!seen.has(id)) {
+        seen.add(id);
+        skills.push({ id, repoDir: `skills/${id}`, origin });
+      }
+      continue;
+    }
+
+    // Match: specialties/<type>/skills/<id>/skill.json  (specialty-specific skills)
+    const specMatch = trimmed.match(/^specialties\/[a-z0-9-]+\/skills\/([a-z0-9-]+)\/skill\.json\s/);
+    if (specMatch) {
+      const id = specMatch[1];
+      if (!seen.has(id)) {
+        seen.add(id);
+        // Repo path for specialty skills uses specialties/<type>/skills/<id>/
+        const dirMatch = trimmed.match(/^(specialties\/[a-z0-9-]+\/skills\/[a-z0-9-]+)\//);
+        skills.push({ id, repoDir: dirMatch ? dirMatch[1] : `specialties/${id}`, origin: "specialty" });
+      }
+    }
+  }
+
+  return skills;
+}
+
 /* ---- Types ---- */
 
 interface KitJson {
@@ -177,7 +222,8 @@ interface WorkspaceFile {
  * GET /api/agent-types/[specialty]
  *
  * Returns full detail for a single specialty by fetching files from GitHub raw.
- * Now includes all 6 canon B-9 organs with role/never metadata.
+ * Skills are discovered from manifest files (base.txt + role-fleet.txt + job-{type}.txt)
+ * to show ALL skills deployed with this agent type.
  */
 export async function GET(
   _request: Request,
@@ -213,7 +259,35 @@ export async function GET(
       accent: agentType.accent || DEFAULT_THEME.accent,
     };
 
-    // ---- Parallel fetches ----
+    // ---- Fetch manifests to discover ALL skills ----
+    const [baseManifest, fleetManifest, jobManifest] = await Promise.all([
+      ghText("infra/manifests/base.txt"),
+      ghText("infra/manifests/role-fleet.txt"),
+      ghText(`infra/manifests/job-${specialty}.txt`),
+    ]);
+
+    // Extract skill entries from each manifest layer
+    const allSkillEntries: { id: string; repoDir: string; origin: string }[] = [];
+    const seenIds = new Set<string>();
+
+    // Process manifests in order: specialty overrides fleet overrides universal
+    // But we want to keep the most specific origin, so process specialty first
+    for (const { text, origin } of [
+      { text: jobManifest, origin: "specialty" as const },
+      { text: fleetManifest, origin: "fleet" as const },
+      { text: baseManifest, origin: "universal" as const },
+    ]) {
+      if (!text) continue;
+      const entries = extractSkillsFromManifest(text, origin);
+      for (const entry of entries) {
+        if (!seenIds.has(entry.id)) {
+          seenIds.add(entry.id);
+          allSkillEntries.push(entry);
+        }
+      }
+    }
+
+    // ---- Parallel fetches for everything else ----
     const WORKSPACE_FILES = ["IDENTITY.md", "SOUL.md", "MEMORY.md"];
 
     const [
@@ -271,48 +345,28 @@ export async function GET(
       context: r.context,
     }));
 
-    // ---- Skills ----
-    const skills: SkillManifest[] = [];
-
-    // Base skills: skills/{id}/ at repo root
-    for (const skillId of kit.base_skills) {
-      const [manifest, skillMd] = await Promise.all([
-        ghJson<SkillManifest>(`skills/${skillId}/skill.json`),
-        ghText(`skills/${skillId}/SKILL.md`),
-      ]);
-      if (manifest) {
-        skills.push({
-          id: manifest.id || skillId,
-          name: manifest.name || skillId,
+    // ---- Skills: fetch all discovered skills in parallel ----
+    const skillResults = await Promise.all(
+      allSkillEntries.map(async (entry) => {
+        const [manifest, skillMd] = await Promise.all([
+          ghJson<SkillManifest>(`${entry.repoDir}/skill.json`),
+          ghText(`${entry.repoDir}/SKILL.md`),
+        ]);
+        if (!manifest) return null;
+        return {
+          id: manifest.id || entry.id,
+          name: manifest.name || entry.id,
           description: manifest.description || "",
           category: manifest.category,
           agent_part: manifest.agent_part,
           version: manifest.version,
-          origin: "base",
+          origin: entry.origin,
           skillMdContent: skillMd || undefined,
-        });
-      }
-    }
+        };
+      })
+    );
 
-    // Specialty skills: specialties/{type}/skills/{id}/
-    for (const skillId of kit.specialty_skills) {
-      const [manifest, skillMd] = await Promise.all([
-        ghJson<SkillManifest>(`${base}/skills/${skillId}/skill.json`),
-        ghText(`${base}/skills/${skillId}/SKILL.md`),
-      ]);
-      if (manifest) {
-        skills.push({
-          id: manifest.id || skillId,
-          name: manifest.name || skillId,
-          description: manifest.description || "",
-          category: manifest.category,
-          agent_part: manifest.agent_part,
-          version: manifest.version,
-          origin: "specialty",
-          skillMdContent: skillMd || undefined,
-        });
-      }
-    }
+    const skills = skillResults.filter(Boolean) as SkillManifest[];
 
     // ---- Assemble response ----
     // Keep backwards-compatible brainAppends for any legacy consumers
@@ -331,7 +385,7 @@ export async function GET(
         base_skills: kit.base_skills,
         specialty_skills: kit.specialty_skills,
         brain_appends: kit.brain_appends,
-        totalSkills: kit.base_skills.length + kit.specialty_skills.length,
+        totalSkills: skills.length,
         soulContent: soulContent || "",
         brainAppends,
         organs,

@@ -30,6 +30,19 @@ interface ResponsibilityEntry {
   enabled: boolean;
 }
 
+/** Fetch text from GitHub, return null on failure */
+async function ghText(path: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${getGhRaw()}/${path}`, {
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
 /** Fetch JSON from GitHub, return null on failure */
 async function ghJson<T>(path: string): Promise<T | null> {
   try {
@@ -44,10 +57,28 @@ async function ghJson<T>(path: string): Promise<T | null> {
 }
 
 /**
+ * Count unique skill IDs from manifest files.
+ * Matches skill.json lines under skills/ and specialties/ directories.
+ */
+function countSkillsInManifest(text: string): Set<string> {
+  const ids = new Set<string>();
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const baseMatch = trimmed.match(/^skills\/([a-z0-9-]+)\/skill\.json\s/);
+    if (baseMatch) { ids.add(baseMatch[1]); continue; }
+    const specMatch = trimmed.match(/^specialties\/[a-z0-9-]+\/skills\/([a-z0-9-]+)\/skill\.json\s/);
+    if (specMatch) ids.add(specMatch[1]);
+  }
+  return ids;
+}
+
+/**
  * GET /api/agent-types/details
  *
  * Fetches kit.json + responsibilities from GitHub raw for ALL specialties.
  * Specialty list is driven by agent-types.json — no hardcoded list.
+ * Skill counts are derived from manifest files (base.txt + role-fleet.txt + job-{type}.txt).
  */
 export async function GET() {
   try {
@@ -64,11 +95,23 @@ export async function GET() {
 
     const agentTypes = agentTypesData.types;
 
-    // Fetch all kit.json files in parallel
+    // Fetch shared manifests once (base + fleet are the same for all specialties)
+    const [baseManifest, fleetManifest] = await Promise.all([
+      ghText("infra/manifests/base.txt"),
+      ghText("infra/manifests/role-fleet.txt"),
+    ]);
+
+    // Fetch all kit.json + job manifests in parallel
     const kitResults = await Promise.all(
       agentTypes.map(async (agentType) => {
         const id = agentType.id;
-        const kit = await ghJson<KitJson>(`specialties/${id}/kit.json`);
+        const [kit, respData, jobManifest] = await Promise.all([
+          ghJson<KitJson>(`specialties/${id}/kit.json`),
+          ghJson<{ responsibilities: ResponsibilityEntry[] }>(
+            `specialties/${id}/responsibilities-${id}.json`
+          ),
+          ghText(`infra/manifests/job-${id}.txt`),
+        ]);
         if (!kit) return null;
 
         const theme = {
@@ -76,16 +119,18 @@ export async function GET() {
           accent: agentType.accent || DEFAULT_THEME.accent,
         };
 
-        // Fetch responsibilities
-        const respData = await ghJson<{ responsibilities: ResponsibilityEntry[] }>(
-          `specialties/${id}/responsibilities-${id}.json`
-        );
         const responsibilities = (respData?.responsibilities || []).map((r) => ({
           id: r.id,
           name: r.name,
           schedule: r.schedule,
           enabled: r.enabled,
         }));
+
+        // Count total skills from all manifest layers
+        const allSkillIds = new Set<string>();
+        if (baseManifest) for (const sid of countSkillsInManifest(baseManifest)) allSkillIds.add(sid);
+        if (fleetManifest) for (const sid of countSkillsInManifest(fleetManifest)) allSkillIds.add(sid);
+        if (jobManifest) for (const sid of countSkillsInManifest(jobManifest)) allSkillIds.add(sid);
 
         return {
           id: kit.id,
@@ -97,7 +142,7 @@ export async function GET() {
           base_skills: kit.base_skills,
           specialty_skills: kit.specialty_skills,
           brain_appends: kit.brain_appends,
-          totalSkills: kit.base_skills.length + kit.specialty_skills.length,
+          totalSkills: allSkillIds.size,
           hasResponsibilities: responsibilities.length > 0,
           responsibilityCount: responsibilities.length,
           responsibilities,
@@ -117,3 +162,4 @@ export async function GET() {
     );
   }
 }
+

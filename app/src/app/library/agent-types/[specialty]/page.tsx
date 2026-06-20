@@ -90,7 +90,15 @@ const ORGAN_META: Record<string, { icon: string; accent: string; label: string }
   "temporal-research": { icon: "🔍", accent: "#38bdf8", label: "Temporal-Research" },
 };
 
-const ORGAN_ORDER = ["cortex", "prefrontal", "motor", "cerebellum", "temporal-memory", "temporal-research"];
+const ORGAN_ORDER = ["cortex", "prefrontal", "motor", "cerebellum", "temporal-memory", "temporal-research", "all"];
+
+/* ---- Origin display metadata ---- */
+const ORIGIN_META: Record<string, { label: string; color: string }> = {
+  universal: { label: "Universal", color: "#94a3b8" },
+  fleet:     { label: "Fleet",     color: "#38bdf8" },
+  specialty: { label: "Specialty", color: "#fbbf24" },
+  base:      { label: "Universal", color: "#94a3b8" },
+};
 
 /* ---- Tabs ---- */
 const TABS = [
@@ -226,14 +234,18 @@ export default function AgentTypeDetailPage({
       const partSkills = grouped[part];
       if (!partSkills || partSkills.length === 0) continue;
       const meta = ORGAN_META[part] || { icon: "🔧", accent: "#566373", label: part };
-      const cards: FileCardItem[] = partSkills.map((s) => ({
-        key: s.id,
-        label: s.name,
-        icon: meta.icon,
-        role: s.description.slice(0, 100),
-        accent: meta.accent,
-        content: s.skillMdContent || s.description,
-      }));
+      const cards: FileCardItem[] = partSkills.map((s) => {
+        const originInfo = ORIGIN_META[s.origin || "base"] || ORIGIN_META.universal;
+        const originTag = `[${originInfo.label}]`;
+        return {
+          key: s.id,
+          label: s.name,
+          icon: meta.icon,
+          role: `${originTag} ${s.description.slice(0, 90)}`,
+          accent: meta.accent,
+          content: s.skillMdContent || s.description,
+        };
+      });
       sections.push({ organ: part, meta, cards });
     }
 
