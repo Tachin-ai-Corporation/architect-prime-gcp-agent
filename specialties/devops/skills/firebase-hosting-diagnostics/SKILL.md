@@ -51,6 +51,34 @@ A file exists in the Drive source (or GCS bucket) but is NOT accessible at the e
 5. **Check Firebase Hosting Configuration:** Run `cat firebase.json` to verify the rewrite rules route requests correctly to the proxy.
 6. **End-to-End Verification:** Run `curl -v https://<target_domain>/public/<filename>` to test the full URL path from the user-facing domain.
 
+## Firebase Hosting Configuration
+
+### Rewrite Rules for Cloud Run
+To proxy requests to a Cloud Run service (e.g., the proxy-service that serves files from GCS), use the `run` key — NOT `destination`:
+```json
+{
+  "hosting": {
+    "public": "hosting_public",
+    "rewrites": [{
+      "source": "/public/**",
+      "run": {
+        "serviceId": "proxy-service",
+        "region": "us-central1"
+      }
+    }]
+  }
+}
+```
+⚠️ `"destination"` is for redirecting to a local file, NOT for proxying to Cloud Run. Always use `"run"` for Cloud Run rewrites.
+⚠️ Always keep the `"public"` directory config — Firebase Hosting requires it.
+
+### Deploying
+```bash
+# Deploy from a directory containing firebase.json and the public/ dir
+firebase deploy --only hosting --project=PROJECT
+```
+No special auth is needed when running on a GCE VM with the correct service account. Do NOT use `gcloud auth activate-service-account` or `gcloud config set auth/impersonate_service_account` before `firebase deploy`.
+
 ## Error Recovery
 
 | Error / Symptom | Likely Cause | Recovery |
@@ -63,6 +91,8 @@ A file exists in the Drive source (or GCS bucket) but is NOT accessible at the e
 | Everything works but wrong content | CDN cache stale | Clear Firebase Hosting cache or perform a force reload of the page. |
 | CDN returns cached 404 after file was synced | Firebase Hosting CDN cached the 404 before the file existed | Wait for cache TTL (up to 1 hour) or run `firebase deploy --only hosting` to bust the cache. |
 | Sync-service 403 on Drive API | Service account missing Drive permissions | Grant Google Drive read/write access to the sync-service service account email. |
+| firebase.json rewrite not working | Used `destination` instead of `run` for Cloud Run proxy | Use `"run": {"serviceId": "SERVICE", "region": "REGION"}` for Cloud Run rewrites. `destination` is for local file redirects only. |
+| `firebase deploy` auth errors | Tried to impersonate service accounts | Run `firebase deploy` directly — GCE ADC handles auth automatically. |
 
 ## Safety
 - This is a READ-ONLY diagnostic procedure — no modifications

@@ -29,6 +29,17 @@ The sync-service **only syncs files in subdirectories** (e.g., `public/`, `image
 
 Drive push notifications have a built-in delay of ~60-90 seconds. Combined with potential Cloud Run cold starts, end-to-end sync typically takes **60-90 seconds**.
 
+### ⚠️ min-instances=1 Required
+
+The sync-service **must** run with `min-instances=1`. If the service scales to zero, the Drive watch channel dies and new file uploads are never synced. This is a permanent infrastructure requirement.
+
+### Firebase Hosting Rewrite
+
+Firebase Hosting uses a Cloud Run rewrite (`/public/**` → `proxy-service`) to serve GCS files. The hosting config is stored in `services/hosting/firebase.json`. After any change, deploy with:
+```bash
+firebase deploy --only hosting --project=tachin-website
+```
+
 ## Infrastructure
 
 | Component | Type | URL | Project |
