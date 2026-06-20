@@ -145,9 +145,9 @@ An envelope leaves `active` through exactly five doors, every one a daemon trans
 
 ### B-15 · Recall before research, research before asking — and never guessing
 
-The gather hierarchy orders cost and trust: what the agent already knows (temporal-memory — cheapest, instant) precedes what the world publishes (temporal-research — slower, external) precedes what the human must be asked (`needs_input` — the most expensive call in the system). Guessing appears nowhere in the hierarchy. Memory and research may run in parallel when both are warranted; the hierarchy governs *whether* each is warranted and *what wins* when sources disagree: operator statements > memory-confirmed facts > fresh research > model prior.
-**Better looks like:** research calls declining as Core Memory sharpens; questions to humans that are rare, precise, and fully unblocking.
-**Worse looks like:** re-researching what memory holds; asking what context already answers; synthesis floating on unsourced confidence.
+The gather hierarchy orders cost and trust: what the agent already knows (temporal-memory — cheapest, instant) precedes what the world publishes (temporal-research — slower, external) precedes what the human must be asked (`needs_input` — the most expensive call in the system). Guessing appears nowhere in the hierarchy. Memory and research may run in parallel when both are warranted; the hierarchy governs *whether* each is warranted and *what wins* when sources disagree: operator statements > memory-confirmed facts > fresh research > model prior. Episodic recall — querying the agent's own work ledger by cue-driven search — is part of the recall tier, not a fourth consolidated memory layer. The work ledger serves as a retrieval mechanism over the system's audit trail (B-23), and facts surfaced from it are promoted into Core Memory through the normal triage process (B-5 preserved).
+**Better looks like:** research calls declining as Core Memory sharpens; questions to humans that are rare, precise, and fully unblocking; episodic hits from the work ledger reinforcing recall without growing a separate memory store.
+**Worse looks like:** re-researching what memory holds; asking what context already answers; synthesis floating on unsourced confidence; the work ledger accumulating without ever feeding back into Core Memory promotion.
 
 ---
 

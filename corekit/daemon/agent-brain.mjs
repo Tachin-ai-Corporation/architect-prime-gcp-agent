@@ -49,6 +49,7 @@ import { extractVerdict, extractFailSummary, extractFailRecommendation } from '.
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
+import { extractCues, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
 import {
   handleSynthesize,
   handleBlocked,
@@ -1257,9 +1258,10 @@ async function getPendingIntakeQueue() {
 }
 
 // ---- Memory: recall context via temporal-memory agent ----
-// Pre-fetches MEMORY.md, core-memory-read, and session-summary then passes
-// all raw data to temporal-memory for synthesis. temporal-memory runs with
-// maxSteps=1 and no tools, so the daemon must gather the data first.
+// Episodic retrieval: pre-fetches MEMORY.md, core-memory (query-filtered + recent),
+// work-ledger digest (7d), and cue-searched work history (30d/180d), then passes
+// all candidates to temporal-memory for synthesis. Escalation allows temporal-memory
+// to request deeper history (one bounded retry).
 async function recallMemory(query, context = {}) {
   try {
     // Build enriched query from multiple sources
@@ -1267,13 +1269,13 @@ async function recallMemory(query, context = {}) {
     if (context.instruction) queryParts.push(`Task: ${context.instruction}`);
     if (context.context_summary) queryParts.push(`Context: ${context.context_summary}`);
     const enrichedQuery = queryParts.join('\n');
+    const scope = context.scope || 'targeted';
+    const cues = context.cues || extractCues(enrichedQuery);
 
-    log('INFO', `Memory recall: "${enrichedQuery.substring(0, 120)}"`);
+    log('INFO', `Memory recall: scope=${scope} cues=[${cues.slice(0, 5).join(',')}] query="${enrichedQuery.substring(0, 120)}"`);
 
-    // ---- Pre-fetch memory data (dual-pass retrieval at daemon level) ----
+    // ---- Layer A: Working Memory (MEMORY.md) ----
     const memoryParts = [];
-
-    // 1. Working Memory — MEMORY.md (always include)
     const memoryPath = `${CORE_DIR}/workspace/MEMORY.md`;
     try {
       if (existsSync(memoryPath)) {
@@ -1284,54 +1286,160 @@ async function recallMemory(query, context = {}) {
       log('WARN', `Memory recall: MEMORY.md read failed: ${e.message}`);
     }
 
-    // 2. Core Memory — Firestore via core-memory-read script
+    // ---- Layer B: Core Memory (Firestore) — query-filtered + recent scan, deduped ----
     const coreMemScript = `${CORE_DIR}/bin/core-memory-read`;
+    const seenCoreIds = new Set();
     if (existsSync(coreMemScript)) {
+      // B1: query-filtered core memory
+      if (cues.length > 0) {
+        try {
+          const coreQueryResult = execFileSync(coreMemScript, [
+            '--query', cues.slice(0, 4).join(' '),
+            '--status', 'active', '--limit', '10',
+          ], { timeout: 10000, stdio: 'pipe', env: { ...process.env, CORE_DIR } });
+          const coreQueryText = coreQueryResult.toString().trim();
+          if (coreQueryText && !coreQueryText.includes('0 entries') && !coreQueryText.includes('No core memory')) {
+            memoryParts.push(`## Core Memory (query: ${cues.slice(0, 4).join(' ')})\n${coreQueryText}`);
+            // Extract IDs to dedup against recent scan
+            for (const m of coreQueryText.matchAll(/\(([a-f0-9-]{8,})\)/g)) seenCoreIds.add(m[1]);
+          }
+        } catch (e) {
+          log('WARN', `Memory recall: core-memory-read --query failed: ${e.message}`);
+        }
+      }
+      // B2: recent core memory (30d window)
       try {
-        const coreResult = execFileSync(coreMemScript, [
-          '--status', 'active', '--limit', '15',
+        const coreRecentResult = execFileSync(coreMemScript, [
+          '--status', 'active', '--since', '30d', '--limit', '8',
         ], { timeout: 10000, stdio: 'pipe', env: { ...process.env, CORE_DIR } });
-        const coreText = coreResult.toString().trim();
-        if (coreText && coreText !== '--- 0 entries ---') {
-          memoryParts.push(`## Core Memory (Firestore)\n${coreText}`);
+        const coreRecentText = coreRecentResult.toString().trim();
+        if (coreRecentText && !coreRecentText.includes('0 entries') && !coreRecentText.includes('No core memory')) {
+          // Simple dedup: only add if it has entries not already seen
+          const hasNew = ![...coreRecentText.matchAll(/\(([a-f0-9-]{8,})\)/g)].every(m => seenCoreIds.has(m[1]));
+          if (hasNew || seenCoreIds.size === 0) {
+            memoryParts.push(`## Core Memory (recent 30d)\n${coreRecentText}`);
+          }
         }
       } catch (e) {
-        log('WARN', `Memory recall: core-memory-read failed: ${e.message}`);
+        log('WARN', `Memory recall: core-memory-read --since 30d failed: ${e.message}`);
       }
     }
 
-    // 3. Session Summaries — recent activity via session-summary script
-    const sessionScript = `${CORE_DIR}/bin/session-summary`;
-    if (existsSync(sessionScript)) {
+    // ---- Layer C: Recent Work Digest (7 days) ----
+    let layerCHits = 0;
+    try {
+      const digest = await recentWorkDigest({
+        firestoreQuery,
+        owner: AGENT_EMAIL || AGENT_ID,
+        sinceDays: 7,
+        limit: 50,
+      });
+      if (digest) {
+        memoryParts.push(digest);
+        layerCHits = (digest.match(/^- /gm) || []).length;
+      }
+    } catch (e) {
+      log('WARN', `Memory recall: recentWorkDigest failed: ${e.message}`);
+    }
+
+    // ---- Layer D: Episodic Work Search (cue-driven) ----
+    let layerDHits = 0;
+    const sinceDays = scope === 'deep' ? 180 : 30;
+    const searchLimit = scope === 'deep' ? 12 : 6;
+    if (cues.length > 0) {
       try {
-        const sessionResult = execFileSync(sessionScript, [
-          '--hours', '24',
-        ], { timeout: 10000, stdio: 'pipe', env: { ...process.env, CORE_DIR } });
-        const sessionText = sessionResult.toString().trim();
-        if (sessionText) {
-          memoryParts.push(`## Recent Sessions (24h)\n${sessionText}`);
+        const workHits = await searchWork({
+          firestoreQuery,
+          owner: AGENT_EMAIL || AGENT_ID,
+          cues,
+          sinceDays,
+          limit: searchLimit,
+        });
+        layerDHits = workHits.length;
+        if (workHits.length > 0) {
+          const hitLines = workHits.map(h =>
+            `- [${h.type}] ${h.title || h.instruction_blurb} (id:${h.id}, ${h.completed_at || h.created_at}, score:${h.score.toFixed(2)})\n  ${h.output_blurb || ''}`.trim()
+          ).join('\n');
+          memoryParts.push(`## Episodic Work History (${sinceDays}d, ${workHits.length} hits)\n${hitLines}`);
         }
       } catch (e) {
-        log('WARN', `Memory recall: session-summary failed: ${e.message}`);
+        log('WARN', `Memory recall: searchWork failed: ${e.message}`);
       }
     }
 
-    // Build context block for temporal-memory
-    const preloadedContext = memoryParts.length > 0
-      ? `\n\n--- PRE-LOADED MEMORY DATA ---\n${memoryParts.join('\n\n')}\n--- END PRE-LOADED DATA ---`
+    log('INFO', `[TELEMETRY] recall_layers scope=${scope} cues=${cues.length} coreIds=${seenCoreIds.size} digestHits=${layerCHits} workHits=${layerDHits}`);
+
+    // ---- Trim candidates to budget ----
+    const CANDIDATE_BUDGET_CHARS = 8000;
+    let candidateBlock = memoryParts.join('\n\n');
+    if (candidateBlock.length > CANDIDATE_BUDGET_CHARS) {
+      candidateBlock = candidateBlock.substring(0, CANDIDATE_BUDGET_CHARS) + '\n[...trimmed to budget]';
+    }
+
+    // ---- Pass-1: temporal-memory synthesis ----
+    const preloadedContext = candidateBlock
+      ? `\n\n--- PRE-LOADED MEMORY DATA ---\n${candidateBlock}\n--- END PRE-LOADED DATA ---`
       : '';
 
+    const pass1Instruction = scope === 'deep'
+      ? `Construct a focused recall package for:\n${enrichedQuery}${preloadedContext}`
+      : `Recall all relevant context for:\n${enrichedQuery}\n\nIf answering requires work history older or broader than the candidates below, emit exactly {"recall_escalate": true, "cues": [...], "reason": "..."} and nothing else.${preloadedContext}`;
+
     const result = await callAgent('temporal-memory', {
-      instruction: `Recall all relevant context for:\n${enrichedQuery}${preloadedContext}`,
-      accept_criteria: 'Return relevant memory context or "No relevant context found"',
+      instruction: pass1Instruction,
+      accept_criteria: 'Return relevant memory context, "No relevant context found", or an escalation object',
     });
-    if (result.success && result.output) {
-      const recalled = toStr(result.output).substring(0, 3000);
-      log('INFO', `Memory recalled: ${recalled.length} chars (${result.durationMs}ms)`);
-      return { recalled };
+
+    if (!result.success || !result.output) {
+      log('INFO', `Memory recall: no context (${result.durationMs}ms)`);
+      return {};
     }
-    log('INFO', `Memory recall: no context (${result.durationMs}ms)`);
-    return {};
+
+    const pass1Output = toStr(result.output);
+
+    // ---- Check for escalation ----
+    if (scope !== 'deep') {
+      try {
+        const escalation = JSON.parse(pass1Output);
+        if (escalation && escalation.recall_escalate === true) {
+          log('INFO', `Memory recall: escalation requested — reason: ${escalation.reason}, refined cues: [${(escalation.cues || []).join(',')}]`);
+          // Deep pass: wider search window
+          const deepCues = escalation.cues && escalation.cues.length > 0 ? escalation.cues : cues;
+          const deepHits = await searchWork({
+            firestoreQuery,
+            owner: AGENT_EMAIL || AGENT_ID,
+            cues: deepCues,
+            sinceDays: 180,
+            limit: 12,
+          });
+          if (deepHits.length > 0) {
+            const deepLines = deepHits.map(h =>
+              `- [${h.type}] ${h.title || h.instruction_blurb} (id:${h.id}, ${h.completed_at || h.created_at}, score:${h.score.toFixed(2)})\n  ${h.output_blurb || ''}`.trim()
+            ).join('\n');
+            const deepBlock = `\n\n## Deep Work History (180d, ${deepHits.length} hits)\n${deepLines}`;
+            const pass2Context = `\n\n--- PRE-LOADED MEMORY DATA ---\n${candidateBlock}${deepBlock}\n--- END PRE-LOADED DATA ---`;
+            const pass2 = await callAgent('temporal-memory', {
+              instruction: `Construct a focused recall package (no further escalation) for:\n${enrichedQuery}${pass2Context}`,
+              accept_criteria: 'Return relevant memory context or "No relevant context found"',
+            });
+            if (pass2.success && pass2.output) {
+              const recalled = toStr(pass2.output).substring(0, 3000);
+              log('INFO', `Memory recalled (escalated): ${recalled.length} chars (pass1:${result.durationMs}ms pass2:${pass2.durationMs}ms)`);
+              return { recalled };
+            }
+          }
+          // Escalation requested but no deep hits found — fall through to pass-1
+          log('INFO', `Memory recall: escalation found 0 deep hits, using pass-1 context`);
+        }
+      } catch (_) {
+        // Not valid JSON — pass-1 returned a normal text package, not an escalation
+      }
+    }
+
+    // ---- Return pass-1 result ----
+    const recalled = pass1Output.substring(0, 3000);
+    log('INFO', `Memory recalled: ${recalled.length} chars (${result.durationMs}ms)`);
+    return { recalled };
   } catch (e) {
     log('WARN', `Memory recall failed: ${e.message}`);
     return {};

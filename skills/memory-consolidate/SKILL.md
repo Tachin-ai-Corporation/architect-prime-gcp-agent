@@ -14,21 +14,24 @@ This is the agent's "sleep cycle" — processing the day's experiences across al
 ### Nightly Consolidation Playbook
 1. **Gather Working Memory:** Read `/opt/corekit/workspace/MEMORY.md` to see recent focus and open items.
 2. **Retrieve Recent Conversations:** Run `session-summary --hours 24 --limit 20` to extract user interactions.
-3. **Scan Recent Core Memory:** Run `core-memory-read --since 30d --limit 20` to scan recent long-term writes.
-4. **Scan Full Category Archives:** Run `core-memory-read --category <cat>` for categories: `architecture`, `operations`, `iam`, `decisions`, `patterns`, `errors`.
-5. **Triage Working Memory:** Classify every entry in `MEMORY.md` into one of: `ACTIVE`, `COMPLETED`, `STALE`, or `PROMOTE`.
-6. **Identify Outdated Core Memories:** Compare recent work against the long-term archive to locate contradicted, redundant, or stale entries.
-7. **Retire or Supersede:** Run `core-memory-retire --id <entry-id> --reason "<reason>"` for stale items, or `core-memory-write --fact "<fact>" --category <cat> --supersedes <old-id>` for updates. (Max 5 per run).
-8. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat>` for promoted items. (Max 5 per run).
-9. **Prune and Rewrite Working Memory:** Overwrite `/opt/corekit/workspace/MEMORY.md` with only active items, using the template format (must be under 2,000 characters).
-10. **Review and Update Deep Truths:** Run `update-deep-truths --list` and modify if needed using `--add` or `--remove`. (Max 2 changes per run).
-11. **Generate Report:** Output a structured summary showing counts of triaged, retired, and promoted items.
+3. **Scan Recent Work Ledger:** The brain daemon queries the agent's completed work envelopes from the last 7 days (via the same episodic retrieval used for recall). Use these to identify facts worth promoting — completed missions carry verified outcomes.
+4. **Scan Recent Core Memory:** Run `core-memory-read --since 30d --limit 20` to scan recent long-term writes.
+5. **Scan Full Category Archives:** Run `core-memory-read --category <cat>` for categories: `architecture`, `operations`, `iam`, `decisions`, `patterns`, `errors`.
+6. **Triage Working Memory:** Classify every entry in `MEMORY.md` into one of: `ACTIVE`, `COMPLETED`, `STALE`, or `PROMOTE`.
+7. **Identify Outdated Core Memories:** Compare recent work against the long-term archive to locate contradicted, redundant, or stale entries.
+8. **Retire or Supersede:** Run `core-memory-retire --id <entry-id> --reason "<reason>"` for stale items, or `core-memory-write --fact "<fact>" --category <cat> --supersedes <old-id>` for updates. (Max 5 per run).
+9. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat>` for promoted items. (Max 5 per run).
+10. **Prune and Rewrite Working Memory:** Overwrite `/opt/corekit/workspace/MEMORY.md` with only active items, using the template format (must be under 2,000 characters).
+11. **Review and Update Deep Truths:** Run `update-deep-truths --list` and modify if needed using `--add` or `--remove`. (Max 2 changes per run).
+12. **Generate Report:** Output a structured summary showing counts of triaged, retired, and promoted items.
 
 ---
 
 ## Architectural Details
 
 ### Three-Layer Memory Architecture
+
+The work ledger (`primes/{id}/work/`) serves as an episodic recall source — a retrieval mechanism over the system's own audit trail (B-23). It is not a fourth consolidated memory layer; facts from work history are promoted into Core Memory through the normal triage process (B-5 preserved).
 
 | Layer | Storage | When Loaded | Lifespan | Your Job |
 |---|---|---|---|---|

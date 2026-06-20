@@ -89,9 +89,9 @@ print(cutoff.strftime('%Y-%m-%dT%H:%M:%S.000Z'))
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
 PARENT_PATH="primes/${PRIME_ID}"
 
-# Always filter by createdAt >= cutoff
+# Always filter by created_at >= cutoff
 FILTER_PARTS=()
-FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"createdAt\"},\"op\":\"GREATER_THAN_OR_EQUAL\",\"value\":{\"stringValue\":\"${CUTOFF}\"}}}")
+FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"created_at\"},\"op\":\"GREATER_THAN_OR_EQUAL\",\"value\":{\"stringValue\":\"${CUTOFF}\"}}}")
 
 if [[ -n "$OWNER_FILTER" ]]; then
   FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"owner\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${OWNER_FILTER}\"}}}")
@@ -117,7 +117,7 @@ QUERY_BODY=$(cat <<EOF
   "structuredQuery": {
     "from": [{"collectionId": "work"}],
     ${WHERE_CLAUSE}
-    "orderBy": [{"field": {"fieldPath": "createdAt"}, "direction": "DESCENDING"}],
+    "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
     "limit": ${LIMIT}
   }
 }
@@ -189,9 +189,9 @@ for entry in data:
         "owner": fv(fields, "owner"),
         "title": fv(fields, "title"),
         "instruction": fv(fields, "instruction"),
-        "result": fv(fields, "result"),
-        "createdAt": fv(fields, "createdAt"),
-        "completedAt": fv(fields, "completedAt"),
+        "output": fv(fields, "output"),
+        "created_at": fv(fields, "created_at"),
+        "completed_at": fv(fields, "completed_at"),
         "intent": fv(fields, "intent"),
         "agent": fv(fields, "agent"),
         "source_channel": fv(fields, "source_channel"),
@@ -201,12 +201,12 @@ for entry in data:
     }
 
     # Calculate duration if both timestamps present
-    if env["createdAt"] and env["completedAt"]:
+    if env["created_at"] and env["completed_at"]:
         try:
             from datetime import datetime
             fmt = "%Y-%m-%dT%H:%M:%S"
-            c = env["createdAt"][:19]
-            d = env["completedAt"][:19]
+            c = env["created_at"][:19]
+            d = env["completed_at"][:19]
             dt = datetime.strptime(d, fmt) - datetime.strptime(c, fmt)
             env["durationSec"] = int(dt.total_seconds())
         except Exception:
@@ -226,8 +226,8 @@ if json_mode:
         for e in envelopes:
             if e.get("instruction"):
                 e["instruction"] = e["instruction"][:200] + ("..." if len(e.get("instruction","")) > 200 else "")
-            if e.get("result"):
-                e["result"] = e["result"][:300] + ("..." if len(e.get("result","")) > 300 else "")
+            if e.get("output"):
+                e["output"] = e["output"][:300] + ("..." if len(e.get("output","")) > 300 else "")
     print(json.dumps(envelopes, indent=2))
     sys.exit(0)
 
@@ -252,9 +252,9 @@ for e in envelopes:
     children = str(e["childCount"]) if e["childCount"] else "—"
     print(f"{e['id']:<35} {e['type']:<4} {owner:<12} {icon} {e['status']:<7} {children:<9} {dur:<10} {title}")
 
-    if verbose and e.get("result"):
-        result_preview = e["result"][:200].replace("\n", " ")
-        print(f"   └─ Result: {result_preview}")
+    if verbose and e.get("output"):
+        result_preview = e["output"][:200].replace("\n", " ")
+        print(f"   └─ Output: {result_preview}")
     if verbose and e.get("process_id"):
         print(f"   └─ Process: {e['process_id']}")
 
