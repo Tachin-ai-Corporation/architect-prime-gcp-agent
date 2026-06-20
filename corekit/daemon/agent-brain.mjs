@@ -1255,6 +1255,9 @@ async function getPendingIntakeQueue() {
 }
 
 // ---- Memory: recall context via temporal-memory agent ----
+// Pre-fetches MEMORY.md, core-memory-read, and session-summary then passes
+// all raw data to temporal-memory for synthesis. temporal-memory runs with
+// maxSteps=1 and no tools, so the daemon must gather the data first.
 async function recallMemory(query, context = {}) {
   try {
     // Build enriched query from multiple sources
@@ -1264,8 +1267,60 @@ async function recallMemory(query, context = {}) {
     const enrichedQuery = queryParts.join('\n');
 
     log('INFO', `Memory recall: "${enrichedQuery.substring(0, 120)}"`);
+
+    // ---- Pre-fetch memory data (dual-pass retrieval at daemon level) ----
+    const memoryParts = [];
+
+    // 1. Working Memory — MEMORY.md (always include)
+    const memoryPath = `${CORE_DIR}/workspace/MEMORY.md`;
+    try {
+      if (existsSync(memoryPath)) {
+        const memContent = readFileSync(memoryPath, 'utf8').trim();
+        if (memContent) memoryParts.push(`## Working Memory (MEMORY.md)\n${memContent}`);
+      }
+    } catch (e) {
+      log('WARN', `Memory recall: MEMORY.md read failed: ${e.message}`);
+    }
+
+    // 2. Core Memory — Firestore via core-memory-read script
+    const coreMemScript = `${CORE_DIR}/bin/core-memory-read`;
+    if (existsSync(coreMemScript)) {
+      try {
+        const coreResult = execFileSync(coreMemScript, [
+          '--status', 'active', '--limit', '15',
+        ], { timeout: 10000, stdio: 'pipe', env: { ...process.env, CORE_DIR } });
+        const coreText = coreResult.toString().trim();
+        if (coreText && coreText !== '--- 0 entries ---') {
+          memoryParts.push(`## Core Memory (Firestore)\n${coreText}`);
+        }
+      } catch (e) {
+        log('WARN', `Memory recall: core-memory-read failed: ${e.message}`);
+      }
+    }
+
+    // 3. Session Summaries — recent activity via session-summary script
+    const sessionScript = `${CORE_DIR}/bin/session-summary`;
+    if (existsSync(sessionScript)) {
+      try {
+        const sessionResult = execFileSync(sessionScript, [
+          '--hours', '24',
+        ], { timeout: 10000, stdio: 'pipe', env: { ...process.env, CORE_DIR } });
+        const sessionText = sessionResult.toString().trim();
+        if (sessionText) {
+          memoryParts.push(`## Recent Sessions (24h)\n${sessionText}`);
+        }
+      } catch (e) {
+        log('WARN', `Memory recall: session-summary failed: ${e.message}`);
+      }
+    }
+
+    // Build context block for temporal-memory
+    const preloadedContext = memoryParts.length > 0
+      ? `\n\n--- PRE-LOADED MEMORY DATA ---\n${memoryParts.join('\n\n')}\n--- END PRE-LOADED DATA ---`
+      : '';
+
     const result = await callAgent('temporal-memory', {
-      instruction: `Recall all relevant context for:\n${enrichedQuery}`,
+      instruction: `Recall all relevant context for:\n${enrichedQuery}${preloadedContext}`,
       accept_criteria: 'Return relevant memory context or "No relevant context found"',
     });
     if (result.success && result.output) {
