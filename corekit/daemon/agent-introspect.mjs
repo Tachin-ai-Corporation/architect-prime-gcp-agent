@@ -193,6 +193,7 @@ function handleSkills() {
   }
 
   // 1. Base skills: /opt/corekit/skills/{id}/
+  const seenSkillIds = new Set();
   if (existsSync(SKILLS_DIR)) {
     try {
       for (const d of readdirSync(SKILLS_DIR)) {
@@ -200,6 +201,7 @@ function handleSkills() {
         try {
           if (statSync(skillDir).isDirectory()) {
             collectSkill(d, skillDir, 'base');
+            seenSkillIds.add(d);
           }
         } catch {}
       }
@@ -207,15 +209,18 @@ function handleSkills() {
   }
 
   // 2. Specialty skills: /opt/corekit/corekit/specialties/{specialty}/skills/{id}/
+  //    Skip any already collected from base (they get deployed there during upgrade)
   if (specialty) {
     const specSkillsDir = join(COREKIT_DIR, 'specialties', specialty, 'skills');
     if (existsSync(specSkillsDir)) {
       try {
         for (const d of readdirSync(specSkillsDir)) {
+          if (seenSkillIds.has(d)) continue; // already in base — skip duplicate
           const skillDir = join(specSkillsDir, d);
           try {
             if (statSync(skillDir).isDirectory()) {
               collectSkill(d, skillDir, 'specialty');
+              seenSkillIds.add(d);
             }
           } catch {}
         }
