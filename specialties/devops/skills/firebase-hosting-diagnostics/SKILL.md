@@ -29,6 +29,18 @@ A file exists in the Drive source (or GCS bucket) but is NOT accessible at the e
    gcloud run services describe sync-service --project=<gcp_project_id> --region=us-central1 --format='value(status.url)'
    gcloud run services logs read sync-service --project=<gcp_project_id> --region=us-central1 --limit=50
    ```
+2b. **Verify Drive Watch Channel:** Check that the watch is active AND the notification address points to the sync-service:
+   ```bash
+   # Check recent watch registration logs
+   gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="sync-service" AND textPayload:"watch"' \
+     --project=<gcp_project_id> --freshness=24h --limit=10 \
+     --format='value(textPayload)'
+   ```
+   Verify the log shows `Using webhook address: https://sync-service-....run.app/sync-all` (must be the service's own URL, NOT a Pub/Sub topic URL).
+   If the address is wrong or the watch is expired, renew it:
+   ```bash
+   curl -X POST https://<sync_service_url>/renew-watch
+   ```
 3. **Check GCS Bucket:** Run `gsutil ls gs://<bucket-name>/public/` and `gsutil stat gs://<bucket-name>/public/<filename>` to verify the file is stored in GCS.
 4. **Check Proxy Service:** Get proxy service URL and test proxy access using `curl -v <proxy-service-url>/public/<filename>`.
 5. **Check Firebase Hosting Configuration:** Run `cat firebase.json` to verify the rewrite rules route requests correctly to the proxy.
@@ -39,6 +51,8 @@ A file exists in the Drive source (or GCS bucket) but is NOT accessible at the e
 | Error / Symptom | Likely Cause | Recovery |
 |-----------------|-------------|----------|
 | File in Drive but not in GCS | Sync-service not running or watch expired | Check sync-service logs using `gcloud run services logs read` and renew the directory watch. |
+| Watch registered but no notifications arrive | Watch address points to wrong URL (e.g., Pub/Sub topic instead of Cloud Run) | Check watch registration logs. The address must be the sync-service's own URL + /sync-all endpoint, NOT a Pub/Sub topic URL. |
+| Files in Drive subfolders sync, but root files don't | By design — sync-service ignores root-level files | Move files to a subdirectory (e.g., public/) for sync to work. Root files are intentionally skipped. |
 | File in GCS but proxy returns 404 | Proxy not configured for that path prefix | Check proxy rewrite rules in configuration, and verify GCS bucket name resolution. |
 | Proxy works but hosting returns 404 | Firebase rewrite missing or incorrect | Update `firebase.json` rewrites and run `firebase deploy --only hosting` to apply them. |
 | Everything works but wrong content | CDN cache stale | Clear Firebase Hosting cache or perform a force reload of the page. |

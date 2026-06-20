@@ -106,6 +106,37 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   "$FIRESTORE_URL/primes/chuck/fleet" | python3 -m json.tool
 ```
 
+## Cloud Logging
+
+`gcloud logging read` uses **Cloud Logging filter syntax**, NOT shell regex or grep patterns. Filters are structured key-value expressions.
+
+⚠️ **Use single quotes around the filter string** to avoid shell escaping issues. Use double quotes ONLY inside the filter for string values.
+
+### Read recent service logs
+```bash
+# Recent logs for a specific Cloud Run service
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="sync-service"' \
+  --project=PROJECT --freshness=1h --limit=20 \
+  --format='table(timestamp,textPayload)'
+```
+
+### Filter by text content
+```bash
+# Logs containing "error" (substring match uses ":")
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="SERVICE" AND textPayload:"error"' \
+  --project=PROJECT --freshness=1h --limit=10
+```
+
+### HTTP request logs
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="SERVICE" AND httpRequest.requestUrl:*' \
+  --project=PROJECT --freshness=24h --limit=10 \
+  --format='table(timestamp,httpRequest.requestUrl,httpRequest.status)'
+```
+
+### Freshness flag
+Use `--freshness=DURATION` instead of manual timestamp math. Accepted values: `1h`, `6h`, `1d`, `7d`, etc. This is simpler and less error-prone than computing RFC3339 timestamps.
+
 ## Infrastructure Discovery
 Key commands for discovering current state before making modifications:
 
@@ -118,6 +149,7 @@ Key commands for discovering current state before making modifications:
 | Cloud Build triggers | `gcloud builds triggers list --project=PROJECT` |
 | Project number | `gcloud projects describe PROJECT --format="value(projectNumber)"` |
 | Firestore documents | `curl -s -H "Authorization: Bearer $TOKEN" "https://firestore.googleapis.com/v1/projects/PROJECT/databases/(default)/documents/COLLECTION"` |
+| Cloud Run logs | `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="SERVICE"' --project=PROJECT --freshness=1h --limit=20` |
 
 ## Safety Rules
 - Always verify before modifying — list resources before deleting/updating

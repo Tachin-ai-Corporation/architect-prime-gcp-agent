@@ -69,6 +69,15 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 2. Run `drive-share <FILE_ID> --to <user_email> --role writer` (or `reader` for read-only access).
 3. Verify: Confirm the API output shows success.
 
+## Sync Service Integration
+
+The `tachin-website` project uses a sync-service that automatically propagates files from Google Drive to GCS and Firebase Hosting. Key rules:
+
+- **Root files are ignored**: The sync-service only syncs files in **subdirectories** (e.g., `public/`, `images/`). Files placed directly in the root Drive folder are skipped by design.
+- **Latency**: Changes take ~60-90 seconds to propagate (Drive notification delay + Cloud Run cold start).
+- **Public folder**: For files intended for the live website, upload to the `public/` subfolder within the root website folder.
+- **Verification**: After uploading, wait 90 seconds then check `gsutil ls gs://tachin-website-assets/public/<filename>` to confirm sync.
+
 ## Error Recovery
 
 | Error / Symptom | Likely Cause | Recovery |
@@ -78,6 +87,7 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 | `429 rateLimitExceeded` | Too many API requests | Wait 30 seconds, then retry the command once. |
 | Search returns empty | Query filter too narrow | Broaden the search by removing mimeType restrictions or searching partial names. |
 | Download fails on Google Doc | Attempting binary download of a Google native doc | Use the specific reader tool (e.g., `docs-cat` for Docs, sheet tools for Sheets) rather than `drive-download`. |
+| File uploaded to Drive but not syncing to GCS | File is in the root folder | Move the file to a subdirectory (e.g., `public/`). The sync-service ignores root-level files by design. |
 
 ## Examples
 
