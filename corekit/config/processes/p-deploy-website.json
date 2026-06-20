@@ -39,7 +39,7 @@
     },
     {
       "title": "Deploy to staging preview channel",
-      "description": "Deploy the website to a Firebase Hosting preview channel for review.\n\n1. Read the `gcp-devops` SKILL.md for the Firebase Hosting deployment procedure\n2. Deploy to the 'staging' preview channel:\n   ```bash\n   cd ${deploy_dir} && firebase hosting:channel:deploy staging --project=${firebase_project} --expires 7d\n   ```\n3. Extract the staging preview URL from the command output\n4. Verify the staging URL responds with `curl -o /dev/null -s -w '%{http_code}' <staging_url>`\n\nOutput: the staging preview URL and the HTTP status code from verification.",
+      "description": "Deploy the website to a Firebase Hosting preview channel for review.\n\nRun this command FIRST:\n```bash\ncd ${deploy_dir} && firebase hosting:channel:deploy staging --project=${firebase_project} --expires 7d\n```\n\nThen:\n1. Extract the staging preview URL from the command output (look for 'Channel URL')\n2. Verify the staging URL responds: `curl -o /dev/null -s -w '%{http_code}' <staging_url>`\n\nOutput: the staging preview URL and the HTTP status code from verification.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
