@@ -1,0 +1,14 @@
+{
+  "name": "sync-service",
+  "version": "1.0.0",
+  "description": "Drive to GCS sync service",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google-cloud/storage": "^7.1.0",
+    "googleapis": "^140.0.0",
+    "express": "^4.19.2"
+  }
+}
