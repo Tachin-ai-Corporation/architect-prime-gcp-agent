@@ -57,11 +57,11 @@
     },
     {
       "title": "Deploy to production",
-      "description": "After receiving owner approval, deploy to the live production site.\n\n1. Deploy to production:\n   ```bash\n   cd ${deploy_dir} && firebase deploy --only hosting --project=${firebase_project}\n   ```\n2. Extract the production Hosting URL from the command output\n3. Verify the production URL responds: `curl -o /dev/null -s -w '%{http_code}' <production_url>`\n\nOutput: the production URL and HTTP status code.",
+      "description": "After receiving owner approval, deploy to the live production site.\n\nRun this command:\n```bash\ncd ${deploy_dir} && firebase deploy --only hosting --project=${firebase_project}\n```\n\nExtract the production Hosting URL from the command output (look for 'Hosting URL').\n\nOutput: the production URL.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Firebase Hosting production deployment succeeded. The production URL is provided and responds with HTTP 200."
+      "accept_criteria": "The firebase deploy command ran successfully (output shows 'Deploy complete'). The production URL is extracted and reported."
     },
     {
       "title": "Verify production deployment",
