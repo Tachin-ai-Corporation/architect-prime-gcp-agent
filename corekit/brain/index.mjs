@@ -155,7 +155,7 @@ const server = createServer(async (req, res) => {
       const systemPrompt = systemMessages.map(m => m.content).join('\n') || agentConfig.systemPrompt;
       const chatMessages = messages.filter(m => m.role !== 'system');
 
-      // Run inference (non-streaming — agent-brain.mjs doesn't use streaming)
+      // Run inference (Anthropic uses streaming internally; response is collected before returning)
       const result = await runAgentTurnSyncWithFallback({
         modelString: agentConfig.model,
         fallbackModel: agentConfig.fallbackModel,

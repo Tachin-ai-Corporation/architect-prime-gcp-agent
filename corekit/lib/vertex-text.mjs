@@ -182,6 +182,8 @@ export function createVertexText(config) {
   const apiBase = `https://${config.location === 'global' ? '' : config.location + '-'}aiplatform.googleapis.com/v1/projects/${config.projectId}/locations/${config.location}/publishers/google/models`;
   const model = config.model;
   const timeoutMs = config.timeoutMs || 30_000;
+  const enforceSchemaTimeoutMs = config.enforceSchemaTimeoutMs || 15_000;
+  const enforceSchemaMaxAttempts = config.enforceSchemaMaxAttempts || 2;
 
   /**
    * Raw Vertex AI text→text call. Internal core used by all other methods.
@@ -423,7 +425,7 @@ export function createVertexText(config) {
     const input = typeof raw === 'string' ? raw : JSON.stringify(raw);
     const prompt = `Restructure this AI decision into the required JSON schema. Preserve ALL semantic content exactly — do not invent, remove, or modify any decisions, instructions, or reasoning.\n\n---\n${input}`;
 
-    for (let attempt = 1; attempt <= 2; attempt++) {
+    for (let attempt = 1; attempt <= enforceSchemaMaxAttempts; attempt++) {
       try {
         const token = await getGceToken();
         const resp = await fetch(`${apiBase}/${model}:generateContent`, {
@@ -436,9 +438,10 @@ export function createVertexText(config) {
               responseSchema: schema,
               maxOutputTokens: 8192,
               temperature: 0.1,
+              thinkingConfig: { thinkingBudget: 0 },
             },
           }),
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(enforceSchemaTimeoutMs),
         });
 
         if (!resp.ok) {
@@ -458,7 +461,7 @@ export function createVertexText(config) {
       }
     }
 
-    log('WARN', `enforceSchema failed 2x, falling back to parseJsonResponse`);
+    log('WARN', `enforceSchema failed ${enforceSchemaMaxAttempts}x, falling back to parseJsonResponse`);
     return typeof raw === 'string' ? parseJsonResponse(raw) : raw;
   }
 

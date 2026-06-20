@@ -476,15 +476,21 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
 
     console.log(`[loop] Calling Anthropic Claude ${modelId} (step ${step}/${maxSteps})...`);
     const response = await retryWithBackoff(
-      () => client.messages.create({
-        model: modelId,
-        max_tokens: maxTokens,
-        system: systemPayload,
-        messages: anthropicMessages,
-        tools: anthropicTools,
-        temperature,
-        top_p: topP,
-      }),
+      async () => {
+        // Use streaming to avoid the Anthropic SDK's 10-minute non-streaming
+        // timeout. stream().finalMessage() returns the same Message object as
+        // create() once the full response is collected.
+        const stream = client.messages.stream({
+          model: modelId,
+          max_tokens: maxTokens,
+          system: systemPayload,
+          messages: anthropicMessages,
+          tools: anthropicTools,
+          temperature,
+          top_p: topP,
+        });
+        return await stream.finalMessage();
+      },
       `Anthropic ${modelId} step ${step}`
     );
 

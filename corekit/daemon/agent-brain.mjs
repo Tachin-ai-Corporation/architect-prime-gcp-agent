@@ -122,6 +122,8 @@ const _vtx = createVertexText({
   location: VERTEX_LOCATION,
   model: CONTRACTS.utility?.model || BRAIN_MODEL,
   timeoutMs: CONTRACTS.utility?.timeout_ms || 30_000,
+  enforceSchemaTimeoutMs: CONTRACTS.utility?.enforce_schema_timeout_ms || 15_000,
+  enforceSchemaMaxAttempts: CONTRACTS.utility?.enforce_schema_max_attempts || 2,
   logger: log,
 });
 
