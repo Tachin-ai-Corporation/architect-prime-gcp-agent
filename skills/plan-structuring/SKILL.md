@@ -33,7 +33,7 @@ Return a JSON object with a `checkpoints` array:
           "agent": "motor|temporal-research|temporal-memory",
           "task": "Specific, atomic instruction. Name the skill(s) to use.",
           "accept_criteria": "Evidence this specific task completed correctly",
-          "step_type": "standard|delegation|approval_gate|ask",
+          "type": "standard|delegation|approval_gate|ask",
           "brief_part": "Which Brief part this task addresses"
         }
       ]
@@ -45,12 +45,24 @@ Return a JSON object with a `checkpoints` array:
 ## Rules
 
 ### Valid task agents
-The `agent` field MUST be exactly one of:
+For standard tasks, the `agent` field MUST be exactly one of:
 - `motor` — executes tools, runs commands, reads/writes files
 - `temporal-research` — web search and external information retrieval
 - `temporal-memory` — internal knowledge and memory recall
 
-No other values are valid. Common mistakes:
+For **delegation** tasks (`type: "delegation"`), the `agent` field is the **delegate specialty** (e.g., `devops`, `engineer`, `product-architect`). You MUST also include `target_email` with the teammate's email from the project team roster.
+
+```json
+{
+  "agent": "devops",
+  "type": "delegation",
+  "target_email": "devops-agent-stan@tachin.ag",
+  "task": "Run the p-sync-health-check process on tachin-website",
+  "accept_criteria": "Report confirming service status"
+}
+```
+
+Common mistakes:
 - `exec` is NOT an agent — it's a skill name. Use `motor` with the exec skill.
 - `system` / `System` is NOT an agent.
 - `cortex`, `prefrontal`, `cerebellum` are organ names, not task agents.
