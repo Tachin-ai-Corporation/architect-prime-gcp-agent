@@ -39,24 +39,44 @@ export async function handleCheckpointPlan(ctx, deps) {
   // redirect to the delegate action handler instead.
   const delegGoal = decision.goal || decision.instruction || '';
   const delegConstraints = decision.constraints || '';
-  const fullText = `${delegGoal} ${delegConstraints}`.toLowerCase();
+
+  // Build a searchable text blob from all relevant fields
+  let fullText = `${delegGoal} ${delegConstraints}`.toLowerCase();
+  // Also check checkpoint labels and task descriptions for delegation signals
+  const rawCheckpoints = decision.checkpoints || decision.plan?.checkpoints || [];
+  for (const cp of rawCheckpoints) {
+    fullText += ` ${(cp.label || cp.instruction || cp.title || '').toLowerCase()}`;
+    for (const t of (cp.tasks || cp.steps || [])) {
+      fullText += ` ${(t.instruction || t.task || t.description || '').toLowerCase()}`;
+    }
+  }
+
   const hasDelegateIntent = /\bdelegate\b/.test(fullText) || /\bdelegation\b/.test(fullText);
+
+  // Search for target email in all text fields
+  const emailRegex = /[\w.-]+@[\w.-]+/;
   const hasTargetEmail = decision.target_email
-    || /[\w.-]+@[\w.-]+/.exec(delegConstraints)?.[0]
-    || /[\w.-]+@[\w.-]+/.exec(delegGoal)?.[0];
+    || emailRegex.exec(delegConstraints)?.[0]
+    || emailRegex.exec(delegGoal)?.[0]
+    || emailRegex.exec(fullText)?.[0];
 
   if (hasDelegateIntent && hasTargetEmail) {
-    // Extract target email from decision fields or text
+    // Extract target email
     const extractedEmail = decision.target_email
-      || /[\w.-]+@[\w.-]+/.exec(delegConstraints)?.[0]
-      || /[\w.-]+@[\w.-]+/.exec(delegGoal)?.[0];
+      || emailRegex.exec(delegConstraints)?.[0]
+      || emailRegex.exec(delegGoal)?.[0]
+      || emailRegex.exec(fullText)?.[0];
     log('INFO', `Checkpoint plan delegation intercept: redirecting to delegate action (target=${extractedEmail})`);
 
     // Remap decision fields for the delegate handler
     decision.action = 'delegate';
     decision.target_email = extractedEmail;
-    decision.instruction = decision.instruction || delegGoal;
-    decision.accept_criteria = decision.accept_criteria || '';
+    decision.instruction = decision.instruction || delegGoal
+      || rawCheckpoints[0]?.tasks?.[0]?.instruction
+      || rawCheckpoints[0]?.tasks?.[0]?.task
+      || rawCheckpoints[0]?.label || '';
+    decision.accept_criteria = decision.accept_criteria
+      || rawCheckpoints[0]?.tasks?.[0]?.accept_criteria || '';
 
     return { delegateAction: 'delegate' };
   }
