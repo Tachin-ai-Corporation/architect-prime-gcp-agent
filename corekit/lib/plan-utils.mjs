@@ -31,6 +31,8 @@ export function extractCheckpoints(d, log = () => {}) {
     accept_criteria: cp.accept_criteria || '',
     tasks: (Array.isArray(cp.tasks) ? cp.tasks : (cp.steps || cp.parts || [])).filter(t => {
       // Validate task has agent and instruction (or task)
+      // Delegation tasks may lack agent but have target_email — allow them through
+      if (t.type === 'delegation' || t._step_type === 'delegation') return true;
       if (!t.agent || typeof t.agent !== 'string') {
         log('WARN', `Checkpoint ${i + 1}: skipping task without agent field`);
         return false;
