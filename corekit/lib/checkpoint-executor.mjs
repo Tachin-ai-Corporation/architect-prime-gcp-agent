@@ -209,9 +209,14 @@ export async function executeCheckpoints(checkpoints, opts) {
       }
 
       if (!taskAgent) {
-        log('WARN', `[checkpoint-executor] Checkpoint ${cpNum} task ${taskNum} missing agent, skipping`);
-        cpResults.push({ step: `${cpNum}.${taskNum}`, agent: 'unknown', result: '[SKIPPED]', success: false });
-        continue;
+        // Delegation tasks may lack agent — default to specialty or 'delegation'
+        if (stepType === 'delegation') {
+          taskAgent = task._specialty || 'delegation';
+        } else {
+          log('WARN', `[checkpoint-executor] Checkpoint ${cpNum} task ${taskNum} missing agent, skipping`);
+          cpResults.push({ step: `${cpNum}.${taskNum}`, agent: 'unknown', result: '[SKIPPED]', success: false });
+          continue;
+        }
       }
 
       // CP2: Step-ledger dedup
