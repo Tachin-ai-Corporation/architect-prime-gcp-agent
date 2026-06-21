@@ -12,8 +12,8 @@
       "step": 1,
       "agent": "motor",
       "intent": "execute",
-      "description": "Pre-flight: Read workspace/MEMORY.md with `cat MEMORY.md` and report character count with `wc -c MEMORY.md`. If MEMORY.md does not exist, create it with the standard template using `cat > MEMORY.md << 'TEMPLATE'\n# MEMORY (DevOps)\n\n## Current Focus\n\n## Active Context\n\n## Open Items\nTEMPLATE` then verify with `wc -c MEMORY.md`.",
-      "accept_criteria": "MEMORY.md contents shown in output. Character count reported."
+      "description": "SCOPE ENFORCEMENT: This process is EXCLUSIVELY about memory management. Ignore ALL context about other work (projects, deployments, debugging, etc.). Do NOT reference any ongoing missions or external tasks.\n\nPre-flight: Read workspace/MEMORY.md with `cat MEMORY.md` and report character count with `wc -c MEMORY.md`. If MEMORY.md does not exist, create it with: `printf '# MEMORY (DevOps)\n\n## Current Focus\n\n## Active Context\n\n## Open Items\n- None\n' > MEMORY.md` then verify with `wc -c MEMORY.md`.",
+      "accept_criteria": "MEMORY.md contents shown in output. Character count reported. No references to non-memory topics."
     },
     {
       "step": 2,
@@ -63,8 +63,8 @@
       "step": 8,
       "agent": "motor",
       "intent": "execute",
-      "description": "Rewrite MEMORY.md: You MUST use the `runCommand` tool to write the file. Keep only ACTIVE items from the triage. Execute this command (replacing placeholders with actual content):\n\nrunCommand: cat > MEMORY.md << 'MEMEOF'\n# MEMORY (DevOps)\n\n## Current Focus\n<active focus items from triage>\n\n## Active Context\n<active context items from triage>\n\n## Open Items\n<open items or 'None'>\nMEMEOF\n\nThen run `wc -c MEMORY.md` to verify size. Report the exact byte count.",
-      "accept_criteria": "runCommand used to write MEMORY.md. wc -c output present showing numeric byte count under 2000."
+      "description": "Rewrite MEMORY.md: You MUST use the `runCommand` tool to write the file. Keep only ACTIVE items from the triage. Do NOT use heredoc syntax (it is fragile). Instead, use this exact pattern:\n\n1. First clear the file: `printf '# MEMORY (DevOps)\n\n' > MEMORY.md`\n2. Append each section: `printf '## Current Focus\n' >> MEMORY.md`\n3. Append items one at a time: `printf '- item text here\n' >> MEMORY.md`\n4. Continue for Active Context and Open Items sections\n5. Finally verify: `wc -c MEMORY.md`\n\nThe final file MUST be under 2000 characters. Only include genuinely ACTIVE items from the triage.",
+      "accept_criteria": "runCommand used with printf to write MEMORY.md. wc -c output present showing numeric byte count under 2000."
     },
     {
       "step": 9,

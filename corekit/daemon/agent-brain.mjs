@@ -1447,35 +1447,15 @@ async function recallMemory(query, context = {}) {
 }
 
 // ---- Memory: write completed work deterministically ----
-// Deterministic write to both core_memory (Firestore via script) and MEMORY.md (local).
-// Previous approach dispatched to temporal-memory LLM which silently dropped the write.
+// Appends to MEMORY.md (working memory) for each completed envelope.
+// Core memory (Firestore) is NOT auto-written here — that creates noise entries
+// like "Completed M: [raw chat messages]..." which pollute long-term storage.
+// Core memory writes happen via:
+//   1. Motor tool calls: core-memory-write (intentional, structured facts)
+//   2. Nightly consolidation: p-memory-consolidate process (curated promotions)
 async function writeMemory(envelope) {
   try {
     const instruction = toStr(envelope.instruction).substring(0, 200);
-    const result = toStr(envelope.output).substring(0, 200);
-    const fact = `Completed ${envelope.type}: ${instruction}. Result: ${result}`;
-    const category = 'operations';
-    const tags = `mission,${envelope.type},auto`;
-
-    log('INFO', `Memory write: envelope ${envelope.id} — deterministic`);
-
-    // 1. Write to Firestore core_memory via script
-    const scriptPath = `${CORE_DIR}/bin/core-memory-write`;
-    if (existsSync(scriptPath)) {
-      try {
-        execFileSync(scriptPath, [
-          '--fact', fact,
-          '--category', category,
-          '--tags', tags,
-          '--source', 'brain-auto',
-        ], { timeout: 15000, stdio: 'pipe', env: { ...process.env, CORE_DIR } });
-        log('INFO', `Memory write: core_memory OK for ${envelope.id}`);
-      } catch (scriptErr) {
-        log('WARN', `Memory write: core-memory-write failed for ${envelope.id}: ${scriptErr.message}`);
-      }
-    } else {
-      log('WARN', `Memory write: core-memory-write not found at ${scriptPath}`);
-    }
 
     // 2. Append one-line summary to MEMORY.md (working memory accumulates during the day)
     const memoryPath = `${CORE_DIR}/workspace/MEMORY.md`;
