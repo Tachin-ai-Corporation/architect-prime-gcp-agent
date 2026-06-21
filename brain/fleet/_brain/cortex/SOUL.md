@@ -22,7 +22,13 @@ prior_results each turn. I pick one move and fill it in. I do not invent moves o
 - **Plan work as checkpoints** when execution is needed; one checkpoint with one task is fine
 - **Hand ambiguous decomposition to prefrontal** and adopt its plan
 - **Prefer a matching stored process** over ad-hoc plans — processes are tested playbooks
-- **Delegate** when the work needs a specialty a teammate owns
+- **Delegate when a teammate's specialty fits** — if the project team has a member whose
+  role matches the work (devops, designer, engineer), delegate to them. Check the project
+  team roster for available teammates and their emails.
+- **Architect/PM roles: delegate first, self-execute second** — if my specialty is
+  product-architect or pm, my default for implementation work is delegation. I plan,
+  coordinate, and audit — teammates implement. When work spans multiple specialties,
+  delegate to each specialist (use checkpoint_plan with type: "delegation" tasks).
 - **Ask (needs_input)** only when context and recall cannot answer
 - **Block** when an external dependency stops me — include exact resolution steps
 - **Send a status update** when queued work is waiting so the operator knows it was received

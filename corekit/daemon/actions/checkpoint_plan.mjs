@@ -35,14 +35,15 @@ export async function handleCheckpointPlan(ctx, deps) {
     buildProjectContext,
   } = deps;
 
-  // Delegation intercept: When cortex wraps a pure delegation in checkpoint_plan,
-  // redirect to the delegate action handler instead.
+  // Delegation intercept: When cortex wraps a PURE single-target delegation
+  // in checkpoint_plan (no mixed local+delegation tasks), redirect to delegate handler.
+  // Multi-delegation plans (multiple targets or mixed tasks) proceed normally
+  // through executeCheckpoints which handles type:"delegation" tasks natively.
   const delegGoal = decision.goal || decision.instruction || '';
   const delegConstraints = decision.constraints || '';
 
   // Build a searchable text blob from all relevant fields
   let fullText = `${delegGoal} ${delegConstraints}`.toLowerCase();
-  // Also check checkpoint labels and task descriptions for delegation signals
   const rawCheckpoints = decision.checkpoints || decision.plan?.checkpoints || [];
   for (const cp of rawCheckpoints) {
     fullText += ` ${(cp.label || cp.instruction || cp.title || '').toLowerCase()}`;
@@ -52,23 +53,39 @@ export async function handleCheckpointPlan(ctx, deps) {
   }
 
   const hasDelegateIntent = /\bdelegate\b/.test(fullText) || /\bdelegation\b/.test(fullText);
+  const emailRegex = /[\w.-]+@[\w.-]+/g;
 
-  // Search for target email in all text fields
-  const emailRegex = /[\w.-]+@[\w.-]+/;
-  const hasTargetEmail = decision.target_email
-    || emailRegex.exec(delegConstraints)?.[0]
-    || emailRegex.exec(delegGoal)?.[0]
-    || emailRegex.exec(fullText)?.[0];
+  // Count unique target emails across all tasks
+  const allTargetEmails = new Set();
+  let hasMixedTasks = false;
+  for (const cp of rawCheckpoints) {
+    for (const t of (cp.tasks || cp.steps || [])) {
+      if (t.type === 'delegation' || t._step_type === 'delegation') {
+        if (t.target_email) allTargetEmails.add(t.target_email);
+      } else {
+        hasMixedTasks = true;  // Has non-delegation tasks too
+      }
+    }
+  }
+  // Also check decision-level target
+  if (decision.target_email) allTargetEmails.add(decision.target_email);
 
-  if (hasDelegateIntent && hasTargetEmail) {
-    // Extract target email
-    const extractedEmail = decision.target_email
-      || emailRegex.exec(delegConstraints)?.[0]
-      || emailRegex.exec(delegGoal)?.[0]
-      || emailRegex.exec(fullText)?.[0];
+  // Extract emails from text if no explicit targets found
+  if (allTargetEmails.size === 0) {
+    const textEmails = fullText.match(emailRegex) || [];
+    textEmails.forEach(e => allTargetEmails.add(e));
+  }
+
+  // Only intercept for PURE single-target delegations (no mixed tasks, one target)
+  const isPureSingleDelegation = hasDelegateIntent
+    && allTargetEmails.size === 1
+    && !hasMixedTasks
+    && rawCheckpoints.every(cp => (cp.tasks || cp.steps || []).length <= 1);
+
+  if (isPureSingleDelegation) {
+    const extractedEmail = [...allTargetEmails][0];
     log('INFO', `Checkpoint plan delegation intercept: redirecting to delegate action (target=${extractedEmail})`);
 
-    // Remap decision fields for the delegate handler
     decision.action = 'delegate';
     decision.target_email = extractedEmail;
     decision.instruction = decision.instruction || delegGoal
@@ -79,6 +96,11 @@ export async function handleCheckpointPlan(ctx, deps) {
       || rawCheckpoints[0]?.tasks?.[0]?.accept_criteria || '';
 
     return { delegateAction: 'delegate' };
+  }
+
+  // Multi-delegation plans: log and proceed through normal checkpoint execution
+  if (hasDelegateIntent && allTargetEmails.size > 1) {
+    log('INFO', `Checkpoint plan: multi-delegation detected (${allTargetEmails.size} targets: ${[...allTargetEmails].join(', ')}). Proceeding with normal checkpoint execution.`);
   }
 
   // Try cortex-provided inline structure first

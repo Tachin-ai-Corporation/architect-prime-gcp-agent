@@ -183,6 +183,7 @@ export async function executeCheckpoints(checkpoints, opts) {
 
     let cpResults = [];
     let cpFailed = false;
+    let delegationDispatched = false;
 
     for (let ti = taskStartIdx; ti < cpTasks.length; ti++) {
       const task = cpTasks[ti];
@@ -530,13 +531,12 @@ export async function executeCheckpoints(checkpoints, opts) {
           updated_at: new Date().toISOString(),
         });
 
-        cpEnvelope.status = 'waiting';
-        cpEnvelope.updated_at = new Date().toISOString();
-        await firestoreWrite('work', cpId, cpEnvelope);
-        await writeHistory(cpId, 'active', 'waiting', 'brain', `Waiting for delegation to ${delegateSpecialty}`);
+        log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation sent to ${targetAgentEmail}`);
 
-        log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation sent, checkpoint waiting`);
-        return { paused: true, waitingOnDelegation: true };
+        // Track that this checkpoint has delegations — don't return yet,
+        // continue processing remaining tasks so parallel delegations fan out
+        delegationDispatched = true;
+        continue;  // Process next task in this checkpoint
       }
 
       // ---- Standard Task execution ----
@@ -822,6 +822,18 @@ export async function executeCheckpoints(checkpoints, opts) {
         cpFailed = true;
         break;
       }
+    }
+
+    // After processing all tasks, if any delegations were dispatched,
+    // pause the checkpoint and wait for delegates to complete
+    if (delegationDispatched) {
+      cpEnvelope.status = 'waiting';
+      cpEnvelope.updated_at = new Date().toISOString();
+      await firestoreWrite('work', cpId, cpEnvelope);
+      await writeHistory(cpId, 'active', 'waiting', 'brain',
+        `Waiting for ${cpEnvelope.children.length} delegation(s) to complete`);
+      log('INFO', `[checkpoint-executor] CP${cpNum}: ${cpEnvelope.children.length} delegation(s) dispatched, checkpoint waiting`);
+      return { paused: true, waitingOnDelegation: true };
     }
 
     // Mark checkpoint complete or failed

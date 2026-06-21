@@ -86,3 +86,68 @@ A simple request yields one checkpoint with one task.
 ### Constraints
 - Do not execute tasks directly.
 - Do not decide goal feasibility; cortex handles decisions.
+
+### Multi-Agent Delegation Plans
+
+When the Brief has multiple parts with `ownership: "teammate"`, structure the plan
+with `type: "delegation"` tasks targeting different teammates.
+
+**Parallel delegation** — independent parts go in the SAME checkpoint:
+```json
+{
+  "checkpoints": [
+    {
+      "instruction": "Delegate specialist work in parallel",
+      "accept_criteria": "Both agents complete their assigned tasks",
+      "tasks": [
+        {
+          "agent": "designer",
+          "type": "delegation",
+          "target_email": "designer-agent-dot@tachin.ag",
+          "task": "Audit the website UX and provide improvement recommendations",
+          "accept_criteria": "Report with specific UX improvement recommendations"
+        },
+        {
+          "agent": "devops",
+          "type": "delegation",
+          "target_email": "devops-agent-stan@tachin.ag",
+          "task": "Run sync-service health check and verify deployment",
+          "accept_criteria": "Report confirming service status and sync timestamp"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Mixed plans** — combine local analysis with delegated implementation:
+```json
+{
+  "checkpoints": [
+    {
+      "instruction": "Gather context locally",
+      "accept_criteria": "Project state documented",
+      "tasks": [
+        {
+          "agent": "motor",
+          "task": "Read the project context and current website structure. Skill: workspace-drive",
+          "accept_criteria": "Summary of current website state"
+        }
+      ]
+    },
+    {
+      "instruction": "Delegate specialist improvements",
+      "accept_criteria": "All delegates complete their work",
+      "tasks": [
+        {
+          "agent": "designer",
+          "type": "delegation",
+          "target_email": "designer-agent-dot@tachin.ag",
+          "task": "Apply UX improvements to the website",
+          "accept_criteria": "Updated design files or mockups"
+        }
+      ]
+    }
+  ]
+}
+```

@@ -77,6 +77,63 @@ Only `action: "delegate"` in the cortex decide response triggers delegation.
 | Work that needs a human decision | `needs_input` |
 | Following a defined playbook | `follow_process` |
 
+## Delegation-First Roles
+
+**Product architects and project managers** should always delegate implementation
+work. Their default action is `delegate` — they plan, coordinate, and audit.
+
+| Agent Type | Default for Implementation | Self-Execute |
+|-----------|--------------------------|--------------|
+| Product Architect | `delegate` to specialist | Plans, reviews, audits, context updates |
+| Project Manager | `delegate` to specialist | Plans, status tracking, context updates |
+| DevOps | Self-execute with motor | Only delegate when another specialty is needed |
+| Designer | Self-execute with motor | Only delegate when another specialty is needed |
+| Engineer | Self-execute with motor | Only delegate when another specialty is needed |
+
+## Multi-Agent Orchestration
+
+When work spans multiple specialties, use `checkpoint_plan` with multiple
+`type: "delegation"` tasks to fan out to several teammates simultaneously.
+
+### Example: Parallel Delegation to Designer + DevOps
+
+```json
+{
+  "action": "checkpoint_plan",
+  "goal": "Improve tachin-website: UX audit by Designer, health check by DevOps",
+  "checkpoints": [
+    {
+      "step": 1,
+      "label": "Parallel specialist work",
+      "tasks": [
+        {
+          "id": "1.1",
+          "type": "delegation",
+          "target_email": "designer-agent-dot@tachin.ag",
+          "agent": "designer",
+          "task": "Audit the tachin-website UX: review layout, navigation, visual hierarchy, and mobile responsiveness. Provide specific improvement recommendations.",
+          "accept_criteria": "Report with at least 3 specific UX improvement recommendations"
+        },
+        {
+          "id": "1.2",
+          "type": "delegation",
+          "target_email": "devops-agent-stan@tachin.ag",
+          "agent": "devops",
+          "task": "Run a health check on the tachin-website sync service and verify deployment status.",
+          "accept_criteria": "Report confirming service status and last sync timestamp"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key rules for multi-agent delegation:**
+- Independent tasks go in the SAME checkpoint (parallel execution)
+- Dependent tasks go in SEQUENTIAL checkpoints (serialized execution)
+- Each delegation task MUST have `type: "delegation"` and `target_email`
+- Pull `target_email` from the project team roster — never guess emails
+
 ## Error Recovery
 
 | Error / Symptom | Likely Cause | Recovery |
