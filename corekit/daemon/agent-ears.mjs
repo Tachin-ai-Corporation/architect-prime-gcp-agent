@@ -466,6 +466,14 @@ async function pollGChat() {
             }
           }
           if (!mentioned && AGENT_MENTION && text.includes(AGENT_MENTION)) mentioned = true;
+          // Delegation marker detection: [DELEGATION] and [DELEGATION-RESULT] markers
+          // use @email instead of display name. Accept messages containing these markers
+          // that are addressed to this agent's email.
+          if (!mentioned && AGENT_USER_EMAIL && text.includes(`@${AGENT_USER_EMAIL}`)) {
+            if (text.includes('[DELEGATION') || text.includes('[DELEGATION-RESULT')) {
+              mentioned = true;
+            }
+          }
           if (!mentioned && (AGENT_MENTION || _agentUserId)) continue;
 
           // Build context from prior messages in this page
