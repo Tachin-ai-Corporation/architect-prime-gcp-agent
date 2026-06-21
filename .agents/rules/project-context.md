@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.20.6.0)
+## Current Architecture (v2026.06.21.1.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -15,6 +15,10 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
 - **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. M→C→T hierarchy enforced for ALL output (acks, synthesize responses) via `createCT()` helper. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Contextual ack with recent mission history + project awareness. Motor timeout detection (`timed_out` status) with cortex `continue` action for re-dispatching timed-out tasks. Process step type dispatch (standard/delegation/spawn_responsibility/approval_gate/optional). Approval gate polling and resume. Responsibility→process linking via processRef (auto-execute, skip Cortex decide).
+- **Memory System Overhaul (v2026.06.21.1.0)**:
+  - **Removed auto core-memory-write**: `writeMemory()` in agent-brain.mjs no longer writes raw mission dumps to Firestore core memory on every envelope completion. Only MEMORY.md (working memory) is auto-appended. Core memory writes are now exclusively via Motor tool calls (intentional, curated facts) and the nightly `p-memory-consolidate` process (triage and promotion). This eliminates unbounded noise accumulation in long-term memory.
+  - **Process hardening (p-memory-consolidate)**: Added SCOPE ENFORCEMENT preamble to step 1 preventing context contamination from unrelated active work. Replaced fragile heredoc syntax in step 8 with deterministic printf pattern for MEMORY.md rewriting.
+  - **memory-system SKILL.md**: Added troubleshooting table for common failure modes (oversized MEMORY.md, failed consolidation, skipped appends), manual recovery steps, and documented the 3000-char size guard behavior.
 - **Brain Overhaul Audit Implementation (v2026.06.18.1)**:
   - **Motor Failure Detection Caller Wiring**: Imported and called `detectMotorFailure` in `checkpoint-executor.mjs` to check motor execution output/error and fail-fast if a token expiration or auth failure is found (resolved Gap 1 regression).
   - **toStr Coercion Protection**: All task and checkpoint string references (e.g. `.substring()`) are wrapped in `toStr` coercion to prevent crash sites when Cortex returns raw objects for task names (resolved Gap 2).
