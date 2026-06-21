@@ -203,7 +203,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         taskDesc = toStr(task.task || task.instruction || '');
         taskCriteria = task.accept_criteria
           || `Task "${toStr(task.task || task.brief_part || '').substring(0, 60)}" completed with evidence of meaningful work. No unresolved errors in tool output.`;
-        stepType = task._step_type || 'standard';
+        stepType = task._step_type || task.type || 'standard';
         isOptional = task._optional === true;
       }
 
@@ -427,21 +427,24 @@ export async function executeCheckpoints(checkpoints, opts) {
         const delegateSpecialty = task._specialty || taskAgent;
         log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: Cross-agent delegation to '${delegateSpecialty}'`);
 
-        let targetAgentEmail = null;
-        try {
-          const primesSnap = await firestoreQuery('primes', []);
-          for (const prime of primesSnap) {
-            const fleetSnap = await firestoreQuery(`primes/${prime.id}/fleet`, [
-              { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
-            ]);
-            const onlineAgent = fleetSnap.find(a => a.status === 'online');
-            if (onlineAgent) {
-              targetAgentEmail = onlineAgent.email;
-              break;
+        // Direct email from cortex/prefrontal output takes priority
+        let targetAgentEmail = task.target_email || null;
+        if (!targetAgentEmail) {
+          try {
+            const primesSnap = await firestoreQuery('primes', []);
+            for (const prime of primesSnap) {
+              const fleetSnap = await firestoreQuery(`primes/${prime.id}/fleet`, [
+                { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
+              ]);
+              const onlineAgent = fleetSnap.find(a => a.status === 'online');
+              if (onlineAgent) {
+                targetAgentEmail = onlineAgent.email;
+                break;
+              }
             }
+          } catch (e) {
+            log('WARN', `Delegation: failed to resolve agent for specialty '${delegateSpecialty}': ${e.message}`);
           }
-        } catch (e) {
-          log('WARN', `Delegation: failed to resolve agent for specialty '${delegateSpecialty}': ${e.message}`);
         }
 
         if (!targetAgentEmail) {
