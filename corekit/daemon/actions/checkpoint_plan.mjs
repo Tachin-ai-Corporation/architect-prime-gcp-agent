@@ -44,6 +44,8 @@ export async function handleCheckpointPlan(ctx, deps) {
     let hasInvalidAgent = false;
     for (const cp of checkpoints) {
       for (const t of cp.tasks) {
+        // Delegation tasks may specify the delegate specialty as agent — allow them through
+        if (t.type === 'delegation' || t._step_type === 'delegation') continue;
         if (!validAgents.includes(t.agent)) {
           log('WARN', `Checkpoint plan: Cortex inline plan contains invalid agent '${t.agent}'. Rejecting inline plan to force prefrontal structuring.`);
           hasInvalidAgent = true;
