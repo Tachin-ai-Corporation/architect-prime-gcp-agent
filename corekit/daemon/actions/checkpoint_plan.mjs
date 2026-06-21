@@ -35,6 +35,32 @@ export async function handleCheckpointPlan(ctx, deps) {
     buildProjectContext,
   } = deps;
 
+  // Delegation intercept: When cortex wraps a pure delegation in checkpoint_plan,
+  // redirect to the delegate action handler instead.
+  const delegGoal = decision.goal || decision.instruction || '';
+  const delegConstraints = decision.constraints || '';
+  const fullText = `${delegGoal} ${delegConstraints}`.toLowerCase();
+  const hasDelegateIntent = /\bdelegate\b/.test(fullText) || /\bdelegation\b/.test(fullText);
+  const hasTargetEmail = decision.target_email
+    || /[\w.-]+@[\w.-]+/.exec(delegConstraints)?.[0]
+    || /[\w.-]+@[\w.-]+/.exec(delegGoal)?.[0];
+
+  if (hasDelegateIntent && hasTargetEmail) {
+    // Extract target email from decision fields or text
+    const extractedEmail = decision.target_email
+      || /[\w.-]+@[\w.-]+/.exec(delegConstraints)?.[0]
+      || /[\w.-]+@[\w.-]+/.exec(delegGoal)?.[0];
+    log('INFO', `Checkpoint plan delegation intercept: redirecting to delegate action (target=${extractedEmail})`);
+
+    // Remap decision fields for the delegate handler
+    decision.action = 'delegate';
+    decision.target_email = extractedEmail;
+    decision.instruction = decision.instruction || delegGoal;
+    decision.accept_criteria = decision.accept_criteria || '';
+
+    return { delegateAction: 'delegate' };
+  }
+
   // Try cortex-provided inline structure first
   let checkpoints = extractCheckpoints(decision);
 
