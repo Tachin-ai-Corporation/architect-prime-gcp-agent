@@ -73,6 +73,7 @@ export function createProcessEngine(deps) {
     cleanupSharedWorkspace: _cleanupWs,
     fireEventResponsibilities: _fireEventResp,
     suggestContextPromotions: _suggestPromo,
+    onMissionComplete: _onMissionComplete,
     contextBudgets = {},
   } = deps;
 
@@ -951,6 +952,15 @@ export function createProcessEngine(deps) {
       `Process ${planFailed ? 'blocked' : 'complete'}: ${processName} (${successTasks}/${totalTasks} tasks)`);
 
     log('INFO', `Process "${processName}" ${planFailed ? 'BLOCKED' : 'COMPLETE'}: ${successTasks}/${totalTasks} tasks`);
+
+    // Delegation result callback — sends [DELEGATION-RESULT] back to delegator
+    if (!planFailed && mission.source_meta?.delegation_ref && _onMissionComplete) {
+      try {
+        await _onMissionComplete(mission);
+      } catch (e) {
+        log('WARN', `onMissionComplete callback failed: ${e.message}`);
+      }
+    }
 
     // Publish shared workspace artifacts to Drive BEFORE cleanup
     if (mission.type === 'M' && _publishArtifacts) {

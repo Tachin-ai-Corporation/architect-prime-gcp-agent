@@ -458,6 +458,43 @@ function _initProcessEngine() {
     createCT,
     suggestContextPromotions,
     buildProjectContext,
+    onMissionComplete: async (mission) => {
+      // Create delegation result envelope for delivery back to the delegator
+      if (!mission.source_meta?.delegation_ref) return;
+      const resultMarker = composeDelegationResultMarker({
+        targetEmail: mission.source_meta.delegated_from || '',
+        ref: mission.source_meta.delegation_ref,
+        status: mission.status,
+        missionId: mission.id,
+        body: toStr(mission.output).substring(0, 500),
+      });
+      const resultOutputId = generateId('w');
+      await firestoreWrite('work', resultOutputId, {
+        id: resultOutputId,
+        type: 'T',
+        parent_id: mission.id,
+        owner: AGENT_EMAIL || AGENT_ID,
+        status: 'complete',
+        intent: 'delegation_result',
+        title: `Delegation result for ${mission.source_meta.delegation_ref}`,
+        instruction: 'Deliver delegation result marker',
+        output: resultMarker,
+        delivery_status: 'pending',
+        delivery_target: mission.source_meta.delegated_from || null,
+        delivery_space_id: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id) || null,
+        delivery_address: makeAddress('gchat', {
+          space: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id)
+            ? `spaces/${PROJECTS[mission.project_id].gchat_space_id}`
+            : null,
+        }),
+        project_id: mission.project_id || null,
+        source_channel: 'brain',
+        source_meta: { delegation_ref: mission.source_meta.delegation_ref },
+        created_at: now(),
+        updated_at: now(),
+      });
+      log('INFO', `Delegation result envelope created: ${resultOutputId} for mission ${mission.id}`);
+    },
   });
 }
 
