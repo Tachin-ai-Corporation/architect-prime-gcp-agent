@@ -6,6 +6,8 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { ContextEditor } from "./ContextEditor";
 import type { ContextEntry } from "./ContextEditor";
+import { CanonEditor } from "./CanonEditor";
+import type { Canon } from "./CanonEditor";
 import { ProjectStatusBadge } from "./ProjectStatusBadge";
 import type { ProjectDetail, ProcessSummary, PromotionEntry } from "./types";
 import styles from "@/app/p/[id]/projects/page.module.css";
@@ -32,6 +34,8 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
   const [desc, setDesc] = useState("");
   const [contextDirty, setContextDirty] = useState(false);
   const [localContext, setLocalContext] = useState<Record<string, ContextEntry>>({});
+  const [localCanon, setLocalCanon] = useState<Canon | undefined>(undefined);
+  const [canonDirty, setCanonDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resolvedPrimeId, setResolvedPrimeId] = useState<string | null>(null);
 
@@ -55,6 +59,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
         setProject(data.project);
         setDesc(data.project.description);
         setLocalContext(data.project.context ?? {});
+        setLocalCanon(data.project.canon);
         setLinkedProcessIds(data.project.standardProcesses ?? []);
         setResolvedPrimeId(primeId || data.project.created_by || "chuck");
         setLoading(false);
@@ -109,6 +114,12 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
     setContextDirty(true);
   }, []);
 
+  /* ---- Canon change ---- */
+  const handleCanonChange = useCallback((canon: Canon) => {
+    setLocalCanon(canon);
+    setCanonDirty(true);
+  }, []);
+
   /* ---- Process linking ---- */
   const handleLinkProcess = useCallback((processId: string) => {
     setLinkedProcessIds((prev) => [...prev, processId]);
@@ -132,23 +143,28 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
   }, [projectId]);
 
   /* ---- Save ---- */
-  const isDirty = contextDirty || processesDirty || editDesc;
+  const isDirty = contextDirty || processesDirty || editDesc || canonDirty;
   const handleSave = useCallback(async () => {
     setSaving(true);
+    const payload: Record<string, unknown> = {
+      description: desc,
+      context: localContext,
+      standardProcesses: linkedProcessIds,
+    };
+    if (canonDirty && localCanon) {
+      payload.canon = localCanon;
+    }
     await api(`/api/projects/${projectId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        description: desc,
-        context: localContext,
-        standardProcesses: linkedProcessIds,
-      }),
+      body: JSON.stringify(payload),
     });
     setContextDirty(false);
     setProcessesDirty(false);
+    setCanonDirty(false);
     setEditDesc(false);
     setSaving(false);
-  }, [projectId, desc, localContext, linkedProcessIds]);
+  }, [projectId, desc, localContext, linkedProcessIds, canonDirty, localCanon]);
 
   if (loading) {
     return (
@@ -256,15 +272,25 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
         </div>
       </div>
 
+      {/* ---- Canon section (authoritative facts) ---- */}
+      <div className={styles.section}>
+        {isDirty && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        )}
+        <CanonEditor
+          canon={localCanon}
+          onChange={handleCanonChange}
+        />
+      </div>
+
       {/* ---- Context section ---- */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Context</h2>
-          {isDirty && (
-            <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save Changes"}
-            </button>
-          )}
         </div>
         <ContextEditor
           context={localContext}

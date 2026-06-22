@@ -1,0 +1,471 @@
+/* ============================================
+   CanonEditor — Component Styles
+   Architect Prime · Dark Theme
+   Amber/gold accents for authoritative canon
+   ============================================ */
+
+/* ---- Container ---- */
+.canon {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ---- Section wrapper with amber border accent ---- */
+.canonSection {
+  padding: 20px;
+  background: rgba(214, 168, 58, 0.04);
+  border: 1px solid rgba(214, 168, 58, 0.2);
+  border-radius: var(--radius-lg);
+  position: relative;
+}
+
+/* ---- Section header ---- */
+.canonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(214, 168, 58, 0.15);
+}
+
+.canonTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.canonIcon {
+  font-size: 18px;
+}
+
+.canonTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--cloud);
+  letter-spacing: -0.01em;
+}
+
+.canonBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(214, 168, 58, 0.14);
+  color: #D6A83A;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ---- Authority list ---- */
+.authoritySection {
+  margin-bottom: 16px;
+}
+
+.authorityLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.authorityChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.authorityChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: rgba(214, 168, 58, 0.08);
+  border: 1px solid rgba(214, 168, 58, 0.2);
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 500;
+  color: #D6A83A;
+}
+
+.authorityIcon {
+  font-size: 10px;
+}
+
+/* ---- Entry rows ---- */
+.entryList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entry {
+  border: 1px solid rgba(214, 168, 58, 0.12);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary, var(--charcoal));
+  overflow: hidden;
+  transition:
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
+}
+.entry:hover {
+  border-color: rgba(214, 168, 58, 0.25);
+}
+
+.entryHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  cursor: default;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-primary, var(--cloud));
+  text-align: left;
+}
+
+.entryKey {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: #D6A83A;
+  flex-shrink: 0;
+  min-width: 120px;
+}
+
+.entryText {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary, var(--mist));
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-hover) var(--ease-standard);
+}
+.entryText:hover {
+  background: rgba(214, 168, 58, 0.06);
+}
+
+.entryMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.entryAuthor {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(86, 99, 115, 0.18);
+  color: var(--text-tertiary, var(--slate));
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.entryDate {
+  font-size: 10px;
+  color: var(--text-tertiary, var(--slate));
+  flex-shrink: 0;
+}
+
+.deleteEntryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  color: var(--text-tertiary, var(--slate));
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.deleteEntryBtn:hover {
+  background: rgba(216, 79, 69, 0.15);
+  color: var(--status-error, #D84F45);
+}
+
+/* ---- Inline editing ---- */
+.editRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(214, 168, 58, 0.1);
+  animation: slideOpen 200ms var(--ease-premium);
+}
+
+@keyframes slideOpen {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 300px; }
+}
+
+.editTextarea {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg-primary, var(--graphite));
+  border: 1px solid rgba(214, 168, 58, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary, var(--cloud));
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+  min-height: 60px;
+  transition:
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
+}
+.editTextarea:focus {
+  border-color: #D6A83A;
+  box-shadow: 0 0 0 2px rgba(214, 168, 58, 0.15);
+}
+
+.editActions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.editSaveBtn {
+  padding: 6px 14px;
+  background: rgba(214, 168, 58, 0.15);
+  border: 1px solid rgba(214, 168, 58, 0.3);
+  border-radius: var(--radius-sm);
+  color: #D6A83A;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
+}
+.editSaveBtn:hover {
+  background: rgba(214, 168, 58, 0.25);
+  box-shadow: 0 0 12px rgba(214, 168, 58, 0.15);
+}
+
+.editCancelBtn {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid var(--border-default, rgba(86, 99, 115, 0.25));
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary, var(--mist));
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.editCancelBtn:hover {
+  background: var(--bg-hover, rgba(86, 99, 115, 0.12));
+  color: var(--text-primary, var(--cloud));
+}
+
+/* ---- Add entry form ---- */
+.addForm {
+  margin-top: 8px;
+  padding: 16px;
+  background: var(--bg-secondary, var(--charcoal));
+  border: 1px solid rgba(214, 168, 58, 0.2);
+  border-radius: var(--radius-md);
+  animation: slideOpen 200ms var(--ease-premium);
+}
+
+.addFormTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #D6A83A;
+  margin-bottom: 12px;
+}
+
+.addGrid {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 8px 12px;
+  align-items: start;
+}
+
+.addLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary, var(--slate));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 8px;
+}
+
+.addInput {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-primary, var(--graphite));
+  border: 1px solid var(--border-default, rgba(86, 99, 115, 0.25));
+  border-radius: var(--radius-sm);
+  color: var(--text-primary, var(--cloud));
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
+}
+.addInput:focus {
+  border-color: #D6A83A;
+  box-shadow: 0 0 0 2px rgba(214, 168, 58, 0.15);
+}
+
+.addTextarea {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-primary, var(--graphite));
+  border: 1px solid var(--border-default, rgba(86, 99, 115, 0.25));
+  border-radius: var(--radius-sm);
+  color: var(--text-primary, var(--cloud));
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  resize: vertical;
+  min-height: 60px;
+  transition:
+    border-color var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
+}
+.addTextarea:focus {
+  border-color: #D6A83A;
+  box-shadow: 0 0 0 2px rgba(214, 168, 58, 0.15);
+}
+
+.addActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.addCancelBtn {
+  padding: 6px 16px;
+  background: transparent;
+  border: 1px solid var(--border-default, rgba(86, 99, 115, 0.25));
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary, var(--mist));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.addCancelBtn:hover {
+  background: var(--bg-hover, rgba(86, 99, 115, 0.12));
+  color: var(--text-primary, var(--cloud));
+}
+
+.addConfirmBtn {
+  padding: 6px 16px;
+  background: rgba(214, 168, 58, 0.15);
+  border: 1px solid rgba(214, 168, 58, 0.3);
+  border-radius: var(--radius-sm);
+  color: #D6A83A;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    box-shadow var(--duration-hover) var(--ease-standard);
+}
+.addConfirmBtn:hover:not(:disabled) {
+  background: rgba(214, 168, 58, 0.25);
+  box-shadow: 0 0 12px rgba(214, 168, 58, 0.15);
+}
+.addConfirmBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Add button ---- */
+.addBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  background: transparent;
+  border: 1px dashed rgba(214, 168, 58, 0.25);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary, var(--slate));
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--duration-hover) var(--ease-standard),
+    border-color var(--duration-hover) var(--ease-standard),
+    color var(--duration-hover) var(--ease-standard);
+}
+.addBtn:hover {
+  background: rgba(214, 168, 58, 0.04);
+  border-color: rgba(214, 168, 58, 0.4);
+  color: #D6A83A;
+}
+
+/* ---- Empty state ---- */
+.empty {
+  text-align: center;
+  padding: 24px 16px;
+  color: var(--text-tertiary, var(--slate));
+  font-size: 13px;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 640px) {
+  .canonSection {
+    padding: 14px;
+  }
+  .entryKey {
+    min-width: 80px;
+  }
+  .entryHeader {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .entryMeta {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .addGrid {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .addLabel {
+    padding-top: 8px;
+  }
+}

@@ -1,4 +1,5 @@
 import type { ContextEntry } from "./ContextEditor";
+import type { Canon } from "./CanonEditor";
 
 export interface ProjectSummary {
   id: string;
@@ -27,6 +28,7 @@ export interface ProjectSummary {
 export interface ProjectDetail extends ProjectSummary {
   context: Record<string, ContextEntry>;
   standardProcesses?: string[];
+  canon?: Canon;
 }
 
 export interface ProcessSummary {
