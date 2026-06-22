@@ -155,15 +155,18 @@ export function createArchivalSweeper(deps) {
 
       // NOTE: blocked envelopes are NOT archived — they persist indefinitely for resumption
 
-      // 6. Orphaned children — active/pending C/T whose parent is cancelled/archived
+      // 6. Orphaned children — active/pending/queued C/T whose parent is cancelled/archived
       const activeChildren = await firestoreQuery('work', [
         { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
       ]);
       const pendingChildren = await firestoreQuery('work', [
         { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
       ]);
+      const queuedChildren = await firestoreQuery('work', [
+        { field: 'status', op: 'EQUAL', value: { stringValue: 'queued' } },
+      ]);
       let orphanCount = 0;
-      for (const env of [...activeChildren, ...pendingChildren]) {
+      for (const env of [...activeChildren, ...pendingChildren, ...queuedChildren]) {
         if (!env.parent_id) continue; // Only check children
         const parent = await firestoreRead('work', env.parent_id);
         if (!parent || ['cancelled', 'archived', 'failed'].includes(parent.status)) {

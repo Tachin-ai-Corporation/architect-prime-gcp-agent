@@ -46,7 +46,7 @@ export function scoreRelevance(envelope, cues) {
 // Indexed owner + status query via firestoreQuery. Client-side filter
 // on created_at window and types. Score, rank, return top limit.
 
-export async function searchWork({ firestoreQuery, owner, cues, sinceDays = 30, statuses = ['complete'], types, limit = 6 }) {
+export async function searchWork({ firestoreQuery, owner, cues, sinceDays = 30, statuses = ['complete', 'active', 'queued'], types, limit = 6 }) {
   const cutoff = new Date(Date.now() - sinceDays * 86400000);
   let allDocs = [];
 
