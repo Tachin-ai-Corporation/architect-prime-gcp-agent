@@ -3155,10 +3155,7 @@ async function dequeueAndProcess() {
     const allQueued = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'queued' } },
     ], { noOrderBy: true });
-    log('INFO', `[DEQUEUE DEBUG] Raw query returned ${allQueued.length} docs. agentOwner=${agentOwner}. Sample: ${allQueued.slice(0, 2).map(e => `{id:${e.id},type:${e.type},owner:${(e.owner||'').substring(0,40)},status:${e.status}}`).join(', ')}`);
     const queued = allQueued.filter(e => e.type === 'M' && (e.owner || '').includes(agentOwner.split('@')[0]));
-    log('INFO', `[DEQUEUE DEBUG] After filter: ${queued.length} missions (type=M, owner contains ${agentOwner.split('@')[0]})`);
-
     if (queued.length === 0) return;
 
     // Sort: missions with context_forward (resumed/unblocked) first, then by created_at FIFO
@@ -3333,19 +3330,14 @@ async function main() {
   // Start intake polling
   const POLL_MS = CONTRACTS.dispatch?.poll_interval_ms || 3000;
   log('INFO', `Starting intake poll (every ${POLL_MS}ms)`);
-  let pollCount = 0;
   setInterval(async () => {
-    pollCount++;
     try {
-      if (pollCount <= 3 || pollCount % 100 === 0) {
-        log('INFO', `[POLL TICK ${pollCount}] processing=${processing} activeMissionId=${activeMissionId || 'null'}`);
-      }
       await pollIntake();
       await checkWaitingEnvelopes();
       await checkApprovedApprovals();
       await dequeueAndProcess();
     } catch (e) {
-      log('ERROR', `[POLL TICK ${pollCount}] Unhandled error in poll loop: ${e.message}\n${e.stack}`);
+      log('ERROR', `Poll loop error: ${e.message}`);
     }
   }, POLL_MS);
 
