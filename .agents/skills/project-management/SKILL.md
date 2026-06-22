@@ -33,12 +33,39 @@ project-manage team-list <id>                          # List team members
 - `type` (optional, default: agent): `agent` or `human`
 
 ## Project Document Schema
-Key fields: `id`, `name`, `description`, `goal`, `status`, `owner`, `gchat_space_id`, `context`, `team`, `standardProcesses`, `created_at`, `updated_at`
+Key fields: `id`, `name`, `description`, `goal`, `status`, `owner`, `gchat_space_id`, `context`, `canon`, `team`, `standardProcesses`, `created_at`, `updated_at`
 
 - `owner` (string, email): Project owner for escalation. Defaults to creator. Should be a human.
 - `gchat_space_id` (string): Primary GChat space ID for project communications (e.g. `AAQAXN-eJIQ`)
 
 Status lifecycle: `active` → `completed` | `paused` | `archived`
+
+## Canon (Authoritative Project Facts)
+The `canon` field contains **authoritative facts** about a project that are:
+- **Always injected first** in all project context (before description, team, context packet)
+- **Prominently labeled** so LLMs treat them as ground truth
+- **Authority-protected**: only users in the `canon.authority` list can modify them
+
+```
+project-manage canon-set <id> <key> <text...>              # Set/update a canon entry
+project-manage canon-list <id>                              # List all canon entries
+project-manage canon-remove <id> <key>                      # Remove a canon entry
+project-manage canon-authority <id> <email1> [email2...]    # Set authority list
+```
+
+### Canon Schema
+```json
+{
+  "canon": {
+    "authority": ["owner@example.com", "agent@example.com"],
+    "entries": [
+      { "key": "architecture", "text": "The main website is at the root, not /public", "updated_by": "owner@example.com" }
+    ]
+  }
+}
+```
+
+Use canon for critical project truths that agents must never contradict: architecture decisions, deployment rules, file layout, naming conventions.
 
 ## Context Packet
 The `context` field is a map of key-value pairs for shared project knowledge. Each key maps to an object with:
@@ -46,10 +73,13 @@ The `context` field is a map of key-value pairs for shared project knowledge. Ea
 - `ref`, `url`, `name`, `summary`
 
 ## Cortex Integration
-Cortex sees project context in every decide call. Uses team members to identify delegation targets. Dispatch motor to persist discovered knowledge back to the project.
+Cortex sees project context in every decide call. Canon entries appear FIRST with a prominent header. Uses team members to identify delegation targets. Dispatch motor to persist discovered knowledge back to the project.
 
 ## Examples
 ```bash
+# Set a canon entry (authoritative fact)
+project-manage canon-set tachin-website architecture The main website is index.html at the root. NOT in /public.
+
 # Add a team member (simple args)
 project-manage team-add proj-self-improvement swe-agent-bobby@tachin.ag engineer Bobby agent
 
@@ -70,3 +100,4 @@ project-manage update my-project '{"context": {"key": {"kind": "convention", "su
 project-manage update my-project '{"context": {"info": "value (with parens) → arrows"}}'
 ```
 **Avoid** these characters in JSON string values: `→`, `()`, `\`, backticks. Use plain ASCII: `to`, `for`, dashes instead.
+

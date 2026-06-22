@@ -498,6 +498,23 @@ function _initProcessEngine() {
         updated_at: now(),
       });
       log('INFO', `Delegation result envelope created: ${resultOutputId} for mission ${mission.id}`);
+
+      // Cross-agent write: complete the delegation T-envelope on the sender's side
+      try {
+        const delegRef = await firestoreRead('work', mission.source_meta.delegation_ref);
+        if (delegRef && delegRef.status === 'waiting') {
+          await firestoreWrite('work', delegRef.id, {
+            ...delegRef,
+            status: 'complete',
+            output: toStr(mission.output).substring(0, 4000),
+            completed_at: now(),
+            updated_at: now(),
+          });
+          log('INFO', `Delegation ref ${delegRef.id} marked complete (cross-agent write)`);
+        }
+      } catch (e) {
+        log('WARN', `Failed to complete delegation ref ${mission.source_meta.delegation_ref}: ${e.message}`);
+      }
     },
   });
 }
@@ -1667,6 +1684,23 @@ async function completeEnvelope(envelope, opts) {
           updated_at: now(),
         });
         log('INFO', `Delegation result envelope created: ${resultOutputId}`);
+
+        // Cross-agent write: complete the delegation T-envelope on the sender's side
+        try {
+          const delegRef = await firestoreRead('work', envelope.source_meta.delegation_ref);
+          if (delegRef && delegRef.status === 'waiting') {
+            await firestoreWrite('work', delegRef.id, {
+              ...delegRef,
+              status: 'complete',
+              output: toStr(envelope.output).substring(0, 4000),
+              completed_at: now(),
+              updated_at: now(),
+            });
+            log('INFO', `Delegation ref ${delegRef.id} marked complete (cross-agent write)`);
+          }
+        } catch (e2) {
+          log('WARN', `Failed to complete delegation ref ${envelope.source_meta.delegation_ref}: ${e2.message}`);
+        }
       } catch (e) {
         log('WARN', `Failed to create delegation result envelope: ${e.message}`);
       }

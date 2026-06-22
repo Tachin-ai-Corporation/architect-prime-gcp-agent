@@ -168,6 +168,15 @@ export interface Project {
     team: Record<string, string>;
     configuration: Record<string, unknown>;
   } | null;
+  canon?: {
+    authority: string[];
+    entries: Array<{
+      key: string;
+      text: string;
+      updated_at?: string;
+      updated_by?: string;
+    }>;
+  };
   created_at: string;
   updated_at: string;
 }

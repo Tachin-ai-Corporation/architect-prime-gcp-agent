@@ -419,6 +419,18 @@ export function createProjectRegistry(config) {
     const header = [`## Project Context: ${p.name || p.id}`];
     if (p.description) header.push(`Description: ${p.description}`);
 
+    // Render canon entries first — authoritative facts that override all other context
+    const canon = p.canon?.entries || [];
+    if (canon.length > 0) {
+      header.push('');
+      header.push('### ⚠️ CANON (Authoritative Project Facts — Do NOT Contradict)');
+      for (const entry of canon) {
+        if (entry.key && entry.text) {
+          header.push(`- **${entry.key}**: ${entry.text}`);
+        }
+      }
+    }
+
     // Render team members so Cortex knows who to delegate to
     const team = Array.isArray(p.team) ? p.team : [];
     if (team.length > 0) {
@@ -440,7 +452,7 @@ export function createProjectRegistry(config) {
     header.push('');
 
     const rendered = renderContextPacket(mergedCtx);
-    if (!rendered && !p.description && team.length === 0) return null;
+    if (!rendered && !p.description && team.length === 0 && canon.length === 0) return null;
 
     let result = header.join('\n') + rendered;
 

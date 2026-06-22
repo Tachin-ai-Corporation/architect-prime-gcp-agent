@@ -1086,21 +1086,328 @@ for t in team:
 "
     ;;
 
+  canon-set)
+    TARGET_ID="${1:?'canon-set requires a project id'}"
+    CANON_KEY="${2:?'canon-set requires a key'}"
+    shift 2
+    CANON_TEXT="$*"
+    [ -z "$CANON_TEXT" ] && { echo "ERROR: canon-set requires text after the key" >&2; exit 1; }
+    python3 -c "
+import json, sys, subprocess, datetime
+
+target_id = '$TARGET_ID'
+canon_key = '$CANON_KEY'
+canon_text = '''$CANON_TEXT'''
+agent_email = '${AGENT_USER_EMAIL:-unknown}'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field: return field['stringValue']
+    if 'integerValue' in field: return int(field['integerValue'])
+    if 'booleanValue' in field: return field['booleanValue']
+    if 'nullValue' in field: return None
+    if 'mapValue' in field: return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field: return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    return str(field)
+
+# Parse existing canon
+canon = {}
+if 'canon' in fields and 'mapValue' in fields['canon']:
+    canon = extract_value(fields['canon'])
+
+# Authority check
+authority = canon.get('authority', [])
+if authority and agent_email not in authority and agent_email != 'unknown':
+    print(f'ERROR: {agent_email} is not in the canon authority list: {authority}', file=sys.stderr)
+    sys.exit(1)
+
+# Update or add entry
+entries = canon.get('entries', [])
+now = datetime.datetime.utcnow().isoformat() + 'Z'
+found = False
+for e in entries:
+    if isinstance(e, dict) and e.get('key') == canon_key:
+        e['text'] = canon_text
+        e['updated_at'] = now
+        e['updated_by'] = agent_email
+        found = True
+        break
+if not found:
+    entries.append({'key': canon_key, 'text': canon_text, 'updated_at': now, 'updated_by': agent_email})
+
+canon['entries'] = entries
+if not authority:
+    canon['authority'] = [agent_email]
+
+# Convert canon to Firestore format
+def to_firestore(val):
+    if val is None: return {'nullValue': None}
+    if isinstance(val, bool): return {'booleanValue': val}
+    if isinstance(val, int): return {'integerValue': str(val)}
+    if isinstance(val, float): return {'doubleValue': val}
+    if isinstance(val, str): return {'stringValue': val}
+    if isinstance(val, list): return {'arrayValue': {'values': [to_firestore(v) for v in val]}}
+    if isinstance(val, dict): return {'mapValue': {'fields': {k: to_firestore(v) for k, v in val.items()}}}
+    return {'stringValue': str(val)}
+
+# Patch
+patch_data = {
+    'fields': {
+        'canon': to_firestore(canon),
+        'updated_at': {'stringValue': now}
+    }
+}
+patch_url = f'{url}?updateMask.fieldPaths=canon&updateMask.fieldPaths=updated_at'
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', patch_url, '-H', f'Authorization: Bearer {token}', '-H', 'Content-Type: application/json', '-d', json.dumps(patch_data)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update canon: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+action = 'Updated' if found else 'Added'
+print(f'{action} canon entry \"{canon_key}\" on project \"{target_id}\"')
+print(f'  Key: {canon_key}')
+print(f'  Text: {canon_text[:100]}...' if len(canon_text) > 100 else f'  Text: {canon_text}')
+print(f'  By: {agent_email}')
+"
+    ;;
+
+  canon-list)
+    TARGET_ID="${1:?'canon-list requires a project id'}"
+    python3 -c "
+import json, sys, subprocess
+
+target_id = '$TARGET_ID'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field: return field['stringValue']
+    if 'integerValue' in field: return int(field['integerValue'])
+    if 'booleanValue' in field: return field['booleanValue']
+    if 'nullValue' in field: return None
+    if 'mapValue' in field: return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field: return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    return str(field)
+
+canon = {}
+if 'canon' in fields and 'mapValue' in fields['canon']:
+    canon = extract_value(fields['canon'])
+
+authority = canon.get('authority', [])
+entries = canon.get('entries', [])
+
+if not entries:
+    print(f'Project \"{target_id}\" has no canon entries.')
+    sys.exit(0)
+
+print(f'Canon for project \"{target_id}\" ({len(entries)} entries):')
+print(f'Authority: {authority}')
+print()
+for i, e in enumerate(entries):
+    if isinstance(e, dict):
+        print(f'  [{i+1}] {e.get(\"key\", \"?\")}')
+        print(f'      {e.get(\"text\", \"\")}')
+        print(f'      (by {e.get(\"updated_by\", \"?\")} at {e.get(\"updated_at\", \"?\")})')
+        print()
+"
+    ;;
+
+  canon-remove)
+    TARGET_ID="${1:?'canon-remove requires a project id'}"
+    CANON_KEY="${2:?'canon-remove requires a key'}"
+    python3 -c "
+import json, sys, subprocess, datetime
+
+target_id = '$TARGET_ID'
+canon_key = '$CANON_KEY'
+agent_email = '${AGENT_USER_EMAIL:-unknown}'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field: return field['stringValue']
+    if 'integerValue' in field: return int(field['integerValue'])
+    if 'booleanValue' in field: return field['booleanValue']
+    if 'nullValue' in field: return None
+    if 'mapValue' in field: return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field: return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    return str(field)
+
+canon = {}
+if 'canon' in fields and 'mapValue' in fields['canon']:
+    canon = extract_value(fields['canon'])
+
+authority = canon.get('authority', [])
+if authority and agent_email not in authority and agent_email != 'unknown':
+    print(f'ERROR: {agent_email} is not in the canon authority list: {authority}', file=sys.stderr)
+    sys.exit(1)
+
+entries = canon.get('entries', [])
+new_entries = [e for e in entries if not (isinstance(e, dict) and e.get('key') == canon_key)]
+if len(new_entries) == len(entries):
+    print(f'Canon entry \"{canon_key}\" not found on project \"{target_id}\".')
+    sys.exit(0)
+
+canon['entries'] = new_entries
+now = datetime.datetime.utcnow().isoformat() + 'Z'
+
+def to_firestore(val):
+    if val is None: return {'nullValue': None}
+    if isinstance(val, bool): return {'booleanValue': val}
+    if isinstance(val, int): return {'integerValue': str(val)}
+    if isinstance(val, float): return {'doubleValue': val}
+    if isinstance(val, str): return {'stringValue': val}
+    if isinstance(val, list): return {'arrayValue': {'values': [to_firestore(v) for v in val]}}
+    if isinstance(val, dict): return {'mapValue': {'fields': {k: to_firestore(v) for k, v in val.items()}}}
+    return {'stringValue': str(val)}
+
+patch_data = {'fields': {'canon': to_firestore(canon), 'updated_at': {'stringValue': now}}}
+patch_url = f'{url}?updateMask.fieldPaths=canon&updateMask.fieldPaths=updated_at'
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', patch_url, '-H', f'Authorization: Bearer {token}', '-H', 'Content-Type: application/json', '-d', json.dumps(patch_data)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update canon: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'Removed canon entry \"{canon_key}\" from project \"{target_id}\"')
+"
+    ;;
+
+  canon-authority)
+    TARGET_ID="${1:?'canon-authority requires a project id'}"
+    shift
+    AUTHORITY_LIST="$*"
+    [ -z "$AUTHORITY_LIST" ] && { echo "ERROR: canon-authority requires space-separated email list" >&2; exit 1; }
+    python3 -c "
+import json, sys, subprocess, datetime
+
+target_id = '$TARGET_ID'
+new_authority = '''$AUTHORITY_LIST'''.split()
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field: return field['stringValue']
+    if 'mapValue' in field: return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field: return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    return str(field)
+
+canon = {}
+if 'canon' in fields and 'mapValue' in fields['canon']:
+    canon = extract_value(fields['canon'])
+canon['authority'] = new_authority
+now = datetime.datetime.utcnow().isoformat() + 'Z'
+
+def to_firestore(val):
+    if val is None: return {'nullValue': None}
+    if isinstance(val, bool): return {'booleanValue': val}
+    if isinstance(val, int): return {'integerValue': str(val)}
+    if isinstance(val, str): return {'stringValue': val}
+    if isinstance(val, list): return {'arrayValue': {'values': [to_firestore(v) for v in val]}}
+    if isinstance(val, dict): return {'mapValue': {'fields': {k: to_firestore(v) for k, v in val.items()}}}
+    return {'stringValue': str(val)}
+
+patch_data = {'fields': {'canon': to_firestore(canon), 'updated_at': {'stringValue': now}}}
+patch_url = f'{url}?updateMask.fieldPaths=canon&updateMask.fieldPaths=updated_at'
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', patch_url, '-H', f'Authorization: Bearer {token}', '-H', 'Content-Type: application/json', '-d', json.dumps(patch_data)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update canon authority: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'Updated canon authority for project \"{target_id}\":')
+for a in new_authority:
+    print(f'  - {a}')
+"
+    ;;
+
   help|*)
-    echo "Usage: project-manage <list|get|create|update|complete|pause|archive|team-add|team-remove|team-list> [args]"
+    echo "Usage: project-manage <command> [args]"
     echo ""
     echo "Commands:"
-    echo "  list                                             List all projects (id, name, status, goal, owner, etc.)"
+    echo "  list                                             List all projects"
     echo "  get '<id>'                                       Get full project details as JSON"
-    echo "  create '<json>' [--processes <ids>]               Create a new project (full JSON)"
-    echo "  update '<id>' '<json>' [--processes <ids>]        Update a project (partial JSON, deep merge on context)"
-    echo "  complete '<id>'                                   Set project status to 'completed' with timestamp"
-    echo "  pause '<id>'                                      Set project status to 'paused'"
-    echo "  archive '<id>'                                    Set project status to 'archived'"
-    echo "  team-add <id> <email> <role> [name] [type]       Add team member (simple positional args)"
-    echo "  team-add <id> '<json>'                            Add team member (JSON with email, role)"
-    echo "  team-remove '<id>' '<email>'                      Remove a team member by email"
-    echo "  team-list '<id>'                                  List team members in table format"
+    echo "  create '<json>' [--processes <ids>]               Create a new project"
+    echo "  update '<id>' '<json>' [--processes <ids>]        Update a project (deep merge on context)"
+    echo "  complete '<id>'                                   Set status to 'completed'"
+    echo "  pause '<id>'                                      Set status to 'paused'"
+    echo "  archive '<id>'                                    Set status to 'archived'"
+    echo "  team-add <id> <email> <role> [name] [type]       Add/update team member"
+    echo "  team-add <id> '<json>'                            Add/update team member (JSON)"
+    echo "  team-remove '<id>' '<email>'                      Remove a team member"
+    echo "  team-list '<id>'                                  List team members"
+    echo "  canon-set <id> <key> <text...>                   Set a canon entry (authoritative fact)"
+    echo "  canon-list <id>                                   List all canon entries"
+    echo "  canon-remove <id> <key>                           Remove a canon entry"
+    echo "  canon-authority <id> <email1> [email2...]         Set canon authority list"
+    echo ""
+    echo "Canon entries are authoritative project facts injected prominently into all agent context."
+    echo "Only users in the authority list can modify canon entries."
     echo ""
     echo "The create JSON MUST include:"
     echo "  id, name, description, context, goal"
@@ -1128,3 +1435,4 @@ for t in team:
     echo '  { "key": { "kind": "sheet|drive_folder|doc|...", "ref": "id", "name": "...", "summary": "..." } }'
     ;;
 esac
+
