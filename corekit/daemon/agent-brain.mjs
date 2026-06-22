@@ -3327,10 +3327,10 @@ async function main() {
   }
 
 
-  // Start intake polling
+  // Start intake polling — recursive setTimeout prevents concurrent ticks
   const POLL_MS = CONTRACTS.dispatch?.poll_interval_ms || 3000;
   log('INFO', `Starting intake poll (every ${POLL_MS}ms)`);
-  setInterval(async () => {
+  async function pollLoop() {
     try {
       await pollIntake();
       await checkWaitingEnvelopes();
@@ -3339,7 +3339,9 @@ async function main() {
     } catch (e) {
       log('ERROR', `Poll loop error: ${e.message}`);
     }
-  }, POLL_MS);
+    setTimeout(pollLoop, POLL_MS);
+  }
+  setTimeout(pollLoop, POLL_MS);
 
   // Phase 7A: Start Responsibility scheduler
   startResponsibilityScheduler();
