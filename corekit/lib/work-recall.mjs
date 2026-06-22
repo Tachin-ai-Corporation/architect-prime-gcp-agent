@@ -33,7 +33,7 @@ export function scoreRelevance(envelope, cues) {
   const ageDays = Math.max(0, (Date.now() - created.getTime()) / 86400000);
   const recencyScore = Math.pow(0.5, ageDays / HALF_LIFE_DAYS);
 
-  const statusMap = { complete: 1.0, blocked: 0.6, failed: 0.6 };
+  const statusMap = { complete: 1.0, queued: 0.8, blocked: 0.6, failed: 0.6 };
   const statusWeight = statusMap[envelope.status] ?? 0.4;
 
   const typeMap = { M: 1.0, R: 0.8, C: 0.7 };

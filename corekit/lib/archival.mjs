@@ -58,7 +58,7 @@ export function createArchivalSweeper(deps) {
    *  5. Timed-out envelopes (always terminal — archive immediately)
    *  6. Orphaned active/pending children whose parents are cancelled/archived/failed
    *
-   * NOTE: Blocked envelopes are NEVER archived — they persist indefinitely for resumption.
+   * NOTE: Blocked and queued envelopes are NEVER archived — they persist for resumption/processing.
    *
    * @returns {Promise<number>} Total number of envelopes archived
    */

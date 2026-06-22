@@ -154,11 +154,11 @@ export function useWorkEnvelopes(
     for (const root of trees) {
       // Only M-type (or R-type) roots should be top-level buckets.
       // C/T without a known parent also land here.
-      if (ACTIVE_STATUSES.has(root.status)) {
+      if (ACTIVE_STATUSES.has(root.status) && root.status !== "queued") {
         currentTrees.push(root);
       } else if (root.type === "R" && hasActiveDescendant(root)) {
         currentTrees.push(root);
-      } else if (root.status === "pending" || root.status === "planned") {
+      } else if (root.status === "queued" || root.status === "pending" || root.status === "planned") {
         queueTrees.push(root);
       } else if (DONE_STATUSES.has(root.status)) {
         previousTrees.push(root);

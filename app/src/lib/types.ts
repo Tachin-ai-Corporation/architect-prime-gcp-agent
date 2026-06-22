@@ -202,7 +202,7 @@ export interface Plan {
 
 /** Canonical set of statuses considered "active" for work tree display */
 export const ACTIVE_STATUSES = new Set<string>([
-  'active', 'waiting', 'needs_input', 'awaiting_approval', 'blocked', 'needs_review', 'timed_out',
+  'active', 'waiting', 'needs_input', 'awaiting_approval', 'blocked', 'needs_review', 'timed_out', 'queued',
 ]);
 
 /** Array version for Firestore `in` queries (max 30) */

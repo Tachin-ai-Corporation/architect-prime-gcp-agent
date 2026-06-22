@@ -91,6 +91,10 @@ const STEP_LEDGER_ENABLED = CONTRACTS.dispatch?.step_ledger_enabled !== false; /
 const CHECKPOINT_RESUME_ENABLED = CONTRACTS.dispatch?.checkpoint_resume_enabled !== false; // default true
 const CLAIM_STALE_MS = CONTRACTS.dispatch?.claim_stale_ms || 600_000; // 10 min
 const LOG_FILE = '/tmp/agent-brain.log';
+
+// Work Queue Discipline: max 1 active M-type mission at a time per agent.
+// New missions enter as 'queued'; dequeueAndProcess() promotes one to 'active' when the slot is empty.
+let activeMissionId = null;
 const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'brain/cortex';
 
 // Brain's own LLM â€” used ONLY for simple textâ†’text summarization via direct
@@ -1680,8 +1684,8 @@ async function completeEnvelope(envelope, opts) {
 // ---- Active envelope scan: query for in-progress work ----
 async function scanActiveEnvelopes() {
   try {
-    // Query all live statuses â€” active, waiting, needs_input, blocked
-    const statuses = ['active', 'waiting', 'needs_input', 'blocked'];
+    // Query all live statuses — active, queued, waiting, needs_input, blocked
+    const statuses = ['active', 'queued', 'waiting', 'needs_input', 'blocked'];
     let allEnvelopes = [];
     for (const status of statuses) {
       const envs = await firestoreQuery('work', [
@@ -1881,8 +1885,11 @@ async function processIntake(intake) {
         log('WARN', `Failed to register child on parent ${delegationRef}: ${e.message}`);
       }
 
-      // Process the delegation mission
-      await processEnvelope(envelope, memoryContext);
+      // Queue the delegation mission (work queue discipline: don't process immediately)
+      envelope.status = 'queued';
+      await firestoreWrite('work', envelopeId, envelope);
+      await writeHistory(envelopeId, 'pending', 'queued', 'brain', 'Queued delegation mission (work queue)');
+      log('INFO', `Delegation mission ${envelopeId} queued for processing`);
       return;
     }
   }
@@ -2042,7 +2049,7 @@ async function processIntake(intake) {
     type: 'M',
     parent_id: null,
     owner: AGENT_EMAIL || AGENT_ID,
-    status: 'pending',
+    status: 'queued',
     intent: decision.intent || 'decide',
     title: await generateTitle(decision.instruction || stripChatFraming(intake.text), 'mission'),
     instruction: decision.instruction || stripChatFraming(intake.text),
@@ -2056,7 +2063,7 @@ async function processIntake(intake) {
     source_meta: intake.source_meta || {},
     project_id: decision.project_id || DEFAULT_PROJECT_ID,
     context: decision.context || null,
-    source_text: sourceText || null, // Raw user message â€” preserved verbatim for child dispatches
+    source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -2067,12 +2074,12 @@ async function processIntake(intake) {
   };
 
   await firestoreWrite('work', envelopeId, envelope);
-  log('INFO', `Created envelope: ${envelopeId} (type=${envelope.type})`);
+  log('INFO', `Created envelope: ${envelopeId} (type=${envelope.type}, status=queued)`);
 
   // Write history entry
-  await writeHistory(envelopeId, null, 'pending', 'brain', 'Created from intake ' + intake.id);
+  await writeHistory(envelopeId, null, 'queued', 'brain', 'Created from intake ' + intake.id);
 
-  // Inject ack as first Câ†’T under the mission
+  // Inject ack as first C→T under the mission
   if (pendingAckText) {
     await createCT(envelope, {
       checkpointTitle: 'Acknowledge receipt',
@@ -2084,17 +2091,18 @@ async function processIntake(intake) {
       ctKey: `ack-${envelope.id}`,
     });
     await firestoreWrite('work', envelope.id, envelope);
-    log('INFO', `Ack injected as Câ†’T under ${envelopeId}`);
+    log('INFO', `Ack injected as C→T under ${envelopeId}`);
   }
 
-  // Process the envelope (pass memory context to avoid re-recall)
-  await processEnvelope(envelope, memoryContext);
+  // Work queue discipline: do NOT call processEnvelope() here.
+  // dequeueAndProcess() will pick it up when the active slot is empty.
+  log('INFO', `Mission ${envelopeId} queued for processing (work queue discipline)`);
 }
 
 // ---- Attach handler: follow-up to existing work ----
 async function handleAttach(intake, decision, memoryContext, pendingAckText = null) {
   const targetId = decision.attach_to || decision.attach_to_mission || decision.continue_mission;
-  log('INFO', `Attach: intake ${intake.id} â†’ target ${targetId}`);
+  log('INFO', `Attach: intake ${intake.id} → target ${targetId}`);
 
   if (!targetId) {
     log('WARN', `Attach missing attach_to field, treating as new_mission`);
@@ -2108,16 +2116,15 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
   }
 
   if (targetEnv.status === 'needs_input') {
-    // Resume the blocked envelope with the human's response
-    log('INFO', `Resuming needs_input envelope ${targetId} with human response`);
-    targetEnv.status = 'active';
+    // Re-queue the envelope with the human's response (work queue discipline)
+    log('INFO', `Re-queuing needs_input envelope ${targetId} with human response`);
+    targetEnv.status = 'queued';
     targetEnv.context_forward = intake.text;
     targetEnv.delivered_at = null;
     targetEnv.delivered_channel = null;
     targetEnv.updated_at = now();
     await firestoreWrite('work', targetId, targetEnv);
-    await writeHistory(targetId, 'needs_input', 'active', 'brain', `Resumed with: ${toStr(intake.text).substring(0, 100)}`);
-    await processEnvelope(targetEnv, memoryContext);
+    await writeHistory(targetId, 'needs_input', 'queued', 'brain', `Re-queued with human response: ${toStr(intake.text).substring(0, 100)}`);
     return;
   }
 
@@ -2125,7 +2132,7 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
     // Check if this is truly a status query or a new instruction to act on
     const isStatusQuery = /\b(?:status|progress|update|how.{0,10}going|where.{0,10}at|what.{0,10}happening)\b/i.test(intake.text);
     if (isStatusQuery) {
-      // Status check â€” deliver current status
+      // Status check — deliver current status
       const statusMsg = `I'm still working on that. Current task: "${targetEnv.instruction}". Status: ${targetEnv.status}, iteration ${targetEnv.iteration || 0}.`;
       const statusEnvId = generateId('w');
       await firestoreWrite('work', statusEnvId, {
@@ -2153,21 +2160,21 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
       log('INFO', `Status check delivered for ${targetId}: ${statusEnvId}`);
       return;
     }
-    // New instruction for active/waiting mission â€” create linked child task
+    // New instruction for active/waiting mission — create linked child task
     log('INFO', `New instruction for ${targetEnv.status} mission ${targetId}, creating child task`);
     return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
   }
 
   // For blocked envelopes, delegate to handleContinue (which knows how to reopen)
   if (targetEnv.status === 'blocked') {
-    log('INFO', `Attach target ${targetId} is blocked â€” routing to handleContinue`);
+    log('INFO', `Attach target ${targetId} is blocked — routing to handleContinue`);
     decision.continue_mission = targetId;
     return handleContinue(intake, decision, memoryContext, pendingAckText);
   }
 
   // For failed missions, create a child task linked to the mission
   if (targetEnv.status === 'failed') {
-    log('INFO', `Attach target ${targetId} is failed â€” creating linked follow-up task`);
+    log('INFO', `Attach target ${targetId} is failed — creating linked follow-up task`);
     return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
   }
 
@@ -2188,7 +2195,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     type: parentId ? 'C' : 'M',
     parent_id: parentId || null,
     owner: AGENT_EMAIL || AGENT_ID,
-    status: 'pending',
+    status: 'queued',
     delivery_status: parentId ? 'internal' : 'pending',
     intent: decision.intent || 'decide',
     title: await generateTitle(_titleInput, 'mission'),
@@ -2212,15 +2219,14 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
   };
 
   await firestoreWrite('work', envelopeId, envelope);
-  log('INFO', `Created envelope: ${envelopeId} (type=M, fallback from intake)`);
-  await writeHistory(envelopeId, null, 'pending', 'brain', 'Created from intake ' + intake.id);
-  await processEnvelope(envelope, memoryContext);
+  log('INFO', `Created envelope: ${envelopeId} (type=M, fallback from intake, status=queued)`);
+  await writeHistory(envelopeId, null, 'queued', 'brain', 'Created from intake ' + intake.id);
 }
 
 // ---- Continue handler: resume a blocked mission ----
 async function handleContinue(intake, decision, memoryContext, pendingAckText = null) {
   const targetId = decision.continue_mission || decision.continue_envelope || decision.mission_id;
-  log('INFO', `Continue: intake ${intake.id} â†’ resuming blocked mission ${targetId}`);
+  log('INFO', `Continue: intake ${intake.id} → resuming blocked mission ${targetId}`);
 
   if (!targetId) {
     log('WARN', `Continue missing continue_mission field, treating as new_mission`);
@@ -2235,7 +2241,7 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
-  // Only reopen blocked or complete missions (not active â€” that's an attach/status check)
+  // Only reopen blocked or complete missions (not active — that's an attach/status check)
   if (!['blocked', 'complete'].includes(mission.status)) {
     // Active target — check for stale claim and resume instead of cascading
     const claimAge = mission.claimed_at ? (Date.now() - mission.claimed_at) : Infinity;
@@ -2254,8 +2260,8 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
 
   const prevStatus = mission.status;
 
-  // Reopen the mission
-  mission.status = 'active';
+  // Re-queue the mission (work queue discipline: don't process immediately)
+  mission.status = 'queued';
   mission.context_forward = [
     mission.context_forward || '',
     `[UNBLOCKED] ${intake.text}`,
@@ -2265,14 +2271,14 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   mission.blocker_type = null;
   mission.delivered_at = null;
   mission.delivered_channel = null;
-  mission.delivery_status = 'internal'; // Reset â€” will become 'pending' when re-completed
+  mission.delivery_status = 'internal'; // Reset — will become 'pending' when re-completed
   mission._swf_state = null; // Reset retry cap for new attempt
   mission.updated_at = now();
 
   await firestoreWrite('work', targetId, mission);
-  await writeHistory(targetId, prevStatus, 'active', 'brain',
-    `Resumed via continue: ${toStr(intake.text).substring(0, 100)}`);
-  log('INFO', `Mission ${targetId} reopened from ${prevStatus} → active`);
+  await writeHistory(targetId, prevStatus, 'queued', 'brain',
+    `Re-queued via continue: ${toStr(intake.text).substring(0, 100)}`);
+  log('INFO', `Mission ${targetId} re-queued from ${prevStatus} → queued (work queue discipline)`);
 
   // Mark intake as consumed BEFORE processing — prevents re-processing if processEnvelope throws
   await firestoreWrite('intake', intake.id, {
@@ -2296,8 +2302,8 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
     log('INFO', `Ack injected as C-T under resumed mission ${mission.id}`);
   }
 
-  // Resume processing — Cortex will see the full mission context + new unblock info
-  await processEnvelope(mission, memoryContext);
+  // Work queue discipline: do NOT call processEnvelope() here.
+  // dequeueAndProcess() will pick it up when the active slot is empty.
 }
 
 // ---- Cancel handler: explicitly abandon work ----
@@ -2316,7 +2322,7 @@ async function handleCancel(intake, decision) {
     return;
   }
 
-  if (!['active', 'blocked', 'needs_input', 'waiting', 'pending'].includes(target.status)) {
+  if (!['active', 'blocked', 'needs_input', 'waiting', 'pending', 'queued'].includes(target.status)) {
     log('INFO', `Cancel target ${targetId} already in terminal state: ${target.status}`);
     return;
   }
@@ -2358,7 +2364,7 @@ async function cascadeCancelChildren(parentId) {
       ...firestoreDecode(d.fields || {}),
     }));
     for (const child of docs) {
-      if (child.parent_id === parentId && ['active', 'pending', 'waiting', 'needs_input'].includes(child.status)) {
+      if (child.parent_id === parentId && ['active', 'pending', 'waiting', 'needs_input', 'queued'].includes(child.status)) {
         await firestoreWrite('work', child.id, {
           status: 'cancelled',
           cancelled_at: now(),
@@ -2536,7 +2542,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   envelope.started_at = envelope.started_at || now();
   envelope.updated_at = now();
   await firestoreWrite('work', envelope.id, envelope);
-  await writeHistory(envelope.id, 'pending', 'active', 'brain', 'Processing started');
+  await writeHistory(envelope.id, 'queued', 'active', 'brain', 'Processing started');
 
   // Cortex loop
   let priorResults = [];
@@ -3047,27 +3053,19 @@ async function checkWaitingEnvelopes() {
 
       if (!allChildrenDone || childResults.length === 0) continue;
 
-      // All delegated children are done â€” resume the waiting envelope
-      log('INFO', `Resuming waiting envelope ${waiting.id}: ${childResults.length} delegation(s) complete`);
+      // All delegated children are done — re-queue the waiting envelope
+      log('INFO', `Re-queuing waiting envelope ${waiting.id}: ${childResults.length} delegation(s) complete`);
 
       // Inject delegation results as context_forward
       const delegationSummary = childResults.map((r, i) =>
         `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${toStr(r.result).substring(0, 500)}`
       ).join('\n\n');
 
-      waiting.status = 'active';
+      waiting.status = 'queued';
       waiting.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
       waiting.updated_at = now();
       await firestoreWrite('work', waiting.id, waiting);
-      await writeHistory(waiting.id, 'waiting', 'active', 'brain', `Delegation(s) complete, resuming`);
-
-      // Resume cortex loop
-      try {
-        const memory = await recallMemory(waiting.instruction);
-        await processEnvelope(waiting, memory);
-      } catch (e) {
-        log('ERROR', `Failed to resume waiting envelope ${waiting.id}: ${e.message}`);
-      }
+      await writeHistory(waiting.id, 'waiting', 'queued', 'brain', `Delegation(s) complete, re-queued (work queue)`);
     }
     // ---- Phase B: Active M envelopes with waiting C children (delegation via checkpoint_plan) ----
     // These are missions where checkpoint-executor created delegation tasks inside checkpoints.
@@ -3113,7 +3111,7 @@ async function checkWaitingEnvelopes() {
 
           if (!allDone || cpResults.length === 0) continue;
 
-          log('INFO', `Resuming active mission ${active.id}: checkpoint ${childId} delegations complete (${cpResults.length} results)`);
+          log('INFO', `Re-queuing active mission ${active.id}: checkpoint ${childId} delegations complete (${cpResults.length} results)`);
 
           const delegationSummary = cpResults.map((r, i) =>
             `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${toStr(r.result).substring(0, 500)}`
@@ -3124,23 +3122,69 @@ async function checkWaitingEnvelopes() {
           child.updated_at = now();
           await firestoreWrite('work', childId, child);
 
+          active.status = 'queued';
           active.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
           active.updated_at = now();
           await firestoreWrite('work', active.id, active);
-          await writeHistory(active.id, 'active', 'active', 'brain', `Checkpoint delegation(s) complete, resuming`);
-
-          try {
-            const memory = await recallMemory(active.instruction);
-            await processEnvelope(active, memory);
-          } catch (e) {
-            log('ERROR', `Failed to resume active mission ${active.id}: ${e.message}`);
-          }
+          await writeHistory(active.id, 'active', 'queued', 'brain', `Checkpoint delegation(s) complete, re-queued (work queue)`);
           break;
         }
       }
     }
   } catch (e) {
     log('WARN', `Waiting envelope check error: ${e.message}`);
+  }
+}
+
+// ---- Work Queue: Dequeue-and-Process ----
+// Promotes exactly one 'queued' M-type mission to 'active' and processes it.
+// Called every poll tick; short-circuits if the active slot is occupied.
+async function dequeueAndProcess() {
+  // If there's already an active mission, verify it's still active in Firestore
+  if (activeMissionId) {
+    const env = await firestoreRead('work', activeMissionId);
+    if (env && env.status === 'active') return; // Slot occupied — skip
+    log('INFO', `Active slot cleared: ${activeMissionId} → ${env?.status || 'deleted'}`);
+    activeMissionId = null;
+  }
+
+  // Query for next queued mission (priority: missions with context_forward first = resumed/unblocked)
+  try {
+    const queued = await firestoreQuery('work', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'queued' } },
+      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+      { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
+    ]);
+
+    if (queued.length === 0) return;
+
+    // Sort: missions with context_forward (resumed/unblocked) first, then by created_at FIFO
+    queued.sort((a, b) => {
+      const aPriority = a.context_forward ? 0 : 1;
+      const bPriority = b.context_forward ? 0 : 1;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return (a.created_at || '').localeCompare(b.created_at || '');
+    });
+
+    const next = queued[0];
+    activeMissionId = next.id;
+    log('INFO', `[WORK QUEUE] Dequeuing mission ${next.id}: "${(next.title || next.instruction || '').substring(0, 60)}" (${queued.length} total queued)`);
+
+    try {
+      const memory = await recallMemory(next.instruction);
+      await processEnvelope(next, memory);
+    } catch (e) {
+      log('ERROR', `Failed to process dequeued mission ${next.id}: ${e.message}`);
+    }
+
+    // After processEnvelope returns, check if mission is still active
+    const final = await firestoreRead('work', next.id);
+    if (!final || final.status !== 'active') {
+      activeMissionId = null; // Slot freed — next tick will dequeue another
+    }
+  } catch (e) {
+    log('WARN', `Dequeue error: ${e.message}`);
+    activeMissionId = null; // Reset on error
   }
 }
 
@@ -3230,7 +3274,7 @@ async function main() {
       log('INFO', `Startup recovery: scanned ${allDocs.length} work docs`);
       const orphaned = allDocs.filter(e => (e.type === 'M' || (e.type === 'C' && e.parent_id && e.intent !== 'checkpoint')) &&
         (e.owner || '').includes(agentId) &&
-        (e.status === 'active' || e.status === 'pending'));
+        (e.status === 'active' || e.status === 'pending' || e.status === 'queued'));
       if (orphaned.length > 0) {
         log('INFO', `Startup recovery: found ${orphaned.length} orphaned envelope(s)`);
         for (const env of orphaned) {
@@ -3261,30 +3305,19 @@ async function main() {
                   await firestoreWrite('work', env.id, { status: 'active', updated_at: now() });
                 }
               } else {
-                log('INFO', `Recovery: resuming mission ${env.id} — checkpoints active/pending or children terminal, resuming execution`);
-                try {
-                  await firestoreWrite('work', env.id, { status: 'active', updated_at: now() });
-                  await writeHistory(env.id, env.status, 'active', 'brain', 'Resumed after restart — resuming execution thread');
-                  const memory = await recallMemory(env.instruction);
-                  await processEnvelope(env, memory);
-                } catch (e) {
-                  log('ERROR', `Recovery resume failed for ${env.id}: ${e.message}`);
-                }
+                // Work queue discipline: queue for processing, don't process immediately
+                log('INFO', `Recovery: queuing mission ${env.id} — checkpoints active/pending or children terminal`);
+                await firestoreWrite('work', env.id, { status: 'queued', updated_at: now() });
+                await writeHistory(env.id, env.status, 'queued', 'brain', 'Queued after restart (work queue discipline)');
               }
             }
           } else {
             // Truly orphaned: no children, was created but processing never started
             log('INFO', `Recovering orphaned envelope: ${env.id} (status=${env.status}, title=${(env.title || '').substring(0, 60)})`);
-            try {
-              env.status = 'pending';
-              env.iteration = 0;
-              await firestoreWrite('work', env.id, { status: 'pending', iteration: 0, updated_at: now() });
-              await writeHistory(env.id, 'active', 'pending', 'brain', 'Recovered after brain restart');
-              const memory = await recallMemory(env.instruction);
-              await processEnvelope(env, memory);
-            } catch (e) {
-              log('ERROR', `Recovery failed for ${env.id}: ${e.message}`);
-            }
+            env.status = 'queued';
+            env.iteration = 0;
+            await firestoreWrite('work', env.id, { status: 'queued', iteration: 0, updated_at: now() });
+            await writeHistory(env.id, 'active', 'queued', 'brain', 'Recovered after brain restart (work queue discipline)');
           }
         }
       }
@@ -3301,6 +3334,7 @@ async function main() {
     await pollIntake();
     await checkWaitingEnvelopes();
     await checkApprovedApprovals();
+    await dequeueAndProcess();
   }, POLL_MS);
 
   // Phase 7A: Start Responsibility scheduler
