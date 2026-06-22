@@ -142,9 +142,22 @@ When work spans multiple specialties, use `checkpoint_plan` with multiple
 | Target agent lacks space membership | Target is not in the project GChat space | Mouth will auto-add them before delivering. If it fails, ask the user to manually add the agent to the space. |
 | Delegation fails to dispatch | Invalid project ID | Verify that the `project_id` field in the delegation payload matches an active project in Firestore. |
 | Delegation task dispatched to Motor instead of GChat | Missing `type: "delegation"` on task | Set `type: "delegation"` on the task object when using checkpoint_plan path. |
-| Mission stuck in waiting | Delegate agent hasn't completed or result not received | Check delegate agent's brain logs. The waiting mission resumes when checkWaitingEnvelopes detects all children complete. |
+| Mission stuck in waiting | Delegate agent hasn't completed or result not received | Check delegate agent's brain logs. The waiting mission resumes when checkWaitingEnvelopes detects all children complete (including archived/cancelled). |
+| Mission stuck in waiting with archived children | Archival sweep archived delegation children before parent resumed | checkWaitingEnvelopes now treats `archived` as terminal (success) and `cancelled` as terminal (failure). |
+| Active mission with waiting checkpoint children | Checkpoint-plan delegations dispatched but parent M envelope stays active | Phase B of checkWaitingEnvelopes scans active M envelopes with waiting C children every ~27s. |
 
 ## Lifecycle
+
+The return path has two mechanisms (both must work for reliable round-trips):
+
+**Mechanism 1: Firestore polling (primary resumption path)**
+- Delegate brain registers its mission as child on delegator's waiting T envelope
+- Delegator's `checkWaitingEnvelopes` polls every ~9s
+- When all children are terminal, it resumes the mission with results
+
+**Mechanism 2: GChat [DELEGATION-RESULT] marker (notification/audit trail)**
+- Delegate mouth sends `[DELEGATION-RESULT]` to the project space
+- This is informational — Firestore polling drives actual resumption
 
 ```
 Delegator                                     Delegate
@@ -155,10 +168,11 @@ Delegator                                     Delegate
                               ──────→         
                                               4. Ears detects delegation marker
                                               5. Brain creates mission (no LLM classify)
-                                              6. Executes work (motor/cerebellum)
-                                              7. Sends [DELEGATION-RESULT] marker
+                                              6. Registers as child on parent T envelope
+                                              7. Executes work (motor/cerebellum)
+                                              8. Sends [DELEGATION-RESULT] marker
                               ←──────         
-8. Ears picks up result
-9. Brain resumes waiting mission
-10. Synthesizes with delegation results
+9. checkWaitingEnvelopes finds child complete
+10. Resumes waiting mission with context_forward
+11. Synthesizes with delegation results
 ```
