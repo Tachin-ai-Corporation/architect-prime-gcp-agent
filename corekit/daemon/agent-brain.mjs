@@ -3293,7 +3293,7 @@ async function main() {
             if (allChildrenDone) {
               log('INFO', `Recovery: archiving completed mission ${env.id}`);
               await firestoreWrite('work', env.id, {
-                status: 'archived', archived_reason: 'child_complete',
+                ...env, status: 'archived', archived_reason: 'child_complete',
                 delivery_status: 'delivered', updated_at: now(),
               });
               await writeHistory(env.id, env.status, 'archived', 'brain', 'Archived after restart — all children complete');
@@ -3305,12 +3305,12 @@ async function main() {
               if (activeChildMissions.length > 0) {
                 log('INFO', `Recovery: mission ${env.id} has ${activeChildMissions.length} active child missions — ensuring parent active`);
                 if (env.status !== 'active') {
-                  await firestoreWrite('work', env.id, { status: 'active', updated_at: now() });
+                  await firestoreWrite('work', env.id, { ...env, status: 'active', updated_at: now() });
                 }
               } else {
                 // Work queue discipline: queue for processing, don't process immediately
                 log('INFO', `Recovery: queuing mission ${env.id} — checkpoints active/pending or children terminal`);
-                await firestoreWrite('work', env.id, { status: 'queued', updated_at: now() });
+                await firestoreWrite('work', env.id, { ...env, status: 'queued', updated_at: now() });
                 await writeHistory(env.id, env.status, 'queued', 'brain', 'Queued after restart (work queue discipline)');
               }
             }
@@ -3319,7 +3319,7 @@ async function main() {
             log('INFO', `Recovering orphaned envelope: ${env.id} (status=${env.status}, title=${(env.title || '').substring(0, 60)})`);
             env.status = 'queued';
             env.iteration = 0;
-            await firestoreWrite('work', env.id, { status: 'queued', iteration: 0, updated_at: now() });
+            await firestoreWrite('work', env.id, { ...env, status: 'queued', iteration: 0, updated_at: now() });
             await writeHistory(env.id, 'active', 'queued', 'brain', 'Recovered after brain restart (work queue discipline)');
           }
         }
