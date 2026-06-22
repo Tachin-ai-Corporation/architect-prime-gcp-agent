@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.21.1.0)
+## Current Architecture (v2026.06.22.1.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -19,6 +19,17 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Removed auto core-memory-write**: `writeMemory()` in agent-brain.mjs no longer writes raw mission dumps to Firestore core memory on every envelope completion. Only MEMORY.md (working memory) is auto-appended. Core memory writes are now exclusively via Motor tool calls (intentional, curated facts) and the nightly `p-memory-consolidate` process (triage and promotion). This eliminates unbounded noise accumulation in long-term memory.
   - **Process hardening (p-memory-consolidate)**: Added SCOPE ENFORCEMENT preamble to step 1 preventing context contamination from unrelated active work. Replaced fragile heredoc syntax in step 8 with deterministic printf pattern for MEMORY.md rewriting.
   - **memory-system SKILL.md**: Added troubleshooting table for common failure modes (oversized MEMORY.md, failed consolidation, skipped appends), manual recovery steps, and documented the 3000-char size guard behavior.
+- **Cross-Agent Delegation & Self-Delegation Prevention (v2026.06.22.1.0)**:
+  - **Delegation-first intelligence**: Product Architect and PM agents are configured as "delegators, never implementers" — cortex/prefrontal SOUL mandates delegation before self-execution. Cortex classify/decide payload includes project team roster for informed delegation decisions.
+  - **Parallel delegation fan-out**: checkpoint-executor processes all delegation tasks in a single checkpoint before waiting, enabling parallel multi-agent dispatch within one checkpoint pass.
+  - **Self-delegation prevention (4-layer defense)**:
+    - Layer 1 — Prefrontal SOUL: Specialty ownership detection distinguishes self vs teammate specialty, marks own specialty tasks as `agent: motor`.
+    - Layer 2 — Cortex SOUL: "Execute work matching your own specialty via motor. NEVER delegate work to an agent with the same specialty as myself."
+    - Layer 3 — Cortex SOUL: "When another agent delegates a task to me, that task is for ME to execute via motor. I do NOT re-delegate it."
+    - Layer 4 — Code guard: `checkpoint-executor.mjs` compares `targetAgentEmail` against `AGENT_EMAIL` — if delegation resolves to self, silently converts to local motor task (`stepType = 'standard'`, `taskAgent = 'motor'`).
+  - **Designer motor SOUL**: Mandatory 6-step workflow for HTML/CSS file modifications — web-fetch → readFile → plan changes → writeFile (complete file) → verify. Prevents the motor from outputting HTML inline instead of writing files.
+  - **assemble-persona in upgrade-corekit**: `upgrade-corekit` now runs `assemble-persona` automatically during upgrades, ensuring specialty SOUL_APPEND changes are applied without a separate bootstrap step.
+  - **Delegation delivery**: `checkpoint-executor.mjs` creates delegation marker envelopes with `delivery_status: 'pending'` for mouth pickup. Target resolution via Firestore `primes/{id}/fleet` specialty lookup with direct `target_email` override.
 - **Brain Overhaul Audit Implementation (v2026.06.18.1)**:
   - **Motor Failure Detection Caller Wiring**: Imported and called `detectMotorFailure` in `checkpoint-executor.mjs` to check motor execution output/error and fail-fast if a token expiration or auth failure is found (resolved Gap 1 regression).
   - **toStr Coercion Protection**: All task and checkpoint string references (e.g. `.substring()`) are wrapped in `toStr` coercion to prevent crash sites when Cortex returns raw objects for task names (resolved Gap 2).
