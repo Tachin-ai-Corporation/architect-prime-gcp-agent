@@ -3331,11 +3331,20 @@ async function main() {
   // Start intake polling
   const POLL_MS = CONTRACTS.dispatch?.poll_interval_ms || 3000;
   log('INFO', `Starting intake poll (every ${POLL_MS}ms)`);
+  let pollCount = 0;
   setInterval(async () => {
-    await pollIntake();
-    await checkWaitingEnvelopes();
-    await checkApprovedApprovals();
-    await dequeueAndProcess();
+    pollCount++;
+    try {
+      if (pollCount <= 3 || pollCount % 100 === 0) {
+        log('INFO', `[POLL TICK ${pollCount}] processing=${processing} activeMissionId=${activeMissionId || 'null'}`);
+      }
+      await pollIntake();
+      await checkWaitingEnvelopes();
+      await checkApprovedApprovals();
+      await dequeueAndProcess();
+    } catch (e) {
+      log('ERROR', `[POLL TICK ${pollCount}] Unhandled error in poll loop: ${e.message}\n${e.stack}`);
+    }
   }, POLL_MS);
 
   // Phase 7A: Start Responsibility scheduler
