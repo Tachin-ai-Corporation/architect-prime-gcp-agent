@@ -463,6 +463,18 @@ export async function executeCheckpoints(checkpoints, opts) {
           continue;
         }
 
+        // ---- Self-delegation guard ----
+        // If the delegation resolves to THIS agent, convert to a local motor task
+        // instead of sending a GChat message to ourselves (which causes infinite loops).
+        if (targetAgentEmail === (AGENT_EMAIL || AGENT_ID)) {
+          log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation to '${delegateSpecialty}' resolved to SELF (${targetAgentEmail}) — converting to local motor task`);
+          // Override: treat as standard motor task
+          stepType = 'standard';
+          task.agent = 'motor';
+          taskAgent = 'motor';
+          // Fall through to standard task execution below
+        } else {
+
         // Create Task envelope with status='waiting'
         const taskId = generateId('w');
         const taskEnvelope = {
@@ -542,6 +554,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         // continue processing remaining tasks so parallel delegations fan out
         delegationDispatched = true;
         continue;  // Process next task in this checkpoint
+        }  // end else (not self-delegation)
       }
 
       // ---- Standard Task execution ----
