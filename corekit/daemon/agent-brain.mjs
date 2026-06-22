@@ -3022,16 +3022,23 @@ async function checkWaitingEnvelopes() {
 
       for (const childId of children) {
         const child = await firestoreRead('work', childId);
-        if (!child) continue;
 
-        if (child.status === 'complete' || child.status === 'failed') {
+        // Null child = deleted from Firestore (treat as failed)
+        if (!child) {
+          childResults.push({ agent: 'unknown', task: childId, result: '[FAILED] Envelope deleted from Firestore', success: false });
+          continue;
+        }
+
+        // Terminal states: complete, failed, archived, cancelled
+        if (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled') {
+          const isSuccess = child.status === 'complete' || child.status === 'archived';
           childResults.push({
             agent: child.owner,
             task: toStr(child.instruction).substring(0, 200),
-            result: child.status === 'complete'
+            result: isSuccess
               ? toStr(child.output).substring(0, 4000)
-              : `[FAILED] ${child.error || 'unknown'}`,
-            success: child.status === 'complete',
+              : `[FAILED] ${child.error || child.status}`,
+            success: isSuccess,
           });
         } else {
           allChildrenDone = false;
@@ -3060,6 +3067,76 @@ async function checkWaitingEnvelopes() {
         await processEnvelope(waiting, memory);
       } catch (e) {
         log('ERROR', `Failed to resume waiting envelope ${waiting.id}: ${e.message}`);
+      }
+    }
+    // ---- Phase B: Active M envelopes with waiting C children (delegation via checkpoint_plan) ----
+    // These are missions where checkpoint-executor created delegation tasks inside checkpoints.
+    // The M envelope stays 'active' but the C child is 'waiting' for delegation results.
+    if (waitingCheckCount % 9 === 0) {  // Less frequent: every ~27s
+      const activeEnvelopes = await firestoreQuery('work', [
+        { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
+        { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
+        { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+      ]);
+
+      for (const active of activeEnvelopes) {
+        const children = active.children || [];
+        if (children.length === 0) continue;
+
+        for (const childId of children) {
+          const child = await firestoreRead('work', childId);
+          if (!child || child.type !== 'C' || child.status !== 'waiting') continue;
+
+          const cpChildren = child.children || [];
+          if (cpChildren.length === 0) continue;
+
+          let allDone = true;
+          let cpResults = [];
+          for (const tcId of cpChildren) {
+            const tc = await firestoreRead('work', tcId);
+            if (!tc) {
+              cpResults.push({ agent: 'unknown', task: tcId, result: '[FAILED] Envelope deleted', success: false });
+              continue;
+            }
+            if (tc.status === 'complete' || tc.status === 'failed' || tc.status === 'archived' || tc.status === 'cancelled') {
+              const isSuccess = tc.status === 'complete' || tc.status === 'archived';
+              cpResults.push({
+                agent: tc.owner,
+                task: toStr(tc.instruction).substring(0, 200),
+                result: isSuccess ? toStr(tc.output).substring(0, 4000) : `[FAILED] ${tc.error || tc.status}`,
+                success: isSuccess,
+              });
+            } else {
+              allDone = false;
+            }
+          }
+
+          if (!allDone || cpResults.length === 0) continue;
+
+          log('INFO', `Resuming active mission ${active.id}: checkpoint ${childId} delegations complete (${cpResults.length} results)`);
+
+          const delegationSummary = cpResults.map((r, i) =>
+            `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${toStr(r.result).substring(0, 500)}`
+          ).join('\n\n');
+
+          child.status = 'complete';
+          child.output = delegationSummary;
+          child.updated_at = now();
+          await firestoreWrite('work', childId, child);
+
+          active.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
+          active.updated_at = now();
+          await firestoreWrite('work', active.id, active);
+          await writeHistory(active.id, 'active', 'active', 'brain', `Checkpoint delegation(s) complete, resuming`);
+
+          try {
+            const memory = await recallMemory(active.instruction);
+            await processEnvelope(active, memory);
+          } catch (e) {
+            log('ERROR', `Failed to resume active mission ${active.id}: ${e.message}`);
+          }
+          break;
+        }
       }
     }
   } catch (e) {

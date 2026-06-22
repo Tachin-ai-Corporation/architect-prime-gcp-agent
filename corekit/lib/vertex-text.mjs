@@ -462,7 +462,19 @@ export function createVertexText(config) {
     }
 
     log('WARN', `enforceSchema failed ${enforceSchemaMaxAttempts}x, falling back to parseJsonResponse`);
-    return typeof raw === 'string' ? parseJsonResponse(raw) : raw;
+    try {
+      return typeof raw === 'string' ? parseJsonResponse(raw) : raw;
+    } catch (_) {
+      // Last resort: if raw text is clearly not JSON (cortex produced narrative text),
+      // wrap it into a synthesize action so the brain can gracefully close the mission.
+      const rawStr = typeof raw === 'string' ? raw : JSON.stringify(raw);
+      const trimmed = rawStr.trim();
+      if (trimmed && !trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        log('WARN', `enforceSchema: raw text is not JSON, wrapping as synthesize action`);
+        return { action: 'synthesize', summary: trimmed.substring(0, 2000) };
+      }
+      throw _;
+    }
   }
 
   /**
