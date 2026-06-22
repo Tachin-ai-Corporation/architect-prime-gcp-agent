@@ -160,12 +160,16 @@ export function createClient(config) {
           })),
         }
       },
-      orderBy: [{
-        field: { fieldPath: opts.orderBy || 'created_at' },
-        direction: opts.orderDirection || 'ASCENDING',
-      }],
       limit: opts.limit || 300,
     };
+    // OrderBy requires composite indexes with multi-field where clauses.
+    // Skip when opts.noOrderBy is true to avoid silent empty results.
+    if (!opts.noOrderBy) {
+      structuredQuery.orderBy = [{
+        field: { fieldPath: opts.orderBy || 'created_at' },
+        direction: opts.orderDirection || 'ASCENDING',
+      }];
+    }
 
     const resp = await fetch(url, {
       method: 'POST',

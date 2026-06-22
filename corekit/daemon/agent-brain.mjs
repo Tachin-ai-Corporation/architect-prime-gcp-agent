@@ -699,8 +699,8 @@ async function firestoreRead(collection, docId) {
   return _db.read(`primes/${PRIME_ID}/${collection}/${docId}`);
 }
 
-async function firestoreQuery(collection, filters) {
-  return _db.query(`primes/${PRIME_ID}`, collection, filters);
+async function firestoreQuery(collection, filters, opts) {
+  return _db.query(`primes/${PRIME_ID}`, collection, filters, opts);
 }
 
 // ---- Envelope helpers ----
@@ -3154,7 +3154,7 @@ async function dequeueAndProcess() {
     const agentOwner = AGENT_EMAIL || AGENT_ID;
     const allQueued = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'queued' } },
-    ]);
+    ], { noOrderBy: true });
     const queued = allQueued.filter(e => e.type === 'M' && (e.owner || '').includes(agentOwner.split('@')[0]));
 
     if (queued.length === 0) return;
