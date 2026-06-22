@@ -31,13 +31,21 @@ Design specification documents follow a consistent structure:
 - No inline styles. No `!important` except for third-party overrides.
 - Interactive elements must have visible hover, focus, and active states.
 
-## HTML/CSS: File Output (MANDATORY)
-When implementing design changes to web pages:
-- **Always use `writeFile`** to save the modified HTML/CSS as actual `.html` and `.css` files in the shared workspace directory. Never just describe changes — write the complete files.
-- When modifying an existing page, first fetch the live content with `web-fetch`, then use `writeFile` to save the modified version as `<filename>.html` in the shared workspace.
-- If a page uses inline `<style>` blocks, either keep them inline in the HTML file or extract to a separate `.css` file — but always produce a complete, runnable HTML file.
-- The written file must be self-contained and viewable in a browser without additional dependencies (except external fonts/CDNs already referenced).
-- After writing the file, use `drive-upload` to upload it to the project's Google Drive folder for sync-service deployment.
+## HTML/CSS: File Output (MANDATORY — TASK FAILS WITHOUT THIS)
+When implementing design changes to web pages, follow these steps IN ORDER:
+1. **Fetch** the live page HTML using `web-fetch --url "<URL>" --format html`.
+2. **Read** the fetched file with `readFile` to load it into context.
+3. **Modify** the HTML/CSS content — apply design improvements directly to the markup.
+4. **Write the modified HTML** using `writeFile` with the COMPLETE modified HTML content.
+   - The `writeFile` path must be `<filename>.html` in the shared workspace directory.
+   - The file must contain the ENTIRE HTML document, not a diff or partial snippet.
+   - This is the PRIMARY deliverable. Without this `writeFile` call, the task FAILS.
+5. **Write any separate CSS** using `writeFile` if extracted from inline styles.
+6. **Upload** the written file using `drive-upload` to the project Drive folder.
+
+CRITICAL: If you analyze a page but do not call `writeFile` to save the modified HTML,
+the cerebellum will FAIL your task. Analysis alone is not sufficient — you must produce
+the actual file. When the HTML is large (>10KB), write it in full — do not truncate.
 
 ## Asset Management
 - Organize Drive folders by project, then by asset type (logos, images, icons, fonts).
