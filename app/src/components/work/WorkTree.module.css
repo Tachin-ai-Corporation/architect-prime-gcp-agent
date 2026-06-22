@@ -77,6 +77,10 @@
   box-shadow: 0 0 10px rgba(224, 108, 117, 0.45);
   animation: pulse 1.8s ease-in-out infinite;
 }
+.rDot.queued {
+  background: #5B8DEF;
+  opacity: 0.7;
+}
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -109,6 +113,14 @@
 }
 .doneL {
   color: #AEB8C4;
+}
+.queuedL {
+  color: #5B8DEF;
+  font-weight: 600;
+}
+.queuedMeta {
+  color: #5B8DEF;
+  font-weight: 500;
 }
 
 /* ---- Type tags ---- */

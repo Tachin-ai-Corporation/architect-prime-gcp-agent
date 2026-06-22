@@ -149,6 +149,7 @@ export function AgentWorkPanel({ primeId, agentFilter }: AgentWorkPanelProps) {
       case "complete": return styles.dotDone;
       case "failed": case "timed_out": return styles.dotFailed;
       case "cancelled": case "rejected": return styles.dotCancelled;
+      case "queued": return styles.dotQueued;
       default: return styles.dotNeutral;
     }
   };

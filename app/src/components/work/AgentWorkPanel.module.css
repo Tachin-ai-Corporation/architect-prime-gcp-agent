@@ -276,6 +276,10 @@
   background: #7A8696;
 }
 
+.dotQueued {
+  background: #5B8DEF;
+}
+
 /* ---- Archive row cells ---- */
 .archiveType {
   font-size: 10px;

@@ -17,7 +17,7 @@ interface WorkTreeProps {
 
 /** Check if a node or any descendant is active/waiting. */
 function hasActiveDescendant(node: TreeNode): boolean {
-  if (node.status === "active" || node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval" || node.status === "blocked" || node.status === "needs_review") {
+  if (node.status === "active" || node.status === "waiting" || node.status === "needs_input" || node.status === "awaiting_approval" || node.status === "blocked" || node.status === "needs_review" || node.status === "queued") {
     return true;
   }
   for (const child of node.children) {
@@ -97,6 +97,7 @@ function TreeNodeRow({
     node.status === "needs_input" ||
     node.status === "awaiting_approval" ||
     node.status === "blocked" ||
+    node.status === "queued" ||
     hasActiveDescendant(node);
   const [expanded, setExpanded] = useState(shouldAutoExpand);
 
@@ -121,7 +122,9 @@ function TreeNodeRow({
                   ? "planned"
                   : node.status === "timed_out"
                     ? "timedout"
-                    : "pending";
+                    : node.status === "queued"
+                      ? "queued"
+                      : "pending";
 
   // Label class
   const labelClass =
@@ -133,7 +136,9 @@ function TreeNodeRow({
           ? styles.blockedL
           : node.status === "complete"
             ? styles.doneL
-            : "";
+            : node.status === "queued"
+              ? styles.queuedL
+              : "";
 
   // Type tag
   const tagClass = node.type === "M" ? `${styles.tag} ${styles.mTag}` : styles.tag;
@@ -149,6 +154,10 @@ function TreeNodeRow({
   if (node.status === "active" && node.started_at) {
     const el = elapsedSince(node.started_at);
     if (el) metaJsx.push(<span key="elapsed" className={styles.live}>{el} elapsed</span>);
+  }
+
+  if (node.status === "queued") {
+    metaJsx.push(<span key="queued" className={styles.queuedMeta}>Queued</span>);
   }
 
   if ((node.status === "waiting" || node.status === "needs_input" || node.status === "blocked" || node.status === "needs_review") && node.blocked_at) {

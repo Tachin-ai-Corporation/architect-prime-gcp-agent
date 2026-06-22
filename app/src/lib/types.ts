@@ -89,7 +89,7 @@ export interface WorkEnvelope {
   type: 'R' | 'M' | 'C' | 'T';
   parent_id: string | null;
   owner: string;
-  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived' | 'awaiting_approval' | 'planned' | 'rejected' | 'timed_out' | 'needs_review';
+  status: 'pending' | 'active' | 'complete' | 'failed' | 'waiting' | 'needs_input' | 'blocked' | 'cancelled' | 'archived' | 'awaiting_approval' | 'planned' | 'rejected' | 'timed_out' | 'needs_review' | 'queued';
   intent: string;
   title?: string;
   instruction: string;

@@ -139,6 +139,10 @@
   background: rgba(230, 126, 34, 0.14);
   color: #E67E22;
 }
+.chipQueued {
+  background: rgba(91, 141, 239, 0.14);
+  color: #5B8DEF;
+}
 
 /* ---- Progress ---- */
 .mProg {

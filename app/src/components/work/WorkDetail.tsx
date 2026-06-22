@@ -80,6 +80,7 @@ function statusLabel(status: string): string {
     case "rejected": return "Rejected";
     case "timed_out": return "Timed Out";
     case "aborted": return "Aborted";
+    case "queued": return "Queued";
     default: return "Pending";
   }
 }
@@ -97,6 +98,7 @@ function statusChipClass(status: string): string {
     case "aborted": return styles.chipFail;
     case "planned": return styles.chipPlanned;
     case "timed_out": return styles.chipTimeout;
+    case "queued": return styles.chipQueued;
     default: return "";
   }
 }
@@ -114,6 +116,7 @@ function dotColor(status: string): string {
     case "aborted": return "#D84F45";
     case "planned": return "#9B59B6";
     case "timed_out": return "#E67E22";
+    case "queued": return "#5B8DEF";
     default: return "#566373";
   }
 }
