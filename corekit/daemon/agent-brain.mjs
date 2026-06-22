@@ -3148,13 +3148,14 @@ async function dequeueAndProcess() {
     activeMissionId = null;
   }
 
-  // Query for next queued mission (priority: missions with context_forward first = resumed/unblocked)
+  // Query for next queued mission — single-field query to avoid composite index requirement.
+  // Owner and type filters applied client-side.
   try {
-    const queued = await firestoreQuery('work', [
+    const agentOwner = AGENT_EMAIL || AGENT_ID;
+    const allQueued = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'queued' } },
-      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
-      { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
     ]);
+    const queued = allQueued.filter(e => e.type === 'M' && (e.owner || '').includes(agentOwner.split('@')[0]));
 
     if (queued.length === 0) return;
 
