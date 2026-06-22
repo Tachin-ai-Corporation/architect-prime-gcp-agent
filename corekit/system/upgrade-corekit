@@ -413,6 +413,18 @@ except:
       fi
     fi
 
+    # ---- Assemble specialty persona (SOUL appends) ----
+    # Re-apply specialty-specific SOUL_APPEND.md files to brain organ workspaces.
+    # Must run AFTER template rendering (which writes base workspace SOULs).
+    PERSONA_BIN="${CORE_ROOT}/bin/assemble-persona"
+    if [[ -x "$PERSONA_BIN" ]]; then
+      PERSONA_TYPE="${TPL_SPECIALTY:-$EXISTING_JOB}"
+      if [[ -n "$PERSONA_TYPE" ]]; then
+        echo "==> Assembling persona (specialty: ${PERSONA_TYPE})"
+        CORE_DIR="$CORE_ROOT" "$PERSONA_BIN" "$PERSONA_TYPE" 2>&1 || echo "  (assemble-persona failed)"
+      fi
+    fi
+
     # ---- Shared workspace architecture ----
     # ADR: Agents have isolated workspaces to load distinct SOUL/TOOLS.
     # We create a central shared directory and symlink it into every workspace
