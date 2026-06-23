@@ -51,7 +51,7 @@
       "description": "Before requesting approval, verify the staging deployment has ALL assets.\n\nCheck these URLs against the staging preview URL:\n```bash\nSTAGING_URL=\"<staging-url-from-previous-step>\"\nfor path in '' 'styles.css' 'home.html' 'about.html' 'security.html' 'privacy.html' 'terms.html' 'newly-released.html'; do\n  CODE=$(curl -sf -o /dev/null -w '%{http_code}' \"${STAGING_URL}/${path}\")\n  echo \"  /${path}: HTTP ${CODE}\"\ndone\n# Check images\nfor img in $(find ${hosting_dir}/hosting_public/images -type f -name '*.png' -o -name '*.jpg' 2>/dev/null | head -5 | sed \"s|${hosting_dir}/hosting_public/||\"); do\n  CODE=$(curl -sf -o /dev/null -w '%{http_code}' \"${STAGING_URL}/${img}\")\n  echo \"  /${img}: HTTP ${CODE}\"\ndone\n```\n\n⚠️ If ANY page or image returns 404, the deployment is INCOMPLETE. Go back to Step 1.\n\nOutput: HTTP status for each page and a sample of images.",
       "agent": "motor",
       "type": "standard",
-      "intent": "research",
+      "intent": "execute",
       "accept_criteria": "All HTML pages return HTTP 200. At least 3 image URLs return HTTP 200. No 404s detected."
     },
     {
@@ -76,7 +76,7 @@
       "description": "Verify the production site has ALL pages AND images loading correctly.\n\nRun:\n```bash\nfor path in '' 'styles.css' 'home.html' 'about.html' 'security.html'; do\n  CODE=$(curl -sf -o /dev/null -w '%{http_code}' \"https://${firebase_project}.web.app/${path}\")\n  SIZE=$(curl -sf \"https://${firebase_project}.web.app/${path}\" | wc -c)\n  echo \"  /${path}: HTTP ${CODE} (${SIZE} bytes)\"\ndone\n```\n\nAlso verify at least one image loads:\n```bash\ncurl -sf -o /dev/null -w 'Logo: HTTP %{http_code}' https://${firebase_project}.web.app/tachin_logo.png\n```\n\nOutput: HTTP status codes and sizes for all pages plus sample images.",
       "agent": "motor",
       "type": "standard",
-      "intent": "research",
+      "intent": "execute",
       "accept_criteria": "All pages return HTTP 200 with non-zero content size. At least one image returns HTTP 200. The production site is fully functional."
     }
   ],
