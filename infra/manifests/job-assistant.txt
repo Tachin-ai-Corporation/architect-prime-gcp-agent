@@ -4,20 +4,8 @@
 
 specialties/assistant/workspace/MEMORY.md workspace/MEMORY.md?
 
-# Workspace skills — Google Drive
-skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+# Workspace skills — Google Drive (skill.json only; tools now in role-fleet)
 skills/workspace-drive/skill.json skills/workspace-drive/skill.json
-skills/workspace-drive/drive-ls bin/drive-ls
-skills/workspace-drive/drive-search bin/drive-search
-skills/workspace-drive/drive-download bin/drive-download
-skills/workspace-drive/drive-download-folder bin/drive-download-folder
-skills/workspace-drive/drive-upload bin/drive-upload
-skills/workspace-drive/drive-mkdir bin/drive-mkdir
-skills/workspace-drive/drive-rename bin/drive-rename
-skills/workspace-drive/drive-delete bin/drive-delete
-skills/workspace-drive/drive-move bin/drive-move
-skills/workspace-drive/drive-share bin/drive-share
-skills/workspace-drive/work-publish bin/work-publish
 
 # Workspace skills — Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md

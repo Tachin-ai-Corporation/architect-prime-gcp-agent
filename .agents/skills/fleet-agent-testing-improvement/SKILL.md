@@ -45,7 +45,31 @@ Run `chat-send` via SSH on `fleet-archie` to send a message as Archie. Archie's 
 echo y | gcloud compute ssh fleet-archie --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="CORE_DIR=/opt/corekit AGENT_USER_EMAIL=product-architect-agent-archie@tachin.ag CHAT_SPACE_ID=spaces/AAQA2JEusfs /opt/corekit/bin/chat-send '@Devops-Agent Stan please search Google Drive for the website asset folder and verify its contents.'"
 ```
 
----
+> **⚠️ Self-Message Filtering**: `chat-send` sends AS the agent specified in `AGENT_USER_EMAIL`. The agent's ears daemon filters out its own messages, so sending AS agent X to trigger agent X **will not work**. Either:
+> 1. Send from a **different agent** (e.g., Archie sends to Stan)
+> 2. Use **Firestore intake injection** (see below)
+> 3. Have a **human** send the message in GChat
+
+### C. Firestore Intake Injection (Direct — Bypasses GChat)
+Write a bash script that creates a pending intake doc directly in Firestore. This bypasses GChat and ears entirely — the brain picks it up within 3 seconds.
+
+**Key fields**: `status: "pending"`, `source_meta.agentId` must match the target agent's AGENT_ID (e.g., `archie`, `stan`, `dot`, `bobby`).
+
+```bash
+#!/bin/bash
+# inject-intake.sh — direct Firestore intake injection
+TOKEN=$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
+BASE="https://firestore.googleapis.com/v1/projects/architect-prime-beta/databases/(default)/documents"
+TS=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+ID="intake-$(date +%s)-$$"
+
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  "$BASE/primes/chuck/intake?documentId=$ID" \
+  -d '{"fields":{"id":{"stringValue":"'"$ID"'"},"source":{"stringValue":"gchat"},"sender":{"stringValue":"christopher@tachin.ag"},"text":{"stringValue":"YOUR INSTRUCTION HERE"},"source_meta":{"mapValue":{"fields":{"agentId":{"stringValue":"TARGET_AGENT_ID"},"space_id":{"stringValue":"spaces/AAQA2JEusfs"}}}},"mentions_me":{"booleanValue":true},"timestamp":{"stringValue":"'"$TS"'"},"created_at":{"stringValue":"'"$TS"'"},"status":{"stringValue":"pending"}}}'
+```
+
+Use the SCP Script Pattern from `/firestore-query` to upload and execute this on prime-chuck.
+
 
 ## 2. Monitor Execution
 

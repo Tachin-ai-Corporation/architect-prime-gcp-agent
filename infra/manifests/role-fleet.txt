@@ -24,6 +24,20 @@ brain/fleet/_brain/motor/IDENTITY.md workspace-motor/IDENTITY.md
 # Workspace auth token (shared by all workspace skills)
 skills/workspace-drive/ws-token bin/ws-token
 
+# Drive tools (universal — all fleet agents publish artifacts to Drive)
+skills/workspace-drive/drive-ls bin/drive-ls
+skills/workspace-drive/drive-search bin/drive-search
+skills/workspace-drive/drive-download bin/drive-download
+skills/workspace-drive/drive-download-folder bin/drive-download-folder
+skills/workspace-drive/drive-upload bin/drive-upload
+skills/workspace-drive/drive-mkdir bin/drive-mkdir
+skills/workspace-drive/drive-rename bin/drive-rename
+skills/workspace-drive/drive-delete bin/drive-delete
+skills/workspace-drive/drive-move bin/drive-move
+skills/workspace-drive/drive-share bin/drive-share
+skills/workspace-drive/work-publish bin/work-publish
+skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+
 # Skills (shared by all fleet agents)
 skills/web-search/SKILL.md skills/web-search/SKILL.md
 skills/web-search/skill.json skills/web-search/skill.json
@@ -41,3 +55,4 @@ corekit/memory/session-summary bin/session-summary
 skills/memory-consolidate/SKILL.md skills/memory-consolidate/SKILL.md
 skills/memory-consolidate/skill.json skills/memory-consolidate/skill.json
 corekit/brain/process-manage bin/process-manage
+
