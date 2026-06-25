@@ -75,21 +75,19 @@ ensure_folder() {
   local QUERY="name='${NAME}' and '${PARENT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
   local ENC_Q
   ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
-  local SEARCH
-  SEARCH=$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-    "${DRIVE_API}/files?q=${ENC_Q}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id)" 2>/dev/null || echo '{}')
   local EXISTING
-  EXISTING=$(python3 -c "import json; d=json.loads('${SEARCH}'.replace(\"'\",\"'\")); fs=d.get('files',[]); print(fs[0]['id'] if fs else '')" 2>/dev/null || echo '')
+  EXISTING=$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files?q=${ENC_Q}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id)" 2>/dev/null \
+    | python3 -c "import sys,json; fs=json.load(sys.stdin).get('files',[]); print(fs[0]['id'] if fs else '')" 2>/dev/null || echo '')
   if [[ -n "$EXISTING" ]]; then
     echo "$EXISTING"
     return 0
   fi
   # Create new folder
   local BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
-  local RESP
-  RESP=$(curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-    -d "$BODY" "${DRIVE_API}/files?supportsAllDrives=true&fields=id" 2>/dev/null || echo '{}')
-  python3 -c "import json; print(json.loads('${RESP}'.replace(\"'\",\"'\")).get('id',''))" 2>/dev/null || echo ''
+  curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+    -d "$BODY" "${DRIVE_API}/files?supportsAllDrives=true&fields=id" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo ''
 }
 
 # ---- Build folder path ----
