@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# drive-mkdir — Create a folder in Google Drive
+# Brain agent: motor (WRITE)
+# Usage: drive-mkdir --name "Project Files" [--parent FOLDER_ID]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-mkdir] [ERROR] $*" >&2; exit 1; }
+NAME="" PARENT=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in --name) NAME="$2"; shift 2 ;; --parent) PARENT="$2"; shift 2 ;;
+    *) if [[ -z "$NAME" && "$1" != -* ]]; then NAME="$1"; shift
+       else die "Unknown: $1"; fi ;; esac
+done
+[[ -n "$NAME" ]] || die "Need --name"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+QUERY="name='${NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+if [[ -n "$PARENT" ]]; then
+  QUERY="name='${NAME}' and '${PARENT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+fi
+ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
+SEARCH_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,webViewLink)"
+
+# 1. Pre-search for existing folder
+HTTP_CODE=$(curl -s -o /tmp/drive-search.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$SEARCH_URL")
+if [[ "$HTTP_CODE" == "200" ]]; then
+  EXISTING_ID=$(python3 -c "
+import sys,json
+try:
+  fs = json.load(open('/tmp/drive-search.json')).get('files',[])
+  if fs: print(fs[0]['id'])
+except: pass
+")
+  if [[ -n "$EXISTING_ID" ]]; then
+    python3 -c "
+import sys,json
+try:
+  f = json.load(open('/tmp/drive-search.json')).get('files',[])[0]
+  print(json.dumps({'status':'existing','id':f.get('id',''),'name':f.get('name',''),'link':f.get('webViewLink','')}, indent=2))
+except: pass
+"
+    exit 0
+  fi
+fi
+
+# 2. Create new folder
+BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\"}"
+[[ -n "$PARENT" ]] && BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
+HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${DRIVE_API}/files?supportsAllDrives=true&fields=id,name,webViewLink")
+
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
+  echo "{\"status\":\"access_denied\",\"parent\":\"${PARENT:-root}\",\"message\":\"I don't have access to create a folder here. Please share the parent folder with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+if [[ "$HTTP_CODE" != "200" ]]; then
+  die "Drive API returned HTTP ${HTTP_CODE}"
+fi
+
+NEW_ID=$(python3 -c "
+import sys,json
+try: print(json.load(open('/tmp/drive-response.json')).get('id',''))
+except: pass
+")
+[[ -z "$NEW_ID" ]] && die "Failed to parse new folder ID"
+
+# 3. Race condition guard: Re-search and pick earliest
+DEDUP_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=createdTime&fields=files(id,name,webViewLink)"
+HTTP_CODE=$(curl -s -o /tmp/drive-dedup.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$DEDUP_URL")
+if [[ "$HTTP_CODE" == "200" ]]; then
+  WINNER_ID=$(python3 -c "
+import sys,json
+try:
+  fs = json.load(open('/tmp/drive-dedup.json')).get('files',[])
+  if fs: print(fs[0]['id'])
+except: pass
+")
+  if [[ -n "$WINNER_ID" && "$WINNER_ID" != "$NEW_ID" ]]; then
+    # Trash our duplicate
+    curl -sf -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -d '{"trashed":true}' "${DRIVE_API}/files/${NEW_ID}?supportsAllDrives=true" >/dev/null 2>&1 || true
+    # Return winner
+    python3 -c "
+import sys,json
+try:
+  f = json.load(open('/tmp/drive-dedup.json')).get('files',[])[0]
+  print(json.dumps({'status':'existing','id':f.get('id',''),'name':f.get('name',''),'link':f.get('webViewLink','')}, indent=2))
+except: pass
+"
+    exit 0
+  fi
+fi
+
+# 4. We won the race, return ours
+python3 -c "
+import json
+try:
+  f = json.load(open('/tmp/drive-response.json'))
+  print(json.dumps({'status':'created','id':f.get('id',''),'name':f.get('name',''),'link':f.get('webViewLink','')}, indent=2))
+except: pass
+"
