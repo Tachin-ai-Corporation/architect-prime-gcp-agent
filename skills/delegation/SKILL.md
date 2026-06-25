@@ -140,6 +140,7 @@ When work spans multiple specialties, use `checkpoint_plan` with multiple
 |-----------------|-------------|----------|
 | Target agent not found | Email address is malformed or guessed | Always copy the exact email from the project registry `team` roster; do not shorten or invent email addresses. |
 | Target agent lacks space membership | Target is not in the project GChat space | Mouth will auto-add them before delivering. If it fails, ask the user to manually add the agent to the space. |
+| Delegation silently fails to reach target agent | Archival sweep archived the delegation output before agent-mouth could deliver it | Fixed in CoreKit `v2026.06.25`. Archival sweeper no longer archives envelopes that have `delivery_status: "pending"`. If you encounter this, ensure the fleet is fully upgraded. |
 | Delegation fails to dispatch | Invalid project ID | Verify that the `project_id` field in the delegation payload matches an active project in Firestore. |
 | Delegation task dispatched to Motor instead of GChat | Missing `type: "delegation"` on task | Set `type: "delegation"` on the task object when using checkpoint_plan path. |
 | Mission stuck in waiting | Delegate agent hasn't completed or result not received | Check delegate agent's brain logs. The waiting mission resumes when checkWaitingEnvelopes detects all children complete (including archived/cancelled). |
