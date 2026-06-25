@@ -263,6 +263,15 @@ export function createArtifactManager(deps) {
     }
     try {
       const { execSync: exec } = await import('child_process');
+      const fs = await import('fs');
+
+      // Guard: skip if drive-mkdir not installed (prime agents lack Drive tools)
+      const mkdirBin = `${coreDir}/bin/drive-mkdir`;
+      if (!fs.existsSync(mkdirBin)) {
+        log('DEBUG', 'drive-mkdir not installed — skipping agent folder provisioning');
+        return null;
+      }
+
       const primeName = (primeId || 'unknown').replace(/["']/g, '');
       const agentName = (agentId || 'unknown').replace(/["']/g, '');
 
