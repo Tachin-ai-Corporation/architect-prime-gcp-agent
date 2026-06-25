@@ -25,21 +25,12 @@ SEARCH_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=1&supportsAllDrives=true&incl
 # 1. Pre-search for existing folder
 HTTP_CODE=$(curl -s -o /tmp/drive-search.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$SEARCH_URL")
 if [[ "$HTTP_CODE" == "200" ]]; then
-  EXISTING_ID=$(python3 -c "
-import sys,json
-try:
-  fs = json.load(open('/tmp/drive-search.json')).get('files',[])
-  if fs: print(fs[0]['id'])
-except: pass
-")
+  EXISTING_ID=$(jq -r '.files[0].id // empty' /tmp/drive-search.json 2>/dev/null || true)
   if [[ -n "$EXISTING_ID" ]]; then
-    python3 -c "
-import sys,json
-try:
-  f = json.load(open('/tmp/drive-search.json')).get('files',[])[0]
-  print(json.dumps({'status':'existing','id':f.get('id',''),'name':f.get('name',''),'link':f.get('webViewLink','')}, indent=2))
-except: pass
-"
+    jq -n --arg id "$EXISTING_ID" \
+          --arg name "$(jq -r '.files[0].name // empty' /tmp/drive-search.json 2>/dev/null)" \
+          --arg link "$(jq -r '.files[0].webViewLink // empty' /tmp/drive-search.json 2>/dev/null)" \
+          '{status: "existing", id: $id, name: $name, link: $link}'
     exit 0
   fi
 fi
@@ -59,44 +50,28 @@ if [[ "$HTTP_CODE" != "200" ]]; then
   die "Drive API returned HTTP ${HTTP_CODE}"
 fi
 
-NEW_ID=$(python3 -c "
-import sys,json
-try: print(json.load(open('/tmp/drive-response.json')).get('id',''))
-except: pass
-")
+NEW_ID=$(jq -r '.id // empty' /tmp/drive-response.json 2>/dev/null || true)
 [[ -z "$NEW_ID" ]] && die "Failed to parse new folder ID"
 
 # 3. Race condition guard: Re-search and pick earliest
 DEDUP_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=createdTime&fields=files(id,name,webViewLink)"
 HTTP_CODE=$(curl -s -o /tmp/drive-dedup.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$DEDUP_URL")
 if [[ "$HTTP_CODE" == "200" ]]; then
-  WINNER_ID=$(python3 -c "
-import sys,json
-try:
-  fs = json.load(open('/tmp/drive-dedup.json')).get('files',[])
-  if fs: print(fs[0]['id'])
-except: pass
-")
+  WINNER_ID=$(jq -r '.files[0].id // empty' /tmp/drive-dedup.json 2>/dev/null || true)
   if [[ -n "$WINNER_ID" && "$WINNER_ID" != "$NEW_ID" ]]; then
     # Trash our duplicate
     curl -sf -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -d '{"trashed":true}' "${DRIVE_API}/files/${NEW_ID}?supportsAllDrives=true" >/dev/null 2>&1 || true
     # Return winner
-    python3 -c "
-import sys,json
-try:
-  f = json.load(open('/tmp/drive-dedup.json')).get('files',[])[0]
-  print(json.dumps({'status':'existing','id':f.get('id',''),'name':f.get('name',''),'link':f.get('webViewLink','')}, indent=2))
-except: pass
-"
+    jq -n --arg id "$WINNER_ID" \
+          --arg name "$(jq -r '.files[0].name // empty' /tmp/drive-dedup.json 2>/dev/null)" \
+          --arg link "$(jq -r '.files[0].webViewLink // empty' /tmp/drive-dedup.json 2>/dev/null)" \
+          '{status: "existing", id: $id, name: $name, link: $link}'
     exit 0
   fi
 fi
 
 # 4. We won the race, return ours
-python3 -c "
-import json
-try:
-  f = json.load(open('/tmp/drive-response.json'))
-  print(json.dumps({'status':'created','id':f.get('id',''),'name':f.get('name',''),'link':f.get('webViewLink','')}, indent=2))
-except: pass
-"
+jq -n --arg id "$NEW_ID" \
+      --arg name "$(jq -r '.name // empty' /tmp/drive-response.json 2>/dev/null)" \
+      --arg link "$(jq -r '.webViewLink // empty' /tmp/drive-response.json 2>/dev/null)" \
+      '{status: "created", id: $id, name: $name, link: $link}'
