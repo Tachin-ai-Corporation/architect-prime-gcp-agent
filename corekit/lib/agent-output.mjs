@@ -5,12 +5,12 @@ import { toStr } from './to-str.mjs';
 
 // Motor failure patterns — previously in callAgent content inspection
 const MOTOR_FAILURE_PATTERNS = [
-  { pattern: /DWD token expired/i, type: 'auth', detail: 'DWD token expired' },
-  { pattern: /Permission denied/i, type: 'auth', detail: 'Permission denied' },
-  { pattern: /PERMISSION_DENIED/i, type: 'auth', detail: 'API permission denied' },
-  { pattern: /Authentication error/i, type: 'auth', detail: 'Authentication error' },
-  { pattern: /exit code [1-9]\d*/i, type: 'exit_code', detail: 'Non-zero exit code' },
-  { pattern: /command failed/i, type: 'exit_code', detail: 'Command failed' },
+  { pattern: /(?:\[ERROR\]|Fatal:).*DWD token expired/i, type: 'auth', detail: 'DWD token expired' },
+  { pattern: /(?:\[ERROR\]|Fatal:).*Permission denied/i, type: 'auth', detail: 'Permission denied' },
+  { pattern: /(?:\[ERROR\]|Fatal:).*PERMISSION_DENIED/i, type: 'auth', detail: 'API permission denied' },
+  { pattern: /(?:\[ERROR\]|Fatal:).*Authentication error/i, type: 'auth', detail: 'Authentication error' },
+  { pattern: /(?:\[ERROR\]|Fatal:).*exit code [1-9]\d*/i, type: 'exit_code', detail: 'Non-zero exit code' },
+  { pattern: /(?:\[ERROR\]|Fatal:).*command failed/i, type: 'exit_code', detail: 'Command failed' },
 ];
 
 /**
