@@ -511,6 +511,54 @@ function _initProcessEngine() {
             updated_at: now(),
           });
           log('INFO', `Delegation ref ${delegRef.id} marked complete (cross-agent write)`);
+
+          // Proactive delegation recovery: check if all checkpoint siblings are now terminal
+          if (delegRef.parent_id) {
+            try {
+              const cpEnv = await firestoreRead('work', delegRef.parent_id);
+              if (cpEnv && cpEnv.type === 'C' && cpEnv.status === 'waiting') {
+                const siblings = cpEnv.children || [];
+                let allDone = true;
+                const sibResults = [];
+                for (const sibId of siblings) {
+                  if (sibId === delegRef.id) {
+                    sibResults.push({ agent: delegRef.owner, result: toStr(mission.output).substring(0, 500), success: true });
+                    continue;
+                  }
+                  const sib = await firestoreRead('work', sibId);
+                  if (!sib || ['complete', 'failed', 'archived', 'cancelled', 'blocked'].includes(sib?.status)) {
+                    const isOk = sib?.status === 'complete' || sib?.status === 'archived';
+                    sibResults.push({ agent: sib?.owner || 'unknown', result: toStr(sib?.output || sib?.status || '').substring(0, 500), success: isOk });
+                  } else {
+                    allDone = false;
+                    break;
+                  }
+                }
+                if (allDone && siblings.length > 0) {
+                  const summary = sibResults.map((r, i) =>
+                    `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${r.result}`
+                  ).join('\n\n');
+                  cpEnv.status = 'complete';
+                  cpEnv.output = summary;
+                  cpEnv.updated_at = now();
+                  await firestoreWrite('work', cpEnv.id, cpEnv);
+                  log('INFO', `Checkpoint ${cpEnv.id} completed proactively (all ${siblings.length} delegation children terminal)`);
+                  if (cpEnv.parent_id) {
+                    const parentMission = await firestoreRead('work', cpEnv.parent_id);
+                    if (parentMission && parentMission.status === 'active') {
+                      parentMission.status = 'queued';
+                      parentMission.context_forward = `[DELEGATION RESULTS]\n${summary}`;
+                      parentMission.updated_at = now();
+                      await firestoreWrite('work', parentMission.id, parentMission);
+                      log('INFO', `Mission ${parentMission.id} re-queued proactively after delegation completion`);
+                    }
+                  }
+                }
+              }
+            } catch (cpErr) {
+              log('WARN', `Proactive delegation recovery failed: ${cpErr.message}`);
+            }
+          }
         }
       } catch (e) {
         log('WARN', `Failed to complete delegation ref ${mission.source_meta.delegation_ref}: ${e.message}`);

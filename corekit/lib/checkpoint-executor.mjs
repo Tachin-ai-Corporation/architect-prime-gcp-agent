@@ -487,7 +487,11 @@ export async function executeCheckpoints(checkpoints, opts) {
           title: taskDesc.substring(0, 100),
           instruction: taskDesc,
           accept_criteria: taskCriteria,
-          context_summary: null,
+          context_summary: [...allResults, ...cpResults].length > 0
+            ? [...allResults, ...cpResults].map(r =>
+                `[CP${r.step}] ${r.agent}: ${r.success ? 'OK' : 'FAIL'} — ${(r.result || '').substring(0, 300)}`
+              ).join('\n')
+            : null,
           output: null,
           children: [],
           context_forward: null,
@@ -521,13 +525,22 @@ export async function executeCheckpoints(checkpoints, opts) {
         const projCtx = (PROJECTS[envelope.project_id] || {}).context || {};
         const driveFolderId = (PROJECTS[envelope.project_id] || {}).drive_folder_id
           || projCtx.drive_folder?.ref || null;
+        // Enrich delegation body with prior checkpoint results
+        const priorCtx = [...allResults, ...cpResults]
+          .filter(r => r.success)
+          .map(r => `[Prior work — ${r.agent}]: ${(r.result || '').substring(0, 500)}`)
+          .join('\n\n');
+        const enrichedBody = priorCtx
+          ? `${taskDesc}\n\n--- Prior checkpoint results ---\n${priorCtx}\n--- End prior results ---`
+          : taskDesc;
+
         const marker = composeDelegationMarker({
           targetEmail: targetAgentEmail,
           ref: taskId,
           from: AGENT_EMAIL || AGENT_ID,
           project: envelope.project_id || 'none',
           drive: driveFolderId,
-          body: taskDesc,
+          body: enrichedBody,
         });
 
         const delegOutputId = generateId('w');

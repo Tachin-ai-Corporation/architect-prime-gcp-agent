@@ -256,6 +256,10 @@ export async function handleCheckpointPlan(ctx, deps) {
     success: r.success,
     durationMs: r.durationMs,
     checkpoint_step: r.step,
+    failure_type: !r.success
+      ? (typeof r.result === 'string' && (r.result.includes('Command failed') || r.result.includes('[ERROR]'))
+         ? 'tool_error' : 'quality_rejection')
+      : null,
   }));
 
   if (planFailed) {
