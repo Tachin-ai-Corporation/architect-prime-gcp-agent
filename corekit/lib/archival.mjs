@@ -36,6 +36,9 @@ export function createArchivalSweeper(deps) {
     staleCleanupHours = 24,
     archiveAgeDays = 7,
     needsInputTimeoutHours = 72,
+    blockedTimeoutHours = 6,
+    waitingTimeoutHours = 8,
+    activeTimeoutHours = 12,
   } = config;
 
   // ---- Internal state ----
@@ -154,12 +157,87 @@ export function createArchivalSweeper(deps) {
       }
       if (timedOutCount) log('INFO', `Archived ${timedOutCount} timed_out envelopes`);
 
-      // NOTE: blocked envelopes are NOT archived — they persist indefinitely for resumption
+      // 5b. Stale blocked envelopes — cancel after blockedTimeoutHours
+      // Fleet agents create blocked delegations that will never be manually resumed.
+      // Cancel (not archive) so orphan cleanup cascades to their children.
+      const blockedCutoff = new Date(Date.now() - blockedTimeoutHours * 60 * 60 * 1000).toISOString();
+      const blocked = await firestoreQuery('work', [
+        { field: 'status', op: 'EQUAL', value: { stringValue: 'blocked' } },
+      ]);
+      let blockedCount = 0;
+      for (const env of blocked) {
+        const envAge = env.updated_at || env.created_at;
+        if (envAge && envAge < blockedCutoff) {
+          await firestoreWrite('work', env.id, {
+            ...env,
+            status: 'cancelled',
+            cancelled_at: now(),
+            cancelled_reason: `Stale blocked >${blockedTimeoutHours}h`,
+            updated_at: now(),
+            completed_at: now(),
+          });
+          blockedCount++;
+        }
+      }
+      if (blockedCount) log('INFO', `Cancelled ${blockedCount} stale blocked envelopes (>${blockedTimeoutHours}h old)`);
 
-      // 6. Orphaned children — active/pending/queued C/T whose parent is cancelled/archived
-      const activeChildren = await firestoreQuery('work', [
+      // 5c. Stale waiting envelopes — cancel after waitingTimeoutHours
+      // Waiting envelopes whose children are stuck create cascading deadlocks.
+      const waitingCutoff = new Date(Date.now() - waitingTimeoutHours * 60 * 60 * 1000).toISOString();
+      const waiting = await firestoreQuery('work', [
+        { field: 'status', op: 'EQUAL', value: { stringValue: 'waiting' } },
+      ]);
+      let waitingCount = 0;
+      for (const env of waiting) {
+        const envAge = env.updated_at || env.created_at;
+        if (envAge && envAge < waitingCutoff) {
+          await firestoreWrite('work', env.id, {
+            ...env,
+            status: 'cancelled',
+            cancelled_at: now(),
+            cancelled_reason: `Stale waiting >${waitingTimeoutHours}h`,
+            updated_at: now(),
+            completed_at: now(),
+          });
+          waitingCount++;
+        }
+      }
+      if (waitingCount) log('INFO', `Cancelled ${waitingCount} stale waiting envelopes (>${waitingTimeoutHours}h old)`);
+
+      // 5d. Stale active envelopes — cancel broken-owner or very old active envelopes
+      const activeCutoff = new Date(Date.now() - activeTimeoutHours * 60 * 60 * 1000).toISOString();
+      const activeAll = await firestoreQuery('work', [
         { field: 'status', op: 'EQUAL', value: { stringValue: 'active' } },
       ]);
+      let staleActiveCount = 0;
+      for (const env of activeAll) {
+        // Cancel immediately if owner is an unrendered template placeholder
+        const isBrokenOwner = env.owner && env.owner.includes('${');
+        const envAge = env.updated_at || env.created_at;
+        const isStale = envAge && envAge < activeCutoff;
+        if (isBrokenOwner || isStale) {
+          const reason = isBrokenOwner
+            ? `Broken owner: ${env.owner}`
+            : `Stale active >${activeTimeoutHours}h`;
+          await firestoreWrite('work', env.id, {
+            ...env,
+            status: 'cancelled',
+            cancelled_at: now(),
+            cancelled_reason: reason,
+            updated_at: now(),
+            completed_at: now(),
+          });
+          staleActiveCount++;
+        }
+      }
+      if (staleActiveCount) log('INFO', `Cancelled ${staleActiveCount} stale/broken active envelopes`);
+
+      // 6. Orphaned children — active/pending/queued C/T whose parent is cancelled/archived
+      // Also include blocked and waiting children — if their parent is terminal, they should be too.
+      const allNonTerminal = [
+        ...activeAll.filter(e => e.parent_id), // Re-use active query, filter to children only
+      ];
+      // Fetch remaining non-terminal statuses for orphan check
       const pendingChildren = await firestoreQuery('work', [
         { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
       ]);
@@ -167,8 +245,10 @@ export function createArchivalSweeper(deps) {
         { field: 'status', op: 'EQUAL', value: { stringValue: 'queued' } },
       ]);
       let orphanCount = 0;
-      for (const env of [...activeChildren, ...pendingChildren, ...queuedChildren]) {
+      for (const env of [...allNonTerminal, ...pendingChildren, ...queuedChildren, ...blocked.filter(e => e.parent_id), ...waiting.filter(e => e.parent_id)]) {
         if (!env.parent_id) continue; // Only check children
+        // Skip if already cancelled in a previous step this sweep
+        if (env.status === 'cancelled') continue;
         const parent = await firestoreRead('work', env.parent_id);
         if (!parent || ['cancelled', 'archived', 'failed'].includes(parent.status)) {
           await firestoreWrite('work', env.id, {
@@ -185,7 +265,8 @@ export function createArchivalSweeper(deps) {
       if (orphanCount) log('INFO', `Cancelled ${orphanCount} orphaned children (parent cancelled/archived/missing)`);
 
       totalArchived = failedCount + completeCount + needsInputCount + cancelledCount + timedOutCount;
-      log('INFO', `Archival sweep complete: ${totalArchived} total archived, ${orphanCount} orphans cancelled (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled, ${timedOutCount} timed_out)`);
+      const totalCancelled = blockedCount + waitingCount + staleActiveCount + orphanCount;
+      log('INFO', `Archival sweep complete: ${totalArchived} archived, ${totalCancelled} cancelled (${failedCount} failed, ${completeCount} complete, ${needsInputCount} unanswered, ${cancelledCount} cancelled, ${timedOutCount} timed_out, ${blockedCount} blocked, ${waitingCount} waiting, ${staleActiveCount} stale_active, ${orphanCount} orphans)`);
     } catch (e) {
       log('WARN', `Archival sweep error: ${e.message}`);
     }

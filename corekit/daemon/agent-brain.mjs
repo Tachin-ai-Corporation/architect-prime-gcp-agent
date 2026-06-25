@@ -1852,6 +1852,9 @@ function _initArchiver() {
       staleCleanupHours: STALE_CLEANUP_HOURS,
       archiveAgeDays: ARCHIVE_AGE_DAYS,
       needsInputTimeoutHours: NEEDS_INPUT_TIMEOUT_HOURS,
+      blockedTimeoutHours: CONTRACTS.dispatch?.blocked_timeout_hours || 6,
+      waitingTimeoutHours: CONTRACTS.dispatch?.waiting_timeout_hours || 8,
+      activeTimeoutHours: CONTRACTS.dispatch?.active_timeout_hours || 12,
     },
   });
 }
@@ -3401,6 +3404,27 @@ async function main() {
       } while (nextPageToken);
 
       log('INFO', `Startup recovery: scanned ${allDocs.length} work docs`);
+
+      // Cancel stale blocked/waiting envelopes owned by this agent on restart
+      const staleBlocked = allDocs.filter(e =>
+        (e.owner || '').includes(agentId) &&
+        (e.status === 'blocked' || e.status === 'waiting')
+      );
+      if (staleBlocked.length > 0) {
+        log('INFO', `Startup recovery: cancelling ${staleBlocked.length} stale blocked/waiting envelope(s)`);
+        for (const env of staleBlocked) {
+          await firestoreWrite('work', env.id, {
+            ...env,
+            status: 'cancelled',
+            cancelled_at: now(),
+            cancelled_reason: `startup_recovery_${env.status}`,
+            updated_at: now(),
+            completed_at: now(),
+          });
+          await writeHistory(env.id, env.status, 'cancelled', 'brain', `Cancelled stale ${env.status} envelope on restart`);
+        }
+      }
+
       const orphaned = allDocs.filter(e => (e.type === 'M' || (e.type === 'C' && e.parent_id && e.intent !== 'checkpoint')) &&
         (e.owner || '').includes(agentId) &&
         (e.status === 'active' || e.status === 'pending' || e.status === 'queued'));
