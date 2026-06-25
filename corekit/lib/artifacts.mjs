@@ -228,7 +228,7 @@ export function createArtifactManager(deps) {
               const fleetAgentEmail = doc.fields?.email?.stringValue;
               if (fleetAgentEmail && fleetAgentEmail !== agentEmail) {
                 try {
-                  exec(`${coreDir}/bin/drive-share ${folderId} --email ${fleetAgentEmail} --role writer`, { timeout: 15_000, cwd: coreDir });
+                  exec(`${coreDir}/bin/drive-share --file ${folderId} --to user:${fleetAgentEmail} --role writer`, { timeout: 15_000, cwd: coreDir });
                   log('DEBUG', `Shared project folder with ${fleetAgentEmail}`);
                 } catch { /* best-effort */ }
               }
@@ -399,7 +399,7 @@ export function createArtifactManager(deps) {
       if (project?.owner && project.owner !== agentEmail) {
         try {
           exec(
-            `${coreDir}/bin/drive-share ${targetFolderId} --email ${project.owner} --role reader`,
+            `${coreDir}/bin/drive-share --file ${targetFolderId} --to user:${project.owner} --role reader`,
             { timeout: 15_000, cwd: coreDir }
           );
           log('INFO', `Artifacts shared with project owner: ${project.owner}`);
