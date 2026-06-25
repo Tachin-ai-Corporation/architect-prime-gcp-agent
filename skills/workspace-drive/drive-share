@@ -17,6 +17,46 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$FILE_ID" && -n "$TARGET" ]] || die "Need --file and --to (anyone|user:email|domain:name)"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+
+# ---- Check existing permissions before creating ----
+# Extract email from target for user-type shares
+CHECK_EMAIL=""
+if [[ "$TARGET" == user:* ]]; then
+  CHECK_EMAIL="${TARGET#user:}"
+elif [[ "$TARGET" != anyone && "$TARGET" != domain:* ]]; then
+  CHECK_EMAIL="$TARGET"
+fi
+
+if [[ -n "$CHECK_EMAIL" ]]; then
+  # List existing permissions and check if this email already has access
+  EXISTING=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files/${FILE_ID}/permissions?supportsAllDrives=true&fields=permissions(emailAddress,role,type)" 2>/dev/null || echo "{}")
+  HAS_ACCESS=$(python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+    email = sys.argv[2].lower()
+    role = sys.argv[3]
+    for p in data.get('permissions', []):
+        if p.get('emailAddress', '').lower() == email:
+            existing_role = p.get('role', '')
+            # Already has equal or higher access
+            roles_rank = {'reader': 1, 'commenter': 2, 'writer': 3, 'fileOrganizer': 4, 'organizer': 5, 'owner': 6}
+            if roles_rank.get(existing_role, 0) >= roles_rank.get(role, 0):
+                print('already_shared')
+                sys.exit(0)
+    print('needs_share')
+except Exception:
+    print('needs_share')
+" "$EXISTING" "$CHECK_EMAIL" "$ROLE" 2>/dev/null || echo "needs_share")
+
+  if [[ "$HAS_ACCESS" == "already_shared" ]]; then
+    echo "{\"status\":\"already_shared\",\"fileId\":\"${FILE_ID}\",\"email\":\"${CHECK_EMAIL}\",\"message\":\"User already has ${ROLE} access or higher\"}"
+    exit 0
+  fi
+fi
+
+# ---- Create permission ----
 BODY=$(python3 -c "
 import json, sys
 target = sys.argv[1]; role = sys.argv[2]
@@ -31,7 +71,7 @@ else:
 " "$TARGET" "$ROLE")
 HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d "$BODY" "${DRIVE_API}/files/${FILE_ID}/permissions?supportsAllDrives=true&fields=id,type,role,emailAddress")
+  -d "$BODY" "${DRIVE_API}/files/${FILE_ID}/permissions?supportsAllDrives=true&fields=id,type,role,emailAddress&sendNotificationEmail=false")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"message\":\"I don't have permission to share this file. Please share it with ${AGENT_USER_EMAIL:-unknown} with editor access\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
