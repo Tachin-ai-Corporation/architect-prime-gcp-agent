@@ -238,7 +238,7 @@ export async function ensureSpaceMember(spaceName, userEmail, token) {
  * @returns {Promise<boolean>} true if delivered successfully
  */
 export async function deliverToAddress(addr, text, opts = {}) {
-  const { token, deliveryTarget, replyInThread = true, log = () => {} } = opts;
+  const { token, deliveryTarget, replyInThread = true, log = () => {}, mentions = [] } = opts;
 
   if (addr.channel === 'gchat') {
     if (!addr.space) {
@@ -251,7 +251,20 @@ export async function deliverToAddress(addr, text, opts = {}) {
       await ensureSpaceMember(addr.space, deliveryTarget, token);
     }
 
-    const body = { text: toGChatMarkdown(text) };
+    let finalMarkdown = toGChatMarkdown(text);
+    if (mentions && mentions.length > 0) {
+      // De-duplicate tags
+      const uniqueMentions = [...new Set(mentions)];
+      const tags = uniqueMentions.map(m => `<users/${m}>`).join(' ');
+      finalMarkdown += `\n\n${tags}`;
+    }
+
+    if (finalMarkdown.length > 4096) {
+      log('WARN: Truncating message for GChat 4096 limit', { originalLength: finalMarkdown.length });
+      finalMarkdown = finalMarkdown.slice(0, 4093) + '...';
+    }
+
+    const body = { text: finalMarkdown };
     let url = `${CHAT_API}/${addr.space}/messages`;
     // Thread reply when the origin was threaded
     if (addr.thread && replyInThread) {

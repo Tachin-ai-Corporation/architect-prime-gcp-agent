@@ -74,7 +74,7 @@ try {
 const MOUTH_CFG = CONTRACTS.mouth || {};
 const LLM_ENABLED = MOUTH_CFG.llm_enabled !== false;
 const LLM_MODEL = MOUTH_CFG.model || 'gemini-2.5-flash';
-const LLM_MAX_TOKENS = MOUTH_CFG.maxTokens || 2000;
+const LLM_MAX_TOKENS = MOUTH_CFG.maxTokens || 8192;
 const LLM_TEMPERATURE = MOUTH_CFG.temperature ?? 0.1;
 const STATUS_ENABLED = MOUTH_CFG.status_updates?.enabled !== false;
 // Exponential backoff schedule: first ack fast, then progressively longer
@@ -397,16 +397,18 @@ async function deliverDelegation(text, addr, targetEmail) {
   await deliverToAddress(addr, text, {
     token,
     deliveryTarget: targetEmail,
+    mentions: [targetEmail],
     replyInThread: false,  // delegations are flat space messages
     log,
   });
 }
 
-async function deliver(text, addr) {
+async function deliver(text, addr, mentions = []) {
   const token = addr?.channel === 'gchat' ? await getDwdToken() : await getGceToken();
   await deliverToAddress(addr, text, {
     token,
     replyInThread: REPLY_IN_THREAD,
+    mentions,
     log,
   });
 
@@ -424,12 +426,12 @@ async function deliver(text, addr) {
 // ================================================================
 // FINAL RESPONSE — LLM CLASSIFY + DELIVER
 // ================================================================
-async function classifyAndDeliver(rawText, overrideQuestion, addr) {
+async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []) {
   const task = readTaskJson();
   const question = overrideQuestion || task?.text || turn.originalQuestion || '';
 
   if (!LLM_ENABLED) {
-    await deliver(rawText, addr);
+    await deliver(rawText, addr, mentions);
     log('Delivered raw (LLM disabled)', { chars: rawText.length });
     await writeTaskLog(task, 'delivered', rawText.length, 'raw');
     markTaskComplete(task?.taskId);
@@ -486,7 +488,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr) {
     if (hasEscalate && action !== 'escalate') parsed.action = 'escalate';
 
     if (action === 'deliver' || action === 'escalate') {
-      await deliver(finalText, addr);
+      await deliver(finalText, addr, mentions);
       log('Delivered', { channel: CHANNEL, chars: finalText.length, action,
         voiced: voiceStatus });
       await writeTaskLog(task, 'delivered', finalText.length, action);
@@ -496,7 +498,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr) {
     }
   } catch (err) {
     log('Classify error — delivering raw', { error: err.message });
-    await deliver(rawText, addr);
+    await deliver(rawText, addr, mentions);
     await writeTaskLog(task, 'delivered', rawText.length, 'fallback');
   }
 
@@ -736,12 +738,18 @@ async function pollBrainV3Envelopes() {
 
         // Delegation envelopes: deliver directly without voicing — markers are pre-formatted
         const deliveryTarget = f.delivery_target?.stringValue;
+
+        let mentions = [];
+        if (envStatus === 'needs_input' || envStatus === 'blocked') {
+          mentions.push('all');
+        }
+
         if (deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result')) {
           await deliverDelegation(output, addr, deliveryTarget);
           log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
         } else {
           // Standard voicing pipeline for non-delegation envelopes
-          await classifyAndDeliver(contextHint + output, envQuestion, addr);
+          await classifyAndDeliver(contextHint + output, envQuestion, addr, mentions);
           log('Delivered envelope output', { envId, status: envStatus, intent: envType });
         }
 
