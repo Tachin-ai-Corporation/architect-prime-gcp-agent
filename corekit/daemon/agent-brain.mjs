@@ -3190,6 +3190,21 @@ async function checkWaitingEnvelopes() {
         continue;
       }
 
+      // T-type delegation task under a C checkpoint: mark complete so the parent
+      // C can detect all children are terminal. Re-queuing to 'queued' would be a
+      // dead end since dequeueAndProcess only handles M-type envelopes.
+      if (waiting.type === 'T' && waiting.parent_id && waiting.intent === 'delegation') {
+        waiting.status = 'complete';
+        waiting.output = delegationSummary;
+        waiting.completed_at = now();
+        waiting.updated_at = now();
+        await firestoreWrite('work', waiting.id, waiting);
+        await writeHistory(waiting.id, 'waiting', 'complete', 'brain',
+          `T-type delegation complete, marking done for parent checkpoint`);
+        log('INFO', `Marking delegation task ${waiting.id} complete (parent checkpoint ${waiting.parent_id})`);
+        continue;
+      }
+
       waiting.status = 'queued';
       waiting.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
       waiting.updated_at = now();
