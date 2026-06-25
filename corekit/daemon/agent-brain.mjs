@@ -1648,8 +1648,8 @@ async function completeEnvelope(envelope, opts) {
       log('WARN', `fireEventResponsibilities failed: ${e.message}`);
     }
 
-    // Delegation result reply
-    if (status === 'complete' && envelope.source_meta?.delegation_ref) {
+    // Delegation result reply (on complete, blocked, or failed — delegator must know)
+    if (['complete', 'blocked', 'failed'].includes(status) && envelope.source_meta?.delegation_ref) {
       try {
         const resultMarker = composeDelegationResultMarker({
           targetEmail: envelope.source_meta.delegated_from || '',
@@ -3069,8 +3069,8 @@ async function checkWaitingEnvelopes() {
           continue;
         }
 
-        // Terminal states: complete, failed, archived, cancelled
-        if (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled') {
+        // Terminal states: complete, failed, archived, cancelled, blocked
+        if (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled' || child.status === 'blocked') {
           const isSuccess = child.status === 'complete' || child.status === 'archived';
           childResults.push({
             agent: child.owner,
@@ -3153,7 +3153,7 @@ async function checkWaitingEnvelopes() {
               cpResults.push({ agent: 'unknown', task: tcId, result: '[FAILED] Envelope deleted', success: false });
               continue;
             }
-            if (tc.status === 'complete' || tc.status === 'failed' || tc.status === 'archived' || tc.status === 'cancelled') {
+            if (tc.status === 'complete' || tc.status === 'failed' || tc.status === 'archived' || tc.status === 'cancelled' || tc.status === 'blocked') {
               const isSuccess = tc.status === 'complete' || tc.status === 'archived';
               cpResults.push({
                 agent: tc.owner,
