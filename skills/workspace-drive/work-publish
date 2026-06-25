@@ -72,43 +72,11 @@ DATE_FOLDER="$(date -u +'%m-%d')"
 # Handles race conditions from concurrent calls by re-searching after create.
 ensure_folder() {
   local NAME="$1" PARENT="$2"
-  # Search for existing folder with this name under parent
-  local QUERY="name='${NAME}' and '${PARENT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-  local ENC_Q
-  ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")
-  local SEARCH_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id)"
-  local EXISTING
-  EXISTING=$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-    "$SEARCH_URL" 2>/dev/null \
-    | python3 -c "import sys,json; fs=json.load(sys.stdin).get('files',[]); print(fs[0]['id'] if fs else '')" 2>/dev/null || echo '')
-  if [[ -n "$EXISTING" ]]; then
-    echo "$EXISTING"
-    return 0
-  fi
-  # Create new folder
-  local BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
-  local NEW_ID
-  NEW_ID=$(curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-    -d "$BODY" "${DRIVE_API}/files?supportsAllDrives=true&fields=id" 2>/dev/null \
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || echo '')
-  [[ -z "$NEW_ID" ]] && { echo ''; return 1; }
-
-  # Race-condition guard: re-search to check for duplicates created concurrently.
-  # Use orderBy=createdTime to deterministically pick the earliest folder.
-  local DEDUP_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=createdTime&fields=files(id)"
-  local WINNER
-  WINNER=$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
-    "$DEDUP_URL" 2>/dev/null \
-    | python3 -c "import sys,json; fs=json.load(sys.stdin).get('files',[]); print(fs[0]['id'] if fs else '')" 2>/dev/null || echo '')
-  if [[ -n "$WINNER" && "$WINNER" != "$NEW_ID" ]]; then
-    # Another process created a folder first — trash our duplicate
-    log "Dedup: using existing folder ${WINNER}, trashing duplicate ${NEW_ID}"
-    curl -sf -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-      -d '{"trashed":true}' "${DRIVE_API}/files/${NEW_ID}?supportsAllDrives=true" >/dev/null 2>&1 || true
-    echo "$WINNER"
-  else
-    echo "$NEW_ID"
-  fi
+  local CMD=("${CORE_DIR}/bin/drive-mkdir" "--name" "$NAME")
+  [[ -n "$PARENT" ]] && CMD+=("--parent" "$PARENT")
+  
+  # drive-mkdir now natively handles deduplication and returns JSON
+  "${CMD[@]}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || echo ""
 }
 
 # ---- Build folder path ----
