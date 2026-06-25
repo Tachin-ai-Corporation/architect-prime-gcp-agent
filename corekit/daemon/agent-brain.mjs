@@ -1164,6 +1164,13 @@ function buildUserPrompt(mode, payload) {
     if (envProjectId && PROJECTS[envProjectId]) {
       const proj = PROJECTS[envProjectId];
       decidePayload.project = proj;
+      
+      // Inject rendered canon prominently for cortex to see
+      const renderedCtx = buildProjectContext(envProjectId, payload.envelope?.context);
+      if (renderedCtx) {
+        decidePayload.rendered_project_context = renderedCtx;
+      }
+
       // Surface required_processes explicitly so Cortex sees them prominently
       const rp = proj.required_processes || proj.context?.required_processes;
       if (rp && Array.isArray(rp) && rp.length > 0) {
@@ -2205,6 +2212,9 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
     targetEnv.delivered_at = null;
     targetEnv.delivered_channel = null;
     targetEnv.updated_at = now();
+    if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
+      targetEnv.project_id = decision.project_id;
+    }
     await firestoreWrite('work', targetId, targetEnv);
     await writeHistory(targetId, 'needs_input', 'queued', 'brain', `Re-queued with human response: ${toStr(intake.text).substring(0, 100)}`);
     return;
@@ -2333,6 +2343,9 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
       mission.claimed_at = Date.now();
       mission.context_forward = toStr(intake.text);
       mission.updated_at = now();
+      if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
+        mission.project_id = decision.project_id;
+      }
       await firestoreWrite('work', targetId, mission);
       return processEnvelope(mission, memoryContext);
     }
@@ -2356,6 +2369,9 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   mission.delivery_status = 'internal'; // Reset — will become 'pending' when re-completed
   mission._swf_state = null; // Reset retry cap for new attempt
   mission.updated_at = now();
+  if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
+    mission.project_id = decision.project_id;
+  }
 
   await firestoreWrite('work', targetId, mission);
   await writeHistory(targetId, prevStatus, 'queued', 'brain',
