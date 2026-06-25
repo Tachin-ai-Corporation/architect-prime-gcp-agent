@@ -3,7 +3,7 @@
 // Both directions (DELEGATION + DELEGATION-RESULT) in one module.
 //
 // Wire format:
-//   @target [DELEGATION ref:<envId> from:<senderEmail> proj:<projectId>]
+//   @target [DELEGATION ref:<envId> from:<senderEmail> proj:<projectId> drive:<folderId>]
 //   <human-readable body>
 //
 //   @sender [DELEGATION-RESULT ref:<envId> status:<complete|failed> mission:<missionId>]
@@ -11,7 +11,7 @@
 
 // ---- Regex patterns ----
 
-const DELEGATION_RE = /\[DELEGATION\s+ref:(\S+)\s+from:(\S+)\s+proj:(\S+)\]/;
+const DELEGATION_RE = /\[DELEGATION\s+ref:(\S+)\s+from:(\S+)\s+proj:(\S+)(?:\s+drive:(\S+))?\]/;
 const DELEGATION_RESULT_RE = /\[DELEGATION-RESULT\s+ref:(\S+)\s+status:(\S+)\s+mission:(\S+)\]/;
 
 // ---- Fast detection ----
@@ -46,11 +46,14 @@ export function isDelegationResultMarker(text) {
  * @param {string} opts.ref - Parent envelope ID (the delegator's task/checkpoint)
  * @param {string} opts.from - Sender agent's email
  * @param {string} opts.project - Project ID
+ * @param {string} [opts.drive] - Project Drive folder ID (optional)
  * @param {string} opts.body - Human-readable delegation instructions
  * @returns {string} Complete delegation message
  */
-export function composeDelegationMarker({ targetEmail, ref, from, project, body }) {
-  const marker = `[DELEGATION ref:${ref} from:${from} proj:${project || 'none'}]`;
+export function composeDelegationMarker({ targetEmail, ref, from, project, drive, body }) {
+  let marker = `[DELEGATION ref:${ref} from:${from} proj:${project || 'none'}`;
+  if (drive) marker += ` drive:${drive}`;
+  marker += ']';
   const mention = targetEmail ? `@${targetEmail} ` : '';
   return `${mention}${marker}\n${body || ''}`.trim();
 }
@@ -93,6 +96,7 @@ export function parseDelegationMarker(text) {
     ref: match[1],
     from: match[2],
     project: match[3],
+    drive: match[4] || null,
     body,
   };
 }

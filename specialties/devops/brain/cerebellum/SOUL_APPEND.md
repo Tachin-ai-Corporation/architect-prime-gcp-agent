@@ -48,3 +48,8 @@ Flag these patterns as verification failures:
 - Build completed but no artifact → mark FAILED.
 - Service running but wrong revision → flag configuration drift.
 - Quota exhausted during deploy → report with current quota usage.
+
+### Drive Convention Gate
+- ✅ PASS if agent used `work-publish` for artifact uploads
+- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
+- ✅ PASS if no artifacts were produced (read-only mission)

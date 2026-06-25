@@ -2944,6 +2944,11 @@ async function loadPrimeConfig() {
   ARTIFACTS_ROOT_FOLDER_ID = _artifacts.getArtifactsRootId();
 }
 
+async function ensureAgentDriveFolder() {
+  if (!_artifacts) _initArtifacts();
+  return _artifacts.ensureAgentFolder();
+}
+
 // ---- History (via history.mjs, Phase 3 extraction) ----
 let _history = null;
 
@@ -3260,6 +3265,9 @@ async function main() {
   await loadProjects();
   await ensureDefaultProject();
   log('INFO', `Projects loaded: ${Object.keys(PROJECTS).length} active (default: ${DEFAULT_PROJECT_ID})`);
+
+  // Provision agent Drive folder: {root}/{prime}/{agent}/
+  ensureAgentDriveFolder().catch(e => log('WARN', `Agent Drive folder provisioning failed: ${e.message}`));
 
   // Verify gateway is reachable
   try {

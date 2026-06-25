@@ -70,3 +70,8 @@ NEW TESTS (not in baseline):
 6. ☐ No unexplained test count changes from baseline
 7. ☐ Flaky tests identified and flagged
 8. ☐ S1/S2 defects have dual evidence
+
+### Drive Convention Gate
+- ✅ PASS if agent used `work-publish` for artifact uploads
+- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
+- ✅ PASS if no artifacts were produced (read-only mission)

@@ -71,3 +71,8 @@ Before marking a security audit mission as complete:
 3. **No motor errors were silently ignored** — every error must be noted or retried
 4. **Recommendations are actionable** — each has an exact command, not vague advice
 5. **Owner is assigned** — every finding has a clear responsible party
+
+### Drive Convention Gate
+- ✅ PASS if agent used `work-publish` for artifact uploads
+- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
+- ✅ PASS if no artifacts were produced (read-only mission)

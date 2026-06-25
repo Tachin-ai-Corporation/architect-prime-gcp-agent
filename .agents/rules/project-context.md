@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.22.1.0)
+## Current Architecture (v2026.06.25.1.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -29,7 +29,15 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
     - Layer 4 — Code guard: `checkpoint-executor.mjs` compares `targetAgentEmail` against `AGENT_EMAIL` — if delegation resolves to self, silently converts to local motor task (`stepType = 'standard'`, `taskAgent = 'motor'`).
   - **Designer motor SOUL**: Mandatory 6-step workflow for HTML/CSS file modifications — web-fetch → readFile → plan changes → writeFile (complete file) → verify. Prevents the motor from outputting HTML inline instead of writing files.
   - **assemble-persona in upgrade-corekit**: `upgrade-corekit` now runs `assemble-persona` automatically during upgrades, ensuring specialty SOUL_APPEND changes are applied without a separate bootstrap step.
-  - **Delegation delivery**: `checkpoint-executor.mjs` creates delegation marker envelopes with `delivery_status: 'pending'` for mouth pickup. Target resolution via Firestore `primes/{id}/fleet` specialty lookup with direct `target_email` override.
+  - **Delegation delivery**: `checkpoint-executor.mjs` creates delegation marker envelopes with `delivery_status: 'pending'` for mouth pickup. Target resolution via Firestore `primes/{id}/fleet` specialty lookup with direct `target_email` override. Delegation markers now include `drive:<folderId>` field for project Drive folder context.
+- **Drive Workspace Standard (v2026.06.25.1.0)**:
+  - **`work-publish` tool**: Deterministic artifact publisher (`skills/workspace-drive/work-publish`) that enforces the standard folder hierarchy. Two modes: `--project <id>` uploads to `{project}/{MM-DD}/`, no flag uploads to `{prime}/{agent}/{MM-DD}/`. Custom subfolders via `--subfolder <name>`. Idempotent folder creation. Replaces raw `drive-upload` for artifact publishing.
+  - **MM-DD date subfolders**: `artifacts.mjs` `publish()` creates `{project}/{MM-DD}/` subfolders instead of the old `{project}/{prime}/{agent}/` nesting. Date computed from UTC at publish time.
+  - **Agent folder provisioning**: `ensureAgentFolder()` in `artifacts.mjs` creates `{root}/{prime}/{agent}/` at brain startup. Called non-blocking from `agent-brain.mjs` init.
+  - **Delegation Drive context**: `delegation.mjs` wire format extended with optional `drive:<folderId>` field. `checkpoint-executor.mjs` resolves project Drive folder from `PROJECTS` and injects into delegation markers. Backward-compatible (regex uses `(?:...)?`).
+  - **Project context upgrade**: `projects.mjs` renders `work-publish` usage patterns instead of raw `drive-upload` in the Shared Workspace section.
+  - **Engineer Drive access**: Added `workspace-drive` to engineer agent type skills + full Drive tools in `job-engineer.txt` manifest.
+  - **Fleet-wide enforcement**: All 9 motor SOUL_APPEND files include "Drive Workspace Convention" block mandating `work-publish`. All 9 cerebellum SOUL_APPEND files include "Drive Convention Gate" for verification.
 - **Brain Overhaul Audit Implementation (v2026.06.18.1)**:
   - **Motor Failure Detection Caller Wiring**: Imported and called `detectMotorFailure` in `checkpoint-executor.mjs` to check motor execution output/error and fail-fast if a token expiration or auth failure is found (resolved Gap 1 regression).
   - **toStr Coercion Protection**: All task and checkpoint string references (e.g. `.substring()`) are wrapped in `toStr` coercion to prevent crash sites when Cortex returns raw objects for task names (resolved Gap 2).

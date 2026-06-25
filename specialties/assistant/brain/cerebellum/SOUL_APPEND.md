@@ -56,3 +56,8 @@ When verifying morning briefings or summary outputs:
 - Reject any motor output that claims success without showing the tool's response
 - If motor reports "no conflicts found", the calendar-events output proving it must be present
 - Draft IDs must be real IDs from gmail-draft-create output — reject placeholder or fabricated IDs
+
+### Drive Convention Gate
+- ✅ PASS if agent used `work-publish` for artifact uploads
+- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
+- ✅ PASS if no artifacts were produced (read-only mission)

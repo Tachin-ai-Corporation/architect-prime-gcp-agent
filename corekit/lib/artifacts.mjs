@@ -247,12 +247,54 @@ export function createArtifactManager(deps) {
   }
 
   // =========================================================================
+  //  Agent folder provisioning
+  // =========================================================================
+
+  /**
+   * Ensure the agent has its own folder: {root}/{prime}/{agent}/.
+   * Called at brain startup. Creates folders idempotently.
+   *
+   * @returns {Promise<string|null>} Agent folder ID or null
+   */
+  async function ensureAgentFolder() {
+    if (!_artifactsRootFolderId) {
+      log('DEBUG', 'No artifacts_root_folder_id — skipping agent folder provisioning');
+      return null;
+    }
+    try {
+      const { execSync: exec } = await import('child_process');
+      const primeName = (primeId || 'unknown').replace(/["']/g, '');
+      const agentName = (agentId || 'unknown').replace(/["']/g, '');
+
+      // Create {root}/{prime}/ folder
+      const primeOut = exec(
+        `${coreDir}/bin/drive-mkdir "${primeName}" --parent ${_artifactsRootFolderId}`,
+        { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
+      ).trim();
+      const primeFolderId = JSON.parse(primeOut).id || JSON.parse(primeOut).folderId;
+      if (!primeFolderId) return null;
+
+      // Create {root}/{prime}/{agent}/ folder
+      const agentOut = exec(
+        `${coreDir}/bin/drive-mkdir "${agentName}" --parent ${primeFolderId}`,
+        { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
+      ).trim();
+      const agentFolderId = JSON.parse(agentOut).id || JSON.parse(agentOut).folderId;
+      log('INFO', `Agent folder provisioned: ${primeName}/${agentName} → ${agentFolderId || '(failed)'}`);
+      return agentFolderId || null;
+    } catch (e) {
+      log('WARN', `ensureAgentFolder failed: ${e.message}`);
+      return null;
+    }
+  }
+
+  // =========================================================================
   //  Artifact publishing
   // =========================================================================
 
   /**
    * Publish artifacts from shared/{missionId}/ to Drive on mission completion.
-   * Creates {project-folder}/{prime-name}/{agent-name}/ subfolder structure.
+   * Creates {project-folder}/{MM-DD}/ subfolder structure.
    *
    * @param {object} envelope - Mission envelope to publish artifacts for
    * @returns {Promise<Array<{name: string, driveId: string, url: string, size: number}>>}
@@ -294,29 +336,19 @@ export function createArtifactManager(deps) {
       const { execSync: exec } = await import('child_process');
       const { statSync } = await import('fs');
 
-      // Create prime/agent subfolder structure
-      const primeName = (primeId || 'unknown').replace(/["']/g, '');
-      const agentName = (agentId || 'unknown').replace(/["']/g, '');
-
+      // Create MM-DD date subfolder under project folder
       let targetFolderId = projectFolderId;
       if (projectFolderId !== 'root') {
-        // Create {prime-name}/ subfolder
         try {
-          const primeOut = exec(
-            `${coreDir}/bin/drive-mkdir "${primeName}" --parent ${projectFolderId}`,
+          const dateSub = new Date().toISOString().slice(5, 10).replace('-', '-'); // MM-DD
+          const dateOut = exec(
+            `${coreDir}/bin/drive-mkdir "${dateSub}" --parent ${projectFolderId}`,
             { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
           ).trim();
-          const primeParsed = JSON.parse(primeOut).folderId || JSON.parse(primeOut).id;
-          if (primeParsed) {
-            // Create {agent-name}/ subfolder under prime
-            const agentOut = exec(
-              `${coreDir}/bin/drive-mkdir "${agentName}" --parent ${primeParsed}`,
-              { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
-            ).trim();
-            targetFolderId = JSON.parse(agentOut).folderId || JSON.parse(agentOut).id || primeParsed;
-          }
+          const dateParsed = JSON.parse(dateOut).id || JSON.parse(dateOut).folderId;
+          if (dateParsed) targetFolderId = dateParsed;
         } catch (e) {
-          log('WARN', `Subfolder creation failed, publishing to project root: ${e.message}`);
+          log('WARN', `Date subfolder creation failed, publishing to project root: ${e.message}`);
         }
       }
 
@@ -427,6 +459,8 @@ export function createArtifactManager(deps) {
     cleanupWorkspace,
     /** Ensure a project has a Drive folder. */
     ensureProjectFolder,
+    /** Ensure the agent has its own folder: {root}/{prime}/{agent}/. */
+    ensureAgentFolder,
     /** Publish shared/ artifacts to Drive. */
     publish,
   };

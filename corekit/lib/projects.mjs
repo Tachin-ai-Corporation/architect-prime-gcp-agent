@@ -463,22 +463,24 @@ export function createProjectRegistry(config) {
     if (driveFolder?.ref) {
       const folderId = driveFolder.ref;
       const folderUrl = driveFolder.url || `https://drive.google.com/drive/folders/${folderId}`;
+      const projectId = p.id || '';
       const lines = ['\n\n## Shared Workspace (Google Drive)'];
       lines.push(`📁 **Shared Workspace**: ${folderUrl}`);
       lines.push(`📂 **Folder ID**: \`${folderId}\``);
       lines.push('');
       lines.push('This Drive folder is the **persistent shared workspace** for this project.');
-      lines.push('Source code, configs, docs, and all project files live here.');
-      lines.push('Changes you make here persist across missions and are visible to all agents on this project.');
+      lines.push('Artifacts are organized in date subfolders (MM-DD) automatically.');
       lines.push('');
-      lines.push('**Working with the shared workspace:**');
+      lines.push('**Publishing artifacts (use `work-publish`):**');
+      lines.push(`- Publish a file: \`work-publish <file> --project ${projectId}\` → uploads to \`${folderId}/MM-DD/\``);
+      lines.push(`- Custom subfolder: \`work-publish <file> --project ${projectId} --subfolder assets\``);
+      lines.push('');
+      lines.push('**Reading/browsing:**');
       lines.push(`- List contents: \`drive-ls ${folderId}\``);
-      lines.push(`- Download a file: \`drive-download <fileId> ${coreDir}/shared/{missionId}/<filename>\``);
-      lines.push(`- Upload/update a file: \`drive-upload "${coreDir}/shared/{missionId}/<filename>" ${folderId}\``);
-      lines.push(`- Create subfolders: \`drive-mkdir "<name>" --parent ${folderId}\``);
+      lines.push(`- Download a file: \`drive-download <fileId> --output ${coreDir}/shared/{missionId}/<filename>\``);
+      lines.push(`- Search: \`drive-search --query "'${folderId}' in parents"\``);
       lines.push('');
-      lines.push('**Workflow**: Pull files you need → edit locally → push changes back to Drive.');
-      lines.push('Organize the workspace with clear subfolders (e.g. src/, docs/, configs/).');
+      lines.push('**Workflow**: Download files you need → edit locally → `work-publish` results back to Drive.');
       
       // List existing artifacts if any
       if (artifactCtx?.files?.length > 0) {

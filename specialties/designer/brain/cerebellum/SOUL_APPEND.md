@@ -48,3 +48,8 @@ When a mission produces multiple deliverables (Slides + Docs, Docs + HTML, etc.)
 - Same typography hierarchy must be used across all deliverables.
 - Terminology and naming must be consistent across all deliverables.
 - Flag any discrepancy as a verification failure before completion.
+
+### Drive Convention Gate
+- ✅ PASS if agent used `work-publish` for artifact uploads
+- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
+- ✅ PASS if no artifacts were produced (read-only mission)

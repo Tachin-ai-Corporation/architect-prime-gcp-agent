@@ -56,3 +56,11 @@ the actual file. When the HTML is large (>10KB), write it in full — do not tru
 ## Color Specification
 Every color reference in any deliverable must include both hex and RGB values.
 When specifying a palette, include: swatch, hex, RGB, and intended usage context.
+
+## Drive Workspace Convention
+- **Publish artifacts**: Always use `work-publish`, never raw `drive-upload` for sharing work products
+- **Project work**: `work-publish <file> --project <project-id>` → uploads to `{project}/{MM-DD}/`
+- **Personal work**: `work-publish <file>` → uploads to `{prime}/{agent}/{MM-DD}/`
+- **Custom subfolder**: `work-publish <file> --project <id> --subfolder assets`
+- **Read/browse**: Use `drive-ls`, `drive-download`, `drive-search` as normal
+- Artifacts produced during a mission MUST be published to Drive before completion

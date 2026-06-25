@@ -517,11 +517,16 @@ export async function executeCheckpoints(checkpoints, opts) {
         await firestoreWrite('work', cpId, cpEnvelope);
 
         // Compose delegation marker for Mouth delivery
+        // Resolve project Drive folder for delegate context
+        const projCtx = (PROJECTS[envelope.project_id] || {}).context || {};
+        const driveFolderId = (PROJECTS[envelope.project_id] || {}).drive_folder_id
+          || projCtx.drive_folder?.ref || null;
         const marker = composeDelegationMarker({
           targetEmail: targetAgentEmail,
           ref: taskId,
           from: AGENT_EMAIL || AGENT_ID,
           project: envelope.project_id || 'none',
+          drive: driveFolderId,
           body: taskDesc,
         });
 

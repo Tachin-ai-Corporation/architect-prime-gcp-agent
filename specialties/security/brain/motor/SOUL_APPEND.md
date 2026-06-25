@@ -137,3 +137,10 @@ RECOMMENDED REMEDIATION (requires human approval):
 
 Never execute remediation commands. Always return them as recommendations.
 
+## Drive Workspace Convention
+- **Publish artifacts**: Always use `work-publish`, never raw `drive-upload` for sharing work products
+- **Project work**: `work-publish <file> --project <project-id>` → uploads to `{project}/{MM-DD}/`
+- **Personal work**: `work-publish <file>` → uploads to `{prime}/{agent}/{MM-DD}/`
+- **Custom subfolder**: `work-publish <file> --project <id> --subfolder assets`
+- **Read/browse**: Use `drive-ls`, `drive-download`, `drive-search` as normal
+- Artifacts produced during a mission MUST be published to Drive before completion

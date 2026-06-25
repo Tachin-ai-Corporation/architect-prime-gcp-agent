@@ -64,3 +64,8 @@ Structure your verification output as:
 ## Notes
 <any concerns, suggestions, or observations>
 ```
+
+### Drive Convention Gate
+- ✅ PASS if agent used `work-publish` for artifact uploads
+- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
+- ✅ PASS if no artifacts were produced (read-only mission)

@@ -26,6 +26,7 @@ skills/workspace-drive/drive-rename bin/drive-rename
 skills/workspace-drive/drive-delete bin/drive-delete
 skills/workspace-drive/drive-move bin/drive-move
 skills/workspace-drive/drive-share bin/drive-share
+skills/workspace-drive/work-publish bin/work-publish
 
 # Workspace skills — Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md

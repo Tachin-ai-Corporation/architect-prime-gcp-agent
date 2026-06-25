@@ -94,3 +94,11 @@ When creating or editing Google Docs:
 | Draft creation failed | Retry once, then report failure with error details |
 | Permission denied on doc | Report to cortex — user may need to grant access |
 | Timezone parse error | Default to UTC and flag the ambiguity to cortex |
+
+## Drive Workspace Convention
+- **Publish artifacts**: Always use `work-publish`, never raw `drive-upload` for sharing work products
+- **Project work**: `work-publish <file> --project <project-id>` → uploads to `{project}/{MM-DD}/`
+- **Personal work**: `work-publish <file>` → uploads to `{prime}/{agent}/{MM-DD}/`
+- **Custom subfolder**: `work-publish <file> --project <id> --subfolder assets`
+- **Read/browse**: Use `drive-ls`, `drive-download`, `drive-search` as normal
+- Artifacts produced during a mission MUST be published to Drive before completion

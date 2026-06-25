@@ -20,8 +20,18 @@ When a task involves files in Google Drive — listing, searching, downloading, 
   Google Workspace docs are exported as PDF. Max depth: 10 levels.
   Output: JSON summary with file/folder counts and output directory.
 
+### Publish (Preferred for Artifacts)
+- `work-publish FILE [--project PROJECT_ID] [--subfolder NAME]` — **Standard artifact publisher.** Automatically resolves the correct Drive folder and creates date-based subfolders.
+  - **Project mode**: `work-publish report.pdf --project tachin-website` → uploads to `{project}/MM-DD/report.pdf`
+  - **Agent mode**: `work-publish notes.md` → uploads to `{prime}/{agent}/MM-DD/notes.md`
+  - **Custom subfolder**: `work-publish logo.svg --project tachin-website --subfolder assets` → uploads to `{project}/assets/logo.svg`
+  - Output: JSON with `status`, `fileId`, `folderId`, `folderPath`, `webViewLink`.
+  - All folder creation is idempotent — safe to run repeatedly.
+
+> ⚠️ **IMPORTANT**: Use `work-publish` instead of `drive-upload` when publishing work products or artifacts. `work-publish` enforces the standard folder hierarchy. Use `drive-upload` only for edge cases where you need direct folder control.
+
 ### Write
-- `drive-upload PATH [--name NAME] [--folder FOLDER_ID]` — Upload a local file to a Google Drive folder.
+- `drive-upload PATH [--name NAME] [--folder FOLDER_ID]` — Upload a local file to a specific Drive folder. For artifact publishing, prefer `work-publish` instead.
   Output: Uploaded file metadata including the newly created `id`.
 - `drive-mkdir --name NAME [--parent PARENT_ID]` — Create a new folder inside Google Drive.
   Output: Created folder metadata.
@@ -33,6 +43,7 @@ When a task involves files in Google Drive — listing, searching, downloading, 
   Output: Success status.
 - `drive-share FILE_ID --to EMAIL --role ROLE` — Share a file/folder with a user or domain. ROLE is `reader`, `writer`, or `commenter`. Use `anyone` for public link sharing.
   Output: Success status.
+
 
 ## Procedures
 
