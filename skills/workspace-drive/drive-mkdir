@@ -37,7 +37,9 @@ fi
 
 # 2. Create new folder
 BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\"}"
-[[ -n "$PARENT" ]] && BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
+if [[ -n "$PARENT" ]]; then
+  BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
+fi
 HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "$BODY" "${DRIVE_API}/files?supportsAllDrives=true&fields=id,name,webViewLink")
@@ -51,7 +53,9 @@ if [[ "$HTTP_CODE" != "200" ]]; then
 fi
 
 NEW_ID=$(jq -r '.id // empty' /tmp/drive-response.json 2>/dev/null || true)
-[[ -z "$NEW_ID" ]] && die "Failed to parse new folder ID"
+if [[ -z "$NEW_ID" ]]; then
+  die "Failed to parse new folder ID"
+fi
 
 # 3. Race condition guard: Re-search and pick earliest
 DEDUP_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=createdTime&fields=files(id,name,webViewLink)"
