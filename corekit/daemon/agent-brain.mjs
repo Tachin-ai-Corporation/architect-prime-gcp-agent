@@ -3095,6 +3095,29 @@ async function checkWaitingEnvelopes() {
         `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${toStr(r.result).substring(0, 500)}`
       ).join('\n\n');
 
+      // C-type checkpoint: complete it and re-queue the parent M-type mission
+      // (dequeueAndProcess only handles M-type, so a queued C-type is a dead end)
+      if (waiting.type === 'C' && waiting.parent_id) {
+        waiting.status = 'complete';
+        waiting.output = delegationSummary;
+        waiting.updated_at = now();
+        await firestoreWrite('work', waiting.id, waiting);
+        await writeHistory(waiting.id, 'waiting', 'complete', 'brain',
+          `C-type delegation(s) complete, marking checkpoint done`);
+
+        const parent = await firestoreRead('work', waiting.parent_id);
+        if (parent && parent.status === 'active') {
+          parent.status = 'queued';
+          parent.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
+          parent.updated_at = now();
+          await firestoreWrite('work', parent.id, parent);
+          await writeHistory(parent.id, 'active', 'queued', 'brain',
+            `Checkpoint delegation(s) complete, re-queued (work queue)`);
+          log('INFO', `Re-queuing parent mission ${parent.id} after C-type checkpoint delegation`);
+        }
+        continue;
+      }
+
       waiting.status = 'queued';
       waiting.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
       waiting.updated_at = now();
