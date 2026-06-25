@@ -88,17 +88,18 @@ export function createArchivalSweeper(deps) {
       ]);
       let completeCount = 0;
       for (const env of complete) {
-        // Child envelopes (have parent_id) never need delivery — archive immediately
+        // Envelopes awaiting delivery MUST NOT be archived yet, regardless of parent_id
+        if (env.delivery_status === 'pending') {
+          continue;
+        }
+
+        // Child envelopes (have parent_id) never need delivery (unless explicitly pending, handled above) — archive immediately
         if (env.parent_id) {
           await firestoreWrite('work', env.id, { ...env, status: 'archived', archived_reason: 'child_complete', delivery_status: 'delivered', updated_at: now() });
           completeCount++;
           continue;
         }
-        // Top-level envelopes: require delivery AND memory before archiving
-        if (env.delivery_status === 'pending') {
-          // DO NOT archive — mouth hasn't delivered this to the user yet
-          continue;
-        }
+
         const envAge = env.completed_at || env.updated_at || env.created_at;
         if (envAge && envAge < completeCutoff) {
           if (env.memory_written) {
