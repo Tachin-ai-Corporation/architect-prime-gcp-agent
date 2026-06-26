@@ -630,7 +630,7 @@ export async function executeCheckpoints(checkpoints, opts) {
               log('INFO', `[delegation] Published ${artifacts.length} artifact(s) to Drive before delegating`);
               // Append artifact references to the delegation instruction
               const artifactRefs = artifacts.map(a => `📄 ${a.name}: ${a.driveUrl || a.id}`).join('\n');
-              taskDesc += `\n\n[SHARED ARTIFACTS — available in the project Drive folder]\n${artifactRefs}\nUse workspace-drive to download these files. Do NOT reference local filesystem paths.`;
+              taskDesc += `\n\n[SHARED ARTIFACTS — available in the project Drive folder]\n${artifactRefs}\nThese files are available in the project's shared Drive folder.`;
             }
           } catch (e) {
             log('WARN', `[delegation] Artifact publish before delegation failed: ${e.message}`);

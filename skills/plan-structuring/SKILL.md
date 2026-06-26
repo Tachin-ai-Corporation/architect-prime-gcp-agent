@@ -13,7 +13,7 @@ No executable commands are governed directly by this skill (prefrontal-only plan
 1. Read the input goal, Brief parts, and available skill index.
 2. Define checkpoints based on risk boundaries, specialty handoffs, or verification checkpoints.
 3. For each checkpoint, define the `instruction` and `accept_criteria`.
-4. Decompose each checkpoint into atomic tasks, identifying the target `agent`, task instructions (referencing specific skills), and task `accept_criteria`.
+4. Decompose each checkpoint into atomic tasks, identifying the target `agent`, task instructions (describing the desired outcome), and task `accept_criteria`.
 5. Format the plan into the final JSON structure containing `checkpoints` and `tasks`.
 6. Verify: Ensure the output plan conforms strictly to the schema, has no missing fields, and does not contain execution commands.
 
@@ -31,7 +31,7 @@ Return a JSON object with a `checkpoints` array:
       "tasks": [
         {
           "agent": "motor|temporal-research|temporal-memory",
-          "task": "Specific, atomic instruction. Name the skill(s) to use.",
+          "task": "Specific, atomic instruction describing the desired outcome.",
           "accept_criteria": "Evidence this specific task completed correctly",
           "type": "standard|delegation|approval_gate|ask",
           "brief_part": "Which Brief part this task addresses"
@@ -103,8 +103,10 @@ A new checkpoint starts when:
 - A different agent specialty is needed
 - An approval gate is required
 
-### Skill references
-When writing motor task instructions, name the specific skill(s) motor should consult.
+### Task instructions describe outcomes
+Write task instructions that describe WHAT should happen, not HOW. Sub-agents
+are specialists — they know their own tools. Say "read the project context"
+not "read the project context using workspace-drive."
 
 ### One-task plans are valid
 A simple request yields one checkpoint with one task.
@@ -156,7 +158,7 @@ with `type: "delegation"` tasks targeting different teammates.
       "tasks": [
         {
           "agent": "motor",
-          "task": "Read the project context and current website structure. Skill: workspace-drive",
+          "task": "Read the project context and current website structure from the project Drive folder",
           "accept_criteria": "Summary of current website state"
         }
       ]

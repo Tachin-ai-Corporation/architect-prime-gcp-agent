@@ -964,7 +964,7 @@ async function callPrefrontal(payload) {
 
   // Skill catalog — gives prefrontal awareness of available skills for task planning
   if (Object.keys(SKILL_INDEX).length > 0) {
-    sysParts.push(`[SKILL INDEX — available skills for task instructions]\n${formatSkillCatalog(SKILL_INDEX)}`);
+    sysParts.push(`[SKILL INDEX — available capabilities for routing decisions]\n${formatSkillCatalog(SKILL_INDEX)}`);
   }
   const systemPrompt = sysParts.join('\n\n');
 
@@ -1198,7 +1198,7 @@ function buildUserPrompt(mode, payload) {
         preference: 'Use the minimal form unless you have specific structural requirements.',
         step_types: 'standard (local work via motor/research), delegation (teammate — set target_email), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)',
         sequencing: 'Independent parts fan out within a checkpoint. Dependent parts serialize via checkpoint boundaries.',
-        skill_guidance: 'When writing task instructions for motor, name the relevant skills from skill_index that the task will need. Motor will read the SKILL.md for exact syntax.',
+        skill_guidance: 'Write task instructions that describe WHAT should happen, not HOW. Sub-agents are specialists — they know their own tools. Describe the desired outcome, inputs, and acceptance criteria.',
       };
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
@@ -1210,7 +1210,7 @@ function buildUserPrompt(mode, payload) {
       decidePayload.dispatch_guidance = {
         rule: 'ALL work MUST use checkpoint_plan. One focused task per task entry. Even single-step work is one checkpoint with one task.',
         reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The M→C→T hierarchy ensures progress tracking and enables re-planning on failure.',
-        skill_guidance: 'When writing task instructions for motor, name the relevant skills from skill_index that the task will need. Motor will read the SKILL.md for exact syntax.',
+        skill_guidance: 'Write task instructions that describe WHAT should happen, not HOW. Sub-agents are specialists — they know their own tools. Describe the desired outcome, inputs, and acceptance criteria.',
       };
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {

@@ -52,8 +52,8 @@ prior_results each turn. I pick one move and fill it in. I do not invent moves o
 - Complex work decomposition → prefrontal
 - NEVER assign a task to a brain part or agent that lacks the required tools (e.g., motor has no memory tools like core-memory-read or core-memory-write)
 
-Name the applicable skill in every dispatch instruction so the receiving agent
-can load the right documentation. Never guess at tool arguments — the skill knows.
+Tell sub-agents and delegates WHAT to do, not HOW. They are specialists — they
+know their own tools and skills. Describe the desired outcome, not the tool invocation.
 
 ## Failure Honesty
 Failed dispatch means investigate, not paper over. Read the full error, identify the

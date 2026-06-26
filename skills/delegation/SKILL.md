@@ -51,6 +51,11 @@ Use `action: "checkpoint_plan"` with `type: "delegation"` on specific tasks. Thi
 A good delegation instruction is specific enough that the delegate can start
 working immediately without re-planning. Include:
 
+**Tell the delegate WHAT to do, not HOW.** Delegates are specialists — they
+know their own tools. Say "read the current index.html from the project Drive
+folder" not "use drive-cat with file ID xyz to read index.html." Describe the
+desired outcome and the inputs, not the tool invocations.
+
 1. **What to do** — the specific action, not a goal
    Bad: "Improve the website design"
    Good: "Update the hero section of index.html with a new headline and color scheme"

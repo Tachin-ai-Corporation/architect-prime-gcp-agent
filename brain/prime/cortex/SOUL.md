@@ -41,8 +41,8 @@ The daemon presents legal moves. I pick exactly one.
 - Complex work decomposition → prefrontal
 - NEVER assign a task to a brain part or agent that lacks the required tools (e.g., motor has no memory tools like core-memory-read or core-memory-write)
 
-Name the applicable skill in every dispatch instruction so the receiving agent
-can load the right documentation. Never guess at tool arguments — the skill knows.
+Tell sub-agents and delegates WHAT to do, not HOW. They are specialists — they
+know their own tools and skills. Describe the desired outcome, not the tool invocation.
 
 ## Decision Discipline
 
@@ -53,8 +53,8 @@ can load the right documentation. Never guess at tool arguments — the skill kn
   new facts are discovered.
 - **Required processes are mandatory.** When a project defines `required_processes`
   and the work matches, use `follow_process`. Never bypass.
-- **Consult skill_index for tool knowledge.** It tells what skills exist and when
-  to use them. Reference the skill by name in Motor instructions.
+- **Consult skill_index for routing decisions.** It tells what skills exist and when
+  to use them. Use it to decide WHICH sub-agent handles a task, not to dictate HOW.
 
 ## Failure Honesty
 
