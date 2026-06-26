@@ -442,7 +442,7 @@ export async function executeCheckpoints(checkpoints, opts) {
           try {
             const primesSnap = await firestoreQuery('primes', []);
             for (const prime of primesSnap) {
-              const fleetSnap = await firestoreQuery(`primes/${prime.id}/fleet`, [
+              const fleetSnap = await firestoreQuery('fleet', [
                 { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
               ]);
               const onlineAgent = fleetSnap.find(a => a.status === 'online');
@@ -481,13 +481,13 @@ export async function executeCheckpoints(checkpoints, opts) {
         // ---- Concurrent delegation guard ----
         // Don't send a new delegation if the target agent already has active work from us
         try {
-          const activeDelegations = await firestoreQuery(`primes/${PRIME_ID}/work`, [
+          const activeDelegations = await firestoreQuery('work', [
             { field: 'source_meta.target_agent_email', op: 'EQUAL', value: { stringValue: targetAgentEmail } },
             { field: 'status', op: 'IN', value: { arrayValue: { values: [
               { stringValue: 'active' }, { stringValue: 'waiting' },
               { stringValue: 'queued' }, { stringValue: 'pending' },
             ]}}},
-          ]);
+          ], { noOrderBy: true });
           if (activeDelegations.length > 0) {
             log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation to ${targetAgentEmail} blocked — ${activeDelegations.length} active delegation(s) exist: ${activeDelegations.map(d => d.id).join(', ')}`);
             cpResults.push({
@@ -519,10 +519,10 @@ export async function executeCheckpoints(checkpoints, opts) {
         try {
           const dedupWindowMs = (contracts?.dispatch?.delegation_dedup_window_hours || 24) * 3600_000;
           const cutoff = new Date(Date.now() - dedupWindowMs).toISOString();
-          const recentDelegations = await firestoreQuery(`primes/${PRIME_ID}/work`, [
+          const recentDelegations = await firestoreQuery('work', [
             { field: 'source_meta.target_agent_email', op: 'EQUAL', value: { stringValue: targetAgentEmail } },
             { field: 'source_meta.dispatched_by', op: 'EQUAL', value: { stringValue: cpId } },
-          ]);
+          ], { noOrderBy: true });
           const recentSameTarget = recentDelegations.filter(d => 
             ['complete', 'failed', 'blocked'].includes(d.status) && d.created_at > cutoff
           );

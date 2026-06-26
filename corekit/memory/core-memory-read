@@ -86,15 +86,24 @@ if [[ -n "$SINCE" ]]; then
 fi
 
 # Build structured query
+# NOTE: Firestore composite queries on subcollections require indexes.
+# When --since is specified, use ONLY createdAt as the Firestore filter
+# and apply status/category filtering client-side to avoid silent failures.
+CLIENT_STATUS_FILTER=""
+CLIENT_CATEGORY_FILTER=""
 FILTERS=()
-if [[ -n "$STATUS" ]]; then
-  FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"status\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${STATUS}\"}}}")
-fi
-if [[ -n "$CATEGORY" ]]; then
-  FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"category\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${CATEGORY}\"}}}")
-fi
 if [[ -n "$SINCE_TIMESTAMP" ]]; then
+  # Range filter takes priority — demote equality filters to client-side
   FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"createdAt\"},\"op\":\"GREATER_THAN_OR_EQUAL\",\"value\":{\"stringValue\":\"${SINCE_TIMESTAMP}\"}}}")
+  [[ -n "$STATUS" ]] && CLIENT_STATUS_FILTER="$STATUS"
+  [[ -n "$CATEGORY" ]] && CLIENT_CATEGORY_FILTER="$CATEGORY"
+else
+  if [[ -n "$STATUS" ]]; then
+    FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"status\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${STATUS}\"}}}")
+  fi
+  if [[ -n "$CATEGORY" ]]; then
+    FILTERS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"category\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${CATEGORY}\"}}}")
+  fi
 fi
 
 if [[ ${#FILTERS[@]} -eq 0 ]]; then
@@ -124,8 +133,7 @@ RESPONSE=$(curl -sf \
   -X POST "https://firestore.googleapis.com/v1/${PARENT}:runQuery" \
   -d "${QUERY_BODY}" 2>&1)
 
-# ── Format output ───────────────────────────────────────────────
-echo "$RESPONSE" | QUERY="$QUERY" python3 -c '
+echo "$RESPONSE" | QUERY="$QUERY" CLIENT_STATUS="$CLIENT_STATUS_FILTER" CLIENT_CATEGORY="$CLIENT_CATEGORY_FILTER" python3 -c '
 import json, sys, os
 
 try:
@@ -136,6 +144,23 @@ except:
 
 if not isinstance(results, list):
     results = [results]
+
+# Client-side status/category filtering (when --since demoted them from Firestore query)
+cs_status = os.environ.get("CLIENT_STATUS", "").strip()
+cs_category = os.environ.get("CLIENT_CATEGORY", "").strip()
+if cs_status or cs_category:
+    filtered = []
+    for entry in results:
+        doc = entry.get("document")
+        if not doc:
+            continue
+        fields = doc.get("fields", {})
+        if cs_status and fields.get("status", {}).get("stringValue", "") != cs_status:
+            continue
+        if cs_category and fields.get("category", {}).get("stringValue", "") != cs_category:
+            continue
+        filtered.append(entry)
+    results = filtered
 
 # Client-side --query filtering (Firestore has no substring/full-text operator)
 query_str = os.environ.get("QUERY", "").strip()
