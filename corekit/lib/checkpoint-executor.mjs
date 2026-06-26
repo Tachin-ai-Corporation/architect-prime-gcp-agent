@@ -792,10 +792,16 @@ export async function executeCheckpoints(checkpoints, opts) {
       if (result.success && taskCriteria && taskAgent !== 'cerebellum' && tEnv.intent !== 'ack' && extractVerdict) {
         try {
           log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: dispatching to cerebellum for verification`);
+          // Research/recall agents produce informational output (not file writes)
+          const isResearchAgent = ['temporal-memory', 'temporal-research'].includes(taskAgent);
+          const researchHint = isResearchAgent
+            ? '\n\n> NOTE: This task was performed by a research/recall agent. These agents produce informational text output — they cannot write files or run commands. Evaluate whether the OUTPUT CONTENT addresses the criteria, not whether files were created or commands were executed. "No relevant results found" or a summary of findings both count as valid output.'
+            : '';
           const verification = await dispatchAgent('cerebellum', {
             instruction: [
               'Verify the following task output meets the acceptance criteria.',
               'Read the verification SKILL.md before rendering your verdict.',
+              researchHint,
               '',
               '## Accept Criteria',
               taskCriteria,
@@ -841,6 +847,7 @@ export async function executeCheckpoints(checkpoints, opts) {
                   'Verify the following RETRY task output meets the acceptance criteria.',
                   'This is a second attempt after the first failed verification.',
                   'Read the verification SKILL.md before rendering your verdict.',
+                  researchHint,
                   '',
                   '## Accept Criteria',
                   taskCriteria,
