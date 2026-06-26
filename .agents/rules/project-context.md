@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.25.1.0)
+## Current Architecture (v2026.06.26.1.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -38,6 +38,13 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Project context upgrade**: `projects.mjs` renders `work-publish` usage patterns instead of raw `drive-upload` in the Shared Workspace section.
   - **Engineer Drive access**: Added `workspace-drive` to engineer agent type skills + full Drive tools in `job-engineer.txt` manifest.
   - **Fleet-wide enforcement**: All 9 motor SOUL_APPEND files include "Drive Workspace Convention" block mandating `work-publish`. All 9 cerebellum SOUL_APPEND files include "Drive Convention Gate" for verification.
+- **Brain Audit Hardening (v2026.06.26.1.0)**:
+  - **Unified process-engine completion**: Process-completed missions now call `completeEnvelope()` instead of an inline ceremony. Previously, process completions silently skipped memory writes, artifact publishing, workspace cleanup, and event responsibilities because 4 optional deps (`writeMemory`, `publishArtifacts`, `cleanupSharedWorkspace`, `fireEventResponsibilities`) were never injected. With `completeEnvelope` wired as a dep, process missions get the full lifecycle ceremony. Fallback inline ceremony preserved for backward compatibility.
+  - **Prefrontal skill awareness**: `callPrefrontal` system prompt now includes `formatSkillCatalog(SKILL_INDEX)` — prefrontal can reference available skills when structuring checkpoint plans, eliminating improvised agent/skill references in task instructions.
+  - **toStr single source of truth**: Removed the duplicate `toStr()` definition from `agent-brain.mjs`. Now imported from `corekit/lib/to-str.mjs`.
+  - **Bare failed lifecycle routing**: Parse-failure `status='failed'` in the cortex loop now routes through `completeEnvelope()` for consistent delivery status, history, and lifecycle handling.
+  - **Status query regex fix**: Removed bare `update` from the `handleAttach` status-query regex (false-positive on "update the configuration"). Added `any.{0,10}update` and `how.{0,10}coming` patterns. Added INFO logging on matches.
+  - **Log message fix**: `processIntakeAsNewTask` log now uses `${envelope.type}` instead of hardcoded `type=M`.
 - **Brain Overhaul Audit Implementation (v2026.06.18.1)**:
   - **Motor Failure Detection Caller Wiring**: Imported and called `detectMotorFailure` in `checkpoint-executor.mjs` to check motor execution output/error and fail-fast if a token expiration or auth failure is found (resolved Gap 1 regression).
   - **toStr Coercion Protection**: All task and checkpoint string references (e.g. `.substring()`) are wrapped in `toStr` coercion to prevent crash sites when Cortex returns raw objects for task names (resolved Gap 2).
