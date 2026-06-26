@@ -55,3 +55,16 @@ color is #1a1a2e, file is uploaded to folder X."
 - Delegate vague goals ("improve the website")
 - Create checkpoint plans with 4+ checkpoints for a simple task
 - Re-delegate work that a teammate returned as blocked — ask the operator instead
+- **Use placeholder delegation instructions** — NEVER write "PLACEHOLDER",
+  "will be filled later", "TBD", or any deferred instruction in a delegation task.
+  Every delegation instruction must be concrete and actionable at plan creation time.
+
+### If you need to read files before delegating
+
+Do NOT create a plan with "CP1: read files, CP2: delegate with placeholder."
+The executor sends delegation instructions exactly as written — placeholders
+are sent verbatim.
+
+**Correct pattern:** Create a plan with only the read step. After you have the
+file contents, Cortex will be called again with the results. THEN create a new
+plan with a concrete delegation containing the specific details you learned.

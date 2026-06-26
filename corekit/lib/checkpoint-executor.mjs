@@ -562,6 +562,21 @@ export async function executeCheckpoints(checkpoints, opts) {
           log('WARN', `[checkpoint-executor] Delegation dedup check failed: ${e.message}`);
         }
 
+        // ---- Guard: reject placeholder or empty delegation instructions ----
+        const PLACEHOLDER_PATTERNS = [/placeholder/i, /will be filled/i, /tbd/i, /to be determined/i, /^$/];
+        const isPlaceholder = PLACEHOLDER_PATTERNS.some(p => p.test(taskDesc.trim()));
+        if (isPlaceholder || taskDesc.trim().length < 20) {
+          log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation instruction is empty or placeholder ("${taskDesc.substring(0, 80)}"). Failing task — Cortex must provide concrete instructions.`);
+          cpResults.push({
+            step: `${cpNum}.${taskNum}`, agent: taskAgent,
+            result: `[FAILED] Delegation instruction was empty or a placeholder. You must provide concrete, specific instructions for the delegate. Do NOT use placeholders like "will be filled later." If you need to read files first, do that in a separate plan iteration before delegating.`,
+            success: false,
+          });
+          recordStep(envelope, taskStepKey, 'failed', 0, STEP_LEDGER_ENABLED);
+          cpFailed = true;
+          break;
+        }
+
         // Create Task envelope with status='waiting'
         const taskId = generateId('w');
         const taskEnvelope = {

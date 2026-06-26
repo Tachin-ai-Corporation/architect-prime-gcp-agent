@@ -66,6 +66,13 @@ over-decomposed. Ask: could two adjacent tasks be one task? Usually yes.
 1 checkpoint, 1 delegation task. A plan that delegates to two agents in sequence 
 is: 2 checkpoints, 1 delegation task each. That's it.
 
+**No placeholder instructions.** Every task instruction — especially delegation
+tasks — must be concrete and actionable. NEVER write "PLACEHOLDER", "will be
+filled later", "TBD", or any deferred content. The executor sends instructions
+exactly as written. If you need information before you can write the delegation
+instruction, make the information-gathering step its own plan. Cortex will be
+called again with the results, and you can write the delegation then.
+
 ### Valid task agents — capabilities and limits
 
 For standard tasks, the `agent` field MUST be exactly one of:
