@@ -444,7 +444,7 @@ export async function executeCheckpoints(checkpoints, opts) {
           try {
             const fleetSnap = await firestoreQuery('fleet', [
               { field: 'email', op: 'EQUAL', value: { stringValue: targetAgentEmail } },
-            ]);
+            ], { noOrderBy: true });
             const onlineMatch = fleetSnap.find(a => a.status === 'online');
             if (!onlineMatch) {
               log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: target_email '${targetAgentEmail}' not found in fleet registry or not online — falling through to specialty lookup`);
@@ -459,7 +459,7 @@ export async function executeCheckpoints(checkpoints, opts) {
           try {
             const fleetSnap = await firestoreQuery('fleet', [
               { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
-            ]);
+            ], { noOrderBy: true });
             const onlineAgent = fleetSnap.find(a => a.status === 'online');
             if (onlineAgent) {
               targetAgentEmail = onlineAgent.email;
