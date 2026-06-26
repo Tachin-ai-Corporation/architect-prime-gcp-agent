@@ -19,6 +19,24 @@ When dispatched to evaluate a completed task's output against its acceptance cri
 5. If any criterion is not met or not evidenced, run `report_fail` with reasoning, checks, and a recommendation.
 6. Verify: Ensure that exactly one verdict tool is executed and returns a success response.
 
+## Evaluating Research and Recall Tasks
+
+Tasks assigned to `temporal-research` or `temporal-memory` produce **informational output**, not file writes or mutations. Evaluate them by these criteria:
+
+- **Did the agent attempt the research/recall?** (tool calls present in the log)
+- **Is the output relevant to the task instruction?** (addresses the question asked)
+- **Is "no results found" a valid outcome?** YES — for novel projects, empty memory and no search results are expected and valid. Do not fail a task because the information doesn't exist.
+
+These agents CANNOT write files, create artifacts, or modify state. Do not fail them for lacking file outputs. Their product is text.
+
+### Common false-positive patterns to avoid
+| Motor output | Correct verdict | Why |
+|-------------|----------------|-----|
+| "No relevant memory found" | PASS (if recall was attempted) | Novel project — memory is empty |
+| "Search returned 3 results: ..." | PASS (if results address the query) | Research succeeded |
+| "Could not find specific document" | PASS (if search was thorough) | Absence is a finding |
+| Research text with no file saves | PASS | Research agents don't save files |
+
 ## Error Recovery
 
 | Error / Symptom | Likely Cause | Recovery |

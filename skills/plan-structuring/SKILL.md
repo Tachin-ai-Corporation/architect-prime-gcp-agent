@@ -44,28 +44,25 @@ Return a JSON object with a `checkpoints` array:
 
 ## Rules
 
-### Valid task agents
+### Valid task agents — capabilities and limits
+
 For standard tasks, the `agent` field MUST be exactly one of:
-- `motor` — executes tools, runs commands, reads/writes files
-- `temporal-research` — web search and external information retrieval
-- `temporal-memory` — internal knowledge and memory recall
+
+| Agent | Can do | Cannot do |
+|-------|--------|-----------|
+| `motor` | Execute commands, read/write files, call any skill tool, modify state | — (full capability) |
+| `temporal-research` | Web search, fetch URLs, read web content | Write files, modify state, execute commands, call non-search tools |
+| `temporal-memory` | Recall internal memory, read core memory | Write files, modify state, execute commands, search the web |
+
+**Common mistakes:**
+- ❌ "Search the web AND save results to a file" → temporal-research can't write files. Split: temporal-research searches → motor saves the results.
+- ❌ "Recall memory AND create a report" → temporal-memory can't write files. Split: temporal-memory recalls → motor creates the report.
+- ❌ Assigning any task that says "create", "write", "upload", "deploy", "modify" to temporal-research or temporal-memory. These verbs require motor.
+- ❌ `exec` is NOT an agent — it's a skill name. Use `motor` with the exec skill.
+- ❌ `system` / `System` is NOT an agent.
+- ❌ `cortex`, `prefrontal`, `cerebellum` are organ names, not task agents.
 
 For **delegation** tasks (`type: "delegation"`), the `agent` field is the **delegate specialty** (e.g., `devops`, `engineer`, `product-architect`). You MUST also include `target_email` with the teammate's email from the project team roster.
-
-```json
-{
-  "agent": "devops",
-  "type": "delegation",
-  "target_email": "devops-agent-stan@tachin.ag",
-  "task": "Run the p-sync-health-check process on tachin-website",
-  "accept_criteria": "Report confirming service status"
-}
-```
-
-Common mistakes:
-- `exec` is NOT an agent — it's a skill name. Use `motor` with the exec skill.
-- `system` / `System` is NOT an agent.
-- `cortex`, `prefrontal`, `cerebellum` are organ names, not task agents.
 
 ### Task atomicity
 Each task must be completable within motor's step budget (~50 tool calls, 300s timeout). If a task would require more, split it.

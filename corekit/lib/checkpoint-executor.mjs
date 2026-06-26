@@ -79,6 +79,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     startTaskIndex = 0,
     savedResults = [],
     buildProjectContext,
+    publishArtifacts,
   } = opts;
 
   const _requiredDeps = { dispatchAgent, envelope, firestoreWrite, writeHistory, log, generateId, buildProjectContext };
@@ -598,6 +599,21 @@ export async function executeCheckpoints(checkpoints, opts) {
         cpEnvelope.updated_at = new Date().toISOString();
         await firestoreWrite('work', cpId, cpEnvelope);
 
+        // Publish local work artifacts so the delegate can access them
+        if (envelope.project_id && publishArtifacts) {
+          try {
+            const artifacts = await publishArtifacts(envelope, { dryRun: false });
+            if (artifacts?.length > 0) {
+              log('INFO', `[delegation] Published ${artifacts.length} artifact(s) to Drive before delegating`);
+              // Append artifact references to the delegation instruction
+              const artifactRefs = artifacts.map(a => `📄 ${a.name}: ${a.driveUrl || a.id}`).join('\n');
+              taskDesc += `\n\n[SHARED ARTIFACTS — available in the project Drive folder]\n${artifactRefs}\nUse workspace-drive to download these files. Do NOT reference local filesystem paths.`;
+            }
+          } catch (e) {
+            log('WARN', `[delegation] Artifact publish before delegation failed: ${e.message}`);
+          }
+        }
+
         // Compose delegation marker for Mouth delivery
         // Resolve project Drive folder for delegate context
         const projCtx = (PROJECTS[envelope.project_id] || {}).context || {};
@@ -805,16 +821,10 @@ export async function executeCheckpoints(checkpoints, opts) {
       if (result.success && taskCriteria && taskAgent !== 'cerebellum' && tEnv.intent !== 'ack' && extractVerdict) {
         try {
           log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: dispatching to cerebellum for verification`);
-          // Research/recall agents produce informational output (not file writes)
-          const isResearchAgent = ['temporal-memory', 'temporal-research'].includes(taskAgent);
-          const researchHint = isResearchAgent
-            ? '\n\n> NOTE: This task was performed by a research/recall agent. These agents produce informational text output — they cannot write files or run commands. Evaluate whether the OUTPUT CONTENT addresses the criteria, not whether files were created or commands were executed. "No relevant results found" or a summary of findings both count as valid output.'
-            : '';
           const verification = await dispatchAgent('cerebellum', {
             instruction: [
               'Verify the following task output meets the acceptance criteria.',
               'Read the verification SKILL.md before rendering your verdict.',
-              researchHint,
               '',
               '## Accept Criteria',
               taskCriteria,

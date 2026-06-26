@@ -47,8 +47,8 @@ async function retryWithBackoff(fn, label) {
 }
 
 // ---- Loop guard: detect stuck tool-calling loops ----
-const DUPLICATE_NUDGE = 3;
-const DUPLICATE_TERMINATE = 5;
+const DUPLICATE_NUDGE = CONTRACTS?.gateway?.duplicate_nudge_threshold || 3;
+const DUPLICATE_TERMINATE = CONTRACTS?.gateway?.duplicate_terminate_threshold || 4;
 const ERROR_NUDGE = 5;
 const ERROR_TERMINATE = 8;
 const ERROR_PATTERNS = ['ERROR:', 'No such file', 'command not found',

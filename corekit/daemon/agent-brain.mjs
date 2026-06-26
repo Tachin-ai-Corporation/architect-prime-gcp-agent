@@ -2554,6 +2554,7 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
     startTaskIndex: taskIndex,
     savedResults,
     buildProjectContext,
+    publishArtifacts,
   });
 
   if (execResult.paused) {
@@ -2578,7 +2579,12 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
   }
 
   // Store results and let cortex synthesize
-  envelope.context_forward = `[CHECKPOINT PLAN RESULTS (resumed after crash)]\n${allResults.map(r => `${r.step} (${r.agent}): ${r.success ? 'OK' : 'FAIL'} — ${toStr(r.result).substring(0, 200)}`).join('\n')}`;
+  // Wait, let's just make sure this is accurate
+  envelope.context_forward = `[CHECKPOINT PLAN RESULTS (resumed after crash)]\n${
+    allResults.map(r => 
+        `${r.step || r.checkpoint_step || '?'} (${r.agent || '?'}): ${r.success ? 'OK' : 'FAIL'} — ${toStr(r.result).substring(0, 200)}`
+    ).join('\n')
+  }`;
   envelope.updated_at = now();
   await firestoreWrite('work', envelope.id, envelope);
 
@@ -3140,6 +3146,20 @@ async function checkWaitingEnvelopes() {
     ]);
 
     for (const waiting of waitingEnvelopes) {
+      if (waiting.status === 'waiting' && waiting.intent === 'delegation') {
+        const ageMs = Date.now() - new Date(waiting.started_at).getTime();
+        const timeoutMs = (CONTRACTS.dispatch?.delegation_timeout_hours || 4) * 3600_000;
+        if (ageMs > timeoutMs) {
+          log('WARN', `Delegation timeout: ${waiting.id} waiting for ${Math.round(ageMs / 3600_000)}h`);
+          waiting.status = 'failed';
+          waiting.error = `Delegation timed out after ${Math.round(ageMs / 3600_000)} hours. Delegate may be offline or stuck.`;
+          waiting.completed_at = now();
+          await firestoreWrite('work', waiting.id, waiting);
+          await writeHistory(waiting.id, 'waiting', 'failed', 'brain', 'Delegation timeout');
+          continue;
+        }
+      }
+
       // Check if any delegated children have completed or failed
       const children = waiting.children || [];
       if (children.length === 0) continue;

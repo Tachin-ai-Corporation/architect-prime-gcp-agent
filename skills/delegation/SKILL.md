@@ -68,6 +68,13 @@ Only `action: "delegate"` in the cortex decide response triggers delegation.
 - ✅ `action: "delegate"` with `target_email` from the project team
 - ✅ `type: "delegation"` task in `checkpoint_plan`
 
+## Cross-Agent Context (File Sharing)
+
+- **NEVER reference local filesystem paths** in delegation instructions. Delegates run on different VMs and cannot access your local files.
+- Before delegating, publish any files the delegate needs to the shared project Drive folder. Reference them by Drive file name or ID.
+- Use `work-publish` to upload files before delegating, or include the content inline in the delegation instruction if it's short (<2000 chars).
+- The brain will also automatically attempt to publish active artifacts before dispatching a delegation, but you must ensure the references in your instructions point to Drive, not local paths.
+
 ## Delegation vs Motor Tasks
 
 | Situation | Use |
