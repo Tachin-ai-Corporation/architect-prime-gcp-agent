@@ -436,20 +436,33 @@ export async function executeCheckpoints(checkpoints, opts) {
         const delegateSpecialty = task._specialty || taskAgent;
         log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: Cross-agent delegation to '${delegateSpecialty}'`);
 
-        // Direct email from cortex/prefrontal output takes priority
+        // Direct email from cortex/prefrontal output takes priority, but must be validated
         let targetAgentEmail = task.target_email || null;
+
+        // Validate target_email against fleet registry (Cortex can hallucinate emails)
+        if (targetAgentEmail) {
+          try {
+            const fleetSnap = await firestoreQuery('fleet', [
+              { field: 'email', op: 'EQUAL', value: { stringValue: targetAgentEmail } },
+            ]);
+            const onlineMatch = fleetSnap.find(a => a.status === 'online');
+            if (!onlineMatch) {
+              log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: target_email '${targetAgentEmail}' not found in fleet registry or not online — falling through to specialty lookup`);
+              targetAgentEmail = null; // Clear so fleet lookup runs below
+            }
+          } catch (e) {
+            log('WARN', `Delegation: fleet validation of '${targetAgentEmail}' failed: ${e.message} — using as-is`);
+          }
+        }
+
         if (!targetAgentEmail) {
           try {
-            const primesSnap = await firestoreQuery('primes', []);
-            for (const prime of primesSnap) {
-              const fleetSnap = await firestoreQuery('fleet', [
-                { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
-              ]);
-              const onlineAgent = fleetSnap.find(a => a.status === 'online');
-              if (onlineAgent) {
-                targetAgentEmail = onlineAgent.email;
-                break;
-              }
+            const fleetSnap = await firestoreQuery('fleet', [
+              { field: 'specialty', op: 'EQUAL', value: { stringValue: delegateSpecialty } },
+            ]);
+            const onlineAgent = fleetSnap.find(a => a.status === 'online');
+            if (onlineAgent) {
+              targetAgentEmail = onlineAgent.email;
             }
           } catch (e) {
             log('WARN', `Delegation: failed to resolve agent for specialty '${delegateSpecialty}': ${e.message}`);
