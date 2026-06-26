@@ -48,6 +48,7 @@ import { makeAddress } from '../corekit/lib/channel.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
+import { toStr } from '../corekit/lib/to-str.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
 import {
@@ -151,12 +152,7 @@ async function generateTitle(text, type = 'mission') {
   return _vtx.generateTitle(text, type);
 }
 
-// Coerce LLM output fields to string — Cortex/synthesize/motor may return objects
-function toStr(v) {
-  if (typeof v === 'string') return v;
-  if (v == null) return '';
-  return typeof v === 'object' ? (v.instruction || v.text || JSON.stringify(v)) : String(v);
-}
+// toStr imported from ../corekit/lib/to-str.mjs (single source of truth)
 
 /**
  * Build a delivery Address from decoded source_meta and source_channel.
@@ -462,6 +458,7 @@ function _initProcessEngine() {
     createCT,
     suggestContextPromotions,
     buildProjectContext,
+    completeEnvelope,
     onMissionComplete: async (mission) => {
       // Create delegation result envelope for delivery back to the delegator
       if (!mission.source_meta?.delegation_ref) return;
@@ -964,6 +961,11 @@ async function callPrefrontal(payload) {
     }, null, 2)}`);
   }
   sysParts.push('You MUST respond with exactly one JSON block and nothing else.');
+
+  // Skill catalog — gives prefrontal awareness of available skills for task planning
+  if (Object.keys(SKILL_INDEX).length > 0) {
+    sysParts.push(`[SKILL INDEX — available skills for task instructions]\n${formatSkillCatalog(SKILL_INDEX)}`);
+  }
   const systemPrompt = sysParts.join('\n\n');
 
   // Build user prompt: instruction + memory + accumulated context
@@ -2225,8 +2227,9 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
 
   if (targetEnv.status === 'active' || targetEnv.status === 'waiting') {
     // Check if this is truly a status query or a new instruction to act on
-    const isStatusQuery = /\b(?:status|progress|update|how.{0,10}going|where.{0,10}at|what.{0,10}happening)\b/i.test(intake.text);
+    const isStatusQuery = /\b(?:status|progress|how.{0,10}going|where.{0,10}at|what.{0,10}happening|any.{0,10}update|how.{0,10}coming)\b/i.test(intake.text);
     if (isStatusQuery) {
+      log('INFO', `Status query detected for ${targetId}: "${intake.text.substring(0, 60)}"`);
       // Status check — deliver current status
       const statusMsg = `I'm still working on that. Current task: "${targetEnv.instruction}". Status: ${targetEnv.status}, iteration ${targetEnv.iteration || 0}.`;
       const statusEnvId = generateId('w');
@@ -2314,7 +2317,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
   };
 
   await firestoreWrite('work', envelopeId, envelope);
-  log('INFO', `Created envelope: ${envelopeId} (type=M, fallback from intake, status=queued)`);
+  log('INFO', `Created envelope: ${envelopeId} (type=${envelope.type}, fallback from intake, status=queued)`);
   await writeHistory(envelopeId, null, 'queued', 'brain', 'Created from intake ' + intake.id);
 }
 
@@ -2801,13 +2804,14 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
         });
         continue;
       }
-      envelope.status = 'failed';
-      envelope.error = `Cortex error: ${JSON.stringify(decision)}`;
-      envelope.completed_at = now();
-      envelope.updated_at = now();
-      await firestoreWrite('work', envelope.id, envelope);
-      await writeHistory(envelope.id, 'active', 'failed', 'brain', envelope.error);
-      log('ERROR', `Envelope ${envelope.id} failed: ${envelope.error}`);
+      await completeEnvelope(envelope, {
+        status: 'failed',
+        output: `Cortex error: ${JSON.stringify(decision)}`,
+        historyDetail: `Cortex parse failure: ${JSON.stringify(decision).substring(0, 200)}`,
+        skipArtifacts: true,
+        skipMemory: true,
+      });
+      log('ERROR', `Envelope ${envelope.id} failed: Cortex error`);
       return;
     }
 

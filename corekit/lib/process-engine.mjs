@@ -47,6 +47,7 @@ import { toStr } from './to-str.mjs';
  * @param {function} [deps.cleanupSharedWorkspace] - async (envelopeId) => void
  * @param {function} [deps.fireEventResponsibilities] - async (eventType, ctx) => void
  * @param {function} [deps.suggestContextPromotions]  - async (envelope) => void
+ * @param {function} [deps.completeEnvelope]  - async (envelope, opts) => void  (unified lifecycle ceremony)
  * @param {object}   [deps.contextBudgets]  - { dispatchSuccess, dispatchFailure, agentStep, cortexStep }
  * @returns {object} Process engine API
  */
@@ -74,6 +75,7 @@ export function createProcessEngine(deps) {
     fireEventResponsibilities: _fireEventResp,
     suggestContextPromotions: _suggestPromo,
     onMissionComplete: _onMissionComplete,
+    completeEnvelope: _completeEnvelope,
     contextBudgets = {},
   } = deps;
 
@@ -917,82 +919,95 @@ export function createProcessEngine(deps) {
     const allResults = execResult.results;
     const planFailed = !execResult.success;
 
-    // ---- Step 5: Auto-complete the mission ----
+    // ---- Step 5: Auto-complete the mission via unified ceremony ----
     const processName = PROCESSES[mission.process_id]?.name || mission.process_id;
     const totalTasks = allResults.length;
     const successTasks = allResults.filter(r => r.success).length;
 
     if (planFailed) {
       const failedStep = allResults.find(r => !r.success);
-      mission.output = [
+      const outputText = [
         `❌ Process "${processName}" failed at step ${failedStep?.step || '?'}.`,
         '',
         ...allResults.map((r, i) => `${i + 1}. **${r.task}** (${r.agent}): ${r.success ? '✅' : '❌'} ${(r.result || '').substring(0, 150)}`),
         '',
         `Failed: ${failedStep?.result || 'Unknown error'}`,
       ].join('\n');
-      mission.status = 'blocked';
-      mission.blocker = `Process step failed: ${failedStep?.task || 'unknown'}`;
-      mission.blocker_type = 'task_failure';
-      mission.blocked_at = now();
+
+      if (_completeEnvelope) {
+        await _completeEnvelope(mission, {
+          status: 'blocked',
+          output: outputText,
+          historyDetail: `Process blocked: ${processName} (${successTasks}/${totalTasks} tasks)`,
+          blocker: `Process step failed: ${failedStep?.task || 'unknown'}`,
+          blockerType: 'task_failure',
+          eventType: 'on_failure',
+        });
+      } else {
+        // Fallback: inline ceremony (legacy — remove when all callers pass completeEnvelope)
+        mission.output = outputText;
+        mission.status = 'blocked';
+        mission.blocker = `Process step failed: ${failedStep?.task || 'unknown'}`;
+        mission.blocker_type = 'task_failure';
+        mission.blocked_at = now();
+        mission.updated_at = now();
+        if (!mission.parent_id) mission.delivery_status = 'pending';
+        await firestoreWrite('work', mission.id, mission);
+        await writeHistory(mission.id, 'active', 'blocked', 'brain',
+          `Process blocked: ${processName} (${successTasks}/${totalTasks} tasks)`);
+      }
     } else {
-      mission.output = [
+      const outputText = [
         `✅ Process "${processName}" completed successfully (${successTasks}/${totalTasks} tasks).`,
         '',
         ...allResults.map((r, i) => `${i + 1}. **${r.task}** (${r.agent}): ✅ ${(r.result || '').substring(0, 150)}`),
       ].join('\n');
-      mission.status = 'complete';
-      mission.completed_at = now();
-    }
 
-    mission.updated_at = now();
-    if (!mission.parent_id) mission.delivery_status = 'pending';
-    await firestoreWrite('work', mission.id, mission);
-    await writeHistory(mission.id, 'active', mission.status, 'brain',
-      `Process ${planFailed ? 'blocked' : 'complete'}: ${processName} (${successTasks}/${totalTasks} tasks)`);
+      if (_completeEnvelope) {
+        await _completeEnvelope(mission, {
+          status: 'complete',
+          output: outputText,
+          historyDetail: `Process complete: ${processName} (${successTasks}/${totalTasks} tasks)`,
+        });
+      } else {
+        // Fallback: inline ceremony (legacy — remove when all callers pass completeEnvelope)
+        mission.output = outputText;
+        mission.status = 'complete';
+        mission.completed_at = now();
+        mission.updated_at = now();
+        if (!mission.parent_id) mission.delivery_status = 'pending';
+        await firestoreWrite('work', mission.id, mission);
+        await writeHistory(mission.id, 'active', 'complete', 'brain',
+          `Process complete: ${processName} (${successTasks}/${totalTasks} tasks)`);
+        if (_writeMemory) await _writeMemory(mission);
+        if (_cleanupWs) await _cleanupWs(mission.id);
+        if (mission.type === 'M') {
+          if (projects) await projects.activateDependents(mission.id);
+          if (mission.project_id && projects) await projects.checkCompletion(mission.project_id);
+          if (_fireEventResp) await _fireEventResp('on_complete', { mission_id: mission.id, project_id: mission.project_id });
+        }
+        if (mission.project_id && mission.type === 'M' && mission.context && _suggestPromo) await _suggestPromo(mission);
+        if (_publishArtifacts && mission.type === 'M') {
+          const artifactLinks = await _publishArtifacts(mission);
+          if (artifactLinks && artifactLinks.length > 0) {
+            const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
+            mission.output = (mission.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
+            await firestoreWrite('work', mission.id, mission);
+          }
+        }
+      }
+    }
 
     log('INFO', `Process "${processName}" ${planFailed ? 'BLOCKED' : 'COMPLETE'}: ${successTasks}/${totalTasks} tasks`);
 
     // Delegation result callback — sends [DELEGATION-RESULT] back to delegator
-    if (!planFailed && mission.source_meta?.delegation_ref && _onMissionComplete) {
+    // Only needed when NOT using completeEnvelope (which handles delegation internally)
+    if (!_completeEnvelope && !planFailed && mission.source_meta?.delegation_ref && _onMissionComplete) {
       try {
         await _onMissionComplete(mission);
       } catch (e) {
         log('WARN', `onMissionComplete callback failed: ${e.message}`);
       }
-    }
-
-    // Publish shared workspace artifacts to Drive BEFORE cleanup
-    if (mission.type === 'M' && _publishArtifacts) {
-      const artifactLinks = await _publishArtifacts(mission);
-      if (artifactLinks && artifactLinks.length > 0) {
-        const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
-        mission.output = (mission.output || '') + `\n\n📎 **Artifacts published to Drive:**\n${linkText}`;
-        await firestoreWrite('work', mission.id, mission);
-      }
-    }
-
-    // Write to memory
-    if (_writeMemory) await _writeMemory(mission);
-    if (_cleanupWs) await _cleanupWs(mission.id);
-
-    // Activate dependent missions and fire event responsibilities
-    if (mission.type === 'M') {
-      if (projects) await projects.activateDependents(mission.id);
-      if (mission.project_id && projects) {
-        await projects.checkCompletion(mission.project_id);
-      }
-      if (_fireEventResp) {
-        await _fireEventResp('on_complete', {
-          mission_id: mission.id,
-          project_id: mission.project_id,
-        });
-      }
-    }
-
-    // Context promotion for project-scoped missions
-    if (mission.project_id && mission.type === 'M' && mission.context) {
-      if (_suggestPromo) await _suggestPromo(mission);
     }
   }
 
