@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.26.1.0)
+## Current Architecture (v2026.06.26.2.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -45,6 +45,13 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Bare failed lifecycle routing**: Parse-failure `status='failed'` in the cortex loop now routes through `completeEnvelope()` for consistent delivery status, history, and lifecycle handling.
   - **Status query regex fix**: Removed bare `update` from the `handleAttach` status-query regex (false-positive on "update the configuration"). Added `any.{0,10}update` and `how.{0,10}coming` patterns. Added INFO logging on matches.
   - **Log message fix**: `processIntakeAsNewTask` log now uses `${envelope.type}` instead of hardcoded `type=M`.
+- **Fleet Mission Success at Scale (v2026.06.26.2.0)**:
+  - **Delegation governance (3 guards)**: checkpoint-executor now enforces concurrent delegation guard (blocks if target agent has active delegations), delegation cap per checkpoint (configurable, default 4), and delegation dedup advisory nudge (warns cortex about re-delegating same work). New contracts: `max_delegations_per_checkpoint`, `delegation_dedup_window_hours`.
+  - **Post-success processify**: synthesize handler evaluates completed missions for repeatable workflows via Flash call. If the mission represents a processifiable pattern (ad-hoc, 2+ checkpoints, project-scoped), auto-creates a process in Firestore and links it to the project's `standardProcesses`. Agents build their own process library from successful work.
+  - **Plan-process alignment**: checkpoint_plan handler scans PROCESSES for intent_keyword matches before prefrontal dispatch, injecting matching process hints. Cortex decide payload includes `process_preference` guidance for projects with `standardProcesses`.
+  - **Post-mission context extraction**: synthesize handler mines project-relevant facts from completed mission output via Flash call. Discovered permissions, commands, URLs, failure modes are persisted to project context automatically.
+  - **Motor context discovery writes**: All 9 motor SOUL_APPEND files include "Project Context Discovery" section teaching agents to persist project facts during execution via `project-manage update`.
+  - **project-manage add-context/add-process**: Two new convenience subcommands for motor to persist project facts (context packets) and link processes to projects during execution.
 - **Brain Overhaul Audit Implementation (v2026.06.18.1)**:
   - **Motor Failure Detection Caller Wiring**: Imported and called `detectMotorFailure` in `checkpoint-executor.mjs` to check motor execution output/error and fail-fast if a token expiration or auth failure is found (resolved Gap 1 regression).
   - **toStr Coercion Protection**: All task and checkpoint string references (e.g. `.substring()`) are wrapped in `toStr` coercion to prevent crash sites when Cortex returns raw objects for task names (resolved Gap 2).

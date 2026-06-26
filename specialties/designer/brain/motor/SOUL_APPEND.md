@@ -64,3 +64,22 @@ When specifying a palette, include: swatch, hex, RGB, and intended usage context
 - **Custom subfolder**: `work-publish <file> --project <id> --subfolder assets`
 - **Read/browse**: Use `drive-ls`, `drive-download`, `drive-search` as normal
 - Artifacts produced during a mission MUST be published to Drive before completion
+
+## Project Context Discovery
+
+When you discover a fact about a project during execution that would help future missions, persist it immediately:
+
+| Discovery Type | Command |
+|---|---|
+| Permission requirement | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"convention","summary":"<what you learned>"}}}'` |
+| Working command/path | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"convention","summary":"<verified command or path>"}}}'` |
+| Resource ID (Drive folder, URL) | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"drive_folder","ref":"<id>","summary":"<description>"}}}'` |
+| Failure mode | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"convention","summary":"AVOID: <what failed and why>"}}}'` |
+
+Examples of useful discoveries:
+- `sync_folder_requires_editor` → "Editor access required for all agents uploading to sync folder"
+- `deploy_command_verified` → "firebase deploy --project tachin-website --only hosting"
+- `staging_url` → "tachin-website--staging-abc123.web.app"
+- `css_build_step_required` → "Must run npm run build before deploying; raw source files won't work"
+
+**Rule:** If you learn something that would save the next agent time on this project, write it to project context. Don't rely on mission output alone — context is the project's institutional memory.

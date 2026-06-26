@@ -13,6 +13,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     SKILL_INDEX,
     extractCheckpoints,
     executeCheckpoints,
+    PROCESSES,
     PROJECTS,
     addressFromMeta,
     summarizeForDelivery,
@@ -127,6 +128,21 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
+  // ---- Plan-Process alignment: nudge prefrontal toward existing processes ----
+  let processMatchHint = '';
+  if (PROCESSES && Object.keys(PROCESSES).length > 0) {
+    const planGoalText = (decision.goal || decision.instruction || decision.reasoning || envelope.instruction || '').toLowerCase();
+    const matchingProcesses = Object.values(PROCESSES).filter(p => {
+      if (p.status === 'deprecated') return false;
+      const keywords = p.intent_keywords || [];
+      return keywords.some(kw => planGoalText.includes(kw.toLowerCase()));
+    });
+    if (matchingProcesses.length > 0) {
+      log('INFO', `[checkpoint_plan] Process match: found ${matchingProcesses.length} matching process(es): ${matchingProcesses.map(p => p.id).join(', ')}`);
+      processMatchHint = `\n\n[EXISTING PROCESSES] The following processes may cover this work:\n${matchingProcesses.map(p => `- ${p.id}: ${p.name} (${(p.steps || []).length} steps) — ${(p.description || '').substring(0, 150)}`).join('\n')}\nConsider using follow_process to invoke these rather than re-inventing their steps. If you use checkpoint_plan, incorporate the process steps.`;
+    }
+  }
+
   // CP4: If cortex didn't provide a valid structure, dispatch to prefrontal
   if (!checkpoints || checkpoints.length === 0) {
     const planGoal = decision.goal || decision.instruction || decision.reasoning || envelope.instruction;
@@ -153,6 +169,8 @@ export async function handleCheckpointPlan(ctx, deps) {
           envelope._brief ? `## Brief\n${JSON.stringify(envelope._brief)}` : '',
           '',
           `## Skill Index\n${formatSkillCatalog(SKILL_INDEX)}`,
+          '',
+          processMatchHint || '',  // Process match hint if any
           '',
           decision.constraints ? `## Constraints\n${decision.constraints}` : '',
           priorResults.length > 0 ? `## Prior Results\n${priorResults.map(r =>

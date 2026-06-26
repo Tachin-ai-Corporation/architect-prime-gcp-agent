@@ -47,7 +47,9 @@
     "evidence_floor_exclude_skills": [
       "fleet-fire", "fleet-hire", "fleet-upgrade", "fleet-verify",
       "fleet-status", "fleet-deploy"
-    ]
+    ],
+    "max_delegations_per_checkpoint": 4,
+    "delegation_dedup_window_hours": 24
   },
   "ears": {
     "firestore_poll_ms": 3000,

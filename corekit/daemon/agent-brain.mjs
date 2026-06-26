@@ -1200,6 +1200,11 @@ function buildUserPrompt(mode, payload) {
         sequencing: 'Independent parts fan out within a checkpoint. Dependent parts serialize via checkpoint boundaries.',
         skill_guidance: 'When writing task instructions for motor, name the relevant skills from skill_index that the task will need. Motor will read the SKILL.md for exact syntax.',
       };
+      // Project-scoped process preference
+      if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
+        decidePayload.dispatch_guidance.process_preference = 
+          `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`;
+      }
     } else {
       // No Brief (non-execution-bound or analysis failed) — fall back to checkpoint_plan guidance
       decidePayload.dispatch_guidance = {
@@ -1207,6 +1212,11 @@ function buildUserPrompt(mode, payload) {
         reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The M→C→T hierarchy ensures progress tracking and enables re-planning on failure.',
         skill_guidance: 'When writing task instructions for motor, name the relevant skills from skill_index that the task will need. Motor will read the SKILL.md for exact syntax.',
       };
+      // Project-scoped process preference
+      if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
+        decidePayload.dispatch_guidance.process_preference = 
+          `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`;
+      }
     }
     return JSON.stringify(decidePayload);
   }

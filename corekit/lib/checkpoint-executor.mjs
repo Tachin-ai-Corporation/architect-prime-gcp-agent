@@ -93,6 +93,8 @@ export async function executeCheckpoints(checkpoints, opts) {
 
   let allResults = savedResults || [];
   let planFailed = false;
+  let delegationCount = 0;
+  const maxDelegations = contracts?.dispatch?.max_delegations_per_checkpoint || 4;
 
   const isPreStamped = checkpoints[0] && checkpoints[0].cEnvelope !== undefined;
 
@@ -184,6 +186,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     let cpResults = [];
     let cpFailed = false;
     let delegationDispatched = false;
+    delegationCount = 0;
 
     for (let ti = taskStartIdx; ti < cpTasks.length; ti++) {
       const task = cpTasks[ti];
@@ -474,6 +477,68 @@ export async function executeCheckpoints(checkpoints, opts) {
           taskAgent = 'motor';
           // Fall through to standard task execution below
         } else {
+
+        // ---- Concurrent delegation guard ----
+        // Don't send a new delegation if the target agent already has active work from us
+        try {
+          const activeDelegations = await firestoreQuery(`primes/${PRIME_ID}/work`, [
+            { field: 'source_meta.target_agent_email', op: 'EQUAL', value: { stringValue: targetAgentEmail } },
+            { field: 'status', op: 'IN', value: { arrayValue: { values: [
+              { stringValue: 'active' }, { stringValue: 'waiting' },
+              { stringValue: 'queued' }, { stringValue: 'pending' },
+            ]}}},
+          ]);
+          if (activeDelegations.length > 0) {
+            log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation to ${targetAgentEmail} blocked — ${activeDelegations.length} active delegation(s) exist: ${activeDelegations.map(d => d.id).join(', ')}`);
+            cpResults.push({
+              step: `${cpNum}.${taskNum}`, agent: taskAgent,
+              result: `[BLOCKED] ${targetAgentEmail} already has ${activeDelegations.length} active delegation(s). Wait for completion before re-delegating.`,
+              success: false,
+            });
+            if (!isOptional) { cpFailed = true; break; }
+            continue;
+          }
+        } catch (e) {
+          log('WARN', `[checkpoint-executor] Concurrent delegation check failed: ${e.message} — proceeding anyway`);
+        }
+
+        // ---- Delegation cap guard ----
+        delegationCount++;
+        if (delegationCount > maxDelegations) {
+          log('WARN', `[checkpoint-executor] CP${cpNum}: delegation cap reached (${maxDelegations}). Blocking further delegations.`);
+          cpResults.push({
+            step: `${cpNum}.${taskNum}`, agent: taskAgent,
+            result: `[BLOCKED] Delegation cap reached (${maxDelegations} per checkpoint). Synthesize with existing results or escalate.`,
+            success: false,
+          });
+          if (!isOptional) { cpFailed = true; break; }
+          continue;
+        }
+
+        // ---- Delegation dedup nudge ----
+        try {
+          const dedupWindowMs = (contracts?.dispatch?.delegation_dedup_window_hours || 24) * 3600_000;
+          const cutoff = new Date(Date.now() - dedupWindowMs).toISOString();
+          const recentDelegations = await firestoreQuery(`primes/${PRIME_ID}/work`, [
+            { field: 'source_meta.target_agent_email', op: 'EQUAL', value: { stringValue: targetAgentEmail } },
+            { field: 'source_meta.dispatched_by', op: 'EQUAL', value: { stringValue: cpId } },
+          ]);
+          const recentSameTarget = recentDelegations.filter(d => 
+            ['complete', 'failed', 'blocked'].includes(d.status) && d.created_at > cutoff
+          );
+          if (recentSameTarget.length > 0) {
+            const lastResult = recentSameTarget[0];
+            log('INFO', `[checkpoint-executor] Delegation dedup: found ${recentSameTarget.length} recent delegation(s) to ${targetAgentEmail}`);
+            // Inject advisory nudge — not blocking, but makes cortex aware
+            cpResults.push({
+              step: `${cpNum}.${taskNum}`, agent: 'system',
+              result: `[ADVISORY] Previous delegation to ${targetAgentEmail} for this checkpoint ${lastResult.status} with: "${(lastResult.output || '').substring(0, 300)}". This new delegation should address what was different.`,
+              success: true,
+            });
+          }
+        } catch (e) {
+          log('WARN', `[checkpoint-executor] Delegation dedup check failed: ${e.message}`);
+        }
 
         // Create Task envelope with status='waiting'
         const taskId = generateId('w');

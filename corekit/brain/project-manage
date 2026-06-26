@@ -13,6 +13,8 @@
 #   project-manage team-add <id> '<json>'                      # Add/update team member (JSON)
 #   project-manage team-remove <id> <email># Remove team member by email
 #   project-manage team-list <id>          # List team members in table format
+#   project-manage add-context <id> <key> '<json-or-string>'  # Add/update a single context key
+#   project-manage add-process <id> <process-id>              # Link a process to the project
 #
 # The JSON for create must include: id, name, description, context, goal
 # Optional fields: owner (defaults to AGENT_USER_EMAIL), parent_id, depends_on
@@ -1386,6 +1388,178 @@ for a in new_authority:
 "
     ;;
 
+  add-context)
+    TARGET_ID="${1:?'add-context requires a project id'}"
+    CTX_KEY="${2:?'add-context requires a context key'}"
+    CTX_VALUE="${3:?'add-context requires a value (JSON packet or plain string)'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+ctx_key = '$CTX_KEY'
+raw_value = '''$CTX_VALUE'''
+
+# Determine if value is a context packet or a plain string
+try:
+    parsed = json.loads(raw_value)
+    if isinstance(parsed, dict) and 'kind' in parsed:
+        packet = parsed
+    else:
+        raise ValueError('no kind field')
+except (json.JSONDecodeError, ValueError):
+    packet = {
+        'kind': 'convention',
+        'summary': raw_value,
+        'updatedAt': datetime.now(timezone.utc).isoformat(),
+        'updatedBy': 'agent'
+    }
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field: return field['stringValue']
+    if 'integerValue' in field: return int(field['integerValue'])
+    if 'booleanValue' in field: return field['booleanValue']
+    if 'doubleValue' in field: return field['doubleValue']
+    if 'nullValue' in field: return None
+    if 'mapValue' in field: return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field: return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field: return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Deep-merge context: set the single key
+existing_ctx = existing.get('context', {})
+if not isinstance(existing_ctx, dict):
+    existing_ctx = {}
+existing_ctx[ctx_key] = packet
+existing['context'] = existing_ctx
+existing['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+def to_firestore(value):
+    if value is None: return {'nullValue': None}
+    if isinstance(value, bool): return {'booleanValue': value}
+    if isinstance(value, int): return {'integerValue': str(value)}
+    if isinstance(value, float): return {'doubleValue': value}
+    if isinstance(value, str): return {'stringValue': value}
+    if isinstance(value, list): return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict): return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update context: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'Added context key \"{ctx_key}\" to project \"{target_id}\".')
+"
+    ;;
+
+  add-process)
+    TARGET_ID="${1:?'add-process requires a project id'}"
+    PROCESS_ID="${2:?'add-process requires a process id'}"
+    python3 -c "
+import json, sys, subprocess
+from datetime import datetime, timezone
+
+target_id = '$TARGET_ID'
+process_id = '$PROCESS_ID'
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+path = '${COLLECTION_PATH}'
+url = f'{base}/{path}/{target_id}'
+
+# Fetch existing document
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Project \"{target_id}\" not found or request failed: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+
+def extract_value(field):
+    if 'stringValue' in field: return field['stringValue']
+    if 'integerValue' in field: return int(field['integerValue'])
+    if 'booleanValue' in field: return field['booleanValue']
+    if 'doubleValue' in field: return field['doubleValue']
+    if 'nullValue' in field: return None
+    if 'mapValue' in field: return {k: extract_value(v) for k, v in field['mapValue'].get('fields', {}).items()}
+    if 'arrayValue' in field: return [extract_value(v) for v in field['arrayValue'].get('values', [])]
+    if 'timestampValue' in field: return field['timestampValue']
+    return str(field)
+
+existing = {k: extract_value(v) for k, v in fields.items()}
+
+# Read current standardProcesses array
+processes = existing.get('standardProcesses', [])
+if not isinstance(processes, list):
+    processes = []
+
+if process_id in processes:
+    print(f'Already linked: process \"{process_id}\" is already in project \"{target_id}\".')
+    sys.exit(0)
+
+processes.append(process_id)
+existing['standardProcesses'] = processes
+existing['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+def to_firestore(value):
+    if value is None: return {'nullValue': None}
+    if isinstance(value, bool): return {'booleanValue': value}
+    if isinstance(value, int): return {'integerValue': str(value)}
+    if isinstance(value, float): return {'doubleValue': value}
+    if isinstance(value, str): return {'stringValue': value}
+    if isinstance(value, list): return {'arrayValue': {'values': [to_firestore(v) for v in value]}}
+    if isinstance(value, dict): return {'mapValue': {'fields': {k: to_firestore(v) for k, v in value.items()}}}
+    return {'stringValue': str(value)}
+
+firestore_doc = {'fields': {k: to_firestore(v) for k, v in existing.items()}}
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'PATCH', url,
+     '-H', f'Authorization: Bearer {token}',
+     '-H', 'Content-Type: application/json',
+     '-d', json.dumps(firestore_doc)],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to update standardProcesses: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+print(f'Linked process \"{process_id}\" to project \"{target_id}\".')
+"
+    ;;
+
   help|*)
     echo "Usage: project-manage <command> [args]"
     echo ""
@@ -1405,6 +1579,8 @@ for a in new_authority:
     echo "  canon-list <id>                                   List all canon entries"
     echo "  canon-remove <id> <key>                           Remove a canon entry"
     echo "  canon-authority <id> <email1> [email2...]         Set canon authority list"
+    echo "  add-context <id> <key> '<json-or-string>'          Add/update a single context key"
+    echo "  add-process <id> <process-id>                      Link a process to standardProcesses"
     echo ""
     echo "Canon entries are authoritative project facts injected prominently into all agent context."
     echo "Only users in the authority list can modify canon entries."
