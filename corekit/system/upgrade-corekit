@@ -151,7 +151,7 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
         NEEDS_INSTALL=1
       elif [[ "$UNIT_NAME" == "command-runner.service" ]]; then
         # If it is command-runner.service, also check if it lacks GCP_PROJECT_ID/PRIME_ID
-        if ! grep -q "GCP_PROJECT_ID" "/etc/systemd/system/${UNIT_NAME}" 2>/dev/null; then
+        if ! grep -q "GCP_PROJECT_ID" "/etc/systemd/system/${UNIT_NAME}" 2>/dev/null || ! grep -q "PRIME_ID" "/etc/systemd/system/${UNIT_NAME}" 2>/dev/null; then
           NEEDS_INSTALL=1
         fi
       fi
