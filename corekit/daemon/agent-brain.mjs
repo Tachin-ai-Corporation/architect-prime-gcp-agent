@@ -3176,8 +3176,8 @@ async function checkWaitingEnvelopes() {
           continue;
         }
 
-        // Terminal states: complete, failed, archived, cancelled, blocked
-        if (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled' || child.status === 'blocked') {
+        // Terminal states: complete, failed, archived, cancelled, blocked, needs_input
+        if (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled' || child.status === 'blocked' || child.status === 'needs_input') {
           const isSuccess = child.status === 'complete' || child.status === 'archived';
           childResults.push({
             agent: child.owner,

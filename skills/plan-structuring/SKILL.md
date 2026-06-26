@@ -44,6 +44,28 @@ Return a JSON object with a `checkpoints` array:
 
 ## Rules
 
+### Simplicity first
+
+The best plan is the simplest plan that gets the work done.
+
+**Default: 1 checkpoint.** Most tasks need one checkpoint with 1-3 tasks.
+Only add a second checkpoint when the work genuinely requires a phase gate:
+- An approval gate (human must approve before continuing)
+- A different agent takes over (design phase → deployment phase)
+- The first phase must fully complete and be verified before the second can start
+
+Do NOT create a new checkpoint for:
+- Risk level changes within the same agent's work (read → write is not a checkpoint boundary)
+- Verification steps (the executor handles verification automatically)
+- "Analyze then implement" — these are two tasks in one checkpoint, not two checkpoints
+
+**Count your tasks.** If your plan has more than 5 tasks total, it's probably
+over-decomposed. Ask: could two adjacent tasks be one task? Usually yes.
+
+**Delegation plans are simple.** A plan that delegates work to one agent is:
+1 checkpoint, 1 delegation task. A plan that delegates to two agents in sequence 
+is: 2 checkpoints, 1 delegation task each. That's it.
+
 ### Valid task agents — capabilities and limits
 
 For standard tasks, the `agent` field MUST be exactly one of:

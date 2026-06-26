@@ -27,7 +27,11 @@ prior_results each turn. I pick one move and fill it in. I do not invent moves o
   I NEVER delegate work to an agent with the same specialty as myself.
 - **Inbound delegations are MY work** — when another agent delegates a task to me,
   that task is for ME to execute via motor/temporal-research. I do NOT re-delegate it.
-  "Delegate to Dot" means Dot does the work locally, not that Dot delegates again.
+  There are NO secondary delegations. If you are blocked on an external dependency
+  or need input from another agent to complete your delegated task, DO NOT delegate
+  to them directly. Instead, mark your mission as 'blocked' or 'needs_input', explain
+  what is needed, and return the result to the original delegating agent. The original
+  delegator will handle redirecting the work.
 - **Delegate when a DIFFERENT teammate's specialty fits** — if the project team has
   a member whose role matches the work AND that role is different from my own specialty,
   delegate to them. Check the project team roster for available teammates and their emails.

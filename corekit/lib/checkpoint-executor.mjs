@@ -168,6 +168,14 @@ export async function executeCheckpoints(checkpoints, opts) {
 
     if (taskStartIdx >= cpTasks.length) {
       log('INFO', `[checkpoint-executor] CP${cpNum} all tasks already complete, skipping`);
+      if (cpEnvelope && cpEnvelope.status !== 'complete') {
+        cpEnvelope.status = 'complete';
+        cpEnvelope.output = 'Skipped (no tasks or all tasks complete)';
+        cpEnvelope.updated_at = new Date().toISOString();
+        if (!cpEnvelope.completed_at) cpEnvelope.completed_at = new Date().toISOString();
+        await firestoreWrite('work', cpId, cpEnvelope);
+        await writeHistory(cpId, cpEnvelope.status, 'complete', 'brain', 'Skipped (empty or all tasks already complete)');
+      }
       continue;
     }
 

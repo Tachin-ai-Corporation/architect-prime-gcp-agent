@@ -154,14 +154,14 @@ export function createLifecycleHandler(deps) {
       }
 
       // Delegation result reply
-      if (status === 'complete' && envelope.source_meta?.delegation_ref) {
+      if (['complete', 'failed', 'blocked', 'needs_input', 'cancelled'].includes(status) && envelope.source_meta?.delegation_ref) {
         try {
           const resultMarker = composeDelegationResultMarker({
             targetEmail: envelope.source_meta.delegated_from || '',
             ref: envelope.source_meta.delegation_ref,
             status: envelope.status,
             missionId: envelope.id,
-            body: toStr(envelope.output).substring(0, 500),
+            body: toStr(envelope.output || envelope.error || envelope.status).substring(0, 500),
           });
           const resultOutputId = generateId('w');
           await firestoreWrite('work', resultOutputId, {

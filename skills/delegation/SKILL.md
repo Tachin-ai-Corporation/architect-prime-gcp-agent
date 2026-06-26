@@ -44,6 +44,32 @@ Use `action: "checkpoint_plan"` with `type: "delegation"` on specific tasks. Thi
 ```
 
 **Important**: Set `type: "delegation"` on the task. The checkpoint executor reads this to route the task to the delegation pipeline instead of Motor.
+## Procedures
+
+### Composing a delegation instruction
+
+A good delegation instruction is specific enough that the delegate can start
+working immediately without re-planning. Include:
+
+1. **What to do** — the specific action, not a goal
+   Bad: "Improve the website design"
+   Good: "Update the hero section of index.html with a new headline and color scheme"
+
+2. **Input files** — by Drive folder ID or file name
+   "Download index.html from Drive folder 1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV"
+
+3. **Specific changes** — what to modify
+   "Replace the headline text with 'AI Workforce Platform'. Change the primary 
+    color from #333 to #1a1a2e. Add a subtitle: 'Deploy AI agents as your workforce.'"
+
+4. **Where to put the output** — Drive folder ID
+   "Upload the updated files to the project artifacts folder"
+
+5. **Acceptance criteria** — how to verify
+   "Hero section displays new headline. Primary color is #1a1a2e. Files uploaded."
+
+If you can't fill in all 5 fields, you don't understand the task well enough to
+delegate it. Read the project context and files first, then delegate.
 
 ## Target Resolution
 
