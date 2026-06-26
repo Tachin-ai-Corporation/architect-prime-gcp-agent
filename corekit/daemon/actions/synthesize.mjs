@@ -54,7 +54,7 @@ export async function handleSynthesize(ctx, deps) {
  * Runs after successful mission synthesis. Non-blocking — errors are swallowed.
  */
 async function postCompletionLearning(envelope, priorResults, synthesisOutput, deps) {
-  const { log, callAgent, enforceSchema, PROCESSES, PROJECTS, firestoreWrite, firestoreQuery,
+  const { log, summarizeViaVertex, PROCESSES, PROJECTS, firestoreWrite, firestoreQuery,
           PRIME_ID, CORE_DIR, getAuthToken, FIRESTORE_BASE } = deps;
 
   // Guard: only run for M-type missions with a project, with 2+ checkpoints
@@ -88,7 +88,7 @@ async function postCompletionLearning(envelope, priorResults, synthesisOutput, d
  * If yes, create a new process definition in Firestore and link it to the project.
  */
 async function tryProcessify(envelope, workSummary, priorResults, deps) {
-  const { log, callAgent, enforceSchema, PROCESSES, firestoreWrite, PRIME_ID } = deps;
+  const { log, summarizeViaVertex, PROCESSES, firestoreWrite, PRIME_ID } = deps;
 
   try {
     // Check if a similar process already exists (by instruction keyword match)
@@ -103,38 +103,32 @@ async function tryProcessify(envelope, workSummary, priorResults, deps) {
     }
 
     // Ask Flash to evaluate processify potential
-    const evalResult = await callAgent('cortex', {
-      instruction: [
-        '[PROCESSIFY EVALUATION]',
-        'Analyze this completed mission and determine if it represents a repeatable workflow.',
-        '',
-        '## Mission',
-        `Instruction: ${envelope.instruction || ''}`,
-        `Project: ${envelope.project_id}`,
-        `Checkpoints completed: ${(envelope.children || []).length}`,
-        '',
-        '## Work Summary',
-        workSummary.substring(0, 3000),
-        '',
-        '## Evaluation Criteria',
-        '- Did the mission follow a sequence of steps that would be the same next time?',
-        '- Were there 3+ meaningful steps that form a natural pipeline?',
-        '- Is this work likely to recur (not a one-off investigation or question)?',
-        '',
-        'Respond with JSON:',
-        '{ "processify": true/false, "process_draft": { "id": "p-...", "name": "...", "description": "...", "intent_keywords": ["..."], "steps": [{"title":"...","description":"...","agent":"motor|temporal-research","type":"standard","accept_criteria":"..."}] } }',
-        'If processify is false, omit process_draft.',
-      ].join('\n'),
-      _missionId: envelope.id,
-      _skipMemory: true,
-    });
+    const evalInstruction = [
+      '[PROCESSIFY EVALUATION]',
+      'Analyze this completed mission and determine if it represents a repeatable workflow.',
+      '',
+      '## Mission',
+      `Instruction: ${envelope.instruction || ''}`,
+      `Project: ${envelope.project_id}`,
+      `Checkpoints completed: ${(envelope.children || []).length}`,
+      '',
+      '## Evaluation Criteria',
+      '- Did the mission follow a sequence of steps that would be the same next time?',
+      '- Were there 3+ meaningful steps that form a natural pipeline?',
+      '- Is this work likely to recur (not a one-off investigation or question)?',
+      '',
+      'Respond with JSON:',
+      '{ "processify": true/false, "process_draft": { "id": "p-...", "name": "...", "description": "...", "intent_keywords": ["..."], "steps": [{"title":"...","description":"...","agent":"motor|temporal-research","type":"standard","accept_criteria":"..."}] } }',
+      'If processify is false, omit process_draft.',
+    ].join('\n');
+    const evalOutput = await summarizeViaVertex(workSummary.substring(0, 3000), evalInstruction);
 
-    if (!evalResult?.success || !evalResult?.output) return;
+    if (!evalOutput) return;
 
     let parsed;
     try {
       // Try to extract JSON from the response
-      const jsonMatch = evalResult.output.match(/\{[\s\S]*\}/);
+      const jsonMatch = evalOutput.match(/\{[\s\S]*\}/);
       if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
     } catch { /* ignore parse errors */ }
 
@@ -214,7 +208,7 @@ async function tryProcessify(envelope, workSummary, priorResults, deps) {
  * Phase 5.2: Extract project-relevant facts from mission output and persist to project context.
  */
 async function tryContextExtraction(envelope, synthesisOutput, workSummary, deps) {
-  const { log, callAgent, PROJECTS, getAuthToken, FIRESTORE_BASE } = deps;
+  const { log, summarizeViaVertex, PROJECTS, getAuthToken, FIRESTORE_BASE } = deps;
 
   try {
     const project = PROJECTS[envelope.project_id];
@@ -224,43 +218,41 @@ async function tryContextExtraction(envelope, synthesisOutput, workSummary, deps
     const existingKeys = Object.keys(existingContext).join(', ');
 
     // Ask Flash to extract project-relevant facts
-    const extractResult = await callAgent('cortex', {
-      instruction: [
-        '[CONTEXT EXTRACTION]',
-        'Extract project-relevant facts from this completed mission that would help future missions.',
-        '',
-        `## Project: ${project.name} (${envelope.project_id})`,
-        `Existing context keys: ${existingKeys || 'none'}`,
-        '',
-        '## Mission Output',
-        (synthesisOutput || '').substring(0, 2000),
-        '',
-        '## Work Summary',
-        workSummary.substring(0, 2000),
-        '',
-        '## What to extract',
-        '- Permission requirements discovered',
-        '- Working commands/paths/URLs verified during execution',
-        '- Folder structures, file locations, resource IDs',
-        '- Deployment procedures that worked',
-        '- Known failure modes and workarounds',
-        '',
-        'DO NOT extract: task-specific one-off details, opinions, intermediate debugging steps.',
-        'DO NOT duplicate keys already in existing context.',
-        '',
-        'Respond with JSON:',
-        '{ "updates": { "<key>": { "kind": "convention|url|drive_folder|doc", "summary": "<fact>", "ref": "<id-if-applicable>" } } }',
-        'If no new facts worth persisting, respond: { "updates": {} }',
-      ].join('\n'),
-      _missionId: envelope.id,
-      _skipMemory: true,
-    });
+    const extractInstruction = [
+      '[CONTEXT EXTRACTION]',
+      'Extract project-relevant facts from this completed mission that would help future missions.',
+      '',
+      `## Project: ${project.name} (${envelope.project_id})`,
+      `Existing context keys: ${existingKeys || 'none'}`,
+      '',
+      '## What to extract',
+      '- Permission requirements discovered',
+      '- Working commands/paths/URLs verified during execution',
+      '- Folder structures, file locations, resource IDs',
+      '- Deployment procedures that worked',
+      '- Known failure modes and workarounds',
+      '',
+      'DO NOT extract: task-specific one-off details, opinions, intermediate debugging steps.',
+      'DO NOT duplicate keys already in existing context.',
+      '',
+      'Respond with JSON:',
+      '{ "updates": { "<key>": { "kind": "convention|url|drive_folder|doc", "summary": "<fact>", "ref": "<id-if-applicable>" } } }',
+      'If no new facts worth persisting, respond: { "updates": {} }',
+    ].join('\n');
+    const inputText = [
+      '## Mission Output',
+      (synthesisOutput || '').substring(0, 2000),
+      '',
+      '## Work Summary',
+      workSummary.substring(0, 2000),
+    ].join('\n');
+    const extractOutput = await summarizeViaVertex(inputText, extractInstruction);
 
-    if (!extractResult?.success || !extractResult?.output) return;
+    if (!extractOutput) return;
 
     let parsed;
     try {
-      const jsonMatch = extractResult.output.match(/\{[\s\S]*\}/);
+      const jsonMatch = extractOutput.match(/\{[\s\S]*\}/);
       if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
     } catch { /* ignore parse errors */ }
 

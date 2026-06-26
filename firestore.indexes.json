@@ -42,6 +42,14 @@
         {"fieldPath": "status", "order": "ASCENDING"},
         {"fieldPath": "createdAt", "order": "DESCENDING"}
       ]
+    },
+    {
+      "collectionGroup": "work",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "source_meta.target_agent_email", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"}
+      ]
     }
   ],
   "fieldOverrides": []

@@ -2702,6 +2702,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     addressFromMeta,
     summarizeForDelivery,
     smartSummarize,
+    summarizeViaVertex,
     getAuthToken,
     FIRESTORE_BASE,
     PRIME_ID,

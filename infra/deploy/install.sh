@@ -101,6 +101,17 @@ gcloud firestore databases create \
   && ok "Firestore database created" \
   || ok "Firestore database already exists"
 
+# ---- Step 3b: Deploy Firestore composite indexes ----
+info "Deploying Firestore composite indexes..."
+if command -v firebase >/dev/null 2>&1; then
+  firebase deploy --only firestore:indexes --project "$PROJECT_ID" --force 2>/dev/null \
+    && ok "Firestore indexes deployed" \
+    || warn "Firestore index deploy failed (non-critical — indexes can be created manually)"
+else
+  warn "firebase CLI not found — skipping index deploy. Run manually:"
+  warn "  npm install -g firebase-tools && firebase deploy --only firestore:indexes --project $PROJECT_ID"
+fi
+
 # ---- Step 4: Create service account for Cloud Run ----
 info "Creating Cloud Run service account: ${SA_NAME}..."
 gcloud iam service-accounts create "$SA_NAME" \

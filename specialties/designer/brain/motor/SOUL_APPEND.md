@@ -71,10 +71,10 @@ When you discover a fact about a project during execution that would help future
 
 | Discovery Type | Command |
 |---|---|
-| Permission requirement | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"convention","summary":"<what you learned>"}}}'` |
-| Working command/path | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"convention","summary":"<verified command or path>"}}}'` |
-| Resource ID (Drive folder, URL) | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"drive_folder","ref":"<id>","summary":"<description>"}}}'` |
-| Failure mode | `project-manage update '<project_id>' '{"context":{"<key>":{"kind":"convention","summary":"AVOID: <what failed and why>"}}}'` |
+| Permission requirement | `project-manage add-context '<project_id>' '<key>' '<what you learned>'` |
+| Working command/path | `project-manage add-context '<project_id>' '<key>' '<verified command or path>'` |
+| Resource ID (Drive folder, URL) | `project-manage add-context '<project_id>' '<key>' '{"kind":"drive_folder","ref":"<id>","summary":"<description>"}'` |
+| Failure mode | `project-manage add-context '<project_id>' '<key>' 'AVOID: <what failed and why>'` |
 
 Examples of useful discoveries:
 - `sync_folder_requires_editor` → "Editor access required for all agents uploading to sync folder"
