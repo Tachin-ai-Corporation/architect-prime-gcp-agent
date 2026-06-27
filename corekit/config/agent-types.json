@@ -78,7 +78,7 @@
       "accent": "#94a3b8",
       "specialty": "Scheduling, communications, admin tasks, document drafting, information gathering",
       "emailPattern": "assistant-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "skill-introspect", "memory-consolidate", "calendar-email-ops"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "workspace-sheets", "workspace-slides", "skill-introspect", "memory-consolidate", "calendar-ops"],
       "brain": true
     },
     {

@@ -1,0 +1,13 @@
+{
+  "id": "calendar-ops",
+  "name": "Calendar Operations",
+  "version": 2,
+  "description": "Procedures for calendar management, scheduling, and timezone handling.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "productivity",
+  "agent_part": "motor",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "When managing calendar events, scheduling meetings, or checking timezone offsets."
+}

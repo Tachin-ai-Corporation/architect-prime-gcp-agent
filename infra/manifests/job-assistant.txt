@@ -35,6 +35,22 @@ skills/workspace-docs/docs-find-replace bin/docs-find-replace
 skills/workspace-docs/docs-comments-list bin/docs-comments-list
 skills/workspace-docs/docs-comments-add bin/docs-comments-add
 
+# Workspace skills — Sheets
+skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
+skills/workspace-sheets/sheets-get bin/sheets-get
+skills/workspace-sheets/sheets-append bin/sheets-append
+skills/workspace-sheets/sheets-update bin/sheets-update
+
+# Workspace skills — Google Slides
+skills/workspace-slides/SKILL.md skills/workspace-slides/SKILL.md
+skills/workspace-slides/skill.json skills/workspace-slides/skill.json
+skills/workspace-slides/slides-create bin/slides-create
+skills/workspace-slides/slides-get bin/slides-get
+skills/workspace-slides/slides-update bin/slides-update
+skills/workspace-slides/slides-add-slide bin/slides-add-slide
+skills/workspace-slides/slides-duplicate bin/slides-duplicate
+
 # Assistant responsibilities
 specialties/assistant/responsibilities-assistant.json corekit/responsibilities-job.json
 
@@ -44,5 +60,5 @@ specialties/assistant/brain/motor/SOUL_APPEND.md corekit/specialties/assistant/b
 specialties/assistant/brain/cerebellum/SOUL_APPEND.md corekit/specialties/assistant/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty skills
-specialties/assistant/skills/calendar-email-ops/SKILL.md corekit/specialties/assistant/skills/calendar-email-ops/SKILL.md
-specialties/assistant/skills/calendar-email-ops/skill.json corekit/specialties/assistant/skills/calendar-email-ops/skill.json
+specialties/assistant/skills/calendar-ops/SKILL.md corekit/specialties/assistant/skills/calendar-ops/SKILL.md
+specialties/assistant/skills/calendar-ops/skill.json corekit/specialties/assistant/skills/calendar-ops/skill.json
