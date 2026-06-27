@@ -11,6 +11,32 @@ DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id>"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}")
+
+# Check if the Docs API is disabled or returned an error that we can bypass using Drive export fallback
+IS_DISABLED=0
+if [[ "$HTTP_CODE" != "200" ]]; then
+  if grep -q "SERVICE_DISABLED" /tmp/docs-response.json 2>/dev/null; then
+    IS_DISABLED=1
+  fi
+fi
+
+if [[ "$IS_DISABLED" == "1" ]]; then
+  DRIVE_API="https://www.googleapis.com/drive/v3"
+  # Fallback to Drive API export
+  DRIVE_TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+  # Fetch title
+  TITLE_RESP=$(curl -s -H "Authorization: Bearer ${DRIVE_TOKEN}" "${DRIVE_API}/files/${DOC_ID}?fields=name")
+  TITLE=$(python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('name','Untitled Doc'))" <<< "$TITLE_RESP")
+  # Fetch text
+  TEXT=$(curl -s -H "Authorization: Bearer ${DRIVE_TOKEN}" "${DRIVE_API}/files/${DOC_ID}/export?mimeType=text/plain")
+  python3 -c "
+import json, sys
+text = sys.stdin.read()
+print(json.dumps({'docId': '$DOC_ID', 'title': '$TITLE', 'text': text, 'chars': len(text)}, indent=2))
+" <<< "$TEXT"
+  exit 0
+fi
+
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
