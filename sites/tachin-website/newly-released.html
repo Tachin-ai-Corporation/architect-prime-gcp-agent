@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What's New — Tachin.ai</title>
+  <meta name="description" content="The latest announcements, product updates, and news from Tachin.ai.">
+  <meta property="og:title" content="What's New — Tachin.ai">
+  <meta property="og:description" content="The latest announcements, product updates, and news from Tachin.ai.">
+  <meta property="og:image" content="assets/og-image.png">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===== NAV ===== -->
+  <nav class="nav" id="nav">
+    <div class="nav__inner">
+      <a href="index.html" aria-label="Tachin.ai Home">
+        <span style="font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); color: var(--color-primary);">Tachin.ai</span>
+      </a>
+      <ul class="nav__links">
+        <li><a href="about.html" class="nav__link">About</a></li>
+        <li><a href="security.html" class="nav__link">Security</a></li>
+        <li><a href="newly-released.html" class="nav__link nav__link--active">Blog</a></li>
+        <li><a href="index.html#contact" class="btn btn--primary">Request Demo</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ===== HERO ===== -->
+  <section class="hero">
+    <div class="container">
+      <h1 class="hero__headline">What's New</h1>
+      <p class="hero__subhead">
+        Product updates, company news, and insights from the Tachin.ai team.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== POSTS ===== -->
+  <section class="section">
+    <div class="container">
+      <div class="post-list">
+
+        <article class="post-item">
+          <time class="post-item__date" datetime="2026-06-15">June 15, 2026</time>
+          <h2 class="post-item__title">Introducing Tachin.ai — Clinical Intelligence for the Modern Health System</h2>
+          <p class="post-item__excerpt">
+            Today we're publicly launching Tachin.ai, a platform purpose-built to transform complex clinical data into actionable insights. Our founding team combines decades of experience across clinical medicine, AI research, and enterprise healthcare technology.
+          </p>
+          <a href="#" class="btn btn--ghost" style="margin-top: var(--space-2);">Read more →</a>
+        </article>
+
+        <article class="post-item">
+          <time class="post-item__date" datetime="2026-06-01">June 1, 2026</time>
+          <h2 class="post-item__title">Our Approach to Responsible AI in Healthcare</h2>
+          <p class="post-item__excerpt">
+            AI in healthcare isn't just a technical challenge — it's an ethical one. In this post we outline the principles guiding Tachin.ai's model development, including fairness auditing, explainability, and human-in-the-loop design.
+          </p>
+          <a href="#" class="btn btn--ghost" style="margin-top: var(--space-2);">Read more →</a>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <div class="footer__brand-name">Tachin.ai</div>
+        <p class="footer__brand-desc">Clinical AI that transforms complex healthcare data into actionable intelligence.</p>
+      </div>
+      <div>
+        <h4 class="footer__col-title">Company</h4>
+        <a href="about.html" class="footer__link">About</a>
+        <a href="newly-released.html" class="footer__link">Blog</a>
+        <a href="security.html" class="footer__link">Security</a>
+      </div>
+      <div>
+        <h4 class="footer__col-title">Legal</h4>
+        <a href="privacy.html" class="footer__link">Privacy Policy</a>
+        <a href="terms.html" class="footer__link">Terms of Service</a>
+      </div>
+      <div>
+        <h4 class="footer__col-title">Contact</h4>
+        <a href="mailto:info@tachin.ai" class="footer__link">info@tachin.ai</a>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <p>&copy; 2026 Tachin.ai. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+    window.addEventListener('scroll', () => {
+      document.getElementById('nav').classList.toggle('nav--scrolled', window.scrollY > 10);
+    });
+  </script>
+
+</body>
+</html>

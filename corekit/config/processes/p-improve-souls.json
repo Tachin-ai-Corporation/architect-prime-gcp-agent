@@ -1,0 +1,39 @@
+{
+  "id": "p-improve-souls",
+  "name": "Improve Organ SOULs",
+  "version": 1,
+  "description": "Evidence-driven improvement of organ behavioral instructions — cortex decisions, prefrontal plans, motor execution, cerebellum verification.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["soul", "cortex", "prefrontal", "motor behavior", "cerebellum", "decision", "plan inflation", "replan", "false positive", "organ"],
+  "steps": [
+    {
+      "title": "Measure organ performance",
+      "description": "Read last 20 mission work trees. Measure per organ: cortex replan rate, prefrontal checkpoint count, motor skill-miss rate, cerebellum false-positive rate. Identify worst organ.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Per-organ metrics with mission evidence. Worst organ identified."
+    },
+    {
+      "title": "Diagnose and fix SOUL rule",
+      "description": "Read the failing organ's SOUL.md and SOUL_APPEND. Identify the rule producing bad behavior. Draft update: each change ties to observed failure, includes denial rules for the failure pattern. Verify: no tool syntax in SOUL (B-17), no daemon bypass instructions.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Updated SOUL with diff. Each change tied to evidence. No tool syntax."
+    },
+    {
+      "title": "Verify on live fleet",
+      "description": "Deploy SOUL change. Send 3 test missions exercising the changed behavior. Re-measure the failing metric. Compare before/after.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Target metric improved. No regression on other organs."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

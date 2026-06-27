@@ -1,0 +1,41 @@
+{
+  "id": "p-web-feature",
+  "name": "Website Feature Change",
+  "description": "Add or change interactive functionality on the tachin.ai website — forms, navigation behavior, animations with logic, third-party embeds, build pipeline changes. For behavior, not pure visuals (use p-web-design) or pure copy (use p-web-content).",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "goal": { "description": "The feature or functionality to build", "required": true },
+    "target_pages": { "description": "Which page(s) are affected", "required": false, "default": "" },
+    "project_id": { "description": "Project context", "required": false, "default": "tachin-website" }
+  },
+  "steps": [
+    {
+      "title": "Plan and build the feature",
+      "sub_process": "p-plan"
+    },
+    {
+      "title": "Verify feature against the design system and IA",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify anything.\n\nVerify the feature ${goal}:\n1. Confirm any UI it introduces uses design-system tokens and documented components.\n2. Confirm it matches the page's purpose in docs/design/TACHIN_SITE_IA.md.\n3. Confirm graceful behavior with JS disabled where feasible (progressive enhancement).\n4. Confirm responsive behavior at 375 / 768 / 1280.\n5. Confirm no console errors and no broken links.",
+      "agent": "cerebellum",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Feature uses design-system UI, matches IA, is responsive, and produces no console errors.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Owner review",
+      "description": "Present the feature and verification results to the owner.",
+      "type": "approval_gate",
+      "approval_message": "⚙️ Feature ready: ${goal}. Review and reply approve or reject.",
+      "agent": "motor",
+      "intent": "approval_gate",
+      "accept_criteria": "Owner approved or rejected."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

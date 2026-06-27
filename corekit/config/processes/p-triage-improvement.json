@@ -1,0 +1,55 @@
+{
+  "id": "p-triage-improvement",
+  "name": "Triage Improvement Suggestion",
+  "version": 1,
+  "description": "Investigate a fleet agent's improvement suggestion, classify it, and execute the right improvement process.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["improve", "improvement", "suggestion", "better", "should have", "next time", "feedback", "fix this"],
+  "steps": [
+    {
+      "title": "Read suggestion and mission history",
+      "description": "Read the improvement suggestion from the delegation instruction. Extract the referenced mission ID. Using work-management skill, read the referenced mission's full work tree — all M/C/T envelopes, their statuses, outputs, verdicts, iteration counts, and telemetry entries. Understand: what the mission tried to do, what succeeded, what failed, how many envelopes were created, and how long it took.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Written summary: what the mission did, what went wrong or was suboptimal, what the user specifically suggested, and the mission's key metrics (envelope count, duration, failure points)."
+    },
+    {
+      "title": "Classify into improvement module(s)",
+      "description": "Based on the evidence, classify the improvement into one or more of the 8 modules. Read the architect-prime project context for module definitions. The 8 modules are: (1) Daemons — control flow bug, crash, stuck loop, ceremony divergence. (2) Organ SOULs — bad decisions, plan inflation, false verdicts, wrong agent assignments. (3) Context & Memory — stale/missing project context, memory recall failures. (4) Neural Gateway — high token cost, low cache rate, loop guard issues. (5) Work Layer — missing process, bad process steps, low process coverage. (6) Skills — missing procedures, wrong syntax, low success rate. (7) Dashboard & Bootstrap — missing UI features, deployment friction. (8) Delegation & Cross-Agent — delegation storms, cross-agent context failures, delegation instruction quality. Report the module(s) and the specific finding for each.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "At least one module identified with specific evidence. If multiple modules, they are prioritized by impact."
+    },
+    {
+      "title": "Execute improvement process(es)",
+      "description": "For each identified module, follow the corresponding improvement process: p-improve-daemons, p-improve-souls, p-improve-context, p-improve-gateway, p-improve-work-layer, p-improve-skills, p-improve-dashboard, or p-improve-delegation. The process defines the evidence→plan→execute→verify cycle. If the improvement involves code/content changes to the repo, stage the changes locally.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Improvement executed per the process. Changed files listed. Before/after metrics documented."
+    },
+    {
+      "title": "Submit changes",
+      "description": "If the improvement produced repo file changes: using git-ops skill, create a feature branch named 'improve/{module}-{short-desc}', commit all changes with a descriptive message, push, and open a pull request to main. The PR description must include: what was improved, which module, evidence, and before/after metrics. If the improvement was data-only (project context, core memory, process in Firestore): no PR needed — the changes are already persisted.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "PR opened (if code changes) or Firestore updated (if data changes). Link provided."
+    },
+    {
+      "title": "Report back",
+      "description": "Compose a summary for the fleet agent's delegation result: what the user suggested, what was investigated, what was improved, what the user should expect to see differently. Keep it concise — the user is not an engineer.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Summary delivered via delegation result. Understandable without reading the PR."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

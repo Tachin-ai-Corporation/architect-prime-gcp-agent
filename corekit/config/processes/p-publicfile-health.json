@@ -1,0 +1,54 @@
+{
+  "id": "p-publicfile-health",
+  "name": "Public File Service Health Check",
+  "description": "Read-only nightly health check of the Drive→GCS sync pipeline behind the public file service: sync-service is up, the Drive watch is active (renew if expired), and GCS is fresh. Reports HEALTHY/DEGRADED/FAILED.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "gcp_project": { "description": "GCP project", "required": false, "default": "tachin-website" },
+    "region": { "description": "Cloud Run region", "required": false, "default": "us-central1" },
+    "gcs_bucket": { "description": "GCS bucket", "required": false, "default": "tachin-website-assets" },
+    "sync_service_url": { "description": "sync-service URL", "required": false, "default": "https://sync-service-m32774wz2q-uc.a.run.app" },
+    "project_id": { "description": "Project context", "required": false, "default": "tachin-public-files" }
+  },
+  "steps": [
+    {
+      "title": "Check sync-service status",
+      "description": "⚠️ READ-ONLY STEP.\n\nCheck the sync-service Cloud Run service is up and serving on ${sync_service_url}.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "sync-service status reported."
+    },
+    {
+      "title": "Verify the Drive watch is active",
+      "description": "⚠️ READ-ONLY STEP.\n\nVerify the Drive watch registration is active and not expired.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Watch state reported (active/expired).",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Renew the watch if expired",
+      "description": "If the watch is expired, trigger renewal on the sync-service. If active, no action.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Watch active after this step (renewed if it was expired)."
+    },
+    {
+      "title": "Check GCS freshness and report",
+      "description": "⚠️ READ-ONLY STEP.\n\nCheck the GCS bucket prefix (${gcs_bucket}/public/) is fresh and consistent with Drive, then produce a HEALTHY/DEGRADED/FAILED report.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Freshness checked. Health report produced with verdict."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

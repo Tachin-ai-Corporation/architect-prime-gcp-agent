@@ -1,0 +1,39 @@
+{
+  "id": "p-improve-skills",
+  "name": "Improve Skills Library",
+  "version": 1,
+  "description": "Evidence-driven improvement of skill grades, motor success rates, and skill gap coverage.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["skill", "skill quality", "motor success", "stuck loop", "skill miss", "SKILL.md", "procedure", "grade", "tool"],
+  "steps": [
+    {
+      "title": "Grade and prioritize",
+      "description": "Using skill-introspect: run validate-skills to grade every skill. Cross-reference with motor_dispatch telemetry for per-skill success rate and skill-miss counts. Priority = traffic × grade-gap × failure-rate.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Ranked list. Top priority skill identified with grade, traffic, success rate."
+    },
+    {
+      "title": "Upgrade priority skill",
+      "description": "Read current SKILL.md and recent motor tool logs. Following SKILL_STANDARD (docs/guides/SKILL_STANDARD.md): add missing layers — procedures first, then error recovery, then examples. Validate grade after edit.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "SKILL.md upgraded to target grade. validate-skills confirms."
+    },
+    {
+      "title": "Test and fill gaps",
+      "description": "Send 3 test missions exercising upgraded skill. Compare success rate before/after. Check skill-miss telemetry for gaps. If gap found (≥3 misses): using skill-authoring, create new skill.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Success rate improved. Gaps addressed."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

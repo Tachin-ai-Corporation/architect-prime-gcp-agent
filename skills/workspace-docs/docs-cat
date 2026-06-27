@@ -9,13 +9,14 @@ DOCS_API="https://docs.googleapis.com/v1/documents"
 die() { echo "[docs-cat] [ERROR] $*" >&2; exit 1; }
 DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id>"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
-HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
+TMP_RESP=$(mktemp)
+HTTP_CODE=$(curl -s -o "$TMP_RESP" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}")
 
 # Check if the Docs API is disabled or returned an error that we can bypass using Drive export fallback
 IS_DISABLED=0
 if [[ "$HTTP_CODE" != "200" ]]; then
-  if grep -q "SERVICE_DISABLED" /tmp/docs-response.json 2>/dev/null; then
+  if grep -q "SERVICE_DISABLED" "$TMP_RESP" 2>/dev/null; then
     IS_DISABLED=1
   fi
 fi
@@ -34,17 +35,19 @@ import json, sys
 text = sys.stdin.read()
 print(json.dumps({'docId': '$DOC_ID', 'title': '$TITLE', 'text': text, 'chars': len(text)}, indent=2))
 " <<< "$TEXT"
+  rm -f "$TMP_RESP"
   exit 0
 fi
 
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  rm -f "$TMP_RESP"
   exit 0
 fi
-[[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
+[[ "$HTTP_CODE" == "200" ]] || { rm -f "$TMP_RESP"; die "Docs API returned HTTP ${HTTP_CODE}"; }
 python3 -c "
-import json
-doc = json.load(open('/tmp/docs-response.json'))
+import json, sys
+doc = json.load(open(sys.argv[1]))
 parts = []
 for elem in doc.get('body',{}).get('content',[]):
     for run in elem.get('paragraph',{}).get('elements',[]):
@@ -52,4 +55,6 @@ for elem in doc.get('body',{}).get('content',[]):
         if tc: parts.append(tc)
 text = ''.join(parts)
 print(json.dumps({'docId':doc.get('documentId',''),'title':doc.get('title',''),'text':text,'chars':len(text)}, indent=2))
-"
+" "$TMP_RESP"
+
+rm -f "$TMP_RESP"

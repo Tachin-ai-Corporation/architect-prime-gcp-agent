@@ -1,0 +1,55 @@
+{
+  "id": "p-improve-delegation",
+  "name": "Improve Delegation & Cross-Agent Workflow",
+  "version": 1,
+  "description": "Evidence-driven improvement of delegation governance, cross-agent context sharing, delegation instruction quality, result handling, and multi-agent coordination patterns.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["delegation", "cross-agent", "delegate", "delegation storm", "ENOENT", "cross-vm", "delegation result", "waiting", "concurrent", "multi-agent"],
+  "steps": [
+    {
+      "title": "Audit delegation health",
+      "description": "Query recent missions involving delegations. For each delegation: count round-trips, measure time from delegation sent to result received, check if the delegate had to re-plan (indicates vague instruction), check for ENOENT errors (cross-agent context failure), check for concurrent delegation violations (multiple active delegations to same target), count cancelled delegations (delegation storm indicator). Read checkpoint-executor delegation guard logs for blocked/bypassed events.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Delegation health metrics: average round-trips, re-plan rate at delegate, ENOENT rate, concurrent violations, cancellation rate, guard bypass rate. Top 3 delegation issues ranked by impact."
+    },
+    {
+      "title": "Diagnose delegation instruction quality",
+      "description": "For delegations where the delegate had to re-plan: read the original delegation instruction. Check against the 5-field specificity standard: (1) what to do — specific action, not a goal, (2) input files — by Drive ID or name, (3) specific changes — what to modify, (4) output location — where to put results, (5) acceptance criteria — how to verify. Score each delegation 0-5. Delegations scoring <3 are too vague.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Delegation quality scores. List of vague delegations with the specific missing fields."
+    },
+    {
+      "title": "Diagnose cross-agent context failures",
+      "description": "For ENOENT errors: trace the file reference. Was the file on the delegator's VM only? Was it published to Drive before delegating? Check if the checkpoint-executor's pre-delegation artifact publish (if implemented) fired correctly. If not implemented: document the gap.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Each ENOENT traced to root cause. Pre-delegation publish status documented."
+    },
+    {
+      "title": "Fix delegation governance",
+      "description": "Based on findings: (a) If concurrent guard is bypassed — fix the Firestore query path or index. (b) If delegation instructions are vague — update the delegating agent's cortex SOUL_APPEND with specificity requirements (this is an Organ SOULs change — create a separate commit). (c) If cross-agent context is failing — implement or fix the pre-delegation artifact publish in checkpoint-executor (this is a Daemons change — create a separate commit). (d) If delegation timeout is missing — add timeout logic to the envelope scan. Each fix goes in its own module's commit.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Each fix in the correct module. No cross-module changes in a single commit."
+    },
+    {
+      "title": "Test delegation end-to-end",
+      "description": "Send a mission that requires delegation (e.g., product-architect delegating design work to designer). Monitor the full lifecycle: delegation sent → delegate receives → delegate executes → result returned → delegator resumes. Verify: instruction is specific (score ≥3), no ENOENT, no concurrent violations, result received within timeout, delegator correctly processes the result.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Delegation round-trip completes. Instruction quality ≥3. Zero ENOENT. Zero guard violations. Result processed correctly."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

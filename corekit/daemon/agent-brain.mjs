@@ -2396,6 +2396,9 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   mission.delivered_channel = null;
   mission.delivery_status = 'internal'; // Reset — will become 'pending' when re-completed
   mission._swf_state = null; // Reset retry cap for new attempt
+  mission.process_id = null; // Clear so Cortex can restart processes if needed
+  mission.process_version = null;
+  mission._follow_process_force_count = 0;
   mission.updated_at = now();
   if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
     mission.project_id = decision.project_id;

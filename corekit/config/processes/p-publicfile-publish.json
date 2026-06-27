@@ -1,0 +1,36 @@
+{
+  "id": "p-publicfile-publish",
+  "name": "Publish Public File",
+  "description": "Publish a file to the Tachin public file service: place it in the synced Drive folder, wait for the sync pipeline to mirror it to GCS, and return the public URL. This is the ad-hoc hosting service, NOT the marketing website.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "file_path": { "description": "Local path of the file to publish", "required": true },
+    "subpath": { "description": "Optional subfolder/name under public/", "required": false, "default": "" },
+    "project_id": { "description": "Project context", "required": false, "default": "tachin-public-files" }
+  },
+  "steps": [
+    {
+      "title": "Upload the file to the synced Drive folder",
+      "description": "Upload ${file_path} into the public file service's Drive source folder (configuration.drive_source_folder). Place it under a subdirectory — root-level files are intentionally ignored by the sync service.\n\nUse the subpath ${subpath} if provided, otherwise place it in an appropriately named subfolder.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "File uploaded to a subdirectory of the Drive source folder. Drive file ID reported.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Wait for sync and confirm the public URL",
+      "description": "The sync pipeline mirrors Drive → GCS in ~60-90 seconds. Wait, then confirm the file is live at the public URL base (configuration.public_url_base + path).\n\n```bash\nsleep 90\ncurl -sf -o /dev/null -w '%{http_code}' \"<public_url>\"\n```\nRetry once after another 60s if not yet 200.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Public URL returns HTTP 200. The final URL is reported to the requester."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

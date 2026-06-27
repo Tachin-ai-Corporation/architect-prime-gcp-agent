@@ -1,0 +1,39 @@
+{
+  "id": "p-improve-context",
+  "name": "Improve Context & Memory",
+  "version": 1,
+  "description": "Evidence-driven improvement of project context completeness, core memory accuracy, and fact persistence.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["context", "memory", "recall", "project context", "stale", "re-discover", "missing context", "core memory"],
+  "steps": [
+    {
+      "title": "Audit completeness",
+      "description": "Read all project documents and last 10 mission outputs per project. Extract discovered facts. Cross-reference: which are persisted, which are missing. Score completeness per project.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Completeness scores. Missing facts listed with source missions."
+    },
+    {
+      "title": "Backfill and clean",
+      "description": "Using work-management skill (project-manage add-context): persist missing facts. Using memory-consolidate skill: remove stale/duplicate core memory entries. Generalize before persisting.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Gaps backfilled. Stale entries removed. Completeness improved."
+    },
+    {
+      "title": "Verify recall",
+      "description": "Send test mission requiring the backfilled facts. Verify agent uses persisted context without re-discovery.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Zero re-discovery in test mission output."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

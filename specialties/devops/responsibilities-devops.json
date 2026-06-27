@@ -1,22 +1,22 @@
 {
-  "version": 1,
+  "version": 2,
   "responsibilities": [
     {
       "id": "r-sync-health-nightly",
-      "name": "Nightly Sync Service Health Check",
+      "name": "Nightly Public File Service Health Check",
       "schedule": "0 7 * * *",
       "enabled": true,
       "singleton": true,
       "min_spacing_minutes": 720,
-      "instruction": "Run the sync-service health check for the tachin-website project. Verify the Cloud Run sync-service is running, the Drive watch channel is active, and the GCS bucket has recent files. If the watch is expired, renew it. Report the overall health status.",
-      "processRef": "p-sync-health-check",
+      "instruction": "Run the public file service health check. Verify the Cloud Run sync-service is running, the Drive watch channel is active, and the GCS bucket has recent files. If the watch is expired, renew it. Report the overall health status.",
+      "processRef": "p-publicfile-health",
       "processParameters": {
         "gcp_project": "tachin-website",
         "region": "us-central1",
         "gcs_bucket": "tachin-website-assets",
         "sync_service_url": "https://sync-service-m32774wz2q-uc.a.run.app"
       },
-      "project_id": "tachin-website",
+      "project_id": "tachin-public-files",
       "context": {
         "success_criteria": "Sync service is HEALTHY or any issues have been remediated. Health report delivered."
       }

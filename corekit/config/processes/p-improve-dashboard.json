@@ -1,0 +1,39 @@
+{
+  "id": "p-improve-dashboard",
+  "name": "Improve Dashboard & Bootstrap",
+  "version": 1,
+  "description": "Evidence-driven improvement of operator experience — SSH elimination, deployment speed, feature parity, component quality.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["dashboard", "bootstrap", "deploy", "UI", "operator", "SSH", "install", "manifest", "component", "page"],
+  "steps": [
+    {
+      "title": "Identify friction",
+      "description": "Review debugging sessions. List what required SSH. Check feature parity: all daemon telemetry types vs dashboard views. Check page sizes (flag >300 lines). Check hardcoded values.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Top 3 friction points. Feature parity matrix. Oversized page list."
+    },
+    {
+      "title": "Implement",
+      "description": "Build missing views, decompose oversized pages, de-hardcode values. Run npx tsc --noEmit — zero errors.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Features built. Type-safe. No regression."
+    },
+    {
+      "title": "Verify",
+      "description": "Deploy dashboard. Verify new views render with live data. Confirm identified friction points resolved.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "New features work. Friction points closed."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

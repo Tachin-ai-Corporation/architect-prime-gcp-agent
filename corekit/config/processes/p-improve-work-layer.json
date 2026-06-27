@@ -1,0 +1,39 @@
+{
+  "id": "p-improve-work-layer",
+  "name": "Improve Work Layer",
+  "version": 1,
+  "description": "Evidence-driven improvement of process coverage, hierarchy compliance, and process step quality.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["process", "work layer", "follow_process", "checkpoint_plan", "envelope count", "hierarchy", "processify", "RMCT"],
+  "steps": [
+    {
+      "title": "Measure process coverage",
+      "description": "Query recent missions. Calculate follow_process vs checkpoint_plan split. Group ad-hoc patterns by type. Identify top 3 candidates for processification (≥3 recurring occurrences).",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Coverage percentage. Top 3 candidates with frequency and representative mission IDs."
+    },
+    {
+      "title": "Create or improve processes",
+      "description": "Using work-management skill: create new processes from successful mission patterns (process-manage create). Improve existing processes with high step-failure rates (process-manage update). Link to projects (project-manage add-process). Steps must be specific — not vague goals.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Processes created/updated with specific step instructions and intent_keywords."
+    },
+    {
+      "title": "Validate",
+      "description": "Send test mission matching new process keywords. Verify cortex selects follow_process. Verify completion. Check envelope count < 20.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "follow_process used. Steps complete. Envelope count reasonable."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

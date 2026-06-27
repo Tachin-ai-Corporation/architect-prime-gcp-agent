@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security &amp; Compliance — Tachin.ai</title>
+  <meta name="description" content="Learn how Tachin.ai protects healthcare data with HIPAA compliance, SOC 2 controls, encryption, and responsible AI practices.">
+  <meta property="og:title" content="Security & Compliance — Tachin.ai">
+  <meta property="og:description" content="Enterprise-grade security built for healthcare from the ground up.">
+  <meta property="og:image" content="assets/og-image.png">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===== NAV ===== -->
+  <nav class="nav" id="nav">
+    <div class="nav__inner">
+      <a href="index.html" aria-label="Tachin.ai Home">
+        <span style="font-family: var(--font-display); font-size: var(--text-xl); font-weight: var(--weight-bold); color: var(--color-primary);">Tachin.ai</span>
+      </a>
+      <ul class="nav__links">
+        <li><a href="about.html" class="nav__link">About</a></li>
+        <li><a href="security.html" class="nav__link nav__link--active">Security</a></li>
+        <li><a href="newly-released.html" class="nav__link">Blog</a></li>
+        <li><a href="index.html#contact" class="btn btn--primary">Request Demo</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ===== HERO ===== -->
+  <section class="hero">
+    <div class="container">
+      <h1 class="hero__headline">Security &amp; Compliance</h1>
+      <p class="hero__subhead">
+        Enterprise-grade security built for healthcare from the ground up. Your data is protected at every layer.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== DATA PROTECTION ===== -->
+  <section class="section">
+    <div class="container">
+      <div class="content-section">
+        <h2>Data Protection</h2>
+        <p>
+          All data is encrypted at rest using AES-256 and in transit using TLS 1.3. We implement strict access controls, audit logging, and data minimization principles to ensure protected health information (PHI) is handled with the highest standard of care.
+        </p>
+        <ul>
+          <li>AES-256 encryption at rest</li>
+          <li>TLS 1.3 encryption in transit</li>
+          <li>Role-based access controls (RBAC)</li>
+          <li>Comprehensive audit logging</li>
+          <li>Automated data retention and disposal policies</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== INFRASTRUCTURE SECURITY ===== -->
+  <section class="section section--alt">
+    <div class="container">
+      <div class="content-section">
+        <h2>Infrastructure Security</h2>
+        <p>
+          Tachin.ai runs on Google Cloud Platform with a zero-trust architecture. Every service, network boundary, and deployment pipeline is hardened according to CIS benchmarks and healthcare-specific security requirements.
+        </p>
+        <ul>
+          <li>Zero-trust network architecture</li>
+          <li>VPC isolation with private service endpoints</li>
+          <li>Continuous vulnerability scanning and patching</li>
+          <li>Immutable infrastructure with infrastructure-as-code</li>
+          <li>24/7 monitoring and incident response</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== COMPLIANCE ===== -->
+  <section class="section">
+    <div class="container">
+      <div class="content-section">
+        <h2>Compliance</h2>
+        <p>
+          We maintain rigorous compliance programs that meet or exceed industry requirements. Our controls are independently audited and continuously monitored.
+        </p>
+        <ul>
+          <li>HIPAA — Business Associate Agreements (BAA) available</li>
+          <li>SOC 2 Type II — independently audited controls</li>
+          <li>HITRUST — aligned with the CSF framework</li>
+          <li>State privacy laws — compliant with CCPA, CPRA, and applicable state regulations</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== RESPONSIBLE AI ===== -->
+  <section class="section section--alt">
+    <div class="container">
+      <div class="content-section">
+        <h2>Responsible AI</h2>
+        <p>
+          We believe AI in healthcare carries a unique responsibility. Our models are developed with fairness, transparency, and clinical safety as core design principles — not afterthoughts.
+        </p>
+        <ul>
+          <li>Bias testing and fairness audits across demographic groups</li>
+          <li>Explainable AI — clinicians can understand how conclusions are reached</li>
+          <li>Human-in-the-loop design — AI augments, never replaces, clinical judgment</li>
+          <li>Model governance with version control, lineage tracking, and rollback capabilities</li>
+          <li>Ongoing monitoring for model drift and performance degradation</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <div class="footer__brand-name">Tachin.ai</div>
+        <p class="footer__brand-desc">Clinical AI that transforms complex healthcare data into actionable intelligence.</p>
+      </div>
+      <div>
+        <h4 class="footer__col-title">Company</h4>
+        <a href="about.html" class="footer__link">About</a>
+        <a href="newly-released.html" class="footer__link">Blog</a>
+        <a href="security.html" class="footer__link">Security</a>
+      </div>
+      <div>
+        <h4 class="footer__col-title">Legal</h4>
+        <a href="privacy.html" class="footer__link">Privacy Policy</a>
+        <a href="terms.html" class="footer__link">Terms of Service</a>
+      </div>
+      <div>
+        <h4 class="footer__col-title">Contact</h4>
+        <a href="mailto:info@tachin.ai" class="footer__link">info@tachin.ai</a>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      <p>&copy; 2026 Tachin.ai. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+    window.addEventListener('scroll', () => {
+      document.getElementById('nav').classList.toggle('nav--scrolled', window.scrollY > 10);
+    });
+  </script>
+
+</body>
+</html>

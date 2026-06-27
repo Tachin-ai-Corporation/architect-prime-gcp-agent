@@ -1,0 +1,34 @@
+{
+  "id": "p-legal-review",
+  "name": "Legal Review",
+  "version": 1,
+  "description": "Performs a legal review on a document, appends redlines and reasoning to the bottom, and generates a structured summary document.",
+  "intent_keywords": ["legal", "review", "redlines", "contract", "terms"],
+  "steps": [
+    {
+      "title": "Analyze Document",
+      "agent": "motor",
+      "description": "Read the target document using docs-cat and analyze it for legal risks, structural concerns, and necessary redlines."
+    },
+    {
+      "title": "Append Redlines & Reasoning",
+      "agent": "motor",
+      "description": "Using docs-write --append, inject a [LEGAL REVIEW REDLINES] section at the bottom of the target document containing the redlines and the reasoning for each."
+    },
+    {
+      "title": "Notify via Comment",
+      "agent": "motor",
+      "description": "Using docs-comments-add, leave a document-level comment pointing the author to the appended redlines."
+    },
+    {
+      "title": "Generate Summary Document",
+      "agent": "motor",
+      "description": "Using docs-create and docs-write, generate a final summary document. Ensure it follows this strict structure: ## Review Scope, ## Key Findings, ## Structural/Risk Concerns, ## Redline Summary."
+    },
+    {
+      "title": "Verify Execution",
+      "agent": "cerebellum",
+      "description": "Verify that a summary document was created with the required headers and that redlines were appended to the original document."
+    }
+  ]
+}
