@@ -178,6 +178,9 @@ export async function handleCheckpointPlan(ctx, deps) {
           ).join('\n')}` : '',
         ].filter(Boolean).join('\n'),
         _missionId: envelope.id,
+        _sourceMeta: envelope.source_meta || envelope._sourceMeta || null,
+        _projectContext: envelope._projectContext || null,
+        _sourceText: envelope.source_text || envelope._sourceText || null,
       });
 
       if (planResult.success && planResult.output) {

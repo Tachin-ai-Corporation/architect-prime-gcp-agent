@@ -860,7 +860,12 @@ async function releaseClaim(envelopeId, claimId) {
 // ---- Gateway HTTP dispatch ----
 async function callCortex(mode, payload) {
   const systemPrompt = buildSystemPrompt(mode, payload);
-  const userPrompt = `[BRAIN-ORCHESTRATED]\n${buildUserPrompt(mode, payload)}`;
+  const pingerEmail = payload.envelope?.source_meta?.senderEmail || payload.envelope?._sourceMeta?.senderEmail || '';
+  const userPrompt = [
+    `[BRAIN-ORCHESTRATED]`,
+    pingerEmail ? `## Requester (Pinger)\nUse this email for Drive sharing and communication: ${pingerEmail}\n` : '',
+    buildUserPrompt(mode, payload)
+  ].filter(Boolean).join('\n');
 
   // Per-agent generation parameters from registry
   const cortexConfig = REGISTRY.agents?.cortex || {};
@@ -969,6 +974,7 @@ async function callPrefrontal(payload) {
   const systemPrompt = sysParts.join('\n\n');
 
   // Build user prompt: instruction + memory + accumulated context
+  const pingerEmail = payload.envelope?.source_meta?.senderEmail || payload.envelope?._sourceMeta?.senderEmail || '';
   const analyzePayload = {
     mode: 'analyze',
     instruction: payload.envelope?.instruction || '',
@@ -976,7 +982,11 @@ async function callPrefrontal(payload) {
     memory: payload.memory || {},
     prior_results: payload.prior_results || [],
   };
-  const userPrompt = `[BRAIN-ORCHESTRATED]\n${JSON.stringify(analyzePayload)}`;
+  const userPrompt = [
+    `[BRAIN-ORCHESTRATED]`,
+    pingerEmail ? `## Requester (Pinger)\nUse this email for Drive sharing and communication: ${pingerEmail}\n` : '',
+    JSON.stringify(analyzePayload)
+  ].filter(Boolean).join('\n');
 
   log('INFO', `Calling Prefrontal: analyze (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
   const start = Date.now();

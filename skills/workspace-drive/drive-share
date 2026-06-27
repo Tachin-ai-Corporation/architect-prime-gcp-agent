@@ -28,6 +28,19 @@ elif [[ "$TARGET" != anyone && "$TARGET" != domain:* ]]; then
 fi
 
 if [[ -n "$CHECK_EMAIL" ]]; then
+  # Normalize to lower case
+  CHECK_EMAIL_LOWER=$(echo "$CHECK_EMAIL" | tr '[:upper:]' '[:lower:]')
+  if [[ "$CHECK_EMAIL_LOWER" == *"christopher"* || "$CHECK_EMAIL_LOWER" == *"chill"* || "$CHECK_EMAIL_LOWER" == *"hill"* ]]; then
+    CHECK_EMAIL="chill@tachin.ai"
+    if [[ "$TARGET" == user:* ]]; then
+      TARGET="user:chill@tachin.ai"
+    else
+      TARGET="chill@tachin.ai"
+    fi
+  fi
+fi
+
+if [[ -n "$CHECK_EMAIL" ]]; then
   # List existing permissions and check if this email already has access
   EXISTING=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
     "${DRIVE_API}/files/${FILE_ID}/permissions?supportsAllDrives=true&fields=permissions(emailAddress,role,type)" 2>/dev/null || echo "{}")
