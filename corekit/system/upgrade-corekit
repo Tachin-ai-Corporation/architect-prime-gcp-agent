@@ -79,7 +79,7 @@ case "${1:-}" in
       echo 'ERROR: Cannot determine agent job/specialty. Check STATE.json or chat-config.json.' >&2
       exit 1
     fi
-    INSTALL_ARGS="--upgrade $ref"
+    INSTALL_ARGS="--upgrade $RESOLVED_REF"
     [[ -n "$EXISTING_ROLE" ]] && INSTALL_ARGS="$INSTALL_ARGS --role $EXISTING_ROLE"
     [[ -n "$EXISTING_JOB" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $EXISTING_JOB"
     echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${EXISTING_JOB:-none}"
