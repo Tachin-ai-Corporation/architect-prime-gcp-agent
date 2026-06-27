@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { secretsCol, primesCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
-import { grantSecretAccess, deriveServiceAccount } from "@/lib/secret-manager";
+import { grantSecretAccess, deriveServiceAccount, derivePrimeServiceAccount } from "@/lib/secret-manager";
 import { requireAuth } from "@/lib/require-auth";
 
 interface RouteContext {
@@ -13,6 +13,7 @@ interface RouteContext {
  * Body: { agentEmail: string }
  *
  * Resolves agent email → fleet doc → derives SA → adds IAM binding
+ * Also supports Prime agents: agentEmail = "prime:{primeId}" → default compute SA
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const auth = await requireAuth();
@@ -42,30 +43,46 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: `Agent '${agentEmail}' already has access` }, { status: 409 });
     }
 
-    // Find the agent across all primes to resolve their name
-    const primesSnap = await primesCol().get();
     let agentName: string | null = null;
+    let serviceAccount: string;
 
-    for (const primeDoc of primesSnap.docs) {
-      const fleetSnap = await primeDoc.ref.collection("fleet")
-        .where("email", "==", agentEmail)
-        .limit(1)
-        .get();
-      if (!fleetSnap.empty) {
-        agentName = fleetSnap.docs[0].id;
-        break;
+    // Check if this is a Prime agent (identifier: "prime:{primeId}")
+    if (agentEmail.startsWith("prime:")) {
+      const primeId = agentEmail.slice("prime:".length);
+      const primeDoc = await primesCol().doc(primeId).get();
+      if (!primeDoc.exists) {
+        return NextResponse.json(
+          { error: `No Prime found with id '${primeId}'` },
+          { status: 404 }
+        );
       }
-    }
+      agentName = primeDoc.data()!.name || primeId;
+      serviceAccount = await derivePrimeServiceAccount();
+    } else {
+      // Find the agent across all primes' fleet subcollections
+      const primesSnap = await primesCol().get();
 
-    if (!agentName) {
-      return NextResponse.json(
-        { error: `No fleet agent found with email '${agentEmail}'` },
-        { status: 404 }
-      );
-    }
+      for (const primeDoc of primesSnap.docs) {
+        const fleetSnap = await primeDoc.ref.collection("fleet")
+          .where("email", "==", agentEmail)
+          .limit(1)
+          .get();
+        if (!fleetSnap.empty) {
+          agentName = fleetSnap.docs[0].id;
+          break;
+        }
+      }
 
-    // Derive service account from agent name
-    const serviceAccount = deriveServiceAccount(agentName);
+      if (!agentName) {
+        return NextResponse.json(
+          { error: `No agent found with email '${agentEmail}'` },
+          { status: 404 }
+        );
+      }
+
+      // Derive service account from agent name
+      serviceAccount = deriveServiceAccount(agentName);
+    }
 
     // Add IAM binding on the SM secret
     await grantSecretAccess(name, serviceAccount);

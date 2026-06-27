@@ -19,7 +19,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$DOC_ID" && -n "$SOURCE_TAB" ]] || die "Need --doc and --source-tab"
-TOKEN="$("" --scope docs)" || die "Auth failed"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 HTTP_CODE=$(curl -s -o /tmp/docs-clone-source.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")

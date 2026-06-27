@@ -22,7 +22,7 @@ interface FleetAgentInfo {
 }
 
 export function SecretsTab() {
-  const { sidebarFleet } = usePrime();
+  const { sidebarFleet, primes } = usePrime();
   const dialog = useDialog();
 
   const [secrets, setSecrets] = useState<SecretData[]>([]);
@@ -54,8 +54,24 @@ export function SecretsTab() {
   // Load secrets on mount
   useEffect(() => {
     loadSecrets();
-    // Build flat list of all fleet agents across all primes
+    // Build flat list of all agents (fleet + primes) across all primes
     const agents: FleetAgentInfo[] = [];
+
+    // Add Prime agents first
+    if (primes) {
+      for (const prime of primes) {
+        if (prime.status !== "removed") {
+          agents.push({
+            name: prime.name,
+            email: `prime:${prime.id}`,
+            specialty: "prime",
+            primeId: prime.id,
+          });
+        }
+      }
+    }
+
+    // Add fleet agents
     if (sidebarFleet) {
       for (const [primeId, fleet] of Object.entries(sidebarFleet)) {
         for (const agent of fleet as Array<{ name: string; email: string; specialty: string }>) {
@@ -66,7 +82,7 @@ export function SecretsTab() {
       }
     }
     setAllFleetAgents(agents);
-  }, [loadSecrets, sidebarFleet]);
+  }, [loadSecrets, sidebarFleet, primes]);
 
   const handleCreateSecret = useCallback(async () => {
     if (!newSecretName || !newSecretValue) return;

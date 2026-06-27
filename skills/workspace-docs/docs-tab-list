@@ -9,7 +9,7 @@ DOCS_API="https://docs.googleapis.com/v1/documents"
 die() { echo "[docs-tab-list] [ERROR] $*" >&2; exit 1; }
 
 DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-tab-list <doc_id>"
-TOKEN="$("" --scope docs)" || die "Auth failed"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 HTTP_CODE=$(curl -s -o /tmp/docs-tab-list.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")

@@ -46,6 +46,21 @@ No custom corekit scripts are governed by this skill. Standard `git` commands ar
    ```
 5. Verify: Ensure the rebase finishes cleanly with no outstanding conflicts.
 
+### Open a pull request
+1. Ensure all changes are committed and pushed to the feature branch:
+   ```bash
+   git push -u origin <branch-name>
+   ```
+2. Create the pull request:
+   ```bash
+   gh pr create --base main --head <branch-name> --title "<title>" --body "<description>"
+   ```
+3. Verify the PR was created:
+   ```bash
+   gh pr list --head <branch-name>
+   ```
+4. Report the PR URL from the output.
+
 ---
 
 ## Git Workflow Reference
@@ -61,6 +76,7 @@ No custom corekit scripts are governed by this skill. Standard `git` commands ar
 | Update from main | `git fetch origin && git rebase origin/main` |
 | Delete local branch | `git branch -d BRANCH_NAME` |
 | Delete remote branch | `git push origin --delete BRANCH_NAME` |
+| Open pull request | `gh pr create --base main --head BRANCH --title "title" --body "desc"` |
 
 ### Commit Message Formatting
 Use conventional commits format:

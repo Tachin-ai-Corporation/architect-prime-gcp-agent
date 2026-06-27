@@ -21,7 +21,7 @@ done
 
 [[ -n "$DOC_ID" && -n "$SOURCE_TAB" && -n "$SUGG_TAB" ]] || die "Missing required args"
 
-TOKEN="$("" --scope docs)" || die "Auth failed"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 # Step A: Read suggestion tab
 HTTP_CODE=$(curl -s -o /tmp/docs-fin-read.json -w '%{http_code}' \
@@ -149,7 +149,7 @@ with open('/tmp/docs-fin-summary.json', 'w') as f:
 "
 
 # Step D: Resolve comment thread
-DRIVE_TOKEN="$("" --scope drive)" || die "Auth failed for drive"
+DRIVE_TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed for drive"
 
 COMMENTS_JSON=$(curl -s -H "Authorization: Bearer ${DRIVE_TOKEN}" "${DRIVE_API}/files/${DOC_ID}/comments?fields=comments(id,content)")
 

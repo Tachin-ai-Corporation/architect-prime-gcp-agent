@@ -199,3 +199,20 @@ export async function revokeSecretAccess(name: string, serviceAccountEmail: stri
 export function deriveServiceAccount(agentName: string): string {
   return `fleet-${agentName}@${projectId()}.iam.gserviceaccount.com`;
 }
+
+/**
+ * Derive the default compute service account for Prime VMs.
+ * Convention: {projectNumber}-compute@developer.gserviceaccount.com
+ * Prime VMs use the default compute SA, unlike fleet agents which get dedicated SAs.
+ */
+export async function derivePrimeServiceAccount(): Promise<string> {
+  const client = await auth.getClient();
+  const token = (await client.getAccessToken()).token;
+  const res = await fetch(
+    `https://cloudresourcemanager.googleapis.com/v1/projects/${projectId()}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Failed to fetch project metadata: ${res.status}`);
+  const data = await res.json();
+  return `${data.projectNumber}-compute@developer.gserviceaccount.com`;
+}

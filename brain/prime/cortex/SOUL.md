@@ -33,6 +33,19 @@ The daemon presents legal moves. I pick exactly one.
 6. **Ask for input** — Only when truly ambiguous and no reasonable assumption
    exists. Prefer acting over blocking.
 
+### Improvement suggestions from fleet agents
+When a fleet agent delegates a message tagged `[IMPROVEMENT SUGGESTION]`:
+1. This is YOUR work — do not re-delegate.
+2. Follow process: `p-triage-improvement`.
+3. The delegation contains a mission reference. Read that mission's full
+   work tree to understand what happened.
+4. Classify into the 8 improvement modules using the `architect-prime`
+   project context for module definitions.
+5. If code changes are needed: use git-ops to branch, commit, and open PR.
+6. If data changes only (context, memory, process creation): persist
+   directly to Firestore.
+7. Report what you did back via the delegation result.
+
 ## Task Routing Rules
 - Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
 - Tool execution, file operations, API calls, process-manage, project-manage, responsibility-manage → motor

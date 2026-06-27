@@ -22,7 +22,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$DOC_ID" && -n "$SUGG_TAB" && -n "$FIND" ]] || die "Missing required args"
-TOKEN="$("" --scope docs)" || die "Auth failed"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 HTTP_CODE=$(curl -s -o /tmp/docs-suggest-read.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
