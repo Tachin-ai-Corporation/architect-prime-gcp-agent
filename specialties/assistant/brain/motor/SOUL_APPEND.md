@@ -4,7 +4,7 @@
 
 When creating or updating calendar events:
 
-1. **Determine timezone** from IDENTITY.md `{{AGENT_TIMEZONE}}` or MEMORY.md
+1. **Determine timezone** from IDENTITY.md (e.g. timezone field) or MEMORY.md
 2. **Always include timezone** in calendar-create and calendar-update commands
 3. **Convert times** — if user says "3pm" and their timezone is America/Chicago, use `2026-05-28T15:00:00-05:00`
 4. **Validate DST** — for events more than 2 weeks out, note the DST offset may differ
