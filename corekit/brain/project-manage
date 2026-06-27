@@ -56,6 +56,33 @@ CMD="${1:-help}"
 shift || true
 
 case "$CMD" in
+  get-artifacts-root)
+    python3 -c "
+import json, sys, subprocess
+
+token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
+base = '${FIRESTORE_BASE}'
+url = f'{base}/config/settings'
+
+result = subprocess.run(
+    ['curl', '-s', '-f', '-X', 'GET', url, '-H', f'Authorization: Bearer {token}'],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f'ERROR: Failed to fetch settings: {result.stderr}', file=sys.stderr)
+    sys.exit(1)
+
+data = json.loads(result.stdout)
+fields = data.get('fields', {})
+root_id = fields.get('artifacts_root_folder_id', {}).get('stringValue', '')
+if root_id:
+    print(root_id)
+else:
+    print('ERROR: artifacts_root_folder_id not found in settings', file=sys.stderr)
+    sys.exit(1)
+"
+    ;;
+
   list)
     python3 -c "
 import json, sys, subprocess
@@ -178,7 +205,11 @@ print(json.dumps(plain, indent=2))
     ;;
 
   create)
-    NEW_JSON="${1:?'create requires a JSON string'}"
+    NEW_JSON_INPUT="${1:?'create requires a JSON string or file path'}"
+    if [ -f "$NEW_JSON_INPUT" ]; then
+      NEW_JSON_INPUT=$(cat "$NEW_JSON_INPUT")
+    fi
+    export NEW_JSON_INPUT
     shift
     PROCESSES=""
     PROCESSES_SET=false
@@ -188,11 +219,12 @@ print(json.dumps(plain, indent=2))
         *) echo "Unknown option: $1" >&2; exit 1 ;;
       esac
     done
+    export PROCESSES PROCESSES_SET
     python3 -c "
 import json, sys, subprocess, os
 from datetime import datetime, timezone
 
-new_project = json.loads('''$NEW_JSON''')
+new_project = json.loads(os.environ['NEW_JSON_INPUT'])
 
 # Validate required fields
 required = ['id', 'name', 'description', 'context', 'goal']
@@ -206,8 +238,8 @@ if not isinstance(new_project.get('context'), dict):
     sys.exit(1)
 
 # Handle --processes
-processes_set = '$PROCESSES_SET' == 'true'
-processes_raw = '''$PROCESSES'''
+processes_set = os.environ['PROCESSES_SET'] == 'true'
+processes_raw = os.environ['PROCESSES']
 if processes_set:
     if processes_raw:
         new_project['standardProcesses'] = [p.strip() for p in processes_raw.split(',') if p.strip()]
@@ -332,7 +364,11 @@ if sp:
 
   update)
     TARGET_ID="${1:?'update requires a project id'}"
-    UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
+    UPDATE_JSON_INPUT="${2:?'update requires a JSON string of partial updates or file path'}"
+    if [ -f "$UPDATE_JSON_INPUT" ]; then
+      UPDATE_JSON_INPUT=$(cat "$UPDATE_JSON_INPUT")
+    fi
+    export TARGET_ID UPDATE_JSON_INPUT
     shift 2
     PROCESSES=""
     PROCESSES_SET=false
@@ -342,12 +378,13 @@ if sp:
         *) echo "Unknown option: $1" >&2; exit 1 ;;
       esac
     done
+    export PROCESSES PROCESSES_SET
     python3 -c "
-import json, sys, subprocess
+import json, sys, subprocess, os
 from datetime import datetime, timezone
 
-target_id = '$TARGET_ID'
-updates = json.loads('''$UPDATE_JSON''')
+target_id = os.environ['TARGET_ID']
+updates = json.loads(os.environ['UPDATE_JSON_INPUT'])
 
 token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
 base = '${FIRESTORE_BASE}'
@@ -433,8 +470,8 @@ if 'parent_id' in updates and updates['parent_id']:
         current_parent = extract_value(pid_field) if pid_field else None
 
 # Handle --processes
-processes_set = '$PROCESSES_SET' == 'true'
-processes_raw = '''$PROCESSES'''
+processes_set = os.environ['PROCESSES_SET'] == 'true'
+processes_raw = os.environ['PROCESSES']
 if processes_set:
     if processes_raw:
         existing['standardProcesses'] = [p.strip() for p in processes_raw.split(',') if p.strip()]
@@ -746,25 +783,29 @@ print(f'Completed project \'{target_id}\'.')
     # Support two syntaxes:
     #   Positional: team-add <projectId> <email> <role> [name] [type]
     #   JSON:       team-add <projectId> '<json>'
-    if [[ "${1:-}" == "{"* ]]; then
-      MEMBER_JSON="$1"
+    if [[ "${1:-}" == "{"* || -f "${1:-}" ]]; then
+      MEMBER_JSON_INPUT="$1"
+      if [ -f "$MEMBER_JSON_INPUT" ]; then
+        MEMBER_JSON_INPUT=$(cat "$MEMBER_JSON_INPUT")
+      fi
     elif [[ -n "${1:-}" && -n "${2:-}" ]]; then
       MEMBER_EMAIL="$1"
       MEMBER_ROLE="$2"
       MEMBER_NAME="${3:-}"
       MEMBER_TYPE="${4:-agent}"
-      MEMBER_JSON="{\"email\": \"${MEMBER_EMAIL}\", \"role\": \"${MEMBER_ROLE}\", \"name\": \"${MEMBER_NAME}\", \"type\": \"${MEMBER_TYPE}\"}"
+      MEMBER_JSON_INPUT="{\"email\": \"${MEMBER_EMAIL}\", \"role\": \"${MEMBER_ROLE}\", \"name\": \"${MEMBER_NAME}\", \"type\": \"${MEMBER_TYPE}\"}"
     else
       echo "Usage: project-manage team-add <projectId> <email> <role> [name] [type]" >&2
       echo "   or: project-manage team-add <projectId> '<json>'" >&2
       exit 1
     fi
+    export TARGET_ID MEMBER_JSON_INPUT
     python3 -c "
-import json, sys, subprocess
+import json, sys, subprocess, os
 from datetime import datetime, timezone
 
-target_id = '$TARGET_ID'
-member = json.loads('''$MEMBER_JSON''')
+target_id = os.environ['TARGET_ID']
+member = json.loads(os.environ['MEMBER_JSON_INPUT'])
 
 # Validate required fields
 if 'email' not in member or not member['email']:

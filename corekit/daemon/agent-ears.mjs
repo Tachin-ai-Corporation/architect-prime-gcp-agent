@@ -521,7 +521,7 @@ async function pollGChat() {
             metadata: {
               space,
               thread: threadName,
-              senderEmail: msg.sender?.name || msg.sender?.displayName || 'unknown',
+              senderEmail: msg.sender?.email || msg.sender?.name || msg.sender?.displayName || 'unknown',
               email: AGENT_USER_EMAIL,
             },
           });

@@ -56,7 +56,11 @@ print(f'Total: {len(resps)} responsibilities')
     ;;
 
   create)
-    NEW_JSON="${1:?'create requires a JSON string'}"
+    NEW_JSON_INPUT="${1:?'create requires a JSON string or file path'}"
+    if [ -f "$NEW_JSON_INPUT" ]; then
+      NEW_JSON_INPUT=$(cat "$NEW_JSON_INPUT")
+    fi
+    export NEW_JSON_INPUT
     shift
     PROCESS_REF=""
     PROCESS_PARAMS=""
@@ -67,10 +71,11 @@ print(f'Total: {len(resps)} responsibilities')
         *) echo "Unknown option: $1" >&2; exit 1 ;;
       esac
     done
+    export PROCESS_REF PROCESS_PARAMS
     python3 -c "
-import json, sys
+import json, sys, os
 
-new_resp = json.loads('''$NEW_JSON''')
+new_resp = json.loads(os.environ['NEW_JSON_INPUT'])
 
 # Validate required fields
 required = ['id', 'name', 'schedule', 'instruction']
@@ -92,13 +97,13 @@ if not ctx.get('success_criteria'):
     sys.exit(1)
 
 # Handle --process-ref
-process_ref = '''$PROCESS_REF'''
+process_ref = os.environ['PROCESS_REF']
 if process_ref:
     new_resp['processRef'] = process_ref
-    print(f'WARNING: processRef \"{process_ref}\" set — process may not exist yet.', file=sys.stderr)
+    print(f'WARNING: processRef "{process_ref}" set — process may not exist yet.', file=sys.stderr)
 
 # Handle --process-params
-process_params_raw = '''$PROCESS_PARAMS'''
+process_params_raw = os.environ['PROCESS_PARAMS']
 if process_params_raw:
     try:
         new_resp['processParameters'] = json.loads(process_params_raw)
@@ -136,7 +141,11 @@ print('Brain scheduler will auto-reload within 10 seconds.')
 
   update)
     TARGET_ID="${1:?'update requires a responsibility id'}"
-    UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
+    UPDATE_JSON_INPUT="${2:?'update requires a JSON string of partial updates or file path'}"
+    if [ -f "$UPDATE_JSON_INPUT" ]; then
+      UPDATE_JSON_INPUT=$(cat "$UPDATE_JSON_INPUT")
+    fi
+    export TARGET_ID UPDATE_JSON_INPUT
     shift 2
     PROCESS_REF=""
     PROCESS_REF_SET=false
@@ -149,13 +158,14 @@ print('Brain scheduler will auto-reload within 10 seconds.')
         *) echo "Unknown option: $1" >&2; exit 1 ;;
       esac
     done
+    export PROCESS_REF PROCESS_REF_SET PROCESS_PARAMS PROCESS_PARAMS_SET
     python3 -c "
-import json, sys
+import json, sys, os
 
-target_id = '$TARGET_ID'
-updates = json.loads('''$UPDATE_JSON''')
-process_ref_set = '$PROCESS_REF_SET' == 'true'
-process_params_set = '$PROCESS_PARAMS_SET' == 'true'
+target_id = os.environ['TARGET_ID']
+updates = json.loads(os.environ['UPDATE_JSON_INPUT'])
+process_ref_set = os.environ['PROCESS_REF_SET'] == 'true'
+process_params_set = os.environ['PROCESS_PARAMS_SET'] == 'true'
 
 with open('$RESP_FILE') as f:
     data = json.load(f)
@@ -179,17 +189,17 @@ for k, v in updates.items():
 
 # Handle --process-ref
 if process_ref_set:
-    process_ref = '''$PROCESS_REF'''
+    process_ref = os.environ['PROCESS_REF']
     if process_ref:
         data['responsibilities'][idx]['processRef'] = process_ref
-        print(f'WARNING: processRef \"{process_ref}\" set — process may not exist yet.', file=sys.stderr)
+        print(f'WARNING: processRef "{process_ref}" set — process may not exist yet.', file=sys.stderr)
     else:
         data['responsibilities'][idx].pop('processRef', None)
         print('Cleared processRef.', file=sys.stderr)
 
 # Handle --process-params
 if process_params_set:
-    process_params_raw = '''$PROCESS_PARAMS'''
+    process_params_raw = os.environ['PROCESS_PARAMS']
     if process_params_raw:
         try:
             data['responsibilities'][idx]['processParameters'] = json.loads(process_params_raw)

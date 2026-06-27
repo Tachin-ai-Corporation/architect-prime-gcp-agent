@@ -146,12 +146,16 @@ print(json.dumps(plain, indent=2))
     ;;
 
   create)
-    NEW_JSON="${1:?'create requires a JSON string'}"
+    NEW_JSON_INPUT="${1:?'create requires a JSON string or file path'}"
+    if [ -f "$NEW_JSON_INPUT" ]; then
+      NEW_JSON_INPUT=$(cat "$NEW_JSON_INPUT")
+    fi
+    export NEW_JSON_INPUT
     python3 -c "
-import json, sys, subprocess
+import json, sys, subprocess, os
 from datetime import datetime, timezone
 
-new_process = json.loads('''$NEW_JSON''')
+new_process = json.loads(os.environ['NEW_JSON_INPUT'])
 
 # Validate required fields
 required = ['id', 'name', 'description', 'steps']
@@ -243,13 +247,17 @@ print(f'  Description: {new_process[\"description\"][:120]}')
 
   update)
     TARGET_ID="${1:?'update requires a process id'}"
-    UPDATE_JSON="${2:?'update requires a JSON string of partial updates'}"
+    UPDATE_JSON_INPUT="${2:?'update requires a JSON string of partial updates or file path'}"
+    if [ -f "$UPDATE_JSON_INPUT" ]; then
+      UPDATE_JSON_INPUT=$(cat "$UPDATE_JSON_INPUT")
+    fi
+    export TARGET_ID UPDATE_JSON_INPUT
     python3 -c "
-import json, sys, subprocess
+import json, sys, subprocess, os
 from datetime import datetime, timezone
 
-target_id = '$TARGET_ID'
-updates = json.loads('''$UPDATE_JSON''')
+target_id = os.environ['TARGET_ID']
+updates = json.loads(os.environ['UPDATE_JSON_INPUT'])
 
 token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
 base = '${FIRESTORE_BASE}'
