@@ -63,6 +63,20 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 
 > ⚠️ **IMPORTANT**: When downloading multiple files, always download them **one at a time** (sequentially). Never issue parallel `drive-download` tool calls — the gateway cannot handle multiple simultaneous tool responses and will crash with a 400 error.
 
+### Edit a file from Drive
+When you need to modify a file that lives in Google Drive:
+1. Run `drive-ls FOLDER_ID` to find the file's ID.
+2. Run `drive-download FILE_ID --output /path/to/local/file` to download it.
+3. Run `readFile` on the downloaded file to load its contents into context.
+4. Apply your modifications to the content.
+5. Run `writeFile` with the COMPLETE modified content to save the file locally.
+   - Write the ENTIRE file, not a diff or snippet.
+   - This step is MANDATORY. Without `writeFile`, you are uploading the original unmodified file.
+6. Run `drive-upload /path/to/local/file --folder FOLDER_ID` to upload the modified version.
+7. Verify: Run `drive-ls FOLDER_ID` to confirm the file was updated.
+
+> ⚠️ **Common mistake**: Downloading a file and uploading it without calling `writeFile` in between. This uploads the original, unmodified file. The `writeFile` call between download and upload is what saves your modifications.
+
 ### Upload a file to a specific folder
 1. Run `drive-search --query "name contains '<folderName>' and mimeType = 'application/vnd.google-apps.folder'"` to get the folder's ID.
 2. If the folder does not exist, run `drive-mkdir --name '<folderName>'` to create it and use the returned ID.

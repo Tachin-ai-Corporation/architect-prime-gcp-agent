@@ -31,31 +31,14 @@ Design specification documents follow a consistent structure:
 - No inline styles. No `!important` except for third-party overrides.
 - Interactive elements must have visible hover, focus, and active states.
 
-## HTML/CSS: File Output (MANDATORY — TASK FAILS WITHOUT THIS)
-When implementing design changes to web pages, follow these steps IN ORDER:
+## HTML/CSS: File Output (MANDATORY)
+When implementing design changes to web pages, you MUST produce the actual modified file.
+Analysis, recommendations, and descriptions are NOT deliverables — the cerebellum will
+FAIL your task if you don't write the file.
 
-### Workflow A: Editing files from Drive (delegation from architect)
-1. **Download** the file using `drive-download <fileId> --output <local_path>`.
-2. **Read** the downloaded file with `readFile` to load it into context.
-3. **Modify** the content in memory — apply all CSS/HTML/JS changes.
-4. **Write the modified file** using `writeFile` with the COMPLETE modified content.
-   - The `writeFile` path must be in the shared workspace directory.
-   - The file must contain the ENTIRE document, not a diff or partial snippet.
-   - **This is the PRIMARY deliverable. Without this `writeFile` call, the task FAILS.**
-5. **Upload** the written file using `drive-upload <path> <folderId>`.
-
-### Workflow B: Editing files from a URL
-1. **Fetch** the live page HTML using `web-fetch --url "<URL>" --format html`.
-2. **Read** the fetched file with `readFile` to load it into context.
-3. **Modify** the HTML/CSS content — apply design improvements directly to the markup.
-4. **Write the modified HTML** using `writeFile` with the COMPLETE modified HTML content.
-   - **This is the PRIMARY deliverable. Without this `writeFile` call, the task FAILS.**
-5. **Upload** the written file using `drive-upload` to the project Drive folder.
-
-CRITICAL: If you download or fetch a file but do not call `writeFile` to save the modified
-version, the cerebellum will FAIL your task. Analysis alone is not sufficient — you must
-produce the actual file. When the HTML is large (>10KB), write it in full — do not truncate.
-The download→upload cycle is NOT enough. You MUST call writeFile BETWEEN download and upload.
+- For files from Drive: follow the "Edit a file from Drive" procedure in the workspace-drive skill.
+- For files from a URL: fetch with `web-fetch`, modify, write with `writeFile`, then upload.
+- Always write the ENTIRE document — no diffs, no snippets, no truncation.
 
 ## Asset Management
 - Organize Drive folders by project, then by asset type (logos, images, icons, fonts).
