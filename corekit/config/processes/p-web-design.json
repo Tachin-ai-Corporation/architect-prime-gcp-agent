@@ -31,7 +31,7 @@
     },
     {
       "title": "Implement the design change",
-      "description": "Implement the approved design in a working branch.\n\n1. Create branch design/${target_pages}-update.\n2. Apply changes using ONLY design-system tokens (CSS custom properties) and documented components.\n3. Edit the shared stylesheet at sites/tachin-website/styles.css and the page markup as needed.\n4. Ensure responsive behavior at the documented breakpoints (mobile 375, tablet 768, desktop 1280).\n5. Save complete modified files.",
+      "description": "Implement the approved design.\n\n1. Apply changes using ONLY design-system tokens (CSS custom properties) and documented components.\n2. Edit the shared stylesheet at sites/tachin-website/styles.css and the page markup as needed.\n3. Ensure responsive behavior at the documented breakpoints (mobile 375, tablet 768, desktop 1280).\n4. Save complete modified files.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
@@ -41,7 +41,7 @@
     },
     {
       "title": "Design self-check",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify anything.\n\nVerify:\n1. Diff against main — confirm changes are scoped to the request.\n2. Confirm every color/space/font value is a design-system token, not a hardcoded literal.\n3. Confirm responsive behavior at 375 / 768 / 1280.\n4. Confirm no regression to other sections sharing the same styles.",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify anything.\n\nVerify:\n1. Re-read the modified files — confirm changes are scoped to the request.\n2. Confirm every color/space/font value is a design-system token, not a hardcoded literal.\n3. Confirm responsive behavior at 375 / 768 / 1280.\n4. Confirm no regression to other sections sharing the same styles.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",

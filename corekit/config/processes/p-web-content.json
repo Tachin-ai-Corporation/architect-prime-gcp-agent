@@ -21,7 +21,7 @@
     },
     {
       "title": "Apply the content change",
-      "description": "Apply the drafted copy to the page file(s) in a working branch.\n\n1. Create branch content/${target_pages}-update.\n2. Edit ONLY text nodes — do not touch HTML structure, classes, or CSS.\n3. Preserve all existing markup and design-system classes exactly.\n4. Save the complete modified file(s).",
+      "description": "Apply the drafted copy to the page file(s).\n\n1. Edit ONLY text nodes — do not touch HTML structure, classes, or CSS.\n2. Preserve all existing markup and design-system classes exactly.\n3. Save the complete modified file(s).",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
@@ -30,11 +30,11 @@
     },
     {
       "title": "Self-check the content change",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify anything.\n\nVerify the change:\n1. Diff the branch against main — confirm ONLY text changed.\n2. Re-read the new copy for typos, tone, and accuracy.\n3. Confirm no design-system classes were altered.",
+      "description": "⚠️ READ-ONLY STEP — do NOT modify anything.\n\nVerify the change:\n1. Re-read the modified file(s) — confirm the requested text was updated correctly.\n2. Check the copy for typos, tone, and accuracy.\n3. Confirm no HTML structure, classes, or CSS were altered — only text content should differ.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Diff shows text-only changes. No typos. Voice consistent.",
+      "accept_criteria": "File re-read confirms the requested text was updated. No typos. Voice consistent. No HTML/CSS changes.",
       "checkpointBoundary": true
     },
     {
