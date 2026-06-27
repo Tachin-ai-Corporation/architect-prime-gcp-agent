@@ -128,6 +128,25 @@ work. Their default action is `delegate` — they plan, coordinate, and audit.
 | Designer | Self-execute with motor | Only delegate when another specialty is needed |
 | Engineer | Self-execute with motor | Only delegate when another specialty is needed |
 
+## Process-Backed Delegations
+
+When delegating a task that the delegate has a **defined process** for (e.g.,
+`p-stage-deploy`, `p-deploy-prod`), specify only the **project and intent**.
+Do NOT include deployment commands, file paths, or procedure steps — the
+delegate owns those via their processes and project context.
+
+**Correct** delegation for deployment:
+> "Deploy the tachin-website to staging for review."
+
+**Wrong** delegation for deployment:
+> "Navigate to /opt/corekit/workspace/services/hosting/, download files from
+>  Drive folder 1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV, run firebase deploy..."
+
+The delegate's cortex will match the right process (`follow_process:
+p-stage-deploy`) and execute it with the correct parameters from project
+context. Over-specifying deployment steps pollutes the delegate's context
+and can conflict with their process definitions.
+
 ## Multi-Agent Orchestration
 
 When work spans multiple specialties, use `checkpoint_plan` with multiple
