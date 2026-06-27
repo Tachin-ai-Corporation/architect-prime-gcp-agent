@@ -1,34 +1,71 @@
 {
   "id": "p-legal-review",
   "name": "Legal Review",
-  "version": 1,
-  "description": "Performs a legal review on a document, appends redlines and reasoning to the bottom, and generates a structured summary document.",
+  "description": "Performs a legal review on a document, proposes redline modifications with reasoning, and generates a structured summary document.",
+  "status": "active",
+  "version": 5,
+  "visibility": "standard",
   "intent_keywords": ["legal", "review", "redlines", "contract", "terms"],
+  "parameters": {
+    "document_id": {
+      "description": "The Google Doc ID to review",
+      "required": true
+    },
+    "project_id": {
+      "description": "Project context",
+      "required": false,
+      "default": ""
+    }
+  },
   "steps": [
     {
       "title": "Analyze Document",
       "agent": "motor",
-      "description": "Read the target document using docs-cat and analyze it for legal risks, structural concerns, and necessary redlines."
+      "type": "standard",
+      "intent": "research",
+      "description": "Access the target document ${document_id} and analyze its contents for legal risks, structural concerns, clarity, and opportunities for redline improvements.",
+      "accept_criteria": "The document ${document_id} was successfully retrieved and analyzed for risks, concerns, and proposed redlines."
     },
     {
-      "title": "Append Redlines & Reasoning",
+      "title": "Propose Edits & Explanations",
       "agent": "motor",
-      "description": "Using docs-write --append, inject a [LEGAL REVIEW REDLINES] section at the bottom of the target document containing the redlines and the reasoning for each."
+      "type": "standard",
+      "intent": "execute",
+      "description": "Draft and apply proposed changes to the document for review, including the legal reasoning or explanation for each suggested modification, using the document suggestion capability.",
+      "accept_criteria": "Suggested changes and reasons are prepared and presented in the document according to the suggestion workflow."
     },
     {
-      "title": "Notify via Comment",
+      "title": "Notify Reviewer",
       "agent": "motor",
-      "description": "Using docs-comments-add, leave a document-level comment pointing the author to the appended redlines."
+      "type": "standard",
+      "intent": "execute",
+      "description": "Leave a notification comment on the document directing the reviewer to the proposed edits, and wait for their response or approval.",
+      "accept_criteria": "A comment notifying the reviewer is posted on the document."
+    },
+    {
+      "title": "Finalize Accepted Edits",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "description": "Process the reviewer's feedback. Apply all approved modifications to the original document content, reject those that were not approved, and resolve the notification comment thread.",
+      "accept_criteria": "Approved modifications are incorporated into the document, rejected changes are omitted, and suggestion artifacts are cleaned up."
     },
     {
       "title": "Generate Summary Document",
       "agent": "motor",
-      "description": "Using docs-create and docs-write, generate a final summary document. Ensure it follows this strict structure: ## Review Scope, ## Key Findings, ## Structural/Risk Concerns, ## Redline Summary."
+      "type": "standard",
+      "intent": "execute",
+      "description": "Create a new document containing the final legal review summary. The summary document must adhere to the following structure:\n\n## Review Scope\n## Key Findings\n## Structural/Risk Concerns\n## Redline Summary",
+      "accept_criteria": "A separate summary document has been created with the required structural headers (Review Scope, Key Findings, Structural/Risk Concerns, Redline Summary) filled out."
     },
     {
       "title": "Verify Execution",
       "agent": "cerebellum",
-      "description": "Verify that a summary document was created with the required headers and that redlines were appended to the original document."
+      "type": "standard",
+      "intent": "research",
+      "description": "Verify that the final approved edits have been integrated, suggestion artifacts are removed, and a structured summary document with the required sections exists.",
+      "accept_criteria": "Verification passed: The document is updated, temporary suggestion tabs/elements are gone, and the structured summary document exists."
     }
   ]
 }
+
