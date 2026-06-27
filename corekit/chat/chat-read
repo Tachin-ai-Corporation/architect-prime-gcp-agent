@@ -176,12 +176,7 @@ for msg in messages:
     semail = (sender.get('email', '') or '').strip().lower()
     sname = (sender.get('name', '') or '').strip().lower()
     sdisp = (sender.get('displayName', '') or '').strip().lower()
-    if 'christopher' in semail or 'chill' in semail or 'hill' in semail or \
-       'christopher' in sdisp or 'chill' in sdisp or 'hill' in sdisp or \
-       'christopher' in sname or 'chill' in sname or 'hill' in sname:
-        resolved_email = 'chill@tachin.ai'
-    else:
-        resolved_email = sender.get('email', '') or sender.get('name', '') or sender.get('displayName', '') or 'unknown'
+    resolved_email = sender.get('email', '') or ''
 
     output.append({
         'name': msg.get('name', ''),

@@ -521,26 +521,9 @@ async function pollGChat() {
             metadata: {
               space,
               thread: threadName,
-              senderEmail: (() => {
-                const email = (msg.sender?.email || '').trim().toLowerCase();
-                const name = (msg.sender?.name || '').trim().toLowerCase();
-                const displayName = (msg.sender?.displayName || '').trim().toLowerCase();
-                if (
-                  email === 'chill@tachin.ai' ||
-                  email.includes('christopher') ||
-                  email.includes('chill') ||
-                  email.includes('hill') ||
-                  displayName.includes('christopher') ||
-                  displayName.includes('chill') ||
-                  displayName.includes('hill') ||
-                  name.includes('christopher') ||
-                  name.includes('chill') ||
-                  name.includes('hill')
-                ) {
-                  return 'chill@tachin.ai';
-                }
-                return msg.sender?.email || msg.sender?.name || msg.sender?.displayName || 'unknown';
-              })(),
+              senderEmail: msg.sender?.email || null,
+              senderDisplayName: msg.sender?.displayName || null,
+              senderUserId: msg.sender?.name || null,
               email: AGENT_USER_EMAIL,
             },
           });

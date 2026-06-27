@@ -860,10 +860,10 @@ async function releaseClaim(envelopeId, claimId) {
 // ---- Gateway HTTP dispatch ----
 async function callCortex(mode, payload) {
   const systemPrompt = buildSystemPrompt(mode, payload);
-  const pingerEmail = payload.envelope?.source_meta?.senderEmail || payload.envelope?._sourceMeta?.senderEmail || '';
+  const pingerEmail = payload.envelope?.source_meta?.senderEmail || '';
   const userPrompt = [
     `[BRAIN-ORCHESTRATED]`,
-    pingerEmail ? `## Requester (Pinger)\nUse this email for Drive sharing and communication: ${pingerEmail}\n` : '',
+    pingerEmail ? `## Requester\nUse this email for Drive sharing and communication: ${pingerEmail}\n` : '',
     buildUserPrompt(mode, payload)
   ].filter(Boolean).join('\n');
 
@@ -974,7 +974,7 @@ async function callPrefrontal(payload) {
   const systemPrompt = sysParts.join('\n\n');
 
   // Build user prompt: instruction + memory + accumulated context
-  const pingerEmail = payload.envelope?.source_meta?.senderEmail || payload.envelope?._sourceMeta?.senderEmail || '';
+  const pingerEmail = payload.envelope?.source_meta?.senderEmail || '';
   const analyzePayload = {
     mode: 'analyze',
     instruction: payload.envelope?.instruction || '',
@@ -984,7 +984,7 @@ async function callPrefrontal(payload) {
   };
   const userPrompt = [
     `[BRAIN-ORCHESTRATED]`,
-    pingerEmail ? `## Requester (Pinger)\nUse this email for Drive sharing and communication: ${pingerEmail}\n` : '',
+    pingerEmail ? `## Requester\nUse this email for Drive sharing and communication: ${pingerEmail}\n` : '',
     JSON.stringify(analyzePayload)
   ].filter(Boolean).join('\n');
 
@@ -1285,12 +1285,12 @@ async function callAgent(agentId, envelope) {
     ? `\n\n## Local Workspace\nYour local working directory is \`${CORE_DIR}/shared/${workspaceId}/\`.\nThis is an **ephemeral** workspace — it is cleaned up when the mission ends.\nUse it for temporary files, intermediate work, and staging.\n\nIf a **Shared Workspace** (Google Drive folder) is listed in the Project Context above, that is the **persistent** source of truth:\n- Pull files you need: \`drive-download <fileId> ${CORE_DIR}/shared/${workspaceId}/<filename>\`\n- Push changes back: \`drive-upload "${CORE_DIR}/shared/${workspaceId}/<filename>" <folderId>\`\n- Organize the shared workspace with clear subfolders (e.g. src/, docs/, configs/)\n- List contents: \`drive-ls <folderId>\`\n\nWrite substantial outputs (plans, reports, code) as FILES, not just text responses.\nYour text response should summarize what you did and reference the filenames.\nPrior step outputs are also saved here — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
     : '';
 
-  const pingerEmail = envelope._sourceMeta?.senderEmail || '';
+  const pingerEmail = envelope.source_meta?.senderEmail || '';
   const userMessage = [
     `[BRAIN-ORCHESTRATED]`,
     instruction,
     workspaceDirective,
-    pingerEmail ? `\n## Requester (Pinger)\nUse this email for Drive sharing and communication: ${pingerEmail}` : '',
+    pingerEmail ? `\n## Requester\nUse this email for Drive sharing and communication: ${pingerEmail}` : '',
     envelope._projectContext ? `\n## Project Context\n${envelope._projectContext}` : '',
     envelope._sourceText ? `\n## Original User Request\n${envelope._sourceText}` : '',
     context ? `\n## Context\n${context}` : '',

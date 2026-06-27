@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.06.22.1.0)
+## Current State (v2026.06.27.1.2)
 6 brain agents in gateway multi-agent configuration, coordinated by the `agent-brain.service` state machine. Brain daemon builds `skill_index` deterministically at startup and injects into cortex payloads with `intent_keywords` for process selection. System prompt = SOUL.md only (no TOOLS.md injection). `assemble-persona` handles specialty SOUL appends at bootstrap and during `upgrade-corekit`. Motor dispatches receive full project context (`_projectContext`) and raw user request (`_sourceText`) as first-class user message sections. LoopGuard provides duplicate detection, semantic stuck detection, and structured `[STUCK REPORT]` output. Cross-agent delegation flows through checkpoint-executor with a 4-layer self-delegation prevention system: prefrontal SOUL specialty ownership detection, cortex SOUL delegation rules, inbound delegation rules, and a code-level checkpoint-executor guard that converts self-delegations to local motor tasks. Delegation dispatches via GChat @-mention with machine-parseable envelope references. Parallel delegation fan-out within a single checkpoint. Product Architect and PM agents are delegation-first (delegate before executing). Designer motor has mandatory step-by-step HTML writeFile enforcement.
 
 ### Agent Inventory

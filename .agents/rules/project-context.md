@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.27.1.1)
+## Current Architecture (v2026.06.27.1.2)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -11,7 +11,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Compute Engine VMs** — One per Prime + one per fleet agent
 - **Neural Gateway** — Host-native AI neural gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC, Claude Opus 4.6 via Anthropic streaming)
 - **Google Chat** — Agent-to-human communication via DWD
-- **Pinger Email Propagation** — Maps all Christopher Hill GChat name/email variations (including `chris@` or `hill`) to canonical `chill@tachin.ai` on ingestion, attaches it as `senderEmail` in `source_meta`, and propagates it as `## Requester (Pinger)` context header to Prefrontal, Cortex, and Motor prompt generators. Fallback normalization in `drive-share` tool ensures all Workspace share requests target `chill@tachin.ai` safely.
+- **Deterministic User Identity Resolution** — Extracts canonical identity fields (`senderEmail`, `senderDisplayName`, `senderUserId`) directly from the GChat API payload on ingestion, attaches them to `source_meta`, and propagates `source_meta.senderEmail` as the `## Requester` context header to Prefrontal, Cortex, and Motor prompt generators. Strict email validation in `drive-share` ensures all Workspace share requests target valid emails without hardcoded fallbacks.
 
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)

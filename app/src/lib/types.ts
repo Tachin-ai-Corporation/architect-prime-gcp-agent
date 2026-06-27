@@ -84,6 +84,15 @@ export interface SetupState {
 
 /* ---- Work Envelope types ---- */
 
+export interface SourceMeta {
+  senderEmail: string | null;
+  senderDisplayName: string | null;
+  senderUserId: string | null;
+  space?: string;
+  thread?: string;
+  [key: string]: unknown;
+}
+
 export interface WorkEnvelope {
   id: string;
   type: 'R' | 'M' | 'C' | 'T';
@@ -100,7 +109,7 @@ export interface WorkEnvelope {
   children: string[];
   depends_on?: string[];
   source_channel: string;
-  source_meta: Record<string, unknown>;
+  source_meta: SourceMeta;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;

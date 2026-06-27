@@ -28,15 +28,10 @@ elif [[ "$TARGET" != anyone && "$TARGET" != domain:* ]]; then
 fi
 
 if [[ -n "$CHECK_EMAIL" ]]; then
-  # Normalize to lower case
-  CHECK_EMAIL_LOWER=$(echo "$CHECK_EMAIL" | tr '[:upper:]' '[:lower:]')
-  if [[ "$CHECK_EMAIL_LOWER" == *"christopher"* || "$CHECK_EMAIL_LOWER" == *"chill"* || "$CHECK_EMAIL_LOWER" == *"hill"* ]]; then
-    CHECK_EMAIL="chill@tachin.ai"
-    if [[ "$TARGET" == user:* ]]; then
-      TARGET="user:chill@tachin.ai"
-    else
-      TARGET="chill@tachin.ai"
-    fi
+  # Validate email format before API call
+  if [[ ! "$CHECK_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+    echo "[drive-share] ERROR: Invalid email format: $CHECK_EMAIL" >&2
+    exit 1
   fi
 fi
 
