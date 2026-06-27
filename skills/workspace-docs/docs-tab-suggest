@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs-tab-suggest — Suggest an edit on a suggestion tab
+# docs-tab-suggest - Suggest an edit on a suggestion tab
 # Brain agent: motor (WRITE)
 # Usage: docs-tab-suggest --doc <doc> --source-tab <tab> --suggestion-tab <tab> --find <text> --replace <text> [--reason <reason>]
 set -euo pipefail
@@ -24,18 +24,20 @@ done
 [[ -n "$DOC_ID" && -n "$SUGG_TAB" && -n "$FIND" ]] || die "Missing required args"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
+export DOC_ID SOURCE_TAB SUGG_TAB FIND REPLACE REASON
+
 HTTP_CODE=$(curl -s -o /tmp/docs-suggest-read.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
 
 python3 -c "
-import json, sys, re
+import json, sys, re, os
 
 doc = json.load(open('/tmp/docs-suggest-read.json'))
-sugg_tab_id = ''
-find_text = sys.argv[1]
-replace_text = sys.argv[2]
-reason = sys.argv[3]
+sugg_tab_id = os.environ.get('SUGG_TAB', '')
+find_text = os.environ.get('FIND', '')
+replace_text = os.environ.get('REPLACE', '')
+reason = os.environ.get('REASON', '')
 
 def find_tab(tabs, target_id):
     for t in tabs:
@@ -59,6 +61,7 @@ checklist_insert_index = -1
 body_start_index = -1
 in_checklist = False
 
+# Match numbers starting in the checklist section
 for elem in content:
     if 'paragraph' in elem:
         para = elem['paragraph']
@@ -69,15 +72,13 @@ for elem in content:
         
         if 'All changes will be applied' in para_text:
             in_checklist = True
-        elif in_checklist and '???' in para_text:
-            # Reached the end of the checklist section
-            # The previous paragraph was the last checklist entry, or the header if empty
-            # But we actually insert RIGHT BEFORE this divider paragraph
+        elif in_checklist and '=====' in para_text:
             checklist_insert_index = current_index
             in_checklist = False
             body_start_index = current_index + para_len
             
-        if re.match(r'^\d+\.\s+«', para_text):
+        # Match digit followed by dot (e.g. 1.)
+        if re.match(r'^\d+\.', para_text.strip()):
             change_count += 1
             
         current_index += para_len
@@ -89,18 +90,16 @@ if checklist_insert_index == -1:
 next_change_id = change_count + 1
 
 # Find the target text in the body
-body_text = full_text[body_start_index-1:] # string is 0-indexed, docs are 1-indexed
+body_text = full_text[body_start_index-1:]
 match_offset = body_text.find(find_text)
 
 if match_offset == -1:
-    print('{\"status\":\"text_not_found\"}')
+    print(json.dumps({'status': 'text_not_found'}))
     sys.exit(0)
 
 match_start = body_start_index + match_offset
 match_end = match_start + len(find_text)
 
-# We will do body replacement FIRST, so we don't mess up the checklist insert index later.
-# Wait, actually we can do body replacement in ONE batchUpdate, and checklist in SECOND batchUpdate.
 body_requests = [
     {
         'deleteContentRange': {
@@ -125,9 +124,8 @@ body_requests = [
 with open('/tmp/docs-suggest-body.json', 'w') as f:
     json.dump({'requests': body_requests}, f)
 
-# For the checklist, we calculate the NEW index since the body replace might have shifted things.
-# However, the checklist is BEFORE the body, so its index does NOT shift when the body changes!
-checklist_entry = f'{next_change_id}. «{find_text}» ? «{replace_text}» — {reason}\n'
+# smart quotes and arrows are U-escaped to be completely ASCII safe on host shell
+checklist_entry = f'{next_change_id}. \u201c{find_text}\u201d \u2192 \u201c{replace_text}\u201d \u2014 {reason}\n'
 
 checklist_requests = [
     {
@@ -149,7 +147,7 @@ with open('/tmp/docs-suggest-checklist.json', 'w') as f:
 
 with open('/tmp/docs-suggest-change-id', 'w') as f:
     f.write(str(next_change_id))
-" "$FIND" "$REPLACE" "$REASON" || die "Failed to parse for suggestion"
+" || die "Failed to parse for suggestion"
 
 if [[ -f /tmp/docs-suggest-change-id ]]; then
     CHANGE_ID=$(cat /tmp/docs-suggest-change-id)
@@ -171,12 +169,12 @@ HTTP_CODE=$(curl -s -o /tmp/docs-suggest-chk-resp.json -w '%{http_code}' \
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to apply checklist entry, HTTP $HTTP_CODE"
 
 python3 -c "
-import json
+import json, os, sys
 print(json.dumps({
     'status': 'suggested',
-    'docId': '',
-    'changeId': ,
-    'find': '',
-    'replace': ''
+    'docId': os.environ.get('DOC_ID', ''),
+    'changeId': int(sys.argv[1]),
+    'find': os.environ.get('FIND', ''),
+    'replace': os.environ.get('REPLACE', '')
 }, indent=2))
-"
+" "$CHANGE_ID"

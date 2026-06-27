@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs-tab-clone — Clone a tab's text content into a new suggestion tab
+# docs-tab-clone - Clone a tab's text content into a new suggestion tab
 # Brain agent: motor (WRITE)
 # Usage: docs-tab-clone --doc <doc_id> --source-tab <tab_id> [--title "Custom Title"]
 set -euo pipefail
@@ -21,16 +21,19 @@ done
 [[ -n "$DOC_ID" && -n "$SOURCE_TAB" ]] || die "Need --doc and --source-tab"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
+# Export vars so python can read them securely from environment
+export DOC_ID SOURCE_TAB TITLE
+
 HTTP_CODE=$(curl -s -o /tmp/docs-clone-source.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
 
 python3 -c "
-import json, sys
+import json, sys, os
 
 doc = json.load(open('/tmp/docs-clone-source.json'))
-source_tab_id = ''
-custom_title = ''
+source_tab_id = os.environ.get('SOURCE_TAB', '')
+custom_title = os.environ.get('TITLE', '')
 
 def find_tab(tabs, target_id):
     for t in tabs:
@@ -46,12 +49,14 @@ if not source_tab:
     sys.exit(1)
 
 source_title = source_tab.get('tabProperties', {}).get('title', 'Unknown')
-new_title = custom_title if custom_title else f'?? Edits — {source_title}'
+pencil_emoji = '\u270f\ufe0f'
+em_dash = '\u2014'
+new_title = custom_title if custom_title else f'{pencil_emoji} Edits {em_dash} {source_title}'
 
 text_parts = []
 headings = []
 
-header_text = '????????????????????????????????\n?? REVIEW: suggested changes\nAll changes will be applied. Check any to REJECT.\n????????????????????????????????\n\n????????????????????????????????\n\n'
+header_text = '================================\n* REVIEW: suggested changes\nAll changes will be applied. Check any to REJECT.\n================================\n\n================================\n\n'
 current_index = 1 + len(header_text)
 
 content = source_tab.get('documentTab', {}).get('body', {}).get('content', [])
@@ -89,7 +94,11 @@ with open('/tmp/docs-clone-data.json', 'w') as f:
 NEW_TITLE=$(python3 -c "import json; print(json.load(open('/tmp/docs-clone-data.json'))['newTitle'])")
 SOURCE_TITLE=$(python3 -c "import json; print(json.load(open('/tmp/docs-clone-data.json'))['sourceTitle'])")
 
-CREATE_REQ=$(python3 -c "import json; print(json.dumps({'requests':[{'addDocumentTab':{'tabProperties':{'title':''}}}]}))")
+CREATE_REQ=$(python3 -c "
+import json
+title = json.load(open('/tmp/docs-clone-data.json'))['newTitle']
+print(json.dumps({'requests':[{'addDocumentTab':{'tabProperties':{'title':title}}}]}))
+")
 HTTP_CODE=$(curl -s -o /tmp/docs-clone-create.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "${CREATE_REQ}" "${DOCS_API}/${DOC_ID}:batchUpdate")
@@ -98,10 +107,12 @@ HTTP_CODE=$(curl -s -o /tmp/docs-clone-create.json -w '%{http_code}' \
 NEW_TAB_ID=$(python3 -c "import json; print(json.load(open('/tmp/docs-clone-create.json')).get('replies',[{}])[0].get('addDocumentTab',{}).get('tabId',''))")
 [[ -n "$NEW_TAB_ID" ]] || die "Failed to get new tab ID"
 
+export NEW_TAB_ID
+
 python3 -c "
-import json
+import json, os
 data = json.load(open('/tmp/docs-clone-data.json'))
-new_tab_id = ''
+new_tab_id = os.environ.get('NEW_TAB_ID', '')
 text = data['text']
 headings = data['headings']
 
@@ -135,13 +146,13 @@ if [[ "$UPDATE_REQ" != '{"requests": []}' ]]; then
 fi
 
 python3 -c "
-import json
+import json, os, sys
 print(json.dumps({
     'status': 'cloned',
-    'docId': '',
-    'sourceTabId': '',
-    'sourceTabTitle': '',
-    'suggestionTabId': '',
-    'suggestionTabTitle': ''
+    'docId': os.environ.get('DOC_ID', ''),
+    'sourceTabId': os.environ.get('SOURCE_TAB', ''),
+    'sourceTabTitle': sys.argv[1],
+    'suggestionTabId': os.environ.get('NEW_TAB_ID', ''),
+    'suggestionTabTitle': sys.argv[2]
 }, indent=2))
-"
+" "$SOURCE_TITLE" "$NEW_TITLE"

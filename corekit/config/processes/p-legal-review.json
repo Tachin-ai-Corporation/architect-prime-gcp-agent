@@ -3,7 +3,7 @@
   "name": "Legal Review",
   "description": "Performs a legal review on a document, proposes redline modifications with reasoning, and generates a structured summary document.",
   "status": "active",
-  "version": 5,
+  "version": 6,
   "visibility": "standard",
   "intent_keywords": ["legal", "review", "redlines", "contract", "terms"],
   "parameters": {
@@ -60,7 +60,7 @@
     },
     {
       "title": "Verify Execution",
-      "agent": "cerebellum",
+      "agent": "temporal-research",
       "type": "standard",
       "intent": "research",
       "description": "Verify that the final approved edits have been integrated, suggestion artifacts are removed, and a structured summary document with the required sections exists.",

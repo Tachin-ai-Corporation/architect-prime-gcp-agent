@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs-tab-finalize — Apply approved suggestions to original tab and cleanup
+# docs-tab-finalize - Apply approved suggestions to original tab and cleanup
 # Brain agent: motor (WRITE) / temporal-memory (READ)
 # Usage: docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id>
 set -euo pipefail
@@ -23,16 +23,19 @@ done
 
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
+export DOC_ID SOURCE_TAB SUGG_TAB
+
 # Step A: Read suggestion tab
 HTTP_CODE=$(curl -s -o /tmp/docs-fin-read.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
 
 python3 -c "
-import json, sys, re
+import json, sys, re, os
 
 doc = json.load(open('/tmp/docs-fin-read.json'))
-sugg_tab_id = ''
+sugg_tab_id = os.environ.get('SUGG_TAB', '')
+source_tab_id = os.environ.get('SOURCE_TAB', '')
 
 def find_tab(tabs, target_id):
     for t in tabs:
@@ -58,7 +61,7 @@ for elem in content:
         para_text = ''.join([run.get('textRun', {}).get('content', '') for run in para.get('elements', [])])
         
         # Check if it's a checklist entry
-        match = re.match(r'^(?:?\s*)?(\d+)\.\s+«(.*?)»\s+?\s+«(.*?)»', para_text)
+        match = re.match(r'^\s*(\d+)\.\s+[\u201c\x22\x27\u2018\u2019](.*?)[\u201d\x22\x27\u2018\u2019]\s*[\u2192\-|>]\s*[\u201c\x22\x27\u2018\u2019](.*?)[\u201d\x22\x27\u2018\u2019]', para_text)
         if match:
             change_id = int(match.group(1))
             orig_text = match.group(2)
@@ -72,8 +75,8 @@ for elem in content:
                     any_strikethrough = True
                     break
             
-            # Check for ? fallback
-            has_check = para_text.startswith('?')
+            # Check for checked mark fallback
+            has_check = para_text.strip().startswith('\u2705') or '[x]' in para_text.lower()
             
             checklist_entries.append({
                 'changeId': change_id,
@@ -102,7 +105,7 @@ for e in checklist_entries:
             'replaceAllText': {
                 'containsText': {'text': e['find'], 'matchCase': True},
                 'replaceText': e['replace'],
-                'tabsCriteria': {'tabIds': ['']}
+                'tabsCriteria': {'tabIds': [source_tab_id]}
             }
         })
 
@@ -157,7 +160,8 @@ COMMENT_ID=$(python3 -c "
 import json, sys
 data = json.loads(sys.argv[1])
 for c in data.get('comments', []):
-    if 'I\\'ve prepared' in c.get('content', '') and 'suggested edits' in c.get('content', ''):
+    content = c.get('content', '')
+    if 'prepared' in content and 'suggested edits' in content:
         print(c['id'])
         sys.exit(0)
 print('')
@@ -168,7 +172,7 @@ if [[ -n "$COMMENT_ID" ]]; then
     NUM_APP=$(python3 -c "import json; print(len(json.load(open('/tmp/docs-fin-summary.json'))['applied']))")
     NUM_REJ=$(python3 -c "import json; print(len(json.load(open('/tmp/docs-fin-summary.json'))['rejected']))")
     
-    RESOLVE_BODY="{\"content\": \"? Finalized: ${NUM_APP} applied, ${NUM_REJ} rejected\", \"action\": \"resolve\"}"
+    RESOLVE_BODY="{\"content\": \"Finalized: ${NUM_APP} applied, ${NUM_REJ} rejected\", \"action\": \"resolve\"}"
     HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
         -X POST -H "Authorization: Bearer ${DRIVE_TOKEN}" -H "Content-Type: application/json" \
         -d "${RESOLVE_BODY}" "${DRIVE_API}/files/${DOC_ID}/comments/${COMMENT_ID}/replies")
@@ -177,14 +181,16 @@ if [[ -n "$COMMENT_ID" ]]; then
     fi
 fi
 
+export COMMENT_RESOLVED
+
 python3 -c "
-import json
+import json, os
 summary = json.load(open('/tmp/docs-fin-summary.json'))
 print(json.dumps({
     'status': 'finalized',
     'applied': summary['applied'],
     'rejected': summary['rejected'],
     'tabDeleted': True,
-    'commentResolved': str('').lower() == 'true'
+    'commentResolved': os.environ.get('COMMENT_RESOLVED', 'false').lower() == 'true'
 }, indent=2))
 "

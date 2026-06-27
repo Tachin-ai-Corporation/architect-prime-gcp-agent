@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs-tab-list — List all tabs in a Google Doc
+# docs-tab-list - List all tabs in a Google Doc
 # Brain agent: temporal-memory (READ)
 # Usage: docs-tab-list <doc_id>
 set -euo pipefail
@@ -11,6 +11,8 @@ die() { echo "[docs-tab-list] [ERROR] $*" >&2; exit 1; }
 DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-tab-list <doc_id>"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
+export DOC_ID
+
 HTTP_CODE=$(curl -s -o /tmp/docs-tab-list.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
 
@@ -21,8 +23,9 @@ fi
 [[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
 
 python3 -c "
-import json
+import json, os
 doc = json.load(open('/tmp/docs-tab-list.json'))
+doc_id = os.environ.get('DOC_ID', '')
 
 def extract_tabs(tabs):
     result = []
@@ -38,11 +41,10 @@ def extract_tabs(tabs):
     return result
 
 tabs = extract_tabs(doc.get('tabs', []))
-tab_count = len(tabs) + sum(len(t['childTabs']) for t in tabs) # simple count for 1 level deep
-# More robust count:
+
 def count_tabs(tabs_list):
     return len(tabs_list) + sum(count_tabs(t['childTabs']) for t in tabs_list)
     
 tab_count = count_tabs(tabs)
-print(json.dumps({'docId': '', 'tabs': tabs, 'tabCount': tab_count}, indent=2))
+print(json.dumps({'docId': doc_id, 'tabs': tabs, 'tabCount': tab_count}, indent=2))
 "
