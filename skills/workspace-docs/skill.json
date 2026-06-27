@@ -1,20 +1,26 @@
 {
-  "id": "workspace-docs",
-  "name": "Google Docs",
-  "version": 2,
-  "description": "Create, read, write, and annotate Google Docs.",
-  "author": "architect-prime",
-  "origin": "core",
-  "category": "workspace",
-  "agent_part": "motor",
-  "scripts": [
-    "docs-cat",
-    "docs-comments-add",
-    "docs-comments-list",
-    "docs-create",
-    "docs-find-replace",
-    "docs-write"
-  ],
-  "requires": {},
-  "when_to_use": "When a task involves creating, reading, editing, or commenting on Google Docs."
+    "id":  "workspace-docs",
+    "name":  "Google Docs",
+    "version":  3,
+    "description":  "Create, read, write, and annotate Google Docs.",
+    "author":  "architect-prime",
+    "origin":  "core",
+    "category":  "workspace",
+    "agent_part":  "motor",
+    "scripts":  [
+                    "docs-cat",
+                    "docs-comments-add",
+                    "docs-comments-list",
+                    "docs-create",
+                    "docs-find-replace",
+                    "docs-tab-clone",
+                    "docs-tab-finalize",
+                    "docs-tab-list",
+                    "docs-tab-suggest",
+                    "docs-write"
+                ],
+    "requires":  {
+
+                 },
+    "when_to_use":  "When a task involves creating, reading, editing, commenting, or suggesting via tab-based workflows on Google Docs."
 }

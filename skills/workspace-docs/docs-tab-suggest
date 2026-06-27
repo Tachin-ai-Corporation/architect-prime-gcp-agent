@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# docs-tab-suggest — Suggest an edit on a suggestion tab
+# Brain agent: motor (WRITE)
+# Usage: docs-tab-suggest --doc <doc> --source-tab <tab> --suggestion-tab <tab> --find <text> --replace <text> [--reason <reason>]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+die() { echo "[docs-tab-suggest] [ERROR] $*" >&2; exit 1; }
+
+DOC_ID="" SOURCE_TAB="" SUGG_TAB="" FIND="" REPLACE="" REASON="No reason provided"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --source-tab) SOURCE_TAB="$2"; shift 2 ;;
+    --suggestion-tab) SUGG_TAB="$2"; shift 2 ;;
+    --find) FIND="$2"; shift 2 ;;
+    --replace) REPLACE="$2"; shift 2 ;;
+    --reason) REASON="$2"; shift 2 ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$DOC_ID" && -n "$SUGG_TAB" && -n "$FIND" ]] || die "Missing required args"
+TOKEN="$("" --scope docs)" || die "Auth failed"
+
+HTTP_CODE=$(curl -s -o /tmp/docs-suggest-read.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
+[[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
+
+python3 -c "
+import json, sys, re
+
+doc = json.load(open('/tmp/docs-suggest-read.json'))
+sugg_tab_id = ''
+find_text = sys.argv[1]
+replace_text = sys.argv[2]
+reason = sys.argv[3]
+
+def find_tab(tabs, target_id):
+    for t in tabs:
+        if t.get('tabProperties', {}).get('tabId') == target_id:
+            return t
+        found = find_tab(t.get('childTabs', []), target_id)
+        if found: return found
+    return None
+
+tab = find_tab(doc.get('tabs', []), sugg_tab_id)
+if not tab:
+    print('error:Suggestion tab not found', file=sys.stderr)
+    sys.exit(1)
+
+content = tab.get('documentTab', {}).get('body', {}).get('content', [])
+
+full_text = ''
+current_index = 1
+change_count = 0
+checklist_insert_index = -1
+body_start_index = -1
+in_checklist = False
+
+for elem in content:
+    if 'paragraph' in elem:
+        para = elem['paragraph']
+        para_text = ''.join([run.get('textRun', {}).get('content', '') for run in para.get('elements', [])])
+        para_len = len(para_text)
+        
+        full_text += para_text
+        
+        if 'All changes will be applied' in para_text:
+            in_checklist = True
+        elif in_checklist and '???' in para_text:
+            # Reached the end of the checklist section
+            # The previous paragraph was the last checklist entry, or the header if empty
+            # But we actually insert RIGHT BEFORE this divider paragraph
+            checklist_insert_index = current_index
+            in_checklist = False
+            body_start_index = current_index + para_len
+            
+        if re.match(r'^\d+\.\s+«', para_text):
+            change_count += 1
+            
+        current_index += para_len
+
+if checklist_insert_index == -1:
+    print('error:Could not find checklist section divider', file=sys.stderr)
+    sys.exit(1)
+
+next_change_id = change_count + 1
+
+# Find the target text in the body
+body_text = full_text[body_start_index-1:] # string is 0-indexed, docs are 1-indexed
+match_offset = body_text.find(find_text)
+
+if match_offset == -1:
+    print('{\"status\":\"text_not_found\"}')
+    sys.exit(0)
+
+match_start = body_start_index + match_offset
+match_end = match_start + len(find_text)
+
+# We will do body replacement FIRST, so we don't mess up the checklist insert index later.
+# Wait, actually we can do body replacement in ONE batchUpdate, and checklist in SECOND batchUpdate.
+body_requests = [
+    {
+        'deleteContentRange': {
+            'range': {'startIndex': match_start, 'endIndex': match_end, 'tabId': sugg_tab_id}
+        }
+    },
+    {
+        'insertText': {
+            'location': {'index': match_start, 'tabId': sugg_tab_id},
+            'text': replace_text
+        }
+    },
+    {
+        'updateTextStyle': {
+            'range': {'startIndex': match_start, 'endIndex': match_start + len(replace_text), 'tabId': sugg_tab_id},
+            'textStyle': {'backgroundColor': {'color': {'rgbColor': {'red': 1.0, 'green': 1.0, 'blue': 0.0}}}},
+            'fields': 'backgroundColor'
+        }
+    }
+]
+
+with open('/tmp/docs-suggest-body.json', 'w') as f:
+    json.dump({'requests': body_requests}, f)
+
+# For the checklist, we calculate the NEW index since the body replace might have shifted things.
+# However, the checklist is BEFORE the body, so its index does NOT shift when the body changes!
+checklist_entry = f'{next_change_id}. «{find_text}» ? «{replace_text}» — {reason}\n'
+
+checklist_requests = [
+    {
+        'insertText': {
+            'location': {'index': checklist_insert_index, 'tabId': sugg_tab_id},
+            'text': checklist_entry
+        }
+    },
+    {
+        'createParagraphBullets': {
+            'range': {'startIndex': checklist_insert_index, 'endIndex': checklist_insert_index + len(checklist_entry) - 1, 'tabId': sugg_tab_id},
+            'bulletPreset': 'BULLET_CHECKBOX'
+        }
+    }
+]
+
+with open('/tmp/docs-suggest-checklist.json', 'w') as f:
+    json.dump({'requests': checklist_requests}, f)
+
+with open('/tmp/docs-suggest-change-id', 'w') as f:
+    f.write(str(next_change_id))
+" "$FIND" "$REPLACE" "$REASON" || die "Failed to parse for suggestion"
+
+if [[ -f /tmp/docs-suggest-change-id ]]; then
+    CHANGE_ID=$(cat /tmp/docs-suggest-change-id)
+else
+    # Text not found printed the JSON and exited 0
+    exit 0
+fi
+
+BODY_REQ=$(cat /tmp/docs-suggest-body.json)
+HTTP_CODE=$(curl -s -o /tmp/docs-suggest-body-resp.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "${BODY_REQ}" "${DOCS_API}/${DOC_ID}:batchUpdate")
+[[ "$HTTP_CODE" == "200" ]] || die "Failed to apply body edit, HTTP $HTTP_CODE"
+
+CHK_REQ=$(cat /tmp/docs-suggest-checklist.json)
+HTTP_CODE=$(curl -s -o /tmp/docs-suggest-chk-resp.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "${CHK_REQ}" "${DOCS_API}/${DOC_ID}:batchUpdate")
+[[ "$HTTP_CODE" == "200" ]] || die "Failed to apply checklist entry, HTTP $HTTP_CODE"
+
+python3 -c "
+import json
+print(json.dumps({
+    'status': 'suggested',
+    'docId': '',
+    'changeId': ,
+    'find': '',
+    'replace': ''
+}, indent=2))
+"

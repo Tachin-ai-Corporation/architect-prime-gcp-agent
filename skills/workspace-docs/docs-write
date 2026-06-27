@@ -1,38 +1,58 @@
 #!/usr/bin/env bash
 # docs-write — Replace or append body text in a Google Doc
 # Brain agent: motor (WRITE)
-# Usage: docs-write --doc DOC_ID --text "New content" [--append]
+# Usage: docs-write --doc DOC_ID (--text "New content" | --file FILE_PATH) [--append]
 # Without --append, clears existing content first.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DOCS_API="https://docs.googleapis.com/v1/documents"
 die() { echo "[docs-write] [ERROR] $*" >&2; exit 1; }
-DOC_ID="" TEXT="" APPEND=false
+DOC_ID="" TEXT="" FILE="" APPEND=false
 while [[ $# -gt 0 ]]; do
-  case "$1" in --doc) DOC_ID="$2"; shift 2 ;; --text) TEXT="$2"; shift 2 ;; --append) APPEND=true; shift ;; *) die "Unknown: $1" ;; esac
+  case "$1" in 
+    --doc) DOC_ID="$2"; shift 2 ;; 
+    --text) TEXT="$2"; shift 2 ;; 
+    --file) FILE="$2"; shift 2 ;; 
+    --append) APPEND=true; shift ;; 
+    *) die "Unknown: $1" ;; 
+  esac
 done
-[[ -n "$DOC_ID" && -n "$TEXT" ]] || die "Need --doc and --text"
+[[ -n "$DOC_ID" && (-n "$TEXT" || -n "$FILE") ]] || die "Need --doc and either --text or --file"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
-if [[ "$APPEND" == "false" ]]; then
-  END_IDX=$(curl -sf -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}" \
-    | python3 -c "
+
+if [[ -n "$FILE" ]]; then
+  TEXT=$(cat "$FILE")
+fi
+
+# We must retrieve END_IDX for appending or for clearing old content.
+END_IDX=$(curl -sf -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}" \
+  | python3 -c "
 import json, sys
 doc = json.load(sys.stdin)
 content = doc.get('body',{}).get('content',[])
 if content: print(content[-1].get('endIndex',1)-1)
 else: print(1)
 ")
+
+INSERT_IDX=1
+
+if [[ "$APPEND" == "false" ]]; then
   if [[ "$END_IDX" -gt 1 ]]; then
     BODY=$(python3 -c "import json; print(json.dumps({'requests':[{'deleteContentRange':{'range':{'startIndex':1,'endIndex':$END_IDX}}}]}))")
     curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
       -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate" > /dev/null
   fi
+else
+  INSERT_IDX=$END_IDX
 fi
+
 BODY=$(python3 -c "
 import json, sys
-print(json.dumps({'requests':[{'insertText':{'location':{'index':1},'text':sys.argv[1]}}]}))
-" "$TEXT")
+print(json.dumps({'requests':[{'insertText':{'location':{'index':int(sys.argv[1])},'text':sys.argv[2]}}]}))
+" "$INSERT_IDX" "$TEXT")
+
 curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate" > /dev/null
+
 echo "{\"status\":\"written\",\"docId\":\"${DOC_ID}\",\"mode\":\"$([ "$APPEND" == "true" ] && echo append || echo replace)\",\"chars\":${#TEXT}}"

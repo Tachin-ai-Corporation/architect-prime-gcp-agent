@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# docs-tab-list — List all tabs in a Google Doc
+# Brain agent: temporal-memory (READ)
+# Usage: docs-tab-list <doc_id>
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+die() { echo "[docs-tab-list] [ERROR] $*" >&2; exit 1; }
+
+DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-tab-list <doc_id>"
+TOKEN="$("" --scope docs)" || die "Auth failed"
+
+HTTP_CODE=$(curl -s -o /tmp/docs-tab-list.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
+
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
+
+python3 -c "
+import json
+doc = json.load(open('/tmp/docs-tab-list.json'))
+
+def extract_tabs(tabs):
+    result = []
+    for t in tabs:
+        props = t.get('tabProperties', {})
+        tab_info = {
+            'tabId': props.get('tabId', ''),
+            'title': props.get('title', ''),
+            'index': props.get('index', 0),
+            'childTabs': extract_tabs(t.get('childTabs', []))
+        }
+        result.append(tab_info)
+    return result
+
+tabs = extract_tabs(doc.get('tabs', []))
+tab_count = len(tabs) + sum(len(t['childTabs']) for t in tabs) # simple count for 1 level deep
+# More robust count:
+def count_tabs(tabs_list):
+    return len(tabs_list) + sum(count_tabs(t['childTabs']) for t in tabs_list)
+    
+tab_count = count_tabs(tabs)
+print(json.dumps({'docId': '', 'tabs': tabs, 'tabCount': tab_count}, indent=2))
+"

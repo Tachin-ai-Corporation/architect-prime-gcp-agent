@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# docs-tab-finalize — Apply approved suggestions to original tab and cleanup
+# Brain agent: motor (WRITE) / temporal-memory (READ)
+# Usage: docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id>
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-tab-finalize] [ERROR] $*" >&2; exit 1; }
+
+DOC_ID="" SOURCE_TAB="" SUGG_TAB=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --source-tab) SOURCE_TAB="$2"; shift 2 ;;
+    --suggestion-tab) SUGG_TAB="$2"; shift 2 ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+[[ -n "$DOC_ID" && -n "$SOURCE_TAB" && -n "$SUGG_TAB" ]] || die "Missing required args"
+
+TOKEN="$("" --scope docs)" || die "Auth failed"
+
+# Step A: Read suggestion tab
+HTTP_CODE=$(curl -s -o /tmp/docs-fin-read.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
+[[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
+
+python3 -c "
+import json, sys, re
+
+doc = json.load(open('/tmp/docs-fin-read.json'))
+sugg_tab_id = ''
+
+def find_tab(tabs, target_id):
+    for t in tabs:
+        if t.get('tabProperties', {}).get('tabId') == target_id:
+            return t
+        found = find_tab(t.get('childTabs', []), target_id)
+        if found: return found
+    return None
+
+tab = find_tab(doc.get('tabs', []), sugg_tab_id)
+if not tab:
+    print('{\"status\":\"already_finalized\"}')
+    sys.exit(0)
+
+content = tab.get('documentTab', {}).get('body', {}).get('content', [])
+
+checklist_entries = []
+any_strikethrough = False
+
+for elem in content:
+    if 'paragraph' in elem:
+        para = elem['paragraph']
+        para_text = ''.join([run.get('textRun', {}).get('content', '') for run in para.get('elements', [])])
+        
+        # Check if it's a checklist entry
+        match = re.match(r'^(?:?\s*)?(\d+)\.\s+«(.*?)»\s+?\s+«(.*?)»', para_text)
+        if match:
+            change_id = int(match.group(1))
+            orig_text = match.group(2)
+            repl_text = match.group(3)
+            
+            # Check for strikethrough
+            is_strikethrough = False
+            for run in para.get('elements', []):
+                if run.get('textRun', {}).get('textStyle', {}).get('strikethrough', False):
+                    is_strikethrough = True
+                    any_strikethrough = True
+                    break
+            
+            # Check for ? fallback
+            has_check = para_text.startswith('?')
+            
+            checklist_entries.append({
+                'changeId': change_id,
+                'find': orig_text,
+                'replace': repl_text,
+                'strikethrough': is_strikethrough,
+                'has_check': has_check
+            })
+
+applied = []
+rejected = []
+requests = []
+
+use_fallback = (not any_strikethrough) and any(e['has_check'] for e in checklist_entries)
+
+for e in checklist_entries:
+    is_rejected = e['strikethrough']
+    if use_fallback and not e['strikethrough']:
+        is_rejected = not e['has_check']
+        
+    if is_rejected:
+        rejected.append({'changeId': e['changeId'], 'status': 'rejected'})
+    else:
+        applied.append({'changeId': e['changeId'], 'status': 'approved'})
+        requests.append({
+            'replaceAllText': {
+                'containsText': {'text': e['find'], 'matchCase': True},
+                'replaceText': e['replace'],
+                'tabsCriteria': {'tabIds': ['']}
+            }
+        })
+
+# Delete tab request
+requests.append({
+    'deleteTab': {
+        'tabId': sugg_tab_id
+    }
+})
+
+with open('/tmp/docs-fin-req.json', 'w') as f:
+    json.dump({'requests': requests}, f)
+
+with open('/tmp/docs-fin-summary.json', 'w') as f:
+    json.dump({'applied': applied, 'rejected': rejected}, f)
+" || die "Failed to parse checklist"
+
+if [[ ! -f /tmp/docs-fin-req.json ]]; then
+    # already finalized
+    cat /tmp/docs-fin-read.json | grep already_finalized >/dev/null && echo "{\"status\":\"already_finalized\"}" && exit 0
+fi
+
+# Step B & C: Apply replacements and delete tab
+REQ=$(cat /tmp/docs-fin-req.json)
+HTTP_CODE=$(curl -s -o /tmp/docs-fin-resp.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "${REQ}" "${DOCS_API}/${DOC_ID}:batchUpdate")
+[[ "$HTTP_CODE" == "200" ]] || die "Failed to apply/delete, HTTP $HTTP_CODE"
+
+# Parse occurrences from response
+python3 -c "
+import json
+resp = json.load(open('/tmp/docs-fin-resp.json'))
+summary = json.load(open('/tmp/docs-fin-summary.json'))
+
+replies = resp.get('replies', [])
+# the last reply is for deleteTab (empty or non-existent), the others correspond to replaceAllText
+for i, app in enumerate(summary['applied']):
+    if i < len(replies):
+        app['occurrences'] = replies[i].get('replaceAllText', {}).get('occurrencesChanged', 0)
+
+with open('/tmp/docs-fin-summary.json', 'w') as f:
+    json.dump(summary, f)
+"
+
+# Step D: Resolve comment thread
+DRIVE_TOKEN="$("" --scope drive)" || die "Auth failed for drive"
+
+COMMENTS_JSON=$(curl -s -H "Authorization: Bearer ${DRIVE_TOKEN}" "${DRIVE_API}/files/${DOC_ID}/comments?fields=comments(id,content)")
+
+COMMENT_ID=$(python3 -c "
+import json, sys
+data = json.loads(sys.argv[1])
+for c in data.get('comments', []):
+    if 'I\\'ve prepared' in c.get('content', '') and 'suggested edits' in c.get('content', ''):
+        print(c['id'])
+        sys.exit(0)
+print('')
+" "${COMMENTS_JSON}")
+
+COMMENT_RESOLVED=false
+if [[ -n "$COMMENT_ID" ]]; then
+    NUM_APP=$(python3 -c "import json; print(len(json.load(open('/tmp/docs-fin-summary.json'))['applied']))")
+    NUM_REJ=$(python3 -c "import json; print(len(json.load(open('/tmp/docs-fin-summary.json'))['rejected']))")
+    
+    RESOLVE_BODY="{\"content\": \"? Finalized: ${NUM_APP} applied, ${NUM_REJ} rejected\", \"action\": \"resolve\"}"
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+        -X POST -H "Authorization: Bearer ${DRIVE_TOKEN}" -H "Content-Type: application/json" \
+        -d "${RESOLVE_BODY}" "${DRIVE_API}/files/${DOC_ID}/comments/${COMMENT_ID}/replies")
+    if [[ "$HTTP_CODE" == "200" ]]; then
+        COMMENT_RESOLVED=true
+    fi
+fi
+
+python3 -c "
+import json
+summary = json.load(open('/tmp/docs-fin-summary.json'))
+print(json.dumps({
+    'status': 'finalized',
+    'applied': summary['applied'],
+    'rejected': summary['rejected'],
+    'tabDeleted': True,
+    'commentResolved': str('').lower() == 'true'
+}, indent=2))
+"
