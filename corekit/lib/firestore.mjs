@@ -22,7 +22,7 @@ export function firestoreEncode(obj) {
     } else if (typeof v === 'boolean') {
       fields[k] = { booleanValue: v };
     } else if (Array.isArray(v)) {
-      fields[k] = { arrayValue: { values: v.map(item => ({ stringValue: String(item) })) } };
+      fields[k] = { arrayValue: { values: v.map(encodeValue) } };
     } else if (v instanceof Date) {
       fields[k] = { timestampValue: v.toISOString() };
     } else if (typeof v === 'object') {
@@ -30,6 +30,30 @@ export function firestoreEncode(obj) {
     }
   }
   return fields;
+}
+
+/**
+ * Helper to encode a single value into Firestore REST API field format.
+ * @param {*} item - The value to encode
+ * @returns {object} Firestore REST API field value representation
+ */
+function encodeValue(item) {
+  if (item === null || item === undefined) {
+    return { nullValue: null };
+  } else if (typeof item === 'string') {
+    return { stringValue: item };
+  } else if (typeof item === 'number') {
+    return Number.isInteger(item) ? { integerValue: String(item) } : { doubleValue: item };
+  } else if (typeof item === 'boolean') {
+    return { booleanValue: item };
+  } else if (Array.isArray(item)) {
+    return { arrayValue: { values: item.map(encodeValue) } };
+  } else if (item instanceof Date) {
+    return { timestampValue: item.toISOString() };
+  } else if (typeof item === 'object') {
+    return { mapValue: { fields: firestoreEncode(item) } };
+  }
+  return { stringValue: String(item) };
 }
 
 /**

@@ -11,6 +11,9 @@ const REFRESH_MARGIN_MS = 30_000;
  * @returns {Promise<string>} OAuth2 access token
  */
 export async function getGceToken() {
+  if (process.env.GCP_TOKEN) {
+    return process.env.GCP_TOKEN;
+  }
   if (_cache.token && Date.now() < _cache.expiresAt - REFRESH_MARGIN_MS) {
     return _cache.token;
   }
