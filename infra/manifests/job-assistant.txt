@@ -34,6 +34,10 @@ skills/workspace-docs/docs-write bin/docs-write
 skills/workspace-docs/docs-find-replace bin/docs-find-replace
 skills/workspace-docs/docs-comments-list bin/docs-comments-list
 skills/workspace-docs/docs-comments-add bin/docs-comments-add
+skills/workspace-docs/docs-tab-clone bin/docs-tab-clone
+skills/workspace-docs/docs-tab-suggest bin/docs-tab-suggest
+skills/workspace-docs/docs-tab-finalize bin/docs-tab-finalize
+skills/workspace-docs/docs-tab-list bin/docs-tab-list
 
 # Workspace skills â€” Sheets
 skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
