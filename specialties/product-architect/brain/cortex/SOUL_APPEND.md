@@ -68,3 +68,27 @@ are sent verbatim.
 **Correct pattern:** Create a plan with only the read step. After you have the
 file contents, Cortex will be called again with the results. THEN create a new
 plan with a concrete delegation containing the specific details you learned.
+
+### Cross-VM file sharing (MANDATORY)
+
+Delegates run on DIFFERENT VMs. They CANNOT access your local files.
+
+**NEVER reference local file names or paths in delegation instructions.** If
+you write design instructions to a local file (e.g., `design_notes.md`),
+the delegate cannot read that file. Instead:
+
+1. **Include all instructions INLINE in the delegation task instruction.**
+   Put the actual CSS, HTML changes, specific selectors, colors, and text
+   directly in the delegation `task` field. This is the preferred approach
+   for instructions under 4000 characters.
+
+2. **Publish to Drive first** if the content is too large for inline. Use
+   `work-publish` to upload the file to the project Drive folder, then
+   reference the Drive file ID in the delegation instruction.
+
+Bad: "Follow the instructions in design_instructions.md"
+Good: "Add scroll-to-reveal animations to home.html. Add these CSS classes
+       to styles.css: .reveal-hidden { opacity: 0; transform: translateY(20px);
+       transition: opacity 0.6s ease; } .reveal-visible { opacity: 1;
+       transform: translateY(0); } Apply .reveal-hidden to each <section>
+       element. Create animations.js with IntersectionObserver code..."

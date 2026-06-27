@@ -893,7 +893,6 @@ export async function executeCheckpoints(checkpoints, opts) {
                   'Verify the following RETRY task output meets the acceptance criteria.',
                   'This is a second attempt after the first failed verification.',
                   'Read the verification SKILL.md before rendering your verdict.',
-                  researchHint,
                   '',
                   '## Accept Criteria',
                   taskCriteria,

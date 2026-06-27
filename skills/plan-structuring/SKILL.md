@@ -73,6 +73,14 @@ exactly as written. If you need information before you can write the delegation
 instruction, make the information-gathering step its own plan. Cortex will be
 called again with the results, and you can write the delegation then.
 
+**No local file references in delegations.** Delegates run on different VMs and
+cannot access the delegator's local files. NEVER write a delegation instruction
+that says "follow the instructions in design_notes.md" — that file does not
+exist on the delegate's VM. Instead, include ALL specific instructions inline
+in the delegation task's `task` field: exact CSS selectors, exact HTML changes,
+exact colors, exact text. If the content exceeds 4000 chars, publish it to
+Drive first and reference the Drive file ID.
+
 ### Valid task agents — capabilities and limits
 
 For standard tasks, the `agent` field MUST be exactly one of:
