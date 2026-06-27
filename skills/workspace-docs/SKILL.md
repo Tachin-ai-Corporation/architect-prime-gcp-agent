@@ -83,3 +83,15 @@ Step 1: docs-find-replace --doc doc_pricing_id --find "USD" --replace "EUR"
 
 Outcome: 4 instances of "USD" replaced with "EUR".
 ```
+
+### Example: Recovering from Access Denied
+```
+Task: "Read the contents of the document with ID '1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk'."
+
+Step 1: docs-cat 1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk
+→ Result: { "status": "access_denied", "docId": "1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk", "message": "Doc access denied. Share with assistant-agent-millie@tachin.ag" }
+
+Step 2: GChat message to user: "Hey there! I tried to read the document you shared, but it looks like I don't have access. Could you please share it with assistant-agent-millie@tachin.ag with Editor/Viewer access?"
+
+Outcome: Agent correctly flags the permissions issue to the user and provides their email address for sharing.
+```
