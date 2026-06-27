@@ -1,10 +1,10 @@
 # infra/manifests/job-finance.txt
-# Finance specialty workspace — layered on top of base + role-fleet
+# Finance specialty workspace â€” layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job finance
 
 specialties/finance/workspace/MEMORY.md workspace/MEMORY.md?
 
-# Workspace skills — Gmail
+# Workspace skills â€” Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
 skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search
@@ -13,7 +13,7 @@ skills/workspace-gmail/gmail-send bin/gmail-send
 skills/workspace-gmail/gmail-draft-create bin/gmail-draft-create
 skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send
 
-# Workspace skills — Sheets
+# Workspace skills â€” Sheets
 skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
 skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
 skills/workspace-sheets/sheets-get bin/sheets-get

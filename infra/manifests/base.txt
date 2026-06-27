@@ -5,7 +5,7 @@
 # Contracts (single source of truth)
 infra/contracts.json corekit/contracts.json
 
-# Core tools — system utilities
+# Core tools â€” system utilities
 corekit/system/upgrade-corekit bin/upgrade-corekit
 corekit/system/validate-contracts bin/validate-contracts
 corekit/system/agent-ou-manage bin/agent-ou-manage
@@ -52,7 +52,7 @@ corekit/brain/config.mjs corekit/brain/config.mjs
 corekit/brain/context.mjs corekit/brain/context.mjs
 corekit/brain/health.mjs corekit/brain/health.mjs
 
-# Skills (universal — every agent type)
+# Skills (universal â€” every agent type)
 skills/skill-introspect/SKILL.md skills/skill-introspect/SKILL.md
 skills/skill-introspect/skill.json skills/skill-introspect/skill.json
 skills/read-my-skills/SKILL.md skills/read-my-skills/SKILL.md
@@ -107,7 +107,7 @@ corekit/lib/agent-output.mjs corekit/lib/agent-output.mjs
 corekit/lib/plan-utils.mjs corekit/lib/plan-utils.mjs
 corekit/lib/work-recall.mjs corekit/lib/work-recall.mjs
 
-# Brain v3 — orchestration service
+# Brain v3 â€” orchestration service
 corekit/daemon/agent-brain.mjs bin/agent-brain.mjs
 corekit/daemon/actions/blocked.mjs bin/actions/blocked.mjs
 corekit/daemon/actions/checkpoint_plan.mjs bin/actions/checkpoint_plan.mjs
@@ -123,7 +123,7 @@ corekit/daemon/start-agent-brain bin/start-agent-brain
 corekit/config/agent-registry.json corekit/agent-registry.json
 corekit/config/responsibilities.json corekit/responsibilities.json
 
-# Standard processes (bundled — always available)
+# Standard processes (bundled â€” always available)
 corekit/config/processes/p-plan.json corekit/processes/p-plan.json
 corekit/config/processes/p-review.json corekit/processes/p-review.json
 corekit/config/processes/p-audit.json corekit/processes/p-audit.json
@@ -152,11 +152,11 @@ sites/tachin-website/terms.html sites/tachin-website/terms.html
 sites/tachin-website/newly-released.html sites/tachin-website/newly-released.html
 sites/tachin-website/styles.css sites/tachin-website/styles.css
 
-# Introspect — filesystem introspection service (Firestore bus)
+# Introspect â€” filesystem introspection service (Firestore bus)
 corekit/daemon/agent-introspect.mjs bin/agent-introspect.mjs
 corekit/daemon/agent-introspect.service corekit/agent-introspect.service
 corekit/daemon/start-agent-introspect bin/start-agent-introspect
 
-# Agent runtime skeleton (seed files — no-clobber on upgrade)
+# Agent runtime skeleton (seed files â€” no-clobber on upgrade)
 brain/agents/main/agent/auth-profiles.json agents/main/agent/auth-profiles.json?
 brain/agents/main/sessions/sessions.json agents/main/sessions/sessions.json?

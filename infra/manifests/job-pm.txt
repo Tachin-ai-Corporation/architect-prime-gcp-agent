@@ -1,5 +1,5 @@
 # infra/manifests/job-pm.txt
-# PM specialty workspace — layered on top of base + role-fleet
+# PM specialty workspace â€” layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job pm
 
 specialties/pm/workspace/MEMORY.md workspace/MEMORY.md?
@@ -13,10 +13,10 @@ specialties/pm/brain/motor/SOUL_APPEND.md corekit/specialties/pm/brain/motor/SOU
 specialties/pm/skills/meeting-ops/SKILL.md corekit/specialties/pm/skills/meeting-ops/SKILL.md
 specialties/pm/skills/meeting-ops/skill.json corekit/specialties/pm/skills/meeting-ops/skill.json
 
-# Workspace skills — Google Drive (skill.json only; tools now in role-fleet)
+# Workspace skills â€” Google Drive (skill.json only; tools now in role-fleet)
 skills/workspace-drive/skill.json skills/workspace-drive/skill.json
 
-# Workspace skills — Gmail
+# Workspace skills â€” Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
 skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search
@@ -25,7 +25,7 @@ skills/workspace-gmail/gmail-send bin/gmail-send
 skills/workspace-gmail/gmail-draft-create bin/gmail-draft-create
 skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send
 
-# Workspace skills — Docs
+# Workspace skills â€” Docs
 skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
 skills/workspace-docs/skill.json skills/workspace-docs/skill.json
 skills/workspace-docs/docs-cat bin/docs-cat
@@ -35,7 +35,7 @@ skills/workspace-docs/docs-find-replace bin/docs-find-replace
 skills/workspace-docs/docs-comments-list bin/docs-comments-list
 skills/workspace-docs/docs-comments-add bin/docs-comments-add
 
-# Workspace skills — Sheets
+# Workspace skills â€” Sheets
 skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
 skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
 skills/workspace-sheets/sheets-get bin/sheets-get

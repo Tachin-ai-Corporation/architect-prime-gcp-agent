@@ -1,5 +1,5 @@
 # infra/manifests/job-engineer.txt
-# Engineer specialty workspace — layered on top of base + role-fleet
+# Engineer specialty workspace â€” layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job engineer
 
 specialties/engineer/workspace/MEMORY.md workspace/MEMORY.md?
@@ -18,5 +18,5 @@ specialties/engineer/skills/git-ops/skill.json corekit/specialties/engineer/skil
 specialties/engineer/skills/code-review/SKILL.md corekit/specialties/engineer/skills/code-review/SKILL.md
 specialties/engineer/skills/code-review/skill.json corekit/specialties/engineer/skills/code-review/skill.json
 
-# Workspace skills — Google Drive (skill.json only; tools now in role-fleet)
+# Workspace skills â€” Google Drive (skill.json only; tools now in role-fleet)
 skills/workspace-drive/skill.json skills/workspace-drive/skill.json

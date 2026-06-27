@@ -1,5 +1,5 @@
 # infra/manifests/job-product-architect.txt
-# Product Architect specialty — standards stewardship, codebase audit, improvement planning
+# Product Architect specialty â€” standards stewardship, codebase audit, improvement planning
 # Installed by: infra/install.sh --role fleet --job product-architect
 
 specialties/product-architect/workspace/MEMORY.md workspace/MEMORY.md?

@@ -1,10 +1,10 @@
 # infra/manifests/job-data.txt
-# Data specialty workspace — layered on top of base + role-fleet
+# Data specialty workspace â€” layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job data
 
 specialties/data/workspace/MEMORY.md workspace/MEMORY.md?
 
-# Workspace skills — Sheets
+# Workspace skills â€” Sheets
 skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
 skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
 skills/workspace-sheets/sheets-get bin/sheets-get

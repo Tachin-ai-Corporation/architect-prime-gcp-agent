@@ -315,6 +315,7 @@ for pair in "${pairs[@]}"; do
 
   # Create directory and download
   run mkdir -p "$out_dir"
+  echo "  [download] $src_url"
   curl -fsSL --retry 3 --retry-delay 2 "$src_url" -o "${tmpdir}/dl_tmp"
 
   # Strip Windows CRLF line endings (\r) — prevents shebang failures on Linux

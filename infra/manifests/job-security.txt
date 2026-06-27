@@ -1,10 +1,10 @@
 # infra/manifests/job-security.txt
-# Security specialty workspace — layered on top of base + role-fleet
+# Security specialty workspace â€” layered on top of base + role-fleet
 # Installed by: infra/install.sh --role fleet --job security
 
 specialties/security/workspace/MEMORY.md workspace/MEMORY.md?
 
-# Workspace skills — Gmail
+# Workspace skills â€” Gmail
 skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
 skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search

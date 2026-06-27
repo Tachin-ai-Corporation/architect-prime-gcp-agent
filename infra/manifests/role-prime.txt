@@ -1,5 +1,5 @@
 # infra/manifests/role-prime.txt
-# Prime-only tools — fleet management, dashboard bridge, memory
+# Prime-only tools â€” fleet management, dashboard bridge, memory
 # Installed by: infra/install.sh --role prime
 
 # Fleet lifecycle

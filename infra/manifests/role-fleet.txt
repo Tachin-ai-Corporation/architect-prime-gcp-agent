@@ -1,12 +1,12 @@
 # infra/manifests/role-fleet.txt
-# Fleet agent base — shared brain sub-agent workspaces + fleet template
+# Fleet agent base â€” shared brain sub-agent workspaces + fleet template
 # Installed by: infra/install.sh --role fleet
 # Then a job-specific manifest is layered on top.
 
 # Fleet workspace seeds (assemble-persona appends specialty brain layers)
 brain/fleet/_base/IDENTITY.md workspace/IDENTITY.md
 
-# Cortex SOUL (base — specialty appends are layered by assemble-persona)
+# Cortex SOUL (base â€” specialty appends are layered by assemble-persona)
 brain/fleet/_brain/cortex/SOUL.md workspace/SOUL.md
 
 # Shared brain sub-agent workspaces (used by ALL fleet agents)
@@ -24,7 +24,7 @@ brain/fleet/_brain/motor/IDENTITY.md workspace-motor/IDENTITY.md
 # Workspace auth token (shared by all workspace skills)
 skills/workspace-drive/ws-token bin/ws-token
 
-# Drive tools (universal — all fleet agents publish artifacts to Drive)
+# Drive tools (universal â€” all fleet agents publish artifacts to Drive)
 skills/workspace-drive/drive-ls bin/drive-ls
 skills/workspace-drive/drive-search bin/drive-search
 skills/workspace-drive/drive-download bin/drive-download
@@ -46,7 +46,7 @@ skills/web-search/skill.json skills/web-search/skill.json
 skills/skill-introspect/SKILL.md skills/skill-introspect/SKILL.md
 skills/skill-introspect/skill.json skills/skill-introspect/skill.json
 
-# Memory — Core Memory + Deep Truths + nightly consolidation
+# Memory â€” Core Memory + Deep Truths + nightly consolidation
 corekit/memory/core-memory-read bin/core-memory-read
 corekit/memory/core-memory-write bin/core-memory-write
 corekit/memory/core-memory-retire bin/core-memory-retire
