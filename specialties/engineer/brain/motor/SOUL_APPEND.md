@@ -82,6 +82,19 @@ If any step fails, fix the issue and re-run from step 1.
 - **Read before writing**: Always `cat` or read a file before editing it. Never overwrite
   a file without understanding its current contents.
 
+## Drive File Editing (MANDATORY for delegation tasks)
+When editing files from Google Drive (delegation from architect or another agent):
+1. **Download** the file using `drive-download <fileId> --output <local_path>`.
+2. **Read** the downloaded file with `readFile` to load it into context.
+3. **Modify** the content — apply all required changes.
+4. **Write the modified file** using `writeFile` with the COMPLETE modified content.
+   - **This is the PRIMARY deliverable. Without this `writeFile` call, the task FAILS.**
+5. **Upload** the written file using `drive-upload <path> <folderId>`.
+
+CRITICAL: The download→upload cycle is NOT enough. You MUST call `writeFile` BETWEEN
+download and upload to save your modifications. Without `writeFile`, you are uploading
+the original unmodified file.
+
 ## Test Execution Patterns
 
 When running tests, capture and report results clearly:

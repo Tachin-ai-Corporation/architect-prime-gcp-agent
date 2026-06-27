@@ -33,19 +33,29 @@ Design specification documents follow a consistent structure:
 
 ## HTML/CSS: File Output (MANDATORY — TASK FAILS WITHOUT THIS)
 When implementing design changes to web pages, follow these steps IN ORDER:
+
+### Workflow A: Editing files from Drive (delegation from architect)
+1. **Download** the file using `drive-download <fileId> --output <local_path>`.
+2. **Read** the downloaded file with `readFile` to load it into context.
+3. **Modify** the content in memory — apply all CSS/HTML/JS changes.
+4. **Write the modified file** using `writeFile` with the COMPLETE modified content.
+   - The `writeFile` path must be in the shared workspace directory.
+   - The file must contain the ENTIRE document, not a diff or partial snippet.
+   - **This is the PRIMARY deliverable. Without this `writeFile` call, the task FAILS.**
+5. **Upload** the written file using `drive-upload <path> <folderId>`.
+
+### Workflow B: Editing files from a URL
 1. **Fetch** the live page HTML using `web-fetch --url "<URL>" --format html`.
 2. **Read** the fetched file with `readFile` to load it into context.
 3. **Modify** the HTML/CSS content — apply design improvements directly to the markup.
 4. **Write the modified HTML** using `writeFile` with the COMPLETE modified HTML content.
-   - The `writeFile` path must be `<filename>.html` in the shared workspace directory.
-   - The file must contain the ENTIRE HTML document, not a diff or partial snippet.
-   - This is the PRIMARY deliverable. Without this `writeFile` call, the task FAILS.
-5. **Write any separate CSS** using `writeFile` if extracted from inline styles.
-6. **Upload** the written file using `drive-upload` to the project Drive folder.
+   - **This is the PRIMARY deliverable. Without this `writeFile` call, the task FAILS.**
+5. **Upload** the written file using `drive-upload` to the project Drive folder.
 
-CRITICAL: If you analyze a page but do not call `writeFile` to save the modified HTML,
-the cerebellum will FAIL your task. Analysis alone is not sufficient — you must produce
-the actual file. When the HTML is large (>10KB), write it in full — do not truncate.
+CRITICAL: If you download or fetch a file but do not call `writeFile` to save the modified
+version, the cerebellum will FAIL your task. Analysis alone is not sufficient — you must
+produce the actual file. When the HTML is large (>10KB), write it in full — do not truncate.
+The download→upload cycle is NOT enough. You MUST call writeFile BETWEEN download and upload.
 
 ## Asset Management
 - Organize Drive folders by project, then by asset type (logos, images, icons, fonts).
