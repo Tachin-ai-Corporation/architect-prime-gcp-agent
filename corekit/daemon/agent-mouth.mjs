@@ -430,8 +430,16 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
   const task = readTaskJson();
   const question = overrideQuestion || task?.text || turn.originalQuestion || '';
 
+  // Extract pinger/sender email from task metadata or default
+  let finalMentions = [...mentions];
+  const senderEmail = task?.metadata?.senderEmail || task?.senderEmail;
+  if (senderEmail && senderEmail !== 'unknown') {
+    finalMentions.push(senderEmail);
+  }
+  finalMentions = [...new Set(finalMentions)];
+
   if (!LLM_ENABLED) {
-    await deliver(rawText, addr, mentions);
+    await deliver(rawText, addr, finalMentions);
     log('Delivered raw (LLM disabled)', { chars: rawText.length });
     await writeTaskLog(task, 'delivered', rawText.length, 'raw');
     markTaskComplete(task?.taskId);
@@ -488,7 +496,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
     if (hasEscalate && action !== 'escalate') parsed.action = 'escalate';
 
     if (action === 'deliver' || action === 'escalate') {
-      await deliver(finalText, addr, mentions);
+      await deliver(finalText, addr, finalMentions);
       log('Delivered', { channel: CHANNEL, chars: finalText.length, action,
         voiced: voiceStatus });
       await writeTaskLog(task, 'delivered', finalText.length, action);
@@ -498,7 +506,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
     }
   } catch (err) {
     log('Classify error — delivering raw', { error: err.message });
-    await deliver(rawText, addr, mentions);
+    await deliver(rawText, addr, finalMentions);
     await writeTaskLog(task, 'delivered', rawText.length, 'fallback');
   }
 
@@ -715,6 +723,9 @@ async function pollBrainV3Envelopes() {
 
         // Resolve delivery address from envelope
         const deliveryAddr = f.delivery_address?.mapValue?.fields;
+        const sourceMeta = f.source_meta?.mapValue?.fields;
+        const senderEmail = sourceMeta?.senderEmail?.stringValue || '';
+
         let addr = null;
         if (deliveryAddr) {
           const ch = deliveryAddr.channel?.stringValue || 'gchat';
@@ -726,7 +737,6 @@ async function pollBrainV3Envelopes() {
         }
         if (!addr) {
           // Legacy fallback: try source_meta, then fall back to first space
-          const sourceMeta = f.source_meta?.mapValue?.fields;
           if (sourceMeta) {
             addr = parseAddress(sourceMeta, CHANNEL);
           }
@@ -740,7 +750,9 @@ async function pollBrainV3Envelopes() {
         const deliveryTarget = f.delivery_target?.stringValue;
 
         let mentions = [];
-        if (envStatus === 'needs_input' || envStatus === 'blocked') {
+        if (senderEmail && senderEmail !== 'unknown') {
+          mentions.push(senderEmail);
+        } else if (envStatus === 'needs_input' || envStatus === 'blocked') {
           mentions.push('all');
         }
 

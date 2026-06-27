@@ -1275,10 +1275,12 @@ async function callAgent(agentId, envelope) {
     ? `\n\n## Local Workspace\nYour local working directory is \`${CORE_DIR}/shared/${workspaceId}/\`.\nThis is an **ephemeral** workspace — it is cleaned up when the mission ends.\nUse it for temporary files, intermediate work, and staging.\n\nIf a **Shared Workspace** (Google Drive folder) is listed in the Project Context above, that is the **persistent** source of truth:\n- Pull files you need: \`drive-download <fileId> ${CORE_DIR}/shared/${workspaceId}/<filename>\`\n- Push changes back: \`drive-upload "${CORE_DIR}/shared/${workspaceId}/<filename>" <folderId>\`\n- Organize the shared workspace with clear subfolders (e.g. src/, docs/, configs/)\n- List contents: \`drive-ls <folderId>\`\n\nWrite substantial outputs (plans, reports, code) as FILES, not just text responses.\nYour text response should summarize what you did and reference the filenames.\nPrior step outputs are also saved here — check with \`ls ${CORE_DIR}/shared/${workspaceId}/\`.`
     : '';
 
+  const pingerEmail = envelope._sourceMeta?.senderEmail || '';
   const userMessage = [
     `[BRAIN-ORCHESTRATED]`,
     instruction,
     workspaceDirective,
+    pingerEmail ? `\n## Requester (Pinger)\nUse this email for Drive sharing and communication: ${pingerEmail}` : '',
     envelope._projectContext ? `\n## Project Context\n${envelope._projectContext}` : '',
     envelope._sourceText ? `\n## Original User Request\n${envelope._sourceText}` : '',
     context ? `\n## Context\n${context}` : '',

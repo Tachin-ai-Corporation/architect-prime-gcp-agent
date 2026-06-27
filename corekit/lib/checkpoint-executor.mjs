@@ -760,6 +760,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         _missionId: envelope.id,
         _projectContext: dispatchProjCtx,
         _sourceText: envelope.source_text || null,
+        _sourceMeta: envelope.source_meta || null,
         context_summary: [...allResults, ...cpResults].length > 0
           ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
           : undefined,
