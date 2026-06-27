@@ -7,7 +7,7 @@ import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { ChatPanel } from "@/components/ChatPanel";
 import { LoadingScreen, OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { PrimeChip, ChatTarget } from "@/components/primes/PrimeGrid";
-import { FleetVisualization, ConnectionLine } from "@/components/fleet/FleetVisualization";
+import { FleetVisualization } from "@/components/fleet/FleetVisualization";
 import { HireModal } from "@/components/fleet/HireModal";
 import { DeployPrimeModal } from "@/components/primes/DeployPrimeModal";
 import { ConfirmDeleteModal } from "@/components/primes/ConfirmDeleteModal";
@@ -37,13 +37,9 @@ function HomeInner() {
   const [actionModal, setActionModal] = useState<{
     primeId: string; agentName: string; action: { title: string; instructions: string[] };
   } | null>(null);
-  const [lines, setLines] = useState<ConnectionLine[]>([]);
-
   /* ---- Refs ---- */
   const isDragging = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const primeChipRef = useRef<HTMLButtonElement>(null);
-  const agentCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const proximityRaf = useRef<number>(0);
 
   /* ---- Auto-select first prime ---- */
@@ -52,42 +48,6 @@ function HomeInner() {
       setSelectedPrimeId(primes[0].id);
     }
   }, [primes, selectedPrimeId]);
-
-  /* ---- Compute SVG connection lines ---- */
-  const computeLines = useCallback(() => {
-    const primeEl = primeChipRef.current;
-    if (!primeEl) { setLines([]); return; }
-
-    const rowEl = primeEl.parentElement;
-    if (!rowEl) { setLines([]); return; }
-
-    const rowRect = rowEl.getBoundingClientRect();
-    const primeRect = primeEl.getBoundingClientRect();
-    const x1 = primeRect.left + primeRect.width / 2 - rowRect.left;
-    const y1 = primeRect.bottom - rowRect.top;
-
-    const newLines: ConnectionLine[] = [];
-    agentCardRefs.current.forEach((el, name) => {
-      const agentRect = el.getBoundingClientRect();
-      const x2 = agentRect.left + agentRect.width / 2 - rowRect.left;
-      const y2 = agentRect.top - rowRect.top;
-      newLines.push({ x1, y1, x2, y2, id: name });
-    });
-    setLines(newLines);
-  }, []);
-
-  useLayoutEffect(() => {
-    const timer = setTimeout(computeLines, 120);
-    return () => clearTimeout(timer);
-  }, [computeLines, selectedPrimeId]);
-
-  useEffect(() => {
-    const container = listRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver(() => computeLines());
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [computeLines]);
 
   /* ---- Proximity glow effect ---- */
   useEffect(() => {
@@ -310,7 +270,6 @@ function HomeInner() {
           return (
             <PrimeChip
               key={p.id}
-              ref={primeChipRef}
               prime={p}
               fleet={fleet}
               isSelected={isSelected}
@@ -326,10 +285,8 @@ function HomeInner() {
               <FleetVisualization
                 primeId={p.id}
                 agents={fleet}
-                lines={isSelected ? lines : []}
                 chatAgentName={chatTarget?.type === "agent" ? chatTarget.agentName : undefined}
                 upgradingAgent={upgradingAgent}
-                agentCardRefs={agentCardRefs}
                 onSelectAgentChat={selectAgentChat}
                 onUpgradeAgent={handleUpgradeAgent}
                 onHireClick={() => setShowHire(true)}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import styles from "./FleetVisualization.module.css";
 import type { FleetAgent, DeployStep } from "@/lib/types";
 
@@ -22,10 +23,8 @@ interface ActionModalData {
 interface FleetVisualizationProps {
   primeId: string;
   agents: FleetAgent[];
-  lines: ConnectionLine[];
   chatAgentName?: string;
   upgradingAgent: string | null;
-  agentCardRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   onSelectAgentChat: (primeId: string, agent: FleetAgent) => void;
   onUpgradeAgent: (primeId: string, agentName: string, e: React.MouseEvent) => void;
   onHireClick: () => void;
@@ -56,15 +55,52 @@ function getDeployProgress(steps: DeployStep[] | undefined) {
 export function FleetVisualization({
   primeId,
   agents,
-  lines,
   chatAgentName,
   upgradingAgent,
-  agentCardRefs,
   onSelectAgentChat,
   onUpgradeAgent,
   onHireClick,
   onActionModal,
 }: FleetVisualizationProps) {
+  const [lines, setLines] = useState<ConnectionLine[]>([]);
+  const localAgentCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const computeLines = useCallback(() => {
+    const primeEl = document.getElementById(`prime-chip-${primeId}`);
+    if (!primeEl) { setLines([]); return; }
+
+    const rowEl = primeEl.parentElement;
+    if (!rowEl) { setLines([]); return; }
+
+    const rowRect = rowEl.getBoundingClientRect();
+    const primeRect = primeEl.getBoundingClientRect();
+    const x1 = primeRect.left + primeRect.width / 2 - rowRect.left;
+    const y1 = primeRect.bottom - rowRect.top;
+
+    const newLines: ConnectionLine[] = [];
+    localAgentCardRefs.current.forEach((el, name) => {
+      const agentRect = el.getBoundingClientRect();
+      const x2 = agentRect.left + agentRect.width / 2 - rowRect.left;
+      const y2 = agentRect.top - rowRect.top;
+      newLines.push({ x1, y1, x2, y2, id: name });
+    });
+    setLines(newLines);
+  }, [primeId]);
+
+  useLayoutEffect(() => {
+    const timer = setTimeout(computeLines, 120);
+    return () => clearTimeout(timer);
+  }, [computeLines, agents]);
+
+  useEffect(() => {
+    const primeEl = document.getElementById(`prime-chip-${primeId}`);
+    if (!primeEl) return;
+    const container = primeEl.parentElement;
+    if (!container) return;
+    const observer = new ResizeObserver(() => computeLines());
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [computeLines, primeId]);
   const router = useRouter();
 
   return (
@@ -106,8 +142,8 @@ export function FleetVisualization({
               <div
                 key={agent.name}
                 ref={(el) => {
-                  if (el) agentCardRefs.current.set(agent.name, el);
-                  else agentCardRefs.current.delete(agent.name);
+                  if (el) localAgentCardRefs.current.set(agent.name, el);
+                  else localAgentCardRefs.current.delete(agent.name);
                 }}
                 className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""} ${isChatTarget ? styles.agentCardActive : ""}`}
                 style={{ animationDelay: `${i * 80}ms` }}
