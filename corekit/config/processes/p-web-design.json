@@ -42,7 +42,7 @@
     {
       "title": "Design self-check",
       "description": "⚠️ READ-ONLY STEP — do NOT modify anything.\n\nVerify:\n1. Diff against main — confirm changes are scoped to the request.\n2. Confirm every color/space/font value is a design-system token, not a hardcoded literal.\n3. Confirm responsive behavior at 375 / 768 / 1280.\n4. Confirm no regression to other sections sharing the same styles.",
-      "agent": "cerebellum",
+      "agent": "motor",
       "type": "standard",
       "intent": "research",
       "accept_criteria": "All values are tokens. Responsive verified. No regressions. Diff scoped to request."

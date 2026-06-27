@@ -31,7 +31,7 @@
     {
       "title": "Self-check the content change",
       "description": "⚠️ READ-ONLY STEP — do NOT modify anything.\n\nVerify the change:\n1. Diff the branch against main — confirm ONLY text changed.\n2. Re-read the new copy for typos, tone, and accuracy.\n3. Confirm no design-system classes were altered.",
-      "agent": "cerebellum",
+      "agent": "motor",
       "type": "standard",
       "intent": "research",
       "accept_criteria": "Diff shows text-only changes. No typos. Voice consistent.",
