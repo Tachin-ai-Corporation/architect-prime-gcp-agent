@@ -459,9 +459,40 @@ async function pollGChat() {
           let mentioned = false;
           if (MENTION_MATCH === 'annotation' && msg.annotations) {
             for (const ann of msg.annotations) {
-              if (ann.type === 'USER_MENTION' && ann.userMention?.user?.name === _agentUserId) {
-                mentioned = true;
-                break;
+              if (ann.type === 'USER_MENTION') {
+                if (_agentUserId && ann.userMention?.user?.name === _agentUserId) {
+                  mentioned = true;
+                  break;
+                }
+                
+                // Fallback relaxed match: check if the text of the mention matches this agent
+                const startIndex = ann.startIndex ?? 0;
+                const length = ann.length ?? 0;
+                if (length > 0) {
+                  const mentionText = text.slice(startIndex, startIndex + length).toLowerCase();
+                  const cleanMention = mentionText.replace(/[@\-_\s]/g, '').trim();
+                  
+                  const cleanDisplayName = (process.env.AGENT_DISPLAY_NAME || '').replace(/[\-_\s]/g, '').toLowerCase();
+                  const cleanAgentMention = (process.env.AGENT_MENTION || '').replace(/[\-_\s]/g, '').toLowerCase();
+                  const cleanAgentId = (process.env.AGENT_ID || '').replace(/[\-_\s]/g, '').toLowerCase();
+                  
+                  if (
+                    (cleanDisplayName && cleanMention.includes(cleanDisplayName)) ||
+                    (cleanAgentMention && cleanMention.includes(cleanAgentMention)) ||
+                    (cleanAgentId && cleanMention.includes(cleanAgentId))
+                  ) {
+                    mentioned = true;
+                    // Also auto-resolve and cache the agent's User ID from this annotation!
+                    if (ann.userMention?.user?.name && !_agentUserId) {
+                      _agentUserId = ann.userMention.user.name;
+                      log('Agent user ID auto-resolved from mention annotation', { userId: _agentUserId });
+                      try {
+                        writeFileSync(`${_stateDir}/agent_user_id.json`, JSON.stringify({ userId: _agentUserId }));
+                      } catch {}
+                    }
+                    break;
+                  }
+                }
               }
             }
           }
@@ -627,13 +658,31 @@ async function main() {
   // Health checks
   if (CHANNEL === 'gchat') {
     try { await getDwdToken(); log('DWD healthcheck OK'); } catch (err) { log('DWD healthcheck FAILED', { error: err.message }); process.exit(1); }
-    // Resolve agent user ID for stable echo filtering
+    
+    // Load cached agent user ID if available
     try {
-      const bootToken = await getDwdToken();
-      _agentUserId = await resolveAgentUserId(bootToken);
-      log('Agent user ID resolved', { userId: _agentUserId });
-    } catch (err) {
-      log('Agent user ID resolution failed — falling back to displayName echo filter', { error: err.message });
+      const rawId = readFileSync(`${_stateDir}/agent_user_id.json`, 'utf8');
+      const cached = JSON.parse(rawId);
+      if (cached && cached.userId) {
+        _agentUserId = cached.userId;
+        log('Loaded cached agent user ID', { userId: _agentUserId });
+      }
+    } catch {}
+
+    // Resolve agent user ID for stable echo filtering if not cached
+    if (!_agentUserId) {
+      try {
+        const bootToken = await getDwdToken();
+        _agentUserId = await resolveAgentUserId(bootToken);
+        if (_agentUserId) {
+          log('Agent user ID resolved', { userId: _agentUserId });
+          try { writeFileSync(`${_stateDir}/agent_user_id.json`, JSON.stringify({ userId: _agentUserId })); } catch {}
+        } else {
+          log('Agent user ID resolution returned null (DWD mode fallback)');
+        }
+      } catch (err) {
+        log('Agent user ID resolution failed — falling back to displayName echo filter', { error: err.message });
+      }
     }
   }
 
