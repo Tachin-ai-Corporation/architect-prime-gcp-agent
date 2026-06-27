@@ -323,20 +323,18 @@ function HomeInner() {
                 setChatTarget({ type: "prime", primeId, entityName: name, entityStatus: status });
               }}
             >
-              {isSelected && (
-                <FleetVisualization
-                  primeId={p.id}
-                  agents={fleet}
-                  lines={lines}
-                  chatAgentName={chatTarget?.type === "agent" ? chatTarget.agentName : undefined}
-                  upgradingAgent={upgradingAgent}
-                  agentCardRefs={agentCardRefs}
-                  onSelectAgentChat={selectAgentChat}
-                  onUpgradeAgent={handleUpgradeAgent}
-                  onHireClick={() => setShowHire(true)}
-                  onActionModal={setActionModal}
-                />
-              )}
+              <FleetVisualization
+                primeId={p.id}
+                agents={fleet}
+                lines={isSelected ? lines : []}
+                chatAgentName={chatTarget?.type === "agent" ? chatTarget.agentName : undefined}
+                upgradingAgent={upgradingAgent}
+                agentCardRefs={agentCardRefs}
+                onSelectAgentChat={selectAgentChat}
+                onUpgradeAgent={handleUpgradeAgent}
+                onHireClick={() => setShowHire(true)}
+                onActionModal={setActionModal}
+              />
             </PrimeChip>
           );
         })}

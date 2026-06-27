@@ -45,10 +45,10 @@ export const PrimeChip = forwardRef<HTMLButtonElement, PrimeChipProps>(function 
 ) {
   return (
     <div className={styles.primeRow}>
-      <button
+      <div
         id={`prime-chip-${prime.id}`}
-        ref={isSelected ? ref : undefined}
-        className={`${styles.primeChip} ${isSelected ? styles.primeChipSelected : ""}`}
+        ref={isSelected ? ref as React.Ref<HTMLDivElement> : undefined}
+        className={`${styles.primeChip} ${styles.primeChipSelected}`}
         onClick={() => onSelect(prime)}
         data-proximity
       >
@@ -99,11 +99,7 @@ export const PrimeChip = forwardRef<HTMLButtonElement, PrimeChipProps>(function 
             {deletingPrime === prime.id ? "⏳" : "🗑"}
           </button>
         )}
-
-        <span className={`${styles.chipExpandIcon} ${isSelected ? styles.chipExpandIconOpen : ""}`}>
-          ▸
-        </span>
-      </button>
+      </div>
 
       {/* Children slot: SVG lines + agent grid rendered by parent */}
       {children}
