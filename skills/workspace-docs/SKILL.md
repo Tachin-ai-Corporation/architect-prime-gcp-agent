@@ -1,5 +1,8 @@
 # Skill: Google Docs
 
+> [!IMPORTANT]
+> **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `runCommand` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command using `runCommand` and wait for the actual output.
+
 ## When to Use
 When a task involves creating, reading, editing, or commenting on Google Docs.
 
@@ -26,8 +29,8 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
   Output: JSON with tab tree.
 - `docs-tab-clone --doc <doc_id> --source-tab <tab_id> [--title "TITLE"]` — Clone a tab's text content into a new suggestion tab. Preserves paragraph structure and heading styles.
   Output: JSON with `sourceTabId`, `suggestionTabId`, `suggestionTabTitle`.
-- `docs-tab-suggest --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --find "ORIGINAL" --replace "NEW" [--reason "WHY"]` — Make a tracked edit: replaces text in the suggestion tab, highlights it yellow, and adds a reject-checkbox entry at the top. Does not touch the original tab.
-  Output: JSON with `changeId`.
+- `docs-tab-suggest --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Make tracked edits in batch. `suggestions.json` should contain an array of `{"find": "ORIGINAL", "replace": "NEW", "reason": "WHY"}`. Does not touch original tab.
+  Output: JSON with applied changes array and not_found array.
 - `docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id>` — Finalize reviewed suggestions: apply approved changes to the original tab (unchecked = approved, checked/strikethrough = rejected), delete the suggestion tab, resolve the review comment.
   Output: JSON summary of applied and rejected changes.
 
@@ -42,13 +45,14 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
 ## Procedures
 
 ### Suggest edits via tab-based review
-1. Run `docs-tab-list <DOC_ID>` to find the target tab's ID.
-2. Run `docs-tab-clone --doc <DOC_ID> --source-tab <TAB_ID>`.
-3. For each proposed change: `docs-tab-suggest --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID> --find '<original>' --replace '<new>' --reason '<why>'`.
-4. Post one comment: `docs-comments-add --doc <DOC_ID> --content "📋 I've prepared N suggested edits in the '✏️ Edits — TAB_NAME' tab. Changes are highlighted yellow. Check any to reject — unchecked changes will be applied. Reply here when done."`.
-5. Wait for the human to reply (mission enters needs_input).
-6. On reply: `docs-tab-finalize --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID>`.
-7. Report summary: which changes were applied, which rejected.
+1. Execute `runCommand({"command": "docs-tab-list <DOC_ID>"})` to find the target tab's ID.
+2. Execute `runCommand({"command": "docs-tab-clone --doc <DOC_ID> --source-tab <TAB_ID>"})`.
+3. Create a JSON file (e.g., `suggestions.json`) containing an array of your edits: `[{"find": "...", "replace": "...", "reason": "..."}]`.
+4. Execute `runCommand({"command": "docs-tab-suggest --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID> --file suggestions.json"})`.
+5. Post one comment: `docs-comments-add --doc <DOC_ID> --content "📋 I've prepared N suggested edits in the '✏️ Edits — TAB_NAME' tab. Changes are highlighted yellow. Check any to reject — unchecked changes will be applied. Reply here when done."`.
+6. Wait for the human to reply (mission enters needs_input).
+7. On reply: execute `runCommand({"command": "docs-tab-finalize --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID>"})`.
+8. Report summary: which changes were applied, which rejected.
 
 ### Read and analyze a document
 1. Resolve the target document ID.
@@ -106,26 +110,33 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
 ### Example: Tab-based document review with inline approve/deny
   Task: "Review Q3 Strategy and suggest improvements"
 
-  Step 1: docs-tab-list abc123
-  → {tabs: [{tabId: "t.0", title: "Q3 Strategy"}]}
+  Step 1: Execute `runCommand({"command": "docs-tab-list abc123"})`
+  Output received: `{"tabs": [{"tabId": "t.0", "title": "Q3 Strategy"}]}`
 
-  Step 2: docs-tab-clone --doc abc123 --source-tab t.0
-  → {suggestionTabId: "t.new1", suggestionTabTitle: "✏️ Edits — Q3 Strategy"}
+  Step 2: Execute `runCommand({"command": "docs-tab-clone --doc abc123 --source-tab t.0"})`
+  Output received: `{"suggestionTabId": "t.new1", "suggestionTabTitle": "✏️ Edits — Q3 Strategy"}`
 
-  Step 3: docs-tab-suggest --doc abc123 --source-tab t.0 --suggestion-tab t.new1 \
-    --find "We will probably finish by Q4" --replace "We project completion by end of Q4" --reason "Remove hedging"
-  → {changeId: 1}
+  Step 3: Write suggestions to `suggestions.json`
+  ```json
+  [
+    {
+      "find": "We will probably finish by Q4",
+      "replace": "We project completion by end of Q4",
+      "reason": "Remove hedging"
+    }
+  ]
+  ```
 
-  Step 4: docs-tab-suggest ... (change 2)
-  Step 5: docs-tab-suggest ... (change 3)
+  Step 4: Execute `runCommand({"command": "docs-tab-suggest --doc abc123 --source-tab t.0 --suggestion-tab t.new1 --file suggestions.json"})`
+  Output received: `{"status": "suggested", "applied": [{"changeId": 1, "find": "...", "replace": "..."}], "not_found": []}`
 
-  Step 6: docs-comments-add --doc abc123 --content "📋 I've prepared 3 suggested edits in the '✏️ Edits — Q3 Strategy' tab. Changes are highlighted yellow. Check any to reject. Reply here when done."
-  → mission enters needs_input
+  Step 5: Execute `runCommand({"command": "docs-comments-add --doc abc123 --content \"📋 I've prepared suggested edits in the '✏️ Edits — Q3 Strategy' tab. Changes are highlighted yellow. Check any to reject. Reply here when done.\""})`
+  Output received: Success (mission enters needs_input)
 
   (Human reviews: accepts changes 1 and 3, checks checkbox on change 2 to reject it, replies "done")
 
-  Step 7: docs-tab-finalize --doc abc123 --source-tab t.0 --suggestion-tab t.new1
-  → {applied: [{changeId: 1}, {changeId: 3}], rejected: [{changeId: 2}], tabDeleted: true}
+  Step 6: Execute `runCommand({"command": "docs-tab-finalize --doc abc123 --source-tab t.0 --suggestion-tab t.new1"})`
+  Output received: `{"applied": [{"changeId": 1}, {"changeId": 3}], "rejected": [{"changeId": 2}], "tabDeleted": true}`
 
   Outcome: Changes 1 and 3 applied to original tab. Change 2 skipped. Suggestion tab removed. One comment resolved.
 
@@ -134,10 +145,10 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
 Task: "Create a new document called 'Project Plan' and add the project overview."
 
 Step 1: docs-create --title "Project Plan" --body "Project Overview:" --folder 12345_folder_id
-→ Result: { "id": "doc_abc123_id", "title": "Project Plan", "url": "https://docs.google.com/document/d/doc_abc123_id/edit" }
+Output received: { "id": "doc_abc123_id", "title": "Project Plan", "url": "https://docs.google.com/document/d/doc_abc123_id/edit" }
 
 Step 2: docs-write --doc doc_abc123_id --text "\n\nPhase 1: Build the prototype." --append
-→ Result: Success
+Output received: Success
 
 Outcome: Document created and text appended.
 ```
@@ -147,7 +158,7 @@ Outcome: Document created and text appended.
 Task: "Update the document 'Pricing Model' to replace 'USD' with 'EUR'."
 
 Step 1: docs-find-replace --doc doc_pricing_id --find "USD" --replace "EUR"
-→ Result: { "replacements": 4, "success": true }
+Output received: { "replacements": 4, "success": true }
 
 Outcome: 4 instances of "USD" replaced with "EUR".
 ```
@@ -157,7 +168,7 @@ Outcome: 4 instances of "USD" replaced with "EUR".
 Task: "Read the contents of the document with ID '1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk'."
 
 Step 1: docs-cat 1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk
-→ Result: { "status": "access_denied", "docId": "1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk", "message": "Doc access denied. Share with assistant-agent-millie@example.com" }
+Output received: { "status": "access_denied", "docId": "1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk", "message": "Doc access denied. Share with assistant-agent-millie@example.com" }
 
 Step 2: GChat message to user: "Hey there! I tried to read the document you shared, but it looks like I don't have access. Could you please share it with assistant-agent-millie@example.com with Commenter or Editor access?"
 
