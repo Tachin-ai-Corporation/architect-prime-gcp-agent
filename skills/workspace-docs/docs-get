@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# docs-get — Get structured document content with text character-to-index mapping
+# Brain agent: motor (READ)
+# Usage: docs-get --doc DOC_ID
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+die() { echo "[docs-get] [ERROR] $*" >&2; exit 1; }
+DOC_ID=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-get --doc <doc_id>"; exit 0 ;;
+    *) # Fallback to positional arg if not prefixed
+       if [[ -z "$DOC_ID" ]]; then DOC_ID="$1"; shift; else die "Unknown: $1"; fi ;;
+  esac
+done
+[[ -n "$DOC_ID" ]] || die "Need --doc"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+
+TMP_RESP=$(mktemp)
+HTTP_CODE=$(curl -s -o "$TMP_RESP" -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${DOCS_API}/${DOC_ID}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE")
+
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  rm -f "$TMP_RESP"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || { rm -f "$TMP_RESP"; die "Docs API returned HTTP ${HTTP_CODE}"; }
+
+python3 -c "
+import json, sys
+
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    doc = json.load(f)
+
+def extract_text_and_map(elements):
+    text = ''
+    index_map = []
+    
+    for elem in elements:
+        if 'paragraph' in elem:
+            for run_elem in elem['paragraph'].get('elements', []):
+                if 'textRun' in run_elem:
+                    tr = run_elem['textRun']
+                    content = tr.get('content', '')
+                    start = tr.get('startIndex', 0)
+                    for i, char in enumerate(content):
+                        text += char
+                        index_map.append(start + i)
+        elif 'table' in elem:
+            for row in elem['table'].get('tableRows', []):
+                for cell in row.get('tableCells', []):
+                    sub_text, sub_map = extract_text_and_map(cell.get('content', []))
+                    text += sub_text
+                    index_map.extend(sub_map)
+        elif 'tableOfContents' in elem:
+            sub_text, sub_map = extract_text_and_map(elem['tableOfContents'].get('content', []))
+            text += sub_text
+            index_map.extend(sub_map)
+    return text, index_map
+
+body_content = doc.get('body', {}).get('content', [])
+text, index_map = extract_text_and_map(body_content)
+
+named_ranges = {}
+for nr_id, nr_obj in doc.get('namedRanges', {}).items():
+    nr_name = nr_obj.get('name', '')
+    ranges_list = []
+    for r in nr_obj.get('ranges', []):
+        ranges_list.append({
+            'startIndex': r.get('startIndex'),
+            'endIndex': r.get('endIndex')
+        })
+    named_ranges[nr_name] = {
+        'namedRangeId': nr_id,
+        'ranges': ranges_list
+    }
+
+output = {
+    'docId': doc.get('documentId', ''),
+    'title': doc.get('title', ''),
+    'text': text,
+    'indexMap': index_map,
+    'namedRanges': named_ranges
+}
+
+print(json.dumps(output, indent=2))
+" "$TMP_RESP"
+
+rm -f "$TMP_RESP"

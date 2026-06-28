@@ -1,8 +1,8 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  3,
-    "description":  "Create, read, write, and annotate Google Docs.",
+    "version":  4,
+    "description":  "Create formatted Google Docs from Markdown, perform surgical style and text replacements, and manage Word (.docx) imports/exports.",
     "author":  "architect-prime",
     "origin":  "core",
     "category":  "workspace",
@@ -17,10 +17,21 @@
                     "docs-tab-finalize",
                     "docs-tab-list",
                     "docs-tab-suggest",
-                    "docs-write"
+                    "docs-write",
+                    "docs-get",
+                    "docs-replace-md",
+                    "docs-batch-replace",
+                    "docs-anchor-insert",
+                    "docs-style",
+                    "docs-insert-table",
+                    "docs-insert-image",
+                    "docs-namedrange-create",
+                    "docs-namedrange-replace",
+                    "docs-export-docx",
+                    "docs-import-docx"
                 ],
     "requires":  {
 
                  },
-    "when_to_use":  "When a task involves creating, reading, editing, commenting, or suggesting via tab-based workflows on Google Docs."
+    "when_to_use":  "When a task involves creating formatted docs from Markdown, editing text ranges or styles programmatically without reflowing the whole body, exporting/importing .docx files, or commenting on Google Docs."
 }

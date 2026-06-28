@@ -1,76 +1,38 @@
 #!/usr/bin/env bash
-# docs-write — Replace or append body text in a Google Doc
+# docs-replace-md — Replace the body of a Google Doc with formatted Markdown
 # Brain agent: motor (WRITE)
-# Usage: docs-write --doc DOC_ID (--text "New content" | --file FILE_PATH) [--append | --overwrite] [--markdown]
-# Without --append, --overwrite must be explicitly provided.
+# Usage: docs-replace-md --doc DOC_ID (--file FILE_PATH | --text "markdown text")
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
-DOCS_API="https://docs.googleapis.com/v1/documents"
-die() { echo "[docs-write] [ERROR] $*" >&2; exit 1; }
-DOC_ID="" TEXT="" FILE="" APPEND=false OVERWRITE=false MD=false
+die() { echo "[docs-replace-md] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" FILE_PATH="" TEXT=""
 while [[ $# -gt 0 ]]; do
-  case "$1" in 
-    --doc) DOC_ID="$2"; shift 2 ;; 
-    --text) TEXT="$2"; shift 2 ;; 
-    --file) FILE="$2"; shift 2 ;; 
-    --append) APPEND=true; shift ;; 
-    --overwrite) OVERWRITE=true; shift ;;
-    --markdown) MD=true; shift ;;
-    --help|-h) echo "Usage: docs-write --doc <doc_id> (--text <text> | --file <file>) [--append | --overwrite] [--markdown]"; exit 0 ;;
-    *) die "Unknown: $1" ;; 
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --file) FILE_PATH="$2"; shift 2 ;;
+    --text) TEXT="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-replace-md --doc <doc_id> (--file <file_path> | --text <text>)"; exit 0 ;;
+    *) die "Unknown: $1" ;;
   esac
 done
-[[ -n "$DOC_ID" && (-n "$TEXT" || -n "$FILE") ]] || die "Need --doc and either --text or --file"
-
-if [[ "$APPEND" == "false" && "$OVERWRITE" == "false" ]]; then
-  die "Safety Check: Whole-document overwrite requires the explicit '--overwrite' flag."
-fi
-
+[[ -n "$DOC_ID" ]] || die "Need --doc"
+[[ -n "$FILE_PATH" || -n "$TEXT" ]] || die "Need --file or --text"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
-if [[ -n "$FILE" ]]; then
-  [[ -f "$FILE" ]] || die "File not found: $FILE"
-  TEXT=$(cat "$FILE")
+# Put text into a variable if it came from file
+if [[ -n "$FILE_PATH" ]]; then
+  [[ -f "$FILE_PATH" ]] || die "File not found: $FILE_PATH"
+  TEXT=$(cat "$FILE_PATH")
 fi
 
-# Delegate to docs-replace-md if we are replacing whole document with markdown
-if [[ "$MD" == "true" && "$APPEND" == "false" ]]; then
-  exec "${CORE_DIR}/bin/docs-replace-md" --doc "$DOC_ID" --text "$TEXT"
-fi
-
-# We must retrieve END_IDX for appending or for clearing old content.
-END_IDX=$(curl -sf -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}" \
-  | python3 -c "
-import json, sys
-doc = json.load(sys.stdin)
-content = doc.get('body',{}).get('content',[])
-if content: print(content[-1].get('endIndex',1)-1)
-else: print(1)
-")
-
-INSERT_IDX=1
-
-if [[ "$APPEND" == "false" ]]; then
-  if [[ "$END_IDX" -gt 1 ]]; then
-    BODY=$(python3 -c "import json; print(json.dumps({'requests':[{'deleteContentRange':{'range':{'startIndex':1,'endIndex':$END_IDX}}}]}))")
-    curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-      -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate" > /dev/null
-  fi
-else
-  INSERT_IDX=$END_IDX
-fi
-
-# If appending markdown, use copy-body logic at INSERT_IDX
-if [[ "$MD" == "true" ]]; then
-  python3 -c "
+python3 -c "
 import urllib.request, urllib.error, json, sys, time
 
 doc_id = sys.argv[1]
 markdown_content = sys.argv[2]
 token = sys.argv[3]
-insert_index = int(sys.argv[4])
-email = sys.argv[5]
+email = sys.argv[4]
 
 def api_call(url, method='GET', headers=None, data=None):
     if headers is None:
@@ -90,13 +52,13 @@ def api_call(url, method='GET', headers=None, data=None):
         sys.stderr.write(f'API error {method} {url}: {e.code} {e.read().decode(\"utf-8\")}\\n')
         sys.exit(1)
 
-# Create a temporary Doc
-temp_title = f'temp_append_md_{int(time.time())}'
+# Step 1: Create a temporary Doc via Drive multipart upload
+temp_title = f'temp_replace_md_{int(time.time())}'
 metadata = {
     'name': temp_title,
     'mimeType': 'application/vnd.google-apps.document'
 }
-boundary = 'boundary_append_md_multipart'
+boundary = 'boundary_replace_md_multipart'
 body_parts = [
     f'--{boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n{json.dumps(metadata)}\\r\\n',
     f'--{boundary}\\r\\nContent-Type: text/markdown; charset=UTF-8\\r\\n\\r\\n{markdown_content}\\r\\n',
@@ -114,13 +76,37 @@ if not temp_id:
     sys.exit(1)
 
 try:
+    # Step 2: Fetch both documents
     temp_doc = api_call(f'https://docs.googleapis.com/v1/documents/{temp_id}')
-    temp_content = temp_doc.get('body', {}).get('content', [])
-    lists_map = temp_doc.get('lists', {})
+    target_doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}')
     
+    # Step 3: Get target document length
+    content_list = target_doc.get('body', {}).get('content', [])
+    target_end = 1
+    if content_list:
+        target_end = content_list[-1].get('endIndex', 1) - 1
+        
     requests = []
     
-    # We copy body in reverse order starting at insert_index
+    # Step 4: Clear target document content if it has any
+    if target_end > 1:
+        requests.append({
+            'deleteContentRange': {
+                'range': {
+                    'startIndex': 1,
+                    'endIndex': target_end
+                }
+            }
+        })
+        
+    # Step 5: Translate temp Doc content to batchUpdate requests for target Doc
+    # We iterate in reverse order to insert at index 1 without shifting.
+    temp_content = temp_doc.get('body', {}).get('content', [])
+    start_index = 1
+    
+    # Extract list mappings from temp doc
+    lists_map = temp_doc.get('lists', {})
+    
     for element in reversed(temp_content):
         if 'paragraph' in element:
             p = element['paragraph']
@@ -140,7 +126,7 @@ try:
                     # Insert text
                     requests.append({
                         'insertText': {
-                            'location': {'index': insert_index},
+                            'location': {'index': start_index},
                             'text': text
                         }
                     })
@@ -158,8 +144,8 @@ try:
                         requests.append({
                             'updateTextStyle': {
                                 'range': {
-                                    'startIndex': insert_index,
-                                    'endIndex': insert_index + text_len
+                                    'startIndex': start_index,
+                                    'endIndex': start_index + text_len
                                 },
                                 'textStyle': text_style,
                                 'fields': ','.join(text_style.keys())
@@ -177,15 +163,15 @@ try:
                     requests.append({
                         'updateParagraphStyle': {
                             'range': {
-                                'startIndex': insert_index,
-                                'endIndex': insert_index + total_len
+                                'startIndex': start_index,
+                                'endIndex': start_index + total_len
                             },
                             'paragraphStyle': p_style_req,
                             'fields': ','.join(p_style_req.keys())
                         }
                     })
                     
-                # Apply bullets
+                # Apply lists/bullets if present
                 if bullet:
                     list_id = bullet.get('listId', '')
                     is_numbered = False
@@ -199,13 +185,14 @@ try:
                     requests.append({
                         'createBullet': {
                             'range': {
-                                'startIndex': insert_index,
-                                'endIndex': insert_index + total_len
+                                'startIndex': start_index,
+                                'endIndex': start_index + total_len
                             },
                             'bulletPreset': preset
                         }
                     })
                     
+    # Execute batchUpdate on target
     if requests:
         api_call(
             f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
@@ -215,13 +202,14 @@ try:
         )
         
     print(json.dumps({
-        'status': 'written',
+        'status': 'replaced',
         'docId': doc_id,
-        'mode': 'append_md',
-        'chars': len(markdown_content)
+        'mode': 'replace_md',
+        'link': f'https://docs.google.com/document/d/{doc_id}'
     }, indent=2))
     
 finally:
+    # Delete the temporary Doc
     delete_url = f'https://www.googleapis.com/drive/v3/files/{temp_id}'
     try:
         req_del = urllib.request.Request(delete_url, headers={'Authorization': f'Bearer {token}'}, method='DELETE')
@@ -229,18 +217,4 @@ finally:
             pass
     except Exception:
         pass
-" "$DOC_ID" "$TEXT" "$TOKEN" "$INSERT_IDX" "${AGENT_USER_EMAIL:-}"
-  exit 0
-fi
-
-# Plain text insertion
-BODY=$(python3 -c "
-import json, sys
-print(json.dumps({'requests':[{'insertText':{'location':{'index':int(sys.argv[1])},'text':sys.argv[2]}}]}))
-" "$INSERT_IDX" "$TEXT")
-
-curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate" > /dev/null
-
-echo "{\"status\":\"written\",\"docId\":\"${DOC_ID}\",\"mode\":\"$([ "$APPEND" == "true" ] && echo append || echo replace)\",\"chars\":${#TEXT}}"
-
+" "$DOC_ID" "$TEXT" "$TOKEN" "${AGENT_USER_EMAIL:-}"

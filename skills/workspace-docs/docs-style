@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# docs-style — Apply styling or heading levels to an anchor phrase or text range
+# Brain agent: motor (WRITE)
+# Usage: docs-style --doc DOC_ID (--anchor "phrase" | --start START_IDX --end END_IDX) --style "HEADING_1|bold|italic|align=CENTER|color=#FF0000"
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+die() { echo "[docs-style] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" ANCHOR="" START_IDX="" END_IDX="" STYLE_DESC=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --anchor) ANCHOR="$2"; shift 2 ;;
+    --start) START_IDX="$2"; shift 2 ;;
+    --end) END_IDX="$2"; shift 2 ;;
+    --style) STYLE_DESC="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-style --doc <doc_id> (--anchor <phrase> | --start <start> --end <end>) --style <style>"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DOC_ID" && -n "$STYLE_DESC" ]] || die "Need --doc and --style"
+[[ -n "$ANCHOR" || (-n "$START_IDX" && -n "$END_IDX") ]] || die "Need either --anchor or --start and --end"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+
+python3 -c "
+import urllib.request, urllib.error, json, sys
+
+doc_id = sys.argv[1]
+anchor = sys.argv[2]
+start_idx_str = sys.argv[3]
+end_idx_str = sys.argv[4]
+style_desc = sys.argv[5]
+token = sys.argv[6]
+email = sys.argv[7]
+
+def api_call(url, method='GET', headers=None, data=None):
+    if headers is None:
+        headers = {}
+    headers['Authorization'] = f'Bearer {token}'
+    req = urllib.request.Request(url, headers=headers, method=method, data=data)
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        if e.code in [401, 403]:
+            print(json.dumps({
+                'status': 'access_denied',
+                'message': f'Docs access denied for {email or \"unknown\"}'
+            }))
+            sys.exit(0)
+        sys.stderr.write(f'API error {method} {url}: {e.code} {e.read().decode(\"utf-8\")}\\n')
+        sys.exit(1)
+
+def extract_text_and_map(elements):
+    text = ''
+    index_map = []
+    for elem in elements:
+        if 'paragraph' in elem:
+            for run_elem in elem['paragraph'].get('elements', []):
+                if 'textRun' in run_elem:
+                    tr = run_elem['textRun']
+                    content = tr.get('content', '')
+                    start = tr.get('startIndex', 0)
+                    for i, char in enumerate(content):
+                        text += char
+                        index_map.append(start + i)
+        elif 'table' in elem:
+            for row in elem['table'].get('tableRows', []):
+                for cell in row.get('tableCells', []):
+                    sub_text, sub_map = extract_text_and_map(cell.get('content', []))
+                    text += sub_text
+                    index_map.extend(sub_map)
+        elif 'tableOfContents' in elem:
+            sub_text, sub_map = extract_text_and_map(elem['tableOfContents'].get('content', []))
+            text += sub_text
+            index_map.extend(sub_map)
+    return text, index_map
+
+# 1. Resolve range
+if anchor:
+    doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE')
+    body_content = doc.get('body', {}).get('content', [])
+    plain_text, index_map = extract_text_and_map(body_content)
+    
+    occurrences = []
+    start = 0
+    while True:
+        pos = plain_text.find(anchor, start)
+        if pos == -1:
+            break
+        occurrences.append(pos)
+        start = pos + 1
+        
+    if not occurrences:
+        sys.stderr.write(f'Anchor not found: \"{anchor}\"\\n')
+        sys.exit(1)
+    if len(occurrences) > 1:
+        sys.stderr.write(f'Anchor not unique: found {len(occurrences)} occurrences of \"{anchor}\"\\n')
+        sys.exit(1)
+        
+    c_start = occurrences[0]
+    start_idx = index_map[c_start]
+    end_idx = index_map[c_start + len(anchor) - 1] + 1
+else:
+    start_idx = int(start_idx_str)
+    end_idx = int(end_idx_str)
+
+# 2. Parse style
+text_style = {}
+p_style = {}
+
+parts = [p.strip() for p in style_desc.split(',')]
+for part in parts:
+    if part == 'bold':
+        text_style['bold'] = True
+    elif part == 'italic':
+        text_style['italic'] = True
+    elif part == 'underline':
+        text_style['underline'] = True
+    elif part == 'strikethrough':
+        text_style['strikethrough'] = True
+    elif part.startswith('color='):
+        hex_color = part.split('=')[1].lstrip('#')
+        r = int(hex_color[0:2], 16) / 255.0
+        g = int(hex_color[2:4], 16) / 255.0
+        b = int(hex_color[4:6], 16) / 255.0
+        text_style['foregroundColor'] = {
+            'color': {
+                'rgbColor': {
+                    'red': r,
+                    'green': g,
+                    'blue': b
+                }
+            }
+        }
+    elif part.startswith('align='):
+        p_style['alignment'] = part.split('=')[1].upper()
+    elif part in ['HEADING_1', 'HEADING_2', 'HEADING_3', 'HEADING_4', 'HEADING_5', 'HEADING_6', 'TITLE', 'SUBTITLE', 'NORMAL_TEXT']:
+        p_style['namedStyleType'] = part
+
+requests = []
+if text_style:
+    requests.append({
+        'updateTextStyle': {
+            'range': {
+                'startIndex': start_idx,
+                'endIndex': end_idx
+            },
+            'textStyle': text_style,
+            'fields': ','.join(text_style.keys())
+        }
+    })
+if p_style:
+    requests.append({
+        'updateParagraphStyle': {
+            'range': {
+                'startIndex': start_idx,
+                'endIndex': end_idx
+            },
+            'paragraphStyle': p_style,
+            'fields': ','.join(p_style.keys())
+        }
+    })
+
+if requests:
+    api_call(
+        f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
+        method='POST',
+        headers={'Content-Type': 'application/json'},
+        data=json.dumps({'requests': requests}).encode('utf-8')
+    )
+
+print(json.dumps({
+    'status': 'styled',
+    'docId': doc_id,
+    'range': {'startIndex': start_idx, 'endIndex': end_idx},
+    'style': style_desc
+}, indent=2))
+" "$DOC_ID" "$ANCHOR" "$START_IDX" "$END_IDX" "$STYLE_DESC" "$TOKEN" "${AGENT_USER_EMAIL:-}"

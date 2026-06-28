@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.28.6.3)
+## Current Architecture (v2026.06.28.7.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -16,6 +16,14 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)
 - **Brain v3 (agent-brain.mjs)**: Deterministic envelope-based orchestration daemon running as a continuous systemd service. Polls Firestore intake → Cortex classify → Cortex decide loop → dispatches to sub-agents → synthesize. M→C→T hierarchy enforced for ALL output (acks, synthesize responses) via `createCT()` helper. R/M/C/T hierarchy (Responsibilities → Missions → Checkpoints → Tasks). Rich context assembly: SOUL.md + IDENTITY.md + MEMORY.md + full agent registry in system prompt (~20K tokens). Envelope context accumulation (400K token rolling budget with oldest-first pruning). Per-agent generation parameters from agent-registry.json. Memory recall/write. Multi-step plans with retry. Delegation. Semantic failure detection. Responsibility scheduler (cron-driven, auto R→M envelopes). Contextual ack with recent mission history + project awareness. Motor timeout detection (`timed_out` status) with cortex `continue` action for re-dispatching timed-out tasks. Process step type dispatch (standard/delegation/spawn_responsibility/approval_gate/optional). Approval gate polling and resume. Responsibility→process linking via processRef (auto-execute, skip Cortex decide).
+- **Google Docs Skill v4 (v2026.06.28.7.0)**:
+  - **Three-Lane Architecture**: Redesigned the `workspace-docs` skill to support formatting-capable generation and surgical edits across three explicit lanes:
+    - *Lane A (Markdown Write-Surface)*: Generate fully-formatted docs from Markdown files via `multipart/related` Drive upload (`docs-create --from-markdown` and `docs-replace-md`), and append Markdown content via `docs-write --markdown`.
+    - *Lane B (Surgical Edits)*: Modify existing documents using anchors and named ranges without model-computed indices or full body rewrites, preserving surrounding styles and collaborative context.
+    - *Lane C (Word .docx Round-Trip)*: Export to and import from `.docx` formats using Drive conversion endpoints for template fidelity and tracked changes.
+  - **Durable Named Ranges**: Support creating and replacing named range content via Docs API in-place swaps, preventing index tracking errors.
+  - **Constraint Validation**: Enforce Google Docs API image constraints (under 50 MB, under 25 megapixels, public URL under 2 KB, PNG/JPEG/GIF formats) at insertion time in `docs-insert-image`.
+  - **Job Manifest Alignment**: Updated assistant, designer, and PM job manifests to install all 21 scripts, making the full formatting capabilities available across all roles.
 - **Memory System Overhaul (v2026.06.21.1.0)**:
   - **Removed auto core-memory-write**: `writeMemory()` in agent-brain.mjs no longer writes raw mission dumps to Firestore core memory on every envelope completion. Only MEMORY.md (working memory) is auto-appended. Core memory writes are now exclusively via Motor tool calls (intentional, curated facts) and the nightly `p-memory-consolidate` process (triage and promotion). This eliminates unbounded noise accumulation in long-term memory.
   - **Process hardening (p-memory-consolidate)**: Added SCOPE ENFORCEMENT preamble to step 1 preventing context contamination from unrelated active work. Replaced fragile heredoc syntax in step 8 with deterministic printf pattern for MEMORY.md rewriting.

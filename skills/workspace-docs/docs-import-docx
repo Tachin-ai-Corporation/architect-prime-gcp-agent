@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# docs-import-docx — Import a local .docx file as a native Google Doc
+# Brain agent: motor (WRITE)
+# Usage: docs-import-docx --file FILE_PATH --title TITLE [--folder FOLDER_ID]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+die() { echo "[docs-import-docx] [ERROR] $*" >&2; exit 1; }
+FILE_PATH="" TITLE="" FOLDER=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --file) FILE_PATH="$2"; shift 2 ;;
+    --title) TITLE="$2"; shift 2 ;;
+    --folder) FOLDER="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-import-docx --file <file_path> --title <title> [--folder <folder_id>]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$FILE_PATH" && -n "$TITLE" ]] || die "Need --file and --title"
+[[ -f "$FILE_PATH" ]] || die "File not found: $FILE_PATH"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+
+python3 -c "
+import urllib.request, urllib.error, json, sys
+
+file_path = sys.argv[1]
+title = sys.argv[2]
+folder = sys.argv[3]
+token = sys.argv[4]
+email = sys.argv[5]
+
+try:
+    with open(file_path, 'rb') as f:
+        docx_content = f.read()
+except Exception as e:
+    sys.stderr.write(f'Read failed: {e}\\n')
+    sys.exit(1)
+
+metadata = {
+    'name': title,
+    'mimeType': 'application/vnd.google-apps.document'
+}
+if folder:
+    metadata['parents'] = [folder]
+
+boundary = b'boundary_docs_import_multipart'
+body_parts = [
+    b'--' + boundary + b'\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n' + json.dumps(metadata).encode('utf-8') + b'\\r\\n',
+    b'--' + boundary + b'\\r\\nContent-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\\r\\n\\r\\n' + docx_content + b'\\r\\n',
+    b'--' + boundary + b'--\\r\\n'
+]
+body_data = b''.join(body_parts)
+
+url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
+req = urllib.request.Request(
+    url,
+    data=body_data,
+    headers={
+        'Authorization': f'Bearer {token}',
+        'Content-Type': f'multipart/related; boundary={boundary.decode(\"utf-8\")}'
+    },
+    method='POST'
+)
+
+try:
+    with urllib.request.urlopen(req) as response:
+        resp = json.loads(response.read().decode('utf-8'))
+        doc_id = resp.get('id')
+        print(json.dumps({
+            'status': 'imported',
+            'docId': doc_id,
+            'title': title,
+            'link': f'https://docs.google.com/document/d/{doc_id}'
+        }, indent=2))
+except urllib.error.HTTPError as e:
+    if e.code in [401, 403]:
+        print(json.dumps({
+            'status': 'access_denied',
+            'message': f'Docs import denied for {email or \"unknown\"}'
+        }))
+        sys.exit(0)
+    sys.stderr.write(f'Import failed: {e.code} {e.read().decode(\"utf-8\")}\\n')
+    sys.exit(1)
+" "$FILE_PATH" "$TITLE" "$FOLDER" "$TOKEN" "${AGENT_USER_EMAIL:-}"

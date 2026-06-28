@@ -1,19 +1,95 @@
 #!/usr/bin/env bash
 # docs-create — Create a new Google Doc
 # Brain agent: motor (WRITE)
-# Usage: docs-create --title "My Document" [--body "Initial text"] [--folder FOLDER_ID]
+# Usage: docs-create --title "My Document" [--body "Initial text"] [--folder FOLDER_ID] [--from-markdown FILE]
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DOCS_API="https://docs.googleapis.com/v1/documents"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[docs-create] [ERROR] $*" >&2; exit 1; }
-TITLE="" BODY_TEXT="" FOLDER=""
+TITLE="" BODY_TEXT="" FOLDER="" FROM_MD=""
 while [[ $# -gt 0 ]]; do
-  case "$1" in --title) TITLE="$2"; shift 2 ;; --body) BODY_TEXT="$2"; shift 2 ;; --folder) FOLDER="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+  case "$1" in
+    --title) TITLE="$2"; shift 2 ;;
+    --body) BODY_TEXT="$2"; shift 2 ;;
+    --folder) FOLDER="$2"; shift 2 ;;
+    --from-markdown) FROM_MD="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-create --title <title> [--body <body>] [--folder <folder_id>] [--from-markdown <file>]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
 done
 [[ -n "$TITLE" ]] || die "Need --title"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+
+if [[ -n "$FROM_MD" ]]; then
+  [[ -f "$FROM_MD" ]] || die "Markdown file not found: $FROM_MD"
+  
+  python3 -c "
+import urllib.request, urllib.error, json, sys
+title = sys.argv[1]
+folder = sys.argv[2]
+md_file = sys.argv[3]
+token = sys.argv[4]
+email = sys.argv[5]
+
+try:
+    with open(md_file, 'r', encoding='utf-8') as f:
+        md_content = f.read()
+except Exception as e:
+    sys.stderr.write(f'Read failed: {e}\\n')
+    sys.exit(1)
+
+metadata = {
+    'name': title,
+    'mimeType': 'application/vnd.google-apps.document'
+}
+if folder:
+    metadata['parents'] = [folder]
+
+boundary = 'boundary_docs_create_multipart'
+body_parts = [
+    f'--{boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n{json.dumps(metadata)}\\r\\n',
+    f'--{boundary}\\r\\nContent-Type: text/markdown; charset=UTF-8\\r\\n\\r\\n{md_content}\\r\\n',
+    f'--{boundary}--\\r\\n'
+]
+body_data = ''.join(body_parts).encode('utf-8')
+
+url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
+req = urllib.request.Request(
+    url,
+    data=body_data,
+    headers={
+        'Authorization': f'Bearer {token}',
+        'Content-Type': f'multipart/related; boundary={boundary}'
+    },
+    method='POST'
+)
+
+try:
+    with urllib.request.urlopen(req) as response:
+        resp = json.loads(response.read().decode('utf-8'))
+        doc_id = resp.get('id')
+        print(json.dumps({
+            'status': 'created',
+            'docId': doc_id,
+            'title': title,
+            'link': f'https://docs.google.com/document/d/{doc_id}'
+        }, indent=2))
+except urllib.error.HTTPError as e:
+    if e.code in [401, 403]:
+        print(json.dumps({
+            'status': 'access_denied',
+            'message': f'Docs create denied for {email or \"unknown\"}'
+        }))
+        sys.exit(0)
+    sys.stderr.write(f'Upload failed: {e.code} {e.read().decode(\"utf-8\")}\\n')
+    sys.exit(1)
+" "$TITLE" "$FOLDER" "$FROM_MD" "$TOKEN" "${AGENT_USER_EMAIL:-}"
+  exit 0
+fi
+
+# Plain body creation
 HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "{\"title\":\"${TITLE}\"}" "$DOCS_API")
@@ -36,3 +112,4 @@ python3 -c "
 import json; d = json.load(open('/tmp/docs-response.json'))
 print(json.dumps({'status':'created','docId':d['documentId'],'title':d['title'],'link':'https://docs.google.com/document/d/'+d['documentId']}, indent=2))
 "
+

@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# docs-batch-replace — Apply multiple find-and-replace text updates atomically
+# Brain agent: motor (WRITE)
+# Usage: docs-batch-replace --doc DOC_ID --file PAIRS_FILE.json
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+die() { echo "[docs-batch-replace] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" PAIRS_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --file) PAIRS_FILE="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-batch-replace --doc <doc_id> --file <pairs_json_file>"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DOC_ID" && -n "$PAIRS_FILE" ]] || die "Need --doc and --file"
+[[ -f "$PAIRS_FILE" ]] || die "Pairs file not found: $PAIRS_FILE"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+
+python3 -c "
+import urllib.request, urllib.error, json, sys
+
+doc_id = sys.argv[1]
+pairs_file = sys.argv[2]
+token = sys.argv[3]
+email = sys.argv[4]
+
+try:
+    with open(pairs_file, 'r', encoding='utf-8') as f:
+        pairs = json.load(f)
+except Exception as e:
+    sys.stderr.write(f'Failed to parse JSON file: {e}\\n')
+    sys.exit(1)
+
+if not isinstance(pairs, list):
+    sys.stderr.write('JSON content must be a list of find/replace objects\\n')
+    sys.exit(1)
+
+requests = []
+for idx, p in enumerate(pairs):
+    find_text = p.get('find')
+    replace_text = p.get('replace')
+    if find_text is None or replace_text is None:
+        sys.stderr.write(f'Item at index {idx} missing find or replace key\\n')
+        sys.exit(1)
+    match_case = p.get('matchCase', False)
+    
+    requests.append({
+        'replaceAllText': {
+            'containsText': {
+                'text': find_text,
+                'matchCase': match_case
+            },
+            'replaceText': replace_text
+        }
+    })
+
+if not requests:
+    print(json.dumps({'status': 'no_changes', 'docId': doc_id, 'occurrencesChanged': 0}))
+    sys.exit(0)
+
+body_data = json.dumps({'requests': requests}).encode('utf-8')
+url = f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate'
+
+req = urllib.request.Request(
+    url,
+    data=body_data,
+    headers={
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    },
+    method='POST'
+)
+
+try:
+    with urllib.request.urlopen(req) as response:
+        resp = json.loads(response.read().decode('utf-8'))
+        replies = resp.get('replies', [])
+        total_changed = sum(r.get('replaceAllText', {}).get('occurrencesChanged', 0) for r in replies if 'replaceAllText' in r)
+        print(json.dumps({
+            'status': 'replaced',
+            'docId': doc_id,
+            'occurrencesChanged': total_changed
+        }, indent=2))
+except urllib.error.HTTPError as e:
+    if e.code in [401, 403]:
+        print(json.dumps({
+            'status': 'access_denied',
+            'message': f'Docs access denied for {email or \"unknown\"}'
+        }))
+        sys.exit(0)
+    sys.stderr.write(f'Batch replace failed: {e.code} {e.read().decode(\"utf-8\")}\\n')
+    sys.exit(1)
+" "$DOC_ID" "$PAIRS_FILE" "$TOKEN" "${AGENT_USER_EMAIL:-}"

@@ -28,12 +28,27 @@ skills/workspace-slides/slides-update bin/slides-update
 skills/workspace-slides/slides-add-slide bin/slides-add-slide
 skills/workspace-slides/slides-duplicate bin/slides-duplicate
 
-# Workspace skills â€” Google Docs
+# Workspace skills — Docs
 skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
 skills/workspace-docs/skill.json skills/workspace-docs/skill.json
 skills/workspace-docs/docs-cat bin/docs-cat
 skills/workspace-docs/docs-create bin/docs-create
 skills/workspace-docs/docs-write bin/docs-write
 skills/workspace-docs/docs-find-replace bin/docs-find-replace
-skills/workspace-docs/docs-comments-add bin/docs-comments-add
 skills/workspace-docs/docs-comments-list bin/docs-comments-list
+skills/workspace-docs/docs-comments-add bin/docs-comments-add
+skills/workspace-docs/docs-tab-clone bin/docs-tab-clone
+skills/workspace-docs/docs-tab-suggest bin/docs-tab-suggest
+skills/workspace-docs/docs-tab-finalize bin/docs-tab-finalize
+skills/workspace-docs/docs-tab-list bin/docs-tab-list
+skills/workspace-docs/docs-get bin/docs-get
+skills/workspace-docs/docs-replace-md bin/docs-replace-md
+skills/workspace-docs/docs-batch-replace bin/docs-batch-replace
+skills/workspace-docs/docs-anchor-insert bin/docs-anchor-insert
+skills/workspace-docs/docs-style bin/docs-style
+skills/workspace-docs/docs-insert-table bin/docs-insert-table
+skills/workspace-docs/docs-insert-image bin/docs-insert-image
+skills/workspace-docs/docs-namedrange-create bin/docs-namedrange-create
+skills/workspace-docs/docs-namedrange-replace bin/docs-namedrange-replace
+skills/workspace-docs/docs-export-docx bin/docs-export-docx
+skills/workspace-docs/docs-import-docx bin/docs-import-docx

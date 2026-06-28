@@ -1,176 +1,118 @@
 # Skill: Google Docs
 
 > [!IMPORTANT]
-> **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `runCommand` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command using `runCommand` and wait for the actual output.
+> **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
 
 ## When to Use
-When a task involves creating, reading, editing, or commenting on Google Docs.
+Use when creating formatted Google Docs from Markdown, performing surgical text/style edits, managing NamedRanges, exporting/importing `.docx` files, leaving feedback comments, or suggesting edits via tab suggestions on Google Docs.
 
-## Commands
+---
 
-### Read
-- `docs-cat <doc_id>` — Read a Google Doc's full text.
-  Output: String of the document's body text.
-- `docs-comments-list --doc <doc_id> [--include-resolved]` — List comments associated with the document.
-  Output: JSON array of comment metadata including `id`, `author`, `content`, and status.
+## 1. Commands
 
-### Write
-- `docs-create --title "TITLE" [--body "INITIAL_TEXT"] [--folder FOLDER_ID]` — Create a new Google Doc.
-  Output: Created document metadata including `id` and `url`.
-- `docs-write --doc <doc_id> (--text "CONTENT" | --file FILE_PATH) [--append]` — Write text to the document. If `--append` is true, appends to the end; otherwise, overwrites the entire document body.
-  Output: Success confirmation.
-- `docs-find-replace --doc <doc_id> --find "OLD" --replace "NEW" [--match-case]` — Find and replace text inside the document.
-  Output: Confirmation with replacement counts.
-- `docs-comments-add --doc <doc_id> --content "TEXT"` — Add a document-level comment to the Doc.
-  Output: Success confirmation.
+### Read & Inspect
+- `docs-cat <doc_id>` — Read a Google Doc's full plain text body.
+- `docs-get --doc <doc_id>` — Structured read. Returns JSON containing document plain text, element start/end character indices mapping, named ranges, and style info. Uses `suggestionsViewMode=SUGGESTIONS_INLINE`.
 
-### Tab Management
-- `docs-tab-list <doc_id>` — List all tabs with IDs, titles, and hierarchy.
-  Output: JSON with tab tree.
-- `docs-tab-clone --doc <doc_id> --source-tab <tab_id> [--title "TITLE"]` — Clone a tab's text content into a new suggestion tab. Preserves paragraph structure and heading styles.
-  Output: JSON with `sourceTabId`, `suggestionTabId`, `suggestionTabTitle`.
-- `docs-tab-suggest --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Make tracked edits in batch. `suggestions.json` should contain an array of `{"find": "ORIGINAL", "replace": "NEW", "reason": "WHY"}`. Does not touch original tab.
-  Output: JSON with applied changes array and not_found array.
-- `docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Finalize reviewed suggestions: apply approved changes to the original tab, delete the suggestion tab, and resolve the review comment. Changes are considered approved unless their yellow highlight in the suggestion tab has been struck through by the reviewer.
-  Output: JSON summary of applied and rejected changes.
+### Lane A — Markdown Write-Surface
+- `docs-create --title "TITLE" [--body "PLAIN_TEXT"] [--folder FOLDER_ID] [--from-markdown FILE_PATH]` — Create a new Doc. If `--from-markdown` is used, performs a `multipart/related` Drive upload to convert a Markdown file into a formatted Google Doc (name = `--title`, parent = `--folder`).
+- `docs-replace-md --doc <doc_id> (--file FILE_PATH | --text "MARKDOWN")` — Replace a target Doc's body completely with formatted Markdown via temporary Doc multipart conversion and in-place structured elements copying.
+- `docs-write --doc <doc_id> (--text "CONTENT" | --file FILE_PATH) [--append | --overwrite] [--markdown]` — Write text to document. If `--append` is specified, appends to the end; if `--overwrite` is specified, clears and overwrites. If `--markdown` is specified, parses and converts content as formatted Markdown instead of plain text. Note: Overwriting requires the explicit `--overwrite` flag.
 
-## Important Notes
-- **Document IDs:** Extract document IDs from Docs URLs. The ID is the long string of alphanumeric characters between `/d/` and `/edit` in the address bar.
-- **Accidental Overwrites:** Using `docs-write` without `--append` will wipe the existing document text. Always check if you should use `--append`.
-- **Suggesting Mode / Redlines (API Limitation):** The Google Docs API **does NOT support** native "Suggesting Mode" or anchored comments. All API writes are permanent changes. To make "suggestions" or "redlines", you MUST append a `[LEGAL REVIEW REDLINES]` or `[PROPOSED CHANGES]` section to the bottom of the document using `docs-write --append`, and leave a document-level comment pointing to it using `docs-comments-add`. Never try to turn on suggestion mode.
-- **Tab-based suggestions and API Limitations:** The Google Docs API **does NOT support** true tab duplication. The `docs-tab-clone` script acts as a polyfill by extracting paragraph text from the source tab and pasting it into a new suggestion tab. The agent workflow uses a clone-edit-finalize pattern: The agent clones the tab, injects suggestions (which are highlighted yellow), and notifies the human. The human can reject a change by applying Strikethrough formatting (Alt+Shift+5) to the yellow text. Un-struck items are applied to the original tab on finalization. You MUST use `--file suggestions.json` in `docs-tab-finalize` so it knows the `find/replace` pairs to search for.
-- **Tab IDs in batchUpdate:** Include `tabId` in every `location` and `range` object when targeting a specific tab. Omitting `tabId` defaults to the first tab.
-- **Tab-scoped replaceAllText:** Use `tabsCriteria: {tabIds: ["TAB_ID"]}` to scope replacements to one tab. Without `tabsCriteria`, `replaceAllText` applies across ALL tabs.
+### Lane B — Surgical Edits (Formatting-Preserving)
+- `docs-find-replace --doc <doc_id> --find "OLD" --replace "NEW" [--match-case]` — Global find and replace all instances of a string.
+- `docs-batch-replace --doc <doc_id> --file PAIRS_FILE.json` — Apply an array of `{find, replace}` pairs atomically in a single `replaceAllText` batchUpdate.
+- `docs-anchor-insert --doc <doc_id> --anchor "phrase" --text "text" [--position before|after]` — Resolve a unique anchor phrase index and insert text immediately before or after it.
+- `docs-style --doc <doc_id> (--anchor "phrase" | --start START_IDX --end END_IDX) --style "STYLE"` — Apply typography/headings/alignment/color to a unique anchor or range. Style can be comma-separated list of: `bold`, `italic`, `underline`, `strikethrough`, `align=CENTER|LEFT|RIGHT|JUSTIFIED`, `color=#RRGGBB`, `HEADING_1` to `HEADING_6`, `TITLE`, `SUBTITLE`, `NORMAL_TEXT`.
+- `docs-insert-table --doc <doc_id> --anchor "phrase" --rows N --cols M` — Insert a table at a resolved anchor index.
+- `docs-insert-image --doc <doc_id> --anchor "phrase" --url IMAGE_URL` — Insert inline image from public URL at a resolved anchor index (enforces PNG/JPEG/GIF format, <50MB, <25MP, URL <2KB).
+- `docs-namedrange-create --doc <doc_id> --name "RANGE_NAME" (--anchor "phrase" | --start START_IDX --end END_IDX)` — Create a named range around a resolved anchor or character index range.
+- `docs-namedrange-replace --doc <doc_id> --name "RANGE_NAME" --text "text"` — Replace named range text in-place without index tracking.
 
-## Procedures
+### Lane C — DOCX Round-Trip
+- `docs-export-docx --doc <doc_id> --out OUTPUT_FILE.docx` — Export a Doc to local `.docx` format.
+- `docs-import-docx --file FILE_PATH.docx --title "TITLE" [--folder FOLDER_ID]` — Import local `.docx` as a native Google Doc via Drive multipart conversion.
 
-### Suggest edits via tab-based review
-1. Execute `runCommand({"command": "docs-tab-list <DOC_ID>"})` to find the target tab's ID.
-2. Execute `runCommand({"command": "docs-tab-clone --doc <DOC_ID> --source-tab <TAB_ID>"})`.
-3. Create a JSON file (e.g., `suggestions.json`) containing an array of your edits: `[{"find": "...", "replace": "...", "reason": "..."}]`.
-4. Execute `runCommand({"command": "docs-tab-suggest --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID> --file suggestions.json"})`.
-5. Post one comment: `docs-comments-add --doc <DOC_ID> --content "📋 I've prepared N suggested edits in the '✏️ Edits' tab. My changes are applied inline and highlighted yellow. To reject a change, apply Strikethrough to the yellow text. Reply here when done."`.
-6. Wait for the human to reply (mission enters needs_input).
-7. On reply: execute `runCommand({"command": "docs-tab-finalize --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID> --file suggestions.json"})`.
-8. Report summary: which changes were applied, which rejected.
+### Comments & Review Polyfills
+- `docs-comments-list --doc <doc_id> [--include-resolved]` — List document-level comments.
+- `docs-comments-add --doc <doc_id> --content "TEXT"` — Add a document-level comment.
+- `docs-tab-list <doc_id>` — List tabs with IDs, titles, and hierarchy.
+- `docs-tab-clone --doc <doc_id> --source-tab <tab_id> [--title "TITLE"]` — Clone a tab's text content into a suggestion tab (highlights suggestion yellow).
+- `docs-tab-suggest --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Make batched suggestion edits in the cloned tab.
+- `docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Apply suggestions to original tab (excluding struck-through text) and clean up.
 
-### Read and analyze a document
-1. Resolve the target document ID.
-2. Run `docs-cat <DOC_ID>` to read the full body content.
-3. If comments are relevant to the task, run `docs-comments-list --doc <DOC_ID>` to fetch comments.
-4. Verify: Check that output text is returned and represents the target document.
+---
 
-### Create a new document in a folder
-1. Resolve the destination folder ID using `drive-search`.
-2. Run `docs-create --title '<title>' --body '<initial_text>' --folder <FOLDER_ID>`.
-3. Record the returned document ID.
-4. Verify: Confirm the output lists the new document ID and URL.
+## 2. Decision Framework
 
-### Edit a document's content
-1. Resolve the document ID.
-2. If adding new text to the end, run `docs-write --doc <DOC_ID> --text '<content>' --append`.
-3. If performing keyword replacements, run `docs-find-replace --doc <DOC_ID> --find '<find_keyword>' --replace '<replacement_keyword>'`.
-4. Run `docs-cat <DOC_ID>` to verify that the edit applied correctly.
+Map the task requirements to the correct lane and tools using the following matrix:
 
-### Add feedback comments
-1. Resolve the document ID.
-2. Run `docs-comments-add --doc <DOC_ID> --content '<feedback_text>'`.
-3. Verify: Confirm success output.
+| Intent | Lane | Tools |
+|---|---|---|
+| "Create a doc / write a report / draft a brief" | A | `docs-create --from-markdown` |
+| "Rewrite / regenerate this whole document" | A | `docs-replace-md` |
+| "Add a section to the end" | A | `docs-write --markdown --append` |
+| "Fix this typo / update this clause / change these values" | B | `docs-find-replace`, `docs-batch-replace` |
+| "Insert a table / image / heading here" | B | `docs-insert-table`, `docs-insert-image`, `docs-style` |
+| "This field updates every cycle (template/report)" | B | `docs-namedrange-create` → `docs-namedrange-replace` |
+| "Apply our branded template / exact typography / complex tables" | C | `docs-export-docx` → OOXML tooling → `docs-import-docx` |
+| "Produce tracked-changes / a redline I can accept-reject" | C | `docs-export-docx` → OOXML `w:ins`/`w:del` → `docs-import-docx` |
+| "Suggest edits for human approval (lightweight)" | polyfill | `docs-tab-clone` → `docs-tab-suggest` × N → human reviews → `docs-tab-finalize` |
+| "Leave feedback / flag an issue" | polyfill | `docs-comments-add` |
 
-### Make suggested redlines (Workaround)
-1. Resolve the document ID.
-2. Draft the redlines and reasoning locally.
-3. Run `docs-write --doc <DOC_ID> --file redlines.md --append` to inject the suggestions at the end of the document.
-4. Run `docs-comments-add --doc <DOC_ID> --content 'I have appended my suggested redlines and reasoning to the bottom of this document for your review.'` to notify the author.
+---
 
-## Error Recovery
+## 3. Procedures
+
+### Create a Formatted Document (Lane A)
+1. Write the content as a local Markdown file (e.g. `report.md`).
+2. Run `docs-create --title "Q3 Summary" --from-markdown report.md --folder 1AbC_folder_id`.
+3. Verify formatting structure by running `docs-get --doc 1AbC_doc_id` and reviewing text layout.
+
+### Edit in Place preserving Formatting (Lane B)
+1. Read the target document structure using `docs-get --doc 1AbC_doc_id`.
+2. Locate a unique anchor phrase nearby the desired edit location.
+3. Prepare a find-and-replace list or define the edit:
+   - For simple inserts: run `docs-anchor-insert --doc 1AbC_doc_id --anchor "anchor phrase" --text "New info" --position after`.
+   - For batch edits: create `pairs.json` and run `docs-batch-replace --doc 1AbC_doc_id --file pairs.json`.
+4. Validate changes using `docs-get --doc 1AbC_doc_id`. Never delete and re-write the entire body for small localized changes.
+
+### Templated/Recurring Updates (Named Ranges)
+1. Locate or create a NamedRange on the target text using `docs-namedrange-create --doc 1AbC_doc_id --name "ReportDate" --anchor "January 1, 2026"`.
+2. Update the field in subsequent runs using `docs-namedrange-replace --doc 1AbC_doc_id --name "ReportDate" --text "February 1, 2026"`. This preserves surrounding styles and formatting.
+
+### High-Fidelity/Tracked-Changes (Lane C Round-Trip)
+1. Export the Google Doc using `docs-export-docx --doc 1AbC_doc_id --out local.docx`.
+2. Perform OOXML manipulations locally (e.g., adding `w:ins`/`w:del` tracked changes or templates via `docx-js`/Office scripts).
+3. Import the updated document using `docs-import-docx --file local.docx --title "Q3 Redlines" --folder 1AbC_folder_id`.
+
+### Suggest Edits via Tab Review Polyfill
+1. Run `docs-tab-list 1AbC_doc_id` to get target tab ID.
+2. Run `docs-tab-clone --doc 1AbC_doc_id --source-tab t.0` to create suggestion tab.
+3. Create `suggestions.json` and apply edits using `docs-tab-suggest --doc 1AbC_doc_id --source-tab t.0 --suggestion-tab t.new --file suggestions.json`.
+4. Leave review comment: `docs-comments-add --doc 1AbC_doc_id --content "📋 I've added suggestions in the review tab. Review and reply here when finished."`
+5. On human confirmation: run `docs-tab-finalize --doc 1AbC_doc_id --source-tab t.0 --suggestion-tab t.new --file suggestions.json` to apply approved changes.
+
+---
+
+## 4. Important Notes / Limitations
+
+- **No Native Suggesting Mode**: The Google Docs API has no toggle for "Suggesting Mode". Use the Tab Suggestion polyfill or Lane C (OOXML redlines).
+- **Comments are Unanchored**: Programmatically created comments appear in the Document Comments sidebar rather than being highlighted on specific text.
+- **Markdown Image Limitation**: Google Drive's Markdown converter does **not** fetch and embed Markdown image syntax (`![caption](url)`). Use `docs-insert-image` (Lane B) to place images at resolved anchors.
+- **Multipart Conversion Requirement**: All Markdown and DOCX conversions require `multipart/related` Drive upload type (`uploadType=multipart`), passing both metadata and body parts in a single request.
+- **Named Ranges Fragmentation**: If a named range is edited by human collaborators, it can split. `docs-namedrange-replace` only replaces the first fragment; re-create the range if it fragments.
+- **Image Constraints**: Public URL image insertions must strictly be under 50 MB, PNG/JPEG/GIF formats only, under 25 megapixels, and URL length under 2KB.
+
+---
+
+## 5. Error Recovery
 
 | Error / Symptom | Likely Cause | Recovery |
-|-----------------|-------------|----------|
-| `403 forbidden` | Service account lacks share access | Ask the user to share the Google Doc with the agent's Workspace email address (shown in the error response). |
-| `404 notFound` | Invalid document ID | Run `drive-search` to find the correct document name and locate the fresh ID. |
-| `429 rateLimitExceeded` | Too many Docs API requests | Wait 30 seconds, then retry the edit once. |
-| Text overwritten | Ran `docs-write` without `--append` | Restore previous text using Google Drive version history if available, or recreate it from your task logs. |
-| `docs-tab-finalize` reports `0 occurrences` for an approved change | Original tab text was modified after suggestion was created | Re-read the original tab, find current text, apply manually with `docs-find-replace` |
-| `docs-tab-suggest` returns `text_not_found` | Text already changed by a prior suggestion in the same session | Re-read the suggestion tab with `docs-get` to get current text after prior edits |
-| `docs-tab-clone` creates tab but text is empty | Source tab has content primarily in tables/images | Clone preserves paragraph text only; note this to the human |
-| Reject markers not being processed | User deleted the marker instead of checking/striking it | If deleted, it defaults to approved. Train the human to use strikethrough instead. |
-
-## Decision Framework
-
-| Signal in the task | Pattern | Tools |
 |---|---|---|
-| "Edit", "update", "fix", "format" — agent has authority | **Direct Edit** | `docs-batch-update`, `docs-insert`, `docs-find-replace` |
-| "Review", "suggest", "propose" — needs approval | **Tab-Based Suggestion** | `docs-tab-clone` → `docs-tab-suggest` × N → human reviews → `docs-tab-finalize` |
-| Heavy rewrite, full restructure | **Shadow Copy** | `drive-copy` → edit copy → compare link |
-| Template application, format conversion | **DOCX Round-Trip** | `docs-export` → local processing → `drive-upload` |
-
-## Examples
-
-### Example: Tab-based document review with inline approve/deny
-  Task: "Review Q3 Strategy and suggest improvements"
-
-  Step 1: Execute `runCommand({"command": "docs-tab-list abc123"})`
-  Output received: `{"tabs": [{"tabId": "t.0", "title": "Q3 Strategy"}]}`
-
-  Step 2: Execute `runCommand({"command": "docs-tab-clone --doc abc123 --source-tab t.0"})`
-  Output received: `{"suggestionTabId": "t.new1", "suggestionTabTitle": "✏️ Edits — Q3 Strategy"}`
-
-  Step 3: Write suggestions to `suggestions.json`
-  ```json
-  [
-    {
-      "find": "We will probably finish by Q4",
-      "replace": "We project completion by end of Q4",
-      "reason": "Remove hedging"
-    }
-  ]
-  ```
-
-  Step 4: Execute `runCommand({"command": "docs-tab-suggest --doc abc123 --source-tab t.0 --suggestion-tab t.new1 --file suggestions.json"})`
-  Output received: `{"status": "suggested", "applied": [{"changeId": 1, "find": "...", "replace": "..."}], "not_found": []}`
-
-  Step 5: Execute `runCommand({"command": "docs-comments-add --doc abc123 --content \"📋 I've prepared suggested edits in the '✏️ Edits — Q3 Strategy' tab. Changes are applied inline and highlighted yellow. To reject a change, apply Strikethrough to the marker. Reply here when done.\""})`
-  Output received: Success (mission enters needs_input)
-
-  (Human reviews: accepts changes 1 and 3, applies strikethrough to change 2 to reject it, replies "done")
-
-  Step 6: Execute `runCommand({"command": "docs-tab-finalize --doc abc123 --source-tab t.0 --suggestion-tab t.new1"})`
-  Output received: `{"applied": [{"changeId": 1}, {"changeId": 3}], "rejected": [{"changeId": 2}], "tabDeleted": true}`
-
-  Outcome: Changes 1 and 3 applied to original tab. Change 2 skipped. Suggestion tab removed. One comment resolved.
-
-### Example: Create a document and write content
-```
-Task: "Create a new document called 'Project Plan' and add the project overview."
-
-Step 1: docs-create --title "Project Plan" --body "Project Overview:" --folder 12345_folder_id
-Output received: { "id": "doc_abc123_id", "title": "Project Plan", "url": "https://docs.google.com/document/d/doc_abc123_id/edit" }
-
-Step 2: docs-write --doc doc_abc123_id --text "\n\nPhase 1: Build the prototype." --append
-Output received: Success
-
-Outcome: Document created and text appended.
-```
-
-### Example: Find and replace text in a document
-```
-Task: "Update the document 'Pricing Model' to replace 'USD' with 'EUR'."
-
-Step 1: docs-find-replace --doc doc_pricing_id --find "USD" --replace "EUR"
-Output received: { "replacements": 4, "success": true }
-
-Outcome: 4 instances of "USD" replaced with "EUR".
-```
-
-### Example: Recovering from Access Denied
-```
-Task: "Read the contents of the document with ID '1AbC2dEfG3hIjK4lMnOpQ5rStUvWxYz6789AbCdEfG'."
-
-Step 1: docs-cat 1AbC2dEfG3hIjK4lMnOpQ5rStUvWxYz6789AbCdEfG
-Output received: { "status": "access_denied", "docId": "1AbC2dEfG3hIjK4lMnOpQ5rStUvWxYz6789AbCdEfG", "message": "Doc access denied. Share with assistant-agent-millie@example.com" }
-
-Step 2: GChat message to user: "Hey there! I tried to read the document you shared, but it looks like I don't have access. Could you please share it with assistant-agent-millie@example.com with Commenter or Editor access?"
-
-Outcome: Agent correctly flags the permissions issue to the user and provides their email address for sharing.
-```
+| `403 forbidden` / `401 unauthorized` | Lack of permissions | Check that the target Google Doc is shared with the agent's service account email address. |
+| Converted document is unformatted / plain-text | Failed multipart upload conversion | Verify that the file upload was sent to `/upload/drive/v3/files?uploadType=multipart`, with metadata MIME type set to `application/vnd.google-apps.document`. |
+| Anchor phrase matches zero or multiple | Anchor text is not unique | Read the text via `docs-get`, identify a more distinct unique anchor phrase, and retry. |
+| Named range replacement has no effect | Named range name mismatch / split | Call `docs-get` to inspect namedRanges keys. If split, re-create the NamedRange. |
+| Image insertion rejected | Image constraint violation | Verify image file format is PNG/JPEG/GIF, size < 50MB, dimensions < 25MP, and URL < 2KB. |
+| Accidental overwrite error | Missing write mode | Make sure to specify `--append` or `--overwrite` when calling `docs-write`. |
