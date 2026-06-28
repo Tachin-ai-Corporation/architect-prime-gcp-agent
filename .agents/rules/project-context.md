@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.28.2.0)
+## Current Architecture (v2026.06.28.3.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -61,6 +61,12 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Manifest discipline (C-11)**: Removed 7 `sites/tachin-website/*` entries from `base.txt`. Website content does not ship as a base default.
   - **Example genericization**: All `SKILL.md`, `SOUL_APPEND.md`, workflow, and JSDoc examples use `@example.com` emails, `your-gcp-project`, `YOUR_DRIVE_FOLDER_ID`, etc.
   - **Dev debris cleanup**: Deleted `scratch/` directory (16 committed files with operator data) and added to `.gitignore`.
+- **Human-Triggered Improvement Loop & Install Hardening (v2026.06.28.3.0)**:
+  - **Operator-triggered improvement**: New `p-review-and-improve` process (5 steps) allows operator to trigger fleet improvement via dashboard chat. Prime cortex SOUL has a new rule recognizing operator improvement requests (parallel to fleet-delegated `[IMPROVEMENT SUGGESTION]` rule).
+  - **Evidence-based improvement modules**: 4 improvement module processes (`p-improve-delegation`, `p-improve-skills`, `p-improve-souls`, `p-improve-work-layer`) rewritten to v2 — derive evidence from `work-log-read` mission trees and `brain-telemetry-read` dispatch data instead of phantom aggregated counters.
+  - **Install.sh hardening**: JOB array migration completed (4 missed string-style `$JOB` refs under `set -u`), workspace template re-rendering on upgrade (reads `agent_display_name`, `specialty`, `agent_user_email`, `gemini_project` from GCE metadata), contracts.json `YOUR_GITHUB_ORG` placeholder rendered from `gh_owner` metadata.
+  - **Operator manifest lookup**: `install.sh` now checks `operator/manifests/job-${j}.txt` first, then `infra/manifests/` as fallback — operator content lives in `operator/` directory (SSOT).
+  - **Fresh-install contamination punch list**: `contracts.json` owner genericized, `github.ts` fallback removed, duplicate `infra/manifests/job-tachin-website.txt` deleted (keep `operator/` copy), real Drive IDs in skill examples replaced with fakes.
 - **Operator Manifest Pipeline & Process Validation (v2026.06.28.2.0)**:
   - **Multi-job manifest support**: `install.sh` now accepts multiple `--job` flags (array-based), enabling layered installs: `base.txt` → `role-fleet.txt` → `job-product-architect.txt` → `job-tachin-website.txt`. Fleet agents receive both their specialty and operator content in a single install.
   - **Operator jobs via VM metadata**: `fleet-bootstrap.sh` reads comma-separated `operator_jobs` from GCE instance metadata and passes as additional `--job` flags. `fleet-deploy` accepts `--operator-jobs` flag and bakes it into VM metadata. `upgrade-corekit` reads operator_jobs during upgrades.
