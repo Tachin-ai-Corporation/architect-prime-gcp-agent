@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "responsibilities": [
+    {
+      "id": "r-sync-health-nightly",
+      "name": "Nightly Public File Service Health Check",
+      "schedule": "0 7 * * *",
+      "enabled": true,
+      "singleton": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Run the public file service health check. Verify the Cloud Run sync-service is running, the Drive watch channel is active, and the GCS bucket has recent files. If the watch is expired, renew it. Report the overall health status.",
+      "processRef": "p-publicfile-health",
+      "processParameters": {
+        "gcp_project": "YOUR_GCP_PROJECT",
+        "region": "us-central1",
+        "gcs_bucket": "YOUR_GCS_BUCKET",
+        "sync_service_url": "YOUR_SYNC_SERVICE_URL"
+      },
+      "project_id": "tachin-public-files",
+      "context": {
+        "success_criteria": "Sync service is HEALTHY or any issues have been remediated. Health report delivered."
+      }
+    }
+  ]
+}
