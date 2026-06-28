@@ -80,6 +80,8 @@ export interface SetupState {
   dwdClientId: string;
   agentEmailDomain: string;
   artifactsRootFolderId: string;
+  githubOwner?: string;
+  githubRepo?: string;
 }
 
 /* ---- Work Envelope types ---- */

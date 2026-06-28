@@ -163,7 +163,14 @@ function HomeInner() {
     const res = await api<{ id: string }>(`/api/primes/${primeId}/commands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "upgrade_corekit", args: { ref: "main" } }),
+      body: JSON.stringify({
+        type: "upgrade_corekit",
+        args: {
+          ref: "main",
+          owner: setup.githubOwner || "",
+          repo: setup.githubRepo || ""
+        }
+      }),
     });
     if (res?.id) {
       dialog.toast({ message: `Upgrading ${primeId} CoreKit…`, variant: "success" });
@@ -180,7 +187,15 @@ function HomeInner() {
     const res = await api<{ id: string }>(`/api/primes/${primeId}/commands`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "fleet_upgrade", args: { name: agentName, ref: "main" } }),
+      body: JSON.stringify({
+        type: "fleet_upgrade",
+        args: {
+          name: agentName,
+          ref: "main",
+          owner: setup.githubOwner || "",
+          repo: setup.githubRepo || ""
+        }
+      }),
     });
     if (res?.id) {
       dialog.toast({ message: `Upgrading ${agentName}…`, variant: "success" });

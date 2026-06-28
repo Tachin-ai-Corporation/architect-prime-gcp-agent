@@ -78,9 +78,21 @@ if [[ "$CURRENT_REF" == "$TARGET_REF" ]]; then
   log "Agent is already on ref '${TARGET_REF}' — upgrade anyway"
 fi
 
+# Resolve GH_OWNER and GH_REPO from env or GCE metadata (or fallback)
+OWNER="${GH_OWNER:-}"
+REPO="${GH_REPO:-}"
+if [[ -z "$OWNER" || -z "$REPO" ]]; then
+  # Fallback to local STATE.json or env
+  STATE_FILE="${CORE_DIR}/corekit/STATE.json"
+  if [[ -f "$STATE_FILE" ]]; then
+    [[ -z "$OWNER" ]] && OWNER="$(jq -r '.owner // ""' "$STATE_FILE" 2>/dev/null)"
+    [[ -z "$REPO" ]] && REPO="$(jq -r '.repo // ""' "$STATE_FILE" 2>/dev/null)"
+  fi
+fi
+
 # ---- SSH and upgrade ----
 log "SSHing into ${FLEET_VM} to run upgrade..."
-UPGRADE_CMD="sudo CORE_REF='${TARGET_REF}' CORE_DIR=/opt/corekit /opt/corekit/bin/upgrade-corekit --apply '${TARGET_REF}' && echo 'UPGRADE_SUCCESS'"
+UPGRADE_CMD="sudo GH_OWNER='${OWNER}' GH_REPO='${REPO}' CORE_REF='${TARGET_REF}' CORE_DIR=/opt/corekit /opt/corekit/bin/upgrade-corekit --apply '${TARGET_REF}' && echo 'UPGRADE_SUCCESS'"
 
 RESULT="$(gcloud compute ssh "$FLEET_VM" \
   --zone="$FLEET_ZONE" \

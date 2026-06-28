@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/require-auth";
-import { commandsCol } from "@/lib/firestore";
+import { commandsCol, getDb } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
 import { getGitHubOwner, getGitHubRepo } from "@/lib/github";
 
@@ -8,6 +8,7 @@ import { getGitHubOwner, getGitHubRepo } from "@/lib/github";
  * Extract version from commit message.
  * Supports two formats:
  *   - Canonical (forever): "v2026.04.26.1.0: description" → "v2026.04.26.1.0"
+ *   - Back-compat (v5.0-v5.3 era): "v5.3.0: description" → "v5.3.0"
  *   - Back-compat (v5.0-v5.3 era): "v5.3.0: description" → "v5.3.0"
  * Returns the version prefix or "unknown".
  *
@@ -37,8 +38,12 @@ function extractVersion(commitMessage: string): string {
 export async function GET() {
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
-    const ghOwner = process.env.GH_OWNER || getGitHubOwner();
-    const ghRepo = process.env.GH_REPO || getGitHubRepo();
+    
+    // Read custom GitHub Owner/Repo settings from config/settings if present
+    const settingsDoc = await getDb().collection("config").doc("settings").get();
+    const settings = settingsDoc.exists ? settingsDoc.data() : null;
+    const ghOwner = settings?.github_owner || process.env.GH_OWNER || getGitHubOwner();
+    const ghRepo = settings?.github_repo || process.env.GH_REPO || getGitHubRepo();
     const deployedCommit = process.env.APP_COMMIT || "";
 
     let stableTagSha = "";
@@ -143,8 +148,12 @@ export async function POST(req: NextRequest) {
 
   try {
     const projectId = process.env.GCP_PROJECT_ID || "";
-    const ghOwner = process.env.GH_OWNER || getGitHubOwner();
-    const ghRepo = process.env.GH_REPO || getGitHubRepo();
+    
+    // Read custom GitHub Owner/Repo settings from config/settings if present
+    const settingsDoc = await getDb().collection("config").doc("settings").get();
+    const settings = settingsDoc.exists ? settingsDoc.data() : null;
+    const ghOwner = settings?.github_owner || process.env.GH_OWNER || getGitHubOwner();
+    const ghRepo = settings?.github_repo || process.env.GH_REPO || getGitHubRepo();
     const region = process.env.REGION || "us-central1";
     const serviceName = process.env.SERVICE_NAME || "architect-prime";
     const image = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane:latest`;

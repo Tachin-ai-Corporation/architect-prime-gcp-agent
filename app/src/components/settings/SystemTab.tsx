@@ -1,17 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePrime } from "@/contexts/PrimeContext";
 import { useDialog } from "@/components/DialogProvider";
 import { api } from "@/lib/api";
 import styles from "@/app/settings/page.module.css";
 
 export function SystemTab() {
-  const { primes, versionInfo } = usePrime();
+  const { primes, versionInfo, setup } = usePrime();
   const dialog = useDialog();
 
   const [upgrading, setUpgrading] = useState(false);
   const [buildStatus, setBuildStatus] = useState<string | null>(null);
+
+  const [owner, setOwner] = useState(setup?.githubOwner || "");
+  const [repo, setRepo] = useState(setup?.githubRepo || "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (setup?.githubOwner) setOwner(setup.githubOwner);
+    if (setup?.githubRepo) setRepo(setup.githubRepo);
+  }, [setup?.githubOwner, setup?.githubRepo]);
+
+  const handleSaveGitHub = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          githubOwner: owner.trim(),
+          githubRepo: repo.trim(),
+        }),
+      });
+      if (res.ok) {
+        setSaved(true);
+        dialog.toast({ message: "GitHub settings saved successfully", variant: "success" });
+        setTimeout(() => setSaved(false), 2500);
+      } else {
+        dialog.toast({ message: "Failed to save GitHub settings", variant: "error" });
+      }
+    } catch {
+      dialog.toast({ message: "Error saving GitHub settings", variant: "error" });
+    }
+    setSaving(false);
+  };
 
   const firstPrimeId = primes.length > 0 ? primes[0].id : null;
 
@@ -135,6 +170,41 @@ export function SystemTab() {
                 {versionInfo.latestStable ? "Stable" : "Unstable"}
               </span>
             </span>
+          </div>
+
+          <div className={styles.fieldRow} style={{ alignItems: "center" }}>
+            <span className={styles.fieldLabel}>Repository Owner / Org</span>
+            <input
+              id="settings-github-owner-input"
+              className="input"
+              style={{ width: 220, fontSize: 13 }}
+              placeholder="e.g. Tachin-ai-Corporation"
+              value={owner}
+              onChange={(e) => setOwner(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.fieldRow} style={{ alignItems: "center" }}>
+            <span className={styles.fieldLabel}>Repository Name</span>
+            <input
+              id="settings-github-repo-input"
+              className="input"
+              style={{ width: 220, fontSize: 13 }}
+              placeholder="e.g. architect-prime-gcp-agent"
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.fieldRow} style={{ justifyContent: "flex-end", marginTop: 8 }}>
+            <button
+              id="settings-save-github-btn"
+              className="btn btn-secondary btn-sm"
+              disabled={saving}
+              onClick={handleSaveGitHub}
+            >
+              {saving ? "Saving..." : saved ? "✓ Saved" : "Save GitHub Settings"}
+            </button>
           </div>
 
           {buildStatus && (

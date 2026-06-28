@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { primesCol, getDb } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
 import { isAuthConfigured } from "@/lib/auth";
+import { getGitHubOwner, getGitHubRepo } from "@/lib/github";
 
 /**
  * GET /api/setup — Returns the project's setup state.
@@ -46,6 +47,9 @@ export async function GET() {
       }
     }
 
+    const githubOwner = settings?.github_owner || process.env.GH_OWNER || getGitHubOwner();
+    const githubRepo = settings?.github_repo || process.env.GH_REPO || getGitHubRepo();
+
     return NextResponse.json({
       hasPrimes,
       dwdConfigured: dwdConfig?.configured === true,
@@ -56,6 +60,8 @@ export async function GET() {
       agentEmailDomain: settings?.agentEmailDomain || "",
       adminEmail: settings?.adminEmail || "",
       artifactsRootFolderId,
+      githubOwner,
+      githubRepo,
     });
   } catch (err) {
     console.error("[api/setup] Error:", err);
@@ -68,13 +74,15 @@ export async function GET() {
       dwdClientId: "",
       agentEmailDomain: "",
       artifactsRootFolderId: "",
+      githubOwner: process.env.GH_OWNER || getGitHubOwner(),
+      githubRepo: process.env.GH_REPO || getGitHubRepo(),
     });
   }
 }
 
 /**
  * POST /api/setup — Save setup settings.
- * Supports: agentEmailDomain, adminEmail, artifactsRootFolderId
+ * Supports: agentEmailDomain, adminEmail, artifactsRootFolderId, githubOwner, githubRepo
  * All settings saved to config/settings (app-level, survives prime teardown).
  */
 export async function POST(req: NextRequest) {
@@ -94,6 +102,12 @@ export async function POST(req: NextRequest) {
     }
     if (typeof body.artifactsRootFolderId === "string") {
       updates.artifacts_root_folder_id = body.artifactsRootFolderId.trim();
+    }
+    if (typeof body.githubOwner === "string") {
+      updates.github_owner = body.githubOwner.trim();
+    }
+    if (typeof body.githubRepo === "string") {
+      updates.github_repo = body.githubRepo.trim();
     }
 
     // Auto-capture admin email from IAP if not already set

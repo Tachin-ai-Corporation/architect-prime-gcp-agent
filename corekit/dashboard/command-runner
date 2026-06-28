@@ -150,10 +150,12 @@ handle_fleet_teardown() {
 
 handle_fleet_upgrade() {
   local args_json="$1"
-  local name ref
+  local name ref owner repo
 
   name=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))")
   ref=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref','main'))")
+  owner=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('owner',''))")
+  repo=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('repo',''))")
 
   if [[ -z "$name" ]]; then
     echo "ERROR: name is required"
@@ -161,17 +163,19 @@ handle_fleet_upgrade() {
   fi
 
   log "Executing: fleet-upgrade --name ${name} --ref ${ref}"
-  "${FLEET_BIN}/fleet-upgrade" --name "$name" --ref "$ref" 2>&1
+  GH_OWNER="${owner:-$GH_OWNER}" GH_REPO="${repo:-$GH_REPO}" "${FLEET_BIN}/fleet-upgrade" --name "$name" --ref "$ref" 2>&1
 }
 
 handle_upgrade_corekit() {
   local args_json="$1"
-  local ref
+  local ref owner repo
 
   ref=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ref','main'))")
+  owner=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('owner',''))")
+  repo=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('repo',''))")
 
   log "Executing: upgrade-corekit --apply ${ref}"
-  CORE_DIR="$CORE_DIR" "${FLEET_BIN}/upgrade-corekit" --apply "$ref" 2>&1
+  GH_OWNER="${owner:-$GH_OWNER}" GH_REPO="${repo:-$GH_REPO}" CORE_DIR="$CORE_DIR" "${FLEET_BIN}/upgrade-corekit" --apply "$ref" 2>&1
   local ck_exit=$?
 
   if [[ $ck_exit -eq 0 ]]; then
