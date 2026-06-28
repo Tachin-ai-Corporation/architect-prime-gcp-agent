@@ -1,7 +1,7 @@
 {
   "id": "p-improve-work-layer",
   "name": "Improve Work Layer",
-  "version": 1,
+  "version": 2,
   "description": "Evidence-driven improvement of process coverage, hierarchy compliance, and process step quality.",
   "status": "active",
   "visibility": "standard",
@@ -9,7 +9,7 @@
   "steps": [
     {
       "title": "Measure process coverage",
-      "description": "Query recent missions. Calculate follow_process vs checkpoint_plan split. Group ad-hoc patterns by type. Identify top 3 candidates for processification (≥3 recurring occurrences).",
+      "description": "Using work-management, run work-log-read --hours 72 to get recent mission trees. For each M-envelope, check if it used follow_process (has processRef) or ad-hoc checkpoint_plan. Calculate coverage percentage. Also query process-manage list for installed processes. Group ad-hoc missions by similarity (similar instruction text or project). Identify top 3 candidates for processification (≥3 recurring ad-hoc patterns).",
       "agent": "motor",
       "type": "standard",
       "intent": "research",

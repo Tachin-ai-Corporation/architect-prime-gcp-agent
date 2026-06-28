@@ -1,7 +1,7 @@
 {
   "id": "p-improve-skills",
   "name": "Improve Skills Library",
-  "version": 1,
+  "version": 2,
   "description": "Evidence-driven improvement of skill grades, motor success rates, and skill gap coverage.",
   "status": "active",
   "visibility": "standard",
@@ -9,11 +9,11 @@
   "steps": [
     {
       "title": "Grade and prioritize",
-      "description": "Using skill-introspect: run validate-skills to grade every skill. Cross-reference with motor_dispatch telemetry for per-skill success rate and skill-miss counts. Priority = traffic × grade-gap × failure-rate.",
+      "description": "Using skill-introspect: run validate-skills to grade every skill. Derive per-skill usage and failure signals from recent mission trees (work-log-read --hours 72) — look for motor tasks that reference a skill and failed or required retry. Cross-reference brain-telemetry-read --agent motor --failures for dispatch errors. Prioritize by grade-gap × observed-failure-count. Do not assume a per-skill success-rate store exists.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Ranked list. Top priority skill identified with grade, traffic, success rate."
+      "accept_criteria": "Ranked list. Top priority skill identified with grade and observed failure evidence from mission trees."
     },
     {
       "title": "Upgrade priority skill",
@@ -25,7 +25,7 @@
     },
     {
       "title": "Test and fill gaps",
-      "description": "Send 3 test missions exercising upgraded skill. Compare success rate before/after. Check skill-miss telemetry for gaps. If gap found (≥3 misses): using skill-authoring, create new skill.",
+      "description": "Send 3 test missions exercising upgraded skill. Compare success rate before/after by reviewing the test mission work trees. Check for skill gaps (motor tasks that fail because no matching skill exists) in the recent mission trees. If gap found (≥3 occurrences): using skill-authoring, create new skill.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

@@ -1,7 +1,7 @@
 {
   "id": "p-improve-delegation",
   "name": "Improve Delegation & Cross-Agent Workflow",
-  "version": 1,
+  "version": 2,
   "description": "Evidence-driven improvement of delegation governance, cross-agent context sharing, delegation instruction quality, result handling, and multi-agent coordination patterns.",
   "status": "active",
   "visibility": "standard",
@@ -9,11 +9,11 @@
   "steps": [
     {
       "title": "Audit delegation health",
-      "description": "Query recent missions involving delegations. For each delegation: count round-trips, measure time from delegation sent to result received, check if the delegate had to re-plan (indicates vague instruction), check for ENOENT errors (cross-agent context failure), check for concurrent delegation violations (multiple active delegations to same target), count cancelled delegations (delegation storm indicator). Read checkpoint-executor delegation guard logs for blocked/bypassed events.",
+      "description": "Using work-management, run work-log-read --hours 72 to get recent mission trees involving delegations. For each delegation: count round-trips (delegation-sent → result-received envelope pairs), measure time from delegation sent to result received, check if the delegate had to re-plan (indicates vague instruction — look for checkpoint re-issued after failure), check for ENOENT errors in task outputs (cross-agent context failure), check for concurrent delegation violations (multiple active delegations to same target), count cancelled delegations (delegation storm indicator). Cross-reference brain-telemetry-read --failures for dispatch errors on the same window. Derive ALL metrics from the work tree and telemetry — do not assume an aggregated delegation-metrics store.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Delegation health metrics: average round-trips, re-plan rate at delegate, ENOENT rate, concurrent violations, cancellation rate, guard bypass rate. Top 3 delegation issues ranked by impact."
+      "accept_criteria": "Delegation health metrics derived from work trees: average round-trips, re-plan rate at delegate, ENOENT rate, concurrent violations, cancellation rate. Evidence cited from specific mission/envelope IDs. Top 3 delegation issues ranked by impact."
     },
     {
       "title": "Diagnose delegation instruction quality",

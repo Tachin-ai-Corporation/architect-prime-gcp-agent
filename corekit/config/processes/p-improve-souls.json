@@ -1,7 +1,7 @@
 {
   "id": "p-improve-souls",
   "name": "Improve Organ SOULs",
-  "version": 1,
+  "version": 2,
   "description": "Evidence-driven improvement of organ behavioral instructions — cortex decisions, prefrontal plans, motor execution, cerebellum verification.",
   "status": "active",
   "visibility": "standard",
@@ -9,11 +9,11 @@
   "steps": [
     {
       "title": "Measure organ performance",
-      "description": "Read last 20 mission work trees. Measure per organ: cortex replan rate, prefrontal checkpoint count, motor skill-miss rate, cerebellum false-positive rate. Identify worst organ.",
+      "description": "Using work-management, run work-log-read --hours 72 to sample recent mission trees. For each mission, derive organ performance from the tree: cortex re-plans (a checkpoint re-issued after a task failure — count C-envelopes with status=failed then re-created), prefrontal plan inflation (checkpoint count per mission), motor failures (T-envelopes assigned to motor with status=failed — note which skill was referenced), cerebellum false-positives (T-envelopes where cerebellum verdict=FAIL then the same task succeeds on retry without changes). Identify the worst-performing organ by evidence count.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Per-organ metrics with mission evidence. Worst organ identified."
+      "accept_criteria": "Per-organ metrics derived from specific mission trees (cite envelope IDs). Worst organ identified with evidence count."
     },
     {
       "title": "Diagnose and fix SOUL rule",

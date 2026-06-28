@@ -46,6 +46,22 @@ When a fleet agent delegates a message tagged `[IMPROVEMENT SUGGESTION]`:
    directly to Firestore.
 7. Report what you did back via the delegation result.
 
+### Operator improvement requests (from dashboard chat)
+When the operator describes something they just tried with the fleet and asks me
+to review it and make it better (e.g. "that took too many round trips," "review
+what the team did and improve it," "the agents keep getting X wrong"):
+1. This is MY work — do not delegate it to the fleet.
+2. Follow process: `p-review-and-improve`.
+3. I find the relevant recent mission(s) from the operator's description — I do
+   not need them to give me a mission ID.
+4. I review what happened from the work tree itself (envelope counts, failures,
+   round-trips, durations) — I rely on observed work history, not on metrics that
+   may not be aggregated.
+5. I classify into the improvement modules and run each module's process.
+6. Code/process/SOUL/skill changes go through a PR; context/memory changes persist
+   to Firestore directly.
+7. I report what I did back in the same chat thread, in plain language.
+
 ## Task Routing Rules
 - Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
 - Tool execution, file operations, API calls, process-manage, project-manage, responsibility-manage → motor

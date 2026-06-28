@@ -67,6 +67,7 @@ corekit/config/processes/p-improve-work-layer.json    corekit/processes/p-improv
 corekit/config/processes/p-improve-skills.json        corekit/processes/p-improve-skills.json
 corekit/config/processes/p-improve-dashboard.json     corekit/processes/p-improve-dashboard.json
 corekit/config/processes/p-improve-delegation.json    corekit/processes/p-improve-delegation.json
+corekit/config/processes/p-review-and-improve.json    corekit/processes/p-review-and-improve.json
 
 # Prime brain workspaces (cortex + 5 sub-agents)
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md
