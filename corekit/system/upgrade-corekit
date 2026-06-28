@@ -48,12 +48,35 @@ case "${1:-}" in
     fi
     echo "==> Upgrading CoreKit to ${ref}..."
 
+    # Resolve owner and repo from environment, STATE.json, VM metadata, or defaults
+    GH_OWNER="${GH_OWNER:-}"
+    if [[ -z "$GH_OWNER" ]]; then
+      if [[ -f "$STATE_FILE" ]]; then
+        GH_OWNER="$(json_value "owner" "$STATE_FILE")"
+      fi
+    fi
+    if [[ -z "$GH_OWNER" ]]; then
+      GH_OWNER="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/gh_owner' 2>/dev/null || true)"
+    fi
+    GH_OWNER="${GH_OWNER:-YOUR_GITHUB_ORG}"
+
+    GH_REPO="${GH_REPO:-}"
+    if [[ -z "$GH_REPO" ]]; then
+      if [[ -f "$STATE_FILE" ]]; then
+        GH_REPO="$(json_value "repo" "$STATE_FILE")"
+      fi
+    fi
+    if [[ -z "$GH_REPO" ]]; then
+      GH_REPO="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/gh_repo' 2>/dev/null || true)"
+    fi
+    GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
+
     # Resolve branch name to commit SHA to bypass GitHub raw CDN cache
     RESOLVED_REF="$ref"
     if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
       RESOLVED_SHA=$(curl -fsSL -H "Accept: application/vnd.github.v3+json" \
-        "https://api.github.com/repos/${GH_OWNER:-YOUR_GITHUB_ORG}/${GH_REPO:-architect-prime-gcp-agent}/commits/${ref}" \
-        2>/dev/null | grep -o '"sha": "[^"]*"' | head -1 | cut -d'"' -f4)
+        "https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/commits/${ref}" \
+        2>/dev/null | grep -o '"sha": "[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
       if [[ -n "$RESOLVED_SHA" ]]; then
         echo "  Resolved ${ref} -> ${RESOLVED_SHA:0:12}"
         RESOLVED_REF="$RESOLVED_SHA"
@@ -61,7 +84,7 @@ case "${1:-}" in
         echo "  Warning: could not resolve SHA for ${ref}, using branch name"
       fi
     fi
-    CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER:-YOUR_GITHUB_ORG}/${GH_REPO:-architect-prime-gcp-agent}/${RESOLVED_REF}"
+    CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${RESOLVED_REF}"
 
     # Read role/job from existing STATE.json so install.sh uses correct manifests
     EXISTING_ROLE=""
@@ -116,8 +139,8 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
     # Model snapshot logic removed (model configs are kept in agent workspaces)
 
     curl -fsSL "${CORE_BASE}/infra/install.sh" | \
-      GH_OWNER="${GH_OWNER:-YOUR_GITHUB_ORG}" \
-      GH_REPO="${GH_REPO:-architect-prime-gcp-agent}" \
+      GH_OWNER="${GH_OWNER}" \
+      GH_REPO="${GH_REPO}" \
       CORE_ROOT="$CORE_ROOT" \
       INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}" \
       bash -s -- $INSTALL_ARGS
