@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.27.1.2)
+## Current Architecture (v2026.06.28.1.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -53,6 +53,14 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Post-mission context extraction**: synthesize handler mines project-relevant facts from completed mission output via Flash call. Discovered permissions, commands, URLs, failure modes are persisted to project context automatically.
   - **Motor context discovery writes**: All 9 motor SOUL_APPEND files include "Project Context Discovery" section teaching agents to persist project facts during execution via `project-manage update`.
   - **project-manage add-context/add-process**: Two new convenience subcommands for motor to persist project facts (context packets) and link processes to projects during execution.
+- **Fresh-Install Contamination Remediation (v2026.06.28.1.0)**:
+  - **Operator-neutral default surface**: All operator-specific values (Tachin emails, Drive IDs, Cloud Run URLs, GCS buckets, GChat spaces) removed from the platform default surface. A fresh fork ships generic placeholders (`YOUR_GITHUB_ORG`, `your-gcp-project`, `@example.com`) that fail visibly if not configured.
+  - **Sync-service fail-fast**: Removed all `process.env.X || '<tachin-literal>'` fallback patterns from `services/sync-service/`. Missing env vars now throw immediately (C-2 compliance — no cross-tenant data paths).
+  - **Templatized infrastructure**: `contracts.json` owner/repo, 6 bootstrap scripts, and dashboard `firebase.ts`/`github.ts` all use env vars or placeholder defaults instead of hardcoded operator values.
+  - **Operator content separation**: `operator/` directory holds operator-specific sites, processes, design docs, and responsibilities. Loaded only via explicit `job-tachin-website.txt` manifest layer, never via `base.txt`.
+  - **Manifest discipline (C-11)**: Removed 7 `sites/tachin-website/*` entries from `base.txt`. Website content does not ship as a base default.
+  - **Example genericization**: All `SKILL.md`, `SOUL_APPEND.md`, workflow, and JSDoc examples use `@example.com` emails, `your-gcp-project`, `YOUR_DRIVE_FOLDER_ID`, etc.
+  - **Dev debris cleanup**: Deleted `scratch/` directory (16 committed files with operator data) and added to `.gitignore`.
 - **Brain Overhaul Audit Implementation (v2026.06.18.1)**:
   - **Motor Failure Detection Caller Wiring**: Imported and called `detectMotorFailure` in `checkpoint-executor.mjs` to check motor execution output/error and fail-fast if a token expiration or auth failure is found (resolved Gap 1 regression).
   - **toStr Coercion Protection**: All task and checkpoint string references (e.g. `.substring()`) are wrapped in `toStr` coercion to prevent crash sites when Cortex returns raw objects for task names (resolved Gap 2).
@@ -204,6 +212,7 @@ brain/            Agent workspace files (SOUL.md, IDENTITY.md, MEMORY.md)
 specialties/      Fleet agent specialty configs
 skills/           Skill manifests
 docs/             Architecture docs, Culture of Work primitives, authoring guides
+operator/         Operator-specific content (sites, processes, docs) — not loaded by default
 ```
 
 ## Development Discipline

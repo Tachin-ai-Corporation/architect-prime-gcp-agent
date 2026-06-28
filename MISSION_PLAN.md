@@ -138,12 +138,13 @@ The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md)
 ├── brain/          # Agent identity workspaces — SOUL.md, IDENTITY.md per role
 ├── specialties/    # Per-agent-type bundles — workspace, brain appends, skills, responsibilities
 ├── skills/         # Versioned skill packages — the system's codified know-how
-├── docs/           # Culture of Work, primitive references, authoring guides, canons, plans
+├── docs/           # Culture of Work, primitive references, authoring guides, plans
+├── operator/       # Operator-specific content — sites, processes, docs (not loaded by default)
 ├── MISSION_PLAN.md # This document
 └── README.md
 ```
 
-Six modules, one home for everything. The dashboard never contains runtime logic; the runtime never reaches into the dashboard.
+Seven modules, one home for everything. The platform default surface (`base.txt` and role/job manifests) is operator-neutral — a fresh fork ships generic placeholders and zero shared infrastructure. Operator-specific content (sites, processes, design docs) lives in `operator/`, loaded only via an explicit job manifest layer. The dashboard never contains runtime logic; the runtime never reaches into the dashboard.
 
 ---
 
