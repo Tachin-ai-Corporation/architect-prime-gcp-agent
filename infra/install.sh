@@ -205,11 +205,12 @@ if [[ "$MODE" == "upgrade" ]]; then
     if [[ -z "$ROLE" ]]; then
       ROLE="$(json_value "role" "$STATE_FILE")"
     fi
-    if [[ -z "$JOB" ]]; then
-      JOB="$(json_value "job" "$STATE_FILE")"
+    if [[ ${#JOB[@]} -eq 0 ]]; then
+      EXISTING_JOB="$(json_value "job" "$STATE_FILE")"
+      [[ -n "$EXISTING_JOB" ]] && JOB+=("$EXISTING_JOB")
     fi
     echo "Role      : ${ROLE:-legacy}"
-    echo "Job       : ${JOB:-none}"
+    if [[ ${#JOB[@]} -gt 0 ]]; then echo "Job       : ${JOB[*]}"; else echo "Job       : none"; fi
   else
     echo "No previous install found, performing fresh install."
   fi
@@ -368,7 +369,7 @@ state_json="{
   \"owner\": \"${GH_OWNER}\",
   \"repo\": \"${GH_REPO}\",
   \"role\": \"${ROLE}\",
-  \"job\": \"${JOB}\",
+  \"job\": \"${JOB[*]:-}\",
   \"installedAt\": \"$(date -Is)\",
   \"fileCount\": ${installed},
   \"fileHashes\": ${hashes_json}
@@ -412,6 +413,6 @@ fi
 echo "  CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Target  : ${INSTALL_ROOT}"
 echo "  Role    : ${ROLE:-all (legacy)}"
-echo "  Job     : ${JOB:-none}"
+if [[ ${#JOB[@]} -gt 0 ]]; then echo "  Job     : ${JOB[*]}"; else echo "  Job     : none"; fi
 echo "  State   : ${state_dir}/STATE.json"
 echo "  Files   : ${installed}"
