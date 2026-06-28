@@ -3,7 +3,7 @@
   "name": "Legal Review",
   "description": "Performs a legal review on a document, proposes redline modifications with reasoning, and generates a structured summary document.",
   "status": "active",
-  "version": 7,
+  "version": 8,
   "visibility": "standard",
   "intent_keywords": ["legal", "review", "redlines", "contract", "terms"],
   "parameters": {
@@ -31,24 +31,24 @@
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "description": "Draft and apply proposed changes to the document for review, including the legal reasoning or explanation for each suggested modification, using the document suggestion capability.",
-      "accept_criteria": "Suggested changes and reasons are prepared and presented in the document according to the suggestion workflow."
+      "description": "Draft and apply proposed changes to the document for review. You MUST use the `docs-tab-clone` -> create `suggestions.json` -> `docs-tab-suggest` workflow described in SKILL.md. Do NOT use `docs-write --append`. Your suggestions.json should include the legal reasoning for each edit.",
+      "accept_criteria": "A suggestion tab has been cloned, and `docs-tab-suggest` was successfully run using a `suggestions.json` file."
     },
     {
       "title": "Notify Reviewer",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "description": "Leave a notification comment on the document directing the reviewer to the proposed edits, and wait for their response or approval.",
-      "accept_criteria": "A comment notifying the reviewer is posted on the document."
+      "description": "Leave a notification comment on the document directing the reviewer to the suggestion tab. Wait for their response or approval.",
+      "accept_criteria": "A comment notifying the reviewer is posted on the document, instructing them to strike through any yellow highlighted text they wish to reject."
     },
     {
       "title": "Finalize Accepted Edits",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "description": "Process the reviewer's feedback. Apply all approved modifications to the original document content, reject those that were not approved, and resolve the notification comment thread.",
-      "accept_criteria": "Approved modifications are incorporated into the document, rejected changes are omitted, and suggestion artifacts are cleaned up."
+      "description": "Process the reviewer's feedback. You MUST use the `docs-tab-finalize` script, providing it with the exact same `--file suggestions.json` you used earlier. This will apply all approved modifications to the original document content, reject those struck through, delete the suggestion tab, and resolve the comment.",
+      "accept_criteria": "`docs-tab-finalize` was successfully run with the `--file suggestions.json` parameter, and the original document is updated."
     },
     {
       "title": "Generate Summary Document",

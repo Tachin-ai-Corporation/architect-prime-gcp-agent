@@ -9,21 +9,22 @@ DOCS_API="https://docs.googleapis.com/v1/documents"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[docs-tab-finalize] [ERROR] $*" >&2; exit 1; }
 
-DOC_ID="" SOURCE_TAB="" SUGG_TAB=""
+DOC_ID="" SOURCE_TAB="" SUGG_TAB="" SUGG_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --doc) DOC_ID="$2"; shift 2 ;;
     --source-tab) SOURCE_TAB="$2"; shift 2 ;;
     --suggestion-tab) SUGG_TAB="$2"; shift 2 ;;
+    --file) SUGG_FILE="$2"; shift 2 ;;
     *) die "Unknown arg: $1" ;;
   esac
 done
 
-[[ -n "$DOC_ID" && -n "$SOURCE_TAB" && -n "$SUGG_TAB" ]] || die "Missing required args"
+[[ -n "$DOC_ID" && -n "$SOURCE_TAB" && -n "$SUGG_TAB" && -n "$SUGG_FILE" ]] || die "Missing required args, ensure --file is provided"
 
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
-export DOC_ID SOURCE_TAB SUGG_TAB
+export DOC_ID SOURCE_TAB SUGG_TAB SUGG_FILE
 
 # Step A: Read suggestion tab
 HTTP_CODE=$(curl -s -o /tmp/docs-fin-read.json -w '%{http_code}' \
@@ -31,11 +32,15 @@ HTTP_CODE=$(curl -s -o /tmp/docs-fin-read.json -w '%{http_code}' \
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
 
 python3 -c "
-import json, sys, re, os
+import json, sys, os
 
 doc = json.load(open('/tmp/docs-fin-read.json'))
 sugg_tab_id = os.environ.get('SUGG_TAB', '')
 source_tab_id = os.environ.get('SOURCE_TAB', '')
+sugg_file = os.environ.get('SUGG_FILE', '')
+
+with open(sugg_file) as f:
+    edits = json.load(f)
 
 def find_tab(tabs, target_id):
     for t in tabs:
@@ -52,64 +57,73 @@ if not tab:
 
 content = tab.get('documentTab', {}).get('body', {}).get('content', [])
 
-checklist_entries = []
-any_strikethrough = False
+yellow_blocks = []
+current_block_text = ''
+current_block_strikethrough = False
 
 for elem in content:
     if 'paragraph' in elem:
-        para = elem['paragraph']
-        para_text = ''.join([run.get('textRun', {}).get('content', '') for run in para.get('elements', [])])
-        
-        # Check for inline markers: \U0001F4DD[☐ Reject (was: "OLD" -> "NEW")]
-        matches = re.finditer(r'\U0001F4DD\[(.*?)\s*Reject\s*\(was:\s*\"(.*?)\"\s*->\s*\"(.*?)\"\s*\)\]', para_text)
-        
-        for match in matches:
-            checkbox_state = match.group(1).strip()
-            orig_text = match.group(2)
-            repl_text = match.group(3)
-            marker_start_idx = match.start()
+        for run in elem.get('paragraph').get('elements', []):
+            if 'textRun' not in run: continue
             
-            # Check for strikethrough in the marker text
-            is_strikethrough = False
-            # Find the run that corresponds to the marker index
-            current_text_len = 0
-            for run in para.get('elements', []):
-                run_text = run.get('textRun', {}).get('content', '')
-                if current_text_len <= marker_start_idx < current_text_len + len(run_text):
-                    if run.get('textRun', {}).get('textStyle', {}).get('strikethrough', False):
-                        is_strikethrough = True
-                    break
-                current_text_len += len(run_text)
+            run_text = run['textRun'].get('content', '')
+            style = run['textRun'].get('textStyle', {})
             
-            # Rejection conditions: checkbox is checked (x, v, \u2611), or marker is struck through
-            has_check = checkbox_state in ['\u2611', 'x', 'X', 'v', 'V']
+            bg = style.get('backgroundColor', {}).get('color', {}).get('rgbColor', {})
+            is_yellow = (bg.get('red') == 1.0 and bg.get('green') == 1.0 and bg.get('blue') == 0.0)
             
-            checklist_entries.append({
-                'changeId': len(checklist_entries) + 1,
-                'find': orig_text,
-                'replace': repl_text,
-                'strikethrough': is_strikethrough,
-                'has_check': has_check
-            })
+            if is_yellow:
+                current_block_text += run_text
+                if style.get('strikethrough', False):
+                    current_block_strikethrough = True
+            else:
+                if current_block_text:
+                    yellow_blocks.append({
+                        'text': current_block_text.rstrip('\n'),
+                        'strikethrough': current_block_strikethrough
+                    })
+                    current_block_text = ''
+                    current_block_strikethrough = False
+
+if current_block_text:
+    yellow_blocks.append({
+        'text': current_block_text.rstrip('\n'),
+        'strikethrough': current_block_strikethrough
+    })
 
 applied = []
 rejected = []
 requests = []
+change_id = 1
 
-for e in checklist_entries:
-    is_rejected = e['strikethrough'] or e['has_check']
+for edit in edits:
+    find_text = edit.get('find', '')
+    replace_text = edit.get('replace', '')
     
+    matching_block = None
+    for b in yellow_blocks:
+        if b['text'] == replace_text:
+            matching_block = b
+            yellow_blocks.remove(b)
+            break
+            
+    # Default to rejected if not found (e.g. user deleted it)
+    is_rejected = True
+    if matching_block:
+        is_rejected = matching_block['strikethrough']
+        
     if is_rejected:
-        rejected.append({'changeId': e['changeId'], 'status': 'rejected'})
+        rejected.append({'changeId': change_id, 'status': 'rejected'})
     else:
-        applied.append({'changeId': e['changeId'], 'status': 'approved'})
+        applied.append({'changeId': change_id, 'status': 'approved'})
         requests.append({
             'replaceAllText': {
-                'containsText': {'text': e['find'], 'matchCase': True},
-                'replaceText': e['replace'],
+                'containsText': {'text': find_text, 'matchCase': True},
+                'replaceText': replace_text,
                 'tabsCriteria': {'tabIds': [source_tab_id]}
             }
         })
+    change_id += 1
 
 # Delete tab request
 requests.append({

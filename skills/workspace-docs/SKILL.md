@@ -31,14 +31,14 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
   Output: JSON with `sourceTabId`, `suggestionTabId`, `suggestionTabTitle`.
 - `docs-tab-suggest --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Make tracked edits in batch. `suggestions.json` should contain an array of `{"find": "ORIGINAL", "replace": "NEW", "reason": "WHY"}`. Does not touch original tab.
   Output: JSON with applied changes array and not_found array.
-- `docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id>` — Finalize reviewed suggestions: apply approved changes to the original tab (unchecked = approved, checked/strikethrough = rejected), delete the suggestion tab, resolve the review comment.
+- `docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Finalize reviewed suggestions: apply approved changes to the original tab, delete the suggestion tab, and resolve the review comment. Changes are considered approved unless their yellow highlight in the suggestion tab has been struck through by the reviewer.
   Output: JSON summary of applied and rejected changes.
 
 ## Important Notes
 - **Document IDs:** Extract document IDs from Docs URLs. The ID is the long string of alphanumeric characters between `/d/` and `/edit` in the address bar.
 - **Accidental Overwrites:** Using `docs-write` without `--append` will wipe the existing document text. Always check if you should use `--append`.
 - **Suggesting Mode / Redlines (API Limitation):** The Google Docs API **does NOT support** native "Suggesting Mode" or anchored comments. All API writes are permanent changes. To make "suggestions" or "redlines", you MUST append a `[LEGAL REVIEW REDLINES]` or `[PROPOSED CHANGES]` section to the bottom of the document using `docs-write --append`, and leave a document-level comment pointing to it using `docs-comments-add`. Never try to turn on suggestion mode.
-- **Tab-based suggestions:** Agents use a clone-edit-finalize workflow via document tabs. The suggestion tab displays changes inline: the new text is highlighted yellow and is immediately followed by a marker like `📝[☐ Reject (was: "OLD" -> "NEW")]`. The human can reject a change by changing `☐` to `☑` or by striking through the marker using Google Docs strikethrough formatting (Alt+Shift+5). Unchecked/un-struck items are applied to the original tab on finalization. One comment total.
+- **Tab-based suggestions and API Limitations:** The Google Docs API **does NOT support** true tab duplication. The `docs-tab-clone` script acts as a polyfill by extracting paragraph text from the source tab and pasting it into a new suggestion tab. The agent workflow uses a clone-edit-finalize pattern: The agent clones the tab, injects suggestions (which are highlighted yellow), and notifies the human. The human can reject a change by applying Strikethrough formatting (Alt+Shift+5) to the yellow text. Un-struck items are applied to the original tab on finalization. You MUST use `--file suggestions.json` in `docs-tab-finalize` so it knows the `find/replace` pairs to search for.
 - **Tab IDs in batchUpdate:** Include `tabId` in every `location` and `range` object when targeting a specific tab. Omitting `tabId` defaults to the first tab.
 - **Tab-scoped replaceAllText:** Use `tabsCriteria: {tabIds: ["TAB_ID"]}` to scope replacements to one tab. Without `tabsCriteria`, `replaceAllText` applies across ALL tabs.
 
@@ -49,9 +49,9 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
 2. Execute `runCommand({"command": "docs-tab-clone --doc <DOC_ID> --source-tab <TAB_ID>"})`.
 3. Create a JSON file (e.g., `suggestions.json`) containing an array of your edits: `[{"find": "...", "replace": "...", "reason": "..."}]`.
 4. Execute `runCommand({"command": "docs-tab-suggest --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID> --file suggestions.json"})`.
-5. Post one comment: `docs-comments-add --doc <DOC_ID> --content "📋 I've prepared N suggested edits in the '✏️ Edits — TAB_NAME' tab. Changes are applied inline and highlighted yellow. To reject a change, either change the ☐ to a ☑, or apply Strikethrough to the marker. Reply here when done."`.
+5. Post one comment: `docs-comments-add --doc <DOC_ID> --content "📋 I've prepared N suggested edits in the '✏️ Edits' tab. My changes are applied inline and highlighted yellow. To reject a change, apply Strikethrough to the yellow text. Reply here when done."`.
 6. Wait for the human to reply (mission enters needs_input).
-7. On reply: execute `runCommand({"command": "docs-tab-finalize --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID>"})`.
+7. On reply: execute `runCommand({"command": "docs-tab-finalize --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID> --file suggestions.json"})`.
 8. Report summary: which changes were applied, which rejected.
 
 ### Read and analyze a document

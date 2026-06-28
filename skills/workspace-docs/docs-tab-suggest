@@ -125,9 +125,6 @@ for item in matched_edits:
     change_count += 1
     next_change_id = change_count
     
-    inline_marker = f' \U0001F4DD[☐ Reject (was: \"{find_text}\" -> \"{replace_text}\")]'
-    replace_with_marker = replace_text + inline_marker
-    
     body_requests.extend([
         {
             'deleteContentRange': {
@@ -137,7 +134,7 @@ for item in matched_edits:
         {
             'insertText': {
                 'location': {'index': match_start, 'tabId': sugg_tab_id},
-                'text': replace_with_marker
+                'text': replace_text
             }
         },
         {
@@ -145,13 +142,6 @@ for item in matched_edits:
                 'range': {'startIndex': match_start, 'endIndex': match_start + len(replace_text), 'tabId': sugg_tab_id},
                 'textStyle': {'backgroundColor': {'color': {'rgbColor': {'red': 1.0, 'green': 1.0, 'blue': 0.0}}}},
                 'fields': 'backgroundColor'
-            }
-        },
-        {
-            'updateTextStyle': {
-                'range': {'startIndex': match_start + len(replace_text), 'endIndex': match_start + len(replace_with_marker), 'tabId': sugg_tab_id},
-                'textStyle': {'foregroundColor': {'color': {'rgbColor': {'red': 0.5, 'green': 0.5, 'blue': 0.5}}}},
-                'fields': 'foregroundColor'
             }
         }
     ])
