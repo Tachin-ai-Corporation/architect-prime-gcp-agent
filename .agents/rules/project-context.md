@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.28.1.0)
+## Current Architecture (v2026.06.28.2.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -61,6 +61,13 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Manifest discipline (C-11)**: Removed 7 `sites/tachin-website/*` entries from `base.txt`. Website content does not ship as a base default.
   - **Example genericization**: All `SKILL.md`, `SOUL_APPEND.md`, workflow, and JSDoc examples use `@example.com` emails, `your-gcp-project`, `YOUR_DRIVE_FOLDER_ID`, etc.
   - **Dev debris cleanup**: Deleted `scratch/` directory (16 committed files with operator data) and added to `.gitignore`.
+- **Operator Manifest Pipeline & Process Validation (v2026.06.28.2.0)**:
+  - **Multi-job manifest support**: `install.sh` now accepts multiple `--job` flags (array-based), enabling layered installs: `base.txt` → `role-fleet.txt` → `job-product-architect.txt` → `job-tachin-website.txt`. Fleet agents receive both their specialty and operator content in a single install.
+  - **Operator jobs via VM metadata**: `fleet-bootstrap.sh` reads comma-separated `operator_jobs` from GCE instance metadata and passes as additional `--job` flags. `fleet-deploy` accepts `--operator-jobs` flag and bakes it into VM metadata. `upgrade-corekit` reads operator_jobs during upgrades.
+  - **Manifest path alignment**: `job-tachin-website.txt` destination paths corrected to `operator/` prefix matching process step references. Site files install to `operator/sites/tachin-website/`, design docs to `operator/docs/`.
+  - **Triage improvement acceptance fix**: `p-triage-improvement` Step 4 acceptance criteria updated to accept Firestore document path confirmation for data-only changes (not just PR links).
+  - **End-to-end process validation**: Improvement process (`p-triage-improvement`) validated on prime-chuck — motor executed 3/5 tasks autonomously, modifying `p-web-content` to add design system compliance steps. Website content update (`p-web-content`) validated on fleet-archie — 2/3 tasks completed autonomously.
+  - **Workspace-docs skill UX**: Tab-based suggestion workflow updated — inline reject markers with `☐`/`☑` instead of strikethrough checklist, clearer comment templates.
 - **Brain Overhaul Audit Implementation (v2026.06.18.1)**:
   - **Motor Failure Detection Caller Wiring**: Imported and called `detectMotorFailure` in `checkpoint-executor.mjs` to check motor execution output/error and fail-fast if a token expiration or auth failure is found (resolved Gap 1 regression).
   - **toStr Coercion Protection**: All task and checkpoint string references (e.g. `.substring()`) are wrapped in `toStr` coercion to prevent crash sites when Cortex returns raw objects for task names (resolved Gap 2).
