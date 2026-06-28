@@ -30,12 +30,23 @@ export function extractFailRecommendation(output) {
   const text = typeof output === 'string' ? output : JSON.stringify(output);
 
   // Try to find the tool result JSON from report_fail
-  const failMatch = text.match(/\[TOOL\] report_fail\(([\s\S]*?)\)\s*(?:\[RESULT\]|\[TOOL\]|\[END TOOL LOG\])/);
+  const failMatch = text.match(/\[TOOL\] report_fail\((.*?)(?:\)|$|\n)/);
   if (failMatch) {
+    const rawArgs = failMatch[1];
     try {
-      const args = JSON.parse(failMatch[1]);
+      const args = JSON.parse(rawArgs);
       return args.recommendation || args.reasoning || 'No recommendation available';
-    } catch { /* fall through */ }
+    } catch {
+      // Regex fallback for truncated JSON
+      const recMatch = rawArgs.match(/"recommendation"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+      if (recMatch) {
+        return recMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+      }
+      const reasoningMatch = rawArgs.match(/"reasoning"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+      if (reasoningMatch) {
+        return reasoningMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+      }
+    }
   }
 
   // Fallback: look for recommendation in any JSON in the output
@@ -60,17 +71,25 @@ export function extractFailSummary(output) {
   if (!output) return '';
   const text = typeof output === 'string' ? output : JSON.stringify(output);
 
-  const failMatch = text.match(/\[TOOL\] report_fail\(([\s\S]*?)\)\s*(?:\[RESULT\]|\[TOOL\]|\[END TOOL LOG\])/);
+  const failMatch = text.match(/\[TOOL\] report_fail\((.*?)(?:\)|$|\n)/);
   if (failMatch) {
+    const rawArgs = failMatch[1];
     try {
-      const args = JSON.parse(failMatch[1]);
+      const args = JSON.parse(rawArgs);
       const failedChecks = (args.checks || []).filter(c => !c.pass);
       if (failedChecks.length > 0) {
         return failedChecks.map(c => `- ${c.criterion}: ${c.evidence}`).join('\n');
       }
       return args.reasoning || '';
-    } catch { /* fall through */ }
+    } catch {
+      // Regex fallback for truncated JSON
+      const reasoningMatch = rawArgs.match(/"reasoning"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+      if (reasoningMatch) {
+        return reasoningMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+      }
+    }
   }
 
   return '';
 }
+
