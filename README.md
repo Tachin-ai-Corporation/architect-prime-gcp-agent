@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.28.7.1 | 2026-06-28 | Audit & Cleanup Plan: deleted the superseded and contaminated legacy plan document `docs/fleet_improvement_prime_agent_plan.md`, and normalized executable bits (+x) on the 10 original `docs-*` scripts. |
 | v2026.06.28.7.0 | 2026-06-28 | Google Docs Skill v4: upgraded workspace-docs skill to support formatting-capable generation and edits across three explicit lanes: Lane A (Markdown surface via multipart/related Drive upload), Lane B (surgical formatting-preserving edits using anchors/named ranges without index math), and Lane C (Word .docx round-trip), completely aligning assistant/designer/pm job manifests. |
 | v2026.06.28.6.3 | 2026-06-28 | Fleet Upgrade Space-Separated Jobs Fix: corrected upgrade-corekit and install.sh to split existing space-separated jobs by word when reconstructing arguments for install.sh and running assemble-persona, preventing unknown argument failures (e.g. for archie with multiple jobs). |
 | v2026.06.28.6.2 | 2026-06-28 | Custom Repository Settings: added ability for user to configure GitHub organization/owner and repository name in the settings System tab, stored these settings in Firestore config/settings, and propagated them when executing upgrade scripts and triggering Cloud Builds. |
