@@ -1,13 +1,13 @@
 {
   "id": "p-web-deploy",
   "name": "Deploy Website",
-  "description": "Build the tachin.ai marketing website from the git source (sites/tachin-website/), deploy to a Firebase staging channel for review, gate on owner approval, promote to production, and verify. Source of truth is git — NOT Google Drive. Does not touch the /public file service.",
+  "description": "Build the tachin.ai marketing website from the git source (operator/sites/tachin-website/), deploy to a Firebase staging channel for review, gate on owner approval, promote to production, and verify. Source of truth is git — NOT Google Drive. Does not touch the /public file service.",
   "status": "active",
   "version": 2,
   "visibility": "standard",
   "parameters": {
     "firebase_project": { "description": "Firebase project ID (tachin-website)", "required": false, "default": "tachin-website" },
-    "site_src": { "description": "Path to site source in repo", "required": false, "default": "/opt/corekit/workspace/sites/tachin-website" },
+    "site_src": { "description": "Path to site source in repo", "required": false, "default": "/opt/corekit/operator/sites/tachin-website" },
     "hosting_dir": { "description": "Firebase Hosting config dir", "required": false, "default": "/opt/corekit/workspace/services/hosting" },
     "project_id": { "description": "Project context", "required": false, "default": "tachin-website" }
   },

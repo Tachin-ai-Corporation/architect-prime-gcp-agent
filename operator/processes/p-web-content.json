@@ -13,7 +13,7 @@
   "steps": [
     {
       "title": "Gather context and draft the content",
-      "description": "Prepare the content change: ${request}\n\n1. Read the current content of the target page(s) (${target_pages}) from sites/tachin-website/ in the repo.\n2. Read docs/design/TACHIN_SITE_IA.md to confirm the page's purpose and voice.\n3. Draft the new copy. Match the established voice: clear, warm, credible, healthcare-appropriate. No hype, no jargon.\n4. Produce the exact before/after text for each change.",
+      "description": "Prepare the content change: ${request}\n\n1. Read the current content of the target page(s) (${target_pages}) from operator/sites/tachin-website/ in the repo.\n2. Read operator/docs/TACHIN_SITE_IA.md to confirm the page's purpose and voice.\n3. Draft the new copy. Match the established voice: clear, warm, credible, healthcare-appropriate. No hype, no jargon.\n4. Produce the exact before/after text for each change.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",

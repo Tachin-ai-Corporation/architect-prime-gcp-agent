@@ -13,7 +13,7 @@
   "steps": [
     {
       "title": "Understand the request against the design system",
-      "description": "⚠️ READ-ONLY STEP.\n\nPrepare the design change: ${request}\n\n1. Read docs/design/TACHIN_DESIGN_SYSTEM.md in full — tokens, components, principles.\n2. Read the current markup/styles for ${target_pages} from sites/tachin-website/.\n3. Identify which design-system tokens and components apply.\n4. Write a short design proposal: what changes, which tokens/components are used, and why it fits the system. If the request would require a NEW token or component, flag it explicitly — new design language needs owner sign-off, not improvisation.",
+      "description": "⚠️ READ-ONLY STEP.\n\nPrepare the design change: ${request}\n\n1. Read operator/docs/TACHIN_DESIGN_SYSTEM.md in full — tokens, components, principles.\n2. Read the current markup/styles for ${target_pages} from operator/sites/tachin-website/.\n3. Identify which design-system tokens and components apply.\n4. Write a short design proposal: what changes, which tokens/components are used, and why it fits the system. If the request would require a NEW token or component, flag it explicitly — new design language needs owner sign-off, not improvisation.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
@@ -31,7 +31,7 @@
     },
     {
       "title": "Implement the design change",
-      "description": "Implement the approved design.\n\n1. Apply changes using ONLY design-system tokens (CSS custom properties) and documented components.\n2. Edit the shared stylesheet at sites/tachin-website/styles.css and the page markup as needed.\n3. Ensure responsive behavior at the documented breakpoints (mobile 375, tablet 768, desktop 1280).\n4. Save complete modified files.",
+      "description": "Implement the approved design.\n\n1. Apply changes using ONLY design-system tokens (CSS custom properties) and documented components.\n2. Edit the shared stylesheet at operator/sites/tachin-website/styles.css and the page markup as needed.\n3. Ensure responsive behavior at the documented breakpoints (mobile 375, tablet 768, desktop 1280).\n4. Save complete modified files.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

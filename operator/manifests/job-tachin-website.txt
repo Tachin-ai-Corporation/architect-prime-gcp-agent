@@ -12,13 +12,13 @@ operator/sites/tachin-website/newly-released.html sites/tachin-website/newly-rel
 operator/sites/tachin-website/styles.css sites/tachin-website/styles.css
 
 # Tachin-specific processes
-operator/processes/p-web-content.json corekit/config/processes/p-web-content.json
-operator/processes/p-web-deploy.json corekit/config/processes/p-web-deploy.json
-operator/processes/p-web-design.json corekit/config/processes/p-web-design.json
-operator/processes/p-web-feature.json corekit/config/processes/p-web-feature.json
-operator/processes/p-web-verify.json corekit/config/processes/p-web-verify.json
-operator/processes/p-publicfile-health.json corekit/config/processes/p-publicfile-health.json
-operator/processes/p-publicfile-publish.json corekit/config/processes/p-publicfile-publish.json
+operator/processes/p-web-content.json corekit/processes/p-web-content.json
+operator/processes/p-web-deploy.json corekit/processes/p-web-deploy.json
+operator/processes/p-web-design.json corekit/processes/p-web-design.json
+operator/processes/p-web-feature.json corekit/processes/p-web-feature.json
+operator/processes/p-web-verify.json corekit/processes/p-web-verify.json
+operator/processes/p-publicfile-health.json corekit/processes/p-publicfile-health.json
+operator/processes/p-publicfile-publish.json corekit/processes/p-publicfile-publish.json
 
 # Devops responsibilities (sync health, etc.)
 operator/responsibilities/responsibilities-devops.json corekit/responsibilities-devops.json
