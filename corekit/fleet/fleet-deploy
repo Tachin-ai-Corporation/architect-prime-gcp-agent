@@ -28,6 +28,7 @@ AGENT_USER_EMAIL=""
 CHAT_SPACE_OVERRIDE=""
 MACHINE_TYPE="e2-medium"
 BOOT_DISK_SIZE="50GB"
+OPERATOR_JOBS=""
 
 usage() {
   cat <<EOF
@@ -39,6 +40,7 @@ Usage: fleet-deploy --name <name> --specialty <desc> --agent-email <email> [opti
   --chat-space   Chat space ID override (default: Prime's space)
   --machine-type VM machine type (default: e2-medium)
   --disk         Boot disk size (default: 50GB)
+  --operator-jobs Comma-separated operator job manifests (e.g. 'tachin-website')
   --help         Show this message
 EOF
   exit 1
@@ -52,6 +54,7 @@ while [[ $# -gt 0 ]]; do
     --chat-space) CHAT_SPACE_OVERRIDE="$2"; shift 2 ;;
     --machine-type) MACHINE_TYPE="$2"; shift 2 ;;
     --disk) BOOT_DISK_SIZE="$2"; shift 2 ;;
+    --operator-jobs) OPERATOR_JOBS="$2"; shift 2 ;;
     --help|-h) usage ;;
     *) die "Unknown arg: $1" ;;
   esac
@@ -459,7 +462,7 @@ gcloud compute instances create "$FLEET_VM" \
   --scopes="https://www.googleapis.com/auth/cloud-platform" \
   --tags="allow-https" \
   --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},agent_first_name=${AGENT_FIRST_NAME},agent_last_name=${AGENT_LAST_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-},dashboard_url=${DASHBOARD_URL:-}" \
+  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},agent_first_name=${AGENT_FIRST_NAME},agent_last_name=${AGENT_LAST_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-},dashboard_url=${DASHBOARD_URL:-},operator_jobs=${OPERATOR_JOBS:-}" \
   --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
   --quiet
 

@@ -82,7 +82,16 @@ case "${1:-}" in
     INSTALL_ARGS="--upgrade $RESOLVED_REF"
     [[ -n "$EXISTING_ROLE" ]] && INSTALL_ARGS="$INSTALL_ARGS --role $EXISTING_ROLE"
     [[ -n "$EXISTING_JOB" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $EXISTING_JOB"
-    echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${EXISTING_JOB:-none}"
+    # Append operator job layers from VM metadata (comma-separated)
+    OPERATOR_JOBS="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/operator_jobs' 2>/dev/null || true)"
+    if [[ -n "$OPERATOR_JOBS" ]]; then
+      IFS=',' read -ra OJ_ARRAY <<< "$OPERATOR_JOBS"
+      for oj in "${OJ_ARRAY[@]}"; do
+        oj="$(echo "$oj" | xargs)"
+        [[ -n "$oj" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $oj"
+      done
+    fi
+    echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${EXISTING_JOB:-none} | Operator: ${OPERATOR_JOBS:-none}"
 
     # ---- Legacy migration: remove stale workspace-{specialty}/ dirs ----
     # Allowlist: only dirs in contracts.workspaces survive

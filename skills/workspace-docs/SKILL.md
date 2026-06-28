@@ -38,7 +38,7 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
 - **Document IDs:** Extract document IDs from Docs URLs. The ID is the long string of alphanumeric characters between `/d/` and `/edit` in the address bar.
 - **Accidental Overwrites:** Using `docs-write` without `--append` will wipe the existing document text. Always check if you should use `--append`.
 - **Suggesting Mode / Redlines (API Limitation):** The Google Docs API **does NOT support** native "Suggesting Mode" or anchored comments. All API writes are permanent changes. To make "suggestions" or "redlines", you MUST append a `[LEGAL REVIEW REDLINES]` or `[PROPOSED CHANGES]` section to the bottom of the document using `docs-write --append`, and leave a document-level comment pointing to it using `docs-comments-add`. Never try to turn on suggestion mode.
-- **Tab-based suggestions:** Agents use a clone-edit-finalize workflow via document tabs. The suggestion tab shows changes highlighted yellow, with a reject-checklist at the top. The human checks any change they want to reject (checked items get strikethrough). Unchecked items are applied to the original tab on finalization. One comment total.
+- **Tab-based suggestions:** Agents use a clone-edit-finalize workflow via document tabs. The suggestion tab displays changes inline: the new text is highlighted yellow and is immediately followed by a marker like `📝[☐ Reject (was: "OLD" -> "NEW")]`. The human can reject a change by changing `☐` to `☑` or by striking through the marker using Google Docs strikethrough formatting (Alt+Shift+5). Unchecked/un-struck items are applied to the original tab on finalization. One comment total.
 - **Tab IDs in batchUpdate:** Include `tabId` in every `location` and `range` object when targeting a specific tab. Omitting `tabId` defaults to the first tab.
 - **Tab-scoped replaceAllText:** Use `tabsCriteria: {tabIds: ["TAB_ID"]}` to scope replacements to one tab. Without `tabsCriteria`, `replaceAllText` applies across ALL tabs.
 
@@ -49,7 +49,7 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
 2. Execute `runCommand({"command": "docs-tab-clone --doc <DOC_ID> --source-tab <TAB_ID>"})`.
 3. Create a JSON file (e.g., `suggestions.json`) containing an array of your edits: `[{"find": "...", "replace": "...", "reason": "..."}]`.
 4. Execute `runCommand({"command": "docs-tab-suggest --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID> --file suggestions.json"})`.
-5. Post one comment: `docs-comments-add --doc <DOC_ID> --content "📋 I've prepared N suggested edits in the '✏️ Edits — TAB_NAME' tab. Changes are highlighted yellow. Check any to reject — unchecked changes will be applied. Reply here when done."`.
+5. Post one comment: `docs-comments-add --doc <DOC_ID> --content "📋 I've prepared N suggested edits in the '✏️ Edits — TAB_NAME' tab. Changes are applied inline and highlighted yellow. To reject a change, either change the ☐ to a ☑, or apply Strikethrough to the marker. Reply here when done."`.
 6. Wait for the human to reply (mission enters needs_input).
 7. On reply: execute `runCommand({"command": "docs-tab-finalize --doc <DOC_ID> --source-tab <TAB_ID> --suggestion-tab <NEW_TAB_ID>"})`.
 8. Report summary: which changes were applied, which rejected.
@@ -94,7 +94,7 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
 | `docs-tab-finalize` reports `0 occurrences` for an approved change | Original tab text was modified after suggestion was created | Re-read the original tab, find current text, apply manually with `docs-find-replace` |
 | `docs-tab-suggest` returns `text_not_found` | Text already changed by a prior suggestion in the same session | Re-read the suggestion tab with `docs-get` to get current text after prior edits |
 | `docs-tab-clone` creates tab but text is empty | Source tab has content primarily in tables/images | Clone preserves paragraph text only; note this to the human |
-| No strikethrough detected on any checklist items after human checked some | `BULLET_CHECKBOX` created non-strikethrough variant | Switch `docs-tab-finalize` to ✅ fallback mechanism (see plan) |
+| Reject markers not being processed | User deleted the marker instead of checking/striking it | If deleted, it defaults to approved. Train the human to use strikethrough instead. |
 
 ## Decision Framework
 
@@ -130,10 +130,10 @@ When a task involves creating, reading, editing, or commenting on Google Docs.
   Step 4: Execute `runCommand({"command": "docs-tab-suggest --doc abc123 --source-tab t.0 --suggestion-tab t.new1 --file suggestions.json"})`
   Output received: `{"status": "suggested", "applied": [{"changeId": 1, "find": "...", "replace": "..."}], "not_found": []}`
 
-  Step 5: Execute `runCommand({"command": "docs-comments-add --doc abc123 --content \"📋 I've prepared suggested edits in the '✏️ Edits — Q3 Strategy' tab. Changes are highlighted yellow. Check any to reject. Reply here when done.\""})`
+  Step 5: Execute `runCommand({"command": "docs-comments-add --doc abc123 --content \"📋 I've prepared suggested edits in the '✏️ Edits — Q3 Strategy' tab. Changes are applied inline and highlighted yellow. To reject a change, apply Strikethrough to the marker. Reply here when done.\""})`
   Output received: Success (mission enters needs_input)
 
-  (Human reviews: accepts changes 1 and 3, checks checkbox on change 2 to reject it, replies "done")
+  (Human reviews: accepts changes 1 and 3, applies strikethrough to change 2 to reject it, replies "done")
 
   Step 6: Execute `runCommand({"command": "docs-tab-finalize --doc abc123 --source-tab t.0 --suggestion-tab t.new1"})`
   Output received: `{"applied": [{"changeId": 1}, {"changeId": 3}], "rejected": [{"changeId": 2}], "tabDeleted": true}`

@@ -35,6 +35,7 @@ CHAT_SPACE_ID="$(curl -sf -H "$MH" "$META/instance/attributes/chat_space_id" || 
 DWD_SIGNER_SA="$(curl -sf -H "$MH" "$META/instance/attributes/dwd_signer_sa" || true)"
 PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || true)"
 DASHBOARD_URL="$(curl -sf -H "$MH" "$META/instance/attributes/dashboard_url" || true)"
+OPERATOR_JOBS="$(curl -sf -H "$MH" "$META/instance/attributes/operator_jobs" || true)"
 
 AGENT_MENTION="${AGENT_FIRST_NAME} ${AGENT_LAST_NAME}"
 AGENT_MENTION="$(echo "$AGENT_MENTION" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -80,7 +81,16 @@ CORE_REF="${CORE_REF}" \
   GH_OWNER="${GH_OWNER}" \
   GH_REPO="${GH_REPO}" \
   CORE_ROOT="${CORE_ROOT}" \
-  bash /tmp/install.sh --role fleet --job "${SPECIALTY}"
+  JOB_FLAGS="--job ${SPECIALTY}"
+  # Append operator job layers (comma-separated in VM metadata)
+  if [[ -n "$OPERATOR_JOBS" ]]; then
+    IFS=',' read -ra OJ_ARRAY <<< "$OPERATOR_JOBS"
+    for oj in "${OJ_ARRAY[@]}"; do
+      oj="$(echo "$oj" | xargs)"  # trim whitespace
+      [[ -n "$oj" ]] && JOB_FLAGS="$JOB_FLAGS --job $oj"
+    done
+  fi
+  bash /tmp/install.sh --role fleet $JOB_FLAGS
 
 # ---- 4) Read contracts.json for cross-cutting values ----
 CONTRACTS="${CORE_DIR}/corekit/contracts.json"

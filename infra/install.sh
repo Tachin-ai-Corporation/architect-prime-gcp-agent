@@ -47,20 +47,20 @@ set -euo pipefail
 MODE="install"
 UPGRADE_REF=""
 ROLE=""
-JOB=""
+JOB=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check)   MODE="check"; shift ;;
     --upgrade) MODE="upgrade"; UPGRADE_REF="${2:-}"; shift 2 || { echo "[ERROR] Missing ref for --upgrade"; exit 1; } ;;
     --role)    ROLE="${2:-}"; shift 2 || { echo "[ERROR] Missing value for --role"; exit 1; } ;;
-    --job)     JOB="${2:-}"; shift 2 || { echo "[ERROR] Missing value for --job"; exit 1; } ;;
+    --job)     JOB+=("${2:-}"); shift 2 || { echo "[ERROR] Missing value for --job"; exit 1; } ;;
     --help|-h) echo "Usage: install.sh [--check | --upgrade <ref>] [--role prime|fleet] [--job devops|engineer]"; exit 0 ;;
     *) echo "[ERROR] Unknown argument: $1"; exit 1 ;;
   esac
 done
 
 # Validate role/job combinations
-if [[ -n "$JOB" && "$ROLE" != "fleet" ]]; then
+if [[ ${#JOB[@]} -gt 0 && "$ROLE" != "fleet" ]]; then
   echo "[ERROR] --job requires --role fleet"
   exit 1
 fi
@@ -220,7 +220,7 @@ fi
 echo "CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Target  : ${INSTALL_ROOT}"
 echo "Role    : ${ROLE:-all (legacy)}"
-echo "Job     : ${JOB:-none}"
+echo "Job     : ${JOB[*]:-none}"
 
 # ---- 1. Build manifest list ----
 info "Building manifest..."
@@ -235,9 +235,9 @@ if [[ -n "$ROLE" ]]; then
     MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/role-prime.txt")
   elif [[ "$ROLE" == "fleet" ]]; then
     MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/role-fleet.txt")
-    if [[ -n "$JOB" ]]; then
-      MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/job-${JOB}.txt")
-    fi
+    for j in "${JOB[@]}"; do
+      MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/job-${j}.txt")
+    done
   fi
 
   # Download and concatenate all fragments

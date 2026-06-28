@@ -60,26 +60,32 @@ for elem in content:
         para = elem['paragraph']
         para_text = ''.join([run.get('textRun', {}).get('content', '') for run in para.get('elements', [])])
         
-        # Check if it's a checklist entry
-        match = re.match(r'^\s*(\d+)\.\s+[\u201c\x22\x27\u2018\u2019](.*?)[\u201d\x22\x27\u2018\u2019]\s*[\u2192\-|>]\s*[\u201c\x22\x27\u2018\u2019](.*?)[\u201d\x22\x27\u2018\u2019]', para_text)
-        if match:
-            change_id = int(match.group(1))
+        # Check for inline markers: \U0001F4DD[☐ Reject (was: "OLD" -> "NEW")]
+        matches = re.finditer(r'\U0001F4DD\[(.*?)\s*Reject\s*\(was:\s*\"(.*?)\"\s*->\s*\"(.*?)\"\s*\)\]', para_text)
+        
+        for match in matches:
+            checkbox_state = match.group(1).strip()
             orig_text = match.group(2)
             repl_text = match.group(3)
+            marker_start_idx = match.start()
             
-            # Check for strikethrough
+            # Check for strikethrough in the marker text
             is_strikethrough = False
+            # Find the run that corresponds to the marker index
+            current_text_len = 0
             for run in para.get('elements', []):
-                if run.get('textRun', {}).get('textStyle', {}).get('strikethrough', False):
-                    is_strikethrough = True
-                    any_strikethrough = True
+                run_text = run.get('textRun', {}).get('content', '')
+                if current_text_len <= marker_start_idx < current_text_len + len(run_text):
+                    if run.get('textRun', {}).get('textStyle', {}).get('strikethrough', False):
+                        is_strikethrough = True
                     break
+                current_text_len += len(run_text)
             
-            # Check for checked mark fallback
-            has_check = para_text.strip().startswith('\u2705') or '[x]' in para_text.lower()
+            # Rejection conditions: checkbox is checked (x, v, \u2611), or marker is struck through
+            has_check = checkbox_state in ['\u2611', 'x', 'X', 'v', 'V']
             
             checklist_entries.append({
-                'changeId': change_id,
+                'changeId': len(checklist_entries) + 1,
                 'find': orig_text,
                 'replace': repl_text,
                 'strikethrough': is_strikethrough,
@@ -90,13 +96,9 @@ applied = []
 rejected = []
 requests = []
 
-use_fallback = (not any_strikethrough) and any(e['has_check'] for e in checklist_entries)
-
 for e in checklist_entries:
-    is_rejected = e['strikethrough']
-    if use_fallback and not e['strikethrough']:
-        is_rejected = not e['has_check']
-        
+    is_rejected = e['strikethrough'] or e['has_check']
+    
     if is_rejected:
         rejected.append({'changeId': e['changeId'], 'status': 'rejected'})
     else:

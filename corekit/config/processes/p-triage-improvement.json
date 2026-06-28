@@ -37,7 +37,7 @@
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "PR opened (if code changes) or Firestore updated (if data changes). Link provided."
+      "accept_criteria": "PR opened with link (if code changes) OR confirmation that Firestore was updated with the document path (if data-only changes). One of these two must be provided."
     },
     {
       "title": "Report back",
