@@ -37,32 +37,41 @@ export async function GET(req: NextRequest) {
   try {
     const db = getDb();
 
-    // Get recent completed missions (last 50)
-    let query = db
+    // Get recent completed missions (last 100 to allow client-side agent filtering)
+    const query = db
       .collection("primes")
       .doc(primeId)
       .collection("work")
       .where("type", "==", "M")
       .where("status", "in", ["complete", "failed"])
       .orderBy("completed_at", "desc")
-      .limit(50);
-
-    if (agentFilter) {
-      query = db
-        .collection("primes")
-        .doc(primeId)
-        .collection("work")
-        .where("type", "==", "M")
-        .where("owner", "==", agentFilter)
-        .where("status", "in", ["complete", "failed"])
-        .orderBy("completed_at", "desc")
-        .limit(50);
-    }
+      .limit(100);
 
     const snap = await query.get();
+    let docs = snap.docs;
+
+    if (agentFilter) {
+      const lowerAgent = agentFilter.toLowerCase();
+      docs = docs.filter((doc) => {
+        const owner = (doc.data().owner || "").toLowerCase();
+        if (owner === lowerAgent) return true;
+        const emailPrefix = owner.split("@")[0];
+        if (emailPrefix === lowerAgent) return true;
+        if (owner === "prime" && (lowerAgent === "prime" || lowerAgent.startsWith("prime-"))) {
+          return true;
+        }
+        if ((lowerAgent === "prime" || lowerAgent.startsWith("prime-")) && (owner === "prime" || emailPrefix === "prime")) {
+          return true;
+        }
+        const segments = emailPrefix.split(/[-_.]/);
+        return segments.includes(lowerAgent);
+      });
+      // Limit to 50 after filtering
+      docs = docs.slice(0, 50);
+    }
     const missions: MissionCost[] = [];
 
-    for (const doc of snap.docs) {
+    for (const doc of docs) {
       const data = doc.data();
 
       // Parse token_usage from the mission envelope

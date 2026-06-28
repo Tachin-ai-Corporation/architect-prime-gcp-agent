@@ -90,12 +90,17 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       const lowerAgent = agentFilter.toLowerCase();
       envelopes = envelopes.filter((e) => {
         const owner = e.owner.toLowerCase();
-        return (
-          owner === lowerAgent ||
-          owner.startsWith(`${lowerAgent}@`) ||
-          owner.includes(`-${lowerAgent}@`) ||
-          owner.includes(`agent-${lowerAgent}@`)
-        );
+        if (owner === lowerAgent) return true;
+        const emailPrefix = owner.split("@")[0];
+        if (emailPrefix === lowerAgent) return true;
+        if (owner === "prime" && (lowerAgent === "prime" || lowerAgent.startsWith("prime-"))) {
+          return true;
+        }
+        if ((lowerAgent === "prime" || lowerAgent.startsWith("prime-")) && (owner === "prime" || emailPrefix === "prime")) {
+          return true;
+        }
+        const segments = emailPrefix.split(/[-_.]/);
+        return segments.includes(lowerAgent);
       });
     }
 

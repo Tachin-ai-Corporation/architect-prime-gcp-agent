@@ -104,6 +104,7 @@ bash infra/deploy/uninstall.sh
 ## Version History
 
 | Version | Date | Summary |
+| v2026.06.28.7.4 | 2026-06-28 | Dashboard Work Tab & Telemetry Cost Fix: resolved active/archived work pages showing nothing and cost telemetry showing empty charts for the Prime agent by introducing a robust case-insensitive owner matching logic matching 'prime' with 'prime-{id}' and direct email prefixes. |
 | v2026.06.28.7.3 | 2026-06-28 | Prime Manifest Workspace Skills Fix: added workspace-* skills to the `role-prime.txt` manifest so that self-improvement processes (like `p-improve-skills`) can read and grade fleet workspace skills on Prime VMs. |
 | v2026.06.28.7.2 | 2026-06-28 | Fleet Upgrade Bootstrap Fix: updated `fleet-upgrade` to download the latest `upgrade-corekit` script from the target ref directly to the fleet VM before executing it. This resolves bootstrapping issues on agents running old versions of `upgrade-corekit` (e.g. stan) that fail to parse multiple space-separated jobs. |
 | v2026.06.28.7.1 | 2026-06-28 | Audit & Cleanup Plan: deleted the superseded and contaminated legacy plan document `docs/fleet_improvement_prime_agent_plan.md`, and normalized executable bits (+x) on the 10 original `docs-*` scripts. |

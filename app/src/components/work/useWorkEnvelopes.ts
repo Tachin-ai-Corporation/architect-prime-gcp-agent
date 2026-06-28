@@ -69,16 +69,23 @@ function collectTreeIds(root: TreeNode, ids: Set<string>): void {
   }
 }
 
-/**
- * Helper to match an envelope's owner (which might be an email like devops-agent-stan@domain)
- * to a short agent name (like "stan").
- */
 export function matchAgent(owner: string | undefined | null, agentName: string): boolean {
   if (!owner) return false;
   const ownerLower = owner.toLowerCase();
   const agentLower = agentName.toLowerCase();
   if (ownerLower === agentLower) return true;
   const emailPrefix = ownerLower.split("@")[0];
+  if (emailPrefix === agentLower) return true;
+
+  // Prime variations matching:
+  // "prime" matches "prime-*" or "prime"
+  if (ownerLower === "prime" && (agentLower === "prime" || agentLower.startsWith("prime-"))) {
+    return true;
+  }
+  if ((agentLower === "prime" || agentLower.startsWith("prime-")) && (ownerLower === "prime" || emailPrefix === "prime")) {
+    return true;
+  }
+
   const segments = emailPrefix.split(/[-_.]/);
   return segments.includes(agentLower);
 }
