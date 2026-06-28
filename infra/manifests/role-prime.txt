@@ -58,15 +58,15 @@ specialties/engineer/skills/git-ops/skill.json   skills/git-ops/skill.json
 specialties/engineer/skills/git-ops/SKILL.md     skills/git-ops/SKILL.md
 
 # Improvement processes
-corekit/config/processes/p-triage-improvement.json    corekit/config/processes/p-triage-improvement.json
-corekit/config/processes/p-improve-daemons.json       corekit/config/processes/p-improve-daemons.json
-corekit/config/processes/p-improve-souls.json         corekit/config/processes/p-improve-souls.json
-corekit/config/processes/p-improve-context.json       corekit/config/processes/p-improve-context.json
-corekit/config/processes/p-improve-gateway.json       corekit/config/processes/p-improve-gateway.json
-corekit/config/processes/p-improve-work-layer.json    corekit/config/processes/p-improve-work-layer.json
-corekit/config/processes/p-improve-skills.json        corekit/config/processes/p-improve-skills.json
-corekit/config/processes/p-improve-dashboard.json     corekit/config/processes/p-improve-dashboard.json
-corekit/config/processes/p-improve-delegation.json    corekit/config/processes/p-improve-delegation.json
+corekit/config/processes/p-triage-improvement.json    corekit/processes/p-triage-improvement.json
+corekit/config/processes/p-improve-daemons.json       corekit/processes/p-improve-daemons.json
+corekit/config/processes/p-improve-souls.json         corekit/processes/p-improve-souls.json
+corekit/config/processes/p-improve-context.json       corekit/processes/p-improve-context.json
+corekit/config/processes/p-improve-gateway.json       corekit/processes/p-improve-gateway.json
+corekit/config/processes/p-improve-work-layer.json    corekit/processes/p-improve-work-layer.json
+corekit/config/processes/p-improve-skills.json        corekit/processes/p-improve-skills.json
+corekit/config/processes/p-improve-dashboard.json     corekit/processes/p-improve-dashboard.json
+corekit/config/processes/p-improve-delegation.json    corekit/processes/p-improve-delegation.json
 
 # Prime brain workspaces (cortex + 5 sub-agents)
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md
