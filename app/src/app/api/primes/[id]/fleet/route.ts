@@ -20,7 +20,11 @@ export async function GET(_req: Request, ctx: RouteContext) {
         createdAt: doc.data().createdAt?.toDate?.()?.toISOString() ?? null,
         deploySteps: doc.data().deploySteps ?? [],
         actionRequired: doc.data().actionRequired ?? null,
-      }));
+      }))
+      .filter((a) => {
+        const s = (a as Record<string, unknown>).status as string | undefined;
+        return s !== "removed" && s !== "deleted" && s !== "decommissioned";
+      });
 
     return NextResponse.json({ fleet });
   } catch (err) {
