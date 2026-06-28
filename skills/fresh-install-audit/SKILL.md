@@ -35,7 +35,7 @@ fresh-install-scan <repo-root> [options]
 
 | Category | Examples | Severity |
 |---|---|---|
-| Real email addresses | `user@company.com` (not `@example.com`) | high |
+| Real email addresses | `someone@their-domain.com` (not `@example.com`) | high |
 | Real GCP project IDs | `my-actual-project-123` | high |
 | Real Drive/Space IDs | Long alphanumeric IDs in Drive URLs | high |
 | Real org/company names | Hardcoded company name in non-example context | high |
