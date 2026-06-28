@@ -31,17 +31,32 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 REGISTRY_FILE="${CORE_DIR}/corekit/fleet-registry.json"
 CHAT_SEND="${CORE_DIR}/bin/chat-send"
 
-# ---- Read agent info from registry ----
-[[ -f "$REGISTRY_FILE" ]] || die "Fleet registry not found: $REGISTRY_FILE"
+# Single-project mode: fleet VMs are in Prime's project
+PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PRIME_PROJECT" ]] || die "Cannot resolve PRIME_PROJECT from metadata"
 
-FLEET_PROJECT="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].project // ""' "$REGISTRY_FILE")"
-FLEET_VM="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].vm // ""' "$REGISTRY_FILE")"
-FLEET_ZONE="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].zone // ""' "$REGISTRY_FILE")"
-CURRENT_REF="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].coreRef // "unknown"' "$REGISTRY_FILE")"
+FLEET_PROJECT="${PRIME_PROJECT}"
+FLEET_VM="fleet-${AGENT_NAME}"
 
-[[ -n "$FLEET_PROJECT" ]] || die "Agent '${AGENT_NAME}' not found in registry"
-[[ -n "$FLEET_VM" ]] || die "No VM found for agent '${AGENT_NAME}'"
-[[ -n "$FLEET_ZONE" ]] || die "No zone found for agent '${AGENT_NAME}'"
+# Prime ID for Firestore operations
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || true)"
+fi
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${FLEET_PROJECT}/databases/(default)/documents"
+
+# Resolve zone from registry or default
+FLEET_ZONE="us-central1-a"
+CURRENT_REF="unknown"
+if [[ -f "$REGISTRY_FILE" ]]; then
+  REG_ZONE="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].zone // ""' "$REGISTRY_FILE" 2>/dev/null || true)"
+  [[ -n "$REG_ZONE" ]] && FLEET_ZONE="$REG_ZONE"
+  
+  REG_REF="$(jq -r --arg name "$AGENT_NAME" '.agents[$name].coreRef // ""' "$REGISTRY_FILE" 2>/dev/null || true)"
+  [[ -n "$REG_REF" ]] && CURRENT_REF="$REG_REF"
+fi
 
 # Default to Prime's current ref if not specified
 if [[ -z "$TARGET_REF" ]]; then
@@ -76,10 +91,29 @@ RESULT="$(gcloud compute ssh "$FLEET_VM" \
 if echo "$RESULT" | grep -q "UPGRADE_SUCCESS"; then
   log "✅ Upgrade successful!"
 
-  # Update registry
-  jq --arg name "$AGENT_NAME" --arg ref "$TARGET_REF" --arg ts "$(date -Is)" \
-     '.agents[$name].coreRef = $ref | .agents[$name].upgradedAt = $ts | .lastUpdated = $ts' \
-    "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
+  # Update local registry if it exists
+  if [[ -f "$REGISTRY_FILE" ]]; then
+    jq --arg name "$AGENT_NAME" --arg ref "$TARGET_REF" --arg ts "$(date -Is)" \
+       '.agents[$name].coreRef = $ref | .agents[$name].upgradedAt = $ts | .lastUpdated = $ts' \
+      "$REGISTRY_FILE" > "${REGISTRY_FILE}.tmp" && mv "${REGISTRY_FILE}.tmp" "$REGISTRY_FILE"
+  fi
+
+  # Update Firestore so dashboard sees the new version
+  if [[ -n "$PRIME_ID" ]]; then
+    TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || true)"
+    
+    if [[ -n "$TOKEN" ]]; then
+      UPDATE_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      curl -s -X PATCH \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"fields\":{\"coreRef\":{\"stringValue\":\"${TARGET_REF}\"},\"updatedAt\":{\"stringValue\":\"${UPDATE_TS}\"}}}" \
+        "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}?updateMask.fieldPaths=coreRef&updateMask.fieldPaths=updatedAt" > /dev/null 2>&1 || true
+      log "Updated coreRef in Firestore to ${TARGET_REF}"
+    fi
+  fi
 
   echo
   echo "============================================================"

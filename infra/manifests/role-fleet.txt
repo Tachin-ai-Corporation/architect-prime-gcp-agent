@@ -37,6 +37,7 @@ skills/workspace-drive/drive-move bin/drive-move
 skills/workspace-drive/drive-share bin/drive-share
 skills/workspace-drive/work-publish bin/work-publish
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+skills/workspace-drive/skill.json skills/workspace-drive/skill.json
 
 # Skills (shared by all fleet agents)
 skills/web-search/SKILL.md skills/web-search/SKILL.md

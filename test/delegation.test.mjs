@@ -145,6 +145,7 @@ describe('parseDelegationMarker', () => {
       ref: 'w-123-abc',
       from: 'arch@domain.com',
       project: 'proj-self-improvement',
+      drive: null,
       body: 'Implement manifest-dedup refactor.',
     });
   });
