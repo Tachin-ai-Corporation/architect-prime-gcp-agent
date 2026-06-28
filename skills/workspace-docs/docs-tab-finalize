@@ -161,7 +161,7 @@ import json, sys
 data = json.loads(sys.argv[1])
 for c in data.get('comments', []):
     content = c.get('content', '')
-    if 'prepared' in content and 'suggested edits' in content:
+    if 'prepared' in content and 'suggested' in content:
         print(c['id'])
         sys.exit(0)
 print('')
