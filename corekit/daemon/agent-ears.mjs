@@ -816,7 +816,7 @@ async function main() {
               CHANNEL === 'gchat' ? 'gchat' : 'dashboard',
               CHANNEL === 'gchat'
                 ? { space: msg.metadata?.space || null, thread: msg.metadata?.thread || null }
-                : { fleet_agent: osHostname().replace(/^fleet-/, '') }
+                : { fleet_agent: CHANNEL === 'dashboard' ? null : osHostname().replace(/^fleet-/, '') }
             )),
           } } },
           status: { stringValue: 'pending' },

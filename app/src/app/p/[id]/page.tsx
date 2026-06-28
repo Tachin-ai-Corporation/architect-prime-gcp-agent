@@ -223,7 +223,7 @@ export default function PrimeDeepDivePage({
           <div className={styles.chatTabContent}>
             <ChatPanel
               primeId={id}
-              agentName={id}
+              agentName={null}
               entityName={id}
               entityStatus={prime.status}
               specialty="prime"

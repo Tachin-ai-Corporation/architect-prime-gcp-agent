@@ -87,11 +87,16 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
       { id: tempId, sender: "admin", text: msg, timestamp: new Date().toISOString() },
     ]);
 
-    await api(apiBase, {
+    const result = await api(apiBase, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: msg }),
     });
+    if (!result) {
+      // Remove optimistic message on failure
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setInput(msg); // Restore the message so user can retry
+    }
     setSending(false);
   };
 

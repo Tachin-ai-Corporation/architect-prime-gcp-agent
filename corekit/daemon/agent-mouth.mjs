@@ -378,7 +378,9 @@ async function buildDefaultAddress() {
     }
     return { channel: 'gchat', space: null, thread: null };
   }
-  return { channel: 'dashboard', fleet_agent: AGENT_HOSTNAME || null };
+  // Prime (CHANNEL=dashboard): fleet_agent=null → writes to primes/{id}/messages
+  // Fleet (CHANNEL=gchat but falling through to dashboard delivery): uses AGENT_HOSTNAME
+  return { channel: 'dashboard', fleet_agent: CHANNEL === 'dashboard' ? null : (AGENT_HOSTNAME || null) };
 }
 
 // ================================================================
@@ -732,7 +734,9 @@ async function pollBrainV3Envelopes() {
           if (ch === 'gchat') {
             addr = { channel: 'gchat', space: deliveryAddr.space?.stringValue || null, thread: deliveryAddr.thread?.stringValue || null };
           } else {
-            addr = { channel: 'dashboard', fleet_agent: deliveryAddr.fleet_agent?.stringValue || null };
+            // Prime agents deliver to root messages, not fleet subcollection
+            const fleetAgent = CHANNEL === 'dashboard' ? null : (deliveryAddr.fleet_agent?.stringValue || null);
+            addr = { channel: 'dashboard', fleet_agent: fleetAgent };
           }
         }
         if (!addr) {
