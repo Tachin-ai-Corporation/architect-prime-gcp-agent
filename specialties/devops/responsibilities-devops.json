@@ -16,7 +16,7 @@
         "gcs_bucket": "YOUR_GCS_BUCKET",
         "sync_service_url": "YOUR_SYNC_SERVICE_URL"
       },
-      "project_id": "tachin-public-files",
+      "project_id": "YOUR_PROJECT_ID",
       "context": {
         "success_criteria": "Sync service is HEALTHY or any issues have been remediated. Health report delivered."
       }
