@@ -1,7 +1,8 @@
 {
   "id": "p-improve-daemons",
-  "name": "Improve Brain Daemons",
+  "name": "[REPO] Improve Brain Daemons",
   "version": 1,
+  "tier": "repo",
   "description": "Evidence-driven improvement of daemon control flow, crash recovery, lifecycle ceremonies, and code complexity.",
   "status": "active",
   "visibility": "standard",
@@ -25,7 +26,7 @@
     },
     {
       "title": "Verify on live fleet",
-      "description": "Deploy to one agent. Send 3 test missions exercising the fixed paths. Read logs and telemetry. Confirm issues resolved, no new errors.",
+      "description": "Deploy to one agent. Send 3 test missions exercising the fixed paths. Read logs and telemetry. Confirm issues resolved, no new errors. If verified, land per the repo-improvement skill.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

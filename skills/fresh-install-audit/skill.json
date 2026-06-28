@@ -1,0 +1,13 @@
+{
+  "id": "fresh-install-audit",
+  "name": "Fresh Install Contamination Audit",
+  "version": 1,
+  "description": "Scan repo files for operator-specific contamination (hardcoded project IDs, emails, Drive IDs, org names) that would break a fresh fork. Used as the REPO improvement gate.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "improvement",
+  "agent_part": "motor",
+  "scripts": ["fresh-install-scan"],
+  "requires": {},
+  "when_to_use": "Before landing any REPO-tier improvement via a PR to main. The repo-improvement skill calls this scan as a mandatory gate. Also usable standalone for periodic contamination audits."
+}

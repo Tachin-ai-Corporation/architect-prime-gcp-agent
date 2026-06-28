@@ -1,7 +1,8 @@
 {
   "id": "p-improve-skills",
-  "name": "Improve a Skill (Prime + Agent + Operator)",
+  "name": "[REPO] Improve a Skill (Prime + Agent + Operator)",
   "version": 3,
+  "tier": "repo",
   "description": "Improve a single skill by iterating with a fleet agent that owns it, using a clean baseline→improve→re-test cycle judged by the operator. Prime investigates and measures mechanics; the owner-agent exercises the skill on a sandbox task under real conditions; the operator defines the quality bar, signs off on the test, and judges before/after. Nothing lands until the operator confirms it is better.",
   "status": "active",
   "visibility": "standard",
@@ -69,7 +70,7 @@
     },
     {
       "title": "Land and report",
-      "description": "If the operator said BETTER: using git-ops, branch 'improve/skills-${skill_id}', commit the skill change, push, open a PR to main with the before/after artifacts and mechanical deltas embedded in the description. Report back to the operator in plain language: what changed, the before/after, what to expect next time. Record the learning. If NOT YET: loop back to the improve step with a different single change. If REVERT: discard the change.",
+      "description": "This is a REPO improvement — land per the repo-improvement skill. If the operator said BETTER: using git-ops, branch 'improve/skills-${skill_id}', commit the skill change, push, open a PR to main with the before/after artifacts and mechanical deltas embedded in the description. Report back to the operator in plain language: what changed, the before/after, what to expect next time. Record the learning. If NOT YET: loop back to the improve step with a different single change. If REVERT: discard the change.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

@@ -1,8 +1,8 @@
 {
   "id": "p-review-and-improve",
   "name": "Review Fleet Work and Improve",
-  "version": 1,
-  "description": "Operator-triggered improvement loop. Given an operator's description of something they just tried with the fleet, find the relevant recent missions, review what happened from the work tree, classify shortcomings into improvement modules, execute the improvements, and report back. Use when an operator asks Prime to review recent agent work and make it better.",
+  "version": 2,
+  "description": "Operator-triggered improvement loop. Given an operator's description of something they just tried with the fleet, find the relevant recent missions, review what happened from the work tree, classify shortcomings into the 9-module tiered set, execute the improvements (REPO via scan+PR, LOCAL via Firestore/overlay), and report back.",
   "status": "active",
   "visibility": "standard",
   "intent_keywords": ["review and improve", "review what happened", "improve the team", "that didn't go well", "took too long", "too many round trips", "improve how", "make the agents better", "review their work", "fix how the team"],
@@ -31,24 +31,24 @@
     },
     {
       "title": "Classify and improve",
-      "description": "Map the assessment to one or more of the 8 improvement modules (read the architect-prime project context for module definitions). For each module, follow its improvement process: p-improve-daemons, p-improve-souls, p-improve-context, p-improve-gateway, p-improve-work-layer, p-improve-skills, p-improve-dashboard, or p-improve-delegation. Execute the evidence→fix→verify cycle defined by that process. Keep each module's changes separate (one module per commit).",
+      "description": "Map the assessment to one or more of the 9 improvement modules (read the architect-prime project context for module definitions). REPO modules (7): p-improve-daemons, p-improve-souls, p-improve-gateway, p-improve-skills, p-improve-dashboard, p-improve-context-repo, p-improve-work-layer-repo. LOCAL modules (2): p-improve-context-local, p-improve-work-layer-local. Delegation is not a module — route delegation findings to the owning module (governance → daemons, instruction quality → souls, process steps → work-layer-repo or -local, operator patterns → context-local). For each module, follow its improvement process. REPO improvements land via the repo-improvement skill (contamination scan + PR). LOCAL improvements land via the local-improvement skill (Firestore/overlay, no PR). Keep each module's changes separate (one module per commit). A single finding never mixes tiers.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "At least one module's improvement executed with before/after reasoning. Changed files or Firestore documents listed. Changes scoped one-module-per-commit.",
+      "accept_criteria": "At least one module's improvement executed with before/after reasoning. REPO changes via PR, LOCAL changes via Firestore/overlay. Changes scoped one-module-per-commit.",
       "checkpointBoundary": true
     },
     {
       "title": "Submit changes",
-      "description": "For repo file changes (code, processes, SOULs, skills): using git-ops, create a branch 'improve/{module}-{short-desc}', commit, push, open a PR to main with what was improved, the module, the evidence, and expected effect. For data-only changes (project context, core memory, process/responsibility in Firestore): persist directly and record the document path. A change is one or the other.",
+      "description": "For REPO changes: land per the repo-improvement skill — contamination scan, branch, PR to main with module, evidence, and expected effect. For LOCAL changes: land per the local-improvement skill — Firestore write or operator/ overlay, no PR. Record all document paths and PR links.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "PR link provided for code changes, OR Firestore document path(s) for data changes. One of the two is present for each improvement."
+      "accept_criteria": "PR link provided for REPO changes, OR Firestore document path(s) for LOCAL changes. Each improvement has exactly one landing type."
     },
     {
       "title": "Report back to the operator",
-      "description": "Reply in the operator's chat thread (the same dashboard conversation that triggered this). Summarize: which mission was reviewed, what was found (in plain language — the operator is not reading the work tree), what was improved, the PR link or Firestore change, and what the operator should expect to see differently next time. Keep it concise and non-technical.",
+      "description": "Reply in the operator's chat thread (the same dashboard conversation that triggered this). Summarize: which mission was reviewed, what was found (in plain language — the operator is not reading the work tree), what was improved (noting tier: upstream PR or local persist), the PR link or Firestore change, and what the operator should expect to see differently next time. Keep it concise and non-technical.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

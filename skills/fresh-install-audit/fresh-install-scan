@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# ============================================================
+# fresh-install-scan — Scan repo for operator-specific contamination
+#
+# Scans platform files for hardcoded operator values that would
+# break a fresh fork. Used as the REPO improvement gate.
+#
+# Usage:
+#   fresh-install-scan <repo-root> [options]
+#   fresh-install-scan . --operator-terms "myorg,me@co.com" --severity-min high
+#
+# Options:
+#   --operator-terms "<csv>"   Extra operator terms to scan for
+#   --severity-min <level>     Minimum severity: info|medium|high|critical (default: info)
+#   --files "<glob>"           Only scan matching files
+#   --exclude "<glob>"         Exclude matching files (default: node_modules/,*.lock,operator/)
+#   --json                     Output JSON instead of human-readable
+# ============================================================
+set -euo pipefail
+
+REPO_ROOT="${1:-.}"
+shift || true
+
+OPERATOR_TERMS=""
+SEVERITY_MIN="info"
+FILES_GLOB=""
+EXCLUDE_GLOB="node_modules/,*.lock,operator/,.git/"
+JSON_OUTPUT=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --operator-terms) OPERATOR_TERMS="$2"; shift 2 ;;
+    --severity-min)   SEVERITY_MIN="$2"; shift 2 ;;
+    --files)          FILES_GLOB="$2"; shift 2 ;;
+    --exclude)        EXCLUDE_GLOB="$2"; shift 2 ;;
+    --json)           JSON_OUTPUT=true; shift ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+# Severity levels (numeric for comparison)
+severity_num() {
+  case "$1" in
+    info)     echo 0 ;;
+    medium)   echo 1 ;;
+    high)     echo 2 ;;
+    critical) echo 3 ;;
+    *)        echo 0 ;;
+  esac
+}
+MIN_SEV=$(severity_num "$SEVERITY_MIN")
+
+# Build grep exclude args
+EXCLUDE_ARGS=""
+IFS=',' read -ra EXCL <<< "$EXCLUDE_GLOB"
+for ex in "${EXCL[@]}"; do
+  EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude-dir=${ex%/}"
+done
+
+# Built-in patterns (high severity)
+# These catch common contamination: real emails, real GCP projects, real URLs
+BUILTIN_PATTERNS=(
+  # Real .run.app URLs (critical)
+  '[a-z0-9-]+\.run\.app'
+  # Real GCS bucket references
+  'gs://[a-z0-9][a-z0-9._-]*[a-z0-9]'
+  # Long alphanumeric IDs (likely Drive/API IDs, 25+ chars)
+  '[0-9a-zA-Z_-]{25,}'
+)
+
+# Context: lines containing these words are excluded (intentional generics)
+GENERIC_MARKERS='example|placeholder|YOUR_|FAKE_|fake|dummy|sample|template|\$\{|TODO'
+
+cd "$REPO_ROOT"
+
+TOTAL_FILES=0
+TOTAL_FINDINGS=0
+FINDINGS_JSON="[]"
+
+scan_pattern() {
+  local pattern="$1"
+  local severity="$2"
+  local category="$3"
+  local sev_n
+  sev_n=$(severity_num "$severity")
+  [[ $sev_n -lt $MIN_SEV ]] && return
+
+  local results
+  if [[ -n "$FILES_GLOB" ]]; then
+    results=$(grep -rnI $EXCLUDE_ARGS --include="$FILES_GLOB" -E "$pattern" . 2>/dev/null || true)
+  else
+    results=$(grep -rnI $EXCLUDE_ARGS -E "$pattern" . 2>/dev/null || true)
+  fi
+
+  # Filter out generic markers (lines that are intentional examples)
+  results=$(echo "$results" | grep -v -E "$GENERIC_MARKERS" || true)
+  # Filter out comments that are documentation
+  results=$(echo "$results" | grep -v -E '^\s*(#|//|/\*|\*)' || true)
+  # Filter out empty
+  results=$(echo "$results" | grep -v '^$' || true)
+
+  if [[ -n "$results" ]]; then
+    local count
+    count=$(echo "$results" | wc -l)
+    TOTAL_FINDINGS=$((TOTAL_FINDINGS + count))
+
+    if [[ "$JSON_OUTPUT" == "true" ]]; then
+      while IFS= read -r line; do
+        local file lineno content
+        file=$(echo "$line" | cut -d: -f1)
+        lineno=$(echo "$line" | cut -d: -f2)
+        content=$(echo "$line" | cut -d: -f3-)
+        FINDINGS_JSON=$(echo "$FINDINGS_JSON" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+d.append({'file': '$file', 'line': $lineno, 'severity': '$severity', 'category': '$category', 'content': '''$content'''[:200]})
+json.dump(d, sys.stdout)
+" 2>/dev/null || echo "$FINDINGS_JSON")
+      done <<< "$results"
+    else
+      echo "  [$severity] $category ($count findings)"
+      echo "$results" | head -5 | while IFS= read -r line; do
+        echo "    $line"
+      done
+      [[ $count -gt 5 ]] && echo "    ... and $((count - 5)) more"
+    fi
+  fi
+}
+
+# Count files to scan
+if [[ -n "$FILES_GLOB" ]]; then
+  TOTAL_FILES=$(find . -name "$FILES_GLOB" -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/operator/*" -type f 2>/dev/null | wc -l || echo 0)
+else
+  TOTAL_FILES=$(find . -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/operator/*" -type f 2>/dev/null | wc -l || echo 0)
+fi
+
+if [[ "$JSON_OUTPUT" != "true" ]]; then
+  echo ""
+  echo "Fresh Install Scan — $REPO_ROOT"
+  echo "============================================"
+  echo "Files scanned: ~$TOTAL_FILES"
+  echo "Severity threshold: $SEVERITY_MIN"
+  echo ""
+fi
+
+# Scan built-in patterns
+scan_pattern "${BUILTIN_PATTERNS[0]}" "critical" "Cloud Run URLs"
+scan_pattern "${BUILTIN_PATTERNS[1]}" "high" "GCS bucket references"
+
+# Scan operator-specific terms
+if [[ -n "$OPERATOR_TERMS" ]]; then
+  IFS=',' read -ra TERMS <<< "$OPERATOR_TERMS"
+  for term in "${TERMS[@]}"; do
+    term=$(echo "$term" | xargs)  # trim whitespace
+    [[ -z "$term" ]] && continue
+    scan_pattern "$term" "high" "Operator term: $term"
+  done
+fi
+
+# Output
+if [[ "$JSON_OUTPUT" == "true" ]]; then
+  echo "{\"files_scanned\": $TOTAL_FILES, \"findings\": $TOTAL_FINDINGS, \"severity_min\": \"$SEVERITY_MIN\", \"details\": $FINDINGS_JSON}"
+else
+  echo ""
+  if [[ $TOTAL_FINDINGS -eq 0 ]]; then
+    echo "✅ Clean — no operator contamination detected ($SEVERITY_MIN+)."
+  else
+    echo "⚠️  $TOTAL_FINDINGS finding(s) at $SEVERITY_MIN+ severity."
+    echo "   Fix contamination before opening a REPO PR."
+  fi
+  echo ""
+fi
+
+exit 0

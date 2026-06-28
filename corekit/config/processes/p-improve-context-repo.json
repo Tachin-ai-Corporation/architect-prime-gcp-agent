@@ -1,0 +1,40 @@
+{
+  "id": "p-improve-context-repo",
+  "name": "[REPO] Improve Context & Memory Machinery",
+  "version": 2,
+  "tier": "repo",
+  "description": "Evidence-driven improvement of context and memory MACHINERY: memory/context code in corekit/, consolidation logic, context schema/loading, retrieval algorithms. Generic platform code only — operator-specific content improvements use p-improve-context-local.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["context machinery", "memory code", "consolidation", "context schema", "retrieval", "context loading", "memory pipeline"],
+  "steps": [
+    {
+      "title": "Investigate machinery",
+      "description": "Read the context/memory code: corekit/brain/context.mjs, corekit/lib/ memory helpers, session-summary, core-memory-read/write scripts, memory-consolidate skill. Identify bugs, inefficiencies, or schema gaps in the machinery itself. Check recent mission trees for context-loading failures or stale-recall symptoms.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Machinery issues identified with file:line references. Distinct from content issues (which belong to p-improve-context-local)."
+    },
+    {
+      "title": "Fix the machinery",
+      "description": "Implement the fix in the platform code. Confirm the change is generic (no operator values). Run node --check on changed files.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Code fixed. No operator-specific values. Tests pass."
+    },
+    {
+      "title": "Land via repo-improvement skill",
+      "description": "Land the change per the repo-improvement skill: contamination scan, branch, PR to main with evidence.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "PR opened. Contamination scan clean."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

@@ -1,7 +1,8 @@
 {
   "id": "p-improve-gateway",
-  "name": "Improve Neural Gateway",
+  "name": "[REPO] Improve Neural Gateway",
   "version": 1,
+  "tier": "repo",
   "description": "Evidence-driven optimization of token cost, prompt caching, loop guards, and model routing.",
   "status": "active",
   "visibility": "standard",
@@ -25,7 +26,7 @@
     },
     {
       "title": "Measure impact",
-      "description": "Deploy. Run 5 comparable missions. Compare before/after on target metrics.",
+      "description": "Deploy. Run 5 comparable missions. Compare before/after on target metrics. If improved, land per the repo-improvement skill.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

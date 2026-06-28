@@ -57,17 +57,29 @@ skills/skill-authoring/skill.json skills/skill-authoring/skill.json
 specialties/engineer/skills/git-ops/skill.json   skills/git-ops/skill.json
 specialties/engineer/skills/git-ops/SKILL.md     skills/git-ops/SKILL.md
 
-# Improvement processes
-corekit/config/processes/p-triage-improvement.json    corekit/processes/p-triage-improvement.json
-corekit/config/processes/p-improve-daemons.json       corekit/processes/p-improve-daemons.json
-corekit/config/processes/p-improve-souls.json         corekit/processes/p-improve-souls.json
-corekit/config/processes/p-improve-context.json       corekit/processes/p-improve-context.json
-corekit/config/processes/p-improve-gateway.json       corekit/processes/p-improve-gateway.json
-corekit/config/processes/p-improve-work-layer.json    corekit/processes/p-improve-work-layer.json
-corekit/config/processes/p-improve-skills.json        corekit/processes/p-improve-skills.json
-corekit/config/processes/p-improve-dashboard.json     corekit/processes/p-improve-dashboard.json
-corekit/config/processes/p-improve-delegation.json    corekit/processes/p-improve-delegation.json
-corekit/config/processes/p-review-and-improve.json    corekit/processes/p-review-and-improve.json
+# Tier-landing skills (REPO vs LOCAL improvement paths)
+skills/repo-improvement/SKILL.md    skills/repo-improvement/SKILL.md
+skills/repo-improvement/skill.json  skills/repo-improvement/skill.json
+skills/local-improvement/SKILL.md   skills/local-improvement/SKILL.md
+skills/local-improvement/skill.json skills/local-improvement/skill.json
+
+# Contamination scan (REPO gate dependency)
+skills/fresh-install-audit/SKILL.md         skills/fresh-install-audit/SKILL.md
+skills/fresh-install-audit/skill.json       skills/fresh-install-audit/skill.json
+skills/fresh-install-audit/fresh-install-scan bin/fresh-install-scan
+
+# Improvement processes (7 REPO + 2 LOCAL)
+corekit/config/processes/p-triage-improvement.json       corekit/processes/p-triage-improvement.json
+corekit/config/processes/p-improve-daemons.json          corekit/processes/p-improve-daemons.json
+corekit/config/processes/p-improve-souls.json            corekit/processes/p-improve-souls.json
+corekit/config/processes/p-improve-context-repo.json     corekit/processes/p-improve-context-repo.json
+corekit/config/processes/p-improve-context-local.json    corekit/processes/p-improve-context-local.json
+corekit/config/processes/p-improve-gateway.json          corekit/processes/p-improve-gateway.json
+corekit/config/processes/p-improve-work-layer-repo.json  corekit/processes/p-improve-work-layer-repo.json
+corekit/config/processes/p-improve-work-layer-local.json corekit/processes/p-improve-work-layer-local.json
+corekit/config/processes/p-improve-skills.json           corekit/processes/p-improve-skills.json
+corekit/config/processes/p-improve-dashboard.json        corekit/processes/p-improve-dashboard.json
+corekit/config/processes/p-review-and-improve.json       corekit/processes/p-review-and-improve.json
 
 # Prime brain workspaces (cortex + 5 sub-agents)
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md

@@ -1,7 +1,8 @@
 {
   "id": "p-improve-dashboard",
-  "name": "Improve Dashboard & Bootstrap",
+  "name": "[REPO] Improve Dashboard & Bootstrap",
   "version": 1,
+  "tier": "repo",
   "description": "Evidence-driven improvement of operator experience — SSH elimination, deployment speed, feature parity, component quality.",
   "status": "active",
   "visibility": "standard",
@@ -25,7 +26,7 @@
     },
     {
       "title": "Verify",
-      "description": "Deploy dashboard. Verify new views render with live data. Confirm identified friction points resolved.",
+      "description": "Deploy dashboard. Verify new views render with live data. Confirm identified friction points resolved. If verified, land per the repo-improvement skill.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

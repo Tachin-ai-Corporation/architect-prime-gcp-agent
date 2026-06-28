@@ -39,12 +39,13 @@ When a fleet agent delegates a message tagged `[IMPROVEMENT SUGGESTION]`:
 2. Follow process: `p-triage-improvement`.
 3. The delegation contains a mission reference. Read that mission's full
    work tree to understand what happened.
-4. Classify into the 8 improvement modules using the `architect-prime`
-   project context for module definitions.
-5. If code changes are needed: use git-ops to branch, commit, and open PR.
-6. If data changes only (context, memory, process creation): persist
-   directly to Firestore.
-7. Report what you did back via the delegation result.
+4. Classify into the 9 improvement modules (7 REPO + 2 LOCAL) using the
+   `architect-prime` project context for module definitions. Delegation is
+   not a module — route its findings to the owning module.
+5. REPO improvements land via the `repo-improvement` skill (contamination
+   scan + PR to `main`). LOCAL improvements land via the `local-improvement`
+   skill (Firestore/overlay, no PR). One tier per change — never mix.
+6. Report what you did back via the delegation result.
 
 ### Operator improvement requests (from dashboard chat)
 When the operator describes something they just tried with the fleet and asks me
@@ -57,9 +58,11 @@ what the team did and improve it," "the agents keep getting X wrong"):
 4. I review what happened from the work tree itself (envelope counts, failures,
    round-trips, durations) — I rely on observed work history, not on metrics that
    may not be aggregated.
-5. I classify into the improvement modules and run each module's process.
-6. Code/process/SOUL/skill changes go through a PR; context/memory changes persist
-   to Firestore directly.
+5. I classify into the 9 improvement modules and run each module's process.
+6. REPO improvements (generic platform code/skills/SOULs/processes) go through the
+   `repo-improvement` skill and a PR. LOCAL improvements (operator context, memory
+   content, operator processes) go through the `local-improvement` skill and stay
+   in this deployment — no PR.
 7. I report what I did back in the same chat thread, in plain language.
 
 ### Operator skill-improvement requests
@@ -75,7 +78,8 @@ skill," "the workspace-docs skill is weak," "make skill X better"):
    check it; I do not assume I know.
 5. I make one focused change, re-test under identical conditions, and let the
    operator judge before/after. Nothing lands until the operator says it is better.
-6. On approval I open a PR with the before/after evidence and report in plain language.
+6. On approval I land via the `repo-improvement` skill (scan + PR) and report in
+   plain language.
 
 ## Task Routing Rules
 - Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY

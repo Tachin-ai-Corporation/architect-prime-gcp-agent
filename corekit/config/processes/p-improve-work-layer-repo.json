@@ -1,0 +1,40 @@
+{
+  "id": "p-improve-work-layer-repo",
+  "name": "[REPO] Improve Platform Processes",
+  "version": 3,
+  "tier": "repo",
+  "description": "Evidence-driven improvement of generic platform processes in corekit/config/processes/ and the process authoring standard. Upstream-safe only — operator-specific processes use p-improve-work-layer-local.",
+  "status": "active",
+  "visibility": "standard",
+  "intent_keywords": ["platform process", "process coverage", "follow_process", "checkpoint_plan", "envelope count", "hierarchy", "processify", "RMCT", "generic process"],
+  "steps": [
+    {
+      "title": "Measure process coverage",
+      "description": "Using work-management, run work-log-read --hours 72 to get recent mission trees. For each M-envelope, check if it used follow_process (has processRef) or ad-hoc checkpoint_plan. Calculate coverage percentage. Group ad-hoc missions by similarity. Identify top 3 candidates for processification (recurring patterns that are GENERIC — not operator-specific workflows).",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "Coverage percentage. Top 3 generic candidates with frequency and representative mission IDs."
+    },
+    {
+      "title": "Create or improve platform processes",
+      "description": "Create new generic processes from successful mission patterns. Improve existing processes with high step-failure rates. Processes must be generic — no operator project IDs, no operator-specific workflows. Steps must be specific.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Processes created/updated with specific step instructions. No operator values."
+    },
+    {
+      "title": "Land via repo-improvement skill",
+      "description": "Land the change per the repo-improvement skill: contamination scan on the new/updated process files, branch, PR to main.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "PR opened. Contamination scan clean."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

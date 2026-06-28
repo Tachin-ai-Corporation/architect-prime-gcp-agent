@@ -1,0 +1,13 @@
+{
+  "id": "repo-improvement",
+  "name": "REPO Improvement Landing",
+  "version": 1,
+  "description": "How to land a REPO-level (upstream) platform improvement: confirm it is clean of operator identity, run the contamination scan, branch, and open a PR to main.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "improvement",
+  "agent_part": "motor",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "When landing a REPO-tier improvement (a generic change to corekit/, brain/, skills/, app/, or generic infra/) that should flow upstream. Defines the contamination gate and PR procedure. Never use for operator-specific changes."
+}

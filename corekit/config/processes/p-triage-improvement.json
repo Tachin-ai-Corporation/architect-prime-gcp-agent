@@ -1,8 +1,8 @@
 {
   "id": "p-triage-improvement",
   "name": "Triage Improvement Suggestion",
-  "version": 1,
-  "description": "Investigate a fleet agent's improvement suggestion, classify it, and execute the right improvement process.",
+  "version": 2,
+  "description": "Investigate a fleet agent's improvement suggestion, classify it into the 9-module tiered set, and execute the right improvement process. REPO modules land via repo-improvement skill (scan + PR); LOCAL modules land via local-improvement skill (Firestore/overlay, no PR).",
   "status": "active",
   "visibility": "standard",
   "intent_keywords": ["improve", "improvement", "suggestion", "better", "should have", "next time", "feedback", "fix this"],
@@ -17,31 +17,23 @@
     },
     {
       "title": "Classify into improvement module(s)",
-      "description": "Based on the evidence, classify the improvement into one or more of the 8 modules. Read the architect-prime project context for module definitions. The 8 modules are: (1) Daemons — control flow bug, crash, stuck loop, ceremony divergence. (2) Organ SOULs — bad decisions, plan inflation, false verdicts, wrong agent assignments. (3) Context & Memory — stale/missing project context, memory recall failures. (4) Neural Gateway — high token cost, low cache rate, loop guard issues. (5) Work Layer — missing process, bad process steps, low process coverage. (6) Skills — missing procedures, wrong syntax, low success rate. (7) Dashboard & Bootstrap — missing UI features, deployment friction. (8) Delegation & Cross-Agent — delegation storms, cross-agent context failures, delegation instruction quality. Report the module(s) and the specific finding for each.",
+      "description": "Based on the evidence, classify the improvement into one or more of the 9 modules. Read the architect-prime project context for module definitions. The 9 modules are: REPO modules — (1) Daemons (p-improve-daemons) — control flow bug, crash, stuck loop, ceremony divergence. (2) Organ SOULs (p-improve-souls) — bad decisions, plan inflation, false verdicts, wrong agent assignments. (3) Neural Gateway (p-improve-gateway) — high token cost, low cache rate, loop guard issues. (4) Skills (p-improve-skills) — missing procedures, wrong syntax, low success rate. (5) Dashboard & Bootstrap (p-improve-dashboard) — missing UI features, deployment friction. (6) Context & Memory Machinery (p-improve-context-repo) — context loading code, memory retrieval, consolidation logic. (7) Platform Processes (p-improve-work-layer-repo) — generic process coverage, bad process steps. LOCAL modules — (8) Context & Memory Content (p-improve-context-local) — stale/missing project context, wrong facts, memory content. (9) Operator Processes (p-improve-work-layer-local) — operator/ process improvements, custom workflow gaps. Delegation is not a module. Route a delegation finding to its owning module: governance/guards/timeouts/cross-agent publish → p-improve-daemons; vague instruction quality → p-improve-souls; delegation as a process step → p-improve-work-layer-repo (generic) or p-improve-work-layer-local (operator); operator-specific delegation pattern → p-improve-context-local. A single finding never mixes tiers — split it (generic skeleton via the REPO process; operator values via the LOCAL process). Report the module(s) and the specific finding for each.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "At least one module identified with specific evidence. If multiple modules, they are prioritized by impact."
+      "accept_criteria": "At least one module identified with specific evidence and its tier (REPO or LOCAL). If multiple modules, they are prioritized by impact. Each finding is assigned to exactly one tier."
     },
     {
       "title": "Execute improvement process(es)",
-      "description": "For each identified module, follow the corresponding improvement process: p-improve-daemons, p-improve-souls, p-improve-context, p-improve-gateway, p-improve-work-layer, p-improve-skills, p-improve-dashboard, or p-improve-delegation. The process defines the evidence→plan→execute→verify cycle. If the improvement involves code/content changes to the repo, stage the changes locally.",
+      "description": "For each identified module, follow the corresponding improvement process. REPO modules: the process's land step uses the repo-improvement skill (contamination scan + PR to main). LOCAL modules: the process's land step uses the local-improvement skill (Firestore/overlay, no PR). Keep each module's changes separate (one module per commit).",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Improvement executed per the process. Changed files listed. Before/after metrics documented."
-    },
-    {
-      "title": "Submit changes",
-      "description": "If the improvement produced repo file changes: using git-ops skill, create a feature branch named 'improve/{module}-{short-desc}', commit all changes with a descriptive message, push, and open a pull request to main. The PR description must include: what was improved, which module, evidence, and before/after metrics. If the improvement was data-only (project context, core memory, process in Firestore): no PR needed — the changes are already persisted.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "PR opened with link (if code changes) OR confirmation that Firestore was updated with the document path (if data-only changes). One of these two must be provided."
+      "accept_criteria": "Improvement executed per the process. REPO changes landed via repo-improvement skill with clean scan. LOCAL changes landed via local-improvement skill with no platform files touched."
     },
     {
       "title": "Report back",
-      "description": "Compose a summary for the fleet agent's delegation result: what the user suggested, what was investigated, what was improved, what the user should expect to see differently. Keep it concise — the user is not an engineer.",
+      "description": "Compose a summary for the fleet agent's delegation result: what the user suggested, what was investigated, what was improved (noting tier: REPO PR or LOCAL persist), what the user should expect to see differently. Keep it concise — the user is not an engineer.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
