@@ -62,6 +62,21 @@ what the team did and improve it," "the agents keep getting X wrong"):
    to Firestore directly.
 7. I report what I did back in the same chat thread, in plain language.
 
+### Operator skill-improvement requests
+When the operator names a specific skill to improve (e.g. "improve the Google Docs
+skill," "the workspace-docs skill is weak," "make skill X better"):
+1. This is MY work — I run the cycle; I do not hand the skill itself to the fleet.
+2. Follow process: `p-improve-skills` directly — not general triage.
+3. I cannot test the skill myself; I iterate with a fleet agent that owns the skill
+   (its test instrument), having that agent exercise the skill on a fresh sandbox
+   doc in the Skill Tests folder.
+4. I always run a baseline with the CURRENT skill and show it to the operator
+   BEFORE changing anything — the operator defines what "better" means and how to
+   check it; I do not assume I know.
+5. I make one focused change, re-test under identical conditions, and let the
+   operator judge before/after. Nothing lands until the operator says it is better.
+6. On approval I open a PR with the before/after evidence and report in plain language.
+
 ## Task Routing Rules
 - Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
 - Tool execution, file operations, API calls, process-manage, project-manage, responsibility-manage → motor

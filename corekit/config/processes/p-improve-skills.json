@@ -1,35 +1,79 @@
 {
   "id": "p-improve-skills",
-  "name": "Improve Skills Library",
-  "version": 2,
-  "description": "Evidence-driven improvement of skill grades, motor success rates, and skill gap coverage.",
+  "name": "Improve a Skill (Prime + Agent + Operator)",
+  "version": 3,
+  "description": "Improve a single skill by iterating with a fleet agent that owns it, using a clean baseline→improve→re-test cycle judged by the operator. Prime investigates and measures mechanics; the owner-agent exercises the skill on a sandbox task under real conditions; the operator defines the quality bar, signs off on the test, and judges before/after. Nothing lands until the operator confirms it is better.",
   "status": "active",
   "visibility": "standard",
-  "intent_keywords": ["skill", "skill quality", "motor success", "stuck loop", "skill miss", "SKILL.md", "procedure", "grade", "tool"],
+  "intent_keywords": ["improve skill", "skill quality", "make the skill better", "skill underperforms", "skill is weak", "fix the skill", "skill not working well", "upgrade skill"],
+  "parameters": {
+    "skill_id": { "description": "The skill to improve (e.g. workspace-docs)", "required": true },
+    "concern": { "description": "The operator's description of what's wrong / what 'better' should look like", "required": false, "default": "" },
+    "owner_agent": { "description": "A fleet agent that has this skill in scope, to act as the test instrument", "required": false, "default": "" },
+    "project_id": { "description": "Project context holding skill_test_folder_id and module references", "required": false, "default": "architect-prime" }
+  },
   "steps": [
     {
-      "title": "Grade and prioritize",
-      "description": "Using skill-introspect: run validate-skills to grade every skill. Derive per-skill usage and failure signals from recent mission trees (work-log-read --hours 72) — look for motor tasks that reference a skill and failed or required retry. Cross-reference brain-telemetry-read --agent motor --failures for dispatch errors. Prioritize by grade-gap × observed-failure-count. Do not assume a per-skill success-rate store exists.",
+      "title": "Investigate the skill and recent real usage",
+      "description": "⚠️ READ-ONLY STEP. Understand skill '${skill_id}' before changing anything.\n1. Read its SKILL.md (all five layers), skill.json, and the scripts it exposes.\n2. Grade it structurally against docs/guides/SKILL_STANDARD.md (which layers are present and substantive, 1-5). There is no validate-skills tool — grade by reading the standard.\n3. Identify which specialty kits list this skill (its owner-agents). If ${owner_agent} is empty, choose one.\n4. Using work-management, pull recent missions where this skill was used (work-log-read --owner <agent>); note where it stalled, errored, over-called tools, or produced poor results.\n5. State the gap: current grade + observed failure modes + the specific shortfall in '${concern}'.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Ranked list. Top priority skill identified with grade and observed failure evidence from mission trees."
+      "accept_criteria": "Current structural grade, the skill's tools, observed failure modes from real usage, an identified owner-agent, and a clear statement of the gap to close.",
+      "checkpointBoundary": true
     },
     {
-      "title": "Upgrade priority skill",
-      "description": "Read current SKILL.md and recent motor tool logs. Following SKILL_STANDARD (docs/guides/SKILL_STANDARD.md): add missing layers — procedures first, then error recovery, then examples. Validate grade after edit.",
+      "title": "Design the test scenario and run the baseline",
+      "description": "Establish the 'before' under real conditions.\n1. Design ONE representative task that exercises the skill's real purpose and has a gradeable target. Define a rubric: list each success dimension and tag it [mechanical] (verifiable by reading the artifact/work tree) or [operator] (needs human judgment).\n2. Create a FRESH sandbox target in the skill-test folder identified by skill_test_folder_id in the ${project_id} project context. Never use production.\n3. Delegate the task to the owner-agent describing the DESIRED OUTCOME and acceptance criteria only — NEVER the tool steps (we are testing whether the skill carries the HOW). Use the CURRENT skill version.\n4. Capture the work tree (tool calls, errors, duration) AND the produced artifact (read it back).",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "SKILL.md upgraded to target grade. validate-skills confirms."
+      "accept_criteria": "A repeatable test scenario, a rubric with [mechanical]/[operator] tags, a sandbox target, and a captured baseline: the artifact + mechanical metrics.",
+      "checkpointBoundary": true
     },
     {
-      "title": "Test and fill gaps",
-      "description": "Send 3 test missions exercising upgraded skill. Compare success rate before/after by reviewing the test mission work trees. Check for skill gaps (motor tasks that fail because no matching skill exists) in the recent mission trees. If gap found (≥3 occurrences): using skill-authoring, create new skill.",
+      "title": "Operator review: confirm test + rubric, grade the baseline",
+      "description": "Present to the operator in one place: (a) the skill's current grade and failure modes, (b) the proposed repeatable test scenario, (c) the draft rubric with [operator] dimensions called out, and (d) the baseline result — the actual artifact the agent produced plus the mechanical metrics. Ask the operator to adjust the test/rubric if needed, grade the baseline on the [operator] dimensions, and approve proceeding.",
+      "type": "approval_gate",
+      "approval_message": "🧪 Skill '${skill_id}' — baseline ready. I've run a test task and captured what the agent produced with the current skill. Please: (1) confirm or adjust the test scenario and quality rubric, (2) grade this baseline output on the human-judgment dimensions, (3) approve me to improve the skill. Reply with your grades/adjustments and approve, or reject.",
+      "agent": "motor",
+      "intent": "approval_gate",
+      "accept_criteria": "Operator has confirmed/adjusted the test and rubric, graded the baseline on [operator] dimensions, and approved or rejected."
+    },
+    {
+      "title": "Improve the skill (one focused change)",
+      "description": "Make ONE focused change to '${skill_id}' addressing the baseline failures, following docs/guides/SKILL_STANDARD.md: procedures first, then error recovery, then examples. Add the missing procedure; fix wrong tool syntax; add an error-recovery row for the failure seen in baseline; add a worked example anchored on the test task. GUARDRAILS: no operator/company-specific values in the skill; no cognition or identity content (B-17 — skills hold tools and procedures only). Bump skill.json version.",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",
-      "accept_criteria": "Success rate improved. Gaps addressed."
+      "accept_criteria": "Skill updated with one coherent, evidence-driven change. Version bumped. No contamination, no cognition drift. Diff produced.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Re-test under identical conditions",
+      "description": "Establish the 'after'. Run the SAME test task, with the SAME agent specialty, on a FRESH identical sandbox target in the skill-test folder, using the IMPROVED skill. Use a fresh agent instance so baseline learnings don't leak. Brief WHAT not HOW, exactly as in baseline. Capture the work tree and the produced artifact identically.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Re-test result captured under identical conditions: artifact + mechanical metrics, comparable 1:1 to the baseline.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Operator verdict: before vs after",
+      "description": "Present before vs after: the two artifacts side by side plus the mechanical deltas (tool-call count, errors, completion, duration). Ask the operator to grade the 'after' on the same rubric and decide: BETTER (land), NOT YET (iterate — I will make a different single change and re-test against this same rubric), or WORSE (revert).",
+      "type": "approval_gate",
+      "approval_message": "📊 Skill '${skill_id}' — before vs after. Here are both outputs and the mechanical deltas. Is the new version better? Reply: BETTER (I'll open a PR), NOT YET (I'll try a different change), or REVERT.",
+      "agent": "motor",
+      "intent": "approval_gate",
+      "accept_criteria": "Operator has rendered a verdict: better, not-yet (iterate), or worse (revert)."
+    },
+    {
+      "title": "Land and report",
+      "description": "If the operator said BETTER: using git-ops, branch 'improve/skills-${skill_id}', commit the skill change, push, open a PR to main with the before/after artifacts and mechanical deltas embedded in the description. Report back to the operator in plain language: what changed, the before/after, what to expect next time. Record the learning. If NOT YET: loop back to the improve step with a different single change. If REVERT: discard the change.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "On BETTER: PR opened with before/after evidence and a plain-language summary delivered. On NOT YET/REVERT: handled accordingly."
     }
   ],
   "contextTemplate": {},
