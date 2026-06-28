@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.28.3.0)
+## Current Architecture (v2026.06.28.4.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -61,6 +61,12 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Manifest discipline (C-11)**: Removed 7 `sites/tachin-website/*` entries from `base.txt`. Website content does not ship as a base default.
   - **Example genericization**: All `SKILL.md`, `SOUL_APPEND.md`, workflow, and JSDoc examples use `@example.com` emails, `your-gcp-project`, `YOUR_DRIVE_FOLDER_ID`, etc.
   - **Dev debris cleanup**: Deleted `scratch/` directory (16 committed files with operator data) and added to `.gitignore`.
+- **Prime Skill-Framework Readiness (v2026.06.28.4.0)**:
+  - **`p-improve-skills` v3**: Full 7-step baseline→improve→re-test cycle with 2 operator approval gates. Fleet agent loop (delegate to owner-agent as test instrument, not self-test). Drops phantom `validate-skills` dependency — grades structure by reading `docs/guides/SKILL_STANDARD.md`. Baseline-first methodology: operator sees "before" and defines what "better" means before any changes.
+  - **Prime SOUL routing**: `Operator skill-improvement requests` section routes "improve the X skill" directly to `p-improve-skills`, not general triage. Six rules covering ownership, process routing, agent loop, baseline-first, operator judgment, PR workflow.
+  - **`architect-prime` project record**: Firestore `projects/architect-prime` seeded with module-defs pointer (`docs/guides/IMPROVEMENT_MODULES.md`), skill standard pointer, and `configuration.skill_test_folder` → `workspace/skill-tests`. Makes improvement processes' "read the architect-prime project context" instructions resolve.
+  - **Skill Tests sandbox**: `workspace/skill-tests/` folder created on Prime VM for baseline/re-test artifacts. Process creates fresh sandbox targets here for each test cycle.
+  - **Fleet API ghost-agent fix**: `/api/primes/[id]/fleet` now filters out agents with `status` of `removed`, `deleted`, or `decommissioned`. Stale Firestore records from decommissioned VMs no longer appear in the dashboard.
 - **Human-Triggered Improvement Loop & Install Hardening (v2026.06.28.3.0)**:
   - **Operator-triggered improvement**: New `p-review-and-improve` process (5 steps) allows operator to trigger fleet improvement via dashboard chat. Prime cortex SOUL has a new rule recognizing operator improvement requests (parallel to fleet-delegated `[IMPROVEMENT SUGGESTION]` rule).
   - **Evidence-based improvement modules**: 4 improvement module processes (`p-improve-delegation`, `p-improve-skills`, `p-improve-souls`, `p-improve-work-layer`) rewritten to v2 — derive evidence from `work-log-read` mission trees and `brain-telemetry-read` dispatch data instead of phantom aggregated counters.
