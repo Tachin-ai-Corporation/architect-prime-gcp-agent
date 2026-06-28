@@ -94,7 +94,11 @@ FILTER_PARTS=()
 FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"created_at\"},\"op\":\"GREATER_THAN_OR_EQUAL\",\"value\":{\"stringValue\":\"${CUTOFF}\"}}}")
 
 if [[ -n "$OWNER_FILTER" ]]; then
-  FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"owner\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${OWNER_FILTER}\"}}}")
+  # Owner filtering is done client-side in Python because Firestore
+  # stores owner as full email (e.g. assistant-agent-millie@tachin.ag)
+  # but callers pass short names (e.g. millie). Firestore EQUAL can't
+  # do substring matching.
+  :
 fi
 if [[ -n "$STATUS_FILTER" ]]; then
   FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"status\"},\"op\":\"EQUAL\",\"value\":{\"stringValue\":\"${STATUS_FILTER}\"}}}")
@@ -132,13 +136,14 @@ RESPONSE=$(curl -sf --max-time 15 \
   -d "${QUERY_BODY}" 2>&1)
 
 # ── Parse and display ──────────────────────────────────────
-python3 - <<'PYPARSE' "$RESPONSE" "$JSON_OUTPUT" "$VERBOSE" "$MIN_STEPS"
+python3 - <<'PYPARSE' "$RESPONSE" "$JSON_OUTPUT" "$VERBOSE" "$MIN_STEPS" "$OWNER_FILTER"
 import json, sys
 
 raw = sys.argv[1]
 json_mode = sys.argv[2] == "true"
 verbose = sys.argv[3] == "true"
 min_steps = int(sys.argv[4])
+owner_filter = sys.argv[5].lower() if len(sys.argv) > 5 and sys.argv[5] else ""
 
 try:
     data = json.loads(raw)
@@ -154,7 +159,19 @@ def fv(fields, key, kind="stringValue", default=""):
     """Extract a typed value from Firestore fields."""
     f = fields.get(key, {})
     if kind == "stringValue":
-        return f.get("stringValue", default)
+        if "stringValue" in f:
+            return f["stringValue"]
+        # Handle mapValue (channel addressing stores owner as {fleet_agent, channel, ...})
+        if "mapValue" in f:
+            mv = f["mapValue"].get("fields", {})
+            agent = mv.get("fleet_agent", {}).get("stringValue", "")
+            if agent:
+                return agent
+            # Fallback: return first stringValue in the map
+            for v in mv.values():
+                if isinstance(v, dict) and "stringValue" in v:
+                    return v["stringValue"]
+        return default
     elif kind == "integerValue":
         return int(f.get("integerValue", default or 0))
     elif kind == "booleanValue":
@@ -215,6 +232,29 @@ for entry in data:
         env["durationSec"] = None
 
     envelopes.append(env)
+
+# Client-side owner filtering (substring match on short name)
+# Firestore stores owner as full email (e.g. assistant-agent-millie@tachin.ag)
+# but callers pass short names (e.g. millie, stan, prime)
+if owner_filter:
+    def match_owner(owner_val, filt):
+        if not owner_val:
+            return False
+        ol = owner_val.lower()
+        if ol == filt:
+            return True
+        prefix = ol.split("@")[0]
+        if prefix == filt:
+            return True
+        # Prime variations: "prime" matches "prime-*"
+        if ol == "prime" and (filt == "prime" or filt.startswith("prime-")):
+            return True
+        if (filt == "prime" or filt.startswith("prime-")) and (ol == "prime" or prefix == "prime"):
+            return True
+        # Segment match: split on - _ . and check if short name is a segment
+        segments = prefix.replace("_", "-").replace(".", "-").split("-")
+        return filt in segments
+    envelopes = [e for e in envelopes if match_owner(e["owner"], owner_filter)]
 
 if not envelopes:
     print("No work envelopes found matching criteria.")
