@@ -128,7 +128,7 @@ res = json.load(open('/tmp/docs-clone-create.json'))
 tab_id = ''
 for reply in res.get('replies', []):
     if 'addDocumentTab' in reply:
-        tab_id = reply['addDocumentTab'].get('tabId', '')
+        tab_id = reply['addDocumentTab'].get('tabProperties', {}).get('tabId', '')
         break
 print(tab_id)
 ")
