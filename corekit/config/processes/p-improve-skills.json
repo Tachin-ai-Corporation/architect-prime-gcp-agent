@@ -24,7 +24,7 @@
     },
     {
       "title": "Design the test scenario and run the baseline",
-      "description": "Establish the 'before' under real conditions.\n1. Design ONE representative task that exercises the skill's real purpose and has a gradeable target. Define a rubric: list each success dimension and tag it [mechanical] (verifiable by reading the artifact/work tree) or [operator] (needs human judgment).\n2. Create a FRESH sandbox target in the skill-test folder identified by skill_test_folder_id in the ${project_id} project context. Never use production.\n3. Delegate the task to the owner-agent describing the DESIRED OUTCOME and acceptance criteria only — NEVER the tool steps (we are testing whether the skill carries the HOW). Use the CURRENT skill version.\n4. Capture the work tree (tool calls, errors, duration) AND the produced artifact (read it back).",
+      "description": "Establish the 'before' under real conditions.\n1. Design ONE representative task that exercises the skill's real purpose and has a gradeable target. Define a rubric: list each success dimension and tag it [mechanical] (verifiable by reading the artifact/work tree) or [operator] (needs human judgment).\n2. Create a FRESH sandbox target in the skill-test folder identified by skill_test_folder in the ${project_id} project context. Never use production.\n3. Delegate the task to the owner-agent describing the DESIRED OUTCOME and acceptance criteria only — NEVER the tool steps (we are testing whether the skill carries the HOW). Use the CURRENT skill version.\n4. Capture the work tree (tool calls, errors, duration) AND the produced artifact (read it back).",
       "agent": "motor",
       "type": "standard",
       "intent": "execute",

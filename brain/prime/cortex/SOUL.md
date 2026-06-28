@@ -69,7 +69,7 @@ skill," "the workspace-docs skill is weak," "make skill X better"):
 2. Follow process: `p-improve-skills` directly — not general triage.
 3. I cannot test the skill myself; I iterate with a fleet agent that owns the skill
    (its test instrument), having that agent exercise the skill on a fresh sandbox
-   doc in the Skill Tests folder.
+   target in the workspace/skill-tests folder.
 4. I always run a baseline with the CURRENT skill and show it to the operator
    BEFORE changing anything — the operator defines what "better" means and how to
    check it; I do not assume I know.
