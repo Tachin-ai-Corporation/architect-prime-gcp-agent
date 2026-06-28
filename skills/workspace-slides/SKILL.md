@@ -59,8 +59,8 @@ slides-create --title "Q3 Report" --folder 1abc2def3ghi
 ### slides-get
 Read presentation content and slide structure.
 ```
-slides-get 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms
-slides-get 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms --slide 0
+slides-get 1xYz2AbC3dEfG4hIjK5lMnOpQ6rStUvWxYz789AbCdE
+slides-get 1xYz2AbC3dEfG4hIjK5lMnOpQ6rStUvWxYz789AbCdE --slide 0
 ```
 **Args:**
 | Arg | Required | Description |
@@ -73,7 +73,7 @@ slides-get 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms --slide 0
 ### slides-update
 Generic batch update — the workhorse for all mutations. Pass raw Slides API request objects.
 ```
-slides-update 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms --requests '[{"insertText":{"objectId":"g123","text":"Hello","insertionIndex":0}}]'
+slides-update 1xYz2AbC3dEfG4hIjK5lMnOpQ6rStUvWxYz789AbCdE --requests '[{"insertText":{"objectId":"g123","text":"Hello","insertionIndex":0}}]'
 ```
 **Args:**
 | Arg | Required | Description |
@@ -86,7 +86,7 @@ slides-update 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms --requests '[{"insert
 ### slides-add-slide
 Add a new slide with a predefined layout.
 ```
-slides-add-slide 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms --layout TITLE_AND_BODY --index 1
+slides-add-slide 1xYz2AbC3dEfG4hIjK5lMnOpQ6rStUvWxYz789AbCdE --layout TITLE_AND_BODY --index 1
 ```
 **Args:**
 | Arg | Required | Description |
@@ -102,7 +102,7 @@ slides-add-slide 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms --layout TITLE_AND
 ### slides-duplicate
 Duplicate an existing slide (copies all elements).
 ```
-slides-duplicate 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms --slide-id g2f1a3b4c5d
+slides-duplicate 1xYz2AbC3dEfG4hIjK5lMnOpQ6rStUvWxYz789AbCdE --slide-id g2f1a3b4c5d
 ```
 **Args:**
 | Arg | Required | Description |

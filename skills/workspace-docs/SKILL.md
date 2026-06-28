@@ -165,10 +165,10 @@ Outcome: 4 instances of "USD" replaced with "EUR".
 
 ### Example: Recovering from Access Denied
 ```
-Task: "Read the contents of the document with ID '1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk'."
+Task: "Read the contents of the document with ID '1AbC2dEfG3hIjK4lMnOpQ5rStUvWxYz6789AbCdEfG'."
 
-Step 1: docs-cat 1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk
-Output received: { "status": "access_denied", "docId": "1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk", "message": "Doc access denied. Share with assistant-agent-millie@example.com" }
+Step 1: docs-cat 1AbC2dEfG3hIjK4lMnOpQ5rStUvWxYz6789AbCdEfG
+Output received: { "status": "access_denied", "docId": "1AbC2dEfG3hIjK4lMnOpQ5rStUvWxYz6789AbCdEfG", "message": "Doc access denied. Share with assistant-agent-millie@example.com" }
 
 Step 2: GChat message to user: "Hey there! I tried to read the document you shared, but it looks like I don't have access. Could you please share it with assistant-agent-millie@example.com with Commenter or Editor access?"
 

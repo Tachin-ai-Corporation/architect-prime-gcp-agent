@@ -238,7 +238,15 @@ if [[ -n "$ROLE" ]]; then
     MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/role-fleet.txt")
     if [[ ${#JOB[@]} -gt 0 ]]; then
       for j in "${JOB[@]}"; do
-        MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/job-${j}.txt")
+        # Job manifests: operator/manifests/ (operator content) first,
+        # then infra/manifests/ (platform specialties) as fallback.
+        op_url="${CORE_BASE}/operator/manifests/job-${j}.txt"
+        infra_url="${CORE_BASE}/infra/manifests/job-${j}.txt"
+        if curl -sfI "$op_url" >/dev/null 2>&1; then
+          MANIFEST_URLS+=("$op_url")
+        else
+          MANIFEST_URLS+=("$infra_url")
+        fi
       done
     fi
   fi
@@ -421,6 +429,15 @@ if [[ -n "$TPL_AGENT_NAME" ]]; then
       -e "s|{{DEPLOY_TIMESTAMP}}|$(date -u +%Y-%m-%dT%H:%M:%SZ)|g" \
       "$f"
   done
+
+  # Also render contracts.json placeholders
+  CONTRACTS_FILE="${INSTALL_ROOT}/corekit/contracts.json"
+  if [[ -f "$CONTRACTS_FILE" ]]; then
+    TPL_GH_OWNER="$(curl -sf -H "$META_HEADER" "$META_URL/gh_owner" 2>/dev/null || echo "${GH_OWNER:-}")"
+    if [[ -n "$TPL_GH_OWNER" ]]; then
+      sed -i "s|YOUR_GITHUB_ORG|${TPL_GH_OWNER//&/\\&}|g" "$CONTRACTS_FILE"
+    fi
+  fi
 fi
 
 # ---- 7. Run contract validation (if script is available) ----
