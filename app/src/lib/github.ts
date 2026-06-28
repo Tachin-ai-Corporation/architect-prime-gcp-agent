@@ -16,7 +16,7 @@ function resolveEnv(name: string, fallback: string): string {
 }
 
 export function getGitHubOwner(): string {
-  return resolveEnv("GH_OWNER", process.env.NEXT_PUBLIC_GITHUB_ORG || 'YOUR_GITHUB_ORG');
+  return resolveEnv("GH_OWNER", process.env.NEXT_PUBLIC_GITHUB_ORG || 'Tachin-ai-Corporation');
 }
 
 export function getGitHubRepo(): string {
