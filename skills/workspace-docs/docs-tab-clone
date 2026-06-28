@@ -43,6 +43,14 @@ def find_tab(tabs, target_id):
         if found: return found
     return None
 
+def find_tab_by_title(tabs, title):
+    for t in tabs:
+        if t.get('tabProperties', {}).get('title') == title:
+            return t
+        found = find_tab_by_title(t.get('childTabs', []), title)
+        if found: return found
+    return None
+
 source_tab = find_tab(doc.get('tabs', []), source_tab_id)
 if not source_tab:
     print('error:Source tab not found', file=sys.stderr)
@@ -52,6 +60,9 @@ source_title = source_tab.get('tabProperties', {}).get('title', 'Unknown')
 pencil_emoji = '\u270f\ufe0f'
 em_dash = '\u2014'
 new_title = custom_title if custom_title else f'{pencil_emoji} Edits {em_dash} {source_title}'
+
+existing_tab = find_tab_by_title(doc.get('tabs', []), new_title)
+existing_tab_id = existing_tab.get('tabProperties', {}).get('tabId', '') if existing_tab else ''
 
 text_parts = []
 headings = []
@@ -86,6 +97,7 @@ with open('/tmp/docs-clone-data.json', 'w') as f:
     json.dump({
         'newTitle': new_title,
         'sourceTitle': source_title,
+        'existingTabId': existing_tab_id,
         'text': header_text + ''.join(text_parts),
         'headings': headings
     }, f)
@@ -96,15 +108,30 @@ SOURCE_TITLE=$(python3 -c "import json; print(json.load(open('/tmp/docs-clone-da
 
 CREATE_REQ=$(python3 -c "
 import json
-title = json.load(open('/tmp/docs-clone-data.json'))['newTitle']
-print(json.dumps({'requests':[{'addDocumentTab':{'tabProperties':{'title':title}}}]}))
+data = json.load(open('/tmp/docs-clone-data.json'))
+title = data['newTitle']
+existing_tab_id = data.get('existingTabId', '')
+requests = []
+if existing_tab_id:
+    requests.append({'deleteTab': {'tabId': existing_tab_id}})
+requests.append({'addDocumentTab': {'tabProperties': {'title': title}}})
+print(json.dumps({'requests': requests}))
 ")
 HTTP_CODE=$(curl -s -o /tmp/docs-clone-create.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "${CREATE_REQ}" "${DOCS_API}/${DOC_ID}:batchUpdate")
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to create tab, HTTP $HTTP_CODE"
 
-NEW_TAB_ID=$(python3 -c "import json; print(json.load(open('/tmp/docs-clone-create.json')).get('replies',[{}])[0].get('addDocumentTab',{}).get('tabId',''))")
+NEW_TAB_ID=$(python3 -c "
+import json
+res = json.load(open('/tmp/docs-clone-create.json'))
+tab_id = ''
+for reply in res.get('replies', []):
+    if 'addDocumentTab' in reply:
+        tab_id = reply['addDocumentTab'].get('tabId', '')
+        break
+print(tab_id)
+")
 [[ -n "$NEW_TAB_ID" ]] || die "Failed to get new tab ID"
 
 export NEW_TAB_ID
