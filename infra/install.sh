@@ -391,8 +391,37 @@ for check_file in \
     else
       die "Missing after install: $check_file"
     fi
-  fi
+   fi
 done
+
+# ---- 6b. Render workspace templates (if on GCE) ----
+# Workspace .md files contain {{AGENT_NAME}}, {{SPECIALTY}}, etc.
+# On bootstrap these are rendered by fleet-bootstrap.sh; on upgrade, install.sh
+# overwrites them with raw templates, so we must re-render here.
+META_URL="http://metadata.google.internal/computeMetadata/v1/instance/attributes"
+META_HEADER="Metadata-Flavor: Google"
+TPL_AGENT_NAME="$(curl -sf -H "$META_HEADER" "$META_URL/agent_display_name" 2>/dev/null || true)"
+if [[ -n "$TPL_AGENT_NAME" ]]; then
+  info "Rendering workspace templates..."
+  TPL_SPECIALTY="$(curl -sf -H "$META_HEADER" "$META_URL/specialty" 2>/dev/null || true)"
+  TPL_EMAIL="$(curl -sf -H "$META_HEADER" "$META_URL/agent_user_email" 2>/dev/null || true)"
+  TPL_PROJECT="$(curl -sf -H "$META_HEADER" "$META_URL/gemini_project" 2>/dev/null || echo "${GH_OWNER:-unknown}")"
+  # Escape sed-special chars
+  TPL_AGENT_NAME_ESC="${TPL_AGENT_NAME//&/\\&}"
+  TPL_SPECIALTY_ESC="${TPL_SPECIALTY//&/\\&}"
+  TPL_EMAIL_ESC="${TPL_EMAIL//&/\\&}"
+  TPL_PROJECT_ESC="${TPL_PROJECT//&/\\&}"
+  for f in "${INSTALL_ROOT}"/workspace*/*.md; do
+    [[ -f "$f" ]] || continue
+    sed -i \
+      -e "s|{{AGENT_NAME}}|${TPL_AGENT_NAME_ESC}|g" \
+      -e "s|{{SPECIALTY}}|${TPL_SPECIALTY_ESC}|g" \
+      -e "s|{{PROJECT_ID}}|${TPL_PROJECT_ESC}|g" \
+      -e "s|{{AGENT_USER_EMAIL}}|${TPL_EMAIL_ESC}|g" \
+      -e "s|{{DEPLOY_TIMESTAMP}}|$(date -u +%Y-%m-%dT%H:%M:%SZ)|g" \
+      "$f"
+  done
+fi
 
 # ---- 7. Run contract validation (if script is available) ----
 VALIDATE="${INSTALL_ROOT}/bin/validate-contracts"
