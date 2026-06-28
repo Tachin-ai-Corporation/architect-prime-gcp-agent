@@ -92,7 +92,7 @@ fi
 
 # ---- SSH and upgrade ----
 log "SSHing into ${FLEET_VM} to run upgrade..."
-UPGRADE_CMD="sudo GH_OWNER='${OWNER}' GH_REPO='${REPO}' CORE_REF='${TARGET_REF}' CORE_DIR=/opt/corekit /opt/corekit/bin/upgrade-corekit --apply '${TARGET_REF}' && echo 'UPGRADE_SUCCESS'"
+UPGRADE_CMD="sudo curl -fsSL 'https://raw.githubusercontent.com/${OWNER}/${REPO}/${TARGET_REF}/corekit/system/upgrade-corekit' -o /opt/corekit/bin/upgrade-corekit && sudo chmod +x /opt/corekit/bin/upgrade-corekit && sudo GH_OWNER='${OWNER}' GH_REPO='${REPO}' CORE_REF='${TARGET_REF}' CORE_DIR=/opt/corekit /opt/corekit/bin/upgrade-corekit --apply '${TARGET_REF}' && echo 'UPGRADE_SUCCESS'"
 
 RESULT="$(gcloud compute ssh "$FLEET_VM" \
   --zone="$FLEET_ZONE" \
