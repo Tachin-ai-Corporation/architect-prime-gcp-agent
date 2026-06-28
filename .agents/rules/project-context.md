@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.06.28.4.0)
+## Current Architecture (v2026.06.28.5.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -61,6 +61,13 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
   - **Manifest discipline (C-11)**: Removed 7 `sites/tachin-website/*` entries from `base.txt`. Website content does not ship as a base default.
   - **Example genericization**: All `SKILL.md`, `SOUL_APPEND.md`, workflow, and JSDoc examples use `@example.com` emails, `your-gcp-project`, `YOUR_DRIVE_FOLDER_ID`, etc.
   - **Dev debris cleanup**: Deleted `scratch/` directory (16 committed files with operator data) and added to `.gitignore`.
+- **Tiered Improvement System — REPO vs LOCAL (v2026.06.28.5.0)**:
+  - **9-module tiered model**: 7 REPO modules (daemons, souls, gateway, skills, dashboard, context-machinery, platform-processes) + 2 LOCAL modules (context-content, operator-processes). Replaces the flat 8-module set. Delegation module deleted — findings routed to owning modules.
+  - **Tier-landing skills**: `repo-improvement` (contamination scan via `fresh-install-scan` → branch → PR to `main`) and `local-improvement` (Firestore write or `operator/` overlay commit, no PR). Every REPO process references `repo-improvement`; every LOCAL process references `local-improvement`. The two paths share nothing.
+  - **`fresh-install-audit` skill**: Contains the `fresh-install-scan` script — the mandatory contamination gate for REPO PRs. Scans for operator-specific values (real emails, project IDs, Drive IDs, org names) in platform files.
+  - **Domain splits**: Context & Memory split into `p-improve-context-repo` (machinery code in corekit/) and `p-improve-context-local` (Firestore project context, core memory content — on-demand cousin of `p-memory-consolidate`). Work Layer split into `p-improve-work-layer-repo` (generic platform processes) and `p-improve-work-layer-local` (operator/ processes and Firestore project processes).
+  - **Machine-readable tiering**: Every `p-improve-*` process declares `"tier": "repo"` or `"tier": "local"`. Names prefixed `[REPO]` or `[LOCAL]`.
+  - **Entry process updates**: `p-triage-improvement` v2 and `p-review-and-improve` v2 classify into the 9-module tiered set with delegation routing rule (governance → daemons, instruction quality → souls, process steps → work-layer, operator patterns → context-local).
 - **Prime Skill-Framework Readiness (v2026.06.28.4.0)**:
   - **`p-improve-skills` v3**: Full 7-step baseline→improve→re-test cycle with 2 operator approval gates. Fleet agent loop (delegate to owner-agent as test instrument, not self-test). Drops phantom `validate-skills` dependency — grades structure by reading `docs/guides/SKILL_STANDARD.md`. Baseline-first methodology: operator sees "before" and defines what "better" means before any changes.
   - **Prime SOUL routing**: `Operator skill-improvement requests` section routes "improve the X skill" directly to `p-improve-skills`, not general triage. Six rules covering ownership, process routing, agent loop, baseline-first, operator judgment, PR workflow.
