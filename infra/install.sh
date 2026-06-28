@@ -220,7 +220,7 @@ fi
 echo "CoreKit : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "Target  : ${INSTALL_ROOT}"
 echo "Role    : ${ROLE:-all (legacy)}"
-echo "Job     : ${JOB[*]:-none}"
+if [[ ${#JOB[@]} -gt 0 ]]; then echo "Job     : ${JOB[*]}"; else echo "Job     : none"; fi
 
 # ---- 1. Build manifest list ----
 info "Building manifest..."
@@ -235,9 +235,11 @@ if [[ -n "$ROLE" ]]; then
     MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/role-prime.txt")
   elif [[ "$ROLE" == "fleet" ]]; then
     MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/role-fleet.txt")
-    for j in "${JOB[@]}"; do
-      MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/job-${j}.txt")
-    done
+    if [[ ${#JOB[@]} -gt 0 ]]; then
+      for j in "${JOB[@]}"; do
+        MANIFEST_URLS+=("${CORE_BASE}/infra/manifests/job-${j}.txt")
+      done
+    fi
   fi
 
   # Download and concatenate all fragments
