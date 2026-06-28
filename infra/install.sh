@@ -207,7 +207,11 @@ if [[ "$MODE" == "upgrade" ]]; then
     fi
     if [[ ${#JOB[@]} -eq 0 ]]; then
       EXISTING_JOB="$(json_value "job" "$STATE_FILE")"
-      [[ -n "$EXISTING_JOB" ]] && JOB+=("$EXISTING_JOB")
+      if [[ -n "$EXISTING_JOB" ]]; then
+        for j in $EXISTING_JOB; do
+          JOB+=("$j")
+        done
+      fi
     fi
     echo "Role      : ${ROLE:-legacy}"
     if [[ ${#JOB[@]} -gt 0 ]]; then echo "Job       : ${JOB[*]}"; else echo "Job       : none"; fi

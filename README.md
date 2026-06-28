@@ -105,6 +105,7 @@ bash infra/deploy/uninstall.sh
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2026.06.28.6.3 | 2026-06-28 | Fleet Upgrade Space-Separated Jobs Fix: corrected upgrade-corekit and install.sh to split existing space-separated jobs by word when reconstructing arguments for install.sh and running assemble-persona, preventing unknown argument failures (e.g. for archie with multiple jobs). |
 | v2026.06.28.6.2 | 2026-06-28 | Custom Repository Settings: added ability for user to configure GitHub organization/owner and repository name in the settings System tab, stored these settings in Firestore config/settings, and propagated them when executing upgrade scripts and triggering Cloud Builds. |
 | v2026.06.28.6.1 | 2026-06-28 | Prime CoreKit Upgrade Fix: resolved GH_OWNER and GH_REPO from STATE.json and GCE VM metadata in upgrade-corekit to prevent raw github 404/exit errors when environment variables are not populated, and handled RESOLVED_SHA retrieval errors gracefully without exiting the shell. |
 | v2026.06.28.6.0 | 2026-06-28 | CI Fixes & Fleet Upgrade Resilience: fixed delegation test to expect `drive: null` field (unit test failure), added missing `workspace-drive/skill.json` to `role-fleet.txt` manifest (contracts validation failure), hardened `fleet-upgrade` to resolve VM from GCP metadata instead of requiring local fleet-registry.json, added Firestore coreRef sync on successful upgrade so dashboard reflects new version. |

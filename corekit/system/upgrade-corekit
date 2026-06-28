@@ -104,7 +104,11 @@ case "${1:-}" in
     fi
     INSTALL_ARGS="--upgrade $RESOLVED_REF"
     [[ -n "$EXISTING_ROLE" ]] && INSTALL_ARGS="$INSTALL_ARGS --role $EXISTING_ROLE"
-    [[ -n "$EXISTING_JOB" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $EXISTING_JOB"
+    if [[ -n "$EXISTING_JOB" ]]; then
+      for j in $EXISTING_JOB; do
+        INSTALL_ARGS="$INSTALL_ARGS --job $j"
+      done
+    fi
     # Append operator job layers from VM metadata (comma-separated)
     OPERATOR_JOBS="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/operator_jobs' 2>/dev/null || true)"
     if [[ -n "$OPERATOR_JOBS" ]]; then
@@ -452,8 +456,10 @@ except:
     if [[ -x "$PERSONA_BIN" ]]; then
       PERSONA_TYPE="${TPL_SPECIALTY:-$EXISTING_JOB}"
       if [[ -n "$PERSONA_TYPE" ]]; then
-        echo "==> Assembling persona (specialty: ${PERSONA_TYPE})"
-        CORE_DIR="$CORE_ROOT" "$PERSONA_BIN" "$PERSONA_TYPE" 2>&1 || echo "  (assemble-persona failed)"
+        for pt in $PERSONA_TYPE; do
+          echo "==> Assembling persona (specialty: ${pt})"
+          CORE_DIR="$CORE_ROOT" "$PERSONA_BIN" "$pt" 2>&1 || echo "  (assemble-persona failed for $pt)"
+        done
       fi
     fi
 
