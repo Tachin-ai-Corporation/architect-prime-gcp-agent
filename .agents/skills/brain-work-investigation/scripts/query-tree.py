@@ -29,7 +29,7 @@ all_docs = []
 page_token = None
 
 while True:
-    url = 'https://firestore.googleapis.com/v1/projects/architect-prime-beta/databases/(default)/documents/primes/chuck/work?pageSize=300'
+    url = 'https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents/primes/chuck/work?pageSize=300'
     if page_token:
         url += f'&pageToken={page_token}'
     

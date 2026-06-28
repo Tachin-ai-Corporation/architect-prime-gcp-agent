@@ -5,7 +5,8 @@ const { registerWatch } = require('./watchHandler');
 const app = express();
 app.use(express.json());
 
-const FOLDER_ID = process.env.DRIVE_FOLDER_ID || '1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV';
+const FOLDER_ID = process.env.DRIVE_FOLDER_ID;
+if (!FOLDER_ID) throw new Error('DRIVE_FOLDER_ID env var is required');
 
 // Legacy routes
 app.post('/', syncService);

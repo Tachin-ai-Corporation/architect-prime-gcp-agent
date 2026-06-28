@@ -29,20 +29,20 @@ To test a specific fleet agent skill (e.g., `workspace-drive`, `web-search`, or 
 
 ### A. Resolve target parameters
 1. **Target Agent & Email**:
-   - Stan (DevOps): `devops-agent-stan@tachin.ag`
-   - Bobby (SWE): `engineer-agent-bobby@tachin.ag`
-   - Archie (Architect): `product-architect-agent-archie@tachin.ag`
-   - Dot (Designer): `designer-agent-dot@tachin.ag`
+   - Stan (DevOps): `devops-agent-stan@example.com`
+   - Bobby (SWE): `engineer-agent-bobby@example.com`
+   - Archie (Architect): `product-architect-agent-archie@example.com`
+   - Dot (Designer): `designer-agent-dot@example.com`
 2. **Project GChat Space**:
-   - Locate the target project in the Firestore `projects/` collection to find its `gchat_space_id` (e.g., `Project: tachin-website` -> `GChat Space: AAQA2JEusfs`).
-   - The corresponding GChat space ID is `spaces/AAQA2JEusfs`.
+   - Locate the target project in the Firestore `projects/` collection to find its `gchat_space_id` (e.g., `Project: your-website-project` -> `GChat Space: EXAMPLE_SPACE_ID`).
+   - The corresponding GChat space ID is `spaces/EXAMPLE_SPACE_ID`.
 
 ### B. Inject message using Domain-Wide Delegation (DWD)
 Run `chat-send` via SSH on `fleet-archie` to send a message as Archie. Archie's VM has a properly configured DWD signer SA, so impersonation works correctly.
 
 ```powershell
 # SSH to fleet-archie and send a GChat mention trigger (as Archie)
-echo y | gcloud compute ssh fleet-archie --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="CORE_DIR=/opt/corekit AGENT_USER_EMAIL=product-architect-agent-archie@tachin.ag CHAT_SPACE_ID=spaces/AAQA2JEusfs /opt/corekit/bin/chat-send '@Devops-Agent Stan please search Google Drive for the website asset folder and verify its contents.'"
+echo y | gcloud compute ssh fleet-archie --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="CORE_DIR=/opt/corekit AGENT_USER_EMAIL=product-architect-agent-archie@example.com CHAT_SPACE_ID=spaces/EXAMPLE_SPACE_ID /opt/corekit/bin/chat-send '@Devops-Agent Stan please search Google Drive for the website asset folder and verify its contents.'"
 ```
 
 > **⚠️ Self-Message Filtering**: `chat-send` sends AS the agent specified in `AGENT_USER_EMAIL`. The agent's ears daemon filters out its own messages, so sending AS agent X to trigger agent X **will not work**. Either:
@@ -59,13 +59,13 @@ Write a bash script that creates a pending intake doc directly in Firestore. Thi
 #!/bin/bash
 # inject-intake.sh — direct Firestore intake injection
 TOKEN=$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
-BASE="https://firestore.googleapis.com/v1/projects/architect-prime-beta/databases/(default)/documents"
+BASE="https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents"
 TS=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
 ID="intake-$(date +%s)-$$"
 
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   "$BASE/primes/chuck/intake?documentId=$ID" \
-  -d '{"fields":{"id":{"stringValue":"'"$ID"'"},"source":{"stringValue":"gchat"},"sender":{"stringValue":"christopher@tachin.ag"},"text":{"stringValue":"YOUR INSTRUCTION HERE"},"source_meta":{"mapValue":{"fields":{"agentId":{"stringValue":"TARGET_AGENT_ID"},"space_id":{"stringValue":"spaces/AAQA2JEusfs"}}}},"mentions_me":{"booleanValue":true},"timestamp":{"stringValue":"'"$TS"'"},"created_at":{"stringValue":"'"$TS"'"},"status":{"stringValue":"pending"}}}'
+  -d '{"fields":{"id":{"stringValue":"'"$ID"'"},"source":{"stringValue":"gchat"},"sender":{"stringValue":"owner@example.com"},"text":{"stringValue":"YOUR INSTRUCTION HERE"},"source_meta":{"mapValue":{"fields":{"agentId":{"stringValue":"TARGET_AGENT_ID"},"space_id":{"stringValue":"spaces/EXAMPLE_SPACE_ID"}}}},"mentions_me":{"booleanValue":true},"timestamp":{"stringValue":"'"$TS"'"},"created_at":{"stringValue":"'"$TS"'"},"status":{"stringValue":"pending"}}}'
 ```
 
 Use the SCP Script Pattern from `/firestore-query` to upload and execute this on prime-chuck.
@@ -80,18 +80,18 @@ SSH into the target agent's VM (e.g., `fleet-stan` for Stan, `fleet-bobby` for B
 
 ```powershell
 # Check ears daemon logs (reception check)
-echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -n 50 /var/log/agent-ears.log"
+echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo tail -n 50 /var/log/agent-ears.log"
 
 # Tail brain daemon logs (classification, checkpoint planning, actions)
-echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-brain -n 50 -f"
+echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo journalctl -u agent-brain -n 50 -f"
 
 # Tail gateway logs (real-time LLM interactions & tool calls)
-echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-neural-gateway -n 50 -f"
+echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo journalctl -u agent-neural-gateway -n 50 -f"
 ```
 
 ### B. Track Firestore Work Envelopes
 Check the `work` collection under `primes/chuck/work/` for the generated envelopes.
-- Look for the top-level mission envelope (`type=M`, `status=active`, `owner=devops-agent-stan@tachin.ag`).
+- Look for the top-level mission envelope (`type=M`, `status=active`, `owner=devops-agent-stan@example.com`).
 - Track the child checkpoints (`type=C`) and tasks (`type=T`) spawned by Prefrontal.
 
 ---
@@ -112,7 +112,7 @@ When a fix is made in the codebase (e.g., editing a script in `corekit/` or upda
 2. **Push to main**: Push the branch to GitHub.
 3. **Upgrade VM**: Upgrade the target agent VM via the dashboard **Upgrade** button, or run the following command on the agent's GCE host:
    ```powershell
-   echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo /opt/corekit/bin/upgrade-corekit --apply main"
+   echo y | gcloud compute ssh fleet-stan --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo /opt/corekit/bin/upgrade-corekit --apply main"
    ```
 
 ---

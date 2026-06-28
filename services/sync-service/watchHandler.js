@@ -1,8 +1,10 @@
 const { google } = require('googleapis');
 const crypto = require('crypto');
 
-const PUBLIC_FOLDER_ID = process.env.DRIVE_PUBLIC_FOLDER_ID || '1mdirwpy-ecggSAh6dExXVfFSTSBv7FJt';
-const ROOT_FOLDER_ID = process.env.DRIVE_FOLDER_ID || '1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV';
+const PUBLIC_FOLDER_ID = process.env.DRIVE_PUBLIC_FOLDER_ID;
+if (!PUBLIC_FOLDER_ID) throw new Error('DRIVE_PUBLIC_FOLDER_ID env var is required');
+const ROOT_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
+if (!ROOT_FOLDER_ID) throw new Error('DRIVE_FOLDER_ID env var is required');
 
 async function registerWatch(req, res) {
   try {
@@ -11,7 +13,8 @@ async function registerWatch(req, res) {
     });
     const drive = google.drive({ version: 'v3', auth });
 
-    const serviceUrl = process.env.SERVICE_URL || 'https://sync-service-m32774wz2q-uc.a.run.app';
+    const serviceUrl = process.env.SERVICE_URL;
+    if (!serviceUrl) throw new Error('SERVICE_URL env var is required');
     const address = `${serviceUrl}/sync-all`;
 
     // Register watches on BOTH the root folder AND the public subfolder.

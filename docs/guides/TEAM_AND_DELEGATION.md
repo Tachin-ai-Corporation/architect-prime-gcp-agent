@@ -8,7 +8,7 @@ Each project carries a `team` array of members:
 
 ```json
 {
-  "email": "swe-agent-bobby@tachin.ag",
+  "email": "swe-agent-bobby@example.com",
   "role": "engineer",
   "name": "Bobby",
   "type": "agent"
@@ -28,10 +28,10 @@ All operations use the `project-manage` motor tool:
 
 ```bash
 # Add a team member
-project-manage team-add '<projectId>' '{"email":"bobby@tachin.ag","role":"engineer","name":"Bobby","type":"agent"}'
+project-manage team-add '<projectId>' '{"email":"bobby@example.com","role":"engineer","name":"Bobby","type":"agent"}'
 
 # Remove a team member
-project-manage team-remove '<projectId>' 'bobby@tachin.ag'
+project-manage team-remove '<projectId>' 'bobby@example.com'
 
 # List team members (included in project-manage get output)
 project-manage get '<projectId>'
@@ -76,8 +76,8 @@ sequenceDiagram
 ## Example: Architect Delegates to Engineer
 
 Project `proj-self-improvement` has team members:
-- Archie (`archie@tachin.ag`) — architect
-- Bobby (`bobby@tachin.ag`) — engineer
+- Archie (`archie@example.com`) — architect
+- Bobby (`bobby@example.com`) — engineer
 
 **Scenario:** Archie's mission is "Improve the project README." Archie researches best practices and decides the actual writing belongs to Bobby.
 
@@ -85,7 +85,7 @@ Cortex returns:
 ```json
 {
   "action": "delegate",
-  "target_email": "bobby@tachin.ag",
+  "target_email": "bobby@example.com",
   "instruction": "Write a comprehensive README.md for proj-self-improvement. Include: project purpose, setup instructions, architecture overview, and contribution guide. Use the research notes in shared/w-abc123/research.md.",
   "accept_criteria": "README.md exists in repo root with all four sections, passes markdown lint",
   "project_id": "proj-self-improvement"

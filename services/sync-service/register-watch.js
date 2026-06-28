@@ -8,7 +8,10 @@ async function watchFolder() {
     });
     const drive = google.drive({ version: 'v3', auth });
 
-    const folderId = '1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV';
+    const folderId = process.env.DRIVE_FOLDER_ID;
+    if (!folderId) throw new Error('DRIVE_FOLDER_ID env var is required');
+    const serviceUrl = process.env.SERVICE_URL;
+    if (!serviceUrl) throw new Error('SERVICE_URL env var is required');
     const channelId = crypto.randomUUID();
 
     console.log(`Registering watch for folder: ${folderId}`);
@@ -19,7 +22,7 @@ async function watchFolder() {
       requestBody: {
         id: channelId,
         type: 'web_hook',
-        address: 'https://sync-service-85486025845.us-central1.run.app/sync-all',
+        address: `${serviceUrl}/sync-all`,
         token: folderId
       }
     });

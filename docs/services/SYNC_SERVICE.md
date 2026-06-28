@@ -2,21 +2,21 @@
 
 ## Overview
 
-The sync service keeps the **tachin-website** Firebase Hosting deployment in sync with changes made to the Google Drive source folder. It operates as a **Cloud Run service** that watches for Drive changes and automatically propagates them to the live site.
+The sync service keeps a Firebase Hosting deployment in sync with changes made to the Google Drive source folder. It operates as a **Cloud Run service** that watches for Drive changes and automatically propagates them to the live site.
 
 ## Pipeline
 
 ```
 Google Drive            →  sync-service  →  GCS Bucket              →  proxy-service  →  Firebase Hosting
-(root folder)              (Cloud Run)       (tachin-website-assets)     (Cloud Run)       (tachin-website.web.app)
-1s5yUdEH5M5ugISHG9o...                      /public/ prefix
+(root folder)              (Cloud Run)       (your-website-assets)       (Cloud Run)       (your-project.web.app)
+YOUR_DRIVE_FOLDER_ID                         /public/ prefix
 ```
 
 ### How It Works
 
 1. **Drive Watch**: On startup, the sync-service auto-registers [Drive API `files.watch()`](https://developers.google.com/drive/api/reference/rest/v3/files/watch) channels on **both** the root website folder AND the `public/` subfolder, pointing notifications to its own `/sync-all` endpoint. ⚠️ `files.watch()` only monitors the watched item itself — NOT its children. That's why both folders must be watched individually.
 2. **Change Detection**: When a file is added, updated, or deleted in a watched folder, Google sends an HTTP POST notification to the sync-service's `/sync-all` endpoint
-3. **Full Sync**: The sync-service traverses the entire Drive folder tree, syncing files from **subdirectories only** (root-level files are ignored by design) to the `tachin-website-assets` GCS bucket under the `public/` prefix
+3. **Full Sync**: The sync-service traverses the entire Drive folder tree, syncing files from **subdirectories only** (root-level files are ignored by design) to the `your-website-assets` GCS bucket under the `public/` prefix
 4. **Deletion Reconciliation**: Files in GCS that no longer exist in Drive subfolders are automatically deleted
 5. **Proxy Service**: The proxy-service Cloud Run instance serves files from the GCS bucket
 6. **Firebase Hosting**: Firebase rewrites route requests through the proxy to serve the synced content
@@ -37,23 +37,23 @@ The sync-service **must** run with `min-instances=1`. If the service scales to z
 
 Firebase Hosting uses a Cloud Run rewrite (`/public/**` → `proxy-service`) to serve GCS files. The hosting config is stored in `services/hosting/firebase.json`. After any change, deploy with:
 ```bash
-firebase deploy --only hosting --project=tachin-website
+firebase deploy --only hosting --project=your-website-project
 ```
 
 ## Infrastructure
 
 | Component | Type | URL | Project |
 |-----------|------|-----|---------|
-| sync-service | Cloud Run | `https://sync-service-m32774wz2q-uc.a.run.app` | tachin-website |
-| proxy-service | Cloud Run | `https://proxy-service-85486025845.us-central1.run.app` | tachin-website |
-| GCS Bucket | Cloud Storage | `gs://tachin-website-assets` | tachin-website |
-| Firebase Hosting | Hosting | `https://tachin-website.web.app` | tachin-website |
-| Drive Root Folder | Google Drive | `1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV` | — |
-| Drive Public Folder | Google Drive | `1mdirwpy-ecggSAh6dExXVfFSTSBv7FJt` | — |
+| sync-service | Cloud Run | `https://your-sync-service.run.app` | your-website-project |
+| proxy-service | Cloud Run | `https://your-proxy-service.run.app` | your-website-project |
+| GCS Bucket | Cloud Storage | `gs://your-website-assets` | your-website-project |
+| Firebase Hosting | Hosting | `https://your-project.web.app` | your-website-project |
+| Drive Root Folder | Google Drive | `YOUR_DRIVE_FOLDER_ID` | — |
+| Drive Public Folder | Google Drive | `YOUR_DRIVE_PUBLIC_FOLDER_ID` | — |
 
 ### Service Account
 
-`drive-sync-sa@tachin-website.iam.gserviceaccount.com` — used by the Cloud Run service. Needs:
+`drive-sync-sa@your-gcp-project.iam.gserviceaccount.com` — used by the Cloud Run service. Needs:
 - Google Drive read access to the root folder
 - `roles/storage.objectAdmin` on the GCS bucket
 
@@ -61,11 +61,11 @@ firebase deploy --only hosting --project=tachin-website
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `DRIVE_FOLDER_ID` | `1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV` | Root website folder in Google Drive |
-| `GCS_BUCKET_NAME` | `tachin-website-assets` | Target GCS bucket |
+| `DRIVE_FOLDER_ID` | `YOUR_DRIVE_FOLDER_ID` | Root website folder in Google Drive |
+| `GCS_BUCKET_NAME` | `your-website-assets` | Target GCS bucket |
 | `GCS_PREFIX` | `public` | Prefix for synced files in GCS |
-| `FIREBASE_PROJECT` | `tachin-website` | Firebase project ID |
-| `SERVICE_URL` | `https://sync-service-m32774wz2q-uc.a.run.app` | Self-URL for Drive watch registration |
+| `FIREBASE_PROJECT` | `your-website-project` | Firebase project ID |
+| `SERVICE_URL` | `https://your-sync-service.run.app` | Self-URL for Drive watch registration |
 
 ### Endpoints
 
@@ -91,7 +91,7 @@ The Drive API watch channel expires every **~24 hours**. The sync-service auto-r
 
 ### Manual Watch Renewal
 ```bash
-curl -X POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch
+curl -X POST https://your-sync-service.run.app/renew-watch
 ```
 
 ## Relationship to Full Website Deploy
@@ -116,7 +116,7 @@ curl -X POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch
 Use Stan's `firebase-hosting-diagnostics` skill for ad-hoc troubleshooting:
 
 ```
-@Devops-Agent Stan diagnose the sync service for tachin-website
+@Devops-Agent Stan diagnose the sync service for your-website-project
 ```
 
 This runs a 6-step diagnostic walkthrough covering every stage of the pipeline.
@@ -125,16 +125,16 @@ This runs a 6-step diagnostic walkthrough covering every stage of the pipeline.
 
 ```bash
 # Sync service logs
-gcloud run services logs read sync-service --project=tachin-website --region=us-central1 --limit=20
+gcloud run services logs read sync-service --project=your-website-project --region=us-central1 --limit=20
 
 # Check watch status
-gcloud run services logs read sync-service --project=tachin-website --region=us-central1 --limit=30 | grep -E 'watch|expir|renew'
+gcloud run services logs read sync-service --project=your-website-project --region=us-central1 --limit=30 | grep -E 'watch|expir|renew'
 
 # GCS bucket contents
-gsutil ls gs://tachin-website-assets/public/
+gsutil ls gs://your-website-assets/public/
 
 # Renew watch manually
-curl -X POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch
+curl -X POST https://your-sync-service.run.app/renew-watch
 ```
 
 ## Troubleshooting

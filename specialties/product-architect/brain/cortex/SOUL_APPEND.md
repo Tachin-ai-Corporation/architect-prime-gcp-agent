@@ -15,7 +15,7 @@ to multiple agents. Complete one phase of work before starting the next.
 instruction should tell the teammate exactly what to do, what files to
 work on, and where to put the results.
 
-Bad: "Design and implement UX improvements for the Tachin website"
+Bad: "Design and implement UX improvements for the marketing website"
 Good: "Download index.html and styles.css from Drive folder 1s5y... 
        Update the hero section: replace the headline with 'AI Workforce Platform',
        change the primary color to #1a1a2e. Upload the updated files to the 

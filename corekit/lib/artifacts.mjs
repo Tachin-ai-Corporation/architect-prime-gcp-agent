@@ -22,7 +22,7 @@ import { getGceToken } from './gce-auth.mjs';
  * @param {string}   deps.config.coreDir       - e.g. '/opt/corekit'
  * @param {string}   deps.config.primeId       - e.g. 'chucknorris'
  * @param {string}   deps.config.agentId       - e.g. 'stan'
- * @param {string}   deps.config.agentEmail    - e.g. 'devops-agent-stan@tachin.ag'
+ * @param {string}   deps.config.agentEmail    - e.g. 'devops-agent-stan@example.com'
  * @param {string}   deps.config.gcpProject    - GCP project ID
  * @returns {object} Artifact manager API
  */

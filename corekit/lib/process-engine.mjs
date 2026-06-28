@@ -29,7 +29,7 @@ import { toStr } from './to-str.mjs';
  * @param {string} deps.config.primeId       - e.g. 'chuck'
  * @param {string} deps.config.agentId       - e.g. 'stan'
  * @param {string} [deps.config.agentEmail]  - e.g. 'stan@...'
- * @param {string} deps.config.gcpProject    - e.g. 'architect-prime-beta'
+ * @param {string} deps.config.gcpProject    - e.g. 'your-gcp-project'
  * @param {function} deps.generateId         - (prefix) => string
  * @param {function} deps.writeHistory       - async (envelopeId, prevStatus, newStatus, actor, detail) => void
  * @param {function} deps.recallMemory       - async (query) => string

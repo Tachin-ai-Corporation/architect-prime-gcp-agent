@@ -79,7 +79,7 @@ GChat message → agent-ears → intake (Firestore) → agent-brain → work env
 - `maxTokens` must account for thinking budget — 30 tokens is NOT enough
 
 ### 2. Owner Field Mismatch
-- Envelopes store `owner` as full email: `devops-agent-stan@tachin.ag`
+- Envelopes store `owner` as full email: `devops-agent-stan@example.com`
 - `AGENT_EMAIL` env var is often empty; `AGENT_ID` is just `stan`
 - When filtering by owner, use `includes(AGENT_ID)` not strict equality
 

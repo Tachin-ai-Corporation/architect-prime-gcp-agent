@@ -108,8 +108,8 @@ When you discover a fact about a project during execution that would help future
 
 Examples of useful discoveries:
 - `sync_folder_requires_editor` → "Editor access required for all agents uploading to sync folder"
-- `deploy_command_verified` → "firebase deploy --project tachin-website --only hosting"
-- `staging_url` → "tachin-website--staging-abc123.web.app"
+- `deploy_command_verified` → "firebase deploy --project your-website-project --only hosting"
+- `staging_url` → "your-website-project--staging-abc123.web.app"
 - `css_build_step_required` → "Must run npm run build before deploying; raw source files won't work"
 
 **Rule:** If you learn something that would save the next agent time on this project, write it to project context. Don't rely on mission output alone — context is the project's institutional memory.

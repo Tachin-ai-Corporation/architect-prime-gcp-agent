@@ -1,0 +1,29 @@
+# Tachin Website — operator job manifest
+# Install this layer only on agents that manage the Tachin website.
+# Usage: install.sh --job tachin-website
+
+# Website source files
+operator/sites/tachin-website/index.html sites/tachin-website/index.html
+operator/sites/tachin-website/about.html sites/tachin-website/about.html
+operator/sites/tachin-website/security.html sites/tachin-website/security.html
+operator/sites/tachin-website/privacy.html sites/tachin-website/privacy.html
+operator/sites/tachin-website/terms.html sites/tachin-website/terms.html
+operator/sites/tachin-website/newly-released.html sites/tachin-website/newly-released.html
+operator/sites/tachin-website/styles.css sites/tachin-website/styles.css
+
+# Tachin-specific processes
+operator/processes/p-web-content.json corekit/config/processes/p-web-content.json
+operator/processes/p-web-deploy.json corekit/config/processes/p-web-deploy.json
+operator/processes/p-web-design.json corekit/config/processes/p-web-design.json
+operator/processes/p-web-feature.json corekit/config/processes/p-web-feature.json
+operator/processes/p-web-verify.json corekit/config/processes/p-web-verify.json
+operator/processes/p-publicfile-health.json corekit/config/processes/p-publicfile-health.json
+operator/processes/p-publicfile-publish.json corekit/config/processes/p-publicfile-publish.json
+
+# Devops responsibilities (sync health, etc.)
+operator/responsibilities/responsibilities-devops.json corekit/responsibilities-devops.json
+
+# Design docs
+operator/docs/TACHIN_DESIGN_SYSTEM.md docs/design/TACHIN_DESIGN_SYSTEM.md
+operator/docs/TACHIN_SITE_IA.md docs/design/TACHIN_SITE_IA.md
+operator/docs/TACHIN_WEB_PROJECTS_PLAN.md docs/plans/TACHIN_WEB_PROJECTS_PLAN.md

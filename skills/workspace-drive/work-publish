@@ -4,8 +4,8 @@
 #
 # Usage:
 #   work-publish <file> [--project <project-id>] [--subfolder <name>]
-#   work-publish <file> --project tachin-website              → {project}/MM-DD/<file>
-#   work-publish <file> --project tachin-website --subfolder assets → {project}/assets/<file>
+#   work-publish <file> --project your-website-project              → {project}/MM-DD/<file>
+#   work-publish <file> --project your-website-project --subfolder assets → {project}/assets/<file>
 #   work-publish <file>                                        → {prime}/{agent}/MM-DD/<file>
 #
 # Reads artifacts_root_folder_id from Firestore config/settings.

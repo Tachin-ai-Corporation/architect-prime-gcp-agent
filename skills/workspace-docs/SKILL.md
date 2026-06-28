@@ -157,9 +157,9 @@ Outcome: 4 instances of "USD" replaced with "EUR".
 Task: "Read the contents of the document with ID '1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk'."
 
 Step 1: docs-cat 1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk
-→ Result: { "status": "access_denied", "docId": "1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk", "message": "Doc access denied. Share with assistant-agent-millie@tachin.ag" }
+→ Result: { "status": "access_denied", "docId": "1K1qmGve-zgKlpRBNSncvp7yeypiZ1AzgnqD11ggMsHk", "message": "Doc access denied. Share with assistant-agent-millie@example.com" }
 
-Step 2: GChat message to user: "Hey there! I tried to read the document you shared, but it looks like I don't have access. Could you please share it with assistant-agent-millie@tachin.ag with Commenter or Editor access?"
+Step 2: GChat message to user: "Hey there! I tried to read the document you shared, but it looks like I don't have access. Could you please share it with assistant-agent-millie@example.com with Commenter or Editor access?"
 
 Outcome: Agent correctly flags the permissions issue to the user and provides their email address for sharing.
 ```

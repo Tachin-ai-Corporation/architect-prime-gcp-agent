@@ -23,7 +23,7 @@ MH="Metadata-Flavor: Google"
 PRIME_ID="$(curl -sf -H "$MH" "$META/instance/attributes/prime_id" || echo 'unknown')"
 AGENT_ID="$(curl -sf -H "$MH" "$META/instance/attributes/agent_id" || echo 'prime')"
 CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo 'main')"
-GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo 'Tachin-ai-Corporation')"
+GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo 'YOUR_GITHUB_ORG')"
 GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo 'architect-prime-gcp-agent')"
 GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
 

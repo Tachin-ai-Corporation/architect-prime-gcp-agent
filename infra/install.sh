@@ -70,7 +70,7 @@ if [[ -n "$ROLE" && "$ROLE" != "prime" && "$ROLE" != "fleet" ]]; then
 fi
 
 # ---- CONFIG (env-overridable) ----
-GH_OWNER="${GH_OWNER:-Tachin-ai-Corporation}"
+GH_OWNER="${GH_OWNER:-YOUR_GITHUB_ORG}"
 GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
 CORE_REF="${CORE_REF:-main}"
 INSTALL_ROOT="${CORE_ROOT:-/opt/corekit}"

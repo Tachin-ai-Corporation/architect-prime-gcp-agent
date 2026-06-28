@@ -143,14 +143,7 @@ corekit/config/processes/p-web-verify.json corekit/processes/p-web-verify.json
 corekit/config/processes/p-publicfile-publish.json corekit/processes/p-publicfile-publish.json
 corekit/config/processes/p-publicfile-health.json corekit/processes/p-publicfile-health.json
 
-# Website source (git is the source of truth)
-sites/tachin-website/index.html sites/tachin-website/index.html
-sites/tachin-website/about.html sites/tachin-website/about.html
-sites/tachin-website/security.html sites/tachin-website/security.html
-sites/tachin-website/privacy.html sites/tachin-website/privacy.html
-sites/tachin-website/terms.html sites/tachin-website/terms.html
-sites/tachin-website/newly-released.html sites/tachin-website/newly-released.html
-sites/tachin-website/styles.css sites/tachin-website/styles.css
+
 
 # Introspect â€” filesystem introspection service (Firestore bus)
 corekit/daemon/agent-introspect.mjs bin/agent-introspect.mjs

@@ -1,4 +1,4 @@
-# Tachin Public File Service
+# Public File Service
 
 ## Overview
 
@@ -28,9 +28,9 @@ Google Drive  →  sync-service (Cloud Run)  →  GCS Bucket  →  proxy-service
 | ----------------- | ------------------------------------------------------------------ |
 | Sync Service      | `https://sync-service-<hash>.run.app`                              |
 | Proxy Service     | `https://proxy-service-<hash>.run.app`                             |
-| GCS Bucket        | `tachin-website-assets`                                            |
-| Drive Source Folder | `1mdirwpy-ecggSAh6dExXVfFSTSBv7FJt`                             |
-| Service Account   | `drive-sync-sa@tachin-website.iam.gserviceaccount.com`             |
+| GCS Bucket        | `your-website-assets`                                              |
+| Drive Source Folder | `YOUR_DRIVE_PUBLIC_FOLDER_ID`                                    |
+| Service Account   | `drive-sync-sa@your-gcp-project.iam.gserviceaccount.com`           |
 
 ---
 
@@ -94,8 +94,8 @@ POST {sync-service-url}/renew-watch
 
 | Concern                     | Rule                                                                  |
 | --------------------------- | --------------------------------------------------------------------- |
-| **Public file service**     | Serves `/public/**` on `tachin-website.web.app`                       |
+| **Public file service**     | Serves `/public/**` on `your-project.web.app`                         |
 | **Marketing website**       | Serves everything else at the root (`/`, `/about`, etc.)              |
 | **Firebase rewrite**        | The `/public/**` rewrite in `firebase.json` **MUST be preserved** by all website deploys |
-| **GCP Projects**            | These are two separate *work-management* projects (`tachin-public-files` vs `tachin-website`) but share the same GCP project (`tachin-website`) |
+| **GCP Projects**            | These are two separate *work-management* projects (`your-public-files` vs `your-website-project`) but share the same GCP project (`your-website-project`) |
 | **Source of truth**         | Drive folder is source of truth for public files; git is source of truth for the website |

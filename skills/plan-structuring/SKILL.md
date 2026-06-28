@@ -139,14 +139,14 @@ with `type: "delegation"` tasks targeting different teammates.
         {
           "agent": "designer",
           "type": "delegation",
-          "target_email": "designer-agent-dot@tachin.ag",
+          "target_email": "designer-agent-dot@example.com",
           "task": "Audit the website UX and provide improvement recommendations",
           "accept_criteria": "Report with specific UX improvement recommendations"
         },
         {
           "agent": "devops",
           "type": "delegation",
-          "target_email": "devops-agent-stan@tachin.ag",
+          "target_email": "devops-agent-stan@example.com",
           "task": "Run sync-service health check and verify deployment",
           "accept_criteria": "Report confirming service status and sync timestamp"
         }
@@ -178,7 +178,7 @@ with `type: "delegation"` tasks targeting different teammates.
         {
           "agent": "designer",
           "type": "delegation",
-          "target_email": "designer-agent-dot@tachin.ag",
+          "target_email": "designer-agent-dot@example.com",
           "task": "Apply UX improvements to the website",
           "accept_criteria": "Updated design files or mockups"
         }

@@ -24,8 +24,8 @@ description: Working process for developing architect-prime-gcp-agent — checkp
 The dashboard itself is a Cloud Run service. App changes need a separate build:
 
 ```powershell
-gcloud builds submit --tag us-docker.pkg.dev/architect-prime-beta/architect-prime/control-plane:latest --project=architect-prime-beta app/
-gcloud run deploy architect-prime --image=us-docker.pkg.dev/architect-prime-beta/architect-prime/control-plane:latest --region=us-central1 --project=architect-prime-beta --allow-unauthenticated
+gcloud builds submit --tag us-docker.pkg.dev/your-gcp-project/architect-prime/control-plane:latest --project=your-gcp-project app/
+gcloud run deploy architect-prime --image=us-docker.pkg.dev/your-gcp-project/architect-prime/control-plane:latest --region=us-central1 --project=your-gcp-project --allow-unauthenticated
 ```
 
 Or use the dashboard's **Upgrade Dashboard** button (triggers Cloud Build automatically).

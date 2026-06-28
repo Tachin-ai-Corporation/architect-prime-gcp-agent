@@ -1,6 +1,6 @@
 # Architect Prime — CoreKit
 
-> Generated from: `Tachin-ai-Corporation/architect-prime-gcp-agent@main`
+> Generated from: `YOUR_GITHUB_ORG/architect-prime-gcp-agent@main`
 
 ## What this is
 A manifest-driven "core kit" for Architect Prime that includes:

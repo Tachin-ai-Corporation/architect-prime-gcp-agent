@@ -25,7 +25,7 @@ project-manage team-list <id>                          # List team members
 
 ## Team Member Schema
 ```json
-{"email": "agent@tachin.ag", "role": "engineer", "name": "Bobby", "type": "agent"}
+{"email": "agent@example.com", "role": "engineer", "name": "Bobby", "type": "agent"}
 ```
 - `email` (required): Agent or human email
 - `role` (required, free-form): e.g. engineer, architect, owner, pm
@@ -78,10 +78,10 @@ Cortex sees project context in every decide call. Canon entries appear FIRST wit
 ## Examples
 ```bash
 # Set a canon entry (authoritative fact)
-project-manage canon-set tachin-website architecture The main website is index.html at the root. NOT in /public.
+project-manage canon-set your-website-project architecture The main website is index.html at the root. NOT in /public.
 
 # Add a team member (simple args)
-project-manage team-add proj-self-improvement swe-agent-bobby@tachin.ag engineer Bobby agent
+project-manage team-add proj-self-improvement swe-agent-bobby@example.com engineer Bobby agent
 
 # List team members
 project-manage team-list proj-self-improvement

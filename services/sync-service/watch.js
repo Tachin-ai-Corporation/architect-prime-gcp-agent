@@ -8,20 +8,22 @@ async function watchFolder() {
     });
     const drive = google.drive({ version: 'v3', auth });
 
-    // Use the folder created or the target Drive folder
-    const folderId = '1NmUo6DK4H7HB_EhG77pJZyjND2JCxylf';
+    const folderId = process.env.DRIVE_FOLDER_ID;
+    if (!folderId) throw new Error('DRIVE_FOLDER_ID env var is required');
+    const serviceUrl = process.env.SERVICE_URL;
+    if (!serviceUrl) throw new Error('SERVICE_URL env var is required');
     const channelId = crypto.randomUUID();
 
     console.log(`Setting up watch for folder ID: ${folderId}`);
     console.log(`Using Channel ID: ${channelId}`);
-    console.log(`Target URL: https://sync-service-85486025845.us-central1.run.app`);
+    console.log(`Target URL: ${serviceUrl}`);
 
     const response = await drive.files.watch({
       fileId: folderId,
       requestBody: {
         id: channelId,
         type: 'web_hook',
-        address: 'https://sync-service-85486025845.us-central1.run.app',
+        address: serviceUrl,
         payload: true
       }
     });

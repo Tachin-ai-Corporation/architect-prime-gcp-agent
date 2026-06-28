@@ -27,7 +27,7 @@ except Exception as e:
     sys.exit(1)
 
 # Get specific document
-url = f'https://firestore.googleapis.com/v1/projects/architect-prime-beta/databases/(default)/documents/primes/chuck/work/{task_id}'
+url = f'https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents/primes/chuck/work/{task_id}'
 req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'})
 
 try:

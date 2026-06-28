@@ -15,10 +15,10 @@ PowerShell intercepts `curl` as `Invoke-WebRequest` and mangles quotes in `--com
 ```powershell
 # Step 1: Write script (use write_to_file tool to a scratch path)
 # Step 2: SCP to VM
-echo y | gcloud compute scp "C:\path\to\script.sh" fleet-{AGENT}:/tmp/script.sh --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap
+echo y | gcloud compute scp "C:\path\to\script.sh" fleet-{AGENT}:/tmp/script.sh --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap
 
 # Step 3: Run (strip Windows CRLF first)
-echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sed -i 's/\r$//' /tmp/script.sh && bash /tmp/script.sh"
+echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sed -i 's/\r$//' /tmp/script.sh && bash /tmp/script.sh"
 ```
 
 > **NEVER** try to inline `curl` commands in `--command=` from PowerShell. It will fail.
@@ -27,22 +27,22 @@ echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=archite
 
 ### Brain daemon (decision-making, mission processing)
 ```powershell
-echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-brain --no-pager -n 40"
+echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo journalctl -u agent-brain --no-pager -n 40"
 ```
 
 ### Ears (input polling, message receipt)
 ```powershell
-echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -40 /var/log/agent-ears.log"
+echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo tail -40 /var/log/agent-ears.log"
 ```
 
 ### Mouth (output delivery to GChat)
 ```powershell
-echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo tail -40 /var/log/agent-mouth.log"
+echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo tail -40 /var/log/agent-mouth.log"
 ```
 
 ### Time-bounded logs
 ```powershell
-echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-brain --no-pager -n 20 --since '2 minutes ago'"
+echo y | gcloud compute ssh fleet-{AGENT} --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo journalctl -u agent-brain --no-pager -n 20 --since '2 minutes ago'"
 ```
 
 ## Firestore Data Model
@@ -75,7 +75,7 @@ primes/chucknorris/fleet/{agent_id}           — fleet agent status
 - `archived` — moved to cold storage
 
 ### Key Fields
-- `owner` — full email like `devops-agent-stan@tachin.ag` (NOT just agent ID)
+- `owner` — full email like `devops-agent-stan@example.com` (NOT just agent ID)
 - `delivery_status` — `internal` (not ready for delivery) or `pending`/`delivered`
 - `iteration` — cortex decide loop count
 - `source_channel` — `gchat`, `dashboard`, etc.
@@ -89,7 +89,7 @@ primes/chucknorris/fleet/{agent_id}           — fleet agent status
 TOKEN=$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
 
 curl -s -H "Authorization: Bearer $TOKEN" \
-  'https://firestore.googleapis.com/v1/projects/architect-prime-beta/databases/(default)/documents/primes/chucknorris/work/{ENVELOPE_ID}' \
+  'https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents/primes/chucknorris/work/{ENVELOPE_ID}' \
   | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -113,7 +113,7 @@ TOKEN=$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/comp
 # Paginate — work collection can have 1000+ docs (old ack-* docs sort before w-*)
 NEXT=""
 while true; do
-  URL="https://firestore.googleapis.com/v1/projects/architect-prime-beta/databases/(default)/documents/primes/chucknorris/work?pageSize=300"
+  URL="https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents/primes/chucknorris/work?pageSize=300"
   [ -n "$NEXT" ] && URL="${URL}&pageToken=${NEXT}"
   RESP=$(curl -s -H "Authorization: Bearer $TOKEN" "$URL")
   echo "$RESP" | python3 -c "

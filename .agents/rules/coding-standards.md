@@ -28,7 +28,7 @@
 - Gateway API: `POST http://localhost:18789/v1/chat/completions` with Bearer token auth
 
 ## PowerShell (local dev)
-- SSH one-liners: `echo y | gcloud compute ssh {VM} --zone={ZONE} --project=architect-prime-beta --tunnel-through-iap --command="..."`
+- SSH one-liners: `echo y | gcloud compute ssh {VM} --zone={ZONE} --project=your-gcp-project --tunnel-through-iap --command="..."`
 - PowerShell doesn't support `&&` — use `;` to chain commands
 - Use `--command=` flag, not `-- "command"` (Plink parsing issues)
 

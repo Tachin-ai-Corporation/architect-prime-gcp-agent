@@ -22,9 +22,9 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 
 ### Publish (Preferred for Artifacts)
 - `work-publish FILE [--project PROJECT_ID] [--subfolder NAME]` — **Standard artifact publisher.** Automatically resolves the correct Drive folder and creates date-based subfolders.
-  - **Project mode**: `work-publish report.pdf --project tachin-website` → uploads to `{project}/MM-DD/report.pdf`
+  - **Project mode**: `work-publish report.pdf --project your-website-project` → uploads to `{project}/MM-DD/report.pdf`
   - **Agent mode**: `work-publish notes.md` → uploads to `{prime}/{agent}/MM-DD/notes.md`
-  - **Custom subfolder**: `work-publish logo.svg --project tachin-website --subfolder assets` → uploads to `{project}/assets/logo.svg`
+  - **Custom subfolder**: `work-publish logo.svg --project your-website-project --subfolder assets` → uploads to `{project}/assets/logo.svg`
   - Output: JSON with `status`, `fileId`, `folderId`, `folderPath`, `webViewLink`.
   - All folder creation is idempotent — safe to run repeatedly.
 
@@ -96,12 +96,12 @@ When you need to modify a file that lives in Google Drive:
 
 ## Sync Service Integration
 
-The `tachin-website` project uses a sync-service that automatically propagates files from Google Drive to GCS and Firebase Hosting. Key rules:
+The `your-website-project` project uses a sync-service that automatically propagates files from Google Drive to GCS and Firebase Hosting. Key rules:
 
 - **Root files are ignored**: The sync-service only syncs files in **subdirectories** (e.g., `public/`, `images/`). Files placed directly in the root Drive folder are skipped by design.
 - **Latency**: Changes take ~60-90 seconds to propagate (Drive notification delay + Cloud Run cold start).
 - **Public folder**: For files intended for the live website, upload to the `public/` subfolder within the root website folder.
-- **Verification**: After uploading, wait 90 seconds then check `gsutil ls gs://tachin-website-assets/public/<filename>` to confirm sync.
+- **Verification**: After uploading, wait 90 seconds then check `gsutil ls gs://your-website-assets/public/<filename>` to confirm sync.
 
 ## Error Recovery
 

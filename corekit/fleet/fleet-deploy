@@ -135,7 +135,7 @@ if [[ -f "$STATE_FILE" ]]; then
   CORE_REF="$(jq -r '.coreRef // "main"' "$STATE_FILE" 2>/dev/null)"
 fi
 [[ -n "$CORE_REF" ]] || CORE_REF="main"
-GH_OWNER="$(jq -r '.owner // "Tachin-ai-Corporation"' "$STATE_FILE" 2>/dev/null || echo "Tachin-ai-Corporation")"
+GH_OWNER="$(jq -r '.owner // "YOUR_GITHUB_ORG"' "$STATE_FILE" 2>/dev/null || echo "YOUR_GITHUB_ORG")"
 GH_REPO="$(jq -r '.repo // "architect-prime-gcp-agent"' "$STATE_FILE" 2>/dev/null || echo "architect-prime-gcp-agent")"
 
 DEPLOY_TS="$(date -Is)"

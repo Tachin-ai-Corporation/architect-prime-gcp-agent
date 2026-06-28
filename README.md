@@ -14,12 +14,12 @@ Everything runs inside the operator's own GCP project: no shared infrastructure,
 
 ### Cloud Shell (Recommended)
 
-[![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://console.cloud.google.com/cloudshell/open?git_repo=https://github.com/Tachin-ai-Corporation/architect-prime-gcp-agent&tutorial=infra/deploy/tutorial.md)
+[![Open in Cloud Shell](https://gstatic.com/cloudssh/images/open-btn.svg)](https://console.cloud.google.com/cloudshell/open?git_repo=https://github.com/YOUR_GITHUB_ORG/architect-prime-gcp-agent&tutorial=infra/deploy/tutorial.md)
 
 ### Manual
 
 ```bash
-git clone https://github.com/Tachin-ai-Corporation/architect-prime-gcp-agent
+git clone https://github.com/YOUR_GITHUB_ORG/architect-prime-gcp-agent
 cd architect-prime-gcp-agent
 export PROJECT_ID="your-project-id"
 bash infra/deploy/install.sh
@@ -106,7 +106,7 @@ bash infra/deploy/uninstall.sh
 | Version | Date | Summary |
 |---------|------|---------|
 | v2026.06.27.1.2 | 2026-06-27 | Deterministic User Identity Resolution: stripped regex mappings for pinger email, extracted canonical identity fields directly from the GChat payload in `agent-ears` and `chat-read`, updated `agent-brain` to rely exclusively on `source_meta.senderEmail` for `## Requester` block injection, added strict email validation to `drive-share`, and standardized `SourceMeta` type in `types.ts`. |
-| v2026.06.27.1.1 | 2026-06-27 | Robust Pinger Email Propagation: propagated `_sourceMeta` pinger email to prefrontal planning dispatches in `checkpoint_plan.mjs` and `agent-brain.mjs`, prepended the `## Requester (Pinger)` block to Cortex prompts in `callCortex`, implemented fallback Christopher Hill variation normalization to `chill@tachin.ai` inside `drive-share` script, and updated Firestore project registers for `tachin-website` and `legal-processes` to correct the owner email. |
+| v2026.06.27.1.1 | 2026-06-27 | Robust Pinger Email Propagation: propagated `_sourceMeta` pinger email to prefrontal planning dispatches in `checkpoint_plan.mjs` and `agent-brain.mjs`, prepended the `## Requester (Pinger)` block to Cortex prompts in `callCortex`, implemented fallback owner variation normalization to `owner@example.com` inside `drive-share` script, and updated Firestore project registers for `your-website-project` and `legal-processes` to correct the owner email. |
 | v2026.06.26.2.0 | 2026-06-26 | Fleet Mission Success at Scale: delegation governance (concurrent guard, per-checkpoint cap, dedup nudge), post-success processify (auto-creates processes from successful ad-hoc missions), plan-process alignment (checkpoint_plan checks for matching processes, project-scoped process preference in decide payload), post-mission context extraction (mines project facts from output via Flash), motor context discovery writes (9 SOUL_APPEND files with Project Context Discovery section), `project-manage` add-context/add-process subcommands. |
 | v2026.06.26.1.0 | 2026-06-26 | Brain Audit Hardening: unified process-engine completion ceremony via `completeEnvelope` dep injection (fixed silent skip of memory/artifacts/cleanup/events for process missions), prefrontal skill catalog injection, `toStr` deduplication, bare `status='failed'` lifecycle routing, `handleAttach` status-query regex fix, `processIntakeAsNewTask` log type fix. |
 | v2026.06.25.1.0 | 2026-06-25 | Drive Workspace Standard: deterministic `work-publish` artifact publisher enforcing `{project}/{MM-DD}/` and `{prime}/{agent}/{MM-DD}/` folder hierarchy, `artifacts.mjs` MM-DD date subfolders replacing old prime/agent nesting, `ensureAgentFolder()` at brain startup, delegation markers extended with `drive:<folderId>` field for project Drive context, `projects.mjs` rendering `work-publish` usage patterns, engineer agents granted Drive access (`workspace-drive` + full manifest), 9 motor SOUL_APPEND files with unified Drive convention, 9 cerebellum SOUL_APPEND files with Drive verification gate. Blocked delegation terminal state fix + delegation result notification fix. |

@@ -124,8 +124,8 @@
     "temporal-memory": "workspace-temporal-memory"
   },
   "github": {
-    "owner": "Tachin-ai-Corporation",
-    "repo": "architect-prime-gcp-agent",
+    "owner": "YOUR_GITHUB_ORG",
+    "repo": "YOUR_REPO_NAME",
     "tokenSecret": "github-token"
   }
 }

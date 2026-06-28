@@ -9,7 +9,7 @@ description: SSH into a Prime or Fleet VM and execute commands directly on the G
 ## Step 1: Find the VM name and zone
 
 ```powershell
-gcloud compute instances list --project=architect-prime-beta --format="table(name,zone,status)"
+gcloud compute instances list --project=your-gcp-project --format="table(name,zone,status)"
 ```
 
 ## Step 2: SSH in
@@ -17,12 +17,12 @@ gcloud compute instances list --project=architect-prime-beta --format="table(nam
 Use `echo y |` to auto-accept host key, and `--command=` for one-shot execution:
 
 ```powershell
-echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=architect-prime-beta --tunnel-through-iap --command="{COMMAND}"
+echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=your-gcp-project --tunnel-through-iap --command="{COMMAND}"
 ```
 
 Example (gateway status check):
 ```powershell
-echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo systemctl status agent-neural-gateway"
+echo y | gcloud compute ssh prime-chucknorris --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo systemctl status agent-neural-gateway"
 ```
 
 ## Common commands
@@ -67,5 +67,5 @@ find /opt/corekit/workspace -name '*.md' -type f
 ## Interactive SSH (when needed)
 
 ```powershell
-echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=architect-prime-beta --tunnel-through-iap
+echo y | gcloud compute ssh {VM_NAME} --zone={ZONE} --project=your-gcp-project --tunnel-through-iap
 ```

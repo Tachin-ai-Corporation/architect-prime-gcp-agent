@@ -11,7 +11,7 @@ Use this skill when you need to audit, debug, or report on the brain daemon's de
 
 ### 1. Reconstruct Mission Hierarchies
 To map out a root mission and all its nested child missions, checkpoints, and tasks:
-1. Locate the target `owner` (e.g., `devops-agent-stan@tachin.ag`) or specific `mission_id` (e.g., `w-1781811338796-3d0b1c0f`).
+1. Locate the target `owner` (e.g., `devops-agent-stan@example.com`) or specific `mission_id` (e.g., `w-1781811338796-3d0b1c0f`).
 2. Run the `query-tree.py` script from the VM (e.g., `prime-chuck`) or copy its execution path:
    ```bash
    python3 scripts/query-tree.py [owner_email] [mission_id]
@@ -34,7 +34,7 @@ To find why a mission is stuck or what is currently blocking execution:
 To follow the Cortex/Prefrontal/Cerebellum decide-loop in real-time or audit past decisions:
 1. SSH into the target VM (e.g., `fleet-stan`) using IAP:
    ```powershell
-   gcloud compute ssh [VM_NAME] --zone=us-central1-a --project=architect-prime-beta --tunnel-through-iap --command="sudo journalctl -u agent-brain --no-pager -n 200"
+   gcloud compute ssh [VM_NAME] --zone=us-central1-a --project=your-gcp-project --tunnel-through-iap --command="sudo journalctl -u agent-brain --no-pager -n 200"
    ```
 2. Look for the following signature log events:
    - `Calling Cortex: mode=classify` (Intake intake routing)

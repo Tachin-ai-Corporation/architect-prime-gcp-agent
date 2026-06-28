@@ -40,7 +40,7 @@ APP_VERSION="${APP_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo
 
 # Auto-detect GitHub coordinates from local git remote if available
 GIT_REMOTE_URL="$(git remote get-url origin 2>/dev/null || echo '')"
-GH_OWNER_DEFAULT="Tachin-ai-Corporation"
+GH_OWNER_DEFAULT="YOUR_GITHUB_ORG"
 GH_REPO_DEFAULT="architect-prime-gcp-agent"
 
 if [[ "$GIT_REMOTE_URL" =~ github\.com[:/]([^/]+)/([^/.]+)(\.git)? ]]; then

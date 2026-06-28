@@ -57,8 +57,8 @@ Delegation targets are resolved from the project's `team` array:
 ```json
 {
   "team": [
-    {"email": "swe-agent-bobby@tachin.ag", "role": "engineer", "name": "Bobby", "type": "agent"},
-    {"email": "chill@tachin.ai", "role": "owner", "name": "Chill", "type": "human"}
+    {"email": "swe-agent-bobby@example.com", "role": "engineer", "name": "Bobby", "type": "agent"},
+    {"email": "owner@example.com", "role": "owner", "name": "Owner", "type": "human"}
   ]
 }
 ```

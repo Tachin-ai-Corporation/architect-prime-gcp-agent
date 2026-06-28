@@ -11,10 +11,10 @@ Use the `action: "delegate"` cortex decision. This is best for single tasks that
 ```json
 {
   "action": "delegate",
-  "target_email": "devops-agent-stan@tachin.ag",
+  "target_email": "devops-agent-stan@example.com",
   "instruction": "Investigate the sync-service health and report status",
   "accept_criteria": "Report with status and any logs",
-  "project_id": "tachin-website"
+  "project_id": "your-website-project"
 }
 ```
 
@@ -32,7 +32,7 @@ Use `action: "checkpoint_plan"` with `type: "delegation"` on specific tasks. Thi
         {
           "id": "1.1",
           "type": "delegation",
-          "target_email": "devops-agent-stan@tachin.ag",
+          "target_email": "devops-agent-stan@example.com",
           "agent": "devops",
           "task": "Verify the sync-service Cloud Run status and last sync timestamp",
           "accept_criteria": "Report confirming service status and recent sync time"
@@ -61,7 +61,7 @@ desired outcome and the inputs, not the tool invocations.
    Good: "Update the hero section of index.html with a new headline and color scheme"
 
 2. **Input files** — by Drive folder ID or file name
-   "Download index.html from Drive folder 1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV"
+   "Download index.html from Drive folder YOUR_DRIVE_FOLDER_ID"
 
 3. **Specific changes** — what to modify
    "Replace the headline text with 'AI Workforce Platform'. Change the primary 
@@ -136,11 +136,11 @@ Do NOT include deployment commands, file paths, or procedure steps — the
 delegate owns those via their processes and project context.
 
 **Correct** delegation for deployment:
-> "Deploy the tachin-website to staging for review."
+> "Deploy the your-website-project to staging for review."
 
 **Wrong** delegation for deployment:
 > "Navigate to /opt/corekit/workspace/services/hosting/, download files from
->  Drive folder 1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV, run firebase deploy..."
+>  Drive folder YOUR_DRIVE_FOLDER_ID, run firebase deploy..."
 
 The delegate's cortex will match the right process (`follow_process:
 p-stage-deploy`) and execute it with the correct parameters from project
@@ -157,7 +157,7 @@ When work spans multiple specialties, use `checkpoint_plan` with multiple
 ```json
 {
   "action": "checkpoint_plan",
-  "goal": "Improve tachin-website: UX audit by Designer, health check by DevOps",
+  "goal": "Improve your-website-project: UX audit by Designer, health check by DevOps",
   "checkpoints": [
     {
       "step": 1,
@@ -166,17 +166,17 @@ When work spans multiple specialties, use `checkpoint_plan` with multiple
         {
           "id": "1.1",
           "type": "delegation",
-          "target_email": "designer-agent-dot@tachin.ag",
+          "target_email": "designer-agent-dot@example.com",
           "agent": "designer",
-          "task": "Audit the tachin-website UX: review layout, navigation, visual hierarchy, and mobile responsiveness. Provide specific improvement recommendations.",
+          "task": "Audit the your-website-project UX: review layout, navigation, visual hierarchy, and mobile responsiveness. Provide specific improvement recommendations.",
           "accept_criteria": "Report with at least 3 specific UX improvement recommendations"
         },
         {
           "id": "1.2",
           "type": "delegation",
-          "target_email": "devops-agent-stan@tachin.ag",
+          "target_email": "devops-agent-stan@example.com",
           "agent": "devops",
-          "task": "Run a health check on the tachin-website sync service and verify deployment status.",
+          "task": "Run a health check on the your-website-project sync service and verify deployment status.",
           "accept_criteria": "Report confirming service status and last sync timestamp"
         }
       ]

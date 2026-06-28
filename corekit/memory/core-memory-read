@@ -57,7 +57,7 @@ if [[ -z "$PRIME_ID" ]]; then
 fi
 
 PROJECT_ID=$(curl -sf -H "Metadata-Flavor: Google" \
-  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "architect-prime-beta")
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "your-gcp-project")
 
 # ── Get access token ────────────────────────────────────────────
 TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
