@@ -53,6 +53,20 @@ skills/telemetry/skill.json skills/telemetry/skill.json
 skills/skill-authoring/SKILL.md skills/skill-authoring/SKILL.md
 skills/skill-authoring/skill.json skills/skill-authoring/skill.json
 
+# Workspace skills (for self-improvement tasks)
+skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
+skills/workspace-drive/skill.json skills/workspace-drive/skill.json
+skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
+skills/workspace-docs/skill.json skills/workspace-docs/skill.json
+skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
+skills/workspace-slides/SKILL.md skills/workspace-slides/SKILL.md
+skills/workspace-slides/skill.json skills/workspace-slides/skill.json
+skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
+skills/workspace-calendar/SKILL.md skills/workspace-calendar/SKILL.md
+skills/workspace-calendar/skill.json skills/workspace-calendar/skill.json
+
 # Git operations (for repo improvements)
 specialties/engineer/skills/git-ops/skill.json   skills/git-ops/skill.json
 specialties/engineer/skills/git-ops/SKILL.md     skills/git-ops/SKILL.md
