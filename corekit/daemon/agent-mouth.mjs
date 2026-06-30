@@ -15,7 +15,7 @@
 //   CHANNEL=gchat node agent-mouth.mjs
 //   CHANNEL=dashboard node agent-mouth.mjs
 // ============================================================
-import { readFileSync, writeFileSync, appendFileSync, existsSync,
+import { readFileSync, writeFileSync, existsSync,
          statSync, openSync, readSync, closeSync } from 'fs';
 import { dirname } from 'path';
 import { hostname as osHostname } from 'os';
@@ -113,11 +113,9 @@ function parseStatusPrompts(raw) {
 const STATUS_PROMPTS = parseStatusPrompts(STATUS_PROMPTS_RAW);
 
 // ---- Logging ----
-const MOUTH_LOG = '/var/log/agent-mouth.log';
 function log(msg, meta = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), svc: 'agent-mouth', ch: CHANNEL, msg, ...meta }) + '\n';
   process.stderr.write(line);
-  try { appendFileSync(MOUTH_LOG, line); } catch {}
 }
 
 // ---- DWD Token wrapper (delegates to shared lib) ----

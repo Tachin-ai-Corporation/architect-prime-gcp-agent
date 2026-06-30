@@ -1898,6 +1898,184 @@ function extractCurrentMessage(intakeText) {
   if (!_notifier) _initNotifier();
   return _notifier.extractCurrentMessage(intakeText);
 }
+
+// ---- Deterministic approval pre-check ----
+// Matches approval/reject keywords and resolves pending approval gates
+// without LLM classification. Returns a string (action taken) or null
+// (not an approval — fall through to normal classify).
+const APPROVE_PATTERN = /^(approve|approved|lgtm|go ahead|proceed|yes|ship it|better|land it)\b/i;
+const REJECT_PATTERN = /^(reject|rejected|deny|denied|no(?:\s|$)|stop|needs?\s*changes?|worse|revert|not yet)\b/i;
+
+async function handleApprovalResponse(intake) {
+  const rawText = (intake.text || '').trim();
+
+  // Extract the actual user message from composite text (strip context lines)
+  const lines = rawText.split('\n');
+  const currentMsgLine = lines.find(l => l.startsWith('User: ')) || lines[lines.length - 1];
+  const userText = currentMsgLine.replace(/^User:\s*/, '').trim();
+  const userTextLower = userText.toLowerCase();
+
+  // Determine action from text
+  let action = null;
+  if (APPROVE_PATTERN.test(userTextLower)) action = 'approved';
+  else if (REJECT_PATTERN.test(userTextLower)) action = 'rejected';
+
+  if (!action) return null; // Not an approval message — fall through
+
+  // Query for pending approvals
+  let pendingApprovals;
+  try {
+    pendingApprovals = await firestoreQuery('approvals', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
+    ]);
+  } catch (e) {
+    log('DEBUG', `Approval pre-check query failed: ${e.message}`);
+    return null; // Query failed — fall through to normal classify
+  }
+
+  if (!pendingApprovals || pendingApprovals.length === 0) {
+    log('DEBUG', `Approval pre-check: "${userTextLower}" matched pattern but no pending approvals exist — falling through to classify`);
+    return null; // No pending approvals — "yes" or "approve" is genuine new input
+  }
+
+  log('INFO', `Approval pre-check: "${userTextLower}" matches ${action}, ${pendingApprovals.length} pending approval(s)`);
+
+  // Claim the intake so it's not reprocessed
+  await firestoreWrite('intake', intake.id, {
+    ...intake,
+    status: 'claimed',
+    claimed_at: now(),
+  });
+
+  // Determine the target approval
+  let target = null;
+
+  // Check for numbered selection: "approve 2" or "approve #2"
+  const numMatch = userText.match(/(?:approve|reject)\s+#?(\d+)/i);
+  // Check for "approve all"
+  const approveAll = /^approve\s+all\b/i.test(userText);
+
+  if (pendingApprovals.length === 1) {
+    target = [pendingApprovals[0]];
+  } else if (approveAll && action === 'approved') {
+    target = pendingApprovals;
+  } else if (numMatch) {
+    const idx = parseInt(numMatch[1], 10) - 1;
+    if (idx >= 0 && idx < pendingApprovals.length) {
+      target = [pendingApprovals[idx]];
+    }
+  }
+
+  // Multi-pending disambiguation: ask which one
+  if (!target) {
+    const listing = pendingApprovals.map((a, i) => {
+      const title = a.title || a.description || a.envelopeId || 'Untitled';
+      const processId = a.processId || '';
+      return `${i + 1}. **${title}**${processId ? ` (${processId})` : ''}`;
+    }).join('\n');
+
+    const disambigText = `You have ${pendingApprovals.length} pending approvals:\n\n${listing}\n\nReply with the number (e.g. \`approve 1\`), a name, or \`approve all\`.`;
+
+    // Send disambiguation reply via a standalone deliverable T envelope
+    const replyId = generateId('w');
+    await firestoreWrite('work', replyId, {
+      id: replyId,
+      type: 'T',
+      parent_id: null,
+      owner: AGENT_EMAIL || AGENT_ID,
+      status: 'complete',
+      intent: 'notification',
+      title: 'Approval disambiguation',
+      instruction: 'Approval disambiguation',
+      output: disambigText,
+      source_channel: intake.source,
+      source_meta: intake.source_meta || {},
+      created_at: now(), started_at: now(),
+      completed_at: now(), updated_at: now(),
+      children: [], accept_criteria: null,
+      context_summary: null, context_forward: null,
+      error: null, iteration: 0,
+      delivery_status: 'pending',
+      delivery_address: addressFromMeta(intake.source_meta, intake.source),
+    });
+
+    await firestoreWrite('intake', intake.id, {
+      ...intake, status: 'resolved_approval',
+      resolved_at: now(), resolution: 'disambiguation',
+    });
+
+    log('INFO', `Approval pre-check: ${pendingApprovals.length} pending — sent disambiguation reply`);
+    return 'disambiguation';
+  }
+
+  // Flip each target approval doc
+  const reason = action === 'rejected' && userText.length > 20 ? userText : undefined;
+  for (const approval of target) {
+    const approvalId = approval.id;
+    try {
+      const updateFields = {
+        status: action,
+        resolvedAt: now(),
+        resolvedBy: `brain:intake:${intake.source}`,
+        ...(reason ? { reason } : {}),
+      };
+      await firestoreWrite('approvals', approvalId, {
+        ...approval,
+        ...updateFields,
+      });
+      log('INFO', `Approval pre-check: flipped ${approvalId} to ${action} (envelope=${approval.envelopeId})`);
+    } catch (e) {
+      log('WARN', `Approval pre-check: failed to flip ${approvalId}: ${e.message}`);
+    }
+  }
+
+  // Trigger the existing approval checker to pick up the flipped docs
+  // and call resumeProcessPlan (approved) or fail the envelope (rejected).
+  // Force immediate check by resetting the throttle counter.
+  if (!_approvalChecker) _initApprovals();
+  // The checker normally only runs every 5th call. We need it to run NOW.
+  // Call it 5 times to guarantee it fires on the 5th.
+  for (let i = 0; i < 5; i++) {
+    await _approvalChecker.checkPending();
+  }
+
+  // Send confirmation reply
+  const targetTitles = target.map(a => a.title || a.envelopeId).join(', ');
+  const confirmText = action === 'approved'
+    ? `✅ Approved: ${targetTitles}. Resuming work.`
+    : `❌ Rejected: ${targetTitles}. ${reason || 'Work stopped at this gate.'}`;
+
+  const confirmId = generateId('w');
+  await firestoreWrite('work', confirmId, {
+    id: confirmId,
+    type: 'T',
+    parent_id: null,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: 'complete',
+    intent: 'notification',
+    title: `Approval ${action}`,
+    instruction: `Approval ${action}`,
+    output: confirmText,
+    source_channel: intake.source,
+    source_meta: intake.source_meta || {},
+    created_at: now(), started_at: now(),
+    completed_at: now(), updated_at: now(),
+    children: [], accept_criteria: null,
+    context_summary: null, context_forward: null,
+    error: null, iteration: 0,
+    delivery_status: 'pending',
+    delivery_address: addressFromMeta(intake.source_meta, intake.source),
+  });
+
+  await firestoreWrite('intake', intake.id, {
+    ...intake, status: 'resolved_approval',
+    resolved_at: now(), resolution: action,
+    approval_ids: target.map(a => a.id),
+  });
+
+  return action;
+}
+
 // ---- Intake processing (Phase 3: memory + active scan + attach) ----
 async function processIntake(intake) {
   await ensureProjectsLoaded();
@@ -2008,6 +2186,17 @@ async function processIntake(intake) {
       log('INFO', `Delegation mission ${envelopeId} queued for processing`);
       return;
     }
+  }
+
+  // ---- Deterministic approval pre-check (before LLM classify) ----
+  // Detects "approve"/"reject" messages and routes them to the existing
+  // approval machinery (approvals.mjs → resumeProcessPlan), bypassing
+  // LLM classification entirely. This prevents approval messages from
+  // being mis-classified as new_mission and spawning phantom work.
+  const approvalResult = await handleApprovalResponse(intake);
+  if (approvalResult) {
+    log('INFO', `Approval pre-check handled intake ${intake.id} (${approvalResult})`);
+    return; // Early return — never reaches LLM classify or new_mission
   }
 
   // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)

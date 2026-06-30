@@ -111,12 +111,10 @@ const conversationHistory = [];
 const MAX_HISTORY = 4;
 
 // ---- Logging ----
-const EARS_LOG = '/var/log/agent-ears.log';
 const PREPROCESS_LOG = '/var/log/agent-ears-preprocess.log';
 function log(msg, meta = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), svc: 'agent-ears', ch: CHANNEL, msg, ...meta }) + '\n';
   process.stderr.write(line);
-  try { appendFileSync(EARS_LOG, line); } catch {}
 }
 
 // ---- Preprocess Prompt ----
