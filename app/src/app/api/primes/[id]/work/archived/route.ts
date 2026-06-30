@@ -38,6 +38,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     // Note: Firestore doesn't support two `in` filters, so we filter status client-side
     // Using created_at to reuse existing composite index (type + created_at)
     let query = wCol
+      .where("prime_id", "==", id)
       .where("type", "in", ["M", "R"])
       .orderBy("created_at", "desc")
       .limit((limit + 1) * 3); // over-fetch to account for client-side status filter

@@ -301,6 +301,7 @@ export async function executeCheckpoints(checkpoints, opts) {
                 processId: { stringValue: envelope.process_id || '' },
                 processName: { stringValue: PROJECTS[envelope.project_id]?.name || '' },
                 planId: { stringValue: envelope.plan_id || '' },
+                prime_id: { stringValue: PRIME_ID },
                 status: { stringValue: 'pending' },
                 requestedAt: { stringValue: new Date().toISOString() },
               }}),

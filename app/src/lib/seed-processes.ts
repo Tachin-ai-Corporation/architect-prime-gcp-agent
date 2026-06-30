@@ -2,8 +2,8 @@
 // Original module
 // Used by api/primes/[id]/deploy and api/primes/[id]/fleet/hire
 //
-// Seeds core process definitions into primes/{id}/processes/
-// at deploy time and fleet hire time. Skips if already at current version.
+// Seeds core process definitions into the shared processes/ collection.
+// Skips if already at current version.
 
 import { processesCol } from "./firestore";
 
@@ -193,10 +193,10 @@ const P_INVESTIGATE: CoreProcess = {
 const CORE_PROCESSES = [P_PLAN, P_INVESTIGATE];
 
 /**
- * Seed core processes into a Prime's processes collection.
+ * Seed core processes into the shared processes collection.
  * Idempotent: skips if the doc exists with origin=core and same version.
  */
-export async function seedCoreProcesses(primeId: string): Promise<{ seeded: string[]; skipped: string[] }> {
+export async function seedCoreProcesses(_primeId?: string): Promise<{ seeded: string[]; skipped: string[] }> {
   const col = processesCol();
   const seeded: string[] = [];
   const skipped: string[] = [];

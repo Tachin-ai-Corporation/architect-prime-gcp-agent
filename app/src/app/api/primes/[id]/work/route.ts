@@ -33,6 +33,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     // Phase 1: Get root envelopes (M and R types) — very few (~10-20)
     const rootSnap = await wCol
+      .where("prime_id", "==", id)
       .where("type", "in", ["M", "R"])
       .where("created_at", ">=", cutoff)
       .orderBy("created_at", "desc")
@@ -97,6 +98,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     // Phase 3: Safety net — catch any active orphans not yet in our results
     // (e.g., active C/T whose parent M was just created and not in our root query)
     const activeSnap = await wCol
+      .where("prime_id", "==", id)
       .where("status", "in", ACTIVE_STATUSES_ARRAY)
       .limit(20)
       .get();

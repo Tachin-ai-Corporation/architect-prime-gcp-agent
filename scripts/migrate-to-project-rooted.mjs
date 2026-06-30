@@ -206,13 +206,13 @@ async function migrate() {
           continue;
         }
 
-        // Prepare fields — stamp owner and prime_id if missing (for work)
+        // Prepare fields — stamp prime_id on all collections for dashboard filtering
         const fields = { ...doc.fields };
+        if (!fields.prime_id) {
+          fields.prime_id = { stringValue: primeId };
+        }
+        // owner is work-specific: stamp if missing
         if (collection === 'work') {
-          if (!fields.prime_id) {
-            fields.prime_id = { stringValue: primeId };
-          }
-          // owner should already be set by the brain; if not, try to infer
           if (!fields.owner && fields.source_meta?.mapValue?.fields?.delegated_to?.stringValue) {
             fields.owner = { stringValue: fields.source_meta.mapValue.fields.delegated_to.stringValue };
           }

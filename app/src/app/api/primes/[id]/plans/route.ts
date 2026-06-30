@@ -13,7 +13,10 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
     const { id } = await ctx.params;
 
     const col = plansCol();
-    const snap = await col.orderBy("created_at", "desc").get();
+    const snap = await col
+      .where("prime_id", "==", id)
+      .orderBy("created_at", "desc")
+      .get();
 
     const plans = snap.docs.map((doc) => ({
       id: doc.id,

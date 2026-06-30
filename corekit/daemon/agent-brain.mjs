@@ -772,6 +772,9 @@ async function firestoreWrite(collection, docId, data) {
   // Stamp executor identity on all work writes (C-1: Prime is executor, not owner)
   if (collection === 'work' && data) {
     data.owner = data.owner || AGENT_EMAIL || AGENT_ID;
+  }
+  // Stamp prime_id on all deployment-rooted writes for dashboard filtering
+  if (DEPLOYMENT_ROOTED.has(collection) && data) {
     data.prime_id = data.prime_id || PRIME_ID;
   }
   return _db.write(pathFor(collection, docId), data);

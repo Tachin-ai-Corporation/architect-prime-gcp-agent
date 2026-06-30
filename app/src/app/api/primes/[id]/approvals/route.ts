@@ -19,10 +19,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const statusFilter = url.searchParams.get("status");
 
     let query = approvalsCol()
+      .where("prime_id", "==", id)
       .orderBy("requestedAt", "desc");
 
     if (statusFilter) {
       query = approvalsCol()
+        .where("prime_id", "==", id)
         .where("status", "==", statusFilter)
         .orderBy("requestedAt", "desc");
     }

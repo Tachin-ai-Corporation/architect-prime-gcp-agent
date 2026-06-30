@@ -12,6 +12,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
     const snap = await skillProposalsCol()
+      .where("prime_id", "==", id)
       .orderBy("proposed_at", "desc")
       .limit(50)
       .get();
