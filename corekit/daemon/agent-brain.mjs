@@ -1797,8 +1797,8 @@ async function completeEnvelope(envelope, opts) {
 // ---- Active envelope scan: query for in-progress work ----
 async function scanActiveEnvelopes() {
   try {
-    // Query all live statuses — active, queued, waiting, needs_input, blocked
-    const statuses = ['active', 'queued', 'waiting', 'needs_input', 'blocked'];
+    // Query all live statuses — active, queued, waiting, needs_input, blocked, awaiting_approval
+    const statuses = ['active', 'queued', 'waiting', 'needs_input', 'blocked', 'awaiting_approval'];
     let allEnvelopes = [];
     for (const status of statuses) {
       const envs = await firestoreQuery('work', [
@@ -1925,9 +1925,11 @@ async function handleApprovalResponse(intake) {
   // Query for pending approvals
   let pendingApprovals;
   try {
-    pendingApprovals = await firestoreQuery('approvals', [
+    // Simple equality filter — no orderBy, no composite index required
+    const allApprovals = await firestoreQuery('approvals', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
-    ]);
+    ], { noOrderBy: true });
+    pendingApprovals = allApprovals;
   } catch (e) {
     log('DEBUG', `Approval pre-check query failed: ${e.message}`);
     return null; // Query failed — fall through to normal classify
@@ -2547,6 +2549,13 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   if (!mission) {
     log('WARN', `Continue target ${targetId} not found, treating as new_mission`);
     log('WARN', `[TELEMETRY] classify_cascade: continue→not_found→new_mission (${targetId})`);
+    return processIntakeAsNewTask(intake, decision, memoryContext);
+  }
+
+  // Only M-type envelopes are valid continue targets — T/C notifications must not be re-queued
+  if (mission.type !== 'M') {
+    log('WARN', `Continue target ${targetId} is type=${mission.type} (not M) — skipping, treating as new_mission`);
+    log('WARN', `[TELEMETRY] classify_cascade: continue→wrong_type_${mission.type}→new_mission (${targetId})`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
