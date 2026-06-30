@@ -1,9 +1,9 @@
 # Primitive: Process
 
-**Firestore path:** `primes/{primeId}/processes/{processId}`
+**Firestore path:** `processes/{processId}`
 **Disk path:** `corekit/config/processes/{processId}.json`
 
-A Process is a **reusable work template** that defines a sequence of steps grouped into checkpoints. Processes are parameterized, support sub-process composition, and produce Plans (which become M→C→T hierarchies when stamped).
+A Process is a **reusable work template** that defines a sequence of steps grouped into checkpoints. Processes are parameterized, support sub-process composition, and produce Plans (which become M→C→T hierarchies when stamped). Processes are stored in one shared library — there is no per-Prime duplication. Projects subscribe to relevant processes via `context.processes`.
 
 ---
 

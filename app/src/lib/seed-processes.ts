@@ -197,7 +197,7 @@ const CORE_PROCESSES = [P_PLAN, P_INVESTIGATE];
  * Idempotent: skips if the doc exists with origin=core and same version.
  */
 export async function seedCoreProcesses(primeId: string): Promise<{ seeded: string[]; skipped: string[] }> {
-  const col = processesCol(primeId);
+  const col = processesCol();
   const seeded: string[] = [];
   const skipped: string[] = [];
 

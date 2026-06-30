@@ -179,7 +179,7 @@ export function createProcessEngine(deps) {
     try {
       const token = await getAuthToken();
       if (token && FIRESTORE_BASE) {
-        const url = `${FIRESTORE_BASE}/primes/${primeId}/processes`;
+        const url = `${FIRESTORE_BASE}/processes`;
         const resp = await fetch(url, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
@@ -839,7 +839,7 @@ export function createProcessEngine(deps) {
     try {
       const token = await getAuthToken();
       if (token && FIRESTORE_BASE) {
-        const procUrl = `${FIRESTORE_BASE}/primes/${primeId}/processes/${processId}`;
+        const procUrl = `${FIRESTORE_BASE}/processes/${processId}`;
         const currentCount = process.execution_count || 0;
         await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
           method: 'PATCH',

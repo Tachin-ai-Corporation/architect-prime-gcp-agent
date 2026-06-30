@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const url = new URL(req.url);
     const includeDeprecated = url.searchParams.get("includeDeprecated") === "true";
 
-    const col = processesCol(id);
+    const col = processesCol();
     const snap = await col.orderBy("created_at", "desc").get();
 
     let processes = snap.docs.map((doc) => ({
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       changelog: [],
     };
 
-    const col = processesCol(id);
+    const col = processesCol();
     await col.doc(body.id).set(process);
 
     return NextResponse.json({ process: { id: body.id, ...process } });

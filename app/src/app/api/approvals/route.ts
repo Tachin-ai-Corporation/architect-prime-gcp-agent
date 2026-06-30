@@ -22,11 +22,11 @@ export async function GET(req: NextRequest) {
 
     const statusFilter = req.nextUrl.searchParams.get("status");
 
-    let query = approvalsCol(primeId)
+    let query = approvalsCol()
       .orderBy("requestedAt", "desc");
 
     if (statusFilter) {
-      query = approvalsCol(primeId)
+      query = approvalsCol()
         .where("status", "==", statusFilter)
         .orderBy("requestedAt", "desc");
     }
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const docRef = approvalsCol(primeId).doc(approvalId);
+    const docRef = approvalsCol().doc(approvalId);
     const existing = await docRef.get();
 
     if (!existing.exists) {

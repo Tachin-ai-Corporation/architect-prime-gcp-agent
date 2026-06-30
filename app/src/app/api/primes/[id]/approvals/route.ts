@@ -18,11 +18,11 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const url = new URL(req.url);
     const statusFilter = url.searchParams.get("status");
 
-    let query = approvalsCol(id)
+    let query = approvalsCol()
       .orderBy("requestedAt", "desc");
 
     if (statusFilter) {
-      query = approvalsCol(id)
+      query = approvalsCol()
         .where("status", "==", statusFilter)
         .orderBy("requestedAt", "desc");
     }
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const docRef = approvalsCol(id).doc(approvalId);
+    const docRef = approvalsCol().doc(approvalId);
     const existing = await docRef.get();
 
     if (!existing.exists) {

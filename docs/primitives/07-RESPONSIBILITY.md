@@ -2,7 +2,7 @@
 
 **WorkEnvelope type:** `R` (container only)
 **Firestore path (definition):** `corekit/config/responsibilities.json`
-**Firestore path (envelope):** `primes/{primeId}/work/{envelopeId}`
+**Firestore path (envelope):** `work/{envelopeId}`
 
 A Responsibility is **scheduled or event-triggered work** that automatically produces R→M envelope pairs. Responsibilities are defined in JSON configuration, managed by the brain daemon's cron scheduler, and can optionally link to a Process for deterministic execution.
 
@@ -150,7 +150,7 @@ Event-driven firing uses `fireEventResponsibilities(eventType)`, which scans all
 When a responsibility fires and creates an M envelope:
 
 1. Use `resp.project_id` if set
-2. Fall back to `DEFAULT_PROJECT_ID` (`{agent-id}/general`)
+2. Fall back to `DEFAULT_PROJECT_ID` (`general`)
 
 ---
 

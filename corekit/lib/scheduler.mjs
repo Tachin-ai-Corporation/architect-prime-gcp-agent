@@ -318,7 +318,7 @@ export function createScheduler(deps) {
             try {
               const token = await getAuthToken();
               if (token && FIRESTORE_BASE) {
-                const procUrl = `${FIRESTORE_BASE}/primes/${primeId}/processes/${process.id}`;
+                const procUrl = `${FIRESTORE_BASE}/processes/${process.id}`;
                 const currentCount = process.execution_count || 0;
                 await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
                   method: 'PATCH',

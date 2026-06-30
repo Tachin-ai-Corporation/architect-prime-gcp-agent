@@ -169,7 +169,10 @@ export function createClient(config) {
    */
   async function query(parentPath, collectionId, filters, opts = {}) {
     const token = await getGceToken();
-    const url = `${BASE}/${parentPath}:runQuery`;
+    // For top-level collections, parentPath is '' → query at the database root
+    const url = parentPath
+      ? `${BASE}/${parentPath}:runQuery`
+      : `${BASE}:runQuery`;
     const structuredQuery = {
       from: [{ collectionId }],
       where: {

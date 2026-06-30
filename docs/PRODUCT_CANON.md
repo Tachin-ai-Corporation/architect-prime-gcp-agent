@@ -12,8 +12,8 @@ This document is **normative**. Where MISSION_PLAN.md describes what Architect P
 ## I. Identity
 
 ### C-1 · Prime is a factory, not an orchestrator
-Prime creates, upgrades, monitors, and tears down agents. It does not route their work. Humans assign work to agents directly; agents delegate to each other directly.
-**Violation looks like:** a feature that makes Prime a mandatory hop in agent-to-agent workflows; a "Prime task queue" that fleet agents consume from; centralizing fleet decision-making in Prime's brain.
+Prime creates, upgrades, monitors, and tears down agents. It does not route their work. Humans assign work to agents directly; agents delegate to each other directly. Consequently, work artifacts (missions, plans, processes) are rooted at the deployment/project level — not under a Prime subcollection. The Prime is an executor, not the storage root. Actor state (fleet, messages, commands) legitimately remains prime-scoped.
+**Violation looks like:** a feature that makes Prime a mandatory hop in agent-to-agent workflows; a "Prime task queue" that fleet agents consume from; centralizing fleet decision-making in Prime's brain; storing work artifacts under `primes/{id}/` instead of top-level collections.
 
 ### C-2 · Zero shared infrastructure
 Everything runs inside the operator's own GCP project. No vendor-hosted services in the runtime path, no cross-tenant anything, no phone-home dependencies.
@@ -81,7 +81,7 @@ VM startup scripts are ~10-line stubs that curl bash from GitHub. Bootstrap chan
 
 ### C-14 · The nine primitives are a closed set
 Responsibility → Mission → Checkpoint → Task form the execution spine. Project, Process, Plan, Artifact, and Skill are the supporting cast. These nine cover all structured work and all codified procedure; inventing new envelope types, work abstractions, or knowledge containers is forbidden without a canon amendment.
-**Violation looks like:** a new envelope type; a "Sprint"/"Epic"/"Ticket" object in Firestore; a parallel work-tracking structure beside `primes/{id}/work`; a knowledge container outside Skills.
+**Violation looks like:** a new envelope type; a "Sprint"/"Epic"/"Ticket" object in Firestore; a parallel work-tracking structure beside `work/`; a knowledge container outside Skills.
 
 ### C-15 · R→M→C→T is the execution spine; no exceptions
 All executable work flows Responsibility (optional wrapper) → Mission → Checkpoint → Task. Missions are always flat — they never nest other Missions. Projects are the **sole** recursive primitive, max depth 4. Every Mission has a `project_id`; never null.

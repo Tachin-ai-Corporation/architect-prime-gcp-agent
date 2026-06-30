@@ -3,7 +3,7 @@
 // The brain daemon writes [TELEMETRY] llm_usage entries to envelope history.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/firestore";
+import { workCol } from "@/lib/firestore";
 
 interface LlmUsageEntry {
   organ: string;
@@ -35,13 +35,8 @@ export async function GET(req: NextRequest) {
   const agentFilter = req.nextUrl.searchParams.get("agent");
 
   try {
-    const db = getDb();
-
     // Get recent completed missions (last 100 to allow client-side agent filtering)
-    const query = db
-      .collection("primes")
-      .doc(primeId)
-      .collection("work")
+    const query = workCol()
       .where("type", "==", "M")
       .where("status", "in", ["complete", "failed"])
       .orderBy("completed_at", "desc")

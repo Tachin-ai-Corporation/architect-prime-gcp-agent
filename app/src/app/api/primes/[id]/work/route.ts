@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/firestore";
+import { workCol, getDb } from "@/lib/firestore";
 import { ACTIVE_STATUSES_ARRAY } from "@/lib/types";
 
 interface RouteContext {
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const typeFilter = url.searchParams.get("type");
 
     const db = getDb();
-    const workCol = db.collection("primes").doc(id).collection("work");
+    const wCol = workCol();
 
     // 7-day cutoff
     const sevenDaysAgo = new Date();
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const cutoff = sevenDaysAgo.toISOString();
 
     // Phase 1: Get root envelopes (M and R types) — very few (~10-20)
-    const rootSnap = await workCol
+    const rootSnap = await wCol
       .where("type", "in", ["M", "R"])
       .where("created_at", ">=", cutoff)
       .orderBy("created_at", "desc")
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
       const childRefs = childIds
         .filter(cid => !seenIds.has(cid))
-        .map(cid => workCol.doc(cid));
+        .map(cid => wCol.doc(cid));
 
       if (childRefs.length === 0) continue;
 
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
       const gcRefs = grandchildIds
         .filter(gid => !seenIds.has(gid))
-        .map(gid => workCol.doc(gid));
+        .map(gid => wCol.doc(gid));
 
       if (gcRefs.length === 0) continue;
 
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     // Phase 3: Safety net — catch any active orphans not yet in our results
     // (e.g., active C/T whose parent M was just created and not in our root query)
-    const activeSnap = await workCol
+    const activeSnap = await wCol
       .where("status", "in", ACTIVE_STATUSES_ARRAY)
       .limit(20)
       .get();
@@ -110,7 +110,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
         const data = doc.data();
         if (data.parent_id && !seenIds.has(data.parent_id)) {
           try {
-            const parentDoc = await workCol.doc(data.parent_id).get();
+            const parentDoc = await wCol.doc(data.parent_id).get();
             if (parentDoc.exists) {
               allEnvelopes.push({ id: parentDoc.id, ...parentDoc.data() });
               seenIds.add(parentDoc.id);

@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     const { id, processId } = await ctx.params;
 
-    const docRef = processesCol(id).doc(processId);
+    const docRef = processesCol().doc(processId);
     const doc = await docRef.get();
 
     if (!doc.exists) {
@@ -37,7 +37,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     const { id, processId } = await ctx.params;
     const body = await req.json();
 
-    const docRef = processesCol(id).doc(processId);
+    const docRef = processesCol().doc(processId);
     const existing = await docRef.get();
 
     if (!existing.exists) {
@@ -118,7 +118,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    const docRef = processesCol(id).doc(processId);
+    const docRef = processesCol().doc(processId);
     const doc = await docRef.get();
 
     if (!doc.exists) {

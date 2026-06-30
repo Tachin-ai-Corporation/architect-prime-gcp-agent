@@ -1,9 +1,11 @@
 # Primitive: Mission
 
 **WorkEnvelope type:** `M`
-**Firestore path:** `primes/{primeId}/work/{missionId}`
+**Firestore path:** `work/{missionId}`
 
 A Mission is a **self-contained goal** with accept criteria, containing one or more Checkpoints. Missions are the primary unit of visible work — they appear in the Work Tree dashboard and always belong to a Project.
+
+Missions live in the **top-level `work/` collection**, not under a Prime subcollection. Each Mission carries locating fields — `project_id` (required), `owner` (the executing agent), and `prime_id` (denormalized, for dashboard filtering) — so the brain finds its work by querying `work where owner == self`.
 
 ---
 
@@ -114,7 +116,7 @@ Resolution order:
 2. `resp.project_id` from Responsibility definition
 3. Plan's `project_id`
 4. Parent Mission's `project_id` (for attached work)
-5. `DEFAULT_PROJECT_ID` (`{agent-id}/general`) — always available
+5. `DEFAULT_PROJECT_ID` (`general`) — always available
 
 ---
 

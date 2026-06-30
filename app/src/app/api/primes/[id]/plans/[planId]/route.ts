@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     const { id, planId } = await ctx.params;
 
-    const docRef = plansCol(id).doc(planId);
+    const docRef = plansCol().doc(planId);
     const doc = await docRef.get();
 
     if (!doc.exists) {
@@ -35,7 +35,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     const { id, planId } = await ctx.params;
     const body = await req.json();
 
-    const docRef = plansCol(id).doc(planId);
+    const docRef = plansCol().doc(planId);
     const existing = await docRef.get();
 
     if (!existing.exists) {

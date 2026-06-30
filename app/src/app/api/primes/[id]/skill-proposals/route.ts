@@ -11,7 +11,7 @@ interface RouteContext {
 export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
-    const snap = await skillProposalsCol(id)
+    const snap = await skillProposalsCol()
       .orderBy("proposed_at", "desc")
       .limit(50)
       .get();
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "action must be 'approve' or 'reject'" }, { status: 400 });
     }
 
-    const ref = skillProposalsCol(id).doc(proposalId);
+    const ref = skillProposalsCol().doc(proposalId);
     const doc = await ref.get();
 
     if (!doc.exists) {

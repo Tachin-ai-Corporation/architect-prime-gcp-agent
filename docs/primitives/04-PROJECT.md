@@ -1,8 +1,8 @@
 # Primitive: Project
 
-**Firestore path:** `primes/{primeId}/projects/{projectId}`
+**Firestore path:** `projects/{projectId}`
 
-A Project is the **organizational container** for Missions. Projects are recursive (parent/child), carry accumulated context, and support dependency management between sibling projects. They are not WorkEnvelopes — they live in their own Firestore collection.
+A Project is the **organizational container** for Missions. Projects are deployment-rooted — they live in the top-level `projects/` collection, shared across all agents in the deployment and orchestrated via the dashboard. Projects are recursive (parent/child), carry accumulated context, and support dependency management between sibling projects. They are not WorkEnvelopes.
 
 ---
 
@@ -100,14 +100,13 @@ A Project with `depends_on` stays `paused` until all dependency Projects are `co
 
 ## Default Project
 
-Every agent has a **default project** created automatically at startup:
+Every deployment has a **default project** created automatically at startup:
 
 ```
-ID: {agent-id}/general
+ID: general
 Goal: "General workspace"
 Status: active
 Parent: null
-Owner: {agent-id}
 ```
 
 This ensures the `project_id` enforcement rule is always satisfiable — even when no named project applies, the default project is used.

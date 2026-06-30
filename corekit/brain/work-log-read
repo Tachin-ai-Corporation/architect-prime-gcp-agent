@@ -87,7 +87,7 @@ print(cutoff.strftime('%Y-%m-%dT%H:%M:%S.000Z'))
 
 # ── Build Firestore query filters ─────────────────────────
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
-PARENT_PATH="primes/${PRIME_ID}"
+PARENT_PATH=""
 
 # Always filter by created_at >= cutoff
 FILTER_PARTS=()
@@ -132,7 +132,7 @@ EOF
 RESPONSE=$(curl -sf --max-time 15 \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -X POST "${FIRESTORE_BASE}/${PARENT_PATH}:runQuery" \
+  -X POST "${FIRESTORE_BASE}${PARENT_PATH:+/${PARENT_PATH}}:runQuery" \
   -d "${QUERY_BODY}" 2>&1)
 
 # ── Parse and display ──────────────────────────────────────

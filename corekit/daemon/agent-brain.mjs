@@ -741,7 +741,22 @@ const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${GCP_PROJE
 const _db = createFirestoreClient({ projectId: GCP_PROJECT, logger: log });
 
 // Thin wrappers preserving existing (collection, docId) call signature.
-// The lib client uses full paths; these prepend the prime scope.
+// Work artifacts are deployment-rooted (top-level); actor state stays prime-scoped.
+// C-1: Prime is executor, not storage root. Work carries owner + prime_id fields.
+
+const DEPLOYMENT_ROOTED = new Set([
+  'work', 'processes', 'plans', 'approvals', 'projects', 'skill-proposals',
+]);
+
+function collectionParent(collection) {
+  return DEPLOYMENT_ROOTED.has(collection) ? '' : `primes/${PRIME_ID}`;
+}
+
+function pathFor(collection, docId) {
+  return DEPLOYMENT_ROOTED.has(collection)
+    ? `${collection}/${docId}`
+    : `primes/${PRIME_ID}/${collection}/${docId}`;
+}
 
 async function firestoreWrite(collection, docId, data) {
   // Invariant check: M-type envelope with parent_id should be C-type
@@ -754,15 +769,29 @@ async function firestoreWrite(collection, docId, data) {
   if (collection === 'work' && data && data.type === 'M') {
     validateMissionProjectId(data);
   }
-  return _db.write(`primes/${PRIME_ID}/${collection}/${docId}`, data);
+  // Stamp executor identity on all work writes (C-1: Prime is executor, not owner)
+  if (collection === 'work' && data) {
+    data.owner = data.owner || AGENT_EMAIL || AGENT_ID;
+    data.prime_id = data.prime_id || PRIME_ID;
+  }
+  return _db.write(pathFor(collection, docId), data);
 }
 
 async function firestoreRead(collection, docId) {
-  return _db.read(`primes/${PRIME_ID}/${collection}/${docId}`);
+  // Dual-read fallback: try new path first, fall back to old prime-scoped path
+  const result = await _db.read(pathFor(collection, docId));
+  if (!result && DEPLOYMENT_ROOTED.has(collection)) {
+    const fallback = await _db.read(`primes/${PRIME_ID}/${collection}/${docId}`);
+    if (fallback) {
+      log('DEBUG', `Dual-read fallback: found ${collection}/${docId} at old prime-scoped path`);
+    }
+    return fallback;
+  }
+  return result;
 }
 
 async function firestoreQuery(collection, filters, opts) {
-  return _db.query(`primes/${PRIME_ID}`, collection, filters, opts);
+  return _db.query(collectionParent(collection), collection, filters, opts);
 }
 
 // ---- Envelope helpers ----
@@ -1611,7 +1640,7 @@ async function writeMemory(envelope) {
     // 3. Mark envelope as memory-written (for archival)
     const token = await getAuthToken();
     if (token) {
-      const url = `${FIRESTORE_BASE}/primes/${PRIME_ID}/work/${envelope.id}?updateMask.fieldPaths=memory_written`;
+      const url = `${FIRESTORE_BASE}/work/${envelope.id}?updateMask.fieldPaths=memory_written`;
       const patchResp = await fetch(url, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -2675,7 +2704,7 @@ async function handleCancel(intake, decision) {
 async function cascadeCancelChildren(parentId) {
   const token = await getAuthToken();
   if (!token) return;
-  const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+  const parentPath = `${FIRESTORE_BASE}`;
   let nextPageToken = null;
   let cancelCount = 0;
   do {
@@ -3644,7 +3673,7 @@ async function main() {
     const agentId = AGENT_ID;
     const token = await getAuthToken();
     if (token) {
-      const parentPath = `${FIRESTORE_BASE}/primes/${PRIME_ID}`;
+      const parentPath = `${FIRESTORE_BASE}`;
       let allDocs = [];
       let nextPageToken = null;
       do {

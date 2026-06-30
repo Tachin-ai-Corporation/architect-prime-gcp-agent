@@ -287,7 +287,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         try {
           const token = await getAuthToken();
           if (token && FIRESTORE_BASE) {
-            const approvalUrl = `${FIRESTORE_BASE}/primes/${PRIME_ID}/approvals/${approvalId}`;
+            const approvalUrl = `${FIRESTORE_BASE}/approvals/${approvalId}`;
             await fetch(approvalUrl, {
               method: 'PATCH',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },

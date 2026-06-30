@@ -589,7 +589,7 @@ async function checkApprovalResponse(text) {
   // Check if there are any pending approvals
   try {
     const token = await getGceToken();
-    const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}/approvals:runQuery`;
+    const queryUrl = `${FIRESTORE_URL}/approvals:runQuery`;
     const resp = await fetch(queryUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },

@@ -608,7 +608,7 @@ async function pollBrainV3Envelopes() {
       },
     };
 
-    const queryUrl = `${FIRESTORE_URL}/primes/${PRIME_ID}:runQuery`;
+    const queryUrl = `${FIRESTORE_URL}:runQuery`;
 
     let results = [];
     try {
@@ -656,7 +656,7 @@ async function pollBrainV3Envelopes() {
         log('WARN', `Envelope ${envId} has no output — skipping delivery and marking delivered`, { envId });
         try {
           const token2 = await getGceToken();
-          const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
+          const docPath = `${FIRESTORE_URL}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
           await fetch(docPath, {
             method: 'PATCH',
             headers: { Authorization: `Bearer ${token2}`, 'Content-Type': 'application/json' },
@@ -769,7 +769,7 @@ async function pollBrainV3Envelopes() {
 
         // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)
         const token2 = await getGceToken();
-        const docPath = `${FIRESTORE_URL}/primes/${PRIME_ID}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
+        const docPath = `${FIRESTORE_URL}/work/${envId}?updateMask.fieldPaths=delivered_at&updateMask.fieldPaths=delivered_channel&updateMask.fieldPaths=delivery_status`;
         const patchRes = await fetch(docPath, {
           method: 'PATCH',
           headers: { Authorization: `Bearer ${token2}`, 'Content-Type': 'application/json' },

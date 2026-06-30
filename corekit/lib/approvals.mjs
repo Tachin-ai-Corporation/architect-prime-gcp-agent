@@ -76,7 +76,7 @@ export function createApprovalChecker(deps) {
 
       // Query for approved or rejected approvals
       for (const targetStatus of ['approved', 'rejected']) {
-        const queryUrl = `${FIRESTORE_BASE}/primes/${primeId}/approvals:runQuery`;
+        const queryUrl = `${FIRESTORE_BASE}/approvals:runQuery`;
         const resp = await fetch(queryUrl, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },

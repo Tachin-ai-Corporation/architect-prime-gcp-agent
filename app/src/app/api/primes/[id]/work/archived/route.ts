@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/firestore";
+import { workCol } from "@/lib/firestore";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -23,8 +23,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const limit = Math.min(Number(url.searchParams.get("limit")) || 20, 100);
     const startAfterDocId = url.searchParams.get("startAfter");
 
-    const db = getDb();
-    const workCol = db.collection("primes").doc(id).collection("work");
+    const wCol = workCol();
 
     const DONE_STATUSES = new Set([
       "complete",
@@ -38,14 +37,14 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     // Build query — root envelopes only, ordered by created_at desc
     // Note: Firestore doesn't support two `in` filters, so we filter status client-side
     // Using created_at to reuse existing composite index (type + created_at)
-    let query = workCol
+    let query = wCol
       .where("type", "in", ["M", "R"])
       .orderBy("created_at", "desc")
       .limit((limit + 1) * 3); // over-fetch to account for client-side status filter
 
     // Cursor pagination: startAfter a specific document
     if (startAfterDocId) {
-      const cursorDoc = await workCol.doc(startAfterDocId).get();
+      const cursorDoc = await wCol.doc(startAfterDocId).get();
       if (cursorDoc.exists) {
         query = query.startAfter(cursorDoc);
       }

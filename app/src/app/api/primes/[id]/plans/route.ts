@@ -12,7 +12,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
 
-    const col = plansCol(id);
+    const col = plansCol();
     const snap = await col.orderBy("created_at", "desc").get();
 
     const plans = snap.docs.map((doc) => ({

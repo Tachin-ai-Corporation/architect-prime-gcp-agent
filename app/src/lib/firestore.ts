@@ -53,20 +53,26 @@ export function commandsCol(primeId: string) {
   return getDb().collection("primes").doc(primeId).collection("commands");
 }
 
-export function approvalsCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("approvals");
+// ---- Deployment-rooted collections (C-1: work artifacts at project level) ----
+
+export function workCol() {
+  return getDb().collection("work");
 }
 
-export function processesCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("processes");
+export function approvalsCol() {
+  return getDb().collection("approvals");
 }
 
-export function plansCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("plans");
+export function processesCol() {
+  return getDb().collection("processes");
 }
 
-export function skillProposalsCol(primeId: string) {
-  return getDb().collection("primes").doc(primeId).collection("skill-proposals");
+export function plansCol() {
+  return getDb().collection("plans");
+}
+
+export function skillProposalsCol() {
+  return getDb().collection("skill-proposals");
 }
 
 export function projectsCol() {

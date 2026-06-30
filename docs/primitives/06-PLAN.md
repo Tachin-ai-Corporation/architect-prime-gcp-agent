@@ -1,6 +1,6 @@
 # Primitive: Plan
 
-**Firestore path:** `primes/{primeId}/plans/{planId}`
+**Firestore path:** `plans/{planId}`
 
 A Plan is an **unexecuted Mission blueprint**. It captures the full M→C→T layout — the Mission instruction, Checkpoint structure, and Task details — without creating any WorkEnvelopes. Plans go through an approval lifecycle before being "stamped" into live work.
 
@@ -11,7 +11,8 @@ A Plan is an **unexecuted Mission blueprint**. It captures the full M→C→T la
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `string` | Unique identifier (generated via `generateId('plan')`) |
-| `project_id` | `string` | Project this Plan belongs to |
+| `project_id` | `string` | **Required.** Project this Plan belongs to |
+| `work_id` | `string \| null` | Mission ID in the top-level `work/` collection (set when stamped) |
 | `name` | `string` | Human-readable name (process name + instruction excerpt) |
 | `process_id` | `string \| null` | Source process (if process-derived) |
 | `process_version` | `number \| null` | Version of the source process |
@@ -96,7 +97,7 @@ Creates a Plan in `draft` status:
 1. Loads the process definition
 2. Calls `processToCheckpointPlan()` to generate the checkpoint structure
 3. Maps the result into `PlanLayout` format
-4. Writes to Firestore at `primes/{id}/plans/{planId}`
+4. Writes to Firestore at `plans/{planId}`
 5. Returns the Plan document
 
 ### `approvePlan(planId, approvedBy)`

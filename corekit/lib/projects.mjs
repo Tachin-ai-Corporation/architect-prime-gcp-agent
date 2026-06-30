@@ -359,7 +359,8 @@ export function createProjectRegistry(config) {
    * @returns {string} The default project ID
    */
   async function ensureDefault() {
-    const defaultId = `${agentId}/general`;
+    // Deployment-level default: shared across all agents (C-1: Prime is executor, not owner)
+    const defaultId = 'general';
     DEFAULT_PROJECT_ID = defaultId;
     if (PROJECTS[defaultId]) {
       log('DEBUG', `Default project exists: ${defaultId}`);
@@ -524,7 +525,7 @@ export function createProjectRegistry(config) {
     if (!Array.isArray(deps) || deps.length === 0) return true;
     try {
       for (const depId of deps) {
-        const dep = await firestore.read(`primes/${primeId}/work/${depId}`);
+        const dep = await firestore.read(`work/${depId}`);
         if (!dep) continue; // dep not found = don't block
         if (dep.status !== 'complete' && dep.status !== 'archived') {
           return false;
@@ -571,7 +572,7 @@ export function createProjectRegistry(config) {
             env.status = 'active';
             env.started_at = now();
             env.updated_at = now();
-            await firestore.write(`primes/${primeId}/work/${env.id}`, env);
+            await firestore.write(`work/${env.id}`, env);
             if (_writeHistory) {
               await _writeHistory(env.id, 'pending', 'active', 'brain', `Dependencies cleared — auto-activated`);
             }

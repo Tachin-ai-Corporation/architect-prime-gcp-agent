@@ -44,7 +44,7 @@ fi
 [ -z "${GCP_PROJECT_ID:-}" ] && { echo "ERROR: Cannot determine GCP_PROJECT_ID" >&2; exit 1; }
 
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
-COLLECTION_PATH="primes/${PRIME_ID}/processes"
+COLLECTION_PATH="processes"
 
 get_token() {
   gcloud auth print-access-token --quiet 2>/dev/null

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/firestore";
+import { getDb, workCol } from "@/lib/firestore";
 
 interface RouteContext {
   params: Promise<{ id: string; workId: string }>;
@@ -14,9 +14,9 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
   try {
     const { id, workId } = await ctx.params;
     const db = getDb();
-    const workCol = db.collection("primes").doc(id).collection("work");
+    const wCol = workCol();
 
-    const rootDoc = await workCol.doc(workId).get();
+    const rootDoc = await wCol.doc(workId).get();
     if (!rootDoc.exists) {
       return NextResponse.json({ error: "Envelope not found" }, { status: 404 });
     }
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       const newIds = childIds.filter((cid: string) => !seenIds.has(cid));
       if (newIds.length === 0) break;
 
-      const refs = newIds.map((cid: string) => workCol.doc(cid));
+      const refs = newIds.map((cid: string) => wCol.doc(cid));
       const nextLevel: any[] = [];
 
       for (let i = 0; i < refs.length; i += 500) {
