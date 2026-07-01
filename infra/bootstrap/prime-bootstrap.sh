@@ -422,6 +422,20 @@ systemctl daemon-reload
 systemctl enable fleet-health-check.timer
 systemctl start fleet-health-check.timer
 
+# ---- 16) Provision Firestore composite indexes ----
+info "Provisioning Firestore composite indexes..."
+if [[ -f "${CORE_DIR}/infra/bootstrap/provision-firestore-indexes.sh" ]]; then
+  GCP_PROJECT_ID="${GCP_PROJECT_ID}" bash "${CORE_DIR}/infra/bootstrap/provision-firestore-indexes.sh" || warn "Index provisioning had errors (non-fatal)"
+else
+  # Fallback: download from repo
+  IDXSCRIPT="$(curl -fsSL "${CORE_BASE}/infra/bootstrap/provision-firestore-indexes.sh" 2>/dev/null)" || true
+  if [[ -n "$IDXSCRIPT" ]]; then
+    echo "$IDXSCRIPT" | GCP_PROJECT_ID="${GCP_PROJECT_ID}" bash || warn "Index provisioning had errors (non-fatal)"
+  else
+    warn "provision-firestore-indexes.sh not found — skipping index setup"
+  fi
+fi
+
 # ---- Done ----
 write_deploy_step "online" "Prime online" "done"
 
