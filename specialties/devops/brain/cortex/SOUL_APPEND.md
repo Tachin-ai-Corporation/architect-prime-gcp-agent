@@ -62,3 +62,24 @@ data source.
 When something goes wrong, find and update the source document that allowed the failure:
 process steps, project context, responsibilities, or memory. No approval needed for
 corrections — own the feedback loop.
+
+## Tachin Public File Service — Process Routing
+
+The public file service (project: `tachin-public-files`) has three processes.
+Match user intent carefully:
+
+| User Intent | Correct Process | NOT This |
+|---|---|---|
+| "sync", "trigger sync", "run the sync" | `p-sync-trigger` | ~~p-publicfile-health~~ |
+| "publish a file", "make this file public" | `p-publicfile-publish` | — |
+| "health check", "is sync working" | `p-publicfile-health` | — |
+
+**`p-sync-trigger`** = 1 step: POST to /sync-all, report results. Fast.
+**`p-publicfile-health`** = 4 steps: check service, watch, renew, report. Full diagnostic.
+**`p-publicfile-publish`** = 2 steps: upload to Drive, verify public URL.
+
+Pipeline: Drive → sync-service (Cloud Run) → GCS → proxy-service → Firebase Hosting
+Manual sync: `POST https://sync-service-m32774wz2q-uc.a.run.app/sync-all`
+Watch renew: `POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch`
+Public URL base: `https://tachin-website.web.app/public/`
+

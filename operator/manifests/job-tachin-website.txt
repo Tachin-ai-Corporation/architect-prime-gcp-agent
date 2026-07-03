@@ -19,6 +19,7 @@ operator/processes/p-web-feature.json corekit/processes/p-web-feature.json
 operator/processes/p-web-verify.json corekit/processes/p-web-verify.json
 operator/processes/p-publicfile-health.json corekit/processes/p-publicfile-health.json
 operator/processes/p-publicfile-publish.json corekit/processes/p-publicfile-publish.json
+operator/processes/p-sync-trigger.json corekit/processes/p-sync-trigger.json
 
 # Devops responsibilities (sync health, etc.)
 operator/responsibilities/responsibilities-devops.json corekit/responsibilities-devops.json

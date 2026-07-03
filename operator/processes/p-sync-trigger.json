@@ -1,0 +1,27 @@
+{
+  "id": "p-sync-trigger",
+  "name": "Trigger Public File Sync",
+  "description": "Manually trigger the Drive→GCS sync for the public file service. This is a lightweight 1-step process that just hits the sync-service /sync-all endpoint and verifies the sync completed. Use this when a user wants to sync files, NOT p-sync-health-check (which is a multi-step health check).",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "sync_service_url": { "description": "sync-service Cloud Run URL", "required": false, "default": "https://sync-service-m32774wz2q-uc.a.run.app" },
+    "gcs_bucket": { "description": "GCS bucket name", "required": false, "default": "tachin-website-assets" },
+    "project_id": { "description": "Project context", "required": false, "default": "tachin-public-files" }
+  },
+  "steps": [
+    {
+      "title": "Trigger sync and verify",
+      "description": "Trigger the sync-service to synchronize the Google Drive /public folder to GCS.\n\n1. POST to ${sync_service_url}/sync-all with an empty JSON body\n2. The response will include syncedFiles, ignoredFiles, and deletedFiles arrays\n3. Report what was synced\n4. Verify the public URL is accessible by checking https://tachin-website.web.app/public/index.html returns HTTP 200\n\nUse the web-fetch tool to make the POST request. Do NOT use curl or run_command.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Sync completed. List of synced files reported. Public URL verified accessible."
+    }
+  ],
+  "contextTemplate": {},
+  "pre_flight": null,
+  "created_by": "system",
+  "execution_count": 0
+}

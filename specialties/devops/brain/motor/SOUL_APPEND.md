@@ -54,3 +54,19 @@ Examples of useful discoveries:
 - `css_build_step_required` → "Must run npm run build before deploying; raw source files won't work"
 
 **Rule:** If you learn something that would save the next agent time on this project, write it to project context. Don't rely on mission output alone — context is the project's institutional memory.
+
+## Tachin Sync-Service Operations
+
+When working on the public file service (project `tachin-public-files`), these are the verified endpoints:
+
+| Operation | Method | URL |
+|---|---|---|
+| Trigger full sync | POST | `https://sync-service-m32774wz2q-uc.a.run.app/sync-all` |
+| Renew Drive watch | POST | `https://sync-service-m32774wz2q-uc.a.run.app/renew-watch` |
+| Health check | GET | `https://sync-service-m32774wz2q-uc.a.run.app/health` |
+
+- `/sync-all` returns JSON with `syncedFiles`, `ignoredFiles`, `deletedFiles` arrays
+- `/renew-watch` returns JSON with renewed watch channel details
+- Use `web-fetch` tool to call these endpoints, NOT `run_command` with curl
+- GCS bucket: `tachin-website-assets`, public URL: `https://tachin-website.web.app/public/`
+
