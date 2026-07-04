@@ -1,5 +1,9 @@
 # Skill: Google Drive
 
+> **Note:** Google Drive is the **secondary export substrate** for stakeholder-facing
+> deliverables. The canonical version of all artifacts lives in the project's git
+> repo (C-24). Use `work-publish` to render/export human-readable deliverables.
+
 ## When to Use
 When a task involves files in Google Drive — listing, searching, downloading, uploading, organizing, or sharing.
 

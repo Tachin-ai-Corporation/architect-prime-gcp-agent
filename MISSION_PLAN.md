@@ -65,7 +65,7 @@ Around the spine, four organizing primitives:
 - **Projects:** The sole recursive primitive (bounded depth) — organizational containers with accumulated context and dependencies.
 - **Plans:** Unexecuted mission blueprints with a full lifecycle: drafted, approved, stamped into M→C→T.
 - **Processes:** Reusable, parameterized templates that produce plans — the system's repeatable ways of working, including delegation steps and human approval gates.
-- **Artifacts:** Files produced during missions, stored in the git artifact substrate (GCS-backed repos with Firestore CAS refs) and published to Google Drive for stakeholder access.
+- **Artifacts:** Files produced during missions, stored in the git artifact substrate (GCS-backed repos with Firestore CAS refs, one per project) with merge-policy governance and changed-paths manifests.
 - **Skills:** Versioned, fleet-shared instruction packages — the system's codified know-how.
 
 The set is closed. New coordination needs are expressed by composing these nine — never by inventing a tenth. The full framework is documented in [`docs/CULTURE_OF_WORK.md`](docs/CULTURE_OF_WORK.md).

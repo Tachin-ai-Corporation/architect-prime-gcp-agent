@@ -164,3 +164,14 @@ graph TD
   "updated_at": "2026-06-08T14:00:00Z"
 }
 ```
+
+## Repo Mapping
+Every project maps to exactly one git artifact repo (repo-per-project convention C-24).
+The repo ID is the project ID sanitized to `[a-z0-9-]` (via `sanitizeRepoId`). Cross-project
+access is granted via explicit `work-clone`.
+
+### `merge_policy`
+- `auto` (default) — mission branches merge to `main` automatically on completion
+- `gated` — merge requires explicit approval via the approval gate before landing on `main`
+
+Resolution: project-level `merge_policy` if set, else `auto`.

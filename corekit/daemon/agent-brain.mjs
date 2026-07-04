@@ -108,7 +108,7 @@ const BRAIN_ROUTE = CORTEX_ROUTE;  // classify/decide/synthesize always use cort
 const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
 
 // ---- Artifacts config (loaded from prime Firestore doc at startup) ----
-// ARTIFACTS_ROOT_FOLDER_ID is now declared in the artifacts wrapper below
+// Drive folder provisioning removed — git substrate is the sole artifact store (C-24)
 
 // ---- Context forwarding budgets (chars per prior step) ----
 const CTX_DISPATCH_SUCCESS = CONTRACTS.dispatch?.ctx_dispatch_success || 4000;
@@ -3232,7 +3232,6 @@ function buildEnvelopeContext(envelope, priorResults, memoryResults) {
 
 // ---- Artifacts (via artifacts.mjs, Phase 3 extraction) ----
 let _artifacts = null;
-let ARTIFACTS_ROOT_FOLDER_ID = null; // synced from module for backward compat
 
 function _initArtifacts() {
   _artifacts = createArtifactManager({
@@ -3267,25 +3266,9 @@ async function cleanupSharedWorkspace(envelopeId) {
   await _artifacts.cleanupWorkspace(envelopeId);
 }
 
-async function ensureProjectDriveFolder(projectId) {
-  if (!_artifacts) _initArtifacts();
-  return _artifacts.ensureProjectFolder(projectId);
-}
-
 async function publishArtifacts(envelope) {
   if (!_artifacts) _initArtifacts();
   return _artifacts.publish(envelope);
-}
-
-async function loadPrimeConfig() {
-  if (!_artifacts) _initArtifacts();
-  await _artifacts.loadConfig();
-  ARTIFACTS_ROOT_FOLDER_ID = _artifacts.getArtifactsRootId();
-}
-
-async function ensureAgentDriveFolder() {
-  if (!_artifacts) _initArtifacts();
-  return _artifacts.ensureAgentFolder();
 }
 
 // ---- History (via history.mjs, Phase 3 extraction) ----
@@ -3626,16 +3609,10 @@ async function main() {
   log('INFO', `Brain summarizer: ${BRAIN_MODEL} (direct Vertex, bypasses gateway)`);
   log('INFO', `Registry agents: ${Object.keys(REGISTRY.agents).join(', ') || 'none loaded'}`);
 
-  // Load prime config (artifacts root folder, etc.)
-  await loadPrimeConfig();
-
   // Load projects from Firestore
   await loadProjects();
   await ensureDefaultProject();
   log('INFO', `Projects loaded: ${Object.keys(PROJECTS).length} active (default: ${DEFAULT_PROJECT_ID})`);
-
-  // Provision agent Drive folder: {root}/{prime}/{agent}/
-  ensureAgentDriveFolder().catch(e => log('WARN', `Agent Drive folder provisioning failed: ${e.message}`));
 
   // Verify gateway is reachable
   try {

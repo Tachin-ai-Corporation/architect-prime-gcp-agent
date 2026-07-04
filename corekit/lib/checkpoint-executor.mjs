@@ -11,6 +11,7 @@ import { composeDelegationMarker } from './delegation.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from './verdict.mjs';
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
+import { allocateVersion } from './git-store.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -1006,9 +1007,19 @@ export async function executeCheckpoints(checkpoints, opts) {
     // Git substrate: commit+push after each successful checkpoint
     if (!cpFailed && gitCommitAndSync && envelope.project_id) {
       try {
-        const d = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+        const d = new Date();
+        const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '.');
+        const sharedDir = `${CORE_DIR}/shared/${envelope.id}`;
+        // Allocate daily version index once per mission, cache on envelope context
+        if (!envelope.context?.git_version_index) {
+          envelope.context = envelope.context || {};
+          envelope.context.git_version_index = allocateVersion?.(sharedDir, 'main', d) || 1;
+        }
+        const i = envelope.context.git_version_index;
         const cpTitle = (cpEnvelope.title || `checkpoint-${cpNum}`).slice(0, 60);
-        const msg = `v${d}.${cpNum}.0: ${cpTitle}`;
+        const msg = `v${dateStr}.${i}.${cpNum}: ${cpTitle}`;
+        // Track checkpoint count for publish() version continuation
+        envelope.context.git_checkpoint_count = cpNum;
         const syncResult = await gitCommitAndSync(envelope.id, envelope.project_id, msg);
         if (syncResult.committed) {
           log('INFO', `[checkpoint-executor] CP${cpNum}: git committed ${syncResult.sha?.slice(0, 8)} (synced=${syncResult.synced})`);

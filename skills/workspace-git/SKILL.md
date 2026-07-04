@@ -1,5 +1,9 @@
 # Skill: Git Workspace
 
+> **Note (A16):** The brain daemon automatically clones mission workspaces into
+> `shared/{missionId}/` at mission start. `work-clone`'s bare default
+> (`shared/{repoId}`) is for ad-hoc cross-project reads outside of missions.
+
 ## When to Use
 When working with git-backed artifact repos — cloning project repos, creating mission branches, committing checkpoint work, syncing changes to the ether, merging branches, or inspecting repo state (status, diffs, logs).
 

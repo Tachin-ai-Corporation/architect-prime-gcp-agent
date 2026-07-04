@@ -2,14 +2,13 @@
 // Extracted from agent-brain.mjs Phase 3
 //
 // Manages the lifecycle of per-mission shared workspaces (shared/{envelopeId}/)
-// and publishes work products via two parallel substrates:
-//   1. Google Drive (legacy, runs first)
-//   2. Git store (GCS bundles + Firestore refs, runs after Drive)
+// and publishes work products via the git artifact substrate (C-24).
+// Git store: GCS bundles + Firestore refs with CAS.
 //
 // All external state (Firestore, config, projects, auth) injected via deps.
 
 import { getGceToken } from './gce-auth.mjs';
-import { ensureRepo, cloneRepo, pushWithRetry, mergeBranch, buildManifest, readRef } from './git-store.mjs';
+import { ensureRepo, cloneRepo, pushWithRetry, pushBranch, mergeBranch, buildManifest, readRef, sanitizeRepoId, allocateVersion } from './git-store.mjs';
 
 /**
  * Create an artifact manager instance.
@@ -50,50 +49,25 @@ export function createArtifactManager(deps) {
 
   const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${gcpProject}/databases/(default)/documents`;
 
-  // ---- Internal state ----
-  let _artifactsRootFolderId = null;
-
   /** ISO timestamp */
   function now() {
     return new Date().toISOString();
   }
 
   // =========================================================================
-  //  Prime config (artifacts_root_folder_id)
+  //  Merge policy resolution (A2)
   // =========================================================================
 
   /**
-   * Load artifacts_root_folder_id from the app-level config/settings doc.
-   * Called at startup and periodically to pick up dashboard config changes.
+   * Resolve the merge policy for a project.
+   * Project-level setting wins; code-class projects default to gated; else auto.
+   * @param {object} [project]
+   * @returns {'auto'|'gated'}
    */
-  async function loadConfig() {
-    try {
-      const token = await getGceToken();
-      if (!token) return;
-      const url = `${FIRESTORE_BASE}/config/settings`;
-      const resp = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!resp.ok) return;
-      const data = await resp.json();
-      const fields = data.fields || {};
-      const rootId = fields.artifacts_root_folder_id?.stringValue || null;
-      if (rootId !== _artifactsRootFolderId) {
-        _artifactsRootFolderId = rootId;
-        log('INFO', `Artifacts root folder: ${rootId || '(not configured)'}`);
-      }
-    } catch (e) {
-      log('WARN', `loadConfig error: ${e.message}`);
-    }
-  }
-
-  /**
-   * Get the current artifacts root folder ID.
-   * @returns {string|null} Drive folder ID or null if not configured
-   */
-  function getArtifactsRootId() {
-    return _artifactsRootFolderId;
+  function resolveMergePolicy(project) {
+    if (project?.merge_policy) return project.merge_policy;
+    if (project?.class === 'code' || project?.type === 'code') return 'gated';
+    return 'auto';
   }
 
   // =========================================================================
@@ -102,9 +76,13 @@ export function createArtifactManager(deps) {
 
   /**
    * Initialize a shared workspace directory for an envelope.
-   * Creates `{coreDir}/shared/{envelopeId}/` via shell.
+   * Creates `{coreDir}/shared/{envelopeId}/` via shell, then clones the
+   * project's git artifact repo and creates a mission branch.
    *
    * @param {string} envelopeId - Envelope ID to create workspace for
+   * @param {object} [opts]
+   * @param {string} [opts.projectId] - Project ID for git substrate init
+   * @param {object} [opts.envelope]  - Envelope ref for degradation marking
    */
   async function initWorkspace(envelopeId, opts = {}) {
     const sharedDir = `${coreDir}/shared/${envelopeId}`;
@@ -119,8 +97,9 @@ export function createArtifactManager(deps) {
     const projectId = opts.projectId;
     if (projectId) {
       try {
-        const repoId = projectId;
-        await ensureRepo(repoId, { mergePolicy: 'auto' });
+        const repoId = sanitizeRepoId(projectId);
+        const project = getProjects()[projectId];
+        await ensureRepo(repoId, { mergePolicy: resolveMergePolicy(project) });
         const branch = `mission/${envelopeId}`;
         const ref = await readRef(repoId, 'main');
         // Clone main (or init empty) into shared dir
@@ -128,14 +107,19 @@ export function createArtifactManager(deps) {
         // Create and checkout mission branch
         const { execSync } = await import('child_process');
         try {
-          execSync(`git checkout -b ${branch}`, { cwd: sharedDir, timeout: 5000 });
+          execSync(`git checkout -b "${branch}"`, { cwd: sharedDir, timeout: 5000 });
         } catch {
           // Branch may exist if resuming
-          try { execSync(`git checkout ${branch}`, { cwd: sharedDir, timeout: 5000 }); } catch { /* ignore */ }
+          try { execSync(`git checkout "${branch}"`, { cwd: sharedDir, timeout: 5000 }); } catch { /* ignore */ }
         }
         log('INFO', `Git workspace initialized: repo=${repoId} branch=${branch} base=${ref?.sha?.slice(0, 8) || 'empty'}`);
       } catch (e) {
         log('WARN', `Git workspace init failed (non-fatal): ${e.message}`);
+        // A9 degradation marker: flag so publish() and commitAndSync know to skip git
+        try {
+          const env = opts.envelope;
+          if (env) { env.context = env.context || {}; env.context.git_status = `degraded: ${e.message.slice(0, 100)}`; }
+        } catch { /* ignore */ }
       }
     }
   }
@@ -164,12 +148,13 @@ export function createArtifactManager(deps) {
    * Called after each checkpoint completion by the brain daemon.
    *
    * @param {string} envelopeId - Mission envelope ID
-   * @param {string} projectId  - Project ID (= repoId)
+   * @param {string} projectId  - Project ID (sanitized to repoId internally)
    * @param {string} message    - Canonical commit message (C-23)
    * @returns {Promise<{committed: boolean, synced: boolean, sha: string|null}>}
    */
   async function commitAndSync(envelopeId, projectId, message) {
     if (!projectId) return { committed: false, synced: false, sha: null };
+    const repoId = sanitizeRepoId(projectId);
     const sharedDir = `${coreDir}/shared/${envelopeId}`;
     const branch = `mission/${envelopeId}`;
 
@@ -206,7 +191,7 @@ export function createArtifactManager(deps) {
       log('INFO', `commitAndSync: committed ${sha.slice(0, 8)} on ${branch}`);
 
       // Push to ether
-      const pushResult = await pushWithRetry(projectId, branch, sharedDir, agentName);
+      const pushResult = await pushWithRetry(repoId, branch, sharedDir, agentName);
       if (pushResult.status === 'pushed' || pushResult.status === 'up_to_date') {
         log('INFO', `commitAndSync: synced ${branch} (${pushResult.status}, ${pushResult.attempts} attempts)`);
         return { committed: true, synced: true, sha };
@@ -221,345 +206,112 @@ export function createArtifactManager(deps) {
   }
 
   // =========================================================================
-  //  Drive folder provisioning
+  //  Artifact publishing (git-only, C-24)
   // =========================================================================
 
   /**
-   * Ensure a project has a Drive folder. Creates one under the artifacts root
-   * if needed. For the agent's "general" project, uses "root" (My Drive).
-   *
-   * @param {string} projectId - Project to ensure folder for
-   * @returns {Promise<string|null>} Drive folder ID, 'root', or null
-   */
-  async function ensureProjectFolder(projectId) {
-    const PROJECTS = getProjects();
-    const DEFAULT_PROJECT_ID = getDefaultProjectId();
-
-    if (!projectId || !PROJECTS[projectId]) return null;
-    const project = PROJECTS[projectId];
-    const ctx = project.context || {};
-
-    // Already has a Drive folder
-    if (project.drive_folder_id) return project.drive_folder_id;
-    if (ctx.drive_folder?.ref) return ctx.drive_folder.ref;
-
-    // General project uses agent's My Drive root
-    if (projectId === DEFAULT_PROJECT_ID || projectId.endsWith('/general')) {
-      return 'root';
-    }
-
-    // No artifacts root configured — can't provision
-    if (!_artifactsRootFolderId) {
-      log('DEBUG', `No artifacts_root_folder_id configured — skipping Drive folder for ${projectId}`);
-      return null;
-    }
-
-    try {
-      const { execSync: exec } = await import('child_process');
-      const projName = (project.name || projectId).replace(/["']/g, '');
-
-      // Create project folder under root
-      const mkdirOut = exec(
-        `${coreDir}/bin/drive-mkdir "${projName}" --parent ${_artifactsRootFolderId}`,
-        { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
-      ).trim();
-
-      // Parse folder ID from output (drive-mkdir outputs JSON with folderId)
-      let folderId = null;
-      try {
-        const parsed = JSON.parse(mkdirOut);
-        folderId = parsed.folderId || parsed.id || null;
-      } catch {
-        // Fallback: extract folder ID from text output
-        const match = mkdirOut.match(/([a-zA-Z0-9_-]{20,})/);
-        folderId = match ? match[1] : null;
-      }
-
-      if (!folderId) {
-        log('WARN', `Failed to parse Drive folder ID from drive-mkdir output: ${mkdirOut.slice(0, 200)}`);
-        return null;
-      }
-
-      // Update project context with new Drive folder
-      project.context = project.context || {};
-      project.context.drive_folder = {
-        kind: 'drive_folder',
-        ref: folderId,
-        name: `Project: ${projName}`,
-        summary: `Shared artifact storage for ${projName}`,
-        url: `https://drive.google.com/drive/folders/${folderId}`,
-        updatedAt: now(),
-        updatedBy: 'brain',
-      };
-      PROJECTS[projectId] = project;
-
-      // Persist to Firestore
-      const token = await getGceToken();
-      if (token) {
-        const projUrl = `${FIRESTORE_BASE}/projects/${projectId}?updateMask.fieldPaths=context`;
-        await fetch(projUrl, {
-          method: 'PATCH',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fields: { context: firestoreEncode(project.context) } }),
-        });
-      }
-
-      log('INFO', `Project Drive folder provisioned: ${projName} → ${folderId}`);
-
-      // Pre-share with fleet agents (best-effort)
-      try {
-        const fleetToken = await getGceToken();
-        if (fleetToken && primeId) {
-          const fleetUrl = `${FIRESTORE_BASE}/primes/${primeId}/fleet`;
-          const fleetResp = await fetch(fleetUrl, {
-            headers: { 'Authorization': `Bearer ${fleetToken}` },
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (fleetResp.ok) {
-            const fleetData = await fleetResp.json();
-            for (const doc of (fleetData.documents || [])) {
-              const fleetAgentEmail = doc.fields?.email?.stringValue;
-              if (fleetAgentEmail && fleetAgentEmail !== agentEmail) {
-                try {
-                  exec(`${coreDir}/bin/drive-share --file ${folderId} --to user:${fleetAgentEmail} --role writer`, { timeout: 15_000, cwd: coreDir });
-                  log('DEBUG', `Shared project folder with ${fleetAgentEmail}`);
-                } catch { /* best-effort */ }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        log('DEBUG', `Fleet pre-share skipped: ${e.message}`);
-      }
-
-      return folderId;
-    } catch (e) {
-      log('WARN', `ensureProjectFolder failed for ${projectId}: ${e.message}`);
-      return null;
-    }
-  }
-
-  // =========================================================================
-  //  Agent folder provisioning
-  // =========================================================================
-
-  /**
-   * Ensure the agent has its own folder: {root}/{prime}/{agent}/.
-   * Called at brain startup. Creates folders idempotently.
-   *
-   * @returns {Promise<string|null>} Agent folder ID or null
-   */
-  async function ensureAgentFolder() {
-    if (!_artifactsRootFolderId) {
-      log('DEBUG', 'No artifacts_root_folder_id — skipping agent folder provisioning');
-      return null;
-    }
-    try {
-      const { execSync: exec } = await import('child_process');
-      const fs = await import('fs');
-
-      // Guard: skip if drive-mkdir not installed (prime agents lack Drive tools)
-      const mkdirBin = `${coreDir}/bin/drive-mkdir`;
-      if (!fs.existsSync(mkdirBin)) {
-        log('DEBUG', 'drive-mkdir not installed — skipping agent folder provisioning');
-        return null;
-      }
-
-      const primeName = (primeId || 'unknown').replace(/["']/g, '');
-      const agentName = (agentId || 'unknown').replace(/["']/g, '');
-
-      // Create {root}/{prime}/ folder
-      const primeOut = exec(
-        `${coreDir}/bin/drive-mkdir "${primeName}" --parent ${_artifactsRootFolderId}`,
-        { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
-      ).trim();
-      const primeFolderId = JSON.parse(primeOut).id || JSON.parse(primeOut).folderId;
-      if (!primeFolderId) return null;
-
-      // Create {root}/{prime}/{agent}/ folder
-      const agentOut = exec(
-        `${coreDir}/bin/drive-mkdir "${agentName}" --parent ${primeFolderId}`,
-        { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
-      ).trim();
-      const agentFolderId = JSON.parse(agentOut).id || JSON.parse(agentOut).folderId;
-      log('INFO', `Agent folder provisioned: ${primeName}/${agentName} → ${agentFolderId || '(failed)'}`);
-      return agentFolderId || null;
-    } catch (e) {
-      log('WARN', `ensureAgentFolder failed: ${e.message}`);
-      return null;
-    }
-  }
-
-  // =========================================================================
-  //  Artifact publishing
-  // =========================================================================
-
-  /**
-   * Publish artifacts from shared/{missionId}/ to Drive on mission completion.
-   * Creates {project-folder}/{MM-DD}/ subfolder structure.
+   * Publish artifacts from shared/{missionId}/ on mission completion.
+   * Commits remaining changes, merges mission branch into main,
+   * builds a changed-paths manifest, and sets envelope.context.artifacts.
    *
    * @param {object} envelope - Mission envelope to publish artifacts for
-   * @returns {Promise<Array<{name: string, driveId: string, url: string, size: number}>>}
-   *   Array of published artifact descriptors (empty if none)
+   * @returns {Promise<object|null>} Git artifact manifest or null
    */
   async function publish(envelope) {
-    if (!envelope || envelope.type !== 'M') return [];
+    if (!envelope || envelope.type !== 'M') return null;
+    if (!envelope.project_id) return null;
 
-    // ---- Git substrate: commit, push, merge, build manifest ----
-    let gitManifest = null;
-    if (envelope.project_id) {
-      try {
-        const sharedDir = `${coreDir}/shared/${envelope.id}`;
-        const repoId = envelope.project_id;
-        const branch = `mission/${envelope.id}`;
-
-        // Final commit of any remaining changes
-        const commitMsg = `v${new Date().toISOString().slice(0, 10).replace(/-/g, '.')}.1.0: ${(envelope.title || 'mission complete').slice(0, 80)}`;
-        const commitResult = await commitAndSync(envelope.id, repoId, commitMsg);
-
-        if (commitResult.sha) {
-          // Merge mission branch into main
-          const mergeResult = await mergeBranch(repoId, branch, 'main', 'auto', agentId || 'brain');
-          if (mergeResult.status === 'merged') {
-            log('INFO', `Git: merged ${branch} → main (sha: ${mergeResult.sha?.slice(0, 8)})`);
-          } else {
-            log('WARN', `Git: merge ${branch} → main returned ${mergeResult.status}`);
-          }
-
-          // Build manifest
-          gitManifest = await buildManifest(repoId, 'main', []);
-          if (gitManifest) {
-            envelope.context = envelope.context || {};
-            envelope.context.git_artifacts = gitManifest;
-          }
-        }
-      } catch (e) {
-        log('WARN', `Git publish failed (non-fatal): ${e.message}`);
-      }
+    // Skip if workspace is degraded (git init failed at initWorkspace time)
+    if (envelope.context?.git_status?.startsWith('degraded')) {
+      log('WARN', `publish: skipping degraded workspace (${envelope.context.git_status})`);
+      return null;
     }
-    // ---- End git substrate ----
 
-    const PROJECTS = getProjects();
-
-    // Check if shared/ has files
-    let files = [];
     try {
-      const { readdirSync, statSync } = await import('fs');
       const sharedDir = `${coreDir}/shared/${envelope.id}`;
-      try {
-        files = readdirSync(sharedDir).filter(f => {
-          try {
-            return statSync(`${sharedDir}/${f}`).isFile();
-          } catch { return false; }
-        });
-      } catch {
-        return []; // No shared dir or empty
-      }
-    } catch {
-      return [];
-    }
+      const repoId = sanitizeRepoId(envelope.project_id);
+      const branch = `mission/${envelope.id}`;
 
-    if (files.length === 0) return [];
+      // Allocate version index for deterministic versioning (A3)
+      const d = new Date();
+      const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '.');
+      const versionIndex = envelope.context?.git_version_index || allocateVersion(sharedDir, 'main', d) || 1;
+      const nextStep = (envelope.context?.git_checkpoint_count || 0) + 1;
+      const title = (envelope.title || 'mission complete').slice(0, 80);
+      const commitMsg = `v${dateStr}.${versionIndex}.${nextStep}: ${title}`;
 
-    // Get project Drive folder
-    const projectFolderId = await ensureProjectFolder(envelope.project_id);
-    if (!projectFolderId) {
-      log('DEBUG', `No Drive folder for project ${envelope.project_id} — skipping artifact publish`);
-      return [];
-    }
+      // Final commit of any remaining changes
+      const commitResult = await commitAndSync(envelope.id, envelope.project_id, commitMsg);
 
-    try {
-      const { execSync: exec } = await import('child_process');
-      const { statSync } = await import('fs');
-
-      // Create MM-DD date subfolder under project folder
-      let targetFolderId = projectFolderId;
-      if (projectFolderId !== 'root') {
-        try {
-          const dateSub = new Date().toISOString().slice(5, 10).replace('-', '-'); // MM-DD
-          const dateOut = exec(
-            `${coreDir}/bin/drive-mkdir "${dateSub}" --parent ${projectFolderId}`,
-            { timeout: 30_000, cwd: coreDir, encoding: 'utf8' }
-          ).trim();
-          const dateParsed = JSON.parse(dateOut).id || JSON.parse(dateOut).folderId;
-          if (dateParsed) targetFolderId = dateParsed;
-        } catch (e) {
-          log('WARN', `Date subfolder creation failed, publishing to project root: ${e.message}`);
-        }
+      if (!commitResult.sha) {
+        log('DEBUG', 'publish: no changes to publish');
+        return null;
       }
 
-      // Upload each file
-      const artifacts = [];
-      for (const file of files) {
-        try {
-          const filePath = `${coreDir}/shared/${envelope.id}/${file}`;
-          const fileSize = statSync(filePath).size;
-          const uploadOut = exec(
-            `${coreDir}/bin/drive-upload "${filePath}" ${targetFolderId}`,
-            { timeout: 60_000, cwd: coreDir, encoding: 'utf8' }
-          ).trim();
+      // Record main SHA before merge (for changed-paths manifest)
+      const mainBefore = (await readRef(repoId, 'main'))?.sha || null;
 
-          let fileId = null, webViewLink = null;
-          try {
-            const parsed = JSON.parse(uploadOut);
-            fileId = parsed.fileId || parsed.id;
-            webViewLink = parsed.webViewLink || parsed.url || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : null);
-          } catch {
-            const match = uploadOut.match(/([a-zA-Z0-9_-]{20,})/);
-            fileId = match ? match[1] : null;
-            webViewLink = fileId ? `https://drive.google.com/file/d/${fileId}/view` : null;
-          }
-
-          if (fileId) {
-            artifacts.push({ name: file, driveId: fileId, url: webViewLink, size: fileSize });
-            log('INFO', `Artifact published: ${file} → ${fileId}`);
-          }
-        } catch (e) {
-          log('WARN', `Failed to upload artifact ${file}: ${e.message}`);
-        }
-      }
-
-      if (artifacts.length === 0) return [];
-
-      // Auto-share with project owner
+      // Resolve merge policy
+      const PROJECTS = getProjects();
       const project = PROJECTS[envelope.project_id];
-      if (project?.owner && project.owner !== agentEmail) {
-        try {
-          exec(
-            `${coreDir}/bin/drive-share --file ${targetFolderId} --to user:${project.owner} --role reader`,
-            { timeout: 15_000, cwd: coreDir }
-          );
-          log('INFO', `Artifacts shared with project owner: ${project.owner}`);
-        } catch (e) {
-          log('DEBUG', `Auto-share with owner skipped: ${e.message}`);
-        }
+      const policy = resolveMergePolicy(project);
+
+      // Merge mission branch into main
+      const mergeResult = await mergeBranch(repoId, branch, 'main', policy, agentId || 'brain');
+
+      if (mergeResult.status === 'AWAITING_APPROVAL') {
+        log('INFO', `Git: merge ${branch} → main requires approval (gated policy)`);
+        // Park merge parameters for later resume
+        envelope.context = envelope.context || {};
+        envelope.context.pending_merge = {
+          repoId,
+          sourceBranch: branch,
+          targetBranch: 'main',
+          missionSha: commitResult.sha,
+          mainBefore,
+          parkedAt: now(),
+        };
+        return null;
       }
 
-      // Update envelope context with artifact manifest
-      envelope.context = envelope.context || {};
-      envelope.context.artifacts = {
-        kind: 'artifact_manifest',
-        summary: `${artifacts.length} artifact(s) published to Drive`,
-        drive_folder: targetFolderId,
-        drive_url: `https://drive.google.com/drive/folders/${targetFolderId}`,
-        files: artifacts,
-        updatedAt: now(),
-        updatedBy: 'brain',
-      };
+      if (mergeResult.status !== 'merged') {
+        log('WARN', `Git: merge ${branch} → main returned ${mergeResult.status}`);
+        return null;
+      }
 
-      // Also update project context with latest artifacts (merge)
-      if (project) {
+      log('INFO', `Git: merged ${branch} → main (sha: ${mergeResult.sha?.slice(0, 8)})`);
+
+      // Build changed-paths manifest (A4)
+      const mergedSha = mergeResult.sha;
+      let changedPaths;
+      try {
+        const { execSync } = await import('child_process');
+        // Clone the merged main to compute diff
+        const tmpDir = `/tmp/manifest-${Date.now()}`;
+        await cloneRepo(repoId, 'main', tmpDir);
+        if (mainBefore) {
+          changedPaths = execSync(`git diff --name-only ${mainBefore}..${mergedSha}`, { cwd: tmpDir, timeout: 10000, encoding: 'utf8' }).split('\n').filter(Boolean);
+        } else {
+          changedPaths = execSync(`git ls-tree -r --name-only ${mergedSha}`, { cwd: tmpDir, timeout: 10000, encoding: 'utf8' }).split('\n').filter(Boolean);
+        }
+        try { execSync(`rm -rf "${tmpDir}"`, { timeout: 5000 }); } catch { /* ignore */ }
+      } catch (e) {
+        log('WARN', `Changed-path computation failed, using empty list: ${e.message}`);
+        changedPaths = [];
+      }
+
+      const gitManifest = await buildManifest(repoId, 'main', changedPaths, { summary: title });
+
+      // Set the canonical artifact manifest on envelope context (A5)
+      if (gitManifest) {
+        envelope.context = envelope.context || {};
+        envelope.context.artifacts = gitManifest;
+      }
+
+      // Also update project context with latest manifest
+      if (project && gitManifest) {
         project.context = project.context || {};
-        const existing = project.context.artifacts?.files || [];
-        project.context.artifacts = {
-          kind: 'artifact_manifest',
-          summary: `${existing.length + artifacts.length} artifact(s) total`,
-          drive_folder: projectFolderId !== 'root' ? projectFolderId : targetFolderId,
-          drive_url: projectFolderId !== 'root' ? `https://drive.google.com/drive/folders/${projectFolderId}` : undefined,
-          files: [...existing, ...artifacts],
-          updatedAt: now(),
-          updatedBy: agentId,
-        };
+        project.context.artifacts = gitManifest;
         PROJECTS[envelope.project_id] = project;
         try {
           const token = await getGceToken();
@@ -576,30 +328,24 @@ export function createArtifactManager(deps) {
         }
       }
 
-      log('INFO', `Published ${artifacts.length} artifacts to Drive for mission ${envelope.id}`);
-      return artifacts;
+      log('INFO', `Published git artifacts for mission ${envelope.id} (${changedPaths.length} changed files)`);
+      return gitManifest;
     } catch (e) {
       log('WARN', `publish failed: ${e.message}`);
-      return [];
+      return null;
     }
   }
 
   return {
-    /** Load artifacts_root_folder_id from prime config. */
-    loadConfig,
-    /** Get current artifacts root folder ID. */
-    getArtifactsRootId,
     /** Initialize shared workspace for an envelope. */
     initWorkspace,
     /** Clean up shared workspace after completion. */
     cleanupWorkspace,
     /** Commit+push checkpoint-level changes to git ether. */
     commitAndSync,
-    /** Ensure a project has a Drive folder. */
-    ensureProjectFolder,
-    /** Ensure the agent has its own folder: {root}/{prime}/{agent}/. */
-    ensureAgentFolder,
-    /** Publish shared/ artifacts to Drive + git store. */
+    /** Publish shared/ artifacts via git substrate. */
     publish,
+    /** Resolve merge policy for a project. */
+    resolveMergePolicy,
   };
 }

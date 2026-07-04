@@ -287,13 +287,23 @@ async function run() {
   console.log(`   GCP_PROJECT_ID: ${process.env.GCP_PROJECT_ID || '(not set)'}`);
 
   if (!process.env.GCP_PROJECT_ID) {
-    console.error('ERROR: GCP_PROJECT_ID must be set');
-    process.exit(1);
+    console.log('SKIP: live git-store tests require GCE ADC (GCP_PROJECT_ID not set)');
+    process.exit(0);
   }
 
   try { execSync('git --version', { encoding: 'utf8' }); } catch {
     console.error('ERROR: git not found in PATH');
     process.exit(1);
+  }
+
+  // Probe GCE metadata server availability (fast timeout)
+  try {
+    const resp = await fetch('http://metadata.google.internal/computeMetadata/v1/project/project-id',
+      { headers: { 'Metadata-Flavor': 'Google' }, signal: AbortSignal.timeout(2000) });
+    if (!resp.ok) throw new Error('metadata server unreachable');
+  } catch {
+    console.log('SKIP: live git-store tests require GCE metadata server');
+    process.exit(0);
   }
 
   try {

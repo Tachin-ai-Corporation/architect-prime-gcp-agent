@@ -5,7 +5,7 @@
 //
 // Public API:
 //   ensureRepo, cloneRepo, fetchBranch, pushBranch, readRef, listRefs,
-//   mergeBranch, gc, buildManifest
+//   mergeBranch, gc, buildManifest, sanitizeRepoId, allocateVersion
 //
 // CLI: node git-store.mjs <cmd> [args...] — prints JSON to stdout,
 //      logs to stderr with [git-store] prefix.
@@ -50,9 +50,29 @@ function loadConfig() {
   return _config;
 }
 
+// ── Store injection seam (for local tests) ─────────────────────────────
+// Module-level store object — holds GCS/Firestore implementations.
+// Default: real GCS/Firestore REST calls. Tests can override via _setTestStore().
+let _store = null; // null = use real implementations below
+
+/**
+ * Inject a test store implementation. Set to null to restore defaults.
+ * The store object must implement: { gcsPut, gcsGet, gcsExists, gcsDelete,
+ *   firestoreRead, firestoreWrite, firestoreDelete, firestoreList }
+ * @param {object|null} store
+ */
+export function _setTestStore(store) { _store = store; }
+
+/**
+ * Inject test config, bypassing contracts.json loading.
+ * @param {object|null} config - config object or null to restore auto-load
+ */
+export function _setTestConfig(config) { _config = config; }
+
 // ── GCS REST helpers ───────────────────────────────────────────────────
 
 async function gcsPut(bucket, objectName, data) {
+  if (_store) return _store.gcsPut(bucket, objectName, data);
   const token = await getGceToken();
   const encodedName = encodeURIComponent(objectName);
   const url = `https://storage.googleapis.com/upload/storage/v1/b/${bucket}/o?uploadType=media&name=${encodedName}`;
@@ -73,6 +93,7 @@ async function gcsPut(bucket, objectName, data) {
 }
 
 async function gcsGet(bucket, objectName) {
+  if (_store) return _store.gcsGet(bucket, objectName);
   const token = await getGceToken();
   const encodedName = encodeURIComponent(objectName);
   const url = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodedName}?alt=media`;
@@ -89,6 +110,7 @@ async function gcsGet(bucket, objectName) {
 }
 
 async function gcsExists(bucket, objectName) {
+  if (_store) return _store.gcsExists(bucket, objectName);
   const token = await getGceToken();
   const encodedName = encodeURIComponent(objectName);
   const url = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodedName}`;
@@ -101,6 +123,7 @@ async function gcsExists(bucket, objectName) {
 }
 
 async function gcsDelete(bucket, objectName) {
+  if (_store) return _store.gcsDelete(bucket, objectName);
   const token = await getGceToken();
   const encodedName = encodeURIComponent(objectName);
   const url = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodedName}`;
@@ -119,6 +142,7 @@ function firestoreBase(projectId) {
 }
 
 async function firestoreRead(projectId, docPath) {
+  if (_store) return _store.firestoreRead(projectId, docPath);
   const token = await getGceToken();
   const url = `${firestoreBase(projectId)}/${docPath}`;
   const resp = await fetch(url, {
@@ -127,13 +151,16 @@ async function firestoreRead(projectId, docPath) {
   });
   if (!resp.ok) {
     if (resp.status === 404) return null;
-    return null;
+    // A6 fix: surface real errors instead of silently returning null
+    const text = await resp.text();
+    throw new Error(`Firestore read failed: ${resp.status} ${text.slice(0, 200)}`);
   }
   const doc = await resp.json();
   return doc;
 }
 
 async function firestoreWrite(projectId, docPath, fields, precondition) {
+  if (_store) return _store.firestoreWrite(projectId, docPath, fields, precondition);
   const token = await getGceToken();
   // Use the Firestore commit API for CAS with preconditions
   const base = firestoreBase(projectId);
@@ -172,6 +199,7 @@ async function firestoreWrite(projectId, docPath, fields, precondition) {
 }
 
 async function firestoreDelete(projectId, docPath) {
+  if (_store) return _store.firestoreDelete(projectId, docPath);
   const token = await getGceToken();
   const url = `${firestoreBase(projectId)}/${docPath}`;
   const resp = await fetch(url, {
@@ -183,6 +211,7 @@ async function firestoreDelete(projectId, docPath) {
 }
 
 async function firestoreList(projectId, collectionPath) {
+  if (_store) return _store.firestoreList(projectId, collectionPath);
   const token = await getGceToken();
   const url = `${firestoreBase(projectId)}/${collectionPath}`;
   const resp = await fetch(url, {
@@ -247,6 +276,62 @@ function refDocPath(repoId, branch) {
   return `git_repos/${repoId}/refs/${safeBranch}`;
 }
 
+// ── Input validation (A8) ──────────────────────────────────────────────
+
+const REPO_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const BRANCH_RE = /^[A-Za-z0-9._/-]{1,128}$/;
+
+/**
+ * Sanitize a raw project ID into a valid repoId.
+ * Lowercases, replaces non-alphanumeric chars with hyphens, trims.
+ * @param {string} raw
+ * @returns {string}
+ */
+export function sanitizeRepoId(raw) {
+  if (!raw) throw new Error('repoId is required');
+  return raw.toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64) || 'unnamed';
+}
+
+function validateRepoId(repoId) {
+  if (!REPO_ID_RE.test(repoId)) {
+    throw new Error(`Invalid repoId: "${repoId}" — must match ${REPO_ID_RE}`);
+  }
+}
+
+function validateBranch(branch) {
+  if (!BRANCH_RE.test(branch)) {
+    throw new Error(`Invalid branch: "${branch}" — must match ${BRANCH_RE}`);
+  }
+}
+
+/**
+ * Allocate a deterministic daily version index.
+ * Reads the commit log on targetRef for today's commits and returns the
+ * next available index (1-based).
+ * @param {string} gitDir - path to local git working tree
+ * @param {string} targetRef - ref to scan (e.g. 'main')
+ * @param {Date} [date] - date to allocate for (default: now)
+ * @returns {number}
+ */
+export function allocateVersion(gitDir, targetRef, date) {
+  const d = date || new Date();
+  const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '.');
+  const escapedDate = dateStr.replace(/\./g, '\\.');
+  const pattern = `^v${escapedDate}\\.(\\d+)\\.`;
+  try {
+    const since = `${d.toISOString().slice(0, 10)}T00:00:00Z`;
+    const logOutput = git(`log ${targetRef} --since="${since}" --format=%s`, { cwd: gitDir });
+    const indices = logOutput.split('\n').filter(Boolean)
+      .map(s => s.match(new RegExp(pattern))?.[1])
+      .filter(Boolean).map(Number);
+    return Math.max(0, ...indices) + 1;
+  } catch { return 1; }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 //  PUBLIC API
 // ══════════════════════════════════════════════════════════════════════
@@ -259,6 +344,7 @@ function refDocPath(repoId, branch) {
  * @returns {Promise<object>} repo doc data
  */
 export async function ensureRepo(repoId, opts = {}) {
+  validateRepoId(repoId);
   const config = loadConfig();
   const mergePolicy = opts.mergePolicy || 'auto';
   const docPath = repoDocPath(repoId);
@@ -319,6 +405,8 @@ export async function ensureRepo(repoId, opts = {}) {
  * @returns {Promise<{sha: string, bundle_keys: string[], updateTime: string}|null>}
  */
 export async function readRef(repoId, branch) {
+  validateRepoId(repoId);
+  validateBranch(branch);
   const config = loadConfig();
   const docPath = refDocPath(repoId, branch);
   const doc = await firestoreRead(config.gcpProject, docPath);
@@ -336,6 +424,7 @@ export async function readRef(repoId, branch) {
  * @returns {Promise<Array<{branch: string, sha: string}>>}
  */
 export async function listRefs(repoId) {
+  validateRepoId(repoId);
   const config = loadConfig();
   const collectionPath = `git_repos/${repoId}/refs`;
   const docs = await firestoreList(config.gcpProject, collectionPath);
@@ -358,6 +447,8 @@ export async function listRefs(repoId) {
  * @returns {Promise<{sha: string|null, appliedBundles: string[]}>}
  */
 export async function fetchBranch(repoId, branch, gitDir) {
+  validateRepoId(repoId);
+  validateBranch(branch);
   const config = loadConfig();
   const ref = await readRef(repoId, branch);
   if (!ref) return { sha: null, appliedBundles: [] };
@@ -366,12 +457,6 @@ export async function fetchBranch(repoId, branch, gitDir) {
   const tmpDir = makeTmpDir('fetch-');
 
   try {
-    // Track which bundles are already applied by checking local refs
-    let localHead = null;
-    try {
-      localHead = git(`rev-parse HEAD`, { cwd: gitDir });
-    } catch { /* empty repo */ }
-
     for (const bundleKey of ref.bundle_keys) {
       const bundlePath = join(tmpDir, `${bundleKey}.bundle`);
       const objectPath = bundleObjectPath(config, repoId, bundleKey);
@@ -379,8 +464,8 @@ export async function fetchBranch(repoId, branch, gitDir) {
       // Download bundle from GCS
       const bundleData = await gcsGet(config.bucket, objectPath);
       if (!bundleData) {
-        log('WARN', `Bundle not found in GCS: ${objectPath}`);
-        continue;
+        // A7 fix: hard-fail on missing bundles — chain is broken
+        throw new Error(`BUNDLE_MISSING: ${objectPath} — chain is broken, cannot advance ref`);
       }
       writeFileSync(bundlePath, bundleData);
 
@@ -401,12 +486,14 @@ export async function fetchBranch(repoId, branch, gitDir) {
       }
     }
 
-    // Update local branch ref to match remote
+    // A1 fix: write to private remote-tracking ref — never touch refs/heads/{branch}
+    // directly (doing so on a checked-out branch orphans local commits).
     if (ref.sha) {
+      const safeRef = `refs/git-store/remote/${branch}`;
       try {
-        git(`update-ref refs/heads/${branch} ${ref.sha}`, { cwd: gitDir });
+        git(`update-ref "${safeRef}" ${ref.sha}`, { cwd: gitDir });
       } catch (e) {
-        log('WARN', `update-ref failed: ${e.message?.slice(0, 100)}`);
+        log('WARN', `update-ref to remote ref failed: ${e.message?.slice(0, 100)}`);
       }
     }
   } finally {
@@ -425,6 +512,8 @@ export async function fetchBranch(repoId, branch, gitDir) {
  * @returns {Promise<{repoId: string, branch: string, sha: string|null, dir: string}>}
  */
 export async function cloneRepo(repoId, branch, destDir) {
+  validateRepoId(repoId);
+  validateBranch(branch);
   const config = loadConfig();
   const resolvedDir = resolve(destDir);
 
@@ -435,18 +524,18 @@ export async function cloneRepo(repoId, branch, destDir) {
   if (!existsSync(join(resolvedDir, '.git'))) {
     git('init', { cwd: resolvedDir });
     // Set default branch
-    git(`checkout -b ${branch}`, { cwd: resolvedDir });
+    git(`checkout -b "${branch}"`, { cwd: resolvedDir });
   }
 
-  // Fetch the branch
+  // Fetch the branch (writes to refs/git-store/remote/{branch})
   const { sha } = await fetchBranch(repoId, branch, resolvedDir);
 
   if (sha) {
-    // Reset working tree to fetched state
+    // Clone is the one path where we DO advance refs/heads — via checkout.
+    // fetchBranch wrote the remote SHA to refs/git-store/remote/{branch}.
     try {
-      git(`checkout -B ${branch} ${sha}`, { cwd: resolvedDir });
+      git(`checkout -B "${branch}" ${sha}`, { cwd: resolvedDir });
     } catch {
-      // If the branch checkout fails, try a hard reset
       try {
         git(`reset --hard ${sha}`, { cwd: resolvedDir });
       } catch (e) {
@@ -468,6 +557,8 @@ export async function cloneRepo(repoId, branch, destDir) {
  * @returns {Promise<{status: 'pushed'|'up_to_date'|'NON_FAST_FORWARD', sha: string|null}>}
  */
 export async function pushBranch(repoId, branch, gitDir, actor) {
+  validateRepoId(repoId);
+  validateBranch(branch);
   const config = loadConfig();
 
   // Step 1: Read remote ref + capture updateTime for CAS
@@ -566,6 +657,8 @@ export async function pushBranch(repoId, branch, gitDir, actor) {
  * @returns {Promise<{status: 'pushed'|'up_to_date'|'failed', sha: string|null, attempts: number}>}
  */
 export async function pushWithRetry(repoId, branch, gitDir, actor) {
+  validateRepoId(repoId);
+  validateBranch(branch);
   const config = loadConfig();
   const maxRetries = config.maxPushRetries;
 
@@ -578,12 +671,15 @@ export async function pushWithRetry(repoId, branch, gitDir, actor) {
 
     log(`push: attempt ${attempt}/${maxRetries} got NON_FAST_FORWARD, fetching + rebasing...`);
 
-    // Fetch latest
+    // Fetch latest (writes to refs/git-store/remote/{branch})
     await fetchBranch(repoId, branch, gitDir);
 
-    // Rebase local work on top of remote
+    // A1 fix: rebase local commits onto the fetched remote tip (private ref).
+    // fetchBranch wrote the latest SHA to refs/git-store/remote/{branch} —
+    // never to refs/heads/{branch} — so rebase against the private ref.
+    const remoteRef = `refs/git-store/remote/${branch}`;
     try {
-      git(`rebase ${branch}`, { cwd: gitDir });
+      git(`rebase "${remoteRef}"`, { cwd: gitDir });
     } catch (e) {
       // If rebase fails, abort and report
       try { git('rebase --abort', { cwd: gitDir }); } catch { /* ignore */ }
@@ -608,52 +704,84 @@ export async function pushWithRetry(repoId, branch, gitDir, actor) {
  * @returns {Promise<{status: 'merged'|'AWAITING_APPROVAL'|'failed', sha: string|null}>}
  */
 export async function mergeBranch(repoId, sourceBranch, targetBranch, policy, actor) {
+  validateRepoId(repoId);
+  validateBranch(sourceBranch);
+  validateBranch(targetBranch);
   if (policy === 'gated') {
     log('merge: gated policy — returning AWAITING_APPROVAL');
     return { status: 'AWAITING_APPROVAL', sha: null };
   }
 
+  const config = loadConfig();
+  // A14 fix: use real agent email if available
+  const actorEmail = process.env.AGENT_USER_EMAIL || `${actor}@agent`;
+  const mergeEnv = {
+    GIT_AUTHOR_NAME: actor,
+    GIT_AUTHOR_EMAIL: actorEmail,
+    GIT_COMMITTER_NAME: actor,
+    GIT_COMMITTER_EMAIL: actorEmail,
+  };
+
   const tmpDir = makeTmpDir('merge-');
   try {
-    // Clone the repo
-    const { sha: targetSha } = await cloneRepo(repoId, targetBranch, tmpDir);
+    // Merge with retry: if the target moves during merge, re-fetch + re-merge.
+    for (let mergeAttempt = 0; mergeAttempt < config.maxPushRetries; mergeAttempt++) {
+      // Clone target branch fresh (or re-fetch on retry)
+      if (mergeAttempt === 0) {
+        await cloneRepo(repoId, targetBranch, tmpDir);
+      } else {
+        // Re-fetch target and reset to remote tip
+        await fetchBranch(repoId, targetBranch, tmpDir);
+        const remoteRef = `refs/git-store/remote/${targetBranch}`;
+        try {
+          git(`checkout -B "${targetBranch}" "${remoteRef}"`, { cwd: tmpDir });
+        } catch {
+          log('merge: failed to reset to remote target after re-fetch');
+          return { status: 'failed', sha: null };
+        }
+      }
 
-    // Fetch the source branch
-    await fetchBranch(repoId, sourceBranch, tmpDir);
+      // Fetch the source branch
+      await fetchBranch(repoId, sourceBranch, tmpDir);
+      const sourceRef = `refs/git-store/remote/${sourceBranch}`;
 
-    // Try fast-forward first
-    let merged = false;
-    try {
-      git(`merge --ff-only ${sourceBranch}`, { cwd: tmpDir });
-      merged = true;
-    } catch {
-      // Fall back to merge commit
+      // Try fast-forward first
+      let merged = false;
       try {
-        git(`merge ${sourceBranch} --no-edit -m "Merge ${sourceBranch} into ${targetBranch}"`, {
-          cwd: tmpDir,
-          env: {
-            GIT_AUTHOR_NAME: actor,
-            GIT_AUTHOR_EMAIL: `${actor}@agent`,
-            GIT_COMMITTER_NAME: actor,
-            GIT_COMMITTER_EMAIL: `${actor}@agent`,
-          },
-        });
+        git(`merge --ff-only "${sourceRef}"`, { cwd: tmpDir });
         merged = true;
-      } catch (e) {
-        log('merge: conflict:', e.message?.slice(0, 100));
-        try { git('merge --abort', { cwd: tmpDir }); } catch { /* ignore */ }
+      } catch {
+        // Fall back to merge commit
+        try {
+          git(`merge "${sourceRef}" --no-edit -m "Merge ${sourceBranch} into ${targetBranch}"`, {
+            cwd: tmpDir,
+            env: mergeEnv,
+          });
+          merged = true;
+        } catch (e) {
+          log('merge: conflict:', e.message?.slice(0, 100));
+          try { git('merge --abort', { cwd: tmpDir }); } catch { /* ignore */ }
+          return { status: 'failed', sha: null };
+        }
+      }
+
+      if (!merged) return { status: 'failed', sha: null };
+
+      // Push the merged target branch
+      const pushResult = await pushBranch(repoId, targetBranch, tmpDir, actor);
+      if (pushResult.status === 'pushed' || pushResult.status === 'up_to_date') {
+        const mergedSha = git('rev-parse HEAD', { cwd: tmpDir });
+        return { status: 'merged', sha: mergedSha };
+      }
+
+      if (pushResult.status !== 'NON_FAST_FORWARD') {
         return { status: 'failed', sha: null };
       }
+
+      // Target was advanced concurrently — retry merge on next iteration
+      log(`merge: target advanced during merge (attempt ${mergeAttempt + 1}), retrying...`);
     }
 
-    if (!merged) return { status: 'failed', sha: null };
-
-    // Push the merged target branch
-    const pushResult = await pushWithRetry(repoId, targetBranch, tmpDir, actor);
-    if (pushResult.status === 'pushed' || pushResult.status === 'up_to_date') {
-      const mergedSha = git('rev-parse HEAD', { cwd: tmpDir });
-      return { status: 'merged', sha: mergedSha };
-    }
     return { status: 'failed', sha: null };
   } finally {
     try { execSync(`rm -rf "${tmpDir}"`, { timeout: 5000 }); } catch { /* ignore */ }
@@ -667,6 +795,8 @@ export async function mergeBranch(repoId, sourceBranch, targetBranch, policy, ac
  * @returns {Promise<{sha: string|null, bundle_keys: string[]}>}
  */
 export async function gc(repoId, branch) {
+  validateRepoId(repoId);
+  validateBranch(branch);
   const config = loadConfig();
   const ref = await readRef(repoId, branch);
   if (!ref || ref.bundle_keys.length <= 1) {
@@ -732,6 +862,8 @@ export async function gc(repoId, branch) {
  * @returns {Promise<object>} manifest conforming to §1.6
  */
 export async function buildManifest(repoId, branch, changedPaths, opts = {}) {
+  validateRepoId(repoId);
+  validateBranch(branch);
   const config = loadConfig();
   const tmpDir = makeTmpDir('manifest-');
 

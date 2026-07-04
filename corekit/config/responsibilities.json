@@ -37,15 +37,15 @@
       "schedule": "0 4 * * 0",
       "enabled": true,
       "min_spacing_minutes": 10080,
-      "instruction": "Run garbage collection on git artifact repos to remove unreferenced bundles older than 30 days. For each active project, execute: `node /opt/corekit/corekit/lib/git-store.mjs gc <projectId> main`. Report the number of bundles pruned and bytes reclaimed.",
+      "instruction": "Run garbage collection on git artifact repos to consolidate bundle chains. For each active project, execute: node /opt/corekit/corekit/lib/git-store.mjs gc <projectId> main. List active projects first with project-manage list. Report the number of bundles consolidated per repo.",
       "context": {
-        "purpose": "Git artifact repos accumulate bundle objects in GCS as missions create, push, and merge branches. Over time, older bundles become unreferenced (superseded by merged content on main). GC identifies bundles not reachable from active branch tips and deletes them to control storage costs.",
+        "purpose": "Git artifact repos accumulate bundle objects in GCS as missions create, push, and merge branches. Over time, bundle chains grow long as each push adds incremental bundles. GC consolidates these chains into fewer, larger bundles to improve clone/fetch performance and reduce object count.",
         "process": [
-          "STEP 1 — LIST ACTIVE PROJECTS: Query Firestore for all active projects to get their IDs (these are the repoIds).",
-          "STEP 2 — RUN GC: For each project repo, execute `node /opt/corekit/corekit/lib/git-store.mjs gc <repoId> main`. This lists all bundle objects in GCS, determines which are reachable from the main branch tip, and deletes unreachable bundles older than 30 days.",
-          "STEP 3 — REPORT: Summarize results — repos processed, bundles pruned, total bytes freed."
+          "STEP 1 — LIST ACTIVE PROJECTS: Run `project-manage list` to get all active project IDs (these are the repoIds).",
+          "STEP 2 — RUN GC: For each project repo, execute `node /opt/corekit/corekit/lib/git-store.mjs gc <repoId> main`. This consolidates bundle chains by repacking incremental bundles into fewer objects.",
+          "STEP 3 — REPORT: Summarize results — repos processed, bundles consolidated per repo."
         ],
-        "success_criteria": "GC ran on all active project repos. Report shows repos processed, bundles pruned, and bytes reclaimed. No errors during GCS deletion."
+        "success_criteria": "GC ran on all active project repos. Report shows repos processed and bundles consolidated per repo. No errors during consolidation."
       }
     }
   ]

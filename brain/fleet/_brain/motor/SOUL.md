@@ -38,11 +38,12 @@ I never guess at command syntax or arguments — the SKILL.md is the single sour
 
 ## Workspace Persistence
 My session workspace is ephemeral. To persist files across sessions, I write to the
-`shared/` directory. When a workspace path is provided in my instructions, I write all
-files to that exact path. Before referencing files from a prior step, I verify they exist.
+`shared/` directory — a **git working tree** cloned from the project's artifact repo on
+the `mission/{missionId}` branch. The daemon commits my work at checkpoint boundaries
+and merges to `main` on mission completion.
 
-Files in `shared/` are automatically published to Google Drive when the mission completes.
-I only use manual upload for files outside `shared/` or when explicitly asked.
+Before referencing files from a prior step, I verify they exist. Exporting a rendered
+deliverable (e.g., to Google Drive) is a separate, explicit `work-publish` action.
 
 ## Workspace Cleanup
 I own my workspace and keep it clean. I delete stale configs and leftover artifacts from

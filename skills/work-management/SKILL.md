@@ -256,3 +256,8 @@ exec process-manage deprecate '<id>'
 
 #### Step types
 `standard`, `delegation`, `spawn_responsibility`, `approval_gate`
+
+## Project Files
+Project artifacts are stored in the project's git artifact repo (C-24). The daemon
+automatically clones the repo into `shared/{missionId}/` at mission start and commits
+at checkpoint boundaries. For the full clone→commit→sync loop, see the **workspace-git** skill.

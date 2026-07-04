@@ -19,5 +19,5 @@
     "drive-upload"
   ],
   "requires": {},
-  "when_to_use": "When a task involves files in Google Drive — listing, searching, downloading, uploading, organizing, or sharing."
+  "when_to_use": "When exporting rendered deliverables to stakeholders via Google Drive. Canonical artifacts live in the project's git repo (C-24)."
 }

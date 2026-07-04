@@ -60,15 +60,15 @@ desired outcome and the inputs, not the tool invocations.
    Bad: "Improve the website design"
    Good: "Update the hero section of index.html with a new headline and color scheme"
 
-2. **Input files** — by Drive folder ID or file name
-   "Download index.html from Drive folder YOUR_DRIVE_FOLDER_ID"
+2. **Input files** — by repo + path (the delegate work-clones the project repo)
+   "Read index.html from the project's shared workspace"
 
 3. **Specific changes** — what to modify
    "Replace the headline text with 'AI Workforce Platform'. Change the primary 
     color from #333 to #1a1a2e. Add a subtitle: 'Deploy AI agents as your workforce.'"
 
-4. **Where to put the output** — Drive folder ID
-   "Upload the updated files to the project artifacts folder"
+4. **Where to put the output** — shared workspace path in the project repo
+   "Write output to the shared workspace; it commits automatically"
 
 5. **Acceptance criteria** — how to verify
    "Hero section displays new headline. Primary color is #1a1a2e. Files uploaded."
@@ -102,9 +102,9 @@ Only `action: "delegate"` in the cortex decide response triggers delegation.
 ## Cross-Agent Context (File Sharing)
 
 - **NEVER reference local filesystem paths** in delegation instructions. Delegates run on different VMs and cannot access your local files.
-- Before delegating, publish any files the delegate needs to the shared project Drive folder. Reference them by Drive file name or ID.
-- Use `work-publish` to upload files before delegating, or include the content inline in the delegation instruction if it's short (<2000 chars).
-- The brain will also automatically attempt to publish active artifacts before dispatching a delegation, but you must ensure the references in your instructions point to Drive, not local paths.
+- The delegate will `work-clone` the project's git repo to get shared files. Ensure your work is committed to the shared workspace before delegating.
+- For small inline content (<2000 chars), include it directly in the delegation instruction.
+- The brain automatically commits pending changes before dispatching a delegation, but verify your files are in `shared/` (the git working tree) before delegating.
 
 ## Delegation vs Motor Tasks
 
