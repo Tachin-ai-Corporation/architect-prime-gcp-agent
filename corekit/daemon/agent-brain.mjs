@@ -2800,6 +2800,7 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
     savedResults,
     buildProjectContext,
     publishArtifacts,
+    gitCommitAndSync,
   });
 
   if (execResult.paused) {
@@ -2883,8 +2884,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   // Use passed memory context, or recall fresh if not provided
   const memory = memoryContext || await recallMemory(envelope.instruction);
 
-  // Phase 5: Initialize shared workspace for this envelope
-  await initSharedWorkspace(envelope.id);
+  // Phase 5: Initialize shared workspace for this envelope (+ git clone if project)
+  await initSharedWorkspace(envelope.id, { projectId: envelope.project_id });
 
   // CP5: Checkpoint resume — if we crashed mid-checkpoint-plan, resume from
   // the last completed step instead of re-running analyze/decide
@@ -3251,9 +3252,14 @@ function _initArtifacts() {
   });
 }
 
-async function initSharedWorkspace(envelopeId) {
+async function initSharedWorkspace(envelopeId, opts = {}) {
   if (!_artifacts) _initArtifacts();
-  await _artifacts.initWorkspace(envelopeId);
+  await _artifacts.initWorkspace(envelopeId, opts);
+}
+
+async function gitCommitAndSync(envelopeId, projectId, message) {
+  if (!_artifacts) _initArtifacts();
+  return _artifacts.commitAndSync(envelopeId, projectId, message);
 }
 
 async function cleanupSharedWorkspace(envelopeId) {

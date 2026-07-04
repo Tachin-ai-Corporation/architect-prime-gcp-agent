@@ -62,7 +62,8 @@ Every ETL or data load completion MUST be verified with ALL of the following che
 - Screenshots or raw output of row counts, schema diffs, and freshness checks must be included in the verification report.
 - If any check cannot be performed (e.g., access denied), report it as UNVERIFIED, not as passed.
 
-### Drive Convention Gate
-- ✅ PASS if agent used `work-publish` for artifact uploads
+### Workspace Convention Gate
+- ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)
+- ✅ PASS if agent used `work-publish` for stakeholder-facing Drive uploads
 - ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
 - ✅ PASS if no artifacts were produced (read-only mission)

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# work-diff — Show file diffs in the local git repo
+# Brain agent: motor (READ)
+#
+# Usage:
+#   work-diff [--dir <path>] [--staged] [--stat] [--file <path>]
+#
+# Output: Git diff text
+set -euo pipefail
+
+die() { echo "[work-diff] [ERROR] $*" >&2; exit 1; }
+
+# ---- Args ----
+DIR="" STAGED=0 STAT=0 FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir)    DIR="$2"; shift 2 ;;
+    --staged) STAGED=1; shift ;;
+    --stat)   STAT=1; shift ;;
+    --file)   FILE="$2"; shift 2 ;;
+    --help|-h) echo "Usage: work-diff [--dir <path>] [--staged] [--stat] [--file <path>]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DIR" ]] || DIR="."
+
+cd "$DIR"
+
+# Build git diff command
+ARGS=("diff")
+[[ $STAGED -eq 1 ]] && ARGS+=("--cached")
+[[ $STAT -eq 1 ]] && ARGS+=("--stat")
+[[ -n "$FILE" ]] && ARGS+=("--" "$FILE")
+
+git "${ARGS[@]}"

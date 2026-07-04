@@ -3,7 +3,7 @@
   "name": "Designer",
   "version": "1.0.0",
   "description": "Branding, design systems, visual concepts, pixel-perfect implementation across Slides, Docs, and HTML/CSS",
-  "base_skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs"],
+  "base_skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "workspace-git"],
   "specialty_skills": ["design-ops"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

@@ -3,7 +3,7 @@
   "name": "Executive Assistant",
   "version": "1.0.0",
   "description": "Calendar management, email triage, meeting prep, follow-up tracking, daily briefings",
-  "base_skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "workspace-sheets", "workspace-slides"],
+  "base_skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "workspace-sheets", "workspace-slides", "workspace-git"],
   "specialty_skills": ["calendar-ops"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# work-status — Show local git repo status
+# Brain agent: motor (READ)
+#
+# Usage:
+#   work-status [--dir <path>]
+#
+# Output: JSON { branch, clean, staged, modified, untracked }
+set -euo pipefail
+
+die() { echo "[work-status] [ERROR] $*" >&2; exit 1; }
+
+# ---- Args ----
+DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir) DIR="$2"; shift 2 ;;
+    --help|-h) echo "Usage: work-status [--dir <path>]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DIR" ]] || DIR="."
+
+cd "$DIR"
+
+# Gather info
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
+STAGED=$(git diff --cached --name-only 2>/dev/null | head -50)
+MODIFIED=$(git diff --name-only 2>/dev/null | head -50)
+UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | head -50)
+
+STAGED_COUNT=$(echo "$STAGED" | grep -c . 2>/dev/null || echo 0)
+MODIFIED_COUNT=$(echo "$MODIFIED" | grep -c . 2>/dev/null || echo 0)
+UNTRACKED_COUNT=$(echo "$UNTRACKED" | grep -c . 2>/dev/null || echo 0)
+
+CLEAN="true"
+if [[ "$STAGED_COUNT" -gt 0 || "$MODIFIED_COUNT" -gt 0 || "$UNTRACKED_COUNT" -gt 0 ]]; then
+  CLEAN="false"
+fi
+
+# Build JSON arrays
+to_json_array() {
+  local input="$1"
+  if [[ -z "$input" ]]; then
+    echo "[]"
+    return
+  fi
+  echo "$input" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))'
+}
+
+STAGED_JSON=$(to_json_array "$STAGED")
+MODIFIED_JSON=$(to_json_array "$MODIFIED")
+UNTRACKED_JSON=$(to_json_array "$UNTRACKED")
+
+echo "{\"branch\":\"${BRANCH}\",\"clean\":${CLEAN},\"staged\":${STAGED_JSON},\"modified\":${MODIFIED_JSON},\"untracked\":${UNTRACKED_JSON}}"

@@ -69,6 +69,16 @@ skills/verification/SKILL.md skills/verification/SKILL.md
 skills/verification/skill.json skills/verification/skill.json
 skills/plan-structuring/SKILL.md skills/plan-structuring/SKILL.md
 skills/plan-structuring/skill.json skills/plan-structuring/skill.json
+skills/workspace-git/SKILL.md skills/workspace-git/SKILL.md
+skills/workspace-git/skill.json skills/workspace-git/skill.json
+skills/workspace-git/work-clone bin/work-clone
+skills/workspace-git/work-branch bin/work-branch
+skills/workspace-git/work-commit bin/work-commit
+skills/workspace-git/work-sync bin/work-sync
+skills/workspace-git/work-merge bin/work-merge
+skills/workspace-git/work-status bin/work-status
+skills/workspace-git/work-diff bin/work-diff
+skills/workspace-git/work-log bin/work-log
 
 # Skill setup (dependency installer)
 corekit/system/skill-setup bin/skill-setup
@@ -106,6 +116,7 @@ corekit/lib/to-str.mjs corekit/lib/to-str.mjs
 corekit/lib/agent-output.mjs corekit/lib/agent-output.mjs
 corekit/lib/plan-utils.mjs corekit/lib/plan-utils.mjs
 corekit/lib/work-recall.mjs corekit/lib/work-recall.mjs
+corekit/lib/git-store.mjs corekit/lib/git-store.mjs
 
 # Brain v3 â€” orchestration service
 corekit/daemon/agent-brain.mjs bin/agent-brain.mjs

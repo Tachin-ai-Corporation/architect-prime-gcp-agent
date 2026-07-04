@@ -1,0 +1,22 @@
+{
+  "id": "workspace-git",
+  "name": "Git Workspace",
+  "version": 1,
+  "description": "Manage git-backed artifact workspaces — clone repos, create branches, commit, sync, merge, view status/diffs/logs.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "workspace",
+  "agent_part": "motor",
+  "scripts": [
+    "work-clone",
+    "work-branch",
+    "work-commit",
+    "work-sync",
+    "work-merge",
+    "work-status",
+    "work-diff",
+    "work-log"
+  ],
+  "requires": {},
+  "when_to_use": "When working with git-backed artifact repos — cloning project repos, creating mission branches, committing work, syncing changes, merging branches, or inspecting repo state."
+}

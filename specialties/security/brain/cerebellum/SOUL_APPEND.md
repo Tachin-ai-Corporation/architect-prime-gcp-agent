@@ -72,7 +72,8 @@ Before marking a security audit mission as complete:
 4. **Recommendations are actionable** — each has an exact command, not vague advice
 5. **Owner is assigned** — every finding has a clear responsible party
 
-### Drive Convention Gate
-- ✅ PASS if agent used `work-publish` for artifact uploads
+### Workspace Convention Gate
+- ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)
+- ✅ PASS if agent used `work-publish` for stakeholder-facing Drive uploads
 - ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
 - ✅ PASS if no artifacts were produced (read-only mission)

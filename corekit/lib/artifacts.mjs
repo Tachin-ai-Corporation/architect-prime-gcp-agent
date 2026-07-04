@@ -1,12 +1,15 @@
-// corekit/lib/artifacts.mjs — Shared workspace & Drive artifact management
+// corekit/lib/artifacts.mjs — Shared workspace & artifact management
 // Extracted from agent-brain.mjs Phase 3
 //
 // Manages the lifecycle of per-mission shared workspaces (shared/{envelopeId}/)
-// and publishes work products to Google Drive on mission completion.
+// and publishes work products via two parallel substrates:
+//   1. Google Drive (legacy, runs first)
+//   2. Git store (GCS bundles + Firestore refs, runs after Drive)
 //
 // All external state (Firestore, config, projects, auth) injected via deps.
 
 import { getGceToken } from './gce-auth.mjs';
+import { ensureRepo, cloneRepo, pushWithRetry, mergeBranch, buildManifest, readRef } from './git-store.mjs';
 
 /**
  * Create an artifact manager instance.
@@ -103,12 +106,37 @@ export function createArtifactManager(deps) {
    *
    * @param {string} envelopeId - Envelope ID to create workspace for
    */
-  async function initWorkspace(envelopeId) {
+  async function initWorkspace(envelopeId, opts = {}) {
+    const sharedDir = `${coreDir}/shared/${envelopeId}`;
     try {
       const { execSync } = await import('child_process');
-      execSync(`mkdir -p ${coreDir}/shared/${envelopeId}`, { timeout: 3000 });
+      execSync(`mkdir -p ${sharedDir}`, { timeout: 3000 });
     } catch (e) {
       log('WARN', `Failed to init shared workspace for ${envelopeId}: ${e.message}`);
+    }
+
+    // Git substrate: clone project repo and create mission branch
+    const projectId = opts.projectId;
+    if (projectId) {
+      try {
+        const repoId = projectId;
+        await ensureRepo(repoId, { mergePolicy: 'auto' });
+        const branch = `mission/${envelopeId}`;
+        const ref = await readRef(repoId, 'main');
+        // Clone main (or init empty) into shared dir
+        await cloneRepo(repoId, 'main', sharedDir);
+        // Create and checkout mission branch
+        const { execSync } = await import('child_process');
+        try {
+          execSync(`git checkout -b ${branch}`, { cwd: sharedDir, timeout: 5000 });
+        } catch {
+          // Branch may exist if resuming
+          try { execSync(`git checkout ${branch}`, { cwd: sharedDir, timeout: 5000 }); } catch { /* ignore */ }
+        }
+        log('INFO', `Git workspace initialized: repo=${repoId} branch=${branch} base=${ref?.sha?.slice(0, 8) || 'empty'}`);
+      } catch (e) {
+        log('WARN', `Git workspace init failed (non-fatal): ${e.message}`);
+      }
     }
   }
 
@@ -124,6 +152,71 @@ export function createArtifactManager(deps) {
       execSync(`rm -rf ${coreDir}/shared/${envelopeId}`, { timeout: 3000 });
     } catch (e) {
       log('WARN', `Failed to cleanup shared workspace for ${envelopeId}: ${e.message}`);
+    }
+  }
+
+  // =========================================================================
+  //  Git substrate: checkpoint-level commit+sync
+  // =========================================================================
+
+  /**
+   * Commit current shared/ changes and push to the ether.
+   * Called after each checkpoint completion by the brain daemon.
+   *
+   * @param {string} envelopeId - Mission envelope ID
+   * @param {string} projectId  - Project ID (= repoId)
+   * @param {string} message    - Canonical commit message (C-23)
+   * @returns {Promise<{committed: boolean, synced: boolean, sha: string|null}>}
+   */
+  async function commitAndSync(envelopeId, projectId, message) {
+    if (!projectId) return { committed: false, synced: false, sha: null };
+    const sharedDir = `${coreDir}/shared/${envelopeId}`;
+    const branch = `mission/${envelopeId}`;
+
+    try {
+      const { execSync } = await import('child_process');
+
+      // Check if git repo exists
+      try {
+        execSync('git rev-parse --git-dir', { cwd: sharedDir, timeout: 3000 });
+      } catch {
+        return { committed: false, synced: false, sha: null };
+      }
+
+      // Stage all changes
+      execSync('git add -A', { cwd: sharedDir, timeout: 5000 });
+
+      // Check if there's anything to commit
+      const status = execSync('git status --porcelain', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
+      if (!status) {
+        log('DEBUG', `commitAndSync: nothing to commit for ${envelopeId}`);
+        const sha = execSync('git rev-parse HEAD', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
+        return { committed: false, synced: true, sha };
+      }
+
+      // Set agent identity
+      const agentName = agentId || 'brain';
+      const agentMail = agentEmail || `${agentName}@agent`;
+      execSync(`git config user.name "${agentName}"`, { cwd: sharedDir, timeout: 3000 });
+      execSync(`git config user.email "${agentMail}"`, { cwd: sharedDir, timeout: 3000 });
+
+      // Commit
+      execSync(`git commit -m ${JSON.stringify(message)}`, { cwd: sharedDir, timeout: 10000 });
+      const sha = execSync('git rev-parse HEAD', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
+      log('INFO', `commitAndSync: committed ${sha.slice(0, 8)} on ${branch}`);
+
+      // Push to ether
+      const pushResult = await pushWithRetry(projectId, branch, sharedDir, agentName);
+      if (pushResult.status === 'pushed' || pushResult.status === 'up_to_date') {
+        log('INFO', `commitAndSync: synced ${branch} (${pushResult.status}, ${pushResult.attempts} attempts)`);
+        return { committed: true, synced: true, sha };
+      } else {
+        log('WARN', `commitAndSync: sync failed (${pushResult.status})`);
+        return { committed: true, synced: false, sha };
+      }
+    } catch (e) {
+      log('WARN', `commitAndSync failed: ${e.message}`);
+      return { committed: false, synced: false, sha: null };
     }
   }
 
@@ -312,6 +405,40 @@ export function createArtifactManager(deps) {
   async function publish(envelope) {
     if (!envelope || envelope.type !== 'M') return [];
 
+    // ---- Git substrate: commit, push, merge, build manifest ----
+    let gitManifest = null;
+    if (envelope.project_id) {
+      try {
+        const sharedDir = `${coreDir}/shared/${envelope.id}`;
+        const repoId = envelope.project_id;
+        const branch = `mission/${envelope.id}`;
+
+        // Final commit of any remaining changes
+        const commitMsg = `v${new Date().toISOString().slice(0, 10).replace(/-/g, '.')}.1.0: ${(envelope.title || 'mission complete').slice(0, 80)}`;
+        const commitResult = await commitAndSync(envelope.id, repoId, commitMsg);
+
+        if (commitResult.sha) {
+          // Merge mission branch into main
+          const mergeResult = await mergeBranch(repoId, branch, 'main', 'auto', agentId || 'brain');
+          if (mergeResult.status === 'merged') {
+            log('INFO', `Git: merged ${branch} → main (sha: ${mergeResult.sha?.slice(0, 8)})`);
+          } else {
+            log('WARN', `Git: merge ${branch} → main returned ${mergeResult.status}`);
+          }
+
+          // Build manifest
+          gitManifest = await buildManifest(repoId, 'main', []);
+          if (gitManifest) {
+            envelope.context = envelope.context || {};
+            envelope.context.git_artifacts = gitManifest;
+          }
+        }
+      } catch (e) {
+        log('WARN', `Git publish failed (non-fatal): ${e.message}`);
+      }
+    }
+    // ---- End git substrate ----
+
     const PROJECTS = getProjects();
 
     // Check if shared/ has files
@@ -466,11 +593,13 @@ export function createArtifactManager(deps) {
     initWorkspace,
     /** Clean up shared workspace after completion. */
     cleanupWorkspace,
+    /** Commit+push checkpoint-level changes to git ether. */
+    commitAndSync,
     /** Ensure a project has a Drive folder. */
     ensureProjectFolder,
     /** Ensure the agent has its own folder: {root}/{prime}/{agent}/. */
     ensureAgentFolder,
-    /** Publish shared/ artifacts to Drive. */
+    /** Publish shared/ artifacts to Drive + git store. */
     publish,
   };
 }

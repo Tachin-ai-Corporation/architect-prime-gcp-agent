@@ -15,9 +15,9 @@ The Culture of Work is the operational framework that governs how Architect Prim
 | **Process** | — | Reusable template that produces Plans |
 | **Plan** | — | Unexecuted Mission blueprint (M→C→T layout) |
 | **Responsibility** | `R` | Scheduled or event-triggered work |
-| **Artifact** | — | Persistent work product published to Google Drive |
+| **Artifact** | — | Persistent work product in git ether + Google Drive |
 
-Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the `primes/{id}/work/{workId}` Firestore collection. Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects, Processes, and Plans are separate Firestore collections. Artifacts are not stored in Firestore — they are files published to Google Drive and referenced via project context.
+Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the `primes/{id}/work/{workId}` Firestore collection. Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects, Processes, and Plans are separate Firestore collections. Artifacts live in the git artifact substrate (C-24) — GCS-backed repos with Firestore CAS refs — and are also published to Google Drive for stakeholder access.
 
 ---
 
@@ -227,15 +227,16 @@ See [AUTHORING_RESPONSIBILITIES.md](guides/AUTHORING_RESPONSIBILITIES.md) for th
 
 Artifacts bridge the gap between ephemeral task outputs and lasting project knowledge. They are files produced during Mission execution that carry value beyond the current task — plans, reports, configs, code bundles, analysis results.
 
-### Local-First, Then Published
+### Dual Substrate: Git + Drive
 
 | Phase | Location | Trigger |
 |-------|----------|---------|
-| **Local** | `shared/{missionId}/` | Task output > 200 chars (auto) or agent writes directly |
-| **Published** | Google Drive project folder | Mission completes |
-| **Discoverable** | Project context | Future Mission loads context |
+| **Local** | `shared/{missionId}/` (git working tree) | Task output > 200 chars (auto) or agent writes directly |
+| **Committed** | Git ether (GCS bundles + Firestore refs) | Checkpoint completes |
+| **Published** | Git main branch + Google Drive project folder | Mission completes |
+| **Discoverable** | Project context (git manifest + Drive manifest) | Future Mission loads context |
 
-During execution, agents write to `shared/{missionId}/` — a local directory with zero network overhead. The Brain daemon auto-saves any task output exceeding 200 characters. When the Mission completes, all files in the directory are uploaded to the project's Google Drive folder.
+During execution, agents write to `shared/{missionId}/` — a local directory backed by a git working tree on a `mission/{missionId}` branch. The Brain daemon auto-saves any task output exceeding 200 characters. After each checkpoint, changes are committed and synced to the git ether. When the Mission completes, the branch is merged to `main` and all files are also uploaded to the project's Google Drive folder.
 
 ### Drive Folder Structure
 
@@ -261,13 +262,19 @@ Artifact manifests are accumulated in project context. When a future Mission loa
 ```mermaid
 graph LR
     T["Task Output"] -->|auto-save| L["shared/{missionId}/"]
+    L -->|checkpoint| G["Git Ether"]
     L -->|mission complete| D["Google Drive"]
+    G -->|merge to main| M["Git Manifest"]
     D -->|manifest| PC["Project Context"]
+    M -->|manifest| PC
     PC -->|loaded by| FM["Future Mission"]
+    FM -->|clone repo| G
     FM -->|drive-download| D
 
     style T fill:#b8d4e8,color:#333
     style L fill:#7eb8da,color:#fff
+    style G fill:#6c5ce7,color:#fff
+    style M fill:#a29bfe,color:#fff
     style D fill:#0f9d58,color:#fff
     style PC fill:#e8a838,color:#fff
     style FM fill:#4a90d9,color:#fff

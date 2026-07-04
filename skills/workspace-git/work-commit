@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# work-commit — Commit staged changes (or all changes with --add-all)
+# Brain agent: motor (WRITE)
+#
+# Usage:
+#   work-commit <message> [--dir <path>] [--add-all]
+#
+# Output: JSON { sha, message, filesChanged }
+set -euo pipefail
+
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+die() { echo "[work-commit] [ERROR] $*" >&2; exit 1; }
+log() { echo "[work-commit] $*" >&2; }
+
+# ---- Args ----
+MSG="" DIR="" ADD_ALL=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir)     DIR="$2"; shift 2 ;;
+    --add-all) ADD_ALL=1; shift ;;
+    --help|-h) echo "Usage: work-commit <message> [--dir <path>] [--add-all]"; exit 0 ;;
+    *)
+      if [[ -z "$MSG" && "$1" != -* ]]; then MSG="$1"; shift
+      else die "Unknown: $1"; fi ;;
+  esac
+done
+[[ -n "$MSG" ]] || die "Need <message>"
+[[ -n "$DIR" ]] || DIR="."
+
+cd "$DIR"
+
+# Stage all if requested
+if [[ $ADD_ALL -eq 1 ]]; then
+  git add -A >&2
+fi
+
+# Check for staged changes
+STAGED=$(git diff --cached --name-only | wc -l)
+if [[ "$STAGED" -eq 0 ]]; then
+  die "No staged changes to commit. Use --add-all or stage files manually."
+fi
+
+# Set agent identity for commits
+AGENT_ID="${AGENT_ID:-motor}"
+AGENT_EMAIL="${AGENT_USER_EMAIL:-${AGENT_ID}@agent}"
+git config user.name "$AGENT_ID" 2>/dev/null || true
+git config user.email "$AGENT_EMAIL" 2>/dev/null || true
+
+# Commit
+git commit -m "$MSG" >&2
+
+# Output
+SHA=$(git rev-parse HEAD)
+FILES_CHANGED=$(git diff --name-only HEAD~1..HEAD 2>/dev/null | wc -l || echo "0")
+echo "{\"sha\":\"${SHA}\",\"message\":$(echo "$MSG" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read().strip()))'),\"filesChanged\":${FILES_CHANGED}}"

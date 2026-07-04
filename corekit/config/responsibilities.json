@@ -30,6 +30,23 @@
         "success_criteria": "MEMORY.md is rewritten to contain only active context, under 2,000 characters. Core Memory is reconciled — stale entries retired, contradicted entries superseded, and genuinely new facts promoted. Deep Truths reviewed and updated only if warranted by strong multi-session evidence. A structured report is produced covering: items triaged, retirements, promotions, Deep Truth changes, and final MEMORY.md character count.",
         "prior_learnings": "Be conservative with both promotions AND retirements — verify before acting. Only promote facts confirmed across multiple sessions. Only retire facts you have clear evidence are wrong or stale. Session-specific debugging notes, one-off error messages, and transient task status should be pruned from MEMORY.md, not promoted. An empty MEMORY.md (just the template header) is a valid and healthy outcome. When rewriting MEMORY.md, use the exec tool to write the file — the file_write tool may not be available in all contexts. When retiring Core Memory, always provide a specific reason — never bulk-retire without justification."
       }
+    },
+    {
+      "id": "r-git-gc",
+      "name": "Weekly Git Artifact GC",
+      "schedule": "0 4 * * 0",
+      "enabled": true,
+      "min_spacing_minutes": 10080,
+      "instruction": "Run garbage collection on git artifact repos to remove unreferenced bundles older than 30 days. For each active project, execute: `node /opt/corekit/corekit/lib/git-store.mjs gc <projectId> main`. Report the number of bundles pruned and bytes reclaimed.",
+      "context": {
+        "purpose": "Git artifact repos accumulate bundle objects in GCS as missions create, push, and merge branches. Over time, older bundles become unreferenced (superseded by merged content on main). GC identifies bundles not reachable from active branch tips and deletes them to control storage costs.",
+        "process": [
+          "STEP 1 — LIST ACTIVE PROJECTS: Query Firestore for all active projects to get their IDs (these are the repoIds).",
+          "STEP 2 — RUN GC: For each project repo, execute `node /opt/corekit/corekit/lib/git-store.mjs gc <repoId> main`. This lists all bundle objects in GCS, determines which are reachable from the main branch tip, and deletes unreachable bundles older than 30 days.",
+          "STEP 3 — REPORT: Summarize results — repos processed, bundles pruned, total bytes freed."
+        ],
+        "success_criteria": "GC ran on all active project repos. Report shows repos processed, bundles pruned, and bytes reclaimed. No errors during GCS deletion."
+      }
     }
   ]
 }

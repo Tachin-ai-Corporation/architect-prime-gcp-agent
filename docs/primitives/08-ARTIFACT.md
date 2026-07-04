@@ -1,9 +1,9 @@
 # Primitive: Artifact
 
-**Storage:** Google Drive (published) / `shared/{missionId}/` (local during execution)
-**Not a WorkEnvelope** — artifacts are files stored in Google Drive, referenced via project context.
+**Storage:** Git repos (GCS bundles + Firestore refs, primary) / Google Drive (published, stakeholder-facing) / `shared/{missionId}/` (local during execution)
+**Not a WorkEnvelope** — artifacts are files in the git artifact ether and optionally published to Google Drive, referenced via project context.
 
-An Artifact is a **file produced during a Mission with lasting value** — plans, reports, configurations, code bundles, analysis outputs, or any other deliverable. Unlike ephemeral task outputs that live only in WorkEnvelope fields, artifacts persist in Google Drive and are discoverable across future Missions via project context.
+An Artifact is a **file produced during a Mission with lasting value** — plans, reports, configurations, code bundles, analysis outputs, or any other deliverable. Unlike ephemeral task outputs that live only in WorkEnvelope fields, artifacts persist in the git artifact substrate (C-24) and are discoverable across future Missions via project context and branch history.
 
 ---
 
@@ -43,21 +43,30 @@ stateDiagram-v2
 ### Phase 1: Local (During Execution)
 
 - Task outputs exceeding **200 characters** are auto-saved by the Brain daemon to `shared/{missionId}/`
+- The shared directory is backed by a git working tree: `mission/{missionId}` branch cloned from the project repo (C-24)
 - Files are written locally — no network overhead during execution
 - Agents can also write files directly to `shared/{missionId}/` via their tools
 
-### Phase 2: Published (Mission Completion)
+### Phase 2: Committed (Checkpoint Completion)
 
-- When a Mission completes, the Brain scans `shared/{missionId}/`
-- All files are uploaded to the project's Google Drive folder
-- An `artifact_manifest` is written to the Mission envelope's context
-- Files are auto-shared with the project owner and stakeholders
+- After each checkpoint completes, the Brain commits all changes and pushes to the ether
+- Commit messages follow canonical format (C-23): `v{YYYY}.{MM}.{DD}.{cpNum}.0: {checkpoint title}`
+- Changes are synced to the git ether (GCS bundles + Firestore refs) after each checkpoint
+- This provides incremental durability — work is never lost even if the mission fails later
 
-### Phase 3: Discoverable (Future Missions)
+### Phase 3: Published (Mission Completion)
 
-- The artifact manifest is included in project context
-- When future Missions load project context, prior artifacts are listed with `drive-download` commands
-- Agents can download and reference any prior artifact
+- When a Mission completes, two publish steps run in parallel:
+  - **Git substrate:** Final commit + merge mission branch → main + build manifest
+  - **Drive substrate:** All files uploaded to the project's Google Drive folder
+- An `artifact_manifest` and `git_artifacts` manifest are written to the Mission envelope context
+- Files are auto-shared with the project owner and stakeholders (Drive only)
+
+### Phase 4: Discoverable (Future Missions)
+
+- The artifact manifests (both git and Drive) are included in project context
+- When future Missions load project context, prior artifacts are listed
+- Agents can clone the repo to access full file history, or use `drive-download` for specific files
 
 ---
 
@@ -141,14 +150,22 @@ sequenceDiagram
 
 When a Mission transitions to `complete`:
 
+#### Git Substrate (Primary)
+1. **Commit** any remaining changes on the mission branch
+2. **Push** the mission branch to the ether (GCS bundles + Firestore refs)
+3. **Merge** the mission branch into `main` (auto policy by default)
+4. **Build manifest** — tree listing of all files on main with commit info
+5. **Write** a `git_artifacts` manifest to the Mission envelope context
+
+#### Drive Substrate (Stakeholder-Facing)
 1. **Scan** `shared/{missionId}/` for all files
-2. **Create** the project folder path in Drive if it doesn't exist: `{root}/{project}/{prime}/{agent}/`
+2. **Create** the project folder path in Drive if it doesn't exist
 3. **Upload** each file to the Drive folder
-4. **Share** the folder with the project owner and any stakeholders defined in `project.context.team`
+4. **Share** the folder with the project owner and stakeholders
 5. **Write** an `artifact_manifest` to the Mission envelope context
 6. **Clean up** the local `shared/{missionId}/` directory
 
-### Auto-Sharing
+### Auto-Sharing (Drive Only)
 
 Published artifacts are automatically shared with:
 - The **project owner** (`project.owner`) — Editor access
@@ -226,6 +243,30 @@ When artifacts are published, an `artifact_manifest` context entry is written to
 | `url` | `string` | Direct URL to the file in Drive |
 | `size` | `number` | File size in bytes |
 
+### Git Artifact Manifest (`git_artifacts`)
+
+When the git substrate publishes, a `git_artifacts` context entry is also written:
+
+```json
+{
+  "repoId": "my-project",
+  "branch": "main",
+  "sha": "abc123def456...",
+  "files": ["architecture-proposal.md", "dependency-analysis.json"],
+  "commitCount": 5,
+  "generatedAt": "2026-07-03T22:00:00Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `repoId` | `string` | Project ID (= git repo ID) |
+| `branch` | `string` | Branch the manifest was built from (always `main` after merge) |
+| `sha` | `string` | Git SHA of the branch tip |
+| `files` | `string[]` | List of file paths in the repo tree |
+| `commitCount` | `number` | Total commits on the branch |
+| `generatedAt` | `string` | ISO timestamp of manifest generation |
+
 ---
 
 ## Agent Behavior Rules
@@ -284,8 +325,9 @@ graph TD
 ```
 
 - **Task** → produces the raw output that becomes an artifact
-- **Mission** → owns the artifact manifest; publish triggered on Mission completion
-- **Project** → accumulates manifests in context for cross-mission discovery
+- **Checkpoint** → triggers a git commit+sync of accumulated work
+- **Mission** → owns the artifact manifests (git + Drive); publish triggered on Mission completion
+- **Project** → accumulates manifests in context for cross-mission discovery; one git repo per project
 - **Process** → can define steps that explicitly produce artifacts (e.g., "generate report" steps)
 
 ---

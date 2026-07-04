@@ -3,7 +3,7 @@
   "name": "Project Manager",
   "version": "1.0.0",
   "description": "Project management, status tracking, stakeholder communication, milestone planning, action item management",
-  "base_skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets"],
+  "base_skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets", "workspace-git"],
   "specialty_skills": ["meeting-ops"],
   "brain_appends": ["cortex", "motor"]
 }

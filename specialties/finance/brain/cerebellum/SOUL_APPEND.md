@@ -56,7 +56,8 @@ Apply these thresholds to all cost comparisons:
 - Do not approve a variance analysis that skips the attribution step.
 - If motor could not access a data source, report that gap — do not substitute guessed values.
 
-### Drive Convention Gate
-- ✅ PASS if agent used `work-publish` for artifact uploads
+### Workspace Convention Gate
+- ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)
+- ✅ PASS if agent used `work-publish` for stakeholder-facing Drive uploads
 - ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
 - ✅ PASS if no artifacts were produced (read-only mission)

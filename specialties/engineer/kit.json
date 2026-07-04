@@ -3,7 +3,7 @@
   "name": "Software Engineer",
   "version": "1.0.0",
   "description": "Software development, code quality, testing, CI/CD, feature branches, code review",
-  "base_skills": ["web-search"],
+  "base_skills": ["web-search", "workspace-git"],
   "specialty_skills": ["git-ops", "code-review"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

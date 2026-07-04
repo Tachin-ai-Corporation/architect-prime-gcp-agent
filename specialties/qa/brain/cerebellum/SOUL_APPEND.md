@@ -71,7 +71,8 @@ NEW TESTS (not in baseline):
 7. ☐ Flaky tests identified and flagged
 8. ☐ S1/S2 defects have dual evidence
 
-### Drive Convention Gate
-- ✅ PASS if agent used `work-publish` for artifact uploads
+### Workspace Convention Gate
+- ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)
+- ✅ PASS if agent used `work-publish` for stakeholder-facing Drive uploads
 - ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
 - ✅ PASS if no artifacts were produced (read-only mission)

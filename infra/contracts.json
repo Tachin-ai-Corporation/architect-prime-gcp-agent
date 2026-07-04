@@ -123,6 +123,14 @@
     "temporal-research": "workspace-temporal-research",
     "temporal-memory": "workspace-temporal-memory"
   },
+  "git": {
+    "_comment": "Tenant-internal git artifact substrate. Single bucket, per-repo prefixes. ADC via metadata SA token.",
+    "bucket": "${TENANT}-agent-git",
+    "prefix": "git/",
+    "defaultBranch": "main",
+    "maxPushRetries": 5,
+    "gcBundleThreshold": 25
+  },
   "github": {
     "owner": "YOUR_GITHUB_ORG",
     "repo": "architect-prime-gcp-agent",

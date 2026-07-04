@@ -422,7 +422,39 @@ systemctl daemon-reload
 systemctl enable fleet-health-check.timer
 systemctl start fleet-health-check.timer
 
-# ---- 16) Provision Firestore composite indexes ----
+# ---- 16) Provision git artifact substrate bucket (idempotent — C-18) ----
+info "Provisioning git artifact bucket..."
+GIT_BUCKET="$(node -e "const c=JSON.parse(require('fs').readFileSync('${CORE_DIR}/corekit/contracts.json','utf8'));console.log((c.git||{}).bucket||'')" 2>/dev/null || echo '')"
+# Resolve ${TENANT} → GCP project ID (tenant-scoped bucket, same substitution as install.sh)
+GIT_BUCKET="${GIT_BUCKET//\$\{TENANT\}/${GCP_PROJECT_ID}}"
+if [[ -n "$GIT_BUCKET" ]]; then
+  if gcloud storage buckets describe "gs://${GIT_BUCKET}" --project="${GCP_PROJECT_ID}" &>/dev/null; then
+    info "Git bucket gs://${GIT_BUCKET} already exists — skipping"
+  else
+    gcloud storage buckets create "gs://${GIT_BUCKET}" \
+      --project="${GCP_PROJECT_ID}" \
+      --location="us-central1" \
+      --uniform-bucket-level-access \
+      --public-access-prevention 2>&1 || warn "Git bucket creation failed (may already exist)"
+    info "Git bucket gs://${GIT_BUCKET} created"
+  fi
+  # IAM: Grant the SA objectAdmin on the git bucket (idempotent)
+  # The default compute SA already has project-level storage access;
+  # per-agent fencing (C-21) is enforced by ref-namespace grants in Firestore
+  # and by IAM conditions on gs://{bucket}/git/{repoId}/ prefixes.
+  SA_EMAIL="$(curl -sf -H "$MH" "$META/instance/service-accounts/default/email" || echo '')"
+  if [[ -n "$SA_EMAIL" ]]; then
+    gcloud storage buckets add-iam-policy-binding "gs://${GIT_BUCKET}" \
+      --member="serviceAccount:${SA_EMAIL}" \
+      --role="roles/storage.objectAdmin" \
+      --project="${GCP_PROJECT_ID}" 2>&1 || warn "Git bucket IAM binding failed (may already exist)"
+  fi
+else
+  warn "git.bucket not configured in contracts.json — skipping git bucket provisioning"
+fi
+write_deploy_step "git_bucket" "Git artifact bucket" "done"
+
+# ---- 17) Provision Firestore composite indexes ----
 info "Provisioning Firestore composite indexes..."
 if [[ -f "${CORE_DIR}/infra/bootstrap/provision-firestore-indexes.sh" ]]; then
   GCP_PROJECT_ID="${GCP_PROJECT_ID}" bash "${CORE_DIR}/infra/bootstrap/provision-firestore-indexes.sh" || warn "Index provisioning had errors (non-fatal)"

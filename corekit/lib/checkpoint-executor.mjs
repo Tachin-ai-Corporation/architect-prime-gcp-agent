@@ -80,6 +80,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     savedResults = [],
     buildProjectContext,
     publishArtifacts,
+    gitCommitAndSync,
   } = opts;
 
   const _requiredDeps = { dispatchAgent, envelope, firestoreWrite, writeHistory, log, generateId, buildProjectContext };
@@ -1001,6 +1002,21 @@ export async function executeCheckpoints(checkpoints, opts) {
       cpFailed ? `Failed at task ${cpResults.length}` : `Complete (${cpResults.length} tasks)`);
 
     allResults.push(...cpResults);
+
+    // Git substrate: commit+push after each successful checkpoint
+    if (!cpFailed && gitCommitAndSync && envelope.project_id) {
+      try {
+        const d = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
+        const cpTitle = (cpEnvelope.title || `checkpoint-${cpNum}`).slice(0, 60);
+        const msg = `v${d}.${cpNum}.0: ${cpTitle}`;
+        const syncResult = await gitCommitAndSync(envelope.id, envelope.project_id, msg);
+        if (syncResult.committed) {
+          log('INFO', `[checkpoint-executor] CP${cpNum}: git committed ${syncResult.sha?.slice(0, 8)} (synced=${syncResult.synced})`);
+        }
+      } catch (e) {
+        log('WARN', `[checkpoint-executor] CP${cpNum}: git commit+sync failed (non-fatal): ${e.message}`);
+      }
+    }
 
     if (cpFailed) {
       planFailed = true;

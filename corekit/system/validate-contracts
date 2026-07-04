@@ -298,6 +298,31 @@ console.log(v.length);
     fail "github.owner or github.repo is empty in contracts.json"
   fi
 
+  # ---- Check 12b: git block (tenant-internal artifact substrate) ----
+  C_GIT_BUCKET="$(read_contract 'git.bucket' 2>/dev/null || echo '')"
+  C_GIT_PREFIX="$(read_contract 'git.prefix' 2>/dev/null || echo '')"
+  C_GIT_BRANCH="$(read_contract 'git.defaultBranch' 2>/dev/null || echo '')"
+  C_GIT_RETRIES="$(read_contract 'git.maxPushRetries' 2>/dev/null || echo '')"
+  C_GIT_GC="$(read_contract 'git.gcBundleThreshold' 2>/dev/null || echo '')"
+
+  if [[ -n "$C_GIT_BUCKET" && -n "$C_GIT_PREFIX" && -n "$C_GIT_BRANCH" ]]; then
+    pass "git.bucket = ${C_GIT_BUCKET}, git.prefix = ${C_GIT_PREFIX}, git.defaultBranch = ${C_GIT_BRANCH}"
+  else
+    fail "git block: bucket, prefix, or defaultBranch is missing or empty in contracts.json"
+  fi
+
+  if [[ "$C_GIT_RETRIES" =~ ^[0-9]+$ ]] && [[ "$C_GIT_RETRIES" -ge 1 ]]; then
+    pass "git.maxPushRetries = ${C_GIT_RETRIES} (≥ 1)"
+  else
+    fail "git.maxPushRetries = '${C_GIT_RETRIES}' (expected number ≥ 1)"
+  fi
+
+  if [[ "$C_GIT_GC" =~ ^[0-9]+$ ]] && [[ "$C_GIT_GC" -ge 5 ]]; then
+    pass "git.gcBundleThreshold = ${C_GIT_GC} (≥ 5)"
+  else
+    fail "git.gcBundleThreshold = '${C_GIT_GC}' (expected number ≥ 5)"
+  fi
+
   # ---- Check 13: Process specialty values ∈ agent-types ids ----
   PROCESS_DIR="corekit/config/processes"
   if [[ -d "$PROCESS_DIR" && -f "$TYPES_FILE" ]]; then

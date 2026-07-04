@@ -137,13 +137,22 @@ git log --oneline -5 -- <file>
 | Type errors | Read type checker output | Add/fix type annotations |
 | Push rejected | `git fetch origin`, `git log --oneline origin/main..HEAD` | Rebase on latest main, resolve conflicts, push again |
 
-## Drive Workspace Convention
-- **Publish artifacts**: Always use `work-publish`, never raw `drive-upload` for sharing work products
+## Workspace Convention
+
+### Git Workspace (Primary — automatic)
+The Brain daemon automatically manages your git workspace for project missions:
+- **Clone + branch**: On mission start, the project repo is cloned and a `mission/{missionId}` branch is created in `shared/{missionId}/`
+- **Commit + sync**: After each checkpoint, your work is committed and synced to the git ether
+- **Merge**: On mission completion, your branch is merged to `main`
+- Write all work products to the `shared/{missionId}/` directory — they are automatically tracked
+- Use `work-status` to check uncommitted changes, `work-diff` to review, `work-log` to see history
+
+### Drive Workspace (Stakeholder-Facing)
+- **Publish artifacts**: Use `work-publish` for sharing work products with stakeholders via Drive
 - **Project work**: `work-publish <file> --project <project-id>` → uploads to `{project}/{MM-DD}/`
 - **Personal work**: `work-publish <file>` → uploads to `{prime}/{agent}/{MM-DD}/`
-- **Custom subfolder**: `work-publish <file> --project <id> --subfolder assets`
 - **Read/browse**: Use `drive-ls`, `drive-download`, `drive-search` as normal
-- Artifacts produced during a mission MUST be published to Drive before completion
+- Drive publishing also happens automatically on mission completion
 
 ## Project Context Discovery
 

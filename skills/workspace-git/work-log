@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# work-log — Show git commit history
+# Brain agent: motor (READ)
+#
+# Usage:
+#   work-log [--dir <path>] [--count <n>] [--oneline]
+#
+# Output: Git log text
+set -euo pipefail
+
+die() { echo "[work-log] [ERROR] $*" >&2; exit 1; }
+
+# ---- Args ----
+DIR="" COUNT=10 ONELINE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir)     DIR="$2"; shift 2 ;;
+    --count)   COUNT="$2"; shift 2 ;;
+    --oneline) ONELINE=1; shift ;;
+    --help|-h) echo "Usage: work-log [--dir <path>] [--count <n>] [--oneline]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DIR" ]] || DIR="."
+
+cd "$DIR"
+
+# Build git log command
+ARGS=("log" "-n" "$COUNT")
+if [[ $ONELINE -eq 1 ]]; then
+  ARGS+=("--oneline")
+else
+  ARGS+=("--format=%H %ai %s")
+fi
+
+git "${ARGS[@]}"

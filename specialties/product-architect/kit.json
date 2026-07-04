@@ -3,7 +3,7 @@
   "name": "Product Architect",
   "version": "1.0.0",
   "description": "Product standards stewardship, codebase architecture analysis, improvement planning, engineering delegation, drift prevention",
-  "base_skills": ["web-search"],
+  "base_skills": ["web-search", "workspace-git"],
   "specialty_skills": ["project-ops", "codebase-audit"],
   "brain_appends": ["cortex", "cerebellum"]
 }

@@ -53,7 +53,7 @@ Secret material lives only in GCP Secret Manager, managed from the dashboard's S
 
 ## The Culture of Work
 
-All work flows through a closed set of eight primitives. The execution spine is **R → M → C → T**:
+All work flows through a closed set of nine primitives. The execution spine is **R → M → C → T**:
 
 - **Responsibilities (R):** Recurring duties — cron-scheduled or event-triggered, configured in JSON, hot-reloaded. Singleton responsibilities guarantee at most one live cycle at a time.
 - **Missions (M):** Multi-checkpoint objectives with definitions of done. Every request becomes a mission. Missions are always flat — they never nest — and every mission belongs to a project.
@@ -65,9 +65,10 @@ Around the spine, four organizing primitives:
 - **Projects:** The sole recursive primitive (bounded depth) — organizational containers with accumulated context and dependencies.
 - **Plans:** Unexecuted mission blueprints with a full lifecycle: drafted, approved, stamped into M→C→T.
 - **Processes:** Reusable, parameterized templates that produce plans — the system's repeatable ways of working, including delegation steps and human approval gates.
-- **Artifacts:** Files produced during missions, auto-published to Google Drive and referenced in project context for cross-mission access.
+- **Artifacts:** Files produced during missions, stored in the git artifact substrate (GCS-backed repos with Firestore CAS refs) and published to Google Drive for stakeholder access.
+- **Skills:** Versioned, fleet-shared instruction packages — the system's codified know-how.
 
-The set is closed. New coordination needs are expressed by composing these eight — never by inventing a ninth. The full framework is documented in [`docs/CULTURE_OF_WORK.md`](docs/CULTURE_OF_WORK.md).
+The set is closed. New coordination needs are expressed by composing these nine — never by inventing a tenth. The full framework is documented in [`docs/CULTURE_OF_WORK.md`](docs/CULTURE_OF_WORK.md).
 
 ---
 

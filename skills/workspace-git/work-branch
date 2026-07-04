@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# work-branch — Create and switch to a new local git branch
+# Brain agent: motor (WRITE)
+#
+# Usage:
+#   work-branch <branchName> [--dir <path>]
+#
+# Output: JSON { branch, status }
+set -euo pipefail
+
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+die() { echo "[work-branch] [ERROR] $*" >&2; exit 1; }
+log() { echo "[work-branch] $*" >&2; }
+
+# ---- Args ----
+BRANCH_NAME="" DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dir) DIR="$2"; shift 2 ;;
+    --help|-h) echo "Usage: work-branch <branchName> [--dir <path>]"; exit 0 ;;
+    *)
+      if [[ -z "$BRANCH_NAME" && "$1" != -* ]]; then BRANCH_NAME="$1"; shift
+      else die "Unknown: $1"; fi ;;
+  esac
+done
+[[ -n "$BRANCH_NAME" ]] || die "Need <branchName>"
+[[ -n "$DIR" ]] || DIR="."
+
+# Create and switch to branch
+cd "$DIR"
+if git rev-parse --verify "$BRANCH_NAME" &>/dev/null; then
+  git checkout "$BRANCH_NAME" >&2
+  log "Switched to existing branch: ${BRANCH_NAME}"
+else
+  git checkout -b "$BRANCH_NAME" >&2
+  log "Created and switched to branch: ${BRANCH_NAME}"
+fi
+
+CURRENT=$(git rev-parse --abbrev-ref HEAD)
+echo "{\"branch\":\"${CURRENT}\",\"status\":\"ok\"}"

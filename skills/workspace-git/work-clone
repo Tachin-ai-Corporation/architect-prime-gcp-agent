@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# work-clone — Clone a git-backed artifact repo from the ether
+# Brain agent: motor (WRITE)
+#
+# Usage:
+#   work-clone <repoId> [--ref <branch>] [--dir <path>]
+#
+# Output: JSON { repoId, branch, sha, dir }
+set -euo pipefail
+
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+GIT_STORE="${CORE_DIR}/corekit/lib/git-store.mjs"
+die() { echo "[work-clone] [ERROR] $*" >&2; exit 1; }
+log() { echo "[work-clone] $*" >&2; }
+
+# ---- Args ----
+REPO_ID="" BRANCH="" DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --ref)    BRANCH="$2"; shift 2 ;;
+    --dir)    DIR="$2"; shift 2 ;;
+    --help|-h) echo "Usage: work-clone <repoId> [--ref <branch>] [--dir <path>]"; exit 0 ;;
+    *)
+      if [[ -z "$REPO_ID" && "$1" != -* ]]; then REPO_ID="$1"; shift
+      else die "Unknown: $1"; fi ;;
+  esac
+done
+[[ -n "$REPO_ID" ]] || die "Need <repoId>"
+
+# Default dir to shared/<repoId>
+[[ -n "$DIR" ]] || DIR="${CORE_DIR}/shared/${REPO_ID}"
+
+# Build args for git-store.mjs
+ARGS=("clone" "$REPO_ID")
+[[ -n "$BRANCH" ]] && ARGS+=("--ref" "$BRANCH")
+ARGS+=("--dir" "$DIR")
+
+log "Cloning repo=${REPO_ID} branch=${BRANCH:-main} dir=${DIR}"
+node "$GIT_STORE" "${ARGS[@]}"
