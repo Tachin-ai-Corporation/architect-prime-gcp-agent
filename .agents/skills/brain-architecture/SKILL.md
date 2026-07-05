@@ -4,7 +4,7 @@ description: Use when working on the brain agent system — creating/editing age
 ---
 # Brain Architecture Implementation
 
-## Current State (v2026.06.28.5.0)
+## Current State (v2026.07.05.3.0)
 6 brain agents in gateway multi-agent configuration, coordinated by the `agent-brain.service` state machine. Brain daemon builds `skill_index` deterministically at startup and injects into cortex payloads with `intent_keywords` for process selection. System prompt = SOUL.md only (no TOOLS.md injection). `assemble-persona` handles specialty SOUL appends at bootstrap and during `upgrade-corekit`. Motor dispatches receive full project context (`_projectContext`) and raw user request (`_sourceText`) as first-class user message sections. LoopGuard provides duplicate detection, semantic stuck detection, and structured `[STUCK REPORT]` output. Cross-agent delegation flows through checkpoint-executor with a 4-layer self-delegation prevention system: prefrontal SOUL specialty ownership detection, cortex SOUL delegation rules, inbound delegation rules, and a code-level checkpoint-executor guard that converts self-delegations to local motor tasks. Delegation dispatches via GChat @-mention with machine-parseable envelope references. Parallel delegation fan-out within a single checkpoint. Product Architect and PM agents are delegation-first (delegate before executing). Designer motor has mandatory step-by-step HTML writeFile enforcement.
 
 ### Agent Inventory
@@ -23,6 +23,14 @@ description: Use when working on the brain agent system — creating/editing age
 - **Cortex JSON Decide Loop**: Cortex classifies inputs and makes structured decisions (`action: "classify"|"decide"|"short_circuit"|"dispatch"|"synthesize"`). 10-case response normalizer infers actions from fields present (e.g., `intent:"synthesize"` → synthesize, `blocker` → blocked, `result` → synthesize fallback).
 - **R/M/C/T Hierarchy**: Work is managed as nested envelopes of Responsibilities (cron scheduled, individually toggleable), Missions, Checkpoints, and Tasks.
 - **Sub-agent Dispatch**: Sub-agents are invoked dynamically by Cortex to execute planned steps.
+
+### Outcome Integrity
+Contract-driven guarantees that dispatch and completion produce verifiable results:
+- **smartTruncate**: Content truncation follows a field-priority contract (`result` → `summary` → `notes`), never silently drops outcome data.
+- **Mission record persistence**: `completeEnvelope` Step 3a writes a durable mission record to Firestore before marking the envelope complete.
+- **Delegation trailer grammar**: Delegation dispatches append a machine-parseable trailer (envelope ref, expected output, return address) so the receiving agent can satisfy the contract.
+- **Completion verification**: `synthesize` verifies that every dispatched checkpoint has a recorded outcome before composing the final response.
+- **GOAL STATE + goal_check**: Prefrontal plans include an explicit `GOAL STATE` block; cortex runs a `goal_check` pass before synthesize to confirm the goal was met.
 
 ### I/O Architecture
 - `agent-ears` — deterministic input (poll, dedup, GChat preprocessor, fire-and-forget gateway POST)
