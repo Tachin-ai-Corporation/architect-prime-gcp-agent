@@ -3766,13 +3766,13 @@ async function main() {
 
       log('INFO', `Startup recovery: scanned ${allDocs.length} work docs`);
 
-      // Cancel stale blocked/waiting envelopes owned by this agent on restart
+      // Cancel stale blocked envelopes owned by this agent on restart (keep 'waiting' for active delegations)
       const staleBlocked = allDocs.filter(e =>
         (e.owner || '').includes(agentId) &&
-        (e.status === 'blocked' || e.status === 'waiting')
+        (e.status === 'blocked')
       );
       if (staleBlocked.length > 0) {
-        log('INFO', `Startup recovery: cancelling ${staleBlocked.length} stale blocked/waiting envelope(s)`);
+        log('INFO', `Startup recovery: cancelling ${staleBlocked.length} stale blocked envelope(s)`);
         for (const env of staleBlocked) {
           await firestoreWrite('work', env.id, {
             ...env,
