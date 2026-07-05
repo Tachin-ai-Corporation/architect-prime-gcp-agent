@@ -235,6 +235,30 @@ for dir in "${CORE_DIR}"/workspace*; do
   fi
 done
 
+# ---- 11e) Provision git artifact substrate bucket (idempotent) ----
+info "Provisioning git artifact bucket..."
+GIT_BUCKET="$(node -e "const c=JSON.parse(require('fs').readFileSync('${CORE_DIR}/corekit/contracts.json','utf8'));console.log((c.git||{}).bucket||'')" 2>/dev/null || echo '')"
+GIT_BUCKET="${GIT_BUCKET//\$\{TENANT\}/${GCP_PROJECT_ID}}"
+if [[ -n "$GIT_BUCKET" ]]; then
+  if gcloud storage buckets describe "gs://${GIT_BUCKET}" --project="${GCP_PROJECT_ID}" &>/dev/null; then
+    info "Git bucket gs://${GIT_BUCKET} already exists — skipping"
+  else
+    gcloud storage buckets create "gs://${GIT_BUCKET}" \
+      --project="${GCP_PROJECT_ID}" \
+      --location="us-central1" \
+      --uniform-bucket-level-access \
+      --public-access-prevention 2>&1 || warn "Git bucket creation failed (may already exist)"
+    info "Git bucket gs://${GIT_BUCKET} created"
+  fi
+  SA_EMAIL="$(curl -sf -H "$MH" "$META/instance/service-accounts/default/email" || echo '')"
+  if [[ -n "$SA_EMAIL" ]]; then
+    gcloud storage buckets add-iam-policy-binding "gs://${GIT_BUCKET}" \
+      --member="serviceAccount:${SA_EMAIL}" \
+      --role="roles/storage.objectAdmin" \
+      --project="${GCP_PROJECT_ID}" 2>&1 || warn "Git bucket IAM binding failed"
+  fi
+fi
+
 # ---- 11d) Final permissions sweep ----
 info "Final permissions sweep..."
 find "${CORE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
