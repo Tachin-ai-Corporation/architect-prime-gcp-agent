@@ -45,9 +45,12 @@ export function initChannel({ contracts, firestoreUrl, primeId, agentHostname })
  */
 export function makeAddress(channel, opts = {}) {
   if (channel === 'gchat') {
+    // Normalize space to always have exactly one spaces/ prefix
+    let space = opts.space || null;
+    if (space && !space.startsWith('spaces/')) space = `spaces/${space}`;
     return {
       channel: 'gchat',
-      space: opts.space || null,
+      space,
       thread: opts.thread || null,
     };
   }

@@ -484,9 +484,7 @@ function _initProcessEngine() {
         delivery_target: mission.source_meta.delegated_from || null,
         delivery_space_id: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id) || null,
         delivery_address: makeAddress('gchat', {
-          space: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id)
-            ? `spaces/${PROJECTS[mission.project_id].gchat_space_id}`
-            : null,
+          space: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id) || null,
         }),
         project_id: mission.project_id || null,
         source_channel: 'brain',
@@ -1786,9 +1784,7 @@ async function completeEnvelope(envelope, opts) {
           delivery_target: envelope.source_meta.delegated_from || null,
           delivery_space_id: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null,
           delivery_address: makeAddress('gchat', {
-            space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id)
-              ? `spaces/${PROJECTS[envelope.project_id].gchat_space_id}`
-              : null,
+            space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null,
           }),
           project_id: envelope.project_id || null,
           source_channel: 'brain',

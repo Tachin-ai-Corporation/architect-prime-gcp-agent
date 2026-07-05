@@ -178,9 +178,7 @@ export function createLifecycleHandler(deps) {
             delivery_target: envelope.source_meta.delegated_from || null,
             delivery_space_id: (envelope.project_id && projects[envelope.project_id]?.gchat_space_id) || null,
             delivery_address: makeAddress('gchat', {
-              space: (envelope.project_id && projects[envelope.project_id]?.gchat_space_id)
-                ? `spaces/${projects[envelope.project_id].gchat_space_id}`
-                : null,
+              space: (envelope.project_id && projects[envelope.project_id]?.gchat_space_id) || null,
             }),
             project_id: envelope.project_id || null,
             source_channel: 'brain',

@@ -89,9 +89,7 @@ export async function handleDelegate(ctx, deps) {
     delivery_target: targetEmail,
     delivery_space_id: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id) || null,
     delivery_address: makeAddress('gchat', {
-      space: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id)
-        ? `spaces/${PROJECTS[delegateProjectId].gchat_space_id}`
-        : null,
+      space: (delegateProjectId && PROJECTS[delegateProjectId]?.gchat_space_id) || null,
     }),
     project_id: delegateProjectId,
     source_channel: 'brain',

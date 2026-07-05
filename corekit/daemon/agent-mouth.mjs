@@ -394,13 +394,14 @@ async function buildDefaultAddress() {
  */
 async function deliverDelegation(text, addr, targetEmail) {
   const token = await getDwdToken();
-  await deliverToAddress(addr, text, {
+  const ok = await deliverToAddress(addr, text, {
     token,
     deliveryTarget: targetEmail,
     mentions: [targetEmail],
     replyInThread: false,  // delegations are flat space messages
     log,
   });
+  if (!ok) throw new Error(`Delegation delivery to ${targetEmail} failed (GChat POST rejected)`);
 }
 
 async function deliver(text, addr, mentions = []) {

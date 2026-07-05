@@ -677,9 +677,7 @@ export async function executeCheckpoints(checkpoints, opts) {
           delivery_status: 'pending',
           delivery_target: targetAgentEmail,
           delivery_address: makeAddress('gchat', {
-            space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id)
-              ? `spaces/${PROJECTS[envelope.project_id].gchat_space_id}`
-              : null,
+            space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null,
           }),
           source_channel: 'brain',
           created_at: new Date().toISOString(),
