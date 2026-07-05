@@ -687,6 +687,17 @@ export async function executeCheckpoints(checkpoints, opts) {
 
         log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation sent to ${targetAgentEmail}`);
 
+        // Persist checkpoint progress so we don't re-delegate on resume
+        if (CHECKPOINT_RESUME_ENABLED && !isPreStamped) {
+          envelope._cp_progress = {
+            checkpointIndex: ci,
+            taskIndex: ti + 1,
+            allResults: [...allResults, ...cpResults],
+            checkpoints,
+          };
+          await firestoreWrite('work', envelope.id, envelope);
+        }
+
         // Track that this checkpoint has delegations — don't return yet,
         // continue processing remaining tasks so parallel delegations fan out
         delegationDispatched = true;
