@@ -2259,6 +2259,17 @@ async function processIntake(intake) {
         log('WARN', `Failed to register child on parent ${delegationRef}: ${e.message}`);
       }
 
+      // Inject ack as first C→T under the mission so the delegator knows we picked it up
+      await createCT(envelope, {
+        checkpointTitle: 'Acknowledge receipt',
+        taskTitle: 'Write acknowledgment',
+        taskOutput: 'Delegation received and queued for processing.',
+        taskIntent: 'ack',
+        deliveryStatus: 'pending',
+        deliveryAddress: addressFromMeta(intake.source_meta, intake.source),
+        ctKey: `ack-${envelopeId}`,
+      });
+
       // Queue the delegation mission (work queue discipline: don't process immediately)
       envelope.status = 'queued';
       await firestoreWrite('work', envelopeId, envelope);
