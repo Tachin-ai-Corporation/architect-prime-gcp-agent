@@ -10,6 +10,7 @@ export async function handleDelegate(ctx, deps) {
     composeDelegationMarker,
     PROJECTS,
     makeAddress,
+    addressFromMeta,
     AGENT_EMAIL,
     AGENT_ID,
     now
@@ -100,6 +101,29 @@ export async function handleDelegate(ctx, deps) {
 
   log('INFO', `Delegation output envelope created: ${delegOutputId} → ${targetEmail}`);
 
+  // Delegation ACK: notify the original requester that work has been delegated
+  const ackId = generateId('w');
+  const agentName = targetEmail.split('@')[0].replace(/-/g, ' ');
+  await firestoreWrite('work', ackId, {
+    id: ackId,
+    type: 'T',
+    parent_id: envelope.id,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: 'complete',
+    intent: 'notification',
+    title: 'Delegation acknowledgment',
+    instruction: 'Notify operator of delegation',
+    output: `I've delegated this to ${agentName}. I'll follow up when they complete their work.`,
+    delivery_status: 'pending',
+    delivery_address: addressFromMeta(envelope.source_meta, envelope.source_channel),
+    source_channel: envelope.source_channel || 'brain',
+    source_meta: envelope.source_meta || {},
+    project_id: delegateProjectId,
+    created_at: now(),
+    updated_at: now(),
+  });
+  log('INFO', `Delegation ack envelope created: ${ackId} → original requester`);
+
   // Set mission to waiting
   envelope.children = envelope.children || [];
   envelope.children.push(delegTaskId);
@@ -111,3 +135,4 @@ export async function handleDelegate(ctx, deps) {
   log('INFO', `Mission ${envelope.id} waiting for delegation to ${targetEmail}`);
   return { exit: true };
 }
+

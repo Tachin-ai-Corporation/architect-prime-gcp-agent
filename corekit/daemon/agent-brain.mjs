@@ -1276,6 +1276,8 @@ function _initNotifier() {
   _notifier = createNotifier({
     vertexText: _vtx,
     firestoreWrite,
+    firestoreRead,
+    addressFromMeta,
     generateId,
     cachedReadFile,
     getGatewayConfig: () => ({ url: GATEWAY_URL, token: GATEWAY_TOKEN, route: BRAIN_ROUTE }),
@@ -3390,6 +3392,32 @@ async function checkWaitingEnvelopes() {
           waiting.completed_at = now();
           await firestoreWrite('work', waiting.id, waiting);
           await writeHistory(waiting.id, 'waiting', 'failed', 'brain', 'Delegation timeout');
+
+          // Escalate: fail the parent M-type mission with a user-facing notification
+          if (waiting.parent_id) {
+            try {
+              const parent = await firestoreRead('work', waiting.parent_id);
+              if (parent && (parent.status === 'waiting' || parent.status === 'active')) {
+                const delegateEmail = waiting.source_meta?.delegated_to || waiting.source_meta?.target_agent_email || 'the delegate';
+                const agentName = typeof delegateEmail === 'string' ? delegateEmail.split('@')[0].replace(/-/g, ' ') : 'the delegate';
+                parent.status = 'failed';
+                parent.error = waiting.error;
+                parent.completed_at = now();
+                parent.updated_at = now();
+                // Top-level M envelopes get delivery so user sees the timeout
+                if (!parent.parent_id) {
+                  parent.delivery_status = 'pending';
+                  parent.delivery_address = addressFromMeta(parent.source_meta, parent.source_channel);
+                  parent.output = `I delegated this task to ${agentName}, but they didn't respond within ${Math.round(ageMs / 3600_000)} hours. The delegation timed out — you may want to try again or reach out directly.`;
+                }
+                await firestoreWrite('work', parent.id, parent);
+                await writeHistory(parent.id, parent.status === 'waiting' ? 'waiting' : 'active', 'failed', 'brain', `Delegation to ${delegateEmail} timed out`);
+                log('INFO', `Parent mission ${parent.id} failed due to delegation timeout`);
+              }
+            } catch (e) {
+              log('WARN', `Failed to escalate delegation timeout to parent ${waiting.parent_id}: ${e.message}`);
+            }
+          }
           continue;
         }
       }

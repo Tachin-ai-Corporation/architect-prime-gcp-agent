@@ -54,6 +54,8 @@ const ACK_FALLBACKS = [
  * @param {object} deps
  * @param {object} deps.vertexText           - vertex-text.mjs client instance (has .transform())
  * @param {function} deps.firestoreWrite     - async (collection, docId, data) => result
+ * @param {function} deps.firestoreRead      - async (collection, docId) => doc or null
+ * @param {function} deps.addressFromMeta    - (sourceMeta, sourceChannel) => Address object
  * @param {function} deps.logger             - (level, msg) logging function
  * @param {function} deps.generateId         - (prefix) => unique ID
  * @param {function} deps.cachedReadFile     - (path) => file content or null
@@ -70,6 +72,8 @@ export function createNotifier(deps) {
   const {
     vertexText,
     firestoreWrite,
+    firestoreRead,
+    addressFromMeta,
     generateId,
     cachedReadFile,
     getGatewayConfig,
@@ -159,6 +163,23 @@ export function createNotifier(deps) {
    * @param {string} message    - Human-readable status message
    */
   async function writeStatusUpdate(envelopeId, message) {
+    // Read parent envelope to get routing info for delivery
+    let parentMeta = {};
+    let parentChannel = 'system';
+    let deliveryAddr = null;
+    try {
+      const parent = firestoreRead ? await firestoreRead('work', envelopeId) : null;
+      if (parent) {
+        parentMeta = parent.source_meta || {};
+        parentChannel = parent.source_channel || 'system';
+        if (addressFromMeta) {
+          deliveryAddr = addressFromMeta(parentMeta, parentChannel);
+        }
+      }
+    } catch (e) {
+      log('WARN', `writeStatusUpdate: failed to read parent ${envelopeId}: ${e.message}`);
+    }
+
     const statusId = generateId('status');
     await firestoreWrite('work', statusId, {
       id: statusId,
@@ -166,11 +187,13 @@ export function createNotifier(deps) {
       parent_id: envelopeId,
       owner: agentEmail || agentId,
       status: 'complete',
-      intent: 'status_update',
+      intent: 'notification',
       instruction: 'Status update',
       output: message,
-      source_channel: 'system',
-      source_meta: {},
+      delivery_status: 'pending',
+      delivery_address: deliveryAddr,
+      source_channel: parentChannel,
+      source_meta: parentMeta,
       created_at: now(),
       started_at: now(),
       completed_at: now(),
