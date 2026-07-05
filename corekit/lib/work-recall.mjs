@@ -129,3 +129,24 @@ export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, l
   }
   return lines.join('\n');
 }
+
+// ── getWorkOutput ───────────────────────────────────────────────
+// Direct document read for deterministic recovery of truncated outputs.
+
+export async function getWorkOutput(id, { firestoreRead }) {
+  if (!id || !firestoreRead) return null;
+  const doc = await firestoreRead('work', id);
+  if (!doc) return null;
+  return {
+    id: doc.id,
+    status: doc.status,
+    type: doc.type,
+    title: doc.title || null,
+    output: doc.output || null,
+    output_chars: (doc.output || '').length,
+    accept_criteria: doc.accept_criteria || null,
+    created_at: doc.created_at || null,
+    completed_at: doc.completed_at || null,
+    project_id: doc.project_id || null,
+  };
+}

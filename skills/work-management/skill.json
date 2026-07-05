@@ -12,6 +12,7 @@
     "project-manage",
     "process-manage",
     "work-log-read",
+    "work-output-read",
     "task-log-read",
     "task-log-write"
   ],

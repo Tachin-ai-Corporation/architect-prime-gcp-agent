@@ -8,8 +8,11 @@ export async function handleFollowProcess(ctx, deps) {
     completeEnvelope,
     ensureProcessesLoaded,
     PROCESSES,
-    executeProcess
+    executeProcess,
+    CONTRACTS,
   } = deps;
+  const smartTruncate = deps.smartTruncate || ((t, n) => (t || '').substring(0, n));
+  const contextSliceChars = CONTRACTS?.dispatch?.context_slice_chars || 500;
 
   const processId = decision.processId || decision.process_id;
 
@@ -33,7 +36,7 @@ export async function handleFollowProcess(ctx, deps) {
       // Build synthesis from child results
       const childResults = priorResults
         .filter(r => r.agent && r.agent !== 'system')
-        .map(r => `${r.agent}: ${toStr(r.result).substring(0, 500)}`)
+        .map(r => `${r.agent}: ${smartTruncate(toStr(r.result), contextSliceChars)}`)
         .join('\n\n');
       const synthesis = childResults || envelope.output || 'Process completed but Cortex could not synthesize results.';
 

@@ -66,7 +66,7 @@ export const CORTEX_SCHEMAS = {
           step_type:       { type: 'STRING', enum: ['standard', 'delegation', 'approval_gate', 'ask'] },
           brief_part:      { type: 'STRING' },
         }, required: ['agent', 'task'] }},
-      }, required: ['instruction', 'tasks'] }},
+      }, required: ['instruction', 'accept_criteria', 'tasks'] }},
       synthesis:       { type: 'STRING' },
       failure_summary: { type: 'STRING' },
       question:        { type: 'STRING' },
@@ -80,6 +80,12 @@ export const CORTEX_SCHEMAS = {
       target_email:    { type: 'STRING' },
       instruction:     { type: 'STRING' },
       accept_criteria: { type: 'STRING' },
+      goal_check: { type: 'OBJECT', properties: {
+        criteria_met: { type: 'ARRAY', items: { type: 'STRING' } },
+        criteria_unmet: { type: 'ARRAY', items: { type: 'STRING' } },
+        confidence: { type: 'STRING', enum: ['high', 'medium', 'low'] },
+        assessment: { type: 'STRING' },
+      }},
       project_id:      { type: 'STRING' },
     },
     required: ['action'],
@@ -109,7 +115,7 @@ export const CORTEX_SCHEMAS = {
               }
             }
           },
-          required: ['instruction', 'tasks']
+          required: ['instruction', 'accept_criteria', 'tasks']
         }
       }
     },
@@ -374,6 +380,10 @@ export function createVertexText(config) {
         log('DEBUG', 'normalizeDecision: steps → checkpoints');
       }
     }
+
+    // goal_check aliases
+    if (parsed.assessment && !parsed.goal_check) parsed.goal_check = { assessment: parsed.assessment };
+    if (parsed.goal_assessment && !parsed.goal_check) parsed.goal_check = parsed.goal_assessment;
 
     return parsed;
   }

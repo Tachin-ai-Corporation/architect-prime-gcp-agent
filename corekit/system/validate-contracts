@@ -248,6 +248,22 @@ for (const x of t.types) console.log(x.id);
     fail "dispatch.claim_stale_ms = '${CSM}' (expected number ≥ 60000)"
   fi
 
+  # synth_verification_enabled: must be boolean
+  SVE="$(read_contract 'dispatch.synth_verification_enabled' 2>/dev/null || echo '')"
+  if [[ "$SVE" == "true" ]] || [[ "$SVE" == "false" ]]; then
+    pass "dispatch.synth_verification_enabled = ${SVE}"
+  else
+    fail "dispatch.synth_verification_enabled = '${SVE}' (expected boolean)"
+  fi
+
+  # synth_verify_min_chars: must be number >= 100
+  SVMC="$(read_contract 'dispatch.synth_verify_min_chars' 2>/dev/null || echo '')"
+  if [[ "$SVMC" =~ ^[0-9]+$ ]] && [[ "$SVMC" -ge 100 ]]; then
+    pass "dispatch.synth_verify_min_chars = ${SVMC} (>= 100)"
+  else
+    fail "dispatch.synth_verify_min_chars = '${SVMC}' (expected number >= 100)"
+  fi
+
   # prior_results_max: optional number ≥ 10
   PRM="$(read_contract 'dispatch.prior_results_max' 2>/dev/null || echo '')"
   if [[ -z "$PRM" ]]; then
@@ -269,6 +285,46 @@ console.log(v.length);
     pass "dispatch.evidence_floor_exclude_skills is array (${EFES} entries)"
   else
     fail "dispatch.evidence_floor_exclude_skills missing or not an array"
+  fi
+
+  # result_preview_chars: must be number >= 100
+  RPC="$(read_contract 'dispatch.result_preview_chars' 2>/dev/null || echo '')"
+  if [[ "$RPC" =~ ^[0-9]+$ ]] && [[ "$RPC" -ge 100 ]]; then
+    pass "dispatch.result_preview_chars = ${RPC} (>= 100)"
+  else
+    fail "dispatch.result_preview_chars = '${RPC}' (expected number >= 100)"
+  fi
+
+  # context_slice_chars: must be number >= 100
+  CSC="$(read_contract 'dispatch.context_slice_chars' 2>/dev/null || echo '')"
+  if [[ "$CSC" =~ ^[0-9]+$ ]] && [[ "$CSC" -ge 100 ]]; then
+    pass "dispatch.context_slice_chars = ${CSC} (>= 100)"
+  else
+    fail "dispatch.context_slice_chars = '${CSC}' (expected number >= 100)"
+  fi
+
+  # criteria_pinning_enabled: must be boolean
+  CPE="$(read_contract 'dispatch.criteria_pinning_enabled' 2>/dev/null || echo '')"
+  if [[ "$CPE" == "true" ]] || [[ "$CPE" == "false" ]]; then
+    pass "dispatch.criteria_pinning_enabled = ${CPE}"
+  else
+    fail "dispatch.criteria_pinning_enabled = '${CPE}' (expected boolean)"
+  fi
+
+  # goal_state_enabled: must be boolean
+  GSE="$(read_contract 'dispatch.goal_state_enabled' 2>/dev/null || echo '')"
+  if [[ "$GSE" == "true" ]] || [[ "$GSE" == "false" ]]; then
+    pass "dispatch.goal_state_enabled = ${GSE}"
+  else
+    fail "dispatch.goal_state_enabled = '${GSE}' (expected boolean)"
+  fi
+
+  # goal_check_required: must be boolean
+  GCR="$(read_contract 'dispatch.goal_check_required' 2>/dev/null || echo '')"
+  if [[ "$GCR" == "true" ]] || [[ "$GCR" == "false" ]]; then
+    pass "dispatch.goal_check_required = ${GCR}"
+  else
+    fail "dispatch.goal_check_required = '${GCR}' (expected boolean)"
   fi
 
   # ---- Check 10c: utility enforce_schema tunables ----

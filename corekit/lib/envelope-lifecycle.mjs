@@ -9,6 +9,8 @@
 // Phase 2.1 extraction from agent-brain.mjs.
 // ============================================================
 
+import { writeMissionRecord } from './mission-record.mjs';
+
 /**
  * Create a lifecycle handler bound to the given dependencies.
  *
@@ -41,6 +43,8 @@ export function createLifecycleHandler(deps) {
     addressFromMeta, generateId, composeDelegationResultMarker,
     makeAddress, toStr, now, log,
     agentEmail, agentId, projects,
+    smartTruncate, resultPreviewChars,
+    coreDir,
   } = deps;
 
   /**
@@ -96,16 +100,39 @@ export function createLifecycleHandler(deps) {
       envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
     }
 
+    // ---- Step 3a: Write mission record (before publish, so commit captures it) ----
+    if (envelope.type === 'M' && envelope.project_id && status === 'complete') {
+      try {
+        const sharedDir = coreDir ? `${coreDir}/shared/${envelope.id}` : null;
+        const recordResult = writeMissionRecord(envelope, sharedDir, log);
+        if (recordResult.written) {
+          envelope.context = envelope.context || {};
+          envelope.context.mission_record = recordResult.files;
+        }
+      } catch (e) {
+        log('WARN', `Mission record write failed: ${e.message}`);
+        envelope.context = envelope.context || {};
+        envelope.context.artifact_status = `degraded: mission record failed`;
+      }
+    }
+
     // ---- Step 3: Publish artifacts (before cleanup, so shared/ files exist) ----
     if (!skipArtifacts && envelope.type === 'M') {
       try {
-        const artifactLinks = await publishArtifacts(envelope);
-        if (artifactLinks && artifactLinks.length > 0) {
-          const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
-          envelope.output = (envelope.output || '') + `\n\n📌 **Artifacts published to Drive:**\n${linkText}`;
+        const manifest = await publishArtifacts(envelope);
+        // publish() returns a git manifest object, not an array of links
+        if (manifest && manifest.kind === 'artifact_manifest') {
+          const fileCount = manifest.files?.length || 0;
+          const commitShort = manifest.commit?.slice(0, 8) || 'unknown';
+          envelope.output = (envelope.output || '') +
+            `\n\n📎 Artifacts: ${manifest.repo || 'repo'}@${manifest.branch || 'main'} ${commitShort} — ${fileCount} file(s)`;
+          envelope.context = envelope.context || {};
+          envelope.context.artifact_status = 'ok';
         }
       } catch (e) {
         log('WARN', `Artifact publishing failed: ${e.message}`);
+        envelope.context = envelope.context || {};
+        envelope.context.artifact_status = `degraded: ${e.message.slice(0, 100)}`;
       }
     }
 
@@ -161,7 +188,13 @@ export function createLifecycleHandler(deps) {
             ref: envelope.source_meta.delegation_ref,
             status: envelope.status,
             missionId: envelope.id,
-            body: toStr(envelope.output || envelope.error || envelope.status).substring(0, 500),
+            body: smartTruncate(toStr(envelope.output || envelope.error || envelope.status), resultPreviewChars),
+            trailer: {
+              fullOutputChars: (envelope.output || '').length,
+              artifactRef: envelope.context?.artifact_status === 'ok'
+                ? `${envelope.project_id || 'repo'}@mission/${envelope.id}` : null,
+              artifactStatus: envelope.context?.artifact_status || null,
+            },
           });
           const resultOutputId = generateId('w');
           await firestoreWrite('work', resultOutputId, {

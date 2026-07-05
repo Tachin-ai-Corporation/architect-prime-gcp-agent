@@ -98,6 +98,7 @@ export async function executeCheckpoints(checkpoints, opts) {
   let planFailed = false;
   let delegationCount = 0;
   const maxDelegations = contracts?.dispatch?.max_delegations_per_checkpoint || 4;
+  const contextSliceChars = contracts?.dispatch?.context_slice_chars || 500;
 
   const isPreStamped = checkpoints[0] && checkpoints[0].cEnvelope !== undefined;
 
@@ -648,7 +649,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         // Enrich delegation body with prior checkpoint results
         const priorCtx = [...allResults, ...cpResults]
           .filter(r => r.success)
-          .map(r => `[Prior work — ${r.agent}]: ${(r.result || '').substring(0, 500)}`)
+          .map(r => `[Prior work — ${r.agent}]: ${smartTruncate(r.result || '', contextSliceChars)}`)
           .join('\n\n');
         const enrichedBody = priorCtx
           ? `${taskDesc}\n\n--- Prior checkpoint results ---\n${priorCtx}\n--- End prior results ---`

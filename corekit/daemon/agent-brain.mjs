@@ -91,6 +91,8 @@ const NEEDS_INPUT_TIMEOUT_HOURS = CONTRACTS.dispatch?.needs_input_timeout_hours 
 const STEP_LEDGER_ENABLED = CONTRACTS.dispatch?.step_ledger_enabled !== false; // default true
 const CHECKPOINT_RESUME_ENABLED = CONTRACTS.dispatch?.checkpoint_resume_enabled !== false; // default true
 const CLAIM_STALE_MS = CONTRACTS.dispatch?.claim_stale_ms || 600_000; // 10 min
+const RESULT_PREVIEW_CHARS = CONTRACTS.dispatch?.result_preview_chars || 700;
+const CONTEXT_SLICE_CHARS = CONTRACTS.dispatch?.context_slice_chars || 500;
 const LOG_FILE = '/tmp/agent-brain.log';
 
 // Work Queue Discipline: max 1 active M-type mission at a time per agent.
@@ -467,7 +469,13 @@ function _initProcessEngine() {
         ref: mission.source_meta.delegation_ref,
         status: mission.status,
         missionId: mission.id,
-        body: toStr(mission.output).substring(0, 500),
+        body: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS),
+        trailer: {
+          fullOutputChars: (mission.output || '').length,
+          artifactRef: mission.context?.artifact_status === 'ok'
+            ? `${mission.project_id || 'repo'}@mission/${mission.id}` : null,
+          artifactStatus: mission.context?.artifact_status || null,
+        },
       });
       const resultOutputId = generateId('w');
       await firestoreWrite('work', resultOutputId, {
@@ -517,13 +525,13 @@ function _initProcessEngine() {
                 const sibResults = [];
                 for (const sibId of siblings) {
                   if (sibId === delegRef.id) {
-                    sibResults.push({ agent: delegRef.owner, result: toStr(mission.output).substring(0, 500), success: true });
+                    sibResults.push({ agent: delegRef.owner, result: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS), success: true });
                     continue;
                   }
                   const sib = await firestoreRead('work', sibId);
                   if (!sib || ['complete', 'failed', 'archived', 'cancelled', 'blocked'].includes(sib?.status)) {
                     const isOk = sib?.status === 'complete' || sib?.status === 'archived';
-                    sibResults.push({ agent: sib?.owner || 'unknown', result: toStr(sib?.output || sib?.status || '').substring(0, 500), success: isOk });
+                    sibResults.push({ agent: sib?.owner || 'unknown', result: smartTruncate(toStr(sib?.output || sib?.status || ''), RESULT_PREVIEW_CHARS), success: isOk });
                   } else {
                     allDone = false;
                     break;
@@ -1258,6 +1266,16 @@ function buildUserPrompt(mode, payload) {
           `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`;
       }
     }
+    // CP-5: Inject GOAL STATE block for missions with accept criteria
+    if (CONTRACTS.dispatch?.goal_state_enabled !== false && payload.envelope?.accept_criteria) {
+      const criteria = payload.envelope.accept_criteria;
+      const priorResults = payload.prior_results || [];
+      decidePayload.goal_state = {
+        accept_criteria: criteria,
+        prior_work_count: priorResults.length,
+        instruction: 'Include a goal_check object in your decision with criteria_met, criteria_unmet, confidence (high/medium/low), and assessment. Do NOT synthesize while criteria_unmet has items unless all paths have been exhausted.',
+      };
+    }
     return JSON.stringify(decidePayload);
   }
   return JSON.stringify(payload);
@@ -1701,16 +1719,40 @@ async function completeEnvelope(envelope, opts) {
     envelope.delivery_address = addressFromMeta(envelope.source_meta, envelope.source_channel);
   }
 
+  // Step 3a: Write mission record (before publish, so commit captures it)
+  if (envelope.type === 'M' && envelope.project_id && status === 'complete') {
+    try {
+      const { writeMissionRecord } = await import('../corekit/lib/mission-record.mjs');
+      const sharedDir = `${CORE_DIR}/shared/${envelope.id}`;
+      const recordResult = writeMissionRecord(envelope, sharedDir, log);
+      if (recordResult.written) {
+        envelope.context = envelope.context || {};
+        envelope.context.mission_record = recordResult.files;
+      }
+    } catch (e) {
+      log('WARN', `Mission record write failed: ${e.message}`);
+      envelope.context = envelope.context || {};
+      envelope.context.artifact_status = `degraded: mission record failed`;
+    }
+  }
+
   // Step 3: Publish artifacts (before cleanup, so shared/ files exist)
   if (!skipArtifacts && envelope.type === 'M') {
     try {
-      const artifactLinks = await publishArtifacts(envelope);
-      if (artifactLinks && artifactLinks.length > 0) {
-        const linkText = artifactLinks.map(a => `- [${a.name}](${a.url})`).join('\n');
-        envelope.output = (envelope.output || '') + `\n\n📌 **Artifacts published to Drive:**\n${linkText}`;
+      const manifest = await publishArtifacts(envelope);
+      // publish() returns a git manifest object, not an array of links
+      if (manifest && manifest.kind === 'artifact_manifest') {
+        const fileCount = manifest.files?.length || 0;
+        const commitShort = manifest.commit?.slice(0, 8) || 'unknown';
+        envelope.output = (envelope.output || '') +
+          `\n\n📎 Artifacts: ${manifest.repo || 'repo'}@${manifest.branch || 'main'} ${commitShort} — ${fileCount} file(s)`;
+        envelope.context = envelope.context || {};
+        envelope.context.artifact_status = 'ok';
       }
     } catch (e) {
       log('WARN', `Artifact publishing failed: ${e.message}`);
+      envelope.context = envelope.context || {};
+      envelope.context.artifact_status = `degraded: ${e.message.slice(0, 100)}`;
     }
   }
 
@@ -1767,7 +1809,13 @@ async function completeEnvelope(envelope, opts) {
           ref: envelope.source_meta.delegation_ref,
           status: envelope.status,
           missionId: envelope.id,
-          body: toStr(envelope.output).substring(0, 500),
+          body: smartTruncate(toStr(envelope.output), RESULT_PREVIEW_CHARS),
+          trailer: {
+            fullOutputChars: (envelope.output || '').length,
+            artifactRef: envelope.context?.artifact_status === 'ok'
+              ? `${envelope.project_id || 'repo'}@mission/${envelope.id}` : null,
+            artifactStatus: envelope.context?.artifact_status || null,
+          },
         });
         const resultOutputId = generateId('w');
         await firestoreWrite('work', resultOutputId, {
@@ -2860,7 +2908,7 @@ async function processEnvelope(envelope, memoryContext) {
       const parent = await firestoreRead('work', envelope.parent_id);
       if (parent && parent.status === 'active') {
         // Append child result to parent's context so cortex sees it on next iteration
-        const childSummary = `[CHILD RESULT] ${envelope.id} (${envelope.status}): ${toStr(envelope.output).substring(0, 500)}`;
+        const childSummary = `[CHILD RESULT] ${envelope.id} (${envelope.status}): ${smartTruncate(toStr(envelope.output), RESULT_PREVIEW_CHARS)}`;
         if (!parent.context_forward) parent.context_forward = '';
         parent.context_forward += '\n' + childSummary;
         parent.updated_at = now();
@@ -3190,7 +3238,7 @@ function buildEnvelopeContext(envelope, priorResults, memoryResults) {
       const resultStr = toStr(latest.result).substring(0, 2000);
       blockParts.push(`Result: ${resultStr}`);
     } else if (latest.agent === 'human') {
-      blockParts.push(`Human input: ${toStr(latest.result).substring(0, 500)}`);
+      blockParts.push(`Human input: ${smartTruncate(toStr(latest.result), CONTEXT_SLICE_CHARS)}`);
     }
   }
 
@@ -3457,7 +3505,7 @@ async function checkWaitingEnvelopes() {
 
       // Inject delegation results as context_forward
       const delegationSummary = childResults.map((r, i) =>
-        `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${toStr(r.result).substring(0, 500)}`
+        `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(toStr(r.result), RESULT_PREVIEW_CHARS)}`
       ).join('\n\n');
 
       // C-type checkpoint: complete it and re-queue the parent M-type mission
@@ -3551,7 +3599,7 @@ async function checkWaitingEnvelopes() {
           log('INFO', `Re-queuing active mission ${active.id}: checkpoint ${childId} delegations complete (${cpResults.length} results)`);
 
           const delegationSummary = cpResults.map((r, i) =>
-            `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${toStr(r.result).substring(0, 500)}`
+            `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(toStr(r.result), RESULT_PREVIEW_CHARS)}`
           ).join('\n\n');
 
           child.status = 'complete';

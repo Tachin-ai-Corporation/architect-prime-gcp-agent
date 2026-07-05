@@ -175,8 +175,12 @@ export function createArtifactManager(deps) {
       const status = execSync('git status --porcelain', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
       if (!status) {
         log('DEBUG', `commitAndSync: nothing to commit for ${envelopeId}`);
-        const sha = execSync('git rev-parse HEAD', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
-        return { committed: false, synced: true, sha };
+        // Guard: unborn HEAD on empty repos throws fatal; detect and return cleanly
+        const headCheck = execSync('git rev-parse --verify -q HEAD 2>/dev/null || echo unborn', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
+        if (headCheck === 'unborn') {
+          return { committed: false, synced: true, sha: null, unborn: true };
+        }
+        return { committed: false, synced: true, sha: headCheck };
       }
 
       // Set agent identity

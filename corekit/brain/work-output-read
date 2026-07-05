@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# ============================================================
+# work-output-read — Read full output of a single work envelope
+#
+# Deterministic recovery path: when delegation results arrive
+# truncated, this atom fetches the complete output from
+# Firestore with zero truncation.
+#
+# Usage:
+#   work-output-read <envelope-id>          # Formatted text
+#   work-output-read <envelope-id> --json   # Raw JSON object
+#
+# Reads from: /primes/{primeId}/work/{envelope-id}
+# ============================================================
+set -euo pipefail
+
+# ── Parse arguments ────────────────────────────────────────
+ENVELOPE_ID=""
+JSON_OUTPUT=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json)  JSON_OUTPUT=true; shift ;;
+    --help|-h)
+      cat <<'HELP'
+Usage: work-output-read <envelope-id> [--json]
+
+Arguments:
+  envelope-id  The work envelope ID to read (required)
+
+Options:
+  --json       Output as raw JSON instead of formatted text
+HELP
+      exit 0
+      ;;
+    -*)  echo "Unknown option: $1" >&2; exit 1 ;;
+    *)
+      if [[ -z "$ENVELOPE_ID" ]]; then
+        ENVELOPE_ID="$1"
+      else
+        echo "ERROR: Unexpected argument: $1" >&2; exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$ENVELOPE_ID" ]]; then
+  echo "ERROR: envelope-id is required" >&2
+  echo "Usage: work-output-read <envelope-id> [--json]" >&2
+  exit 1
+fi
+
+# ── Resolve Prime ID and Project ───────────────────────────
+PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id" 2>/dev/null || echo "")
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID=$(hostname | sed 's/^prime-//' | sed 's/^fleet-//')
+fi
+
+PROJECT_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "")
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "ERROR: Could not resolve PROJECT_ID" >&2
+  exit 1
+fi
+
+# ── Get access token ───────────────────────────────────────
+TOKEN=$(curl -sf --max-time 3 -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# ── Fetch the envelope document ────────────────────────────
+FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
+DOC_PATH="primes/${PRIME_ID}/work/${ENVELOPE_ID}"
+
+RESPONSE=$(curl -sf --max-time 15 \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  "${FIRESTORE_BASE}/${DOC_PATH}" 2>&1)
+
+# ── Parse and display ──────────────────────────────────────
+python3 - <<'PYPARSE' "$RESPONSE" "$JSON_OUTPUT" "$ENVELOPE_ID"
+import json, sys
+
+raw = sys.argv[1]
+json_mode = sys.argv[2] == "true"
+envelope_id = sys.argv[3]
+
+try:
+    doc = json.loads(raw)
+except json.JSONDecodeError:
+    print("ERROR: Could not parse Firestore response", file=sys.stderr)
+    print(raw[:500], file=sys.stderr)
+    sys.exit(1)
+
+# Firestore returns {"error": ...} on missing documents
+if "error" in doc:
+    code = doc["error"].get("code", "?")
+    msg = doc["error"].get("message", "unknown")
+    print(f"ERROR: Firestore {code} — {msg}", file=sys.stderr)
+    sys.exit(1)
+
+fields = doc.get("fields", {})
+if not fields:
+    print(f"ERROR: Envelope {envelope_id} has no fields", file=sys.stderr)
+    sys.exit(1)
+
+def fv(key, kind="stringValue", default=""):
+    """Extract a typed value from Firestore fields."""
+    f = fields.get(key, {})
+    if kind == "stringValue":
+        if "stringValue" in f:
+            return f["stringValue"]
+        if "mapValue" in f:
+            mv = f["mapValue"].get("fields", {})
+            agent = mv.get("fleet_agent", {}).get("stringValue", "")
+            if agent:
+                return agent
+            for v in mv.values():
+                if isinstance(v, dict) and "stringValue" in v:
+                    return v["stringValue"]
+        return default
+    elif kind == "integerValue":
+        return int(f.get("integerValue", default or 0))
+    elif kind == "arrayValue":
+        arr = f.get("arrayValue", {}).get("values", [])
+        return [v.get("stringValue", "") for v in arr]
+    elif kind == "mapValue":
+        if "mapValue" in f:
+            mv = f["mapValue"].get("fields", {})
+            # Flatten one level of Firestore typing
+            result = {}
+            for mk, mv_val in mv.items():
+                for type_key in ("stringValue", "integerValue", "booleanValue"):
+                    if type_key in mv_val:
+                        result[mk] = mv_val[type_key]
+                        break
+            return result
+        return default
+    return default
+
+env = {
+    "id": envelope_id,
+    "status": fv("status"),
+    "type": fv("type"),
+    "title": fv("title"),
+    "owner": fv("owner"),
+    "created_at": fv("created_at"),
+    "completed_at": fv("completed_at"),
+    "updated_at": fv("updated_at"),
+    "instruction": fv("instruction"),
+    "output": fv("output"),
+    "accept_criteria": fv("accept_criteria"),
+    "project_id": fv("project_id"),
+}
+
+# Conditional fields — only include when present
+source_channel = fv("source_channel")
+if source_channel:
+    env["source_channel"] = source_channel
+
+source_meta = fv("source_meta", "mapValue", {})
+if source_meta:
+    env["source_meta"] = source_meta
+
+error = fv("error")
+if error:
+    env["error"] = error
+
+iteration = fv("iteration", "integerValue", 0)
+if iteration:
+    env["iteration"] = iteration
+
+children = fv("child_ids", "arrayValue")
+if children:
+    env["children"] = children
+
+if json_mode:
+    print(json.dumps(env, indent=2))
+    sys.exit(0)
+
+# ── Formatted text output ─────────────────────────────────
+print(f"Status: {env['status']}")
+print(f"Type: {env['type']}")
+print(f"Title: {env['title']}")
+if env.get("owner"):
+    print(f"Owner: {env['owner']}")
+print(f"Created: {env['created_at']}")
+if env.get("completed_at"):
+    print(f"Completed: {env['completed_at']}")
+if env.get("updated_at"):
+    print(f"Updated: {env['updated_at']}")
+if env.get("accept_criteria"):
+    print(f"Accept Criteria: {env['accept_criteria']}")
+if env.get("project_id"):
+    print(f"Project: {env['project_id']}")
+if env.get("source_channel"):
+    print(f"Source Channel: {env['source_channel']}")
+if env.get("source_meta"):
+    print(f"Source Meta: {json.dumps(env['source_meta'])}")
+if env.get("error"):
+    print(f"Error: {env['error']}")
+if env.get("iteration"):
+    print(f"Iteration: {env['iteration']}")
+if env.get("children"):
+    print(f"Children: {', '.join(env['children'])}")
+if env.get("instruction"):
+    print(f"Instruction chars: {len(env['instruction'])}")
+
+output = env.get("output", "")
+print(f"Output chars: {len(output)}")
+print("---")
+# Full output — no truncation; this is the whole point
+print(output)
+PYPARSE

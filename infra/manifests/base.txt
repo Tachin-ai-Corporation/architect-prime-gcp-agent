@@ -35,6 +35,7 @@ corekit/brain/skill-author bin/skill-author
 corekit/brain/brain-telemetry-write bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read bin/brain-telemetry-read
 corekit/brain/work-log-read bin/work-log-read
+corekit/brain/work-output-read bin/work-output-read
 corekit/brain/assemble-persona bin/assemble-persona
 corekit/brain/task-log-write bin/task-log-write
 corekit/brain/task-log-read bin/task-log-read

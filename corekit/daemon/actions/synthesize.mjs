@@ -1,5 +1,17 @@
 // Action handler: synthesize
 
+// Pure exemption predicate — determines if verification can be skipped.
+function isSynthExempt(envelope, contracts = {}) {
+  // Delegated missions always require verification
+  if (envelope.source_meta?.delegation_ref) return false;
+  // Missions with pinned criteria always require verification
+  if (envelope.accept_criteria && envelope.accept_criteria.length > 20) return false;
+  // Short outputs below threshold are exempt
+  const minChars = contracts.dispatch?.synth_verify_min_chars || 400;
+  if ((envelope.output || '').length < minChars) return true;
+  return false;
+}
+
 export async function handleSynthesize(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
   const { log, createCT, completeEnvelope, MAX_ITERATIONS } = deps;
@@ -31,6 +43,46 @@ export async function handleSynthesize(ctx, deps) {
   });
 
   envelope.output = synthesisOutput;
+
+  // CP-6: Universal completion verification
+  const skipVerify = isSynthExempt(envelope, deps.CONTRACTS);
+  if (!skipVerify && deps.dispatchAgent && deps.extractVerdict) {
+    try {
+      const criteria = envelope.accept_criteria || 'Complete the requested task successfully';
+      const verification = await deps.dispatchAgent('cerebellum', {
+        instruction: [
+          'Verify the following mission synthesis meets the acceptance criteria.',
+          'Read the verification SKILL.md before rendering your verdict.',
+          '',
+          '## Accept Criteria',
+          criteria,
+          '',
+          '## Mission Synthesis',
+          synthesisOutput || '(empty)',
+        ].join('\n'),
+        _missionId: envelope.id,
+      });
+      const verdict = deps.extractVerdict(verification.output);
+      if (verdict === 'FAIL') {
+        const { extractFailSummary } = await import('../../lib/verdict.mjs');
+        const failSummary = extractFailSummary(verification.output);
+        deps.log('WARN', `[synthesize] Cerebellum FAIL on mission ${envelope.id}: ${failSummary}`);
+        return {
+          continue: true,
+          activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration, context: { verification_fail: failSummary } },
+          priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED] ${failSummary}` }],
+        };
+      } else if (verdict === null) {
+        deps.log('WARN', `[synthesize] Cerebellum did not render verdict for mission ${envelope.id}`);
+        envelope.needs_review = true;
+        envelope.review_reason = 'Cerebellum did not render verdict on synthesis';
+      }
+      // PASS falls through to normal completion
+    } catch (e) {
+      deps.log('WARN', `[synthesize] Verification failed: ${e.message}`);
+    }
+  }
+
   await completeEnvelope(envelope, {
     status: 'complete',
     output: synthesisOutput,

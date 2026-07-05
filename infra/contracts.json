@@ -49,7 +49,14 @@
       "fleet-status", "fleet-deploy"
     ],
     "max_delegations_per_checkpoint": 4,
-    "delegation_dedup_window_hours": 24
+    "delegation_dedup_window_hours": 24,
+    "result_preview_chars": 700,
+    "context_slice_chars": 500,
+    "synth_verification_enabled": true,
+    "synth_verify_min_chars": 400,
+    "criteria_pinning_enabled": true,
+    "goal_state_enabled": true,
+    "goal_check_required": true
   },
   "ears": {
     "firestore_poll_ms": 3000,

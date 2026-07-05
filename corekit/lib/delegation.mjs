@@ -50,12 +50,17 @@ export function isDelegationResultMarker(text) {
  * @param {string} opts.body - Human-readable delegation instructions
  * @returns {string} Complete delegation message
  */
-export function composeDelegationMarker({ targetEmail, ref, from, project, drive, body }) {
+export function composeDelegationMarker({ targetEmail, ref, from, project, drive, body, criteria }) {
   let marker = `[DELEGATION ref:${ref} from:${from} proj:${project || 'none'}`;
   if (drive) marker += ` drive:${drive}`;
   marker += ']';
   const mention = targetEmail ? `@${targetEmail} ` : '';
-  return `${mention}${marker}\n${body || ''}`.trim();
+  let result = `${mention}${marker}\n${body || ''}`;
+  // Propagate accept criteria to delegate for outcome contract pinning
+  if (criteria) {
+    result += `\n\n[ACCEPT-CRITERIA]\n${criteria}\n[/ACCEPT-CRITERIA]`;
+  }
+  return result.trim();
 }
 
 /**
@@ -69,10 +74,19 @@ export function composeDelegationMarker({ targetEmail, ref, from, project, drive
  * @param {string} opts.body - Human-readable result summary
  * @returns {string} Complete result message
  */
-export function composeDelegationResultMarker({ targetEmail, ref, status, missionId, body }) {
+export function composeDelegationResultMarker({ targetEmail, ref, status, missionId, body, trailer }) {
   const marker = `[DELEGATION-RESULT ref:${ref} status:${status} mission:${missionId}]`;
   const mention = targetEmail ? `@${targetEmail} ` : '';
-  return `${mention}${marker}\n${body || ''}`.trim();
+  let result = `${mention}${marker}\n${body || ''}`;
+  // Structured trailer: deterministic recovery metadata below separator
+  if (trailer) {
+    const lines = ['---'];
+    if (trailer.fullOutputChars != null) lines.push(`full_output: ${trailer.fullOutputChars} chars · work-output-read ${missionId}`);
+    if (trailer.artifactRef) lines.push(`artifacts: ${trailer.artifactRef}`);
+    if (trailer.artifactStatus) lines.push(`artifact_status: ${trailer.artifactStatus}`);
+    result += '\n' + lines.join('\n');
+  }
+  return result.trim();
 }
 
 // ---- Parse ----
@@ -90,7 +104,16 @@ export function parseDelegationMarker(text) {
 
   // Extract body: everything after the marker line
   const markerEnd = text.indexOf(']', text.indexOf('[DELEGATION '));
-  const body = markerEnd >= 0 ? text.substring(markerEnd + 1).trim() : '';
+  let body = markerEnd >= 0 ? text.substring(markerEnd + 1).trim() : '';
+
+  // Extract accept criteria from body if present
+  let criteria = null;
+  const criteriaMatch = body.match(/\[ACCEPT-CRITERIA\]\n([\s\S]*?)\n\[\/ACCEPT-CRITERIA\]/);
+  if (criteriaMatch) {
+    criteria = criteriaMatch[1].trim();
+    // Remove criteria block from body
+    body = body.replace(/\n?\n?\[ACCEPT-CRITERIA\][\s\S]*?\[\/ACCEPT-CRITERIA\]/, '').trim();
+  }
 
   return {
     ref: match[1],
@@ -98,6 +121,7 @@ export function parseDelegationMarker(text) {
     project: match[3],
     drive: match[4] || null,
     body,
+    criteria,
   };
 }
 
@@ -121,4 +145,37 @@ export function parseDelegationResultMarker(text) {
     missionId: match[3],
     body,
   };
+}
+
+/**
+ * Parse the structured trailer from a delegation result marker body.
+ * Pure — no I/O, no LLM.
+ *
+ * @param {string} text - Full delegation result marker text
+ * @returns {{ fullOutputChars: number|null, recoveryCommand: string|null, artifactRef: string|null, artifactStatus: string|null } | null}
+ */
+export function parseResultTrailer(text) {
+  if (!text) return null;
+  const sepIdx = text.indexOf('\n---\n');
+  if (sepIdx < 0) return null;
+  const trailerBlock = text.substring(sepIdx + 5);
+  const result = { fullOutputChars: null, recoveryCommand: null, artifactRef: null, artifactStatus: null };
+  for (const line of trailerBlock.split('\n')) {
+    const trimmed = line.trim();
+    const fullOutputMatch = trimmed.match(/^full_output:\s*(\d+)\s*chars\s*·\s*(.+)$/);
+    if (fullOutputMatch) {
+      result.fullOutputChars = parseInt(fullOutputMatch[1], 10);
+      result.recoveryCommand = fullOutputMatch[2].trim();
+      continue;
+    }
+    if (trimmed.startsWith('artifacts:')) {
+      result.artifactRef = trimmed.substring('artifacts:'.length).trim();
+      continue;
+    }
+    if (trimmed.startsWith('artifact_status:')) {
+      result.artifactStatus = trimmed.substring('artifact_status:'.length).trim();
+      continue;
+    }
+  }
+  return (result.fullOutputChars || result.artifactRef) ? result : null;
 }

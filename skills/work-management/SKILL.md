@@ -10,6 +10,8 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
   Output: JSON array of task records containing status, agent, and output details.
 - `work-log-read [--hours <n>] [--owner <name>] [--status <status>] [--type <type>] [--min-steps <n>] [--limit <n>] [--json] [--verbose]` — Query recent work envelopes (missions, checkpoints, responsibilities) from Firestore.
   Output: Table or JSON representation of work envelopes including dispatches, outcomes, and timestamps.
+- `work-output-read <envelope-id> [--json]` — Read the full output of a work envelope from Firestore. Use this to recover truncated delegation results or inspect mission output.
+  Output: Formatted header (status, type, title, timestamps) followed by full output text. With `--json`: raw JSON with all fields.
 
 ### Write
 - `responsibility-manage` — Manage responsibility configurations.

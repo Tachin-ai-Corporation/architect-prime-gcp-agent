@@ -252,4 +252,12 @@ Every improvement proposal states, up front: which axis it improves, by what mea
 
 ## Amendments
 
+### B-25 · The Outcome Contract
+Every mission carries an immutable `accept_criteria` field, pinned at activation.
+Delegator criteria propagate verbatim. Self-originated criteria are derived by
+the classify phase. The synthesize action is a *proposal of completion*; an
+independent cerebellum pass verifies it against the pinned criteria before the
+envelope closes. Transport carries references, not full output — the
+`work-output-read` atom provides deterministic recovery.
+
 This canon changes the way code changes: by PR, approved by a human CODEOWNER. An amendment states the quality being added, refined, or retired, and the evidence that the gradient still points at a brain that is more deterministic, more attentive, more economical, more honest, and easier to read than the one before it.
