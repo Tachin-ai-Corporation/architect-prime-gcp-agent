@@ -112,10 +112,20 @@ if ref: print(ref)
 " 2>/dev/null || echo '')"
 
   if [[ -z "$PROJ_FOLDER" ]]; then
-    # Create project folder under root
-    log "Creating project folder: ${PROJ_NAME}"
-    PROJ_FOLDER="$(ensure_folder "$PROJ_NAME" "$ROOT_FOLDER_ID")"
-    [[ -n "$PROJ_FOLDER" ]] || die "Failed to create project folder"
+    log "Project lacks drive_folder_id. Searching Drive for folder named '${PROJ_NAME}'..."
+    PROJ_FOLDER="$(${CORE_DIR}/bin/drive-search --query "name = '${PROJ_NAME}' and mimeType = 'application/vnd.google-apps.folder'" | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if len(d)>0 else "")' 2>/dev/null || echo '')"
+    
+    if [[ -n "$PROJ_FOLDER" ]]; then
+      log "Found folder ID ${PROJ_FOLDER}. Updating Firestore project document..."
+      curl -s -X PATCH -H "Authorization: Bearer ${GCE_TOKEN}" -H "Content-Type: application/json" \
+        "${FS_BASE}/projects/${PROJECT}?updateMask.fieldPaths=drive_folder_id" \
+        -d "{\"fields\":{\"drive_folder_id\":{\"stringValue\":\"${PROJ_FOLDER}\"}}}" >/dev/null || true
+    else
+      # Create project folder under root
+      log "Creating project folder: ${PROJ_NAME}"
+      PROJ_FOLDER="$(ensure_folder "$PROJ_NAME" "$ROOT_FOLDER_ID")"
+      [[ -n "$PROJ_FOLDER" ]] || die "Failed to resolve or create project folder '${PROJ_NAME}'. Ensure it exists or I have permission to create it."
+    fi
   fi
 
   # Create date or custom subfolder
