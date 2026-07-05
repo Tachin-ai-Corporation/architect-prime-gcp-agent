@@ -60,8 +60,10 @@ desired outcome and the inputs, not the tool invocations.
    Bad: "Improve the website design"
    Good: "Update the hero section of index.html with a new headline and color scheme"
 
-2. **Input files** — by repo + path (the delegate work-clones the project repo)
-   "Read index.html from the project's shared workspace"
+2. **Input files** — by repo + exact file path (the delegate works in `shared/<mission_id>`)
+   "Read `operator/docs/TACHIN_SITE_IA.md` from the project's shared workspace"
+   > [!WARNING]
+   > Do NOT refer to files by generic names or artifact names that only exist in your local artifact directory (e.g. "Website Refactor Plan.md"). The delegate agent CANNOT see your local artifacts! You must either upload the file to the project's Git repository and provide the exact Git path, or provide a Google Drive file ID if applicable.
 
 3. **Specific changes** — what to modify
    "Replace the headline text with 'AI Workforce Platform'. Change the primary 
