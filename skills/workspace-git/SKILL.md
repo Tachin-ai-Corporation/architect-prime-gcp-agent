@@ -1,8 +1,12 @@
 # Skill: Git Workspace
 
 > **Note (A16):** The brain daemon automatically clones mission workspaces into
-> `shared/{missionId}/` at mission start. `work-clone`'s bare default
-> (`shared/{repoId}`) is for ad-hoc cross-project reads outside of missions.
+> `shared/{missionId}/` at mission start. 
+> 
+> > [!WARNING]
+> > **DO NOT instruct agents (Motor) to clone the mission's primary project repository.** The Brain Daemon has ALREADY cloned it into `shared/<missionId>`. Prefrontal plans must NOT include a "Clone the repo" step. Motor agents must NOT run `work-clone` for the main project. Just start working in `shared/<missionId>/` directly!
+> 
+> `work-clone`'s bare default (`shared/{repoId}`) is ONLY for ad-hoc cross-project reads outside of missions.
 
 ## When to Use
 When working with git-backed artifact repos — cloning project repos, creating mission branches, committing checkpoint work, syncing changes to the ether, merging branches, or inspecting repo state (status, diffs, logs).
