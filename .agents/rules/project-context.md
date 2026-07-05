@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.07.04.2.0)
+## Current Architecture (v2026.07.05.2.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -38,7 +38,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
     - Layer 4 — Code guard: `checkpoint-executor.mjs` compares `targetAgentEmail` against `AGENT_EMAIL` — if delegation resolves to self, silently converts to local motor task (`stepType = 'standard'`, `taskAgent = 'motor'`).
   - **Designer motor SOUL**: Mandatory 6-step workflow for HTML/CSS file modifications — web-fetch → readFile → plan changes → writeFile (complete file) → verify. Prevents the motor from outputting HTML inline instead of writing files.
   - **assemble-persona in upgrade-corekit**: `upgrade-corekit` now runs `assemble-persona` automatically during upgrades, ensuring specialty SOUL_APPEND changes are applied without a separate bootstrap step.
-  - **Delegation delivery**: `checkpoint-executor.mjs` creates delegation marker envelopes with `delivery_status: 'pending'` for mouth pickup. Target resolution via Firestore `primes/{id}/fleet` specialty lookup with direct `target_email` override. Delegation markers now include `drive:<folderId>` field for project Drive folder context.
+  - **Delegation delivery**: `checkpoint-executor.mjs` creates delegation marker envelopes with `delivery_status: 'pending'` for mouth pickup. Target resolution via Firestore `primes/{id}/fleet` specialty lookup with direct `target_email` override. Delegation markers now include `drive:<folderId>` field for project Drive folder context. `makeAddress()` in `channel.mjs` normalizes `space` values to ensure exactly one `spaces/` prefix — prevents double-prefixed GChat API URLs that cause 404 delivery failures. `deliverDelegation()` in `agent-mouth.mjs` propagates GChat POST failures as thrown errors, preventing envelopes from being marked `delivered` when the API rejects the request.
 <!-- Drive Workspace Standard removed — superseded by Git Artifact Substrate (C-24) -->
 - **Brain Audit Hardening (v2026.06.26.1.0)**:
   - **Unified process-engine completion**: Process-completed missions now call `completeEnvelope()` instead of an inline ceremony. Previously, process completions silently skipped memory writes, artifact publishing, workspace cleanup, and event responsibilities because 4 optional deps (`writeMemory`, `publishArtifacts`, `cleanupSharedWorkspace`, `fireEventResponsibilities`) were never injected. With `completeEnvelope` wired as a dep, process missions get the full lifecycle ceremony. Fallback inline ceremony preserved for backward compatibility.
