@@ -55,9 +55,11 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 1. Run `drive-search --query "name contains '<filename>'"` to retrieve matching files.
 2. If no results, run `drive-search --query "fullText contains '<filename>'"` to search within file contents.
 3. If multiple files return, examine `mimeType` and `modifiedTime` to find the correct file.
-4. Run `drive-download <FILE_ID> --output /tmp/<filename>` using the file ID from search.
+4. **CRITICAL: Check the `mimeType` before proceeding!**
+   - If the file is a Google Doc (`application/vnd.google-apps.document`), **do not use `drive-download`**. Use `docs-cat <FILE_ID>` or `docs-get --doc <FILE_ID>` (from the `workspace-docs` skill).
+   - If the file is a Google Sheet (`application/vnd.google-apps.spreadsheet`), use the appropriate `workspace-sheets` tools.
+   - For all other standard files (e.g. `application/pdf`, `text/markdown`, `text/plain`), run `drive-download <FILE_ID> --output /tmp/<filename>`.
 5. Verify: Check that local file size > 0 and file exists.
-   *Note: For Google native documents (Docs, Sheets, Slides), do not download them; read their content directly using their respective specialty tools (e.g. `docs-cat` or sheet read scripts).*
 
 ### Download an entire folder recursively
 1. Run `drive-download-folder FOLDER_ID --output /path/to/local/dir` to download all files and subfolders.
