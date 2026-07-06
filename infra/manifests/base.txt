@@ -84,6 +84,9 @@ skills/workspace-git/work-log bin/work-log
 # Skill setup (dependency installer)
 corekit/system/skill-setup bin/skill-setup
 
+# Documentation (Guides)
+docs/guides/SKILL_STANDARD.md docs/guides/SKILL_STANDARD.md
+
 # Config
 corekit/README.md corekit/README.md
 corekit/exec-approvals.json exec-approvals.json

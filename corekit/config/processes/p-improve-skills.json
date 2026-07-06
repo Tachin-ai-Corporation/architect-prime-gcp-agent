@@ -16,11 +16,11 @@
   "steps": [
     {
       "title": "Investigate the skill and recent real usage",
-      "description": "⚠️ READ-ONLY STEP. Understand skill '${skill_id}' before changing anything.\n1. Read its SKILL.md (all five layers), skill.json, and the scripts it exposes.\n2. Grade it structurally against docs/guides/SKILL_STANDARD.md (which layers are present and substantive, 1-5). There is no validate-skills tool — grade by reading the standard.\n3. Identify which specialty kits list this skill (its owner-agents). If ${owner_agent} is empty, choose one.\n4. Using work-management, pull recent missions where this skill was used (work-log-read --owner <agent>); note where it stalled, errored, over-called tools, or produced poor results.\n5. State the gap: current grade + observed failure modes + the specific shortfall in '${concern}'.",
+      "description": "⚠️ READ-ONLY STEP. Understand skill '${skill_id}' before changing anything.\n1. Read its SKILL.md (all five layers), skill.json, and the scripts it exposes.\n2. Grade it structurally against docs/guides/SKILL_STANDARD.md (which layers are present and substantive, 1-5). There is no validate-skills tool — grade by reading the standard. If the standard file is missing, note that the grade is N/A due to missing context.\n3. Identify which specialty kits list this skill (its owner-agents) by reading `corekit/agent-types.json` and the specialty definitions. If ${owner_agent} is empty, choose one.\n4. Using work-management, pull recent missions where this skill was used (work-log-read --owner <agent>); note where it stalled, errored, over-called tools, or produced poor results.\n5. State the gap: current grade + observed failure modes + the specific shortfall in '${concern}'.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "Current structural grade, the skill's tools, observed failure modes from real usage, an identified owner-agent, and a clear statement of the gap to close.",
+      "accept_criteria": "Current structural grade (or explanation if blocked), the skill's tools, observed failure modes from real usage, an identified owner-agent, and a clear statement of the gap to close.",
       "checkpointBoundary": true
     },
     {
