@@ -25,6 +25,7 @@ brain/fleet/_brain/motor/IDENTITY.md workspace-motor/IDENTITY.md
 skills/workspace-drive/ws-token bin/ws-token
 
 # Drive tools (universal â€” all fleet agents publish artifacts to Drive)
+skills/workspace-drive/drive-copy bin/drive-copy
 skills/workspace-drive/drive-ls bin/drive-ls
 skills/workspace-drive/drive-search bin/drive-search
 skills/workspace-drive/drive-download bin/drive-download

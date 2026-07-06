@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# docs-tab-suggest - Suggest an edit on a suggestion tab
+# docs-suggest - Suggest an edit in-place (highlighted yellow)
 # Brain agent: motor (WRITE)
-# Usage: docs-tab-suggest --doc <doc> --source-tab <tab> --suggestion-tab <tab> --find <text> --replace <text> [--reason <reason>]
+# Usage: docs-suggest --doc <doc> [--tab <tab>] --find <text> --replace <text> [--reason <reason>]
+# Or:    docs-suggest --doc <doc> [--tab <tab>] --file <json_file>
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DOCS_API="https://docs.googleapis.com/v1/documents"
-die() { echo "[docs-tab-suggest] [ERROR] $*" >&2; exit 1; }
+die() { echo "[docs-suggest] [ERROR] $*" >&2; exit 1; }
 
-DOC_ID="" SOURCE_TAB="" SUGG_TAB="" FIND="" REPLACE="" REASON="No reason provided" SUGG_FILE=""
+DOC_ID="" TARGET_TAB="" FIND="" REPLACE="" REASON="No reason provided" SUGG_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --doc) DOC_ID="$2"; shift 2 ;;
-    --source-tab) SOURCE_TAB="$2"; shift 2 ;;
-    --suggestion-tab) SUGG_TAB="$2"; shift 2 ;;
+    --tab) TARGET_TAB="$2"; shift 2 ;;
     --find) FIND="$2"; shift 2 ;;
     --replace) REPLACE="$2"; shift 2 ;;
     --reason) REASON="$2"; shift 2 ;;
@@ -30,10 +30,10 @@ else
   export FIND REPLACE REASON
 fi
 
-[[ -n "$DOC_ID" && -n "$SUGG_TAB" ]] || die "Missing required args"
+[[ -n "$DOC_ID" ]] || die "Missing --doc"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
-export DOC_ID SOURCE_TAB SUGG_TAB
+export DOC_ID TARGET_TAB
 
 rm -f /tmp/docs-suggest-body.json /tmp/docs-suggest-result.json
 
@@ -42,10 +42,10 @@ HTTP_CODE=$(curl -s -o /tmp/docs-suggest-read.json -w '%{http_code}' \
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
 
 python3 -c "
-import json, sys, re, os
+import json, sys, os
 
 doc = json.load(open('/tmp/docs-suggest-read.json'))
-sugg_tab_id = os.environ.get('SUGG_TAB', '')
+target_tab_id = os.environ.get('TARGET_TAB', '')
 
 sugg_file = os.environ.get('SUGG_FILE', '')
 if sugg_file:
@@ -56,18 +56,24 @@ else:
 
 def find_tab(tabs, target_id):
     for t in tabs:
-        if t.get('tabProperties', {}).get('tabId') == target_id:
+        if not target_id or t.get('tabProperties', {}).get('tabId') == target_id:
             return t
         found = find_tab(t.get('childTabs', []), target_id)
         if found: return found
     return None
 
-tab = find_tab(doc.get('tabs', []), sugg_tab_id)
-if not tab:
-    print('error:Suggestion tab not found', file=sys.stderr)
-    sys.exit(1)
-
-content = tab.get('documentTab', {}).get('body', {}).get('content', [])
+tabs = doc.get('tabs', [])
+if not tabs:
+    # Older documents without tabs have body at the root
+    content = doc.get('body', {}).get('content', [])
+    target_tab_id = ''
+else:
+    tab = find_tab(tabs, target_tab_id) if target_tab_id else tabs[0]
+    if not tab:
+        print('error:Tab not found', file=sys.stderr)
+        sys.exit(1)
+    target_tab_id = tab.get('tabProperties', {}).get('tabId', '')
+    content = tab.get('documentTab', {}).get('body', {}).get('content', [])
 
 full_text = ''
 body_start_index = 1
@@ -128,18 +134,18 @@ for item in matched_edits:
     body_requests.extend([
         {
             'deleteContentRange': {
-                'range': {'startIndex': match_start, 'endIndex': match_end, 'tabId': sugg_tab_id}
+                'range': {'startIndex': match_start, 'endIndex': match_end, 'tabId': target_tab_id} if target_tab_id else {'startIndex': match_start, 'endIndex': match_end}
             }
         },
         {
             'insertText': {
-                'location': {'index': match_start, 'tabId': sugg_tab_id},
+                'location': {'index': match_start, 'tabId': target_tab_id} if target_tab_id else {'index': match_start},
                 'text': replace_text
             }
         },
         {
             'updateTextStyle': {
-                'range': {'startIndex': match_start, 'endIndex': match_start + len(replace_text), 'tabId': sugg_tab_id},
+                'range': {'startIndex': match_start, 'endIndex': match_start + len(replace_text), 'tabId': target_tab_id} if target_tab_id else {'startIndex': match_start, 'endIndex': match_start + len(replace_text)},
                 'textStyle': {'backgroundColor': {'color': {'rgbColor': {'red': 1.0, 'green': 1.0, 'blue': 0.0}}}},
                 'fields': 'backgroundColor'
             }

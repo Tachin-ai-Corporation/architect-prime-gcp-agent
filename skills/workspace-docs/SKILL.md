@@ -36,10 +36,7 @@ Use when creating formatted Google Docs from Markdown, performing surgical text/
 ### Comments & Review Polyfills
 - `docs-comments-list --doc <doc_id> [--include-resolved]` — List document-level comments.
 - `docs-comments-add --doc <doc_id> --content "TEXT"` — Add a document-level comment.
-- `docs-tab-list <doc_id>` — List tabs with IDs, titles, and hierarchy.
-- `docs-tab-clone --doc <doc_id> --source-tab <tab_id> [--title "TITLE"]` — Clone a tab's text content into a suggestion tab (highlights suggestion yellow).
-- `docs-tab-suggest --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Make batched suggestion edits in the cloned tab.
-- `docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Apply suggestions to original tab (excluding struck-through text) and clean up.
+- `docs-suggest --doc <doc_id> [--tab <tab_id>] --file <suggestions.json>` — Make batched suggestion edits in-place, highlighting changes in yellow.
 
 ---
 
@@ -57,7 +54,7 @@ Map the task requirements to the correct lane and tools using the following matr
 | "This field updates every cycle (template/report)" | B | `docs-namedrange-create` → `docs-namedrange-replace` |
 | "Apply our branded template / exact typography / complex tables" | C | `docs-export-docx` → OOXML tooling → `docs-import-docx` |
 | "Produce tracked-changes / a redline I can accept-reject" | C | `docs-export-docx` → OOXML `w:ins`/`w:del` → `docs-import-docx` |
-| "Suggest edits for human approval (lightweight)" | polyfill | `docs-tab-clone` → `docs-tab-suggest` × N → human reviews → `docs-tab-finalize` |
+| "Suggest edits for human approval (lightweight)" | polyfill | `drive-copy` → `docs-suggest` × N → `drive-share` |
 | "Leave feedback / flag an issue" | polyfill | `docs-comments-add` |
 
 ---
@@ -86,18 +83,17 @@ Map the task requirements to the correct lane and tools using the following matr
 2. Perform OOXML manipulations locally (e.g., adding `w:ins`/`w:del` tracked changes or templates via `docx-js`/Office scripts).
 3. Import the updated document using `docs-import-docx --file local.docx --title "Q3 Redlines" --folder 1AbC_folder_id`.
 
-### Suggest Edits via Tab Review Polyfill
-1. Run `docs-tab-list 1AbC_doc_id` to get target tab ID.
-2. Run `docs-tab-clone --doc 1AbC_doc_id --source-tab t.0` to create suggestion tab.
-3. Create `suggestions.json` and apply edits using `docs-tab-suggest --doc 1AbC_doc_id --source-tab t.0 --suggestion-tab t.new --file suggestions.json`.
-4. Leave review comment: `docs-comments-add --doc 1AbC_doc_id --content "📋 I've added suggestions in the review tab. Review and reply here when finished."`
-5. On human confirmation: run `docs-tab-finalize --doc 1AbC_doc_id --source-tab t.0 --suggestion-tab t.new --file suggestions.json` to apply approved changes.
+### Suggest Edits via Copy-and-Suggest Polyfill
+1. Run `drive-copy --file 1AbC_doc_id --title "Suggested Edits - Document Name"` to make a full copy of the original document. Wait for the new file ID.
+2. Create `suggestions.json` and apply edits to the **copied** document using `docs-suggest --doc NEW_COPY_ID --file suggestions.json`. The edits will replace text and be highlighted in yellow.
+3. Share the copied document with the original requester using `drive-share --file NEW_COPY_ID --to user:email@example.com --role writer`.
+4. The human will review the copied document. They can use strikethrough to reject edits or manually merge the copied document back into their original document as they see fit.
 
 ---
 
 ## 4. Important Notes / Limitations
 
-- **No Native Suggesting Mode**: The Google Docs API has no toggle for "Suggesting Mode". Use the Tab Suggestion polyfill or Lane C (OOXML redlines).
+- **No Native Suggesting Mode**: The Google Docs API has no toggle for "Suggesting Mode". Use the Copy-and-Suggest polyfill or Lane C (OOXML redlines).
 - **Comments are Unanchored**: Programmatically created comments appear in the Document Comments sidebar rather than being highlighted on specific text.
 - **Markdown Image Limitation**: Google Drive's Markdown converter does **not** fetch and embed Markdown image syntax (`![caption](url)`). Use `docs-insert-image` (Lane B) to place images at resolved anchors.
 - **Multipart Conversion Requirement**: All Markdown and DOCX conversions require `multipart/related` Drive upload type (`uploadType=multipart`), passing both metadata and body parts in a single request.

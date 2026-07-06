@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# drive-copy — Copy a file in Google Drive
+# Brain agent: motor (WRITE)
+# Usage: drive-copy --file FILE_ID [--title "New Title"] [--folder FOLDER_ID]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[drive-copy] [ERROR] $*" >&2; exit 1; }
+
+FILE_ID="" TITLE="" FOLDER_ID=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --file) FILE_ID="$2"; shift 2 ;;
+    --title) TITLE="$2"; shift 2 ;;
+    --folder) FOLDER_ID="$2"; shift 2 ;;
+    *) if [[ -z "$FILE_ID" && "$1" != -* ]]; then FILE_ID="$1"; shift
+       else die "Unknown arg: $1"; fi ;;
+  esac
+done
+
+[[ -n "$FILE_ID" ]] || die "Need --file"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+
+BODY="{}"
+if [[ -n "$TITLE" || -n "$FOLDER_ID" ]]; then
+  BODY=$(python3 -c "
+import json, sys
+data = {}
+if sys.argv[1]: data['name'] = sys.argv[1]
+if sys.argv[2]: data['parents'] = [sys.argv[2]]
+print(json.dumps(data))
+" "$TITLE" "$FOLDER_ID")
+fi
+
+HTTP_CODE=$(curl -s -o /tmp/drive-copy-resp.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${DRIVE_API}/files/${FILE_ID}/copy?supportsAllDrives=true")
+
+if [[ "$HTTP_CODE" != "200" ]]; then
+  die "Drive API returned HTTP ${HTTP_CODE}: $(cat /tmp/drive-copy-resp.json)"
+fi
+
+python3 -c "
+import json
+p = json.load(open('/tmp/drive-copy-resp.json'))
+print(json.dumps({
+    'status': 'copied',
+    'fileId': p.get('id', ''),
+    'name': p.get('name', ''),
+    'mimeType': p.get('mimeType', '')
+}, indent=2))
+"

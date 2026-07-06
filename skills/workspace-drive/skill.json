@@ -8,6 +8,7 @@
   "category": "workspace",
   "agent_part": "motor",
   "scripts": [
+    "drive-copy",
     "drive-delete",
     "drive-download",
     "drive-ls",
