@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "agent_id": "prime",
   "job": "prime",
   "agents": {
@@ -34,10 +34,11 @@
         "gmail-send", "gmail-search", "gmail-read", "gmail-reply", "gmail-drafts",
         "calendar-create", "calendar-events", "calendar-update", "calendar-delete", "calendar-search",
         "exec", "responsibility-manage", "skill-author",
-        "fleet-deploy", "fleet-fire", "fleet-health-check", "fleet-hire", "fleet-monitor", "fleet-status", "fleet-teardown", "fleet-upgrade", "fleet-verify"
+        "fleet-deploy", "fleet-fire", "fleet-health-check", "fleet-hire", "fleet-monitor", "fleet-status", "fleet-teardown", "fleet-upgrade", "fleet-verify",
+        "shell", "gcloud", "gsutil", "bq", "jq", "python3", "secret-read"
       ],
-      "description": "Execution agent. Runs shell commands, manages files, Google Drive, Gmail, Calendar, and responsibility configs. Includes both workspace tools and GCP/GCE fleet management tools.",
-      "constraints": "Executes. Does not plan or verify.",
+      "description": "Execution agent with broad system capability. Runs arbitrary shell commands, writes and executes scripts, operates Google Cloud via gcloud/gsutil/bq, manages the fleet, and handles files. Prime's motor is a capable system engineer — it composes Unix tooling and GCP operations to solve open-ended problems, not just run fixed scripts.",
+      "constraints": "Executes with system-level power. Inspects before destructive operations. Does not plan or verify. Never handles broad Google Workspace user data (Prime is dashboard-only, not a Workspace teammate).",
       "max_tokens": 65536,
       "temperature": 0.3,
       "top_p": 0.9

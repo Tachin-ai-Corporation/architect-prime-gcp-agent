@@ -53,6 +53,18 @@ skills/telemetry/skill.json skills/telemetry/skill.json
 skills/skill-authoring/SKILL.md skills/skill-authoring/SKILL.md
 skills/skill-authoring/skill.json skills/skill-authoring/skill.json
 
+# Generic capability skills (Prime unbinding — system-level power)
+skills/system-shell/SKILL.md   skills/system-shell/SKILL.md
+skills/system-shell/skill.json skills/system-shell/skill.json
+skills/gcp-admin/SKILL.md       skills/gcp-admin/SKILL.md
+skills/gcp-admin/skill.json     skills/gcp-admin/skill.json
+skills/scripting/SKILL.md       skills/scripting/SKILL.md
+skills/scripting/skill.json     skills/scripting/skill.json
+
+# Credentials & Secrets
+skills/secrets/SKILL.md   skills/secrets/SKILL.md
+skills/secrets/skill.json skills/secrets/skill.json
+
 # Workspace skills (for self-improvement tasks)
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
 skills/workspace-drive/skill.json skills/workspace-drive/skill.json

@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.07.06.1.0)
+## Current Architecture (v2026.07.06.1.1)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -12,6 +12,8 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Neural Gateway** — Host-native AI neural gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC, Claude Opus 4.6 via Anthropic streaming)
 - **Google Chat** — Agent-to-human communication via DWD
 - **Deterministic User Identity Resolution** — Extracts canonical identity fields (`senderEmail`, `senderDisplayName`, `senderUserId`) directly from the GChat API payload on ingestion, attaches them to `source_meta`, and propagates `source_meta.senderEmail` as the `## Requester` context header to Prefrontal, Cortex, and Motor prompt generators. Strict email validation in `drive-share` ensures all Workspace share requests target valid emails without hardcoded fallbacks.
+- **Prime Unbound (v2026.07.06.1.1)**: Transformed Prime from a locked-down operator into a creative problem-solver with direct system operation power. Installed `system-shell`, `gcp-admin`, and `scripting` skills. Rewrote Prime's SOUL (Cortex/Motor) and amended Brain Canon (B-26) to mandate resourcefulness and native tool use.
+- **Wait/Resume Capability (v2026.07.06.1.1)**: Implemented daemon-owned `wait` action in `agent-brain.mjs`. Agents can pause for a duration; the daemon detects expired timers, sets status to `queued`, and injects a `resume_instruction`. Amended Brain Canon (B-14) to codify `waiting` as a terminal state.
 
 ### Prime VM Architecture
 - **6-agent brain**: cortex (plan executor) + 5 sub-agents (temporal-research, temporal-memory, prefrontal, motor, cerebellum)

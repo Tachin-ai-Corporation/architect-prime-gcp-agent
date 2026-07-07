@@ -1,0 +1,13 @@
+{
+  "id": "system-shell",
+  "name": "System Shell",
+  "version": 1,
+  "description": "Generic command-line capability: file system navigation, text processing, process inspection, and Unix tooling for creative self-directed problem solving.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "system",
+  "agent_part": "motor",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "When a task needs general-purpose shell work — inspecting the filesystem, processing text/JSON/logs, chaining Unix tools, checking processes or services — rather than a specific CoreKit script. This is the default capability for open-ended system tasks."
+}

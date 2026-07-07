@@ -182,7 +182,7 @@ init_deploy_steps
 info "Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl git python3 ca-certificates gnupg jq openssl
+apt-get install -y -qq curl git python3 ca-certificates gnupg jq ripgrep openssl
 
 write_deploy_step "packages" "System packages" "done"
 

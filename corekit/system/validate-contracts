@@ -327,6 +327,30 @@ console.log(v.length);
     fail "dispatch.goal_check_required = '${GCR}' (expected boolean)"
   fi
 
+  # wait_min_minutes: must be number >= 1
+  WMIN="$(read_contract 'dispatch.wait_min_minutes' 2>/dev/null || echo '')"
+  if [[ "$WMIN" =~ ^[0-9]+$ ]] && [[ "$WMIN" -ge 1 ]]; then
+    pass "dispatch.wait_min_minutes = ${WMIN} (>= 1)"
+  else
+    fail "dispatch.wait_min_minutes = '${WMIN}' (expected number >= 1)"
+  fi
+
+  # wait_max_minutes: must be number >= wait_min_minutes
+  WMAX="$(read_contract 'dispatch.wait_max_minutes' 2>/dev/null || echo '')"
+  if [[ "$WMAX" =~ ^[0-9]+$ ]] && [[ "$WMAX" -ge "$WMIN" ]]; then
+    pass "dispatch.wait_max_minutes = ${WMAX} (>= ${WMIN})"
+  else
+    fail "dispatch.wait_max_minutes = '${WMAX}' (expected number >= ${WMIN})"
+  fi
+
+  # wait_default_minutes: must be between min and max
+  WDEF="$(read_contract 'dispatch.wait_default_minutes' 2>/dev/null || echo '')"
+  if [[ "$WDEF" =~ ^[0-9]+$ ]] && [[ "$WDEF" -ge "$WMIN" ]] && [[ "$WDEF" -le "$WMAX" ]]; then
+    pass "dispatch.wait_default_minutes = ${WDEF} (within [${WMIN}, ${WMAX}])"
+  else
+    fail "dispatch.wait_default_minutes = '${WDEF}' (expected number within [${WMIN}, ${WMAX}])"
+  fi
+
   # ---- Check 10c: utility enforce_schema tunables ----
   ESTO="$(read_contract 'utility.enforce_schema_timeout_ms' 2>/dev/null || echo '')"
   if [[ "$ESTO" =~ ^[0-9]+$ ]] && [[ "$ESTO" -ge 1000 ]]; then

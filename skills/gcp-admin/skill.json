@@ -1,0 +1,13 @@
+{
+  "id": "gcp-admin",
+  "name": "GCP Admin",
+  "version": 1,
+  "description": "Generic Google Cloud command-line capability via gcloud/gsutil/bq — inspect and manage compute, storage, IAM, logging, and services in the operator's project using the VM's ADC identity.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "system",
+  "agent_part": "motor",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "When a task needs Google Cloud operations beyond the fleet-lifecycle scripts — inspecting VMs, reading Cloud Logging, checking Cloud Run services, GCS operations, IAM inspection, or any gcloud/gsutil/bq command. Uses the VM's own ADC identity (no keys)."
+}

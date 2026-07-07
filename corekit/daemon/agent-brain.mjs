@@ -59,7 +59,8 @@ import {
   handleSynthesizeWithFailure,
   handleFollowProcess,
   handleDelegate,
-  handleCheckpointPlan
+  handleCheckpointPlan,
+  handleWait
 } from './actions/index.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
@@ -3028,6 +3029,10 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     extractCheckpoints,
     composeDelegationMarker,
     makeAddress,
+    handleWait,
+    writeHistory,
+    CONTRACTS,
+    firestoreWrite
   };
 
   // Phase 2.3: Action dispatch table
@@ -3040,6 +3045,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     follow_process: handleFollowProcess,
     delegate: handleDelegate,
     checkpoint_plan: handleCheckpointPlan,
+    wait: handleWait,
   };
 
   while (iteration < MAX_ITERATIONS) {
@@ -3475,6 +3481,22 @@ async function checkWaitingEnvelopes() {
           }
           continue;
         }
+      }
+
+      // ---- Phase A.2: Temporal wait resumption ----
+      if (waiting.status === 'waiting' && waiting.wait_resume_at) {
+        if (new Date() >= new Date(waiting.wait_resume_at)) {
+          log('INFO', `Wait expired: re-queuing mission ${waiting.id}`);
+          waiting.status = 'queued';
+          waiting.context_forward = `[RESUMED AFTER WAIT]\n${waiting.resume_instruction || 'Continue mission'}`;
+          waiting.wait_resume_at = null;
+          waiting.resume_instruction = null;
+          waiting.updated_at = now();
+          await firestoreWrite('work', waiting.id, waiting);
+          await writeHistory(waiting.id, 'waiting', 'queued', 'brain', 'Wait duration expired, re-queued');
+          continue;
+        }
+        continue; // Still waiting
       }
 
       // Check if any delegated children have completed or failed

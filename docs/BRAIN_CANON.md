@@ -139,7 +139,7 @@ Checkpoints execute strictly in sequence; a checkpoint closes only when every no
 
 ### B-14 · Termination is deterministic and total
 
-An envelope leaves `active` through exactly five doors, every one a daemon transition with history: verified accept criteria → `complete`; iteration cap or unrecoverable error → `failed`, with cause attached; a precise human question → `needs_input`; an identified external blocker → `blocked`; an explicit cancel → `cancelled`. There is no sixth door. Nothing terminates implicitly, nothing terminates silently, and every terminal state carries enough context to explain itself in one read.
+An envelope leaves `active` through exactly six doors, every one a daemon transition with history: verified accept criteria → `complete`; iteration cap or unrecoverable error → `failed`, with cause attached; a precise human question → `needs_input`; an identified external blocker → `blocked`; an explicit cancel → `cancelled`; or a duration-bounded pause → `waiting`. There is no seventh door. Nothing terminates implicitly, nothing terminates silently, and every terminal state carries enough context to explain itself in one read.
 **Better looks like:** terminal states whose payloads make the next action obvious; caps hit rarely because cycles got more decisive.
 **Worse looks like:** envelopes that age out unexplained; a completion written by anything but the daemon; failure without a cause.
 
@@ -261,3 +261,13 @@ envelope closes. Transport carries references, not full output — the
 `work-output-read` atom provides deterministic recovery.
 
 This canon changes the way code changes: by PR, approved by a human CODEOWNER. An amendment states the quality being added, refined, or retired, and the evidence that the gradient still points at a brain that is more deterministic, more attentive, more economical, more honest, and easier to read than the one before it.
+
+### B-26 · Prime Unbound
+The Prime agent is the system's recursive architect and trusted operator. Unlike
+fleet agents, Prime interacts only with the sys-admin through the dashboard, making
+it safe to carry broad system-level power. Prime is unbound from rigid task-specific
+command sets; it carries a real shell, cloud administration power, and the ability to
+write and run scripts. Its value is resourcefulness: figuring out how to solve open
+problems within its domain without needing a pre-authored command for every case.
+It remains bounded by the Product Canon (walls) but is given the full gradient of
+system capability to maintain and improve the factory.

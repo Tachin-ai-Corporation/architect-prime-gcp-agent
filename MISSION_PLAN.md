@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> Current version: v2026.07.06.1.0
+> Current version: v2026.07.06.1.1
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -91,7 +91,13 @@ One envelope at a time, fully attended; throughput is achieved by hiring more ag
 
 **Input and output are deterministic and independent.** Ears polls the channels, deduplicates, and hands off — zero judgment. Mouth classifies and delivers outputs back to the channel. Either can fail without taking the other down.
 
-**Inter-agent work travels where humans can see it.** Agents delegate to each other over Google Chat with @-mentions: a machine-parseable envelope reference plus a human-readable summary. The conversation is legible to everyone in the room; the state machine resumes from Firestore, never from parsing chat.
+**Inter-agent work travels where humans can see it.** Agents delegate to each other over Google Chat with @-mentions: a machine-parseable envelope reference plus a human-readable summary. 
+
+| Version | Date | Summary |
+| v2026.07.06.1.1 | 2026-07-06 | **Unbind Prime & Wait/Resume**: transformed Prime into a creative system operator with `system-shell`, `gcp-admin`, and `scripting` skills; implemented daemon-owned `wait` capability for all agents with deterministic resumption in `agent-brain.mjs`; amended Brain Canon (B-14, B-26) to codify Prime's unbinding and the `waiting` terminal state. |
+| v2026.07.06.1.0 | 2026-07-06 | **Google Docs Skill v5**: upgraded `workspace-docs` to support professionally formatted documents via HTML/CSS multipart upload, added `docs-clone-template` for placeholder replacement in template clones, added `docs-format-page` for margins/headers/footers/page numbers/orientation, and established a comprehensive Document Design System in SKILL.md. |
+
+The conversation is legible to everyone in the room; the state machine resumes from Firestore, never from parsing chat.
 
 ---
 
@@ -119,7 +125,7 @@ Agent capability is layered by manifest: universal tools in the base layer, role
 
 ## Governing Principles
 
-The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md) (the walls — invariants that must hold) and [`docs/BRAIN_CANON.md`](docs/BRAIN_CANON.md) (the gradient — what better looks like). The shortest possible distillation:
+The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md) (the walls — invariants that must hold) and [`docs/BRAIN_CANON.md`](docs/BRAIN_CANON.md) (the gradient — what better looks like for the brain). The shortest possible distillation:
 
 1. **Everything that can be deterministic is deterministic.** LLM calls are reserved for judgment.
 2. **Contracts over documentation.** `infra/contracts.json` is the single source of truth, validated before anything starts.

@@ -56,7 +56,10 @@
     "synth_verify_min_chars": 400,
     "criteria_pinning_enabled": true,
     "goal_state_enabled": true,
-    "goal_check_required": true
+    "goal_check_required": true,
+    "wait_min_minutes": 1,
+    "wait_max_minutes": 1440,
+    "wait_default_minutes": 5
   },
   "ears": {
     "firestore_poll_ms": 3000,

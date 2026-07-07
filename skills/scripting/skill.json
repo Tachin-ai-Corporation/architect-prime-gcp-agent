@@ -1,0 +1,13 @@
+{
+  "id": "scripting",
+  "name": "Scripting",
+  "version": 1,
+  "description": "Author and execute bash/python scripts for multi-step automation, data transforms, and orchestration that exceeds a single command.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "system",
+  "agent_part": "motor",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "When a task requires more than a single shell command — multi-step logic, loops, structured data transforms, or reusable automation. Write a script, run it, capture output."
+}
