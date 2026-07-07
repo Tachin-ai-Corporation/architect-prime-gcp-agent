@@ -8,7 +8,7 @@
  * Extract a verification verdict from a cerebellum response's tool log.
  *
  * @param {string} output - The full agent response including tool execution log
- * @returns {'PASS'|'FAIL'|null} - PASS, FAIL, or null if no verdict tool was called
+ * @returns {'PASS'|'FAIL'|'PROBE'|null} - PASS, FAIL, PROBE, or null if no verdict tool was called
  */
 export function extractVerdict(output) {
   if (!output) return null;
@@ -16,6 +16,7 @@ export function extractVerdict(output) {
   const toolLog = text.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/)?.[1] || '';
   if (toolLog.includes('[TOOL] report_pass(')) return 'PASS';
   if (toolLog.includes('[TOOL] report_fail(')) return 'FAIL';
+  if (toolLog.includes('[TOOL] request_probe(')) return 'PROBE';
   return null; // No verdict tool called → escalate
 }
 
@@ -93,3 +94,39 @@ export function extractFailSummary(output) {
   return '';
 }
 
+/**
+ * Parse the probes array from a request_probe tool-log entry.
+ * Returns [] on any parse failure.
+ *
+ * @param {string} output - The full agent response including tool execution log
+ * @returns {Array<{claim: string, instruction: string}>}
+ */
+export function extractProbes(output) {
+  if (!output) return [];
+  const text = typeof output === 'string' ? output : JSON.stringify(output);
+  try {
+    const toolLog = text.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/)?.[1] || '';
+    const probeMatch = toolLog.match(/\[TOOL\] request_probe\((.*?)(?:\)|$|\n)/);
+    if (!probeMatch) return [];
+    const args = JSON.parse(probeMatch[1]);
+    if (!Array.isArray(args.probes)) return [];
+    return args.probes
+      .filter(p => p && typeof p.claim === 'string' && typeof p.instruction === 'string')
+      .map(p => ({ claim: String(p.claim), instruction: String(p.instruction) }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Ordinal stakes comparison.
+ * stakesAtLeast('consequential', 'routine') === true means the first meets/exceeds the second.
+ *
+ * @param {string} stakes - The stakes level to check
+ * @param {string} minimum - The minimum required level
+ * @returns {boolean}
+ */
+export function stakesAtLeast(stakes, minimum) {
+  const ord = { routine: 0, consequential: 1, irreversible: 2 };
+  return (ord[stakes] ?? 0) >= (ord[minimum] ?? 1);
+}

@@ -414,8 +414,8 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
         localHistory.push({ role: 'user', content: guardResult.message });
       }
 
-      // Phase 4.10: Terminal tool execution checks (report_pass/report_fail)
-      if (sc.name === 'report_pass' || sc.name === 'report_fail') {
+      // Phase 4.10: Terminal tool execution checks (report_pass/report_fail/request_probe)
+      if (sc.name === 'report_pass' || sc.name === 'report_fail' || sc.name === 'request_probe') {
         console.log(`[loop] Terminal tool ${sc.name} executed. Exiting turn loop.`);
         step = maxSteps;
         break;
@@ -585,8 +585,8 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
         localHistory.push({ role: 'user', content: guardResult.message });
       }
 
-      // Phase 4.10: Terminal tool execution checks (report_pass/report_fail)
-      if (sc.name === 'report_pass' || sc.name === 'report_fail') {
+      // Phase 4.10: Terminal tool execution checks (report_pass/report_fail/request_probe)
+      if (sc.name === 'report_pass' || sc.name === 'report_fail' || sc.name === 'request_probe') {
         console.log(`[loop] Terminal tool ${sc.name} executed. Exiting turn loop.`);
         step = maxSteps;
         break;

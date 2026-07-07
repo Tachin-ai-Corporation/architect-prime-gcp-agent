@@ -70,13 +70,13 @@ Group by Read/Write when the skill has both. Include output format — motor nee
 1. `{command}` → {what to check in the output}
 2. If {condition}: `{command}` → {what to check}
 3. If {error condition}: {recovery action from Layer 4, or inline}
-4. `{command}` → {verify the outcome}
+4. `{command}` → {verify the outcome by a different path than step 1 — re-derive, not re-read (B-28)}
 
 ### {Another procedure}
 ...
 ```
 
-Each procedure is a numbered sequence that a motor agent follows step by step. The procedure names the goal ("Find a file by name"), not the first step ("Run drive-search"). Include decision points (if/then) and verification steps (confirm the result).
+Each procedure is a numbered sequence that a motor agent follows step by step. The procedure names the goal ("Find a file by name"), not the first step ("Run drive-search"). Include decision points (if/then) and verification steps that re-derive the outcome by an independent route (B-28: verification is re-derivation, not recognition).
 
 **How many procedures:** Cover the 3–5 most common tasks this skill serves. If you're unsure which tasks are most common, check the `skill_miss` and `motor_dispatch` telemetry — the tasks motor is dispatched for most frequently with this skill are the procedures to write.
 
@@ -184,7 +184,7 @@ Each example is a complete task→tool-sequence→output trace. Include at least
 ### {Goal 1}
 1. `{command}` → {check}
 2. If {condition}: `{command}` → {check}
-3. Verify: `{command}` → {expected outcome}
+3. Verify: `{command}` → {expected outcome — re-derive by a different route, not re-read (B-28)}
 
 ### {Goal 2}
 1. ...

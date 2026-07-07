@@ -286,3 +286,58 @@ own with the intended next step, no tokens burned mid-wait.
 **Worse looks like:** an LLM told to "wait" by looping tool calls or sleeping inside a
 command; an in-process timer that dies on daemon restart; unbounded waits; the resume clock
 stored anywhere but the envelope.
+
+### B-28 · Verification is re-derivation, not recognition
+"Sounds right" is the pattern-matcher voting on surface features; it is how confident
+wrong answers pass. A claim is verified only by rebuilding it from ground truth via a
+path that does not share the original's assumptions: recompute by a different route,
+run the code, locate the exact source, construct the counterexample. The tool log is
+ground truth over any narrative. Where in-band re-derivation is impossible, cerebellum
+requests a **verification probe** — a fresh motor session given only the claim and the
+probe instruction, never the original transcript — and the daemon owns the dispatch,
+the context stripping, and the single re-verdict round. Probe depth follows stakes:
+routine work gets evidence-checking; consequential and irreversible work gets
+re-derivation.
+**Better looks like:** two independent paths agreeing; a probe that overturns a fluent
+claim before it ships.
+**Worse looks like:** a PASS justified by plausibility; a verifier that reads only what
+the executor wrote; probes burned on trivia while the kill-shot claim rides through
+unexamined.
+
+### B-29 · Every claim carries its epistemic bin
+Three bins, claim-level, visible end-to-end: **verified** (checked; the check can be
+shown), **inferred** (follows from verified claims by stated reasoning), **assumed**
+(needed to proceed; not checked). A blanket disclaimer launders guesses into the same
+currency as facts and is forbidden. Bins ride the envelope from motor output through
+verification into synthesis and delivery; surviving assumptions surface at the top of
+the risk section, never a footnote. The vocabulary is constant everywhere: "confirmed,"
+"likely, because X," "assumption — verify before relying." An honest `assumed` label is
+never a verification failure; an unlabeled guess always is.
+**Better looks like:** a reader who can discount exactly what the writer couldn't check.
+**Worse looks like:** a number in a table reading as fact regardless of pedigree;
+unlabeled uncertainty becoming someone else's unearned confidence.
+
+### B-30 · Answer, then reasoning, then risk — that order, always
+Delivered output leads with the answer in actionable form; then the compressed
+load-bearing chain a checker would need; then risk — what would change the answer, the
+labeled assumptions, what to check before acting. Hedges are information and live in
+the risk section where they can be acted on, never smeared across the answer as
+qualifiers. Scale to stakes: one line each for a lookup, full treatment for anything
+signed. The first line must be safe to act on alone, or carry its own warning in the
+same breath.
+**Better looks like:** a reader who acts correctly having read only three lines.
+**Worse looks like:** the mystery-novel synthesis; the naked answer whose risks are
+discovered in production.
+
+### B-31 · The impostor test
+Named anti-patterns that photograph as competence and fail under load, run against
+every substantial output: fluency-as-accuracy · comprehensiveness-as-rigor ·
+speed-as-capability · hedging-as-calibration · precision-as-accuracy ·
+citation-as-verification · agreement-as-helpfulness · structure-as-thought ·
+activity-as-progress. Each organ owns the counters for the impostors it is positioned
+to catch (the registry with counters lives in `docs/guides/EPISTEMIC_DISCIPLINE.md`).
+Two are load-bearing enough to state here: output precision matches the coarsest
+input, and every action must move a belief or it is theater.
+**Better looks like:** the passage that came out easiest getting audited hardest.
+**Worse looks like:** review passing the costume because review is what the costume is
+dressed for.

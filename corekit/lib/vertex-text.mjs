@@ -27,6 +27,8 @@ export const CORTEX_SCHEMAS = {
       context_summary:{ type: 'STRING' },
       project_id:     { type: 'STRING' },
       process_id:     { type: 'STRING' },
+      job_to_be_done: { type: 'STRING' },
+      stakes: { type: 'STRING', enum: ['routine', 'consequential', 'irreversible'] },
     },
     required: ['classification', 'reasoning'],
   },
@@ -42,8 +44,14 @@ export const CORTEX_SCHEMAS = {
         risk:        { type: 'STRING', enum: ['none', 'mutating', 'destructive_or_public'] },
         depends_on:  { type: 'ARRAY', items: { type: 'STRING' } },
         unknowns:    { type: 'ARRAY', items: { type: 'STRING' } },
+        check:        { type: 'STRING' },
+        assumes:      { type: 'ARRAY', items: { type: 'STRING' } },
+        load_bearing: { type: 'BOOLEAN' },
       }, required: ['id', 'summary', 'ownership', 'risk'] }},
       process_match: { type: 'STRING' },
+      kill_shot:    { type: 'STRING' },
+      premise:      { type: 'STRING', enum: ['sound', 'flawed'] },
+      premise_note: { type: 'STRING' },
     },
     required: ['objective', 'parts'],
   },
@@ -90,6 +98,13 @@ export const CORTEX_SCHEMAS = {
         assessment: { type: 'STRING' },
       }},
       project_id:      { type: 'STRING' },
+      answer: { type: 'STRING' },
+      risk:   { type: 'STRING' },
+      assumptions: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+        claim:  { type: 'STRING' },
+        status: { type: 'STRING', enum: ['verified', 'inferred', 'assumed'] },
+        note:   { type: 'STRING' },
+      }, required: ['claim', 'status'] }},
     },
     required: ['action'],
   },
@@ -323,11 +338,21 @@ export function createVertexText(config) {
       const allowed = ['new_mission', 'attach', 'continue', 'cancel'];
       if (!allowed.includes(parsed.classification)) return { valid: false, reason: `classification missing or invalid: ${parsed.classification}` };
       if (typeof parsed.reasoning !== 'string' || !parsed.reasoning) return { valid: false, reason: 'reasoning missing' };
+      if (parsed.stakes && !['routine', 'consequential', 'irreversible'].includes(parsed.stakes)) {
+        return { valid: false, reason: `stakes invalid: ${parsed.stakes}` };
+      }
       return { valid: true };
     }
     if (schemaName === 'decide') {
       const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate', 'wait'];
       if (!allowed.includes(parsed.action)) return { valid: false, reason: `action missing or invalid: ${parsed.action}` };
+      if (Array.isArray(parsed.assumptions)) {
+        for (const a of parsed.assumptions) {
+          if (!a || !a.claim || !['verified', 'inferred', 'assumed'].includes(a.status)) {
+            return { valid: false, reason: 'assumptions entries require claim and status in {verified,inferred,assumed}' };
+          }
+        }
+      }
       return { valid: true };
     }
     if (schemaName === 'analyze') {

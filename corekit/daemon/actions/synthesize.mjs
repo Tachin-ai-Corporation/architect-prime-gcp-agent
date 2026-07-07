@@ -1,5 +1,7 @@
 // Action handler: synthesize
 
+import { extractVerdict, extractFailSummary, extractProbes, stakesAtLeast } from '../../lib/verdict.mjs';
+
 // Pure exemption predicate — determines if verification can be skipped.
 function isSynthExempt(envelope, contracts = {}) {
   // Delegated missions always require verification
@@ -10,6 +12,21 @@ function isSynthExempt(envelope, contracts = {}) {
   const minChars = contracts.dispatch?.synth_verify_min_chars || 400;
   if ((envelope.output || '').length < minChars) return true;
   return false;
+}
+
+// B-30: Compose answer-first delivery order from cortex decision fields.
+function composeAnswerFirst(decision, synthesisOutput) {
+  if (!decision.answer) return synthesisOutput;
+  const parts = [decision.answer];
+  if (synthesisOutput) parts.push(synthesisOutput);
+  if (decision.risk) parts.push(`**Risk:** ${decision.risk}`);
+  if (Array.isArray(decision.assumptions) && decision.assumptions.length > 0) {
+    const assumed = decision.assumptions.filter(a => a.status === 'assumed');
+    if (assumed.length > 0) {
+      parts.push('**Open assumptions:**\n' + assumed.map(a => `- ${a.claim}${a.note ? ` — ${a.note}` : ''}`).join('\n'));
+    }
+  }
+  return parts.join('\n\n');
 }
 
 export async function handleSynthesize(ctx, deps) {
@@ -31,8 +48,11 @@ export async function handleSynthesize(ctx, deps) {
     };
   }
 
+  // B-30: Compose answer-first output when cortex provides structured fields
+  const rawSynthesisOutput = decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '';
+  const synthesisOutput = composeAnswerFirst(decision, rawSynthesisOutput);
+
   // Wrap synthesis in C→T under the mission
-  const synthesisOutput = decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '';
   await createCT(envelope, {
     checkpointTitle: 'Formulate response',
     taskTitle: 'Synthesize answer',
@@ -47,6 +67,12 @@ export async function handleSynthesize(ctx, deps) {
   // CP-6: Universal completion verification
   const skipVerify = isSynthExempt(envelope, deps.CONTRACTS);
   if (!skipVerify && deps.dispatchAgent && deps.extractVerdict) {
+    const missionStakes = envelope.stakes || 'routine';
+    const ATTACK_STAKES_MIN = deps.CONTRACTS?.dispatch?.attack_duty_stakes_min || 'consequential';
+    const PROBE_ENABLED = deps.CONTRACTS?.dispatch?.verify_probe_enabled !== false;
+    const PROBE_STAKES_MIN = deps.CONTRACTS?.dispatch?.verify_probe_stakes_min || 'consequential';
+    const PROBE_MAX = deps.CONTRACTS?.dispatch?.verify_probe_max ?? 2;
+
     try {
       const criteria = envelope.accept_criteria || 'Complete the requested task successfully';
       const verification = await deps.dispatchAgent('cerebellum', {
@@ -59,12 +85,29 @@ export async function handleSynthesize(ctx, deps) {
           '',
           '## Mission Synthesis',
           synthesisOutput || '(empty)',
-        ].join('\n'),
+          // Attack Duty block (stakes-gated)
+          ...(stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) ? [
+            '',
+            '## Attack Duty (stakes: ' + missionStakes + ')',
+            'Before any PASS, run three attacks and record them in your checks:',
+            '1. Strongest domain-expert objection',
+            '2. Flip test — invert the softest input; does the conclusion survive?',
+            '3. Boundary probe — find where the claim stops being true; confirm this case is inside.',
+            'A winning attack is a FAIL with the attack as the recommendation.',
+          ] : []),
+          // Probe eligibility hint
+          ...(PROBE_ENABLED && stakesAtLeast(missionStakes, PROBE_STAKES_MIN) ? [
+            '',
+            '## Probe Eligibility',
+            'This mission\'s stakes (' + missionStakes + ') qualify for verification probes.',
+            'For any load-bearing claim you cannot verify from the evidence provided,',
+            'use `request_probe` instead of guessing. Max ' + PROBE_MAX + ' probes per round.',
+          ] : []),
+        ].filter(Boolean).join('\n'),
         _missionId: envelope.id,
       });
       const verdict = deps.extractVerdict(verification.output);
       if (verdict === 'FAIL') {
-        const { extractFailSummary } = await import('../../lib/verdict.mjs');
         const failSummary = extractFailSummary(verification.output);
         deps.log('WARN', `[synthesize] Cerebellum FAIL on mission ${envelope.id}: ${failSummary}`);
         return {
@@ -72,6 +115,52 @@ export async function handleSynthesize(ctx, deps) {
           activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration, context: { verification_fail: failSummary } },
           priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED] ${failSummary}` }],
         };
+      } else if (verdict === 'PROBE' && PROBE_ENABLED) {
+        // PROBE verdict — dispatch fresh motor probes, then re-verdict
+        const probes = extractProbes(verification.output);
+        if (probes.length > 0) {
+          deps.log('INFO', `[synthesize] Running ${probes.length} verification probe(s) on mission ${envelope.id}`);
+          const probeResults = [];
+          for (const probe of probes.slice(0, PROBE_MAX)) {
+            try {
+              const pr = await deps.dispatchAgent('motor', {
+                instruction: [
+                  '[VERIFICATION PROBE]', '', '## Claim to verify', probe.claim,
+                  '', '## Method', probe.instruction,
+                  '', 'Re-derive this claim from ground truth using ONLY the method above.',
+                  'Report whether the claim is verified or contradicted, with the evidence.',
+                ].join('\n'),
+                _missionId: envelope.id, _probe: true,
+              });
+              probeResults.push({ claim: probe.claim, output: pr.output || pr.error || '(no output)' });
+            } catch (probeErr) {
+              probeResults.push({ claim: probe.claim, output: `Probe error: ${probeErr.message}` });
+            }
+          }
+          // Re-dispatch cerebellum with probe results for final verdict
+          const probeEvidence = probeResults.map((p, i) => `### Probe ${i + 1}: ${p.claim}\n${p.output}`).join('\n\n');
+          const finalV = await deps.dispatchAgent('cerebellum', {
+            instruction: [
+              'Final verdict round. Original synthesis AND independent probe results are below.',
+              'Render exactly one terminal verdict (report_pass or report_fail). Do NOT request further probes.',
+              '', '## Accept Criteria', criteria,
+              '', '## Mission Synthesis', synthesisOutput || '(empty)',
+              '', '## Verification Probe Results', probeEvidence,
+            ].join('\n'),
+            _missionId: envelope.id,
+          });
+          const fv = deps.extractVerdict(finalV.output);
+          if (fv === 'FAIL') {
+            const fSummary = extractFailSummary(finalV.output);
+            deps.log('WARN', `[synthesize] Cerebellum FAIL (post-probe) on mission ${envelope.id}: ${fSummary}`);
+            return {
+              continue: true,
+              activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration, context: { verification_fail: fSummary } },
+              priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED (post-probe)] ${fSummary}` }],
+            };
+          }
+          // PASS or null falls through to normal completion
+        }
       } else if (verdict === null) {
         deps.log('WARN', `[synthesize] Cerebellum did not render verdict for mission ${envelope.id}`);
         envelope.needs_review = true;

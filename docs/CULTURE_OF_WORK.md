@@ -351,6 +351,13 @@ and yields (B-27).
 Use cases: deployment settle time, rate-limit backoff, giving a delegate time to finish,
 scheduled rechecks within a single mission.
 
+### Epistemic Discipline
+
+Every brain verifies by re-derivation rather than recognition (B-28, verification
+probes), labels its claims with epistemic bins (B-29: verified / inferred / assumed),
+delivers answer-first (B-30), and runs the impostor test on substantial output (B-31).
+The full doctrine, registry, and probe protocol: [EPISTEMIC_DISCIPLINE.md](guides/EPISTEMIC_DISCIPLINE.md).
+
 ---
 
 ## Document Index

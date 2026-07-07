@@ -36,6 +36,33 @@ const SUMMARY_TYPES = {
       JSON.stringify(ctx.steps, null, 2),
     ].filter(Boolean).join('\n'),
   },
+  completion: {
+    llm: true,
+    maxChars: 3000,
+    prompt: (ctx) => [
+      `You are writing the final delivery for a completed mission.`,
+      ``,
+      `DELIVERY CONTRACT (B-30 — Answer, then reasoning, then risk):`,
+      `1. Lead with the answer in actionable form — the decision, number, or recommendation.`,
+      `   The first line must be safe to act on alone, or carry its own warning in the same breath.`,
+      `2. Then the compressed load-bearing chain a checker would need — audit trail, not proof of effort.`,
+      `3. Then risk — what would change this answer, any labeled assumptions (verified/inferred/assumed),`,
+      `   what to check before acting. Hedges are information: they live here, not smeared through the answer.`,
+      ``,
+      `RULES:`,
+      `- Under ${ctx.maxChars || 3000} characters`,
+      `- Do NOT reorder: answer → reasoning → risk. This order is a contract.`,
+      `- Include ALL relevant URLs, links, and artifact references inline`,
+      `- Self-contained — never reference prior messages`,
+      `- No internal jargon (motor, cerebellum, checkpoint, envelope)`,
+      `- Scale to stakes: one-line answer for a lookup, full treatment for anything signed`,
+      ``,
+      ctx.title ? `MISSION: ${ctx.title}` : '',
+      ``,
+      `RAW OUTPUT:`,
+      ctx.rawText || '(empty)',
+    ].filter(Boolean).join('\n'),
+  },
   status_update: { llm: false },  // Pass through — already human-readable
   error_report: { llm: false },   // Pass through — errors should be precise
 };

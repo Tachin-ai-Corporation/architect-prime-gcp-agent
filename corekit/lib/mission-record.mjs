@@ -41,8 +41,27 @@ export function renderMissionRecordHeader(envelope) {
   if (envelope.accept_criteria) {
     lines.push(`| Accept Criteria | ${envelope.accept_criteria} |`);
   }
+  if (envelope.stakes) {
+    lines.push(`| Stakes | ${envelope.stakes} |`);
+  }
 
   lines.push('');
+
+  // B-29: Epistemic state section
+  if (envelope.stakes || envelope._brief?.kill_shot || envelope._lastDecision?.assumptions?.length) {
+    lines.push('## Epistemic State', '');
+    if (envelope.stakes) lines.push(`- **Stakes:** ${envelope.stakes}`);
+    if (envelope._brief?.kill_shot) lines.push(`- **Kill shot:** ${envelope._brief.kill_shot}`);
+    const assumptions = envelope._lastDecision?.assumptions;
+    if (Array.isArray(assumptions) && assumptions.length > 0) {
+      lines.push('- **Assumptions:**');
+      for (const a of assumptions) {
+        lines.push(`  - \`${a.status}\` ${a.claim}${a.note ? ` — ${a.note}` : ''}`);
+      }
+    }
+    lines.push('');
+  }
+
   return lines.join('\n');
 }
 
@@ -88,6 +107,10 @@ export function renderResultJson(envelope, verification = null) {
     } : null,
     children_count: envelope.children?.length || 0,
     iteration: envelope.iteration || 0,
+    stakes: envelope.stakes || null,
+    job_to_be_done: envelope.job_to_be_done || null,
+    kill_shot: envelope._brief?.kill_shot || null,
+    assumptions: envelope._lastDecision?.assumptions || null,
   };
 }
 

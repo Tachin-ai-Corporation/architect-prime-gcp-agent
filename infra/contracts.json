@@ -59,7 +59,11 @@
     "goal_check_required": true,
     "wait_min_minutes": 1,
     "wait_max_minutes": 1440,
-    "wait_default_minutes": 5
+    "wait_default_minutes": 5,
+    "verify_probe_enabled": true,
+    "verify_probe_max": 2,
+    "verify_probe_stakes_min": "consequential",
+    "attack_duty_stakes_min": "consequential"
   },
   "ears": {
     "firestore_poll_ms": 3000,

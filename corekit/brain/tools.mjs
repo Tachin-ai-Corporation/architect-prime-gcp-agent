@@ -217,6 +217,27 @@ export const reportFail = {
   },
 };
 
+export const requestProbe = {
+  name: 'request_probe',
+  description: 'Request independent re-derivation of specific claims before rendering a verdict. Use ONLY for load-bearing claims that cannot be verified from the provided evidence — claims whose truth requires re-running, recomputing by a different route, or checking live state. The daemon executes each probe in a fresh session with no access to the original transcript, then returns the results to you for a final verdict. One probe round maximum.',
+  schema: {
+    type: 'object',
+    properties: {
+      probes: { type: 'array', minItems: 1, maxItems: 3, items: { type: 'object', properties: {
+        claim:       { type: 'string', description: 'The exact claim to re-derive' },
+        instruction: { type: 'string', description: 'How to re-derive it from ground truth by a DIFFERENT route than the original. Exact commands/paths. Do NOT reference the original task or its output.' },
+      }, required: ['claim', 'instruction'] }},
+      reasoning: { type: 'string', description: 'Why these claims cannot be verified from the provided evidence' },
+    },
+    required: ['probes', 'reasoning'],
+  },
+  execute: async ({ probes }) => ({
+    status: 'probes_requested',
+    count: probes.length,
+    note: 'Session ends; the daemon will run these probes independently and re-dispatch you with results.',
+  }),
+};
+
 // ---- Helper: Convert standard schema to Google uppercase type schema ----
 export function toGoogleSchema(schema) {
   if (!schema) return undefined;
@@ -250,6 +271,7 @@ export function getAllTools() {
     listDir: listDirTool,
     report_pass: reportPass,
     report_fail: reportFail,
+    request_probe: requestProbe,
   };
 }
 

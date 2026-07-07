@@ -128,6 +128,27 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
+  // B-28: Irreversibility guard — warn when destructive_or_public parts lack approval gates
+  if (checkpoints && checkpoints.length > 0 && envelope._brief?.parts) {
+    const destructiveParts = envelope._brief.parts.filter(p => p.risk === 'destructive_or_public');
+    if (destructiveParts.length > 0) {
+      const hasApprovalGate = checkpoints.some(cp =>
+        (cp.tasks || []).some(t => t.step_type === 'approval_gate' || t._step_type === 'approval_gate')
+      );
+      if (!hasApprovalGate) {
+        log('WARN', `[checkpoint_plan] Irreversibility guard: ${destructiveParts.length} destructive_or_public part(s) but no approval_gate in plan`);
+        // Inject warning as prior result so cortex sees it on next iteration
+        return {
+          continue: true,
+          priorResultsAppend: [{
+            agent: 'system',
+            result: `[IRREVERSIBILITY WARNING] The Brief contains ${destructiveParts.length} destructive_or_public part(s) (${destructiveParts.map(p => p.id).join(', ')}) but the plan has no approval_gate step. Add an approval_gate or re-plan with explicit operator confirmation before destructive actions.`,
+          }],
+        };
+      }
+    }
+  }
+
   // ---- Plan-Process alignment: nudge prefrontal toward existing processes ----
   let processMatchHint = '';
   if (PROCESSES && Object.keys(PROCESSES).length > 0) {

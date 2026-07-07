@@ -8,7 +8,7 @@ import { toStr } from './to-str.mjs';
 import { smartTruncate } from './vertex-text.mjs';
 import { makeAddress } from './channel.mjs';
 import { composeDelegationMarker } from './delegation.mjs';
-import { extractVerdict, extractFailSummary, extractFailRecommendation } from './verdict.mjs';
+import { extractVerdict, extractFailSummary, extractFailRecommendation, extractProbes, stakesAtLeast } from './verdict.mjs';
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion } from './git-store.mjs';
@@ -93,6 +93,11 @@ export async function executeCheckpoints(checkpoints, opts) {
 
   const STEP_LEDGER_ENABLED = contracts.dispatch?.step_ledger_enabled !== false;
   const CHECKPOINT_RESUME_ENABLED = contracts.dispatch?.checkpoint_resume_enabled !== false;
+  const PROBE_ENABLED = contracts.dispatch?.verify_probe_enabled !== false;
+  const PROBE_MAX = contracts.dispatch?.verify_probe_max ?? 2;
+  const PROBE_STAKES_MIN = contracts.dispatch?.verify_probe_stakes_min || 'consequential';
+  const ATTACK_STAKES_MIN = contracts.dispatch?.attack_duty_stakes_min || 'consequential';
+  const missionStakes = envelope.stakes || 'routine';
 
   let allResults = savedResults || [];
   let planFailed = false;
@@ -868,7 +873,25 @@ export async function executeCheckpoints(checkpoints, opts) {
               '',
               '## Task Output',
               result.output || '(empty)',
-            ].join('\n'),
+              // Attack Duty block (stakes-gated)
+              ...(stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) ? [
+                '',
+                '## Attack Duty (stakes: ' + missionStakes + ')',
+                'Before any PASS, run three attacks and record them in your checks:',
+                '1. Strongest domain-expert objection',
+                '2. Flip test — invert the softest input; does the conclusion survive?',
+                '3. Boundary probe — find where the claim stops being true; confirm this case is inside.',
+                'A winning attack is a FAIL with the attack as the recommendation.',
+              ] : []),
+              // Probe eligibility hint
+              ...(PROBE_ENABLED && stakesAtLeast(missionStakes, PROBE_STAKES_MIN) ? [
+                '',
+                '## Probe Eligibility',
+                'This mission\'s stakes (' + missionStakes + ') qualify for verification probes.',
+                'For any load-bearing claim you cannot verify from the evidence provided,',
+                'use `request_probe` instead of guessing. Max ' + PROBE_MAX + ' probes per round.',
+              ] : []),
+            ].filter(Boolean).join('\n'),
             _missionId: envelope.id,
           });
 
@@ -929,6 +952,89 @@ export async function executeCheckpoints(checkpoints, opts) {
             }
           } else if (verdict === 'PASS') {
             log('INFO', `[checkpoint-executor] Cerebellum PASS on CP${cpNum} Task ${taskNum}`);
+          } else if (verdict === 'PROBE' && PROBE_ENABLED) {
+            // PROBE verdict — dispatch fresh motor probes, then re-verdict
+            const probes = extractProbes(verification.output);
+            if (probes.length === 0) {
+              log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: PROBE verdict but no parseable probes — treating as needs_review`);
+              tEnv.needs_review = true;
+              tEnv.review_reason = 'Cerebellum requested probes but no parseable probes found';
+            } else {
+              log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: running ${probes.length} verification probe(s)`);
+              const probeResults = [];
+              for (const probe of probes.slice(0, PROBE_MAX)) {
+                try {
+                  const probeResult = await dispatchAgent('motor', {
+                    instruction: [
+                      '[VERIFICATION PROBE]',
+                      '',
+                      '## Claim to verify',
+                      probe.claim,
+                      '',
+                      '## Method',
+                      probe.instruction,
+                      '',
+                      'Re-derive this claim from ground truth using ONLY the method above.',
+                      'Report whether the claim is verified or contradicted, with the evidence.',
+                    ].join('\n'),
+                    _missionId: envelope.id,
+                    _probe: true,
+                  });
+                  probeResults.push({ claim: probe.claim, output: probeResult.output || probeResult.error || '(no output)' });
+                } catch (probeErr) {
+                  probeResults.push({ claim: probe.claim, output: `Probe error: ${probeErr.message}` });
+                }
+              }
+
+              // Re-dispatch cerebellum with original + probe evidence for final verdict
+              log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: re-dispatching cerebellum with probe results for final verdict`);
+              const probeEvidence = probeResults.map((p, i) => [
+                `### Probe ${i + 1}: ${p.claim}`,
+                p.output,
+              ].join('\n')).join('\n\n');
+
+              try {
+                const finalVerification = await dispatchAgent('cerebellum', {
+                  instruction: [
+                    'Final verdict round. The original task output AND independent probe results are below.',
+                    'Render exactly one terminal verdict (report_pass or report_fail). Do NOT request further probes.',
+                    'Read the verification SKILL.md before rendering your verdict.',
+                    '',
+                    '## Accept Criteria',
+                    taskCriteria,
+                    '',
+                    '## Original Task Output',
+                    result.output || '(empty)',
+                    '',
+                    '## Verification Probe Results',
+                    probeEvidence,
+                  ].join('\n'),
+                  _missionId: envelope.id,
+                });
+
+                const finalVerdict = extractVerdict(finalVerification.output);
+                if (finalVerdict === 'FAIL') {
+                  const failSummary = extractFailSummary ? extractFailSummary(finalVerification.output) : 'Probe-informed verification failed';
+                  log('WARN', `[checkpoint-executor] Cerebellum FAIL (post-probe) CP${cpNum} Task ${taskNum}: ${failSummary}`);
+                  result.success = false;
+                  result.error = `Verification failed after probes: ${failSummary}`;
+                } else if (finalVerdict === 'PASS') {
+                  log('INFO', `[checkpoint-executor] Cerebellum PASS (post-probe) CP${cpNum} Task ${taskNum}`);
+                } else if (finalVerdict === 'PROBE') {
+                  log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: second PROBE request — probe budget exhausted, treating as FAIL`);
+                  result.success = false;
+                  result.error = 'Verification probe budget exhausted — cerebellum requested further probes after probe round';
+                } else {
+                  log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: post-probe verdict not rendered — flagging for review`);
+                  tEnv.needs_review = true;
+                  tEnv.review_reason = 'Cerebellum did not render verdict after probe round';
+                }
+              } catch (finalErr) {
+                log('WARN', `[checkpoint-executor] Post-probe cerebellum dispatch failed: ${finalErr.message}`);
+                tEnv.needs_review = true;
+                tEnv.review_reason = `Post-probe verification error: ${finalErr.message}`;
+              }
+            }
           } else {
             log('WARN', `[checkpoint-executor] Cerebellum did not render verdict tool for CP${cpNum} Task ${taskNum} — flagging for review`);
             tEnv.needs_review = true;

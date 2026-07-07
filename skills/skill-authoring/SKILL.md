@@ -29,7 +29,7 @@ When creating new skills or modifying existing skill packages, generating templa
    ```
 3. Edit the generated `SKILL.md` in the output directory to document commands, procedures, error tables, and examples.
 4. Run `skill-author validate --dir workspace/skill-staging/firebase-deploy-check` to verify completeness.
-5. Verify: Ensure the validation tool outputs a PASS result.
+5. Verify: Ensure the validation tool outputs a PASS result. Confirm each procedure's verify step re-derives the outcome by an independent route, not re-reads the original output (B-28).
 
 ## Error Recovery
 

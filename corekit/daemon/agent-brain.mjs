@@ -1277,6 +1277,14 @@ function buildUserPrompt(mode, payload) {
         instruction: 'Include a goal_check object in your decision with criteria_met, criteria_unmet, confidence (high/medium/low), and assessment. Do NOT synthesize while criteria_unmet has items unless all paths have been exhausted.',
       };
     }
+    // B-28: Surface premise check from Brief
+    if (payload.brief?.premise === 'flawed' && payload.brief?.premise_note) {
+      decidePayload.premise_check = {
+        status: 'flawed',
+        note: payload.brief.premise_note,
+        instruction: 'Prefrontal flagged the request\'s premise as flawed. Consider whether to proceed with the original instruction or reframe the work. Do NOT plan inside a false frame.',
+      };
+    }
     return JSON.stringify(decidePayload);
   }
   return JSON.stringify(payload);
@@ -1340,14 +1348,19 @@ async function callAgent(agentId, envelope) {
   const userMessage = [
     `[BRAIN-ORCHESTRATED]`,
     instruction,
-    workspaceDirective,
-    pingerEmail ? `\n## Requester\nUse this email for Drive sharing and communication: ${pingerEmail}` : '',
-    envelope._projectContext ? `\n## Project Context\n${envelope._projectContext}` : '',
-    envelope._sourceText ? `\n## Original User Request\n${envelope._sourceText}` : '',
-    context ? `\n## Context\n${context}` : '',
+    // B-28: Probe dispatches are context-stripped — independence is deterministic
+    ...(envelope._probe ? [] : [
+      workspaceDirective,
+      pingerEmail ? `\n## Requester\nUse this email for Drive sharing and communication: ${pingerEmail}` : '',
+      envelope._projectContext ? `\n## Project Context\n${envelope._projectContext}` : '',
+      envelope._sourceText ? `\n## Original User Request\n${envelope._sourceText}` : '',
+      context ? `\n## Context\n${context}` : '',
+    ]),
     criteria ? `\n## Acceptance Criteria\n${criteria}` : '',
-    envelope.prior_results_context ? `\n## Prior Work\n${envelope.prior_results_context}` : '',
-    envelope.memory_context ? `\n## Relevant Memory\n${envelope.memory_context}` : '',
+    ...(envelope._probe ? [] : [
+      envelope.prior_results_context ? `\n## Prior Work\n${envelope.prior_results_context}` : '',
+      envelope.memory_context ? `\n## Relevant Memory\n${envelope.memory_context}` : '',
+    ]),
   ].filter(Boolean).join('\n');
 
   // Per-agent generation parameters from registry
@@ -2461,6 +2474,8 @@ async function processIntake(intake) {
     project_id: decision.project_id || DEFAULT_PROJECT_ID,
     context: decision.context || null,
     source_text: sourceText || null, // Raw user message — preserved verbatim for child dispatches
+    stakes: decision.stakes || 'routine', // B-29: epistemic stakes from classify
+    job_to_be_done: decision.job_to_be_done || null, // B-30: the job behind the deliverable
     created_at: now(),
     started_at: null,
     completed_at: null,
@@ -3029,7 +3044,9 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     extractCheckpoints,
     composeDelegationMarker,
     makeAddress,
-    handleWait
+    handleWait,
+    dispatchAgent: callAgent,
+    extractVerdict: (await import('../lib/verdict.mjs')).extractVerdict,
   };
 
   // Phase 2.3: Action dispatch table
@@ -3115,6 +3132,11 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
       _tokenUsage.callCount++;
       log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=cortex model=${CORTEX_ROUTE} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} duration=${decision.durationMs || 0}ms`);
+    }
+
+    // B-29: Stash decision for mission record epistemic state
+    if (decision && !decision.error) {
+      envelope._lastDecision = decision;
     }
 
     if (decision.error) {
