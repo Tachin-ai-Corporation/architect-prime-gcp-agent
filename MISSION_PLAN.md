@@ -1,5 +1,8 @@
 # Architect Prime — Mission Plan
 
+> Current version: v2026.07.06.1.0
+
+
 > This document describes **what Architect Prime is** and **what it is becoming**.
 > The normative boundaries live in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md); the definition of improvement lives in [`docs/BRAIN_CANON.md`](docs/BRAIN_CANON.md); implementation plans live in [`docs/plans/`](docs/plans/).
 
