@@ -336,6 +336,21 @@ Key principles:
 - Exactly-once: receiver dedup + sender idempotency
 - Singleton responsibilities: at most one cycle alive at any time
 
+### Timed Waits (mission suspension)
+
+A Mission can suspend itself for a bounded duration via the `wait` action and resume
+automatically. Unlike a Responsibility (which schedules *new* work on a recurring trigger),
+a wait pauses an *in-flight* Mission and continues it with a specified next step.
+Mechanically: the Mission enters `waiting` status with a `wait_resume_at` timestamp and a
+`resume_instruction` on the envelope; `checkWaitingEnvelopes()` in the daemon poll loop
+re-queues it once the clock elapses, injecting the instruction via `context_forward`.
+Bounded by `contracts.json` (`wait_min_minutes`/`wait_max_minutes`); for longer or recurring
+delays, use a Responsibility instead. The LLM never sleeps — it emits one `wait` decision
+and yields (B-27).
+
+Use cases: deployment settle time, rate-limit backoff, giving a delegate time to finish,
+scheduled rechecks within a single mission.
+
 ---
 
 ## Document Index

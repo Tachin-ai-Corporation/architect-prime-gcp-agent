@@ -53,7 +53,7 @@ export const CORTEX_SCHEMAS = {
       action:     { type: 'STRING', enum: [
         'checkpoint_plan', 'synthesize', 'synthesize_with_failure',
         'needs_input', 'blocked', 'follow_process', 'status_update',
-        'delegate',
+        'delegate', 'wait',
       ]},
       reasoning:  { type: 'STRING' },
       checkpoints: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
@@ -73,6 +73,9 @@ export const CORTEX_SCHEMAS = {
       what_is_needed:  { type: 'STRING' },
       blocker:            { type: 'STRING' },
       blocker_type:       { type: 'STRING' },
+      minutes:         { type: 'NUMBER' },
+      reason:          { type: 'STRING' },
+      then:            { type: 'STRING' },
       escalation_message: { type: 'STRING' },
       processId:  { type: 'STRING' },
       parameters: { type: 'OBJECT' },
@@ -323,7 +326,7 @@ export function createVertexText(config) {
       return { valid: true };
     }
     if (schemaName === 'decide') {
-      const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate'];
+      const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate', 'wait'];
       if (!allowed.includes(parsed.action)) return { valid: false, reason: `action missing or invalid: ${parsed.action}` };
       return { valid: true };
     }

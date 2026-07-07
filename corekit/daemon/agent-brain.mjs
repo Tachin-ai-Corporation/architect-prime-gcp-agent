@@ -3029,10 +3029,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     extractCheckpoints,
     composeDelegationMarker,
     makeAddress,
-    handleWait,
-    writeHistory,
-    CONTRACTS,
-    firestoreWrite
+    handleWait
   };
 
   // Phase 2.3: Action dispatch table
@@ -3200,7 +3197,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     log('WARN', `Unknown action '${action}' — nudging Cortex`);
     priorResults.push({
       agent: 'system',
-      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan, delegate, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update.`,
+      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan, delegate, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait.`,
     });
 
     // Phase 3.3: priorResults budget — prevent unbounded growth

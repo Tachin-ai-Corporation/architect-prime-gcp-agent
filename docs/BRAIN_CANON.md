@@ -115,7 +115,7 @@ The daemon owns the loop; prefrontal owns the decomposition; cortex owns the com
 
 ### B-11 · Decisions are choices among daemon-defined legal moves
 
-For every envelope state, the daemon defines the closed set of legal moves — dispatch, continue, synthesize, **delegate** (via output envelope → Mouth delivery, never direct chat-send), ask (`needs_input`), fail — and their required parameters. Cortex selects and parameterizes; it never invents a move, a state, or a transition. Malformed or illegal decisions are rejected at the schema boundary and handled deterministically (repair, retry within budget, fall back) — never executed on faith.
+For every envelope state, the daemon defines the closed set of legal moves — dispatch, continue, synthesize, **delegate** (via output envelope → Mouth delivery, never direct chat-send), ask (`needs_input`), **wait** (a duration-bounded pause; see B-27), fail — and their required parameters. Cortex selects and parameterizes; it never invents a move, a state, or a transition. Malformed or illegal decisions are rejected at the schema boundary and handled deterministically (repair, retry within budget, fall back) — never executed on faith. The legal-move set is enforced structurally: the `decide` output schema enum and the deterministic validator are the single source of which moves exist — a move wired into the dispatch table but absent from the schema is unreachable.
 **Better looks like:** the legal-move table readable straight from daemon code; decision schemas that get stricter over time; rejected decisions that leave a clean trace.
 **Worse looks like:** free-text decisions; a "misc" action; the daemon honoring fields the schema never defined.
 
@@ -271,3 +271,18 @@ write and run scripts. Its value is resourcefulness: figuring out how to solve o
 problems within its domain without needing a pre-authored command for every case.
 It remains bounded by the Product Canon (walls) but is given the full gradient of
 system capability to maintain and improve the factory.
+
+### B-27 · Timed waits are daemon-owned; the model never sleeps
+A brain may pause an in-flight mission for a bounded duration via the `wait` action, and
+resume automatically. The pause is a `waiting` envelope state (B-14) carrying a
+`wait_resume_at` timestamp and a `resume_instruction`; the daemon poll loop
+(`checkWaitingEnvelopes`) owns resumption, re-queuing the envelope when the clock elapses
+and surfacing the instruction via `context_forward`. The LLM never sleeps, polls, or
+busy-waits — it emits one decision and yields. Waits are bounded by `contracts.json`
+(`wait_min_minutes`/`wait_max_minutes`); anything longer or recurring is a Responsibility,
+not a wait. Suspension does not count against the iteration budget.
+**Better looks like:** a mission that pauses for deployment settle time and resumes on its
+own with the intended next step, no tokens burned mid-wait.
+**Worse looks like:** an LLM told to "wait" by looping tool calls or sleeping inside a
+command; an in-process timer that dies on daemon restart; unbounded waits; the resume clock
+stored anywhere but the envelope.

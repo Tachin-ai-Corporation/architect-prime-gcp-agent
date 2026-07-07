@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> Current version: v2026.07.06.1.1
+> Current version: v2026.07.07.1.0
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -13,6 +13,8 @@
 Architect Prime is a **self-bootstrapping agent factory**. It deploys autonomous AI specialist agents into a Google Cloud project, where they operate as named teammates inside Google Workspace — reachable by chat and email, present on calendars, working alongside humans in the channels humans already use.
 
 Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages their cost, and tears them down. Humans assign work to agents directly; agents delegate to each other directly. The factory builds and maintains the fleet — it never sits in the middle of the work.
+
+Within its own operational domain, Prime is a capable system operator: because it is reachable only by the sys-admin through the dashboard and holds no broad Workspace identity, it safely carries system-level power — shell, Google Cloud CLI, and scripting — to diagnose, build, and self-improve creatively (B-26). This breadth is deliberate and fenced structurally (manifest + IAM), and it does not make Prime a router of fleet work: the factory-not-orchestrator boundary (C-1) is unchanged.
 
 Everything runs inside the operator's own GCP project: no shared infrastructure, no external runtime dependencies, no API keys. Authentication is Application Default Credentials, Domain-Wide Delegation, and per-agent IAM, end to end.
 
@@ -94,7 +96,8 @@ One envelope at a time, fully attended; throughput is achieved by hiring more ag
 **Inter-agent work travels where humans can see it.** Agents delegate to each other over Google Chat with @-mentions: a machine-parseable envelope reference plus a human-readable summary. 
 
 | Version | Date | Summary |
-| v2026.07.06.1.1 | 2026-07-06 | **Unbind Prime & Wait/Resume**: transformed Prime into a creative system operator with `system-shell`, `gcp-admin`, and `scripting` skills; implemented daemon-owned `wait` capability for all agents with deterministic resumption in `agent-brain.mjs`; amended Brain Canon (B-14, B-26) to codify Prime's unbinding and the `waiting` terminal state. |
+| v2026.07.07.1.0 | 2026-07-07 | **Wait activation + canon reconciliation**: added `wait` to the cortex decide schema enum and validator in `vertex-text.mjs` (the missing link that made `wait` reachable); added B-27 (timed-wait discipline); added `wait` to B-11's legal-move set; reconciled the Prime-role description in project-context and MISSION_PLAN; added a timed-wait subsection to CULTURE_OF_WORK; added the pause notification to the operator. |
+| v2026.07.06.1.1 | 2026-07-06 | **Unbind Prime & Wait/Resume**: transformed Prime into a creative system operator with `system-shell`, `gcp-admin`, and `scripting` skills; implemented daemon-owned `wait` capability for all agents with deterministic resumption in `agent-brain.mjs`; amended Brain Canon (B-14, B-26) to codify Prime's unbinding and the `waiting` suspended state. |
 | v2026.07.06.1.0 | 2026-07-06 | **Google Docs Skill v5**: upgraded `workspace-docs` to support professionally formatted documents via HTML/CSS multipart upload, added `docs-clone-template` for placeholder replacement in template clones, added `docs-format-page` for margins/headers/footers/page numbers/orientation, and established a comprehensive Document Design System in SKILL.md. |
 
 The conversation is legible to everyone in the room; the state machine resumes from Firestore, never from parsing chat.
