@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# docs-format-page — Set page-level formatting: margins, headers, footers, page numbers
+# Brain agent: motor (WRITE)
+# Usage: docs-format-page --doc DOC_ID [--margins "1in"] [--header "text"] [--footer "text"] [--page-numbers] [--orientation portrait|landscape]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DOCS_API="https://docs.googleapis.com/v1/documents"
+die() { echo "[docs-format-page] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" MARGINS="" HEADER_TEXT="" FOOTER_TEXT="" PAGE_NUMS=false ORIENTATION=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --margins) MARGINS="$2"; shift 2 ;;
+    --header) HEADER_TEXT="$2"; shift 2 ;;
+    --footer) FOOTER_TEXT="$2"; shift 2 ;;
+    --page-numbers) PAGE_NUMS=true; shift ;;
+    --orientation) ORIENTATION="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-format-page --doc <doc_id> [--margins <size>] [--header <text>] [--footer <text>] [--page-numbers] [--orientation portrait|landscape]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DOC_ID" ]] || die "Need --doc"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+
+python3 -c "
+import urllib.request, urllib.error, json, sys
+
+doc_id = sys.argv[1]
+margins = sys.argv[2]
+header_text = sys.argv[3]
+footer_text = sys.argv[4]
+page_nums = sys.argv[5] == 'true'
+orientation = sys.argv[6]
+token = sys.argv[7]
+email = sys.argv[8]
+
+def api(url, method='GET', data=None):
+    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+    req = urllib.request.Request(url, headers=headers, method=method,
+                                 data=json.dumps(data).encode() if data else None)
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        if e.code in [401, 403]:
+            print(json.dumps({'status': 'access_denied', 'message': f'Access denied for {email or \"unknown\"}'}))
+            sys.exit(0)
+        sys.stderr.write(f'API error: {e.code} {e.read().decode(\"utf-8\")}\\n')
+        sys.exit(1)
+
+# Parse margin value to DXA (1 inch = 1440 DXA)
+def parse_margin(val):
+    val = val.strip().lower()
+    if val.endswith('in'):
+        return int(float(val[:-2]) * 1440)
+    elif val.endswith('cm'):
+        return int(float(val[:-2]) * 567)
+    elif val.endswith('pt'):
+        return int(float(val[:-2]) * 20)
+    else:
+        return int(float(val) * 1440)  # default: inches
+
+requests = []
+fields = []
+
+# 1. Document style (margins, page size, orientation)
+doc_style = {}
+doc_fields = []
+
+if margins:
+    m = parse_margin(margins)
+    doc_style['marginTop'] = {'magnitude': m, 'unit': 'PT'}
+    doc_style['marginBottom'] = {'magnitude': m, 'unit': 'PT'}
+    doc_style['marginLeft'] = {'magnitude': m, 'unit': 'PT'}
+    doc_style['marginRight'] = {'magnitude': m, 'unit': 'PT'}
+    doc_fields.extend(['marginTop', 'marginBottom', 'marginLeft', 'marginRight'])
+
+if orientation:
+    if orientation == 'landscape':
+        doc_style['pageSize'] = {
+            'width': {'magnitude': 792, 'unit': 'PT'},
+            'height': {'magnitude': 612, 'unit': 'PT'}
+        }
+    else:
+        doc_style['pageSize'] = {
+            'width': {'magnitude': 612, 'unit': 'PT'},
+            'height': {'magnitude': 792, 'unit': 'PT'}
+        }
+    doc_fields.append('pageSize')
+
+if doc_fields:
+    requests.append({
+        'updateDocumentStyle': {
+            'documentStyle': doc_style,
+            'fields': ','.join(doc_fields)
+        }
+    })
+
+# 2. Header
+if header_text:
+    requests.append({'createHeader': {'type': 'DEFAULT', 'sectionBreakLocation': {'index': 0}}})
+
+# 3. Footer
+if footer_text or page_nums:
+    requests.append({'createFooter': {'type': 'DEFAULT', 'sectionBreakLocation': {'index': 0}}})
+
+# Apply document style and create header/footer first
+if requests:
+    result = api(f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate', 'POST', {'requests': requests})
+
+# 4. Populate header text
+if header_text:
+    doc = api(f'https://docs.googleapis.com/v1/documents/{doc_id}')
+    headers = doc.get('headers', {})
+    if headers:
+        header_id = list(headers.keys())[0]
+        header_requests = [
+            {'insertText': {'location': {'segmentId': header_id, 'index': 0}, 'text': header_text}},
+            {'updateTextStyle': {
+                'range': {'segmentId': header_id, 'startIndex': 0, 'endIndex': len(header_text)},
+                'textStyle': {'fontSize': {'magnitude': 9, 'unit': 'PT'}, 'foregroundColor': {'color': {'rgbColor': {'red': 0.4, 'green': 0.4, 'blue': 0.4}}}},
+                'fields': 'fontSize,foregroundColor'
+            }}
+        ]
+        api(f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate', 'POST', {'requests': header_requests})
+
+# 5. Populate footer text / page numbers
+if footer_text or page_nums:
+    doc = api(f'https://docs.googleapis.com/v1/documents/{doc_id}')
+    footers = doc.get('footers', {})
+    if footers:
+        footer_id = list(footers.keys())[0]
+        footer_content = footer_text or ''
+        if page_nums and footer_content:
+            footer_content += '    '  # spacer before page number
+        footer_requests = []
+        if footer_content:
+            footer_requests.append({'insertText': {'location': {'segmentId': footer_id, 'index': 0}, 'text': footer_content}})
+            footer_requests.append({'updateTextStyle': {
+                'range': {'segmentId': footer_id, 'startIndex': 0, 'endIndex': len(footer_content)},
+                'textStyle': {'fontSize': {'magnitude': 9, 'unit': 'PT'}, 'foregroundColor': {'color': {'rgbColor': {'red': 0.4, 'green': 0.4, 'blue': 0.4}}}},
+                'fields': 'fontSize,foregroundColor'
+            }})
+        if page_nums:
+            insert_idx = len(footer_content)
+            footer_requests.append({
+                'insertText': {
+                    'location': {'segmentId': footer_id, 'index': insert_idx},
+                    'text': 'PAGE_NUM_PLACEHOLDER'
+                }
+            })
+        api(f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate', 'POST', {'requests': footer_requests})
+
+applied = []
+if margins: applied.append('margins')
+if header_text: applied.append('header')
+if footer_text: applied.append('footer')
+if page_nums: applied.append('page_numbers')
+if orientation: applied.append(f'orientation:{orientation}')
+
+print(json.dumps({
+    'status': 'formatted',
+    'docId': doc_id,
+    'applied': applied,
+    'link': f'https://docs.google.com/document/d/{doc_id}'
+}, indent=2))
+" "$DOC_ID" "$MARGINS" "$HEADER_TEXT" "$FOOTER_TEXT" "$PAGE_NUMS" "$ORIENTATION" "$TOKEN" "${AGENT_USER_EMAIL:-}"

@@ -38,3 +38,5 @@ skills/workspace-docs/docs-namedrange-create bin/docs-namedrange-create
 skills/workspace-docs/docs-namedrange-replace bin/docs-namedrange-replace
 skills/workspace-docs/docs-export-docx bin/docs-export-docx
 skills/workspace-docs/docs-import-docx bin/docs-import-docx
+skills/workspace-docs/docs-clone-template bin/docs-clone-template
+skills/workspace-docs/docs-format-page bin/docs-format-page
