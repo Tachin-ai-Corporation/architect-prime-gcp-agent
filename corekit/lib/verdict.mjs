@@ -106,7 +106,8 @@ export function extractProbes(output) {
   const text = typeof output === 'string' ? output : JSON.stringify(output);
   try {
     const toolLog = text.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/)?.[1] || '';
-    const probeMatch = toolLog.match(/\[TOOL\] request_probe\((.*?)(?:\)|$|\n)/);
+    const probeMatch = toolLog.match(/\[TOOL\] request_probe\((.*?)\) → /)
+      || toolLog.match(/\[TOOL\] request_probe\((.*)\)\s*$/m);
     if (!probeMatch) return [];
     const args = JSON.parse(probeMatch[1]);
     if (!Array.isArray(args.probes)) return [];

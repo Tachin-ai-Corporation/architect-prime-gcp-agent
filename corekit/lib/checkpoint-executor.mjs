@@ -862,6 +862,10 @@ export async function executeCheckpoints(checkpoints, opts) {
       // Cerebellum verification
       if (result.success && taskCriteria && taskAgent !== 'cerebellum' && tEnv.intent !== 'ack' && extractVerdict) {
         try {
+          // B-28/B-29: load-bearing Brief parts get probes + attacks regardless of mission stakes
+          const taskPart = (envelope._brief?.parts || []).find(p => p.id === task.brief_part);
+          const isLoadBearing = !!taskPart?.load_bearing;
+
           log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: dispatching to cerebellum for verification`);
           const verification = await dispatchAgent('cerebellum', {
             instruction: [
@@ -873,10 +877,10 @@ export async function executeCheckpoints(checkpoints, opts) {
               '',
               '## Task Output',
               result.output || '(empty)',
-              // Attack Duty block (stakes-gated)
-              ...(stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) ? [
+              // Attack Duty block (stakes-gated, or load-bearing Brief part)
+              ...((stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing) ? [
                 '',
-                '## Attack Duty (stakes: ' + missionStakes + ')',
+                '## Attack Duty (stakes: ' + missionStakes + (isLoadBearing ? ', load-bearing part' : '') + ')',
                 'Before any PASS, run three attacks and record them in your checks:',
                 '1. Strongest domain-expert objection',
                 '2. Flip test — invert the softest input; does the conclusion survive?',
@@ -884,7 +888,7 @@ export async function executeCheckpoints(checkpoints, opts) {
                 'A winning attack is a FAIL with the attack as the recommendation.',
               ] : []),
               // Probe eligibility hint
-              ...(PROBE_ENABLED && stakesAtLeast(missionStakes, PROBE_STAKES_MIN) ? [
+              ...(PROBE_ENABLED && (stakesAtLeast(missionStakes, PROBE_STAKES_MIN) || isLoadBearing) ? [
                 '',
                 '## Probe Eligibility',
                 'This mission\'s stakes (' + missionStakes + ') qualify for verification probes.',
@@ -956,9 +960,11 @@ export async function executeCheckpoints(checkpoints, opts) {
             // PROBE verdict — dispatch fresh motor probes, then re-verdict
             const probes = extractProbes(verification.output);
             if (probes.length === 0) {
-              log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: PROBE verdict but no parseable probes — treating as needs_review`);
+              log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: PROBE verdict but no parseable probes — failing closed (B-28)`);
               tEnv.needs_review = true;
               tEnv.review_reason = 'Cerebellum requested probes but no parseable probes found';
+              result.success = false;
+              result.error = 'Verification incomplete: cerebellum requested re-derivation probes that could not be parsed. The claim remains unverified (B-28 fail-closed).';
             } else {
               log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: running ${probes.length} verification probe(s)`);
               const probeResults = [];

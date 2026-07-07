@@ -17,16 +17,17 @@ function isSynthExempt(envelope, contracts = {}) {
 // B-30: Compose answer-first delivery order from cortex decision fields.
 function composeAnswerFirst(decision, synthesisOutput) {
   if (!decision.answer) return synthesisOutput;
-  const parts = [decision.answer];
-  if (synthesisOutput) parts.push(synthesisOutput);
-  if (decision.risk) parts.push(`**Risk:** ${decision.risk}`);
-  if (Array.isArray(decision.assumptions) && decision.assumptions.length > 0) {
-    const assumed = decision.assumptions.filter(a => a.status === 'assumed');
-    if (assumed.length > 0) {
-      parts.push('**Open assumptions:**\n' + assumed.map(a => `- ${a.claim}${a.note ? ` — ${a.note}` : ''}`).join('\n'));
-    }
+  const lines = [String(decision.answer).trim()];
+  if (synthesisOutput) lines.push('', '— Reasoning —', String(synthesisOutput).trim());
+  const assumptions = Array.isArray(decision.assumptions) ? decision.assumptions : [];
+  const order = { assumed: 0, inferred: 1, verified: 2 };
+  const sorted = [...assumptions].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
+  if (decision.risk || sorted.length > 0) {
+    lines.push('', '— Risk & assumptions —');
+    if (decision.risk) lines.push(String(decision.risk).trim());
+    for (const a of sorted) lines.push(`• [${a.status}] ${a.claim}${a.note ? ' — ' + a.note : ''}`);
   }
-  return parts.join('\n\n');
+  return lines.join('\n');
 }
 
 export async function handleSynthesize(ctx, deps) {
@@ -160,6 +161,16 @@ export async function handleSynthesize(ctx, deps) {
             };
           }
           // PASS or null falls through to normal completion
+        } else {
+          deps.log('WARN', `[synthesize] PROBE verdict but no parseable probes on mission ${envelope.id} — failing closed (B-28)`);
+          return {
+            continue: true,
+            activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration, context: { verification_fail: 'probe_unparseable' } },
+            priorResultsAppend: [{
+              agent: 'cerebellum',
+              result: '[VERIFICATION INCOMPLETE] Re-derivation probes were requested but could not be parsed. Claims remain unverified — re-plan with verifiable evidence, or state the claims so they can be checked from the provided output (B-28).',
+            }],
+          };
         }
       } else if (verdict === null) {
         deps.log('WARN', `[synthesize] Cerebellum did not render verdict for mission ${envelope.id}`);

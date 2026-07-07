@@ -27,6 +27,11 @@ try {
   console.log('[loop] WARN: contracts.json not loaded: ' + e.message);
 }
 
+// Terminal tools carry their payload THROUGH the tool log (verdict.mjs parses it) —
+// they get a generous cap; ordinary tools keep the tight one.
+const TERMINAL_LOG_TOOLS = new Set(['report_pass', 'report_fail', 'request_probe']);
+const argLogCap = (name) => (TERMINAL_LOG_TOOLS.has(name) ? 4000 : 200);
+
 // ---- Retry with exponential backoff for rate-limited model calls ----
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 2000;
@@ -428,7 +433,7 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
   // Append ground-truth tool execution log — cannot be fabricated by the LLM
   if (turnToolCalls.length > 0) {
     const toolLog = turnToolCalls.map(tc =>
-      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, 200)}) → ${(
+      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, argLogCap(tc.toolName))}) → ${(
         typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)
       ).substring(0, 500)}`
     ).join('\n');
@@ -599,7 +604,7 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
   // Append ground-truth tool execution log — cannot be fabricated by the LLM
   if (turnToolCalls.length > 0) {
     const toolLog = turnToolCalls.map(tc =>
-      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, 200)}) → ${(
+      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, argLogCap(tc.toolName))}) → ${(
         typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)
       ).substring(0, 500)}`
     ).join('\n');
