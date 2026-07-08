@@ -134,6 +134,7 @@ corekit/daemon/actions/needs_input.mjs bin/actions/needs_input.mjs
 corekit/daemon/actions/status_update.mjs bin/actions/status_update.mjs
 corekit/daemon/actions/synthesize.mjs bin/actions/synthesize.mjs
 corekit/daemon/actions/synthesize_with_failure.mjs bin/actions/synthesize_with_failure.mjs
+corekit/daemon/actions/wait.mjs bin/actions/wait.mjs
 corekit/daemon/agent-brain.service corekit/agent-brain.service
 corekit/daemon/start-agent-brain bin/start-agent-brain
 corekit/config/agent-registry.json corekit/agent-registry.json
