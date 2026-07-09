@@ -84,10 +84,24 @@ export function createApprovalChecker(deps) {
             structuredQuery: {
               from: [{ collectionId: 'approvals' }],
               where: {
-                fieldFilter: {
-                  field: { fieldPath: 'status' },
-                  op: 'EQUAL',
-                  value: { stringValue: targetStatus },
+                compositeFilter: {
+                  op: 'AND',
+                  filters: [
+                    {
+                      fieldFilter: {
+                        field: { fieldPath: 'prime_id' },
+                        op: 'EQUAL',
+                        value: { stringValue: primeId },
+                      },
+                    },
+                    {
+                      fieldFilter: {
+                        field: { fieldPath: 'status' },
+                        op: 'EQUAL',
+                        value: { stringValue: targetStatus },
+                      },
+                    },
+                  ],
                 },
               },
               limit: 5,

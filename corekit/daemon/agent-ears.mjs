@@ -597,10 +597,24 @@ async function checkApprovalResponse(text) {
         structuredQuery: {
           from: [{ collectionId: 'approvals' }],
           where: {
-            fieldFilter: {
-              field: { fieldPath: 'status' },
-              op: 'EQUAL',
-              value: { stringValue: 'pending' },
+            compositeFilter: {
+              op: 'AND',
+              filters: [
+                {
+                  fieldFilter: {
+                    field: { fieldPath: 'prime_id' },
+                    op: 'EQUAL',
+                    value: { stringValue: PRIME_ID },
+                  },
+                },
+                {
+                  fieldFilter: {
+                    field: { fieldPath: 'status' },
+                    op: 'EQUAL',
+                    value: { stringValue: 'pending' },
+                  },
+                },
+              ],
             },
           },
           orderBy: [{ field: { fieldPath: 'requestedAt' }, direction: 'DESCENDING' }],

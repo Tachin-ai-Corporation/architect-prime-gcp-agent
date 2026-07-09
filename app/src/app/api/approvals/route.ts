@@ -23,10 +23,12 @@ export async function GET(req: NextRequest) {
     const statusFilter = req.nextUrl.searchParams.get("status");
 
     let query = approvalsCol()
+      .where("prime_id", "==", primeId)
       .orderBy("requestedAt", "desc");
 
     if (statusFilter) {
       query = approvalsCol()
+        .where("prime_id", "==", primeId)
         .where("status", "==", statusFilter)
         .orderBy("requestedAt", "desc");
     }

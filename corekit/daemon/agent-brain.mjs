@@ -2019,6 +2019,7 @@ async function handleApprovalResponse(intake) {
   try {
     // Simple equality filter — no orderBy, no composite index required
     const allApprovals = await firestoreQuery('approvals', [
+      { field: 'prime_id', op: 'EQUAL', value: { stringValue: PRIME_ID } },
       { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
     ], { noOrderBy: true });
     pendingApprovals = allApprovals;
