@@ -2045,8 +2045,12 @@ async function handleApprovalResponse(intake) {
   // Determine the target approval
   let target = null;
 
-  // Check for numbered selection: "approve 2" or "approve #2"
-  const numMatch = userText.match(/(?:approve|reject)\s+#?(\d+)/i);
+  // Extract all numbers that appear after the approve/reject keyword
+  const afterKeywordMatch = userText.match(/(?:approve|reject)\s+(.+)/i);
+  let numbers = null;
+  if (afterKeywordMatch) {
+    numbers = afterKeywordMatch[1].match(/\b\d+\b/g);
+  }
   // Check for "approve all"
   const approveAll = /^approve\s+all\b/i.test(userText);
 
@@ -2054,10 +2058,16 @@ async function handleApprovalResponse(intake) {
     target = [pendingApprovals[0]];
   } else if (approveAll && action === 'approved') {
     target = pendingApprovals;
-  } else if (numMatch) {
-    const idx = parseInt(numMatch[1], 10) - 1;
-    if (idx >= 0 && idx < pendingApprovals.length) {
-      target = [pendingApprovals[idx]];
+  } else if (numbers) {
+    const matched = [];
+    for (const numStr of numbers) {
+      const idx = parseInt(numStr, 10) - 1;
+      if (idx >= 0 && idx < pendingApprovals.length) {
+        matched.push(pendingApprovals[idx]);
+      }
+    }
+    if (matched.length > 0) {
+      target = matched;
     }
   }
 
