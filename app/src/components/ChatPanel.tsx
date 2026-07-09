@@ -107,45 +107,34 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
     }
   };
 
-  const statusClass = entityStatus === "online" ? styles.statusOnline
-    : entityStatus === "deploying" ? styles.statusDeploying
-    : entityStatus === "error" ? styles.statusError
-    : styles.statusOffline;
-
   return (
     <div className={`${styles.chatPanel} ${inline ? styles.chatPanelInline : ""}`} id="chat-panel">
-      {/* ---- Header ---- */}
-      <div className={styles.chatHeader}>
-        <div className={styles.chatHeaderAvatar}>
-          {agentName ? agentName.charAt(0).toUpperCase() : "P"}
-        </div>
-        <div className={styles.chatHeaderInfo}>
-          <div className={styles.chatHeaderNameRow}>
-            <span className={styles.chatHeaderName}>{entityName}</span>
-            {specialty && (
-              <span className={styles.chatHeaderBadge}>{specialty}</span>
-            )}
-          </div>
-          {entityStatus && (
-            <span className={styles.chatHeaderStatus}>
-              <span className={`${styles.statusDot} ${statusClass}`} />
-              {entityStatus}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ---- Messages ---- */}
-      {messages.length === 0 ? (
+      
+      {/* ---- Messages Area ---- */
+      messages.length === 0 ? (
         <div className={styles.emptyState}>
-          <div className={styles.emptyIcon}>💬</div>
-          <div className={styles.emptyTitle}>Start a conversation</div>
-          <div className={styles.emptySub}>
-            Send a message to {entityName}
+          <div className={styles.hero}>
+            <div className={styles.heroAvatar}>
+              {agentName ? agentName.charAt(0).toUpperCase() : "P"}
+            </div>
+            <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
+            <p className={styles.heroSubtitle}>
+              I'm ready to assist you. How can I help you today?
+            </p>
           </div>
         </div>
       ) : (
         <div className={styles.chatMessages} ref={messagesRef}>
+          <div className={styles.hero}>
+            <div className={styles.heroAvatar}>
+              {agentName ? agentName.charAt(0).toUpperCase() : "P"}
+            </div>
+            <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
+            <p className={styles.heroSubtitle}>
+              I've been trained on our latest manuals and technical specs to give you fast, accurate answers.
+            </p>
+          </div>
+
           {messages.map((msg) => {
             const isEntity = msg.sender !== "admin";
             return (
@@ -153,25 +142,20 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
                 key={msg.id}
                 className={`${styles.chatMessage} ${isEntity ? styles.fromEntity : styles.fromAdmin}`}
               >
-                <div className={`${styles.msgAvatar} ${isEntity ? styles.avatarEntity : styles.avatarYou}`}>
-                  {isEntity ? senderLabel.charAt(0).toUpperCase() : "Y"}
+                <div className={`${styles.msgBubble} ${isEntity ? styles.bubbleEntity : styles.bubbleAdmin}`}>
+                  {isEntity ? (
+                    <MarkdownMessage text={msg.text} />
+                  ) : (
+                    msg.text.split("\n").map((line, i) => (
+                      <span key={i}>
+                        {line}
+                        {i < msg.text.split("\n").length - 1 && <br />}
+                      </span>
+                    ))
+                  )}
                 </div>
-                <div>
-                  <div className={`${styles.msgBubble} ${isEntity ? styles.bubbleEntity : styles.bubbleAdmin}`}>
-                    {isEntity ? (
-                      <MarkdownMessage text={msg.text} />
-                    ) : (
-                      msg.text.split("\n").map((line, i) => (
-                        <span key={i}>
-                          {line}
-                          {i < msg.text.split("\n").length - 1 && <br />}
-                        </span>
-                      ))
-                    )}
-                  </div>
-                  <div className={styles.msgMeta}>
-                    {msg.timestamp ? formatTime(msg.timestamp) : ""}
-                  </div>
+                <div className={styles.msgMeta}>
+                  {msg.timestamp ? formatTime(msg.timestamp) : ""}
                 </div>
               </div>
             );
@@ -179,26 +163,34 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
         </div>
       )}
 
-      {/* ---- Input ---- */}
+      {/* ---- Input Bar ---- */}
       <div className={styles.chatInputBar}>
-        <div className={styles.chatInputRow}>
+        <div className={styles.chatInputWrapper}>
           <textarea
             id="chat-panel-input"
             className={styles.chatInput}
-            placeholder={`Message ${entityName}…`}
+            placeholder="Ask a question..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            rows={1}
           />
           <button
             id="chat-panel-send"
             className={styles.chatSendBtn}
             onClick={() => handleSend()}
             disabled={!input.trim() || sending}
+            aria-label="Send message"
           >
-            ↑
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path>
+              <path d="m21.854 2.147-10.94 10.939"></path>
+            </svg>
           </button>
         </div>
+        <p className={styles.inputHint}>
+          Press Enter to send, Shift+Enter for new line
+        </p>
       </div>
     </div>
   );

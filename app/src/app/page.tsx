@@ -4,9 +4,8 @@ import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
-import { ChatPanel } from "@/components/ChatPanel";
 import { LoadingScreen, OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
-import { PrimeChip, ChatTarget } from "@/components/primes/PrimeGrid";
+import { PrimeChip } from "@/components/primes/PrimeGrid";
 import { FleetVisualization } from "@/components/fleet/FleetVisualization";
 import { HireModal } from "@/components/fleet/HireModal";
 import { DeployPrimeModal } from "@/components/primes/DeployPrimeModal";
@@ -25,8 +24,6 @@ function HomeInner() {
   const [selectedPrimeId, setSelectedPrimeId] = useState<string | null>(null);
   const [showDeploy, setShowDeploy] = useState(false);
   const [deploying, setDeploying] = useState(false);
-  const [chatTarget, setChatTarget] = useState<ChatTarget | null>(null);
-  const [chatWidth, setChatWidth] = useState(420);
   const [showHire, setShowHire] = useState(false);
   const [upgradingPrime, setUpgradingPrime] = useState<string | null>(null);
   const [upgradingAgent, setUpgradingAgent] = useState<string | null>(null);
@@ -88,32 +85,6 @@ function HomeInner() {
     };
   }, []);
 
-  /* ---- Chat panel resize (left-edge drag) ---- */
-  const handleResizeDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isDragging.current = true;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-
-    const handleMove = (ev: MouseEvent) => {
-      if (!isDragging.current) return;
-      const newWidth = window.innerWidth - ev.clientX;
-      setChatWidth(Math.max(320, Math.min(800, newWidth)));
-    };
-
-    const handleUp = () => {
-      isDragging.current = false;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      document.removeEventListener("mousemove", handleMove);
-      document.removeEventListener("mouseup", handleUp);
-    };
-
-    document.addEventListener("mousemove", handleMove);
-    document.addEventListener("mouseup", handleUp);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   /* ---- Select Prime ---- */
   const selectPrime = useCallback((prime: PrimeInstance) => {
     setSelectedPrimeId((prev) => (prev === prime.id ? null : prime.id));
@@ -122,15 +93,8 @@ function HomeInner() {
 
   /* ---- Select Agent for chat ---- */
   const selectAgentChat = useCallback((primeId: string, agent: FleetAgent) => {
-    setChatTarget({
-      type: "agent",
-      primeId,
-      agentName: agent.name,
-      entityName: agent.name,
-      entityStatus: agent.status,
-      specialty: agent.specialty,
-    });
-  }, []);
+    router.push(`/p/${primeId}/a/${agent.name}#chat`);
+  }, [router]);
 
   /* ---- Deploy Prime ---- */
   const handleDeploy = async (name: string, zone: string) => {
@@ -293,14 +257,14 @@ function HomeInner() {
               onSelect={selectPrime}
               onUpgrade={handleUpgradePrime}
               onDelete={handleDeletePrime}
-              onChat={(primeId, name, status) => {
-                setChatTarget({ type: "prime", primeId, entityName: name, entityStatus: status });
+              onChat={(primeId) => {
+                router.push(`/p/${primeId}#chat`);
               }}
             >
               <FleetVisualization
                 primeId={p.id}
                 agents={fleet}
-                chatAgentName={chatTarget?.type === "agent" ? chatTarget.agentName : undefined}
+                chatAgentName={undefined}
                 upgradingAgent={upgradingAgent}
                 onSelectAgentChat={selectAgentChat}
                 onUpgradeAgent={handleUpgradeAgent}
@@ -311,29 +275,6 @@ function HomeInner() {
           );
         })}
       </div>
-
-      {/* ---- Floating Chat Panel ---- */}
-      {chatTarget && (
-        <div className={styles.chatOverlay} style={{ width: chatWidth }} id="chat-overlay">
-          <div className={styles.chatResizeHandle} onMouseDown={handleResizeDown} />
-          <button
-            className={styles.chatCloseBtn}
-            onClick={() => setChatTarget(null)}
-            aria-label="Close chat"
-            id="chat-close-btn"
-          >
-            ✕
-          </button>
-          <ChatPanel
-            key={`${chatTarget.primeId}-${chatTarget.agentName || "prime"}`}
-            primeId={chatTarget.primeId}
-            agentName={chatTarget.type === "agent" ? chatTarget.agentName : undefined}
-            entityName={chatTarget.entityName}
-            entityStatus={chatTarget.entityStatus}
-            specialty={chatTarget.specialty}
-          />
-        </div>
-      )}
 
       {/* ---- Deploy Modal ---- */}
       {showDeploy && (
