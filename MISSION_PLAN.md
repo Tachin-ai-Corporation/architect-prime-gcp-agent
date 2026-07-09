@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> Current version: v2026.07.07.4.0
+> Current version: v2026.07.09.1.0
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -96,6 +96,7 @@ One envelope at a time, fully attended; throughput is achieved by hiring more ag
 **Inter-agent work travels where humans can see it.** Agents delegate to each other over Google Chat with @-mentions: a machine-parseable envelope reference plus a human-readable summary. 
 
 | Version | Date | Summary |
+| v2026.07.09.1.0 | 2026-07-09 | **Manifest fix + fleet recovery**: added missing `wait.mjs` to `base.txt` manifest (was imported by `actions/index.mjs` but never shipped — crashed agent-brain on every VM); created `/opt/corekit/lib` symlink on all 7 agent VMs; recovered all fleet and prime brains from crash-loop. 1 repo file, 7 VMs hotfixed. |
 | v2026.07.07.4.0 | 2026-07-07 | **Probe pipeline fail-closed + load-bearing gating + bin-complete delivery**: terminal tools (`request_probe`, `report_pass`, `report_fail`) get 4000-char arg cap in tool log (was 200, truncating realistic probe payloads); `extractProbes` regex anchors on structural ` → ` separator instead of first `)` (paren-heavy instructions now parse); both empty-probes paths (checkpoint-executor + synthesize) fail closed (`result.success = false` / `activeGuard` with `probe_unparseable`) instead of silent pass; `load_bearing` Brief parts now widen attack duty and probe eligibility gates regardless of mission stakes; `composeAnswerFirst` renders all three bins (assumed → inferred → verified) under `— Reasoning —` / `— Risk & assumptions —` section markers; Mouth prompt preserves bin labels and markers. 5 files, 43 insertions. |
 | v2026.07.07.2.0 | 2026-07-07 | **Epistemic Discipline (B-28..B-31)**: verification is re-derivation via independent probes (`request_probe` tool, daemon-dispatched fresh-context motor sessions, single re-verdict round); every claim carries its epistemic bin (verified/inferred/assumed) via `decide.assumptions[]` riding envelope to Mission Record and delivery; answer-first delivery composition (`composeAnswerFirst` in synthesize.mjs); named impostor anti-patterns owned per organ; attack duty (stakes-gated, three named attacks in cerebellum verification); schemas extended (classify: `stakes`/`job_to_be_done`, analyze: `check`/`assumes`/`load_bearing`/`kill_shot`/`premise`, decide: `answer`/`risk`/`assumptions[]`); irreversibility guard in checkpoint_plan; probe context stripping; 12 organ SOULs updated; verification/skill-authoring skills amended; `completion` delivery type in mouth. 31 files, 910 insertions. |
 | v2026.07.07.1.0 | 2026-07-07 | **Wait activation + canon reconciliation**: added `wait` to the cortex decide schema enum and validator in `vertex-text.mjs` (the missing link that made `wait` reachable); added B-27 (timed-wait discipline); added `wait` to B-11's legal-move set; reconciled the Prime-role description in project-context and MISSION_PLAN; added a timed-wait subsection to CULTURE_OF_WORK; added the pause notification to the operator. |
