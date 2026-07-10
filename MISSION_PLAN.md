@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-Current version: v2026.07.10.8.0
+Current version: v2026.07.10.9.0
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -96,6 +96,7 @@ One envelope at a time, fully attended; throughput is achieved by hiring more ag
 **Inter-agent work travels where humans can see it.** Agents delegate to each other over Google Chat with @-mentions: a machine-parseable envelope reference plus a human-readable summary. 
 
 | Version | Date | Summary |
+| v2026.07.10.9.0 | 2026-07-10 | **Dashboard Inline Markdown Viewer & GCS Artifact Download Fix**: Resolved HTTP 403 errors on artifact downloads by granting the control plane SA the `roles/storage.objectAdmin` role in `install.sh`, and built a premium inline React Markdown viewer modal in the dashboard UI using 1health design tokens to display text/markdown artifacts without leaving the chat context. |
 | v2026.07.10.8.0 | 2026-07-10 | **Memory Texture & Deployment Drift Hotfix**: Resolved a crash loop on fleet VMs caused by missing shared modules (`conversation-context.mjs`, `artifact-share.mjs`) in the `base.txt` manifest; patched the `writeMemory` function in the brain daemon to capture instruction and output texture for decision context retention; hooked conversational `respond` fast-path actions into working memory injection so chat history is reliably documented in `MEMORY.md`. |
 | v2026.07.09.7.0 | 2026-07-09 | **Harness Horizon Corrective Pass**: Resolved seven critical, high, and low defects across the Harness Horizon implementation: routed conversation responses accurately, corrected the Mouth conversation context parser, implemented threadless DM space support, introduced a whitelisted single-read constraint to `respond` intakes, replaced the mock-style reads with live-filtering fleet status and 7-day completed work summaries, filtered automated system runs from the presence ribbon, fixed TS compilation errors, and completed a clean-up low sweep. |
 | v2026.07.09.6.0 | 2026-07-09 | **Harness Horizon: Channel Completion, Verified Respond, Live Cognition**: retired dashboard fleet chat write paths to focus communication solely on Google Chat; implemented chronological ear GChat thread assembly; built tool-grounded, 10s-raced synchronous local DB read filters (`fleet_status` and `recent_work`) inside the daemon; implemented conversation-aware voicing tone context slicing in the mouth pipeline; integrated flexible intent exclusion and character-capped chat summaries into memory consolidation; and built a recursive presence dashboard active task tracker. |

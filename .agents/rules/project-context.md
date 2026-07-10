@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.07.10.8.0)
+## Current Architecture (v2026.07.10.9.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -11,6 +11,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Compute Engine VMs** — One per Prime + one per fleet agent
 - **Neural Gateway** — Host-native AI neural gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC, Claude Opus 4.6 via Anthropic streaming)
 - **Google Chat** — Agent-to-human communication via DWD
+- **Dashboard Inline Markdown Viewer & GCS Artifact Download Fix (v2026.07.10.9.0)**: Resolved HTTP 403 errors on artifact downloads by granting the control plane SA the `roles/storage.objectAdmin` role in `install.sh`, and built a premium inline React Markdown viewer modal in the dashboard UI using 1health design tokens to display text/markdown artifacts without leaving the chat context.
 - **Memory Texture & Deployment Drift Hotfix (v2026.07.10.8.0)**: Resolved a crash loop on fleet VMs caused by missing shared modules (`conversation-context.mjs`, `artifact-share.mjs`) in the `base.txt` manifest; patched the `writeMemory` function in the brain daemon to capture instruction and output texture for decision context retention; hooked conversational `respond` fast-path actions into working memory injection so chat history is reliably documented in `MEMORY.md`.
 - **Harness Horizon Corrective Pass (v2026.07.09.7.0)**: Resolved seven critical, high, and low defects across the Harness Horizon implementation: routed conversation responses accurately, corrected the Mouth conversation context parser, implemented threadless DM space support, introduced a whitelisted single-read constraint to `respond` intakes, replaced the mock-style reads with live-filtering fleet status and 7-day completed work summaries, filtered automated system runs from the presence ribbon, fixed TS compilation errors, and completed a clean-up low sweep.
 - **Harness Horizon: Channel Completion, Verified Respond, Live Cognition (v2026.07.09.6.0)**: Transitions fleet agent messaging exclusively to Google Chat, retires all dashboard write paths with 405/read-only panel migrations, streamlines chronological thread assembly, establishes safe tool-verified conversational response gates (10s whitelisted REST reads timeout racing), implements tone-continuity conversation voicing context tracking (1500-char tail slice), directs all chat session triage through standard nightly memory consolidation, and visualizes deepest active descendant tasks dynamically inside the presence dashboard ribbon.
