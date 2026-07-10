@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import styles from "./AttachmentList.module.css";
-
+import { MarkdownViewerModal } from "./MarkdownViewerModal";
 interface Attachment {
   name: string;
   size: number;
@@ -14,6 +15,10 @@ interface AttachmentListProps {
 }
 
 export function AttachmentList({ primeId, attachments }: AttachmentListProps) {
+  const [selectedMarkdownUrl, setSelectedMarkdownUrl] = useState<string | null>(null);
+  const [selectedMarkdownName, setSelectedMarkdownName] = useState<string>("");
+  const [markdownContent, setMarkdownContent] = useState<string>("");
+
   if (!attachments || attachments.length === 0) return null;
 
   const formatSize = (bytes: number) => {
@@ -60,8 +65,29 @@ export function AttachmentList({ primeId, attachments }: AttachmentListProps) {
     }
   };
 
+  const handleAttachmentClick = async (e: React.MouseEvent<HTMLAnchorElement>, att: Attachment, downloadUrl: string) => {
+    const ext = att.name.split(".").pop()?.toLowerCase();
+    if (ext === "md" || ext === "txt") {
+      e.preventDefault();
+      try {
+        const res = await fetch(downloadUrl);
+        if (res.ok) {
+          const text = await res.text();
+          setMarkdownContent(text);
+          setSelectedMarkdownName(att.name);
+          setSelectedMarkdownUrl(downloadUrl);
+        } else {
+          console.error("Failed to fetch markdown content:", res.statusText);
+        }
+      } catch (err) {
+        console.error("Error fetching markdown content:", err);
+      }
+    }
+  };
+
   return (
-    <div className={styles.container}>
+    <>
+      <div className={styles.container}>
       {attachments.map((att, idx) => {
         const downloadUrl = `/api/primes/${primeId}/artifacts?gcsPath=${encodeURIComponent(att.gcsPath)}`;
         return (
@@ -72,6 +98,7 @@ export function AttachmentList({ primeId, attachments }: AttachmentListProps) {
             rel="noopener noreferrer"
             className={styles.attachmentCard}
             title={`Download ${att.name}`}
+            onClick={(e) => handleAttachmentClick(e, att, downloadUrl)}
           >
             <div className={styles.iconContainer}>{getIcon(att.name)}</div>
             <div className={styles.meta}>
@@ -86,6 +113,13 @@ export function AttachmentList({ primeId, attachments }: AttachmentListProps) {
           </a>
         );
       })}
-    </div>
+      </div>
+      <MarkdownViewerModal
+        isOpen={!!selectedMarkdownUrl}
+        onClose={() => setSelectedMarkdownUrl(null)}
+        title={selectedMarkdownName}
+        content={markdownContent}
+      />
+    </>
   );
 }

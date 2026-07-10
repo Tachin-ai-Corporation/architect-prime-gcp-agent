@@ -132,6 +132,7 @@ ROLES=(
   roles/aiplatform.user             # Vertex AI access for agent LLM
   roles/cloudbuild.builds.editor    # Trigger Cloud Build (dashboard self-upgrade)
   roles/run.admin                   # Update Cloud Run service
+  roles/storage.objectAdmin         # Read/write artifacts in GCS
 )
 for role in "${ROLES[@]}"; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
