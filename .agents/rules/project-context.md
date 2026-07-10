@@ -3,7 +3,7 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.07.09.6.0)
+## Current Architecture (v2026.07.09.7.0)
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (18-route breadcrumb-navigated hierarchy, 1health design system) + REST API (control plane)
@@ -11,6 +11,7 @@ Architect Prime is an AI agent fleet management system for Google Workspace on G
 - **Compute Engine VMs** — One per Prime + one per fleet agent
 - **Neural Gateway** — Host-native AI neural gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC, Claude Opus 4.6 via Anthropic streaming)
 - **Google Chat** — Agent-to-human communication via DWD
+- **Harness Horizon Corrective Pass (v2026.07.09.7.0)**: Resolved seven critical, high, and low defects across the Harness Horizon implementation: routed conversation responses accurately, corrected the Mouth conversation context parser, implemented threadless DM space support, introduced a whitelisted single-read constraint to `respond` intakes, replaced the mock-style reads with live-filtering fleet status and 7-day completed work summaries, filtered automated system runs from the presence ribbon, fixed TS compilation errors, and completed a clean-up low sweep.
 - **Harness Horizon: Channel Completion, Verified Respond, Live Cognition (v2026.07.09.6.0)**: Transitions fleet agent messaging exclusively to Google Chat, retires all dashboard write paths with 405/read-only panel migrations, streamlines chronological thread assembly, establishes safe tool-verified conversational response gates (10s whitelisted REST reads timeout racing), implements tone-continuity conversation voicing context tracking (1500-char tail slice), directs all chat session triage through standard nightly memory consolidation, and visualizes deepest active descendant tasks dynamically inside the presence dashboard ribbon.
 - **Dashboard Conversational Loop & GCS Attachment Delivery (v2026.07.09.5.0)**: Builds a seamless, premium conversational loop between the frontend Next.js dashboard and the Prime agent VM. Incorporates oldest-turn-evicting conversation context extraction (`corekit/lib/conversation-context.mjs`), a short-circuiting conversational `'respond'` Cortex move, a deterministic zero-LLM ambient recall tier (Layers A and B only), secure direct GCS artifact upload upon git publishing, and high-security Next.js media/attachment streaming with path-traversal protection.
 - **Deterministic User Identity Resolution** — Extracts canonical identity fields (`senderEmail`, `senderDisplayName`, `senderUserId`) directly from the GChat API payload on ingestion, attaches them to `source_meta`, and propagates `source_meta.senderEmail` as the `## Requester` context header to Prefrontal, Cortex, and Motor prompt generators. Strict email validation in `drive-share` ensures all Workspace share requests target valid emails without hardcoded fallbacks.

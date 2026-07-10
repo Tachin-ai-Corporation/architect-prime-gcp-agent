@@ -386,15 +386,24 @@ function buildContextualMessage(targetMsg, priorMsgs) {
 }
 
 function buildThreadConversation(targetMsg, pageMsgs) {
+  if (CONTRACTS.conversation?.enabled === false) return null;
+
   const cfg = CONTRACTS.conversation || {};
   const maxTurns = cfg.max_turns || 12;
   const perTurnChars = cfg.per_turn_chars || 600;
   const budgetChars = cfg.budget_chars || 6000;
 
-  // Find all messages in pageMsgs that belong to the same thread as targetMsg, sorted oldest-first
+  const hasThread = !!targetMsg.thread?.name;
+  // Find all messages in pageMsgs that belong to the same thread as targetMsg, sorted oldest-first.
+  // Support threadless DM spaces by falling back to space scoping if thread name is absent.
   const threadMsgs = pageMsgs
-    .filter(m => m.thread?.name && m.thread.name === targetMsg.thread?.name)
-    .filter(m => m.createTime <= targetMsg.createTime)
+    .filter(m => {
+      if (hasThread) {
+        return m.thread?.name && m.thread.name === targetMsg.thread.name;
+      }
+      return true; // threadless space-wide fallback
+    })
+    .filter(m => m.createTime < targetMsg.createTime) // strict target message self-exclusion
     .slice(-maxTurns);
 
   const turns = threadMsgs.map(m => {
@@ -828,7 +837,7 @@ async function main() {
         const intakeDoc = {
           id: { stringValue: intakeId },
           text: { stringValue: cleanedText },
-          source: { stringValue: msg.metadata?.source === 'dashboard' ? 'dashboard' : CHANNEL },
+          source: { stringValue: CHANNEL },
           ...(msg.conversation_ctx ? { conversation_ctx: { stringValue: JSON.stringify(msg.conversation_ctx) } } : {}),
           source_meta: { mapValue: { fields: {
             taskId: { stringValue: taskId },

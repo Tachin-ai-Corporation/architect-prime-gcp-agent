@@ -1176,7 +1176,7 @@ function buildUserPrompt(mode, payload) {
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
         required_processes: 'CRITICAL: Projects may define required_processes — activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
         conversation_grounding: 'When a conversation block is present, resolve pronouns, ellipsis, and references ("yes", "do that", "the second one", "same as before") against it before classifying. The most recent prime turn (last_prime_reply) is what the human is most likely replying to.',
-        respond_rules: 'Classify as "respond" ONLY when the turn is conversational or informational and fully answerable from the conversation, memory, active_envelopes, and recent_completed_missions already in this payload, or by triggering one or more whitelisted read tools listed in respond_reads_available. greetings, acknowledgments, status questions about visible work, questions answered by provided memory, clarifying answers. A respond performs NO state-mutating execution. If any whitelisted read tool in respond_reads_available is needed to answer, add its ID to the "reads" array; default "reads" to empty otherwise. Put the complete reply in "response" — if reads are requested, this response serves as a draft that will be synthesized against live tool results using respond_compose. If the turn requires running anything else, writing or mutating state, or doing complex work: it is not a respond. When in doubt, new_mission.',
+        respond_rules: 'Classify as "respond" ONLY when the turn is conversational or informational and fully answerable from the conversation, memory, active_envelopes, and recent_completed_missions already in this payload, or by triggering at most one whitelisted read tool listed in respond_reads_available. greetings, acknowledgments, status questions about visible work, questions answered by provided memory, clarifying answers. A respond performs NO state-mutating execution. If any whitelisted read tool in respond_reads_available is needed to answer, add its ID to the "reads" array (at most one read tool can be requested; requesting multiple reads is strictly forbidden); default "reads" to empty otherwise. Put the complete reply in "response" — if a read is requested, this response serves as a draft that will be synthesized against the live tool results using respond_compose. If the turn requires running anything else, writing or mutating state, or doing complex work: it is not a respond. When in doubt, new_mission.',
         input_answer_binding: 'If an active envelope is in needs_input or blocked and the new turn plausibly answers its question (check the conversation: the question is usually the last prime turn), classify as "continue" with the answer carried in instruction — never as a new_mission that restates the question.',
       },
     };
@@ -2344,7 +2344,7 @@ async function processIntake(intake) {
 
   // ---- CP1: Assemble Conversation Context (B-32) ----
   let convoContext = null;
-  if (intake.conversation_ctx) {
+  if (intake.conversation_ctx && CONTRACTS.conversation?.enabled !== false) {
     try {
       convoContext = JSON.parse(intake.conversation_ctx);
       log('INFO', 'Using intake-provided conversation context');
@@ -2386,10 +2386,10 @@ async function processIntake(intake) {
   if (CONTRACTS.dispatch?.respond_reads_enabled && CONTRACTS.dispatch?.respond_reads) {
     const whitelisted = CONTRACTS.dispatch.respond_reads;
     if (whitelisted.includes('fleet_status')) {
-      respondReadsAvailable.push({ id: 'fleet_status', description: 'Query Firestore and return a formatted snapshot of current fleet members and their status/heartbeat.' });
+      respondReadsAvailable.push({ id: 'fleet_status', description: 'Query Firestore and return a formatted snapshot of live registered fleet members and their specialties. Use to answer who is currently active in the fleet.' });
     }
     if (whitelisted.includes('recent_work')) {
-      respondReadsAvailable.push({ id: 'recent_work', description: 'Query Firestore and return a formatted list of the 5 most recently updated work envelopes.' });
+      respondReadsAvailable.push({ id: 'recent_work', description: 'Query Firestore for completed work envelopes assigned to this agent over the last 7 days. Use to answer what I have recently accomplished or worked on.' });
     }
   }
 
@@ -2543,69 +2543,45 @@ async function processIntake(intake) {
   // Handle respond classification (conversational fast-path)
   if (classification === 'respond') {
     let finalResponse = toStr(decision.response || '').trim();
-    const readsRequested = decision.reads || [];
+    const readsRequested = Array.isArray(decision.reads) ? decision.reads : [];
 
     try {
-      if (CONTRACTS.dispatch?.respond_reads_enabled && Array.isArray(readsRequested) && readsRequested.length > 0) {
-        log('INFO', `Respond-reads requested: ${JSON.stringify(readsRequested)}`);
-        const whitelisted = CONTRACTS.dispatch.respond_reads || [];
-        const toolOutputs = [];
+      if (CONTRACTS.dispatch?.respond_reads_enabled !== false && readsRequested.length > 0) {
+        const whitelist = CONTRACTS.dispatch?.respond_reads || [];
+        // Locked decision: exactly ONE read per respond. Execute the first
+        // whitelisted entry; anything further is ignored with a WARN.
+        const readId = readsRequested.find(r => whitelist.includes(r)) || null;
+        if (readsRequested.length > 1) {
+          log('WARN', `respond requested ${readsRequested.length} reads — executing at most one ('${readId || 'none'}')`);
+        }
 
-        // DB queries and synthesis must run with a tight 10s timeout
-        const readPromise = (async () => {
-          for (const tool of readsRequested) {
-            if (whitelisted.includes(tool)) {
-              log('INFO', `Executing whitelisted respond-read helper: ${tool}`);
-              let outputText = '';
-              if (tool === 'fleet_status') {
-                outputText = await executeFleetStatus();
-              } else if (tool === 'recent_work') {
-                outputText = await executeRecentWork();
-              }
-              toolOutputs.push(`[TOOL RESULT: ${tool}]\n${outputText}`);
-            } else {
-              log('WARN', `Requested respond-read helper is not whitelisted: ${tool}`);
-            }
-          }
-        })();
+        if (!readId) {
+          // Reads were requested but none is whitelisted. The draft was written
+          // expecting grounding — never deliver it ungrounded (B-15).
+          log('WARN', `respond reads ${JSON.stringify(readsRequested)} not whitelisted — demoting to new_mission`);
+          finalResponse = '';
+        } else {
+          log('INFO', `Executing whitelisted respond-read: ${readId}`);
+          const readFn = readId === 'fleet_status' ? executeFleetStatus : executeRecentWork;
+          const readResult = toStr(await Promise.race([
+            readFn(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('respond read timed out (10s)')), 10000)),
+          ])).substring(0, 4000);
 
-        // Race the database reads against a 10-second timeout
-        await Promise.race([
-          readPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Database read timed out (10s)')), 10000))
-        ]);
-
-        if (toolOutputs.length > 0) {
-          log('INFO', `Executing follow-up Cortex respond_compose with tool outputs`);
-          const compositeToolText = toolOutputs.join('\n\n');
-          
-          // Race the synthesis call with a 10-second timeout
-          const composePromise = callCortex('respond_compose', {
-            inbound: {
-              text: intake.text,
-              source: intake.source,
-              source_meta: intake.source_meta || {},
-            },
+          log('INFO', `respond read '${readId}': ${readResult.length} chars — composing`);
+          const composeDecision = await callCortex('respond_compose', {
+            inbound: { text: intake.text, source: intake.source, source_meta: intake.source_meta || {} },
             conversation: convoContext ? convoContext.block : null,
-            last_prime_reply: lastPrimeReply,
             memory: ambientMemory,
-            active_envelopes: activeEnvelopes,
-            recent_completed_missions: recentMissionsForClassify,
-            tool_grounding: compositeToolText,
+            tool_grounding: `[TOOL RESULT: ${readId}]\n${readResult}`,
             draft_response: finalResponse,
           });
-
-          const composeDecision = await Promise.race([
-            composePromise,
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Cortex respond_compose timed out (10s)')), 10000))
-          ]);
-
-          if (composeDecision.error) {
-            throw new Error(`respond_compose failed: ${JSON.stringify(composeDecision.error)}`);
-          } else {
-            finalResponse = toStr(composeDecision.response || '').trim();
-            log('INFO', `Respond_compose generated finalized draft response: "${finalResponse.substring(0, 100)}..."`);
+          const composedText = toStr(composeDecision?.response || '').trim();
+          if (composeDecision?.error || !composedText) {
+            throw new Error(`respond_compose failed: ${JSON.stringify(composeDecision?.error || 'empty response')}`);
           }
+          finalResponse = composedText;
+          log('INFO', `respond_compose grounded reply: "${finalResponse.substring(0, 100)}"`);
         }
       }
 
@@ -2613,7 +2589,7 @@ async function processIntake(intake) {
         await handleRespond(intake, decision, finalResponse, convoContext);
         return;
       }
-      log('WARN', `respond ${finalResponse ? 'disabled by dispatch.respond_enabled' : 'without response text'} — demoting to new_mission`);
+      log('WARN', `respond ${finalResponse ? 'disabled by dispatch.respond_enabled' : 'without deliverable text'} — demoting to new_mission`);
       classification = 'new_mission';
     } catch (err) {
       log('WARN', `Respond-reads execution or synthesis failed: ${err.message} — demoting to new_mission`);
@@ -2688,13 +2664,13 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
 
   if (!targetId) {
     log('WARN', `Attach missing attach_to field, reverting to new_mission fallback`);
-    return processIntakeAsNewTask(intake, decision, memoryContext);
+    return processIntakeAsNewTask(intake, decision, memoryContext, null, convoContext);
   }
 
   const targetEnv = await firestoreRead('work', targetId);
   if (!targetEnv) {
     log('WARN', `Attach target ${targetId} not found, treating as new_mission`);
-    return processIntakeAsNewTask(intake, decision, memoryContext);
+    return processIntakeAsNewTask(intake, decision, memoryContext, null, convoContext);
   }
 
   if (targetEnv.status === 'needs_input') {
@@ -2707,6 +2683,9 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
     targetEnv.updated_at = now();
     if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
       targetEnv.project_id = decision.project_id;
+    }
+    if (convoContext) {
+      targetEnv.conversation_context = convoContext.block;
     }
     await firestoreWrite('work', targetId, targetEnv);
     await writeHistory(targetId, 'needs_input', 'queued', 'brain', `Re-queued with human response: ${toStr(intake.text).substring(0, 100)}`);
@@ -2748,46 +2727,34 @@ async function handleAttach(intake, decision, memoryContext, pendingAckText = nu
     }
     // New instruction for active/waiting mission — create linked child task
     log('INFO', `New instruction for ${targetEnv.status} mission ${targetId}, creating child task`);
-    return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
+    return processIntakeAsNewTask(intake, decision, memoryContext, targetId, convoContext);
   }
 
   // For blocked envelopes, delegate to handleContinue (which knows how to reopen)
   if (targetEnv.status === 'blocked') {
     log('INFO', `Attach target ${targetId} is blocked — routing to handleContinue`);
     decision.continue_mission = targetId;
-    return handleContinue(intake, decision, memoryContext, pendingAckText);
+    return handleContinue(intake, decision, memoryContext, pendingAckText, convoContext);
   }
 
   // For failed missions, create a child task linked to the mission
   if (targetEnv.status === 'failed') {
     log('INFO', `Attach target ${targetId} is failed — creating linked follow-up task`);
-    return processIntakeAsNewTask(intake, decision, memoryContext, targetId);
+    return processIntakeAsNewTask(intake, decision, memoryContext, targetId, convoContext);
   }
 
   // For complete or other statuses, treat as a new follow-up task
   log('INFO', `Attach target ${targetId} is ${targetEnv.status}, creating follow-up task`);
   log('WARN', `[TELEMETRY] classify_cascade: attach→complete_fallback→new_mission (${targetId})`);
-  return processIntakeAsNewTask(intake, decision, memoryContext);
+  return processIntakeAsNewTask(intake, decision, memoryContext, null, convoContext);
 }
 
 // ---- Helper: create new task from intake when attach falls through ----
-async function processIntakeAsNewTask(intake, decision, memoryContext, parentId = null) {
+async function processIntakeAsNewTask(intake, decision, memoryContext, parentId = null, convoContext = null) {
   const envelopeId = generateId('w');
   const _titleInput = (decision.instruction && decision.instruction.length > 100)
     ? decision.instruction
     : stripChatFraming(intake.text) || decision.instruction || 'Untitled';
-
-  let conversationBlock = null;
-  if (intake.source === 'dashboard') {
-    const convoContext = await assembleConversation({
-      projectId: GCP_PROJECT,
-      primeId: PRIME_ID,
-      getToken: getGceToken,
-      config: CONTRACTS.conversation,
-      log,
-    }).catch(() => null);
-    if (convoContext) conversationBlock = convoContext.block;
-  }
 
   const envelope = {
     id: envelopeId,
@@ -2815,7 +2782,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     updated_at: now(),
     iteration: 0,
     memory_context: memoryContext,
-    conversation_context: conversationBlock,
+    conversation_context: convoContext ? convoContext.block : null,
   };
 
   await firestoreWrite('work', envelopeId, envelope);
@@ -2831,21 +2798,21 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   if (!targetId) {
     log('WARN', `Continue missing continue_mission field, reverting to new_mission fallback`);
     log('WARN', `[TELEMETRY] classify_cascade: continue→missing_target→new_mission`);
-    return processIntakeAsNewTask(intake, decision, memoryContext);
+    return processIntakeAsNewTask(intake, decision, memoryContext, null, convoContext);
   }
 
   const mission = await firestoreRead('work', targetId);
   if (!mission) {
     log('WARN', `Continue target ${targetId} not found, treating as new_mission`);
     log('WARN', `[TELEMETRY] classify_cascade: continue→not_found→new_mission (${targetId})`);
-    return processIntakeAsNewTask(intake, decision, memoryContext);
+    return processIntakeAsNewTask(intake, decision, memoryContext, null, convoContext);
   }
 
   // Only M-type envelopes are valid continue targets — T/C notifications must not be re-queued
   if (mission.type !== 'M') {
     log('WARN', `Continue target ${targetId} is type=${mission.type} (not M) — skipping, treating as new_mission`);
     log('WARN', `[TELEMETRY] classify_cascade: continue→wrong_type_${mission.type}→new_mission (${targetId})`);
-    return processIntakeAsNewTask(intake, decision, memoryContext);
+    return processIntakeAsNewTask(intake, decision, memoryContext, null, convoContext);
   }
 
   // Only reopen blocked or complete missions (not active — that's an attach/status check)
@@ -2861,11 +2828,16 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
       if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
         mission.project_id = decision.project_id;
       }
+      // B-32: refresh the conversation on the resumed mission — the user's new
+      // turn (often a needs_input answer) is exactly what the decide loop must see.
+      if (convoContext) {
+        mission.conversation_context = convoContext.block;
+      }
       await firestoreWrite('work', targetId, mission);
       return processEnvelope(mission, memoryContext);
     }
     log('WARN', `[TELEMETRY] classify_cascade: continue→active_busy→attach (${targetId}, status=${mission.status})`);
-    return handleAttach(intake, { ...decision, attach_to: targetId }, memoryContext);
+    return handleAttach(intake, { ...decision, attach_to: targetId }, memoryContext, null, convoContext);
   }
 
   const prevStatus = mission.status;
@@ -2889,6 +2861,9 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   mission.updated_at = now();
   if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
     mission.project_id = decision.project_id;
+  }
+  if (convoContext) {
+    mission.conversation_context = convoContext.block;
   }
 
   await firestoreWrite('work', targetId, mission);
@@ -2999,24 +2974,16 @@ async function cascadeCancelChildren(parentId) {
   if (cancelCount > 0) log('INFO', `Cascade-cancelled ${cancelCount} children of ${parentId}`);
 }
 
-// ---- Whitelisted Respond reads (CP3) ----
-// Local in-process DB queries executing inside the daemon without spawning child processes.
+// ---- Whitelisted respond reads (CP3) ----
+// In-process, read-only, deterministic. No shell, no skills, no motor.
 async function executeFleetStatus() {
   try {
     const agents = await firestoreQuery('fleet', []);
-    if (!agents || agents.length === 0) {
-      return "No fleet agents found.";
-    }
-    const lines = ["=== Fleet Status Snapshot ==="];
-    for (const a of agents) {
-      const email = a.email || 'unknown';
-      const status = a.status || 'unknown';
-      const specialty = a.specialty || 'unknown';
-      const lastSeen = a.lastSeen || a.updated_at || 'never';
-      lines.push(`- Agent: ${a.name || 'unknown'} (${specialty})`);
-      lines.push(`  Email: ${email}`);
-      lines.push(`  Status: ${status}`);
-      lines.push(`  Last Active: ${lastSeen}`);
+    const live = (agents || []).filter(a => !['removed', 'deleted', 'decommissioned'].includes(a.status));
+    if (live.length === 0) return 'No fleet agents registered.';
+    const lines = ['=== Fleet Status Snapshot ==='];
+    for (const a of live) {
+      lines.push(`- ${a.name || a.id}: status=${a.status || 'unknown'}${a.specialty ? ` specialty=${a.specialty}` : ''}${a.email ? ` email=${a.email}` : ''}`);
     }
     return lines.join('\n');
   } catch (e) {
@@ -3026,28 +2993,13 @@ async function executeFleetStatus() {
 
 async function executeRecentWork() {
   try {
-    const recent = await firestoreQuery('work', [
-      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
-    ]);
-    const sorted = recent
-      .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
-      .slice(0, 5);
-
-    if (sorted.length === 0) {
-      return "No recent work envelopes found.";
-    }
-
-    const lines = ["=== Recent Work Envelopes (Last 5) ==="];
-    for (const e of sorted) {
-      const type = e.type || 'unknown';
-      const status = e.status || 'unknown';
-      const title = e.title || 'Untitled';
-      const updated = e.updated_at || 'unknown';
-      lines.push(`- [${type}] ${e.id}: "${title}"`);
-      lines.push(`  Status: ${status}`);
-      lines.push(`  Updated: ${updated}`);
-    }
-    return lines.join('\n');
+    const digest = await recentWorkDigest({
+      firestoreQuery,
+      owner: AGENT_EMAIL || AGENT_ID,
+      sinceDays: 7,
+      limit: 50,
+    });
+    return digest || 'No completed work in the last 7 days.';
   } catch (e) {
     return `Error retrieving recent work: ${e.message}`;
   }
@@ -3057,16 +3009,12 @@ async function executeRecentWork() {
 async function handleRespond(intake, decision, responseText, convoContext) {
   const envelopeId = generateId('w');
 
-  const deliveryAddress =
-    intake.source_meta?.thread_ts ||
-    convoContext?.delivery_address ||
-    intake.source_meta?.channel_id ||
-    null;
+  // Canonical address: routes the reply to the originating channel/thread.
+  // (addressFromMeta handles dashboard, gchat space/thread, and legacy metas.)
+  const deliveryAddress = addressFromMeta(intake.source_meta, intake.source);
 
-  let missionTitle = await generateTitle(intake.text, 'mission');
-  if (!missionTitle || missionTitle === 'Untitled') {
-    missionTitle = `Respond: ${intake.text.substring(0, 40)}`;
-  }
+  // Deterministic title — respond stays at one model call (classify).
+  const missionTitle = `Chat reply: ${stripChatFraming(intake.text || '').substring(0, 60)}`;
 
   const envelope = {
     id: envelopeId,

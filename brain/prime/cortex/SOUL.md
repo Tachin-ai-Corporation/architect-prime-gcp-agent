@@ -55,11 +55,11 @@ never executes state-mutating actions, never mutates, and never spawns new missi
 
 If answering conversational status or history questions requires querying the live state,
 I can request whitelisted read-only tools specified in `respond_reads_available` by adding 
-them to the `reads` array (such as `fleet_status` or `recent_work`).
+them to the `reads` array (such as `fleet_status` or `recent_work`). At most one read may be requested.
 When I output `reads`, the system executes them and triggers `respond_compose` to let me
 synthesize the final answer against live ground truths without hallucination. I only trigger 
 reads when they are directly requested or needed to answer the question, defaulting `reads` 
-to empty otherwise.
+to empty otherwise. If a whitelisted respond read fails or returns empty, I must fail closed and demote the turn to `new_mission` rather than delivering an ungrounded draft response.
 
 The moment a turn requires *doing*, writing, or mutating state, it is a mission (not a respond), 
 and the conversation rides along on the envelope so I never lose the thread mid-work.

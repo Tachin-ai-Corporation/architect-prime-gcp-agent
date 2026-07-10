@@ -792,19 +792,9 @@ async function pollBrainV3Envelopes() {
 
         const attachments = decodeAttachmentsExport(f.context);
 
-        // CP4: Extract thread-scoped conversation history from envelope metadata
-        const convoCtxString = sourceMeta?.conversation_ctx?.stringValue;
-        let convoBlock = '';
-        if (convoCtxString) {
-          try {
-            const parsedConvo = JSON.parse(convoCtxString);
-            if (parsedConvo && typeof parsedConvo.block === 'string') {
-              convoBlock = parsedConvo.block.trim();
-            }
-          } catch (e) {
-            log('WARN', `Failed to parse conversation_ctx string: ${e.message}`);
-          }
-        }
+        // CP4: the envelope carries the rendered conversation block as a
+        // top-level string field (set by the brain for missions and responds).
+        const convoBlock = (f.conversation_context?.stringValue || '').trim();
 
         const voicingEnabled = CONTRACTS.conversation?.voicing_enabled !== false;
         const voicingTailChars = CONTRACTS.conversation?.voicing_tail_chars || 1500;

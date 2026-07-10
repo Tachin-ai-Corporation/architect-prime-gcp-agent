@@ -19,7 +19,7 @@
       "step": 2,
       "agent": "motor",
       "intent": "execute",
-      "description": "Gather sessions: Run `session-summary --hours 24 --limit 20`. Report the number of sessions found. If the command returns 'No completed missions found', report '0 sessions in last 24 hours' — this is normal and not an error.",
+      "description": "Gather sessions: Run `session-summary --hours 24 --limit 20 --exclude-intent memory_consolidation`. Report the number of sessions found. If the command returns 'No completed missions found', report '0 sessions in last 24 hours' — this is normal and not an error.",
       "accept_criteria": "session-summary command executed. Session count reported (0 is acceptable)."
     },
     {

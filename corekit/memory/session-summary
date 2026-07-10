@@ -6,7 +6,7 @@
 # to produce a summary of recent agent activity.
 #
 # Usage:
-#   session-summary [--hours 24] [--limit 20]
+#   session-summary [--hours 24] [--limit 20] [--exclude-intent <intent>]
 #
 # Output: Plain text summary of recent completed missions, suitable for memory consolidation.
 

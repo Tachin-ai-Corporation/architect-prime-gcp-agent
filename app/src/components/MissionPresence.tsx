@@ -12,6 +12,8 @@ interface PresenceEnvelope {
   instruction: string;
   created_at: string;
   updated_at: string;
+  source_channel?: string;
+  blocker?: string | null;
 }
 
 function deriveActivity(rootId: string, envelopes: PresenceEnvelope[]): PresenceEnvelope | null {
@@ -59,7 +61,8 @@ function deriveActivity(rootId: string, envelopes: PresenceEnvelope[]): Presence
   }
 
   // Only return if it is a descendant (depth > 0)
-  return deepestNode && deepestNode.id !== rootId ? deepestNode : null;
+  const finalNode = deepestNode as PresenceEnvelope | null;
+  return finalNode && finalNode.id !== rootId ? finalNode : null;
 }
 
 export function MissionPresence({ primeId }: { primeId: string }) {
@@ -73,8 +76,12 @@ export function MissionPresence({ primeId }: { primeId: string }) {
         if (res && res.envelopes) {
           setAllEnvelopes(res.envelopes);
           // Active root missions (type M)
+          // F6: The presence strip exists solely for real-time human interaction on the dashboard;
+          // scheduling loops and automated chat channels must never pollute it.
           const activeMissions = res.envelopes.filter(
-            (e) => e.type === "M" && e.status !== "complete" && e.status !== "failed" && e.status !== "cancelled" && e.status !== "archived" && e.status !== "rejected"
+            (e) => e.type === "M" &&
+                   e.status !== "complete" && e.status !== "failed" && e.status !== "cancelled" && e.status !== "archived" && e.status !== "rejected" &&
+                   e.source_channel !== "schedule" && e.source_channel !== "gchat"
           );
           setMissions(activeMissions);
         }
@@ -98,11 +105,15 @@ export function MissionPresence({ primeId }: { primeId: string }) {
         const attention = m.status === "needs_input" || m.status === "blocked";
         const activity = deriveActivity(m.id, allEnvelopes);
         
-        // Build activity label
-        let activityText = "";
-        if (activity) {
+        // Build subrow text: either the blocker explanation (when attention is active)
+        // or descendant traversal activity.
+        let sublineText = "";
+        if (attention) {
+          const rawBlocker = m.blocker || "";
+          sublineText = rawBlocker.length > 120 ? rawBlocker.slice(0, 117) + "..." : rawBlocker;
+        } else if (activity) {
           const rawText = activity.title || activity.instruction || activity.id;
-          activityText = rawText.length > 120 ? rawText.slice(0, 117) + "..." : rawText;
+          sublineText = `→ ${rawText.length > 120 ? rawText.slice(0, 117) + "..." : rawText}`;
         }
 
         return (
@@ -113,9 +124,9 @@ export function MissionPresence({ primeId }: { primeId: string }) {
               <span className={styles.title}>{m.title || m.id}</span>
               <span className={styles.status}>{m.status.replace("_", " ")}</span>
             </div>
-            {activityText && (
+            {sublineText && (
               <div className={styles.subRow}>
-                → {activityText}
+                {sublineText}
               </div>
             )}
           </div>

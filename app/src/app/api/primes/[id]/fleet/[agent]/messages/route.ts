@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fleetMessagesCol } from "@/lib/firestore";
-import { requireAuth } from "@/lib/require-auth";
 
 interface RouteContext {
   params: Promise<{ id: string; agent: string }>;
@@ -43,6 +42,11 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 export async function POST(req: NextRequest, ctx: RouteContext) {
   return NextResponse.json(
     { error: "Direct dashboard chat is retired for fleet agents. Please use GChat." },
-    { status: 405 }
+    {
+      status: 405,
+      headers: {
+        Allow: "GET",
+      },
+    }
   );
 }
