@@ -98,6 +98,8 @@ corekit/daemon/agent-ears.service corekit/agent-ears.service
 corekit/daemon/agent-mouth.service corekit/agent-mouth.service
 
 # Shared libraries (used by all daemons)
+corekit/lib/conversation-context.mjs corekit/lib/conversation-context.mjs
+corekit/lib/artifact-share.mjs corekit/lib/artifact-share.mjs
 corekit/lib/gce-auth.mjs corekit/lib/gce-auth.mjs
 corekit/lib/dwd-auth.mjs corekit/lib/dwd-auth.mjs
 corekit/lib/firestore.mjs corekit/lib/firestore.mjs
