@@ -1683,7 +1683,9 @@ async function recallMemory(query, context = {}) {
 //   2. Nightly consolidation: p-memory-consolidate process (curated promotions)
 async function writeMemory(envelope) {
   try {
-    const instruction = toStr(envelope.instruction).substring(0, 200);
+    const instruction = toStr(envelope.instruction).replace(/\s+/g, ' ').trim().substring(0, 120);
+    const outputText = envelope.output ? toStr(envelope.output) : (envelope.context_summary ? toStr(envelope.context_summary) : '');
+    const texture = outputText ? ` -> ${outputText.replace(/\s+/g, ' ').trim().substring(0, 120)}` : '';
 
     // 2. Append one-line summary to MEMORY.md (working memory accumulates during the day)
     const memoryPath = `${CORE_DIR}/workspace/MEMORY.md`;
@@ -1691,7 +1693,7 @@ async function writeMemory(envelope) {
       const currentSize = readFileSync(memoryPath, 'utf8').length;
       if (currentSize < 3000) { // Size guard — prevent unbounded growth
         const datestamp = new Date().toISOString().substring(0, 10);
-        const oneLiner = `- [${datestamp}] ${envelope.type}: ${instruction.substring(0, 120)}\n`;
+        const oneLiner = `- [${datestamp}] ${envelope.type}: ${instruction}${texture}\n`;
         appendFileSync(memoryPath, oneLiner);
         log('INFO', `Memory write: MEMORY.md appended (${currentSize + oneLiner.length} chars)`);
       } else {
@@ -3052,6 +3054,11 @@ async function handleRespond(intake, decision, responseText, convoContext) {
   await firestoreWrite('work', envelopeId, envelope);
   await writeHistory(envelopeId, null, 'complete', 'brain', 'Created complete-on-creation respond envelope (fast-path)');
   log('INFO', `Created complete-on-creation respond envelope: ${envelopeId} with response: "${responseText.substring(0, 80)}..."`);
+
+  // Write to working memory so conversational texture is retained
+  try { await writeMemory(envelope); } catch (e) {
+    log('WARN', `Memory write failed for respond envelope: ${e.message}`);
+  }
 
   // Update intake status so it doesn't get processed again
   await firestoreWrite('intake', intake.id, {
