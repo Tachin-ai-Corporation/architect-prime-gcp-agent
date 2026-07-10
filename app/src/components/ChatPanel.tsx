@@ -4,13 +4,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import styles from "./ChatPanel.module.css";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { AttachmentList } from "./AttachmentList";
+import { MissionPresence } from "./MissionPresence";
 import { api } from "@/lib/api";
 import type { ChatMessage } from "@/lib/types";
 
 interface ChatPanelProps {
   primeId: string;
-  /** If set, chat with this fleet agent. If null, chat with the Prime. */
-  agentName?: string | null;
   /** Display name for the header */
   entityName: string;
   /** Entity status */
@@ -21,7 +20,7 @@ interface ChatPanelProps {
   inline?: boolean;
 }
 
-export function ChatPanel({ primeId, agentName, entityName, entityStatus, specialty, inline }: ChatPanelProps) {
+export function ChatPanel({ primeId, entityName, entityStatus, specialty, inline }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -29,11 +28,9 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isInitialLoad = useRef(true);
 
-  const apiBase = agentName
-    ? `/api/primes/${primeId}/fleet/${agentName}/messages`
-    : `/api/primes/${primeId}/messages`;
+  const apiBase = `/api/primes/${primeId}/messages`;
 
-  const senderLabel = agentName || "Prime";
+  const senderLabel = "Prime";
 
   const formatTime = (ts: string) =>
     new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -116,7 +113,7 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
         <div className={styles.emptyState}>
           <div className={styles.hero}>
             <div className={styles.heroAvatar}>
-              {agentName ? agentName.charAt(0).toUpperCase() : "P"}
+              P
             </div>
             <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
             <p className={styles.heroSubtitle}>
@@ -128,7 +125,7 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
         <div className={styles.chatMessages} ref={messagesRef}>
           <div className={styles.hero}>
             <div className={styles.heroAvatar}>
-              {agentName ? agentName.charAt(0).toUpperCase() : "P"}
+              P
             </div>
             <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
             <p className={styles.heroSubtitle}>
@@ -155,7 +152,7 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
                     ))
                   )}
                 </div>
-                {msg.attachments && msg.attachments.length > 0 && (
+                {isEntity && msg.attachments && msg.attachments.length > 0 && (
                   <AttachmentList primeId={primeId} attachments={msg.attachments} />
                 )}
                 <div className={styles.msgMeta}>
@@ -168,6 +165,7 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
       )}
 
       {/* ---- Input Bar ---- */}
+      <MissionPresence primeId={primeId} />
       <div className={styles.chatInputBar}>
         <div className={styles.chatInputWrapper}>
           <textarea

@@ -30,6 +30,7 @@ export const CORTEX_SCHEMAS = {
       process_id:     { type: 'STRING' },
       job_to_be_done: { type: 'STRING' },
       stakes: { type: 'STRING', enum: ['routine', 'consequential', 'irreversible'] },
+      reads:  { type: 'ARRAY', items: { type: 'STRING' } },
     },
     required: ['classification', 'reasoning'],
   },
@@ -139,6 +140,14 @@ export const CORTEX_SCHEMAS = {
       }
     },
     required: ['checkpoints']
+  },
+  respond_compose: {
+    type: 'OBJECT',
+    properties: {
+      reasoning: { type: 'STRING' },
+      response:  { type: 'STRING' },
+    },
+    required: ['reasoning', 'response'],
   }
 };
 
@@ -347,6 +356,11 @@ export function createVertexText(config) {
       }
       return { valid: true };
     }
+    if (schemaName === 'respond_compose') {
+      if (typeof parsed.reasoning !== 'string' || !parsed.reasoning) return { valid: false, reason: 'reasoning missing' };
+      if (typeof parsed.response !== 'string' || !parsed.response) return { valid: false, reason: 'response missing' };
+      return { valid: true };
+    }
     if (schemaName === 'decide') {
       const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate', 'wait'];
       if (!allowed.includes(parsed.action)) return { valid: false, reason: `action missing or invalid: ${parsed.action}` };
@@ -458,6 +472,10 @@ export function createVertexText(config) {
         }
         if (schemaName === 'classify' && (parsed.classification || parsed.action)) {
           log('INFO', `enforceSchema fast-exit: valid JSON with classification`);
+          return parsed;
+        }
+        if (schemaName === 'respond_compose' && parsed.response) {
+          log('INFO', `enforceSchema fast-exit: valid JSON with response`);
           return parsed;
         }
       }

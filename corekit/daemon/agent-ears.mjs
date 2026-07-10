@@ -278,36 +278,6 @@ async function markFirestoreConsumed(msg) {
   });
 }
 
-// ---- Firestore Poller for Fleet Dashboard Messages ----
-async function pollFirestoreDashboard() {
-  if (!PRIME_ID || !AGENT_HOSTNAME) return [];
-  const token = await getGceToken();
-  const body = { structuredQuery: { from: [{ collectionId: 'messages' }],
-    where: { fieldFilter: { field: { fieldPath: 'processed' }, op: 'EQUAL', value: { booleanValue: false } } },
-    limit: 50 } };
-  const parentPath = `primes/${PRIME_ID}/fleet/${AGENT_HOSTNAME}`;
-  const res = await fetch(`${FIRESTORE_URL}/${parentPath}:runQuery`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const data = await res.json();
-  if (!Array.isArray(data)) return [];
-  return data
-    .filter(d => { const f = d.document?.fields; return f?.text?.stringValue && f?.sender?.stringValue === 'admin'; })
-    .map(d => ({ text: d.document.fields.text.stringValue, id: d.document.name,
-      timestamp: d.document.fields.timestamp?.timestampValue || '',
-      metadata: { source: 'dashboard' } }))
-    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-}
-
-async function markFirestoreDashboardConsumed(msg) {
-  const token = await getGceToken();
-  await fetch(`https://firestore.googleapis.com/v1/${msg.id}?updateMask.fieldPaths=processed`, {
-    method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fields: { processed: { booleanValue: true } } })
-  });
-}
-
 // ---- GChat Poller (Fleet) ----
 let _gchatSpaces = [];
 let _gchatLastDiscovery = 0;
@@ -415,6 +385,52 @@ function buildContextualMessage(targetMsg, priorMsgs) {
   return composite;
 }
 
+function buildThreadConversation(targetMsg, pageMsgs) {
+  const cfg = CONTRACTS.conversation || {};
+  const maxTurns = cfg.max_turns || 12;
+  const perTurnChars = cfg.per_turn_chars || 600;
+  const budgetChars = cfg.budget_chars || 6000;
+
+  // Find all messages in pageMsgs that belong to the same thread as targetMsg, sorted oldest-first
+  const threadMsgs = pageMsgs
+    .filter(m => m.thread?.name && m.thread.name === targetMsg.thread?.name)
+    .filter(m => m.createTime <= targetMsg.createTime)
+    .slice(-maxTurns);
+
+  const turns = threadMsgs.map(m => {
+    const senderEmail = m.sender?.email || '';
+    const senderDisplayName = m.sender?.displayName || '';
+    const isAgent = (_agentUserId && m.sender?.name === _agentUserId) ||
+                    (process.env.AGENT_DISPLAY_NAME && senderDisplayName === process.env.AGENT_DISPLAY_NAME);
+    const role = isAgent ? 'prime' : 'admin';
+    const text = (m.text || m.argumentText || '').trim();
+    return {
+      role,
+      text: text.substring(0, perTurnChars) + (text.length > perTurnChars ? ' […trimmed]' : ''),
+      ts: m.createTime || '',
+    };
+  });
+
+  if (turns.length === 0) return null;
+
+  const render = ts => ts.map(t => `[${t.role}${t.ts ? ' ' + t.ts.substring(0, 16) : ''}] ${t.text}`).join('\n');
+  let kept = turns;
+  while (kept.length > 1 && render(kept).length > budgetChars) {
+    kept = kept.slice(1);
+  }
+
+  const lastAdmin = [...kept].reverse().find(t => t.role === 'admin') || null;
+  const lastPrime = [...kept].reverse().find(t => t.role === 'prime') || null;
+
+  return {
+    block: `## Conversation (most recent ${kept.length} turns, oldest first)\n${render(kept)}`,
+    turns: kept,
+    last_admin_text: lastAdmin?.text || null,
+    last_prime_text: lastPrime?.text || null,
+    cue_text: kept.slice(-4).map(t => t.text).join(' '),
+  };
+}
+
 async function pollGChat() {
   await discoverSpaces();
   if (_gchatSpaces.length === 0) return [];
@@ -511,11 +527,14 @@ async function pollGChat() {
           const composite = buildContextualMessage(msg, priorMsgs);
 
           const threadName = msg.thread?.name || null;
+          const convoCtx = buildThreadConversation(msg, pageMsgs);
+
           messages.push({
             text: composite,
             rawText: text,
             id: msg.name,
             timestamp: ct,
+            conversation_ctx: convoCtx,
             metadata: {
               space,
               thread: threadName,
@@ -720,9 +739,7 @@ async function main() {
       // Poll for messages
       let messages;
       if (CHANNEL === 'gchat') {
-        const gchatMsgs = await pollGChat();
-        const dashMsgs = await pollFirestoreDashboard();
-        messages = [...gchatMsgs, ...dashMsgs];
+        messages = await pollGChat();
       } else {
         messages = await pollFirestore();
       }
@@ -739,8 +756,7 @@ async function main() {
         // Dedup
         if (recentMessages.has(dedupKey)) {
           log('Dedup — skipping', { text: msg.text.slice(0, 60) });
-          if (msg.metadata?.source === 'dashboard') await markFirestoreDashboardConsumed(msg);
-          else if (CHANNEL === 'gchat') markGChatConsumed(msg);
+          if (CHANNEL === 'gchat') markGChatConsumed(msg);
           else await markFirestoreConsumed(msg);
           continue;
         }
@@ -750,8 +766,7 @@ async function main() {
         const lastTime = lastSeen.get(sender) || 0;
         if (now - lastTime < COOLDOWN_MS) {
           log('Cooldown — skipping', { sender, text: msg.text.slice(0, 60) });
-          if (msg.metadata?.source === 'dashboard') await markFirestoreDashboardConsumed(msg);
-          else if (CHANNEL === 'gchat') markGChatConsumed(msg);
+          if (CHANNEL === 'gchat') markGChatConsumed(msg);
           else await markFirestoreConsumed(msg);
           continue;
         }
@@ -760,8 +775,7 @@ async function main() {
         lastSeen.set(sender, now);
 
         // Mark consumed IMMEDIATELY
-        if (msg.metadata?.source === 'dashboard') await markFirestoreDashboardConsumed(msg);
-        else if (CHANNEL === 'gchat') markGChatConsumed(msg);
+        if (CHANNEL === 'gchat') markGChatConsumed(msg);
         else await markFirestoreConsumed(msg);
 
         const taskId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -815,6 +829,7 @@ async function main() {
           id: { stringValue: intakeId },
           text: { stringValue: cleanedText },
           source: { stringValue: msg.metadata?.source === 'dashboard' ? 'dashboard' : CHANNEL },
+          ...(msg.conversation_ctx ? { conversation_ctx: { stringValue: JSON.stringify(msg.conversation_ctx) } } : {}),
           source_meta: { mapValue: { fields: {
             taskId: { stringValue: taskId },
             agentEmail: { stringValue: AGENT_USER_EMAIL },

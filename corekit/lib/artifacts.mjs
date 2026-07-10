@@ -309,13 +309,17 @@ export function createArtifactManager(deps) {
       // Dashboard GCS attachment upload (CP4)
       if (envelope.source_channel === 'dashboard' && changedPaths && changedPaths.length > 0) {
         try {
+          const MAX_EXPORT_FILES = 20;
+          const exportPaths = changedPaths.slice(0, MAX_EXPORT_FILES).map(p => `${sharedDir}/${p}`);
+          if (changedPaths.length > MAX_EXPORT_FILES) {
+            log('WARN', `Attachment export capped at ${MAX_EXPORT_FILES} of ${changedPaths.length} changed files`);
+          }
           const { uploadArtifacts } = await import('./artifact-share.mjs');
-          const absPaths = changedPaths.map(p => `${sharedDir}/${p}`);
-          const attachments = await uploadArtifacts(absPaths, { log });
+          const attachments = await uploadArtifacts(exportPaths, { scope: `missions/${envelope.id}`, log });
           if (attachments && attachments.length > 0) {
             envelope.context = envelope.context || {};
             envelope.context.attachments_export = attachments;
-            log('INFO', `Uploaded ${attachments.length} attachments for dashboard message: ${JSON.stringify(attachments)}`);
+            log('INFO', `Uploaded ${attachments.length} attachment(s) for dashboard delivery`);
           }
         } catch (uploadErr) {
           log('WARN', `Dashboard attachments upload failed: ${uploadErr.message}`);

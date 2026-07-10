@@ -10,6 +10,7 @@ import { AgentProcesses } from "@/components/agent/AgentProcesses";
 import { ContractsViewer } from "@/components/agent/ContractsViewer";
 import { CostDashboard } from "@/components/agent/CostDashboard";
 import { ChatPanel } from "@/components/ChatPanel";
+import { FleetCommsReadOnly } from "@/components/FleetCommsReadOnly";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
 import { ApprovalQueue } from "@/components/work/ApprovalQueue";
 import { PersonaPanel } from "@/components/agent/PersonaPanel";
@@ -27,7 +28,7 @@ const TABS = [
   { key: "plans", label: "Plans", icon: "🗺️" },
   { key: "processes", label: "Processes", icon: "⚙️" },
   { key: "memory", label: "Memory", icon: "💾" },
-  { key: "chat", label: "Chat", icon: "💬" },
+  { key: "chat", label: "Comms", icon: "💬" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -222,16 +223,12 @@ export default function AgentDeepDivePage({
           <AgentWorkPanel primeId={id} agentFilter={agent} />
         )}
 
-        {/* Chat */}
+        {/* Chat / Comms */}
         {activeTab === "chat" && (
           <div className={styles.chatTabContent}>
-            <ChatPanel
+            <FleetCommsReadOnly
               primeId={id}
               agentName={agent}
-              entityName={agent}
-              entityStatus={agentData?.status}
-              specialty={agentData?.specialty}
-              inline
             />
           </div>
         )}

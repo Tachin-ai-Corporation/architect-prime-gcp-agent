@@ -140,3 +140,15 @@ Work products live in git repos backed by GCS bundles (objects) + Firestore CAS 
 ## Amendments
 
 The Canon changes the way code changes: by PR, reviewed and approved by a human CODEOWNER. An amendment PR must state the invariant being added, changed, or retired; the evidence that the change preserves the product's identity; and the migration consequences for existing invariant checks (cerebellum SOUL_APPEND, CI jobs). Agents — including the Product Architect — may propose amendments; only humans approve them. Absent an approved amendment, the Architect rejects any improvement proposal that conflicts with this document, and the conflict itself is recorded as a learning.
+
+### C-25 · Dashboard deliveries may carry structured attachments
+Attachments (name, size, object path) exported at mission publish from the tenant
+artifact store extend the delivery payload; they never change the delivery path.
+The mouth remains the single outbound surface, and the dashboard streams objects
+through an authenticated, prime-scoped route — never public or signed URLs.
+
+### C-26 · Fleet dashboard-chat is read-only
+Live interactive chat for fleet agents has migrated entirely to direct Google Chat threads.
+The dashboard-chat POST endpoint is retired with a deterministic 405 error, and the fleet
+agent deep-dive tab renders historic communications as a read-only historic archive.
+

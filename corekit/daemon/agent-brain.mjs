@@ -1168,13 +1168,16 @@ function buildUserPrompt(mode, payload) {
       core_facts: payload.memory?.recalled || null,
       active_envelopes: payload.active_envelopes || [],
       recent_completed_missions: payload.recent_completed_missions || [],
+      respond_reads_available: payload.respond_reads_available || [],
       classification_guidance: {
         blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
         dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as "attach" to add follow-up context to the prior mission. Only create new_mission if the inbound is genuinely different work.',
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
         required_processes: 'CRITICAL: Projects may define required_processes — activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
-        conversational_turns: 'CRITICAL: If the message is a greeting, status check, simple question about the agent/fleet state, or any turn requiring zero system mutations or file edits, you MUST classify as "respond" and provide a complete, friendly, professional response in the "response" field of your output. Use the conversation_context to resolve pronouns (e.g. "do it again" or "what is candicejr doing?").',
+        conversation_grounding: 'When a conversation block is present, resolve pronouns, ellipsis, and references ("yes", "do that", "the second one", "same as before") against it before classifying. The most recent prime turn (last_prime_reply) is what the human is most likely replying to.',
+        respond_rules: 'Classify as "respond" ONLY when the turn is conversational or informational and fully answerable from the conversation, memory, active_envelopes, and recent_completed_missions already in this payload, or by triggering one or more whitelisted read tools listed in respond_reads_available. greetings, acknowledgments, status questions about visible work, questions answered by provided memory, clarifying answers. A respond performs NO state-mutating execution. If any whitelisted read tool in respond_reads_available is needed to answer, add its ID to the "reads" array; default "reads" to empty otherwise. Put the complete reply in "response" — if reads are requested, this response serves as a draft that will be synthesized against live tool results using respond_compose. If the turn requires running anything else, writing or mutating state, or doing complex work: it is not a respond. When in doubt, new_mission.',
+        input_answer_binding: 'If an active envelope is in needs_input or blocked and the new turn plausibly answers its question (check the conversation: the question is usually the last prime turn), classify as "continue" with the answer carried in instruction — never as a new_mission that restates the question.',
       },
     };
     classifyPayload.skill_index = SKILL_INDEX;
@@ -1289,6 +1292,18 @@ function buildUserPrompt(mode, payload) {
       };
     }
     return JSON.stringify(decidePayload);
+  }
+  if (mode === 'respond_compose') {
+    const composePayload = {
+      mode: 'respond_compose',
+      inbound: payload.inbound,
+      conversation_context: payload.conversation || null,
+      memory: payload.memory || {},
+      tool_grounding: payload.tool_grounding || '',
+      draft_response: payload.draft_response || '',
+      guidance: 'Combine the user prompt, conversation history, any retrieved memories, and the live tool results to compose a final, concise, accurate reply. Avoid any placeholder text or hallucinations. The reply should be natural and match the conversational tone.'
+    };
+    return JSON.stringify(composePayload);
   }
   return JSON.stringify(payload);
 }
@@ -1471,6 +1486,7 @@ async function recallMemory(query, context = {}) {
     // Build enriched query from multiple sources
     const queryParts = [query];
     if (context.last_prime_reply) queryParts.push(`Previous Assistant: ${context.last_prime_reply}`);
+    if (context.conversation_hint) queryParts.push(`Recent conversation: ${context.conversation_hint.substring(0, 800)}`);
     if (context.instruction) queryParts.push(`Task: ${context.instruction}`);
     if (context.context_summary) queryParts.push(`Context: ${context.context_summary}`);
     const enrichedQuery = queryParts.join('\n');
@@ -1531,9 +1547,10 @@ async function recallMemory(query, context = {}) {
     }
 
     if (context.tier === 'ambient') {
-      const candidateBlock = memoryParts.join('\n\n');
-      log('INFO', `Memory recall: ambient path returning deterministic Layers A+B (${candidateBlock.length} chars)`);
-      return { recalled: candidateBlock.substring(0, 4000) };
+      let ambientBlock = memoryParts.join('\n\n');
+      if (ambientBlock.length > 2500) ambientBlock = ambientBlock.substring(0, 2500) + '\n[...trimmed]';
+      log('INFO', `[TELEMETRY] recall_layers tier=ambient cues=${cues.length} chars=${ambientBlock.length}`);
+      return ambientBlock ? { recalled: ambientBlock } : {};
     }
 
     // ---- Layer C: Recent Work Digest (7 days) ----
@@ -2327,7 +2344,16 @@ async function processIntake(intake) {
 
   // ---- CP1: Assemble Conversation Context (B-32) ----
   let convoContext = null;
-  if (intake.source === 'dashboard') {
+  if (intake.conversation_ctx) {
+    try {
+      convoContext = JSON.parse(intake.conversation_ctx);
+      log('INFO', 'Using intake-provided conversation context');
+    } catch (e) {
+      log('WARN', `Failed to parse intake-provided conversation context: ${e.message}`);
+    }
+  }
+
+  if (!convoContext && intake.source === 'dashboard' && CONTRACTS.conversation?.enabled !== false) {
     convoContext = await assembleConversation({
       projectId: GCP_PROJECT,
       primeId: PRIME_ID,
@@ -2337,11 +2363,9 @@ async function processIntake(intake) {
     });
   }
 
-  let lastPrimeReply = null;
-  if (convoContext && convoContext.turns) {
-    const lastAssistant = [...convoContext.turns].reverse().find(t => t.role === 'assistant');
-    if (lastAssistant) lastPrimeReply = lastAssistant.text;
-  }
+  // conversation-context.mjs emits roles 'admin' | 'prime' and pre-computes the
+  // last prime turn — use it; never re-derive against role names that don't exist.
+  const lastPrimeReply = convoContext ? (convoContext.last_prime_text || null) : null;
 
   // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)
   const activeEnvelopes = await scanActiveEnvelopes();
@@ -2351,7 +2375,23 @@ async function processIntake(intake) {
   // Phase 3+: Dual memory recall
   // First recall: ambient context from raw inbound text (helps classify)
   // B-15: Ambient (pre-classify) recall is deterministic-only (Layers A+B, no LLM)
-  const ambientMemory = await recallMemory(intake.text, { tier: 'ambient', last_prime_reply: lastPrimeReply });
+  const ambientMemory = await recallMemory(intake.text, {
+    tier: 'ambient',
+    last_prime_reply: lastPrimeReply,
+    cues: extractCues([intake.text, convoContext?.cue_text || ''].filter(Boolean).join(' ')),
+  });
+
+  // Construct whitelisted respond reads available information
+  const respondReadsAvailable = [];
+  if (CONTRACTS.dispatch?.respond_reads_enabled && CONTRACTS.dispatch?.respond_reads) {
+    const whitelisted = CONTRACTS.dispatch.respond_reads;
+    if (whitelisted.includes('fleet_status')) {
+      respondReadsAvailable.push({ id: 'fleet_status', description: 'Query Firestore and return a formatted snapshot of current fleet members and their status/heartbeat.' });
+    }
+    if (whitelisted.includes('recent_work')) {
+      respondReadsAvailable.push({ id: 'recent_work', description: 'Query Firestore and return a formatted list of the 5 most recently updated work envelopes.' });
+    }
+  }
 
   // Call Cortex in classify mode (with ambient memory + recent missions for dedup)
   const recentMissionsForClassify = await scanRecentMissions(5);
@@ -2366,6 +2406,7 @@ async function processIntake(intake) {
     memory: ambientMemory,
     active_envelopes: activeEnvelopes,
     recent_completed_missions: recentMissionsForClassify,
+    respond_reads_available: respondReadsAvailable,
   });
 
   if (decision.error) {
@@ -2379,7 +2420,7 @@ async function processIntake(intake) {
   log('INFO', `Classify result: ${decision.classification || decision.action}`);
 
   // Normalize classification
-  const classification = decision.classification || 'new_mission';
+  let classification = decision.classification || 'new_mission';
 
   // Second recall: enriched with classify results (instruction, context_summary)
   // This gives processEnvelope much better memory context for the decide loop
@@ -2391,6 +2432,8 @@ async function processIntake(intake) {
     const enrichedMemory = await recallMemory(intake.text, {
       instruction: decision.instruction,
       context_summary: decision.context_summary,
+      cues: extractCues([intake.text, decision.instruction || '', convoContext?.cue_text || ''].filter(Boolean).join(' ')),
+      conversation_hint: convoContext?.cue_text || null,
     });
     // Merge: prefer enriched recall if it found context
     if (enrichedMemory.recalled && enrichedMemory.recalled !== ambientMemory.recalled) {
@@ -2452,7 +2495,7 @@ async function processIntake(intake) {
       log('WARN', `Dedup guard: suppressing new_mission â€” similar active envelope ${duplicate.id} exists. Forcing attach.`);
       decision.classification = 'attach';
       decision.attach_to = duplicate.id;
-      await handleAttach(intake, decision, memoryContext, pendingAckText);
+      await handleAttach(intake, decision, memoryContext, pendingAckText, convoContext);
       return;
     }
   }
@@ -2481,13 +2524,13 @@ async function processIntake(intake) {
 
   // Phase 3: Handle attach classification (follow-up to existing work)
   if (classification === 'attach') {
-    await handleAttach(intake, decision, memoryContext, pendingAckText);
+    await handleAttach(intake, decision, memoryContext, pendingAckText, convoContext);
     return;
   }
 
   // Handle continue classification (resume a blocked mission)
   if (classification === 'continue') {
-    await handleContinue(intake, decision, memoryContext, pendingAckText);
+    await handleContinue(intake, decision, memoryContext, pendingAckText, convoContext);
     return;
   }
 
@@ -2499,8 +2542,83 @@ async function processIntake(intake) {
 
   // Handle respond classification (conversational fast-path)
   if (classification === 'respond') {
-    await handleRespond(intake, decision, memoryContext);
-    return;
+    let finalResponse = toStr(decision.response || '').trim();
+    const readsRequested = decision.reads || [];
+
+    try {
+      if (CONTRACTS.dispatch?.respond_reads_enabled && Array.isArray(readsRequested) && readsRequested.length > 0) {
+        log('INFO', `Respond-reads requested: ${JSON.stringify(readsRequested)}`);
+        const whitelisted = CONTRACTS.dispatch.respond_reads || [];
+        const toolOutputs = [];
+
+        // DB queries and synthesis must run with a tight 10s timeout
+        const readPromise = (async () => {
+          for (const tool of readsRequested) {
+            if (whitelisted.includes(tool)) {
+              log('INFO', `Executing whitelisted respond-read helper: ${tool}`);
+              let outputText = '';
+              if (tool === 'fleet_status') {
+                outputText = await executeFleetStatus();
+              } else if (tool === 'recent_work') {
+                outputText = await executeRecentWork();
+              }
+              toolOutputs.push(`[TOOL RESULT: ${tool}]\n${outputText}`);
+            } else {
+              log('WARN', `Requested respond-read helper is not whitelisted: ${tool}`);
+            }
+          }
+        })();
+
+        // Race the database reads against a 10-second timeout
+        await Promise.race([
+          readPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Database read timed out (10s)')), 10000))
+        ]);
+
+        if (toolOutputs.length > 0) {
+          log('INFO', `Executing follow-up Cortex respond_compose with tool outputs`);
+          const compositeToolText = toolOutputs.join('\n\n');
+          
+          // Race the synthesis call with a 10-second timeout
+          const composePromise = callCortex('respond_compose', {
+            inbound: {
+              text: intake.text,
+              source: intake.source,
+              source_meta: intake.source_meta || {},
+            },
+            conversation: convoContext ? convoContext.block : null,
+            last_prime_reply: lastPrimeReply,
+            memory: ambientMemory,
+            active_envelopes: activeEnvelopes,
+            recent_completed_missions: recentMissionsForClassify,
+            tool_grounding: compositeToolText,
+            draft_response: finalResponse,
+          });
+
+          const composeDecision = await Promise.race([
+            composePromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Cortex respond_compose timed out (10s)')), 10000))
+          ]);
+
+          if (composeDecision.error) {
+            throw new Error(`respond_compose failed: ${JSON.stringify(composeDecision.error)}`);
+          } else {
+            finalResponse = toStr(composeDecision.response || '').trim();
+            log('INFO', `Respond_compose generated finalized draft response: "${finalResponse.substring(0, 100)}..."`);
+          }
+        }
+      }
+
+      if (finalResponse && CONTRACTS.dispatch?.respond_enabled !== false) {
+        await handleRespond(intake, decision, finalResponse, convoContext);
+        return;
+      }
+      log('WARN', `respond ${finalResponse ? 'disabled by dispatch.respond_enabled' : 'without response text'} — demoting to new_mission`);
+      classification = 'new_mission';
+    } catch (err) {
+      log('WARN', `Respond-reads execution or synthesis failed: ${err.message} — demoting to new_mission`);
+      classification = 'new_mission';
+    }
   }
 
   const envelopeId = generateId('w');
@@ -2563,39 +2681,13 @@ async function processIntake(intake) {
   log('INFO', `Mission ${envelopeId} queued for processing (work queue discipline)`);
 }
 
-// ---- Helper: find most recently active non-terminal mission ----
-async function findMostRecentActiveMission() {
-  try {
-    const ownerEmail = AGENT_EMAIL || AGENT_ID;
-    const existing = await firestoreQuery('work', [
-      { field: 'owner', op: 'EQUAL', value: { stringValue: ownerEmail } },
-      { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
-    ]);
-    // Filter non-terminal statuses
-    const nonTerminal = existing.filter(e => ['active', 'blocked', 'needs_input', 'waiting', 'pending', 'queued'].includes(e.status));
-    if (nonTerminal.length === 0) return null;
-    // Sort descending by updated_at
-    nonTerminal.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
-    return nonTerminal[0].id;
-  } catch (e) {
-    log('WARN', `findMostRecentActiveMission query failed: ${e.message}`);
-    return null;
-  }
-}
-
 // ---- Attach handler: follow-up to existing work ----
-async function handleAttach(intake, decision, memoryContext, pendingAckText = null) {
+async function handleAttach(intake, decision, memoryContext, pendingAckText = null, convoContext = null) {
   let targetId = decision.attach_to || decision.attach_to_mission || decision.continue_mission;
-  if (!targetId) {
-    targetId = await findMostRecentActiveMission();
-    if (targetId) {
-      log('INFO', `Attach missing attach_to, auto-bound to most recent active mission: ${targetId}`);
-    }
-  }
-  log('INFO', `Attach: intake ${intake.id} → target ${targetId}`);
+  log('INFO', `Attach: intake ${intake.id} → target ${targetId || 'NONE'}`);
 
   if (!targetId) {
-    log('WARN', `Attach missing attach_to field and no active mission found, treating as new_mission`);
+    log('WARN', `Attach missing attach_to field, reverting to new_mission fallback`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
@@ -2732,18 +2824,12 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
 }
 
 // ---- Continue handler: resume a blocked mission ----
-async function handleContinue(intake, decision, memoryContext, pendingAckText = null) {
+async function handleContinue(intake, decision, memoryContext, pendingAckText = null, convoContext = null) {
   let targetId = decision.continue_mission || decision.continue_envelope || decision.mission_id;
-  if (!targetId) {
-    targetId = await findMostRecentActiveMission();
-    if (targetId) {
-      log('INFO', `Continue missing continue_mission, auto-bound to most recent active mission: ${targetId}`);
-    }
-  }
-  log('INFO', `Continue: intake ${intake.id} → resuming blocked mission ${targetId}`);
+  log('INFO', `Continue: intake ${intake.id} → resuming blocked mission ${targetId || 'NONE'}`);
 
   if (!targetId) {
-    log('WARN', `Continue missing continue_mission field and no active mission found, treating as new_mission`);
+    log('WARN', `Continue missing continue_mission field, reverting to new_mission fallback`);
     log('WARN', `[TELEMETRY] classify_cascade: continue→missing_target→new_mission`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
@@ -2913,10 +2999,74 @@ async function cascadeCancelChildren(parentId) {
   if (cancelCount > 0) log('INFO', `Cascade-cancelled ${cancelCount} children of ${parentId}`);
 }
 
+// ---- Whitelisted Respond reads (CP3) ----
+// Local in-process DB queries executing inside the daemon without spawning child processes.
+async function executeFleetStatus() {
+  try {
+    const agents = await firestoreQuery('fleet', []);
+    if (!agents || agents.length === 0) {
+      return "No fleet agents found.";
+    }
+    const lines = ["=== Fleet Status Snapshot ==="];
+    for (const a of agents) {
+      const email = a.email || 'unknown';
+      const status = a.status || 'unknown';
+      const specialty = a.specialty || 'unknown';
+      const lastSeen = a.lastSeen || a.updated_at || 'never';
+      lines.push(`- Agent: ${a.name || 'unknown'} (${specialty})`);
+      lines.push(`  Email: ${email}`);
+      lines.push(`  Status: ${status}`);
+      lines.push(`  Last Active: ${lastSeen}`);
+    }
+    return lines.join('\n');
+  } catch (e) {
+    return `Error retrieving fleet status: ${e.message}`;
+  }
+}
+
+async function executeRecentWork() {
+  try {
+    const recent = await firestoreQuery('work', [
+      { field: 'owner', op: 'EQUAL', value: { stringValue: AGENT_EMAIL || AGENT_ID } },
+    ]);
+    const sorted = recent
+      .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+      .slice(0, 5);
+
+    if (sorted.length === 0) {
+      return "No recent work envelopes found.";
+    }
+
+    const lines = ["=== Recent Work Envelopes (Last 5) ==="];
+    for (const e of sorted) {
+      const type = e.type || 'unknown';
+      const status = e.status || 'unknown';
+      const title = e.title || 'Untitled';
+      const updated = e.updated_at || 'unknown';
+      lines.push(`- [${type}] ${e.id}: "${title}"`);
+      lines.push(`  Status: ${status}`);
+      lines.push(`  Updated: ${updated}`);
+    }
+    return lines.join('\n');
+  } catch (e) {
+    return `Error retrieving recent work: ${e.message}`;
+  }
+}
+
 // ---- Respond handler: fast-path conversational turns ----
-async function handleRespond(intake, decision, memoryContext) {
+async function handleRespond(intake, decision, responseText, convoContext) {
   const envelopeId = generateId('w');
-  const responseText = decision.response || 'Hello, how can I assist you?';
+
+  const deliveryAddress =
+    intake.source_meta?.thread_ts ||
+    convoContext?.delivery_address ||
+    intake.source_meta?.channel_id ||
+    null;
+
+  let missionTitle = await generateTitle(intake.text, 'mission');
+  if (!missionTitle || missionTitle === 'Untitled') {
+    missionTitle = `Respond: ${intake.text.substring(0, 40)}`;
+  }
 
   const envelope = {
     id: envelopeId,
@@ -2925,7 +3075,7 @@ async function handleRespond(intake, decision, memoryContext) {
     owner: AGENT_EMAIL || AGENT_ID,
     status: 'complete',
     intent: 'respond',
-    title: 'Respond to user inquiry',
+    title: missionTitle,
     instruction: decision.instruction || intake.text,
     accept_criteria: null,
     context_summary: null,
@@ -2945,8 +3095,10 @@ async function handleRespond(intake, decision, memoryContext) {
     completed_at: now(),
     updated_at: now(),
     iteration: 1,
-    memory_context: memoryContext,
+    memory_context: null, // Omit ambient from DB to save space on turns
+    conversation_context: convoContext?.block || null,
     delivery_status: 'pending',
+    delivery_address: deliveryAddress,
   };
 
   await firestoreWrite('work', envelopeId, envelope);
@@ -2956,8 +3108,9 @@ async function handleRespond(intake, decision, memoryContext) {
   // Update intake status so it doesn't get processed again
   await firestoreWrite('intake', intake.id, {
     ...intake,
-    status: 'claimed',
-    claimed_at: now(),
+    status: 'consumed',
+    consumed_by: envelopeId,
+    consumed_at: now(),
   });
 }
 

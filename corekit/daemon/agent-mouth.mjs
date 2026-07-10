@@ -453,7 +453,7 @@ async function deliver(text, addr, mentions = [], attachments = []) {
 // ================================================================
 // FINAL RESPONSE — LLM CLASSIFY + DELIVER
 // ================================================================
-async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = [], attachments = []) {
+async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = [], attachments = [], convoTail = '') {
   const task = readTaskJson();
   const question = overrideQuestion || task?.text || turn.originalQuestion || '';
 
@@ -478,6 +478,9 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
 
     // Build rich input with conversation context
     const parts = [];
+    if (convoTail) {
+      parts.push(`RECENT CONVERSATION (historical turns for tone and topic context):\n${convoTail}`);
+    }
     if (question) parts.push(`CONTEXT (what the human asked or what triggered this):\n${question}`);
     parts.push(`BRAIN OUTPUT:\n${rawText}`);
     const input = parts.join('\n\n');
@@ -789,12 +792,37 @@ async function pollBrainV3Envelopes() {
 
         const attachments = decodeAttachmentsExport(f.context);
 
+        // CP4: Extract thread-scoped conversation history from envelope metadata
+        const convoCtxString = sourceMeta?.conversation_ctx?.stringValue;
+        let convoBlock = '';
+        if (convoCtxString) {
+          try {
+            const parsedConvo = JSON.parse(convoCtxString);
+            if (parsedConvo && typeof parsedConvo.block === 'string') {
+              convoBlock = parsedConvo.block.trim();
+            }
+          } catch (e) {
+            log('WARN', `Failed to parse conversation_ctx string: ${e.message}`);
+          }
+        }
+
+        const voicingEnabled = CONTRACTS.conversation?.voicing_enabled !== false;
+        const voicingTailChars = CONTRACTS.conversation?.voicing_tail_chars || 1500;
+        let convoTail = '';
+        if (voicingEnabled && convoBlock) {
+          if (convoBlock.length > voicingTailChars) {
+            convoTail = convoBlock.substring(convoBlock.length - voicingTailChars);
+          } else {
+            convoTail = convoBlock;
+          }
+        }
+
         if (deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result')) {
           await deliverDelegation(output, addr, deliveryTarget);
           log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
         } else {
           // Standard voicing pipeline for non-delegation envelopes
-          await classifyAndDeliver(contextHint + output, envQuestion, addr, mentions, attachments);
+          await classifyAndDeliver(contextHint + output, envQuestion, addr, mentions, attachments, convoTail);
           log('Delivered envelope output', { envId, status: envStatus, intent: envType });
         }
 

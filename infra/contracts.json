@@ -45,6 +45,8 @@
     "checkpoint_resume_enabled": true,
     "claim_stale_ms": 600000,
     "respond_enabled": true,
+    "respond_reads_enabled": true,
+    "respond_reads": ["fleet_status", "recent_work"],
     "evidence_floor_exclude_skills": [
       "fleet-fire", "fleet-hire", "fleet-upgrade", "fleet-verify",
       "fleet-status", "fleet-deploy"
@@ -71,7 +73,7 @@
     "gchat_poll_ms": 5000,
     "dedup_window_ms": 300000,
     "cooldown_ms": 2000,
-    "gchat_context_messages": 5,
+    "gchat_context_messages": 0,
     "max_pages_per_poll": 5,
     "new_space_seed": "now",
     "mention_match": "annotation",
@@ -99,9 +101,12 @@
     "reply_in_thread": true
   },
   "conversation": {
+    "enabled": true,
     "max_turns": 12,
     "budget_chars": 6000,
-    "per_turn_chars": 600
+    "per_turn_chars": 600,
+    "voicing_enabled": true,
+    "voicing_tail_chars": 1500
   },
   "projects": {
     "context_max_tokens": 2000,

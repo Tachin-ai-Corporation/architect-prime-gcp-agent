@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fleetMessagesCol } from "@/lib/firestore";
-import { FieldValue } from "@google-cloud/firestore";
 import { requireAuth } from "@/lib/require-auth";
 
 interface RouteContext {
@@ -42,33 +41,8 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
  * The agent-ears service on the fleet VM polls for unprocessed admin messages.
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
-  try {
-    const { id, agent } = await ctx.params;
-    const auth = await requireAuth();
-    if (!auth.authenticated) return auth.response;
-
-    const body = await req.json();
-    const { text } = body;
-
-    if (!text || typeof text !== "string") {
-      return NextResponse.json({ error: "text is required" }, { status: 400 });
-    }
-
-    const msgRef = fleetMessagesCol(id, agent).doc();
-    await msgRef.set({
-      sender: "admin",
-      text: text.trim(),
-      timestamp: FieldValue.serverTimestamp(),
-      processed: false,
-    });
-
-    return NextResponse.json(
-      { id: msgRef.id, sender: "admin", text: text.trim() },
-      { status: 201 }
-    );
-  } catch (err) {
-    const { id, agent } = await ctx.params;
-    console.error(`[api/primes/${id}/fleet/${agent}/messages] POST error:`, err);
-    return NextResponse.json({ error: "Failed to send message" }, { status: 500 });
-  }
+  return NextResponse.json(
+    { error: "Direct dashboard chat is retired for fleet agents. Please use GChat." },
+    { status: 405 }
+  );
 }

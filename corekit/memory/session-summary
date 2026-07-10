@@ -14,11 +14,13 @@ set -euo pipefail
 
 HOURS=24
 LIMIT=20
+EXCLUDE_INTENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --hours) HOURS="$2"; shift 2 ;;
     --limit) LIMIT="$2"; shift 2 ;;
+    --exclude-intent) EXCLUDE_INTENT="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -91,6 +93,7 @@ if not isinstance(results, list):
 
 # Filter by cutoff and sort client-side
 cutoff = "'"${SINCE_TIMESTAMP}"'"
+exclude_intent = "'"${EXCLUDE_INTENT}"'"
 filtered = []
 for entry in results:
     doc = entry.get("document")
@@ -111,6 +114,11 @@ count = 0
 for entry in filtered:
     doc = entry["document"]
     fields = doc.get("fields", {})
+    intent = fields.get("intent", {}).get("stringValue", "")
+    
+    if exclude_intent and intent == exclude_intent:
+        continue
+        
     instruction = fields.get("instruction", {}).get("stringValue", "?")
     output = fields.get("output", {}).get("stringValue", "")
     completed = fields.get("completed_at", {}).get("stringValue", "?")
@@ -118,12 +126,16 @@ for entry in filtered:
 
     count += 1
     display = title if title else instruction[:200]
+    if intent == "respond":
+        display = f"[chat] {display}"
+
     print(f"--- Mission {count}: {display} ---")
     print(f"  Completed: {completed}")
     if instruction:
         print(f"  Request: {instruction[:300]}")
     if output:
-        print(f"  Result: {output[:300]}")
+        limit_chars = 100 if intent == "respond" else 300
+        print(f"  Result: {output[:limit_chars]}")
     print()
 
 if count == 0:
