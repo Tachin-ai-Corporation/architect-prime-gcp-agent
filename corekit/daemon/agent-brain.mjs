@@ -2477,53 +2477,6 @@ async function processIntake(intake) {
     }
   }
 
-  // ---- Hard dedup guard: prevent duplicate active missions ----
-  if (classification === 'new_mission' && activeEnvelopes.length > 0) {
-    const newInst = toStr(decision.instruction || intake.text).toLowerCase().substring(0, 120);
-    const duplicate = activeEnvelopes.find(ae => {
-      const aeInst = (ae.instruction || '').toLowerCase();
-      // Simple similarity: shared prefix of meaningful length
-      const minLen = Math.min(newInst.length, aeInst.length);
-      if (minLen < 20) return false;
-      let matched = 0;
-      const words1 = newInst.split(/\s+/);
-      const words2 = aeInst.split(/\s+/);
-      for (const w of words1) {
-        if (w.length > 3 && words2.includes(w)) matched++;
-      }
-      return matched >= 3 && matched / words1.length > 0.4;
-    });
-    if (duplicate) {
-      log('WARN', `Dedup guard: suppressing new_mission â€” similar active envelope ${duplicate.id} exists. Forcing attach.`);
-      decision.classification = 'attach';
-      decision.attach_to = duplicate.id;
-      await handleAttach(intake, decision, memoryContext, pendingAckText, convoContext);
-      return;
-    }
-  }
-
-  // Hard dedup guard #2: prevent duplicate of recently completed missions
-  if (classification === 'new_mission' && recentMissionsForClassify.length > 0) {
-    const newInstC = toStr(decision.instruction || intake.text).toLowerCase().substring(0, 120);
-    const completedDup = recentMissionsForClassify.find(rm => {
-      const rmInst = (rm.instruction || '').toLowerCase();
-      const minLen = Math.min(newInstC.length, rmInst.length);
-      if (minLen < 20) return false;
-      const words1 = newInstC.split(/\s+/);
-      const words2 = rmInst.split(/\s+/);
-      let matched = 0;
-      for (const w of words1) {
-        if (w.length > 3 && words2.includes(w)) matched++;
-      }
-      return matched >= 3 && matched / words1.length > 0.4;
-    });
-    if (completedDup) {
-      log('WARN', `Dedup guard: suppressing new_mission — similar completed mission ${completedDup.id} exists (completed ${completedDup.completed_at}). Skipping intake.`);
-      await firestoreWrite('intake', intake.id, { ...intake, status: 'deduped', deduped_against: completedDup.id, deduped_at: now() });
-      return;
-    }
-  }
-
   // Phase 3: Handle attach classification (follow-up to existing work)
   if (classification === 'attach') {
     await handleAttach(intake, decision, memoryContext, pendingAckText, convoContext);
