@@ -241,7 +241,7 @@ export async function ensureSpaceMember(spaceName, userEmail, token) {
  * @returns {Promise<boolean>} true if delivered successfully
  */
 export async function deliverToAddress(addr, text, opts = {}) {
-  const { token, deliveryTarget, replyInThread = true, log = () => {}, mentions = [] } = opts;
+  const { token, deliveryTarget, replyInThread = true, log = () => {}, mentions = [], attachments = [] } = opts;
 
   if (addr.channel === 'gchat') {
     if (!addr.space) {
@@ -300,20 +300,36 @@ export async function deliverToAddress(addr, text, opts = {}) {
       ? `${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${addr.fleet_agent}/messages`
       : `${FIRESTORE_URL}/primes/${PRIME_ID}/messages`;
 
+    const messageFields = {
+      text: { stringValue: text },
+      sender: { stringValue: AGENT_HOSTNAME || 'agent' },
+      timestamp: { timestampValue: new Date().toISOString() },
+      processed: { booleanValue: true },
+    };
+
+    if (attachments && attachments.length > 0) {
+      messageFields.attachments = {
+        arrayValue: {
+          values: attachments.map(att => ({
+            mapValue: {
+              fields: {
+                name: { stringValue: att.name || '' },
+                size: { integerValue: String(att.size || 0) },
+                gcsPath: { stringValue: att.gcsPath || '' },
+              }
+            }
+          }))
+        }
+      };
+    }
+
     const res = await fetch(basePath, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        fields: {
-          text: { stringValue: text },
-          sender: { stringValue: AGENT_HOSTNAME || 'agent' },
-          timestamp: { timestampValue: new Date().toISOString() },
-          processed: { booleanValue: true },
-        },
-      }),
+      body: JSON.stringify({ fields: messageFields }),
     });
     return res.ok;
   }

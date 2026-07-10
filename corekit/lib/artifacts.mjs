@@ -306,6 +306,22 @@ export function createArtifactManager(deps) {
 
       const gitManifest = await buildManifest(repoId, 'main', changedPaths, { summary: title });
 
+      // Dashboard GCS attachment upload (CP4)
+      if (envelope.source_channel === 'dashboard' && changedPaths && changedPaths.length > 0) {
+        try {
+          const { uploadArtifacts } = await import('./artifact-share.mjs');
+          const absPaths = changedPaths.map(p => `${sharedDir}/${p}`);
+          const attachments = await uploadArtifacts(absPaths, { log });
+          if (attachments && attachments.length > 0) {
+            envelope.context = envelope.context || {};
+            envelope.context.attachments_export = attachments;
+            log('INFO', `Uploaded ${attachments.length} attachments for dashboard message: ${JSON.stringify(attachments)}`);
+          }
+        } catch (uploadErr) {
+          log('WARN', `Dashboard attachments upload failed: ${uploadErr.message}`);
+        }
+      }
+
       // Set the canonical artifact manifest on envelope context (A5)
       if (gitManifest) {
         envelope.context = envelope.context || {};

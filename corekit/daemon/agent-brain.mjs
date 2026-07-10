@@ -48,6 +48,7 @@ import { makeAddress } from '../corekit/lib/channel.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
+import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
@@ -1148,7 +1149,7 @@ function buildSystemPrompt(mode, payload) {
       step_count: (p.steps || []).length,
       parameters: Object.keys(p.parameters || {}),
     }));
-    parts.push(`[PROCESS REGISTRY â€” reusable playbooks]\nProcesses are stored, versioned playbooks that define step-by-step workflows. Use the "follow_process" action when work matches an existing process. Available:\n${JSON.stringify(processSummary, null, 2)}`);
+    parts.push(`[PROCESS REGISTRY — reusable playbooks]\nProcesses are stored, versioned playbooks that define step-by-step workflows. Use the "follow_process" action when work matches an existing process. Available:\n${JSON.stringify(processSummary, null, 2)}`);
   }
 
   // 6. Mode and JSON constraint
@@ -1162,16 +1163,18 @@ function buildUserPrompt(mode, payload) {
     const classifyPayload = {
       mode: 'classify',
       inbound: payload.inbound,
+      conversation_context: payload.conversation || null,
       memory: payload.memory || {},
       core_facts: payload.memory?.recalled || null,
       active_envelopes: payload.active_envelopes || [],
       recent_completed_missions: payload.recent_completed_missions || [],
       classification_guidance: {
-        blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions â€” use "continue" instead.',
+        blocked_missions: 'If a blocked mission exists and the user message addresses the blocker or asks to retry/fix/continue the work, classify as "continue" with continue_mission set to the mission ID. Do NOT classify as "attach" for blocked missions — use "continue" instead.',
         attach_vs_continue: '"attach" = follow-up info or new instruction for active/waiting work. "continue" = resume blocked/stalled work or retry after failure.',
         dedup_prevention: 'CRITICAL: If a recent_completed_mission has a very similar instruction to the new inbound message (same goal/action), do NOT create a new_mission. Instead classify as "attach" to add follow-up context to the prior mission. Only create new_mission if the inbound is genuinely different work.',
         project_identification: 'If the work matches a known project from the project_registry, set project_id in your response. Not every piece of work belongs to a project.',
-        required_processes: 'CRITICAL: Projects may define required_processes â€” activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
+        required_processes: 'CRITICAL: Projects may define required_processes — activities that MUST go through a specific process. When classifying, if any part of the instruction matches a required_process description on a project, you MUST set project_id to that project. On the decide step, the required process will be surfaced for you to follow.',
+        conversational_turns: 'CRITICAL: If the message is a greeting, status check, simple question about the agent/fleet state, or any turn requiring zero system mutations or file edits, you MUST classify as "respond" and provide a complete, friendly, professional response in the "response" field of your output. Use the conversation_context to resolve pronouns (e.g. "do it again" or "what is candicejr doing?").',
       },
     };
     classifyPayload.skill_index = SKILL_INDEX;
@@ -1467,6 +1470,7 @@ async function recallMemory(query, context = {}) {
   try {
     // Build enriched query from multiple sources
     const queryParts = [query];
+    if (context.last_prime_reply) queryParts.push(`Previous Assistant: ${context.last_prime_reply}`);
     if (context.instruction) queryParts.push(`Task: ${context.instruction}`);
     if (context.context_summary) queryParts.push(`Context: ${context.context_summary}`);
     const enrichedQuery = queryParts.join('\n');
@@ -1524,6 +1528,12 @@ async function recallMemory(query, context = {}) {
       } catch (e) {
         log('WARN', `Memory recall: core-memory-read --since 30d failed: ${e.message}`);
       }
+    }
+
+    if (context.tier === 'ambient') {
+      const candidateBlock = memoryParts.join('\n\n');
+      log('INFO', `Memory recall: ambient path returning deterministic Layers A+B (${candidateBlock.length} chars)`);
+      return { recalled: candidateBlock.substring(0, 4000) };
     }
 
     // ---- Layer C: Recent Work Digest (7 days) ----
@@ -2315,14 +2325,33 @@ async function processIntake(intake) {
     return; // Early return — never reaches LLM classify or new_mission
   }
 
+  // ---- CP1: Assemble Conversation Context (B-32) ----
+  let convoContext = null;
+  if (intake.source === 'dashboard') {
+    convoContext = await assembleConversation({
+      projectId: GCP_PROJECT,
+      primeId: PRIME_ID,
+      getToken: getGceToken,
+      config: CONTRACTS.conversation,
+      log,
+    });
+  }
+
+  let lastPrimeReply = null;
+  if (convoContext && convoContext.turns) {
+    const lastAssistant = [...convoContext.turns].reverse().find(t => t.role === 'assistant');
+    if (lastAssistant) lastPrimeReply = lastAssistant.text;
+  }
+
   // Phase 3: Active envelope scan (moved before ACK for mission-aware acknowledgments)
   const activeEnvelopes = await scanActiveEnvelopes();
 
-  // (Quick ack moved to after classify â€” see below)
+  // (Quick ack moved to after classify — see below)
 
   // Phase 3+: Dual memory recall
   // First recall: ambient context from raw inbound text (helps classify)
-  const ambientMemory = await recallMemory(intake.text);
+  // B-15: Ambient (pre-classify) recall is deterministic-only (Layers A+B, no LLM)
+  const ambientMemory = await recallMemory(intake.text, { tier: 'ambient', last_prime_reply: lastPrimeReply });
 
   // Call Cortex in classify mode (with ambient memory + recent missions for dedup)
   const recentMissionsForClassify = await scanRecentMissions(5);
@@ -2332,15 +2361,33 @@ async function processIntake(intake) {
       source: intake.source,
       source_meta: intake.source_meta || {},
     },
+    conversation: convoContext ? convoContext.block : null,
+    last_prime_reply: lastPrimeReply,
     memory: ambientMemory,
     active_envelopes: activeEnvelopes,
     recent_completed_missions: recentMissionsForClassify,
   });
 
+  if (decision.error) {
+    log('ERROR', `Classify failed for intake ${intake.id}: ${JSON.stringify(decision)}`);
+    // Revert to pending for retry on next poll
+    await firestoreWrite('intake', intake.id, { ...intake, status: 'pending', claimed_at: null });
+    log('INFO', `Intake ${intake.id} reverted to pending for retry`);
+    return;
+  }
+
+  log('INFO', `Classify result: ${decision.classification || decision.action}`);
+
+  // Normalize classification
+  const classification = decision.classification || 'new_mission';
+
   // Second recall: enriched with classify results (instruction, context_summary)
   // This gives processEnvelope much better memory context for the decide loop
+  // B-15: Full 4-layer + temporal-memory recall runs post-classify ONLY for mission-bound classifications
   let memoryContext = ambientMemory;
-  if (!decision.error && (decision.instruction || decision.context_summary)) {
+  const isMissionBound = ['new_mission', 'attach', 'continue'].includes(classification);
+
+  if (isMissionBound && (decision.instruction || decision.context_summary)) {
     const enrichedMemory = await recallMemory(intake.text, {
       instruction: decision.instruction,
       context_summary: decision.context_summary,
@@ -2355,19 +2402,6 @@ async function processIntake(intake) {
       log('INFO', `Enriched memory recall: ${memoryContext.recalled.length} chars (combined)`);
     }
   }
-
-  if (decision.error) {
-    log('ERROR', `Classify failed for intake ${intake.id}: ${JSON.stringify(decision)}`);
-    // Revert to pending for retry on next poll
-    await firestoreWrite('intake', intake.id, { ...intake, status: 'pending', claimed_at: null });
-    log('INFO', `Intake ${intake.id} reverted to pending for retry`);
-    return;
-  }
-
-  log('INFO', `Classify result: ${decision.classification || decision.action}`);
-
-  // Normalize classification
-  const classification = decision.classification || 'new_mission';
 
   // Quick ack â€” generate text now, inject as Câ†’T after M envelope is created
   let pendingAckText = null;
@@ -2463,6 +2497,12 @@ async function processIntake(intake) {
     return;
   }
 
+  // Handle respond classification (conversational fast-path)
+  if (classification === 'respond') {
+    await handleRespond(intake, decision, memoryContext);
+    return;
+  }
+
   const envelopeId = generateId('w');
 
   const envelope = {
@@ -2493,6 +2533,7 @@ async function processIntake(intake) {
     updated_at: now(),
     iteration: 0,
     memory_context: memoryContext, // Phase 3: pass memory to processEnvelope
+    conversation_context: convoContext ? convoContext.block : null,
     delivery_status: 'internal', // Not deliverable until synthesized
   };
 
@@ -2522,13 +2563,39 @@ async function processIntake(intake) {
   log('INFO', `Mission ${envelopeId} queued for processing (work queue discipline)`);
 }
 
+// ---- Helper: find most recently active non-terminal mission ----
+async function findMostRecentActiveMission() {
+  try {
+    const ownerEmail = AGENT_EMAIL || AGENT_ID;
+    const existing = await firestoreQuery('work', [
+      { field: 'owner', op: 'EQUAL', value: { stringValue: ownerEmail } },
+      { field: 'type', op: 'EQUAL', value: { stringValue: 'M' } },
+    ]);
+    // Filter non-terminal statuses
+    const nonTerminal = existing.filter(e => ['active', 'blocked', 'needs_input', 'waiting', 'pending', 'queued'].includes(e.status));
+    if (nonTerminal.length === 0) return null;
+    // Sort descending by updated_at
+    nonTerminal.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+    return nonTerminal[0].id;
+  } catch (e) {
+    log('WARN', `findMostRecentActiveMission query failed: ${e.message}`);
+    return null;
+  }
+}
+
 // ---- Attach handler: follow-up to existing work ----
 async function handleAttach(intake, decision, memoryContext, pendingAckText = null) {
-  const targetId = decision.attach_to || decision.attach_to_mission || decision.continue_mission;
+  let targetId = decision.attach_to || decision.attach_to_mission || decision.continue_mission;
+  if (!targetId) {
+    targetId = await findMostRecentActiveMission();
+    if (targetId) {
+      log('INFO', `Attach missing attach_to, auto-bound to most recent active mission: ${targetId}`);
+    }
+  }
   log('INFO', `Attach: intake ${intake.id} → target ${targetId}`);
 
   if (!targetId) {
-    log('WARN', `Attach missing attach_to field, treating as new_mission`);
+    log('WARN', `Attach missing attach_to field and no active mission found, treating as new_mission`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
 
@@ -2617,6 +2684,19 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
   const _titleInput = (decision.instruction && decision.instruction.length > 100)
     ? decision.instruction
     : stripChatFraming(intake.text) || decision.instruction || 'Untitled';
+
+  let conversationBlock = null;
+  if (intake.source === 'dashboard') {
+    const convoContext = await assembleConversation({
+      projectId: GCP_PROJECT,
+      primeId: PRIME_ID,
+      getToken: getGceToken,
+      config: CONTRACTS.conversation,
+      log,
+    }).catch(() => null);
+    if (convoContext) conversationBlock = convoContext.block;
+  }
+
   const envelope = {
     id: envelopeId,
     type: parentId ? 'C' : 'M',
@@ -2643,6 +2723,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     updated_at: now(),
     iteration: 0,
     memory_context: memoryContext,
+    conversation_context: conversationBlock,
   };
 
   await firestoreWrite('work', envelopeId, envelope);
@@ -2652,11 +2733,17 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
 
 // ---- Continue handler: resume a blocked mission ----
 async function handleContinue(intake, decision, memoryContext, pendingAckText = null) {
-  const targetId = decision.continue_mission || decision.continue_envelope || decision.mission_id;
+  let targetId = decision.continue_mission || decision.continue_envelope || decision.mission_id;
+  if (!targetId) {
+    targetId = await findMostRecentActiveMission();
+    if (targetId) {
+      log('INFO', `Continue missing continue_mission, auto-bound to most recent active mission: ${targetId}`);
+    }
+  }
   log('INFO', `Continue: intake ${intake.id} → resuming blocked mission ${targetId}`);
 
   if (!targetId) {
-    log('WARN', `Continue missing continue_mission field, treating as new_mission`);
+    log('WARN', `Continue missing continue_mission field and no active mission found, treating as new_mission`);
     log('WARN', `[TELEMETRY] classify_cascade: continue→missing_target→new_mission`);
     return processIntakeAsNewTask(intake, decision, memoryContext);
   }
@@ -2824,6 +2911,54 @@ async function cascadeCancelChildren(parentId) {
     nextPageToken = data.nextPageToken || null;
   } while (nextPageToken);
   if (cancelCount > 0) log('INFO', `Cascade-cancelled ${cancelCount} children of ${parentId}`);
+}
+
+// ---- Respond handler: fast-path conversational turns ----
+async function handleRespond(intake, decision, memoryContext) {
+  const envelopeId = generateId('w');
+  const responseText = decision.response || 'Hello, how can I assist you?';
+
+  const envelope = {
+    id: envelopeId,
+    type: 'M',
+    parent_id: null,
+    owner: AGENT_EMAIL || AGENT_ID,
+    status: 'complete',
+    intent: 'respond',
+    title: 'Respond to user inquiry',
+    instruction: decision.instruction || intake.text,
+    accept_criteria: null,
+    context_summary: null,
+    output: responseText,
+    children: [],
+    context_forward: null,
+    error: null,
+    source_channel: intake.source,
+    source_meta: intake.source_meta || {},
+    project_id: DEFAULT_PROJECT_ID,
+    context: null,
+    source_text: intake.text || null,
+    stakes: 'routine',
+    job_to_be_done: 'respond',
+    created_at: now(),
+    started_at: now(),
+    completed_at: now(),
+    updated_at: now(),
+    iteration: 1,
+    memory_context: memoryContext,
+    delivery_status: 'pending',
+  };
+
+  await firestoreWrite('work', envelopeId, envelope);
+  await writeHistory(envelopeId, null, 'complete', 'brain', 'Created complete-on-creation respond envelope (fast-path)');
+  log('INFO', `Created complete-on-creation respond envelope: ${envelopeId} with response: "${responseText.substring(0, 80)}..."`);
+
+  // Update intake status so it doesn't get processed again
+  await firestoreWrite('intake', intake.id, {
+    ...intake,
+    status: 'claimed',
+    claimed_at: now(),
+  });
 }
 
 // ---- CP5: Checkpoint plan resume (crash recovery) ----
@@ -3125,6 +3260,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
         instruction: envelope.instruction,
         accept_criteria: envelope.accept_criteria,
         context_summary: envelope.context_summary,
+        conversation_context: envelope.conversation_context || null,
       },
       memory,
       envelope_context: envelopeContext,

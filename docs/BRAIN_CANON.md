@@ -34,8 +34,8 @@ Prompt size is a cost, a latency, and an attention hazard. The brain assembles t
 **Worse looks like:** "include everything just in case"; growing system prompts; raw logs pasted where a two-line digest would do.
 
 ### B-5 · Memory is a discipline, not a warehouse
-Three layers, three speeds: working memory (the scratchpad, pruned relentlessly), Core Memory (durable facts, actively retired and superseded), Deep Truths (behavioral firmware, changed rarely and only on multi-session evidence). The value of memory is its signal density.
-**Better looks like:** smaller working memory carrying more operational truth; retirement and supersession happening as often as promotion; an agent that gets *more* predictable as it accumulates experience.
+Four layers, four speeds: working memory (the scratchpad / MEMORY.md, pruned relentlessly), Core Memory (durable facts in Firestore, actively retired and superseded), Deep Truths (behavioral firmware / SOUL.md, changed rarely and only on multi-session evidence), and Temporal Memory (consolidated long-term episodic synthesis / SOUL.md, generated nightly). The value of memory is its signal density.
+**Better looks like:** smaller working memory carrying more operational truth; consolidation and retirement happening as often as promotion; an agent that gets *more* predictable as it accumulates experience.
 **Worse looks like:** memory that only grows; stale facts shaping live decisions; promotion without evidence; an agent whose behavior drifts because its memory did.
 
 ### B-6 · A teammate's conversational surface
@@ -146,6 +146,8 @@ An envelope leaves `active` through exactly six doors, every one a daemon transi
 ### B-15 · Recall before research, research before asking — and never guessing
 
 The gather hierarchy orders cost and trust: what the agent already knows (temporal-memory — cheapest, instant) precedes what the world publishes (temporal-research — slower, external) precedes what the human must be asked (`needs_input` — the most expensive call in the system). Guessing appears nowhere in the hierarchy. Memory and research may run in parallel when both are warranted; the hierarchy governs *whether* each is warranted and *what wins* when sources disagree: operator statements > memory-confirmed facts > fresh research > model prior. Episodic recall — querying the agent's own work ledger by cue-driven search — is part of the recall tier, not a fourth consolidated memory layer. The work ledger serves as a retrieval mechanism over the system's audit trail (B-23), and facts surfaced from it are promoted into Core Memory through the normal triage process (B-5 preserved).
+
+To enforce economic efficiency, recall is strictly tiered by stakes: pre-classification intake runs under a deterministic, zero-LLM "ambient" recall tier (Layers A and B only, completing in under 50ms). The expensive, multi-stage LLM-synthesized Temporal Memory consolidation (Layer D) is reserved exclusively for post-classification mission execution.
 **Better looks like:** research calls declining as Core Memory sharpens; questions to humans that are rare, precise, and fully unblocking; episodic hits from the work ledger reinforcing recall without growing a separate memory store.
 **Worse looks like:** re-researching what memory holds; asking what context already answers; synthesis floating on unsourced confidence; the work ledger accumulating without ever feeding back into Core Memory promotion.
 
@@ -341,3 +343,9 @@ input, and every action must move a belief or it is theater.
 **Better looks like:** the passage that came out easiest getting audited hardest.
 **Worse looks like:** review passing the costume because review is what the costume is
 dressed for.
+
+### B-32 · The conversation is deterministic context, not memory
+
+The recent conversation transcript is a sliding-window situational context, never represented as agent memory. It is assembled deterministically by the daemon, trimmed to a character budget, and injected as a structured turn transcript into the intake, classify, and decide phases. Organs never fetch or query the chat history themselves — they operate within the situational envelope context constructed for them by the harness.
+**Better looks like:** organs focusing purely on decision-making and execution using the provided context; zero token overhead from redundant history fetches; a clean separation between conversational context and long-term memory.
+**Worse looks like:** organs fetching Firestore message collections directly; conversation history leaking into MEMORY.md; agents losing focus because of unbudgeted and unsummarized chats.

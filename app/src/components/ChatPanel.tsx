@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import styles from "./ChatPanel.module.css";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { AttachmentList } from "./AttachmentList";
 import { api } from "@/lib/api";
 import type { ChatMessage } from "@/lib/types";
 
@@ -154,6 +155,9 @@ export function ChatPanel({ primeId, agentName, entityName, entityStatus, specia
                     ))
                   )}
                 </div>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <AttachmentList primeId={primeId} attachments={msg.attachments} />
+                )}
                 <div className={styles.msgMeta}>
                   {msg.timestamp ? formatTime(msg.timestamp) : ""}
                 </div>

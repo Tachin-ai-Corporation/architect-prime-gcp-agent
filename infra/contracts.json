@@ -44,6 +44,7 @@
     "step_ledger_enabled": true,
     "checkpoint_resume_enabled": true,
     "claim_stale_ms": 600000,
+    "respond_enabled": true,
     "evidence_floor_exclude_skills": [
       "fleet-fire", "fleet-hire", "fleet-upgrade", "fleet-verify",
       "fleet-status", "fleet-deploy"
@@ -97,6 +98,11 @@
   "chat": {
     "reply_in_thread": true
   },
+  "conversation": {
+    "max_turns": 12,
+    "budget_chars": 6000,
+    "per_turn_chars": 600
+  },
   "projects": {
     "context_max_tokens": 2000,
     "promotion_auto": false,
@@ -141,6 +147,8 @@
     "_comment": "Tenant-internal git artifact substrate. Single bucket, per-repo prefixes. ADC via metadata SA token.",
     "bucket": "${TENANT}-agent-git",
     "prefix": "git/",
+    "artifacts_prefix": "artifacts/",
+    "max_artifact_mb": 20,
     "defaultBranch": "main",
     "maxPushRetries": 5,
     "gcBundleThreshold": 25

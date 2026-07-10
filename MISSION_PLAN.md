@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-> Current version: v2026.07.09.4.0
+> Current version: v2026.07.09.5.0
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -96,6 +96,7 @@ One envelope at a time, fully attended; throughput is achieved by hiring more ag
 **Inter-agent work travels where humans can see it.** Agents delegate to each other over Google Chat with @-mentions: a machine-parseable envelope reference plus a human-readable summary. 
 
 | Version | Date | Summary |
+| v2026.07.09.5.0 | 2026-07-09 | **Dashboard Conversational Loop & GCS Attachment Delivery (CP4 Completion)**: completed the full conversation context layer integration (`corekit/lib/conversation-context.mjs`), implemented conversational fast-path (`'respond'` Cortex move) with specialized Mouth conversational voicing hints, engineered a deterministic zero-LLM ambient recall tier (Layers A and B short-circuit), built GCS-backed direct artifact sharing (`artifact-share.mjs`) on git publish blocks, established a high-security Next.js streaming API route, and designed a premium HSL glassmorphic frontend downloadable attachment list (`AttachmentList.tsx`) for the centered Chat UI. |
 | v2026.07.09.4.0 | 2026-07-09 | **Compound Approvals & Parser Fix**: added compound selection parsing to `handleApprovalResponse` in `agent-brain.mjs` to extract multiple numbers from user responses (e.g. `"approve 6 and 7"`), resolving the stuck-resumption duplicate gate issue; deployed changes to the active VM `prime-candicejr` via `upgrade-corekit` and verified query-isolation and parser fixes are live. 1 file, 16 insertions, 6 deletions. |
 | v2026.07.09.3.0 | 2026-07-09 | **Approvals Isolation & Context Scoping**: isolated the global flat `approvals` collection queries per Prime instance by adding `prime_id` filtering to the agent brain daemon, the agent ears REST listener, the approvals polling library, and the dashboard API routes, successfully eliminating cross-agent context leakage and broken approval hijackings. 4 files, 15 insertions, 11 deletions. |
 | v2026.07.09.2.0 | 2026-07-09 | **Dashboard Chat Redesign**: removed the floating slide-out chat overlay from the main dashboard (`app/src/app/page.tsx`); updated dashboard routing to direct users to the dedicated full-page agent chat view (`/p/[primeId]/a/[agentName]#chat`); completely rewrote `ChatPanel.tsx` and `ChatPanel.module.css` to adopt a premium, centered, 1health-inspired conversational UI with a hero avatar, clean single-column feed, and glassmorphic input area. 3 files, 212 insertions, 316 deletions. |

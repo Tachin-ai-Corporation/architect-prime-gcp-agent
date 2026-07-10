@@ -16,7 +16,8 @@ export const CORTEX_SCHEMAS = {
   classify: {
     type: 'OBJECT',
     properties: {
-      classification: { type: 'STRING', enum: ['new_mission', 'attach', 'continue', 'cancel'] },
+      classification: { type: 'STRING', enum: ['new_mission', 'attach', 'continue', 'cancel', 'respond'] },
+      response:       { type: 'STRING' },
       instruction:    { type: 'STRING' },
       intent:         { type: 'STRING' },
       reasoning:      { type: 'STRING' },
@@ -335,8 +336,11 @@ export function createVertexText(config) {
   function validateSchema(parsed, schemaName) {
     if (!parsed || typeof parsed !== 'object') return { valid: false, reason: 'not an object' };
     if (schemaName === 'classify') {
-      const allowed = ['new_mission', 'attach', 'continue', 'cancel'];
+      const allowed = ['new_mission', 'attach', 'continue', 'cancel', 'respond'];
       if (!allowed.includes(parsed.classification)) return { valid: false, reason: `classification missing or invalid: ${parsed.classification}` };
+      if (parsed.classification === 'respond' && (typeof parsed.response !== 'string' || !parsed.response.trim())) {
+        return { valid: false, reason: 'response missing for respond classification' };
+      }
       if (typeof parsed.reasoning !== 'string' || !parsed.reasoning) return { valid: false, reason: 'reasoning missing' };
       if (parsed.stakes && !['routine', 'consequential', 'irreversible'].includes(parsed.stakes)) {
         return { valid: false, reason: `stakes invalid: ${parsed.stakes}` };

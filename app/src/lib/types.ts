@@ -18,6 +18,7 @@ export interface ChatMessage {
   sender: "admin" | "prime";
   text: string;
   timestamp: string;
+  attachments?: { name: string; size: number; gcsPath: string }[];
 }
 
 export interface FleetAgent {

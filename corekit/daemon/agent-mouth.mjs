@@ -404,12 +404,38 @@ async function deliverDelegation(text, addr, targetEmail) {
   if (!ok) throw new Error(`Delegation delivery to ${targetEmail} failed (GChat POST rejected)`);
 }
 
-async function deliver(text, addr, mentions = []) {
+function decodeAttachmentsExport(contextField) {
+  try {
+    const fields = contextField?.mapValue?.fields;
+    if (!fields) return null;
+    const attachmentsField = fields.attachments_export || fields.attachments;
+    const values = attachmentsField?.arrayValue?.values;
+    if (!Array.isArray(values)) return null;
+
+    const decoded = [];
+    for (const v of values) {
+      const itemFields = v.mapValue?.fields;
+      if (!itemFields) continue;
+      decoded.push({
+        name: itemFields.name?.stringValue || '',
+        size: parseInt(itemFields.size?.integerValue || itemFields.size?.stringValue || '0', 10),
+        gcsPath: itemFields.gcsPath?.stringValue || '',
+      });
+    }
+    return decoded.length > 0 ? decoded : null;
+  } catch (err) {
+    log('Failed to decode attachments_export', { error: err.message });
+    return null;
+  }
+}
+
+async function deliver(text, addr, mentions = [], attachments = []) {
   const token = addr?.channel === 'gchat' ? await getDwdToken() : await getGceToken();
   await deliverToAddress(addr, text, {
     token,
     replyInThread: REPLY_IN_THREAD,
     mentions,
+    attachments,
     log,
   });
 
@@ -427,7 +453,7 @@ async function deliver(text, addr, mentions = []) {
 // ================================================================
 // FINAL RESPONSE — LLM CLASSIFY + DELIVER
 // ================================================================
-async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []) {
+async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = [], attachments = []) {
   const task = readTaskJson();
   const question = overrideQuestion || task?.text || turn.originalQuestion || '';
 
@@ -440,7 +466,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
   finalMentions = [...new Set(finalMentions)];
 
   if (!LLM_ENABLED) {
-    await deliver(rawText, addr, finalMentions);
+    await deliver(rawText, addr, finalMentions, attachments);
     log('Delivered raw (LLM disabled)', { chars: rawText.length });
     await writeTaskLog(task, 'delivered', rawText.length, 'raw');
     markTaskComplete(task?.taskId);
@@ -497,7 +523,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
     if (hasEscalate && action !== 'escalate') parsed.action = 'escalate';
 
     if (action === 'deliver' || action === 'escalate') {
-      await deliver(finalText, addr, finalMentions);
+      await deliver(finalText, addr, finalMentions, attachments);
       log('Delivered', { channel: CHANNEL, chars: finalText.length, action,
         voiced: voiceStatus });
       await writeTaskLog(task, 'delivered', finalText.length, action);
@@ -507,7 +533,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
     }
   } catch (err) {
     log('Classify error — delivering raw', { error: err.message });
-    await deliver(rawText, addr, finalMentions);
+    await deliver(rawText, addr, finalMentions, attachments);
     await writeTaskLog(task, 'delivered', rawText.length, 'fallback');
   }
 
@@ -720,6 +746,8 @@ async function pollBrainV3Envelopes() {
           contextHint = '[This is a status notification — keep it brief and informational]\n\n';
         } else if (envType === 'ack') {
           contextHint = '[This is a quick acknowledgment — keep it very short]\n\n';
+        } else if (envType === 'respond') {
+          contextHint = '[This is a direct conversational response — be polite, direct, and helpful, and do NOT mention tasks or missions]\n\n';
         }
 
         // Resolve delivery address from envelope
@@ -759,12 +787,14 @@ async function pollBrainV3Envelopes() {
           mentions.push('all');
         }
 
+        const attachments = decodeAttachmentsExport(f.context);
+
         if (deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result')) {
           await deliverDelegation(output, addr, deliveryTarget);
           log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
         } else {
           // Standard voicing pipeline for non-delegation envelopes
-          await classifyAndDeliver(contextHint + output, envQuestion, addr, mentions);
+          await classifyAndDeliver(contextHint + output, envQuestion, addr, mentions, attachments);
           log('Delivered envelope output', { envId, status: envStatus, intent: envType });
         }
 
