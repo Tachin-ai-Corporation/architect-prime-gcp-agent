@@ -16,9 +16,10 @@ import { allocateVersion } from './git-store.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
-function deriveStepKey(envId, cpNum, action, target = '') {
+function deriveStepKey(envId, cpNum, action, target = '', iteration = '') {
   const hash = createHash('sha256');
-  hash.update(`${envId}:${cpNum}:${action}:${target}`);
+  const part = iteration ? `:${iteration}` : '';
+  hash.update(`${envId}:${cpNum}:${action}:${target}${part}`);
   return hash.digest('hex').substring(0, 16);
 }
 
@@ -241,7 +242,7 @@ export async function executeCheckpoints(checkpoints, opts) {
       }
 
       // CP2: Step-ledger dedup
-      const taskStepKey = deriveStepKey(envelope.id, cpNum, 'cp_task', `${ci}.${ti}.${taskAgent}`);
+      const taskStepKey = deriveStepKey(envelope.id, cpNum, 'cp_task', `${ci}.${ti}.${taskAgent}`, envelope.iteration);
       if (isStepComplete(envelope, taskStepKey, STEP_LEDGER_ENABLED)) {
         const prev = getStepResult(envelope, taskStepKey);
         log('INFO', `[checkpoint-executor] CP2 dedup: CP${cpNum} Task ${taskNum} already recorded (${prev?.status}), skipping dispatch`);

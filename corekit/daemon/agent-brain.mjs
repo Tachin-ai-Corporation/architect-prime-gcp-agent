@@ -2377,15 +2377,14 @@ async function processIntake(intake) {
   if (delegationRef) {
     log('INFO', `Delegation intake detected: ref=${delegationRef} from=${intake.source_meta.delegated_from}`);
 
-    // Dedup: check for existing non-terminal mission with same delegation_ref
+    // Dedup: check for existing non-terminal mission with same delegation_ref (proceed anyway per user directive)
     try {
       const existing = await firestoreQuery('work', [
         { field: 'source_meta.delegation_ref', op: 'EQUAL', value: { stringValue: delegationRef } },
       ]);
       const active = existing.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
       if (active.length > 0) {
-        log('INFO', `Delegation dedup: mission ${active[0].id} already in progress for ref ${delegationRef}, skipping`);
-        return;
+        log('INFO', `Delegation dedup: active mission ${active[0].id} already exists for ref ${delegationRef}, proceeding per user directive (no skip)`);
       }
     } catch (e) {
       log('WARN', `Delegation dedup check failed (${e.message}), proceeding`);
