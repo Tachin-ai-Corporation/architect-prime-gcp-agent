@@ -268,6 +268,12 @@ export function createVertexText(config) {
       }
 
       const data = await resp.json();
+      // SESSION_CONTEXT_PLAN Phase 0: utility calls were invisible to token
+      // accounting — log counts only (never content, C-8).
+      const um = data.usageMetadata;
+      if (um) {
+        log('INFO', `TELEMETRY utility_usage model=${model} input=${um.promptTokenCount || 0} output=${um.candidatesTokenCount || 0} cached=${um.cachedContentTokenCount || 0}`);
+      }
       const parts = data.candidates?.[0]?.content?.parts || [];
       let result = '';
       for (const part of parts) {
@@ -510,6 +516,10 @@ export function createVertexText(config) {
         }
 
         const data = await resp.json();
+        const um = data.usageMetadata;
+        if (um) {
+          log('INFO', `TELEMETRY utility_usage stage=enforce_schema model=${model} input=${um.promptTokenCount || 0} output=${um.candidatesTokenCount || 0} cached=${um.cachedContentTokenCount || 0}`);
+        }
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!text) { log('WARN', `enforceSchema attempt ${attempt}: empty response`); continue; }
 

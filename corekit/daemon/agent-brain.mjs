@@ -970,6 +970,15 @@ async function callCortex(mode, payload) {
     parsed.usage = data.usage || null;
     parsed.durationMs = _cortexDuration;
   }
+
+  // SESSION_CONTEXT_PLAN Phase 0: classify and respond_compose run before an
+  // envelope exists, so the envelope-scoped mission_total accumulator never
+  // sees them — log their usage intake-scoped here. decide/plan modes are
+  // already covered by the decide-loop accumulator.
+  if ((mode === 'classify' || mode === 'respond_compose') && data.usage) {
+    const u = data.usage;
+    log('INFO', `[TELEMETRY] llm_usage organ=cortex mode=${mode} input=${u.promptTokenCount || u.prompt_tokens || 0} output=${u.candidatesTokenCount || u.completion_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${_cortexDuration}ms`);
+  }
   return parsed;
 }
 
@@ -1069,6 +1078,12 @@ async function callPrefrontal(payload) {
   }
 
   log('INFO', `Prefrontal responded (${content.length} chars, ${durationMs}ms)`);
+
+  // SESSION_CONTEXT_PLAN Phase 0: prefrontal usage was previously discarded.
+  if (data.usage) {
+    const u = data.usage;
+    log('INFO', `[TELEMETRY] llm_usage organ=prefrontal model=${route} input=${u.promptTokenCount || u.prompt_tokens || 0} output=${u.candidatesTokenCount || u.completion_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${durationMs}ms`);
+  }
 
   const brief = await enforceSchema(content, 'analyze');
   if (brief && brief.parts) {
@@ -1824,7 +1839,7 @@ async function completeEnvelope(envelope, opts) {
   // Phase 4.3: Token usage summary
   if (opts.tokenUsage && opts.tokenUsage.callCount > 0) {
     const u = opts.tokenUsage;
-    log('INFO', `[TELEMETRY] mission_total mission=${envelope.id} calls=${u.callCount} input=${u.totalInput} output=${u.totalOutput} cached=${u.totalCached}`);
+    log('INFO', `[TELEMETRY] mission_total mission=${envelope.id} calls=${u.callCount} input=${u.totalInput} output=${u.totalOutput} cached=${u.totalCached} cache_writes=${u.totalCacheWrites || 0}`);
   }
 
   // Step 5: Memory + cleanup
@@ -3051,7 +3066,7 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
   log('INFO', `CP5 resume: ${checkpoints.length} checkpoints, resuming from CP${checkpointIndex + 1} task ${taskIndex}`);
 
   // Phase 4.3: LLM cost telemetry — per-mission token accumulator for resume path
-  const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, callCount: 0 };
+  const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, totalCacheWrites: 0, callCount: 0 };
 
   const dispatchAgent = async (agentId, payload) => {
     const res = await callAgent(agentId, payload);
@@ -3060,8 +3075,9 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
       _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
       _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
       _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
+      _tokenUsage.totalCacheWrites += (u.cacheCreationTokenCount || 0);
       _tokenUsage.callCount++;
-      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} duration=${res.durationMs || 0}ms`);
+      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${res.durationMs || 0}ms`);
     }
     return res;
   };
@@ -3209,7 +3225,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   let iteration = 0;
 
   // Phase 4.3: LLM cost telemetry — per-mission token accumulator
-  const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, callCount: 0 };
+  const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, totalCacheWrites: 0, callCount: 0 };
 
   // If resuming from needs_input, inject the human's response
   if (envelope.context_forward) {
@@ -3222,6 +3238,23 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   }
 
   let _activeGuard = null; // Phase 3.2: guard enforcement state
+
+  // SESSION_CONTEXT_PLAN Phase 0: action handlers (synthesize's cerebellum
+  // verification chain, probes) previously dispatched through raw callAgent,
+  // bypassing the mission token accumulator — wrap it like every other path.
+  const trackedDispatchAgent = async (agentId, payload) => {
+    const res = await callAgent(agentId, payload);
+    if (res?.usage) {
+      const u = res.usage;
+      _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
+      _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
+      _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
+      _tokenUsage.totalCacheWrites += (u.cacheCreationTokenCount || 0);
+      _tokenUsage.callCount++;
+      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${res.durationMs || 0}ms`);
+    }
+    return res;
+  };
 
   // Phase 2.2: Dependencies for action handlers (Dependency Injection)
   const deps = {
@@ -3266,7 +3299,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     composeDelegationMarker,
     makeAddress,
     handleWait,
-    dispatchAgent: callAgent,
+    dispatchAgent: trackedDispatchAgent,
     extractVerdict: (await import('../lib/verdict.mjs')).extractVerdict,
   };
 
@@ -3352,8 +3385,9 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
       _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
       _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
+      _tokenUsage.totalCacheWrites += (u.cacheCreationTokenCount || 0);
       _tokenUsage.callCount++;
-      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=cortex model=${CORTEX_ROUTE} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} duration=${decision.durationMs || 0}ms`);
+      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=cortex model=${CORTEX_ROUTE} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${decision.durationMs || 0}ms`);
     }
 
     // B-29: Stash decision for mission record epistemic state

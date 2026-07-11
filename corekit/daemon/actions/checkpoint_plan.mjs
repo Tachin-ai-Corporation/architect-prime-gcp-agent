@@ -247,8 +247,9 @@ export async function handleCheckpointPlan(ctx, deps) {
       _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
       _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
       _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
+      _tokenUsage.totalCacheWrites += (u.cacheCreationTokenCount || 0);
       _tokenUsage.callCount++;
-      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} duration=${res.durationMs || 0}ms`);
+      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${res.durationMs || 0}ms`);
     }
     return res;
   };

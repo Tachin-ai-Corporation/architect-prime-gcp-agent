@@ -51,6 +51,64 @@ async function retryWithBackoff(fn, label) {
   }
 }
 
+// ---- Usage accumulation (SESSION_CONTEXT_PLAN Phase 0) ----
+// Both SDKs report real token counts per call; the turn loop makes one billed
+// call per step, so usage is summed across steps. last_step_input_tokens is
+// the final step's full prompt size — the context-size signal downstream
+// compaction thresholds key off. The finalized shape is dual-keyed: OpenAI
+// names plus the aliases agent-brain.mjs telemetry already reads
+// (promptTokenCount / candidatesTokenCount / cachedContentTokenCount).
+function newUsageAccumulator(provider) {
+  return {
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedReadTokens: 0,
+    cacheWriteTokens: 0,
+    lastStepInputTokens: 0,
+    steps: 0,
+    provider,
+  };
+}
+
+function addGoogleUsage(acc, usageMetadata) {
+  if (!usageMetadata) return;
+  acc.promptTokens += usageMetadata.promptTokenCount || 0;
+  acc.completionTokens += usageMetadata.candidatesTokenCount || 0;
+  acc.cachedReadTokens += usageMetadata.cachedContentTokenCount || 0;
+  acc.lastStepInputTokens = usageMetadata.promptTokenCount || acc.lastStepInputTokens;
+  acc.steps++;
+}
+
+function addAnthropicUsage(acc, usage) {
+  if (!usage) return;
+  // Anthropic reports uncached input, cache reads, and cache writes separately;
+  // the attended prompt is their sum (matches Gemini's promptTokenCount semantics).
+  const stepInput = (usage.input_tokens || 0)
+    + (usage.cache_read_input_tokens || 0)
+    + (usage.cache_creation_input_tokens || 0);
+  acc.promptTokens += stepInput;
+  acc.completionTokens += usage.output_tokens || 0;
+  acc.cachedReadTokens += usage.cache_read_input_tokens || 0;
+  acc.cacheWriteTokens += usage.cache_creation_input_tokens || 0;
+  acc.lastStepInputTokens = stepInput || acc.lastStepInputTokens;
+  acc.steps++;
+}
+
+function finalizeUsage(acc) {
+  return {
+    prompt_tokens: acc.promptTokens,
+    completion_tokens: acc.completionTokens,
+    total_tokens: acc.promptTokens + acc.completionTokens,
+    promptTokenCount: acc.promptTokens,
+    candidatesTokenCount: acc.completionTokens,
+    cachedContentTokenCount: acc.cachedReadTokens,
+    cacheCreationTokenCount: acc.cacheWriteTokens,
+    last_step_input_tokens: acc.lastStepInputTokens,
+    steps: acc.steps,
+    provider: acc.provider,
+  };
+}
+
 // ---- Loop guard: detect stuck tool-calling loops ----
 const DUPLICATE_NUDGE = CONTRACTS?.gateway?.duplicate_nudge_threshold || 3;
 const DUPLICATE_TERMINATE = CONTRACTS?.gateway?.duplicate_terminate_threshold || 4;
@@ -297,6 +355,7 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
   let text = '';
   let finalFinishReason = 'stop';
   const turnToolCalls = [];
+  const usageAcc = newUsageAccumulator('vertex-google');
 
   const googleTools = tools ? [{
     functionDeclarations: Object.values(tools).map(t => ({
@@ -332,6 +391,8 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
       }),
       `Google ${modelId} step ${step}`
     );
+
+    addGoogleUsage(usageAcc, response.usageMetadata);
 
     const candidate = response.candidates?.[0];
     const parts = candidate?.content?.parts || [];
@@ -450,7 +511,7 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
   return {
     text,
     toolCalls: turnToolCalls,
-    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
   };
 }
@@ -465,6 +526,7 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
   let text = '';
   let finalFinishReason = 'stop';
   const turnToolCalls = [];
+  const usageAcc = newUsageAccumulator('vertex-anthropic');
 
   const anthropicTools = tools ? Object.values(tools).map(t => ({
     name: t.name,
@@ -509,6 +571,8 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
       },
       `Anthropic ${modelId} step ${step}`
     );
+
+    addAnthropicUsage(usageAcc, response.usage);
 
     const textBlock = response.content.find(b => b.type === 'text');
     const stepText = textBlock ? textBlock.text : '';
@@ -621,7 +685,7 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
   return {
     text,
     toolCalls: turnToolCalls,
-    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
   };
 }
@@ -656,7 +720,10 @@ export async function runAgentTurnSyncWithFallback(opts) {
     return await runAgentTurnSync(opts);
   } catch (err) {
     if (opts.fallbackModel && opts.fallbackModel !== opts.modelString) {
-      console.warn(`[loop] primary model failed (${err.message}), trying fallback: ${opts.fallbackModel}`);
+      // Cross-provider fallback re-runs the whole turn: the failed primary
+      // attempt's tokens are already billed but its usage object is lost with
+      // the throw — the event itself is the double-spend telemetry signal.
+      console.warn(`[loop] TELEMETRY fallback_turn primary=${opts.modelString} fallback=${opts.fallbackModel} error="${String(err.message).substring(0, 160)}"`);
       return await runAgentTurnSync({ ...opts, modelString: opts.fallbackModel });
     }
     throw err;

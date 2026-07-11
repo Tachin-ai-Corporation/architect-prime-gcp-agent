@@ -168,7 +168,8 @@ const server = createServer(async (req, res) => {
         topP: topP ?? agentConfig.topP ?? 0.95,
       });
 
-      console.log(`[brain] #${rid} completed (${result.text.length} chars, ${result.usage?.totalTokens || '?'} tokens)`);
+      const u = result.usage || {};
+      console.log(`[brain] #${rid} completed (${result.text.length} chars, in=${u.prompt_tokens ?? '?'} out=${u.completion_tokens ?? '?'} cached=${u.cachedContentTokenCount ?? 0} cache_write=${u.cacheCreationTokenCount ?? 0} steps=${u.steps ?? 1} provider=${u.provider || '?'})`);
 
       // Return OpenAI-compatible response
       res.writeHead(200, { 'Content-Type': 'application/json' });
