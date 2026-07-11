@@ -53,6 +53,7 @@ import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
+import { toContentParts } from '../corekit/lib/prompt-blocks.mjs';
 import {
   handleSynthesize,
   handleBlocked,
@@ -900,13 +901,18 @@ async function releaseClaim(envelopeId, claimId) {
 
 // ---- Gateway HTTP dispatch ----
 async function callCortex(mode, payload) {
-  const systemPrompt = buildSystemPrompt(mode, payload);
+  // SESSION_CONTEXT_PLAN Phase 2: two system blocks (stable | MEMORY) and a
+  // cache-tiered content-parts user message. The [BRAIN-ORCHESTRATED] header
+  // opens the boot-stable bytes; the per-mission Requester line rides the
+  // mission tier so it never re-keys the boot block.
+  const sysBlocks = buildSystemBlocks(mode, payload);
   const pingerEmail = payload.envelope?.source_meta?.senderEmail || '';
-  const userPrompt = [
-    `[BRAIN-ORCHESTRATED]`,
-    pingerEmail ? `## Requester\nUse this email for Drive sharing and communication: ${pingerEmail}\n` : '',
-    buildUserPrompt(mode, payload)
-  ].filter(Boolean).join('\n');
+  const userBlocks = [
+    { label: '', text: '[BRAIN-ORCHESTRATED]', tier: 'boot' },
+    ...(pingerEmail ? [{ label: 'REQUESTER', text: `Use this email for Drive sharing and communication: ${pingerEmail}`, tier: 'mission' }] : []),
+    ...buildUserBlocks(mode, payload),
+  ];
+  const userContent = toContentParts(userBlocks);
 
   // Per-agent generation parameters from registry
   const cortexConfig = REGISTRY.agents?.cortex || {};
@@ -926,8 +932,9 @@ async function callCortex(mode, payload) {
     body: JSON.stringify({
       model: BRAIN_ROUTE,
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
+        { role: 'system', content: sysBlocks.stable },
+        ...(sysBlocks.volatile ? [{ role: 'system', content: sysBlocks.volatile }] : []),
+        { role: 'user', content: userContent },
       ],
       max_tokens: maxTokens,
       temperature: temperature,
@@ -1093,8 +1100,15 @@ async function callPrefrontal(payload) {
   return brief;
 }
 
-function buildSystemPrompt(mode, payload) {
+// SESSION_CONTEXT_PLAN Phase 2: the system prompt splits into two blocks —
+// stable [SOUL, IDENTITY, capabilities, registries, constraint] and volatile
+// [MEMORY.md]. MEMORY is appended at every envelope completion; carrying it
+// last means a memory write re-keys only the small volatile block while the
+// large stable prefix keeps its 1h cache entry (gateway places the breakpoint
+// on the first system block).
+function buildSystemBlocks(mode, payload) {
   const parts = [];
+  const volatileParts = [];
 
   // 1. Read SOUL.md â€” core decision-making guidance
   const soulPaths = [
@@ -1133,7 +1147,7 @@ function buildSystemPrompt(mode, payload) {
     if (memoryContent) break;
   }
   if (memoryContent) {
-    parts.push(`[MEMORY â€” baseline knowledge]\n${memoryContent}`);
+    volatileParts.push(`[MEMORY â€” baseline knowledge]\n${memoryContent}`);
   }
 
 
@@ -1175,10 +1189,13 @@ function buildSystemPrompt(mode, payload) {
   // prompt-cache sharing.
   parts.push(`You MUST respond with exactly one JSON block and nothing else.`);
 
-  return parts.join('\n\n');
+  return { stable: parts.join('\n\n'), volatile: volatileParts.join('\n\n') };
 }
 
-function buildUserPrompt(mode, payload) {
+// Build the full mode payload as an OBJECT (SESSION_CONTEXT_PLAN Phase 2:
+// renamed from buildUserPrompt — block partitioning needs the object, and
+// serialization moved to the call sites).
+function buildModePayload(mode, payload) {
   if (mode === 'classify') {
     const classifyPayload = {
       mode: 'classify',
@@ -1221,7 +1238,7 @@ function buildUserPrompt(mode, payload) {
         parameters: Object.keys(p.parameters || {}),
       }));
     }
-    return JSON.stringify(classifyPayload);
+    return classifyPayload;
   }
   if (mode === 'decide') {
     const decidePayload = {
@@ -1314,7 +1331,7 @@ function buildUserPrompt(mode, payload) {
         instruction: 'Prefrontal flagged the request\'s premise as flawed. Consider whether to proceed with the original instruction or reframe the work. Do NOT plan inside a false frame.',
       };
     }
-    return JSON.stringify(decidePayload);
+    return decidePayload;
   }
   if (mode === 'respond_compose') {
     const composePayload = {
@@ -1326,9 +1343,90 @@ function buildUserPrompt(mode, payload) {
       draft_response: payload.draft_response || '',
       guidance: 'Combine the user prompt, conversation history, any retrieved memories, and the live tool results to compose a final, concise, accurate reply. Avoid any placeholder text or hallucinations. The reply should be natural and match the conversational tone.'
     };
-    return JSON.stringify(composePayload);
+    return composePayload;
   }
-  return JSON.stringify(payload);
+  return payload;
+}
+
+// SESSION_CONTEXT_PLAN Phase 2: partition the mode payload into cache-tiered
+// blocks, ordered most-stable-first. The gateway turns tiers into Anthropic
+// cache breakpoints; on Gemini the same byte order feeds implicit caching.
+// Envelope keys are sorted so serialization is byte-deterministic across
+// iterations (Firestore field order is not guaranteed).
+const ENVELOPE_MUTABLE_KEYS = new Set([
+  'status', 'updated_at', 'iteration', 'started_at', 'completed_at',
+  'output', 'error', 'children', 'step_ledger', 'claimed_by', 'claimed_at',
+  '_cp_progress', '_lastDecision', '_accumulated_context', 'context_forward',
+  'delivery_status', 'delivered_at',
+]);
+
+function splitEnvelope(env) {
+  const statics = {};
+  const state = {};
+  for (const k of Object.keys(env || {}).sort()) {
+    (ENVELOPE_MUTABLE_KEYS.has(k) ? state : statics)[k] = env[k];
+  }
+  return { statics, state };
+}
+
+function buildUserBlocks(mode, payload) {
+  const p = buildModePayload(mode, payload);
+  if (mode === 'decide') {
+    const { statics, state } = splitEnvelope(p.envelope);
+    const boot = {
+      skill_index: p.skill_index,
+      available_processes: p.available_processes,
+    };
+    const mission = {
+      envelope: statics,
+      memory: p.memory,
+      project: p.project,
+      rendered_project_context: p.rendered_project_context,
+      required_processes: p.required_processes,
+      brief: p.brief,
+      dispatch_guidance: p.dispatch_guidance,
+    };
+    const working = {
+      mode: 'decide',
+      iteration: p.iteration,
+      envelope_state: state,
+      envelope_context: p.envelope_context,
+      prior_results: p.prior_results,
+      pending_intake_count: p.pending_intake_count,
+      pending_queue: p.pending_queue,
+      goal_state: p.goal_state,
+      premise_check: p.premise_check,
+    };
+    return [
+      { label: 'BOOT-STABLE CONTEXT', text: JSON.stringify(boot), tier: 'boot' },
+      { label: 'MISSION CONTEXT', text: JSON.stringify(mission), tier: 'mission' },
+      { label: 'WORKING STATE', text: JSON.stringify(working), tier: 'volatile' },
+    ];
+  }
+  if (mode === 'classify') {
+    const boot = {
+      classification_guidance: p.classification_guidance,
+      skill_index: p.skill_index,
+      respond_reads_available: p.respond_reads_available,
+      process_registry: p.process_registry,
+      project_registry: p.project_registry,
+    };
+    const turn = {
+      mode: 'classify',
+      inbound: p.inbound,
+      conversation_context: p.conversation_context,
+      memory: p.memory,
+      core_facts: p.core_facts,
+      active_envelopes: p.active_envelopes,
+      recent_completed_missions: p.recent_completed_missions,
+    };
+    return [
+      { label: 'BOOT-STABLE CONTEXT', text: JSON.stringify(boot), tier: 'boot' },
+      { label: 'CURRENT TURN', text: JSON.stringify(turn), tier: 'volatile' },
+    ];
+  }
+  // respond_compose and any other mode: single volatile block.
+  return [{ label: '', text: JSON.stringify(p), tier: 'volatile' }];
 }
 
 // parseJsonResponse, repairTruncatedJson, extractBalancedJson
@@ -1386,22 +1484,31 @@ async function callAgent(agentId, envelope) {
     : '';
 
   const pingerEmail = envelope.source_meta?.senderEmail || '';
+  // SESSION_CONTEXT_PLAN Phase 2: mission-stable blocks lead, prior work
+  // follows, the per-task instruction and criteria come LAST — the stable
+  // prefix stays byte-identical across a plan's tasks (Gemini implicit
+  // caching keys on it) and instruction-last is the long-context attention
+  // position. B-28: probe dispatches remain [header, instruction, criteria]
+  // only — no mission bytes exist in a probe's prompt, so exact-prefix
+  // caching cannot serve it mission content.
   const userMessage = [
     `[BRAIN-ORCHESTRATED]`,
-    instruction,
-    // B-28: Probe dispatches are context-stripped — independence is deterministic
+    // Mission-stable prefix (byte-identical across tasks in one mission)
     ...(envelope._probe ? [] : [
       workspaceDirective,
       pingerEmail ? `\n## Requester\nUse this email for Drive sharing and communication: ${pingerEmail}` : '',
       envelope._projectContext ? `\n## Project Context\n${envelope._projectContext}` : '',
       envelope._sourceText ? `\n## Original User Request\n${envelope._sourceText}` : '',
-      context ? `\n## Context\n${context}` : '',
-    ]),
-    criteria ? `\n## Acceptance Criteria\n${criteria}` : '',
-    ...(envelope._probe ? [] : [
-      envelope.prior_results_context ? `\n## Prior Work\n${envelope.prior_results_context}` : '',
       envelope.memory_context ? `\n## Relevant Memory\n${envelope.memory_context}` : '',
     ]),
+    // Prior work (grows across the plan)
+    ...(envelope._probe ? [] : [
+      context ? `\n## Context\n${context}` : '',
+      envelope.prior_results_context ? `\n## Prior Work\n${envelope.prior_results_context}` : '',
+    ]),
+    // The task itself — last
+    instruction ? `\n## Task\n${instruction}` : '',
+    criteria ? `\n## Acceptance Criteria\n${criteria}` : '',
   ].filter(Boolean).join('\n');
 
   // Per-agent generation parameters from registry

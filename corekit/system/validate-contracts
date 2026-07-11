@@ -265,6 +265,30 @@ console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
     fail "vertex.context_windows incomplete (${CW_CHECK})"
   fi
 
+  # SESSION_CONTEXT_PLAN Phase 2: prompt-caching knobs
+  for field in anthropic_cache_ttl_stable anthropic_cache_ttl_mission; do
+    TTL="$(read_contract "vertex.${field}" 2>/dev/null || echo '')"
+    if [[ "$TTL" == "5m" || "$TTL" == "1h" ]]; then
+      pass "vertex.${field} = ${TTL}"
+    else
+      fail "vertex.${field} = '${TTL}' (expected '5m' or '1h')"
+    fi
+  done
+  for field in anthropic_cache_message_breakpoints anthropic_session_affinity gemini_explicit_cache; do
+    VAL="$(read_contract "vertex.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" == "true" || "$VAL" == "false" ]]; then
+      pass "vertex.${field} = ${VAL} (boolean)"
+    else
+      fail "vertex.${field} = '${VAL}' (expected boolean)"
+    fi
+  done
+  GECT="$(read_contract 'vertex.gemini_explicit_cache_ttl_seconds' 2>/dev/null || echo '')"
+  if [[ "$GECT" =~ ^[0-9]+$ ]] && [[ "$GECT" -ge 300 ]]; then
+    pass "vertex.gemini_explicit_cache_ttl_seconds = ${GECT} (≥ 300)"
+  else
+    fail "vertex.gemini_explicit_cache_ttl_seconds = '${GECT}' (expected number ≥ 300)"
+  fi
+
   # SESSION_CONTEXT_PLAN Phase 1: checkpoint digest budget
   CDC="$(read_contract 'compaction.checkpoint_digest_chars' 2>/dev/null || echo '')"
   if [[ "$CDC" =~ ^[0-9]+$ ]] && [[ "$CDC" -ge 500 ]]; then

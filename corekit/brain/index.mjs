@@ -150,9 +150,14 @@ const server = createServer(async (req, res) => {
       const rawTools = getFilteredTools(agentConfig.allowedTools);
       const tools = rawTools && Object.keys(rawTools).length > 0 ? rawTools : undefined;
 
-      // Separate system messages from the rest
+      // Separate system messages from the rest. SESSION_CONTEXT_PLAN Phase 2:
+      // multiple system messages are preserved as separate BLOCKS (stable
+      // first, volatile MEMORY last) so the stable prefix can carry a 1h
+      // cache breakpoint; content-parts arrays flatten to their text.
+      const contentToString = c => Array.isArray(c) ? c.map(p => p?.text || '').join('\n\n') : (c || '');
       const systemMessages = messages.filter(m => m.role === 'system');
-      const systemPrompt = systemMessages.map(m => m.content).join('\n') || agentConfig.systemPrompt;
+      const systemBlocks = systemMessages.map(m => contentToString(m.content)).filter(Boolean);
+      const systemPrompt = systemBlocks.join('\n') || agentConfig.systemPrompt;
       const chatMessages = messages.filter(m => m.role !== 'system');
 
       // Run inference (Anthropic uses streaming internally; response is collected before returning)
@@ -160,12 +165,14 @@ const server = createServer(async (req, res) => {
         modelString: agentConfig.model,
         fallbackModel: agentConfig.fallbackModel,
         systemPrompt,
+        systemBlocks: systemBlocks.length > 0 ? systemBlocks : undefined,
         messages: chatMessages,
         tools,
         maxSteps: agentConfig.maxSteps,
         maxTokens: maxTokens || agentConfig.maxTokens || 8192,
         temperature: temperature ?? agentConfig.temperature ?? 0.3,
         topP: topP ?? agentConfig.topP ?? 0.95,
+        agentId,
       });
 
       const u = result.usage || {};

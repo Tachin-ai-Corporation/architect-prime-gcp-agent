@@ -5,6 +5,8 @@
 
 import { getGoogleClient, getAnthropicClient, parseModel } from './router.mjs';
 import { toGoogleSchema } from './tools.mjs';
+import { computeBreakpointLayout, estimateTokens } from '../lib/prompt-blocks.mjs';
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -25,6 +27,36 @@ try {
   }
 } catch (e) {
   console.log('[loop] WARN: contracts.json not loaded: ' + e.message);
+}
+
+// ---- Prompt caching configuration (SESSION_CONTEXT_PLAN Phase 2, C-7) ----
+// Live-verified 2026-07-11: claude-opus-4-6 @ us-east5 accepts cache_control
+// ttl '1h' (billed under cache_creation.ephemeral_1h_input_tokens) with a
+// ~4,096-token caching floor; Gemini explicit cachedContent enforces 1h TTLs
+// exactly with a ~2,048-token floor. 1h is load-bearing, not an optimization:
+// a single motor task can outlive the 5m default TTL.
+const VERTEX_CFG = CONTRACTS.vertex || {};
+const CACHE_TTL_STABLE = VERTEX_CFG.anthropic_cache_ttl_stable || '1h';
+const CACHE_TTL_MISSION = VERTEX_CFG.anthropic_cache_ttl_mission || '1h';
+const MSG_BREAKPOINTS_ENABLED = VERTEX_CFG.anthropic_cache_message_breakpoints === true;
+const SESSION_AFFINITY_ENABLED = VERTEX_CFG.anthropic_session_affinity === true;
+const GEMINI_EXPLICIT_CACHE = VERTEX_CFG.gemini_explicit_cache === true;
+const GEMINI_CACHE_TTL_S = VERTEX_CFG.gemini_explicit_cache_ttl_seconds || 3600;
+
+// '5m' is the provider default — omit the ttl field for maximum compatibility.
+function cacheControl(ttl) {
+  return ttl && ttl !== '5m' ? { type: 'ephemeral', ttl } : { type: 'ephemeral' };
+}
+
+// Resolve system content: prefer caller-supplied blocks (stable block first),
+// fall back to the single systemPrompt string. The skill catalog (boot-stable)
+// is appended to the FIRST block so the stable prefix stays byte-identical.
+function resolveSystemBlocks(systemBlocks, systemPrompt, catalog) {
+  const blocks = (Array.isArray(systemBlocks) && systemBlocks.length > 0)
+    ? [...systemBlocks]
+    : [systemPrompt || ''];
+  if (catalog) blocks[0] = blocks[0] + catalog;
+  return blocks.filter(b => typeof b === 'string' && b.length > 0);
 }
 
 // Terminal tools carry their payload THROUGH the tool log (verdict.mjs parses it) —
@@ -295,11 +327,16 @@ function convertMessagesToGoogle(messages) {
       continue;
     }
 
-    // Regular text messages
+    // Regular text messages. Content-parts arrays (SESSION_CONTEXT_PLAN
+    // Phase 2) concatenate to the identical bytes renderBlocks() produced —
+    // exactly what Gemini implicit caching keys on.
     const role = msg.role === 'assistant' ? 'model' : 'user';
+    const text = Array.isArray(msg.content)
+      ? msg.content.map(p => p?.text || '').join('\n\n')
+      : (msg.content || '');
     result.push({
       role,
-      parts: [{ text: msg.content || '' }]
+      parts: [{ text }]
     });
   }
   return result;
@@ -338,6 +375,16 @@ function convertMessagesToAnthropic(messages) {
       };
     }
 
+    // Content-parts arrays pass through as Anthropic text blocks; the
+    // daemon-supplied `tier` hint survives for breakpoint placement and is
+    // stripped before the request leaves applyMessageBreakpoints().
+    if (Array.isArray(msg.content)) {
+      return {
+        role,
+        content: msg.content.map(p => ({ type: 'text', text: p?.text || '', ...(p?.tier ? { tier: p.tier } : {}) })),
+      };
+    }
+
     return {
       role,
       content: msg.content || ''
@@ -346,9 +393,66 @@ function convertMessagesToAnthropic(messages) {
 }
 
 /**
+ * Place cache_control on the first user message's content parts per the
+ * pure layout arithmetic (SESSION_CONTEXT_PLAN Phase 2). Non-standard `tier`
+ * hints are stripped here — nothing non-API ever reaches the provider.
+ * Logs part token estimates so sub-floor misses (Opus caches only prefixes
+ * over ~4,096 tokens) are explainable from telemetry.
+ */
+function applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed }) {
+  const first = anthropicMessages.find(m => m.role === 'user' && Array.isArray(m.content));
+  for (const msg of anthropicMessages) {
+    if (!Array.isArray(msg.content)) continue;
+    if (msg === first) {
+      const layout = computeBreakpointLayout(msg.content, {
+        systemBreakpointsUsed,
+        ttlStable: CACHE_TTL_STABLE,
+        ttlMission: CACHE_TTL_MISSION,
+      });
+      const sizes = msg.content.map(p => `${p.tier || 'volatile'}≈${estimateTokens(p.text)}tok`).join(' ');
+      console.log(`[loop] cache breakpoints: ${layout.length} message BP(s) [${sizes}]`);
+      msg.content = msg.content.map((p, i) => {
+        const bp = layout.find(b => b.index === i);
+        const clean = { type: 'text', text: p.text };
+        return bp ? { ...clean, cache_control: cacheControl(bp.ttl) } : clean;
+      });
+    } else {
+      msg.content = msg.content.map(p => ({ type: 'text', text: p.text }));
+    }
+  }
+}
+
+// ---- Gemini explicit context caching (flag-gated; SESSION_CONTEXT_PLAN Phase 2) ----
+// Live-verified mechanism: ai.caches.create() with a 1h TTL, ~2,048-token
+// floor, cachedContentTokenCount reports hits. Gateway-side lifecycle only:
+// handles keyed by content hash, expired entries recreated, any error falls
+// back to the inline path. No daemon state, nothing persisted (B-22 trivial).
+const _geminiCaches = new Map(); // hash -> { name, expiresAtMs }
+
+async function getGeminiCachedContent(ai, modelId, systemText, googleTools) {
+  const toolsJson = googleTools ? JSON.stringify(googleTools) : '';
+  const hash = createHash('sha256').update(`${modelId}\n${systemText}\n${toolsJson}`).digest('hex').substring(0, 16);
+  const now = Date.now();
+  const hit = _geminiCaches.get(hash);
+  if (hit && hit.expiresAtMs > now + 60_000) return hit.name;
+  if (estimateTokens(systemText) < 2048) return null; // sub-floor: provider would decline
+  const cache = await ai.caches.create({
+    model: modelId,
+    config: {
+      systemInstruction: systemText,
+      ...(googleTools ? { tools: googleTools } : {}),
+      ttl: `${GEMINI_CACHE_TTL_S}s`,
+    },
+  });
+  _geminiCaches.set(hash, { name: cache.name, expiresAtMs: now + GEMINI_CACHE_TTL_S * 1000 });
+  console.log(`[loop] gemini explicit cache created: ${cache.name} (≈${estimateTokens(systemText)}tok, ttl=${GEMINI_CACHE_TTL_S}s)`);
+  return cache.name;
+}
+
+/**
  * Execute tool-calling loop using Google GenAI SDK.
  */
-async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95 }) {
+async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95 }) {
   const ai = getGoogleClient();
   const localHistory = [...messages];
   let step = 0;
@@ -365,10 +469,21 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
     }))
   }] : undefined;
 
-  // Layer D: Inject skill catalog into system prompt for execution agents
-  if (tools) {
-    const catalog = getSkillCatalog();
-    if (catalog) systemPrompt = systemPrompt + catalog;
+  // Layer D: Inject skill catalog into system prompt for execution agents.
+  // Blocks resolve stable-first; Gemini receives one joined string either way.
+  const sysBlocks = resolveSystemBlocks(systemBlocks, systemPrompt, tools ? getSkillCatalog() : '');
+  const systemText = sysBlocks.join('\n\n');
+
+  // Flag-gated explicit cache for the stable system prefix (+ tools). Any
+  // failure degrades to the inline path — caching is never load-bearing.
+  let cachedContentName = null;
+  if (GEMINI_EXPLICIT_CACHE) {
+    try {
+      cachedContentName = await getGeminiCachedContent(ai, modelId, systemText, googleTools);
+    } catch (e) {
+      console.warn(`[loop] gemini explicit cache unavailable (${e.message}) — inline fallback`);
+      cachedContentName = null;
+    }
   }
 
   const guard = new LoopGuard();
@@ -382,8 +497,9 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
         model: modelId,
         contents: googleMessages,
         config: {
-          systemInstruction: systemPrompt,
-          tools: googleTools,
+          ...(cachedContentName
+            ? { cachedContent: cachedContentName }
+            : { systemInstruction: systemText, tools: googleTools }),
           temperature,
           maxOutputTokens: maxTokens,
           topP,
@@ -519,7 +635,7 @@ async function runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSt
 /**
  * Execute tool-calling loop using Anthropic Messages SDK.
  */
-async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95 }) {
+async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95, agentId = '' }) {
   const client = getAnthropicClient();
   const localHistory = [...messages];
   let step = 0;
@@ -534,22 +650,34 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
     input_schema: t.schema
   })) : undefined;
 
-  // Layer D: Inject skill catalog into system prompt for execution agents
-  if (tools) {
-    const catalog = getSkillCatalog();
-    if (catalog) systemPrompt = systemPrompt + catalog;
-  }
+  // Layer D: Inject skill catalog into system prompt for execution agents.
+  // Blocks resolve stable-first; MEMORY.md (volatile) rides the second block
+  // so its writes stop re-keying the stable prefix (SESSION_CONTEXT_PLAN Phase 2).
+  const sysBlocks = resolveSystemBlocks(systemBlocks, systemPrompt, tools ? getSkillCatalog() : '');
+
+  const promptCachingEnabled = CONTRACTS.vertex?.anthropic_prompt_caching === true;
+  // BP1 (1h TTL, live-verified) on the stable first block only. Later system
+  // blocks (MEMORY.md) stay uncached — their churn is the reason they're last.
+  const systemPayload = promptCachingEnabled
+    ? sysBlocks.map((text, i) => (i === 0
+        ? { type: 'text', text, cache_control: cacheControl(CACHE_TTL_STABLE) }
+        : { type: 'text', text }))
+    : sysBlocks.join('\n');
+
+  // Session affinity: keep consecutive brain loops on the same backend so
+  // cache reads actually hit (live verification: required on load-balanced
+  // Vertex endpoints). Stable per agent route per gateway process.
+  const requestOptions = SESSION_AFFINITY_ENABLED
+    ? { headers: { 'X-Vertex-Ai-Session-Id': `brain-${agentId || 'agent'}-${process.pid}` } }
+    : undefined;
 
   const guard = new LoopGuard();
 
   while (step < maxSteps) {
     const anthropicMessages = convertMessagesToAnthropic(localHistory);
-
-    // CP9: Prompt caching — structure system as content block with cache_control if enabled
-    const promptCachingEnabled = CONTRACTS.vertex?.anthropic_prompt_caching === true;
-    const systemPayload = promptCachingEnabled
-      ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
-      : systemPrompt;
+    if (promptCachingEnabled && MSG_BREAKPOINTS_ENABLED) {
+      applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed: 1 });
+    }
 
     console.log(`[loop] Calling Anthropic Claude ${modelId} (step ${step}/${maxSteps})...`);
     const response = await retryWithBackoff(
@@ -566,7 +694,7 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
           messages: anthropicMessages,
           tools: anthropicTools,
           temperature,
-        });
+        }, requestOptions);
         return await stream.finalMessage();
       },
       `Anthropic ${modelId} step ${step}`
@@ -696,19 +824,21 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, ma
 export async function runAgentTurnSync({
   modelString,
   systemPrompt,
+  systemBlocks,
   messages,
   tools,
   maxSteps = 12,
   maxTokens = 8192,
   temperature = 0.3,
   topP = 0.95,
+  agentId = '',
 }) {
   const { prefix, modelId } = parseModel(modelString);
 
   if (prefix === 'vertex-anthropic') {
-    return await runAnthropicTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens, temperature, topP });
+    return await runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens, temperature, topP, agentId });
   } else {
-    return await runGoogleTurnSync({ modelId, systemPrompt, messages, tools, maxSteps, maxTokens, temperature, topP });
+    return await runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens, temperature, topP });
   }
 }
 
