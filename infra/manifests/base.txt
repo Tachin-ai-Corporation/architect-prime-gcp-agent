@@ -119,6 +119,7 @@ corekit/lib/channel.mjs corekit/lib/channel.mjs
 corekit/lib/envelope-lifecycle.mjs corekit/lib/envelope-lifecycle.mjs
 corekit/lib/deliverable.mjs corekit/lib/deliverable.mjs
 corekit/lib/checkpoint-executor.mjs corekit/lib/checkpoint-executor.mjs
+corekit/lib/compaction.mjs corekit/lib/compaction.mjs
 corekit/lib/to-str.mjs corekit/lib/to-str.mjs
 corekit/lib/agent-output.mjs corekit/lib/agent-output.mjs
 corekit/lib/plan-utils.mjs corekit/lib/plan-utils.mjs

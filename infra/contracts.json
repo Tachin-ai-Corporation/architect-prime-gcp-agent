@@ -113,6 +113,9 @@
     "voicing_enabled": true,
     "voicing_tail_chars": 1500
   },
+  "compaction": {
+    "checkpoint_digest_chars": 4000
+  },
   "projects": {
     "context_max_tokens": 2000,
     "promotion_auto": false,

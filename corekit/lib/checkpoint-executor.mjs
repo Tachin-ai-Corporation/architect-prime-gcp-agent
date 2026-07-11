@@ -6,6 +6,7 @@
 
 import { toStr } from './to-str.mjs';
 import { smartTruncate } from './vertex-text.mjs';
+import { buildPriorWorkContext, renderCheckpointDigest } from './compaction.mjs';
 import { makeAddress } from './channel.mjs';
 import { composeDelegationMarker } from './delegation.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation, extractProbes, stakesAtLeast } from './verdict.mjs';
@@ -768,9 +769,19 @@ export async function executeCheckpoints(checkpoints, opts) {
       const currentSkillCatalog = (taskAgent === 'motor' || taskAgent === 'temporal-research')
         ? skillIndex : '';
 
-      const priorContext = [...allResults, ...cpResults].length > 0
-        ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n\n')
-        : undefined;
+      // SESSION_CONTEXT_PLAN Phase 1: prior work is sent ONCE — completed
+      // checkpoints as deterministic digests, the current checkpoint verbatim.
+      // Previously context_summary AND prior_results_context both carried the
+      // full transcript at CTX_AGENT_STEP chars/step (quadratic growth, ×2).
+      const priorContext = buildPriorWorkContext({
+        checkpoints,
+        allResults,
+        cpResults,
+        currentCpNum: cpNum,
+        missionId: envelope.id,
+        stepChars: CTX_AGENT_STEP,
+        digestChars: contracts?.compaction?.checkpoint_digest_chars || 4000,
+      });
 
       const dispatchPayload = {
         instruction: currentInstruction + currentSkillCatalog,
@@ -779,9 +790,6 @@ export async function executeCheckpoints(checkpoints, opts) {
         _projectContext: dispatchProjCtx,
         _sourceText: envelope.source_text || null,
         _sourceMeta: envelope.source_meta || null,
-        context_summary: [...allResults, ...cpResults].length > 0
-          ? [...allResults, ...cpResults].map(r => `Step ${r.step} (${r.agent}): ${smartTruncate(r.result || '', CTX_AGENT_STEP)}`).join('\n')
-          : undefined,
         prior_results_context: priorContext,
         memory_context: envelope.memory_context || null,
       };
@@ -1118,6 +1126,18 @@ export async function executeCheckpoints(checkpoints, opts) {
     // Mark checkpoint complete or failed
     cpEnvelope.status = cpFailed ? 'failed' : 'complete';
     cpEnvelope.output = cpFailed ? `Checkpoint failed at task ${cpResults.length}/${cpTasks.length}` : `Checkpoint complete: ${cpResults.length} tasks`;
+    // SESSION_CONTEXT_PLAN Phase 1: persist the deterministic digest for
+    // observability. Dispatch context recomputes it purely from results, so
+    // this field is never load-bearing (B-22). Dedicated field — never
+    // context_forward, which is the live resume/human-injection surface.
+    cpEnvelope._cp_digest = renderCheckpointDigest({
+      cpNum,
+      instruction: cpEnvelope.instruction || '',
+      acceptCriteria: cpEnvelope.accept_criteria || '',
+      results: cpResults,
+      missionId: envelope.id,
+      capChars: contracts?.compaction?.checkpoint_digest_chars || 4000,
+    });
     cpEnvelope.completed_at = new Date().toISOString();
     cpEnvelope.updated_at = new Date().toISOString();
     await firestoreWrite('work', cpId, cpEnvelope);

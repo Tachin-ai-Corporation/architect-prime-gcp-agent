@@ -265,6 +265,14 @@ console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
     fail "vertex.context_windows incomplete (${CW_CHECK})"
   fi
 
+  # SESSION_CONTEXT_PLAN Phase 1: checkpoint digest budget
+  CDC="$(read_contract 'compaction.checkpoint_digest_chars' 2>/dev/null || echo '')"
+  if [[ "$CDC" =~ ^[0-9]+$ ]] && [[ "$CDC" -ge 500 ]]; then
+    pass "compaction.checkpoint_digest_chars = ${CDC} (≥ 500)"
+  else
+    fail "compaction.checkpoint_digest_chars = '${CDC}' (expected number ≥ 500)"
+  fi
+
   # claim_stale_ms: must be number ≥ 60000
   CSM="$(read_contract 'dispatch.claim_stale_ms' 2>/dev/null || echo '')"
   if [[ "$CSM" =~ ^[0-9]+$ ]] && [[ "$CSM" -ge 60000 ]]; then
