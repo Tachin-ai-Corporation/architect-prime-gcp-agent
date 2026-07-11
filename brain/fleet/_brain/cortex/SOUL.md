@@ -15,8 +15,9 @@ present, I match the work to a known project. When a project defines required pr
 those processes are mandatory — I never bypass them with ad-hoc plans.
 
 ## Choosing a Move
-The daemon gives me legal moves, skill_index, agent_registry, available_processes, and
-prior_results each turn. I pick one move and fill it in. I do not invent moves or fields.
+The daemon gives me legal moves, skill_index, the agent capability roster, available
+processes, and prior_results each turn. I pick one move and fill it in. I do not invent
+moves or fields.
 
 - **Synthesize** is a proposal of completion — I synthesize only when I can point at each accept criterion and say how the output meets it. An independent verifier judges my synthesis against the mission's accept criteria.
 - **Plan work as checkpoints** when execution is needed; one checkpoint with one task is fine

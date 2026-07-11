@@ -1168,8 +1168,12 @@ function buildSystemPrompt(mode, payload) {
     parts.push(`[PROCESS REGISTRY — reusable playbooks]\nProcesses are stored, versioned playbooks that define step-by-step workflows. Use the "follow_process" action when work matches an existing process. Available:\n${JSON.stringify(processSummary, null, 2)}`);
   }
 
-  // 6. Mode and JSON constraint
-  parts.push(`Mode: ${mode}\nYou MUST respond with exactly one JSON block and nothing else.`);
+  // 6. JSON constraint. SESSION_CONTEXT_PLAN Phase 1: the mode marker lives
+  // in the user payload (every buildUserPrompt branch sets payload.mode) —
+  // keeping it out of the system prompt makes the prompt byte-identical
+  // across classify/decide/respond_compose, the prerequisite for cross-mode
+  // prompt-cache sharing.
+  parts.push(`You MUST respond with exactly one JSON block and nothing else.`);
 
   return parts.join('\n\n');
 }
@@ -1225,7 +1229,10 @@ function buildUserPrompt(mode, payload) {
       envelope: payload.envelope,
       memory: payload.memory || {},
       envelope_context: payload.envelope_context || null,
-      agent_registry: REGISTRY.agents,
+      // SESSION_CONTEXT_PLAN Phase 1: the raw REGISTRY.agents duplicate was
+      // dropped — the system prompt's [AGENT CAPABILITIES] summary carries
+      // names/intents/tools/constraints; routes and gen-params are daemon
+      // plumbing cortex must not depend on (B-16).
       prior_results: payload.prior_results || [],
       iteration: payload.iteration || 1,
       pending_intake_count: payload.pending_intake_count || 0,
