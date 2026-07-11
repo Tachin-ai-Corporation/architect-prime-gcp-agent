@@ -138,6 +138,20 @@ export function createClient(config) {
           + `\n\n[TRUNCATED — full output saved to shared workspace / Drive]`;
       }
     }
+    // SESSION_CONTEXT_PLAN Phase 0b: _accumulated_context was unguarded — an
+    // oversized envelope made EVERY write to the doc fail (losing step_ledger
+    // and status transitions). Last-resort guard: keep the head (mission
+    // framing) and the most recent tail.
+    if (data?._accumulated_context && typeof data._accumulated_context === 'string') {
+      const MAX_ACC = 400_000;
+      const acc = data._accumulated_context;
+      if (acc.length > MAX_ACC) {
+        log('WARN', `write: truncating _accumulated_context from ${acc.length} to ${MAX_ACC} chars for ${path}`);
+        data._accumulated_context = acc.substring(0, 50_000)
+          + `\n\n[--- ${acc.length - MAX_ACC} chars elided at Firestore size guard ---]\n\n`
+          + acc.substring(acc.length - (MAX_ACC - 50_000));
+      }
+    }
     const url = `${BASE}/${path}`;
     const resp = await fetch(url, {
       method: 'PATCH',

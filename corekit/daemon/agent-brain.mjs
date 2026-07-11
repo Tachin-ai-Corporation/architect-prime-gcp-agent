@@ -3320,6 +3320,26 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     iteration++;
     envelope.iteration = iteration;
 
+    // Phase 3.3 / SESSION_CONTEXT_PLAN Phase 0b: priorResults budget — prevent
+    // unbounded growth. Previously this check sat after the action-dispatch
+    // `continue`, making it unreachable on every handled action; it now runs
+    // at the top of every iteration, before the decide payload is built.
+    const PRIOR_RESULTS_MAX = CONTRACTS.dispatch?.prior_results_max || 25;
+    const PRIOR_RESULTS_KEEP = Math.floor(PRIOR_RESULTS_MAX * 0.6); // keep last 60%
+    if (priorResults.length > PRIOR_RESULTS_MAX) {
+      const keep = priorResults.slice(-PRIOR_RESULTS_KEEP);
+      const older = priorResults.slice(0, -PRIOR_RESULTS_KEEP);
+      const summarized = older
+        .map(r => `${r.agent || 'system'}: ${toStr(r.result).substring(0, 100)}`)
+        .join('\n');
+      priorResults.length = 0;
+      priorResults.push(
+        { agent: 'system', result: `[PRIOR WORK SUMMARY]\n${summarized}`, success: true },
+        ...keep
+      );
+      log('INFO', `priorResults truncated: ${older.length} entries summarized, ${keep.length} kept`);
+    }
+
     // Queue awareness: check for pending intake
     const queueInfo = await getPendingIntakeQueue();
     if (queueInfo.count > 0) {
@@ -3496,23 +3516,6 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       agent: 'system',
       result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan, delegate, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait.`,
     });
-
-    // Phase 3.3: priorResults budget — prevent unbounded growth
-    const PRIOR_RESULTS_MAX = CONTRACTS.dispatch?.prior_results_max || 25;
-    const PRIOR_RESULTS_KEEP = Math.floor(PRIOR_RESULTS_MAX * 0.6); // keep last 60%
-    if (priorResults.length > PRIOR_RESULTS_MAX) {
-      const keep = priorResults.slice(-PRIOR_RESULTS_KEEP);
-      const older = priorResults.slice(0, -PRIOR_RESULTS_KEEP);
-      const summarized = older
-        .map(r => `${r.agent || 'system'}: ${toStr(r.result).substring(0, 100)}`)
-        .join('\n');
-      priorResults.length = 0;
-      priorResults.push(
-        { agent: 'system', result: `[PRIOR WORK SUMMARY]\n${summarized}`, success: true },
-        ...keep
-      );
-      log('INFO', `priorResults truncated: ${older.length} entries summarized, ${keep.length} kept`);
-    }
   }
 
   // Max iterations reached
@@ -3571,9 +3574,11 @@ function buildEnvelopeContext(envelope, priorResults, memoryResults) {
   if (accumulated.length > CONTEXT_CHAR_BUDGET) {
     const blocks = accumulated.split(/\n\n(?=--- Iteration )/);
     if (blocks.length > 2) {
-      // Keep first 10% + last 90% of blocks
+      // Keep first 10% (mission framing) + last 50% (recent work), drop the
+      // true middle. SESSION_CONTEXT_PLAN Phase 0b: the previous 10%/90%
+      // split summed to >= N-1 blocks — the prune was a no-op.
       const keepFirst = Math.max(1, Math.floor(blocks.length * 0.1));
-      const keepLast = Math.max(1, Math.floor(blocks.length * 0.9));
+      const keepLast = Math.max(1, Math.floor(blocks.length * 0.5));
       const pruned = [
         ...blocks.slice(0, keepFirst),
         `\n--- [${blocks.length - keepFirst - keepLast} iterations pruned for context budget] ---\n`,

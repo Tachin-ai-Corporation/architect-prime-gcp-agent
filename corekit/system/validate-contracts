@@ -240,6 +240,31 @@ for (const x of t.types) console.log(x.id);
     fi
   done
 
+  # SESSION_CONTEXT_PLAN Phase 0b: context_token_budget must stay Firestore-safe.
+  # _accumulated_context persists on the work doc (1MiB limit); budget × 4 chars
+  # must leave headroom for output (800K guard) and other fields.
+  CTB="$(read_contract 'dispatch.context_token_budget' 2>/dev/null || echo '')"
+  if [[ "$CTB" =~ ^[0-9]+$ ]] && [[ "$CTB" -le 125000 ]]; then
+    pass "dispatch.context_token_budget = ${CTB} (≤ 125000, Firestore-safe)"
+  else
+    fail "dispatch.context_token_budget = '${CTB}' (expected number ≤ 125000 — ×4 chars must stay under Firestore doc limits)"
+  fi
+
+  # SESSION_CONTEXT_PLAN Phase 0b: vertex.context_windows must cover every
+  # model referenced in vertex.models (compaction thresholds key off these).
+  CW_CHECK="$(node -e "
+const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
+const windows = c.vertex?.context_windows || {};
+const models = Object.values(c.vertex?.models || {}).map(m => m.split('/').pop());
+const missing = models.filter(m => !(windows[m] > 0));
+console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
+" 2>/dev/null || echo 'ERROR')"
+  if [[ "$CW_CHECK" == "OK" ]]; then
+    pass "vertex.context_windows covers all vertex.models entries"
+  else
+    fail "vertex.context_windows incomplete (${CW_CHECK})"
+  fi
+
   # claim_stale_ms: must be number ≥ 60000
   CSM="$(read_contract 'dispatch.claim_stale_ms' 2>/dev/null || echo '')"
   if [[ "$CSM" =~ ^[0-9]+$ ]] && [[ "$CSM" -ge 60000 ]]; then

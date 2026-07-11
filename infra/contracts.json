@@ -9,7 +9,12 @@
       "cortexFallback": "vertex-google/gemini-2.5-pro",
       "subagent": "vertex-google/gemini-2.5-flash"
     },
-    "anthropic_prompt_caching": true
+    "anthropic_prompt_caching": true,
+    "context_windows": {
+      "claude-opus-4-6": 200000,
+      "gemini-2.5-pro": 1048576,
+      "gemini-2.5-flash": 1048576
+    }
   },
   "agents": {
     "defaultId": "cortex",
@@ -18,8 +23,7 @@
   "gateway": {
     "port": 18789,
     "timeoutSeconds": 180,
-    "bind": "loopback",
-    "forward_gen_params": true
+    "bind": "loopback"
   },
   "env": {
     "GOOGLE_GENAI_USE_VERTEXAI": "True",
@@ -39,7 +43,7 @@
     "stale_cleanup_hours": 24,
     "archive_age_days": 7,
     "archive_interval_ms": 3600000,
-    "context_token_budget": 400000,
+    "context_token_budget": 100000,
     "needs_input_timeout_hours": 72,
     "step_ledger_enabled": true,
     "checkpoint_resume_enabled": true,
