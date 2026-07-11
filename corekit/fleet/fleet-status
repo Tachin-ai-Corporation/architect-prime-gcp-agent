@@ -112,10 +112,46 @@ deployed_at = fv(fields.get("deployedAt"))
 deploy_steps = fv(fields.get("deploySteps")) or []
 action_required = fv(fields.get("actionRequired")) or None
 
+# Health + liveness. The registry 'status' field is deploy-time and never
+# reflects a crash-looping brain — so derive real liveness from the health
+# record written by fleet-health-check (brain state + heartbeat freshness).
+health = fv(fields.get("health")) or {}
+last_heartbeat = fv(fields.get("lastHeartbeat"))
+STALE_MIN = 45  # 3 health-check cycles (timer runs every 15 min)
+
+def _heartbeat_age_min(hb):
+    if not hb:
+        return None
+    try:
+        t = datetime.fromisoformat(str(hb).replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - t).total_seconds() / 60.0
+    except Exception:
+        return None
+
+hb_age = _heartbeat_age_min(last_heartbeat)
+brain_state = health.get("brainState", "")
+health_status = health.get("status", "")
+degraded = health.get("degraded", "")
+
+if not health_status:
+    live, liveness = None, "no health data yet"
+elif health_status == "healthy" and (hb_age is None or hb_age <= STALE_MIN):
+    live, liveness = True, "healthy"
+elif brain_state and brain_state != "active":
+    live, liveness = False, "brain %s" % brain_state
+elif hb_age is not None and hb_age > STALE_MIN:
+    live, liveness = False, "no heartbeat for %dm" % int(hb_age)
+else:
+    live, liveness = False, (degraded or "unhealthy")
+
 if json_mode:
     print(json.dumps({
         "agent": agent_name,
         "status": status,
+        "live": live,
+        "liveness": liveness,
+        "health": health or None,
+        "lastHeartbeat": last_heartbeat,
         "specialty": specialty,
         "email": email,
         "vm": vm,
@@ -125,10 +161,18 @@ if json_mode:
         "actionRequired": action_required,
     }, indent=2))
 else:
+    live_icon = {True: "🟢 LIVE", False: "🔴 DOWN", None: "⚪ UNKNOWN"}[live]
     print(f"\n{'='*50}")
     print(f"  FLEET AGENT: {agent_name}")
     print(f"{'='*50}")
-    print(f"  Status     : {status}")
+    print(f"  Status     : {status}  (registry / deploy-time)")
+    print(f"  Liveness   : {live_icon} — {liveness}")
+    if health:
+        hb = f"{int(hb_age)}m ago" if hb_age is not None else "never"
+        print(f"  Services   : brain={brain_state or '?'}  gateway={health.get('gatewayHttp','?')}  ears={health.get('earsState','?')}  mouth={health.get('mouthState','?')}")
+        print(f"  Heartbeat  : {hb}  (last healthy check)")
+        if health.get("lastRecoveryMethod"):
+            print(f"  Recovery   : {health.get('lastRecoveryMethod')} → {health.get('lastRecoveryResult','?')} @ {health.get('lastRecoveryAttempt','?')}")
     print(f"  Specialty  : {specialty}")
     print(f"  Email      : {email}")
     print(f"  VM         : {vm}")
@@ -213,13 +257,31 @@ def fv(f):
         return m
     return ""
 
+def derive_live(status, health):
+    """Real liveness from the health record, not the deploy-time status field.
+    Returns True (live), False (down), or None (no health data yet)."""
+    hs = (health or {}).get("status", "")
+    bs = (health or {}).get("brainState", "")
+    if not hs:
+        return None
+    if hs == "healthy":
+        return True
+    return False
+
 agents = []
 for doc in docs:
     name = doc.get("name", "").split("/")[-1]
     fields = doc.get("fields", {})
+    health = fv(fields.get("health")) or {}
+    status = fv(fields.get("status"))
     agents.append({
         "name": name,
-        "status": fv(fields.get("status")),
+        "status": status,
+        "live": derive_live(status, health),
+        "brainState": health.get("brainState", ""),
+        "degraded": health.get("degraded", ""),
+        "health": health or None,
+        "lastHeartbeat": fv(fields.get("lastHeartbeat")),
         "specialty": fv(fields.get("specialty")),
         "email": fv(fields.get("email")),
         "vm": fv(fields.get("vm")),
@@ -248,7 +310,18 @@ else:
             total_count = len(steps)
             progress = f"  [{done_count}/{total_count}]" if total_count > 0 and a["status"] in ("deploying", "needs_action") else ""
 
-            print(f"  {status_icon}  {a['name']:12s}  {a['specialty']:10s}  {a['status']}{progress}")
+            # Liveness marker — flags the registry-online-but-brain-dead case
+            # that a deploy-time status alone hides.
+            live = a.get("live")
+            if live is False:
+                reason = a.get("degraded") or (f"brain {a['brainState']}" if a.get("brainState") else "unhealthy")
+                live_note = f"  🔴 DOWN ({reason})"
+            elif live is None:
+                live_note = "  ⚪ (no health data)"
+            else:
+                live_note = ""
+
+            print(f"  {status_icon}  {a['name']:12s}  {a['specialty']:10s}  {a['status']}{progress}{live_note}")
 
             # Show action required if any
             ar = a.get("actionRequired")

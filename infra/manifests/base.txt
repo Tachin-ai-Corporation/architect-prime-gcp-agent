@@ -117,6 +117,7 @@ corekit/lib/history.mjs corekit/lib/history.mjs
 corekit/lib/delegation.mjs corekit/lib/delegation.mjs
 corekit/lib/channel.mjs corekit/lib/channel.mjs
 corekit/lib/envelope-lifecycle.mjs corekit/lib/envelope-lifecycle.mjs
+corekit/lib/deliverable.mjs corekit/lib/deliverable.mjs
 corekit/lib/checkpoint-executor.mjs corekit/lib/checkpoint-executor.mjs
 corekit/lib/to-str.mjs corekit/lib/to-str.mjs
 corekit/lib/agent-output.mjs corekit/lib/agent-output.mjs

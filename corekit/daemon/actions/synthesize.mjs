@@ -49,8 +49,10 @@ export async function handleSynthesize(ctx, deps) {
     };
   }
 
-  // B-30: Compose answer-first output when cortex provides structured fields
-  const rawSynthesisOutput = decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || '';
+  // B-30: Compose answer-first output when cortex provides structured fields.
+  // `summary` is included because enforceSchema's raw-text fallback emits
+  // { action:'synthesize', summary } (vertex-text.mjs) — without it that body drops.
+  const rawSynthesisOutput = decision.synthesis || decision.summary || decision.content || decision.response || decision.message || decision.instruction || '';
   const synthesisOutput = composeAnswerFirst(decision, rawSynthesisOutput);
 
   // Wrap synthesis in C→T under the mission
@@ -186,6 +188,7 @@ export async function handleSynthesize(ctx, deps) {
   await completeEnvelope(envelope, {
     status: 'complete',
     output: synthesisOutput,
+    priorResults,
     historyDetail: 'Synthesized response',
     tokenUsage: _tokenUsage,
   });

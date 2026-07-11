@@ -3,14 +3,20 @@
 
 import { toStr } from './to-str.mjs';
 
-// Motor failure patterns — previously in callAgent content inspection
+// Motor failure patterns — previously in callAgent content inspection.
+// The error prefix accepts every form motor output actually uses: bash tools
+// emit `[<tool>] [ERROR] …`, JS/tool failures emit `Error: …` (e.g. the gateway
+// tool runner and work-output-read), and unhandled throws emit `Fatal: …`. The
+// `/i` flag also covers the lowercase/`ERROR:` variants. Anchoring on `[ERROR]`
+// alone silently missed `Error:`-prefixed auth failures.
+const ERR_PREFIX = String.raw`(?:\[ERROR\]|Error:|Fatal:)`;
 const MOTOR_FAILURE_PATTERNS = [
-  { pattern: /(?:\[ERROR\]|Fatal:).*DWD token expired/i, type: 'auth', detail: 'DWD token expired' },
-  { pattern: /(?:\[ERROR\]|Fatal:).*Permission denied/i, type: 'auth', detail: 'Permission denied' },
-  { pattern: /(?:\[ERROR\]|Fatal:).*PERMISSION_DENIED/i, type: 'auth', detail: 'API permission denied' },
-  { pattern: /(?:\[ERROR\]|Fatal:).*Authentication error/i, type: 'auth', detail: 'Authentication error' },
-  { pattern: /(?:\[ERROR\]|Fatal:).*exit code [1-9]\d*/i, type: 'exit_code', detail: 'Non-zero exit code' },
-  { pattern: /(?:\[ERROR\]|Fatal:).*command failed/i, type: 'exit_code', detail: 'Command failed' },
+  { pattern: new RegExp(`${ERR_PREFIX}.*DWD token expired`, 'i'), type: 'auth', detail: 'DWD token expired' },
+  { pattern: new RegExp(`${ERR_PREFIX}.*Permission denied`, 'i'), type: 'auth', detail: 'Permission denied' },
+  { pattern: new RegExp(`${ERR_PREFIX}.*PERMISSION_DENIED`, 'i'), type: 'auth', detail: 'API permission denied' },
+  { pattern: new RegExp(`${ERR_PREFIX}.*Authentication error`, 'i'), type: 'auth', detail: 'Authentication error' },
+  { pattern: new RegExp(`${ERR_PREFIX}.*exit code [1-9]\\d*`, 'i'), type: 'exit_code', detail: 'Non-zero exit code' },
+  { pattern: new RegExp(`${ERR_PREFIX}.*command failed`, 'i'), type: 'exit_code', detail: 'Command failed' },
 ];
 
 /**

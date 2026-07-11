@@ -10,6 +10,7 @@
 // ============================================================
 
 import { writeMissionRecord } from './mission-record.mjs';
+import { composeDeliverable } from './deliverable.mjs';
 
 /**
  * Create a lifecycle handler bound to the given dependencies.
@@ -69,6 +70,7 @@ export function createLifecycleHandler(deps) {
       historyDetail,
       blocker = null,
       blockerType = null,
+      priorResults = null,
       eventType = status === 'blocked' ? 'on_failure' : 'on_complete',
       skipArtifacts = false,
       skipMemory = false,
@@ -82,7 +84,14 @@ export function createLifecycleHandler(deps) {
     }
 
     // ---- Step 1: Set envelope fields ----
-    envelope.output = output;
+    // Guarantee a non-empty deliverable summary before mission record + artifact
+    // footer capture it (B-14, B-30). Mirrors the inline completeEnvelope in
+    // agent-brain.mjs — keep both in sync.
+    const _deliverable = composeDeliverable(envelope, { synthesis: output, priorResults });
+    if (_deliverable.composed) {
+      log('WARN', `[deliverable] Empty synthesis on ${envelope.id} (${status}) — composed summary from mission state`);
+    }
+    envelope.output = _deliverable.body;
     envelope.status = status;
     envelope.updated_at = now();
 

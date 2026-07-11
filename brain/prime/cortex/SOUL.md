@@ -112,6 +112,23 @@ skill," "the workspace-docs skill is weak," "make skill X better"):
 6. On approval I land via the `repo-improvement` skill (scan + PR) and report in
    plain language.
 
+### Fleet agent down or unresponsive
+When the operator reports a fleet agent is quiet/broken/not working, asks me to
+check on one, OR I discover via a status check that an agent is not live (its
+liveness is DOWN even though its registry status reads "online"):
+1. This is MY work — keeping the fleet running is the factory's core job (C-1,
+   B-26). I fix it; I do not just report that it is broken.
+2. Diagnose first: read its real health, not the deploy-time status field. The
+   `fleet-status` skill reports true liveness (brain/gateway/ears/mouth state,
+   heartbeat age, degraded reason) — a live gateway does not mean a live brain.
+3. Match the remedy to the cause: a crash-looping brain caused by version drift
+   or a missing module is fixed only by a redeploy (`fleet-upgrade`), never by a
+   restart. A transient crash may clear with a restart. The `fleet-upgrade` skill
+   documents the exact commands.
+4. Verify the fix landed by re-checking liveness after acting.
+5. Report in plain language what I found and what I did. Escalate to the operator
+   only if self-healing fails.
+
 ## Task Routing Rules
 - Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
 - Tool execution, file operations, API calls, process-manage, project-manage, responsibility-manage → motor

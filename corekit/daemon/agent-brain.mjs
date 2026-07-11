@@ -47,6 +47,7 @@ import { composeDelegationMarker, composeDelegationResultMarker } from '../corek
 import { makeAddress } from '../corekit/lib/channel.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
+import { composeDeliverable } from '../corekit/lib/deliverable.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
 import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
@@ -1731,6 +1732,7 @@ async function completeEnvelope(envelope, opts) {
     historyDetail,
     blocker = null,
     blockerType = null,
+    priorResults = null,
     eventType = status === 'blocked' ? 'on_failure' : 'on_complete',
     skipArtifacts = false,
     skipMemory = false,
@@ -1743,8 +1745,20 @@ async function completeEnvelope(envelope, opts) {
     envelope.delivery_status = 'internal';
   }
 
-  // Step 1: Set envelope fields
-  envelope.output = output;
+  // Step 1: Set envelope fields.
+  // Compose a guaranteed-non-empty deliverable summary (B-14, B-30): a real
+  // synthesis is used verbatim; an empty/artifact-only body is replaced with a
+  // deterministic summary built from mission state. Done BEFORE the mission
+  // record and artifact footer so both capture the summary, never a bare body.
+  const _deliverable = composeDeliverable(envelope, {
+    synthesis: output,
+    priorResults,
+    minChars: CONTRACTS.dispatch?.min_deliverable_chars,
+  });
+  if (_deliverable.composed) {
+    log('WARN', `[deliverable] Empty synthesis on ${envelope.id} (${status}) — composed summary from mission state`);
+  }
+  envelope.output = _deliverable.body;
   envelope.status = status;
   envelope.updated_at = now();
 
@@ -3390,8 +3404,27 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     // If a guard was set in a previous iteration, enforce it now
     if (_activeGuard && iteration > _activeGuard.injectedAt) {
       if (action === _activeGuard.forbidden) {
-        log('WARN', `Guard override: cortex chose forbidden '${action}', forcing '${_activeGuard.fallback}'`);
-        action = _activeGuard.fallback;
+        const fallback = _activeGuard.fallback;
+        // CP2: Before forcing a terminal synthesis, give cortex exactly one
+        // dedicated turn to author the final answer if its current decision
+        // carries no summary — otherwise the forced synthesize runs on a stale
+        // plan decision and closes empty (B-1: the model owns the judgment; the
+        // daemon owns the loop). The CP1 deliverable floor is the safety net if
+        // it still returns empty after this grace turn.
+        const forcingSynthesis = fallback === 'synthesize' || fallback === 'synthesize_with_failure';
+        const hasSummary = !!(decision.synthesis || decision.summary || decision.answer || decision.content || decision.message);
+        if (forcingSynthesis && !hasSummary && !envelope._synth_grace_used) {
+          envelope._synth_grace_used = true;
+          log('WARN', `Guard: cortex chose forbidden '${action}' with no summary — granting one synthesis turn before forcing '${fallback}'`);
+          priorResults.push({
+            agent: 'system',
+            result: `[SYSTEM] Finish now: return action "${fallback}" with a written outcome summary for the requester in the "synthesis" field — what was accomplished, or why it could not be. Do NOT plan more work.`,
+          });
+          _activeGuard = { ..._activeGuard, injectedAt: iteration }; // re-arm: force next turn if still no synthesis
+          continue;
+        }
+        log('WARN', `Guard override: cortex chose forbidden '${action}', forcing '${fallback}'`);
+        action = fallback;
         decision.action = action;
         // Transfer guard context to decision if relevant
         if (_activeGuard.context) Object.assign(decision, _activeGuard.context);

@@ -22,6 +22,7 @@ import { hostname as osHostname } from 'os';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
 import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
+import { stripArtifactFooter } from '../corekit/lib/deliverable.mjs';
 import { parseAddress, deliverToAddress, mirrorToDashboard, initChannel, toGChatMarkdown, discoverSpaces } from '../corekit/lib/channel.mjs';
 
 // ---- Config ----
@@ -811,8 +812,19 @@ async function pollBrainV3Envelopes() {
           await deliverDelegation(output, addr, deliveryTarget);
           log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
         } else {
+          // CP4 defense-in-depth: the brain's completeEnvelope guarantees a
+          // non-empty summary (deliverable.mjs). If an artifact-only body still
+          // reaches here (older envelope, or a path that bypassed that ceremony),
+          // don't let the voicer improvise "I found some artifacts" over it —
+          // prepend an honest deterministic line and flag it.
+          let deliverBody = output;
+          if (!stripArtifactFooter(output)) {
+            const noun = attachments.length ? `${attachments.length} artifact(s) were produced` : 'the work completed';
+            deliverBody = `I finished this, but no written summary was generated — ${noun}. Details below:\n\n${output}`;
+            log('[TELEMETRY] deliverable_empty_body reached mouth — prepended neutral summary', { envId, status: envStatus });
+          }
           // Standard voicing pipeline for non-delegation envelopes
-          await classifyAndDeliver(contextHint + output, envQuestion, addr, mentions, attachments, convoTail);
+          await classifyAndDeliver(contextHint + deliverBody, envQuestion, addr, mentions, attachments, convoTail);
           log('Delivered envelope output', { envId, status: envStatus, intent: envType });
         }
 

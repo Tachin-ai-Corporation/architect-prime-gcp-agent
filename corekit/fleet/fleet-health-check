@@ -127,28 +127,62 @@ print(d.get('fields',{}).get('zone',{}).get('stringValue',''))" 2>/dev/null || t
     continue
   fi
 
-  # ---- SSH and check gateway health ----
+  # ---- SSH and probe ALL core services, not just the gateway ----
+  # A fleet agent with a live gateway but a dead agent-brain is completely
+  # incapacitated (it cannot process any work) yet the old gateway-only probe
+  # reported it "healthy". We now check the brain (the loop owner) plus ears and
+  # mouth. Health is "healthy" only when the gateway responds AND the brain is
+  # active. One SSH call; no pipes/quotes in the remote command so it survives
+  # gcloud arg handling. Remote $() is preserved (single-quoted at assignment)
+  # and expands on the fleet VM.
   HEALTH_STATUS="unhealthy"
   LATENCY_MS=0
   START_MS=$(date +%s%N)
 
-  HTTP_CODE="$(gcloud compute ssh "$VM" --zone="$ZONE" --project="$PRIME_PROJECT" --quiet \
-    --command="curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost:18789/v1/models" \
-    2>/dev/null)" || true
-  # If SSH failed or returned empty, default to 000
-  HTTP_CODE="${HTTP_CODE:-000}"
-  # Strip any non-numeric chars (SSH banners, etc.)
-  HTTP_CODE="$(echo "$HTTP_CODE" | grep -oE '[0-9]+' | tail -1)"
-  [[ -n "$HTTP_CODE" ]] || HTTP_CODE="000"
+  REMOTE_PROBE='echo GW=$(curl -s -o /dev/null -w %{http_code} --max-time 10 http://localhost:18789/v1/models); echo BR=$(systemctl is-active agent-brain); echo EA=$(systemctl is-active agent-ears); echo MO=$(systemctl is-active agent-mouth)'
+  PROBE="$(gcloud compute ssh "$VM" --zone="$ZONE" --project="$PRIME_PROJECT" --quiet \
+    --command="$REMOTE_PROBE" 2>/dev/null)" || true
+
+  # Parse each service token; default to unknown/000 on missing lines.
+  HTTP_CODE="$(echo "$PROBE" | sed -n 's/^GW=//p' | grep -oE '[0-9]+' | tail -1)"; HTTP_CODE="${HTTP_CODE:-000}"
+  BRAIN_STATE="$(echo "$PROBE" | sed -n 's/^BR=//p' | tr -d '[:space:]')"; BRAIN_STATE="${BRAIN_STATE:-unknown}"
+  EARS_STATE="$(echo "$PROBE" | sed -n 's/^EA=//p' | tr -d '[:space:]')"; EARS_STATE="${EARS_STATE:-unknown}"
+  MOUTH_STATE="$(echo "$PROBE" | sed -n 's/^MO=//p' | tr -d '[:space:]')"; MOUTH_STATE="${MOUTH_STATE:-unknown}"
 
   END_MS=$(date +%s%N)
   LATENCY_MS=$(( (END_MS - START_MS) / 1000000 ))
 
-  if [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "401" ]]; then
+  GATEWAY_OK=false
+  [[ "$HTTP_CODE" == "200" || "$HTTP_CODE" == "401" ]] && GATEWAY_OK=true
+  BRAIN_OK=false
+  [[ "$BRAIN_STATE" == "active" ]] && BRAIN_OK=true
+
+  # Build a human-readable degraded reason for the dashboard + operator.
+  DEGRADED=""
+  $GATEWAY_OK || DEGRADED="${DEGRADED}gateway(${HTTP_CODE}) "
+  $BRAIN_OK   || DEGRADED="${DEGRADED}brain(${BRAIN_STATE}) "
+  [[ "$EARS_STATE"  == "active" ]] || DEGRADED="${DEGRADED}ears(${EARS_STATE}) "
+  [[ "$MOUTH_STATE" == "active" ]] || DEGRADED="${DEGRADED}mouth(${MOUTH_STATE}) "
+  DEGRADED="$(echo "$DEGRADED" | sed 's/[[:space:]]*$//')"
+
+  # Healthy requires the loop owner (brain) AND the gateway it consults.
+  if $GATEWAY_OK && $BRAIN_OK; then
     HEALTH_STATUS="healthy"
   fi
 
-  log "  Result: ${HEALTH_STATUS} (HTTP ${HTTP_CODE}, ${LATENCY_MS}ms)"
+  # If the brain is down, grab its recent journal to distinguish a transient
+  # crash (a restart fixes it) from version drift / a missing module (only a
+  # redeploy fixes it). Grep runs locally on Prime to avoid remote quoting.
+  NEEDS_REDEPLOY=false
+  if ! $BRAIN_OK; then
+    BRAIN_LOG="$(gcloud compute ssh "$VM" --zone="$ZONE" --project="$PRIME_PROJECT" --quiet \
+      --command='journalctl -u agent-brain -n 40 --no-pager' 2>/dev/null)" || true
+    if echo "$BRAIN_LOG" | grep -qE 'ERR_MODULE_NOT_FOUND|Cannot find module'; then
+      NEEDS_REDEPLOY=true
+    fi
+  fi
+
+  log "  Result: ${HEALTH_STATUS} (gateway ${HTTP_CODE}, brain ${BRAIN_STATE}, ears ${EARS_STATE}, mouth ${MOUTH_STATE}, ${LATENCY_MS}ms)${DEGRADED:+ — degraded: ${DEGRADED}}"
 
   # ---- Read current consecutive failures from Firestore ----
   CURRENT_FAILURES="$(curl -s -H "Authorization: Bearer $TOKEN" \
@@ -171,42 +205,26 @@ print(cf)
   NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   TOKEN="$(get_token)"  # refresh token
 
-  HEALTH_PATCH="{
-    \"fields\": {
-      \"health\": {
-        \"mapValue\": {
-          \"fields\": {
-            \"lastCheck\": { \"stringValue\": \"${NOW}\" },
+  # Per-service health fields — the dashboard and fleet-status render these so a
+  # dead brain is visible even when the VM/gateway is up.
+  HEALTH_INNER="\"lastCheck\": { \"stringValue\": \"${NOW}\" },
             \"status\": { \"stringValue\": \"${HEALTH_STATUS}\" },
             \"latencyMs\": { \"integerValue\": \"${LATENCY_MS}\" },
             \"consecutiveFailures\": { \"integerValue\": \"${NEW_FAILURES}\" },
-            \"httpCode\": { \"stringValue\": \"${HTTP_CODE}\" }
-          }
-        }
-      }
-    }
-  }"
+            \"httpCode\": { \"stringValue\": \"${HTTP_CODE}\" },
+            \"gatewayHttp\": { \"stringValue\": \"${HTTP_CODE}\" },
+            \"brainState\": { \"stringValue\": \"${BRAIN_STATE}\" },
+            \"earsState\": { \"stringValue\": \"${EARS_STATE}\" },
+            \"mouthState\": { \"stringValue\": \"${MOUTH_STATE}\" },
+            \"degraded\": { \"stringValue\": \"${DEGRADED}\" }"
 
-  # Also update lastHeartbeat if healthy
+  # lastHeartbeat advances only on a fully healthy check (brain + gateway), so
+  # staleness is a true liveness signal for the brain, not just the VM.
   if [[ "$HEALTH_STATUS" == "healthy" ]]; then
-    HEALTH_PATCH="{
-      \"fields\": {
-        \"health\": {
-          \"mapValue\": {
-            \"fields\": {
-              \"lastCheck\": { \"stringValue\": \"${NOW}\" },
-              \"status\": { \"stringValue\": \"${HEALTH_STATUS}\" },
-              \"latencyMs\": { \"integerValue\": \"${LATENCY_MS}\" },
-              \"consecutiveFailures\": { \"integerValue\": \"0\" },
-              \"httpCode\": { \"stringValue\": \"${HTTP_CODE}\" }
-            }
-          }
-        },
-        \"lastHeartbeat\": { \"stringValue\": \"${NOW}\" }
-      }
-    }"
+    HEALTH_PATCH="{ \"fields\": { \"health\": { \"mapValue\": { \"fields\": { ${HEALTH_INNER} } } }, \"lastHeartbeat\": { \"stringValue\": \"${NOW}\" } } }"
     MASK="updateMask.fieldPaths=health&updateMask.fieldPaths=lastHeartbeat"
   else
+    HEALTH_PATCH="{ \"fields\": { \"health\": { \"mapValue\": { \"fields\": { ${HEALTH_INNER} } } } } }"
     MASK="updateMask.fieldPaths=health"
   fi
 
@@ -217,48 +235,88 @@ print(cf)
     "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?${MASK}" \
     >/dev/null 2>&1
 
-  # ---- Auto-recovery: restart gateway after 3+ consecutive failures ----
+  # ---- Auto-recovery: Prime self-heals after 3+ consecutive failures ----
+  # Prime is the factory operator (C-1, B-26): when a fleet agent is down, it
+  # fixes it rather than merely reporting it. The recovery METHOD depends on the
+  # cause — a restart cannot fix a missing module, only a redeploy can:
+  #   * brain down + version drift (ERR_MODULE_NOT_FOUND) → fleet-upgrade (redeploy)
+  #   * brain down (transient)                            → restart agent-brain
+  #   * gateway down only                                 → restart gateway
+  # We reset consecutiveFailures after any attempt so recovery (especially a
+  # multi-minute redeploy) is not re-triggered every cycle (anti-flap).
   if [[ "$NEW_FAILURES" -ge 3 ]]; then
-    log "  ⚠️  ${NAME} has ${NEW_FAILURES} consecutive failures — attempting auto-recovery..."
+    RECOVERY_METHOD="none"
+    RECOVERY_OK=false
 
-    RESTART_OK=false
-    if gcloud compute ssh "$VM" --zone="$ZONE" --quiet \
-        --command="sudo systemctl restart agent-neural-gateway 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
-      RESTART_OK=true
-    fi
+    if ! $BRAIN_OK && $NEEDS_REDEPLOY; then
+      RECOVERY_METHOD="redeploy"
+      log "  ⚠️  ${NAME}: brain down with version drift (missing module) — redeploying via fleet-upgrade..."
+      if [[ -x "${CORE_DIR}/bin/fleet-upgrade" ]]; then
+        if PRIME_ID="$PRIME_ID" "${CORE_DIR}/bin/fleet-upgrade" --name "$NAME" >/dev/null 2>&1; then
+          RECOVERY_OK=true
+        fi
+      else
+        warn "  fleet-upgrade not found at ${CORE_DIR}/bin — cannot redeploy ${NAME}"
+      fi
+      $RECOVERY_OK && log "  ✅ ${NAME} redeployed via fleet-upgrade" || warn "  ❌ Redeploy of ${NAME} failed — escalating to operator"
 
-    if $RESTART_OK; then
-      log "  ✅ Gateway service restarted for ${NAME}"
+    elif ! $BRAIN_OK; then
+      RECOVERY_METHOD="restart_brain"
+      log "  ⚠️  ${NAME}: brain down (transient) — restarting agent-brain..."
+      if gcloud compute ssh "$VM" --zone="$ZONE" --project="$PRIME_PROJECT" --quiet \
+          --command="sudo systemctl restart agent-brain 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
+        RECOVERY_OK=true
+      fi
+      $RECOVERY_OK && log "  ✅ agent-brain restarted for ${NAME}" || warn "  ❌ Failed to restart agent-brain for ${NAME}"
+
     else
-      warn "  ❌ Failed to restart gateway service for ${NAME}"
+      RECOVERY_METHOD="restart_gateway"
+      log "  ⚠️  ${NAME}: gateway unhealthy — restarting agent-neural-gateway..."
+      if gcloud compute ssh "$VM" --zone="$ZONE" --project="$PRIME_PROJECT" --quiet \
+          --command="sudo systemctl restart agent-neural-gateway 2>/dev/null && echo OK" 2>/dev/null | grep -q "OK"; then
+        RECOVERY_OK=true
+      fi
+      $RECOVERY_OK && log "  ✅ Gateway restarted for ${NAME}" || warn "  ❌ Failed to restart gateway for ${NAME}"
     fi
 
-    # Record recovery attempt
-    RECOVERY_PATCH="{
-      \"fields\": {
-        \"health\": {
-          \"mapValue\": {
-            \"fields\": {
+    # Reset the failure counter after an attempt so a slow redeploy isn't
+    # hammered every cycle; the next check re-evaluates from a clean slate.
+    RECOVERY_RESULT="$($RECOVERY_OK && echo success || echo failed)"
+    NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    TOKEN="$(get_token)"
+    RECOVERY_PATCH="{ \"fields\": { \"health\": { \"mapValue\": { \"fields\": {
               \"lastCheck\": { \"stringValue\": \"${NOW}\" },
               \"status\": { \"stringValue\": \"${HEALTH_STATUS}\" },
-              \"latencyMs\": { \"integerValue\": \"${LATENCY_MS}\" },
-              \"consecutiveFailures\": { \"integerValue\": \"${NEW_FAILURES}\" },
-              \"httpCode\": { \"stringValue\": \"${HTTP_CODE}\" },
+              \"consecutiveFailures\": { \"integerValue\": \"0\" },
+              \"degraded\": { \"stringValue\": \"${DEGRADED}\" },
+              \"brainState\": { \"stringValue\": \"${BRAIN_STATE}\" },
               \"lastRecoveryAttempt\": { \"stringValue\": \"${NOW}\" },
-              \"lastRecoveryResult\": { \"stringValue\": \"$(${RESTART_OK} && echo success || echo failed)\" }
-            }
-          }
-        }
-      }
-    }"
-
-    TOKEN="$(get_token)"
+              \"lastRecoveryMethod\": { \"stringValue\": \"${RECOVERY_METHOD}\" },
+              \"lastRecoveryResult\": { \"stringValue\": \"${RECOVERY_RESULT}\" }
+    } } } } }"
     curl -s -X PATCH \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
       -d "$RECOVERY_PATCH" \
       "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?updateMask.fieldPaths=health" \
       >/dev/null 2>&1
+
+    # Escalate to the operator only when self-healing failed — surfaced via the
+    # fleet doc's actionRequired, which the dashboard already renders.
+    if ! $RECOVERY_OK; then
+      ACTION_PATCH="{ \"fields\": { \"actionRequired\": { \"mapValue\": { \"fields\": {
+                \"title\": { \"stringValue\": \"${NAME} is down — auto-recovery failed\" },
+                \"detail\": { \"stringValue\": \"degraded: ${DEGRADED}; tried ${RECOVERY_METHOD}\" },
+                \"raisedAt\": { \"stringValue\": \"${NOW}\" }
+      } } } } }"
+      TOKEN="$(get_token)"
+      curl -s -X PATCH \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$ACTION_PATCH" \
+        "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${NAME}?updateMask.fieldPaths=actionRequired" \
+        >/dev/null 2>&1
+    fi
   fi
 
   # ---- OU Compliance Check ----
