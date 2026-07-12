@@ -130,6 +130,12 @@
   "chat": {
     "reply_in_thread": true
   },
+  "delivery": {
+    "_comment": "Mouth delivery retry discipline: exponential backoff between failed attempts, terminal delivery_status='failed' at max_attempts. Brain fast-fails waiting delegation Ts off the terminal status.",
+    "max_attempts": 8,
+    "retry_backoff_base_seconds": 5,
+    "retry_backoff_max_seconds": 600
+  },
   "conversation": {
     "enabled": true,
     "max_turns": 12,

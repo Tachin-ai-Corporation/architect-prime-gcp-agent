@@ -4320,6 +4320,29 @@ async function checkWaitingEnvelopes() {
 
     for (const waiting of waitingEnvelopes) {
       if (waiting.status === 'waiting' && waiting.intent === 'delegation') {
+        // Fast-fail: if the delegation message itself could not be delivered
+        // (mouth exhausted its retry budget → delivery_status='failed'),
+        // waiting out the full timeout is pointless — the delegate never
+        // received anything. Fail the T now so the mission resumes and cortex
+        // can re-target or escalate.
+        const sendEnvId = waiting.source_meta?.delivery_envelope_id;
+        if (sendEnvId) {
+          try {
+            const sendEnv = await firestoreRead('work', sendEnvId);
+            if (sendEnv?.delivery_status === 'failed') {
+              const target = waiting.source_meta?.target_agent_email || 'target';
+              log('WARN', `Delegation delivery failed terminally: ${waiting.id} → ${target}`);
+              waiting.status = 'failed';
+              waiting.error = `Delegation could not be delivered to ${target}: ${sendEnv.delivery_error || 'delivery rejected'}. The delegate never received the request.`;
+              waiting.completed_at = now();
+              await firestoreWrite('work', waiting.id, waiting);
+              await writeHistory(waiting.id, 'waiting', 'failed', 'brain', 'Delegation delivery failed');
+              continue;
+            }
+          } catch (e) {
+            log('WARN', `Delegation delivery check failed for ${waiting.id}: ${e.message}`);
+          }
+        }
         const ageMs = Date.now() - new Date(waiting.started_at).getTime();
         const timeoutMs = (CONTRACTS.dispatch?.delegation_timeout_hours || 4) * 3600_000;
         if (ageMs > timeoutMs) {

@@ -84,6 +84,14 @@ const STATUS_ENABLED = MOUTH_CFG.status_updates?.enabled !== false;
 const STATUS_SCHEDULE = MOUTH_CFG.status_updates?.schedule_ms
   || [10_000, 300_000, 600_000, 1_800_000, 7_200_000];
 const DELIVERY_TIMEOUT = 600_000;
+// Delivery retry discipline (contracts.delivery): exponential backoff between
+// failed attempts, terminal delivery_status='failed' after the cap. Without
+// this, an undeliverable envelope (bad target, no space) retries every poll
+// cycle forever.
+const DELIVERY_CFG = CONTRACTS.delivery || {};
+const DELIVERY_MAX_ATTEMPTS = DELIVERY_CFG.max_attempts ?? 8;
+const DELIVERY_BACKOFF_BASE_S = DELIVERY_CFG.retry_backoff_base_seconds ?? 5;
+const DELIVERY_BACKOFF_MAX_S = DELIVERY_CFG.retry_backoff_max_seconds ?? 600;
 
 const CHAT_CONFIG = CONTRACTS.chat || {};
 const REPLY_IN_THREAD = CHAT_CONFIG.reply_in_thread !== false;  // default true
@@ -714,6 +722,14 @@ async function pollBrainV3Envelopes() {
       if (deliveryStatus === 'internal') { skippedDelivered++; continue; }
       // Skip: archived envelopes — stale delivery_status from race condition
       if (status === 'archived') { skippedDelivered++; continue; }
+      // Retry backoff: a previously failed attempt scheduled the next one —
+      // don't touch the dedup cache, just wait for the window to open.
+      const deliveryAttempts = parseInt(f.delivery_attempts?.integerValue || '0', 10);
+      const nextAttemptAt = f.next_delivery_attempt_at?.timestampValue || null;
+      if (deliveryAttempts > 0 && nextAttemptAt && new Date(nextAttemptAt) > new Date()) {
+        skippedDelivered++;
+        continue;
+      }
       // Skip: child envelopes (C/T) — only top-level M envelopes should be delivered
       // Exception: intent='ack', 'notification', 'delegation_send', 'delegation_result'
       // are intentionally deliverable C/T pairs
@@ -901,6 +917,38 @@ async function pollBrainV3Envelopes() {
         delivered++;
       } catch (err) {
         log('Envelope delivery error', { envId, error: err.message });
+        // Persist the attempt (crash-safe counter) so undeliverable envelopes
+        // back off exponentially and go terminal instead of retrying forever.
+        // The pending query stops matching once delivery_status='failed', and
+        // the brain fast-fails waiting delegation Ts off that status.
+        try {
+          const attempts = deliveryAttempts + 1;
+          const terminal = attempts >= DELIVERY_MAX_ATTEMPTS;
+          const backoffS = Math.min(DELIVERY_BACKOFF_BASE_S * 2 ** attempts, DELIVERY_BACKOFF_MAX_S);
+          const fields = {
+            delivery_attempts: { integerValue: String(attempts) },
+            delivery_error: { stringValue: String(err.message || err).slice(0, 500) },
+            next_delivery_attempt_at: { timestampValue: new Date(Date.now() + backoffS * 1000).toISOString() },
+          };
+          let mask = 'updateMask.fieldPaths=delivery_attempts&updateMask.fieldPaths=delivery_error&updateMask.fieldPaths=next_delivery_attempt_at';
+          if (terminal) {
+            fields.delivery_status = { stringValue: 'failed' };
+            mask += '&updateMask.fieldPaths=delivery_status';
+          }
+          const tokenRetry = await getGceToken();
+          await fetch(`${FIRESTORE_URL}/work/${envId}?${mask}`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${tokenRetry}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields }),
+          });
+          // Allow the next window's poll to re-attempt (non-terminal only)
+          if (!terminal) _deliveredEnvelopes.delete(envId);
+          if (terminal) {
+            log('[TELEMETRY] delivery_failed_terminal', { envId, attempts, error: String(err.message || err).slice(0, 200) });
+          }
+        } catch (bookErr) {
+          log('Delivery attempt bookkeeping failed', { envId, error: bookErr.message });
+        }
       }
     }
 

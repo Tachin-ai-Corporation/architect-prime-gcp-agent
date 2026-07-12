@@ -362,6 +362,17 @@ console.log(miss.length ? 'MISSING:'+miss.join(',') : 'OK');
     fi
   fi
 
+  # Delivery retry discipline: bounded retries keep undeliverable envelopes
+  # from retrying every poll cycle forever
+  for field in max_attempts retry_backoff_base_seconds retry_backoff_max_seconds; do
+    VAL="$(read_contract "delivery.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" =~ ^[0-9]+$ ]] && [[ "$VAL" -ge 1 ]]; then
+      pass "delivery.${field} = ${VAL}"
+    else
+      fail "delivery.${field} = '${VAL}' (expected positive number)"
+    fi
+  done
+
   # SESSION_CONTEXT_PLAN Phase 3: mission compaction knobs
   for field in enabled session_log_to_git; do
     VAL="$(read_contract "compaction.${field}" 2>/dev/null || echo '')"
