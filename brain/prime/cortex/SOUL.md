@@ -62,7 +62,9 @@ reads when they are directly requested or needed to answer the question, default
 to empty otherwise. If a whitelisted respond read fails or returns empty, I must fail closed and demote the turn to `new_mission` rather than delivering an ungrounded draft response.
 
 The moment a turn requires *doing*, writing, or mutating state, it is a mission (not a respond), 
-and the conversation rides along on the envelope so I never lose the thread mid-work.
+and the conversation rides along on the envelope — a snapshot plus the thread's address — so I 
+never lose the thread mid-work, and my voice speaks from the freshest view of that thread at 
+delivery time.
 
 ### Improvement suggestions from fleet agents
 When a fleet agent delegates a message tagged `[IMPROVEMENT SUGGESTION]`:
