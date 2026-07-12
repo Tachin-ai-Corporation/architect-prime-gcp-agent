@@ -205,6 +205,64 @@ export async function readThread({
 }
 
 /**
+ * Retention sweep: delete turn docs that are BOTH already folded into the
+ * thread summary (ts <= summary_through_ts) AND older than the retention
+ * horizon. Digest-before-prune, mirroring the memory_written-before-archival
+ * ceremony — an unfolded turn is never deleted regardless of age. Bounded
+ * per run; called on the archival cadence.
+ */
+export async function sweepThreadTurns({
+  projectId, primeId, getToken, config = {}, log = () => {}, maxDeletes = 200,
+}) {
+  const cfg = { ...DEFAULTS, turn_retention_days: 14, ...config };
+  const token = await getToken();
+  if (!token) return 0;
+  const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
+  const cutoff = new Date(Date.now() - cfg.turn_retention_days * 86_400_000).toISOString();
+  let deleted = 0;
+
+  try {
+    const listRes = await fetch(`${base}/primes/${primeId}/threads?pageSize=100`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!listRes.ok) return 0;
+    const threads = (await listRes.json()).documents || [];
+
+    for (const t of threads) {
+      if (deleted >= maxDeletes) break;
+      const watermark = t.fields?.summary_through_ts?.timestampValue || '';
+      if (!watermark) continue; // nothing folded yet — nothing eligible
+      const bound = watermark < cutoff ? watermark : cutoff;
+      const res = await fetch(`${t.name}:runQuery`.replace(t.name, `https://firestore.googleapis.com/v1/${t.name}`), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ structuredQuery: {
+          from: [{ collectionId: 'turns' }],
+          where: { fieldFilter: { field: { fieldPath: 'ts' }, op: 'LESS_THAN_OR_EQUAL', value: { timestampValue: bound } } },
+          limit: Math.min(50, maxDeletes - deleted),
+        } }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) continue;
+      const rows = (await res.json()).filter(r => r.document?.name);
+      for (const r of rows) {
+        const del = await fetch(`https://firestore.googleapis.com/v1/${r.document.name}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (del.ok) deleted++;
+      }
+    }
+    if (deleted > 0) log('INFO', `[TELEMETRY] thread_turns_swept deleted=${deleted} horizon_days=${cfg.turn_retention_days}`);
+  } catch (e) {
+    log('WARN', `thread-ledger: sweep failed: ${e.message}`);
+  }
+  return deleted;
+}
+
+/**
  * Code-triggered thread compaction (never model-decided). Folds turns older
  * than the recent window into the thread doc's summary via ONE stateless
  * utility call (C-6), watermark-preconditioned: the summary write carries

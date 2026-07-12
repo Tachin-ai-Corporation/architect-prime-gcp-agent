@@ -800,7 +800,33 @@ async function pollBrainV3Envelopes() {
 
         // CP4: the envelope carries the rendered conversation block as a
         // top-level string field (set by the brain for missions and responds).
-        const convoBlock = (f.conversation_context?.stringValue || '').trim();
+        // SESSION_CONTEXT_PLAN Phase 4: that snapshot is frozen at envelope
+        // creation — for long missions it is hours stale. When the thread
+        // ledger is enabled, voice from the thread AS IT IS at delivery time
+        // (operator interjections, our own acks and status updates included),
+        // keyed off the RESOLVED delivery address. Snapshot stays the fallback;
+        // voicing never goes silent over a ledger miss.
+        let convoBlock = (f.conversation_context?.stringValue || '').trim();
+        if (CONTRACTS.conversation?.voicing_ledger_enabled === true
+            && CONTRACTS.conversation?.thread_ledger_enabled !== false) {
+          try {
+            const vtk = threadKeyFor(addr, PRIME_ID);
+            if (vtk) {
+              const { readThread } = await import('../corekit/lib/thread-ledger.mjs');
+              const thread = await readThread({
+                projectId: GCP_PROJECT, primeId: PRIME_ID, getToken: getGceToken,
+                threadKey: vtk, config: CONTRACTS.conversation,
+                log: (lvl, msg) => log(`thread-ledger ${lvl}`, { msg }),
+              });
+              if (thread?.block) {
+                convoBlock = thread.block;
+                log('[TELEMETRY] voicing_context', { source: 'ledger', thread: vtk, turns: thread.turns?.length || 0 });
+              }
+            }
+          } catch (e) {
+            log('voicing ledger read failed — using envelope snapshot', { error: e.message });
+          }
+        }
 
         const voicingEnabled = CONTRACTS.conversation?.voicing_enabled !== false;
         const voicingTailChars = CONTRACTS.conversation?.voicing_tail_chars || 1500;

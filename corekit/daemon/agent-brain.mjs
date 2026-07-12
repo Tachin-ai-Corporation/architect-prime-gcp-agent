@@ -2187,6 +2187,24 @@ function _initArchiver() {
 async function archiveEnvelopes() {
   if (!_archiver) _initArchiver();
   await _archiver.sweep();
+
+  // SESSION_CONTEXT_PLAN Phase 4: thread-turn retention rides the archival
+  // cadence. Digest-before-prune — only turns already folded into a thread
+  // summary AND past the retention horizon are deleted.
+  if (CONTRACTS.conversation?.thread_ledger_enabled !== false) {
+    try {
+      const { sweepThreadTurns } = await import('../corekit/lib/thread-ledger.mjs');
+      await sweepThreadTurns({
+        projectId: GCP_PROJECT,
+        primeId: PRIME_ID,
+        getToken: getGceToken,
+        config: CONTRACTS.conversation,
+        log,
+      });
+    } catch (e) {
+      log('WARN', `thread-turn sweep failed (non-fatal): ${e.message}`);
+    }
+  }
 }
 
 // ---- Quick ACK + message extraction (via notifications.mjs) ----
