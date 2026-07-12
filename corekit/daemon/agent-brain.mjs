@@ -910,11 +910,14 @@ async function releaseClaim(envelopeId, claimId) {
 }
 
 // ---- Gateway HTTP dispatch ----
-async function callCortex(mode, payload) {
+async function callCortex(mode, payload, sessionCtl = null) {
   // SESSION_CONTEXT_PLAN Phase 2: two system blocks (stable | MEMORY) and a
   // cache-tiered content-parts user message. The [BRAIN-ORCHESTRATED] header
   // opens the boot-stable bytes; the per-mission Requester line rides the
   // mission tier so it never re-keys the boot block.
+  // Phase 5: with an active session, a 'continue' turn ships ONLY the
+  // volatile tier — the static prefix lives in the gateway-held history
+  // (the Phase 2 tier partition IS the session's static/delta split).
   const sysBlocks = buildSystemBlocks(mode, payload);
   const pingerEmail = payload.envelope?.source_meta?.senderEmail || '';
   const userBlocks = [
@@ -922,7 +925,9 @@ async function callCortex(mode, payload) {
     ...(pingerEmail ? [{ label: 'REQUESTER', text: `Use this email for Drive sharing and communication: ${pingerEmail}`, tier: 'mission' }] : []),
     ...buildUserBlocks(mode, payload),
   ];
-  const userContent = toContentParts(userBlocks);
+  const userContent = (sessionCtl && sessionCtl.op === 'continue')
+    ? toContentParts(userBlocks.filter(b => (b.tier || 'volatile') === 'volatile'))
+    : toContentParts(userBlocks);
 
   // Per-agent generation parameters from registry
   const cortexConfig = REGISTRY.agents?.cortex || {};
@@ -946,6 +951,7 @@ async function callCortex(mode, payload) {
         ...(sysBlocks.volatile ? [{ role: 'system', content: sysBlocks.volatile }] : []),
         { role: 'user', content: userContent },
       ],
+      ...(sessionCtl ? { session: sessionCtl } : {}),
       max_tokens: maxTokens,
       temperature: temperature,
       top_p: topP,
@@ -962,6 +968,15 @@ async function callCortex(mode, payload) {
   }
 
   const data = await resp.json();
+
+  // Phase 5 fail-closed protocol: a 'continue' turn shipped only the delta —
+  // a completion without the session echo (fast miss, old gateway, excluded
+  // agent) must NEVER be acted on. 'open' turns carry full context and stay
+  // valid either way; they just don't get a session.
+  if (sessionCtl?.op === 'continue' && data.session?.present !== true) {
+    log('INFO', `[TELEMETRY] session_miss id=${sessionCtl.id} reason=${data.session?.reason || 'no_echo'}`);
+    return { _session_miss: true, reason: data.session?.reason || 'no_echo' };
+  }
 
   // Debug: log the response structure to understand the format
   const msg = data.choices?.[0]?.message;
@@ -986,6 +1001,7 @@ async function callCortex(mode, payload) {
   if (parsed && typeof parsed === 'object') {
     parsed.usage = data.usage || null;
     parsed.durationMs = _cortexDuration;
+    parsed._session = data.session || null; // Phase 5: seq echo for the controller
   }
 
   // SESSION_CONTEXT_PLAN Phase 0: classify and respond_compose run before an
@@ -3419,6 +3435,18 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   let iteration = envelope.iteration || 0;
   let _lastPromptTokens = 0; // real prompt size of the newest decide call (Phase 0 telemetry)
 
+  // SESSION_CONTEXT_PLAN Phase 5: cortex per-mission session controller.
+  // No-op unless session.enabled. The session is a rebuildable cache — any
+  // miss falls back to today's stateless full assembly in the SAME iteration,
+  // and a consecutive-miss circuit breaker stops attaching for this envelope.
+  // Generation counters prevent a stale in-flight request from resurrecting
+  // an old transcript; envelope._session carries ids and counters only.
+  const _sessEnabled = CONTRACTS.session?.enabled === true;
+  const _sessBreaker = CONTRACTS.session?.miss_circuit_breaker || 3;
+  let _sess = null; // { id, seq }
+  let _sessGen = envelope._session?.generation || 0;
+  let _sessMisses = 0;
+
   // Phase 4.3: LLM cost telemetry — per-mission token accumulator
   const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, totalCacheWrites: 0, callCount: 0 };
 
@@ -3541,6 +3569,13 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     try {
       const compactSeq = await compactMissionContext(envelope, { lastPromptTokens: _lastPromptTokens });
       if (compactSeq > 0) {
+        // Phase 5: a compaction rewrites the context the session's history no
+        // longer matches — close it; the next iteration re-opens fresh over
+        // the compacted state.
+        if (_sess) {
+          await closeGatewaySession(_sess.id);
+          _sess = null;
+        }
         priorResults.push({
           agent: 'system',
           success: true,
@@ -3592,7 +3627,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     }
 
     // ---- DECIDE: cortex commits a plan from the Brief ----
-    let decision = await callCortex('decide', {
+    const decideArgs = {
       envelope: {
         id: envelope.id,
         type: envelope.type,
@@ -3608,7 +3643,50 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       pending_intake_count: queueInfo.count,
       pending_queue: queueInfo.queue,
       brief,
-    });
+    };
+
+    // SESSION_CONTEXT_PLAN Phase 5: session-first decide. 'open' carries the
+    // full context (safe even against an old/excluded gateway); 'continue'
+    // ships the volatile delta only and fails closed to a stateless full call.
+    let decision = null;
+    if (_sessEnabled && _sessMisses < _sessBreaker) {
+      if (!_sess) {
+        _sessGen++;
+        const sid = `${envelope.id}:cortex:g${_sessGen}`;
+        const opened = await callCortex('decide', decideArgs, { id: sid, op: 'open' });
+        if (opened && !opened.error && opened._session?.present) {
+          _sess = { id: sid, seq: opened._session.seq };
+          envelope._session = { id: sid, seq: _sess.seq, generation: _sessGen };
+          log('INFO', `[TELEMETRY] session_open mission=${envelope.id} id=${sid}`);
+          decision = opened;
+        } else if (opened && !opened.error) {
+          // Full-context call, no session materialized (old gateway / flag off
+          // server-side) — the decision is valid; count the miss.
+          _sessMisses++;
+          decision = opened;
+        } else {
+          _sessMisses++;
+        }
+      } else {
+        const cont = await callCortex('decide', decideArgs, { id: _sess.id, op: 'continue', seq: _sess.seq });
+        if (cont?._session_miss || !cont || cont.error) {
+          if (cont?.error) {
+            // Garbage never poisons a transcript: hard cortex errors reset
+            // the session; the stateless fallback below still decides.
+            await closeGatewaySession(_sess.id);
+          }
+          _sess = null;
+          _sessMisses++;
+        } else {
+          _sess.seq = cont._session?.seq ?? _sess.seq;
+          envelope._session = { id: _sess.id, seq: _sess.seq, generation: _sessGen };
+          decision = cont;
+        }
+      }
+    }
+    if (!decision) {
+      decision = await callCortex('decide', decideArgs);
+    }
 
     // Phase 4.3: LLM cost telemetry — cortex call
     if (decision?.usage) {
@@ -3717,6 +3795,12 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       }
 
       if (actionResult?.exit) {
+        // SESSION_CONTEXT_PLAN Phase 5: every exit door closes the session —
+        // suspensions outlive any sane TTL (B-27) and completions are final.
+        if (_sess) {
+          await closeGatewaySession(_sess.id);
+          _sess = null;
+        }
         // SESSION_CONTEXT_PLAN Phase 3: compact-on-suspend — a mission pausing
         // above half its working budget resumes from a digest instead of
         // re-sending the whole accumulated string after a possibly days-long
@@ -3746,6 +3830,10 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   }
 
   // Max iterations reached
+  if (_sess) {
+    await closeGatewaySession(_sess.id);
+    _sess = null;
+  }
   await completeEnvelope(envelope, {
     status: 'failed',
     output: `Max iterations (${MAX_ITERATIONS}) reached`,
@@ -4000,6 +4088,20 @@ function log(level, msg) {
 // ---- Intake poller ----
 // Uses Firestore REST query polling (real-time listeners require gRPC client).
 let processing = false;
+
+// SESSION_CONTEXT_PLAN Phase 5: explicit gateway-session teardown. Idempotent
+// (C-18); a failed DELETE is mopped up by the store's activity TTL.
+async function closeGatewaySession(sessionId) {
+  try {
+    await fetch(GATEWAY_URL.replace('/v1/chat/completions', `/v1/sessions/${encodeURIComponent(sessionId)}`), {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${GATEWAY_TOKEN}` },
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch (e) {
+    log('WARN', `session close failed (TTL will mop up): ${e.message}`);
+  }
+}
 
 // SESSION_CONTEXT_PLAN Phase 4: resolve an intake's thread key and upsert the
 // inbound turn into the thread ledger. Dashboard needs_input replies carry no
