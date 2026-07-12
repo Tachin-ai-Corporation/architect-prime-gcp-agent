@@ -36,6 +36,30 @@ export function isDelegationResultMarker(text) {
   return text.includes('[DELEGATION-RESULT ') && DELEGATION_RESULT_RE.test(text);
 }
 
+// ---- Target email normalization ----
+
+/**
+ * Normalize a delegation target email that came out of LLM output or was
+ * regex-extracted from free text. Strips @mention prefixes, wrapping
+ * brackets/quotes, and trailing sentence punctuation (a bare `[\w.-]+@[\w.-]+`
+ * extraction captures a sentence-ending period — "agent@example.com." — which
+ * GChat then rejects). Pure, deterministic.
+ *
+ * @param {string} raw
+ * @returns {{ email: string|null, valid: boolean }} normalized email and
+ *   whether it has a plausible mailbox@domain.tld shape
+ */
+export function normalizeTargetEmail(raw) {
+  if (!raw || typeof raw !== 'string') return { email: null, valid: false };
+  let email = raw.trim();
+  if (email.startsWith('@')) email = email.substring(1);
+  email = email.replace(/^[<("'[]+/, '').replace(/[>)"'\]]+$/, '');
+  email = email.replace(/[.,;:!?]+$/, '');
+  email = email.toLowerCase();
+  const valid = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(email);
+  return { email: email || null, valid };
+}
+
 // ---- Compose ----
 
 /**

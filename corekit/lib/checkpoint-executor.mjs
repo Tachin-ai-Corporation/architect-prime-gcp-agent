@@ -8,7 +8,7 @@ import { toStr } from './to-str.mjs';
 import { smartTruncate } from './vertex-text.mjs';
 import { buildPriorWorkContext, renderCheckpointDigest } from './compaction.mjs';
 import { makeAddress } from './channel.mjs';
-import { composeDelegationMarker } from './delegation.mjs';
+import { composeDelegationMarker, normalizeTargetEmail } from './delegation.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation, extractProbes, stakesAtLeast } from './verdict.mjs';
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
@@ -458,6 +458,11 @@ export async function executeCheckpoints(checkpoints, opts) {
 
         // Direct email from cortex/prefrontal output takes priority, but must be validated
         let targetAgentEmail = task.target_email || null;
+        if (targetAgentEmail) {
+          // Strip @mention prefixes / trailing punctuation before registry lookup
+          const norm = normalizeTargetEmail(targetAgentEmail);
+          targetAgentEmail = norm.valid ? norm.email : targetAgentEmail;
+        }
 
         // Validate target_email against fleet registry (Cortex can hallucinate emails)
         if (targetAgentEmail) {
@@ -588,8 +593,28 @@ export async function executeCheckpoints(checkpoints, opts) {
           break;
         }
 
+        // ---- Guard: deliverable route ----
+        // Delegations deliver through the shared project GChat space. Without
+        // one, the mouth drops the address and the message never reaches the
+        // delegate — fail fast instead of creating an undeliverable waiting T.
+        const delegSpaceId = (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null;
+        if (!delegSpaceId) {
+          const spacedProjects = Object.values(PROJECTS)
+            .filter(p => p && p.gchat_space_id && p.status !== 'archived')
+            .map(p => `"${p.id}"`).join(', ');
+          log('ERROR', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: project "${envelope.project_id || 'none'}" has no GChat space — delegation undeliverable`);
+          cpResults.push({
+            step: `${cpNum}.${taskNum}`, agent: taskAgent,
+            result: `[FAILED] Delegation to ${targetAgentEmail} is undeliverable: project "${envelope.project_id || 'none'}" has no GChat space. ${spacedProjects ? `Re-plan under a project with a space: ${spacedProjects}.` : 'No project has a GChat space — escalate with needs_input.'}`,
+            success: false,
+          });
+          if (!isOptional) { cpFailed = true; break; }
+          continue;
+        }
+
         // Create Task envelope with status='waiting'
         const taskId = generateId('w');
+        const delegOutputId = generateId('w');
         const taskEnvelope = {
           id: taskId,
           type: 'T',
@@ -617,6 +642,7 @@ export async function executeCheckpoints(checkpoints, opts) {
             step_type: 'delegation',
             delegated_to: delegateSpecialty,
             target_agent_email: targetAgentEmail,
+            delivery_envelope_id: delegOutputId,
           },
           project_id: envelope.project_id || null,
           created_at: new Date().toISOString(),
@@ -671,7 +697,6 @@ export async function executeCheckpoints(checkpoints, opts) {
           body: enrichedBody,
         });
 
-        const delegOutputId = generateId('w');
         await firestoreWrite('work', delegOutputId, {
           id: delegOutputId,
           type: 'T',
@@ -684,9 +709,7 @@ export async function executeCheckpoints(checkpoints, opts) {
           output: marker,
           delivery_status: 'pending',
           delivery_target: targetAgentEmail,
-          delivery_address: makeAddress('gchat', {
-            space: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null,
-          }),
+          delivery_address: makeAddress('gchat', { space: delegSpaceId }),
           source_channel: 'brain',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),

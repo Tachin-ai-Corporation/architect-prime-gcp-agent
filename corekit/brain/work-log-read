@@ -95,7 +95,7 @@ FILTER_PARTS+=("{\"fieldFilter\":{\"field\":{\"fieldPath\":\"created_at\"},\"op\
 
 if [[ -n "$OWNER_FILTER" ]]; then
   # Owner filtering is done client-side in Python because Firestore
-  # stores owner as full email (e.g. assistant-agent-millie@tachin.ag)
+  # stores owner as full email (e.g. assistant-agent-millie@example.com)
   # but callers pass short names (e.g. millie). Firestore EQUAL can't
   # do substring matching.
   :
@@ -234,7 +234,7 @@ for entry in data:
     envelopes.append(env)
 
 # Client-side owner filtering (substring match on short name)
-# Firestore stores owner as full email (e.g. assistant-agent-millie@tachin.ag)
+# Firestore stores owner as full email (e.g. assistant-agent-millie@example.com)
 # but callers pass short names (e.g. millie, stan, prime)
 if owner_filter:
     def match_owner(owner_val, filt):

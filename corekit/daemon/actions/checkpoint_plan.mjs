@@ -1,6 +1,7 @@
 // Action handler: checkpoint_plan
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeTargetEmail } from '../../lib/delegation.mjs';
 
 export async function handleCheckpointPlan(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
@@ -56,25 +57,32 @@ export async function handleCheckpointPlan(ctx, deps) {
   const hasDelegateIntent = /\bdelegate\b/.test(fullText) || /\bdelegation\b/.test(fullText);
   const emailRegex = /[\w.-]+@[\w.-]+/g;
 
-  // Count unique target emails across all tasks
+  // Count unique target emails across all tasks. Normalize every candidate —
+  // the bare regex above captures trailing sentence punctuation
+  // ("agent@example.com." at the end of a goal sentence), and normalization
+  // also dedupes punctuated/clean variants of the same address.
   const allTargetEmails = new Set();
+  const addTarget = (raw) => {
+    const { email, valid } = normalizeTargetEmail(raw);
+    if (valid) allTargetEmails.add(email);
+  };
   let hasMixedTasks = false;
   for (const cp of rawCheckpoints) {
     for (const t of (cp.tasks || cp.steps || [])) {
       if (t.type === 'delegation' || t._step_type === 'delegation') {
-        if (t.target_email) allTargetEmails.add(t.target_email);
+        if (t.target_email) addTarget(t.target_email);
       } else {
         hasMixedTasks = true;  // Has non-delegation tasks too
       }
     }
   }
   // Also check decision-level target
-  if (decision.target_email) allTargetEmails.add(decision.target_email);
+  if (decision.target_email) addTarget(decision.target_email);
 
   // Extract emails from text if no explicit targets found
   if (allTargetEmails.size === 0) {
     const textEmails = fullText.match(emailRegex) || [];
-    textEmails.forEach(e => allTargetEmails.add(e));
+    textEmails.forEach(addTarget);
   }
 
   // Only intercept for PURE single-target delegations (no mixed tasks, one target)

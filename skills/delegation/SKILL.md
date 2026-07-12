@@ -198,6 +198,9 @@ When work spans multiple specialties, use `checkpoint_plan` with multiple
 | Error / Symptom | Likely Cause | Recovery |
 |-----------------|-------------|----------|
 | Target agent not found | Email address is malformed or guessed | Always copy the exact email from the project registry `team` roster; do not shorten or invent email addresses. |
+| `[SYSTEM] delegate: "..." is not a registered online fleet agent` | Target email not in the fleet registry (hallucinated or agent offline) | The rejection message lists the registered agents — pick the exact email from that list, or use `needs_input` if no suitable agent exists. |
+| `[SYSTEM] delegate: project "..." has no GChat space` | Delegation attempted on a project without a shared space (e.g. the default `general` project) | Delegations deliver through shared project GChat spaces. Re-issue the delegate action with `project_id` set to one of the spaced projects listed in the rejection message. |
+| Delegation T failed with "could not be delivered" | Mouth exhausted its delivery retry budget (`delivery.max_attempts`) — GChat rejected the message | The mission resumes automatically with the failure context. Re-target using a registered agent + spaced project, or escalate with `needs_input`. |
 | Target agent lacks space membership | Target is not in the project GChat space | Mouth will auto-add them before delivering. If it fails, ask the user to manually add the agent to the space. |
 | Delegation silently fails to reach target agent | Archival sweep archived the delegation output before agent-mouth could deliver it | Fixed in CoreKit `v2026.06.25`. Archival sweeper no longer archives envelopes that have `delivery_status: "pending"`. If you encounter this, ensure the fleet is fully upgraded. |
 | Delegation fails to dispatch | Invalid project ID | Verify that the `project_id` field in the delegation payload matches an active project in Firestore. |
@@ -223,7 +226,9 @@ The return path has two mechanisms (both must work for reliable round-trips):
 Delegator                                     Delegate
 ─────────                                     ────────
 1. Cortex decides: delegate                   
-2. Creates T envelope (waiting)               
+2. Validates target (fleet registry) +        
+   route (project GChat space), then          
+   creates C→T envelopes (waiting)            
 3. Mouth sends [DELEGATION] marker            
                               ──────→         
                                               4. Ears detects delegation marker
