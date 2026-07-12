@@ -138,3 +138,124 @@ export function buildPriorWorkContext({
 
   return sections.length > 0 ? sections.join('\n\n') : undefined;
 }
+
+// ---------------------------------------------------------------------------
+// Mission rung (Phase 3): token-triggered rolling compaction of the decide
+// loop's accumulated context. All decisions here are deterministic; only the
+// digest PROSE comes from the stateless utility LLM, and its shape is
+// hard-validated below (the utility path's wrap-as-synthesize last resort
+// must never be spliced into a mission's context).
+// ---------------------------------------------------------------------------
+
+const ITERATION_SPLIT = /\n\n(?=--- Iteration )/;
+
+/**
+ * Deterministic compaction trigger (C-4). Fires only when the measured prompt
+ * (real tokens preferred, chars/4 proxy otherwise) crosses the working-budget
+ * threshold AND there is enough middle context to be worth folding.
+ */
+export function shouldCompact({
+  lastRealPromptTokens = 0,
+  accumulatedChars = 0,
+  compactionsSoFar = 0,
+  cfg = {},
+}) {
+  if (cfg.enabled === false) return { compact: false, reason: 'disabled' };
+  const budget = cfg.working_budget_tokens || 80000;
+  const triggerPct = cfg.trigger_pct || 0.7;
+  const minTokens = cfg.min_compactable_tokens || 8000;
+  const maxCompactions = cfg.max_compactions_per_mission || 3;
+  if (compactionsSoFar >= maxCompactions) return { compact: false, reason: 'max_compactions' };
+  const effective = Math.max(lastRealPromptTokens, Math.ceil(accumulatedChars / 4));
+  if (Math.ceil(accumulatedChars / 4) < minTokens) return { compact: false, reason: 'below_min' };
+  if (effective < budget * triggerPct) return { compact: false, reason: 'below_threshold' };
+  return { compact: true, reason: `effective=${effective} >= ${Math.floor(budget * triggerPct)}` };
+}
+
+/**
+ * Split accumulated context into { head, blocks } on iteration markers.
+ * head carries the mission framing plus any prior [CONTEXT COMPACTED] digest
+ * blocks — which therefore stay pinned through every later fold and through
+ * the fallback prune (both split on the same iteration-marker regex).
+ */
+export function splitIterationBlocks(accumulated) {
+  const parts = (accumulated || '').split(ITERATION_SPLIT);
+  if (parts.length === 0) return { head: '', blocks: [] };
+  return { head: parts[0], blocks: parts.slice(1) };
+}
+
+/**
+ * Deterministic secret scrub for anything durably persisted (C-8 names
+ * transcripts a leak surface). Best-effort by nature — the pattern list errs
+ * broad and the git session log stays contracts-disabled by default.
+ */
+export function redactSecrets(text) {
+  return (text || '')
+    .replace(/ya29\.[A-Za-z0-9_-]+/g, '[REDACTED-GCP-TOKEN]')
+    .replace(/AIza[0-9A-Za-z_-]{35}/g, '[REDACTED-API-KEY]')
+    .replace(/gh[pousr]_[A-Za-z0-9]{20,}/g, '[REDACTED-GITHUB-TOKEN]')
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]{20,}/g, 'Bearer [REDACTED]')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[REDACTED-PRIVATE-KEY]');
+}
+
+/**
+ * Hard-validate the LLM digest shape (B-29 bins mandatory). Rejecting here is
+ * what keeps enforceSchema-style repair fallbacks out of mission context.
+ */
+export function validateMissionDigest(d) {
+  if (!d || typeof d !== 'object') return { valid: false, reason: 'not an object' };
+  if (!Array.isArray(d.decisions)) return { valid: false, reason: 'decisions missing' };
+  if (!Array.isArray(d.claims)) return { valid: false, reason: 'claims missing' };
+  for (const c of d.claims) {
+    if (!c || typeof c.text !== 'string' || !['verified', 'inferred', 'assumed'].includes(c.bin)) {
+      return { valid: false, reason: 'claims entries require text and bin in {verified,inferred,assumed}' };
+    }
+  }
+  if (!Array.isArray(d.open_questions)) return { valid: false, reason: 'open_questions missing' };
+  return { valid: true };
+}
+
+/** Instruction handed to the stateless utility LLM (C-6). */
+export function missionDigestInstruction() {
+  return [
+    'Summarize this mission work log into STRICT JSON with exactly these keys:',
+    '{"covered_iterations":"i..j","decisions":[{"iteration":1,"action":"...","target":"...","outcome":"..."}],',
+    '"claims":[{"text":"...","bin":"verified|inferred|assumed","source":"..."}],',
+    '"open_questions":["..."],"artifacts":[{"ref":"...","desc":"..."}],"durable_learnings":["..."]}',
+    'Every claim MUST carry its epistemic bin: verified (the check can be shown), inferred (follows by stated reasoning), assumed (not checked).',
+    'Never upgrade a bin. Preserve exact identifiers, file paths, and envelope ids. Respond with ONLY the JSON object.',
+  ].join('\n');
+}
+
+/**
+ * Render the compacted accumulated-context string. Mission instruction and
+ * accept criteria are daemon-copied VERBATIM (B-25) — the LLM never rewrites
+ * them. The digest block does not start with '--- Iteration ', so every
+ * later split folds it into the head: pinned by construction.
+ */
+export function spliceCompacted({
+  head,
+  keptBlocks = [],
+  digest,
+  seq,
+  instruction = '',
+  acceptCriteria = '',
+  coveredLabel = '',
+  sessionLogPath = '',
+  capChars = 6000,
+}) {
+  const lines = [
+    `[CONTEXT COMPACTED — seq ${seq}${coveredLabel ? ` — iterations ${coveredLabel}` : ''}]`,
+    instruction ? `Mission instruction (verbatim): ${toStr(instruction)}` : '',
+    acceptCriteria ? `Accept criteria (verbatim): ${toStr(acceptCriteria)}` : '',
+    `Decisions: ${JSON.stringify(digest.decisions || [])}`,
+    `Claims (each carries its epistemic bin — treat 'assumed' as unverified): ${JSON.stringify(digest.claims || [])}`,
+    `Open questions: ${JSON.stringify(digest.open_questions || [])}`,
+    (digest.artifacts && digest.artifacts.length) ? `Artifacts: ${JSON.stringify(digest.artifacts)}` : '',
+    (digest.durable_learnings && digest.durable_learnings.length) ? `Durable learnings: ${JSON.stringify(digest.durable_learnings)}` : '',
+    sessionLogPath ? `Full pre-compaction log: ${sessionLogPath}` : '',
+  ].filter(Boolean);
+  let block = lines.join('\n');
+  if (block.length > capChars) block = smartTruncate(block, capChars);
+  return [head, block, ...keptBlocks].filter(Boolean).join('\n\n');
+}

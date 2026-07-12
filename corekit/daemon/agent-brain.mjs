@@ -26,7 +26,7 @@
 // Run:
 //   node agent-brain.mjs
 // ============================================================
-import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync, writeFileSync } from 'fs';
+import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync, writeFileSync, mkdirSync } from 'fs';
 import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 
@@ -54,6 +54,7 @@ import { toStr } from '../corekit/lib/to-str.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
 import { toContentParts } from '../corekit/lib/prompt-blocks.mjs';
+import { shouldCompact, splitIterationBlocks, redactSecrets, validateMissionDigest, missionDigestInstruction, spliceCompacted } from '../corekit/lib/compaction.mjs';
 import {
   handleSynthesize,
   handleBlocked,
@@ -788,6 +789,14 @@ async function firestoreWrite(collection, docId, data) {
     data.prime_id = data.prime_id || PRIME_ID;
   }
   return _db.write(pathFor(collection, docId), data);
+}
+
+// SESSION_CONTEXT_PLAN Phase 3: field-masked partial update — writes ONLY the
+// named fields so concurrent whole-doc writers (child-completion propagation,
+// waiting sweeps) cannot be clobbered by, or clobber, a compaction splice.
+async function firestoreWriteFields(collection, docId, fieldsObj) {
+  const fieldPaths = Object.keys(fieldsObj);
+  return _db.patch(pathFor(collection, docId), fieldPaths, firestoreEncode(fieldsObj));
 }
 
 async function firestoreRead(collection, docId) {
@@ -3333,9 +3342,14 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   await firestoreWrite('work', envelope.id, envelope);
   await writeHistory(envelope.id, 'queued', 'active', 'brain', 'Processing started');
 
-  // Cortex loop
+  // Cortex loop. SESSION_CONTEXT_PLAN Phase 3: iteration numbering is
+  // mission-lifetime (resumes from the persisted counter) so '--- Iteration N ---'
+  // markers stay unique across daemon restarts and compaction bookkeeping
+  // stays unambiguous. Suspensions never consumed iterations (B-27) — resumed
+  // counts reflect real work.
   let priorResults = [];
-  let iteration = 0;
+  let iteration = envelope.iteration || 0;
+  let _lastPromptTokens = 0; // real prompt size of the newest decide call (Phase 0 telemetry)
 
   // Phase 4.3: LLM cost telemetry — per-mission token accumulator
   const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, totalCacheWrites: 0, callCount: 0 };
@@ -3453,6 +3467,22 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       log('INFO', `priorResults truncated: ${older.length} entries summarized, ${keep.length} kept`);
     }
 
+    // SESSION_CONTEXT_PLAN Phase 3: rolling compaction — at the token
+    // threshold, fold the middle iterations into a validated digest and
+    // tell the model it rolled (the roll notice below).
+    try {
+      const compactSeq = await compactMissionContext(envelope, { lastPromptTokens: _lastPromptTokens });
+      if (compactSeq > 0) {
+        priorResults.push({
+          agent: 'system',
+          success: true,
+          result: `[SYSTEM] Context compacted (seq ${compactSeq}): older iterations are summarized in the [CONTEXT COMPACTED] block above. Digest claims carry epistemic bins — treat 'assumed' as unverified. Full task outputs remain recoverable from the mission work tree.`,
+        });
+      }
+    } catch (e) {
+      log('WARN', `compaction check failed (non-fatal): ${e.message}`);
+    }
+
     // Queue awareness: check for pending intake
     const queueInfo = await getPendingIntakeQueue();
     if (queueInfo.count > 0) {
@@ -3520,6 +3550,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
       _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
       _tokenUsage.totalCacheWrites += (u.cacheCreationTokenCount || 0);
       _tokenUsage.callCount++;
+      // Phase 3: the newest decide call's full prompt size is the compaction signal
+      _lastPromptTokens = u.last_step_input_tokens || u.promptTokenCount || _lastPromptTokens;
       log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=cortex model=${CORTEX_ROUTE} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${decision.durationMs || 0}ms`);
     }
 
@@ -3616,7 +3648,21 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
         }
       }
 
-      if (actionResult?.exit) return;
+      if (actionResult?.exit) {
+        // SESSION_CONTEXT_PLAN Phase 3: compact-on-suspend — a mission pausing
+        // above half its working budget resumes from a digest instead of
+        // re-sending the whole accumulated string after a possibly days-long
+        // pause. The envelope is already persisted in its suspended state;
+        // the field-masked splice touches only the context fields.
+        if (['waiting', 'needs_input', 'blocked', 'awaiting_approval'].includes(envelope.status)) {
+          try {
+            await compactMissionContext(envelope, { lastPromptTokens: _lastPromptTokens, trigger: 'suspend', triggerPctOverride: 0.5 });
+          } catch (e) {
+            log('WARN', `compact-on-suspend failed (non-fatal): ${e.message}`);
+          }
+        }
+        return;
+      }
       if (actionResult?.activeGuard) _activeGuard = actionResult.activeGuard;
       if (actionResult?.priorResultsAppend) priorResults.push(...actionResult.priorResultsAppend);
       continue;
@@ -3646,6 +3692,113 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
 const CONTEXT_TOKEN_BUDGET = CONTRACTS.dispatch?.context_token_budget || 400_000;
 const CHARS_PER_TOKEN = 4; // rough estimate
 const CONTEXT_CHAR_BUDGET = CONTEXT_TOKEN_BUDGET * CHARS_PER_TOKEN;
+
+// SESSION_CONTEXT_PLAN Phase 3: token-triggered rolling compaction — the
+// canon-native "roll to a new session at N%". Everything here is daemon code
+// (C-4): the trigger is arithmetic, the splice is deterministic, criteria are
+// copied verbatim (B-25), and only the digest prose comes from the stateless
+// utility path (C-6) with its shape hard-validated (B-29 bins mandatory).
+// Crash-safety: seq is monotonic from the Firestore-persisted _compaction;
+// a replayed transaction recomputes against the already-compacted context
+// and simply declines (below_threshold). Returns the new seq, or 0.
+async function compactMissionContext(envelope, { lastPromptTokens = 0, trigger = 'tokens', triggerPctOverride = null } = {}) {
+  const cfg = { ...(CONTRACTS.compaction || {}) };
+  if (triggerPctOverride) cfg.trigger_pct = triggerPctOverride;
+  const acc = envelope._accumulated_context || '';
+  const check = shouldCompact({
+    lastRealPromptTokens: lastPromptTokens,
+    accumulatedChars: acc.length,
+    compactionsSoFar: envelope._compaction?.seq || 0,
+    cfg,
+  });
+  if (!check.compact) return 0;
+
+  const keepRecent = cfg.keep_recent_iterations || 5;
+  const { head, blocks } = splitIterationBlocks(acc);
+  if (blocks.length <= keepRecent + 2) return 0; // too little middle to fold
+
+  const seq = (envelope._compaction?.seq || 0) + 1;
+  const kept = blocks.slice(-keepRecent);
+  const middle = blocks.slice(0, blocks.length - keepRecent);
+  const windowText = middle.join('\n\n');
+
+  // Optional durable raw-window log (contracts-gated, DEFAULT FALSE — C-8
+  // names transcripts a leak surface and the shared ether is permanent).
+  // Durability-before-destruction: the splice aborts if the commit fails.
+  let sessionLogPath = '';
+  if (cfg.session_log_to_git === true) {
+    try {
+      const dir = `${CORE_DIR}/shared/${envelope.id}/missions`;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(`${dir}/session-log-${seq}.md`, redactSecrets(windowText));
+      const sync = await gitCommitAndSync(envelope.id, envelope.project_id, `session-log ${seq} for ${envelope.id}`);
+      if (!sync?.committed) throw new Error('git commit did not land');
+      sessionLogPath = `shared/${envelope.id}/missions/session-log-${seq}.md`;
+    } catch (e) {
+      log('WARN', `compaction: session-log persist failed (${e.message}) — splice aborted this round`);
+      return 0;
+    }
+  }
+
+  // Two-step digest: stateless utility generation, then hard shape validation.
+  // The utility path's wrap-as-synthesize repair fallback can never pass
+  // validateMissionDigest, so garbage is never spliced into mission context.
+  let digest = null;
+  for (let attempt = 1; attempt <= 2 && !digest; attempt++) {
+    const rawText = await _vtx.transform(
+      windowText.substring(0, 120_000),
+      missionDigestInstruction(),
+      { maxTokens: 4096, temperature: 0.1, timeoutMs: 60_000 },
+    );
+    if (!rawText) continue;
+    try {
+      const parsed = parseJsonResponse(rawText);
+      const shape = validateMissionDigest(parsed);
+      if (shape.valid) digest = parsed;
+      else log('WARN', `compaction digest invalid (attempt ${attempt}): ${shape.reason}`);
+    } catch (e) {
+      log('WARN', `compaction digest parse failed (attempt ${attempt}): ${e.message}`);
+    }
+  }
+  if (!digest) {
+    log('WARN', `[TELEMETRY] compaction_fallback mission=${envelope.id} seq=${seq} trigger=${trigger} — digest failed; deterministic prune remains the bound`);
+    return 0;
+  }
+
+  envelope._accumulated_context = spliceCompacted({
+    head,
+    keptBlocks: kept,
+    digest,
+    seq,
+    instruction: envelope.instruction,
+    acceptCriteria: envelope.accept_criteria,
+    coveredLabel: digest.covered_iterations || '',
+    sessionLogPath,
+    capChars: cfg.digest_max_chars || 6000,
+  });
+  envelope._compaction = {
+    seq,
+    at_iteration: envelope.iteration || 0,
+    covered: digest.covered_iterations || '',
+    dropped_chars: windowText.length,
+    session_log: sessionLogPath || null,
+    trigger,
+    at: now(),
+    durable_learnings: (digest.durable_learnings || []).slice(0, 5),
+  };
+  // Field-masked write: concurrent whole-doc writers (child propagation,
+  // waiting sweeps) can neither clobber nor be clobbered by the splice.
+  await firestoreWriteFields('work', envelope.id, {
+    _accumulated_context: envelope._accumulated_context,
+    _compaction: envelope._compaction,
+    updated_at: now(),
+  });
+  await writeHistory(envelope.id, 'active', 'active', 'brain',
+    `Context compacted (seq ${seq}): iterations ${digest.covered_iterations || '?'} folded (${windowText.length} chars → digest)`,
+    `compact-${envelope.id}-${seq}`);
+  log('INFO', `[TELEMETRY] compaction mission=${envelope.id} seq=${seq} trigger=${trigger} dropped_chars=${windowText.length} kept_blocks=${kept.length} chars_after=${envelope._accumulated_context.length}`);
+  return seq;
+}
 
 function buildEnvelopeContext(envelope, priorResults, memoryResults) {
   // Start with any previously accumulated context from Firestore
@@ -3756,9 +3909,9 @@ function _initHistory() {
   });
 }
 
-async function writeHistory(envelopeId, prevStatus, newStatus, agent, detail) {
+async function writeHistory(envelopeId, prevStatus, newStatus, agent, detail, logicalKey) {
   if (!_history) _initHistory();
-  await _history.write(envelopeId, prevStatus, newStatus, agent, detail);
+  await _history.write(envelopeId, prevStatus, newStatus, agent, detail, logicalKey);
 }
 
 // ---- Logging ----

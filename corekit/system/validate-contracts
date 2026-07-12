@@ -297,6 +297,31 @@ console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
     fail "compaction.checkpoint_digest_chars = '${CDC}' (expected number ≥ 500)"
   fi
 
+  # SESSION_CONTEXT_PLAN Phase 3: mission compaction knobs
+  for field in enabled session_log_to_git; do
+    VAL="$(read_contract "compaction.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" == "true" || "$VAL" == "false" ]]; then
+      pass "compaction.${field} = ${VAL} (boolean)"
+    else
+      fail "compaction.${field} = '${VAL}' (expected boolean)"
+    fi
+  done
+  CWB="$(read_contract 'compaction.working_budget_tokens' 2>/dev/null || echo '')"
+  CTB2="$(read_contract 'dispatch.context_token_budget' 2>/dev/null || echo '0')"
+  if [[ "$CWB" =~ ^[0-9]+$ ]] && [[ "$CWB" -ge 10000 ]] && [[ "$CWB" -le "$CTB2" ]]; then
+    pass "compaction.working_budget_tokens = ${CWB} (10000..dispatch.context_token_budget)"
+  else
+    fail "compaction.working_budget_tokens = '${CWB}' (expected 10000 ≤ n ≤ dispatch.context_token_budget=${CTB2})"
+  fi
+  for field in min_compactable_tokens keep_recent_iterations max_compactions_per_mission digest_max_chars; do
+    VAL="$(read_contract "compaction.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" =~ ^[0-9]+$ ]] && [[ "$VAL" -ge 1 ]]; then
+      pass "compaction.${field} = ${VAL}"
+    else
+      fail "compaction.${field} = '${VAL}' (expected positive number)"
+    fi
+  done
+
   # claim_stale_ms: must be number ≥ 60000
   CSM="$(read_contract 'dispatch.claim_stale_ms' 2>/dev/null || echo '')"
   if [[ "$CSM" =~ ^[0-9]+$ ]] && [[ "$CSM" -ge 60000 ]]; then

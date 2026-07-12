@@ -120,7 +120,15 @@
     "voicing_tail_chars": 1500
   },
   "compaction": {
-    "checkpoint_digest_chars": 4000
+    "enabled": true,
+    "checkpoint_digest_chars": 4000,
+    "trigger_pct": 0.7,
+    "working_budget_tokens": 80000,
+    "min_compactable_tokens": 8000,
+    "keep_recent_iterations": 5,
+    "max_compactions_per_mission": 3,
+    "digest_max_chars": 6000,
+    "session_log_to_git": false
   },
   "projects": {
     "context_max_tokens": 2000,
