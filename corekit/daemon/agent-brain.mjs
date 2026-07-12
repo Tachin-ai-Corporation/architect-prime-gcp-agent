@@ -1971,6 +1971,33 @@ async function completeEnvelope(envelope, opts) {
       log('WARN', `Memory write failed during completion: ${e.message}`);
     }
   }
+
+  // SESSION_CONTEXT_PLAN Phase 3b: responsibility learning feed — durable
+  // learnings distilled by mission compaction flow to a Firestore overlay
+  // (primes/{id}/responsibility_state/{respId}) that the scheduler merges
+  // into the next firing's PRIOR LEARNINGS. The on-disk responsibilities
+  // JSON is manifest-managed (upgrades overwrite it), so learnings must
+  // never be written there. FIFO-capped; never blocks completion.
+  const _respId = envelope.source_meta?.responsibility_id;
+  if (_respId && status === 'complete' && envelope._compaction?.durable_learnings?.length) {
+    try {
+      const overlay = await firestoreRead('responsibility_state', _respId) || {};
+      const maxEntries = CONTRACTS.compaction?.learnings_max_entries || 5;
+      const existing = (overlay.prior_learnings || '').split('\n').filter(Boolean);
+      const today = now().substring(0, 10);
+      const additions = envelope._compaction.durable_learnings.slice(0, 2)
+        .map(l => `- [${today}] ${toStr(l).substring(0, 300)}`);
+      const merged = [...existing, ...additions].slice(-maxEntries);
+      await firestoreWrite('responsibility_state', _respId, {
+        id: _respId,
+        prior_learnings: merged.join('\n'),
+        updated_at: now(),
+      });
+      log('INFO', `[TELEMETRY] learnings_feed responsibility=${_respId} added=${additions.length} total=${merged.length}`);
+    } catch (e) {
+      log('WARN', `Responsibility learnings feed failed (non-fatal): ${e.message}`);
+    }
+  }
   if (!skipCleanup) {
     try { await cleanupSharedWorkspace(envelope.id); } catch (e) {
       log('WARN', `Workspace cleanup failed: ${e.message}`);
@@ -4476,6 +4503,7 @@ function _initScheduler() {
     writeHistory,
     recallMemory,
     firestoreWrite,
+    firestoreRead,
     firestoreQuery,
     ensureProcessesLoaded,
     getProcesses: () => PROCESSES,

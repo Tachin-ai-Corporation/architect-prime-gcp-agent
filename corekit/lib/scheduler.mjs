@@ -119,6 +119,7 @@ export function createScheduler(deps) {
     writeHistory,
     recallMemory,
     firestoreWrite,
+    firestoreRead,
     firestoreQuery,
     ensureProcessesLoaded,
     getProcesses,
@@ -361,8 +362,21 @@ export function createScheduler(deps) {
     if (resp.context?.success_criteria) {
       contextParts.push(`SUCCESS CRITERIA: ${resp.context.success_criteria}`);
     }
-    if (resp.context?.prior_learnings) {
-      contextParts.push(`PRIOR LEARNINGS: ${resp.context.prior_learnings}`);
+    // SESSION_CONTEXT_PLAN Phase 3b: merge machine-fed learnings from the
+    // Firestore overlay (written by completeEnvelope from compaction digests)
+    // with the hand-authored config value. Config prose leads; the overlay's
+    // dated FIFO lines follow. Overlay read is best-effort — a miss degrades
+    // to config-only, exactly today's behavior.
+    let overlayLearnings = '';
+    if (firestoreRead) {
+      try {
+        const overlay = await firestoreRead('responsibility_state', resp.id);
+        if (overlay?.prior_learnings) overlayLearnings = overlay.prior_learnings;
+      } catch { /* overlay optional */ }
+    }
+    if (resp.context?.prior_learnings || overlayLearnings) {
+      const merged = [resp.context?.prior_learnings, overlayLearnings].filter(Boolean).join('\n');
+      contextParts.push(`PRIOR LEARNINGS: ${merged}`);
     }
     const contextSummary = contextParts.join('\n\n');
 

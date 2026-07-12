@@ -47,5 +47,5 @@ No custom corekit scripts are governed directly by this skill (handled via core 
 ## Best Practices
 - Always create a project before starting an improvement cycle.
 - Link the project to the relevant process for traceability.
-- Update `prior_learnings` on the responsibility after each cycle — this is how the agent learns.
+- Update `prior_learnings` on the responsibility after each cycle — this is how the agent learns. (The daemon also machine-feeds dated learnings from mission compaction digests into the `responsibility_state` Firestore overlay; your hand-authored guidance and the machine-fed lines are merged at fire time — do not duplicate them.)
 - Close projects when the improvement is verified and deployed.

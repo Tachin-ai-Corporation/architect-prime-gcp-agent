@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for all cross-cutting values. Read by validate-contracts, bootstraps, and runtime scripts. Edit THIS file — the manifest installs it to VMs.",
+  "_comment": "Single source of truth for all cross-cutting values. Read by validate-contracts, bootstraps, and runtime scripts. Edit THIS file \u2014 the manifest installs it to VMs.",
   "version": 2,
   "vertex": {
     "location": "us-central1",
@@ -24,7 +24,13 @@
   },
   "agents": {
     "defaultId": "cortex",
-    "subagentIds": ["temporal-research", "temporal-memory", "prefrontal", "motor", "cerebellum"]
+    "subagentIds": [
+      "temporal-research",
+      "temporal-memory",
+      "prefrontal",
+      "motor",
+      "cerebellum"
+    ]
   },
   "gateway": {
     "port": 18789,
@@ -56,10 +62,17 @@
     "claim_stale_ms": 600000,
     "respond_enabled": true,
     "respond_reads_enabled": true,
-    "respond_reads": ["fleet_status", "recent_work"],
+    "respond_reads": [
+      "fleet_status",
+      "recent_work"
+    ],
     "evidence_floor_exclude_skills": [
-      "fleet-fire", "fleet-hire", "fleet-upgrade", "fleet-verify",
-      "fleet-status", "fleet-deploy"
+      "fleet-fire",
+      "fleet-hire",
+      "fleet-upgrade",
+      "fleet-verify",
+      "fleet-status",
+      "fleet-deploy"
     ],
     "max_delegations_per_checkpoint": 4,
     "delegation_dedup_window_hours": 24,
@@ -105,7 +118,13 @@
     "dashboard_visibility_mirror": true,
     "status_updates": {
       "enabled": true,
-      "schedule_ms": [10000, 300000, 600000, 1800000, 7200000]
+      "schedule_ms": [
+        10000,
+        300000,
+        600000,
+        1800000,
+        7200000
+      ]
     }
   },
   "chat": {
@@ -128,7 +147,8 @@
     "keep_recent_iterations": 5,
     "max_compactions_per_mission": 3,
     "digest_max_chars": 6000,
-    "session_log_to_git": false
+    "session_log_to_git": false,
+    "learnings_max_entries": 5
   },
   "projects": {
     "context_max_tokens": 2000,

@@ -48,7 +48,9 @@ export function renderMissionRecordHeader(envelope) {
   lines.push('');
 
   // B-29: Epistemic state section
-  if (envelope.stakes || envelope._brief?.kill_shot || envelope._lastDecision?.assumptions?.length) {
+  const compactionLearnings = envelope._compaction?.durable_learnings;
+  if (envelope.stakes || envelope._brief?.kill_shot || envelope._lastDecision?.assumptions?.length
+      || (Array.isArray(compactionLearnings) && compactionLearnings.length > 0)) {
     lines.push('## Epistemic State', '');
     if (envelope.stakes) lines.push(`- **Stakes:** ${envelope.stakes}`);
     if (envelope._brief?.kill_shot) lines.push(`- **Kill shot:** ${envelope._brief.kill_shot}`);
@@ -57,6 +59,13 @@ export function renderMissionRecordHeader(envelope) {
       lines.push('- **Assumptions:**');
       for (const a of assumptions) {
         lines.push(`  - \`${a.status}\` ${a.claim}${a.note ? ` — ${a.note}` : ''}`);
+      }
+    }
+    // SESSION_CONTEXT_PLAN Phase 3: learnings distilled by mission compaction
+    if (Array.isArray(compactionLearnings) && compactionLearnings.length > 0) {
+      lines.push('- **Durable learnings (context compaction):**');
+      for (const l of compactionLearnings) {
+        lines.push(`  - ${l}`);
       }
     }
     lines.push('');
@@ -111,6 +120,11 @@ export function renderResultJson(envelope, verification = null) {
     job_to_be_done: envelope.job_to_be_done || null,
     kill_shot: envelope._brief?.kill_shot || null,
     assumptions: envelope._lastDecision?.assumptions || null,
+    compaction: envelope._compaction ? {
+      seq: envelope._compaction.seq || 0,
+      covered: envelope._compaction.covered || null,
+      durable_learnings: envelope._compaction.durable_learnings || [],
+    } : null,
   };
 }
 

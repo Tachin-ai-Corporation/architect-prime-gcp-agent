@@ -13,7 +13,7 @@ This is the agent's "sleep cycle" — processing the day's experiences across al
 
 ### Nightly Consolidation Playbook
 1. **Gather Working Memory:** Read `/opt/corekit/workspace/MEMORY.md` to see recent focus and open items.
-2. **Retrieve Recent Conversations:** Run `session-summary --hours 24 --limit 20` to extract user interactions.
+2. **Retrieve Recent Conversations:** Run `session-summary --hours 24 --limit 20` to extract user interactions. Long missions include a `Digest:` section — compaction digests whose `learning:` lines carry pre-binned claims distilled in-flight; treat these as first-class promotion candidates (they already passed epistemic-bin validation).
 3. **Scan Recent Work Ledger:** The brain daemon queries the agent's completed work envelopes from the last 7 days (via the same episodic retrieval used for recall). Use these to identify facts worth promoting — completed missions carry verified outcomes.
 4. **Scan Recent Core Memory:** Run `core-memory-read --since 30d --limit 20` to scan recent long-term writes.
 5. **Scan Full Category Archives:** Run `core-memory-read --category <cat>` for categories: `architecture`, `operations`, `iam`, `decisions`, `patterns`, `errors`.

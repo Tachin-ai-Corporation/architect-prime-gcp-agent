@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # session-summary — Extract recent completed work from Firestore envelopes
 #
-# The brain gateway doesn't persist session transcripts to disk,
-# so this tool queries Firestore for recently completed Mission envelopes
-# to produce a summary of recent agent activity.
+# Queries Firestore for recently completed Mission envelopes to produce a
+# summary of recent agent activity. Long missions carry compaction digests
+# (_compaction, SESSION_CONTEXT_PLAN Phase 3) — real transcript summaries
+# with epistemic bins — which this tool surfaces as a Digest section for
+# the nightly p-memory-consolidate triage.
 #
 # Usage:
 #   session-summary [--hours 24] [--limit 20] [--exclude-intent <intent>]
@@ -136,6 +138,20 @@ for entry in filtered:
     if output:
         limit_chars = 100 if intent == "respond" else 300
         print(f"  Result: {output[:limit_chars]}")
+
+    # SESSION_CONTEXT_PLAN Phase 3: surface compaction digests (pre-binned
+    # claims already condensed in-flight) for higher-quality consolidation.
+    comp = fields.get("_compaction", {}).get("mapValue", {}).get("fields", {})
+    if comp:
+        covered = comp.get("covered", {}).get("stringValue", "")
+        seq = comp.get("seq", {}).get("integerValue", "") or comp.get("seq", {}).get("doubleValue", "")
+        learnings = comp.get("durable_learnings", {}).get("arrayValue", {}).get("values", [])
+        if covered or learnings:
+            print(f"  Digest: compaction seq {seq}, iterations {covered or '?'}")
+            for lv in learnings:
+                lt = lv.get("stringValue", "")
+                if lt:
+                    print(f"    - learning: {lt[:300]}")
     print()
 
 if count == 0:

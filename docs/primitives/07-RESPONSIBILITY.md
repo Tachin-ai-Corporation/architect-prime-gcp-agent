@@ -34,9 +34,17 @@ These fields are in the responsibility JSON definition (not the WorkEnvelope):
   process: string[];                // Step-by-step instructions
   reference_files: string[];        // Files the agent should consult
   success_criteria: string;         // What constitutes a successful execution
-  prior_learnings: string;          // Lessons from previous executions
+  prior_learnings: string;          // Lessons from previous executions (hand-authored)
 }
 ```
+
+> **Machine-fed learnings (SESSION_CONTEXT_PLAN Phase 3):** the daemon also
+> maintains a Firestore overlay at `primes/{id}/responsibility_state/{respId}`
+> whose `prior_learnings` holds dated FIFO lines (`- [YYYY-MM-DD] lesson`,
+> max `compaction.learnings_max_entries`) distilled from mission compaction
+> digests. The scheduler merges config prose first, overlay lines after, into
+> the firing's PRIOR LEARNINGS context. The on-disk responsibilities JSON is
+> manifest-managed — never write learnings into it.
 
 ---
 

@@ -313,7 +313,7 @@ console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
   else
     fail "compaction.working_budget_tokens = '${CWB}' (expected 10000 ≤ n ≤ dispatch.context_token_budget=${CTB2})"
   fi
-  for field in min_compactable_tokens keep_recent_iterations max_compactions_per_mission digest_max_chars; do
+  for field in min_compactable_tokens keep_recent_iterations max_compactions_per_mission digest_max_chars learnings_max_entries; do
     VAL="$(read_contract "compaction.${field}" 2>/dev/null || echo '')"
     if [[ "$VAL" =~ ^[0-9]+$ ]] && [[ "$VAL" -ge 1 ]]; then
       pass "compaction.${field} = ${VAL}"
