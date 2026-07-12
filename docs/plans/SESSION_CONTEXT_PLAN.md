@@ -1,7 +1,7 @@
 # Session Context & Prompt Caching Plan
 
-> **Version:** 1.0
-> **Status:** Active — approved GO on all phases (2026-07-11)
+> **Version:** 1.1
+> **Status:** Implemented — all six phases on main (2026-07-11, v2026.07.11.2.0 → .9.1). Phases 0–2 live-validated on the fleet (94.5% Opus cache hit on iteration 2). Phase 5 ships dark behind `session.enabled` (flip after cadence telemetry); motor sessions (5.3) remain telemetry-gated by design.
 > **Ownership:** Human maintainers via CODEOWNERS
 > **Canon alignment:** Improves B-4 (context economy) and B-8 (fewer tokens per envelope) without weakening B-1 (determinism), B-22 (crash-safety), B-23 (observability), B-28 (verification independence). No new primitive (C-14); every knob in contracts.json (C-7); every mechanism ships with telemetry (C-20) and a kill switch.
 

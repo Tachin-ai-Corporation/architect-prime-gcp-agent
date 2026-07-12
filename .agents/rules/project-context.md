@@ -302,3 +302,12 @@ operator/         Operator-specific content (sites, processes, docs) — not loa
 - contracts.json — single source of truth for cross-cutting values
 - Idempotent — every script safely re-runnable
 - Public repo — curl-installable from `raw.githubusercontent.com`
+
+
+### Session Context Architecture (SESSION_CONTEXT_PLAN, shipped 2026-07-11)
+Plan: `docs/plans/SESSION_CONTEXT_PLAN.md`. Six phases, all on main:
+- **Telemetry** (Phase 0): gateway returns real dual-keyed usage (incl. `cachedContentTokenCount`/`cacheCreationTokenCount`, `last_step_input_tokens`); every `[TELEMETRY] llm_usage` line carries cache splits.
+- **Prompt caching** (Phase 2): `corekit/lib/prompt-blocks.mjs` partitions payloads into boot/mission/volatile tiers; system prompt is two blocks (stable | MEMORY.md last); gateway places Anthropic 1h-TTL breakpoints (`vertex.anthropic_cache_*` contracts) and sends `X-Vertex-Ai-Session-Id`; Opus caching floor is 4,096 tokens. NEVER add volatile content to the stable system block or the boot tier — it re-keys the cache.
+- **Compaction** (Phases 1+3): `corekit/lib/compaction.mjs` — checkpoint digests (`_cp_digest`, never `context_forward`) + token-triggered mission compaction (`_compaction` on the envelope, `contracts.compaction.*`, field-masked writes via `firestoreWriteFields`). Digests carry verbatim accept_criteria (B-25) and per-claim epistemic bins (B-29).
+- **Thread ledger** (Phase 4): `corekit/lib/thread-ledger.mjs` — `primes/{id}/threads/{key}/turns`, written by brain (intake claim), ears (GChat backfill), mouth (delivered voice); B-32 was amended for it. Thread keys preserve case.
+- **Gateway sessions** (Phase 5, DARK — `session.enabled=false`): `corekit/brain/context.mjs` session store + open/continue/reset protocol; cortex per-mission decide sessions ship deltas (the tier partition is the split); cerebellum is session-excluded (B-28). Flip `session.enabled` only after cadence telemetry supports it. Motor sessions (5.3) intentionally unimplemented pending telemetry.

@@ -65,3 +65,12 @@ Contract-driven guarantees that dispatch and completion produce verifiable resul
 - `agent-ears` bridges input channels → neural gateway (fire-and-forget POST)
 - `agent-mouth` bridges gateway output → delivery channel (GChat or Firestore)
 - Fleet tools (`fleet-deploy`, etc.) available via VM execution on PATH
+
+
+## Session Context Layer (2026-07-11)
+The brain's context handling is measured, cached, bounded, and thread-true:
+- `corekit/lib/prompt-blocks.mjs` — cache-tier block assembly (boot/mission/volatile); the gateway maps tiers to Anthropic cache_control breakpoints (1h TTL) and concatenates for Gemini.
+- `corekit/lib/compaction.mjs` — checkpoint digests + token-triggered mission compaction ("roll at N%"): `compactMissionContext` in agent-brain.mjs splices a validated digest (verbatim criteria, binned claims) into `_accumulated_context` at `contracts.compaction` thresholds.
+- `corekit/lib/thread-ledger.mjs` — (channel, thread)-keyed conversation cache written at intake claim / GChat backfill / delivery; read by classify fill-in and mouth voicing.
+- `corekit/brain/context.mjs` — gateway session store (dark; `session.enabled`); cortex decide sessions send volatile-tier deltas; cerebellum structurally excluded (B-28).
+Debugging: grep daemon logs for `[TELEMETRY] llm_usage` (cache splits), `compaction`, `session_open|session_miss`, `thread_turn_append`. Gateway `/status` lists live sessions.
