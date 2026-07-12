@@ -422,6 +422,35 @@ function applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed }) {
   }
 }
 
+/**
+ * SESSION_CONTEXT_PLAN Phase 5: place ONE rolling cache breakpoint at the
+ * session's frozen-prefix boundary (everything the gateway stored before this
+ * turn's delta), so the byte-stable transcript prefix is read from provider
+ * cache at ~0.1x while only the new delta is billed full price. Replaces
+ * applyMessageBreakpoints on continue turns (system BP1 + this = 2, well under
+ * the 4 cap). The boundary message may be an assistant STRING turn (a coerced
+ * decision) or a USER content-parts array (the open turn / a prior delta) —
+ * handle both; tier hints are stripped from every array-content message so
+ * nothing non-API reaches the provider.
+ */
+function applySessionBoundaryBreakpoint(anthropicMessages, boundaryIndex) {
+  const idx = boundaryIndex - 1; // last frozen (cached) message
+  anthropicMessages.forEach((msg, i) => {
+    if (i === idx) {
+      if (Array.isArray(msg.content)) {
+        const parts = msg.content.map(p => ({ type: 'text', text: p.text }));
+        parts[parts.length - 1] = { ...parts[parts.length - 1], cache_control: cacheControl(CACHE_TTL_MISSION) };
+        msg.content = parts;
+      } else {
+        msg.content = [{ type: 'text', text: msg.content || '', cache_control: cacheControl(CACHE_TTL_MISSION) }];
+      }
+    } else if (Array.isArray(msg.content)) {
+      msg.content = msg.content.map(p => ({ type: 'text', text: p.text }));
+    }
+  });
+  console.log(`[loop] session cache breakpoint at frozen-prefix boundary (msg ${idx}, ttl=${CACHE_TTL_MISSION})`);
+}
+
 // ---- Gemini explicit context caching (flag-gated; SESSION_CONTEXT_PLAN Phase 2) ----
 // Live-verified mechanism: ai.caches.create() with a 1h TTL, ~2,048-token
 // floor, cachedContentTokenCount reports hits. Gateway-side lifecycle only:
@@ -629,16 +658,13 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
     toolCalls: turnToolCalls,
     usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
-    // SESSION_CONTEXT_PLAN Phase 5: the full turn history (input + assistant +
-    // tool turns) — previously discarded here; the session store persists it.
-    history: localHistory,
   };
 }
 
 /**
  * Execute tool-calling loop using Anthropic Messages SDK.
  */
-async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95, agentId = '' }) {
+async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens = 8192, temperature = 0.3, topP = 0.95, agentId = '', sessionCacheBoundary = 0 }) {
   const client = getAnthropicClient();
   const localHistory = [...messages];
   let step = 0;
@@ -679,7 +705,14 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messa
   while (step < maxSteps) {
     const anthropicMessages = convertMessagesToAnthropic(localHistory);
     if (promptCachingEnabled && MSG_BREAKPOINTS_ENABLED) {
-      applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed: 1 });
+      // On a session continue the frozen transcript prefix is what to cache
+      // (one rolling breakpoint at its boundary); otherwise use the Phase-2
+      // tier layout on the first user message.
+      if (sessionCacheBoundary > 0) {
+        applySessionBoundaryBreakpoint(anthropicMessages, sessionCacheBoundary);
+      } else {
+        applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed: 1 });
+      }
     }
 
     console.log(`[loop] Calling Anthropic Claude ${modelId} (step ${step}/${maxSteps})...`);
@@ -818,9 +851,6 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messa
     toolCalls: turnToolCalls,
     usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
-    // SESSION_CONTEXT_PLAN Phase 5: the full turn history (input + assistant +
-    // tool turns) — previously discarded here; the session store persists it.
-    history: localHistory,
   };
 }
 
@@ -838,12 +868,16 @@ export async function runAgentTurnSync({
   temperature = 0.3,
   topP = 0.95,
   agentId = '',
+  sessionCacheBoundary = 0,
 }) {
   const { prefix, modelId } = parseModel(modelString);
 
   if (prefix === 'vertex-anthropic') {
-    return await runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens, temperature, topP, agentId });
+    return await runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens, temperature, topP, agentId, sessionCacheBoundary });
   } else {
+    // Google path: the replayed transcript is a byte-stable prefix, so implicit
+    // caching rewards it without explicit breakpoints (no cortex on Gemini
+    // today anyway — this is the cross-provider fallback path).
     return await runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages, tools, maxSteps, maxTokens, temperature, topP });
   }
 }

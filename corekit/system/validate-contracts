@@ -342,6 +342,26 @@ console.log(Array.isArray(v) && v.includes('cerebellum') ? 'OK' : 'MISSING');
     fail "session.excluded_agents must be an array including 'cerebellum' (B-28 verification isolation)"
   fi
 
+  # SESSION_CONTEXT_PLAN Phase 5: sessions REQUIRE provider caching + affinity +
+  # compaction. Without caching the replayed transcript is billed full price
+  # every turn (re-introducing the quadratic the session removes); without
+  # compaction nothing bounds the growing in-memory transcript.
+  if [[ "$SE" == "true" ]]; then
+    DEP_CHECK="$(node -e "
+const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
+const miss = [];
+if (c.vertex?.anthropic_prompt_caching !== true) miss.push('vertex.anthropic_prompt_caching');
+if (c.vertex?.anthropic_session_affinity !== true) miss.push('vertex.anthropic_session_affinity');
+if (c.compaction?.enabled !== true) miss.push('compaction.enabled');
+console.log(miss.length ? 'MISSING:'+miss.join(',') : 'OK');
+" 2>/dev/null || echo 'ERROR')"
+    if [[ "$DEP_CHECK" == "OK" ]]; then
+      pass "session.enabled=true prerequisites satisfied (caching + affinity + compaction)"
+    else
+      fail "session.enabled=true requires: ${DEP_CHECK} (else replayed transcript is unbounded and billed full price)"
+    fi
+  fi
+
   # SESSION_CONTEXT_PLAN Phase 3: mission compaction knobs
   for field in enabled session_log_to_git; do
     VAL="$(read_contract "compaction.${field}" 2>/dev/null || echo '')"

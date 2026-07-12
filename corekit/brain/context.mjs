@@ -45,10 +45,15 @@ export function hashSystem(stableSystemBlock) {
   return createHash('sha256').update(stableSystemBlock || '').digest('hex').substring(0, 16);
 }
 
-// Cap stored tool_result content at the same budget the stateless path uses
-// (B-4: a session must not replace bounded digests with unbounded transcripts).
+// Cap stored content at the same budget the stateless path uses (B-4: a
+// session must not replace bounded digests with unbounded transcripts).
+// Covers tool results AND user-role deltas (the daemon caps per-result in
+// buildDecideDeltaBlock; this is the store's own backstop against any single
+// oversized turn persisting cache-read across every later continue). Array
+// (content-parts) messages are left intact — they are already budgeted by the
+// daemon's tier assembly.
 function capMessage(m) {
-  if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > TURN_CONTENT_CAP) {
+  if ((m.role === 'tool' || m.role === 'user') && typeof m.content === 'string' && m.content.length > TURN_CONTENT_CAP) {
     return { ...m, content: m.content.substring(0, TURN_CONTENT_CAP) + ` [...capped at ${TURN_CONTENT_CAP} chars — full result in envelope state]` };
   }
   return m;

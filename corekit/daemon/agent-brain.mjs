@@ -919,15 +919,33 @@ async function callCortex(mode, payload, sessionCtl = null) {
   // volatile tier — the static prefix lives in the gateway-held history
   // (the Phase 2 tier partition IS the session's static/delta split).
   const sysBlocks = buildSystemBlocks(mode, payload);
-  const pingerEmail = payload.envelope?.source_meta?.senderEmail || '';
-  const userBlocks = [
-    { label: '', text: '[BRAIN-ORCHESTRATED]', tier: 'boot' },
-    ...(pingerEmail ? [{ label: 'REQUESTER', text: `Use this email for Drive sharing and communication: ${pingerEmail}`, tier: 'mission' }] : []),
-    ...buildUserBlocks(mode, payload),
-  ];
-  const userContent = (sessionCtl && sessionCtl.op === 'continue')
-    ? toContentParts(userBlocks.filter(b => (b.tier || 'volatile') === 'volatile'))
-    : toContentParts(userBlocks);
+
+  // Phase 5: a 'continue' is DAEMON-AUTHORED — it prepends the previous
+  // decision (coerced JSON) as an assistant turn and sends ONLY a slim
+  // "WORKING STATE (delta)" user turn (new since the last decision). The
+  // static prefix (header, boot, mission, and the open turn's full working
+  // state) lives in the gateway-held transcript and is cache-read at ~0.1x.
+  // A continue without a prior decision is impossible by construction (the
+  // controller nulls the session), but guard defensively: fall back to the
+  // full open-shape rather than emit consecutive user turns.
+  const isContinue = !!(sessionCtl && sessionCtl.op === 'continue' && sessionCtl.priorDecision);
+  let userContent;
+  if (isContinue) {
+    userContent = toContentParts(buildDecideDeltaBlock(payload, sessionCtl.sentUpto || 0));
+  } else {
+    const pingerEmail = payload.envelope?.source_meta?.senderEmail || '';
+    const userBlocks = [
+      { label: '', text: '[BRAIN-ORCHESTRATED]', tier: 'boot' },
+      ...(pingerEmail ? [{ label: 'REQUESTER', text: `Use this email for Drive sharing and communication: ${pingerEmail}`, tier: 'mission' }] : []),
+      ...buildUserBlocks(mode, payload),
+    ];
+    userContent = toContentParts(userBlocks);
+  }
+
+  // Only ids/counters cross the wire — priorDecision/sentUpto are daemon-side.
+  const sessionField = sessionCtl
+    ? { id: sessionCtl.id, op: (sessionCtl.op === 'continue' && !isContinue) ? 'open' : sessionCtl.op, seq: sessionCtl.seq }
+    : null;
 
   // Per-agent generation parameters from registry
   const cortexConfig = REGISTRY.agents?.cortex || {};
@@ -935,7 +953,7 @@ async function callCortex(mode, payload, sessionCtl = null) {
   const temperature = cortexConfig.temperature ?? 0.4;
   const topP = cortexConfig.top_p ?? 0.95;
 
-  log('INFO', `Calling Cortex: mode=${mode} (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
+  log('INFO', `Calling Cortex: mode=${mode}${sessionField ? ` session=${sessionField.op}` : ''} (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
   const _cortexStart = Date.now();
 
   const resp = await fetch(GATEWAY_URL, {
@@ -949,9 +967,10 @@ async function callCortex(mode, payload, sessionCtl = null) {
       messages: [
         { role: 'system', content: sysBlocks.stable },
         ...(sysBlocks.volatile ? [{ role: 'system', content: sysBlocks.volatile }] : []),
+        ...(isContinue ? [{ role: 'assistant', content: sessionCtl.priorDecision }] : []),
         { role: 'user', content: userContent },
       ],
-      ...(sessionCtl ? { session: sessionCtl } : {}),
+      ...(sessionField ? { session: sessionField } : {}),
       max_tokens: maxTokens,
       temperature: temperature,
       top_p: topP,
@@ -972,8 +991,10 @@ async function callCortex(mode, payload, sessionCtl = null) {
   // Phase 5 fail-closed protocol: a 'continue' turn shipped only the delta —
   // a completion without the session echo (fast miss, old gateway, excluded
   // agent) must NEVER be acted on. 'open' turns carry full context and stay
-  // valid either way; they just don't get a session.
-  if (sessionCtl?.op === 'continue' && data.session?.present !== true) {
+  // valid either way; they just don't get a session. Keyed on isContinue, not
+  // the requested op, so a missing-priorDecision reopen (sent as open-shape) is
+  // never mistaken for a delta miss.
+  if (isContinue && data.session?.present !== true) {
     log('INFO', `[TELEMETRY] session_miss id=${sessionCtl.id} reason=${data.session?.reason || 'no_echo'}`);
     return { _session_miss: true, reason: data.session?.reason || 'no_echo' };
   }
@@ -996,12 +1017,18 @@ async function callCortex(mode, payload, sessionCtl = null) {
 
   log('DEBUG', `Cortex raw response (${content.length} chars): ${content.substring(0, 300)}`);
 
-  // Phase 4.3: Attach usage metadata to the parsed result for telemetry
   const parsed = await enforceSchema(content, mode);
+  // Phase 5: capture the COERCED decision JSON BEFORE daemon-only fields are
+  // attached — this exact string becomes the assistant turn on the next
+  // continue (the plan's "coerced JSON, never raw garbage"). A parse failure
+  // yields no _coercedDecision, so the controller resets the session.
   if (parsed && typeof parsed === 'object') {
+    const coerced = !parsed.error ? JSON.stringify(parsed) : null;
+    // Phase 4.3: Attach usage metadata to the parsed result for telemetry
     parsed.usage = data.usage || null;
     parsed.durationMs = _cortexDuration;
     parsed._session = data.session || null; // Phase 5: seq echo for the controller
+    parsed._coercedDecision = coerced;
   }
 
   // SESSION_CONTEXT_PLAN Phase 0: classify and respond_compose run before an
@@ -1383,8 +1410,41 @@ const ENVELOPE_MUTABLE_KEYS = new Set([
   'status', 'updated_at', 'iteration', 'started_at', 'completed_at',
   'output', 'error', 'children', 'step_ledger', 'claimed_by', 'claimed_at',
   '_cp_progress', '_lastDecision', '_accumulated_context', 'context_forward',
-  'delivery_status', 'delivered_at',
+  'delivery_status', 'delivered_at', '_session', '_compaction',
 ]);
+
+// Per-result cap for the session delta (SESSION_CONTEXT_PLAN Phase 5). The
+// delta is appended verbatim into the gateway transcript, so an uncapped
+// dispatch result would inflate one turn AND persist cache-read on every
+// later continue and count toward the compaction trigger — the exact B-4
+// "unbounded transcript" hazard. Matches buildEnvelopeContext's own budget.
+const DELTA_RESULT_CHARS = 2000;
+
+// SESSION_CONTEXT_PLAN Phase 5: the slim continue delta — ONLY what is new
+// since the model's last decision. The cumulative envelope_context and the
+// full prior_results array are deliberately OMITTED: the model already read
+// them as earlier turns in the session transcript (that IS the accumulated
+// context). new_results is the tail past the watermark, each result capped.
+function buildDecideDeltaBlock(payload, sentUpto = 0) {
+  const p = buildModePayload('decide', payload);
+  const tail = (p.prior_results || []).slice(sentUpto).map(r => ({
+    ...r,
+    result: typeof r.result === 'string' ? smartTruncate(r.result, DELTA_RESULT_CHARS) : r.result,
+  }));
+  return [{
+    label: 'WORKING STATE (delta) — new since your last decision',
+    text: JSON.stringify({
+      mode: 'decide',
+      iteration: p.iteration,
+      new_results: tail,
+      pending_intake_count: p.pending_intake_count,
+      pending_queue: p.pending_queue,
+      goal_state: p.goal_state,
+      premise_check: p.premise_check,
+    }),
+    tier: 'volatile',
+  }];
+}
 
 function splitEnvelope(env) {
   const statics = {};
@@ -3446,6 +3506,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   let _sess = null; // { id, seq }
   let _sessGen = envelope._session?.generation || 0;
   let _sessMisses = 0;
+  let _lastCoercedDecision = null;  // prior turn's coerced decision → next continue's assistant turn
+  let _priorResultsSent = 0;        // watermark: how many priorResults the model has already seen
 
   // Phase 4.3: LLM cost telemetry — per-mission token accumulator
   const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, totalCacheWrites: 0, callCount: 0 };
@@ -3561,6 +3623,12 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
         ...keep
       );
       log('INFO', `priorResults truncated: ${older.length} entries summarized, ${keep.length} kept`);
+      // SESSION_CONTEXT_PLAN Phase 5: this rewrites priorResults IN PLACE, so
+      // the index watermark (_priorResultsSent) no longer points at the same
+      // entries. Close the session — the next decide re-opens over the
+      // truncated array with a fresh watermark, so no result is ever dropped
+      // from a delta slice. (Mirrors the compaction close.)
+      if (_sess) { await closeGatewaySession(_sess.id); _sess = null; }
     }
 
     // SESSION_CONTEXT_PLAN Phase 3: rolling compaction — at the token
@@ -3646,8 +3714,13 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     };
 
     // SESSION_CONTEXT_PLAN Phase 5: session-first decide. 'open' carries the
-    // full context (safe even against an old/excluded gateway); 'continue'
-    // ships the volatile delta only and fails closed to a stateless full call.
+    // full context (byte-identical to the stateless assembly, so it is safe
+    // even against an old/excluded gateway); 'continue' prepends the prior
+    // coerced decision as an assistant turn and ships only the WORKING STATE
+    // delta, failing closed to a stateless full call on any miss. On any
+    // successful decide the watermark advances to priorResults.length so the
+    // NEXT delta carries exactly the results appended since (dispatch results,
+    // guard/parse nudges, human context_forward).
     let decision = null;
     if (_sessEnabled && _sessMisses < _sessBreaker) {
       if (!_sess) {
@@ -3657,6 +3730,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
         if (opened && !opened.error && opened._session?.present) {
           _sess = { id: sid, seq: opened._session.seq };
           envelope._session = { id: sid, seq: _sess.seq, generation: _sessGen };
+          _lastCoercedDecision = opened._coercedDecision || null;
+          _priorResultsSent = priorResults.length;
           log('INFO', `[TELEMETRY] session_open mission=${envelope.id} id=${sid}`);
           decision = opened;
         } else if (opened && !opened.error) {
@@ -3668,11 +3743,15 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
           _sessMisses++;
         }
       } else {
-        const cont = await callCortex('decide', decideArgs, { id: _sess.id, op: 'continue', seq: _sess.seq });
+        const cont = await callCortex('decide', decideArgs, {
+          id: _sess.id, op: 'continue', seq: _sess.seq,
+          priorDecision: _lastCoercedDecision, sentUpto: _priorResultsSent,
+        });
         if (cont?._session_miss || !cont || cont.error) {
           if (cont?.error) {
             // Garbage never poisons a transcript: hard cortex errors reset
-            // the session; the stateless fallback below still decides.
+            // the session; the stateless fallback below still decides, and the
+            // parse-retry nudge (pushed below) rides the next fresh open.
             await closeGatewaySession(_sess.id);
           }
           _sess = null;
@@ -3680,6 +3759,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
         } else {
           _sess.seq = cont._session?.seq ?? _sess.seq;
           envelope._session = { id: _sess.id, seq: _sess.seq, generation: _sessGen };
+          _lastCoercedDecision = cont._coercedDecision || _lastCoercedDecision;
+          _priorResultsSent = priorResults.length;
           decision = cont;
         }
       }

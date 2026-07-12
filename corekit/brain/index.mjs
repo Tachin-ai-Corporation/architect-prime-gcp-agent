@@ -207,27 +207,33 @@ const server = createServer(async (req, res) => {
       const systemPrompt = systemBlocks.join('\n') || agentConfig.systemPrompt;
       let chatMessages = messages.filter(m => m.role !== 'system');
 
-      // Session lifecycle (daemon-commanded). systemHash covers the STABLE
-      // block only — MEMORY.md churn must not invalidate sessions.
+      // Session lifecycle (daemon-commanded). Daemon-authored store/replay:
+      // the gateway stores ONLY the messages the daemon sends, never model
+      // output. systemHash covers the STABLE block only — MEMORY.md churn must
+      // not invalidate sessions. sessionCacheBoundary marks the frozen prefix
+      // (everything stored before this turn's delta) so loop.mjs can place one
+      // rolling cache breakpoint there and read it at ~0.1x.
       const stableHash = hashSystem(systemBlocks[0] || agentConfig.systemPrompt || '');
+      let deltaMessages = null;      // continue-hit: the daemon-sent delta to append post-turn
+      let sessionCacheBoundary = 0;  // # of frozen messages before the delta
+      let sessionEcho;
       if (sessionReq?.id && sessionEnabled && !excludedAgents.includes(agentId)) {
         if (sessionReq.op === 'open') {
           session = openSession({ id: sessionReq.id, agentId, systemHash: stableHash, messages: chatMessages });
+          sessionEcho = { id: session.id, present: true, seq: session.seq };
           console.log(`[brain] #${rid} TELEMETRY session_open id=${sessionReq.id} msgs=${chatMessages.length}`);
         } else if (sessionReq.op === 'reset') {
           session = resetSession({ id: sessionReq.id, agentId, systemHash: stableHash, messages: chatMessages });
+          sessionEcho = { id: session.id, present: true, seq: session.seq };
           console.log(`[brain] #${rid} TELEMETRY session_reset id=${sessionReq.id} msgs=${chatMessages.length}`);
         } else if (session) {
-          // continue-hit: replay stored history + the delta the daemon sent.
-          console.log(`[brain] #${rid} TELEMETRY session_hit id=${sessionReq.id} seq=${session.seq} stored=${session.messages.length} delta=${chatMessages.length}`);
+          // continue-hit: replay [stored frozen prefix + daemon delta].
+          deltaMessages = chatMessages;
+          sessionCacheBoundary = session.messages.length;
           chatMessages = [...session.messages, ...chatMessages];
+          console.log(`[brain] #${rid} TELEMETRY session_hit id=${sessionReq.id} seq=${session.seq} stored=${sessionCacheBoundary} delta=${deltaMessages.length}`);
         }
       }
-      // Watermark for post-turn appends: continue-hits append [delta + new
-      // turns]; open/reset already stored the input, so only new turns append.
-      const sessionDeltaStart = session
-        ? (sessionReq.op === 'continue' ? session.messages.length : chatMessages.length)
-        : 0;
 
       // Run inference (Anthropic uses streaming internally; response is collected before returning)
       const result = await runAgentTurnSyncWithFallback({
@@ -242,16 +248,18 @@ const server = createServer(async (req, res) => {
         temperature: temperature ?? agentConfig.temperature ?? 0.3,
         topP: topP ?? agentConfig.topP ?? 0.95,
         agentId,
+        sessionCacheBoundary,
       });
 
       const u = result.usage || {};
       console.log(`[brain] #${rid} completed (${result.text.length} chars, in=${u.prompt_tokens ?? '?'} out=${u.completion_tokens ?? '?'} cached=${u.cachedContentTokenCount ?? 0} cache_write=${u.cacheCreationTokenCount ?? 0} steps=${u.steps ?? 1} provider=${u.provider || '?'})`);
 
-      // Persist the completed turn into the session (delta + new turns for
-      // continue-hits; new turns only after open/reset).
-      let sessionEcho;
-      if (session && Array.isArray(result.history)) {
-        const updated = appendTurn(session.id, result.history.slice(sessionDeltaStart), u.last_step_input_tokens || 0);
+      // Commit the daemon-authored delta to the transcript AFTER a successful
+      // provider call (a throw leaves seq unadvanced → daemon reopens). Model
+      // output is never stored — the daemon supplies the coerced decision as
+      // the assistant turn on the next continue.
+      if (session && deltaMessages) {
+        const updated = appendTurn(session.id, deltaMessages, u.last_step_input_tokens || 0);
         if (updated) sessionEcho = { id: updated.id, present: true, seq: updated.seq };
       }
 
