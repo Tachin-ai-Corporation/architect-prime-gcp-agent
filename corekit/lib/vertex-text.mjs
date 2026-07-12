@@ -400,13 +400,33 @@ export function createVertexText(config) {
    * @param {object} parsed - Parsed Cortex JSON
    * @returns {object} The same object, mutated in place
    */
-  function normalizeDecision(parsed) {
+  function normalizeDecision(parsed, schemaName) {
     if (!parsed || typeof parsed !== 'object') return parsed;
 
     // Action aliases: cortex often returns "move" instead of "action"
     if (parsed.move && !parsed.action) {
       parsed.action = parsed.move;
       log('DEBUG', `normalizeDecision: move → action (${parsed.action})`);
+    }
+
+    // Classify aliases: cortex frequently echoes the mode marker as
+    // "action":"classify" and puts the actual decision under "type"
+    // (mirroring decide's "action" field convention), or sometimes puts the
+    // classification value directly under "action" with no wrapper at all.
+    // Both silently produced classification=undefined in production — 11 of
+    // 15 recent classify calls on prime-candicejr hit this before the alias
+    // existed, masked by a since-fixed fast-exit that treated any truthy
+    // "action" (always present, since it's the echoed mode marker) as proof
+    // of a valid classification (see enforceSchemaFn).
+    if (schemaName === 'classify' && !parsed.classification) {
+      const CLASSIFY_ENUM = ['new_mission', 'attach', 'continue', 'cancel', 'respond'];
+      if (parsed.type && CLASSIFY_ENUM.includes(parsed.type)) {
+        parsed.classification = parsed.type;
+        log('DEBUG', `normalizeDecision: type → classification (${parsed.classification})`);
+      } else if (parsed.action && CLASSIFY_ENUM.includes(parsed.action)) {
+        parsed.classification = parsed.action;
+        log('DEBUG', `normalizeDecision: action → classification (${parsed.classification})`);
+      }
     }
 
     // Classify aliases: cortex returns attach_to_mission instead of attach_to
@@ -453,39 +473,47 @@ export function createVertexText(config) {
     const schema = CORTEX_SCHEMAS[schemaName];
     if (!schema) return typeof raw === 'string' ? parseJsonResponse(raw) : raw;
 
-    // Fast path: deterministic parse + normalize + validate (no LLM call)
+    // Parse + normalize ONCE. The deterministic check and the fast-exit below
+    // must see the same (aliased) object — this used to re-parse `raw` twice
+    // in separate try-blocks, so an alias applied for the first check never
+    // reached the fast-exit's fresh, un-normalized copy.
+    let parsed = null;
     try {
-      const parsed = typeof raw === 'object' ? raw : parseJsonResponse(raw);
-      normalizeDecision(parsed);
+      parsed = typeof raw === 'object' ? raw : parseJsonResponse(raw);
+      normalizeDecision(parsed, schemaName);
+    } catch (e) {
+      log('INFO', `enforceSchema deterministic parse failed: ${e.message}`);
+    }
+
+    if (parsed) {
+      // Fast path: deterministic validate (no LLM call)
       const check = validateSchema(parsed, schemaName);
       if (check.valid) {
         log('DEBUG', `enforceSchema OK (deterministic): action=${parsed.action || parsed.classification}`);
         return parsed;
       }
       log('INFO', `enforceSchema deterministic invalid: ${check.reason} | action=${parsed?.action || 'none'}`);
-    } catch (e) {
-      log('INFO', `enforceSchema deterministic parse failed: ${e.message}`);
-    }
 
-    // Fast-exit: valid JSON with minimum required fields — skip Flash LLM coercion.
-    // The daemon's own legality checks downstream catch illegal actions.
-    try {
-      const parsed = typeof raw === 'object' ? raw : parseJsonResponse(raw);
-      if (parsed) {
-        if (schemaName === 'decide' && parsed.action) {
-          log('INFO', `enforceSchema fast-exit: valid JSON with action=${parsed.action}`);
-          return parsed;
-        }
-        if (schemaName === 'classify' && (parsed.classification || parsed.action)) {
-          log('INFO', `enforceSchema fast-exit: valid JSON with classification`);
-          return parsed;
-        }
-        if (schemaName === 'respond_compose' && parsed.response) {
-          log('INFO', `enforceSchema fast-exit: valid JSON with response`);
-          return parsed;
-        }
+      // Fast-exit: valid JSON with minimum required fields — skip Flash LLM
+      // coercion. The daemon's own legality checks downstream catch illegal
+      // actions. classify checks classification ONLY: "action" is never a
+      // real classify field — it's always the echoed mode marker
+      // ("action":"classify") — so its mere presence can't stand in for a
+      // valid decision (this previously let every malformed classify
+      // response through unrepaired, since the mode-marker is always set).
+      if (schemaName === 'decide' && parsed.action) {
+        log('INFO', `enforceSchema fast-exit: valid JSON with action=${parsed.action}`);
+        return parsed;
       }
-    } catch (_) { /* not parseable — proceed to LLM coercion */ }
+      if (schemaName === 'classify' && parsed.classification) {
+        log('INFO', `enforceSchema fast-exit: valid JSON with classification=${parsed.classification}`);
+        return parsed;
+      }
+      if (schemaName === 'respond_compose' && parsed.response) {
+        log('INFO', `enforceSchema fast-exit: valid JSON with response`);
+        return parsed;
+      }
+    }
 
     // Slow path: Flash LLM structured-output coercion
     const input = typeof raw === 'string' ? raw : JSON.stringify(raw);
