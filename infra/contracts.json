@@ -136,7 +136,13 @@
     "budget_chars": 6000,
     "per_turn_chars": 600,
     "voicing_enabled": true,
-    "voicing_tail_chars": 1500
+    "voicing_tail_chars": 1500,
+    "thread_ledger_enabled": true,
+    "turn_store_chars": 8000,
+    "compact_after_turns": 30,
+    "summary_max_chars": 1200,
+    "turn_retention_days": 14,
+    "voicing_ledger_enabled": true
   },
   "compaction": {
     "enabled": true,

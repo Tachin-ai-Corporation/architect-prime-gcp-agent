@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, existsSync,
 import { dirname } from 'path';
 import { hostname as osHostname } from 'os';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
+import { threadKeyFor, appendTurn as ledgerAppendTurn } from '../corekit/lib/thread-ledger.mjs';
 import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
 import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
 import { stripArtifactFooter } from '../corekit/lib/deliverable.mjs';
@@ -471,7 +472,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
     log('Delivered raw (LLM disabled)', { chars: rawText.length });
     await writeTaskLog(task, 'delivered', rawText.length, 'raw');
     markTaskComplete(task?.taskId);
-    return;
+    return rawText; // SESSION_CONTEXT_PLAN Phase 4: delivered text for the thread ledger
   }
 
   try {
@@ -531,17 +532,21 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
       log('Delivered', { channel: CHANNEL, chars: finalText.length, action,
         voiced: voiceStatus });
       await writeTaskLog(task, 'delivered', finalText.length, action);
-    } else {
-      log('Suppressed (internal)', { chars: rawText.length });
-      await writeTaskLog(task, 'suppressed', 0, 'internal');
+      markTaskComplete(task?.taskId);
+      return finalText; // SESSION_CONTEXT_PLAN Phase 4: the voice's actual words
     }
+    log('Suppressed (internal)', { chars: rawText.length });
+    await writeTaskLog(task, 'suppressed', 0, 'internal');
   } catch (err) {
     log('Classify error — delivering raw', { error: err.message });
     await deliver(rawText, addr, finalMentions, attachments);
     await writeTaskLog(task, 'delivered', rawText.length, 'fallback');
+    markTaskComplete(task?.taskId);
+    return rawText;
   }
 
   markTaskComplete(task?.taskId);
+  return null; // suppressed — nothing entered the thread
 }
 
 // ================================================================
@@ -824,8 +829,31 @@ async function pollBrainV3Envelopes() {
             log('[TELEMETRY] deliverable_empty_body reached mouth — prepended neutral summary', { envId, status: envStatus });
           }
           // Standard voicing pipeline for non-delegation envelopes
-          await classifyAndDeliver(contextHint + deliverBody, envQuestion, addr, mentions, attachments, convoTail);
+          const voicedText = await classifyAndDeliver(contextHint + deliverBody, envQuestion, addr, mentions, attachments, convoTail);
           log('Delivered envelope output', { envId, status: envStatus, intent: envType });
+
+          // SESSION_CONTEXT_PLAN Phase 4: ledger the voice's ACTUAL words,
+          // keyed off the RESOLVED delivery address (post-fallback) so the
+          // turn lands in the thread it was really spoken into. Idempotent
+          // (d-{envId}); one bounded retry; never blocks delivery marking.
+          if (voicedText && CONTRACTS.conversation?.thread_ledger_enabled !== false) {
+            const tk = threadKeyFor(addr, PRIME_ID);
+            if (tk) {
+              const appendOnce = () => ledgerAppendTurn({
+                projectId: GCP_PROJECT, primeId: PRIME_ID, getToken: getGceToken,
+                threadKey: tk, turnId: `d-${envId}`, role: 'prime', text: voicedText,
+                source: 'delivery', channelMeta: addr || {},
+                config: CONTRACTS.conversation,
+                log: (lvl, msg) => log(`thread-ledger ${lvl}`, { msg }),
+              });
+              try {
+                if (!(await appendOnce())) await appendOnce();
+                log('[TELEMETRY] thread_turn_append', { thread: tk, role: 'prime', source: 'delivery' });
+              } catch (e) {
+                log('thread-ledger delivery append failed (non-fatal)', { envId, error: e.message });
+              }
+            }
+          }
         }
 
         // Mark envelope as delivered in Firestore (set both delivered_at AND delivery_status)

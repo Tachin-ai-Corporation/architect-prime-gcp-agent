@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } fr
 import { dirname } from 'path';
 import { hostname as osHostname } from 'os';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
+import { threadKeyFor, appendTurn } from '../corekit/lib/thread-ledger.mjs';
 import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
 import { isDelegationMarker, parseDelegationMarker } from '../corekit/lib/delegation.mjs';
 import { makeAddress, serializeAddress, discoverSpaces as _discoverSpacesLib, resolveAgentUserId } from '../corekit/lib/channel.mjs';
@@ -385,6 +386,40 @@ function buildContextualMessage(targetMsg, priorMsgs) {
   return composite;
 }
 
+// SESSION_CONTEXT_PLAN Phase 4: monotonic thread-ledger accumulation from the
+// poll page. Ears remains input-only (B-3) — this is deterministic transport
+// bookkeeping, no LLM, no delivery. Role detection reuses the same agent-user
+// check as buildThreadConversation; before _agentUserId resolves, an agent
+// turn may transiently persist as 'admin' and self-heals on the next page
+// re-observation (same turn id, re-upserted with the correct role).
+async function backfillThreadLedger(space, threadName, pageMsgs) {
+  if (CONTRACTS.conversation?.enabled === false) return;
+  if (CONTRACTS.conversation?.thread_ledger_enabled === false) return;
+  const address = { channel: 'gchat', space, thread: threadName };
+  const threadKey = threadKeyFor(address, PRIME_ID);
+  if (!threadKey) return;
+  const cfg = CONTRACTS.conversation || {};
+  const sameThread = pageMsgs
+    .filter(m => (m.thread?.name || null) === threadName && (m.text || '').trim())
+    .slice(-((cfg.max_turns || 12) * 2)); // bound writes per poll
+  for (const m of sameThread) {
+    const isAgent = (_agentUserId && m.sender?.name === _agentUserId);
+    await appendTurn({
+      projectId: GCP_PROJECT,
+      primeId: PRIME_ID,
+      getToken: getGceToken,
+      threadKey,
+      turnId: m.name,
+      role: isAgent ? 'prime' : 'admin',
+      text: m.text,
+      source: 'gchat-backfill',
+      channelMeta: address,
+      config: cfg,
+      log: (lvl, msg) => log(`thread-ledger ${lvl}`, { msg }),
+    });
+  }
+}
+
 function buildThreadConversation(targetMsg, pageMsgs) {
   if (CONTRACTS.conversation?.enabled === false) return null;
 
@@ -537,6 +572,11 @@ async function pollGChat() {
 
           const threadName = msg.thread?.name || null;
           const convoCtx = buildThreadConversation(msg, pageMsgs);
+
+          // SESSION_CONTEXT_PLAN Phase 4: backfill the thread ledger from the
+          // poll page — once a turn has been observed, it is never lost to the
+          // 25×5 page window again. Fire-and-forget; idempotent upserts.
+          backfillThreadLedger(space, threadName, pageMsgs).catch(() => {});
 
           messages.push({
             text: composite,
@@ -847,6 +887,11 @@ async function main() {
             ...(msg.metadata?.spaceName ? { spaceName: { stringValue: msg.metadata.spaceName } } : {}),
             ...(msg.metadata?.threadName ? { threadName: { stringValue: msg.metadata.threadName } } : {}),
             ...(msg.metadata?.senderEmail ? { senderEmail: { stringValue: msg.metadata.senderEmail } } : {}),
+            // SESSION_CONTEXT_PLAN Phase 4: channel message identity (thread-
+            // ledger turn id — replay-safe upserts) and the raw single-message
+            // text (the composite carries multi-message framing pollution).
+            ...(msg.id ? { channel_msg_id: { stringValue: String(msg.id) } } : {}),
+            ...(msg.rawText ? { raw_text: { stringValue: String(msg.rawText).substring(0, 8000) } } : {}),
             ...delegationMeta,
             address: serializeAddress(makeAddress(
               CHANNEL === 'gchat' ? 'gchat' : 'dashboard',

@@ -297,6 +297,24 @@ console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
     fail "compaction.checkpoint_digest_chars = '${CDC}' (expected number ≥ 500)"
   fi
 
+  # SESSION_CONTEXT_PLAN Phase 4: thread-ledger knobs
+  for field in thread_ledger_enabled voicing_ledger_enabled; do
+    VAL="$(read_contract "conversation.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" == "true" || "$VAL" == "false" ]]; then
+      pass "conversation.${field} = ${VAL} (boolean)"
+    else
+      fail "conversation.${field} = '${VAL}' (expected boolean)"
+    fi
+  done
+  for field in turn_store_chars compact_after_turns summary_max_chars turn_retention_days; do
+    VAL="$(read_contract "conversation.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" =~ ^[0-9]+$ ]] && [[ "$VAL" -ge 1 ]]; then
+      pass "conversation.${field} = ${VAL}"
+    else
+      fail "conversation.${field} = '${VAL}' (expected positive number)"
+    fi
+  done
+
   # SESSION_CONTEXT_PLAN Phase 3: mission compaction knobs
   for field in enabled session_log_to_git; do
     VAL="$(read_contract "compaction.${field}" 2>/dev/null || echo '')"

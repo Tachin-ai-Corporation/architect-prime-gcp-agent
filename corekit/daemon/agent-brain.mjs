@@ -55,6 +55,7 @@ import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
 import { toContentParts } from '../corekit/lib/prompt-blocks.mjs';
 import { shouldCompact, splitIterationBlocks, redactSecrets, validateMissionDigest, missionDigestInstruction, spliceCompacted } from '../corekit/lib/compaction.mjs';
+import { threadKeyFor, appendTurn as ledgerAppendTurn, compactThread } from '../corekit/lib/thread-ledger.mjs';
 import {
   handleSynthesize,
   handleBlocked,
@@ -2543,6 +2544,25 @@ async function processIntake(intake) {
     });
   }
 
+  // SESSION_CONTEXT_PLAN Phase 4: ledger fill-in — when the channel provided
+  // no context (e.g. a GChat thread resumed after the poll window scrolled,
+  // or a needs_input reply routed by envelope), the accumulated thread ledger
+  // supplies it. Existing paths stay primary: intake-serialized context for
+  // GChat (B-32 poll-time serialization), assembleConversation for dashboard.
+  if (!convoContext && intake._thread_key && CONTRACTS.conversation?.enabled !== false
+      && CONTRACTS.conversation?.thread_ledger_enabled !== false) {
+    const { readThread } = await import('../corekit/lib/thread-ledger.mjs');
+    convoContext = await readThread({
+      projectId: GCP_PROJECT,
+      primeId: PRIME_ID,
+      getToken: getGceToken,
+      threadKey: intake._thread_key,
+      config: CONTRACTS.conversation,
+      log,
+    });
+    if (convoContext) log('INFO', `[TELEMETRY] convo_assembled thread=${intake._thread_key} source=ledger turns=${convoContext.turns?.length || 0}`);
+  }
+
   // conversation-context.mjs emits roles 'admin' | 'prime' and pre-computes the
   // last prime turn — use it; never re-derive against role names that don't exist.
   const lastPrimeReply = convoContext ? (convoContext.last_prime_text || null) : null;
@@ -2761,6 +2781,7 @@ async function processIntake(intake) {
     iteration: 0,
     memory_context: memoryContext, // Phase 3: pass memory to processEnvelope
     conversation_context: convoContext ? convoContext.block : null,
+    thread_key: intake._thread_key || null, // SESSION_CONTEXT_PLAN Phase 4: thread address rides the envelope
     delivery_status: 'internal', // Not deliverable until synthesized
   };
 
@@ -2916,6 +2937,7 @@ async function processIntakeAsNewTask(intake, decision, memoryContext, parentId 
     iteration: 0,
     memory_context: memoryContext,
     conversation_context: convoContext ? convoContext.block : null,
+    thread_key: intake._thread_key || null, // SESSION_CONTEXT_PLAN Phase 4
   };
 
   await firestoreWrite('work', envelopeId, envelope);
@@ -3178,6 +3200,7 @@ async function handleRespond(intake, decision, responseText, convoContext) {
     iteration: 1,
     memory_context: null, // Omit ambient from DB to save space on turns
     conversation_context: convoContext?.block || null,
+    thread_key: intake._thread_key || null, // SESSION_CONTEXT_PLAN Phase 4
     delivery_status: 'pending',
     delivery_address: deliveryAddress,
   };
@@ -3960,6 +3983,57 @@ function log(level, msg) {
 // Uses Firestore REST query polling (real-time listeners require gRPC client).
 let processing = false;
 
+// SESSION_CONTEXT_PLAN Phase 4: resolve an intake's thread key and upsert the
+// inbound turn into the thread ledger. Dashboard needs_input replies carry no
+// address — they resolve through the envelope they answer (thread_key stamp,
+// falling back to its delivery_address). Unkeyable intakes are skipped; the
+// ledger is a cache, never a gate.
+async function ledgerInboundTurn(intake) {
+  if (CONTRACTS.conversation?.thread_ledger_enabled === false) return;
+  const sm = intake.source_meta || {};
+  let address = null;
+  if (sm.address?.channel) {
+    address = sm.address;
+  } else if (intake.source === 'gchat' && (sm.threadName || sm.spaceName)) {
+    address = { channel: 'gchat', space: sm.spaceName || null, thread: sm.threadName || null };
+  } else if (intake.source === 'dashboard') {
+    address = { channel: 'dashboard' };
+  }
+  let threadKey = threadKeyFor(address, PRIME_ID);
+  if (!threadKey && sm.responding_to) {
+    const target = await firestoreRead('work', sm.responding_to).catch(() => null);
+    threadKey = target?.thread_key
+      || threadKeyFor(target?.delivery_address, PRIME_ID)
+      || null;
+    if (threadKey && !address) address = target?.delivery_address || { channel: 'dashboard' };
+  }
+  if (!threadKey) return;
+  const ok = await ledgerAppendTurn({
+    projectId: GCP_PROJECT,
+    primeId: PRIME_ID,
+    getToken: getGceToken,
+    threadKey,
+    turnId: sm.channel_msg_id || intake.id,
+    role: 'admin',
+    text: sm.raw_text || intake.text,
+    source: 'intake',
+    channelMeta: address || {},
+    config: CONTRACTS.conversation,
+    log,
+  });
+  if (ok) {
+    intake._thread_key = threadKey;
+    log('INFO', `[TELEMETRY] thread_turn_append thread=${threadKey} role=admin source=intake`);
+    // Code-triggered thread compaction rides the write path (deterministic
+    // count threshold inside compactThread; C-4 — never model-decided).
+    compactThread({
+      projectId: GCP_PROJECT, primeId: PRIME_ID, getToken: getGceToken,
+      threadKey, summarize: (text, instruction, opts) => _vtx.summarize(text, instruction, opts),
+      config: CONTRACTS.conversation, log,
+    }).catch(e => log('WARN', `thread compaction failed (non-fatal): ${e.message}`));
+  }
+}
+
 async function pollIntake() {
   if (processing) return;
   processing = true;
@@ -3976,6 +4050,15 @@ async function pollIntake() {
 
     for (const intake of filtered) {
       try {
+        // SESSION_CONTEXT_PLAN Phase 4: ledger the inbound turn at the TRUE
+        // claim site — before processIntake's delegation/approval early
+        // returns, so those turns enter the thread too. Idempotent by channel
+        // message identity; intake retries re-upsert the same turn.
+        try {
+          await ledgerInboundTurn(intake);
+        } catch (e) {
+          log('WARN', `thread-ledger inbound append failed (non-fatal): ${e.message}`);
+        }
         await processIntake(intake);
       } catch (e) {
         log('ERROR', `Intake processing error: ${e.message}\n${e.stack}`);

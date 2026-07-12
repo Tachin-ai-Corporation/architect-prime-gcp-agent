@@ -52,6 +52,30 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       created_at: now.toISOString(),
     });
 
+    // SESSION_CONTEXT_PLAN Phase 4: mirror the reply into the durable
+    // dashboard transcript so the chat UI and conversation assembly see it
+    // (previously these turns were invisible to every context assembler).
+    // Marked processed — ears must not re-ingest it as a fresh message.
+    try {
+      await db
+        .collection("primes")
+        .doc(primeId)
+        .collection("messages")
+        .doc(intakeId)
+        .set({
+          text: response.trim(),
+          sender: "admin",
+          processed: true,
+          timestamp: now.toISOString(),
+          meta: { responding_to: workId },
+        });
+    } catch (mirrorErr) {
+      console.warn(
+        `[api/primes/${primeId}/work/${workId}/respond] messages mirror failed:`,
+        mirrorErr
+      );
+    }
+
     return NextResponse.json({ ok: true, intakeId }, { status: 201 });
   } catch (err) {
     const { id, workId } = await ctx.params;
