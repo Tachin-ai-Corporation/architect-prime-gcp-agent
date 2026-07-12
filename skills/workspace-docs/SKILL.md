@@ -1,4 +1,4 @@
-# Skill: Google Docs (v5)
+# Skill: Google Docs (v6)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
@@ -11,8 +11,15 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 ## 1. Commands
 
 ### Read & Inspect
-- `docs-cat <doc_id>` — Read a Google Doc's full plain text body.
+- `docs-cat <doc_id>` — Read a Google Doc's plain text body (includes table cell text). Flags for large docs:
+  - `--meta` — title, total chars, and heading outline with char offsets (no body text). **Always run this first on unfamiliar docs.**
+  - `--find "TEXT" [--context N]` — case-insensitive search; returns every match (max 20) with char offset and ±N chars of context (default 800).
+  - `--offset N --limit M` — read a window of M chars starting at char N; response includes `next_offset` when more remains.
+  - `--max-chars N` — cap a full read; adds `truncated: true` + `next_offset`.
 - `docs-get --doc <doc_id>` — Structured read. Returns JSON containing document plain text, element start/end character indices mapping, named ranges, and style info. Uses `suggestionsViewMode=SUGGESTIONS_INLINE`.
+
+> [!WARNING]
+> **Tool output is capped (~8,000 chars per step).** A bare `docs-cat` on a large doc gets cut off mid-body and later sections silently vanish. For any doc you haven't measured: `docs-cat ID --meta` first, then read the sections you need with `--find` or `--offset/--limit` windows.
 
 ### Lane A — Markdown Write-Surface
 - `docs-create --title "TITLE" [--body "PLAIN_TEXT"] [--folder FOLDER_ID] [--from-markdown FILE_PATH]` — Create a new Doc. If `--from-markdown` is used, performs a `multipart/related` Drive upload to convert a Markdown file into a formatted Google Doc (name = `--title`, parent = `--folder`).
@@ -117,6 +124,13 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 3. Clone and fill: `docs-clone-template --template TEMPLATE_DOC_ID --title "Acme Corp Report" --folder FOLDER_ID --replacements replacements.json`
 4. Verify: `docs-cat NEW_DOC_ID` — confirm all `{{` placeholders resolved.
 
+### Reading Large Documents (paginated reads)
+1. Measure first: `docs-cat DOC_ID --meta` — returns total `chars` and the heading `outline` with char offsets.
+2. If the doc is under ~6,000 chars, a plain `docs-cat DOC_ID` is fine.
+3. To read a specific section, search for its heading: `docs-cat DOC_ID --find "LEGAL REVIEW REDLINES" --context 3000` — returns the section content around the match.
+4. To read sequentially, window through it: `docs-cat DOC_ID --offset 0 --limit 6000`, then continue from the returned `next_offset` until `truncated` is absent.
+5. Never treat a single full read of a large doc as complete — if `chars` exceeds what you received, the tail is missing.
+
 ### Edit in Place Preserving Formatting (Lane B)
 1. Read the target document structure using `docs-get --doc DOC_ID`.
 2. Locate a unique anchor phrase nearby the desired edit location.
@@ -164,6 +178,8 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 | Error / Symptom | Likely Cause | Recovery |
 |---|---|---|
 | `403 forbidden` / `401 unauthorized` | Lack of permissions | Check that the target Google Doc is shared with the agent's service account email address. |
+| Doc text cut off mid-body / a known section is missing from output | Doc larger than the per-step output cap | `docs-cat ID --meta` for total chars + outline, then `--find "section heading" --context 3000` or `--offset/--limit` windows to read the missing part. |
+| `--find` returns 0 matches for text visible in the doc | Text lives in a suggestion, header/footer, or differs in whitespace | Try a shorter, distinctive substring of the phrase; check `docs-get` for suggestions view. Table cell text IS searchable. |
 | Converted document is unformatted / plain-text | Failed multipart upload conversion | Verify that the file upload was sent to `/upload/drive/v3/files?uploadType=multipart`, with metadata MIME type set to `application/vnd.google-apps.document`. |
 | HTML styles not applied | CSS syntax error or unsupported property | Use only inline `style=""` attributes. Verify no typos in hex colors. Avoid class selectors, flexbox, grid. |
 | Headings render as bold plain text | Used `<b>` instead of `<h1>`-`<h6>` | Google maps `<h1>` to Heading 1 etc. Manual bold is not a heading. Use heading tags. |

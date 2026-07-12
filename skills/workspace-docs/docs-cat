@@ -1,15 +1,131 @@
 #!/usr/bin/env bash
-# docs-cat — Read a Google Doc's full text content
+# docs-cat — Read a Google Doc's text: full body, metadata/outline, ranged window, or targeted search
 # Brain agent: temporal-memory (READ)
-# Usage: docs-cat <doc_id>
+# Usage: docs-cat <doc_id> [--meta] [--find "TEXT" [--context N]] [--offset N] [--limit N] [--max-chars N]
+#   (no flags)      full plain-text body (JSON: docId, title, text, chars)
+#   --meta          title, total chars, heading outline with char offsets — no body text
+#   --find "TEXT"   case-insensitive substring search; returns every match (max 20)
+#                   with its char offset and an excerpt of surrounding context
+#   --context N     chars of context on each side of a --find match (default 800)
+#   --offset N      start reading at char offset N (combine with --limit)
+#   --limit N       return at most N chars from --offset
+#   --max-chars N   cap a full read at N chars (adds next_offset for continuation)
+# Large docs: downstream tool output is capped (~8K chars per step), so a full
+# read of a big doc gets cut off mid-body. Run --meta first, then read the part
+# you need with --find or --offset/--limit windows.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DOCS_API="https://docs.googleapis.com/v1/documents"
 die() { echo "[docs-cat] [ERROR] $*" >&2; exit 1; }
-DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id>"
+DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id> [--meta] [--find TEXT [--context N]] [--offset N --limit N] [--max-chars N]"
+shift || true
+
+META=0; FIND_TEXT=""; CONTEXT=800; OFFSET=0; LIMIT=0; MAX_CHARS=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --meta) META=1; shift ;;
+    --find) FIND_TEXT="${2:-}"; [[ -n "$FIND_TEXT" ]] || die "--find requires a search string"; shift 2 ;;
+    --context) CONTEXT="${2:-800}"; shift 2 ;;
+    --offset) OFFSET="${2:-0}"; shift 2 ;;
+    --limit) LIMIT="${2:-0}"; shift 2 ;;
+    --max-chars) MAX_CHARS="${2:-0}"; shift 2 ;;
+    *) die "Unknown flag: $1" ;;
+  esac
+done
+export DC_META="$META" DC_FIND="$FIND_TEXT" DC_CONTEXT="$CONTEXT" \
+       DC_OFFSET="$OFFSET" DC_LIMIT="$LIMIT" DC_MAX_CHARS="$MAX_CHARS" DC_DOC_ID="$DOC_ID"
+
+# Shared renderer: reads the doc content and applies the selected view.
+# arg1 = 'api' (Docs API JSON, outline available) | 'text' (plain text, DC_TITLE env)
+RENDER=$(cat << 'PYEOF'
+import json, os, sys
+kind, path = sys.argv[1], sys.argv[2]
+if kind == 'api':
+    doc = json.load(open(path))
+    doc_id = doc.get('documentId', '')
+    title = doc.get('title', '')
+    parts, outline = [], []
+
+    def walk(content, pos):
+        # Recurse structural elements — paragraphs, tables (cell content is
+        # invisible to a paragraph-only reader), and tables of contents.
+        for elem in content:
+            para = elem.get('paragraph')
+            if para:
+                ptext = ''.join(r.get('textRun', {}).get('content', '') for r in para.get('elements', []))
+                style = (para.get('paragraphStyle') or {}).get('namedStyleType', '')
+                if ptext.strip() and (style.startswith('HEADING') or style in ('TITLE', 'SUBTITLE')):
+                    outline.append({'offset': pos, 'style': style, 'text': ptext.strip()[:200]})
+                parts.append(ptext)
+                pos += len(ptext)
+                continue
+            table = elem.get('table')
+            if table:
+                for row in table.get('tableRows', []):
+                    for cell in row.get('tableCells', []):
+                        pos = walk(cell.get('content', []), pos)
+                continue
+            toc = elem.get('tableOfContents')
+            if toc:
+                pos = walk(toc.get('content', []), pos)
+        return pos
+
+    walk(doc.get('body', {}).get('content', []), 0)
+    text = ''.join(parts)
+else:
+    text = open(path, encoding='utf-8', errors='replace').read()
+    doc_id = os.environ.get('DC_DOC_ID', '')
+    title = os.environ.get('DC_TITLE', 'Untitled Doc')
+    outline = None
+
+env = os.environ
+total = len(text)
+out = {'docId': doc_id, 'title': title, 'chars': total}
+find = env.get('DC_FIND', '')
+if env.get('DC_META') == '1':
+    out['outline'] = outline if outline is not None else []
+    if outline is None:
+        out['note'] = 'outline unavailable (Drive export fallback)'
+elif find:
+    ctx = max(int(env.get('DC_CONTEXT') or 800), 50)
+    hay, needle = text.lower(), find.lower()
+    matches, start = [], 0
+    while len(matches) < 20:
+        i = hay.find(needle, start)
+        if i < 0:
+            break
+        a, b = max(0, i - ctx), min(total, i + len(needle) + ctx)
+        matches.append({'offset': i, 'excerpt': text[a:b]})
+        start = i + len(needle)
+    out['find'] = find
+    out['match_count'] = len(matches)
+    out['matches'] = matches
+    if len(matches) == 20:
+        out['note'] = 'first 20 matches shown — narrow the search string for more specific hits'
+else:
+    off = max(int(env.get('DC_OFFSET') or 0), 0)
+    lim = int(env.get('DC_LIMIT') or 0)
+    maxc = int(env.get('DC_MAX_CHARS') or 0)
+    if lim <= 0 and maxc > 0:
+        lim = maxc
+    if off > 0 or lim > 0:
+        end = min(total, off + lim) if lim > 0 else total
+        out['text'] = text[off:end]
+        out['offset'] = off
+        out['returned'] = end - off
+        if end < total:
+            out['truncated'] = True
+            out['next_offset'] = end
+    else:
+        out['text'] = text
+print(json.dumps(out, indent=2))
+PYEOF
+)
+
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 TMP_RESP=$(mktemp)
+trap 'rm -f "$TMP_RESP"' EXIT
 HTTP_CODE=$(curl -s -o "$TMP_RESP" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}")
 
@@ -27,34 +143,20 @@ if [[ "$IS_DISABLED" == "1" ]]; then
   DRIVE_TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
   # Fetch title
   TITLE_RESP=$(curl -s -H "Authorization: Bearer ${DRIVE_TOKEN}" "${DRIVE_API}/files/${DOC_ID}?fields=name")
-  TITLE=$(python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('name','Untitled Doc'))" <<< "$TITLE_RESP")
-  # Fetch text
-  TEXT=$(curl -s -H "Authorization: Bearer ${DRIVE_TOKEN}" "${DRIVE_API}/files/${DOC_ID}/export?mimeType=text/plain")
-  python3 -c "
-import json, sys
-text = sys.stdin.read()
-print(json.dumps({'docId': '$DOC_ID', 'title': '$TITLE', 'text': text, 'chars': len(text)}, indent=2))
-" <<< "$TEXT"
-  rm -f "$TMP_RESP"
+  DC_TITLE=$(python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('name','Untitled Doc'))" <<< "$TITLE_RESP")
+  export DC_TITLE
+  # Fetch text to a temp file (no shell injection through content)
+  TMP_TEXT=$(mktemp)
+  trap 'rm -f "$TMP_RESP" "$TMP_TEXT"' EXIT
+  curl -s -H "Authorization: Bearer ${DRIVE_TOKEN}" \
+    "${DRIVE_API}/files/${DOC_ID}/export?mimeType=text/plain" > "$TMP_TEXT"
+  python3 -c "$RENDER" text "$TMP_TEXT"
   exit 0
 fi
 
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
-  rm -f "$TMP_RESP"
   exit 0
 fi
-[[ "$HTTP_CODE" == "200" ]] || { rm -f "$TMP_RESP"; die "Docs API returned HTTP ${HTTP_CODE}"; }
-python3 -c "
-import json, sys
-doc = json.load(open(sys.argv[1]))
-parts = []
-for elem in doc.get('body',{}).get('content',[]):
-    for run in elem.get('paragraph',{}).get('elements',[]):
-        tc = run.get('textRun',{}).get('content','')
-        if tc: parts.append(tc)
-text = ''.join(parts)
-print(json.dumps({'docId':doc.get('documentId',''),'title':doc.get('title',''),'text':text,'chars':len(text)}, indent=2))
-" "$TMP_RESP"
-
-rm -f "$TMP_RESP"
+[[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
+python3 -c "$RENDER" api "$TMP_RESP"
