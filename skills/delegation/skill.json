@@ -1,13 +1,16 @@
 {
   "id": "delegation",
   "name": "Cross-Agent Delegation",
-  "version": 2,
-  "description": "Delegate work to teammate agents on shared projects via the brain delegate action.",
+  "version": 3,
+  "description": "Delegate work to teammate agents on shared projects via the brain delegate action. Fleet-only and project-scoped: delegation exists only within a project that has a team and a GChat space. Primes never delegate — they operate fleet agents directly.",
   "author": "architect-prime",
   "origin": "core",
   "category": "work",
   "agent_part": "cortex",
+  "roles": ["fleet"],
   "scripts": [],
-  "requires": {},
-  "when_to_use": "When work should be assigned to a teammate agent instead of done locally."
+  "requires": {
+    "project_context": true
+  },
+  "when_to_use": "When project work should be assigned to a teammate agent on the same project instead of done locally. Only valid within a project that has a GChat space."
 }

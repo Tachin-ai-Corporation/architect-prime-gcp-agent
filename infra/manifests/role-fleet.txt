@@ -44,6 +44,11 @@ skills/workspace-drive/skill.json skills/workspace-drive/skill.json
 skills/web-search/SKILL.md skills/web-search/SKILL.md
 skills/web-search/skill.json skills/web-search/skill.json
 
+# Cross-agent delegation — FLEET-ONLY, project-scoped (skill.json roles).
+# Primes never delegate: they operate fleet agents directly.
+skills/delegation/SKILL.md skills/delegation/SKILL.md
+skills/delegation/skill.json skills/delegation/skill.json
+
 # Skill introspect (universal)
 skills/skill-introspect/SKILL.md skills/skill-introspect/SKILL.md
 skills/skill-introspect/skill.json skills/skill-introspect/skill.json

@@ -84,6 +84,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     buildProjectContext,
     publishArtifacts,
     gitCommitAndSync,
+    delegationEnabled = true,
   } = opts;
 
   const _requiredDeps = { dispatchAgent, envelope, firestoreWrite, writeHistory, log, generateId, buildProjectContext };
@@ -454,6 +455,20 @@ export async function executeCheckpoints(checkpoints, opts) {
       // ---- Delegation: cross-agent dispatch via GChat ----
       if (stepType === 'delegation') {
         const delegateSpecialty = task._specialty || taskAgent;
+
+        // Delegation is fleet-only (skill.json roles) and project-scoped.
+        // Agents without the skill (Primes) never enter the delegation path.
+        if (!delegationEnabled) {
+          log('ERROR', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation not available to this agent — failing task`);
+          cpResults.push({
+            step: `${cpNum}.${taskNum}`, agent: taskAgent,
+            result: `[FAILED] Delegation is not available to this agent. Primes never delegate — operate the fleet directly (SSH via system-shell, work-log tools, fleet-verify/fleet-upgrade) or re-plan the work as local motor tasks.`,
+            success: false,
+          });
+          if (!isOptional) { cpFailed = true; break; }
+          continue;
+        }
+
         log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: Cross-agent delegation to '${delegateSpecialty}'`);
 
         // Direct email from cortex/prefrontal output takes priority, but must be validated

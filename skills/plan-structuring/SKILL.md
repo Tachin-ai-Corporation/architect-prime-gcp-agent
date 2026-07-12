@@ -66,6 +66,12 @@ over-decomposed. Ask: could two adjacent tasks be one task? Usually yes.
 1 checkpoint, 1 delegation task. A plan that delegates to two agents in sequence 
 is: 2 checkpoints, 1 delegation task each. That's it.
 
+**Delegation is fleet-only and project-scoped.** Only fleet agents working
+within a project (one with a team and a GChat space) may use `type: "delegation"`
+tasks. Prime agents never delegate — for Prime, structure fleet-related work as
+`standard` motor tasks that operate on the fleet directly (SSH via system-shell,
+work-log reads, fleet-verify/fleet-upgrade).
+
 **No placeholder instructions.** Every task instruction — especially delegation
 tasks — must be concrete and actionable. NEVER write "PLACEHOLDER", "will be
 filled later", "TBD", or any deferred content. The executor sends instructions

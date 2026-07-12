@@ -24,6 +24,33 @@ export async function handleDelegate(ctx, deps) {
   const delegateCriteria = decision.accept_criteria || '';
   const delegateProjectId = decision.project_id || envelope.project_id || null;
 
+  // ---- Validation gate 0: the delegation skill must be installed ----
+  // The skill is role-scoped to fleet agents (skill.json roles). Primes never
+  // delegate — they operate fleet agents directly.
+  const delegationInstalled = Array.isArray(deps.SKILL_INDEX)
+    && deps.SKILL_INDEX.some(s => s.id === 'delegation');
+  if (!delegationInstalled) {
+    log('ERROR', 'delegate: delegation skill not installed for this agent — delegation NOT sent');
+    return {
+      continue: true,
+      priorResultsAppend: [{ agent: 'system', result: '[SYSTEM] delegation is not available to this agent. Primes never delegate — operate the fleet directly instead: SSH into the agent VM (system-shell / gcp-admin), read its work with the work-log tools, test or upgrade it (fleet-verify, fleet-upgrade), or do the work locally with checkpoint_plan.' }]
+    };
+  }
+
+  // ---- Validation gate 0.5: delegation is project-scoped ----
+  // Delegation exists only within a project context (shared team + GChat
+  // space). An unscoped mission has no delegation route.
+  if (!delegateProjectId || !PROJECTS[delegateProjectId]) {
+    const spacedProjects = Object.values(PROJECTS)
+      .filter(p => p && p.gchat_space_id && p.status !== 'archived')
+      .map(p => `"${p.id}" (${p.name || p.id})`);
+    log('ERROR', `delegate: no project context (project_id=${delegateProjectId || 'none'}) — delegation NOT sent`);
+    return {
+      continue: true,
+      priorResultsAppend: [{ agent: 'system', result: `[SYSTEM] delegate: delegation is only available within a project context, and this mission ${delegateProjectId ? `names unknown project "${delegateProjectId}"` : 'has no project'} — the delegation was NOT sent. ${spacedProjects.length ? `Set project_id to one of the delegation-capable projects: ${spacedProjects.join(', ')}, or do the work locally.` : 'No delegation-capable project exists — do the work locally or use needs_input.'}` }]
+    };
+  }
+
   if (!rawTargetEmail) {
     log('ERROR', 'delegate: missing target_email');
     return {

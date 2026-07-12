@@ -284,6 +284,15 @@ try {
 }
 
 // ---- Skill index (runtime discovery, replaces static TOOLS.md) ----
+// Agent role (prime|fleet) from STATE.json — skills can scope themselves to
+// roles via skill.json "roles"; role-mismatched skills never enter the index,
+// even if a stale directory survives from an earlier install (installs copy
+// but never prune).
+let AGENT_ROLE = '';
+try {
+  AGENT_ROLE = JSON.parse(readFileSync(CORE_DIR + '/corekit/STATE.json', 'utf8')).role || '';
+} catch {}
+
 function buildSkillIndex() {
   const index = [];
   const skillsDirs = [CORE_DIR + '/skills'];
@@ -314,6 +323,10 @@ function buildSkillIndex() {
       if (!existsSync(jsonPath)) continue;
       try {
         const manifest = JSON.parse(readFileSync(jsonPath, 'utf8'));
+        // Role scoping: skill.json "roles": ["fleet"] excludes the skill from
+        // agents of other roles (e.g. delegation never surfaces on a Prime).
+        const skillRoles = Array.isArray(manifest.roles) ? manifest.roles : null;
+        if (skillRoles && AGENT_ROLE && !skillRoles.includes(AGENT_ROLE)) continue;
         index.push({
           id: manifest.id || name,
           name: manifest.name || name,
@@ -454,6 +467,9 @@ function _initProcessEngine() {
       primeId: PRIME_ID,
       agentId: AGENT_ID,
       agentEmail: AGENT_EMAIL,
+      // Fleet-only capability: process delegation steps are gated on the
+      // role-scoped delegation skill being in the index (never on a Prime)
+      delegationEnabled: (SKILL_INDEX || []).some(s => s.id === 'delegation'),
       gcpProject: GCP_PROJECT,
     },
     generateId,
@@ -1344,7 +1360,9 @@ function buildModePayload(mode, payload) {
         minimal_form: '{ action: "checkpoint_plan", goal: "...", constraints: "..." } — prefrontal structures the plan',
         full_form: '{ action: "checkpoint_plan", checkpoints: [...] } — you provide the full structure',
         preference: 'Use the minimal form unless you have specific structural requirements.',
-        step_types: 'standard (local work via motor/research), delegation (teammate — set target_email), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)',
+        step_types: (SKILL_INDEX || []).some(s => s.id === 'delegation')
+          ? 'standard (local work via motor/research), delegation (project teammate — set target_email), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)'
+          : 'standard (local work via motor/research), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)',
         sequencing: 'Independent parts fan out within a checkpoint. Dependent parts serialize via checkpoint boundaries.',
         skill_guidance: 'Write task instructions that describe WHAT should happen, not HOW. Sub-agents are specialists — they know their own tools. Describe the desired outcome, inputs, and acceptance criteria.',
       };
@@ -3906,7 +3924,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     log('WARN', `Unknown action '${action}' — nudging Cortex`);
     priorResults.push({
       agent: 'system',
-      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan, delegate, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait.`,
+      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan${(SKILL_INDEX || []).some(s => s.id === 'delegation') ? ', delegate' : ''}, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait.`,
     });
   }
 

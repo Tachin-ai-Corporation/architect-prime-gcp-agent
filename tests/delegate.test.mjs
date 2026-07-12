@@ -33,10 +33,11 @@ describe('normalizeTargetEmail', () => {
 
 const MILLIE = 'assistant-agent-millie@example.com';
 
-function makeDeps({ fleet, projects, fleetThrows = false } = {}) {
+function makeDeps({ fleet, projects, fleetThrows = false, skillIndex } = {}) {
   const writes = [];
   let n = 0;
   const deps = {
+    SKILL_INDEX: skillIndex !== undefined ? skillIndex : [{ id: 'delegation', name: 'Cross-Agent Delegation' }],
     log: () => {},
     now: () => '2026-07-12T00:00:00.000Z',
     generateId: () => `w-test-${++n}`,
@@ -73,6 +74,35 @@ const FLEET_OK = [{ email: MILLIE, status: 'online', specialty: 'assistant' }];
 const PROJECTS_OK = { 'proj-a': { id: 'proj-a', name: 'Project A', status: 'active', gchat_space_id: 'spaces/XYZ' } };
 
 describe('handleDelegate validation gates', () => {
+  it('rejects when the delegation skill is not installed (Prime) with direct-operation guidance', async () => {
+    const { deps, writes } = makeDeps({ fleet: FLEET_OK, projects: PROJECTS_OK, skillIndex: [] });
+    const res = await handleDelegate(
+      { envelope: makeEnvelope(), decision: { target_email: MILLIE, instruction: 'x' } }, deps);
+    assert.equal(res.continue, true);
+    assert.match(res.priorResultsAppend[0].result, /not available to this agent/);
+    assert.match(res.priorResultsAppend[0].result, /SSH/);
+    assert.equal(writes.length, 0);
+  });
+
+  it('rejects a projectless mission (delegation is project-scoped)', async () => {
+    const { deps, writes } = makeDeps({ fleet: FLEET_OK, projects: PROJECTS_OK });
+    const res = await handleDelegate(
+      { envelope: makeEnvelope({ project_id: null }), decision: { target_email: MILLIE, instruction: 'x' } }, deps);
+    assert.equal(res.continue, true);
+    assert.match(res.priorResultsAppend[0].result, /only available within a project context/);
+    assert.match(res.priorResultsAppend[0].result, /proj-a/);
+    assert.equal(writes.length, 0);
+  });
+
+  it('rejects an unknown project id', async () => {
+    const { deps, writes } = makeDeps({ fleet: FLEET_OK, projects: PROJECTS_OK });
+    const res = await handleDelegate(
+      { envelope: makeEnvelope({ project_id: 'no-such-project' }), decision: { target_email: MILLIE, instruction: 'x' } }, deps);
+    assert.equal(res.continue, true);
+    assert.match(res.priorResultsAppend[0].result, /unknown project "no-such-project"/);
+    assert.equal(writes.length, 0);
+  });
+
   it('rejects an invalid email shape without writing anything', async () => {
     const { deps, writes } = makeDeps({ fleet: FLEET_OK, projects: PROJECTS_OK });
     const res = await handleDelegate(

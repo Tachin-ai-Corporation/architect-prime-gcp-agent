@@ -86,6 +86,7 @@ export function createProcessEngine(deps) {
     primeId,
     agentId,
     agentEmail = '',
+    delegationEnabled = true,
     gcpProject,
   } = config;
 
@@ -894,7 +895,8 @@ export function createProcessEngine(deps) {
       generateId,
       contracts: {},
       skillIndex: '',
-      PROJECTS: {},
+      PROJECTS: (projects && typeof projects.getAll === 'function' ? projects.getAll() : {}) || {},
+      delegationEnabled,
       addressFromMeta: null,
       summarizeForDelivery: _summarizeDelivery,
       smartSummarize,

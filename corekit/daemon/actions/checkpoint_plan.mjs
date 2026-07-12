@@ -91,6 +91,20 @@ export async function handleCheckpointPlan(ctx, deps) {
     && !hasMixedTasks
     && rawCheckpoints.every(cp => (cp.tasks || cp.steps || []).length <= 1);
 
+  // Delegation is a fleet-only, project-scoped capability (skill.json roles).
+  // Without the skill installed (e.g. on a Prime), never route into the
+  // delegation pipeline — reject the plan with direct-operation guidance.
+  const delegationInstalled = Array.isArray(SKILL_INDEX)
+    && SKILL_INDEX.some(s => s.id === 'delegation');
+
+  if (isPureSingleDelegation && !delegationInstalled) {
+    log('WARN', 'Checkpoint plan delegation intercept: delegation skill not installed — rejecting delegation plan');
+    return {
+      continue: true,
+      priorResultsAppend: [{ agent: 'system', result: '[SYSTEM] delegation is not available to this agent. Primes never delegate — operate the fleet directly instead: SSH into the agent VM (system-shell / gcp-admin), read its work with the work-log tools, test or upgrade it (fleet-verify, fleet-upgrade), or do the work locally with checkpoint_plan.' }]
+    };
+  }
+
   if (isPureSingleDelegation) {
     const extractedEmail = [...allTargetEmails][0];
     log('INFO', `Checkpoint plan delegation intercept: redirecting to delegate action (target=${extractedEmail})`);
@@ -274,6 +288,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     generateId,
     contracts: CONTRACTS,
     skillIndex: formatSkillCatalog(SKILL_INDEX),
+    delegationEnabled: delegationInstalled,
     PROJECTS,
     addressFromMeta,
     summarizeForDelivery,

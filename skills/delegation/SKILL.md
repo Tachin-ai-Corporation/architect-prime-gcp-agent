@@ -1,7 +1,14 @@
 # Skill: Cross-Agent Delegation
 
+## Availability (built into this skill)
+
+> [!IMPORTANT]
+> **Fleet-only.** This skill is scoped to fleet agents (`skill.json` `roles: ["fleet"]`) — it is never installed on, indexed by, or usable from a Prime. Primes do not delegate: they operate fleet agents directly (SSH into the agent's VM, read its work trees and logs, test its skills, run fleet-verify/fleet-upgrade).
+>
+> **Project-scoped.** Delegation exists ONLY within a project context: the mission must belong to a registered project that has a team and a GChat space. The brain rejects any delegation outside a project, or on a project without a space, before anything is sent — the rejection lists the delegation-capable projects. There is no cross-agent delegation outside projects.
+
 ## When to Use
-When work should be assigned to a teammate agent on a shared project instead of done locally (e.g., when the work belongs to another agent's specialty or role).
+When project work should be assigned to a teammate agent on the same project instead of done locally (e.g., when the work belongs to another agent's specialty or role).
 
 ## Two Delegation Paths
 

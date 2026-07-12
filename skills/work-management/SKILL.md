@@ -259,6 +259,9 @@ exec process-manage deprecate '<id>'
 #### Step types
 `standard`, `delegation`, `spawn_responsibility`, `approval_gate`
 
+Note: `delegation` steps are fleet-only and project-scoped (see the delegation
+skill). Primes never delegate — they operate fleet agents directly.
+
 ## Project Files
 Project artifacts are stored in the project's git artifact repo (C-24). The daemon
 automatically clones the repo into `shared/{missionId}/` at mission start and commits
