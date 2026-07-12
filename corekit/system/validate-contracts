@@ -315,6 +315,33 @@ console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
     fi
   done
 
+  # SESSION_CONTEXT_PLAN Phase 5: gateway session knobs
+  SE="$(read_contract 'session.enabled' 2>/dev/null || echo '')"
+  if [[ "$SE" == "true" || "$SE" == "false" ]]; then
+    pass "session.enabled = ${SE} (boolean)"
+  else
+    fail "session.enabled = '${SE}' (expected boolean)"
+  fi
+  for field in idle_ttl_minutes max_sessions miss_circuit_breaker; do
+    VAL="$(read_contract "session.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" =~ ^[0-9]+$ ]] && [[ "$VAL" -ge 1 ]]; then
+      pass "session.${field} = ${VAL}"
+    else
+      fail "session.${field} = '${VAL}' (expected positive number)"
+    fi
+  done
+  # B-28: cerebellum must be session-excluded, structurally
+  SEA="$(node -e "
+const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
+const v = c.session?.excluded_agents;
+console.log(Array.isArray(v) && v.includes('cerebellum') ? 'OK' : 'MISSING');
+" 2>/dev/null || echo 'ERROR')"
+  if [[ "$SEA" == "OK" ]]; then
+    pass "session.excluded_agents includes cerebellum (B-28)"
+  else
+    fail "session.excluded_agents must be an array including 'cerebellum' (B-28 verification isolation)"
+  fi
+
   # SESSION_CONTEXT_PLAN Phase 3: mission compaction knobs
   for field in enabled session_log_to_git; do
     VAL="$(read_contract "compaction.${field}" 2>/dev/null || echo '')"

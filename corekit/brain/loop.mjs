@@ -629,6 +629,9 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
     toolCalls: turnToolCalls,
     usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
+    // SESSION_CONTEXT_PLAN Phase 5: the full turn history (input + assistant +
+    // tool turns) — previously discarded here; the session store persists it.
+    history: localHistory,
   };
 }
 
@@ -815,6 +818,9 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messa
     toolCalls: turnToolCalls,
     usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
+    // SESSION_CONTEXT_PLAN Phase 5: the full turn history (input + assistant +
+    // tool turns) — previously discarded here; the session store persists it.
+    history: localHistory,
   };
 }
 

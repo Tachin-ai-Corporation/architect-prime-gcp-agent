@@ -21,7 +21,7 @@ import { initRouter, getProviderStatus } from './router.mjs';
 import { runAgentTurnSyncWithFallback } from './loop.mjs';
 import { loadAgentConfig, getBrainConfig, getContracts } from './config.mjs';
 import { getFilteredTools } from './tools.mjs';
-import { listSessions } from './context.mjs';
+import { listSessions, openSession, continueSession, appendTurn, resetSession, closeSession, hashSystem } from './context.mjs';
 import { handleHealth } from './health.mjs';
 
 // ---- Read body helper ----
@@ -118,6 +118,21 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // ---- DELETE /v1/sessions/{id} — explicit session teardown (idempotent) ----
+  if (req.method === 'DELETE' && req.url?.startsWith('/v1/sessions/')) {
+    if (!checkAuth(req)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Unauthorized', type: 'auth_error' } }));
+      return;
+    }
+    const sid = decodeURIComponent(req.url.substring('/v1/sessions/'.length));
+    const existed = closeSession(sid);
+    console.log(`[brain] TELEMETRY session_close id=${sid} existed=${existed}`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, existed }));
+    return;
+  }
+
   // ---- /v1/chat/completions — OpenAI-compatible inference endpoint ----
   if (req.method === 'POST' && req.url === '/v1/chat/completions') {
     // Auth check
@@ -138,10 +153,42 @@ const server = createServer(async (req, res) => {
         max_tokens: maxTokens,
         temperature,
         top_p: topP,
+        session: sessionReq,
       } = body;
 
       const agentId = parseAgentId(modelRoute);
-      console.log(`[brain] #${rid} route=${modelRoute} agent=${agentId} msgs=${messages.length}`);
+      console.log(`[brain] #${rid} route=${modelRoute} agent=${agentId} msgs=${messages.length}${sessionReq ? ` session=${sessionReq.id}:${sessionReq.op}` : ''}`);
+
+      // SESSION_CONTEXT_PLAN Phase 5: daemon-commanded sessions. B-28 is
+      // enforced structurally at BOTH ends — excluded agents (cerebellum)
+      // never join a session even if a caller asks.
+      const sessionCfg = getContracts()?.session || {};
+      const sessionEnabled = sessionCfg.enabled === true;
+      const excludedAgents = sessionCfg.excluded_agents || ['cerebellum'];
+      let session = null;
+      if (sessionReq?.id && sessionEnabled) {
+        if (excludedAgents.includes(agentId)) {
+          console.warn(`[brain] #${rid} WARN session ignored for excluded agent ${agentId} (B-28)`);
+        } else if (sessionReq.op === 'continue') {
+          const stableBlock = messages.find(m => m.role === 'system');
+          const lookup = continueSession({
+            id: sessionReq.id,
+            agentId,
+            systemHash: stableBlock ? hashSystem(typeof stableBlock.content === 'string' ? stableBlock.content : JSON.stringify(stableBlock.content)) : null,
+            expectedSeq: sessionReq.seq,
+          });
+          if (lookup.miss) {
+            // Fast miss — a specified protocol case, answered WITHOUT a
+            // provider call. The daemon rebuilds via op:'open'.
+            console.log(`[brain] #${rid} TELEMETRY session_miss id=${sessionReq.id} reason=${lookup.miss}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ session: { id: sessionReq.id, present: false, reason: lookup.miss } }));
+            return;
+          }
+          session = lookup.session;
+        }
+        // op 'open' / 'reset' are handled after the system split below.
+      }
 
       // Load agent config
       const agentConfig = loadAgentConfig(agentId);
@@ -158,7 +205,29 @@ const server = createServer(async (req, res) => {
       const systemMessages = messages.filter(m => m.role === 'system');
       const systemBlocks = systemMessages.map(m => contentToString(m.content)).filter(Boolean);
       const systemPrompt = systemBlocks.join('\n') || agentConfig.systemPrompt;
-      const chatMessages = messages.filter(m => m.role !== 'system');
+      let chatMessages = messages.filter(m => m.role !== 'system');
+
+      // Session lifecycle (daemon-commanded). systemHash covers the STABLE
+      // block only — MEMORY.md churn must not invalidate sessions.
+      const stableHash = hashSystem(systemBlocks[0] || agentConfig.systemPrompt || '');
+      if (sessionReq?.id && sessionEnabled && !excludedAgents.includes(agentId)) {
+        if (sessionReq.op === 'open') {
+          session = openSession({ id: sessionReq.id, agentId, systemHash: stableHash, messages: chatMessages });
+          console.log(`[brain] #${rid} TELEMETRY session_open id=${sessionReq.id} msgs=${chatMessages.length}`);
+        } else if (sessionReq.op === 'reset') {
+          session = resetSession({ id: sessionReq.id, agentId, systemHash: stableHash, messages: chatMessages });
+          console.log(`[brain] #${rid} TELEMETRY session_reset id=${sessionReq.id} msgs=${chatMessages.length}`);
+        } else if (session) {
+          // continue-hit: replay stored history + the delta the daemon sent.
+          console.log(`[brain] #${rid} TELEMETRY session_hit id=${sessionReq.id} seq=${session.seq} stored=${session.messages.length} delta=${chatMessages.length}`);
+          chatMessages = [...session.messages, ...chatMessages];
+        }
+      }
+      // Watermark for post-turn appends: continue-hits append [delta + new
+      // turns]; open/reset already stored the input, so only new turns append.
+      const sessionDeltaStart = session
+        ? (sessionReq.op === 'continue' ? session.messages.length : chatMessages.length)
+        : 0;
 
       // Run inference (Anthropic uses streaming internally; response is collected before returning)
       const result = await runAgentTurnSyncWithFallback({
@@ -178,7 +247,16 @@ const server = createServer(async (req, res) => {
       const u = result.usage || {};
       console.log(`[brain] #${rid} completed (${result.text.length} chars, in=${u.prompt_tokens ?? '?'} out=${u.completion_tokens ?? '?'} cached=${u.cachedContentTokenCount ?? 0} cache_write=${u.cacheCreationTokenCount ?? 0} steps=${u.steps ?? 1} provider=${u.provider || '?'})`);
 
-      // Return OpenAI-compatible response
+      // Persist the completed turn into the session (delta + new turns for
+      // continue-hits; new turns only after open/reset).
+      let sessionEcho;
+      if (session && Array.isArray(result.history)) {
+        const updated = appendTurn(session.id, result.history.slice(sessionDeltaStart), u.last_step_input_tokens || 0);
+        if (updated) sessionEcho = { id: updated.id, present: true, seq: updated.seq };
+      }
+
+      // Return OpenAI-compatible response (session echo is additive — callers
+      // without sessions see the identical shape as before)
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         id: `chatcmpl-brain-${rid}`,
@@ -194,6 +272,7 @@ const server = createServer(async (req, res) => {
           finish_reason: result.finishReason || 'stop',
         }],
         usage: result.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        ...(sessionEcho ? { session: sessionEcho } : {}),
       }));
     } catch (err) {
       console.error(`[brain] #${rid} error:`, err.message);

@@ -156,6 +156,13 @@
     "session_log_to_git": false,
     "learnings_max_entries": 5
   },
+  "session": {
+    "enabled": false,
+    "idle_ttl_minutes": 30,
+    "max_sessions": 16,
+    "miss_circuit_breaker": 3,
+    "excluded_agents": ["cerebellum"]
+  },
   "projects": {
     "context_max_tokens": 2000,
     "promotion_auto": false,
