@@ -76,6 +76,18 @@ export async function handleSynthesize(ctx, deps) {
     const PROBE_STAKES_MIN = deps.CONTRACTS?.dispatch?.verify_probe_stakes_min || 'consequential';
     const PROBE_MAX = deps.CONTRACTS?.dispatch?.verify_probe_max ?? 2;
 
+    // F3/B-28: a synthesis that rests on a teammate's REPORTED completion must be
+    // re-derived against ground truth, not accepted on the delegate's word —
+    // regardless of stakes. (Archie accepted Dot's "done" twice for a hero-section
+    // change that never went live; routine stakes had gated off probes/attacks, so
+    // verification was a shallow text-coherence check.) Detect two cases: this
+    // mission IS a delegate finalizing its own claim (delegation_ref), or this
+    // mission is the DELEGATOR synthesizing a teammate's returned result.
+    const restsOnDelegation = !!envelope.source_meta?.delegation_ref
+      || priorResults.some(r => typeof r?.result === 'string' && r.result.includes('[DELEGATION RESULT'));
+    const attackEligible = restsOnDelegation || stakesAtLeast(missionStakes, ATTACK_STAKES_MIN);
+    const probeEligible = PROBE_ENABLED && (restsOnDelegation || stakesAtLeast(missionStakes, PROBE_STAKES_MIN));
+
     try {
       const criteria = envelope.accept_criteria || 'Complete the requested task successfully';
       const verification = await deps.dispatchAgent('cerebellum', {
@@ -88,21 +100,32 @@ export async function handleSynthesize(ctx, deps) {
           '',
           '## Mission Synthesis',
           synthesisOutput || '(empty)',
-          // Attack Duty block (stakes-gated)
-          ...(stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) ? [
+          // Delegated-outcome directive: re-derive, don't recognize (B-28)
+          ...(restsOnDelegation ? [
             '',
-            '## Attack Duty (stakes: ' + missionStakes + ')',
+            '## Delegated Outcome — re-derive, do not trust the report',
+            'This synthesis rests on a teammate agent\'s reported completion. A delegate\'s',
+            '"done" is an ASSUMED claim until re-derived. For every claimed outcome tied to',
+            'an observable artifact — a live URL, a committed file, a deployed change, a',
+            'shared document — you MUST `request_probe` to fetch/inspect the ACTUAL artifact',
+            'and confirm the claimed change is really present. Do NOT PASS on the delegate\'s',
+            'word alone. If an artifact cannot be inspected, that claim stays unverified (fail closed).',
+          ] : []),
+          // Attack Duty block (stakes-gated, or forced for delegated outcomes)
+          ...(attackEligible ? [
+            '',
+            '## Attack Duty (stakes: ' + missionStakes + (restsOnDelegation ? ', delegated outcome' : '') + ')',
             'Before any PASS, run three attacks and record them in your checks:',
             '1. Strongest domain-expert objection',
             '2. Flip test — invert the softest input; does the conclusion survive?',
             '3. Boundary probe — find where the claim stops being true; confirm this case is inside.',
             'A winning attack is a FAIL with the attack as the recommendation.',
           ] : []),
-          // Probe eligibility hint
-          ...(PROBE_ENABLED && stakesAtLeast(missionStakes, PROBE_STAKES_MIN) ? [
+          // Probe eligibility hint (stakes-gated, or forced for delegated outcomes)
+          ...(probeEligible ? [
             '',
             '## Probe Eligibility',
-            'This mission\'s stakes (' + missionStakes + ') qualify for verification probes.',
+            'This mission qualifies for verification probes' + (restsOnDelegation ? ' (delegated outcome — re-derivation is mandatory)' : ' (stakes: ' + missionStakes + ')') + '.',
             'For any load-bearing claim you cannot verify from the evidence provided,',
             'use `request_probe` instead of guessing. Max ' + PROBE_MAX + ' probes per round.',
           ] : []),
