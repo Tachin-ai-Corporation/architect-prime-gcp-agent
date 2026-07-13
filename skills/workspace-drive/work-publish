@@ -54,15 +54,19 @@ ROOT_FOLDER_ID="$(curl -sf -H "Authorization: Bearer ${GCE_TOKEN}" \
 
 # ---- Resolve agent identity ----
 AGENT_ID="${AGENT_ID:-$(hostname -s | sed 's/^fleet-//')}"
-PRIME_ID="${PRIME_ID:-$(python3 -c "
-import json,sys
-try:
-  d = json.load(open('${CORE_DIR}/config/contracts.json'))
-  print(d.get('primeId', ''))
-except: print('')
-" 2>/dev/null || echo '')}"
-[[ -z "$PRIME_ID" ]] && PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
-  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime-id' 2>/dev/null || echo 'unknown')"
+# PRIME_ID: env → prime-config.json/chat-config.json (primeId) → metadata (prime_id,
+# underscore — matches the key fleet-deploy stamps). The old path
+# (config/contracts.json) and hyphenated 'prime-id' metadata key were both wrong,
+# so agent-mode artifacts misfiled under 'unknown/'.
+if [[ -z "${PRIME_ID:-}" ]]; then
+  for CFG in "${CORE_DIR}/corekit/prime-config.json" "${CORE_DIR}/corekit/chat-config.json"; do
+    [[ -f "$CFG" ]] || continue
+    PRIME_ID="$(python3 -c "import json; print(json.load(open('$CFG')).get('primeId',''))" 2>/dev/null || echo '')"
+    [[ -n "$PRIME_ID" ]] && break
+  done
+fi
+[[ -z "${PRIME_ID:-}" ]] && PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || echo 'unknown')"
 
 # ---- Date subfolder (UTC) ----
 DATE_FOLDER="$(date -u +'%m-%d')"
