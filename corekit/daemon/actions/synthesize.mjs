@@ -439,11 +439,30 @@ async function tryContextExtraction(envelope, synthesisOutput, workSummary, deps
       return;
     }
 
-    // Write context updates to project via Firestore patch
+    // Write context updates to project via Firestore patch.
+    // Self-healing guard (B-4): a context entry key must be a semantic slug and
+    // the entry must carry real content (summary/ref/url). This drops the
+    // garbage numeric-keyed empty-map entries ({"259":{}, ...}) that a past bad
+    // write injected and that this function otherwise copies forward on every
+    // run — the tachin-website project had 430 such keys polluting every payload.
     const updates = parsed.updates;
-    const updatedContext = { ...existingContext };
+    const isSemanticKey = (k) => /^[a-z][a-z0-9_-]{2,63}$/i.test(k);
+    // Garbage = a non-semantic key (e.g. a numeric "259") OR an empty entry.
+    // Real entries take ANY shape — string, array, or non-empty object — so we
+    // must NOT require summary/ref/url (that would nuke valid string/array/map
+    // context like architect-prime's module_definitions_source / documentation).
+    const isEmptyEntry = (v) => v == null
+      || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0)
+      || (typeof v === 'string' && v.trim() === '');
+    const updatedContext = {};
+    for (const [k, v] of Object.entries(existingContext)) {
+      if (isSemanticKey(k) && !isEmptyEntry(v)) updatedContext[k] = v;
+    }
+    const droppedGarbage = Object.keys(existingContext).length - Object.keys(updatedContext).length;
+    if (droppedGarbage > 0) log('INFO', `[context-extract] Pruned ${droppedGarbage} non-semantic/empty context key(s) from ${envelope.project_id}`);
     for (const [key, entry] of Object.entries(updates)) {
-      if (existingContext[key]) continue; // Don't overwrite existing keys
+      if (!isSemanticKey(key)) continue;          // reject garbage keys at the source
+      if (updatedContext[key]) continue;          // don't overwrite existing keys
       updatedContext[key] = {
         ...(typeof entry === 'object' ? entry : { summary: String(entry) }),
         kind: entry?.kind || 'convention',
@@ -452,9 +471,9 @@ async function tryContextExtraction(envelope, synthesisOutput, workSummary, deps
       };
     }
 
-    // Only write if there are actual new entries
-    const newKeys = Object.keys(updates).filter(k => !existingContext[k]);
-    if (newKeys.length === 0) return;
+    // Write if there are new entries OR garbage was pruned (self-heal).
+    const newKeys = Object.keys(updates).filter(k => isSemanticKey(k) && !existingContext[k]);
+    if (newKeys.length === 0 && droppedGarbage === 0) return;
 
     // Projects are top-level (not under primes/), use direct REST PATCH
     const token = await getAuthToken();

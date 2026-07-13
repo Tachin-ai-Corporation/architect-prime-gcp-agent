@@ -157,13 +157,39 @@ fi
 # ---- Upload file ----
 FILE_NAME="$(basename "$FILE")"
 MIME="$(file --mime-type -b "$FILE" 2>/dev/null || echo 'application/octet-stream')"
-META="{\"name\":\"${FILE_NAME}\",\"parents\":[\"${TARGET_PARENT}\"]}"
 
-HTTP_CODE=$(curl -s -o /tmp/wp-response.json -w '%{http_code}' \
-  -X POST -H "Authorization: Bearer ${TOKEN}" \
-  -F "metadata=${META};type=application/json" \
-  -F "file=@${FILE};type=${MIME}" \
-  "${UPLOAD_API}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink,webContentLink")
+# C-18 idempotency: if a file of the same name already exists in the target
+# folder, UPDATE it in place (new revision) rather than creating a duplicate.
+# Repeated publishes previously left triplicate copies (e.g. security.html x3).
+EXISTING_ID="$(curl -sf -G -H "Authorization: Bearer ${TOKEN}" \
+  --data-urlencode "q=name = '${FILE_NAME}' and '${TARGET_PARENT}' in parents and trashed = false" \
+  --data-urlencode "fields=files(id,name)" \
+  --data-urlencode "supportsAllDrives=true" \
+  --data-urlencode "includeItemsFromAllDrives=true" \
+  "${DRIVE_API}/files" \
+  | python3 -c 'import sys,json
+try:
+    fs=json.load(sys.stdin).get("files",[])
+    print(fs[0]["id"] if fs else "")
+except Exception: print("")' 2>/dev/null || echo '')"
+
+if [[ -n "$EXISTING_ID" ]]; then
+  log "Existing '${FILE_NAME}' found in target folder (${EXISTING_ID}) — updating in place (idempotent)"
+  HTTP_CODE=$(curl -s -o /tmp/wp-response.json -w '%{http_code}' \
+    -X PATCH -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: ${MIME}" \
+    --data-binary "@${FILE}" \
+    "${UPLOAD_API}/files/${EXISTING_ID}?uploadType=media&supportsAllDrives=true&fields=id,name,webViewLink,webContentLink")
+  PUBLISH_MODE="updated"
+else
+  META="{\"name\":\"${FILE_NAME}\",\"parents\":[\"${TARGET_PARENT}\"]}"
+  HTTP_CODE=$(curl -s -o /tmp/wp-response.json -w '%{http_code}' \
+    -X POST -H "Authorization: Bearer ${TOKEN}" \
+    -F "metadata=${META};type=application/json" \
+    -F "file=@${FILE};type=${MIME}" \
+    "${UPLOAD_API}/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink,webContentLink")
+  PUBLISH_MODE="created"
+fi
 
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"folder\":\"${TARGET_PARENT}\",\"path\":\"${FOLDER_PATH}\",\"message\":\"I don't have access to upload here. Please share the folder with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
@@ -178,6 +204,7 @@ import json
 f = json.load(open('/tmp/wp-response.json'))
 print(json.dumps({
   'status': 'published',
+  'mode': '${PUBLISH_MODE}',
   'fileId': f.get('id', ''),
   'fileName': f.get('name', ''),
   'folderId': '${TARGET_PARENT}',
