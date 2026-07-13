@@ -18,12 +18,18 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DOCS_API="https://docs.googleapis.com/v1/documents"
 die() { echo "[docs-cat] [ERROR] $*" >&2; exit 1; }
-DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id> [--meta] [--find TEXT [--context N]] [--offset N --limit N] [--max-chars N]"
+DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id> [--json] [--meta] [--find TEXT [--context N]] [--offset N --limit N] [--max-chars N]"
 shift || true
 
-META=0; FIND_TEXT=""; CONTEXT=800; OFFSET=0; LIMIT=0; MAX_CHARS=0
+# Default output is PLAIN TEXT — the body, ready to pipe/grep. Pass --json for
+# the structured {docId,title,text,chars} wrapper. (Structured modes --meta and
+# --find always emit JSON since they carry offsets/matches.) This default flip
+# fixes the failure mode where motor piped docs-cat's JSON into grep/head and
+# got nothing usable.
+META=0; FIND_TEXT=""; CONTEXT=800; OFFSET=0; LIMIT=0; MAX_CHARS=0; JSON=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --json) JSON=1; shift ;;
     --meta) META=1; shift ;;
     --find) FIND_TEXT="${2:-}"; [[ -n "$FIND_TEXT" ]] || die "--find requires a search string"; shift 2 ;;
     --context) CONTEXT="${2:-800}"; shift 2 ;;
@@ -34,7 +40,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 export DC_META="$META" DC_FIND="$FIND_TEXT" DC_CONTEXT="$CONTEXT" \
-       DC_OFFSET="$OFFSET" DC_LIMIT="$LIMIT" DC_MAX_CHARS="$MAX_CHARS" DC_DOC_ID="$DOC_ID"
+       DC_OFFSET="$OFFSET" DC_LIMIT="$LIMIT" DC_MAX_CHARS="$MAX_CHARS" DC_DOC_ID="$DOC_ID" DC_JSON="$JSON"
 
 # Shared renderer: reads the doc content and applies the selected view.
 # arg1 = 'api' (Docs API JSON, outline available) | 'text' (plain text, DC_TITLE env)
@@ -109,16 +115,26 @@ else:
     maxc = int(env.get('DC_MAX_CHARS') or 0)
     if lim <= 0 and maxc > 0:
         lim = maxc
-    if off > 0 or lim > 0:
-        end = min(total, off + lim) if lim > 0 else total
-        out['text'] = text[off:end]
+    end = min(total, off + lim) if lim > 0 else total
+    slice_text = text[off:end]
+    truncated = end < total
+    if env.get('DC_JSON') == '1':
+        out['text'] = slice_text
         out['offset'] = off
         out['returned'] = end - off
-        if end < total:
+        if truncated:
             out['truncated'] = True
             out['next_offset'] = end
+        print(json.dumps(out, indent=2))
     else:
-        out['text'] = text
+        # Plain text to stdout; pagination hint to stderr so stdout stays pure.
+        sys.stdout.write(slice_text)
+        if not slice_text.endswith('\n'):
+            sys.stdout.write('\n')
+        if truncated:
+            sys.stderr.write(f"[docs-cat] returned {end-off} chars from offset {off}; "
+                             f"{total-end} more remain — continue with --offset {end}\n")
+    sys.exit(0)
 print(json.dumps(out, indent=2))
 PYEOF
 )

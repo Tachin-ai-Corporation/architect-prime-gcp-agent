@@ -1,4 +1,4 @@
-# Skill: Google Docs (v6)
+# Skill: Google Docs (v7)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
@@ -11,7 +11,7 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 ## 1. Commands
 
 ### Read & Inspect
-- `docs-cat <doc_id>` — Read a Google Doc's plain text body (includes table cell text). Flags for large docs:
+- `docs-cat <doc_id>` — Read a Google Doc's **plain text body** (includes table cell text), printed directly to stdout so you can pipe/grep it. Pass `--json` for the structured `{docId,title,text,chars}` wrapper. Flags for large docs:
   - `--meta` — title, total chars, and heading outline with char offsets (no body text). **Always run this first on unfamiliar docs.**
   - `--find "TEXT" [--context N]` — case-insensitive search; returns every match (max 20) with char offset and ±N chars of context (default 800).
   - `--offset N --limit M` — read a window of M chars starting at char N; response includes `next_offset` when more remains.
@@ -33,6 +33,7 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 - `docs-find-replace --doc <doc_id> --find "OLD" --replace "NEW" [--match-case]` — Global find and replace all instances of a string.
 - `docs-batch-replace --doc <doc_id> --file PAIRS_FILE.json` — Apply an array of `{find, replace}` pairs atomically in a single `replaceAllText` batchUpdate.
 - `docs-anchor-insert --doc <doc_id> --anchor "phrase" --text "text" [--position before|after]` — Resolve a unique anchor phrase index and insert text immediately before or after it.
+- `docs-section-delete --doc <doc_id> (--from-anchor "phrase" [--keep-anchor] | --start N --end N)` — Delete a contiguous region: from a unique anchor phrase to the **end of the document** (default), everything **after** the anchor (`--keep-anchor`), or an explicit character-index range. This is the tool for stripping a trailing section (e.g. a review/redline block) that `docs-find-replace` can't target and that rebuilding the whole body would risk. Anchor matching spans table and TOC text.
 - `docs-style --doc <doc_id> (--anchor "phrase" | --start START_IDX --end END_IDX) --style "STYLE"` — Apply typography/headings/alignment/color to a unique anchor or range. Style can be comma-separated list of: `bold`, `italic`, `underline`, `strikethrough`, `align=CENTER|LEFT|RIGHT|JUSTIFIED`, `color=#RRGGBB`, `HEADING_1` to `HEADING_6`, `TITLE`, `SUBTITLE`, `NORMAL_TEXT`.
 - `docs-insert-table --doc <doc_id> --anchor "phrase" --rows N --cols M` — Insert a table at a resolved anchor index.
 - `docs-insert-image --doc <doc_id> --anchor "phrase" --url IMAGE_URL` — Insert inline image from public URL at a resolved anchor index (enforces PNG/JPEG/GIF format, <50MB, <25MP, URL <2KB).
@@ -69,6 +70,8 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 | "Add a section to the end" | A | `docs-write --markdown --append` |
 | "Create a document from our standard template" | D | `docs-clone-template --template ID --replacements file` |
 | "Fix this typo / update this clause / change these values" | B | `docs-find-replace`, `docs-batch-replace` |
+| "Delete this section / strip the review notes at the end / remove everything after X" | B | `docs-section-delete --from-anchor` |
+| "Finalize this redlined doc: apply the notes, then remove the notes section" | B | `docs-find-replace`/`docs-batch-replace` to apply, then `docs-section-delete --from-anchor` to strip |
 | "Insert a table / image / heading here" | B | `docs-insert-table`, `docs-insert-image`, `docs-style` |
 | "This field updates every cycle (template/report)" | B | `docs-namedrange-create` → `docs-namedrange-replace` |
 | "Apply our branded template / exact typography / complex tables" | C | `docs-export-docx` → OOXML tooling → `docs-import-docx` |
@@ -130,6 +133,16 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 3. To read a specific section, search for its heading: `docs-cat DOC_ID --find "LEGAL REVIEW REDLINES" --context 3000` — returns the section content around the match.
 4. To read sequentially, window through it: `docs-cat DOC_ID --offset 0 --limit 6000`, then continue from the returned `next_offset` until `truncated` is absent.
 5. Never treat a single full read of a large doc as complete — if `chars` exceeds what you received, the tail is missing.
+
+### Finalize a Redlined Document (apply notes, then strip the notes section)
+A common request: a doc has review/redline notes appended at the end; incorporate them into the body, then remove the notes so the doc is clean.
+1. `docs-cat DOC_ID --meta` — locate the notes section heading and its char offset (e.g. `[LEGAL REVIEW REDLINES]`).
+2. `docs-cat DOC_ID --find "LEGAL REVIEW REDLINES" --context 3000` — read the notes so you know exactly what changes they call for.
+3. Apply each change to the body with `docs-find-replace` (one clause at a time) or `docs-batch-replace` (a `{find,replace}` pairs file) — surgical, formatting-preserving.
+4. Strip the notes: `docs-section-delete --doc DOC_ID --from-anchor "[LEGAL REVIEW REDLINES]"` — deletes the heading and everything after it. The document is now a clean final version.
+5. Verify: `docs-cat DOC_ID --meta` — confirm the notes heading is gone and the body carries the applied changes.
+
+Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrite` it — that loses formatting and is exactly what failed before `docs-section-delete` existed.
 
 ### Edit in Place Preserving Formatting (Lane B)
 1. Read the target document structure using `docs-get --doc DOC_ID`.

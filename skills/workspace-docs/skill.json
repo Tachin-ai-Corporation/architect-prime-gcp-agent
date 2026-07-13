@@ -1,8 +1,8 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  6,
-    "description":  "Create professionally formatted Google Docs from Markdown or HTML, read docs with paginated/targeted reads for large documents, use templates, manage page formatting (margins, headers, footers), and suggest edits.",
+    "version":  7,
+    "description":  "Create professionally formatted Google Docs from Markdown or HTML, read docs with paginated/targeted reads for large documents, delete sections/ranges, use templates, manage page formatting (margins, headers, footers), and suggest edits.",
     "author":  "architect-prime",
     "origin":  "core",
     "category":  "workspace",
@@ -15,6 +15,7 @@
                     "docs-find-replace",
                     "docs-suggest",
                     "docs-write",
+                    "docs-section-delete",
                     "docs-get",
                     "docs-replace-md",
                     "docs-batch-replace",
