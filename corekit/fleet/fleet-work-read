@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-work-read — Structured, read-only introspection of any
+# fleet agent's work from the shared Firestore work/ collection.
+#
+# This is Prime's OBSERVE capability (fleet-introspect skill): it
+# lets a Prime read another agent's missions/checkpoints/tasks
+# WITHOUT SSH into that agent's VM. Deterministic (C-4/C-5),
+# read-only, low blast radius.
+#
+# Usage:
+#   fleet-work-read --agent millie                 # last 5 missions (summary)
+#   fleet-work-read --agent millie --last 10        # last 10 missions
+#   fleet-work-read --agent millie --status failed  # only failed missions
+#   fleet-work-read --agent millie --mission <id>   # drill into one mission's C->T tree
+#   fleet-work-read --email assistant-agent-millie@example.com ...  # explicit (cross-prime)
+#   fleet-work-read ... --json                      # machine-readable
+#
+# Agent short-name -> email resolves via THIS prime's fleet registry
+# (primes/{primeId}/fleet/{name}.email). For an agent under a different
+# prime, pass --email directly.
+#
+# Reads: root work/ collection (owner == agent email). Runs on Prime's VM
+# using the GCE metadata token.
+# ============================================================
+set -euo pipefail
+
+log() { echo "[$(date -Is)] [fleet-work-read] $*" >&2; }
+die() { echo "[$(date -Is)] [fleet-work-read] [FATAL] $*" >&2; exit 1; }
+
+# ---- Parse args ----
+AGENT_NAME=""
+AGENT_EMAIL=""
+LAST=5
+STATUS_FILTER=""
+TYPE_FILTER="M"
+MISSION_ID=""
+JSON_MODE=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --agent)   AGENT_NAME="$2";    shift 2 ;;
+    --email)   AGENT_EMAIL="$2";   shift 2 ;;
+    --last)    LAST="$2";          shift 2 ;;
+    --status)  STATUS_FILTER="$2"; shift 2 ;;
+    --type)    TYPE_FILTER="$2";   shift 2 ;;
+    --mission) MISSION_ID="$2";    shift 2 ;;
+    --json)    JSON_MODE=true;     shift ;;
+    --help|-h)
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) die "Unknown arg: $1" ;;
+  esac
+done
+
+# ---- Resolve project + prime ID ----
+PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PRIME_PROJECT" ]] || die "Cannot resolve project from metadata"
+
+PRIME_ID="${PRIME_ID:-}"
+if [[ -z "$PRIME_ID" ]]; then
+  PRIME_ID="$(curl -s -f -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || true)"
+fi
+
+FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${PRIME_PROJECT}/databases/(default)/documents"
+
+TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")"
+[[ -n "$TOKEN" ]] || die "Could not obtain access token"
+
+# ---- Resolve agent email (short name -> registry email) ----
+if [[ -z "$AGENT_EMAIL" ]]; then
+  [[ -n "$AGENT_NAME" ]] || die "Provide --agent <name> or --email <full-email>"
+  [[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID for registry lookup; pass --email instead"
+  REG_TMP="$(mktemp)"; trap 'rm -f "$REG_TMP"' EXIT
+  curl -s -o "$REG_TMP" -H "Authorization: Bearer $TOKEN" \
+    "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}"
+  AGENT_EMAIL="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open('$REG_TMP'))
+    print(d.get('fields',{}).get('email',{}).get('stringValue',''))
+except Exception:
+    print('')
+")"
+  [[ -n "$AGENT_EMAIL" ]] || die "Agent '${AGENT_NAME}' not found in ${PRIME_ID}'s fleet registry. Pass --email for an agent under a different prime."
+fi
+
+# ============================================================
+# Mission drill-down mode: one mission + its full C->T tree
+# ============================================================
+if [[ -n "$MISSION_ID" ]]; then
+  # Fetch the mission, then each child (children[] holds C ids; T ids hang off C).
+  M_TMP="$(mktemp)"; C_TMP="$(mktemp)"
+  trap 'rm -f "$REG_TMP" "$M_TMP" "$C_TMP"' EXIT
+  curl -s -o "$M_TMP" -H "Authorization: Bearer $TOKEN" "${FIRESTORE_URL}/work/${MISSION_ID}"
+
+  # Collect the whole subtree by querying children ids breadth-first via the
+  # REST batchGet-free path: read mission, then read each referenced child.
+  python3 - "$M_TMP" "$FIRESTORE_URL" "$TOKEN" "$JSON_MODE" "$AGENT_EMAIL" <<'PYDRILL'
+import json, sys, urllib.request
+
+m_file, fs_url, token, json_mode, email = sys.argv[1:6]
+json_mode = (json_mode == "true")
+
+def dec(v):
+    for k in ("stringValue","integerValue","booleanValue","timestampValue"):
+        if k in v: return v[k]
+    if "nullValue" in v: return None
+    if "arrayValue" in v: return [dec(x) for x in v["arrayValue"].get("values",[])]
+    if "mapValue" in v: return {kk:dec(vv) for kk,vv in v["mapValue"].get("fields",{}).items()}
+    return v
+
+def fetch(env_id):
+    req = urllib.request.Request(f"{fs_url}/work/{env_id}",
+        headers={"Authorization": f"Bearer {token}"})
+    try:
+        d = json.load(urllib.request.urlopen(req, timeout=15))
+    except Exception:
+        return None
+    return {k:dec(v) for k,v in d.get("fields",{}).items()}
+
+try:
+    md = json.load(open(m_file))
+except Exception:
+    print("ERROR: could not read mission document", file=sys.stderr); sys.exit(1)
+if "fields" not in md:
+    print(f"Mission not found or inaccessible.", file=sys.stderr); sys.exit(1)
+mission = {k:dec(v) for k,v in md.get("fields",{}).items()}
+
+nodes = []  # (depth, env)
+def walk(env, depth):
+    nodes.append((depth, env))
+    for cid in (env.get("children") or []):
+        c = fetch(cid)
+        if c: walk(c, depth+1)
+        else: nodes.append((depth+1, {"id": cid, "type":"?", "status":"missing"}))
+walk(mission, 0)
+
+if json_mode:
+    print(json.dumps([{"depth":d, **e} for d,e in nodes], indent=1, default=str))
+else:
+    ICON={"complete":"OK","archived":"OK","failed":"XX","blocked":"!!","needs_input":"??",
+          "cancelled":"--","active":"..","waiting":"..","queued":".."}
+    print(f"\nMISSION {mission.get('id')}  [{mission.get('status')}]  {email}")
+    print(f"  {(mission.get('title') or '')[:90]}")
+    instr=(mission.get('instruction') or '')[:400]
+    if instr: print(f"  instruction: {instr}")
+    err=mission.get('error')
+    if err: print(f"  error: {str(err)[:300]}")
+    print("  " + "-"*60)
+    for d,e in nodes[1:]:
+        pad="    "*d
+        code=ICON.get(e.get('status'),'  ')
+        line=f"  {pad}[{code}] {e.get('type','?')} {e.get('intent') or ''} :: {(e.get('title') or '')[:70]}"
+        print(line)
+        ee=e.get('error')
+        if ee: print(f"  {pad}      error: {str(ee)[:200]}")
+    print()
+PYDRILL
+  exit 0
+fi
+
+# ============================================================
+# List mode: last N missions for the agent
+# ============================================================
+# Equality on owner (fleet agents store owner == full email). No orderBy in
+# the query (avoids a composite-index requirement); sort client-side.
+Q_TMP="$(mktemp)"; trap 'rm -f "$REG_TMP" "$Q_TMP"' EXIT
+QUERY_BODY="$(python3 -c "
+import json,sys
+email='$AGENT_EMAIL'
+print(json.dumps({'structuredQuery':{
+  'from':[{'collectionId':'work'}],
+  'where':{'fieldFilter':{'field':{'fieldPath':'owner'},'op':'EQUAL','value':{'stringValue':email}}},
+  'limit':500}}))
+")"
+
+HTTP_CODE=$(curl -s -o "$Q_TMP" -w '%{http_code}' --max-time 20 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -X POST "${FIRESTORE_URL}:runQuery" -d "$QUERY_BODY")
+if [[ "$HTTP_CODE" != "200" ]]; then
+  echo "ERROR: Firestore query returned HTTP ${HTTP_CODE}" >&2
+  head -c 500 "$Q_TMP" >&2; echo >&2
+  exit 1
+fi
+
+python3 - "$Q_TMP" "$JSON_MODE" "$LAST" "$STATUS_FILTER" "$TYPE_FILTER" "$AGENT_EMAIL" <<'PYLIST'
+import json, sys
+
+q_file  = sys.argv[1]
+json_mode = sys.argv[2] == "true"
+last    = int(sys.argv[3])
+status_f= sys.argv[4]
+type_f  = sys.argv[5]
+email   = sys.argv[6]
+
+def dec(v):
+    for k in ("stringValue","integerValue","booleanValue","timestampValue"):
+        if k in v: return v[k]
+    if "nullValue" in v: return None
+    if "arrayValue" in v: return [dec(x) for x in v["arrayValue"].get("values",[])]
+    if "mapValue" in v: return {kk:dec(vv) for kk,vv in v["mapValue"].get("fields",{}).items()}
+    return v
+
+data = json.load(open(q_file))
+rows = [{k:dec(v) for k,v in r["document"].get("fields",{}).items()}
+        for r in data if r.get("document")]
+if type_f:   rows = [r for r in rows if r.get("type") == type_f]
+if status_f: rows = [r for r in rows if r.get("status") == status_f]
+rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+rows = rows[:last]
+
+def summ(m):
+    return {
+        "id": m.get("id"), "status": m.get("status"), "type": m.get("type"),
+        "created_at": m.get("created_at"), "updated_at": m.get("updated_at"),
+        "iteration": m.get("iteration"), "project_id": m.get("project_id"),
+        "title": (m.get("title") or "")[:90],
+        "instruction": (m.get("instruction") or "")[:300],
+        "output": (str(m.get("output"))[:400] if m.get("output") else None),
+        "error": (str(m.get("error"))[:300] if m.get("error") else None),
+        "n_children": len(m.get("children") or []),
+    }
+
+if json_mode:
+    print(json.dumps({"agent": email, "count": len(rows),
+                      "missions": [summ(m) for m in rows]}, indent=1, default=str))
+else:
+    if not rows:
+        print(f"\nNo work envelopes found for {email} (type={type_f or 'any'}, status={status_f or 'any'}).\n")
+        sys.exit(0)
+    print(f"\n=== {email} — last {len(rows)} {type_f or ''} ===")
+    for m in rows:
+        print(f"\n{m.get('id')}  [{m.get('status')}]  iter {m.get('iteration')}  proj={m.get('project_id')}")
+        print(f"  {(m.get('title') or '')[:90]}")
+        if m.get("error"):
+            print(f"  error: {str(m.get('error'))[:220]}")
+        elif m.get("output"):
+            print(f"  output: {str(m.get('output'))[:220].strip()}")
+        print(f"  children: {len(m.get('children') or [])}   (drill: fleet-work-read --agent <n> --mission {m.get('id')})")
+    print()
+PYLIST

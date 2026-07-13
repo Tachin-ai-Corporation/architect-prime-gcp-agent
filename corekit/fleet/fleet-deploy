@@ -430,6 +430,29 @@ fi
 
 write_deploy_step "iam_granted" "IAM roles granted" "done" "aiplatform.user + serviceAccountTokenCreator + datastore.user"
 
+# ------------------------------------------------------------
+# Grant THIS Prime's SA IAP tunnel access to fleet VMs.
+# Prime's OPERATE capability (fleet platform-engineer role): a Prime
+# reaches fleet hosts over `gcloud compute ssh --tunnel-through-iap`
+# for test/upgrade/remediation. The Prime SA already holds
+# compute.admin (instance access + SSH-key push); the ONLY missing
+# piece for the IAP tunnel is roles/iap.tunnelResourceAccessor.
+# (The firewall already permits :22 to the IAP range.) Idempotent —
+# safe to re-run on every deploy so all forks get a reachable fleet.
+# ------------------------------------------------------------
+PRIME_SA="$(curl -sf -H 'Metadata-Flavor: Google' \
+  'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email' 2>/dev/null || echo '')"
+if [[ -n "$PRIME_SA" ]]; then
+  log "Granting roles/iap.tunnelResourceAccessor to Prime SA ${PRIME_SA}"
+  gcloud projects add-iam-policy-binding "$FLEET_PROJECT" \
+    --member="serviceAccount:${PRIME_SA}" \
+    --role="roles/iap.tunnelResourceAccessor" \
+    --condition=None --quiet > /dev/null 2>&1 \
+    || warn "IAP tunnel grant for Prime SA may already exist or failed"
+else
+  warn "Could not resolve Prime SA email from metadata — skipping IAP grant"
+fi
+
 
 # ============================================================
 # 4. Build and create VM (with agent-ears + agent-mouth)

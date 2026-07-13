@@ -129,17 +129,31 @@ EOF
 )
 
 # ── Execute query ──────────────────────────────────────────
-RESPONSE=$(curl -sf --max-time 15 \
+# Stream the response to a temp FILE, never into a shell variable that would
+# later be passed as an argv. The full Firestore payload (up to LIMIT
+# envelopes, each with multi-KB output/instruction fields) routinely exceeds
+# the OS argument-length limit (ARG_MAX) — passing it as argv[1] made this
+# tool fail with "Argument list too long" on every large result set.
+TMP_RESP="$(mktemp)"
+trap 'rm -f "$TMP_RESP"' EXIT
+HTTP_CODE=$(curl -s --max-time 15 -o "$TMP_RESP" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -X POST "${FIRESTORE_BASE}${PARENT_PATH:+/${PARENT_PATH}}:runQuery" \
-  -d "${QUERY_BODY}" 2>&1)
+  -d "${QUERY_BODY}")
+
+if [[ "$HTTP_CODE" != "200" ]]; then
+  echo "ERROR: Firestore query returned HTTP ${HTTP_CODE}" >&2
+  head -c 500 "$TMP_RESP" >&2; echo >&2
+  exit 1
+fi
 
 # ── Parse and display ──────────────────────────────────────
-python3 - <<'PYPARSE' "$RESPONSE" "$JSON_OUTPUT" "$VERBOSE" "$MIN_STEPS" "$OWNER_FILTER"
+# The response arrives as a file PATH (tiny argv), read from disk in Python.
+python3 - <<'PYPARSE' "$TMP_RESP" "$JSON_OUTPUT" "$VERBOSE" "$MIN_STEPS" "$OWNER_FILTER"
 import json, sys
 
-raw = sys.argv[1]
+raw = open(sys.argv[1], encoding="utf-8").read()
 json_mode = sys.argv[2] == "true"
 verbose = sys.argv[3] == "true"
 min_steps = int(sys.argv[4])

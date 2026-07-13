@@ -1,0 +1,16 @@
+{
+  "id": "fleet-introspect",
+  "name": "Fleet Introspect",
+  "version": 1,
+  "description": "Read-only, structured introspection of any fleet agent's work (missions, checkpoints, tasks) from the shared Firestore work/ collection — no SSH. Prime's OBSERVE capability for monitoring and improving the fleet.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "fleet",
+  "agent_part": "motor",
+  "roles": ["prime"],
+  "scripts": [
+    "fleet-work-read"
+  ],
+  "requires": {},
+  "when_to_use": "When a Prime needs to analyze a fleet agent's recent missions, diagnose why a mission failed, or gather evidence for a fleet-improvement pass — without SSHing into the agent's VM."
+}

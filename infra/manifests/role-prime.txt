@@ -12,6 +12,7 @@ corekit/fleet/fleet-status bin/fleet-status
 corekit/fleet/fleet-verify bin/fleet-verify
 corekit/fleet/fleet-upgrade bin/fleet-upgrade
 corekit/fleet/fleet-health-check bin/fleet-health-check
+corekit/fleet/fleet-work-read bin/fleet-work-read
 
 # Dashboard bridge
 corekit/dashboard/command-runner bin/command-runner
@@ -42,6 +43,8 @@ skills/fleet-fire/SKILL.md skills/fleet-fire/SKILL.md
 skills/fleet-fire/skill.json skills/fleet-fire/skill.json
 skills/fleet-status/SKILL.md skills/fleet-status/SKILL.md
 skills/fleet-status/skill.json skills/fleet-status/skill.json
+skills/fleet-introspect/SKILL.md skills/fleet-introspect/SKILL.md
+skills/fleet-introspect/skill.json skills/fleet-introspect/skill.json
 skills/fleet-verify/SKILL.md skills/fleet-verify/SKILL.md
 skills/fleet-verify/skill.json skills/fleet-verify/skill.json
 skills/fleet-upgrade/SKILL.md skills/fleet-upgrade/SKILL.md
