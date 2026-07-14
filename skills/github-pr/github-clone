@@ -34,7 +34,8 @@ fi
 OWNER="${REPO%%/*}"; NAME="${REPO##*/}"
 [[ -n "$DIR" ]] || DIR="${CORE_DIR}/shared/upstream-${NAME}"
 
-TOKEN="$(secret-read --name "$SECRET")" || die "Could not read GitHub token from secret '${SECRET}'"
+SECRET_READ="${CORE_DIR}/bin/secret-read"; [[ -x "$SECRET_READ" ]] || SECRET_READ="secret-read"
+TOKEN="$("$SECRET_READ" --name "$SECRET")" || die "Could not read GitHub token from secret '${SECRET}'"
 [[ -n "$TOKEN" ]] || die "GitHub token secret '${SECRET}' is empty"
 
 # Fresh clone dir

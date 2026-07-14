@@ -50,7 +50,8 @@ git -C "$DIR" rev-parse --verify "$BRANCH" >/dev/null 2>&1 || die "branch does n
 AHEAD=$(git -C "$DIR" rev-list --count "origin/${BASE}..${BRANCH}" 2>/dev/null || echo 0)
 [[ "$AHEAD" -ge 1 ]] || die "branch has no commits ahead of origin/${BASE} - nothing to PR"
 
-TOKEN=$(secret-read --name "$SECRET") || die "Could not read GitHub token"
+SECRET_READ="${CORE_DIR}/bin/secret-read"; [[ -x "$SECRET_READ" ]] || SECRET_READ="secret-read"
+TOKEN=$("$SECRET_READ" --name "$SECRET") || die "Could not read GitHub token"
 [[ -n "$TOKEN" ]] || die "GitHub token empty"
 
 # Push the branch (token injected only for this command, not persisted).
