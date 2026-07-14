@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-retro — Deterministic fleet failure gather + cluster.
+#
+# Prime's IMPROVE capability (Rung 3): reads recent non-success
+# missions across the whole fleet from the shared Firestore work/
+# collection, walks each to its failing task(s), and clusters the
+# failures by error signature. A cluster spanning >= 2 missions/agents
+# is a SYSTEMIC signal (the same thing this manual review surfaced).
+#
+# Deterministic (C-4): no LLM. Emits structured JSON candidates that
+# the fleet-improve skill classifies (into improvement modules) and
+# drafts. Read-only.
+#
+# Usage:
+#   fleet-retro                 # last 10 missions/agent, all fleet
+#   fleet-retro --last 20        # deeper lookback per agent
+#   fleet-retro --min-cluster 2  # min cluster size to report (default 2)
+# ============================================================
+set -euo pipefail
+log() { echo "[$(date -Is)] [fleet-retro] $*" >&2; }
+die() { echo "[$(date -Is)] [fleet-retro] [FATAL] $*" >&2; exit 1; }
+
+LAST=10; MIN_CLUSTER=2
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --last)        LAST="$2"; shift 2 ;;
+    --min-cluster) MIN_CLUSTER="$2"; shift 2 ;;
+    --help|-h) echo "Usage: fleet-retro [--last N] [--min-cluster N]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+
+PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PRIME_PROJECT" ]] || die "Cannot resolve project"
+PRIME_ID="${PRIME_ID:-}"
+[[ -n "$PRIME_ID" ]] || PRIME_ID="$(curl -s -f -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || true)"
+[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
+FS="https://firestore.googleapis.com/v1/projects/${PRIME_PROJECT}/databases/(default)/documents"
+TOKEN="$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")"
+[[ -n "$TOKEN" ]] || die "No token"
+
+export FR_FS="$FS" FR_TOKEN="$TOKEN" FR_PRIME="$PRIME_ID" FR_LAST="$LAST" FR_MIN="$MIN_CLUSTER"
+python3 <<'PYEOF'
+import os, re, json, urllib.request
+FS=os.environ["FR_FS"]; TOK=os.environ["FR_TOKEN"]; PRIME=os.environ["FR_PRIME"]
+LAST=int(os.environ["FR_LAST"]); MIN=int(os.environ["FR_MIN"])
+H={"Authorization":f"Bearer {TOK}"}
+NONSUCCESS={"failed","blocked","cancelled"}
+
+def dec(v):
+    for k in ("stringValue","integerValue","booleanValue","timestampValue"):
+        if k in v: return v[k]
+    if "nullValue" in v: return None
+    if "arrayValue" in v: return [dec(x) for x in v["arrayValue"].get("values",[])]
+    if "mapValue" in v: return {kk:dec(vv) for kk,vv in v["mapValue"].get("fields",{}).items()}
+    return v
+
+def getdoc(env_id):
+    try:
+        d=json.load(urllib.request.urlopen(urllib.request.Request(f"{FS}/work/{env_id}",headers=H),timeout=15))
+        return {k:dec(v) for k,v in d.get("fields",{}).items()}
+    except Exception:
+        return None
+
+def query_owner(email):
+    body=json.dumps({"structuredQuery":{"from":[{"collectionId":"work"}],
+        "where":{"fieldFilter":{"field":{"fieldPath":"owner"},"op":"EQUAL","value":{"stringValue":email}}},
+        "limit":500}}).encode()
+    req=urllib.request.Request(f"{FS}:runQuery",data=body,headers={**H,"Content-Type":"application/json"})
+    out=[]
+    try:
+        for r in json.load(urllib.request.urlopen(req,timeout=30)):
+            if r.get("document"): out.append({k:dec(v) for k,v in r["document"]["fields"].items()})
+    except Exception: pass
+    return out
+
+def norm_sig(text):
+    t=(text or "").lower()
+    t=re.sub(r'w-\d+-[0-9a-f]+','<env>',t)   # envelope ids
+    t=re.sub(r'[0-9a-f]{6,}','<id>',t)        # hex ids
+    t=re.sub(r'\d+','<n>',t)                  # numbers
+    t=re.sub(r'\s+',' ',t).strip()
+    return t[:80]
+
+# Fleet roster: email -> {name, specialty}
+roster={}
+try:
+    reg=json.load(urllib.request.urlopen(urllib.request.Request(f"{FS}/primes/{PRIME}/fleet?pageSize=50",headers=H),timeout=15))
+    for doc in reg.get("documents",[]):
+        f={k:dec(v) for k,v in doc.get("fields",{}).items()}
+        if f.get("email") and f.get("status")!="removed":
+            roster[f["email"]]={"name":doc["name"].split("/")[-1],"specialty":f.get("specialty")}
+except Exception as e:
+    print(json.dumps({"error":f"roster read failed: {e}"})); raise SystemExit(1)
+
+failures=[]
+for email,meta in roster.items():
+    ms=[r for r in query_owner(email) if r.get("type")=="M" and r.get("status") in NONSUCCESS]
+    ms.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+    for m in ms[:LAST]:
+        # Walk M -> C -> T to find the deepest failing node with an error.
+        worst=None
+        for cid in (m.get("children") or []):
+            c=getdoc(cid)
+            if not c: continue
+            candidates=[(cid,c)]+[(tid,getdoc(tid)) for tid in (c.get("children") or [])]
+            for nid,nf in candidates:
+                if not nf: continue
+                if nf.get("status") in NONSUCCESS and str(nf.get("error") or "").strip():
+                    worst={"title":str(nf.get("title") or "")[:80],"error":str(nf.get("error"))[:300]}
+        err=(worst or {}).get("error") or (str(m.get("error")) if m.get("error")
+             else (str(m.get("output"))[:300] if m.get("output") else ""))
+        failures.append({"agent":meta["name"],"specialty":meta.get("specialty"),"mission":m.get("id"),
+                         "status":m.get("status"),"task":(worst or {}).get("title"),
+                         "error":str(err)[:300],"sig":norm_sig(err)})
+
+clusters={}
+for f in failures:
+    if f["sig"]: clusters.setdefault(f["sig"],[]).append(f)
+systemic=[{"signature":sig,"count":len(items),
+           "agents":sorted({i["agent"] for i in items}),
+           "specialties":sorted({i["specialty"] for i in items if i["specialty"]}),
+           "sample_error":items[0]["error"],
+           "missions":[i["mission"] for i in items][:8]}
+          for sig,items in clusters.items() if len(items)>=MIN]
+systemic.sort(key=lambda c:-c["count"])
+
+print(json.dumps({
+  "prime":PRIME,"fleet_agents":len(roster),"missions_scanned_per_agent":LAST,
+  "total_failures":len(failures),"systemic_clusters":len(systemic),
+  "clusters":systemic,
+  "singletons":[{"agent":f["agent"],"mission":f["mission"],"error":f["error"][:120]}
+                for sig,items in clusters.items() if len(items)<MIN for f in items][:20],
+}, indent=1, default=str))
+PYEOF

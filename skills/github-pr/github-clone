@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# github-clone — Clone the generic (upstream) GitHub repo for a Prime to
+# prepare an upstream improvement PR. Authenticates with the GitHub token in
+# Secret Manager; does NOT persist the token in the clone's git config.
+#
+# Usage:
+#   github-clone [--repo owner/name] [--dir <path>] [--ref <branch>] [--secret <secret-id>]
+# Defaults: repo from STATE.json (owner/repo), dir=/opt/corekit/shared/upstream-<repo>,
+#           ref=default branch, secret=aps-secret-github-token
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+die() { echo "[github-clone] [ERROR] $*" >&2; exit 1; }
+log() { echo "[github-clone] $*" >&2; }
+
+REPO="" DIR="" REF="" SECRET="aps-secret-github-token"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo)   REPO="$2"; shift 2 ;;
+    --dir)    DIR="$2"; shift 2 ;;
+    --ref)    REF="$2"; shift 2 ;;
+    --secret) SECRET="$2"; shift 2 ;;
+    --help|-h) echo "Usage: github-clone [--repo owner/name] [--dir path] [--ref branch] [--secret id]"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+
+# Resolve owner/repo from STATE.json when not supplied.
+if [[ -z "$REPO" ]]; then
+  STATE="${CORE_DIR}/corekit/STATE.json"
+  [[ -f "$STATE" ]] || die "No --repo and no STATE.json to infer it from"
+  REPO="$(python3 -c "import json;s=json.load(open('$STATE'));print(f\"{s.get('owner','')}/{s.get('repo','')}\")" 2>/dev/null || true)"
+  [[ "$REPO" == */* && "$REPO" != "/" ]] || die "Could not infer owner/repo from STATE.json"
+fi
+OWNER="${REPO%%/*}"; NAME="${REPO##*/}"
+[[ -n "$DIR" ]] || DIR="${CORE_DIR}/shared/upstream-${NAME}"
+
+TOKEN="$(secret-read --name "$SECRET")" || die "Could not read GitHub token from secret '${SECRET}'"
+[[ -n "$TOKEN" ]] || die "GitHub token secret '${SECRET}' is empty"
+
+# Fresh clone dir
+rm -rf "$DIR"; mkdir -p "$(dirname "$DIR")"
+
+log "Cloning ${OWNER}/${NAME} -> ${DIR}"
+# Token in the clone URL for this one command; scrubbed from the remote right after.
+if ! git clone --quiet "https://x-access-token:${TOKEN}@github.com/${OWNER}/${NAME}.git" "$DIR" 2>/dev/null; then
+  die "git clone failed for ${OWNER}/${NAME} (check the token's repo access)"
+fi
+# Scrub the token: point origin at the tokenless URL. Pushes re-inject the token.
+git -C "$DIR" remote set-url origin "https://github.com/${OWNER}/${NAME}.git"
+
+if [[ -n "$REF" ]]; then
+  git -C "$DIR" checkout --quiet "$REF" 2>/dev/null || log "ref '${REF}' not found; staying on default branch"
+fi
+DEFAULT_BRANCH="$(git -C "$DIR" rev-parse --abbrev-ref HEAD)"
+echo "{\"status\":\"cloned\",\"repo\":\"${OWNER}/${NAME}\",\"dir\":\"${DIR}\",\"branch\":\"${DEFAULT_BRANCH}\"}"

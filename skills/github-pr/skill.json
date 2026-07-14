@@ -1,0 +1,19 @@
+{
+  "id": "github-pr",
+  "name": "GitHub PR (upstream contribution)",
+  "version": 1,
+  "description": "Prime's CONTRIBUTE capability: clone the generic upstream GitHub repo with the Secret-Manager token and open a HUMAN-GATED draft pull request. Never merges. The concrete GitHub-authenticated tooling behind the repo-improvement landing step.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "fleet",
+  "agent_part": "motor",
+  "roles": ["prime"],
+  "scripts": [
+    "github-clone",
+    "github-pr-open"
+  ],
+  "requires": {
+    "secret": "aps-secret-github-token"
+  },
+  "when_to_use": "When a Prime has a verified, template-clean platform improvement to propose upstream: clone the generic repo, commit the change on a branch, and open a draft PR for human review. Never for merging."
+}

@@ -13,6 +13,7 @@ corekit/fleet/fleet-verify bin/fleet-verify
 corekit/fleet/fleet-upgrade bin/fleet-upgrade
 corekit/fleet/fleet-health-check bin/fleet-health-check
 corekit/fleet/fleet-work-read bin/fleet-work-read
+corekit/fleet/fleet-retro bin/fleet-retro
 
 # Dashboard bridge
 corekit/dashboard/command-runner bin/command-runner
@@ -45,6 +46,12 @@ skills/fleet-status/SKILL.md skills/fleet-status/SKILL.md
 skills/fleet-status/skill.json skills/fleet-status/skill.json
 skills/fleet-introspect/SKILL.md skills/fleet-introspect/SKILL.md
 skills/fleet-introspect/skill.json skills/fleet-introspect/skill.json
+skills/fleet-improve/SKILL.md skills/fleet-improve/SKILL.md
+skills/fleet-improve/skill.json skills/fleet-improve/skill.json
+skills/github-pr/SKILL.md skills/github-pr/SKILL.md
+skills/github-pr/skill.json skills/github-pr/skill.json
+skills/github-pr/github-clone bin/github-clone
+skills/github-pr/github-pr-open bin/github-pr-open
 skills/fleet-verify/SKILL.md skills/fleet-verify/SKILL.md
 skills/fleet-verify/skill.json skills/fleet-verify/skill.json
 skills/fleet-upgrade/SKILL.md skills/fleet-upgrade/SKILL.md
@@ -67,6 +74,7 @@ skills/scripting/skill.json     skills/scripting/skill.json
 # Credentials & Secrets
 skills/secrets/SKILL.md   skills/secrets/SKILL.md
 skills/secrets/skill.json skills/secrets/skill.json
+skills/secrets/secret-read bin/secret-read
 
 # Workspace skills (for self-improvement tasks)
 skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
@@ -109,6 +117,7 @@ corekit/config/processes/p-improve-work-layer-local.json corekit/processes/p-imp
 corekit/config/processes/p-improve-skills.json           corekit/processes/p-improve-skills.json
 corekit/config/processes/p-improve-dashboard.json        corekit/processes/p-improve-dashboard.json
 corekit/config/processes/p-review-and-improve.json       corekit/processes/p-review-and-improve.json
+corekit/config/processes/p-upstream-improvement.json     corekit/processes/p-upstream-improvement.json
 
 # Prime brain workspaces (cortex + 5 sub-agents)
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md

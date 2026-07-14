@@ -1,0 +1,16 @@
+{
+  "id": "fleet-improve",
+  "name": "Fleet Improve",
+  "version": 1,
+  "description": "Prime's IMPROVE capability: gather + cluster systemic fleet failures (fleet-retro), classify into improvement modules, draft evidence-backed candidates, and land them (REPO via human-gated PR, LOCAL via overlay). The automated fleet retro.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "fleet",
+  "agent_part": "motor",
+  "roles": ["prime"],
+  "scripts": [
+    "fleet-retro"
+  ],
+  "requires": {},
+  "when_to_use": "On a schedule or on demand, to find systemic failure patterns across the fleet and turn them into concrete platform improvements (upstream PRs for REPO fixes, overlays for LOCAL)."
+}
