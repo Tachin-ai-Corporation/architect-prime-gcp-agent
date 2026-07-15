@@ -99,6 +99,40 @@ fi
 # Use default scopes if none specified
 [[ -n "$SCOPES" ]] || SCOPES="$DEFAULT_SCOPES"
 
+# ---- C-27 egress guard: the CLI never mints a SEND-class token ----
+# The mouth is the sole outbound egress (C-27). The agent-facing CLI must refuse
+# to hand a motor a token that can POST a message. Policy: reads (*.readonly) are
+# never egress and always pass; a specific set of SEND-class scopes is denied
+# (matched by full string AND exact leaf, so a trailing-slash full-mail scope or
+# a ".create" variant cannot slip through); every other scope (drive/docs/
+# calendar/presentations/admin.directory/etc.) passes so agent + Prime-admin
+# tooling is unaffected. Email send is denied for every role (inbound-only); chat
+# send is denied for fleet — Prime keeps chat.messages for its carved-out,
+# operator-run fleet lifecycle tooling (fleet-verify/upgrade/teardown).
+ROLE_NOW="$(python3 -c "
+import json
+try: print(json.load(open('${CORE_DIR}/corekit/STATE.json')).get('role',''))
+except: pass
+" 2>/dev/null)"
+for s in $SCOPES; do
+  name="${s##*/}"
+  # Reads are never egress.
+  case "$name" in *.readonly) continue ;; esac
+  deny=""
+  # Full-mailbox scope grants send; its trailing slash yields an empty leaf, so
+  # match the full string.
+  case "$s" in *mail.google.com*) deny="full-gmail (mail.google.com)" ;; esac
+  # Gmail + Chat write/send scopes, by exact leaf.
+  case "$name" in
+    gmail.send|gmail.compose|gmail.modify|gmail.insert) deny="$name" ;;
+    chat.messages.create|chat.import|chat.import.deletion) deny="$name" ;;
+    chat.messages) [[ "$ROLE_NOW" == "prime" ]] || deny="chat.messages (fleet)" ;;
+  esac
+  if [[ -n "$deny" ]]; then
+    die "C-27 egress guard: scope '${s}' is send-class (${deny}). Agents never send directly — the mouth is the sole outbound egress. Emit an output envelope (delivery_status:pending, delivery_address) for the mouth to deliver instead."
+  fi
+done
+
 # ---- Step 1: Get VM SA metadata token (for calling signJwt API) ----
 META="http://metadata.google.internal/computeMetadata/v1"
 VM_SA_EMAIL="$(curl -sf -H 'Metadata-Flavor: Google' \

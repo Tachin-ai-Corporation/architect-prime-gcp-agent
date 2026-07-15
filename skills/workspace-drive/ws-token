@@ -7,7 +7,7 @@
 # instead of dwd-token directly.
 #
 # Usage:
-#   ws-token --scope gmail      → Gmail read + send scopes
+#   ws-token --scope gmail      → Gmail read-only (send is mouth-only, C-27)
 #   ws-token --scope calendar   → Calendar full access
 #   ws-token --scope drive      → Drive file access
 #   ws-token --scope docs       → Docs + Drive scopes
@@ -30,7 +30,9 @@ DWD_TOKEN="${CORE_DIR}/bin/dwd-token"
 die() { echo "[ws-token] [ERROR] $*" >&2; exit 1; }
 
 # ---- Scope mapping ----
-SCOPE_GMAIL="https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.modify"
+# C-27: Gmail is INBOUND-ONLY for agents. Send/compose/modify are removed — the
+# mouth is the sole outbound egress and email send is not an agent capability.
+SCOPE_GMAIL="https://www.googleapis.com/auth/gmail.readonly"
 SCOPE_CALENDAR="https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events"
 SCOPE_DRIVE="https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file"
 SCOPE_DOCS="https://www.googleapis.com/auth/documents https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file"

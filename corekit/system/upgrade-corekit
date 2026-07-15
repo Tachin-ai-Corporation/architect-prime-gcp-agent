@@ -140,6 +140,18 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
       fi
     fi
 
+    # ---- Legacy migration: purge pre-prune orphans (not in STATE.json) ----
+    # The STATE.json-keyed prune in install.sh removes files that LEAVE a manifest
+    # going forward; it cannot catch orphans that fell out BEFORE that prune
+    # existed. workspace-chat was deleted from the repo/manifests long ago, but its
+    # stale SKILL.md/skill.json linger on deployed VMs and misled agents into a
+    # broken direct chat-send (the archie "--text" incident). One-time explicit
+    # removal; idempotent (no-op once gone). C-27 / C-9.
+    if [[ -d "${CORE_ROOT}/skills/workspace-chat" ]]; then
+      echo "  Removing decommissioned orphan skill: skills/workspace-chat"
+      rm -rf "${CORE_ROOT}/skills/workspace-chat"
+    fi
+
     # Model snapshot logic removed (model configs are kept in agent workspaces)
 
     curl -fsSL "${CORE_BASE}/infra/install.sh" | \

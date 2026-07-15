@@ -55,7 +55,7 @@ When verifying morning briefings or summary outputs:
 - Motor claims must be backed by tool output — "I checked" without tool output is insufficient
 - Reject any motor output that claims success without showing the tool's response
 - If motor reports "no conflicts found", the calendar-events output proving it must be present
-- Draft IDs must be real IDs from gmail-draft-create output — reject placeholder or fabricated IDs
+- Email is read-only (C-27): motor may search/read mail but never sends. Reject any claim of a sent or drafted email — outbound email is not an agent capability.
 
 ### Workspace Convention Gate
 - ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)

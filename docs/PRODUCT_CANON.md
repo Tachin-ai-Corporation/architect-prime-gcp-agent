@@ -12,7 +12,7 @@ This document is **normative**. Where MISSION_PLAN.md describes what Architect P
 ## I. Identity
 
 ### C-1 · Prime is a factory, not an orchestrator
-Prime creates, upgrades, monitors, and tears down agents. It does not route their work. Humans assign work to agents directly; agents delegate to each other directly. Consequently, work artifacts (missions, plans, processes) are rooted at the deployment/project level — not under a Prime subcollection. The Prime is an executor, not the storage root. Actor state (fleet, messages, commands) legitimately remains prime-scoped.
+Prime creates, upgrades, monitors, and tears down agents. It does not route their work. Humans assign work to agents directly; agents delegate to each other directly — peer-to-peer, with no Prime routing hop, though every delegation still egresses through the delegating agent's own mouth (C-27); "directly" negates a Prime relay, not the egress funnel. Consequently, work artifacts (missions, plans, processes) are rooted at the deployment/project level — not under a Prime subcollection. The Prime is an executor, not the storage root. Actor state (fleet, messages, commands) legitimately remains prime-scoped.
 **Violation looks like:** a feature that makes Prime a mandatory hop in agent-to-agent workflows; a "Prime task queue" that fleet agents consume from; centralizing fleet decision-making in Prime's brain; storing work artifacts under `primes/{id}/` instead of top-level collections.
 
 ### C-2 · Zero shared infrastructure
@@ -20,7 +20,7 @@ Everything runs inside the operator's own GCP project. No vendor-hosted services
 **Violation looks like:** a callback to any endpoint outside the operator's project; a shared Firestore/bucket/queue outside the project; telemetry leaving the project boundary.
 
 ### C-3 · Agents are teammates, not endpoints
-Fleet agents hold real Google Workspace identities and communicate where humans communicate (Chat, Gmail, Calendar) via Domain-Wide Delegation. Inter-agent protocols must stay human-readable in those channels even when machine-parsed.
+Fleet agents hold real Google Workspace identities and communicate where humans communicate (Chat, Gmail, Calendar) via Domain-Wide Delegation. Inter-agent protocols must stay human-readable in those channels even when machine-parsed. Every such message — agent-to-agent included — egresses through the sending agent's own mouth (C-27); the "no opaque side channel" prohibition and the sole-egress rule are one wall seen from two sides.
 **Violation looks like:** an opaque agent-to-agent side channel humans cannot read; protocol messages reduced to bare payloads with no human-readable summary; bypassing Workspace identity for agent communication.
 
 ---
@@ -108,7 +108,7 @@ Installs, deploys, upgrades, hires, and fires are safely re-runnable. Upgrades o
 **Violation looks like:** a service that starts with invalid config and fails an hour later; validation moved to "best effort" post-start; a new config file with no bootstrap-time check.
 
 ### C-20 · Observable by default
-All inter-agent communication is logged in Firestore; daemons emit structured JSON logs with telemetry; the Work Tree shows the full envelope hierarchy in real time. New mechanisms (delegation, secrets grants, rollouts) arrive with their observability built in, not promised later.
+All inter-agent communication is logged in Firestore; daemons emit structured JSON logs with telemetry; the Work Tree shows the full envelope hierarchy in real time. New mechanisms (delegation, secrets grants, rollouts) arrive with their observability built in, not promised later. A single outbound egress — the mouth (C-27) — is what keeps this observability point single and makes the "silent side channel" prohibition enforceable: one path to log, one path to audit.
 **Violation looks like:** a silent side channel; a new daemon without telemetry writes; grant/revoke actions with no audit trail.
 
 ### C-21 · Capability fencing is structural, not behavioral
@@ -144,11 +144,54 @@ The Canon changes the way code changes: by PR, reviewed and approved by a human 
 ### C-25 · Dashboard deliveries may carry structured attachments
 Attachments (name, size, object path) exported at mission publish from the tenant
 artifact store extend the delivery payload; they never change the delivery path.
-The mouth remains the single outbound surface, and the dashboard streams objects
+The mouth remains the single outbound surface (the general rule is **C-27**, of which
+attachment delivery is one application — attachments extend the payload, never the
+path), and the dashboard streams objects
 through an authenticated, prime-scoped route — never public or signed URLs.
 
 ### C-26 · Fleet dashboard-chat is read-only
 Live interactive chat for fleet agents has migrated entirely to direct Google Chat threads.
 The dashboard-chat POST endpoint is retired with a deterministic 405 error, and the fleet
 agent deep-dive tab renders historic communications as a read-only historic archive.
+The *send* side of those direct Chat threads is still the mouth (C-27); migration-to-Chat
+is not a license for a fleet-side direct-send path.
+
+### C-27 · The mouth is the sole outbound egress
+Every agent-initiated outbound message — to a human **or** to another agent, on any channel
+(Chat, Gmail, dashboard, and any channel added later) — leaves the VM only through that agent's
+own `agent-mouth` daemon and its classify-and-deliver path. No organ, tool, skill, or daemon
+may originate an outbound send by any other route. An agent *requests* a send by writing (or
+completing) a work envelope with `delivery_status:'pending'` and a `delivery_address`; it never
+delivers. Inter-agent delegation is **not** exempt: the durable coordination record is the shared
+work envelope in Firestore, and the delegation ping egresses through the mouth (composed as an
+output envelope, delivered by the mouth), never a direct `chat-send`. Inbound sensing (ears polling,
+`chat-read`, `gmail-search`/`gmail-get`) is unaffected — reading is not egress.
+
+**Carve-out — operator provisioning tooling.** Prime-run fleet lifecycle scripts (`fleet-verify`,
+`fleet-upgrade`, `fleet-teardown`) and the pre-mouth `fleet-bootstrap` self-report card are
+out-of-band *operator* instruments, not agent cognition; they may post terse status directly (the
+bootstrap card structurally *must* — it fires before the agent's mouth exists). This carve-out is
+for Prime lifecycle tooling only; it is never a license for a fleet agent's motor to send outside
+its mouth.
+
+**Enforcement (structural, not behavioral — C-21).** Agent send-CLIs (`chat-send`, `gmail-send`,
+`gmail-draft-*`) are not installed on fleet agents; the agent-facing token minter (`dwd-token`)
+refuses to mint send-class scopes (chat send is denied to fleet, email send to all); the Workspace
+DWD grant withholds all Gmail send scopes entirely; and the mouth mints its send token through the
+daemon library `dwd-auth.mjs`, which is not on the agent command PATH (a motor reaches CLIs, not
+module imports, in its tool/skill-driven flow). **Residuals (tracked hardenings):** (1) on a
+single-VM, shared-SA, keyless host the chat send capability cannot be cryptographically isolated
+from a co-resident motor — a `node` one-liner could import `dwd-auth.mjs` (or hand-roll the signJwt
+exchange) against the VM metadata SA to mint a `chat.messages` token, bypassing both the CLI guard
+and the mouth; this is an off-script act outside normal tool/skill flow, is bounded by the DWD grant
+(Gmail send cannot be minted at all), and is closable for chat only by giving the mouth its own
+workload identity. (2) Delegation egresses through the mouth today but is delivered as a
+pre-formatted marker on a path that skips the voicing/classify filter (`deliverDelegation`);
+converting it to a voiced conversational nudge is the second follow-on.
+
+**Violation looks like:** motor or a skill calling a Chat/Gmail send API directly; a delegation or
+delegation-result marker written to a channel by anything but the mouth; a
+"quick notify" / "ping the operator" path that posts without an output envelope; a send-capable
+scope reachable from the agent-facing token CLI; any outbound side channel that skips the mouth's
+classify filter.
 

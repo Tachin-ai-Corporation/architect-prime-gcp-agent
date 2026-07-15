@@ -12,8 +12,10 @@ corekit/system/agent-ou-manage bin/agent-ou-manage
 corekit/system/secret-read bin/secret-read
 
 # Chat tools (DWD)
+# C-27: chat-send is NOT installed to agents — the mouth is the sole outbound
+# egress. dwd-token (scope-guarded) and chat-read (inbound) are agent-facing.
+# chat-send ships only to Prime (role-prime.txt) for carved-out lifecycle tooling.
 corekit/chat/dwd-token bin/dwd-token
-corekit/chat/chat-send bin/chat-send
 corekit/chat/chat-read bin/chat-read
 
 # Agent Ears (deterministic input) + Agent Mouth (output classification + delivery)

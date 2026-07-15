@@ -317,7 +317,7 @@ Processes can include **approval gate** steps that pause execution and wait for 
    - Generates an approval ID
    - Writes an approval document to `primes/{id}/approvals/{approvalId}`
    - Marks the Task, Checkpoint, and Mission as `awaiting_approval`
-   - Sends a notification to the operator (via Mouth → dashboard/chat)
+   - Sends a notification to the operator (via Mouth → dashboard/chat — the sole outbound egress, C-27)
 3. Operator approves or rejects via dashboard
 4. On approval: `resumeProcessAfterApproval()` marks the gate task complete and resumes from the next task
 5. On rejection: Mission status transitions to `rejected`
@@ -328,7 +328,7 @@ The approval gate is **hierarchical** — it pauses the entire M→C→T stack, 
 
 ## Cross-Agent Delegation
 
-Agents delegate work to other agents via the GChat @-Delegation Protocol. The protocol is fully deterministic — marker parsing never touches an LLM. See [DELEGATION_PROTOCOL.md](guides/DELEGATION_PROTOCOL.md) for wire format, mechanics, and guard rails.
+Agents delegate work to other agents peer-to-peer. The durable coordination record is the shared work envelope in Firestore; the delegation ping egresses through the delegating agent's own mouth (C-27) — never a direct send. The marker is machine-parsed deterministically — no LLM decides the flow. See [DELEGATION_PROTOCOL.md](guides/DELEGATION_PROTOCOL.md) for mechanics and guard rails.
 
 Key principles:
 - Delegation markers ride on GChat (humans can watch)

@@ -20,12 +20,14 @@ Architect Prime and fleet agents communicate through Google Chat using **Domain-
 4. **Client ID:** Enter the DWD Signer SA Client ID (shown in the Dashboard → Setup tab)
 5. **OAuth Scopes:**
    ```
-   https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.create,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.memberships,https://www.googleapis.com/auth/chat.spaces,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/gmail.compose,https://www.googleapis.com/auth/gmail.modify,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/contacts.readonly,https://www.googleapis.com/auth/admin.directory.orgunit,https://www.googleapis.com/auth/admin.directory.user
+   https://www.googleapis.com/auth/chat.messages,https://www.googleapis.com/auth/chat.messages.readonly,https://www.googleapis.com/auth/chat.memberships,https://www.googleapis.com/auth/chat.spaces,https://www.googleapis.com/auth/chat.spaces.readonly,https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/calendar.events,https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/documents,https://www.googleapis.com/auth/spreadsheets,https://www.googleapis.com/auth/presentations,https://www.googleapis.com/auth/contacts.readonly,https://www.googleapis.com/auth/admin.directory.orgunit,https://www.googleapis.com/auth/admin.directory.user
    ```
 6. Click **Authorize**
 7. Wait up to 24 hours for propagation (usually much faster)
 
 > **Note:** This DWD grant covers ALL agents — Prime and every fleet agent. It only needs to be done once per SA Client ID.
+>
+> **C-27 (sole outbound egress):** Gmail **send** scopes (`gmail.send`, `gmail.compose`, `gmail.modify`) are deliberately **excluded** — email is inbound-only; agents read mail but never send it. `chat.messages.create` is also excluded (`chat.messages` alone covers the mouth's send). Keeping these out of the grant is the domain-layer backstop for C-27: even a token minted outside the CLI guard cannot send email, and the only send scope any identity can obtain is `chat.messages` (which the mouth uses to deliver, and Prime uses for carved-out lifecycle tooling). If you previously authorized the send scopes, **remove them** from the existing grant.
 
 ### Step 2: Create Agent User Accounts
 
@@ -81,7 +83,8 @@ Detects @-mention → fires gateway POST (non-blocking)
                     ▼
     agent-mouth polls gateway logs → classifies → delivers
     │
-    └── chat-send (DWD) → posts response as the agent user
+    └── mouth posts via DWD (channel.mjs deliverToAddress) as the agent user
+        — the sole outbound egress (C-27); chat-send is NOT on this path
 ```
 
 ## Adding Fleet Agents

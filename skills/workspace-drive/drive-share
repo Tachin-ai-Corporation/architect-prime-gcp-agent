@@ -77,6 +77,9 @@ elif target.startswith('domain:'):
 else:
     print(json.dumps({'type':'user','role':role,'emailAddress':target}))
 " "$TARGET" "$ROLE")
+# C-27: sendNotificationEmail MUST stay false. This tool grants access (an
+# access-control mutation), not a message. Flipping it to true would email the
+# grantee — an agent-initiated outbound send that bypasses the mouth. Never flip it.
 HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "$BODY" "${DRIVE_API}/files/${FILE_ID}/permissions?supportsAllDrives=true&fields=id,type,role,emailAddress&sendNotificationEmail=false")

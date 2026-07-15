@@ -191,7 +191,10 @@ async function preprocessMessage(text) {
 }
 
 // ---- DWD Token wrapper (delegates to shared lib) ----
-const DWD_SCOPES = 'https://www.googleapis.com/auth/chat.messages https://www.googleapis.com/auth/chat.spaces.readonly';
+// C-27/B-33: ears is INBOUND only — it lists/reads messages, never POSTs. It
+// holds read scopes only; the send-capable chat.messages scope belongs to the
+// mouth alone.
+const DWD_SCOPES = 'https://www.googleapis.com/auth/chat.messages.readonly https://www.googleapis.com/auth/chat.spaces.readonly';
 
 async function getDwdToken() {
   return _getDwdTokenLib({

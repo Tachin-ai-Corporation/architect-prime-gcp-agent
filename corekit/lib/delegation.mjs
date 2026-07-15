@@ -63,7 +63,11 @@ export function normalizeTargetEmail(raw) {
 // ---- Compose ----
 
 /**
- * Compose a delegation marker message for sending via chat-send.
+ * Compose a delegation marker message. The marker is written to an output
+ * envelope and delivered by the MOUTH (channel.mjs deliverToAddress) — never via
+ * chat-send (C-27: the mouth is the sole outbound egress; chat-send is not on
+ * fleet agents). Converting this marker to a voiced conversational nudge is a
+ * tracked follow-on.
  *
  * @param {object} opts
  * @param {string} opts.targetEmail - Target agent's workspace email (for @mention)

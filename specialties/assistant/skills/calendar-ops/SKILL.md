@@ -15,7 +15,7 @@ No custom corekit scripts are governed directly by this skill (handled via core 
 3. **Check conflicts** via `calendar-events` for the target date/time range.
 4. **Propose slots** if conflicts exist: suggest 3 alternative time slots.
 5. **Wait for confirmation** before creating the event (NEVER auto-create without approval).
-6. **Create event** using `calendar-event-create` with all required fields.
+6. **Create event** using `calendar-create` with all required fields (attendee-less).
 7. **Confirm** with a summary of what was created.
 
 ### Daily Briefing Procedure
@@ -36,12 +36,13 @@ No custom corekit scripts are governed directly by this skill (handled via core 
 # Event discovery
 calendar-events --days 1 --date YYYY-MM-DD
 
-# Event creation
-calendar-event-create \
+# Event creation (attendee-less — C-27: agents don't send invitations; the mouth
+# is the sole outbound egress. Create the event, then report its link so a human
+# can add attendees if needed.)
+calendar-create \
   --summary "Meeting Title" \
   --start "YYYY-MM-DDTHH:MM:SS" \
   --end "YYYY-MM-DDTHH:MM:SS" \
-  --attendees "email1@domain.com,email2@domain.com" \
   --description "Agenda:\n1. Topic A\n2. Topic B" \
   --location "Google Meet" \
   --timezone "America/Chicago"

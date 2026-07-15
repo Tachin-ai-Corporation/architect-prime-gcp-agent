@@ -31,7 +31,7 @@
       "intents": ["execute"],
       "tools": [
         "drive-ls", "drive-upload", "drive-mkdir", "drive-mv", "drive-cat", "drive-find", "drive-meta", "drive-share", "drive-trash",
-        "gmail-send", "gmail-search", "gmail-read", "gmail-reply", "gmail-drafts",
+        "gmail-search", "gmail-read",
         "calendar-create", "calendar-events", "calendar-update", "calendar-delete", "calendar-search",
         "exec", "responsibility-manage", "skill-author",
         "fleet-deploy", "fleet-fire", "fleet-health-check", "fleet-hire", "fleet-monitor", "fleet-status", "fleet-teardown", "fleet-upgrade", "fleet-verify",

@@ -12,9 +12,8 @@ skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
 skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
 skills/workspace-gmail/gmail-search bin/gmail-search
 skills/workspace-gmail/gmail-get bin/gmail-get
-skills/workspace-gmail/gmail-send bin/gmail-send
-skills/workspace-gmail/gmail-draft-create bin/gmail-draft-create
-skills/workspace-gmail/gmail-draft-send bin/gmail-draft-send
+# Gmail send/draft removed — C-27: email is inbound-only (search/get). Outbound
+# email returns only when the mouth gains an email egress channel.
 
 # Workspace skills â€” Calendar
 skills/workspace-calendar/SKILL.md skills/workspace-calendar/SKILL.md
@@ -29,6 +28,7 @@ skills/workspace-calendar/calendar-delete bin/calendar-delete
 skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
 skills/workspace-docs/skill.json skills/workspace-docs/skill.json
 skills/workspace-docs/docs-cat bin/docs-cat
+skills/workspace-docs/docs-tab-list bin/docs-tab-list
 skills/workspace-docs/docs-create bin/docs-create
 skills/workspace-docs/docs-write bin/docs-write
 skills/workspace-docs/docs-section-delete bin/docs-section-delete

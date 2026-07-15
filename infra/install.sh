@@ -181,6 +181,28 @@ if [[ "$MODE" == "check" ]]; then
     fi
   done < <(grep -o '"[^"]*":"sha256:[^"]*"' "$STATE_FILE")
 
+  # ---- Extra files: present under managed dirs but absent from STATE.json ----
+  # Observability for orphans that predate the upgrade-time prune. Reported, not
+  # treated as drift, to preserve the check-mode exit-code contract (0/2/3).
+  declare -A known_dests
+  while IFS= read -r match; do
+    d="$(echo "$match" | sed 's/"\([^"]*\)":"sha256:.*/\1/')"
+    [[ -n "$d" ]] && known_dests["$d"]=1
+  done < <(grep -o '"[^"]*":"sha256:[^"]*"' "$STATE_FILE")
+  extra_count=0
+  for scan_dir in bin skills corekit/lib corekit/processes; do
+    base="${INSTALL_ROOT}/${scan_dir}"
+    run test -d "$base" 2>/dev/null || continue
+    while IFS= read -r f; do
+      rel="${f#"${INSTALL_ROOT}"/}"
+      if [[ -z "${known_dests[$rel]+x}" ]]; then
+        echo "  [EXTRA] ${rel}"
+        extra_count=$((extra_count + 1))
+      fi
+    done < <(run find "$base" -type f -not -path "*/custom-skills/*" 2>/dev/null)
+  done
+  [[ $extra_count -gt 0 ]] && echo "  (${extra_count} extra file(s) not in STATE.json — pruned on next upgrade)"
+
   echo ""
   echo "Results: ${ok_count} ok, ${drift_count} drifted, ${missing_count} missing"
 
@@ -289,6 +311,7 @@ fi
 # ---- 3. Download files ----
 info "Installing ${#pairs[@]} file pairs..."
 declare -A file_hashes
+declare -A noclobber_dests   # dests seeded no-clobber (?) — runtime-owned, never pruned
 installed=0
 
 for pair in "${pairs[@]}"; do
@@ -304,6 +327,7 @@ for pair in "${pairs[@]}"; do
   if [[ "$dest" == *\? ]]; then
     noclobber=1
     dest="${dest%?}"  # strip trailing ?
+    noclobber_dests["$dest"]=1  # runtime-owned seed — excluded from the prune below
   fi
 
   # Safety: refuse absolute destination paths
@@ -357,6 +381,50 @@ run find "${INSTALL_ROOT}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 # Belt-and-suspenders: ensure no CRLF in any bin scripts
 # (defensive against SCP from Windows, git autocrlf, etc.)
 run find "${INSTALL_ROOT}/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
+
+# ---- 4.5 Prune decommissioned files (C-9 removal discipline, C-18-safe) ----
+# Remove files that were manifest-managed on the PREVIOUS install (recorded in
+# STATE.json fileHashes) but are ABSENT from the CURRENT manifest. This is what
+# makes manifest removal a real operation: a tool/skill deleted from a manifest
+# (e.g. an agent send-CLI removed to enforce C-27) is deleted from the VM on the
+# next upgrade instead of lingering as an orphan.
+#
+# Two protections keep runtime state safe: (1) files never in a manifest
+# (node_modules/, shared/, custom-skills/, generated configs) are not STATE.json
+# keys, so they are never candidates. (2) No-clobber (?) manifest seeds ARE
+# recorded in STATE.json (they get hashed in at install), and several are LIVE
+# runtime state — sessions.json, MEMORY.md, progress.json, fleet-registry.json,
+# auth-profiles.json — so the loop below explicitly SKIPS no-clobber dests and
+# the runtime dirs, pruning only decommissioned manifest-managed product files
+# (bin/, skills/, lib/, processes). Honors C-18. Idempotent (a second run finds
+# nothing stale). Guarded on a non-empty new manifest so a partial fetch cannot
+# compute the whole prior tree as stale.
+if [[ -f "$STATE_FILE" && ${#file_hashes[@]} -gt 0 ]]; then
+  info "Pruning decommissioned files (manifest diff)..."
+  pruned=0
+  while IFS= read -r old_dest; do
+    [[ -z "$old_dest" ]] && continue
+    # Still manifest-managed? (present in the freshly-built dest set) → keep.
+    if [[ -n "${file_hashes[$old_dest]+x}" ]]; then continue; fi
+    # Never prune runtime-owned state: no-clobber (?) seeds recorded this run, or
+    # anything under the runtime dirs / known runtime files — even if a future
+    # manifest edit drops the seed line (its old STATE.json key would otherwise
+    # make it a false stale candidate). Prune only decommissioned product files.
+    if [[ -n "${noclobber_dests[$old_dest]+x}" ]]; then continue; fi
+    case "$old_dest" in
+      agents/*|workspace/*|workspace-*/*|*/MEMORY.md|*/progress.json|corekit/fleet-registry.json|corekit/chat-config.json) continue ;;
+    esac
+    stale_path="${INSTALL_ROOT}/${old_dest}"
+    if run test -f "$stale_path" 2>/dev/null; then
+      run rm -f "$stale_path" 2>/dev/null || true
+      echo "  [prune] ${old_dest}"
+      pruned=$((pruned + 1))
+    fi
+  done < <(grep -o '"[^"]*":"sha256:[^"]*"' "$STATE_FILE" | sed 's/"\([^"]*\)":"sha256:.*/\1/')
+  # Sweep now-empty skill/action dirs left behind by pruned files.
+  run find "${INSTALL_ROOT}/skills" "${INSTALL_ROOT}/bin/actions" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+  echo "Pruned ${pruned} decommissioned file(s)."
+fi
 
 # ---- 5. Write STATE.json ----
 info "Writing STATE.json..."

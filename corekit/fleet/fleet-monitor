@@ -258,7 +258,7 @@ sleep 5  # give services a moment
 DWD_OK=false
 for attempt in 1 2 3; do
   DWD_RESULT="$(gcloud compute ssh "$FLEET_VM" --zone="$ZONE" --project="$PROJECT" \
-    --command="sudo ${CORE_ROOT}/bin/dwd-token --user ${AGENT_EMAIL} 2>&1 | head -1" \
+    --command="sudo ${CORE_ROOT}/bin/dwd-token --user ${AGENT_EMAIL} --scope 'https://www.googleapis.com/auth/chat.spaces.readonly' 2>&1 | head -1" \
     --ssh-flag="-o ConnectTimeout=${SSH_TIMEOUT}" \
     --ssh-flag="-o StrictHostKeyChecking=no" \
     2>/dev/null || echo "SSH_FAILED")"

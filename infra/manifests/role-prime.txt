@@ -15,6 +15,11 @@ corekit/fleet/fleet-health-check bin/fleet-health-check
 corekit/fleet/fleet-work-read bin/fleet-work-read
 corekit/fleet/fleet-retro bin/fleet-retro
 
+# Chat send — Prime-only. C-27 carve-out: operator-run fleet lifecycle tooling
+# (fleet-verify/upgrade/teardown) posts terse status to the fleet space out-of-band.
+# NOT installed on fleet agents — a fleet agent's sole outbound egress is its mouth.
+corekit/chat/chat-send bin/chat-send
+
 # Dashboard bridge
 corekit/dashboard/command-runner bin/command-runner
 

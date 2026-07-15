@@ -20,7 +20,7 @@ When managing Google Calendar events — listing events, searching by query, cre
   Output: Success confirmation.
 
 ## Important Notes
-- **Attendees:** Adding attendees sends invitation emails — confirm with the user before creating events with attendees.
+- **Attendees:** Not supported. Events are attendee-less by design — adding attendees would send invitation emails, and agents do not send outbound messages (C-27; the mouth is the sole egress). Create the event, then report its link so a human can invite attendees if needed.
 - **Timestamps:** All timestamps must be in strict ISO 8601 format (e.g., `2026-04-25T10:00:00Z`).
 - **Calendar ID:** Default calendar is `primary`. Use `--calendar <id>` for other calendars.
 

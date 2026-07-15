@@ -2,18 +2,15 @@
   "id": "workspace-gmail",
   "name": "Gmail",
   "version": 2,
-  "description": "Search, read, send, and draft emails via Gmail.",
+  "description": "Search and read emails via Gmail (inbound-only; C-27: sending is the mouth's job).",
   "author": "architect-prime",
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
   "scripts": [
-    "gmail-draft-create",
-    "gmail-draft-send",
     "gmail-get",
-    "gmail-search",
-    "gmail-send"
+    "gmail-search"
   ],
   "requires": {},
-  "when_to_use": "When a task involves sending, reading, searching, or drafting emails in Gmail."
+  "when_to_use": "When a task involves reading or searching emails in Gmail. Agents do NOT send email — the mouth is the sole outbound egress (C-27)."
 }

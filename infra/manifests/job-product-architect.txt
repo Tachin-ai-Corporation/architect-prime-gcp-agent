@@ -21,6 +21,7 @@ specialties/product-architect/skills/codebase-audit/skill.json corekit/specialti
 skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
 skills/workspace-docs/skill.json skills/workspace-docs/skill.json
 skills/workspace-docs/docs-cat bin/docs-cat
+skills/workspace-docs/docs-tab-list bin/docs-tab-list
 skills/workspace-docs/docs-create bin/docs-create
 skills/workspace-docs/docs-write bin/docs-write
 skills/workspace-docs/docs-section-delete bin/docs-section-delete

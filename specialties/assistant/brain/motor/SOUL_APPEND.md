@@ -21,50 +21,19 @@ calendar-events --start "START_DATE" --end "END_DATE"
 - If ANY overlap exists, report conflicts back to cortex — do NOT create the event
 - Include the conflicting event title, time, and attendees in your report
 
-## Draft-Before-Send Workflow
+## Email — Read-Only (C-27)
 
-### Creating Email Drafts
+The mouth is the sole outbound egress, so the assistant **never sends email**. Gmail is inbound-only.
+
 ```bash
-# Always draft first
-gmail-draft-create --to "recipient@example.com" --subject "Subject" --body "Body text"
+# Find mail, then read the body
+gmail-search --query "from:person@example.com newer_than:7d" --max-results 5
+gmail-get <MESSAGE_ID>
 ```
 
-### Sending Drafts (only after user confirms)
-```bash
-# Get draft ID from the create output, then send
-gmail-draft-send --draft-id "DRAFT_ID"
-```
-
-### Direct Send (only when explicitly authorized)
-```bash
-# Only use when user explicitly says "send immediately" or "skip draft"
-gmail-send --to "recipient@example.com" --subject "Subject" --body "Body text"
-```
-
-NEVER call `gmail-send` when cortex dispatch says "draft". NEVER call `gmail-draft-send` without a confirmed draft ID from a prior step.
-
-## Recipient Verification
-
-Before composing any email:
-
-1. **Search for recipient** in recent emails:
-   ```bash
-   gmail-search --query "from:recipient@example.com OR to:recipient@example.com" --max-results 3
-   ```
-2. **If no results** — report to cortex that this recipient has no email history; do NOT proceed without confirmation
-3. **For multiple recipients** — verify each one individually
-4. **Use exact addresses** from search results — never modify or guess at email addresses
-
-## Email Formatting Standards
-
-When composing email bodies:
-
-- **Opening**: Brief, professional greeting appropriate to the relationship
-- **Body**: Clear, concise — one topic per paragraph
-- **CTA**: Every email MUST have a clear call-to-action or next step
-- **Closing**: Professional sign-off using the agent's configured name
-- **No HTML** unless explicitly requested — use plain text by default
-- **Quote relevant context** when replying to threads
+- The send/draft tools (`gmail-send`, `gmail-draft-create`, `gmail-draft-send`) are **removed** — do not call them.
+- If a task asks you to "email someone", you cannot deliver it. Surface the composed message text back to cortex; outbound delivery is the mouth's job (today it reaches humans via Chat/dashboard, not Gmail). Report the limitation plainly rather than claiming a send.
+- Composing-and-sending email returns as an assistant capability only when the mouth gains an email egress channel.
 
 ## Calendar Event Standards
 

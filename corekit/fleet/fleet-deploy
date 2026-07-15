@@ -84,7 +84,6 @@ fi
 
 CORE_ROOT="${CORE_ROOT:-/opt/corekit}"
 REGISTRY_FILE="${CORE_ROOT}/corekit/fleet-registry.json"
-CHAT_SEND="${CORE_ROOT}/bin/chat-send"
 
 # Resolve Cloud Run URL for fleet-bootstrap status relay
 DASHBOARD_URL="$(gcloud run services describe architect-prime \
