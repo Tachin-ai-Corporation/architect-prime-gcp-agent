@@ -2526,18 +2526,9 @@ async function processIntake(intake) {
   if (delegationRef) {
     log('INFO', `Delegation intake detected: ref=${delegationRef} from=${intake.source_meta.delegated_from}`);
 
-    // Dedup: check for existing non-terminal mission with same delegation_ref (proceed anyway per user directive)
-    try {
-      const existing = await firestoreQuery('work', [
-        { field: 'source_meta.delegation_ref', op: 'EQUAL', value: { stringValue: delegationRef } },
-      ]);
-      const active = existing.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
-      if (active.length > 0) {
-        log('INFO', `Delegation dedup: active mission ${active[0].id} already exists for ref ${delegationRef}, proceeding per user directive (no skip)`);
-      }
-    } catch (e) {
-      log('WARN', `Delegation dedup check failed (${e.message}), proceeding`);
-    }
+    // Dedup (delegation_ref + owner + type M) is handled inside
+    // materializeDelegationMission — single source of truth, shared with the
+    // envelope reconciler.
 
     // Ref validation: verify parent envelope exists
     let parentEnvelope = null;
@@ -2548,78 +2539,23 @@ async function processIntake(intake) {
       log('WARN', `Delegation ref ${delegationRef} not found in work collection, treating as normal intake`);
       // Fall through to normal classify path
     } else {
-      // Create M envelope deterministically (no LLM classify)
+      // Materialize the mission from the shared work T. The creation logic is
+      // shared with the envelope reconciler (reconcileIncomingDelegations); the
+      // authoritative delegation_ref dedup lives inside the helper, so the two
+      // pickup paths (this chat-marker path + the envelope poll) never double-create.
       const delegationBody = intake.source_meta.delegation_body || intake.text;
-      const delegationProject = intake.source_meta.delegation_project || null;
-      const memoryContext = await recallMemory(delegationBody);
-      const envelopeId = generateId('w');
-
-      const envelope = {
-        id: envelopeId,
-        type: 'M',
-        parent_id: null,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'pending',
-        intent: 'execute',
-        title: `Delegation: ${delegationBody.substring(0, 80)}`,
+      await materializeDelegationMission({
+        ref: delegationRef,
+        parentEnvelope,
+        delegatedFrom: intake.source_meta.delegated_from || null,
         instruction: delegationBody,
-        accept_criteria: null,
-        context_summary: `Delegated from ${intake.source_meta.delegated_from || 'unknown'}`,
-        output: null,
-        children: [],
-        context_forward: null,
-        error: null,
-        source_channel: intake.source,
-        source_meta: {
-          ...(intake.source_meta || {}),
-          delegation_ref: delegationRef,
-          delegated_from: intake.source_meta.delegated_from || null,
-        },
-        project_id: delegationProject !== 'none' ? delegationProject : DEFAULT_PROJECT_ID,
-        context: null,
-        source_text: sourceText || null,
-        created_at: now(),
-        started_at: null,
-        completed_at: null,
-        updated_at: now(),
-        iteration: 0,
-        memory_context: memoryContext,
-        delivery_status: 'internal',
-      };
-
-      await firestoreWrite('work', envelopeId, envelope);
-      await writeHistory(envelopeId, null, 'pending', 'brain', `Delegation from ${intake.source_meta.delegated_from || 'unknown'} (ref: ${delegationRef})`);
-      log('INFO', `Created delegation mission: ${envelopeId} for ref ${delegationRef}`);
-
-      // Register as child on parent envelope (cross-agent Firestore write)
-      try {
-        const updatedChildren = [...(parentEnvelope.children || []), envelopeId];
-        await firestoreWrite('work', delegationRef, {
-          ...parentEnvelope,
-          children: updatedChildren,
-          updated_at: now(),
-        });
-        log('INFO', `Registered ${envelopeId} as child on parent ${delegationRef}`);
-      } catch (e) {
-        log('WARN', `Failed to register child on parent ${delegationRef}: ${e.message}`);
-      }
-
-      // Inject ack as first C→T under the mission so the delegator knows we picked it up
-      await createCT(envelope, {
-        checkpointTitle: 'Acknowledge receipt',
-        taskTitle: 'Write acknowledgment',
-        taskOutput: 'Delegation received and queued for processing.',
-        taskIntent: 'ack',
-        deliveryStatus: 'pending',
-        deliveryAddress: addressFromMeta(intake.source_meta, intake.source),
-        ctKey: `ack-${envelopeId}`,
+        acceptCriteria: null,
+        projectId: intake.source_meta.delegation_project || null,
+        sourceChannel: intake.source,
+        sourceMeta: intake.source_meta,
+        sourceText: sourceText || null,
+        ackAddress: addressFromMeta(intake.source_meta, intake.source),
       });
-
-      // Queue the delegation mission (work queue discipline: don't process immediately)
-      envelope.status = 'queued';
-      await firestoreWrite('work', envelopeId, envelope);
-      await writeHistory(envelopeId, 'pending', 'queued', 'brain', 'Queued delegation mission (work queue)');
-      log('INFO', `Delegation mission ${envelopeId} queued for processing`);
       return;
     }
   }
@@ -4322,6 +4258,144 @@ async function pollIntake() {
   }
 }
 
+/**
+ * Materialize the delegate's mission from the delegating agent's shared work T
+ * (the durable coordination record — C-27). Shared by the ears-marker intake
+ * path and the envelope reconciler. Idempotent within a single brain process
+ * (pollLoop serializes the two pickup paths): best-effort dedup on delegation_ref
+ * (+ owner + type M) means whichever pickup path runs first wins and the other
+ * no-ops. Returns the mission id, or null if deduped / no parent.
+ *
+ * @param {object} p
+ * @param {string}       p.ref            delegation_ref = the delegator's waiting T id
+ * @param {object}       [p.parentEnvelope] pre-read parent (skips a read)
+ * @param {string|null}  p.delegatedFrom  delegator email
+ * @param {string}       p.instruction
+ * @param {string|null}  p.acceptCriteria
+ * @param {string|null}  p.projectId
+ * @param {string}       p.sourceChannel
+ * @param {object}       p.sourceMeta
+ * @param {string|null}  p.sourceText
+ * @param {object|null}  p.ackAddress     address the pickup-ack is delivered to (via Mouth)
+ */
+async function materializeDelegationMission(p) {
+  const meOwner = AGENT_EMAIL || AGENT_ID;
+  // Dedup (best-effort, single-process-serialized): at most one M per
+  // delegation_ref for this agent. Keyed strictly on delegation_ref + owner +
+  // type M — never on instruction similarity. On a query failure, SKIP rather
+  // than risk a duplicate (the reconciler retries next poll; the ears path
+  // re-fires on the next intake).
+  try {
+    const existing = await firestoreQuery('work', [
+      { field: 'source_meta.delegation_ref', op: 'EQUAL', value: { stringValue: p.ref } },
+    ], { noOrderBy: true });
+    if (existing.some(e => e.type === 'M' && e.owner === meOwner)) return null;
+  } catch (e) {
+    log('WARN', `materializeDelegationMission dedup check failed (${e.message}) — skipping to avoid a duplicate`);
+    return null;
+  }
+  // Parent (the delegator's waiting T) must exist.
+  let parent = p.parentEnvelope || null;
+  if (!parent) { try { parent = await firestoreRead('work', p.ref); } catch { /* ignore */ } }
+  if (!parent) { log('WARN', `Delegation ref ${p.ref} not found — cannot materialize`); return null; }
+
+  const instruction = p.instruction || '';
+  const memoryContext = await recallMemory(instruction);
+  const envelopeId = generateId('w');
+  const envelope = {
+    id: envelopeId, type: 'M', parent_id: null, owner: meOwner,
+    status: 'queued', intent: 'execute',
+    title: `Delegation: ${instruction.substring(0, 80)}`,
+    instruction, accept_criteria: p.acceptCriteria || null,
+    context_summary: `Delegated from ${p.delegatedFrom || 'unknown'}`,
+    output: null, children: [], context_forward: null, error: null,
+    source_channel: p.sourceChannel || 'brain',
+    source_meta: { ...(p.sourceMeta || {}), delegation_ref: p.ref, delegated_from: p.delegatedFrom || null },
+    project_id: (p.projectId && p.projectId !== 'none') ? p.projectId : DEFAULT_PROJECT_ID,
+    context: null, source_text: p.sourceText || null,
+    created_at: now(), started_at: null, completed_at: null, updated_at: now(),
+    iteration: 0, memory_context: memoryContext, delivery_status: 'internal',
+  };
+  // Write the mission already QUEUED (status set in the literal above) so a later
+  // failure in child-registration or the ack can never strand it half-built at
+  // 'pending' — where the dedup would treat it as done but dequeueAndProcess
+  // (which only runs 'queued') would never execute it.
+  await firestoreWrite('work', envelopeId, envelope);
+  await writeHistory(envelopeId, null, 'queued', 'brain', `Delegation from ${p.delegatedFrom || 'unknown'} (ref: ${p.ref}) — queued`);
+  log('INFO', `Created + queued delegation mission: ${envelopeId} for ref ${p.ref}`);
+
+  // Register as child on the parent (cross-agent Firestore write) — best-effort.
+  try {
+    await firestoreWrite('work', p.ref, { ...parent, children: [...(parent.children || []), envelopeId], updated_at: now() });
+    log('INFO', `Registered ${envelopeId} as child on parent ${p.ref}`);
+  } catch (e) {
+    log('WARN', `Failed to register child on parent ${p.ref}: ${e.message}`);
+  }
+
+  // Pickup ack, delivered to the delegator by the Mouth (C-27) — best-effort; the
+  // mission is already queued, so an ack failure cannot strand it.
+  if (p.ackAddress) {
+    try {
+      await createCT(envelope, {
+        checkpointTitle: 'Acknowledge receipt', taskTitle: 'Write acknowledgment',
+        taskOutput: 'Delegation received and queued for processing.', taskIntent: 'ack',
+        deliveryStatus: 'pending', deliveryAddress: p.ackAddress, ctKey: `ack-${envelopeId}`,
+      });
+    } catch (e) {
+      log('WARN', `Pickup-ack createCT failed for ${envelopeId}: ${e.message}`);
+    }
+  }
+  return envelopeId;
+}
+
+/**
+ * Envelope-driven delegation pickup (C-27 / ME-5). The durable coordination
+ * record is the shared work T the delegating agent wrote (owner=delegator,
+ * intent='delegation', source_meta.target_agent_email=<this agent>). This poll
+ * materializes the delegate's mission directly from that T — so a delegation
+ * survives even if the conversational chat ping is never delivered or seen (the
+ * Millie-class failure where a dropped chat message lost the whole delegation).
+ * Two-equality query (target_agent_email + status=='waiting') served by the
+ * provisioned (source_meta.target_agent_email, status) composite index
+ * (firestore.indexes.json) — bounded to OUTSTANDING delegations, so the scan
+ * never grows with history. The dedup in materializeDelegationMission keeps this
+ * and the ears-marker path from double-creating; both run in this one poll loop,
+ * so they never race in-process (best-effort across a restart overlap).
+ */
+async function reconcileIncomingDelegations() {
+  const meEmail = (AGENT_EMAIL || AGENT_ID || '').toLowerCase();
+  if (!meEmail) return;
+  let tasks;
+  try {
+    tasks = await firestoreQuery('work', [
+      { field: 'source_meta.target_agent_email', op: 'EQUAL', value: { stringValue: meEmail } },
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'waiting' } },
+    ], { noOrderBy: true });
+  } catch (e) { log('WARN', `reconcileIncomingDelegations query failed: ${e.message}`); return; }
+  for (const t of (tasks || [])) {
+    if (t.intent !== 'delegation') continue; // status==='waiting' is server-filtered
+    // Resolve the shared GChat space for the pickup ack (delivered by the Mouth).
+    const spaceId = (t.project_id && PROJECTS[t.project_id]?.gchat_space_id) || null;
+    const ackAddress = spaceId ? makeAddress('gchat', { space: spaceId }) : null;
+    try {
+      const mid = await materializeDelegationMission({
+        ref: t.id, parentEnvelope: t,
+        delegatedFrom: t.owner || null,
+        instruction: t.instruction || '',
+        acceptCriteria: t.accept_criteria || null,
+        projectId: t.project_id || null,
+        sourceChannel: 'brain',
+        sourceMeta: { delegated_from: t.owner || null },
+        sourceText: null,
+        ackAddress,
+      });
+      if (mid) log('INFO', `reconcileIncomingDelegations: materialized ${mid} for waiting delegation ${t.id} from ${t.owner}`);
+    } catch (e) {
+      log('WARN', `reconcileIncomingDelegations: failed for ${t.id}: ${e.message}`);
+    }
+  }
+}
+
 // ---- Waiting envelope resumption (Phase 6) ----
 let waitingCheckCount = 0;
 
@@ -4348,14 +4422,24 @@ async function checkWaitingEnvelopes() {
           try {
             const sendEnv = await firestoreRead('work', sendEnvId);
             if (sendEnv?.delivery_status === 'failed') {
-              const target = waiting.source_meta?.target_agent_email || 'target';
-              log('WARN', `Delegation delivery failed terminally: ${waiting.id} → ${target}`);
-              waiting.status = 'failed';
-              waiting.error = `Delegation could not be delivered to ${target}: ${sendEnv.delivery_error || 'delivery rejected'}. The delegate never received the request.`;
-              waiting.completed_at = now();
-              await firestoreWrite('work', waiting.id, waiting);
-              await writeHistory(waiting.id, 'waiting', 'failed', 'brain', 'Delegation delivery failed');
-              continue;
+              // C-27/ME-5: the shared work T is the durable coordination record; the
+              // chat ping is best-effort. If the delegate has already materialized a
+              // mission from the envelope (a child is registered), a failed ping is
+              // moot — failing the T here would strand the delegate's in-flight work
+              // and its completion write (gated on status==='waiting') would be
+              // dropped. Only fast-fail when nothing has picked it up.
+              if (Array.isArray(waiting.children) && waiting.children.length > 0) {
+                log('INFO', `Delegation ${waiting.id}: ping delivery failed but a child mission was materialized from the envelope — not failing (envelope is authoritative, C-27)`);
+              } else {
+                const target = waiting.source_meta?.target_agent_email || 'target';
+                log('WARN', `Delegation delivery failed and not yet picked up: ${waiting.id} → ${target}`);
+                waiting.status = 'failed';
+                waiting.error = `Delegation could not be delivered to ${target}: ${sendEnv.delivery_error || 'delivery rejected'}. The delegate never received the request.`;
+                waiting.completed_at = now();
+                await firestoreWrite('work', waiting.id, waiting);
+                await writeHistory(waiting.id, 'waiting', 'failed', 'brain', 'Delegation delivery failed');
+                continue;
+              }
             }
           } catch (e) {
             log('WARN', `Delegation delivery check failed for ${waiting.id}: ${e.message}`);
@@ -4786,6 +4870,7 @@ async function main() {
   async function pollLoop() {
     try {
       await pollIntake();
+      await reconcileIncomingDelegations();  // ME-5: envelope-driven delegation pickup (runs after intake so the chat-marker path wins when both fire; dedup keeps them from double-creating)
       await checkWaitingEnvelopes();
       await checkApprovedApprovals();
       await dequeueAndProcess();
