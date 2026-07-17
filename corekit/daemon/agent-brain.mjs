@@ -519,11 +519,22 @@ function _initProcessEngine() {
       // Cross-agent write: complete the delegation T-envelope on the sender's side
       try {
         const delegRef = await firestoreRead('work', mission.source_meta.delegation_ref);
-        if (delegRef && delegRef.status === 'waiting') {
+        // C-27/ME-5 (audit HIGH fix): reconcile the T from the delegate's ACTUAL terminal
+        // status — never hardcode 'complete'. Also recover a T the delegator fast-failed
+        // on a transient delivery-ping failure (delivery_fast_failed), so a delegate that
+        // did the work still completes it (closes the residual race where the child
+        // registers just after the fast-fail guard's fresh read). Deriving the status
+        // from the outcome also fixes the pre-existing mislabel where a blocked/failed
+        // delegate was written back as a phantom 'complete'. Clear the fail residue on
+        // a genuine success.
+        const delegSucceeded = !(mission.status === 'failed' || mission.status === 'blocked');
+        if (delegRef && (delegRef.status === 'waiting' || delegRef.delivery_fast_failed === true)) {
           await firestoreWrite('work', delegRef.id, {
             ...delegRef,
-            status: 'complete',
+            status: delegSucceeded ? 'complete' : 'failed',
             output: toStr(mission.output).substring(0, 4000),
+            error: delegSucceeded ? null : (mission.error || 'Delegate reported failure'),
+            delivery_fast_failed: false,
             completed_at: now(),
             updated_at: now(),
           });
@@ -2145,11 +2156,21 @@ async function completeEnvelope(envelope, opts) {
         // Cross-agent write: complete the delegation T-envelope on the sender's side
         try {
           const delegRef = await firestoreRead('work', envelope.source_meta.delegation_ref);
-          if (delegRef && delegRef.status === 'waiting') {
+          // C-27/ME-5 (audit HIGH fix): reconcile the T from the delegate's ACTUAL terminal
+          // status (`status` is guarded to complete|blocked|failed above) — never hardcode
+          // 'complete'. Also recover a T the delegator fast-failed on a transient
+          // delivery-ping failure (delivery_fast_failed), so a delegate that did the work
+          // still completes it (closes the residual post-guard race). Status-accuracy also
+          // fixes the pre-existing mislabel where a blocked/failed delegate was written
+          // back as a phantom 'complete'. Clear the fail residue on a genuine success.
+          const delegSucceeded = (status === 'complete');
+          if (delegRef && (delegRef.status === 'waiting' || delegRef.delivery_fast_failed === true)) {
             await firestoreWrite('work', delegRef.id, {
               ...delegRef,
-              status: 'complete',
+              status: delegSucceeded ? 'complete' : 'failed',
               output: toStr(envelope.output).substring(0, 4000),
+              error: delegSucceeded ? null : (envelope.error || 'Delegate reported failure'),
+              delivery_fast_failed: false,
               completed_at: now(),
               updated_at: now(),
             });
@@ -4308,8 +4329,21 @@ async function materializeDelegationMission(p) {
   log('INFO', `Created + queued delegation mission: ${envelopeId} for ref ${p.ref}`);
 
   // Register as child on the parent (cross-agent Firestore write) — best-effort.
+  // C-27/ME-5 concurrency (audit HIGH fix): field-masked append (children + updated_at
+  // ONLY) off a FRESH read — never a stale full-object write. The delegator's
+  // fast-fail / timeout sweep writes status+error on this SAME T from another daemon;
+  // a whole-doc write here off the reconcile-time snapshot would clobber that status
+  // (and vice-versa). Disjoint field masks let both writes coexist. Idempotent: if the
+  // child is already registered (dedup or a retried poll), don't re-append.
   try {
-    await firestoreWrite('work', p.ref, { ...parent, children: [...(parent.children || []), envelopeId], updated_at: now() });
+    const freshParent = await firestoreRead('work', p.ref) || parent;
+    const kids = Array.isArray(freshParent.children) ? freshParent.children : [];
+    if (!kids.includes(envelopeId)) {
+      await firestoreWriteFields('work', p.ref, {
+        children: [...kids, envelopeId],
+        updated_at: now(),
+      });
+    }
     log('INFO', `Registered ${envelopeId} as child on parent ${p.ref}`);
   } catch (e) {
     log('WARN', `Failed to register child on parent ${p.ref}: ${e.message}`);
@@ -4408,18 +4442,33 @@ async function checkWaitingEnvelopes() {
               // C-27/ME-5: the shared work T is the durable coordination record; the
               // chat ping is best-effort. If the delegate has already materialized a
               // mission from the envelope (a child is registered), a failed ping is
-              // moot — failing the T here would strand the delegate's in-flight work
-              // and its completion write (gated on status==='waiting') would be
-              // dropped. Only fast-fail when nothing has picked it up.
-              if (Array.isArray(waiting.children) && waiting.children.length > 0) {
+              // moot — failing the T here would strand the delegate's in-flight work.
+              //
+              // Concurrency (audit HIGH fix): the `children` guard MUST read a FRESH
+              // snapshot, not `waiting` (captured up to a full poll cycle earlier at
+              // the query) — a child registered in that window is invisible to a stale
+              // guard, so a full-doc fail write would drop it and strand completed
+              // work. So: re-read here, guard on the fresh snapshot, and write ONLY
+              // status/error/completed_at via a field mask so a concurrent child
+              // registration (children-only mask) is never clobbered. The residual
+              // sub-RTT window (child registers between this re-read and the mask
+              // write) is closed downstream — the fail is tagged delivery_fast_failed,
+              // and the cross-agent completion treats a fast-failed T as still
+              // reconcilable, so a delegate that did the work still completes it.
+              const fresh = await firestoreRead('work', waiting.id) || waiting;
+              if (fresh.status !== 'waiting') {
+                // Already transitioned (completed by the delegate, or otherwise) — leave it.
+              } else if (Array.isArray(fresh.children) && fresh.children.length > 0) {
                 log('INFO', `Delegation ${waiting.id}: ping delivery failed but a child mission was materialized from the envelope — not failing (envelope is authoritative, C-27)`);
               } else {
                 const target = waiting.source_meta?.target_agent_email || 'target';
                 log('WARN', `Delegation delivery failed and not yet picked up: ${waiting.id} → ${target}`);
-                waiting.status = 'failed';
-                waiting.error = `Delegation could not be delivered to ${target}: ${sendEnv.delivery_error || 'delivery rejected'}. The delegate never received the request.`;
-                waiting.completed_at = now();
-                await firestoreWrite('work', waiting.id, waiting);
+                await firestoreWriteFields('work', waiting.id, {
+                  status: 'failed',
+                  error: `Delegation could not be delivered to ${target}: ${sendEnv.delivery_error || 'delivery rejected'}. The delegate never received the request.`,
+                  completed_at: now(),
+                  delivery_fast_failed: true,
+                });
                 await writeHistory(waiting.id, 'waiting', 'failed', 'brain', 'Delegation delivery failed');
                 continue;
               }
@@ -4431,11 +4480,24 @@ async function checkWaitingEnvelopes() {
         const ageMs = Date.now() - new Date(waiting.started_at).getTime();
         const timeoutMs = (CONTRACTS.dispatch?.delegation_timeout_hours || 4) * 3600_000;
         if (ageMs > timeoutMs) {
+          // Concurrency (audit HIGH fix): mirror the fast-fail path — re-read fresh and
+          // write ONLY status/error/completed_at via a field mask, never a full-object
+          // write off the stale query snapshot. A delegate completing right at the 4h
+          // boundary transitions the T out of 'waiting' and (via the reconciler) may
+          // register a child; a stale full-doc write here would clobber that completion
+          // and drop the child. Skip if the T is no longer 'waiting'. No
+          // delivery_fast_failed marker — a genuine timeout is terminal (the 4h contract
+          // expired), not recoverable by a late completion.
+          const freshT = await firestoreRead('work', waiting.id) || waiting;
+          if (freshT.status !== 'waiting') continue;
           log('WARN', `Delegation timeout: ${waiting.id} waiting for ${Math.round(ageMs / 3600_000)}h`);
-          waiting.status = 'failed';
-          waiting.error = `Delegation timed out after ${Math.round(ageMs / 3600_000)} hours. Delegate may be offline or stuck.`;
-          waiting.completed_at = now();
-          await firestoreWrite('work', waiting.id, waiting);
+          const timeoutError = `Delegation timed out after ${Math.round(ageMs / 3600_000)} hours. Delegate may be offline or stuck.`;
+          waiting.error = timeoutError; // consumed by the parent-escalation block below
+          await firestoreWriteFields('work', waiting.id, {
+            status: 'failed',
+            error: timeoutError,
+            completed_at: now(),
+          });
           await writeHistory(waiting.id, 'waiting', 'failed', 'brain', 'Delegation timeout');
 
           // Escalate: fail the parent M-type mission with a user-facing notification

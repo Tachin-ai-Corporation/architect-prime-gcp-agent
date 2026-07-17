@@ -502,7 +502,12 @@ export async function executeCheckpoints(checkpoints, opts) {
             ], { noOrderBy: true });
             const onlineAgent = fleetSnap.find(a => a.status === 'online');
             if (onlineAgent) {
-              targetAgentEmail = onlineAgent.email;
+              // Normalize (→ lowercase) so the stored target_agent_email matches the
+              // reconciler's lowercased EQUAL query (agent-brain reconcileIncomingDelegations
+              // force-lowercases self-email; Firestore EQUAL is case-sensitive). Audit LOW
+              // fix — the specialty-resolution path was the only producer storing verbatim.
+              const norm = normalizeTargetEmail(onlineAgent.email);
+              targetAgentEmail = norm.valid ? norm.email : (onlineAgent.email || '').toLowerCase();
             }
           } catch (e) {
             log('WARN', `Delegation: failed to resolve agent for specialty '${delegateSpecialty}': ${e.message}`);
