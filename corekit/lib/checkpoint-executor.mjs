@@ -12,7 +12,7 @@ import { composeDelegationMarker, normalizeTargetEmail } from './delegation.mjs'
 import { extractVerdict, extractFailSummary, extractFailRecommendation, extractProbes, stakesAtLeast } from './verdict.mjs';
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
-import { allocateVersion } from './git-store.mjs';
+import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -647,16 +647,39 @@ export async function executeCheckpoints(checkpoints, opts) {
         // non-deterministic outcome), and (b) avoids a second full-object write
         // clobbering the reconciler's cross-agent child registration on this same T
         // (which would re-open the delivery-fast-fail stranding).
-        if (envelope.project_id && publishArtifacts) {
+        // #3-reality (C-24 — git is the artifact substrate): hand the delegate a
+        // RETRIEVABLE pointer to the delegator's in-flight work. Per-checkpoint work is
+        // committed to THIS mission's git branch (mission/<id>) and only merged to main
+        // on completion — and a gated merge policy parks even that — so a delegate that
+        // clones `main` can be missing its input files. Calling publishArtifacts commits
+        // (and, policy permitting, merges) the current work; either way we give the
+        // delegate the exact branch ref so it can fetch the inputs deterministically from
+        // the git store, independent of merge policy. (The prior `artifacts?.length > 0`
+        // guard was DEAD: publishArtifacts returns a manifest OBJECT, not an array, so the
+        // pointer block never appended.)
+        if (envelope.project_id) {
           try {
-            const artifacts = await publishArtifacts(envelope, { dryRun: false });
-            if (artifacts?.length > 0) {
-              log('INFO', `[delegation] Published ${artifacts.length} artifact(s) to Drive before delegating`);
-              const artifactRefs = artifacts.map(a => `📄 ${a.name}: ${a.driveUrl || a.id}`).join('\n');
-              taskDesc += `\n\n[SHARED ARTIFACTS — available in the project Drive folder]\n${artifactRefs}\nThese files are available in the project's shared Drive folder.`;
+            let manifest = null;
+            if (publishArtifacts) manifest = await publishArtifacts(envelope, { dryRun: false });
+            const repoId = sanitizeRepoId(envelope.project_id);
+            const missionBranch = `mission/${envelope.id}`;
+            let pointer = `\n\n[INPUT FILES — from the delegator's git branch]\n`
+              + `Files the delegator produced for this task are committed to branch \`${missionBranch}\` `
+              + `of repo \`${repoId}\` in the shared git store (they may not yet be on \`main\`). `
+              + `Before you depend on a named input file, retrieve them:\n`
+              + `  work-clone ${repoId} --ref ${missionBranch} --dir delegator-inputs\n`
+              + `then read from the \`delegator-inputs/\` directory. If a named file is absent there, it was not produced — do not loop; report what is missing.`;
+            if (manifest && manifest.kind === 'artifact_manifest' && Array.isArray(manifest.files) && manifest.files.length) {
+              const fileList = manifest.files.slice(0, 25)
+                .map(f => `  - ${typeof f === 'string' ? f : (f.path || f.name || '')}`)
+                .filter(s => s.trim().length > 3).join('\n');
+              pointer += `\n\nPublished this checkpoint (${manifest.files.length} file(s)`
+                + (manifest.commit ? `, commit ${String(manifest.commit).slice(0, 8)}` : '') + `):\n${fileList}`;
             }
+            taskDesc += pointer;
+            log('INFO', `[delegation] Attached git-branch input pointer (${missionBranch}) to delegated instruction`);
           } catch (e) {
-            log('WARN', `[delegation] Artifact publish before delegation failed: ${e.message}`);
+            log('WARN', `[delegation] Artifact publish / input pointer before delegation failed: ${e.message}`);
           }
         }
         const priorCtx = [...allResults, ...cpResults]

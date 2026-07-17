@@ -528,7 +528,7 @@ function _initProcessEngine() {
         // from the outcome also fixes the pre-existing mislabel where a blocked/failed
         // delegate was written back as a phantom 'complete'. Clear the fail residue on
         // a genuine success.
-        const delegSucceeded = !(mission.status === 'failed' || mission.status === 'blocked');
+        const delegSucceeded = !(mission.status === 'failed' || mission.status === 'blocked' || mission.status === 'needs_input');
         if (delegRef && (delegRef.status === 'waiting' || delegRef.delivery_fast_failed === true)) {
           await firestoreWrite('work', delegRef.id, {
             ...delegRef,
@@ -555,7 +555,11 @@ function _initProcessEngine() {
                     continue;
                   }
                   const sib = await firestoreRead('work', sibId);
-                  if (!sib || ['complete', 'failed', 'archived', 'cancelled', 'blocked'].includes(sib?.status)) {
+                  // Same fast-fail transient exception (see Phase A): don't treat a delivery-
+                  // fast-failed T with a materialized child as terminal — the write-back recovers it.
+                  const _sibFastFailTransient = sib?.status === 'failed' && sib?.delivery_fast_failed === true
+                    && Array.isArray(sib?.children) && sib.children.length > 0;
+                  if (!sib || (!_sibFastFailTransient && ['complete', 'failed', 'archived', 'cancelled', 'blocked', 'needs_input'].includes(sib?.status))) {
                     const isOk = sib?.status === 'complete' || sib?.status === 'archived';
                     sibResults.push({ agent: sib?.owner || 'unknown', result: smartTruncate(toStr(sib?.output || sib?.status || ''), RESULT_PREVIEW_CHARS), success: isOk });
                   } else {
@@ -567,19 +571,25 @@ function _initProcessEngine() {
                   const summary = sibResults.map((r, i) =>
                     `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${r.result}`
                   ).join('\n\n');
-                  cpEnv.status = 'complete';
+                  // #2 defense-in-depth (this proactive path is dead in the daemon via
+                  // !_completeEnvelope, but gate it so it can't regress): checkpoint status
+                  // tracks delegation OUTCOME, and a non-success clears the parent's
+                  // _cp_progress so cortex re-decides rather than mechanically resuming.
+                  const sibAllOk = sibResults.every(r => r.success);
+                  cpEnv.status = sibAllOk ? 'complete' : 'failed';
                   cpEnv.output = summary;
                   cpEnv.updated_at = now();
                   await firestoreWrite('work', cpEnv.id, cpEnv);
-                  log('INFO', `Checkpoint ${cpEnv.id} completed proactively (all ${siblings.length} delegation children terminal)`);
+                  log('INFO', `Checkpoint ${cpEnv.id} completed proactively (all ${siblings.length} delegation children terminal, ${sibAllOk ? 'ok' : 'with failures'})`);
                   if (cpEnv.parent_id) {
                     const parentMission = await firestoreRead('work', cpEnv.parent_id);
                     if (parentMission && parentMission.status === 'active') {
                       parentMission.status = 'queued';
                       parentMission.context_forward = `[DELEGATION RESULTS]\n${summary}`;
+                      if (!sibAllOk) parentMission._cp_progress = null;
                       parentMission.updated_at = now();
                       await firestoreWrite('work', parentMission.id, parentMission);
-                      log('INFO', `Mission ${parentMission.id} re-queued proactively after delegation completion`);
+                      log('INFO', `Mission ${parentMission.id} re-queued proactively after delegation completion (${sibAllOk ? 'ok' : 'with failures'})`);
                     }
                   }
                 }
@@ -2126,8 +2136,9 @@ async function completeEnvelope(envelope, opts) {
       log('WARN', `fireEventResponsibilities failed: ${e.message}`);
     }
 
-    // Delegation result reply (on complete, blocked, or failed — delegator must know)
-    if (['complete', 'blocked', 'failed'].includes(status) && envelope.source_meta?.delegation_ref) {
+    // Delegation result reply (on complete, blocked, failed, or needs_input — the delegator
+    // must know so its checkpoint gate + cortex can react, instead of hanging on a 'waiting' T)
+    if (['complete', 'blocked', 'failed', 'needs_input'].includes(status) && envelope.source_meta?.delegation_ref) {
       try {
         // B-2 (C-27): conversational result prose (mouth voices it + appends the tag);
         // trailer dropped from the wire, recovery data stays in Firestore fields (C-5).
@@ -2162,8 +2173,8 @@ async function completeEnvelope(envelope, opts) {
         try {
           const delegRef = await firestoreRead('work', envelope.source_meta.delegation_ref);
           // C-27/ME-5 (audit HIGH fix): reconcile the T from the delegate's ACTUAL terminal
-          // status (`status` is guarded to complete|blocked|failed above) — never hardcode
-          // 'complete'. Also recover a T the delegator fast-failed on a transient
+          // status (`status` is guarded to complete|blocked|failed|needs_input above) — never
+          // hardcode 'complete'. Also recover a T the delegator fast-failed on a transient
           // delivery-ping failure (delivery_fast_failed), so a delegate that did the work
           // still completes it (closes the residual post-guard race). Status-accuracy also
           // fixes the pre-existing mislabel where a blocked/failed delegate was written
@@ -2174,7 +2185,7 @@ async function completeEnvelope(envelope, opts) {
               ...delegRef,
               status: delegSucceeded ? 'complete' : 'failed',
               output: toStr(envelope.output).substring(0, 4000),
-              error: delegSucceeded ? null : (envelope.error || 'Delegate reported failure'),
+              error: delegSucceeded ? null : (envelope.error || (status === 'needs_input' ? 'Delegate needs additional input to proceed' : 'Delegate reported failure')),
               delivery_fast_failed: false,
               completed_at: now(),
               updated_at: now(),
@@ -4568,8 +4579,17 @@ async function checkWaitingEnvelopes() {
           continue;
         }
 
-        // Terminal states: complete, failed, archived, cancelled, blocked, needs_input
-        if (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled' || child.status === 'blocked' || child.status === 'needs_input') {
+        // Terminal states: complete, failed, archived, cancelled, blocked, needs_input.
+        // EXCEPTION (audit interaction w/ 0db2743): a delegation T that is 'failed' ONLY
+        // because of a transient delivery-ping fast-fail AND has a materialized child is
+        // NOT yet terminal — the reconciler picked it up and the cross-agent completion
+        // write-back will still resolve it (recover to complete). Treating it as terminal
+        // here would cascade a spurious checkpoint failure for a delegation that actually
+        // succeeded. (A fast-failed T with NO child never materialized → genuinely failed,
+        // so it stays terminal and the checkpoint doesn't hang.)
+        const _fastFailTransient = child.status === 'failed' && child.delivery_fast_failed === true
+          && Array.isArray(child.children) && child.children.length > 0;
+        if (!_fastFailTransient && (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled' || child.status === 'blocked' || child.status === 'needs_input')) {
           const isSuccess = child.status === 'complete' || child.status === 'archived';
           childResults.push({
             agent: child.owner,
@@ -4594,25 +4614,32 @@ async function checkWaitingEnvelopes() {
         `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(toStr(r.result), RESULT_PREVIEW_CHARS)}`
       ).join('\n\n');
 
+      // #2 (C-15/B-28): gate the checkpoint/task status + the mission's resume mode on the
+      // delegation OUTCOME. On any non-success, mark the envelope 'failed' and (for a
+      // re-queued parent M) clear _cp_progress so cortex re-enters the DECIDE loop on the
+      // FAILED context_forward instead of mechanically resuming past the delegation.
+      const cAllOk = childResults.every(r => r.success);
+
       // C-type checkpoint: complete it and re-queue the parent M-type mission
       // (dequeueAndProcess only handles M-type, so a queued C-type is a dead end)
       if (waiting.type === 'C' && waiting.parent_id) {
-        waiting.status = 'complete';
+        waiting.status = cAllOk ? 'complete' : 'failed';
         waiting.output = delegationSummary;
         waiting.updated_at = now();
         await firestoreWrite('work', waiting.id, waiting);
-        await writeHistory(waiting.id, 'waiting', 'complete', 'brain',
-          `C-type delegation(s) complete, marking checkpoint done`);
+        await writeHistory(waiting.id, 'waiting', waiting.status, 'brain',
+          `C-type delegation(s) ${cAllOk ? 'complete' : 'had failures'}, marking checkpoint ${waiting.status}`);
 
         const parent = await firestoreRead('work', waiting.parent_id);
         if (parent && parent.status === 'active') {
           parent.status = 'queued';
           parent.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
+          if (!cAllOk) parent._cp_progress = null; // force cortex re-entry, not mechanical resume
           parent.updated_at = now();
           await firestoreWrite('work', parent.id, parent);
           await writeHistory(parent.id, 'active', 'queued', 'brain',
-            `Checkpoint delegation(s) complete, re-queued (work queue)`);
-          log('INFO', `Re-queuing parent mission ${parent.id} after C-type checkpoint delegation`);
+            `Checkpoint delegation(s) ${cAllOk ? 'complete' : 'had failures'}, re-queued${cAllOk ? '' : ' for cortex decision'}`);
+          log('INFO', `Re-queuing parent mission ${parent.id} after C-type checkpoint delegation (${cAllOk ? 'ok' : 'with failures'})`);
         }
         continue;
       }
@@ -4621,22 +4648,23 @@ async function checkWaitingEnvelopes() {
       // C can detect all children are terminal. Re-queuing to 'queued' would be a
       // dead end since dequeueAndProcess only handles M-type envelopes.
       if (waiting.type === 'T' && waiting.parent_id && waiting.intent === 'delegation') {
-        waiting.status = 'complete';
+        waiting.status = cAllOk ? 'complete' : 'failed';
         waiting.output = delegationSummary;
         waiting.completed_at = now();
         waiting.updated_at = now();
         await firestoreWrite('work', waiting.id, waiting);
-        await writeHistory(waiting.id, 'waiting', 'complete', 'brain',
-          `T-type delegation complete, marking done for parent checkpoint`);
-        log('INFO', `Marking delegation task ${waiting.id} complete (parent checkpoint ${waiting.parent_id})`);
+        await writeHistory(waiting.id, 'waiting', waiting.status, 'brain',
+          `T-type delegation ${cAllOk ? 'complete' : 'had failures'}, marking ${waiting.status} for parent checkpoint`);
+        log('INFO', `Marking delegation task ${waiting.id} ${waiting.status} (parent checkpoint ${waiting.parent_id})`);
         continue;
       }
 
       waiting.status = 'queued';
       waiting.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
+      if (!cAllOk) waiting._cp_progress = null; // force cortex re-entry, not mechanical resume
       waiting.updated_at = now();
       await firestoreWrite('work', waiting.id, waiting);
-      await writeHistory(waiting.id, 'waiting', 'queued', 'brain', `Delegation(s) complete, re-queued (work queue)`);
+      await writeHistory(waiting.id, 'waiting', 'queued', 'brain', `Delegation(s) ${cAllOk ? 'complete' : 'had failures'}, re-queued${cAllOk ? '' : ' for cortex decision'}`);
     }
     // ---- Phase B: Active M envelopes with waiting C children (delegation via checkpoint_plan) ----
     // These are missions where checkpoint-executor created delegation tasks inside checkpoints.
@@ -4667,7 +4695,11 @@ async function checkWaitingEnvelopes() {
               cpResults.push({ agent: 'unknown', task: tcId, result: '[FAILED] Envelope deleted', success: false });
               continue;
             }
-            if (tc.status === 'complete' || tc.status === 'failed' || tc.status === 'archived' || tc.status === 'cancelled' || tc.status === 'blocked') {
+            // Same fast-fail transient exception as Phase A: a delivery-fast-failed T with a
+            // materialized child will be recovered by the completion write-back — not yet terminal.
+            const _tcFastFailTransient = tc.status === 'failed' && tc.delivery_fast_failed === true
+              && Array.isArray(tc.children) && tc.children.length > 0;
+            if (!_tcFastFailTransient && (tc.status === 'complete' || tc.status === 'failed' || tc.status === 'archived' || tc.status === 'cancelled' || tc.status === 'blocked' || tc.status === 'needs_input')) {
               const isSuccess = tc.status === 'complete' || tc.status === 'archived';
               cpResults.push({
                 agent: tc.owner,
@@ -4688,16 +4720,26 @@ async function checkWaitingEnvelopes() {
             `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${smartTruncate(toStr(r.result), RESULT_PREVIEW_CHARS)}`
           ).join('\n\n');
 
-          child.status = 'complete';
+          // #2 (C-15/B-28/B-1): gate the checkpoint on delegation OUTCOME, don't stamp it
+          // 'complete' unconditionally. If any delegation did not succeed, mark the
+          // checkpoint 'failed' AND clear the parent's _cp_progress so the dequeue routes
+          // the mission back into the cortex DECIDE loop — which reads the FAILED
+          // context_forward and re-plans / escalates — instead of executeCheckpointPlanResume
+          // mechanically advancing past the delegation into the next checkpoint blind (the
+          // failure mode that let a delegator push a deploy on top of a blocked design).
+          const cpAllOk = cpResults.every(r => r.success);
+          child.status = cpAllOk ? 'complete' : 'failed';
           child.output = delegationSummary;
           child.updated_at = now();
           await firestoreWrite('work', childId, child);
 
           active.status = 'queued';
           active.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
+          if (!cpAllOk) active._cp_progress = null; // force cortex re-entry, not mechanical resume
           active.updated_at = now();
           await firestoreWrite('work', active.id, active);
-          await writeHistory(active.id, 'active', 'queued', 'brain', `Checkpoint delegation(s) complete, re-queued (work queue)`);
+          await writeHistory(active.id, 'active', 'queued', 'brain',
+            `Checkpoint delegation(s) ${cpAllOk ? 'complete' : 'had failures'}, re-queued${cpAllOk ? '' : ' for cortex decision'}`);
           break;
         }
       }

@@ -1,5 +1,6 @@
 // Action handler: delegate
 import { normalizeTargetEmail } from '../../lib/delegation.mjs';
+import { sanitizeRepoId } from '../../lib/git-store.mjs';
 
 export async function handleDelegate(ctx, deps) {
   const { envelope, decision } = ctx;
@@ -133,6 +134,28 @@ export async function handleDelegate(ctx, deps) {
   const ackId = generateId('w');
   const agentName = targetEmail.split('@')[0].replace(/-/g, ' ');
 
+  // #3-reality (C-24): give the delegate a retrievable git-branch pointer to any inputs
+  // the delegator has already committed. Those live on branch mission/<envelope.id> of
+  // the DELEGATOR's OWN project repo — sanitizeRepoId(envelope.project_id), NOT
+  // decision.project_id (which can differ on a cross-project delegation and would name the
+  // wrong repo). Only emit when the delegator has a project repo (a project-less mission
+  // has no such branch). Enrich ONLY the delegation T's instruction — the reconciler
+  // materializes the delegate mission from t.instruction; the title + ping stay clean.
+  // (The cortex-direct path does not itself commit before delegating, so the branch may be
+  // empty for a fresh mission — the wording is honest about that and says to report, not
+  // loop, on a missing file.)
+  let delegateInstructionEnriched = delegateInstruction;
+  if (envelope.project_id) {
+    const _delegRepoId = sanitizeRepoId(envelope.project_id);
+    const _delegMissionBranch = `mission/${envelope.id}`;
+    delegateInstructionEnriched = delegateInstruction
+      + `\n\n[INPUT FILES — from the delegator's git branch]\n`
+      + `Any files the delegator has already committed for this task are on branch \`${_delegMissionBranch}\` of repo \`${_delegRepoId}\` `
+      + `in the shared git store (they may not yet be on \`main\`). If your instruction names an input file, retrieve it first:\n`
+      + `  work-clone ${_delegRepoId} --ref ${_delegMissionBranch} --dir delegator-inputs\n`
+      + `then read from \`delegator-inputs/\`. If a named file is absent, it was not produced — do not loop; report what is missing.`;
+  }
+
   const cpEnvelope = {
     id: cpId,
     type: 'C',
@@ -173,7 +196,7 @@ export async function handleDelegate(ctx, deps) {
     status: 'waiting',
     intent: 'delegation',
     title: await generateTitle(delegateInstruction, 'task'),
-    instruction: delegateInstruction,
+    instruction: delegateInstructionEnriched,
     accept_criteria: delegateCriteria,
     context_summary: null,
     output: null,
