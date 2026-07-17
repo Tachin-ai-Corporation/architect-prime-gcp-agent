@@ -60,6 +60,48 @@ export function normalizeTargetEmail(raw) {
   return { email: email || null, valid };
 }
 
+// ---- Conversational nudge + correlation tag (B-2) ----
+// Under C-27/ME-5 the delegation ping is voiced conversational PROSE (the plain
+// instruction/summary), and the MOUTH appends ONE deterministic correlation tag
+// AFTER voicing (in channel.mjs, out of the LLM's reach). The recipient's ears
+// regex-suppress the tag so the ping never becomes an intake / spurious mission —
+// pickup is owned by the envelope reconciler (the durable work T), never the ping.
+// Detection is a fixed regex (C-4), never an LLM asked "is this a delegation".
+
+const DELEGATION_PING_RE = /\(delegation(?: result)? ref:\s*(\S+?)\)/i;
+
+/**
+ * Deterministic correlation tag appended to a voiced delegation ping (post-voicing).
+ * @param {{ref:string, kind?:'send'|'result'}} opts
+ * @returns {string} e.g. "(delegation ref: w-123)" or "(delegation result ref: w-123)"
+ */
+export function composeCorrelationTag({ ref, kind } = {}) {
+  if (!ref) return '';
+  return kind === 'result' ? `(delegation result ref: ${ref})` : `(delegation ref: ${ref})`;
+}
+
+/**
+ * True if text carries a delegation correlation tag (send or result). Pure regex.
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function isDelegationPing(text) {
+  if (!text) return false;
+  return DELEGATION_PING_RE.test(text);
+}
+
+/**
+ * Parse the correlation tag from a ping. Pure.
+ * @param {string} text
+ * @returns {{ ref: string, kind: 'send'|'result' } | null}
+ */
+export function parseDelegationPing(text) {
+  if (!text) return null;
+  const m = text.match(DELEGATION_PING_RE);
+  if (!m) return null;
+  return { ref: m[1], kind: /result/i.test(m[0]) ? 'result' : 'send' };
+}
+
 // ---- Compose ----
 
 /**

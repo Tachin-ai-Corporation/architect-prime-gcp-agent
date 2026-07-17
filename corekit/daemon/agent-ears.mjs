@@ -22,7 +22,7 @@ import { hostname as osHostname } from 'os';
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
 import { threadKeyFor, appendTurn } from '../corekit/lib/thread-ledger.mjs';
 import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
-import { isDelegationMarker, parseDelegationMarker } from '../corekit/lib/delegation.mjs';
+import { isDelegationPing, isDelegationMarker, isDelegationResultMarker } from '../corekit/lib/delegation.mjs';
 import { makeAddress, serializeAddress, discoverSpaces as _discoverSpacesLib, resolveAgentUserId } from '../corekit/lib/channel.mjs';
 
 // ---- Config ----
@@ -852,25 +852,18 @@ async function main() {
           continue; // Skip normal intake processing
         }
 
-        // ---- Delegation marker detection ----
-        // Only check the CURRENT message for delegation markers, not context.
-        // Context lines from prior messages may contain old delegation markers
-        // that should not trigger delegation processing.
-        // Use rawText (original message only) for delegation detection,
-        // NOT msg.text which is the composite with context from prior messages.
+        // ---- Delegation ping suppression (C-27 / ME-5 B-2) ----
+        // Pickup is owned by the envelope reconciler (reconcileIncomingDelegations
+        // reads the durable work T), so a delegation ping — voiced conversational
+        // prose + a correlation tag, OR a legacy [DELEGATION ...]/[DELEGATION-RESULT]
+        // marker during a mixed-version rollout — is a human COURTESY, not a request.
+        // Suppress it here so it never becomes an intake / spurious mission.
+        // Detection is fixed regexes (C-4), never an LLM asked "is this a delegation".
+        // Use rawText (the original single message), not the context-laden composite.
         const currentMsgText = cleanMentionText(msg.rawText || msg.text || '');
-        let delegationMeta = {};
-        if (isDelegationMarker(currentMsgText)) {
-          const parsed = parseDelegationMarker(currentMsgText);
-          if (parsed) {
-            log('Delegation marker detected', { ref: parsed.ref, from: parsed.from, project: parsed.project });
-            delegationMeta = {
-              delegation_ref: { stringValue: parsed.ref },
-              delegated_from: { stringValue: parsed.from },
-              delegation_project: { stringValue: parsed.project },
-              delegation_body: { stringValue: parsed.body || '' },
-            };
-          }
+        if (isDelegationPing(currentMsgText) || isDelegationMarker(currentMsgText) || isDelegationResultMarker(currentMsgText)) {
+          log('Delegation ping suppressed — envelope reconciler owns pickup', { text: currentMsgText.slice(0, 60) });
+          continue;
         }
 
         // ---- Brain v3: Write intake record to Firestore ----
@@ -895,7 +888,6 @@ async function main() {
             // text (the composite carries multi-message framing pollution).
             ...(msg.id ? { channel_msg_id: { stringValue: String(msg.id) } } : {}),
             ...(msg.rawText ? { raw_text: { stringValue: String(msg.rawText).substring(0, 8000) } } : {}),
-            ...delegationMeta,
             address: serializeAddress(makeAddress(
               CHANNEL === 'gchat' ? 'gchat' : 'dashboard',
               CHANNEL === 'gchat'

@@ -25,6 +25,7 @@ import { getDwdToken as _getDwdTokenLib } from '../corekit/lib/dwd-auth.mjs';
 import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
 import { stripArtifactFooter } from '../corekit/lib/deliverable.mjs';
 import { parseAddress, deliverToAddress, mirrorToDashboard, initChannel, toGChatMarkdown, discoverSpaces } from '../corekit/lib/channel.mjs';
+import { composeCorrelationTag } from '../corekit/lib/delegation.mjs';
 
 // ---- Config ----
 const CHANNEL = process.env.CHANNEL || 'dashboard';
@@ -439,13 +440,15 @@ function decodeAttachmentsExport(contextField) {
   }
 }
 
-async function deliver(text, addr, mentions = [], attachments = []) {
+async function deliver(text, addr, mentions = [], attachments = [], opts = {}) {
   const token = addr?.channel === 'gchat' ? await getDwdToken() : await getGceToken();
   await deliverToAddress(addr, text, {
     token,
-    replyInThread: REPLY_IN_THREAD,
+    replyInThread: opts.replyInThread !== undefined ? opts.replyInThread : REPLY_IN_THREAD,
     mentions,
     attachments,
+    deliveryTarget: opts.deliveryTarget || undefined,
+    correlationTag: opts.correlationTag || '',
     log,
   });
 
@@ -463,23 +466,33 @@ async function deliver(text, addr, mentions = [], attachments = []) {
 // ================================================================
 // FINAL RESPONSE — LLM CLASSIFY + DELIVER
 // ================================================================
-async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = [], attachments = [], convoTail = '') {
+async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = [], attachments = [], convoTail = '', opts = {}) {
+  // B-2: opts all default off/none so the ~15 non-delegation callers are unaffected.
+  const {
+    deliveryTarget = null, correlationTag = '', contextHint = '',
+    neverSuppress = false, mentionsVerbatim = false, skipTaskLifecycle = false,
+    replyInThread,
+  } = opts;
+  const deliverOpts = { deliveryTarget, correlationTag, replyInThread };
   const task = readTaskJson();
   const question = overrideQuestion || task?.text || turn.originalQuestion || '';
 
-  // Extract pinger/sender email from task metadata or default
+  // Extract pinger/sender email from task metadata or default. For a delegation
+  // ping (mentionsVerbatim) use ONLY the caller's mentions so the ping never
+  // @mentions the operator + never touches the delegator's TASK.json.
   let finalMentions = [...mentions];
-  const senderEmail = task?.metadata?.senderEmail || task?.senderEmail;
-  if (senderEmail && senderEmail !== 'unknown') {
-    finalMentions.push(senderEmail);
+  if (!mentionsVerbatim) {
+    const senderEmail = task?.metadata?.senderEmail || task?.senderEmail;
+    if (senderEmail && senderEmail !== 'unknown') {
+      finalMentions.push(senderEmail);
+    }
   }
   finalMentions = [...new Set(finalMentions)];
 
   if (!LLM_ENABLED) {
-    await deliver(rawText, addr, finalMentions, attachments);
+    await deliver(rawText, addr, finalMentions, attachments, deliverOpts);
     log('Delivered raw (LLM disabled)', { chars: rawText.length });
-    await writeTaskLog(task, 'delivered', rawText.length, 'raw');
-    markTaskComplete(task?.taskId);
+    if (!skipTaskLifecycle) { await writeTaskLog(task, 'delivered', rawText.length, 'raw'); markTaskComplete(task?.taskId); }
     return rawText; // SESSION_CONTEXT_PLAN Phase 4: delivered text for the thread ledger
   }
 
@@ -491,6 +504,7 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
     if (convoTail) {
       parts.push(`RECENT CONVERSATION (historical turns for tone and topic context):\n${convoTail}`);
     }
+    if (contextHint) parts.push(`DELIVERY GUIDANCE (shape the tone; do NOT quote this line):\n${contextHint}`);
     if (question) parts.push(`CONTEXT (what the human asked or what triggered this):\n${question}`);
     parts.push(`BRAIN OUTPUT:\n${rawText}`);
     const input = parts.join('\n\n');
@@ -535,25 +549,23 @@ async function classifyAndDeliver(rawText, overrideQuestion, addr, mentions = []
     const hasEscalate = /\[ESCALATE\]/i.test(rawText);
     if (hasEscalate && action !== 'escalate') parsed.action = 'escalate';
 
-    if (action === 'deliver' || action === 'escalate') {
-      await deliver(finalText, addr, finalMentions, attachments);
+    if (action === 'deliver' || action === 'escalate' || neverSuppress) {
+      await deliver(finalText, addr, finalMentions, attachments, deliverOpts);
       log('Delivered', { channel: CHANNEL, chars: finalText.length, action,
-        voiced: voiceStatus });
-      await writeTaskLog(task, 'delivered', finalText.length, action);
-      markTaskComplete(task?.taskId);
+        voiced: voiceStatus, forced: (neverSuppress && action !== 'deliver' && action !== 'escalate') ? true : undefined });
+      if (!skipTaskLifecycle) { await writeTaskLog(task, 'delivered', finalText.length, action); markTaskComplete(task?.taskId); }
       return finalText; // SESSION_CONTEXT_PLAN Phase 4: the voice's actual words
     }
     log('Suppressed (internal)', { chars: rawText.length });
-    await writeTaskLog(task, 'suppressed', 0, 'internal');
+    if (!skipTaskLifecycle) await writeTaskLog(task, 'suppressed', 0, 'internal');
   } catch (err) {
     log('Classify error — delivering raw', { error: err.message });
-    await deliver(rawText, addr, finalMentions, attachments);
-    await writeTaskLog(task, 'delivered', rawText.length, 'fallback');
-    markTaskComplete(task?.taskId);
+    await deliver(rawText, addr, finalMentions, attachments, deliverOpts);
+    if (!skipTaskLifecycle) { await writeTaskLog(task, 'delivered', rawText.length, 'fallback'); markTaskComplete(task?.taskId); }
     return rawText;
   }
 
-  markTaskComplete(task?.taskId);
+  if (!skipTaskLifecycle) markTaskComplete(task?.taskId);
   return null; // suppressed — nothing entered the thread
 }
 
@@ -855,9 +867,33 @@ async function pollBrainV3Envelopes() {
           }
         }
 
-        if (deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result')) {
+        const delegationRef = f.delegation_ref?.stringValue || null;
+        const isDelegationEnv = deliveryTarget && (envIntent === 'delegation_send' || envIntent === 'delegation_result');
+        if (isDelegationEnv && !delegationRef) {
+          // Legacy path (conversational_ping_enabled=false): pre-formatted [DELEGATION ...]
+          // marker, delivered verbatim (no voicing).
           await deliverDelegation(output, addr, deliveryTarget);
-          log('Delivered delegation envelope to target', { envId, target: deliveryTarget, intent: envIntent });
+          log('Delivered delegation marker (legacy) to target', { envId, target: deliveryTarget, intent: envIntent });
+        } else if (isDelegationEnv && delegationRef) {
+          // B-2 conversational ping (C-27): voice the prose body through the normal
+          // pipeline; the correlation tag is appended POST-voicing in channel.mjs
+          // (out of the LLM's reach) so the recipient's ears can suppress it. @mention
+          // ONLY the target (mentionsVerbatim), never suppress (C-3 human visibility),
+          // and don't touch the operator's TASK.json (skipTaskLifecycle). ensureSpaceMember
+          // still runs downstream because deliveryTarget is set.
+          const kind = envIntent === 'delegation_result' ? 'result' : 'send';
+          await classifyAndDeliver(output, envQuestion, addr, [deliveryTarget], attachments, convoTail, {
+            deliveryTarget,
+            correlationTag: composeCorrelationTag({ ref: delegationRef, kind }),
+            contextHint: kind === 'result'
+              ? '[This is a status update to the teammate who delegated this — voice it as naturally telling a colleague what you found or did; keep the substance intact.]'
+              : '[This is a hand-off to a teammate — voice it as naturally asking a colleague to take this on; keep the instruction substance intact.]',
+            neverSuppress: true,
+            mentionsVerbatim: true,
+            skipTaskLifecycle: true,
+            replyInThread: false,
+          });
+          log('Delivered delegation ping (voiced + tag) to target', { envId, target: deliveryTarget, intent: envIntent, ref: delegationRef });
         } else {
           // CP4 defense-in-depth: the brain's completeEnvelope guarantees a
           // non-empty summary (deliverable.mjs). If an artifact-only body still

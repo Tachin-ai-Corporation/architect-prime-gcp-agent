@@ -241,7 +241,7 @@ export async function ensureSpaceMember(spaceName, userEmail, token) {
  * @returns {Promise<boolean>} true if delivered successfully
  */
 export async function deliverToAddress(addr, text, opts = {}) {
-  const { token, deliveryTarget, replyInThread = true, log = () => {}, mentions = [], attachments = [] } = opts;
+  const { token, deliveryTarget, replyInThread = true, log = () => {}, mentions = [], attachments = [], correlationTag = '' } = opts;
 
   if (addr.channel === 'gchat') {
     if (!addr.space) {
@@ -254,18 +254,29 @@ export async function deliverToAddress(addr, text, opts = {}) {
       await ensureSpaceMember(addr.space, deliveryTarget, token);
     }
 
-    let finalMarkdown = toGChatMarkdown(text);
+    let bodyMd = toGChatMarkdown(text);
+    // Suffix = mention block + correlation tag (B-2). Both MUST survive the 4096
+    // cap, so truncate only the BODY, never the suffix — otherwise a long ping
+    // could lose its @mention or its (delegation ref: …) tag (the latter would
+    // let the ping slip past the recipient's suppression gate → spurious mission).
+    let suffix = '';
     if (mentions && mentions.length > 0) {
-      // De-duplicate tags
       const uniqueMentions = [...new Set(mentions)];
-      const tags = uniqueMentions.map(m => `<users/${m}>`).join(' ');
-      finalMarkdown += `\n\n${tags}`;
+      suffix += `\n\n${uniqueMentions.map(m => `<users/${m}>`).join(' ')}`;
     }
+    if (correlationTag) suffix += `\n\n${correlationTag}`;
 
-    if (finalMarkdown.length > 4096) {
-      log('WARN: Truncating message for GChat 4096 limit', { originalLength: finalMarkdown.length });
-      finalMarkdown = finalMarkdown.slice(0, 4093) + '...';
+    const GCHAT_LIMIT = 4096;
+    if (bodyMd.length + suffix.length > GCHAT_LIMIT) {
+      const room = Math.max(0, GCHAT_LIMIT - suffix.length - 3);
+      log('WARN: Truncating message BODY for GChat 4096 limit (suffix preserved)', { bodyLength: bodyMd.length, suffixLength: suffix.length });
+      bodyMd = bodyMd.slice(0, room) + '...';
     }
+    let finalMarkdown = bodyMd + suffix;
+    // Final safety: if the suffix alone somehow approaches the cap, hard-slice so
+    // the POST is never rejected (unreachable at current call sites — mention +
+    // tag are tiny — but cheap insurance).
+    if (finalMarkdown.length > GCHAT_LIMIT) finalMarkdown = finalMarkdown.slice(0, GCHAT_LIMIT);
 
     const body = { text: finalMarkdown };
     let url = `${CHAT_API}/${addr.space}/messages`;
