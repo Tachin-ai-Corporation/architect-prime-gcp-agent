@@ -78,6 +78,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     CORE_DIR = '/opt/corekit',
     CTX_AGENT_STEP = 8000,
     CTX_DISPATCH_FAILURE = 3000,
+    CTX_VERIFY_INPUT = 24000,
     startCpIndex = 0,
     startTaskIndex = 0,
     savedResults = [],
@@ -863,12 +864,24 @@ export async function executeCheckpoints(checkpoints, opts) {
         }
       }
 
+      // #4B: token-limit truncation ('length') — the reply was cut mid-stream, usually
+      // because the agent pasted a huge blob (raw logs, full JSON, a file dump) instead of
+      // writing to a file. Flag it retryable so the single retry below fires with a
+      // file-then-summarize nudge, turning a truncated dump into a bounded result.
+      // Deterministic detection of a deterministic gateway signal (B-1/B-3).
+      let truncatedNudge = '';
+      if (result.finishReason === 'length') {
+        result.success = false;
+        result.error = `${result.error ? result.error + ' ' : ''}[OUTPUT TRUNCATED AT TOKEN LIMIT]`;
+        truncatedNudge = '\n\n[TRUNCATION] Your previous reply hit the token limit. Do NOT paste large content (logs, full file contents, big JSON) into your response — write it to a file in your workspace and return only a concise summary plus the file path.';
+      }
+
       // Retry once on failure (for non-optional tasks)
       if (!result.success && !isOptional) {
         log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum} failed (${taskAgent}): ${result.error}. Retrying...`);
         result = await dispatchAgent(taskAgent, {
           ...dispatchPayload,
-          instruction: `${currentInstruction}${currentSkillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.`,
+          instruction: `${currentInstruction}${currentSkillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.${truncatedNudge}`,
           prior_results_context: [
             priorContext,
             `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${smartTruncate(result.output || '', 500)}`,
@@ -924,7 +937,10 @@ export async function executeCheckpoints(checkpoints, opts) {
               taskCriteria,
               '',
               '## Task Output',
-              result.output || '(empty)',
+              // B-28/B-4: bound the verifier's input so a ballooned motor output can't
+              // blow the cerebellum context (→ dispatch error → null verdict → verification
+              // silently skipped). smartTruncate keeps head+tail so setup + errors survive.
+              smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
               // Attack Duty block (stakes-gated, or load-bearing Brief part)
               ...((stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing) ? [
                 '',
@@ -987,7 +1003,10 @@ export async function executeCheckpoints(checkpoints, opts) {
                   taskCriteria,
                   '',
                   '## Task Output (Retry)',
-                  result.output || '(empty)',
+                  // B-28/B-4: bound the verifier's input so a ballooned motor output can't
+              // blow the cerebellum context (→ dispatch error → null verdict → verification
+              // silently skipped). smartTruncate keeps head+tail so setup + errors survive.
+              smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
                 ].join('\n'),
                 _missionId: envelope.id,
               });
@@ -1058,7 +1077,10 @@ export async function executeCheckpoints(checkpoints, opts) {
                     taskCriteria,
                     '',
                     '## Original Task Output',
-                    result.output || '(empty)',
+                    // B-28/B-4: bound the verifier's input so a ballooned motor output can't
+              // blow the cerebellum context (→ dispatch error → null verdict → verification
+              // silently skipped). smartTruncate keeps head+tail so setup + errors survive.
+              smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
                     '',
                     '## Verification Probe Results',
                     probeEvidence,

@@ -8,8 +8,9 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
 ### Read
 - `task-log-read [--last <n>] [--agent <name>] [--task <taskId>]` — Read recent task records from Firestore.
   Output: JSON array of task records containing status, agent, and output details.
-- `work-log-read [--hours <n>] [--owner <name>] [--status <status>] [--type <type>] [--min-steps <n>] [--limit <n>] [--json] [--verbose]` — Query recent work envelopes (missions, checkpoints, responsibilities) from Firestore.
+- `work-log-read [--hours <n>] [--owner <name>] [--status <status>] [--type <type>] [--min-steps <n>] [--mission <id>] [--limit <n>] [--json] [--verbose]` — Query recent work envelopes (missions, checkpoints, responsibilities) from Firestore.
   Output: Table or JSON representation of work envelopes including dispatches, outcomes, and timestamps.
+  Use `--mission <id>` to inspect ONE mission's full M→C→T tree with bounded reads (one GET per envelope in that mission) — do NOT widen `--hours` to hunt for a single mission's children; that pulls the whole fleet's window and can exhaust your budget.
 - `work-output-read <envelope-id> [--json]` — Read the full output of a work envelope from Firestore. Use this to recover truncated delegation results or inspect mission output.
   Output: Formatted header (status, type, title, timestamps) followed by full output text. With `--json`: raw JSON with all fields.
 

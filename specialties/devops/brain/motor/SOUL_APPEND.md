@@ -32,7 +32,8 @@ When errors occur, follow this pattern:
 
 ### Git Workspace (Primary — automatic)
 The Brain daemon automatically manages your git workspace for project missions:
-- **Clone + branch**: On mission start, the project repo is cloned and a `mission/{missionId}` branch is created in `shared/{missionId}/`
+- **Clone + branch**: On mission start, the daemon clones the project repo — its `main` branch plus your `mission/{missionId}` branch — into `shared/{missionId}/`. You do NOT need to re-clone it.
+- **Inputs are NOT auto-present**: Do not assume that files produced by an upstream teammate, or files named in your delegated instruction, are already in that clone. Before you depend on a named input file, verify it exists in your workspace; if it does not, obtain it as your instruction directs (e.g. the shared Project-Context workspace, or the git ref named in the instruction), then proceed.
 - **Commit + sync**: After each checkpoint, your work is committed and synced to the git ether
 - **Merge**: On mission completion, your branch is merged to `main`
 - Write all work products to the `shared/{missionId}/` directory — they are automatically tracked

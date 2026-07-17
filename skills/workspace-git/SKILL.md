@@ -6,6 +6,9 @@
 > > [!WARNING]
 > > **DO NOT instruct agents (Motor) to clone the mission's primary project repository.** The Brain Daemon has ALREADY cloned it into `shared/<missionId>`. Prefrontal plans must NOT include a "Clone the repo" step. Motor agents must NOT run `work-clone` for the main project. Just start working in `shared/<missionId>/` directly!
 > 
+> > [!NOTE]
+> > The auto-clone contains the project repo's `main` plus your `mission/<missionId>` branch — nothing more. Files produced by an upstream teammate, or files named in a delegated instruction, are NOT guaranteed to be in that clone. Before depending on a named input file, verify it exists in the workspace; if it does not, obtain it as the delegated instruction directs (e.g. the shared Project-Context workspace, or the git ref named in the instruction), then proceed.
+> 
 > `work-clone`'s bare default (`shared/{repoId}`) is ONLY for ad-hoc cross-project reads outside of missions.
 
 ## When to Use

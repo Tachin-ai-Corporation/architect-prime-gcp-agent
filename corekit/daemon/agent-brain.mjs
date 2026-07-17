@@ -122,6 +122,7 @@ const PROJECT_PROMOTION_AUTO = CONTRACTS.projects?.promotion_auto || false;
 const CTX_DISPATCH_SUCCESS = CONTRACTS.dispatch?.ctx_dispatch_success || 4000;
 const CTX_DISPATCH_FAILURE = CONTRACTS.dispatch?.ctx_dispatch_failure || 3000;
 const CTX_AGENT_STEP = CONTRACTS.dispatch?.ctx_agent_step || 8000;
+const CTX_VERIFY_INPUT = CONTRACTS.dispatch?.ctx_verify_input || 24000;
 const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 
 // Brain's own LLM for simple textâ†’text tasks (summarize, compress, rephrase).
@@ -1667,7 +1668,11 @@ async function callAgent(agentId, envelope) {
     // Content inspection (verdict detection, motor failure patterns) is the
     // caller's responsibility. Moved to checkpoint-executor in Phase 3.1.
     // Phase 4.3: Pass through usage metadata for telemetry
-    return { success: true, output: content, error: null, durationMs, usage: data.usage || null };
+    // #4B: surface the gateway's finish_reason so the caller can detect a
+    // token-limit truncation ('length') deterministically and retry with a
+    // "write to a file, return a concise summary" nudge (B-1/B-3).
+    const finishReason = data.choices?.[0]?.finish_reason || 'stop';
+    return { success: true, output: content, error: null, durationMs, usage: data.usage || null, finishReason };
   } catch (e) {
     const durationMs = Date.now() - start;
     const isTimeout = e.name === 'TimeoutError' || e.message?.includes('abort');
@@ -3329,6 +3334,7 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
     CORE_DIR,
     CTX_AGENT_STEP,
     CTX_DISPATCH_FAILURE,
+    CTX_VERIFY_INPUT,
     startCpIndex: checkpointIndex,
     startTaskIndex: taskIndex,
     savedResults,
@@ -3533,6 +3539,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     CORE_DIR,
     CTX_AGENT_STEP,
     CTX_DISPATCH_FAILURE,
+    CTX_VERIFY_INPUT,
     CONTRACTS,
     buildProjectContext,
     MAX_ITERATIONS,

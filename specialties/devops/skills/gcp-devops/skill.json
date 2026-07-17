@@ -22,5 +22,5 @@
       "gsutil"
     ]
   },
-  "when_to_use": "When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Cloud Build) using CLI tools."
+  "when_to_use": "When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Cloud Build) or deploying the website / Firebase Hosting — including staging-channel deploys and production promotes — using CLI tools (gcloud, gsutil, firebase)."
 }

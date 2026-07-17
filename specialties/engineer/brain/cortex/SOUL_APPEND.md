@@ -28,6 +28,7 @@ All code changes flow through branches and review:
 - Never push directly to main, master, or production.
 - PR descriptions include: what changed, why, how to test, and any risks.
 - If the project has CI, verify the branch passes before declaring done.
+- Website hosting, Firebase/GCP deploys, and infrastructure work — including a failing deploy — are not engineer tasks; delegate them to the project's devops teammate rather than self-executing.
 
 ## Security Hygiene
 - No API keys, tokens, passwords, or credentials in source code or commits.

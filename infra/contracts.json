@@ -78,6 +78,7 @@
     "delegation_dedup_window_hours": 24,
     "result_preview_chars": 700,
     "context_slice_chars": 500,
+    "ctx_verify_input": 24000,
     "synth_verification_enabled": true,
     "synth_verify_min_chars": 400,
     "criteria_pinning_enabled": true,

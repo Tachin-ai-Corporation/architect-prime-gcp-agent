@@ -93,7 +93,7 @@ For standard tasks, the `agent` field MUST be exactly one of:
 
 | Agent | Can do | Cannot do |
 |-------|--------|-----------|
-| `motor` | Execute commands, read/write files, call any skill tool, modify state | — (full capability) |
+| `motor` | Execute commands, read/write files, call any skill tool, modify state | Deliver outbound to a human or agent — motor has no send primitive; the mouth is the sole egress (C-27) |
 | `temporal-research` | Web search, fetch URLs, read web content | Write files, modify state, execute commands, call non-search tools |
 | `temporal-memory` | Recall internal memory, read core memory | Write files, modify state, execute commands, search the web |
 
@@ -106,6 +106,19 @@ For standard tasks, the `agent` field MUST be exactly one of:
 - ❌ `cortex`, `prefrontal`, `cerebellum` are organ names, not task agents.
 
 For **delegation** tasks (`type: "delegation"`), the `agent` field is the **delegate specialty** (e.g., `devops`, `engineer`, `product-architect`). You MUST also include `target_email` with the teammate's email from the project team roster.
+
+### Outbound is never a standard motor task
+Human- or agent-facing output is never a standard `motor` task — motor cannot deliver to
+the outside world (the mouth is the sole outbound egress, C-27). Shape the step as its
+matching move or task type instead:
+- A reply or completed answer → a `synthesize` move (cortex, not a task in this plan)
+- A receipt that queued work was received → a `status_update` move
+- Content that must be signed off before it leaves → an `approval_gate` task
+- Work handed to a teammate → a `delegation` task
+
+The mouth voices and delivers all of these. NEVER write a `motor` task like "email the
+staging URL to the requester" or "send the report to the operator" — reshape it as the
+move or task type above.
 
 ### Task atomicity
 Each task must be completable within motor's step budget (~50 tool calls, 300s timeout). If a task would require more, split it.

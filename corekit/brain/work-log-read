@@ -12,10 +12,11 @@
 #   work-log-read --hours 24 --status complete # Completed only
 #   work-log-read --hours 48 --type M          # Missions only
 #   work-log-read --hours 24 --min-steps 3     # Multi-step only
+#   work-log-read --mission w-123...           # Drill ONE mission's M->C->T tree
 #   work-log-read --hours 24 --json            # JSON output
 #   work-log-read --hours 24 --verbose         # Include result text
 #
-# Reads from: /primes/{primeId}/work/
+# Reads from: the top-level work/ collection.
 # ============================================================
 set -euo pipefail
 
@@ -28,6 +29,7 @@ MIN_STEPS=0
 LIMIT=50
 JSON_OUTPUT=false
 VERBOSE=false
+MISSION_ID=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --status)    STATUS_FILTER="$2";   shift 2 ;;
     --type)      TYPE_FILTER="$2";     shift 2 ;;
     --min-steps) MIN_STEPS="$2";       shift 2 ;;
+    --mission)   MISSION_ID="$2";      shift 2 ;;
     --limit)     LIMIT="$2";           shift 2 ;;
     --json)      JSON_OUTPUT=true;     shift ;;
     --verbose)   VERBOSE=true;         shift ;;
@@ -49,6 +52,7 @@ Options:
   --status STATUS  Filter by status (complete, failed, active, pending)
   --type TYPE      Filter by envelope type (M=mission, C=child, R=responsibility)
   --min-steps N    Only show envelopes with N+ child dispatches (default: 0)
+  --mission ID     Drill ONE mission: print its M->C->T tree (bounded reads)
   --limit N        Max results (default: 50)
   --json           Output as JSON array
   --verbose        Include result/instruction text in output
@@ -88,6 +92,81 @@ print(cutoff.strftime('%Y-%m-%dT%H:%M:%S.000Z'))
 # ── Build Firestore query filters ─────────────────────────
 FIRESTORE_BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
 PARENT_PATH=""
+
+# ── Mission drill-down: one mission + its full M->C->T tree ───
+# Scopes to a SINGLE mission — one GET per envelope in that mission (single- to
+# low-double-digit reads) instead of an unbounded --hours window over every agent's
+# work (B-4: bounded context; the original tool forced --hours 72 to inspect one
+# mission, ballooning an agent's motor budget). Mirrors the children-based tree walk
+# in corekit/fleet/fleet-work-read (Prime-only); kept inline to avoid a cross-CLI
+# shared-module dependency for a read-only tool — a future refactor could share it (B-18).
+if [[ -n "$MISSION_ID" ]]; then
+  M_TMP="$(mktemp)"; trap 'rm -f "$M_TMP"' EXIT
+  curl -s -o "$M_TMP" --max-time 15 -H "Authorization: Bearer ${TOKEN}" \
+    "${FIRESTORE_BASE}/work/${MISSION_ID}"
+  python3 - "$M_TMP" "$FIRESTORE_BASE" "$TOKEN" "$JSON_OUTPUT" "$VERBOSE" <<'PYDRILL'
+import json, sys, urllib.request
+m_file, fs_url, token, json_mode, verbose = sys.argv[1:6]
+json_mode = (json_mode == "true"); verbose = (verbose == "true")
+
+def dec(v):
+    for k in ("stringValue", "integerValue", "booleanValue", "timestampValue"):
+        if k in v: return v[k]
+    if "nullValue" in v: return None
+    if "arrayValue" in v: return [dec(x) for x in v["arrayValue"].get("values", [])]
+    if "mapValue" in v: return {kk: dec(vv) for kk, vv in v["mapValue"].get("fields", {}).items()}
+    return v
+
+def fetch(env_id):
+    req = urllib.request.Request(f"{fs_url}/work/{env_id}", headers={"Authorization": f"Bearer {token}"})
+    try:
+        d = json.load(urllib.request.urlopen(req, timeout=15))
+    except Exception:
+        return None
+    return {k: dec(v) for k, v in d.get("fields", {}).items()}
+
+try:
+    md = json.load(open(m_file, encoding="utf-8"))
+except Exception:
+    print("ERROR: could not read mission document", file=sys.stderr); sys.exit(1)
+if "fields" not in md:
+    print("Mission not found or inaccessible.", file=sys.stderr); sys.exit(1)
+mission = {k: dec(v) for k, v in md.get("fields", {}).items()}
+
+nodes = []
+def walk(env, depth):
+    nodes.append((depth, env))
+    for cid in (env.get("children") or []):
+        c = fetch(cid)
+        if c: walk(c, depth + 1)
+        else: nodes.append((depth + 1, {"id": cid, "type": "?", "status": "missing"}))
+walk(mission, 0)
+
+if json_mode:
+    print(json.dumps([{"depth": d, **e} for d, e in nodes], indent=1, default=str))
+    sys.exit(0)
+
+ICON = {"complete": "✅", "archived": "✅", "failed": "❌", "blocked": "🚫", "needs_input": "❓",
+        "cancelled": "⊘", "active": "🔄", "waiting": "⏳", "queued": "⏳"}
+print(f"\nMISSION {mission.get('id')}  [{mission.get('status')}]  {mission.get('owner') or ''}")
+print(f"  {(mission.get('title') or '')[:90]}")
+_instr = (mission.get('instruction') or '')[:400]
+if _instr: print(f"  instruction: {_instr}")
+_err = mission.get('error')
+if _err: print(f"  error: {str(_err)[:300]}")
+print("  " + "─" * 60)
+for d, e in nodes[1:]:
+    pad = "    " * d
+    code = ICON.get(e.get('status'), '  ')
+    print(f"  {pad}[{code}] {e.get('type', '?')} {e.get('intent') or ''} :: {(e.get('title') or '')[:70]}")
+    _ee = e.get('error')
+    if _ee: print(f"  {pad}      error: {str(_ee)[:200]}")
+    if verbose and e.get('output'):
+        print(f"  {pad}      output: {str(e.get('output'))[:200].strip()}")
+print(f"\n{len(nodes)} node(s) in mission tree.")
+PYDRILL
+  exit 0
+fi
 
 # Always filter by created_at >= cutoff
 FILTER_PARTS=()
@@ -205,9 +284,11 @@ for entry in data:
     name = doc.get("name", "")
     env_id = name.split("/")[-1] if name else "?"
 
-    # Count children by looking at child_ids array or childCount field
-    child_ids = fv(fields, "child_ids", "arrayValue")
-    child_count = len(child_ids) if child_ids else fv(fields, "childCount", "integerValue", 0)
+    # Count children from the persisted `children` array — the M->C->T tree is stored
+    # there. (child_ids / childCount were read here previously but are written nowhere,
+    # so the CHILDREN column was always "—" and --min-steps filtered out everything.)
+    child_ids = fv(fields, "children", "arrayValue")
+    child_count = len(child_ids)
 
     # Skip if below min-steps threshold
     if min_steps > 0 and child_count < min_steps:
