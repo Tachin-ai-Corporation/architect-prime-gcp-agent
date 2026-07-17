@@ -630,6 +630,37 @@ export async function executeCheckpoints(checkpoints, opts) {
         // Create Task envelope with status='waiting'
         const taskId = generateId('w');
         const delegOutputId = generateId('w');
+        const taskTitle = taskDesc.substring(0, 100); // clean title, before artifact refs are appended
+
+        // B-2/C-27: publish artifacts + compose the ENRICHED body BEFORE the single
+        // write of the durable T. The reconciler (the sole pickup now that the ears
+        // suppress the ping) reads t.instruction, so it must be enriched from the
+        // first write. Writing the T EXACTLY ONCE (a) avoids a race where a reconciler
+        // poll landing in a two-write window materializes from a stale raw instruction
+        // (the delegation_ref dedup would then block the correction — a lost-context,
+        // non-deterministic outcome), and (b) avoids a second full-object write
+        // clobbering the reconciler's cross-agent child registration on this same T
+        // (which would re-open the delivery-fast-fail stranding).
+        if (envelope.project_id && publishArtifacts) {
+          try {
+            const artifacts = await publishArtifacts(envelope, { dryRun: false });
+            if (artifacts?.length > 0) {
+              log('INFO', `[delegation] Published ${artifacts.length} artifact(s) to Drive before delegating`);
+              const artifactRefs = artifacts.map(a => `📄 ${a.name}: ${a.driveUrl || a.id}`).join('\n');
+              taskDesc += `\n\n[SHARED ARTIFACTS — available in the project Drive folder]\n${artifactRefs}\nThese files are available in the project's shared Drive folder.`;
+            }
+          } catch (e) {
+            log('WARN', `[delegation] Artifact publish before delegation failed: ${e.message}`);
+          }
+        }
+        const priorCtx = [...allResults, ...cpResults]
+          .filter(r => r.success)
+          .map(r => `[Prior work — ${r.agent}]: ${smartTruncate(r.result || '', contextSliceChars)}`)
+          .join('\n\n');
+        const enrichedBody = priorCtx
+          ? `${taskDesc}\n\n--- Prior checkpoint results ---\n${priorCtx}\n--- End prior results ---`
+          : taskDesc;
+
         const taskEnvelope = {
           id: taskId,
           type: 'T',
@@ -637,8 +668,8 @@ export async function executeCheckpoints(checkpoints, opts) {
           owner: AGENT_EMAIL || AGENT_ID,
           status: 'waiting',
           intent: 'delegation',
-          title: taskDesc.substring(0, 100),
-          instruction: taskDesc,
+          title: taskTitle,
+          instruction: enrichedBody,
           accept_criteria: taskCriteria,
           context_summary: [...allResults, ...cpResults].length > 0
             ? [...allResults, ...cpResults].map(r =>
@@ -674,44 +705,8 @@ export async function executeCheckpoints(checkpoints, opts) {
         cpEnvelope.updated_at = new Date().toISOString();
         await firestoreWrite('work', cpId, cpEnvelope);
 
-        // Publish local work artifacts so the delegate can access them
-        if (envelope.project_id && publishArtifacts) {
-          try {
-            const artifacts = await publishArtifacts(envelope, { dryRun: false });
-            if (artifacts?.length > 0) {
-              log('INFO', `[delegation] Published ${artifacts.length} artifact(s) to Drive before delegating`);
-              // Append artifact references to the delegation instruction
-              const artifactRefs = artifacts.map(a => `📄 ${a.name}: ${a.driveUrl || a.id}`).join('\n');
-              taskDesc += `\n\n[SHARED ARTIFACTS — available in the project Drive folder]\n${artifactRefs}\nThese files are available in the project's shared Drive folder.`;
-            }
-          } catch (e) {
-            log('WARN', `[delegation] Artifact publish before delegation failed: ${e.message}`);
-          }
-        }
-
-        // Compose delegation marker for Mouth delivery
-        // Resolve project Drive folder for delegate context
-        const projCtx = (PROJECTS[envelope.project_id] || {}).context || {};
-        const driveFolderId = (PROJECTS[envelope.project_id] || {}).drive_folder_id
-          || projCtx.drive_folder?.ref || null;
-        // Enrich delegation body with prior checkpoint results
-        const priorCtx = [...allResults, ...cpResults]
-          .filter(r => r.success)
-          .map(r => `[Prior work — ${r.agent}]: ${smartTruncate(r.result || '', contextSliceChars)}`)
-          .join('\n\n');
-        const enrichedBody = priorCtx
-          ? `${taskDesc}\n\n--- Prior checkpoint results ---\n${priorCtx}\n--- End prior results ---`
-          : taskDesc;
-
-        const marker = composeDelegationMarker({
-          targetEmail: targetAgentEmail,
-          ref: taskId,
-          from: AGENT_EMAIL || AGENT_ID,
-          project: envelope.project_id || 'none',
-          drive: driveFolderId,
-          body: enrichedBody,
-        });
-
+        // B-2 (C-27): conversational prose ping — the mouth voices enrichedBody and
+        // appends the correlation tag; delegation_ref routes it to the voiced path.
         await firestoreWrite('work', delegOutputId, {
           id: delegOutputId,
           type: 'T',
@@ -720,8 +715,9 @@ export async function executeCheckpoints(checkpoints, opts) {
           status: 'complete',
           intent: 'delegation_send',
           title: `Delegation to ${delegateSpecialty}`,
-          instruction: taskDesc,
-          output: marker,
+          instruction: enrichedBody,
+          output: enrichedBody,
+          delegation_ref: taskId,
           delivery_status: 'pending',
           delivery_target: targetAgentEmail,
           delivery_address: makeAddress('gchat', { space: delegSpaceId }),

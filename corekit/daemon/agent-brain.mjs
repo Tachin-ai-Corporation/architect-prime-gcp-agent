@@ -486,19 +486,10 @@ function _initProcessEngine() {
     onMissionComplete: async (mission) => {
       // Create delegation result envelope for delivery back to the delegator
       if (!mission.source_meta?.delegation_ref) return;
-      const resultMarker = composeDelegationResultMarker({
-        targetEmail: mission.source_meta.delegated_from || '',
-        ref: mission.source_meta.delegation_ref,
-        status: mission.status,
-        missionId: mission.id,
-        body: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS),
-        trailer: {
-          fullOutputChars: (mission.output || '').length,
-          artifactRef: mission.context?.artifact_status === 'ok'
-            ? `${mission.project_id || 'repo'}@mission/${mission.id}` : null,
-          artifactStatus: mission.context?.artifact_status || null,
-        },
-      });
+      // B-2 (C-27): conversational result prose — the mouth voices it and appends the
+      // correlation tag. The machine trailer is dropped from the wire; recovery data
+      // (char count, artifact ref) stays in the Firestore envelope/T fields (C-5).
+      const resultBody = smartTruncate(toStr(mission.output || mission.error || mission.status), RESULT_PREVIEW_CHARS);
       const resultOutputId = generateId('w');
       await firestoreWrite('work', resultOutputId, {
         id: resultOutputId,
@@ -508,8 +499,9 @@ function _initProcessEngine() {
         status: 'complete',
         intent: 'delegation_result',
         title: `Delegation result for ${mission.source_meta.delegation_ref}`,
-        instruction: 'Deliver delegation result marker',
-        output: resultMarker,
+        instruction: 'Deliver delegation result (conversational)',
+        output: resultBody,
+        delegation_ref: mission.source_meta.delegation_ref,
         delivery_status: 'pending',
         delivery_target: mission.source_meta.delegated_from || null,
         delivery_space_id: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id) || null,
@@ -2121,19 +2113,9 @@ async function completeEnvelope(envelope, opts) {
     // Delegation result reply (on complete, blocked, or failed — delegator must know)
     if (['complete', 'blocked', 'failed'].includes(status) && envelope.source_meta?.delegation_ref) {
       try {
-        const resultMarker = composeDelegationResultMarker({
-          targetEmail: envelope.source_meta.delegated_from || '',
-          ref: envelope.source_meta.delegation_ref,
-          status: envelope.status,
-          missionId: envelope.id,
-          body: smartTruncate(toStr(envelope.output), RESULT_PREVIEW_CHARS),
-          trailer: {
-            fullOutputChars: (envelope.output || '').length,
-            artifactRef: envelope.context?.artifact_status === 'ok'
-              ? `${envelope.project_id || 'repo'}@mission/${envelope.id}` : null,
-            artifactStatus: envelope.context?.artifact_status || null,
-          },
-        });
+        // B-2 (C-27): conversational result prose (mouth voices it + appends the tag);
+        // trailer dropped from the wire, recovery data stays in Firestore fields (C-5).
+        const resultBody = smartTruncate(toStr(envelope.output || envelope.error || envelope.status), RESULT_PREVIEW_CHARS);
         const resultOutputId = generateId('w');
         await firestoreWrite('work', resultOutputId, {
           id: resultOutputId,
@@ -2143,8 +2125,9 @@ async function completeEnvelope(envelope, opts) {
           status: 'complete',
           intent: 'delegation_result',
           title: `Delegation result for ${envelope.source_meta.delegation_ref}`,
-          instruction: 'Deliver delegation result marker',
-          output: resultMarker,
+          instruction: 'Deliver delegation result (conversational)',
+          output: resultBody,
+          delegation_ref: envelope.source_meta.delegation_ref,
           delivery_status: 'pending',
           delivery_target: envelope.source_meta.delegated_from || null,
           delivery_space_id: (envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id) || null,

@@ -198,16 +198,9 @@ export async function handleDelegate(ctx, deps) {
   await firestoreWrite('work', delegTaskId, delegTaskEnvelope);
   await writeHistory(delegTaskId, null, 'waiting', 'brain', `Delegating to ${targetEmail}`);
 
-  // Compose delegation marker as output envelope for Mouth
-  const delegMarker = composeDelegationMarker({
-    targetEmail,
-    ref: delegTaskId,
-    from: AGENT_EMAIL || AGENT_ID,
-    project: delegateProjectId || 'none',
-    body: delegateInstruction,
-    criteria: delegateCriteria,
-  });
-
+  // B-2 (C-27): the delegation ping is conversational PROSE — the mouth voices it and
+  // appends the correlation tag post-voicing. The ref + accept_criteria live on the
+  // durable delegation T (the reconciler reads them); the ping carries no raw marker.
   await firestoreWrite('work', delegOutputId, {
     id: delegOutputId,
     type: 'T',
@@ -217,7 +210,8 @@ export async function handleDelegate(ctx, deps) {
     intent: 'delegation_send',
     title: `Delegation to ${targetEmail}`,
     instruction: delegateInstruction,
-    output: delegMarker,
+    output: delegateInstruction,
+    delegation_ref: delegTaskId,
     delivery_status: 'pending',
     delivery_target: targetEmail,
     delivery_space_id: spaceId,

@@ -192,19 +192,8 @@ export function createLifecycleHandler(deps) {
       // Delegation result reply
       if (['complete', 'failed', 'blocked', 'needs_input', 'cancelled'].includes(status) && envelope.source_meta?.delegation_ref) {
         try {
-          const resultMarker = composeDelegationResultMarker({
-            targetEmail: envelope.source_meta.delegated_from || '',
-            ref: envelope.source_meta.delegation_ref,
-            status: envelope.status,
-            missionId: envelope.id,
-            body: smartTruncate(toStr(envelope.output || envelope.error || envelope.status), resultPreviewChars),
-            trailer: {
-              fullOutputChars: (envelope.output || '').length,
-              artifactRef: envelope.context?.artifact_status === 'ok'
-                ? `${envelope.project_id || 'repo'}@mission/${envelope.id}` : null,
-              artifactStatus: envelope.context?.artifact_status || null,
-            },
-          });
+          // B-2 (C-27): conversational result prose (the mouth voices it + appends the tag).
+          const resultBody = smartTruncate(toStr(envelope.output || envelope.error || envelope.status), resultPreviewChars);
           const resultOutputId = generateId('w');
           await firestoreWrite('work', resultOutputId, {
             id: resultOutputId,
@@ -214,8 +203,9 @@ export function createLifecycleHandler(deps) {
             status: 'complete',
             intent: 'delegation_result',
             title: `Delegation result for ${envelope.source_meta.delegation_ref}`,
-            instruction: 'Deliver delegation result marker',
-            output: resultMarker,
+            instruction: 'Deliver delegation result (conversational)',
+            output: resultBody,
+            delegation_ref: envelope.source_meta.delegation_ref,
             delivery_status: 'pending',
             delivery_target: envelope.source_meta.delegated_from || null,
             delivery_space_id: (envelope.project_id && projects[envelope.project_id]?.gchat_space_id) || null,
