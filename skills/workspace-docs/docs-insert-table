@@ -20,8 +20,11 @@ done
 [[ -n "$DOC_ID" && -n "$ANCHOR" && -n "$ROWS" && -n "$COLS" ]] || die "Need --doc, --anchor, --rows, and --cols"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
+export DOCSLIB_DIR="${CORE_DIR}/bin"
 python3 -c "
-import urllib.request, urllib.error, json, sys
+import urllib.request, urllib.error, json, sys, os
+sys.path.insert(0, os.environ['DOCSLIB_DIR'])
+from _docslib import extract_text_and_map
 
 doc_id = sys.argv[1]
 anchor = sys.argv[2]
@@ -48,30 +51,6 @@ def api_call(url, method='GET', headers=None, data=None):
         sys.stderr.write(f'API error {method} {url}: {e.code} {e.read().decode(\"utf-8\")}\\n')
         sys.exit(1)
 
-def extract_text_and_map(elements):
-    text = ''
-    index_map = []
-    for elem in elements:
-        if 'paragraph' in elem:
-            for run_elem in elem['paragraph'].get('elements', []):
-                if 'textRun' in run_elem:
-                    tr = run_elem['textRun']
-                    content = tr.get('content', '')
-                    start = run_elem.get('startIndex', 0)
-                    for i, char in enumerate(content):
-                        text += char
-                        index_map.append(start + i)
-        elif 'table' in elem:
-            for row in elem['table'].get('tableRows', []):
-                for cell in row.get('tableCells', []):
-                    sub_text, sub_map = extract_text_and_map(cell.get('content', []))
-                    text += sub_text
-                    index_map.extend(sub_map)
-        elif 'tableOfContents' in elem:
-            sub_text, sub_map = extract_text_and_map(elem['tableOfContents'].get('content', []))
-            text += sub_text
-            index_map.extend(sub_map)
-    return text, index_map
 
 doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?suggestionsViewMode=SUGGESTIONS_INLINE')
 body_content = doc.get('body', {}).get('content', [])

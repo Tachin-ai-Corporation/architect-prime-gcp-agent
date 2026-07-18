@@ -43,8 +43,11 @@ if [[ -z "$ANCHOR" && ( -z "$START_IDX" || -z "$END_IDX" ) ]]; then
 fi
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
+export DOCSLIB_DIR="${CORE_DIR}/bin"
 python3 -c "
-import urllib.request, urllib.error, json, sys
+import urllib.request, urllib.error, json, sys, os
+sys.path.insert(0, os.environ['DOCSLIB_DIR'])
+from _docslib import extract_text_and_map
 
 doc_id, anchor, keep_anchor, start_arg, end_arg, token, email = sys.argv[1:8]
 keep_anchor = (keep_anchor == 'true')
@@ -61,23 +64,6 @@ def api_call(url, method='GET', headers=None, data=None):
             sys.exit(0)
         sys.stderr.write(f'API error {method} {url}: {e.code} {e.read().decode(\"utf-8\")}\n'); sys.exit(1)
 
-def extract_text_and_map(elements):
-    text, index_map = '', []
-    for elem in elements:
-        if 'paragraph' in elem:
-            for run_elem in elem['paragraph'].get('elements', []):
-                tr = run_elem.get('textRun')
-                if tr:
-                    content = tr.get('content', ''); start = run_elem.get('startIndex', 0)
-                    for i, ch in enumerate(content):
-                        text += ch; index_map.append(start + i)
-        elif 'table' in elem:
-            for row in elem['table'].get('tableRows', []):
-                for cell in row.get('tableCells', []):
-                    t, m = extract_text_and_map(cell.get('content', [])); text += t; index_map.extend(m)
-        elif 'tableOfContents' in elem:
-            t, m = extract_text_and_map(elem['tableOfContents'].get('content', [])); text += t; index_map.extend(m)
-    return text, index_map
 
 doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}')
 content = doc.get('body', {}).get('content', [])

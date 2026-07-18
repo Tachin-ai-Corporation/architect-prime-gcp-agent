@@ -27,6 +27,7 @@ skills/workspace-gmail/gmail-get bin/gmail-get
 # Workspace skills — Docs
 skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
 skills/workspace-docs/skill.json skills/workspace-docs/skill.json
+skills/workspace-docs/_docslib.py bin/_docslib.py
 skills/workspace-docs/docs-cat bin/docs-cat
 skills/workspace-docs/docs-tab-list bin/docs-tab-list
 skills/workspace-docs/docs-create bin/docs-create

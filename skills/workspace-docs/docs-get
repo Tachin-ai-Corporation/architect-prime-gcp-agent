@@ -31,47 +31,17 @@ if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
 fi
 [[ "$HTTP_CODE" == "200" ]] || { rm -f "$TMP_RESP"; die "Docs API returned HTTP ${HTTP_CODE}"; }
 
+export DOCSLIB_DIR="${CORE_DIR}/bin"
 python3 -c "
-import json, sys
+import json, sys, os
+sys.path.insert(0, os.environ['DOCSLIB_DIR'])
+from _docslib import extract_text_segments
 
 with open(sys.argv[1], 'r', encoding='utf-8') as f:
     doc = json.load(f)
 
-def extract_text_and_map(elements):
-    # Emit one compact segment per textRun ({startIndex,endIndex,text}) rather
-    # than one int per character — same per-textRun startIndex mapping, ~1/6 the
-    # size, so output stays under the harness cap instead of truncating into
-    # invalid JSON. endIndex is exclusive (start + len(content)).
-    text = ''
-    segments = []
-
-    for elem in elements:
-        if 'paragraph' in elem:
-            for run_elem in elem['paragraph'].get('elements', []):
-                if 'textRun' in run_elem:
-                    tr = run_elem['textRun']
-                    content = tr.get('content', '')
-                    start = run_elem.get('startIndex', 0)
-                    text += content
-                    segments.append({
-                        'startIndex': start,
-                        'endIndex': start + len(content),
-                        'text': content
-                    })
-        elif 'table' in elem:
-            for row in elem['table'].get('tableRows', []):
-                for cell in row.get('tableCells', []):
-                    sub_text, sub_segs = extract_text_and_map(cell.get('content', []))
-                    text += sub_text
-                    segments.extend(sub_segs)
-        elif 'tableOfContents' in elem:
-            sub_text, sub_segs = extract_text_and_map(elem['tableOfContents'].get('content', []))
-            text += sub_text
-            segments.extend(sub_segs)
-    return text, segments
-
 body_content = doc.get('body', {}).get('content', [])
-text, index_map = extract_text_and_map(body_content)
+text, index_map = extract_text_segments(body_content)
 
 named_ranges = {}
 for nr_id, nr_obj in doc.get('namedRanges', {}).items():
