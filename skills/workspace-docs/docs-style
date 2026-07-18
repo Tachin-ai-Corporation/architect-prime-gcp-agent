@@ -78,7 +78,7 @@ def extract_text_and_map(elements):
 
 # 1. Resolve range
 if anchor:
-    doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE')
+    doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?suggestionsViewMode=SUGGESTIONS_INLINE')
     body_content = doc.get('body', {}).get('content', [])
     plain_text, index_map = extract_text_and_map(body_content)
     
@@ -120,7 +120,12 @@ for part in parts:
     elif part == 'strikethrough':
         text_style['strikethrough'] = True
     elif part.startswith('color='):
-        hex_color = part.split('=')[1].lstrip('#')
+        hex_color = part.split('=', 1)[1].strip().lstrip('#')
+        if len(hex_color) == 3:
+            hex_color = ''.join(ch * 2 for ch in hex_color)
+        if len(hex_color) != 6 or any(ch not in '0123456789abcdefABCDEF' for ch in hex_color):
+            sys.stderr.write(f'Invalid hex color: \"{part}\" (use #RRGGBB or #RGB)\\n')
+            sys.exit(1)
         r = int(hex_color[0:2], 16) / 255.0
         g = int(hex_color[2:4], 16) / 255.0
         b = int(hex_color[4:6], 16) / 255.0
@@ -134,7 +139,17 @@ for part in parts:
             }
         }
     elif part.startswith('align='):
-        p_style['alignment'] = part.split('=')[1].upper()
+        align_val = part.split('=', 1)[1].strip().upper()
+        # Docs API enums are START/CENTER/END/JUSTIFIED; accept LEFT/RIGHT as aliases.
+        align_map = {
+            'LEFT': 'START', 'START': 'START',
+            'RIGHT': 'END', 'END': 'END',
+            'CENTER': 'CENTER', 'JUSTIFIED': 'JUSTIFIED'
+        }
+        if align_val not in align_map:
+            sys.stderr.write(f'Invalid alignment: \"{align_val}\" (use START/LEFT, CENTER, END/RIGHT, or JUSTIFIED)\\n')
+            sys.exit(1)
+        p_style['alignment'] = align_map[align_val]
     elif part in ['HEADING_1', 'HEADING_2', 'HEADING_3', 'HEADING_4', 'HEADING_5', 'HEADING_6', 'TITLE', 'SUBTITLE', 'NORMAL_TEXT']:
         p_style['namedStyleType'] = part
 
@@ -162,13 +177,16 @@ if p_style:
         }
     })
 
-if requests:
-    api_call(
-        f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
-        method='POST',
-        headers={'Content-Type': 'application/json'},
-        data=json.dumps({'requests': requests}).encode('utf-8')
-    )
+if not requests:
+    sys.stderr.write(f'No recognized style tokens in \"{style_desc}\" — nothing to apply.\\n')
+    sys.exit(1)
+
+api_call(
+    f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
+    method='POST',
+    headers={'Content-Type': 'application/json'},
+    data=json.dumps({'requests': requests}).encode('utf-8')
+)
 
 print(json.dumps({
     'status': 'styled',

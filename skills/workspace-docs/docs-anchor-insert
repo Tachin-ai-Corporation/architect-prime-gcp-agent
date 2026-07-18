@@ -75,7 +75,10 @@ def extract_text_and_map(elements):
             index_map.extend(sub_map)
     return text, index_map
 
-doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE')
+# NOTE: do NOT pass includeTabsContent=true — that flag empties the legacy
+# doc['body'], so extract_text_and_map would see no text and every anchor would
+# report 'not found'. Omitting it populates body from the first tab (matches docs-cat).
+doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?suggestionsViewMode=SUGGESTIONS_INLINE')
 body_content = doc.get('body', {}).get('content', [])
 plain_text, index_map = extract_text_and_map(body_content)
 
@@ -103,6 +106,13 @@ else:
     # Insert after the last character of the anchor phrase
     last_char_idx = c_start + len(anchor) - 1
     insert_idx = index_map[last_char_idx] + 1
+    # Boundary guard: the body owns a trailing newline, so the highest legal
+    # insertion index is doc_end-1. If the anchor's last char sits at a
+    # paragraph/structure boundary (end of body), the +1 can point past the last
+    # valid index and 400 the batchUpdate — clamp to the paragraph/body end.
+    doc_end = body_content[-1].get('endIndex', 1) if body_content else 1
+    if insert_idx > doc_end - 1:
+        insert_idx = doc_end - 1
 
 # Execute insert
 req_body = {

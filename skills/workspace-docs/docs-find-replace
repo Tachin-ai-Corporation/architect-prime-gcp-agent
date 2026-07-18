@@ -21,7 +21,8 @@ import json, sys
 req = {'replaceAllText':{'containsText':{'text':sys.argv[1],'matchCase':sys.argv[3]=='true'},'replaceText':sys.argv[2]}}
 print(json.dumps({'requests':[req]}))
 " "$FIND" "$REPLACE" "$MATCH_CASE")
-HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
+RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
@@ -29,10 +30,13 @@ if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   exit 0
 fi
 [[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
+# Pass RESP path, DOC_ID and FIND via argv so a FIND containing a quote or $(...)
+# cannot break this block or inject shell — mirrors the safe argv pass above.
 python3 -c "
-import json
-data = json.load(open('/tmp/docs-response.json'))
+import json, sys
+resp_file, doc_id, find = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.load(open(resp_file))
 replies = data.get('replies',[{}])
 count = replies[0].get('replaceAllText',{}).get('occurrencesChanged',0) if replies else 0
-print(json.dumps({'status':'replaced','docId':'$DOC_ID','find':'$FIND','occurrences':count}, indent=2))
-"
+print(json.dumps({'status':'replaced','docId':doc_id,'find':find,'occurrences':count}, indent=2))
+" "$RESP" "$DOC_ID" "$FIND"

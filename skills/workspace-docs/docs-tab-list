@@ -13,7 +13,9 @@ TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 export DOC_ID
 
-HTTP_CODE=$(curl -s -o /tmp/docs-tab-list.json -w '%{http_code}' \
+TMP_RESP=$(mktemp)
+trap 'rm -f "$TMP_RESP"' EXIT
+HTTP_CODE=$(curl -s -o "$TMP_RESP" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
 
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
@@ -23,8 +25,8 @@ fi
 [[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
 
 python3 -c "
-import json, os
-doc = json.load(open('/tmp/docs-tab-list.json'))
+import json, os, sys
+doc = json.load(open(sys.argv[1]))
 doc_id = os.environ.get('DOC_ID', '')
 
 def extract_tabs(tabs):
@@ -47,4 +49,4 @@ def count_tabs(tabs_list):
     
 tab_count = count_tabs(tabs)
 print(json.dumps({'docId': doc_id, 'tabs': tabs, 'tabCount': tab_count}, indent=2))
-"
+" "$TMP_RESP"

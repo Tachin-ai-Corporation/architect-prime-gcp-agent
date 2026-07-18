@@ -13,26 +13,43 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$DOC_ID" ]] || die "Need --doc"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
-HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
-  -H "Authorization: Bearer ${TOKEN}" \
-  "${DRIVE_API}/files/${DOC_ID}/comments?fields=comments(id,content,author,createdTime,resolved,replies)&pageSize=100")
-if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
-  echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Comments access denied. Share doc with ${AGENT_USER_EMAIL:-unknown}\"}"
-  exit 0
-fi
-[[ "$HTTP_CODE" == "200" ]] || die "Drive API returned HTTP ${HTTP_CODE}"
+# Drive caps pageSize at 100, so page through every result (accumulating BEFORE the
+# client-side resolved filter) to avoid silently truncating busy review docs. Only
+# reply IDs are requested (replies/id) to keep each page small. Each page gets its
+# own mktemp file to avoid the fixed-/tmp-path race under concurrent invocation.
+FIELDS="nextPageToken,comments(id,content,author,createdTime,resolved,replies/id)"
+PAGE_FILES=()
+cleanup() { [[ ${#PAGE_FILES[@]} -eq 0 ]] || rm -f "${PAGE_FILES[@]}"; }
+trap cleanup EXIT
+PAGE_TOKEN=""
+while :; do
+  URL="${DRIVE_API}/files/${DOC_ID}/comments?fields=${FIELDS}&pageSize=100"
+  [[ -n "$PAGE_TOKEN" ]] && URL="${URL}&pageToken=${PAGE_TOKEN}"
+  RESP="$(mktemp)"
+  PAGE_FILES+=("$RESP")
+  HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
+    -H "Authorization: Bearer ${TOKEN}" "$URL")
+  if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+    echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Comments access denied. Share doc with ${AGENT_USER_EMAIL:-unknown}\"}"
+    exit 0
+  fi
+  [[ "$HTTP_CODE" == "200" ]] || die "Drive API returned HTTP ${HTTP_CODE}"
+  PAGE_TOKEN=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('nextPageToken',''))" "$RESP")
+  [[ -n "$PAGE_TOKEN" ]] || break
+done
 python3 -c "
 import json, sys
-data = json.load(open('/tmp/docs-response.json'))
 include_resolved = sys.argv[1] == 'true'
 comments = []
-for c in data.get('comments',[]):
-    if not include_resolved and c.get('resolved'): continue
-    comments.append({
-        'id':c.get('id',''),'content':c.get('content',''),
-        'author':c.get('author',{}).get('displayName',''),
-        'created':c.get('createdTime',''),'resolved':c.get('resolved',False),
-        'replies':len(c.get('replies',[]))
-    })
+for path in sys.argv[2:]:
+    data = json.load(open(path))
+    for c in data.get('comments',[]):
+        if not include_resolved and c.get('resolved'): continue
+        comments.append({
+            'id':c.get('id',''),'content':c.get('content',''),
+            'author':c.get('author',{}).get('displayName',''),
+            'created':c.get('createdTime',''),'resolved':c.get('resolved',False),
+            'replies':len(c.get('replies',[]))
+        })
 print(json.dumps({'comments':comments,'count':len(comments)}, indent=2))
-" "$INCLUDE_RESOLVED"
+" "$INCLUDE_RESOLVED" "${PAGE_FILES[@]}"

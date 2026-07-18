@@ -38,31 +38,25 @@ ext = img_url.split('?')[0].split('.')[-1].lower()
 valid_exts = ['png', 'jpg', 'jpeg', 'gif']
 is_valid_ext = ext in valid_exts
 
-# Constraint 3: Verify content size < 50MB via HEAD request
+# Constraint 3 (advisory, NON-FATAL): best-effort HEAD for size/format guidance.
+# Many CDNs 403/405 a HEAD request, so failures here never block the insert —
+# Google's server-side fetch during batchUpdate is the authoritative validator.
+content_type = ''
 try:
     req = urllib.request.Request(img_url, method='HEAD')
     with urllib.request.urlopen(req, timeout=5) as r:
-        content_length = int(r.headers.get('Content-Length', 0))
+        content_length = int(r.headers.get('Content-Length', 0) or 0)
         content_type = r.headers.get('Content-Type', '').lower()
-        
-        if content_length > 50 * 1024 * 1024:
-            sys.stderr.write(f'Validation failed: Image size ({content_length} bytes) exceeds 50 MB limit.\\n')
-            sys.exit(1)
-            
-        if content_type:
-            is_valid_type = any(t in content_type for t in ['image/png', 'image/jpeg', 'image/gif'])
-            if not is_valid_type and not is_valid_ext:
-                sys.stderr.write(f'Validation failed: Unsupported content type \"{content_type}\" (Must be PNG, JPEG, or GIF).\\n')
-                sys.exit(1)
-except urllib.error.HTTPError as e:
-    # URL unreachable
-    sys.stderr.write(f'Validation failed: Image URL returned HTTP status {e.code}\\n')
-    sys.exit(1)
+        if content_length and content_length > 50 * 1024 * 1024:
+            sys.stderr.write(f'[warn] Image size ({content_length} bytes) exceeds the 50 MB Docs limit; Google may reject it.\\n')
 except Exception:
-    # Timeout or other network errors - proceed but check extension
-    if not is_valid_ext:
-        sys.stderr.write(f'Validation failed: Could not reach URL and extension \".{ext}\" is not PNG, JPEG, or GIF.\\n')
-        sys.exit(1)
+    # HEAD blocked (403/405), timed out, or network error — fall back to extension/Content-Type.
+    pass
+
+# Format guidance (advisory, non-fatal): warn if neither extension nor content-type looks like an image.
+is_valid_type = any(t in content_type for t in ['image/png', 'image/jpeg', 'image/gif'])
+if not is_valid_ext and not is_valid_type:
+    sys.stderr.write(f'[warn] URL extension \".{ext}\" and content-type \"{content_type or \"unknown\"}\" are not clearly PNG/JPEG/GIF; Google will validate on fetch.\\n')
 
 def api_call(url, method='GET', headers=None, data=None):
     if headers is None:
@@ -107,7 +101,7 @@ def extract_text_and_map(elements):
             index_map.extend(sub_map)
     return text, index_map
 
-doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE')
+doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?suggestionsViewMode=SUGGESTIONS_INLINE')
 body_content = doc.get('body', {}).get('content', [])
 plain_text, index_map = extract_text_and_map(body_content)
 

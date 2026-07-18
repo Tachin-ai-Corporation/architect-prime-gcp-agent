@@ -1,10 +1,10 @@
-# Skill: Google Docs (v7)
+# Skill: Google Docs (v8)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
 
 ## When to Use
-Use when creating formatted Google Docs from Markdown or HTML, performing surgical text/style edits, managing NamedRanges, exporting/importing `.docx` files, cloning templates, setting page formatting (margins, headers, footers), leaving feedback comments, or suggesting edits via tab suggestions on Google Docs.
+Use when creating formatted Google Docs from Markdown or HTML, performing surgical text/style edits, managing NamedRanges, exporting/importing `.docx` files, cloning templates, setting page formatting (margins, headers, footers), leaving feedback comments (add/list/resolve/delete), or suggesting in-place edits for human review on Google Docs.
 
 ---
 
@@ -16,7 +16,7 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
   - `--find "TEXT" [--context N]` — case-insensitive search; returns every match (max 20) with char offset and ±N chars of context (default 800).
   - `--offset N --limit M` — read a window of M chars starting at char N; response includes `next_offset` when more remains.
   - `--max-chars N` — cap a full read; adds `truncated: true` + `next_offset`.
-- `docs-get --doc <doc_id>` — Structured read. Returns JSON containing document plain text, element start/end character indices mapping, named ranges, and style info. Uses `suggestionsViewMode=SUGGESTIONS_INLINE`.
+- `docs-get --doc <doc_id> [--tab <tab>]` — Structured read (per-tab; defaults to the first tab, paginated for large docs). Returns JSON containing the document plain text plus a compact per-textRun index map — segments `[{startIndex,endIndex,text}]` carrying the **raw Docs API indices** — named ranges, and style info. Uses `suggestionsViewMode=SUGGESTIONS_INLINE`. This is the only valid source of the API indices that `--start/--end` flags consume.
 
 > [!WARNING]
 > **Tool output is capped (~8,000 chars per step).** A bare `docs-cat` on a large doc gets cut off mid-body and later sections silently vanish. For any doc you haven't measured: `docs-cat ID --meta` first, then read the sections you need with `--find` or `--offset/--limit` windows.
@@ -30,13 +30,17 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 - `docs-create --title "TITLE" --from-html FILE_PATH [--folder FOLDER_ID]` — Create a new Doc from an HTML file via `multipart/related` Drive upload with `Content-Type: text/html`. Google converts HTML to native Doc formatting: `<h1>` → Heading 1, `<table>` → native tables, inline CSS `color`/`font-family`/`font-size`/`background-color` → text/paragraph styles. **Use this lane when you need colors, custom fonts, styled tables, or any formatting Markdown cannot express.**
 
 ### Lane B — Surgical Edits (Formatting-Preserving)
+
+> [!WARNING]
+> **Two different index models — never mix them.** `docs-cat` (`--meta`/`--find`/`--offset`) emits **plain-text** character offsets. The `--start`/`--end` flags on `docs-section-delete`, `docs-style`, and `docs-namedrange-create` require **raw Docs API indices**, which come **only from `docs-get`** (its per-textRun segment map). On any doc containing tables or images the two diverge, and feeding a `docs-cat` offset into a `--start/--end` range corrupts the wrong region. Prefer `--anchor` (unambiguous) over raw indices; when you must use indices, source them from `docs-get`.
+
 - `docs-find-replace --doc <doc_id> --find "OLD" --replace "NEW" [--match-case]` — Global find and replace all instances of a string.
 - `docs-batch-replace --doc <doc_id> --file PAIRS_FILE.json` — Apply an array of `{find, replace}` pairs atomically in a single `replaceAllText` batchUpdate.
 - `docs-anchor-insert --doc <doc_id> --anchor "phrase" --text "text" [--position before|after]` — Resolve a unique anchor phrase index and insert text immediately before or after it.
 - `docs-section-delete --doc <doc_id> (--from-anchor "phrase" [--keep-anchor] | --start N --end N)` — Delete a contiguous region: from a unique anchor phrase to the **end of the document** (default), everything **after** the anchor (`--keep-anchor`), or an explicit character-index range. This is the tool for stripping a trailing section (e.g. a review/redline block) that `docs-find-replace` can't target and that rebuilding the whole body would risk. Anchor matching spans table and TOC text.
-- `docs-style --doc <doc_id> (--anchor "phrase" | --start START_IDX --end END_IDX) --style "STYLE"` — Apply typography/headings/alignment/color to a unique anchor or range. Style can be comma-separated list of: `bold`, `italic`, `underline`, `strikethrough`, `align=CENTER|LEFT|RIGHT|JUSTIFIED`, `color=#RRGGBB`, `HEADING_1` to `HEADING_6`, `TITLE`, `SUBTITLE`, `NORMAL_TEXT`.
+- `docs-style --doc <doc_id> (--anchor "phrase" | --start START_IDX --end END_IDX) --style "STYLE"` — Apply typography/headings/alignment/color to a unique anchor or range. Style can be comma-separated list of: `bold`, `italic`, `underline`, `strikethrough`, `align=START|CENTER|END|JUSTIFIED` (`LEFT`/`RIGHT` are accepted as aliases for `START`/`END`), `color=#RRGGBB`, `HEADING_1` to `HEADING_6`, `TITLE`, `SUBTITLE`, `NORMAL_TEXT`.
 - `docs-insert-table --doc <doc_id> --anchor "phrase" --rows N --cols M` — Insert a table at a resolved anchor index.
-- `docs-insert-image --doc <doc_id> --anchor "phrase" --url IMAGE_URL` — Insert inline image from public URL at a resolved anchor index (enforces PNG/JPEG/GIF format, <50MB, <25MP, URL <2KB).
+- `docs-insert-image --doc <doc_id> --anchor "phrase" --url IMAGE_URL` — Insert inline image from public URL at a resolved anchor index (PNG/JPEG/GIF format, <50MB, and URL <2KB are checked locally; the megapixel limit is enforced server-side by Google, not client-side).
 - `docs-namedrange-create --doc <doc_id> --name "RANGE_NAME" (--anchor "phrase" | --start START_IDX --end END_IDX)` — Create a named range around a resolved anchor or character index range.
 - `docs-namedrange-replace --doc <doc_id> --name "RANGE_NAME" --text "text"` — Replace named range text in-place without index tracking.
 
@@ -48,15 +52,17 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 - `docs-clone-template --template DOC_ID --title "TITLE" [--folder FOLDER_ID] [--replacements FILE]` — Clone a template Doc via Drive `files.copy`, optionally filling `{{placeholder}}` tags from a JSON replacements file `[{"find":"{{client}}","replace":"Acme Corp"},...]`.
 
 ### Page Formatting
-- `docs-format-page --doc <doc_id> [--margins "1in"] [--header "text"] [--footer "text"] [--page-numbers] [--orientation portrait|landscape]` — Set document-level page formatting: margins (inches/cm/pt), header text, footer text, page numbers, page orientation. Apply after creating content to add professional page chrome.
+- `docs-format-page --doc <doc_id> [--margins "1in"] [--header "text"] [--footer "text"] [--orientation portrait|landscape]` — Set document-level page formatting: margins (inches/cm/pt), header text, footer text, page orientation. Apply after creating content to add professional page chrome. Automatic page numbers are unsupported (Docs API v1 has no page-number request) — use the Lane C DOCX round-trip if you need them.
 
-### Comments & Review Polyfills
+### Comments & Review
 - `docs-comments-list --doc <doc_id> [--include-resolved]` — List document-level comments.
 - `docs-comments-add --doc <doc_id> --content "TEXT"` — Add a document-level comment.
+- `docs-comments-resolve --doc <doc_id> --comment-id <cid> [--content "note"]` — Resolve/close a review comment thread (Drive reply with `action=resolve`).
+- `docs-comments-delete --doc <doc_id> --comment-id <cid>` — Permanently remove a comment (no undo).
 - `docs-tab-list <doc_id>` — List tabs with IDs, titles, and hierarchy.
-- `docs-tab-clone --doc <doc_id> --source-tab <tab_id> [--title "TITLE"]` — Clone a tab's text content into a suggestion tab (highlights suggestion yellow).
-- `docs-tab-suggest --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Make batched suggestion edits in the cloned tab.
-- `docs-tab-finalize --doc <doc_id> --source-tab <tab_id> --suggestion-tab <tab_id> --file <suggestions.json>` — Apply suggestions to original tab (excluding struck-through text) and clean up.
+
+### Suggest & Review
+- `docs-suggest --doc <doc_id> [--tab <tab>] (--find "OLD" --replace "NEW" [--reason "..."] | --file suggestions.json)` — In-place suggestion polyfill: replaces each matched string and highlights the new text yellow, descending-sorted in one atomic batchUpdate. **Destructive** — it deletes and re-inserts, so the original text survives only in the doc's version history. Leave a `docs-comments-add` note for the human, then close the thread with `docs-comments-resolve` once the edit is accepted.
 
 ---
 
@@ -76,8 +82,10 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 | "This field updates every cycle (template/report)" | B | `docs-namedrange-create` → `docs-namedrange-replace` |
 | "Apply our branded template / exact typography / complex tables" | C | `docs-export-docx` → OOXML tooling → `docs-import-docx` |
 | "Produce tracked-changes / a redline I can accept-reject" | C | `docs-export-docx` → OOXML `w:ins`/`w:del` → `docs-import-docx` |
-| "Add margins, headers, footers, or page numbers" | — | `docs-format-page` (use after any lane's creation step) |
-| "Suggest edits for human approval (lightweight)" | polyfill | `docs-tab-clone` → `docs-tab-suggest` × N → human reviews → `docs-tab-finalize` |
+| "Add margins, headers, or footers" | — | `docs-format-page` (use after any lane's creation step; page numbers need Lane C DOCX) |
+| "Suggest an edit for human review" | polyfill | `docs-suggest` (then `docs-comments-add` to flag it) |
+| "Resolve/close a review comment" | polyfill | `docs-comments-resolve` |
+| "Delete a comment" | polyfill | `docs-comments-delete` |
 | "Leave feedback / flag an issue" | polyfill | `docs-comments-add` |
 
 **Default lane selection:** If the document needs any visual styling beyond what Markdown supports (custom colors, branded fonts, table borders, colored headings), use Lane A+ (HTML). Otherwise, Lane A (Markdown) is simpler. For recurring documents with fixed layouts, use Lane D (Templates).
@@ -161,18 +169,17 @@ Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrit
 2. Perform OOXML manipulations locally (e.g., adding `w:ins`/`w:del` tracked changes or templates via `docx-js`/Office scripts).
 3. Import the updated document using `docs-import-docx --file local.docx --title "Q3 Redlines" --folder FOLDER_ID`.
 
-### Suggest Edits via Tab Review Polyfill
-1. Run `docs-tab-list DOC_ID` to get target tab ID.
-2. Run `docs-tab-clone --doc DOC_ID --source-tab t.0` to create suggestion tab.
-3. Create `suggestions.json` and apply edits using `docs-tab-suggest --doc DOC_ID --source-tab t.0 --suggestion-tab t.new --file suggestions.json`.
-4. Leave review comment: `docs-comments-add --doc DOC_ID --content "📋 I've added suggestions in the review tab. Review and reply here when finished."`
-5. On human confirmation: run `docs-tab-finalize --doc DOC_ID --source-tab t.0 --suggestion-tab t.new --file suggestions.json` to apply approved changes.
+### Suggest → Review → Resolve
+1. If the doc has multiple tabs, run `docs-tab-list DOC_ID` and pick the target tab; otherwise skip this step.
+2. Apply the suggestion(s): `docs-suggest --doc DOC_ID [--tab t.X] --find "old clause" --replace "new clause" --reason "…"` (or `--file suggestions.json` for a batch). The replaced text is highlighted yellow.
+3. Flag it for the human: `docs-comments-add --doc DOC_ID --content "Proposed edits highlighted in yellow — reply to approve."` (capture the returned comment ID).
+4. On approval, optionally clear the yellow highlight with `docs-style` over the range (or leave it as the final look), then close the thread: `docs-comments-resolve --doc DOC_ID --comment-id CID`. To discard the thread entirely, `docs-comments-delete --doc DOC_ID --comment-id CID`.
 
 ---
 
 ## 4. Important Notes / Limitations
 
-- **No Native Suggesting Mode**: The Google Docs API has no toggle for "Suggesting Mode". Use the Tab Suggestion polyfill or Lane C (OOXML redlines).
+- **No Native Suggesting Mode**: The Google Docs API has no toggle for "Suggesting Mode". Use `docs-suggest` (the in-place highlighted-edit polyfill) for lightweight review, or Lane C (OOXML redlines) for accept/reject tracked changes.
 - **Comments are Unanchored**: Programmatically created comments appear in the Document Comments sidebar rather than being highlighted on specific text.
 - **Markdown Image Limitation**: Google Drive's Markdown converter does **not** fetch and embed Markdown image syntax (`![caption](url)`). Use `docs-insert-image` (Lane B) to place images at resolved anchors after creation.
 - **Markdown Formatting Limits**: Markdown conversion cannot produce custom colors, custom fonts, table borders, background shading, or fine-grained spacing. For these, use Lane A+ (HTML) instead.
@@ -180,9 +187,9 @@ Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrit
 - **Markdown Complex Tables**: Merged cells, column spans, and nested tables may not render. Use Lane B `docs-insert-table` for complex layouts.
 - **HTML CSS Limits**: Inline CSS is supported for colors, fonts, sizes, padding, borders, alignment. CSS flexbox, grid, and class-based selectors are stripped during conversion. Use only inline `style=""` attributes.
 - **Multipart Conversion Requirement**: All Markdown, HTML, and DOCX conversions require `multipart/related` Drive upload type (`uploadType=multipart`), passing both metadata and body parts in a single request.
-- **Named Ranges Fragmentation**: If a named range is edited by human collaborators, it can split. `docs-namedrange-replace` only replaces the first fragment; re-create the range if it fragments.
-- **Image Constraints**: Public URL image insertions must strictly be under 50 MB, PNG/JPEG/GIF formats only, under 25 megapixels, and URL length under 2KB.
-- **Headers/Footers via Conversion**: Neither Markdown nor HTML conversion includes headers, footers, or page numbers. Always apply these with `docs-format-page` as a post-creation step.
+- **Named Ranges Fragmentation**: If a named range is edited by human collaborators, it can split into multiple fragments. `docs-namedrange-replace` replaces **all** fragments of the range in a single call.
+- **Image Constraints**: Public URL image insertions must be PNG/JPEG/GIF, under 50 MB, and URL length under 2KB (these are checked locally). The 25-megapixel dimension limit is enforced server-side by Google, not client-side.
+- **Headers/Footers via Conversion**: Neither Markdown nor HTML conversion includes headers or footers. Apply these with `docs-format-page` as a post-creation step. Automatic page numbers are **unsupported** by `docs-format-page` (Docs API v1 has no page-number request) — use the Lane C DOCX round-trip if you need them.
 
 ---
 

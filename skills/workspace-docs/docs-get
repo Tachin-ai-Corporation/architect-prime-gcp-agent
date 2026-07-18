@@ -22,7 +22,7 @@ TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 TMP_RESP=$(mktemp)
 HTTP_CODE=$(curl -s -o "$TMP_RESP" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
-  "${DOCS_API}/${DOC_ID}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE")
+  "${DOCS_API}/${DOC_ID}?suggestionsViewMode=SUGGESTIONS_INLINE")
 
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
@@ -38,9 +38,13 @@ with open(sys.argv[1], 'r', encoding='utf-8') as f:
     doc = json.load(f)
 
 def extract_text_and_map(elements):
+    # Emit one compact segment per textRun ({startIndex,endIndex,text}) rather
+    # than one int per character — same per-textRun startIndex mapping, ~1/6 the
+    # size, so output stays under the harness cap instead of truncating into
+    # invalid JSON. endIndex is exclusive (start + len(content)).
     text = ''
-    index_map = []
-    
+    segments = []
+
     for elem in elements:
         if 'paragraph' in elem:
             for run_elem in elem['paragraph'].get('elements', []):
@@ -48,20 +52,23 @@ def extract_text_and_map(elements):
                     tr = run_elem['textRun']
                     content = tr.get('content', '')
                     start = tr.get('startIndex', 0)
-                    for i, char in enumerate(content):
-                        text += char
-                        index_map.append(start + i)
+                    text += content
+                    segments.append({
+                        'startIndex': start,
+                        'endIndex': start + len(content),
+                        'text': content
+                    })
         elif 'table' in elem:
             for row in elem['table'].get('tableRows', []):
                 for cell in row.get('tableCells', []):
-                    sub_text, sub_map = extract_text_and_map(cell.get('content', []))
+                    sub_text, sub_segs = extract_text_and_map(cell.get('content', []))
                     text += sub_text
-                    index_map.extend(sub_map)
+                    segments.extend(sub_segs)
         elif 'tableOfContents' in elem:
-            sub_text, sub_map = extract_text_and_map(elem['tableOfContents'].get('content', []))
+            sub_text, sub_segs = extract_text_and_map(elem['tableOfContents'].get('content', []))
             text += sub_text
-            index_map.extend(sub_map)
-    return text, index_map
+            segments.extend(sub_segs)
+    return text, segments
 
 body_content = doc.get('body', {}).get('content', [])
 text, index_map = extract_text_and_map(body_content)

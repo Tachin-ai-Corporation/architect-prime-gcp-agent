@@ -1,8 +1,8 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  7,
-    "description":  "Create professionally formatted Google Docs from Markdown or HTML, read docs with paginated/targeted reads for large documents, delete sections/ranges, use templates, manage page formatting (margins, headers, footers), and suggest edits.",
+    "version":  8,
+    "description":  "Create professionally formatted Google Docs from Markdown or HTML, read docs with paginated/targeted reads for large documents, delete sections/ranges, use templates, manage page formatting (margins, headers, footers), make in-place suggestion edits (highlighted for human review), and add, list, resolve, or delete review comments.",
     "author":  "architect-prime",
     "origin":  "core",
     "category":  "workspace",
@@ -11,6 +11,9 @@
                     "docs-cat",
                     "docs-comments-add",
                     "docs-comments-list",
+                    "docs-comments-resolve",
+                    "docs-comments-delete",
+                    "docs-tab-list",
                     "docs-create",
                     "docs-find-replace",
                     "docs-suggest",
@@ -33,5 +36,5 @@
     "requires":  {
 
                  },
-    "when_to_use":  "When a task involves creating formatted docs from Markdown, editing text ranges or styles programmatically without reflowing the whole body, exporting/importing .docx files, or commenting on Google Docs."
+    "when_to_use":  "When a task involves creating formatted docs from Markdown or HTML, editing text ranges or styles programmatically without reflowing the whole body, exporting/importing .docx files, suggesting in-place edits for human review, or adding, listing, resolving, and deleting comments on Google Docs."
 }

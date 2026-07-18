@@ -15,7 +15,11 @@
 #   docs-section-delete --doc DOC_ID --from-anchor "PHRASE" --keep-anchor
 #       Delete everything AFTER the anchor, keeping the anchor line itself.
 #   docs-section-delete --doc DOC_ID --start 1240 --end 2380
-#       Delete an explicit character-index range (from docs-get / --meta offsets).
+#       Delete an explicit index range. --start/--end are RAW Docs API indices
+#       sourced from docs-get — NOT docs-cat --meta plaintext offsets. The two
+#       index models diverge on any doc containing a table/image, so feeding a
+#       --meta offset here deletes the wrong range. An --end past EOF is clamped
+#       to the document's last valid index.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
@@ -100,7 +104,10 @@ if anchor:
     else:
         del_start = index_map[c0]
 else:
-    del_start = int(start_arg); del_end = int(end_arg)
+    del_start = int(start_arg)
+    # Clamp an explicit --end past EOF: deleteContentRange 400s if endIndex
+    # exceeds the body's last valid index (doc_end-1).
+    del_end = min(int(end_arg), doc_end - 1)
 
 if del_start < 1: del_start = 1
 if del_end <= del_start:

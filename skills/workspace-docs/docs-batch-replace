@@ -2,6 +2,9 @@
 # docs-batch-replace — Apply multiple find-and-replace text updates atomically
 # Brain agent: motor (WRITE)
 # Usage: docs-batch-replace --doc DOC_ID --file PAIRS_FILE.json
+# NOTE: Pairs apply IN ORDER within the single batchUpdate and can cascade — an
+#       earlier replace (A->B) feeds into a later one (B->C). Order pairs so this
+#       cascade is intentional.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
@@ -45,6 +48,9 @@ for idx, p in enumerate(pairs):
     replace_text = p.get('replace')
     if find_text is None or replace_text is None:
         sys.stderr.write(f'Item at index {idx} missing find or replace key\\n')
+        sys.exit(1)
+    if find_text == '':
+        sys.stderr.write(f'Item at index {idx} has an empty find (find must be non-empty)\\n')
         sys.exit(1)
     match_case = p.get('matchCase', False)
     

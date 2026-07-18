@@ -23,6 +23,10 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$DOC_ID" && (-n "$TEXT" || -n "$FILE") ]] || die "Need --doc and either --text or --file"
 
+if [[ "$APPEND" == "true" && "$OVERWRITE" == "true" ]]; then
+  die "Conflicting flags: --append and --overwrite cannot be used together."
+fi
+
 if [[ "$APPEND" == "false" && "$OVERWRITE" == "false" ]]; then
   die "Safety Check: Whole-document overwrite requires the explicit '--overwrite' flag."
 fi
@@ -40,24 +44,22 @@ if [[ "$MD" == "true" && "$APPEND" == "false" ]]; then
 fi
 
 # We must retrieve END_IDX for appending or for clearing old content.
-END_IDX=$(curl -sf -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}" \
-  | python3 -c "
+RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}")
+if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "403" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Docs access denied for ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Docs fetch failed with HTTP ${HTTP_CODE}"
+END_IDX=$(python3 -c "
 import json, sys
-doc = json.load(sys.stdin)
+doc = json.load(open(sys.argv[1]))
 content = doc.get('body',{}).get('content',[])
-if content: print(content[-1].get('endIndex',1)-1)
-else: print(1)
-")
+print(content[-1].get('endIndex',1)-1 if content else 1)
+" "$RESP")
 
 INSERT_IDX=1
-
-if [[ "$APPEND" == "false" ]]; then
-  if [[ "$END_IDX" -gt 1 ]]; then
-    BODY=$(python3 -c "import json; print(json.dumps({'requests':[{'deleteContentRange':{'range':{'startIndex':1,'endIndex':$END_IDX}}}]}))")
-    curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-      -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate" > /dev/null
-  fi
-else
+if [[ "$APPEND" == "true" ]]; then
   INSERT_IDX=$END_IDX
 fi
 
@@ -233,14 +235,30 @@ finally:
   exit 0
 fi
 
-# Plain text insertion
+# Plain text insertion.
+# For --overwrite this is a SINGLE atomic batchUpdate (delete-then-insert), so a
+# transient insert failure can never leave the doc emptied by a prior clear call.
 BODY=$(python3 -c "
 import json, sys
-print(json.dumps({'requests':[{'insertText':{'location':{'index':int(sys.argv[1])},'text':sys.argv[2]}}]}))
-" "$INSERT_IDX" "$TEXT")
+overwrite = sys.argv[1] == 'true'
+end_idx = int(sys.argv[2])
+insert_idx = int(sys.argv[3])
+text = sys.argv[4]
+reqs = []
+if overwrite and end_idx > 1:
+    reqs.append({'deleteContentRange':{'range':{'startIndex':1,'endIndex':end_idx}}})
+reqs.append({'insertText':{'location':{'index':insert_idx},'text':text}})
+print(json.dumps({'requests':reqs}))
+" "$OVERWRITE" "$END_IDX" "$INSERT_IDX" "$TEXT")
 
-curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate" > /dev/null
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' -X POST \
+  -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  -d "$BODY" "${DOCS_API}/${DOC_ID}:batchUpdate")
+if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "403" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Docs access denied for ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Docs write failed with HTTP ${HTTP_CODE}: $(cat "$RESP")"
 
 echo "{\"status\":\"written\",\"docId\":\"${DOC_ID}\",\"mode\":\"$([ "$APPEND" == "true" ] && echo append || echo replace)\",\"chars\":${#TEXT}}"
 

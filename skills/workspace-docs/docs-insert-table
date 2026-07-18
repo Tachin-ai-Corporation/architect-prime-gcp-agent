@@ -73,7 +73,7 @@ def extract_text_and_map(elements):
             index_map.extend(sub_map)
     return text, index_map
 
-doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE')
+doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?suggestionsViewMode=SUGGESTIONS_INLINE')
 body_content = doc.get('body', {}).get('content', [])
 plain_text, index_map = extract_text_and_map(body_content)
 
@@ -96,6 +96,11 @@ if len(occurrences) > 1:
 c_start = occurrences[0]
 last_char_idx = c_start + len(anchor) - 1
 insert_idx = index_map[last_char_idx] + 1
+
+# Clamp to body_end - 1 so an anchor at the very end of the doc doesn't 400.
+body_end = body_content[-1].get('endIndex', insert_idx + 1) if body_content else insert_idx + 1
+if insert_idx > body_end - 1:
+    insert_idx = body_end - 1
 
 # Execute insertTable
 req_body = {

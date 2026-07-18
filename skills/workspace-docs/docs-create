@@ -38,7 +38,7 @@ try:
     with open(html_file, 'r', encoding='utf-8') as f:
         html_content = f.read()
 except Exception as e:
-    sys.stderr.write(f'Read failed: {e}\\\\n')
+    sys.stderr.write(f'Read failed: {e}\\n')
     sys.exit(1)
 
 metadata = {
@@ -50,9 +50,9 @@ if folder:
 
 boundary = 'boundary_docs_create_multipart'
 body_parts = [
-    f'--{boundary}\\\\r\\\\nContent-Type: application/json; charset=UTF-8\\\\r\\\\n\\\\r\\\\n{json.dumps(metadata)}\\\\r\\\\n',
-    f'--{boundary}\\\\r\\\\nContent-Type: text/html; charset=UTF-8\\\\r\\\\n\\\\r\\\\n{html_content}\\\\r\\\\n',
-    f'--{boundary}--\\\\r\\\\n'
+    f'--{boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n{json.dumps(metadata)}\\r\\n',
+    f'--{boundary}\\r\\nContent-Type: text/html; charset=UTF-8\\r\\n\\r\\n{html_content}\\r\\n',
+    f'--{boundary}--\\r\\n'
 ]
 body_data = ''.join(body_parts).encode('utf-8')
 
@@ -85,7 +85,7 @@ except urllib.error.HTTPError as e:
             'message': f'Docs create denied for {email or \"unknown\"}'
         }))
         sys.exit(0)
-    sys.stderr.write(f'Upload failed: {e.code} {e.read().decode(\"utf-8\")}\\\\n')
+    sys.stderr.write(f'Upload failed: {e.code} {e.read().decode(\"utf-8\")}\\n')
     sys.exit(1)
 " "$TITLE" "$FOLDER" "$FROM_HTML" "$TOKEN" "${AGENT_USER_EMAIL:-}"
   exit 0
@@ -159,15 +159,17 @@ except urllib.error.HTTPError as e:
 fi
 
 # Plain body creation
-HTTP_CODE=$(curl -s -o /tmp/docs-response.json -w '%{http_code}' \
+RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT
+CREATE_BODY=$(python3 -c "import json,sys; print(json.dumps({'title':sys.argv[1]}))" "$TITLE")
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d "{\"title\":\"${TITLE}\"}" "$DOCS_API")
+  -d "$CREATE_BODY" "$DOCS_API")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"message\":\"Docs create denied for ${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
 fi
 [[ "$HTTP_CODE" == "200" ]] || die "Docs create failed with HTTP ${HTTP_CODE}"
-DOC_ID=$(python3 -c "import json; print(json.load(open('/tmp/docs-response.json'))['documentId'])")
+DOC_ID=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['documentId'])" "$RESP")
 if [[ -n "$BODY_TEXT" ]]; then
   BODY=$(python3 -c "import json,sys; print(json.dumps({'requests':[{'insertText':{'location':{'index':1},'text':sys.argv[1]}}]}))" "$BODY_TEXT")
   curl -sf -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
@@ -178,7 +180,7 @@ if [[ -n "$FOLDER" ]]; then
     "${DRIVE_API}/files/${DOC_ID}?addParents=${FOLDER}&removeParents=root" > /dev/null 2>&1
 fi
 python3 -c "
-import json; d = json.load(open('/tmp/docs-response.json'))
+import json,sys; d = json.load(open(sys.argv[1]))
 print(json.dumps({'status':'created','docId':d['documentId'],'title':d['title'],'link':'https://docs.google.com/document/d/'+d['documentId']}, indent=2))
-"
+" "$RESP"
 

@@ -2,219 +2,62 @@
 # docs-replace-md — Replace the body of a Google Doc with formatted Markdown
 # Brain agent: motor (WRITE)
 # Usage: docs-replace-md --doc DOC_ID (--file FILE_PATH | --text "markdown text")
+#
+# In-place Drive media update: PATCHes the doc with Content-Type text/markdown and
+# lets Drive natively re-convert. Preserves the doc ID, URL, and sharing, and keeps
+# tables/images/lists/TOC intact (unlike a hand-rolled element copy).
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 die() { echo "[docs-replace-md] [ERROR] $*" >&2; exit 1; }
-DOC_ID="" FILE_PATH="" TEXT=""
+DOC_ID="" FILE_PATH="" TEXT="" TEXT_SET=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --doc) DOC_ID="$2"; shift 2 ;;
     --file) FILE_PATH="$2"; shift 2 ;;
-    --text) TEXT="$2"; shift 2 ;;
+    --text) TEXT="$2"; TEXT_SET=true; shift 2 ;;
     --help|-h) echo "Usage: docs-replace-md --doc <doc_id> (--file <file_path> | --text <text>)"; exit 0 ;;
     *) die "Unknown: $1" ;;
   esac
 done
 [[ -n "$DOC_ID" ]] || die "Need --doc"
-[[ -n "$FILE_PATH" || -n "$TEXT" ]] || die "Need --file or --text"
-TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+[[ -n "$FILE_PATH" || "$TEXT_SET" == "true" ]] || die "Need --file or --text"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 
-# Put text into a variable if it came from file
+# Resolve the markdown source to a file path so we can stream it (avoids ARG_MAX).
+TMP_MD=""
 if [[ -n "$FILE_PATH" ]]; then
   [[ -f "$FILE_PATH" ]] || die "File not found: $FILE_PATH"
-  TEXT=$(cat "$FILE_PATH")
+  SRC="$FILE_PATH"
+else
+  TMP_MD="$(mktemp)"
+  printf '%s' "$TEXT" > "$TMP_MD"
+  SRC="$TMP_MD"
 fi
 
+RESP="$(mktemp)"
+trap 'rm -f "$RESP" ${TMP_MD:+"$TMP_MD"}' EXIT
+
+# In-place media update — Drive re-converts the markdown back into the existing Doc.
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' -X PATCH \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: text/markdown" \
+  --data-binary "@${SRC}" \
+  "https://www.googleapis.com/upload/drive/v3/files/${DOC_ID}?uploadType=media&supportsAllDrives=true")
+
+if [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "403" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Docs access denied for ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Media update failed with HTTP ${HTTP_CODE}: $(cat "$RESP")"
+
 python3 -c "
-import urllib.request, urllib.error, json, sys, time
-
+import json, sys
 doc_id = sys.argv[1]
-markdown_content = sys.argv[2]
-token = sys.argv[3]
-email = sys.argv[4]
-
-def api_call(url, method='GET', headers=None, data=None):
-    if headers is None:
-        headers = {}
-    headers['Authorization'] = f'Bearer {token}'
-    req = urllib.request.Request(url, headers=headers, method=method, data=data)
-    try:
-        with urllib.request.urlopen(req) as r:
-            return json.loads(r.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        if e.code in [401, 403]:
-            print(json.dumps({
-                'status': 'access_denied',
-                'message': f'Docs access denied for {email or \"unknown\"}'
-            }))
-            sys.exit(0)
-        sys.stderr.write(f'API error {method} {url}: {e.code} {e.read().decode(\"utf-8\")}\\n')
-        sys.exit(1)
-
-# Step 1: Create a temporary Doc via Drive multipart upload
-temp_title = f'temp_replace_md_{int(time.time())}'
-metadata = {
-    'name': temp_title,
-    'mimeType': 'application/vnd.google-apps.document'
-}
-boundary = 'boundary_replace_md_multipart'
-body_parts = [
-    f'--{boundary}\\r\\nContent-Type: application/json; charset=UTF-8\\r\\n\\r\\n{json.dumps(metadata)}\\r\\n',
-    f'--{boundary}\\r\\nContent-Type: text/markdown; charset=UTF-8\\r\\n\\r\\n{markdown_content}\\r\\n',
-    f'--{boundary}--\\r\\n'
-]
-body_data = ''.join(body_parts).encode('utf-8')
-
-upload_url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true'
-headers = {'Content-Type': f'multipart/related; boundary={boundary}'}
-temp_doc_info = api_call(upload_url, method='POST', headers=headers, data=body_data)
-temp_id = temp_doc_info.get('id')
-
-if not temp_id:
-    sys.stderr.write('Failed to create temporary converted Doc\\n')
-    sys.exit(1)
-
-try:
-    # Step 2: Fetch both documents
-    temp_doc = api_call(f'https://docs.googleapis.com/v1/documents/{temp_id}')
-    target_doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}')
-    
-    # Step 3: Get target document length
-    content_list = target_doc.get('body', {}).get('content', [])
-    target_end = 1
-    if content_list:
-        target_end = content_list[-1].get('endIndex', 1) - 1
-        
-    requests = []
-    
-    # Step 4: Clear target document content if it has any
-    if target_end > 1:
-        requests.append({
-            'deleteContentRange': {
-                'range': {
-                    'startIndex': 1,
-                    'endIndex': target_end
-                }
-            }
-        })
-        
-    # Step 5: Translate temp Doc content to batchUpdate requests for target Doc
-    # We iterate in reverse order to insert at index 1 without shifting.
-    temp_content = temp_doc.get('body', {}).get('content', [])
-    start_index = 1
-    
-    # Extract list mappings from temp doc
-    lists_map = temp_doc.get('lists', {})
-    
-    for element in reversed(temp_content):
-        if 'paragraph' in element:
-            p = element['paragraph']
-            elements = p.get('elements', [])
-            p_style = p.get('paragraphStyle', {})
-            bullet = p.get('bullet', {})
-            
-            total_len = 0
-            for run_elem in reversed(elements):
-                if 'textRun' in run_elem:
-                    tr = run_elem['textRun']
-                    text = tr.get('content', '')
-                    style = tr.get('textStyle', {})
-                    if not text:
-                        continue
-                        
-                    # Insert text
-                    requests.append({
-                        'insertText': {
-                            'location': {'index': start_index},
-                            'text': text
-                        }
-                    })
-                    
-                    # Apply text style
-                    text_len = len(text)
-                    text_style = {}
-                    for key in ['bold', 'italic', 'underline', 'strikethrough', 'fontSize', 'weightedFontFamily', 'link']:
-                        if key in style:
-                            text_style[key] = style[key]
-                    if 'foregroundColor' in style:
-                        text_style['foregroundColor'] = style['foregroundColor']
-                        
-                    if text_style:
-                        requests.append({
-                            'updateTextStyle': {
-                                'range': {
-                                    'startIndex': start_index,
-                                    'endIndex': start_index + text_len
-                                },
-                                'textStyle': text_style,
-                                'fields': ','.join(text_style.keys())
-                            }
-                        })
-                    total_len += text_len
-                    
-            if total_len > 0:
-                # Apply paragraph style
-                p_style_req = {}
-                for key in ['namedStyleType', 'alignment', 'lineSpacing', 'spaceBefore', 'spaceAfter', 'keepWithNext', 'keepTogether']:
-                    if key in p_style:
-                        p_style_req[key] = p_style[key]
-                if p_style_req:
-                    requests.append({
-                        'updateParagraphStyle': {
-                            'range': {
-                                'startIndex': start_index,
-                                'endIndex': start_index + total_len
-                            },
-                            'paragraphStyle': p_style_req,
-                            'fields': ','.join(p_style_req.keys())
-                        }
-                    })
-                    
-                # Apply lists/bullets if present
-                if bullet:
-                    list_id = bullet.get('listId', '')
-                    is_numbered = False
-                    if list_id in lists_map:
-                        nesting_levels = lists_map[list_id].get('listProperties', {}).get('nestingLevels', [])
-                        if nesting_levels:
-                            glyph_type = nesting_levels[0].get('glyphType', '')
-                            if glyph_type and glyph_type != 'GLYPH_TYPE_UNSPECIFIED':
-                                is_numbered = True
-                    preset = 'NUMBERED_DECIMAL_NESTED' if is_numbered else 'BULLET_DISC_CIRCLE_SQUARE'
-                    requests.append({
-                        'createBullet': {
-                            'range': {
-                                'startIndex': start_index,
-                                'endIndex': start_index + total_len
-                            },
-                            'bulletPreset': preset
-                        }
-                    })
-                    
-    # Execute batchUpdate on target
-    if requests:
-        api_call(
-            f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
-            method='POST',
-            headers={'Content-Type': 'application/json'},
-            data=json.dumps({'requests': requests}).encode('utf-8')
-        )
-        
-    print(json.dumps({
-        'status': 'replaced',
-        'docId': doc_id,
-        'mode': 'replace_md',
-        'link': f'https://docs.google.com/document/d/{doc_id}'
-    }, indent=2))
-    
-finally:
-    # Delete the temporary Doc
-    delete_url = f'https://www.googleapis.com/drive/v3/files/{temp_id}'
-    try:
-        req_del = urllib.request.Request(delete_url, headers={'Authorization': f'Bearer {token}'}, method='DELETE')
-        with urllib.request.urlopen(req_del) as _:
-            pass
-    except Exception:
-        pass
-" "$DOC_ID" "$TEXT" "$TOKEN" "${AGENT_USER_EMAIL:-}"
+print(json.dumps({
+    'status': 'replaced',
+    'docId': doc_id,
+    'mode': 'replace_md',
+    'link': 'https://docs.google.com/document/d/' + doc_id
+}, indent=2))
+" "$DOC_ID"

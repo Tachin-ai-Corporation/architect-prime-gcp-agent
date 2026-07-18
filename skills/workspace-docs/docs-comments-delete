@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# docs-comments-delete — Permanently delete a comment from a Google Doc
+# Brain agent: motor (WRITE)
+# Usage: docs-comments-delete --doc DOC_ID --comment-id CID
+# NOTE: Permanent — no undo. Full Drive scope is required to remove foreign comments.
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-comments-delete] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" COMMENT_ID=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --comment-id) COMMENT_ID="$2"; shift 2 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DOC_ID" && -n "$COMMENT_ID" ]] || die "Need --doc and --comment-id"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT
+# DELETE succeeds with HTTP 204 and an EMPTY body — do not parse the response.
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
+  -X DELETE -H "Authorization: Bearer ${TOKEN}" \
+  "${DRIVE_API}/files/${DOC_ID}/comments/${COMMENT_ID}")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Comments access denied. Share doc with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+if [[ "$HTTP_CODE" == "404" ]]; then
+  echo "{\"status\":\"not_found\",\"commentId\":\"${COMMENT_ID}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "204" ]] || die "Drive API returned HTTP ${HTTP_CODE}"
+echo "{\"status\":\"deleted\",\"commentId\":\"${COMMENT_ID}\"}"

@@ -35,16 +35,21 @@ TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 export DOC_ID TARGET_TAB
 
-rm -f /tmp/docs-suggest-body.json /tmp/docs-suggest-result.json
+READ_JSON="$(mktemp)"
+BODY_JSON="$(mktemp)"
+RESULT_JSON="$(mktemp)"
+RESP_JSON="$(mktemp)"
+trap 'rm -f "$READ_JSON" "$BODY_JSON" "$RESULT_JSON" "$RESP_JSON"' EXIT
+export READ_JSON BODY_JSON RESULT_JSON
 
-HTTP_CODE=$(curl -s -o /tmp/docs-suggest-read.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o "$READ_JSON" -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DOCS_API}/${DOC_ID}?includeTabsContent=true")
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to read doc, HTTP $HTTP_CODE"
 
 python3 -c "
 import json, sys, os
 
-doc = json.load(open('/tmp/docs-suggest-read.json'))
+doc = json.load(open(os.environ['READ_JSON']))
 target_tab_id = os.environ.get('TARGET_TAB', '')
 
 sugg_file = os.environ.get('SUGG_FILE', '')
@@ -75,43 +80,65 @@ else:
     target_tab_id = tab.get('tabProperties', {}).get('tabId', '')
     content = tab.get('documentTab', {}).get('body', {}).get('content', [])
 
-full_text = ''
-body_start_index = 1
+# Canonical text/index mapper (shared verbatim with the other Lane-B scripts):
+# recurses tables + TOC and maps each char to its TRUE API startIndex.
+def extract_text_and_map(elements):
+    text = ''
+    index_map = []
+    for elem in elements:
+        if 'paragraph' in elem:
+            for run_elem in elem['paragraph'].get('elements', []):
+                if 'textRun' in run_elem:
+                    tr = run_elem['textRun']
+                    content = tr.get('content', '')
+                    start = tr.get('startIndex', 0)
+                    for i, char in enumerate(content):
+                        text += char
+                        index_map.append(start + i)
+        elif 'table' in elem:
+            for row in elem['table'].get('tableRows', []):
+                for cell in row.get('tableCells', []):
+                    sub_text, sub_map = extract_text_and_map(cell.get('content', []))
+                    text += sub_text
+                    index_map.extend(sub_map)
+        elif 'tableOfContents' in elem:
+            sub_text, sub_map = extract_text_and_map(elem['tableOfContents'].get('content', []))
+            text += sub_text
+            index_map.extend(sub_map)
+    return text, index_map
 
-for elem in content:
-    if 'paragraph' in elem:
-        para = elem['paragraph']
-        para_text = ''.join([run.get('textRun', {}).get('content', '') for run in para.get('elements', [])])
-        full_text += para_text
+body_text, index_map = extract_text_and_map(content)
 
-body_text = full_text[body_start_index-1:]
+# Mutable search buffer, same length as body_text so offsets stay aligned with index_map.
+# Each match is blanked with equal-length spaces so identical strings map to distinct
+# instances, while the offset we feed into index_map still refers to the ORIGINAL char
+# positions (spaces preserve length -> preserve alignment).
+search_text = body_text
 
 matched_edits = []
 not_found_edits = []
 
-# To handle multiple occurrences, we consume the string so we don't match the same instance twice
-last_search_idx = 0
-
 for edit in edits:
     find_text = edit.get('find', '')
     if not find_text: continue
-    
-    # Simple search from the beginning of body
-    match_offset = body_text.find(find_text)
-    
-    if match_offset == -1:
+
+    # Search the mutable buffer; off is an offset into the ORIGINAL char stream.
+    off = search_text.find(find_text)
+
+    if off == -1:
         not_found_edits.append(edit)
     else:
-        # Avoid duplicate matches on identical strings by obfuscating the found part in our search buffer
-        # A bit hacky but prevents mapping 5 identical finds to the same index
-        match_start = body_start_index + match_offset
+        # True API indices come from index_map, never from arithmetic on a hardcoded base.
+        match_start = index_map[off]
+        match_end = index_map[off + len(find_text) - 1] + 1
         matched_edits.append({
             'edit': edit,
             'match_start': match_start,
-            'match_end': match_start + len(find_text)
+            'match_end': match_end
         })
-        # blank it out in our local buffer so next search doesn't hit it
-        body_text = body_text[:match_offset] + (' ' * len(find_text)) + body_text[match_offset+len(find_text):]
+        # Blank the found span (equal length) so the next search skips this instance
+        # without disturbing offset->index_map alignment.
+        search_text = search_text[:off] + (' ' * len(find_text)) + search_text[off+len(find_text):]
 
 # Sort descending by match_start so bottom-up replacements don't shift indices
 matched_edits.sort(key=lambda x: x['match_start'], reverse=True)
@@ -127,31 +154,36 @@ for item in matched_edits:
     find_text = edit.get('find', '')
     replace_text = edit.get('replace', '')
     reason = edit.get('reason', 'No reason provided')
-    
+
     change_count += 1
     next_change_id = change_count
-    
-    body_requests.extend([
-        {
-            'deleteContentRange': {
-                'range': {'startIndex': match_start, 'endIndex': match_end, 'tabId': target_tab_id} if target_tab_id else {'startIndex': match_start, 'endIndex': match_end}
-            }
-        },
-        {
-            'insertText': {
-                'location': {'index': match_start, 'tabId': target_tab_id} if target_tab_id else {'index': match_start},
-                'text': replace_text
-            }
-        },
-        {
+
+    del_range = {'startIndex': match_start, 'endIndex': match_end}
+    if target_tab_id:
+        del_range['tabId'] = target_tab_id
+    body_requests.append({'deleteContentRange': {'range': del_range}})
+
+    # Empty-replace guard: a pure redaction is delete-only. insertText with empty text
+    # and updateTextStyle over an empty range both 400, so skip them when replace is blank.
+    if replace_text != '':
+        ins_loc = {'index': match_start}
+        if target_tab_id:
+            ins_loc['tabId'] = target_tab_id
+        body_requests.append({
+            'insertText': {'location': ins_loc, 'text': replace_text}
+        })
+
+        style_range = {'startIndex': match_start, 'endIndex': match_start + len(replace_text)}
+        if target_tab_id:
+            style_range['tabId'] = target_tab_id
+        body_requests.append({
             'updateTextStyle': {
-                'range': {'startIndex': match_start, 'endIndex': match_start + len(replace_text), 'tabId': target_tab_id} if target_tab_id else {'startIndex': match_start, 'endIndex': match_start + len(replace_text)},
+                'range': style_range,
                 'textStyle': {'backgroundColor': {'color': {'rgbColor': {'red': 1.0, 'green': 1.0, 'blue': 0.0}}}},
                 'fields': 'backgroundColor'
             }
-        }
-    ])
-    
+        })
+
     applied_changes.append({
         'changeId': next_change_id,
         'find': find_text,
@@ -162,10 +194,10 @@ if not body_requests:
     print(json.dumps({'status': 'no_changes_applied', 'not_found': not_found_edits}))
     sys.exit(0)
 
-with open('/tmp/docs-suggest-body.json', 'w') as f:
+with open(os.environ['BODY_JSON'], 'w') as f:
     json.dump({'requests': body_requests}, f)
 
-with open('/tmp/docs-suggest-result.json', 'w') as f:
+with open(os.environ['RESULT_JSON'], 'w') as f:
     json.dump({
         'status': 'suggested',
         'docId': os.environ.get('DOC_ID', ''),
@@ -174,14 +206,14 @@ with open('/tmp/docs-suggest-result.json', 'w') as f:
     }, f, indent=2)
 " || die "Failed to parse for suggestion"
 
-if [[ ! -f /tmp/docs-suggest-body.json ]]; then
+if [[ ! -s "$BODY_JSON" ]]; then
     exit 0
 fi
 
-BODY_REQ=$(cat /tmp/docs-suggest-body.json)
-HTTP_CODE=$(curl -s -o /tmp/docs-suggest-body-resp.json -w '%{http_code}' \
+BODY_REQ=$(cat "$BODY_JSON")
+HTTP_CODE=$(curl -s -o "$RESP_JSON" -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "${BODY_REQ}" "${DOCS_API}/${DOC_ID}:batchUpdate")
 [[ "$HTTP_CODE" == "200" ]] || die "Failed to apply body edit, HTTP $HTTP_CODE"
 
-cat /tmp/docs-suggest-result.json
+cat "$RESULT_JSON"

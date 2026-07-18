@@ -41,12 +41,23 @@ try:
         'bytes': len(content)
     }, indent=2))
 except urllib.error.HTTPError as e:
+    body = e.read().decode('utf-8', 'replace')
+    low = body.lower()
+    # files.export caps at 10MB; that surfaces as a 403 whose body mentions size,
+    # distinct from an auth 403.
+    if e.code == 403 and ('too large' in low or 'exportsizelimitexceeded' in low or 'export size' in low):
+        print(json.dumps({
+            'status': 'export_too_large',
+            'docId': doc_id,
+            'message': 'Document exceeds the 10MB files.export size limit'
+        }))
+        sys.exit(0)
     if e.code in [401, 403]:
         print(json.dumps({
             'status': 'access_denied',
             'message': f'Docs export denied for {email or \"unknown\"}'
         }))
         sys.exit(0)
-    sys.stderr.write(f'Export failed: {e.code} {e.read().decode(\"utf-8\")}\\n')
+    sys.stderr.write(f'Export failed: {e.code} {body}\\n')
     sys.exit(1)
 " "$DOC_ID" "$OUT_FILE" "$TOKEN" "${AGENT_USER_EMAIL:-}"
