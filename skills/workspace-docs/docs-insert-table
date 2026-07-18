@@ -57,7 +57,7 @@ def extract_text_and_map(elements):
                 if 'textRun' in run_elem:
                     tr = run_elem['textRun']
                     content = tr.get('content', '')
-                    start = tr.get('startIndex', 0)
+                    start = run_elem.get('startIndex', 0)
                     for i, char in enumerate(content):
                         text += char
                         index_map.append(start + i)

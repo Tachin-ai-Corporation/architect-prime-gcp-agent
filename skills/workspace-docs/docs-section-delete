@@ -68,7 +68,7 @@ def extract_text_and_map(elements):
             for run_elem in elem['paragraph'].get('elements', []):
                 tr = run_elem.get('textRun')
                 if tr:
-                    content = tr.get('content', ''); start = tr.get('startIndex', 0)
+                    content = tr.get('content', ''); start = run_elem.get('startIndex', 0)
                     for i, ch in enumerate(content):
                         text += ch; index_map.append(start + i)
         elif 'table' in elem:
