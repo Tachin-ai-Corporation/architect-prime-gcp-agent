@@ -83,3 +83,43 @@ No custom corekit scripts are governed directly by this skill (handled via works
 - Verify meeting attendee names before attributing action items
 - Do not fabricate decisions — only record what was explicitly decided
 - Date format: always YYYY-MM-DD for consistency
+
+---
+
+## Document Naming Conventions
+
+All created PM documents MUST follow these naming patterns:
+
+- Status reports: `[Project] — Status Report — [YYYY-MM-DD]`
+- Meeting notes: `[Project] — Meeting Notes — [YYYY-MM-DD]`
+- Project briefs: `[Project] — Project Brief`
+- Milestone plans: `[Project] — Milestone Plan — [Version]`
+- Action item logs: `[Project] — Action Items`
+- Decision logs: `[Project] — Decision Log`
+- Stakeholder updates: `[Project] — Stakeholder Update — [YYYY-MM-DD]`
+
+When creating files in Drive, place them in the project's Drive folder (check project context for the folder ID; the workspace-drive skill's standard publisher resolves it automatically).
+
+### Meeting Notes Output Template
+```markdown
+## Meeting: [Title] — [Date]
+**Attendees**: [list]
+
+### Decisions
+- [Decision 1]: [rationale]
+
+### Action Items
+| # | Action | Owner | Due Date | Status |
+|---|--------|-------|----------|--------|
+| 1 | [description] | [owner] | [YYYY-MM-DD] | Open |
+
+### Open Questions
+- [Question 1] — assigned to [owner] to resolve by [date]
+```
+Record each decision with its rationale; flag anything left unresolved as an open question with an owner and a resolve-by date.
+
+### Milestone tracking
+1. When a tracking sheet is linked in the project context, maintain milestones there (use the workspace-sheets tools).
+2. Each milestone row must include: milestone name, owner, start date, target completion date, actual completion date (when done), status (Not Started / In Progress / Complete / Blocked), dependencies (milestones that must complete first), and notes.
+3. Update milestone status at the end of every mission that affects progress.
+4. Verify: If a milestone will miss its target date, flag the slippage immediately in the mission report — never leave a stale target date.

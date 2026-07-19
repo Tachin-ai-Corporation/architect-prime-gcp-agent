@@ -162,3 +162,16 @@ Key commands for discovering current state before making modifications:
 - Include rollback steps for any destructive operation
 - Never fabricate resource names — always discover them first
 - Use `--format=json` for machine-readable output when chaining commands
+
+---
+
+### Error Recovery — additional rows (quota, resource-not-found) + Cloud Run pre-build check
+
+Add to the Error Recovery table:
+
+| Quota exceeded | Project or regional quota exhausted | Report the exact quota name and current usage from the error message; request an increase or switch region — do not retry blindly. |
+| Resource not found (404) | Wrong resource name, project, or region | Re-discover the resource with the relevant list command from Infrastructure Discovery; verify `--project` and `--region` match the target. |
+
+Add as step 0 of the "Build and deploy to Cloud Run" procedure:
+
+0. Verify the target Artifact Registry repository exists before building (`gcloud artifacts repositories list --project=PROJECT --location=REGION`) — a push to a nonexistent repo fails only after the full build completes.

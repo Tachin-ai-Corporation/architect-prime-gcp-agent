@@ -107,3 +107,13 @@ Use conventional commits format:
 - Run pre-commit checks before pushing
 - Use `--dry-run` with destructive git operations when available
 - Verify branch name before deleting — list first, delete second
+
+---
+
+### Run pre-commit checks
+Run these IN ORDER before every commit. If any step fails, fix the issue and re-run from step 1.
+1. **Format** — run the project's formatter (e.g. `prettier`, `black`, `gofmt`).
+2. **Lint** — run the project's linter (e.g. `eslint`, `ruff`, `golangci-lint`), applying auto-fixes where safe.
+3. **Type check** — run the type checker if the project has one (e.g. `tsc --noEmit`, `mypy`).
+4. **Test** — run the test suite (e.g. `npm test`, `pytest`, `go test ./...`).
+5. Verify: all steps exit clean before staging the commit.

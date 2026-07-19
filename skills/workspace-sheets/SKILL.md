@@ -46,3 +46,15 @@ When a task involves reading from, writing to, or appending rows in Google Sheet
 | `404 notFound` | Invalid spreadsheet ID | Run `drive-search` to find the correct spreadsheet by name and obtain the active ID. |
 | `400 invalidArgument` | Range syntax is invalid, or values are not a valid JSON array of arrays | Verify range parameter format (e.g. "Sheet1!A1"). Ensure values are double-nested arrays like `[[ ... ]]` and JSON-encoded. |
 | Row appended in wrong place | Range parameter does not match table bounds | Use a generic column range (like `Sheet1!A:E`) to find the next empty row for the table. |
+
+---
+
+### Maintain an append-only tracking sheet
+
+For sheets that serve as historical logs (e.g. financial tracking sheets), never delete rows or overwrite historical values:
+
+1. Run `sheets-get` on the affected range first — read current state before any modification.
+2. Add new data with `sheets-append`.
+3. Use `sheets-update` ONLY for correcting formulas (not recorded values), updating status columns, or adding notes to existing rows.
+4. To correct an error, append an adjustment row containing: a reference to the original row, the adjustment amount (positive or negative), the reason, the date, and who requested it.
+5. Verify: confirm the original row is untouched and the adjustment row appended below the last filled row.

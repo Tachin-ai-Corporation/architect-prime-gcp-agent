@@ -71,3 +71,87 @@ No custom corekit scripts are governed directly by this skill. Standard `gcloud`
 - Redact sensitive data (key IDs, email addresses) in external reports
 - Never output service account key material
 - Flag but don't delete — all remediation requires explicit approval
+
+---
+
+### Write-Command Blocklist (Read-Only Enforcement)
+
+Audit missions are strictly read-only. NEVER execute any of the following — refuse and return the recommended command for human operator approval instead:
+
+- `gcloud projects add-iam-policy-binding` / `remove-iam-policy-binding` / `set-iam-policy` — modifies or replaces IAM policy
+- `gcloud iam service-accounts create|delete|enable|disable` — modifies service accounts
+- `gcloud iam service-accounts keys create|delete` — creates or deletes SA keys
+- `gcloud compute firewall-rules create|update|delete` — modifies firewall
+- `gcloud org-policies set-policy|reset` — modifies org policy
+- `gcloud storage buckets update` — modifies bucket config
+- `gsutil iam set|ch` — modifies bucket IAM
+- Any binding mutation containing both `--member=` and `--role=`
+- Any `terraform apply` or `terraform destroy`
+
+Refusal message: "Blocked: Security motor cannot execute write operations. Returning recommended command for human operator approval."
+
+Verification (cerebellum): scan motor output for the patterns `add-iam-policy-binding`, `remove-iam-policy-binding`, `set-iam-policy`, `keys create`, `keys delete`, `firewall-rules create|update|delete`, `set-policy`, `buckets update` — any hit taints the finding set and must be flagged as a compliance violation.
+
+### Extended Discovery Reference
+
+| What | Command |
+|------|---------|
+| Full IAM policy snapshot (JSON, for diffing) | `gcloud projects get-iam-policy PROJECT --format=json > iam-policy.json` |
+| Org-level IAM policy | `gcloud organizations get-iam-policy ORG_ID` |
+| IAM policy on a service account | `gcloud iam service-accounts get-iam-policy SA_EMAIL` |
+| Role definition | `gcloud iam roles describe ROLE` |
+| Networks / subnets | `gcloud compute networks list --project=PROJECT` / `gcloud compute networks subnets list --project=PROJECT` |
+| Resource inventory | `gcloud compute instances list`, `gcloud run services list`, `gcloud sql instances list`, `gcloud functions list`, `gcloud storage ls` (all with `--project=PROJECT`) |
+| Audit logs | `gcloud logging read "FILTER" --project=PROJECT --limit=50` |
+| Log sinks / alert policies | `gcloud logging sinks list --project=PROJECT` / `gcloud monitoring policies list --project=PROJECT` |
+| Org policies in effect | `gcloud org-policies list --project=PROJECT` / `gcloud org-policies describe CONSTRAINT --project=PROJECT` |
+| Asset inventory — IAM | `gcloud asset search-all-iam-policies --scope=projects/PROJECT` |
+| Asset inventory — resources | `gcloud asset search-all-resources --scope=projects/PROJECT --asset-types=TYPE` |
+
+### Check for External Principals
+1. List all members outside the expected domain:
+   ```bash
+   gcloud projects get-iam-policy PROJECT --flatten="bindings[].members" --format="value(bindings.members)" | grep -v "@EXPECTED_DOMAIN" | sort -u
+   ```
+2. Verify: cross-check each external principal against known exceptions before flagging.
+
+### Audit Service Account Key Age
+1. List every SA's user-managed keys with validity dates:
+   ```bash
+   for sa in $(gcloud iam service-accounts list --project=PROJECT --format="value(email)"); do
+     echo "=== $sa ==="
+     gcloud iam service-accounts keys list --iam-account=$sa --managed-by=user --format="table(KEY_ID,validAfterTime,validBeforeTime)"
+   done
+   ```
+2. Verify: flag keys older than 90 days, citing the exact `validAfterTime`.
+
+### Check Cloud Run Public Ingress
+1. Identify services whose ingress is not internal:
+   ```bash
+   gcloud run services list --project=PROJECT --format=json | jq '.[] | select(.spec.template.metadata.annotations["run.googleapis.com/ingress"] != "internal")'
+   ```
+2. Verify: document each non-internal service and whether public exposure is intended.
+
+### Check Bucket Public-Access Prevention
+1. Inspect each bucket's IAM configuration and public-access-prevention setting:
+   ```bash
+   for bucket in $(gcloud storage ls --project=PROJECT); do
+     gcloud storage buckets describe $bucket --format=json | jq '{bucket: .name, iamConfiguration: .iamConfiguration, publicAccessPrevention: .iamConfiguration.publicAccessPrevention}'
+   done
+   ```
+2. Verify: flag any bucket without `publicAccessPrevention: enforced` that holds sensitive data.
+
+### Remediation Recommendation Format
+
+Never execute remediation commands — always return them as recommendations:
+
+```
+RECOMMENDED REMEDIATION (requires human approval):
+  Command: gcloud projects remove-iam-policy-binding PROJECT \
+    --member=MEMBER --role=ROLE
+  Rollback: gcloud projects add-iam-policy-binding PROJECT \
+    --member=MEMBER --role=ROLE
+  Risk: [Low/Medium/High] — description of what this changes
+```
+
+Every recommendation must include a rollback command and a risk statement.

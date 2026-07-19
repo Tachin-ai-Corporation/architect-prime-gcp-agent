@@ -1,46 +1,39 @@
 # Data Specialty — Cortex Decision Bias
 
-## Cost-Aware Queries (MANDATORY)
-- `SELECT *` is forbidden in production queries — always specify explicit columns.
-- Exploratory queries must include `LIMIT`. Default to `LIMIT 1000` if none given.
-- Before dispatching any scan-heavy query, require a dry-run cost estimate first.
-- If estimated cost exceeds $5 for a single query, escalate to the user before executing.
-- Track cumulative query cost within a mission — if total exceeds $20, pause and report.
-- Prefer partitioned and clustered table scans over full table scans.
+## Cost is a first-class constraint
+- Full-column selects are forbidden in production queries — plans name explicit columns.
+- Exploratory queries are always row-limited; assume a modest default limit when none is
+  given.
+- No scan-heavy query dispatches without a dry-run cost estimate first. A single query
+  estimated over $5 escalates to the user before executing; cumulative mission cost is
+  tracked, and past $20 the mission pauses and reports.
+- Prefer partitioned and clustered scans over full table scans, always.
 
-## Schema-First Changes
-- Every schema change must have a backout plan documented before execution.
-- Backout plan includes: rollback DDL, data recovery steps, affected downstream consumers.
-- Schema changes to production tables use a 2-step approach: staging first, validate, then promote.
-- Never drop columns without verifying zero downstream references first.
+## Schema-first changes
+- Every schema change carries a documented backout plan before execution: rollback steps,
+  data recovery, and the affected downstream consumers.
+- Production schema changes go staging-first: apply, validate downstream, then promote.
+- Columns are never dropped without verifying zero downstream references.
 
-## Data Quality Gates
-Data is validated at every boundary crossing:
-- **Before load**: source file row counts, null checks, type validation.
-- **After transform**: expected row counts, business rule assertions.
-- **After load**: reconciliation between source and destination counts.
-If a quality gate fails, the pipeline stops — no silent data corruption.
+## Quality gates at every boundary
+Data is validated at each crossing — before load (row counts, nulls, types), after
+transform (expected counts, business-rule assertions), after load (source-to-destination
+reconciliation). A failed gate stops the pipeline; there is no silent data corruption.
 
-## Lineage Documentation
-Every pipeline built or modified includes documentation of:
-- Source system(s) and extraction method.
-- Transformation logic applied.
-- Destination table(s) and downstream consumers.
-- Refresh schedule and SLA expectations.
+## Lineage and freshness
+- Every pipeline built or modified is documented: source systems and extraction method,
+  transformation logic, destination tables and downstream consumers, refresh schedule and
+  SLA expectations.
+- Freshness is tracked against SLA for every dataset managed; stale data is flagged before
+  it causes downstream reporting errors.
 
-## Production Safety
-- Large tables must use partition pruning or LIMIT.
-- Write operations use staging tables, never direct INSERT into prod.
-- DELETE/UPDATE statements require WHERE clause review before execution.
-- Require idempotent writes — MERGE or WRITE_TRUNCATE over WRITE_APPEND unless append-only is intentional.
+## Production safety
+- Writes land in staging tables, never directly in production.
+- Deletes and updates have their scope reviewed before execution.
+- Writes are idempotent — merge or truncate-and-replace over blind appends, unless
+  append-only is the intent.
 
-## Freshness Monitoring
-For every dataset managed:
-- Record the last successful refresh timestamp.
-- Compare against the expected SLA (hourly, daily, etc.).
-- Flag stale data before it causes downstream reporting errors.
-- Suggest monitoring responsibilities for critical data freshness.
-
-## Discovery Before Action
-- Before modifying any dataset, table, or view, discover current schema, row count, and last modified time.
-- Check dataset-level access controls before granting table-level permissions.
+## Discovery before action
+Before modifying any dataset, table, or view: discover its current schema, row count, and
+last modified time. Check dataset-level access controls before granting table-level
+permissions.

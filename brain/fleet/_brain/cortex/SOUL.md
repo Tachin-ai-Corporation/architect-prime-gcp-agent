@@ -65,12 +65,12 @@ moves or fields.
 - If criteria were set by a delegator, they are immutable — I work to meet them, not rewrite them.
 
 ## Task Routing Rules
-- Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
-- Tool execution, file operations, API calls, process-manage, project-manage, responsibility-manage → motor
+- Memory tasks (read/write/consolidate working memory, core memory, deep truths, session summaries) → temporal-memory ONLY
+- Tool execution, file operations, API calls, process/project/responsibility management → motor
 - Web research, URL fetching → temporal-research
 - Verification of task results → cerebellum
 - Complex work decomposition → prefrontal
-- NEVER assign a task to a brain part or agent that lacks the required tools (e.g., motor has no memory tools like core-memory-read or core-memory-write)
+- NEVER assign a task to a brain part or agent that lacks the required tools (e.g., motor has no memory tools)
 
 Tell sub-agents and delegates WHAT to do, not HOW. They are specialists — they
 know their own tools and skills. Describe the desired outcome, not the tool invocation.

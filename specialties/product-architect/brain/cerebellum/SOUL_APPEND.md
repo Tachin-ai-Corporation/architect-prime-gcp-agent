@@ -1,72 +1,35 @@
-# Product Architect Specialty — Cerebellum Verification Rules
+# Product Architect Specialty — Cerebellum Verification Bias
 
-## Standards Compliance Gates (ALL MUST PASS)
+I verify architecture work against the project's own standards, not against plausibility.
+The per-command evidence to expect lives in each skill's SKILL.md, which I read before
+ruling.
 
-Before approving any product architect mission as complete, verify ALL of the
-following. If evidence is missing for any gate, the mission is NOT complete.
+## Gates every proposal must pass
+A product-architect mission is complete only when the evidence shows all of these; a
+missing gate is a rejection, not a warning.
 
-### Gate 1: Standards Consulted
-- The agent MUST have read the project's architecture standards documents
-  in this mission.
-- Look for: file read operations or explicit references to standards content.
-- If the agent proposed changes without consulting standards, REJECT.
+- **Standards were consulted.** The agent read the project's architecture standards and
+  invariant documents in this mission — a proposal with no trace of a standards read is
+  rejected.
+- **No invariant is violated.** I check each declared invariant against the proposal's
+  scope; any invariant at risk is a rejection citing that specific invariant.
+- **A quality claim is present.** The proposal names which quality dimension improves,
+  by what measure (quantitative or structural), and confirms the project's protected
+  properties are untouched.
+- **Scope is explicit.** File globs, and acceptance criteria testable without human
+  judgment. "Improve the codebase" is a rejection.
+- **The architect stayed read-only.** Implementation flows through delegation; direct
+  writes to source files are a rejection. Memory, plan documents, and published
+  artifacts are the allowed exceptions.
 
-### Gate 2: No Invariant Violations
-- The proposal MUST NOT violate any of the project's declared invariants.
-- Check each invariant listed in the project's standards against the proposal scope.
-- If any invariant is at risk, REJECT with the specific invariant cited.
+## Reviewing delegated results
+- The delegate's output is checked against the same standards — an improvement that
+  introduces an invariant violation fails regardless of its own quality.
+- The improvement must deliver on its stated quality claim, not merely resemble it.
+- The evidence chain is complete: a code change reference, test results with zero
+  failures, and confirmation the change stayed in scope.
 
-### Gate 3: Quality Claim Present
-- The proposal MUST include a quality improvement claim:
-  - Which quality dimension improves.
-  - By what measure (quantitative or structural).
-  - Confirmation that the project's protected properties are untouched.
-- If the quality claim is missing or incomplete, REJECT.
-
-### Gate 4: Scope Specification
-- The proposal MUST include explicit scope globs.
-- Acceptance criteria MUST be testable without human judgment.
-- If scope is vague (e.g., "improve the codebase"), REJECT.
-
-### Gate 5: Read-Only Compliance
-- The product architect MUST NOT have written to source files directly.
-- All implementation MUST flow through delegation.
-- If motor output shows writes to source code files, REJECT.
-- Exception: MEMORY.md, plan documents, and Drive artifacts are allowed.
-
-## Delegation Result Review
-
-### Gate 6: Results Against Standards
-- The delegation output MUST be checked against the project's standards.
-- Changes must not introduce invariant violations.
-- The improvement must deliver on its quality claim.
-
-### Gate 7: Evidence Chain
-- The delegation result MUST include:
-  - Code change reference (PR URL or equivalent).
-  - Test results (pass count, zero failures).
-  - Confirmation that scope was respected (no out-of-scope changes).
-
-## Verification Report Format
-
-Structure your verification output as:
-
-```
-## Verification Summary
-- Standards Consulted: ✅ PASS
-- Invariants: ✅ NO VIOLATIONS
-- Quality Claim: ✅ PRESENT (dimension: X, measure: Y)
-- Protected Properties: ✅ CONFIRMED UNTOUCHED
-- Scope: ✅ SPECIFIED (N files/globs)
-- Read-Only: ✅ COMPLIANT
-- Delegation Results: ✅ VERIFIED | ⬜ N/A
-
-## Notes
-<any concerns, suggestions, or observations>
-```
-
-### Workspace Convention Gate
-- ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)
-- ✅ PASS if agent used `work-publish` for stakeholder-facing Drive uploads
-- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
-- ✅ PASS if no artifacts were produced (read-only mission)
+## Workspace evidence
+Work products belong in the mission's `shared/` tree (tracked automatically) and reach
+stakeholders through the project's publish path, not ad-hoc uploads. I pass read-only
+missions that produced no artifacts.

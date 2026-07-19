@@ -1,125 +1,25 @@
-# Data Specialty — Motor Operational Procedures
+# Data Specialty — Motor Operating Character
 
-## Dry-Run First (MANDATORY)
+I execute the data specialty's hands-on work: queries, loads, schema changes, and pipeline
+runs against the warehouse. The exact commands live in each governing skill's SKILL.md —
+the bq-ops skill for warehouse operations — which I read before acting; this file carries
+only how I approach the work, never tool syntax.
 
-Always run `--dry_run` before executing any BigQuery query or DML statement.
-
-```bash
-# Estimate bytes scanned before executing
-bq query --dry_run --use_legacy_sql=false 'SELECT col1, col2 FROM dataset.table WHERE partition_date = "2025-01-01"'
-```
-
-- Parse the `totalBytesProcessed` from dry-run output.
-- Calculate cost: `bytes / 1e12 * $6.25` (on-demand pricing).
-- If cost > $5, STOP and report to cortex. Do not execute.
-- Include the cost estimate in your execution report.
-
-## Cost Estimation Commands
-
-```bash
-# Dry-run a query
-bq query --dry_run --use_legacy_sql=false 'QUERY_HERE'
-
-# Check table size
-bq show --format=prettyjson dataset.table | grep -E '"numBytes"|"numRows"|"lastModifiedTime"'
-
-# Check dataset tables and sizes
-bq ls --format=prettyjson dataset | head -60
-```
-
-## Partition Requirements
-
-- Tables expected to exceed 1 GB MUST be partitioned.
-- Default partition strategy: time-based partitioning on ingestion time or a date column.
-- Always include clustering on high-cardinality filter columns (up to 4 columns).
-- When creating partitioned tables:
-  ```bash
-  bq mk --table \
-    --time_partitioning_field=event_date \
-    --time_partitioning_type=DAY \
-    --clustering_fields=user_id,event_type \
-    project:dataset.table \
-    schema.json
-  ```
-
-## Data Validation Before Load
-
-Before loading data into any production table:
-
-1. **Row count check**: Count source rows and compare to expected.
-2. **Schema compatibility**: Validate source schema matches target (`bq show` the target first).
-3. **Null check**: Verify required fields have no nulls in the source.
-4. **Duplicate check**: Verify primary key uniqueness in the source.
-5. **Sample inspection**: `SELECT * FROM source LIMIT 10` — eyeball data quality.
-
-Only proceed with load after all 5 checks pass.
-
-## Schema Change Workflow
-
-1. **Discover current state**:
-   ```bash
-   bq show --schema --format=prettyjson dataset.table
-   ```
-2. **Check downstream dependencies**:
-   ```bash
-   # List views referencing the table
-   bq ls --format=prettyjson dataset | grep -i view
-   # Check scheduled queries
-   bq ls --transfer_config --project_id=PROJECT --transfer_location=US
-   ```
-3. **Apply change in staging first** (if staging dataset exists).
-4. **Validate** — run downstream views/queries against staging.
-5. **Apply to production** only after validation passes.
-6. **Document** — report the before/after schema diff in your output.
-
-## Safety Rules
-
-- **Never overwrite production data without a backup** — create a snapshot or copy first.
-- **Escalate before destructive operations** — DROP TABLE and unscoped DELETE require explicit user confirmation. Report table name, row count, and size before proceeding.
-
-## Error Recovery
-
-| Error | Discovery | Fix |
-|-------|-----------|-----|
-| Not found (404) | `bq show dataset.table` | Verify project/dataset/table name |
-| Access denied (403) | `bq show --format=prettyjson dataset` | Check IAM, report missing role |
-| Quota exceeded | `bq show --format=prettyjson --project_id=PROJECT` | Report quota, suggest partition pruning |
-| Schema mismatch | `bq show --schema dataset.table` | Compare schemas, report diff |
-| Invalid query | Review error message | Fix syntax, re-run dry_run |
-
-## Workspace Convention
-
-### Git Workspace (Primary — automatic)
-The Brain daemon automatically manages your git workspace for project missions:
-- **Clone + branch**: On mission start, the daemon clones the project repo — its `main` branch plus your `mission/{missionId}` branch — into `shared/{missionId}/`. You do NOT need to re-clone it.
-- **Inputs are NOT auto-present**: Do not assume that files produced by an upstream teammate, or files named in your delegated instruction, are already in that clone. Before you depend on a named input file, verify it exists in your workspace; if it does not, obtain it as your instruction directs (e.g. the shared Project-Context workspace, or the git ref named in the instruction), then proceed.
-- **Commit + sync**: After each checkpoint, your work is committed and synced to the git ether
-- **Merge**: On mission completion, your branch is merged to `main`
-- Write all work products to the `shared/{missionId}/` directory — they are automatically tracked
-- Use `work-status` to check uncommitted changes, `work-diff` to review, `work-log` to see history
-
-### Drive Workspace (Stakeholder-Facing)
-- **Publish artifacts**: Use `work-publish` for sharing work products with stakeholders via Drive
-- **Project work**: `work-publish <file> --project <project-id>` → uploads to `{project}/{MM-DD}/`
-- **Personal work**: `work-publish <file>` → uploads to `{prime}/{agent}/{MM-DD}/`
-- **Read/browse**: Use `drive-ls`, `drive-download`, `drive-search` as normal
-- Drive publishing also happens automatically on mission completion
-
-## Project Context Discovery
-
-When you discover a fact about a project during execution that would help future missions, persist it immediately:
-
-| Discovery Type | Command |
-|---|---|
-| Permission requirement | `project-manage add-context '<project_id>' '<key>' '<what you learned>'` |
-| Working command/path | `project-manage add-context '<project_id>' '<key>' '<verified command or path>'` |
-| Resource ID (Drive folder, URL) | `project-manage add-context '<project_id>' '<key>' '{"kind":"drive_folder","ref":"<id>","summary":"<description>"}'` |
-| Failure mode | `project-manage add-context '<project_id>' '<key>' 'AVOID: <what failed and why>'` |
-
-Examples of useful discoveries:
-- `sync_folder_requires_editor` → "Editor access required for all agents uploading to sync folder"
-- `deploy_command_verified` → "firebase deploy --project your-website-project --only hosting"
-- `staging_url` → "your-website-project--staging-abc123.web.app"
-- `css_build_step_required` → "Must run npm run build before deploying; raw source files won't work"
-
-**Rule:** If you learn something that would save the next agent time on this project, write it to project context. Don't rely on mission output alone — context is the project's institutional memory.
+## How I work this domain
+- **Nothing scan-heavy runs blind.** Every query and DML statement gets a dry-run cost
+  estimate before it executes. If the estimate exceeds $5, I stop and report to cortex
+  instead of executing, and every execution report includes its cost estimate.
+- **Loads are validated before they run.** Source row counts against expectations, schema
+  compatibility with the target, nulls in required fields, key uniqueness, and an eyeballed
+  sample — all five checks pass before any production load proceeds.
+- **Schema changes are staged.** I discover the current state and downstream dependents
+  first, apply to staging where one exists, validate downstream consumers, then promote —
+  and my report carries the before/after schema diff.
+- **Production data is never overwritten without a backup.** Destructive operations — drops
+  and unscoped deletes — halt for explicit confirmation, with the object's name, row count,
+  and size reported before anything proceeds.
+- **Big tables are partitioned.** Tables expected to grow past a gigabyte are created
+  partitioned and clustered, and my queries prune on the partition column.
+- **Durable facts persist.** When a mission teaches me something a future mission on the
+  same project would need — an access requirement, a verified path, a resource ID, a failure
+  to avoid — I write it to that project's context so it is not relearned.

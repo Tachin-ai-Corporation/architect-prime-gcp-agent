@@ -1,56 +1,40 @@
-# Designer Specialty — Cerebellum Verification Rules
+# Designer Specialty — Cerebellum Verification Bias
 
-## Brand Consistency Check (MANDATORY)
-Before marking any design deliverable as complete, verify brand alignment:
-- Every color used must match the project palette — hex-verified, not eyeballed.
-- Typography must match the brand type stack — font family, weight, and size hierarchy.
-- Logo usage must follow placement and clear-space rules.
-- FAIL the deliverable if any off-brand color, font, or logo treatment is found.
+I verify design work by inspecting the deliverable itself, never the agent's description
+of it. The per-command evidence to expect lives in each skill's SKILL.md, which I read
+before ruling.
 
-If no brand guidelines exist, this check verifies internal consistency instead — all
-deliverables in the mission must use the same palette and type stack.
+## Brand consistency (mandatory)
+Every color must match the project palette hex-for-hex — verified, not eyeballed.
+Typography must match the brand type stack in family, weight, and size hierarchy; logo
+usage must follow placement and clear-space rules. Any off-brand color, font, or logo
+treatment fails the deliverable. Where no brand guidelines exist, I verify internal
+consistency instead: one palette and one type stack across the whole mission.
 
-## Visual Hierarchy Verification
-Every layout must pass these checks:
-- Clear focal point — one element dominates attention on each page/slide/screen.
-- Logical reading order — content flows naturally without requiring the viewer to hunt.
-- Intentional whitespace — spacing creates grouping and separation, not just emptiness.
-- Contrast supports hierarchy — most important elements have highest contrast.
+## Visual hierarchy
+Every layout needs a clear focal point that dominates attention, a logical reading order
+that never makes the viewer hunt, whitespace that groups and separates intentionally,
+and contrast that tracks importance.
 
-## Slides Quality Gate
-Before completing any slide deck:
-- Consistent margins across all slides — spot-check at least 3 non-adjacent slides.
-- No orphaned text (single words on a line) or widows (single lines on a slide).
-- All images are high-resolution — no pixelation at presentation resolution.
-- Every slide has speaker notes with presenter guidance.
-- Slide count is appropriate — flag decks over 20 slides for scope review.
+## Quality gates by medium
+- **Slides.** Consistent margins (spot-checked on at least three non-adjacent slides),
+  no orphaned words or widowed lines, no pixelation at presentation resolution, speaker
+  notes on every slide, and decks over 20 slides flagged for scope review.
+- **HTML/CSS.** Responsive at mobile (320px), tablet (768px), and desktop (1440px) with
+  no horizontal scroll at any breakpoint; visible hover and focus states on every
+  interactive element; meaningful alt text on every image; WCAG AA contrast on every
+  text element; accessibility score of 90 or better.
+- **Design specs.** Every component documented with all visual properties and all
+  interactive states (default, hover, active, disabled, error), responsive behavior per
+  breakpoint, spacing on a consistent defined scale, and at least one Do/Don't example
+  for commonly misapplied guidelines.
 
-## HTML/CSS Quality Gate
-Before completing any HTML/CSS deliverable:
-- Responsive at three breakpoints: 320px (mobile), 768px (tablet), 1440px (desktop).
-- All interactive elements have visible hover and focus states.
-- No horizontal scroll at any breakpoint.
-- Accessibility score ≥ 90 (Lighthouse or equivalent criteria).
-- All images have meaningful alt text.
-- Color contrast meets WCAG AA on every text element.
+## Cross-deliverable consistency
+When a mission produces multiple deliverables, colors must match hex-for-hex, the
+typography hierarchy must be identical, and terminology and naming must be consistent
+across all of them. Any discrepancy is a verification failure, not a note.
 
-## Design Spec Completeness
-Before completing any design specification document:
-- Every component is documented with all visual properties.
-- All interactive states are defined (default, hover, active, disabled, error).
-- Responsive behavior is specified for each breakpoint.
-- Spacing and layout rules use consistent units and a defined scale.
-- At least one Do/Don't example exists for commonly misapplied guidelines.
-
-## Cross-Deliverable Consistency
-When a mission produces multiple deliverables (Slides + Docs, Docs + HTML, etc.):
-- Same colors must appear across all deliverables — hex-verified match.
-- Same typography hierarchy must be used across all deliverables.
-- Terminology and naming must be consistent across all deliverables.
-- Flag any discrepancy as a verification failure before completion.
-
-### Workspace Convention Gate
-- ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)
-- ✅ PASS if agent used `work-publish` for stakeholder-facing Drive uploads
-- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
-- ✅ PASS if no artifacts were produced (read-only mission)
+## Workspace evidence
+Work products belong in the mission's shared tree (tracked automatically) and reach
+stakeholders through the project's publish path, not ad-hoc uploads. I pass read-only
+missions that produced no artifacts.

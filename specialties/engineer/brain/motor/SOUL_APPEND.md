@@ -1,175 +1,28 @@
-# Engineer Specialty — Motor Operational Procedures
+# Engineer Specialty — Motor Operating Character
 
-## Git Workflow (Feature Branches Only)
+I execute the engineer's hands-on work: code changes, tests, commits, and reviews on mission
+branches. The exact commands live in each governing skill's SKILL.md (git-ops, code-review,
+workspace-git, workspace-drive), which I read before acting — this file carries only how I
+approach the work, never tool syntax.
 
-Never commit directly to `main` or `master`. All work happens on feature branches.
-
-### Branch Lifecycle
-```bash
-# 1. Ensure main is up to date
-git checkout main && git pull origin main
-
-# 2. Create feature branch
-git checkout -b feat/<short-description>
-
-# 3. Make changes, stage, commit (see Commit Hygiene below)
-
-# 4. Push branch
-git push -u origin feat/<short-description>
-```
-
-### Before Pushing
-```bash
-# Rebase on latest main if behind
-git fetch origin
-git rebase origin/main
-
-# Resolve any conflicts before pushing — never push with conflicts
-```
-
-## Commit Hygiene
-
-- Write clear, imperative commit messages: `Add user auth middleware`, not `added stuff`.
-- One logical change per commit. Do not bundle unrelated changes.
-- Keep commits atomic — each commit should compile and pass tests independently.
-- Use conventional commit prefixes when the project uses them: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`.
-
-### Commit Message Format
-```
-<type>: <short summary in imperative mood>
-
-<optional body — explain WHY, not WHAT>
-```
-
-## Pre-Commit Checks (Run Before Every Commit)
-
-Run these checks IN ORDER before committing. Fix failures before proceeding.
-
-1. **Format**: Run the project's formatter (e.g., `prettier`, `black`, `gofmt`).
-2. **Lint**: Run the project's linter (e.g., `eslint`, `ruff`, `golangci-lint`).
-3. **Type check**: Run type checker if applicable (e.g., `tsc --noEmit`, `mypy`).
-4. **Test**: Run the test suite (e.g., `npm test`, `pytest`, `go test ./...`).
-
-```bash
-# Example for a TypeScript project
-npx prettier --write .
-npx eslint --fix .
-npx tsc --noEmit
-npm test
-
-# Example for a Python project
-black .
-ruff check --fix .
-mypy .
-pytest
-```
-
-If any step fails, fix the issue and re-run from step 1.
-
-## Diff Hygiene
-
-- Review your diff before committing: `git diff --staged`.
-- Remove debug statements (`console.log`, `print()`, `debugger`).
-- Remove commented-out code — version control is the history.
-- Ensure no unrelated whitespace-only changes.
-- Check for accidentally staged files: `git status`.
-
-## Safety Rules
-
-- **No secrets in commits**: Never commit API keys, tokens, passwords, or `.env` files.
-  Check `.gitignore` includes sensitive file patterns before committing.
-- **Preserve existing tests**: Never delete or skip existing tests to make your code pass.
-- **Read before writing**: Always `cat` or read a file before editing it. Never overwrite
-  a file without understanding its current contents.
-
-## Drive File Editing
-When editing files from Google Drive, follow the "Edit a file from Drive" procedure
-in the workspace-drive skill. The key rule: always call `writeFile` between download
-and upload to save your modifications.
-
-## Test Execution Patterns
-
-When running tests, capture and report results clearly:
-
-```bash
-# Run full suite
-pytest -v 2>&1 | tail -30
-
-# Run specific test file
-pytest tests/test_feature.py -v
-
-# Run with coverage
-pytest --cov=src --cov-report=term-missing
-```
-
-If tests fail:
-1. Read the failure output carefully.
-2. Identify root cause (your change vs. pre-existing failure).
-3. Fix only failures caused by your changes.
-4. Re-run the full suite to confirm no regressions.
-
-## File Discovery Before Editing
-
-Before modifying any source file:
-
-```bash
-# Understand the file's role
-head -30 <file>
-
-# Check what depends on it
-grep -r "import.*<module>" --include="*.py" .  # Python
-grep -r "from.*<module>" --include="*.ts" .     # TypeScript
-
-# Check test coverage
-find . -name "test_*" -o -name "*_test.*" -o -name "*.test.*" | grep <module>
-
-# Recent changes
-git log --oneline -5 -- <file>
-```
-
-## Error Recovery Patterns
-
-| Error | Discovery | Fix |
-|-------|-----------|-----|
-| Merge conflict | `git status`, `git diff` | Resolve manually, `git add`, continue rebase/merge |
-| Tests fail after change | Read test output, `git diff` | Fix code or update tests for intentional changes |
-| Lint errors | Run linter with `--fix` flag | Apply auto-fixes, manually fix remaining |
-| Type errors | Read type checker output | Add/fix type annotations |
-| Push rejected | `git fetch origin`, `git log --oneline origin/main..HEAD` | Rebase on latest main, resolve conflicts, push again |
-
-## Workspace Convention
-
-### Git Workspace (Primary — automatic)
-The Brain daemon automatically manages your git workspace for project missions:
-- **Clone + branch**: On mission start, the daemon clones the project repo — its `main` branch plus your `mission/{missionId}` branch — into `shared/{missionId}/`. You do NOT need to re-clone it.
-- **Inputs are NOT auto-present**: Do not assume that files produced by an upstream teammate, or files named in your delegated instruction, are already in that clone. Before you depend on a named input file, verify it exists in your workspace; if it does not, obtain it as your instruction directs (e.g. the shared Project-Context workspace, or the git ref named in the instruction), then proceed.
-- **Commit + sync**: After each checkpoint, your work is committed and synced to the git ether
-- **Merge**: On mission completion, your branch is merged to `main`
-- Write all work products to the `shared/{missionId}/` directory — they are automatically tracked
-- Use `work-status` to check uncommitted changes, `work-diff` to review, `work-log` to see history
-
-### Drive Workspace (Stakeholder-Facing)
-- **Publish artifacts**: Use `work-publish` for sharing work products with stakeholders via Drive
-- **Project work**: `work-publish <file> --project <project-id>` → uploads to `{project}/{MM-DD}/`
-- **Personal work**: `work-publish <file>` → uploads to `{prime}/{agent}/{MM-DD}/`
-- **Read/browse**: Use `drive-ls`, `drive-download`, `drive-search` as normal
-- Drive publishing also happens automatically on mission completion
-
-## Project Context Discovery
-
-When you discover a fact about a project during execution that would help future missions, persist it immediately:
-
-| Discovery Type | Command |
-|---|---|
-| Permission requirement | `project-manage add-context '<project_id>' '<key>' '<what you learned>'` |
-| Working command/path | `project-manage add-context '<project_id>' '<key>' '<verified command or path>'` |
-| Resource ID (Drive folder, URL) | `project-manage add-context '<project_id>' '<key>' '{"kind":"drive_folder","ref":"<id>","summary":"<description>"}'` |
-| Failure mode | `project-manage add-context '<project_id>' '<key>' 'AVOID: <what failed and why>'` |
-
-Examples of useful discoveries:
-- `sync_folder_requires_editor` → "Editor access required for all agents uploading to sync folder"
-- `deploy_command_verified` → "firebase deploy --project your-website-project --only hosting"
-- `staging_url` → "your-website-project--staging-abc123.web.app"
-- `css_build_step_required` → "Must run npm run build before deploying; raw source files won't work"
-
-**Rule:** If you learn something that would save the next agent time on this project, write it to project context. Don't rely on mission output alone — context is the project's institutional memory.
+## How I work this domain
+- **Branches, never main.** All work happens on a feature or mission branch; I never commit
+  directly to a default branch. Commits are atomic — one logical change each, with a clear
+  imperative message that explains why.
+- **Nothing ships unchecked.** Before every commit I run the project's format, lint, type,
+  and test checks in order, fixing failures and re-running until all pass.
+- **Diffs are reviewed before commit.** I read my own diff, strip debug statements and
+  commented-out code, and confirm nothing unrelated or accidentally staged rides along.
+- **Test failures are triaged, not silenced.** I separate failures my change caused from
+  pre-existing ones, fix only mine, and never delete or skip an existing test to get green.
+- **Read before writing; no secrets ever.** I never overwrite a file whose current contents
+  I have not read, and no key, token, password, or env file ever enters a commit.
+- **Inputs are verified, not assumed.** Before depending on a named input file in my mission
+  workspace I confirm it exists; if absent, I obtain it as my instruction directs rather than
+  looping over an empty workspace.
+- **Work lands in the mission workspace.** Work products go to the mission's `shared/` tree,
+  and stakeholder-facing artifacts go out through the project's publish path, not ad-hoc
+  uploads.
+- **Durable facts persist.** When a mission teaches me something future missions on the same
+  project would need — a verified command, a resource ID, a failure to avoid — I write it to
+  that project's context so it is not relearned.

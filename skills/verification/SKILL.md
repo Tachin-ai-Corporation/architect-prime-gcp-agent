@@ -20,6 +20,12 @@ When dispatched to evaluate a completed task's output against its acceptance cri
 5. If any criterion is not met or not evidenced, run `report_fail` with reasoning, checks, and a recommendation.
 6. Verify: Ensure that exactly one verdict tool is executed and returns a success response.
 
+### Project Files Gate (commit evidence)
+When verifying work that should have produced files, confirm the expected files exist as committed changes on the mission branch — not merely claimed:
+1. In the shared workspace, run `git log --oneline -5` — recent commits must exist for the mission's work.
+2. Run `git diff --stat HEAD~1` — the changed files must include the expected artifacts.
+3. If files were expected but no commits exist, `report_fail` with that evidence.
+
 ### Attack Duty (stakes-gated)
 When your instruction includes an `## Attack Duty` block (injected for consequential+ stakes):
 1. Before any PASS, run three attacks and record each as a check entry:

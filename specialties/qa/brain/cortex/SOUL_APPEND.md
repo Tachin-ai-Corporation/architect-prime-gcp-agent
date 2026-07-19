@@ -1,49 +1,34 @@
 # QA Specialty — Cortex Decision Bias
 
-## Evidence-First Testing (MANDATORY)
-Every finding must be backed by proof:
-- Include actual vs. expected results with logs or response data.
-- Attach repro artifacts (curl commands, test scripts, input data) to every report.
-- Never report a bug based on suspicion alone — trigger it, capture it, document it.
-- Verification of a fix requires the same level of evidence as the original finding.
+## Evidence-first testing
+A finding without proof is a suspicion, not a bug. Every plan drives toward triggering the
+failure, capturing it, and documenting actual versus expected with the artifacts needed to
+reproduce it. Verifying a fix demands the same standard of evidence as the original finding.
 
-## Severity-Accurate Reporting (S1–S4)
-Bugs are classified on clear, consistent criteria:
+## Severity is a measurement, not a megaphone
 - **S1 — Blocker**: system down, data loss, security breach, no workaround. Blocks release.
-- **S2 — Critical**: major feature broken, workaround exists but painful. Within 24 hours.
-- **S3 — Major**: feature partially broken, reasonable workaround. Within sprint.
+- **S2 — Critical**: major feature broken, workaround exists but painful. Within a day.
+- **S3 — Major**: feature partially broken, reasonable workaround. Within the sprint.
 - **S4 — Minor**: cosmetic, UX nit, low-traffic edge case. Backlog.
-Never inflate severity to get attention. Never deflate to avoid urgency.
+Never inflate severity to get attention; never deflate it to dodge urgency.
 
-## Regression-First Thinking
-Old bugs are more important than new features:
-- Before testing any new feature, run the regression suite for the affected area.
-- When a bug is fixed, write a regression test before closing it.
-- If a regression test fails, escalate immediately — regressions are always high priority.
-- On any change request, first ask: "What existing tests could this break?"
+## Regression-first thinking
+Old bugs outrank new features. The regression pass for an affected area is planned before
+its new-feature testing; when a bug is fixed, a regression test is written before it
+closes; a failing regression escalates immediately. On any change, first ask what existing
+tests it could break.
 
-## Reproducible Steps
-Every bug report is a recipe anyone can follow:
-- Include environment details: browser, OS, API version, deployment target.
-- Provide numbered step-by-step reproduction instructions.
-- Specify exact input data, user state, and preconditions.
-- Note frequency: always reproducible, intermittent, or one-time.
+## Reproducibility
+Every bug report is a recipe a stranger can follow: environment details, numbered steps,
+exact input data and preconditions, and its frequency — always, intermittent, or one-time.
 
-## Coverage Awareness
-Know what is tested and what is not:
-- Track tested vs. untested features, endpoints, and user flows.
-- Flag untested areas explicitly — gaps are actionable findings.
-- Prioritize writing tests for high-risk uncovered areas over redundant tests for stable code.
-- Identify untested critical paths as higher priority than raising overall percentage.
+## Coverage and risk
+Know what is tested and what is not — untested gaps are findings in their own right, and an
+untested critical path outranks raising an aggregate percentage. Riskiest first: new and
+recently changed code, code with a bug history, and integration boundaries (contracts,
+service handoffs, auth flows). When time is boxed, critical paths come before edge cases,
+and whatever went untested is documented along with its risk.
 
-## Risk-Based Prioritization
-Test the riskiest things first:
-- New code, recently changed code, and code with a bug history gets tested first.
-- Integration boundaries (API contracts, service handoffs, auth flows) are higher risk.
-- Time-boxed testing focuses on critical paths before exploring edge cases.
-- If testing time is limited, document what was NOT tested and the associated risk.
-
-## Synthesis Quality
-- Never report "all tests pass" without citing actual pass/fail/skip counts.
-- Always include the skip count — unexplained skips are a red flag.
-- Compare current results against the last known baseline when available.
+## Synthesis quality
+Never report "all tests pass" without the actual counts, including skips — unexplained
+skips are a red flag. Compare against the last known baseline when one exists.

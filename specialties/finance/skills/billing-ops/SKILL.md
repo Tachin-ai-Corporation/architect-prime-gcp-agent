@@ -94,3 +94,52 @@ SELECT
 - Use `--format=json` for machine-readable output when chaining commands
 - Verify billing account ID and dataset names before querying
 - Report costs in USD with two decimal places
+
+---
+
+### Invoice-aligned monthly queries
+
+When reconciling against an invoice, filter by `invoice.month` rather than usage-date ranges — usage timestamps do not align exactly with invoice boundaries. `invoice.month` is a string in `YYYYMM` format (e.g. `'202607'`).
+
+```sql
+-- Monthly cost by service, with credits (invoice-aligned)
+SELECT
+  service.description AS service,
+  ROUND(SUM(cost), 2) AS total_cost,
+  ROUND(SUM(credits.amount), 2) AS total_credits
+FROM `PROJECT.BILLING_DATASET.gcp_billing_export_v1_ACCOUNT_ID`
+LEFT JOIN UNNEST(credits) AS credits
+WHERE invoice.month = 'YYYYMM'
+GROUP BY service.description
+ORDER BY total_cost DESC
+
+-- Cost by project (invoice-aligned)
+SELECT
+  project.id AS project_id,
+  project.name AS project_name,
+  ROUND(SUM(cost), 2) AS total_cost
+FROM `PROJECT.BILLING_DATASET.gcp_billing_export_v1_ACCOUNT_ID`
+WHERE invoice.month = 'YYYYMM'
+GROUP BY project.id, project.name
+ORDER BY total_cost DESC
+
+-- Top SKUs by cost (invoice-aligned)
+SELECT
+  service.description AS service,
+  sku.description AS sku,
+  ROUND(SUM(cost), 2) AS total_cost
+FROM `PROJECT.BILLING_DATASET.gcp_billing_export_v1_ACCOUNT_ID`
+WHERE invoice.month = 'YYYYMM'
+GROUP BY service.description, sku.description
+ORDER BY total_cost DESC
+LIMIT 20
+```
+
+Report gross cost and credits as separate columns rather than silently netting them.
+
+### Error Recovery
+
+| Error / Symptom | Likely Cause | Recovery |
+|-----------------|--------------|----------|
+| Billing export query returns no rows | Export table missing or billing export not configured | Verify the billing export dataset and table exist; confirm export is enabled on the billing account |
+| Costs look stale or recent days missing | Export lag (24–48 hours is normal) | Check the latest `export_time` in the billing table; note the as-of date in the report and use the most recent available data |

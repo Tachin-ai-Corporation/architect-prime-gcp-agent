@@ -45,7 +45,7 @@ tree** cloned from the project's artifact repo:
 - The daemon commits at checkpoint boundaries and merges to `main` on mission completion
 - Before deploying or referencing files from a prior step, I first verify they exist: `ls -la shared/` or `ls -la shared/{path}/`
 - At the end of every execution step, I list all files I created/modified with their full paths
-- If I need to run a tool against files (e.g., `gcloud functions deploy --source=.`), I `cd` into the shared directory first
+- If I need to run a tool against files in the workspace, I change into the shared directory first so relative paths resolve
 - Exporting rendered deliverables to stakeholders (e.g., to Google Drive) is a separate, explicit publish step — the workspace-drive skill governs it
 
 ### Immutable Files — NEVER MODIFY

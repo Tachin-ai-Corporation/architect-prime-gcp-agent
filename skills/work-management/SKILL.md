@@ -19,7 +19,7 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
   - Subcommands: `list`, `create '<json>'`, `update '<id>' '<json>'`, `remove '<id>'`, `toggle '<id>' [on|off]`.
   - Output: Status or configuration JSON.
 - `project-manage` — Manage project details and teams in Firestore.
-  - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `complete '<id>'`, `pause '<id>'`, `archive '<id>'`, `team-add '<id>' '<json>'`, `team-remove '<id>' '<email>'`, `team-list '<id>'`.
+  - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `complete '<id>'`, `pause '<id>'`, `archive '<id>'`, `team-add '<id>' '<json>'`, `team-remove '<id>' '<email>'`, `team-list '<id>'`, `add-context '<id>' '<key>' '<value>'`.
   - Output: Status confirmation, team lists, or project JSON.
 - `process-manage` — Manage deterministic process definitions in Firestore.
   - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `deprecate '<id>'`.
@@ -192,6 +192,22 @@ exec project-manage team-remove '<id>' '<email>'
 ```
 exec project-manage team-list '<id>'
 ```
+
+**add-context** — Persist a project discovery (institutional memory)
+```
+exec project-manage add-context '<id>' '<key>' '<value-or-json-packet>'
+```
+The value may be a plain string or a JSON packet (e.g. `{"kind":"drive_folder","ref":"<id>","summary":"<description>"}`).
+Persist a discovery immediately when execution teaches you something a future mission on the same project would need:
+
+| Discovery type | Example |
+|---|---|
+| Permission requirement | `project-manage add-context '<project_id>' 'sync_folder_requires_editor' 'Editor access required for all agents uploading to the sync folder'` |
+| Verified command or path | `project-manage add-context '<project_id>' 'deploy_command_verified' 'firebase deploy --project your-website-project --only hosting'` |
+| Resource ID (Drive folder, URL) | `project-manage add-context '<project_id>' 'assets_folder' '{"kind":"drive_folder","ref":"<id>","summary":"shared assets"}'` |
+| Failure mode | `project-manage add-context '<project_id>' 'css_build_step_required' 'AVOID: deploying raw source; must run npm run build first'` |
+
+Context is the project's institutional memory — if a fact would save the next agent time on this project, write it to context rather than relying on mission output alone.
 
 #### Optional flags (create/update)
 - `--processes <comma-separated-ids>` — Set `standardProcesses` array

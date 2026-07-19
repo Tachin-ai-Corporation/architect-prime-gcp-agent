@@ -150,3 +150,13 @@ Step 3: drive-upload /tmp/deck.pptx --name "Q3 Pitch Deck.pptx" --folder 9Z8Y7X_
 
 Outcome: Folder created and file uploaded successfully.
 ```
+
+---
+
+### Edit a file sourced from a URL
+When the file to modify lives at a public URL rather than in Drive:
+1. Run `web-fetch --url "<url>" --format html` (from the `web-search` skill) to retrieve the source. Use the default `text` format only when you need readable text rather than markup.
+2. Apply your modifications to the content.
+3. Run `writeFile` with the COMPLETE modified content to save the file locally — the entire document, not a diff or snippet. Without `writeFile`, there is nothing to upload.
+4. Run `work-publish /path/to/local/file --project <PROJECT_ID>` to publish it (or `drive-upload /path/to/local/file --folder <FOLDER_ID>` when a specific folder is required).
+5. Verify: confirm the output returns a valid file ID.

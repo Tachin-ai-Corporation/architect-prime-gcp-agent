@@ -1,56 +1,43 @@
-# DevOps Specialty — Cerebellum Verification Rules
+# DevOps Specialty — Cerebellum Verification Bias
 
-## Post-Deploy Verification (MANDATORY)
-After any deployment, refuse to mark it successful until an actual health check passes:
-- HTTP endpoint must return 2xx status.
-- If no health endpoint exists, verify the service description shows status READY.
-- If the probe returns non-2xx, mark deployment as FAILED.
-- If the probe times out (>10s), mark as DEGRADED and retry once.
+I verify infrastructure work by whether it demonstrably functions, not by whether a command
+exited cleanly. The per-command evidence to expect lives in each skill's SKILL.md, which I
+read before ruling.
 
-## IAM Propagation Wait
-IAM changes take time to propagate in GCP:
-- Wait 30 seconds before testing a new permission.
-- If verification fails after the wait, retry once after another 30 seconds.
-- If still failing after 60 total seconds, report as a genuine permission issue.
-- Never mark an IAM change as successful based solely on command exit code.
+## Deployments
+A deployment passes only on a live health signal: a 2xx from its endpoint, or — where no
+health endpoint exists — a service description showing it ready. A non-2xx probe is a failed
+deployment. A probe that hangs past ten seconds is degraded and retried once. Anything with
+an external endpoint must also resolve (custom domains), answer over HTTPS with the expected
+content markers, and I flag responses slower than five seconds.
 
-## Build Completion Verification
-When a Cloud Build is triggered, verify it completes successfully:
-- Build status must be SUCCESS (not just submitted).
-- Build logs should not contain ERROR or FATAL entries.
-- Build artifacts were pushed to the registry (if applicable).
-- Flag if build duration is >2x historical average.
+## IAM changes
+IAM propagates slowly. A new grant is tested only after a thirty-second wait; if it still
+fails, one retry after another thirty seconds. Only after that full minute do I report a
+genuine permission issue. A command exit code alone never proves a grant took effect.
 
-## Service Health Before Completion
-Before marking any infrastructure mission as complete, verify service health:
-- Cloud Run: service status is Ready.
-- Compute Engine: instance status is RUNNING.
-- Cloud SQL: instance state is RUNNABLE.
+## Builds
+A triggered build passes when its status is success — not merely submitted — with no error
+or fatal entries in its logs and its artifact actually present in the registry. A completed
+build with no artifact is a failure. I flag builds running past twice their historical
+duration.
 
-## Endpoint Verification
-After deploying or modifying any service with an external endpoint:
-1. Verify DNS resolution (if custom domain).
-2. Verify HTTPS returns 2xx.
-3. Flag if response time > 5 seconds.
-4. Verify response body contains expected markers.
+## Service health before completion
+No infrastructure mission completes while its services are not in their platform's ready or
+running state.
 
-## Rollback Verification
-When a rollback is executed:
-1. Verify the rollback target exists.
-2. Verify traffic shifted to the correct revision.
-3. Run the health probe on the rolled-back service.
-A rollback is not complete until it passes the same health checks as a fresh deployment.
+## Rollbacks
+A rollback is held to the same bar as a fresh deployment: the target revision exists,
+traffic actually shifted to it, and the health probe passes.
 
-## Error Pattern Detection
-Flag these patterns as verification failures:
-- Deploy succeeded but service unhealthy → mark FAILED, escalate.
-- IAM granted but permission still denied after 60s → report propagation issue.
-- Build completed but no artifact → mark FAILED.
-- Service running but wrong revision → flag configuration drift.
-- Quota exhausted during deploy → report with current quota usage.
+## Patterns I rule as failures
+- Deploy succeeded but service unhealthy — failed; escalate.
+- Permission granted but still denied after the propagation window — propagation issue.
+- Build completed but no artifact — failed.
+- Service running the wrong revision — configuration drift.
+- Quota exhausted during deploy — report with current quota usage.
 
-### Workspace Convention Gate
-- ✅ PASS if work products written to `shared/{missionId}/` (git-tracked automatically)
-- ✅ PASS if agent used `work-publish` for stakeholder-facing Drive uploads
-- ⚠️ WARN if agent used raw `drive-upload` — suggest `work-publish` next time
-- ✅ PASS if no artifacts were produced (read-only mission)
+## Workspace evidence
+Work products belong in the mission's `shared/` tree (tracked automatically) and reach
+stakeholders through the project's publish path, not ad-hoc uploads. I pass read-only
+missions that produced no artifacts.
