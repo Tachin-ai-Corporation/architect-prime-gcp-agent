@@ -22,6 +22,7 @@ When managing Google Calendar events — listing events, searching by query, cre
 ## Important Notes
 - **Attendees:** Not supported. Events are attendee-less by design — adding attendees would send invitation emails, and agents do not send outbound messages (C-27; the mouth is the sole egress). Create the event, then report its link so a human can invite attendees if needed.
 - **Timestamps:** All timestamps must be in strict ISO 8601 format (e.g., `2026-04-25T10:00:00Z`).
+- **Timezone:** When a request gives a wall-clock time ("3pm"), convert it to the requester's timezone (from the agent's IDENTITY.md/MEMORY.md) before formatting — e.g. 3pm `America/Chicago` → `2026-05-28T15:00:00-05:00`. For events more than ~2 weeks out, check whether the DST offset differs on that date. If the timezone is ambiguous, default to UTC (`Z`) and flag the assumption.
 - **Calendar ID:** Default calendar is `primary`. Use `--calendar <id>` for other calendars.
 
 ## Procedures
@@ -32,9 +33,10 @@ When managing Google Calendar events — listing events, searching by query, cre
 3. Verify: Check that the output returns a list of events scheduled for that day.
 
 ### Schedule a new meeting
-1. Confirm the meeting title, start time, and end time in ISO 8601 format.
-2. Run `calendar-create --summary "Project Alignment" --from "2026-06-19T10:00:00Z" --to "2026-06-19T10:30:00Z"`.
-3. Verify: Confirm the output displays a success confirmation containing the new event ID.
+1. Confirm the title, start, and end in ISO 8601 (convert wall-clock times to the requester's timezone first — see Important Notes). Default the duration to 30 minutes if unspecified.
+2. **Check for conflicts first:** run `calendar-events --from "<start>" --to "<end>"` for the target window. If any existing event overlaps, do NOT create — report the conflicting event(s) (title, time) back to cortex instead.
+3. Run `calendar-create --summary "Project Alignment" --from "2026-06-19T10:00:00Z" --to "2026-06-19T10:30:00Z" [--description "…\nCreated by <agent name>"]`. Give it a concise, descriptive title (e.g. "1:1 — Alice + Bob", not "Meeting").
+4. Verify: Confirm the output displays a success confirmation containing the new event ID.
 
 ### Reschedule an existing meeting
 1. Run `calendar-search --query "Project Alignment"` to locate the event and retrieve its ID.

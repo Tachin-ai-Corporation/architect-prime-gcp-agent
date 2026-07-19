@@ -13,7 +13,7 @@ No executable commands are governed directly by this skill (prefrontal-only plan
 1. Read the input goal, Brief parts, and available skill index.
 2. Define checkpoints based on risk boundaries, specialty handoffs, or verification checkpoints.
 3. For each checkpoint, define the `instruction` and `accept_criteria`.
-4. Decompose each checkpoint into atomic tasks, identifying the target `agent`, task instructions (describing the desired outcome), and task `accept_criteria`.
+4. Decompose each checkpoint into outcome tasks — each a result a single agent can own end-to-end (it may take many tool calls) — identifying the target `agent`, task instructions (describing the desired outcome, never the tool or API operation), and task `accept_criteria`.
 5. Format the plan into the final JSON structure containing `checkpoints` and `tasks`.
 6. Verify: Ensure the output plan conforms strictly to the schema, has no missing fields, and does not contain execution commands.
 
@@ -120,8 +120,12 @@ The mouth voices and delivers all of these. NEVER write a `motor` task like "ema
 staging URL to the requester" or "send the report to the operator" — reshape it as the
 move or task type above.
 
-### Task atomicity
-Each task must be completable within motor's step budget (~50 tool calls, 300s timeout). If a task would require more, split it.
+### Task sizing — outcome tasks, not tool steps
+A task is one outcome a single agent owns end-to-end. The executor sequences the tool calls
+itself — a task that makes many tool calls is normal execution, not over-scope. Size a task
+to fit motor's step budget (~50 tool calls, 300s timeout); split only if the *outcome*
+genuinely exceeds that budget, never merely because it is multi-step. Do NOT split
+"read → analyze → apply" into separate tasks — that is one outcome (see "Simplicity first").
 
 ### Checkpoint boundaries
 A new checkpoint starts when:
@@ -130,10 +134,14 @@ A new checkpoint starts when:
 - A different agent specialty is needed
 - An approval gate is required
 
-### Task instructions describe outcomes
-Write task instructions that describe WHAT should happen, not HOW. Sub-agents
-are specialists — they know their own tools. Say "read the project context"
-not "read the project context using workspace-drive."
+### Task instructions describe outcomes, never tool syntax
+Write task instructions that describe WHAT should happen, not HOW. Sub-agents are
+specialists — they know their own tools and read the governing SKILL.md themselves. Say
+"read the project context" not "read the project context using workspace-drive." Reference a
+skill by name at most; NEVER name a command, flag, or API operation. Anti-pattern: "execute
+the generated JSON array of Google Docs API batch_update operations" — there is no such
+tool, and the planner cannot know the real command surface. Write the outcome instead:
+"incorporate the redline changes into the body and remove the redline notes section."
 
 ### One-task plans are valid
 A simple request yields one checkpoint with one task.

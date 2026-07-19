@@ -92,7 +92,7 @@ async function writeResult(docPath, result) {
   // Extract relative path from full resource name
   const relPath = docPath.includes('/documents/') ? docPath.split('/documents/')[1] : docPath;
   const url = `${FIRESTORE_URL}/${relPath}?updateMask.fieldPaths=status&updateMask.fieldPaths=result&updateMask.fieldPaths=completedAt`;
-  await fetch(url, {
+  const res = await fetch(url, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -103,6 +103,12 @@ async function writeResult(docPath, result) {
       },
     }),
   });
+  // A Firestore rejection (e.g. 400 document-too-large) resolves the fetch — without this
+  // check the command doc never flips to complete and the dashboard card hangs pending.
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`writeResult PATCH ${res.status}: ${body.slice(0, 300)}`);
+  }
 }
 
 async function writeError(docPath, error) {
@@ -309,6 +315,13 @@ function handleConfig() {
 function handleWorkspace() {
   const workspaces = {};
   const files = {};  // flat map: "workspace-motor/SOUL.md" → content
+  // Persona files always carry content (the Brain cards read them); other .md artifacts are
+  // included only while the running total stays under budget, so a workspace full of agent
+  // work artifacts can't push the Firestore result doc toward its 1 MiB limit.
+  const PERSONA_FILES = new Set(['SOUL.md', 'IDENTITY.md', 'MEMORY.md', 'AGENTS.md']);
+  const MAX_FILE = 65536;       // 64KB per file — comfortably above the largest organ SOUL (~18KB)
+  const MAX_TOTAL = 700 * 1024; // total content budget across all workspace dirs
+  let totalChars = 0;
   if (existsSync(CORE_DIR)) {
     const entries = readdirSync(CORE_DIR);
     for (const e of entries) {
@@ -322,10 +335,20 @@ function handleWorkspace() {
           .map(f => {
             const fp = join(wsDir, f);
             const fst = statSync(fp);
-            // Read .md content (capped at 8KB to stay safe)
+            // Read .md content. Cap per-file size, but ALWAYS populate persona keys when
+            // readable — a dropped key renders as "Not found on agent" in the dashboard.
+            // The old 8KB cap silently hid every organ SOUL >= 8KB (cortex ~11.5KB,
+            // motor/cerebellum with appends), which is why those Brain cards showed empty
+            // while prefrontal (no append) rendered.
             let content = undefined;
-            if (f.endsWith('.md') && fst.size < 8192) {
-              try { content = readFileSync(fp, 'utf8'); } catch {}
+            if (f.endsWith('.md') && (PERSONA_FILES.has(f) || totalChars < MAX_TOTAL)) {
+              try {
+                const raw = readFileSync(fp, 'utf8');
+                content = raw.length > MAX_FILE
+                  ? raw.slice(0, MAX_FILE) + `\n\n… [truncated: ${fst.size} bytes total]`
+                  : raw;
+                totalChars += content.length;
+              } catch {}
             }
             // Build flat key: "workspace" dir → "SOUL.md", others → "workspace-motor/SOUL.md"
             const flatKey = e === 'workspace' ? f : `${e}/${f}`;

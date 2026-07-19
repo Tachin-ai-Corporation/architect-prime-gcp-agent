@@ -1,4 +1,4 @@
-# Skill: Google Docs (v8)
+# Skill: Google Docs (v10)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
@@ -138,14 +138,14 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 ### Reading Large Documents (paginated reads)
 1. Measure first: `docs-cat DOC_ID --meta` — returns total `chars` and the heading `outline` with char offsets.
 2. If the doc is under ~6,000 chars, a plain `docs-cat DOC_ID` is fine.
-3. To read a specific section, search for its heading: `docs-cat DOC_ID --find "LEGAL REVIEW REDLINES" --context 3000` — returns the section content around the match.
+3. To read a specific section **in full**, take its heading offset from the `--meta` outline and the next heading's offset, then read the whole span with `docs-cat DOC_ID --offset START --limit (END-START)`. Do NOT rely on `--find "HEADING" --context N`: it returns only ±N chars around the match, so on a section longer than N it silently drops the tail (this is how a 30k-char redline block gets read as 12k and half its changes go missing). Size the window to the whole section, or window through it.
 4. To read sequentially, window through it: `docs-cat DOC_ID --offset 0 --limit 6000`, then continue from the returned `next_offset` until `truncated` is absent.
 5. Never treat a single full read of a large doc as complete — if `chars` exceeds what you received, the tail is missing.
 
 ### Finalize a Redlined Document (apply notes, then strip the notes section)
 A common request: a doc has review/redline notes appended at the end; incorporate them into the body, then remove the notes so the doc is clean.
 1. `docs-cat DOC_ID --meta` — locate the notes section heading and its char offset (e.g. `[LEGAL REVIEW REDLINES]`).
-2. `docs-cat DOC_ID --find "LEGAL REVIEW REDLINES" --context 3000` — read the notes so you know exactly what changes they call for.
+2. Read the **entire** notes section — not just the first screen. Take the notes heading's offset from `--meta` and read from there to the end: `docs-cat DOC_ID --offset <notes_start> --limit <chars_to_end>`. A redline block often runs many thousands of chars; `--find … --context N` caps at ±N and will hide the tail. If you apply changes from a partial read you WILL miss redlines — confirm you have read to the end of the document before applying anything.
 3. Apply each change to the body with `docs-find-replace` (one clause at a time) or `docs-batch-replace` (a `{find,replace}` pairs file) — surgical, formatting-preserving.
 4. Strip the notes: `docs-section-delete --doc DOC_ID --from-anchor "[LEGAL REVIEW REDLINES]"` — deletes the heading and everything after it. The document is now a clean final version.
 5. Verify: `docs-cat DOC_ID --meta` — confirm the notes heading is gone and the body carries the applied changes.
@@ -190,6 +190,8 @@ Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrit
 - **Named Ranges Fragmentation**: If a named range is edited by human collaborators, it can split into multiple fragments. `docs-namedrange-replace` replaces **all** fragments of the range in a single call.
 - **Image Constraints**: Public URL image insertions must be PNG/JPEG/GIF, under 50 MB, and URL length under 2KB (these are checked locally). The 25-megapixel dimension limit is enforced server-side by Google, not client-side.
 - **Headers/Footers via Conversion**: Neither Markdown nor HTML conversion includes headers or footers. Apply these with `docs-format-page` as a post-creation step. Automatic page numbers are **unsupported** by `docs-format-page` (Docs API v1 has no page-number request) — use the Lane C DOCX round-trip if you need them.
+- **Multi-line inserts**: `docs-anchor-insert`, `docs-write`, `docs-find-replace`, `docs-namedrange-replace`, and `docs-suggest` interpret `\n` and `\t` in `--text`/`--replace` as real line breaks and tabs — pass `"Clause 1.\nClause 2."` and get two lines. A literal backslash-n is never inserted verbatim.
+- **Sharing**: Creating or editing a doc does not share it, and you should NOT share a document unless explicitly instructed — sharing sends notification emails, an outbound side effect agents do not initiate (C-27).
 
 ---
 

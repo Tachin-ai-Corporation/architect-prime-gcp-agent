@@ -23,6 +23,9 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$DOC_ID" && (-n "$TEXT" || -n "$FILE") ]] || die "Need --doc and either --text or --file"
 
+# Interpret \n and \t in --text so callers get real line breaks, not literal backslashes.
+[[ -n "$TEXT" ]] && { TEXT="${TEXT//'\n'/$'\n'}"; TEXT="${TEXT//'\t'/$'\t'}"; }
+
 if [[ "$APPEND" == "true" && "$OVERWRITE" == "true" ]]; then
   die "Conflicting flags: --append and --overwrite cannot be used together."
 fi

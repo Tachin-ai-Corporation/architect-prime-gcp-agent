@@ -22,6 +22,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Interpret \n and \t in --replace so callers get real line breaks, not literal backslashes.
+REPLACE="${REPLACE//'\n'/$'\n'}"; REPLACE="${REPLACE//'\t'/$'\t'}"
+
 if [[ -n "$SUGG_FILE" ]]; then
   [[ -f "$SUGG_FILE" ]] || die "File not found: $SUGG_FILE"
   export SUGG_FILE

@@ -1,10 +1,10 @@
 # Culture of Work
 
-The Culture of Work is the operational framework that governs how Architect Prime agents plan, execute, track, and verify work. It defines **8 primitives** that compose into a hierarchy, enforced by the brain daemon (`agent-brain.mjs`) and stored in Firestore.
+The Culture of Work is the operational framework that governs how Architect Prime agents plan, execute, track, and verify work. It defines **9 primitives** that compose into a hierarchy, enforced by the brain daemon (`agent-brain.mjs`) and stored in Firestore.
 
 ---
 
-## The 8 Primitives
+## The 9 Primitives
 
 | Primitive | Envelope Type | Purpose |
 |-----------|:---:|---------|
@@ -16,8 +16,9 @@ The Culture of Work is the operational framework that governs how Architect Prim
 | **Plan** | — | Unexecuted Mission blueprint (M→C→T layout) |
 | **Responsibility** | `R` | Scheduled or event-triggered work |
 | **Artifact** | — | Persistent work product in git ether + Google Drive |
+| **Skill** | — | Codified, versioned procedure an organ follows instead of re-deriving — the sole home of tool syntax and multi-step how-to (B-16/B-17) |
 
-Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the `primes/{id}/work/{workId}` Firestore collection. Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects, Processes, and Plans are separate Firestore collections. Artifacts live in the git artifact substrate (C-24) — GCS-backed repos with Firestore CAS refs — and are also published to Google Drive for stakeholder access.
+Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the `primes/{id}/work/{workId}` Firestore collection. Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects, Processes, and Plans are separate Firestore collections. Artifacts live in the git artifact substrate (C-24) — GCS-backed repos with Firestore CAS refs — and are also published to Google Drive for stakeholder access. Skills are versioned procedure packages installed to agents via manifests (C-9); they are the sole home of tool-level HOW (B-16/B-17), which planning organs reference by name and the executor follows — never re-derived in a SOUL or a plan.
 
 ---
 

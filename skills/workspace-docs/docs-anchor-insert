@@ -19,6 +19,14 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$DOC_ID" && -n "$ANCHOR" && -n "$TEXT" ]] || die "Need --doc, --anchor, and --text"
 [[ "$POSITION" == "before" || "$POSITION" == "after" ]] || die "--position must be 'before' or 'after'"
+
+# Interpret escape sequences in --text so callers can pass "line1\nline2" and get real line
+# breaks. Bash double-quotes leave \n literal, which the Docs API would otherwise insert
+# verbatim (the "10.2.1...\nEither party" corruption seen live). Targeted to \n and \t only,
+# so other backslashes are left untouched.
+TEXT="${TEXT//'\n'/$'\n'}"
+TEXT="${TEXT//'\t'/$'\t'}"
+
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 # Read structured data via python

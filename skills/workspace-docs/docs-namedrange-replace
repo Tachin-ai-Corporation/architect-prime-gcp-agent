@@ -18,6 +18,8 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$DOC_ID" && -n "$NAME" ]] || die "Need --doc and --name"
 [[ "$HAVE_TEXT" == "1" ]] || die "Need --text (may be empty, e.g. --text \"\", to clear the range)"
+# Interpret \n and \t in --text so callers get real line breaks, not literal backslashes.
+TEXT="${TEXT//'\n'/$'\n'}"; TEXT="${TEXT//'\t'/$'\t'}"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
 python3 -c "

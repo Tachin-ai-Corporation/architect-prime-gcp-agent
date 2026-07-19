@@ -222,12 +222,13 @@ export async function executeCheckpoints(checkpoints, opts) {
         taskAgent = tEnv.source_meta?.agent || 'motor';
         isOptional = tEnv.source_meta?.optional || false;
         taskDesc = tEnv.instruction || '';
-        taskCriteria = tEnv.accept_criteria || '';
+        taskCriteria = tEnv.accept_criteria
+          || `The task's stated outcome is achieved: "${toStr(tEnv.instruction || '').substring(0, 200)}". Concrete tool evidence shows the outcome was produced (not simulated), with no unresolved errors.`;
       } else {
         taskAgent = task.agent;
         taskDesc = toStr(task.task || task.instruction || '');
         taskCriteria = task.accept_criteria
-          || `Task "${toStr(task.task || task.brief_part || '').substring(0, 60)}" completed with evidence of meaningful work. No unresolved errors in tool output.`;
+          || `The task's stated outcome is achieved: "${toStr(task.task || task.brief_part || '').substring(0, 200)}". Concrete tool evidence shows the outcome was produced (not simulated), with no unresolved errors.`;
         stepType = task._step_type || task.type || 'standard';
         isOptional = task._optional === true;
       }
@@ -904,7 +905,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum} failed (${taskAgent}): ${result.error}. Retrying...`);
         result = await dispatchAgent(taskAgent, {
           ...dispatchPayload,
-          instruction: `${currentInstruction}${currentSkillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Try again with adjusted approach.${truncatedNudge}`,
+          instruction: `${currentInstruction}${currentSkillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Read the governing SKILL.md and use its documented commands. Investigate why it failed (wrong arguments? missing input? wrong target? unread doc?) and correct it — a failing command is something you resolve, not a dead end. Do not simulate results.${truncatedNudge}`,
           prior_results_context: [
             priorContext,
             `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${smartTruncate(result.output || '', 500)}`,
@@ -1124,9 +1125,13 @@ export async function executeCheckpoints(checkpoints, opts) {
                   result.success = false;
                   result.error = 'Verification probe budget exhausted — cerebellum requested further probes after probe round';
                 } else {
-                  log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: post-probe verdict not rendered — flagging for review`);
+                  // Probe round already spent and still no terminal verdict — fail closed
+                  // rather than pass unverified (B-28).
+                  log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: post-probe verdict not rendered — failing closed (B-28)`);
                   tEnv.needs_review = true;
-                  tEnv.review_reason = 'Cerebellum did not render verdict after probe round';
+                  tEnv.review_reason = 'Cerebellum did not render a terminal verdict after the probe round';
+                  result.success = false;
+                  result.error = 'Verification incomplete: no terminal PASS/FAIL verdict after the probe round (B-28 fail-closed).';
                 }
               } catch (finalErr) {
                 log('WARN', `[checkpoint-executor] Post-probe cerebellum dispatch failed: ${finalErr.message}`);
@@ -1135,9 +1140,58 @@ export async function executeCheckpoints(checkpoints, opts) {
               }
             }
           } else {
-            log('WARN', `[checkpoint-executor] Cerebellum did not render verdict tool for CP${cpNum} Task ${taskNum} — flagging for review`);
-            tEnv.needs_review = true;
-            tEnv.review_reason = 'Cerebellum did not render verdict via tool call';
+            // No terminal verdict rendered. Re-verify ONCE; a missing verdict must not
+            // silently pass as success (fail-closed, B-28) — consistent with the
+            // PROBE-no-parse path above.
+            log('WARN', `[checkpoint-executor] Cerebellum did not render verdict tool for CP${cpNum} Task ${taskNum} — re-verifying once`);
+            let reVerdict2 = null;
+            let reVerifyThrew = false;
+            try {
+              const reVer2 = await dispatchAgent('cerebellum', {
+                instruction: [
+                  'Verify the following task output meets the acceptance criteria.',
+                  'You MUST render exactly one terminal verdict by calling report_pass or report_fail — do not reply in prose.',
+                  'Read the verification SKILL.md before rendering your verdict.',
+                  '',
+                  '## Accept Criteria',
+                  taskCriteria,
+                  '',
+                  '## Task Output',
+                  smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
+                ].join('\n'),
+                _missionId: envelope.id,
+              });
+              reVerdict2 = extractVerdict(reVer2.output);
+              if (reVerdict2 === 'FAIL') {
+                const s = extractFailSummary ? extractFailSummary(reVer2.output) : 'Acceptance criteria not met';
+                log('WARN', `[checkpoint-executor] Cerebellum FAIL on re-verify CP${cpNum} Task ${taskNum}: ${s}`);
+                result.success = false;
+                result.error = `Verification failed: ${s}`;
+              } else if (reVerdict2 === 'PASS') {
+                log('INFO', `[checkpoint-executor] Cerebellum PASS on re-verify CP${cpNum} Task ${taskNum}`);
+              }
+            } catch (e) {
+              reVerifyThrew = true;
+              log('WARN', `[checkpoint-executor] Re-verify dispatch failed: ${e.message}`);
+            }
+            if (reVerdict2 !== 'PASS' && reVerdict2 !== 'FAIL') {
+              if (reVerifyThrew) {
+                // Transient verifier-infra failure (dispatch threw), not a refusal to render.
+                // Match the sibling dispatch-error paths (initial-verify catch, post-probe
+                // catch): flag for review without rejecting possibly-good work.
+                log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: re-verify dispatch error — flagging for review (verifier unavailable)`);
+                tEnv.needs_review = true;
+                tEnv.review_reason = 'Verifier dispatch failed during re-verification (transient infra error)';
+              } else {
+                // The verifier responded twice without rendering a terminal verdict — that is
+                // a refusal, not flakiness. A missing verdict must not pass as success (B-28).
+                log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: no verdict after re-verify — failing closed (B-28)`);
+                tEnv.needs_review = true;
+                tEnv.review_reason = 'Cerebellum did not render a terminal verdict after re-verification';
+                result.success = false;
+                result.error = 'Verification incomplete: the independent verifier did not render a terminal PASS/FAIL verdict (B-28 fail-closed).';
+              }
+            }
           }
         } catch (verErr) {
           log('WARN', `[checkpoint-executor] Cerebellum verification failed: ${verErr.message}`);
