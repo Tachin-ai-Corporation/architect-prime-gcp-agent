@@ -134,6 +134,7 @@ The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md)
 6. **Idempotent everything.** Re-runnable scripts, resumable state, restart as routine.
 7. **Observable by default.** Every transition writes history; every mechanism ships with its telemetry.
 8. **Capability fencing is structural.** Personas reinforce; manifests, IAM, and CI enforce.
+9. **Each content layer holds one purpose.** Organs are WHO/HOW-it-thinks (the static, soft-locked identity core); Skills are the HOW of tools; Projects are the 40,000-ft working area; Processes are the proven paths. Content in the wrong layer is a defect — the map is [`docs/MODULE_CHARTER.md`](docs/MODULE_CHARTER.md) (C-28).
 
 ---
 

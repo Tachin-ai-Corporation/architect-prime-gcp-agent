@@ -27,17 +27,19 @@ Every new project orchestration follows this iterative cycle:
 7. Retest with UNIQUE prompt (avoid dedup guard)
 ```
 
-### Key Principle: Fix at the Right Level
+### Key Principle: Fix at the Right Level (C-28 layer purity)
+
+The four content layers each hold one purpose — see [`docs/MODULE_CHARTER.md`](../../../docs/MODULE_CHARTER.md).
 
 | Problem Type | Fix Location | Example |
 |---|---|---|
-| Wrong decision (cortex picks wrong action) | Cortex SOUL | "Don't re-delegate HTML/CSS work" |
-| Missing tool workflow (motor doesn't know the procedure) | Governing SKILL | "Edit a file from Drive" in workspace-drive SKILL |
-| Missing delegation context | plan-structuring SKILL or delegation SKILL | "No cross-VM file references" |
+| Wrong decision / character (cortex picks wrong action) | **Organ** SOUL | "Don't re-delegate HTML/CSS work" |
+| Missing tool workflow (motor doesn't know the procedure) | governing **Skill** | "Edit a file from Drive" in workspace-drive SKILL |
+| A repeatable ordering of outcomes for a situation | a **Process** | "finalize a redlined doc: read→apply→verify→strip" |
+| A durable working-area fact (a repo, folder, URL, convention) | **Project** context (resource packet) | `design_system_doc: {kind:doc, ref}` |
 | Code bug | Source code | Undefined variable, arg parsing error |
-| Tool syntax error | Tool script | Arg handling in corekit scripts |
 
-> **Canon B-16**: Motor-facing tool workflows go in the tool's governing SKILL, not in motor SOULs. The SOUL says *what* to produce (behavioral constraint). The SKILL says *how* to use the tools (procedure).
+> **Canon B-16/B-17 + C-28**: tool syntax lives ONLY in Skills; a SOUL never carries it. The SOUL says *what* to produce (character); the SKILL says *how* to use the tools; a PROCESS says *when and in what sequence*; a PROJECT holds durable references, never particulars or steps.
 
 ## Procedures
 
@@ -47,11 +49,12 @@ Every new project orchestration follows this iterative cycle:
 # Register the project
 project-manage create '<project_id>' '<display_name>' '<description>'
 
-# Add project context
+# Add project context — durable resource references only (C-28 resource packets)
 project-manage add-context '<project_id>' 'drive_folder' '{"kind":"drive_folder","ref":"<FOLDER_ID>","summary":"Root project folder"}'
-project-manage add-context '<project_id>' 'deploy_command' 'firebase deploy --project <project_id> --only hosting'
-project-manage add-context '<project_id>' 'staging_url' 'https://<project_id>--staging.web.app'
-project-manage add-context '<project_id>' 'prod_url' 'https://<project_id>.web.app'
+project-manage add-context '<project_id>' 'staging_url' '{"kind":"url","url":"https://<project_id>--staging.web.app","summary":"Staging site"}'
+project-manage add-context '<project_id>' 'prod_url' '{"kind":"url","url":"https://<project_id>.web.app","summary":"Production site"}'
+# A deploy COMMAND is tool syntax — it belongs in the governing deploy skill, not project context.
+# A repeatable deploy PATH belongs in a Process. The project only points at the process (add-process / --processes).
 
 # Add team members
 project-manage add-member '<project_id>' '<agent_email>' '<role>'
