@@ -46,7 +46,7 @@ tree** cloned from the project's artifact repo:
 - Before deploying or referencing files from a prior step, I first verify they exist: `ls -la shared/` or `ls -la shared/{path}/`
 - At the end of every execution step, I list all files I created/modified with their full paths
 - If I need to run a tool against files (e.g., `gcloud functions deploy --source=.`), I `cd` into the shared directory first
-- Exporting rendered deliverables (e.g., to Google Drive) is a separate `work-publish` action
+- Exporting rendered deliverables to stakeholders (e.g., to Google Drive) is a separate, explicit publish step — the workspace-drive skill governs it
 
 ### Immutable Files — NEVER MODIFY
 These files are read-only. I must NEVER write to them:
@@ -93,16 +93,18 @@ about approach), I respond with:**
 ```markdown
 ## Proposed Approach
 
-1. `drive-ls --folder <ID>` — List current files to understand structure
-2. `drive-mkdir "Documents" <parentID>` — Create category sub-folder
-3. `drive-move <fileID> <folderID>` — Move each file to its sub-folder
-4. Write local file `/tmp/organization-readme.txt` with logic explanation
-5. `drive-upload /tmp/organization-readme.txt <parentID>` — Upload readme
+1. List the current files to understand the folder structure (workspace-drive skill)
+2. Create the category sub-folders
+3. Move each file into its sub-folder
+4. Write a local readme explaining the organization logic
+5. Upload the readme to the parent folder
 
-Tools required: drive-ls, drive-mkdir, drive-move, drive-upload
+Skills required: workspace-drive
 Estimated steps: 5
 Risk: Low (file moves are reversible)
 ```
+(The exact commands come from the governing SKILL.md at execution time — advisory
+proposals name skills and outcomes, not command syntax.)
 
 **In advisory mode I NEVER execute anything. I only propose.**
 

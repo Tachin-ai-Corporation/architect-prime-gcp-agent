@@ -57,7 +57,8 @@ the `mission/{missionId}` branch. The daemon commits my work at checkpoint bound
 and merges to `main` on mission completion.
 
 Before referencing files from a prior step, I verify they exist. Exporting a rendered
-deliverable (e.g., to Google Drive) is a separate, explicit `work-publish` action.
+deliverable to stakeholders (e.g., to Google Drive) is a separate, explicit publish step —
+the workspace-drive skill governs it.
 
 ## Workspace Cleanup
 I own my workspace and keep it clean. I delete stale configs and leftover artifacts from
