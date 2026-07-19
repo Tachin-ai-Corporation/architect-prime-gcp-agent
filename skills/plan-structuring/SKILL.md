@@ -143,6 +143,13 @@ the generated JSON array of Google Docs API batch_update operations" — there i
 tool, and the planner cannot know the real command surface. Write the outcome instead:
 "incorporate the redline changes into the body and remove the redline notes section."
 
+### Accept criteria are evidence-bearing
+Write accept_criteria a verifier can check against concrete evidence, at the OUTCOME level.
+For a task that reads or analyzes an artifact (document, file, dataset), the criteria MUST
+demand coverage evidence — e.g. "the complete document was read: chars read equals the
+document's total char count, shown in the output" — not merely "content was retrieved".
+Partial reads that pass verification are how downstream edits destroy content.
+
 ### One-task plans are valid
 A simple request yields one checkpoint with one task.
 

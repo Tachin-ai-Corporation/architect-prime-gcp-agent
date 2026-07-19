@@ -1,7 +1,7 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  10,
+    "version":  11,
     "description":  "Create professionally formatted Google Docs from Markdown or HTML, read docs with paginated/targeted reads for large documents, delete sections/ranges, use templates, manage page formatting (margins, headers, footers), make in-place suggestion edits (highlighted for human review), and add, list, resolve, or delete review comments.",
     "author":  "architect-prime",
     "origin":  "core",

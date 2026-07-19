@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # docs-cat — Read a Google Doc's text: full body, metadata/outline, ranged window, or targeted search
 # Brain agent: temporal-memory (READ)
-# Usage: docs-cat <doc_id> [--meta] [--find "TEXT" [--context N]] [--offset N] [--limit N] [--max-chars N]
+# Usage: docs-cat <doc_id> [--meta] [--find "TEXT" [--context N]] [--offset N] [--limit N] [--max-chars N] [--out FILE]
 #   (no flags)      full plain-text body (JSON: docId, title, text, chars)
 #   --meta          title, total chars, heading outline with char offsets — no body text
 #   --find "TEXT"   case-insensitive substring search; returns every match (max 20)
@@ -10,9 +10,12 @@
 #   --offset N      start reading at char offset N (combine with --limit)
 #   --limit N       return at most N chars from --offset
 #   --max-chars N   cap a full read at N chars (adds next_offset for continuation)
+#   --out FILE      write the COMPLETE plain text to FILE in one call; prints a
+#                   {written, chars} summary. THE way to read a large doc fully:
+#                   the text lands on disk (no output cap), then grep/sed it locally.
 # Large docs: downstream tool output is capped (~8K chars per step), so a full
-# read of a big doc gets cut off mid-body. Run --meta first, then read the part
-# you need with --find or --offset/--limit windows.
+# read of a big doc gets cut off mid-body. For full content use --out FILE; for
+# a section use --meta first, then --find or --offset/--limit windows.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
@@ -26,7 +29,7 @@ shift || true
 # --find always emit JSON since they carry offsets/matches.) This default flip
 # fixes the failure mode where motor piped docs-cat's JSON into grep/head and
 # got nothing usable.
-META=0; FIND_TEXT=""; CONTEXT=800; OFFSET=0; LIMIT=0; MAX_CHARS=0; JSON=0; HAS_WINDOW=0
+META=0; FIND_TEXT=""; CONTEXT=800; OFFSET=0; LIMIT=0; MAX_CHARS=0; JSON=0; HAS_WINDOW=0; OUT_FILE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --json) JSON=1; shift ;;
@@ -36,15 +39,17 @@ while [[ $# -gt 0 ]]; do
     --offset) OFFSET="${2:-0}"; HAS_WINDOW=1; shift 2 ;;
     --limit) LIMIT="${2:-0}"; HAS_WINDOW=1; shift 2 ;;
     --max-chars) MAX_CHARS="${2:-0}"; HAS_WINDOW=1; shift 2 ;;
+    --out) OUT_FILE="${2:-}"; [[ -n "$OUT_FILE" ]] || die "--out requires a file path"; shift 2 ;;
     *) die "Unknown flag: $1" ;;
   esac
 done
-# Self-limit a bare full read: with no window/meta/find flags, default MAX_CHARS
+# Self-limit a bare full read: with no window/meta/find/out flags, default MAX_CHARS
 # to ~6000 so the plain read emits a next_offset continuation hint instead of
 # being silently cut by the ~8K harness output cap.
-if [[ "$HAS_WINDOW" == "0" && "$META" == "0" && -z "$FIND_TEXT" ]]; then MAX_CHARS=6000; fi
+if [[ "$HAS_WINDOW" == "0" && "$META" == "0" && -z "$FIND_TEXT" && -z "$OUT_FILE" ]]; then MAX_CHARS=6000; fi
 export DC_META="$META" DC_FIND="$FIND_TEXT" DC_CONTEXT="$CONTEXT" \
-       DC_OFFSET="$OFFSET" DC_LIMIT="$LIMIT" DC_MAX_CHARS="$MAX_CHARS" DC_DOC_ID="$DOC_ID" DC_JSON="$JSON"
+       DC_OFFSET="$OFFSET" DC_LIMIT="$LIMIT" DC_MAX_CHARS="$MAX_CHARS" DC_DOC_ID="$DOC_ID" DC_JSON="$JSON" \
+       DC_OUT="$OUT_FILE"
 
 # Shared renderer: reads the doc content and applies the selected view.
 # arg1 = 'api' (Docs API JSON, outline available) | 'text' (plain text, DC_TITLE env)
@@ -113,6 +118,17 @@ env = os.environ
 total = len(text)
 out = {'docId': doc_id, 'title': title, 'chars': total}
 find = env.get('DC_FIND', '')
+out_file = env.get('DC_OUT', '')
+if out_file:
+    # Full-content materialization: the COMPLETE text lands on disk in one call
+    # (immune to the harness output cap), and the caller gets a verifiable char
+    # count to check against --meta before deriving edits.
+    with open(out_file, 'w', encoding='utf-8') as fh:
+        fh.write(text)
+    out['written'] = out_file
+    out['note'] = 'complete document text written to file; verify chars, then grep/sed the file locally'
+    print(json.dumps(out, indent=2))
+    sys.exit(0)
 if env.get('DC_META') == '1':
     out['outline'] = outline if outline is not None else []
     if outline is None:

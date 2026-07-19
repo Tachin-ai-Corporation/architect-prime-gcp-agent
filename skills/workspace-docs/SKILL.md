@@ -1,4 +1,4 @@
-# Skill: Google Docs (v10)
+# Skill: Google Docs (v11)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
@@ -13,6 +13,7 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 ### Read & Inspect
 - `docs-cat <doc_id>` — Read a Google Doc's **plain text body** (includes table cell text), printed directly to stdout so you can pipe/grep it. Pass `--json` for the structured `{docId,title,text,chars}` wrapper. Flags for large docs:
   - `--meta` — title, total chars, and heading outline with char offsets (no body text). **Always run this first on unfamiliar docs.**
+  - `--out FILE` — write the **complete** document text to FILE in ONE call (immune to the output cap) and return `{written, chars}`. **The way to read a whole large doc**: `docs-cat ID --out doc.txt`, check `chars` matches `--meta`, then `grep -n` / `sed -n 'A,Bp'` the local file. Never paginate a full read through your own context, and never repeat a bare `docs-cat` hoping for more output — its return is capped every time.
   - `--find "TEXT" [--context N]` — case-insensitive search; returns every match (max 20) with char offset and ±N chars of context (default 800).
   - `--offset N --limit M` — read a window of M chars starting at char N; response includes `next_offset` when more remains.
   - `--max-chars N` — cap a full read; adds `truncated: true` + `next_offset`.
@@ -135,20 +136,27 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 3. Clone and fill: `docs-clone-template --template TEMPLATE_DOC_ID --title "Acme Corp Report" --folder FOLDER_ID --replacements replacements.json`
 4. Verify: `docs-cat NEW_DOC_ID` — confirm all `{{` placeholders resolved.
 
-### Reading Large Documents (paginated reads)
+### Reading Large Documents (complete, verifiable reads)
 1. Measure first: `docs-cat DOC_ID --meta` — returns total `chars` and the heading `outline` with char offsets.
 2. If the doc is under ~6,000 chars, a plain `docs-cat DOC_ID` is fine.
-3. To read a specific section **in full**, take its heading offset from the `--meta` outline and the next heading's offset, then read the whole span with `docs-cat DOC_ID --offset START --limit (END-START)`. Do NOT rely on `--find "HEADING" --context N`: it returns only ±N chars around the match, so on a section longer than N it silently drops the tail (this is how a 30k-char redline block gets read as 12k and half its changes go missing). Size the window to the whole section, or window through it.
-4. To read sequentially, window through it: `docs-cat DOC_ID --offset 0 --limit 6000`, then continue from the returned `next_offset` until `truncated` is absent.
-5. Never treat a single full read of a large doc as complete — if `chars` exceeds what you received, the tail is missing.
+3. **For the full content of anything larger, materialize it to disk in ONE call:**
+   `docs-cat DOC_ID --out doc.txt` → returns `{written, chars}`.
+   **Coverage check (mandatory before any edit):** the returned `chars` must equal the `--meta` total (`wc -c doc.txt` re-confirms). Only a count-verified local copy proves you have read everything.
+4. Analyze the LOCAL file, not more API reads: `grep -n "pattern" doc.txt`, `sed -n '100,200p' doc.txt`. This costs zero further doc reads and cannot be truncated.
+5. To read just one section, take its heading offset (and the next heading's) from the `--meta` outline and read the span: `docs-cat DOC_ID --offset START --limit (END-START)`. Do NOT rely on `--find "HEADING" --context N` for long sections — it returns only ±N chars and silently drops the tail.
+6. Anti-patterns that WILL fail: repeating a bare `docs-cat` (output is capped every time — you get the same head repeatedly and LoopGuard kills the session); paginating an entire large doc window-by-window through your own context (slow, token-heavy, and you lose track of coverage). Use `--out`.
 
 ### Finalize a Redlined Document (apply notes, then strip the notes section)
 A common request: a doc has review/redline notes appended at the end; incorporate them into the body, then remove the notes so the doc is clean.
-1. `docs-cat DOC_ID --meta` — locate the notes section heading and its char offset (e.g. `[LEGAL REVIEW REDLINES]`).
-2. Read the **entire** notes section — not just the first screen. Take the notes heading's offset from `--meta` and read from there to the end: `docs-cat DOC_ID --offset <notes_start> --limit <chars_to_end>`. A redline block often runs many thousands of chars; `--find … --context N` caps at ±N and will hide the tail. If you apply changes from a partial read you WILL miss redlines — confirm you have read to the end of the document before applying anything.
-3. Apply each change to the body with `docs-find-replace` (one clause at a time) or `docs-batch-replace` (a `{find,replace}` pairs file) — surgical, formatting-preserving.
-4. Strip the notes: `docs-section-delete --doc DOC_ID --from-anchor "[LEGAL REVIEW REDLINES]"` — deletes the heading and everything after it. The document is now a clean final version.
-5. Verify: `docs-cat DOC_ID --meta` — confirm the notes heading is gone and the body carries the applied changes.
+
+**HARD ORDERING — deviation destroys content.** The notes section is the only copy of the requested changes: if you delete it before every change is applied and verified, the changes are unrecoverable. Do not run ANY mutation until step 2's coverage check passes.
+
+1. `docs-cat DOC_ID --meta` — total chars + the notes heading (e.g. `[LEGAL REVIEW REDLINES]`) and its offset.
+2. `docs-cat DOC_ID --out doc.txt` — materialize the COMPLETE doc; **verify the returned `chars` equals the `--meta` total.** Extract every redline item from the local file (`grep -n` / `sed -n`) and enumerate them as an explicit checklist of `{find, replace}` edits. If the coverage check fails, STOP — do not edit.
+3. Apply the changes to the body with `docs-batch-replace` (a pairs file, atomic) or `docs-find-replace` per clause — surgical, formatting-preserving.
+4. Verify EVERY change landed before touching the notes: re-read (`docs-cat DOC_ID --out doc2.txt`) and confirm each checklist item's new text is present in the body.
+5. Only now strip the notes: `docs-section-delete --doc DOC_ID --from-anchor "[LEGAL REVIEW REDLINES]"` — **always `--from-anchor`, never `--start/--end` raw indices** (plain-text offsets are not API indices; a raw-index delete here removes the wrong span).
+6. Verify final state: `docs-cat DOC_ID --meta` — notes heading gone, char count ≈ body-only, spot-check two applied changes.
 
 Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrite` it — that loses formatting and is exactly what failed before `docs-section-delete` existed.
 
