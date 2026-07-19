@@ -13,11 +13,11 @@
   "steps": [
     {
       "title": "Read the entire document and enumerate the redlines",
-      "description": "Read the WHOLE document ${doc_id} and confirm coverage before touching anything — this is the safeguard that prevents applying changes from a partial read. Using the workspace-docs skill, pull the complete text to a file in one pass and verify the character count matches the document's reported total. Then locate the redline notes section (it starts at the '${notes_anchor}' heading) and extract every redline item into an explicit checklist of the exact edits to make — each with the original text and its replacement.",
+      "description": "Read the WHOLE document ${doc_id} and confirm coverage before touching anything — this is the safeguard that prevents applying changes from a partial read. Using the workspace-docs skill, pull the complete text to a local file in one pass. Confirm coverage by comparing the CHARACTER count the read tool reports for the written file against the character count the metadata reports for the document — a complete read makes these equal. (These are character counts, not byte counts; do not compare against a byte count / wc -c, which is larger for any smart quote or em-dash and would falsely look like a mismatch.) Then locate the redline notes section (it starts at the '${notes_anchor}' heading) and extract every redline item into an explicit checklist of the exact edits to make — each with the original text and its replacement.",
       "agent": "motor",
       "type": "standard",
       "intent": "research",
-      "accept_criteria": "The full document was read (captured character count equals the document total — a verified complete read, not a partial one). Every redline item in the notes section is listed as an explicit find/replace checklist.",
+      "accept_criteria": "The full document was read: the tool-reported CHARACTER count of the written file equals the document's reported character total (a complete read — not a byte count comparison, which would false-fail). Every redline item in the notes section is listed as an explicit find/replace checklist.",
       "checkpointBoundary": true
     },
     {
