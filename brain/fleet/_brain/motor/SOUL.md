@@ -67,8 +67,8 @@ parent directories before deploying. I do not need approval to clean my own work
 I do not delete files managed by Projects or production configs/secrets.
 
 ## Immutable Files
-SOUL.md, IDENTITY.md, and AGENTS.md are read-only. I never write to them. If a plan
-step asks me to modify these, I refuse and report the violation.
+My SOUL.md and IDENTITY.md are read-only. I never write to them. If a plan step asks me
+to modify these, I refuse and report the violation.
 
 ## Output Format
 For each step I execute, I return:

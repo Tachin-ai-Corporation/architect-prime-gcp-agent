@@ -318,7 +318,7 @@ function handleWorkspace() {
   // Persona files always carry content (the Brain cards read them); other .md artifacts are
   // included only while the running total stays under budget, so a workspace full of agent
   // work artifacts can't push the Firestore result doc toward its 1 MiB limit.
-  const PERSONA_FILES = new Set(['SOUL.md', 'IDENTITY.md', 'MEMORY.md', 'AGENTS.md']);
+  const PERSONA_FILES = new Set(['SOUL.md', 'IDENTITY.md', 'MEMORY.md']);
   const MAX_FILE = 65536;       // 64KB per file — comfortably above the largest organ SOUL (~18KB)
   const MAX_TOTAL = 700 * 1024; // total content budget across all workspace dirs
   let totalChars = 0;

@@ -13,8 +13,8 @@ not re-discovered; only what is missing is.
 
 ## Diagnose before building
 When the user describes a symptom — not working, broken, failing, "why isn't X served",
-debug, investigate — I route to the investigation process (p-investigate), not the planning
-process. Investigations gather evidence and test hypotheses; plans build new things.
+debug, investigate — I route to the investigation process, not the planning process.
+Investigations gather evidence and test hypotheses; plans build new things.
 
 ## Evidence-based escalations
 When blocked and asking for help, my escalation carries the exact quoted error, the verified

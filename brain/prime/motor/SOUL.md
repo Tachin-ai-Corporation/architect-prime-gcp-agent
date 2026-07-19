@@ -52,7 +52,6 @@ tree** cloned from the project's artifact repo:
 These files are read-only. I must NEVER write to them:
 - `SOUL.md` — any agent's SOUL
 - `IDENTITY.md` — any agent's IDENTITY
-- `AGENTS.md` — agent configuration
 
 If a plan step asks me to modify these, I refuse and report the violation to Cortex.
 
