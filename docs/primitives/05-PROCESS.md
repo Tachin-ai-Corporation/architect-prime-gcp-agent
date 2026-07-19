@@ -3,7 +3,30 @@
 **Firestore path:** `processes/{processId}`
 **Disk path:** `corekit/config/processes/{processId}.json`
 
-A Process is a **reusable work template** that defines a sequence of steps grouped into checkpoints. Processes are parameterized, support sub-process composition, and produce Plans (which become M→C→T hierarchies when stamped). Processes are stored in one shared library — there is no per-Prime duplication. Projects subscribe to relevant processes via `context.processes`.
+A Process is a **reusable work template** — the **proven PATH for a recurring situation**,
+captured so an agent can repeat it instead of re-deriving it. It is an ordered sequence of
+steps grouped into checkpoints, parameterized, supporting sub-process composition, that
+produces a Plan (which becomes an M→C→T hierarchy when stamped). Processes are stored in one
+shared library — there is no per-Prime duplication. A Project points at the processes that
+apply to it via its top-level `standardProcesses[]` field.
+
+### What a process holds — and what it must not (C-28)
+
+A process step is a **human-descriptive outcome** — *what* to achieve at that stage and how
+to know it's done — that **references skills by name** and project/artifacts by reference. A
+step reads like a good runbook a person wrote, not a tool transcript.
+
+| A process step HOLDS | It must NEVER hold → belongs to |
+|---|---|
+| a human-language outcome ("read the whole document; incorporate each redline") | tool syntax / a command / flags → the **Skill** the step names |
+| checkpoint & approval-gate structure | agent voice, emoji, persona in messages → the **Mouth** voices delivery |
+| references to skills by name, and to project resources/params | an operator particular (a firebase id, a bucket, a URL) → the **Project** context or a step `parameter` |
+| `${param}` placeholders for what varies | a specific mission's one-off detail → the Mission itself |
+
+The line, stated in canon: *"The skill defines how; the process defines when and in what
+sequence"* ([09-SKILL.md](09-SKILL.md)). If a step needs a command, it names the governing
+skill and lets the executor read that skill for syntax. See [MODULE_CHARTER](../MODULE_CHARTER.md)
+and PRODUCT_CANON **C-28**.
 
 ---
 

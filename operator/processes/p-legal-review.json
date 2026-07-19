@@ -1,0 +1,49 @@
+{
+  "id": "p-legal-review",
+  "name": "Finalize a Redlined Legal Document",
+  "description": "Incorporate the reviewer redline notes at the end of a legal document into the body, then remove the notes so the document is a clean, signable final version. Use when a document carries a review/redline notes section that must be applied and stripped. Captures the proven path: read completely, apply every change, verify, then strip — never delete the notes before the changes are verified in place.",
+  "status": "active",
+  "version": 1,
+  "visibility": "standard",
+  "parameters": {
+    "doc_id": { "description": "The Google Doc ID of the agreement to finalize", "required": true },
+    "notes_anchor": { "description": "The heading text that marks the start of the redline notes section (e.g. '[LEGAL REVIEW REDLINES]')", "required": false, "default": "[LEGAL REVIEW REDLINES]" },
+    "project_id": { "description": "Project context", "required": false, "default": "legal-processes" }
+  },
+  "steps": [
+    {
+      "title": "Read the entire document and enumerate the redlines",
+      "description": "Read the WHOLE document ${doc_id} and confirm coverage before touching anything — this is the safeguard that prevents applying changes from a partial read. Using the workspace-docs skill, pull the complete text to a file in one pass and verify the character count matches the document's reported total. Then locate the redline notes section (it starts at the '${notes_anchor}' heading) and extract every redline item into an explicit checklist of the exact edits to make — each with the original text and its replacement.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "research",
+      "accept_criteria": "The full document was read (captured character count equals the document total — a verified complete read, not a partial one). Every redline item in the notes section is listed as an explicit find/replace checklist.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Apply every redline change to the body",
+      "description": "Apply each redline from the checklist to the main body of the document, using the workspace-docs skill's editing tools. Make the changes surgically, preserving surrounding formatting. Do NOT remove the notes section in this step — the notes are the only record of the requested changes until they are verified in place.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Every checklist item's new text is present in the document body. No change was skipped."
+    },
+    {
+      "title": "Verify every change landed, then remove the notes section",
+      "description": "Re-read the document and confirm each redline change from the checklist is present in the body. ONLY after every change is verified, remove the entire redline notes section from the anchor '${notes_anchor}' to the end of the document, using the workspace-docs skill (anchor-based deletion, never raw index positions). The document is now a clean final version.",
+      "agent": "motor",
+      "type": "standard",
+      "intent": "execute",
+      "accept_criteria": "Each redline change is confirmed present in the body. The '${notes_anchor}' notes section is gone. No literal escape sequences or formatting corruption were introduced.",
+      "checkpointBoundary": true
+    },
+    {
+      "title": "Report the finalized document for signature",
+      "description": "Summarize what was finalized: how many redline changes were incorporated, confirmation the notes section was removed, and the document's final title and length. Recommend a human read-through before signing, and flag honestly any redline whose intent was ambiguous or a judgment call rather than a mechanical replacement.",
+      "agent": "cortex",
+      "type": "standard",
+      "intent": "synthesize",
+      "accept_criteria": "A clear summary is delivered with the change count, the clean-state confirmation, and an honest note on any judgment-call redlines."
+    }
+  ]
+}
