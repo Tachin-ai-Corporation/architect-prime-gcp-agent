@@ -106,6 +106,7 @@ corekit/lib/firestore.mjs corekit/lib/firestore.mjs
 corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs
+corekit/lib/project-context.mjs corekit/lib/project-context.mjs
 corekit/lib/process-engine.mjs corekit/lib/process-engine.mjs
 corekit/lib/verdict.mjs corekit/lib/verdict.mjs
 corekit/lib/scheduler.mjs corekit/lib/scheduler.mjs

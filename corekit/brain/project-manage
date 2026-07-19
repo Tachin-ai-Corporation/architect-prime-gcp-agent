@@ -1452,9 +1452,24 @@ except (json.JSONDecodeError, ValueError):
     packet = {
         'kind': 'convention',
         'summary': raw_value,
-        'updatedAt': datetime.now(timezone.utc).isoformat(),
-        'updatedBy': 'agent'
     }
+
+# C-28 layer purity (mirrors corekit/lib/project-context.mjs): a project holds the
+# 40,000-ft working-area view — durable resource references only. Reject keys that name
+# history/state/particulars/process and values that are not a resource packet. See
+# docs/MODULE_CHARTER.md.
+import re
+_SEMANTIC = re.compile(r'^[a-z][a-z0-9_-]{2,63}$', re.I)
+_OFF_LAYER = re.compile(r'(^|[_-])(state|history|failure|failures|log|logs|snapshot|attempt|attempts|debug|todo|task|tasks|step|steps|plan[_-]?file|workflow|procedure|process)([_-]|$)', re.I)
+_KINDS = {'drive_folder', 'doc', 'sheet', 'slides', 'url', 'repo', 'git', 'resource', 'convention'}
+if not _SEMANTIC.match(ctx_key):
+    print(f'ERROR: context key \"{ctx_key}\" is not a semantic slug', file=sys.stderr); sys.exit(1)
+if _OFF_LAYER.search(ctx_key):
+    print(f'ERROR: context key \"{ctx_key}\" names history/state/particulars/process (C-28) — that belongs in the Mission record or a Process, not project context', file=sys.stderr); sys.exit(1)
+if not isinstance(packet, dict) or packet.get('kind') not in _KINDS or not (packet.get('ref') or packet.get('url') or packet.get('summary')):
+    print(f'ERROR: context value must be a resource packet {{\"kind\": one of {sorted(_KINDS)}, and a ref|url|summary}} (C-28)', file=sys.stderr); sys.exit(1)
+packet['updatedAt'] = datetime.now(timezone.utc).isoformat()
+packet['updatedBy'] = 'agent'
 
 token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
 base = '${FIRESTORE_BASE}'

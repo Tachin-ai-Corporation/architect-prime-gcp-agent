@@ -22,16 +22,41 @@ A Project is the **organizational container** for Missions. Projects are deploym
 | `created_at` | `string` | ISO 8601 timestamp |
 | `updated_at` | `string` | Last update timestamp |
 
-### ProjectContext
+### ProjectContext — the 40,000-ft working-area view (C-28)
+
+A project is the **40,000-foot view** of a working area: what it is, who works it, the
+durable resources it lives in, and the processes that apply. It is **not** a mission ledger.
+`context` is a curated map of **durable resource references only** — keyed by a semantic
+slug, each value a resource packet:
 
 ```typescript
-{
-  documentation: string[];              // Paths or URLs to relevant docs
-  processes: string[];                  // Process IDs relevant to this project
-  team: Record<string, string>;         // Role → agent/user mappings
-  configuration: Record<string, unknown>; // Project-specific config values
-}
+context: Record<string /* semantic slug */, {
+  kind: 'drive_folder' | 'doc' | 'sheet' | 'slides' | 'url' | 'repo' | 'git' | 'resource' | 'convention';
+  ref?: string;      // resource id (Drive folder id, repo, doc id)
+  url?: string;      // stable URL (staging/prod)
+  summary?: string;  // one-line durable fact (a lasting convention, an access requirement)
+  updatedAt?: string; updatedBy?: string;
+}>
 ```
+
+**What context holds:** the Drive folder / repo / doc a working area lives in, a stable
+staging/prod URL, a lasting working convention (an always-required build step, an access
+requirement). **What it NEVER holds** (→ where it belongs): a specific mission's document id
+or one-off result (→ the Mission record / an Artifact); history or a failure that happened
+(→ nowhere, or a Process learning if repeatable); transient state like "repo is at commit X"
+(→ nowhere); a sequence of steps / a workflow / a procedure (→ a **Process**).
+
+**References to related processes** are the top-level **`standardProcesses: string[]`** field
+(process IDs), not context — managed with the `--processes` flag / `add-process`. This is how
+a project points at the processes that apply to it.
+
+Enforcement: every writer of `context` passes it through the single validator
+`corekit/lib/project-context.mjs` (`validateContextEntry` / `filterProjectContext`), which
+rejects off-layer keys, non-resource values, and caps the map size. See
+[MODULE_CHARTER](../MODULE_CHARTER.md) and PRODUCT_CANON **C-28**.
+
+> The older typed `{documentation, processes, team, configuration}` shape is superseded by
+> this slug-packet map plus the top-level `team` and `standardProcesses` fields.
 
 ---
 

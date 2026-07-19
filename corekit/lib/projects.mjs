@@ -9,6 +9,7 @@
 
 import { getGceToken } from './gce-auth.mjs';
 import { firestoreEncode, firestoreDecode } from './firestore.mjs';
+import { validateContextEntry } from './project-context.mjs';
 
 /**
  * Create a project registry instance.
@@ -603,12 +604,17 @@ export function createProjectRegistry(config) {
       const projectContext = project.context || {};
       const missionContext = envelope.context || {};
 
-      // Find NEW context entries in mission that aren't in project
+      // Find NEW context entries in mission that aren't in project — and gate each
+      // through the shared C-28 validator (corekit/lib/project-context.mjs). A mission's
+      // envelope.context accumulates working notes; only durable resource references may
+      // be promoted to the project's 40k-ft view. This was previously UN-guarded and was
+      // the main path by which mission particulars leaked into project context.
       const newEntries = {};
       for (const [key, entry] of Object.entries(missionContext)) {
-        if (!projectContext[key] && entry && typeof entry === 'object') {
-          newEntries[key] = entry;
-        }
+        if (projectContext[key]) continue;
+        const { ok, reason } = validateContextEntry(key, entry);
+        if (!ok) { log('INFO', `Context promotion: skipped '${key}' (C-28): ${reason}`); continue; }
+        newEntries[key] = entry;
       }
 
       if (Object.keys(newEntries).length === 0) return;

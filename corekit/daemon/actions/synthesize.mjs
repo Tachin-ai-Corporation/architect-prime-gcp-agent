@@ -1,6 +1,7 @@
 // Action handler: synthesize
 
 import { extractVerdict, extractFailSummary, extractProbes, stakesAtLeast } from '../../lib/verdict.mjs';
+import { filterProjectContext, validateContextEntry } from '../../lib/project-context.mjs';
 
 // Pure exemption predicate — determines if verification can be skipped.
 function isSynthExempt(envelope, contracts = {}) {
@@ -403,19 +404,23 @@ async function tryContextExtraction(envelope, synthesisOutput, workSummary, deps
       `## Project: ${project.name} (${envelope.project_id})`,
       `Existing context keys: ${existingKeys || 'none'}`,
       '',
-      '## What to extract',
-      '- Permission requirements discovered',
-      '- Working commands/paths/URLs verified during execution',
-      '- Folder structures, file locations, resource IDs',
-      '- Deployment procedures that worked',
-      '- Known failure modes and workarounds',
+      '## What a project holds (C-28: the 40,000-ft working-area view)',
+      'ONLY durable resource references that any FUTURE mission on this area would reuse:',
+      '- A durable Drive folder / repo / doc / sheet the area lives in (with its id)',
+      '- A stable URL (staging/prod) or a lasting working convention (an access requirement,',
+      '  a build-step that is always required)',
       '',
-      'DO NOT extract: task-specific one-off details, opinions, intermediate debugging steps.',
-      'DO NOT duplicate keys already in existing context.',
+      'NEVER extract (these belong elsewhere, not in project context):',
+      '- A specific mission particular — this run\'s document id, a one-off result → Mission record / Artifact',
+      '- History or a failure that happened → nowhere (or, if repeatable, a Process learning)',
+      '- Transient state — "repo is at commit X", "the site currently shows Y" → nowhere',
+      '- A sequence of steps / a workflow / a procedure → a Process, never project context',
+      '- Anything already in the existing context keys',
       '',
-      'Respond with JSON:',
-      '{ "updates": { "<key>": { "kind": "convention|url|drive_folder|doc", "summary": "<fact>", "ref": "<id-if-applicable>" } } }',
-      'If no new facts worth persisting, respond: { "updates": {} }',
+      'Respond with JSON. Each value MUST be a resource packet:',
+      '{ "updates": { "<slug_key>": { "kind": "drive_folder|repo|doc|sheet|url|convention", "summary": "<durable fact>", "ref": "<id-or-url-if-applicable>" } } }',
+      'Prefer { "updates": {} } — most missions add nothing durable. Only emit a key when you are',
+      'confident it is a lasting property of the working area, not of this one mission.',
     ].join('\n');
     const inputText = [
       '## Mission Output',
@@ -439,41 +444,29 @@ async function tryContextExtraction(envelope, synthesisOutput, workSummary, deps
       return;
     }
 
-    // Write context updates to project via Firestore patch.
-    // Self-healing guard (B-4): a context entry key must be a semantic slug and
-    // the entry must carry real content (summary/ref/url). This drops the
-    // garbage numeric-keyed empty-map entries ({"259":{}, ...}) that a past bad
-    // write injected and that this function otherwise copies forward on every
-    // run — the tachin-website project had 430 such keys polluting every payload.
+    // Write context updates to project via Firestore patch, enforcing C-28 layer
+    // purity through the shared validator (corekit/lib/project-context.mjs): a project
+    // holds the 40,000-ft working-area view — durable resource references only, never
+    // mission particulars, history, transient state, or process steps. This also
+    // self-heals: existing off-layer/empty keys are pruned on the way through (the copy-
+    // forward that once let tachin-website accumulate 430 junk keys now can't persist any).
     const updates = parsed.updates;
-    const isSemanticKey = (k) => /^[a-z][a-z0-9_-]{2,63}$/i.test(k);
-    // Garbage = a non-semantic key (e.g. a numeric "259") OR an empty entry.
-    // Real entries take ANY shape — string, array, or non-empty object — so we
-    // must NOT require summary/ref/url (that would nuke valid string/array/map
-    // context like architect-prime's module_definitions_source / documentation).
-    const isEmptyEntry = (v) => v == null
-      || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0)
-      || (typeof v === 'string' && v.trim() === '');
-    const updatedContext = {};
-    for (const [k, v] of Object.entries(existingContext)) {
-      if (isSemanticKey(k) && !isEmptyEntry(v)) updatedContext[k] = v;
-    }
-    const droppedGarbage = Object.keys(existingContext).length - Object.keys(updatedContext).length;
-    if (droppedGarbage > 0) log('INFO', `[context-extract] Pruned ${droppedGarbage} non-semantic/empty context key(s) from ${envelope.project_id}`);
+    const { context: updatedContext, dropped } = filterProjectContext(existingContext);
+    if (dropped.length > 0) log('INFO', `[context-extract] Pruned ${dropped.length} off-layer/empty context key(s) from ${envelope.project_id}: ${dropped.map(d => d.key).join(', ')}`);
+    const newKeys = [];
     for (const [key, entry] of Object.entries(updates)) {
-      if (!isSemanticKey(key)) continue;          // reject garbage keys at the source
-      if (updatedContext[key]) continue;          // don't overwrite existing keys
-      updatedContext[key] = {
-        ...(typeof entry === 'object' ? entry : { summary: String(entry) }),
-        kind: entry?.kind || 'convention',
-        updatedAt: new Date().toISOString(),
-        updatedBy: envelope.owner || 'agent',
-      };
+      if (updatedContext[key]) continue;          // never overwrite an existing key
+      const candidate = (typeof entry === 'object' && entry)
+        ? { ...entry, kind: entry.kind || 'convention' }
+        : { kind: 'convention', summary: String(entry) };
+      const { ok, reason } = validateContextEntry(key, candidate);
+      if (!ok) { log('INFO', `[context-extract] Rejected '${key}' (C-28): ${reason}`); continue; }
+      updatedContext[key] = { ...candidate, updatedAt: new Date().toISOString(), updatedBy: envelope.owner || 'agent' };
+      newKeys.push(key);
     }
 
-    // Write if there are new entries OR garbage was pruned (self-heal).
-    const newKeys = Object.keys(updates).filter(k => isSemanticKey(k) && !existingContext[k]);
-    if (newKeys.length === 0 && droppedGarbage === 0) return;
+    // Write if there are new entries OR off-layer keys were pruned (self-heal).
+    if (newKeys.length === 0 && dropped.length === 0) return;
 
     // Projects are top-level (not under primes/), use direct REST PATCH
     const token = await getAuthToken();

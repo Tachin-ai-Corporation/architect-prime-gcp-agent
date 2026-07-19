@@ -207,7 +207,7 @@ Persist a discovery immediately when execution teaches you something a future mi
 | Resource ID (Drive folder, URL) | `project-manage add-context '<project_id>' 'assets_folder' '{"kind":"drive_folder","ref":"<id>","summary":"shared assets"}'` |
 | Failure mode | `project-manage add-context '<project_id>' 'css_build_step_required' 'AVOID: deploying raw source; must run npm run build first'` |
 
-Context is the project's institutional memory — if a fact would save the next agent time on this project, write it to context rather than relying on mission output alone.
+Context is the project's institutional memory — if a **durable** fact would save the next agent time on this project, write it. **C-28 layer purity:** context holds only 40,000-ft working-area references — durable resources and lasting conventions. It is NOT for mission particulars (a specific doc id, this run's result → the Mission record), history/failures, transient state ("repo is at commit X"), or step sequences (→ a Process). Values must be resource packets; `add-context` rejects off-layer keys. To point a project at the processes that apply to it, use `add-process` / `--processes`, not context.
 
 #### Optional flags (create/update)
 - `--processes <comma-separated-ids>` — Set `standardProcesses` array
