@@ -195,3 +195,38 @@ delegation-result marker written to a channel by anything but the mouth; a
 scope reachable from the agent-facing token CLI; any outbound side channel that skips the mouth's
 classify filter.
 
+### C-28 · Layer purity: each content layer holds one purpose; organs are the locked core
+The product's authored content lives in four delineated layers, and each holds exactly one kind of
+thing (the full map is [`docs/MODULE_CHARTER.md`](MODULE_CHARTER.md)):
+- **Organs** (`brain/**/SOUL.md`, `IDENTITY.md`, specialty `SOUL_APPEND.md`) — WHO an agent is and
+  HOW it thinks: character, values, decision bias, epistemic discipline, and how to *find* skills.
+  Never tool syntax (→ Skill, B-16/B-17), a work-path or process id (→ Process), a project fact or
+  taxonomy (→ Project), or a Claude-Code/harness concept.
+- **Skills** (`skills/`, `specialties/*/skills/`) — HOW to use a capability: tool commands, flags,
+  per-tool procedure, error recovery. Never character, a when/sequence work-path, or an
+  operator/project particular.
+- **Projects** (Firestore `projects/{id}`) — WHERE work happens: the 40,000-foot working-area view
+  (name, goal, description), team, durable resource references, and `standardProcesses[]`. Never
+  mission particulars/instances, history, transient state, or process/task steps.
+- **Processes** (`corekit/config/processes/`, `operator/processes/`, Firestore `processes/`) — the
+  proven PATH for a recurring situation: human-descriptive outcome steps and gates that reference
+  skills by name and project/artifacts. Never tool syntax, agent voice/character, or an operator
+  particular.
+
+The dividing line, already stated for the how/when pair: *"The skill defines how; the process
+defines when and in what sequence"* ([`docs/primitives/09-SKILL.md`](primitives/09-SKILL.md)).
+Content in the wrong layer is a defect regardless of whether it "works." The layers stratify by
+volatility: organs are the frozen identity core, the other three carry all iteration.
+
+**Organs are soft-locked.** An organ changes only by explicit intent. `validate-contracts` pins each
+organ file's content hash (`brain/ORGAN_LOCK.json`) and fails on any un-acknowledged drift;
+re-pinning with `update-organ-lock` plus an `organ-change: intended` commit trailer is the sanctioned
+acknowledgment — the same verify-or-abort discipline that already guards the `## Deep Truths` region
+(`corekit/memory/update-deep-truths`). A parallel always-on check rejects cross-layer leakage (tool
+flags, `p-*` ids, project tokens) in any organ body.
+
+**Violation looks like:** a `--flag` or backtick command in a SOUL; a `p-*` process id or an
+improvement-module taxonomy frozen into an organ; a mission particular, failure-mode, or transient
+state written to project context; a bash/curl block or an operator id inside a process step; a
+"skill" that governs zero tools and is really a work-path; an organ edited without re-pinning the lock.
+
