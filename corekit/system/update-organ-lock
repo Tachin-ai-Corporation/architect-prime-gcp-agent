@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# update-organ-lock — re-pin the organ soft-lock (C-28).
+#
+# Organs are the static identity core; skills/projects/processes carry all iteration.
+# This script pins a content hash of every organ file into brain/ORGAN_LOCK.json.
+# validate-contracts fails on any un-acknowledged drift; running THIS script (plus an
+# `organ-change: intended` commit trailer) is the sanctioned acknowledgment that an
+# organ change is deliberate. Same verify-or-abort discipline as update-deep-truths.
+#
+# For a file carrying the machine-managed `## Deep Truths` region, only the human-authored
+# body ABOVE the marker is hashed — so a deep-truths append never trips the lock.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
+OUT="brain/ORGAN_LOCK.json"
+
+python3 - "$OUT" <<'PYEOF'
+import hashlib, json, sys, glob, os
+out = sys.argv[1]
+MARKER = "<!-- Managed by update-deep-truths"
+patterns = [
+    "brain/fleet/_brain/*/SOUL.md", "brain/fleet/_brain/*/IDENTITY.md", "brain/fleet/_base/IDENTITY.md",
+    "brain/prime/*/SOUL.md", "brain/prime/*/IDENTITY.md",
+    "specialties/*/brain/*/SOUL_APPEND.md",
+]
+files = sorted({f.replace(os.sep, "/") for p in patterns for f in glob.glob(p)})
+locks = {}
+for f in files:
+    text = open(f, encoding="utf-8").read()
+    # Hash only the human-authored region above the Deep Truths marker, if present.
+    idx = text.find(MARKER)
+    lockable = text[:idx] if idx >= 0 else text
+    locks[f] = "sha256:" + hashlib.sha256(lockable.encode("utf-8")).hexdigest()
+doc = {
+    "_comment": "Organ soft-lock (C-28). Regenerate with corekit/system/update-organ-lock after an INTENTIONAL organ change; include an 'organ-change: intended' commit trailer. Do not hand-edit.",
+    "version": 1,
+    "count": len(locks),
+    "files": locks,
+}
+open(out, "w", encoding="utf-8", newline="\n").write(json.dumps(doc, indent=2) + "\n")
+print(f"[update-organ-lock] pinned {len(locks)} organ files -> {out}")
+PYEOF

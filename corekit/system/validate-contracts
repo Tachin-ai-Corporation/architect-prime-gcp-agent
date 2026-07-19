@@ -651,6 +651,65 @@ t.types.forEach(x => console.log(x.id));
 " 2>/dev/null)
     [[ $TRI_FAIL -eq 0 ]] && pass "Tri-source skill consistency verified across all agent types"
   fi
+
+  # ---- Check 15: Organ layer purity (C-28) ----
+  # Organ SOULs carry character, not tool syntax or process ids. Flag backtick-wrapped
+  # command-with-flag invocations and backtick process ids. Skill NAMES are allowed.
+  ORGAN_FILES=$(ls brain/fleet/_brain/*/SOUL.md brain/prime/*/SOUL.md specialties/*/brain/*/SOUL_APPEND.md 2>/dev/null || true)
+  if [[ -n "$ORGAN_FILES" ]]; then
+    ORGAN_HITS=$(grep -rEn '`p-[a-z][a-z-]*`|`[a-z][a-z0-9]*(-[a-z0-9]+)* +--[a-z]' $ORGAN_FILES 2>/dev/null || true)
+    if [[ -n "$ORGAN_HITS" ]]; then
+      fail "Organ purity (C-28): tool syntax / process id in an organ SOUL — move it to the governing skill/process:"
+      echo "$ORGAN_HITS" | head -8 | sed 's/^/    /'
+    else
+      pass "Organ layer purity — no tool syntax or process ids in organ SOULs (C-28)"
+    fi
+  fi
+
+  # ---- Check 16: Organ soft-lock (C-28) ----
+  # Every organ file's content hash must match brain/ORGAN_LOCK.json. Any drift is an
+  # un-acknowledged organ change: re-pin with corekit/system/update-organ-lock and include
+  # an 'organ-change: intended' commit trailer. Deep-truths region is excluded from the hash.
+  if [[ -f "brain/ORGAN_LOCK.json" ]]; then
+    LOCK_RESULT=$(python3 - <<'PYEOF' 2>/dev/null || echo "ERROR"
+import hashlib, json, glob, os
+MARKER = "<!-- Managed by update-deep-truths"
+lock = json.load(open("brain/ORGAN_LOCK.json", encoding="utf-8"))["files"]
+patterns = ["brain/fleet/_brain/*/SOUL.md","brain/fleet/_brain/*/IDENTITY.md","brain/fleet/_base/IDENTITY.md","brain/prime/*/SOUL.md","brain/prime/*/IDENTITY.md","specialties/*/brain/*/SOUL_APPEND.md"]
+files = sorted({f.replace(os.sep,"/") for p in patterns for f in glob.glob(p)})
+drift = []
+for f in files:
+    t = open(f, encoding="utf-8").read()
+    i = t.find(MARKER)
+    h = "sha256:"+hashlib.sha256((t[:i] if i>=0 else t).encode("utf-8")).hexdigest()
+    if f not in lock: drift.append(f"NEW (unpinned): {f}")
+    elif lock[f] != h: drift.append(f"CHANGED: {f}")
+for f in lock:
+    if f not in files: drift.append(f"REMOVED: {f}")
+print("\n".join(drift) if drift else "OK")
+PYEOF
+)
+    if [[ "$LOCK_RESULT" == "OK" ]]; then
+      pass "Organ soft-lock — all organ files match ORGAN_LOCK.json (C-28)"
+    else
+      fail "Organ soft-lock (C-28): organ files changed without re-pinning. Run corekit/system/update-organ-lock + add an 'organ-change: intended' trailer if this is intended:"
+      echo "$LOCK_RESULT" | head -8 | sed 's/^/    /'
+    fi
+  fi
+
+  # ---- Check 17: Platform process purity (C-28) ----
+  # A process step describes an outcome and names skills; it never embeds tool syntax.
+  # Flag bash fences and raw command invocations in platform process definitions.
+  PROC_FILES=$(ls corekit/config/processes/*.json 2>/dev/null || true)
+  if [[ -n "$PROC_FILES" ]]; then
+    PROC_HITS=$(grep -rEn '```bash|firebase deploy|gcloud [a-z]|gsutil |curl -X|bq query' $PROC_FILES 2>/dev/null || true)
+    if [[ -n "$PROC_HITS" ]]; then
+      fail "Process purity (C-28): tool syntax in a platform process step — name the governing skill instead:"
+      echo "$PROC_HITS" | head -8 | sed 's/^/    /'
+    else
+      pass "Platform process purity — no tool syntax in corekit/config/processes (C-28)"
+    fi
+  fi
 fi
 
 # ============================================================
