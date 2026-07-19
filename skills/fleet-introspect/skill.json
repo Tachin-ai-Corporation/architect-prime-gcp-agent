@@ -12,5 +12,5 @@
     "fleet-work-read"
   ],
   "requires": {},
-  "when_to_use": "When a Prime needs to analyze a fleet agent's recent missions, diagnose why a mission failed, or gather evidence for a fleet-improvement pass — without SSHing into the agent's VM."
+  "when_to_use": "When a Prime needs to analyze a fleet agent's recent missions, diagnose why a mission failed, or gather evidence for a fleet improvement review — without SSHing into the agent's VM."
 }

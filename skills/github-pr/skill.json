@@ -2,7 +2,7 @@
   "id": "github-pr",
   "name": "GitHub PR (upstream contribution)",
   "version": 1,
-  "description": "Prime's CONTRIBUTE capability: clone the generic upstream GitHub repo with the Secret-Manager token and open a HUMAN-GATED draft pull request. Never merges. The concrete GitHub-authenticated tooling behind the repo-improvement landing step.",
+  "description": "Prime's CONTRIBUTE capability: clone the generic upstream GitHub repo with the Secret-Manager token and open a HUMAN-GATED draft pull request. Never merges.",
   "author": "architect-prime",
   "origin": "core",
   "category": "fleet",

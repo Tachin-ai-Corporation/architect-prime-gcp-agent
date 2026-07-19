@@ -3,7 +3,7 @@
 ## Availability (built into this skill)
 
 > [!IMPORTANT]
-> **Prime-only.** Scoped to Prime agents (`skill.json` `roles: ["prime"]`). This is Prime's CONTRIBUTE capability — the concrete, GitHub-authenticated tooling that turns a verified platform improvement into a **human-gated draft PR** on the generic repo. It is the working machinery behind the `repo-improvement` landing step (which describes the flow; this skill actually performs it — the fleet VMs have no `gh` CLI, and their git origin is the git-store, not GitHub).
+> **Prime-only.** Scoped to Prime agents (`skill.json` `roles: ["prime"]`). This is Prime's CONTRIBUTE capability — the concrete, GitHub-authenticated tooling that turns a verified platform improvement into a **human-gated draft PR** on the generic repo (the fleet VMs have no `gh` CLI, and their git origin is the git-store, not GitHub).
 
 ## The one rule
 **Prime opens draft PRs; a human reviews and merges. Prime NEVER merges.** A PR to the public template repo is `destructive_or_public` (B-28) — the draft state + human merge is the approval gate, by construction.
@@ -18,10 +18,10 @@ A GitHub token in Secret Manager (default `aps-secret-github-token`), granted `r
 ## Procedure: land a verified REPO improvement as a PR
 1. **Clone** — `github-clone` → note the returned `dir` and default `branch`.
 2. **Branch** — in `dir`: `git checkout -b improve/<module>-<slug>`.
-3. **Apply** — make the change following full repo discipline: edit + manifest entry in the same commit (C-9), `contracts.json` if cross-cutting (C-7), a pure `tests/` case where testable. Keep it template-clean (placeholders, no operator values) and run the `repo-improvement` contamination scan (`fresh-install-scan`) before committing.
+3. **Apply** — make the change following full repo discipline: edit + manifest entry in the same commit (C-9), `contracts.json` if cross-cutting (C-7), a pure `tests/` case where testable. Keep it template-clean (placeholders, no operator values) — scan the diff for operator-specific tokens before committing.
 4. **Commit** — version-prefixed message (C-23): `git add <files> && git commit -m "vYYYY.MM.DD.N.0: ..."`.
 5. **Self-verify** — run `node --check` / the affected `tests/` / `validate-contracts` inside the clone. A change that can't pass its own gates does NOT become a PR.
-6. **Body** — write the PR body to a file: problem, evidence (mission IDs from `fleet-retro`), the change, canon citations, and the self-verify result.
+6. **Body** — write the PR body to a file: problem, evidence (the mission IDs that surfaced it), the change, canon citations, and the self-verify result.
 7. **Open** — `github-pr-open --dir <dir> --branch improve/<...> --title "..." --body-file <body>` (draft by default).
 8. **Gate** — post the returned PR URL to the operator as an `approval_gate`. Stop. The human reviews and merges; the normal dashboard upgrade then rolls it out.
 

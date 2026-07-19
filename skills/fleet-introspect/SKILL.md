@@ -6,7 +6,7 @@
 > **Prime-only.** This skill is scoped to Prime agents (`skill.json` `roles: ["prime"]`) — fleet agents never see it. It is how a Prime **observes** the fleet: reading another agent's work directly, without SSHing into that agent's VM.
 
 ## When to Use
-When you need to understand what a fleet agent has been doing — analyze its recent missions, diagnose why a mission failed, review its success rate, or gather evidence for a fleet-improvement pass. This is the **read** half of Prime's platform-engineer role; use SSH (`system-shell`) only for operations that need a shell on the agent's host (test, restart, upgrade).
+When you need to understand what a fleet agent has been doing — analyze its recent missions, diagnose why a mission failed, review its success rate, or gather evidence for a fleet improvement review. This is the **read** half of Prime's platform-engineer role; use SSH (`system-shell`) only for operations that need a shell on the agent's host (test, restart, upgrade).
 
 ## What it reads
 Fleet agents write their work to the shared root `work/` Firestore collection, keyed by `owner` (their full email). A Prime can read any agent's envelopes from its own VM with the metadata token — no host access required. This is deterministic and read-only (C-4/C-5).
@@ -33,7 +33,7 @@ fleet-work-read --agent millie --json            # machine-readable
 1. `fleet-work-read --agent <name> --last 10` — get the recent mission list; note the ones with `failed`/`blocked`/`cancelled` status.
 2. `fleet-work-read --agent <name> --mission <id>` on each — the tree shows which checkpoint/task failed and its error text.
 3. Read the failing task's error to classify the root cause (tool error, auth, missing input, verification rejection).
-4. If the fix belongs in the product (a skill, a daemon, a tool), route it through the improvement processes (`p-review-and-improve`, `repo-improvement`) and — once built — propose it upstream as a human-gated PR.
+4. If the fix belongs in the product (a skill, a daemon, a tool), surface it to the operator with a concrete recommendation. (The structured self-improvement pipeline is being reimplemented; a verified fix may still be proposed upstream as a human-gated draft PR via the github-pr skill.)
 
 ## Related skills (don't duplicate)
 - **fleet-status** — registry + live health/liveness of agents (brain state, heartbeat). Use for "is agent X up?"
