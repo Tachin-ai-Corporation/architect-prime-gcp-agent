@@ -259,6 +259,11 @@ function buildSkillCatalogPrompt() {
       if (!existsSync(jsonPath)) continue;
       try {
         const m = JSON.parse(readFileSync(jsonPath, 'utf8'));
+        // Executor catalog: skip skills owned SOLELY by the planning organs
+        // (cortex/prefrontal) — a tool-using organ never reads plan-structuring,
+        // delegation, or skill-introspect. Each organ stays in its own lane.
+        const ap = Array.isArray(m.agent_part) ? m.agent_part : [m.agent_part || 'motor'];
+        if (ap.length && ap.every(p => p === 'cortex' || p === 'prefrontal')) continue;
         entries.push({
           name: m.name || name,
           id: m.id || name,

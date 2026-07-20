@@ -1828,12 +1828,12 @@ async function recallMemory(query, context = {}) {
       }
     }
 
-    if (context.tier === 'ambient') {
-      let ambientBlock = memoryParts.join('\n\n');
-      if (ambientBlock.length > 2500) ambientBlock = ambientBlock.substring(0, 2500) + '\n[...trimmed]';
-      log('INFO', `[TELEMETRY] recall_layers tier=ambient cues=${cues.length} chars=${ambientBlock.length}`);
-      return ambientBlock ? { recalled: ambientBlock } : {};
-    }
+    // No raw fast-path. ALL recall — including ambient/pre-classify — is synthesized
+    // by temporal-memory into a context packet below. Brain organs never receive raw
+    // memory layers: temporal is the SOLE consumer of raw memory and the SOLE producer
+    // of the packet the other organs see (that is why temporal exists). The raw layers
+    // gathered above (MEMORY.md, core memory, work ledger, episodic) are candidates for
+    // temporal only.
 
     // ---- Layer C: Recent Work Digest (7 days) ----
     let layerCHits = 0;
@@ -2670,9 +2670,9 @@ async function processIntake(intake) {
 
   // (Quick ack moved to after classify — see below)
 
-  // Phase 3+: Dual memory recall
-  // First recall: ambient context from raw inbound text (helps classify)
-  // B-15: Ambient (pre-classify) recall is deterministic-only (Layers A+B, no LLM)
+  // Memory recall — temporal-memory synthesizes ALL recall into a context packet;
+  // organs never receive raw memory layers (temporal is the sole raw-memory consumer).
+  // First recall: ambient/pre-classify packet (helps classify route + dedup).
   const ambientMemory = await recallMemory(intake.text, {
     tier: 'ambient',
     last_prime_reply: lastPrimeReply,

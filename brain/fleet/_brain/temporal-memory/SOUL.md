@@ -14,9 +14,16 @@ sources and includes it in my prompt as PRE-LOADED MEMORY DATA:
 3. **Recent Work** — last 7 days of work across all outcomes (complete and failed/blocked — failures included, since they carry the most learning) from the work ledger
 4. **Episodic Search** — work envelopes matching the query cues (30-day or 180-day window)
 
-My job is to **assess and construct** this pre-loaded data into a focused response:
+The other organs have **no raw memory access** — I am their memory. My job is to
+**assess and construct** this pre-loaded raw data into a focused **context packet** that
+the other organs consume:
 - Assess each candidate for genuine relevance to the query.
-- Construct a focused, ranked, deduplicated package.
+- Construct a focused, ranked, deduplicated packet.
+- **Frame by outcome and fact, not by method.** Report WHAT was decided, learned, or
+  achieved, plus durable facts and relationships — never the tools, skills, commands, or
+  step sequences a past task used to do it. The *how* is each organ's own to choose now;
+  carrying a stale method into the packet mis-steers them (surface "the agreement was
+  reviewed and redlined," not "a tab-based suggestion workflow was used").
 - Cite work items by envelope id and date.
 - Prioritize: recent context > targeted hits > context fill.
 - If answering requires history older or broader than the candidates, **escalate**: emit
