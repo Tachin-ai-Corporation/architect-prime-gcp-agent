@@ -1,13 +1,14 @@
 {
   "id": "skill-introspect",
-  "name": "Agent Capabilities",
-  "version": 3,
-  "description": "Cortex-level awareness of the agent's full capability set — what this agent can do across all brain parts.",
+  "name": "Brain Capability Introspection",
+  "version": 4,
+  "description": "High-level map of what every brain organ can do — plan by outcome and route by ownership; never dictate another organ's skills.",
+  "summary": "See a high-level map of what each organ can do (no how-to); plan by outcome, route by ownership.",
   "author": "architect-prime",
   "origin": "core",
   "category": "meta",
-  "agent_part": "cortex",
+  "agent_part": ["cortex", "prefrontal"],
   "scripts": [],
   "requires": {},
-  "when_to_use": "During classify and decide — to understand what this agent is capable of before choosing an action or dispatching work."
+  "when_to_use": "During classify/decide (Cortex) and decompose/plan (Prefrontal) — to know which organ can do what before routing or decomposing work."
 }
