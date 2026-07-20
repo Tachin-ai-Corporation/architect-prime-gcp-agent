@@ -1,4 +1,4 @@
-# Skill: Google Docs (v13)
+# Skill: Google Docs (v14)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
@@ -48,7 +48,8 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 
 ### Lane C — DOCX Round-Trip
 - `docs-export-docx --doc <doc_id> --out OUTPUT_FILE.docx` — Export a Doc to local `.docx` format.
-- `docs-import-docx --file FILE_PATH.docx --title "TITLE" [--folder FOLDER_ID]` — Import local `.docx` as a native Google Doc via Drive multipart conversion.
+- `docs-import-docx --file FILE_PATH.docx --title "TITLE" [--folder FOLDER_ID]` — Import local `.docx` as a **new** native Google Doc via Drive multipart conversion.
+- `docs-replace-file --doc <doc_id> --file EDITED.docx` — Replace an **existing** doc's entire content in place from a local file (`.docx`/`.html`/`.md`/`.txt`) in **one atomic call**. Preserves the doc id and adds a revision, so version history stays intact. This is the "edit locally, apply all at once" path — plan a batch of edits on a local copy, then push the result back once, instead of many inline mutations to the live doc. (`docs-import-docx` makes a new doc; `docs-replace-file` updates the one you already have.)
 
 ### Lane D — Templates
 - `docs-clone-template --template DOC_ID --title "TITLE" [--folder FOLDER_ID] [--replacements FILE]` — Clone a template Doc via Drive `files.copy`, optionally filling `{{placeholder}}` tags from a JSON replacements file `[{"find":"{{client}}","replace":"Acme Corp"},...]`.
@@ -75,6 +76,7 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 | "Create a doc with custom fonts, colors, or styled tables" | A+ | Write HTML with inline CSS → `docs-create --from-html` |
 | "Create a doc / write a report / draft a brief" | A | `docs-create --from-markdown` |
 | "Rewrite / regenerate this whole document" | A/A+ | `docs-replace-md` or recreate via `--from-html` |
+| "Apply many edits / restructure an EXISTING doc (finalize a contract, batch of redlines)" | C | Edit locally, apply once: `docs-export-docx` → edit the `.docx` (python-docx) → `docs-replace-file`. **See §3 "Heavy or structural edits".** Avoids inline churn on the live doc. |
 | "Add a section to the end" | A | `docs-write --markdown --append` |
 | "Create a document from our standard template" | D | `docs-clone-template --template ID --replacements file` |
 | "Fix this typo / update this clause / change these values" | B | `docs-find-replace`, `docs-batch-replace` |
@@ -186,6 +188,34 @@ Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrit
 ### Templated/Recurring Updates (Named Ranges)
 1. Locate or create a NamedRange on the target text using `docs-namedrange-create --doc DOC_ID --name "ReportDate" --anchor "January 1, 2026"`.
 2. Update the field in subsequent runs using `docs-namedrange-replace --doc DOC_ID --name "ReportDate" --text "February 1, 2026"`. This preserves surrounding styles and formatting.
+
+### Heavy or structural edits — edit locally, apply once (docx round-trip)
+When a task needs **many** edits or **structural** changes to an existing doc (finalizing a contract, applying a batch of redlines, reorganizing sections), do NOT churn the live doc with many inline mutations across retries. Work on a local copy, plan and apply ALL edits there, then push the result back in **one** call. Version history is the restore point — nothing here is irreversible.
+
+1. **Mark** the pre-edit revision: `docs-revision DOC_ID` (records the "restore to here" point).
+2. **Export** to a local docx: `docs-export-docx --doc DOC_ID --out edit.docx`.
+3. **Edit locally with python-docx** — open `edit.docx`, apply every planned change, save. python-docx splits a paragraph's text across "runs", so a phrase that spans runs won't match run-by-run; the robust pattern for text changes is to rebuild at the paragraph level:
+   ```python
+   import docx
+   d = docx.Document('edit.docx')
+   edits = {'Net 30': 'Net 20', 'peregrine3': 'Peregrine III'}   # your planned redlines
+   def apply(paras):
+       for p in paras:
+           new = p.text
+           for old, repl in edits.items(): new = new.replace(old, repl)
+           if new != p.text and p.runs:
+               for r in p.runs: r.text = ''          # clear existing runs
+               p.runs[0].text = new                  # write the full replaced text back to the first run
+   apply(d.paragraphs)
+   for t in d.tables:
+       for row in t.rows:
+           for cell in row.cells: apply(cell.paragraphs)
+   d.save('edit.docx')
+   ```
+   (The paragraph-rebuild drops intra-paragraph run formatting for changed paragraphs — fine for text redlines. If you must preserve bold/italic *within* a changed sentence, use the surgical Lane B `docs-batch-replace` instead.)
+4. **Apply once**: `docs-replace-file --doc DOC_ID --file edit.docx` — replaces the live doc in a single atomic call, preserving its id and adding a revision.
+5. **Verify** (B-28): `docs-cat DOC_ID --meta` plus `--find` spot-checks — confirm the changes landed and nothing was dropped. Doc→docx→Doc conversion can shift some formatting; check headings/tables if they matter, and fall back to Lane B for anything the round-trip mangled.
+6. **Recovery note + clean up**: `docs-comments-add DOC_ID --content "<what changed + how to review/restore via File > Version history>"`, then **delete your local temp files** (`rm -f edit.docx doc.txt …`). Always leave the workspace clean — stray export/scratch files confuse the next mission.
 
 ### High-Fidelity/Tracked-Changes (Lane C Round-Trip)
 1. Export the Google Doc using `docs-export-docx --doc DOC_ID --out local.docx`.

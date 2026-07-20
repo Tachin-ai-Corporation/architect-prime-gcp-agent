@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# docs-replace-file — Replace a Google Doc's ENTIRE content in place from a local file,
+# in ONE atomic call (Drive files.update media). Preserves the doc id and appends a new
+# revision, so version history stays intact. This is the "edit locally, apply all at once"
+# path: export -> edit the local .docx -> docs-replace-file -> clean up the workspace.
+# Brain agent: motor (WRITE)
+# Usage: docs-replace-file --doc DOC_ID --file edited.docx   (also .html / .md / .txt)
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+UPLOAD_API="https://www.googleapis.com/upload/drive/v3"
+die() { echo "[docs-replace-file] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --file) FILE="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-replace-file --doc <doc_id> --file <edited.docx|.html|.md|.txt>"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DOC_ID" && -n "$FILE" ]] || die "Need --doc and --file"
+[[ -f "$FILE" ]] || die "File not found: $FILE"
+# Content-Type by extension; Drive converts the upload back into the native Google Doc.
+case "$FILE" in
+  *.docx) MIME="application/vnd.openxmlformats-officedocument.wordprocessingml.document" ;;
+  *.html|*.htm) MIME="text/html" ;;
+  *.md|*.markdown) MIME="text/markdown" ;;
+  *.txt) MIME="text/plain" ;;
+  *) die "Unsupported file type (use .docx, .html, .md, or .txt): $FILE" ;;
+esac
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' -X PATCH \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: ${MIME}" \
+  --data-binary @"${FILE}" \
+  "${UPLOAD_API}/files/${DOC_ID}?uploadType=media&fields=id,name,modifiedTime")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+# Surface the real HTTP status + body on failure (no opaque "Command failed").
+[[ "$HTTP_CODE" == "200" ]] || die "Drive files.update returned HTTP ${HTTP_CODE}: $(head -c 400 "$RESP")"
+python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+print(json.dumps({
+    'status': 'replaced',
+    'docId': d.get('id'),
+    'modifiedTime': d.get('modifiedTime'),
+    'note': 'Content replaced in place in one call; a new revision was added — the prior version is recoverable via File > Version history.'
+}, indent=2))
+" "$RESP"

@@ -1,7 +1,7 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  11,
+    "version":  12,
     "description":  "Create professionally formatted Google Docs from Markdown or HTML, read docs with paginated/targeted reads for large documents, delete sections/ranges, use templates, manage page formatting (margins, headers, footers), make in-place suggestion edits (highlighted for human review), and add, list, resolve, or delete review comments.",
     "author":  "architect-prime",
     "origin":  "core",
@@ -30,12 +30,14 @@
                     "docs-namedrange-replace",
                     "docs-export-docx",
                     "docs-import-docx",
+                    "docs-replace-file",
+                    "docs-revision",
                     "docs-clone-template",
                     "docs-format-page",
                     "_docslib.py"
                 ],
     "requires":  {
-
+                     "apt": ["python3-docx"]
                  },
     "when_to_use":  "When a task involves creating formatted docs from Markdown or HTML, editing text ranges or styles programmatically without reflowing the whole body, exporting/importing .docx files, suggesting in-place edits for human review, or adding, listing, resolving, and deleting comments on Google Docs."
 }
