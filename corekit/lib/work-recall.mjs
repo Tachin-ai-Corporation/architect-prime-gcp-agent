@@ -104,7 +104,7 @@ const DIGEST_STATUSES = ['complete', 'failed', 'blocked', 'needs_input', 'cancel
 const OUTCOME_MARK = { complete: '[done]', failed: '[FAILED]', blocked: '[blocked]', needs_input: '[needs-input]', cancelled: '[cancelled]' };
 const digestTs = d => d.completed_at || d.updated_at || d.created_at || '';
 
-export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, limit = 50, statuses = DIGEST_STATUSES }) {
+export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, limit = 50, statuses = DIGEST_STATUSES, types = ['M', 'R'] }) {
   const seen = new Map();
   for (const status of statuses) {
     const filters = [
@@ -118,8 +118,12 @@ export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, l
   const empty = `${header}\n\nNo recent work found.`;
   if (seen.size === 0) return empty;
 
+  // Recall is holistic-but-lean (B-4): keep top-level work units (missions,
+  // responsibilities), whose output/error IS the outcome summary. Per-task
+  // (C/T) detail is for deliberate investigation via work-log-read, not ambient recall.
   const cutoff = new Date(Date.now() - sinceDays * 86400000);
   const recent = [...seen.values()]
+    .filter(d => types.includes(d.type))
     .filter(d => { const t = digestTs(d); return t && new Date(t) >= cutoff; })
     .sort((a, b) => new Date(digestTs(b)) - new Date(digestTs(a)))
     .slice(0, limit);
