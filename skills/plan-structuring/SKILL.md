@@ -11,9 +11,9 @@ No executable commands are governed directly by this skill (prefrontal-only plan
 
 ### Structure a checkpoint and task plan
 1. Read the input goal, Brief parts, and available skill index.
-2. Define checkpoints based on risk boundaries, specialty handoffs, or verification checkpoints.
-3. For each checkpoint, define the `instruction` and `accept_criteria`.
-4. Decompose each checkpoint into outcome tasks — each a result a single agent can own end-to-end (it may take many tool calls) — identifying the target `agent`, task instructions (describing the desired outcome, never the tool or API operation), and task `accept_criteria`.
+2. Define checkpoints as **verifiable milestones** — each a meaningful state the mission reaches that is worth an independent quality check (a phase gate, a specialty handoff, a deliverable produced). A checkpoint is NOT a task grouping or a tool step; it is the milestone cerebellum will judge.
+3. For each checkpoint, write its `instruction` (the milestone) and `accept_criteria` — the observable OUTCOME true when the milestone is reached. This is the contract cerebellum verifies, so it must be a real, checkable end state, not "the tasks ran."
+4. Decompose each checkpoint into outcome tasks — each a result a single organ owns end-to-end (it may take many tool calls) — with the target `agent`, an instruction describing the desired outcome (never the tool or API operation), and a light `accept_criteria` the executing organ uses to self-check its own task.
 5. Format the plan into the final JSON structure containing `checkpoints` and `tasks`.
 6. Verify: Ensure the output plan conforms strictly to the schema, has no missing fields, and does not contain execution commands.
 
@@ -26,13 +26,13 @@ Return a JSON object with a `checkpoints` array:
 {
   "checkpoints": [
     {
-      "instruction": "Human-readable checkpoint goal",
-      "accept_criteria": "Observable evidence that this checkpoint succeeded",
+      "instruction": "The milestone — the meaningful state reached at this checkpoint",
+      "accept_criteria": "The observable OUTCOME true at this milestone (what cerebellum verifies) — an end state, not 'the tasks ran'. E.g. 'the agreement reflects every redline and the notes section is gone', not 'each redline applied individually'.",
       "tasks": [
         {
           "agent": "motor|temporal-research|temporal-memory",
-          "task": "Specific, atomic instruction describing the desired outcome.",
-          "accept_criteria": "Evidence this specific task completed correctly",
+          "task": "An outcome a single organ owns end-to-end. Describe WHAT to achieve, never the tool/API.",
+          "accept_criteria": "A light self-check the executing organ uses to confirm its own task (cerebellum does NOT gate individual tasks — it judges the checkpoint milestone).",
           "type": "standard|delegation|approval_gate|ask",
           "brief_part": "Which Brief part this task addresses"
         }
@@ -43,6 +43,15 @@ Return a JSON object with a `checkpoints` array:
 ```
 
 ## Rules
+
+### Checkpoints are milestones; tasks are steps
+A checkpoint is a **verifiable milestone** — a state worth an independent check — and its
+`accept_criteria` is the OUTCOME cerebellum judges. Tasks are the steps the owning organ
+takes to reach it; the organ self-verifies its own tasks. Do NOT smuggle tool-step language
+("apply each X individually", "generate a structured list of instructions") into a
+checkpoint's criteria — that makes the milestone unverifiable against how the organ actually
+chose to work, and it is the over-specification that strands execution. State the end state;
+let the organ choose how to reach it.
 
 ### Simplicity first
 

@@ -109,9 +109,19 @@ Given 5 process steps where steps 2 and 4 have `checkpointBoundary: true`:
 
 ---
 
-## Auto-Verification
+## Verification happens at the checkpoint boundary
 
-After all Tasks in a Checkpoint complete, the brain daemon may invoke **cerebellum** to verify the combined output against the Checkpoint's `accept_criteria`. This provides a higher-level quality gate beyond individual Task verification.
+Verification is a **checkpoint-level** concern, not a per-Task one. Individual Tasks are
+**self-verified** by the organ that executes them — the organ confirms its own output before
+reporting the Task complete. After all Tasks in a Checkpoint complete, the brain daemon
+dispatches **cerebellum** once to judge the combined output against the Checkpoint's
+`accept_criteria` — a single, higher-level judgment of whether the *milestone* was achieved.
+
+A Checkpoint is the unit of verification precisely because it is a **verifiable milestone**;
+a Task is just a step toward it. So a Checkpoint's `accept_criteria` must state the observable
+**outcome** at the milestone (what is true when it's done), not the per-step mechanics of how
+the organ got there. Verification is a judgment call — true to life — made once per milestone,
+not a mechanical gate on every step.
 
 ---
 

@@ -944,259 +944,11 @@ export async function executeCheckpoints(checkpoints, opts) {
         }
       }
 
-      // Cerebellum verification
-      if (result.success && taskCriteria && taskAgent !== 'cerebellum' && tEnv.intent !== 'ack' && extractVerdict) {
-        try {
-          // B-28/B-29: load-bearing Brief parts get probes + attacks regardless of mission stakes
-          const taskPart = (envelope._brief?.parts || []).find(p => p.id === task.brief_part);
-          const isLoadBearing = !!taskPart?.load_bearing;
-
-          log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: dispatching to cerebellum for verification`);
-          const verification = await dispatchAgent('cerebellum', {
-            instruction: [
-              'Verify the following task output meets the acceptance criteria.',
-              'Read the verification SKILL.md before rendering your verdict.',
-              '',
-              '## Accept Criteria',
-              taskCriteria,
-              '',
-              '## Task Output',
-              // B-28/B-4: bound the verifier's input so a ballooned motor output can't
-              // blow the cerebellum context (→ dispatch error → null verdict → verification
-              // silently skipped). smartTruncate keeps head+tail so setup + errors survive.
-              smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
-              // Attack Duty block (stakes-gated, or load-bearing Brief part)
-              ...((stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing) ? [
-                '',
-                '## Attack Duty (stakes: ' + missionStakes + (isLoadBearing ? ', load-bearing part' : '') + ')',
-                'Before any PASS, run three attacks and record them in your checks:',
-                '1. Strongest domain-expert objection',
-                '2. Flip test — invert the softest input; does the conclusion survive?',
-                '3. Boundary probe — find where the claim stops being true; confirm this case is inside.',
-                'A winning attack is a FAIL with the attack as the recommendation.',
-              ] : []),
-              // Probe eligibility hint
-              ...(PROBE_ENABLED && (stakesAtLeast(missionStakes, PROBE_STAKES_MIN) || isLoadBearing) ? [
-                '',
-                '## Probe Eligibility',
-                'This mission\'s stakes (' + missionStakes + ') qualify for verification probes.',
-                'For any load-bearing claim you cannot verify from the evidence provided,',
-                'use `request_probe` instead of guessing. Max ' + PROBE_MAX + ' probes per round.',
-              ] : []),
-            ].filter(Boolean).join('\n'),
-            _missionId: envelope.id,
-          });
-
-          const verdict = extractVerdict(verification.output);
-
-          if (verdict === 'FAIL') {
-            const failSummary = extractFailSummary ? extractFailSummary(verification.output) : 'Acceptance criteria not met';
-            const recommendation = extractFailRecommendation ? extractFailRecommendation(verification.output) : '';
-            log('WARN', `[checkpoint-executor] Cerebellum FAIL on CP${cpNum} Task ${taskNum}: ${failSummary}`);
-
-            log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: retrying ${taskAgent} with cerebellum feedback`);
-            result = await dispatchAgent(taskAgent, {
-              ...dispatchPayload,
-              instruction: [
-                currentInstruction + currentSkillCatalog,
-                '',
-                '[VERIFICATION FAILED] An independent verification found issues with your previous output:',
-                failSummary,
-                recommendation ? `\nRecommendation: ${recommendation}` : '',
-                '\nPlease re-execute and address the issues above. Use tools to actually run commands — do NOT simulate or assume results.',
-              ].join('\n'),
-            });
-
-            if (taskAgent === 'motor') {
-              const motorCheck = detectMotorFailure(result.output || result.error || '');
-              if (motorCheck.failed) {
-                result.success = false;
-                result.error = motorCheck.detail;
-              }
-            }
-
-            if (result.success) {
-              log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: re-verifying retry output with cerebellum`);
-              const reVerification = await dispatchAgent('cerebellum', {
-                instruction: [
-                  'Verify the following RETRY task output meets the acceptance criteria.',
-                  'This is a second attempt after the first failed verification.',
-                  'Read the verification SKILL.md before rendering your verdict.',
-                  '',
-                  '## Accept Criteria',
-                  taskCriteria,
-                  '',
-                  '## Task Output (Retry)',
-                  // B-28/B-4: bound the verifier's input so a ballooned motor output can't
-              // blow the cerebellum context (→ dispatch error → null verdict → verification
-              // silently skipped). smartTruncate keeps head+tail so setup + errors survive.
-              smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
-                ].join('\n'),
-                _missionId: envelope.id,
-              });
-
-              const reVerdict = extractVerdict(reVerification.output);
-              if (reVerdict === 'FAIL') {
-                const reFailSummary = extractFailSummary ? extractFailSummary(reVerification.output) : 'Acceptance criteria not met on retry';
-                log('WARN', `[checkpoint-executor] Cerebellum FAIL on retry CP${cpNum} Task ${taskNum}: ${reFailSummary}`);
-                result.success = false;
-                result.error = `Verification failed after retry: ${reFailSummary}`;
-              } else if (reVerdict === 'PASS') {
-                log('INFO', `[checkpoint-executor] Cerebellum PASS on retry CP${cpNum} Task ${taskNum}`);
-              }
-            }
-          } else if (verdict === 'PASS') {
-            log('INFO', `[checkpoint-executor] Cerebellum PASS on CP${cpNum} Task ${taskNum}`);
-          } else if (verdict === 'PROBE' && PROBE_ENABLED) {
-            // PROBE verdict — dispatch fresh motor probes, then re-verdict
-            const probes = extractProbes(verification.output);
-            if (probes.length === 0) {
-              log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: PROBE verdict but no parseable probes — failing closed (B-28)`);
-              tEnv.needs_review = true;
-              tEnv.review_reason = 'Cerebellum requested probes but no parseable probes found';
-              result.success = false;
-              result.error = 'Verification incomplete: cerebellum requested re-derivation probes that could not be parsed. The claim remains unverified (B-28 fail-closed).';
-            } else {
-              log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: running ${probes.length} verification probe(s)`);
-              const probeResults = [];
-              for (const probe of probes.slice(0, PROBE_MAX)) {
-                try {
-                  const probeResult = await dispatchAgent('motor', {
-                    instruction: [
-                      '[VERIFICATION PROBE]',
-                      '',
-                      '## Claim to verify',
-                      probe.claim,
-                      '',
-                      '## Method',
-                      probe.instruction,
-                      '',
-                      'Re-derive this claim from ground truth using ONLY the method above.',
-                      'Report whether the claim is verified or contradicted, with the evidence.',
-                    ].join('\n'),
-                    _missionId: envelope.id,
-                    _probe: true,
-                  });
-                  probeResults.push({ claim: probe.claim, output: probeResult.output || probeResult.error || '(no output)' });
-                } catch (probeErr) {
-                  probeResults.push({ claim: probe.claim, output: `Probe error: ${probeErr.message}` });
-                }
-              }
-
-              // Re-dispatch cerebellum with original + probe evidence for final verdict
-              log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: re-dispatching cerebellum with probe results for final verdict`);
-              const probeEvidence = probeResults.map((p, i) => [
-                `### Probe ${i + 1}: ${p.claim}`,
-                p.output,
-              ].join('\n')).join('\n\n');
-
-              try {
-                const finalVerification = await dispatchAgent('cerebellum', {
-                  instruction: [
-                    'Final verdict round. The original task output AND independent probe results are below.',
-                    'Render exactly one terminal verdict (report_pass or report_fail). Do NOT request further probes.',
-                    'Read the verification SKILL.md before rendering your verdict.',
-                    '',
-                    '## Accept Criteria',
-                    taskCriteria,
-                    '',
-                    '## Original Task Output',
-                    // B-28/B-4: bound the verifier's input so a ballooned motor output can't
-              // blow the cerebellum context (→ dispatch error → null verdict → verification
-              // silently skipped). smartTruncate keeps head+tail so setup + errors survive.
-              smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
-                    '',
-                    '## Verification Probe Results',
-                    probeEvidence,
-                  ].join('\n'),
-                  _missionId: envelope.id,
-                });
-
-                const finalVerdict = extractVerdict(finalVerification.output);
-                if (finalVerdict === 'FAIL') {
-                  const failSummary = extractFailSummary ? extractFailSummary(finalVerification.output) : 'Probe-informed verification failed';
-                  log('WARN', `[checkpoint-executor] Cerebellum FAIL (post-probe) CP${cpNum} Task ${taskNum}: ${failSummary}`);
-                  result.success = false;
-                  result.error = `Verification failed after probes: ${failSummary}`;
-                } else if (finalVerdict === 'PASS') {
-                  log('INFO', `[checkpoint-executor] Cerebellum PASS (post-probe) CP${cpNum} Task ${taskNum}`);
-                } else if (finalVerdict === 'PROBE') {
-                  log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: second PROBE request — probe budget exhausted, treating as FAIL`);
-                  result.success = false;
-                  result.error = 'Verification probe budget exhausted — cerebellum requested further probes after probe round';
-                } else {
-                  // Probe round already spent and still no terminal verdict — fail closed
-                  // rather than pass unverified (B-28).
-                  log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: post-probe verdict not rendered — failing closed (B-28)`);
-                  tEnv.needs_review = true;
-                  tEnv.review_reason = 'Cerebellum did not render a terminal verdict after the probe round';
-                  result.success = false;
-                  result.error = 'Verification incomplete: no terminal PASS/FAIL verdict after the probe round (B-28 fail-closed).';
-                }
-              } catch (finalErr) {
-                log('WARN', `[checkpoint-executor] Post-probe cerebellum dispatch failed: ${finalErr.message}`);
-                tEnv.needs_review = true;
-                tEnv.review_reason = `Post-probe verification error: ${finalErr.message}`;
-              }
-            }
-          } else {
-            // No terminal verdict rendered. Re-verify ONCE; a missing verdict must not
-            // silently pass as success (fail-closed, B-28) — consistent with the
-            // PROBE-no-parse path above.
-            log('WARN', `[checkpoint-executor] Cerebellum did not render verdict tool for CP${cpNum} Task ${taskNum} — re-verifying once`);
-            let reVerdict2 = null;
-            let reVerifyThrew = false;
-            try {
-              const reVer2 = await dispatchAgent('cerebellum', {
-                instruction: [
-                  'Verify the following task output meets the acceptance criteria.',
-                  'You MUST render exactly one terminal verdict by calling report_pass or report_fail — do not reply in prose.',
-                  'Read the verification SKILL.md before rendering your verdict.',
-                  '',
-                  '## Accept Criteria',
-                  taskCriteria,
-                  '',
-                  '## Task Output',
-                  smartTruncate(result.output || '(empty)', CTX_VERIFY_INPUT),
-                ].join('\n'),
-                _missionId: envelope.id,
-              });
-              reVerdict2 = extractVerdict(reVer2.output);
-              if (reVerdict2 === 'FAIL') {
-                const s = extractFailSummary ? extractFailSummary(reVer2.output) : 'Acceptance criteria not met';
-                log('WARN', `[checkpoint-executor] Cerebellum FAIL on re-verify CP${cpNum} Task ${taskNum}: ${s}`);
-                result.success = false;
-                result.error = `Verification failed: ${s}`;
-              } else if (reVerdict2 === 'PASS') {
-                log('INFO', `[checkpoint-executor] Cerebellum PASS on re-verify CP${cpNum} Task ${taskNum}`);
-              }
-            } catch (e) {
-              reVerifyThrew = true;
-              log('WARN', `[checkpoint-executor] Re-verify dispatch failed: ${e.message}`);
-            }
-            if (reVerdict2 !== 'PASS' && reVerdict2 !== 'FAIL') {
-              if (reVerifyThrew) {
-                // Transient verifier-infra failure (dispatch threw), not a refusal to render.
-                // Match the sibling dispatch-error paths (initial-verify catch, post-probe
-                // catch): flag for review without rejecting possibly-good work.
-                log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: re-verify dispatch error — flagging for review (verifier unavailable)`);
-                tEnv.needs_review = true;
-                tEnv.review_reason = 'Verifier dispatch failed during re-verification (transient infra error)';
-              } else {
-                // The verifier responded twice without rendering a terminal verdict — that is
-                // a refusal, not flakiness. A missing verdict must not pass as success (B-28).
-                log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: no verdict after re-verify — failing closed (B-28)`);
-                tEnv.needs_review = true;
-                tEnv.review_reason = 'Cerebellum did not render a terminal verdict after re-verification';
-                result.success = false;
-                result.error = 'Verification incomplete: the independent verifier did not render a terminal PASS/FAIL verdict (B-28 fail-closed).';
-              }
-            }
-          }
-        } catch (verErr) {
-          log('WARN', `[checkpoint-executor] Cerebellum verification failed: ${verErr.message}`);
-        }
-      }
+      // Task self-verification: the executing organ verifies its OWN task output
+      // before reporting success (result.success is the organ's own judgment). Cerebellum
+      // does NOT gate individual tasks — it verifies the CHECKPOINT milestone once, at the
+      // checkpoint boundary (see checkpoint-level verification after the task loop). Canon:
+      // 02-CHECKPOINT.md — "verification happens at checkpoint boundaries".
 
       // Update task envelope
       tEnv.output = result.output || result.error;
@@ -1260,6 +1012,71 @@ export async function executeCheckpoints(checkpoints, opts) {
         `Waiting for ${cpEnvelope.children.length} delegation(s) to complete`);
       log('INFO', `[checkpoint-executor] CP${cpNum}: ${cpEnvelope.children.length} delegation(s) dispatched, checkpoint waiting`);
       return { paused: true, waitingOnDelegation: true };
+    }
+
+    // ---- Checkpoint-level verification (Cerebellum) ----
+    // Canon (02-CHECKPOINT.md): verification happens at checkpoint boundaries. Individual
+    // tasks are self-verified by the executing organ (result.success is its own judgment);
+    // Cerebellum makes ONE higher-level judgment per checkpoint — did the combined work meet
+    // the checkpoint's milestone (accept_criteria)? A holistic judgment call, true to life,
+    // not a mechanical per-step gate.
+    if (!cpFailed && cpEnvelope.accept_criteria && extractVerdict) {
+      try {
+        const cpOutcome = cpResults.map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`).join('\n');
+        const isLoadBearing = (envelope._brief?.parts || []).some(p => p.load_bearing);
+        log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum`);
+        const cpVer = await dispatchAgent('cerebellum', {
+          instruction: [
+            'Verify that this CHECKPOINT MILESTONE has been achieved. Judge the checkpoint as a',
+            'whole against its acceptance criteria — a holistic judgment, not a per-step check.',
+            'Read the verification SKILL.md before rendering your verdict.',
+            '',
+            '## Checkpoint',
+            cpEnvelope.instruction || `Checkpoint ${cpNum}`,
+            '',
+            '## Acceptance Criteria (the milestone)',
+            cpEnvelope.accept_criteria,
+            '',
+            '## Combined Task Outputs',
+            smartTruncate(cpOutcome || '(no output)', CTX_VERIFY_INPUT),
+            ...((stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing) ? [
+              '',
+              `## Attack Duty (stakes: ${missionStakes}${isLoadBearing ? ', load-bearing' : ''})`,
+              'Before any PASS, run three attacks and record them: strongest domain objection; flip test; boundary probe.',
+              'A winning attack is a FAIL with the attack as the recommendation.',
+            ] : []),
+            ...(PROBE_ENABLED && (stakesAtLeast(missionStakes, PROBE_STAKES_MIN) || isLoadBearing) ? [
+              '',
+              '## Probe Eligibility',
+              `For any load-bearing claim you cannot verify from the evidence, use request_probe (max ${PROBE_MAX}).`,
+            ] : []),
+          ].filter(Boolean).join('\n'),
+          _missionId: envelope.id,
+        });
+        const cpVerdict = extractVerdict(cpVer.output);
+        if (cpVerdict === 'FAIL') {
+          const s = extractFailSummary ? extractFailSummary(cpVer.output) : 'Checkpoint acceptance criteria not met';
+          const rec = extractFailRecommendation ? extractFailRecommendation(cpVer.output) : '';
+          log('WARN', `[checkpoint-executor] Cerebellum FAIL on CP${cpNum} milestone: ${s}`);
+          cpFailed = true;
+          cpResults.push({ step: `${cpNum}.verify`, agent: 'cerebellum', result: `[CHECKPOINT VERIFICATION FAILED] ${s}${rec ? `\nRecommendation: ${rec}` : ''}`, success: false });
+        } else if (cpVerdict === 'PASS') {
+          log('INFO', `[checkpoint-executor] Cerebellum PASS on CP${cpNum} milestone`);
+        } else {
+          // No terminal verdict (or an unresolved PROBE request) — fail closed (B-28): a
+          // milestone must not pass unverified. The failed-checkpoint path re-enters cortex
+          // with this reason so it can re-plan or gather what the verifier needs.
+          log('WARN', `[checkpoint-executor] CP${cpNum}: no terminal checkpoint verdict — failing closed (B-28)`);
+          cpFailed = true;
+          cpEnvelope.needs_review = true;
+          cpResults.push({ step: `${cpNum}.verify`, agent: 'cerebellum', result: '[CHECKPOINT VERIFICATION INCOMPLETE] No terminal PASS/FAIL verdict (B-28 fail-closed).', success: false });
+        }
+      } catch (e) {
+        // Transient verifier-infra failure (dispatch threw), not a refusal. Flag for review
+        // rather than failing a checkpoint whose tasks all succeeded.
+        log('WARN', `[checkpoint-executor] Checkpoint verification dispatch error CP${cpNum}: ${e.message} — flagging for review, not failing`);
+        cpEnvelope.needs_review = true;
+      }
     }
 
     // Mark checkpoint complete or failed
