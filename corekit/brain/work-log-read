@@ -30,11 +30,15 @@ LIMIT=50
 JSON_OUTPUT=false
 VERBOSE=false
 MISSION_ID=""
+SELF=false
+RECENT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --hours)     HOURS="$2";           shift 2 ;;
     --owner)     OWNER_FILTER="$2";    shift 2 ;;
+    --self)      SELF=true;            shift ;;
+    --recent)    RECENT="$2";          shift 2 ;;
     --status)    STATUS_FILTER="$2";   shift 2 ;;
     --type)      TYPE_FILTER="$2";     shift 2 ;;
     --min-steps) MIN_STEPS="$2";       shift 2 ;;
@@ -49,10 +53,16 @@ Usage: work-log-read [OPTIONS]
 Options:
   --hours N        Look back N hours (default: 24)
   --owner NAME     Filter by agent owner (e.g. stan, anora)
-  --status STATUS  Filter by status (complete, failed, active, pending)
+  --self           Filter to MY OWN work (this agent). Use to review or learn
+                   from your own recent missions and failures.
+  --recent N       Shorthand for "my last N missions" (implies --type M,
+                   --limit N, and a 30-day window). Combine with --self.
+  --status STATUS  Filter by status (complete, failed, blocked, active, pending)
   --type TYPE      Filter by envelope type (M=mission, C=child, R=responsibility)
   --min-steps N    Only show envelopes with N+ child dispatches (default: 0)
-  --mission ID     Drill ONE mission: print its M->C->T tree (bounded reads)
+  --mission ID     Drill ONE mission: print its M->C->T tree + step ledger
+                   (per-task attempts with their errors — the richest failure
+                   detail for diagnosing why a mission failed)
   --limit N        Max results (default: 50)
   --json           Output as JSON array
   --verbose        Include result/instruction text in output
@@ -62,6 +72,24 @@ HELP
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
+
+# ── --self / --recent convenience resolution ───────────────
+# --self scopes to this agent's own work. Owner is stored as a full email but
+# matched client-side by substring, so the hostname-derived short name (or the
+# AGENT_USER_EMAIL env when present) is a sufficient filter.
+if [[ "$SELF" == "true" && -z "$OWNER_FILTER" ]]; then
+  if [[ -n "${AGENT_USER_EMAIL:-}" ]]; then
+    OWNER_FILTER="$AGENT_USER_EMAIL"
+  else
+    OWNER_FILTER="$(hostname | sed 's/^prime-//;s/^fleet-//')"
+  fi
+fi
+# --recent N: "my last N missions" — missions only, over a 30-day window.
+if [[ -n "$RECENT" ]]; then
+  TYPE_FILTER="${TYPE_FILTER:-M}"
+  LIMIT="$RECENT"
+  [[ "$HOURS" == "24" ]] && HOURS=720
+fi
 
 # ── Resolve Prime ID and Project ───────────────────────────
 PRIME_ID=$(curl -sf --max-time 2 -H "Metadata-Flavor: Google" \
@@ -163,6 +191,24 @@ for d, e in nodes[1:]:
     if _ee: print(f"  {pad}      error: {str(_ee)[:200]}")
     if verbose and e.get('output'):
         print(f"  {pad}      output: {str(e.get('output'))[:200].strip()}")
+
+# Step ledger: per-task attempts (status + error + timing) — the richest signal
+# for WHY a mission failed. It lives on the mission envelope, not in the C/T tree,
+# so it is invisible to a plain tree walk. Surface it (bounded to last 25).
+sl = mission.get('step_ledger') or {}
+if isinstance(sl, dict) and sl:
+    print("\n  STEP LEDGER — per-task attempts (richest failure detail):")
+    entries = sorted(sl.items(), key=lambda kv: ((kv[1] or {}).get('timestamp') or ''))
+    for _h, rec in entries[-25:]:
+        rec = rec or {}
+        st = rec.get('status', '?')
+        code = ICON.get(st, '  ')
+        dur = rec.get('durationMs')
+        print(f"    [{code}] {st}  {rec.get('timestamp','')}" + (f"  ({dur}ms)" if dur else ""))
+        er = rec.get('error')
+        if er:
+            print(f"        error: {str(er)[:260]}")
+
 print(f"\n{len(nodes)} node(s) in mission tree.")
 PYDRILL
   exit 0

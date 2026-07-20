@@ -46,7 +46,7 @@ export function scoreRelevance(envelope, cues) {
 // Indexed owner + status query via firestoreQuery. Client-side filter
 // on created_at window and types. Score, rank, return top limit.
 
-export async function searchWork({ firestoreQuery, owner, cues, sinceDays = 30, statuses = ['complete', 'active', 'queued'], types, limit = 6 }) {
+export async function searchWork({ firestoreQuery, owner, cues, sinceDays = 30, statuses = ['complete', 'active', 'queued', 'failed', 'blocked', 'needs_input'], types, limit = 6 }) {
   const cutoff = new Date(Date.now() - sinceDays * 86400000);
   let allDocs = [];
 
@@ -95,34 +95,47 @@ export async function searchWork({ firestoreQuery, owner, cues, sinceDays = 30, 
 }
 
 // ── recentWorkDigest ────────────────────────────────────────────────
-// Completed work in window, grouped by day and compacted.
+// Recent work in window across ALL terminal outcomes (not just complete),
+// grouped by day and compacted. Failures/blocks carry the most learning, so
+// they are included with an outcome marker and a why-blurb (output||error),
+// each citing its id so recall can point at a specific mission.
 
-export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, limit = 50 }) {
-  const filters = [
-    { field: 'owner', op: 'EQUAL', value: { stringValue: owner } },
-    { field: 'status', op: 'EQUAL', value: { stringValue: 'complete' } },
-  ];
-  const docs = await firestoreQuery('work', filters);
-  if (!docs || docs.length === 0) return `## Work Completed (Last ${sinceDays} Days)\n\nNo completed work found.`;
+const DIGEST_STATUSES = ['complete', 'failed', 'blocked', 'needs_input', 'cancelled'];
+const OUTCOME_MARK = { complete: '[done]', failed: '[FAILED]', blocked: '[blocked]', needs_input: '[needs-input]', cancelled: '[cancelled]' };
+const digestTs = d => d.completed_at || d.updated_at || d.created_at || '';
+
+export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, limit = 50, statuses = DIGEST_STATUSES }) {
+  const seen = new Map();
+  for (const status of statuses) {
+    const filters = [
+      { field: 'owner', op: 'EQUAL', value: { stringValue: owner } },
+      { field: 'status', op: 'EQUAL', value: { stringValue: status } },
+    ];
+    const docs = await firestoreQuery('work', filters);
+    if (docs) for (const d of docs) if (d && d.id) seen.set(d.id, d);
+  }
+  const header = `## Recent Work (Last ${sinceDays} Days) — includes outcomes`;
+  const empty = `${header}\n\nNo recent work found.`;
+  if (seen.size === 0) return empty;
 
   const cutoff = new Date(Date.now() - sinceDays * 86400000);
-  const recent = docs
-    .filter(d => d.completed_at && new Date(d.completed_at) >= cutoff)
-    .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
+  const recent = [...seen.values()]
+    .filter(d => { const t = digestTs(d); return t && new Date(t) >= cutoff; })
+    .sort((a, b) => new Date(digestTs(b)) - new Date(digestTs(a)))
     .slice(0, limit);
-
-  if (recent.length === 0) return `## Work Completed (Last ${sinceDays} Days)\n\nNo completed work found.`;
+  if (recent.length === 0) return empty;
 
   // Group by day
   const groups = {};
   for (const d of recent) {
-    const day = new Date(d.completed_at).toISOString().slice(0, 10);
+    const day = new Date(digestTs(d)).toISOString().slice(0, 10);
     if (!groups[day]) groups[day] = [];
-    const blurb = (d.output || '').substring(0, 200);
-    groups[day].push(`- [${d.type || '?'}] ${d.title || 'Untitled'} — ${blurb} (${d.completed_at})`);
+    const mark = OUTCOME_MARK[d.status] || `[${d.status || '?'}]`;
+    const blurb = (d.output || d.error || '').substring(0, 220).replace(/\s+/g, ' ').trim();
+    groups[day].push(`- ${mark} [${d.type || '?'}] ${d.title || 'Untitled'} (id:${d.id})${blurb ? ` — ${blurb}` : ''}`);
   }
 
-  const lines = [`## Work Completed (Last ${sinceDays} Days)`];
+  const lines = [header];
   for (const day of Object.keys(groups).sort().reverse()) {
     lines.push(`### ${day}`);
     lines.push(...groups[day]);

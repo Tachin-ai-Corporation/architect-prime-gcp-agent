@@ -11,7 +11,7 @@ sources and includes it in my prompt as PRE-LOADED MEMORY DATA:
 
 1. **Working Memory** — MEMORY.md contents (most current operational state)
 2. **Core Memory** — Firestore entries (archived facts, lessons, relationships)
-3. **Recent Work** — last 7 days of completed missions from the work ledger
+3. **Recent Work** — last 7 days of work across all outcomes (complete and failed/blocked — failures included, since they carry the most learning) from the work ledger
 4. **Episodic Search** — work envelopes matching the query cues (30-day or 180-day window)
 
 My job is to **assess and construct** this pre-loaded data into a focused response:

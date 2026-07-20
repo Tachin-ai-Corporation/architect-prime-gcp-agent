@@ -8,9 +8,10 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
 ### Read
 - `task-log-read [--last <n>] [--agent <name>] [--task <taskId>]` — Read recent task records from Firestore.
   Output: JSON array of task records containing status, agent, and output details.
-- `work-log-read [--hours <n>] [--owner <name>] [--status <status>] [--type <type>] [--min-steps <n>] [--mission <id>] [--limit <n>] [--json] [--verbose]` — Query recent work envelopes (missions, checkpoints, responsibilities) from Firestore.
+- `work-log-read [--hours <n>] [--owner <name>] [--self] [--recent <n>] [--status <status>] [--type <type>] [--min-steps <n>] [--mission <id>] [--limit <n>] [--json] [--verbose]` — Query recent work envelopes (missions, checkpoints, responsibilities) from Firestore.
   Output: Table or JSON representation of work envelopes including dispatches, outcomes, and timestamps.
-  Use `--mission <id>` to inspect ONE mission's full M→C→T tree with bounded reads (one GET per envelope in that mission) — do NOT widen `--hours` to hunt for a single mission's children; that pulls the whole fleet's window and can exhaust your budget.
+  Use `--self` to scope to **your own** work, and `--recent <n>` for "my last N missions" (implies `--type M`, a 30-day window). `--status failed` (or `blocked`) narrows to what went wrong.
+  Use `--mission <id>` to inspect ONE mission's full M→C→T tree **plus its step ledger** (per-task attempts with their errors — the richest signal for *why* it failed) with bounded reads (one GET per envelope) — do NOT widen `--hours` to hunt for a single mission's children; that pulls the whole fleet's window and can exhaust your budget.
 - `work-output-read <envelope-id> [--json]` — Read the full output of a work envelope from Firestore. Use this to recover truncated delegation results or inspect mission output.
   Output: Formatted header (status, type, title, timestamps) followed by full output text. With `--json`: raw JSON with all fields.
 
@@ -53,6 +54,13 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
 1. Define the timeframe (e.g., last 48 hours).
 2. Run `work-log-read --hours 48 --status complete` to list all completed envelopes.
 3. Verify: Confirm the output displays a list of completed missions or responsibilities with completion status.
+
+### Analyze my own recent work / diagnose a failed mission
+Use this when a task asks you to review, learn from, or report on your own past work — especially failures (recall gives outcome-level context; this is the tool for per-task depth).
+1. List your recent missions: `work-log-read --self --recent 10` — note the ones marked failed/blocked and copy the mission id you care about.
+2. Drill the failure: `work-log-read --self --mission <id>` — this prints the M→C→T tree AND the **step ledger** (each task attempt's status, error, and timing). The step-ledger errors are the concrete "why" (tool error, verification rejection, missing input).
+3. If an envelope's output is truncated, pull it in full with `work-output-read <envelope-id>`.
+4. Classify each failure by its root cause and, if the fix belongs in the product (a skill, a tool, a daemon), surface it to your Prime/operator with the mission id and the exact error as evidence (B-29 — cite what you observed, not what you infer).
 
 ---
 

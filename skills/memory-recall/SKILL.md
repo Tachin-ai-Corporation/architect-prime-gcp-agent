@@ -13,10 +13,12 @@ retrieval:
 ### Pre-loaded Sources (always included)
 1. **Working Memory** — `MEMORY.md` contents (most current operational state)
 2. **Core Memory** — Firestore entries via `core-memory-read` (query-filtered + recent scan, deduped)
-3. **Recent Work Digest** — Last 7 days of completed missions from the work ledger (grouped by day)
+3. **Recent Work Digest** — Last 7 days of work across **all outcomes** (complete, failed, blocked, needs_input, cancelled) from the work ledger, grouped by day; each entry is marked with its outcome and a short why-blurb and cites its mission id. Failures are included on purpose — recent failures carry the most learning and are the context most often needed.
 
 ### Targeted Sources (included when cues match)
-4. **Episodic Work Search** — Work envelopes matching extracted cues from the query (30-day window)
+4. **Episodic Work Search** — Work envelopes matching extracted cues from the query (30-day window; 180 days on escalation). Includes failed/blocked missions, ranked below completed ones.
+
+> **Granularity boundary.** Recall surfaces recent work at the **mission/outcome** level (holistic, bounded). For a deliberate, per-task post-mortem of one failed mission — its step-ledger attempts, tool errors, and per-attempt timing — that is an explicit investigation *task* the agent runs via the **work-management** skill (`work-log-read --self --mission <id>`), not something recall pre-loads. Keep recall lean (B-4); reach for the tool when depth is the goal.
 
 All data is injected into temporal-memory's prompt as `PRE-LOADED MEMORY DATA`.
 
