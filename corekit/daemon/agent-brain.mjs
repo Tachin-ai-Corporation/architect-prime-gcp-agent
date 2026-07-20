@@ -353,6 +353,34 @@ function formatSkillCatalog(skillIndex) {
   return `\n\n[AVAILABLE SKILLS]\nBefore using any command tool, read the relevant SKILL.md:\n${entries.join('\n')}\n\nDo NOT guess skill paths. Only the paths listed above exist.\n[END AVAILABLE SKILLS]`;
 }
 
+// ---- Brain capability map (path-free, high-level; for planning organs) ----
+// The HIGH-LEVEL view of what each organ can do — names + one-line purpose, NO
+// paths, NO how-to. Generated on deploy by skill-setup (skill-capability-map.md).
+// Cortex/Prefrontal plan against THIS, never a skill catalog: they see WHICH organ
+// can do WHAT, not HOW — the executing organ chooses its own skills. Falls back to
+// an in-memory derivation if the generated file is absent (older install / boot race).
+function formatCapabilityMapFromIndex(skillIndex) {
+  if (!skillIndex?.length) return '';
+  const byOrgan = {};
+  for (const s of skillIndex) {
+    const brief = (s.when_to_use || s.category || '').split('. ')[0].slice(0, 120);
+    for (const o of (s.agent_parts || ['motor'])) {
+      (byOrgan[o] ||= []).push(`- ${s.name}${brief ? ` — ${brief}` : ''}`);
+    }
+  }
+  const order = ['cortex', 'prefrontal', 'motor', 'cerebellum', 'temporal-memory', 'temporal-research', 'all'];
+  const organs = Object.keys(byOrgan).sort((a, b) => ((order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)));
+  return organs.map(o => `## ${o}\n${byOrgan[o].sort().join('\n')}`).join('\n\n');
+}
+function loadCapabilityMap() {
+  try {
+    const m = readFileSync(CORE_DIR + '/skill-capability-map.md', 'utf8');
+    if (m && m.trim()) return m.trim();
+  } catch {}
+  return formatCapabilityMapFromIndex(SKILL_INDEX);
+}
+let CAPABILITY_MAP = loadCapabilityMap();
+
 // ---- Project registry (via corekit/lib/projects.mjs, Phase 1A extraction) ----
 // NOTE: _projects is initialized later in startupInit() after PRIME_ID/AGENT_ID are set.
 // The globals PROJECTS, DEFAULT_PROJECT_ID, PROJECT_CHILDREN provide backward compat
@@ -1107,9 +1135,11 @@ async function callPrefrontal(payload) {
   }
   sysParts.push('You MUST respond with exactly one JSON block and nothing else.');
 
-  // Skill catalog — gives prefrontal awareness of available skills for task planning
-  if (Object.keys(SKILL_INDEX).length > 0) {
-    sysParts.push(`[SKILL INDEX — available capabilities for routing decisions]\n${formatSkillCatalog(SKILL_INDEX)}`);
+  // Capability map — high-level awareness of what each organ can do, for outcome
+  // decomposition and ownership routing. Prefrontal plans by OUTCOME; it never sees
+  // how a skill works and never names a skill/tool — the executing organ owns the how.
+  if (CAPABILITY_MAP) {
+    sysParts.push(`[BRAIN CAPABILITY MAP — what each organ can do, high level]\nDecompose by outcome and route by ownership. You see WHICH organ can do WHAT, never HOW. Never name a skill, command, or tool for another organ — the executing organ chooses its own.\n\n${CAPABILITY_MAP}`);
   }
   const systemPrompt = sysParts.join('\n\n');
 
@@ -1300,7 +1330,7 @@ function buildModePayload(mode, payload) {
         input_answer_binding: 'If an active envelope is in needs_input or blocked and the new turn plausibly answers its question (check the conversation: the question is usually the last prime turn), classify as "continue" with the answer carried in instruction — never as a new_mission that restates the question.',
       },
     };
-    classifyPayload.skill_index = SKILL_INDEX;
+    classifyPayload.capability_map = CAPABILITY_MAP;
     if (Object.keys(PROJECTS).length > 0) {
       classifyPayload.project_registry = Object.values(PROJECTS).map(p => {
         const entry = {
@@ -1338,7 +1368,7 @@ function buildModePayload(mode, payload) {
       pending_intake_count: payload.pending_intake_count || 0,
       pending_queue: payload.pending_queue || [],
     };
-    decidePayload.skill_index = SKILL_INDEX;
+    decidePayload.capability_map = CAPABILITY_MAP;
     // Inject project context if envelope is scoped to a project
     const envProjectId = payload.envelope?.project_id;
     if (envProjectId && PROJECTS[envProjectId]) {
@@ -1492,7 +1522,7 @@ function buildUserBlocks(mode, payload) {
   if (mode === 'decide') {
     const { statics, state } = splitEnvelope(p.envelope);
     const boot = {
-      skill_index: p.skill_index,
+      capability_map: p.capability_map,
       available_processes: p.available_processes,
     };
     const mission = {
@@ -1524,7 +1554,7 @@ function buildUserBlocks(mode, payload) {
   if (mode === 'classify') {
     const boot = {
       classification_guidance: p.classification_guidance,
-      skill_index: p.skill_index,
+      capability_map: p.capability_map,
       respond_reads_available: p.respond_reads_available,
       process_registry: p.process_registry,
       project_registry: p.project_registry,
@@ -3538,6 +3568,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     enforceSchema,
     formatSkillCatalog,
     SKILL_INDEX,
+    CAPABILITY_MAP,
     addressFromMeta,
     summarizeForDelivery,
     smartSummarize,

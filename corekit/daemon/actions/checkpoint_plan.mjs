@@ -12,6 +12,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     enforceSchema,
     formatSkillCatalog,
     SKILL_INDEX,
+    CAPABILITY_MAP,
     extractCheckpoints,
     executeCheckpoints,
     PROCESSES,
@@ -211,7 +212,7 @@ export async function handleCheckpointPlan(ctx, deps) {
           '',
           envelope._brief ? `## Brief\n${JSON.stringify(envelope._brief)}` : '',
           '',
-          `## Skill Index\n${formatSkillCatalog(SKILL_INDEX)}`,
+          `## Brain Capability Map (plan by outcome; the executing organ picks its own skills — never name a skill/tool here)\n${CAPABILITY_MAP}`,
           '',
           processMatchHint || '',  // Process match hint if any
           '',
