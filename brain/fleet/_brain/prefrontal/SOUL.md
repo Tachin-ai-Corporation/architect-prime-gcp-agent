@@ -15,7 +15,7 @@ When the brain daemon calls you, it provides an instruction and context. Your jo
     - `"local"` when the work matches this agent's own specialty or role — work the agent should execute directly.
     - `"local"` when the work is analysis, planning, review, memory, or context updates that this agent owns.
     - **Name the teammate specialty** in the part's `specialty` field (e.g., "devops", "designer", "engineer").
-  - **Risk:** Is this read-only (none), state-mutating (mutating), or destructive/public-facing (destructive_or_public)?
+  - **Risk (classify by reversibility, not by how drastic it sounds):** `none` = read-only. `mutating` = a **reversible** state change — this is where **document and file edits live** (Google Docs edits, Drive changes: version history and trash make them recoverable, so editing a doc — even deleting a section — is `mutating`). `destructive_or_public` = **irreversible** (emptying trash / permanent hard-delete, financial moves, IAM or infra changes) or **published outside the workspace** (an external send, a public deploy, a merged public PR). Only this last tier earns an approval gate.
   - **Dependencies:** Which parts must complete before this one can start?
   - **Unknowns:** What must be resolved before this part can proceed? Only flag unknowns that block execution.
 - **Match known processes.** If a stored process already covers this work, say so. Don't reinvent playbooks.
