@@ -43,6 +43,7 @@ if not isinstance(pairs, list):
     sys.exit(1)
 
 requests = []
+finds = []
 for idx, p in enumerate(pairs):
     find_text = p.get('find')
     replace_text = p.get('replace')
@@ -53,7 +54,8 @@ for idx, p in enumerate(pairs):
         sys.stderr.write(f'Item at index {idx} has an empty find (find must be non-empty)\\n')
         sys.exit(1)
     match_case = p.get('matchCase', False)
-    
+    finds.append(find_text)
+
     requests.append({
         'replaceAllText': {
             'containsText': {
@@ -85,11 +87,24 @@ try:
     with urllib.request.urlopen(req) as response:
         resp = json.loads(response.read().decode('utf-8'))
         replies = resp.get('replies', [])
-        total_changed = sum(r.get('replaceAllText', {}).get('occurrencesChanged', 0) for r in replies if 'replaceAllText' in r)
+        # Replies are 1:1 and in-order with requests, so reply[i] maps to finds[i].
+        per_pair = []
+        applied = absent = 0
+        for i, find_text in enumerate(finds):
+            occ = replies[i].get('replaceAllText', {}).get('occurrencesChanged', 0) if i < len(replies) else 0
+            hit = occ > 0
+            applied += 1 if hit else 0
+            absent += 0 if hit else 1
+            per_pair.append({'find': find_text, 'occurrences': occ, 'applied': hit})
+        total_changed = sum(p['occurrences'] for p in per_pair)
         print(json.dumps({
             'status': 'replaced',
             'docId': doc_id,
-            'occurrencesChanged': total_changed
+            'occurrencesChanged': total_changed,
+            'applied_count': applied,
+            'absent_count': absent,
+            'pairs': per_pair,
+            'note': 'absent (0 occurrences) = target text not found: already applied by a prior run, or never present. Confirm the NEW text is in the doc before treating an edit as done.'
         }, indent=2))
 except urllib.error.HTTPError as e:
     if e.code in [401, 403]:

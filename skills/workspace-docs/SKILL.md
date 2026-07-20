@@ -1,4 +1,4 @@
-# Skill: Google Docs (v11)
+# Skill: Google Docs (v12)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
@@ -18,6 +18,7 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
   - `--offset N --limit M` — read a window of M chars starting at char N; response includes `next_offset` when more remains.
   - `--max-chars N` — cap a full read; adds `truncated: true` + `next_offset`.
 - `docs-get --doc <doc_id> [--tab <tab>]` — Structured read (per-tab; defaults to the first tab, paginated for large docs). Returns JSON containing the document plain text plus a compact per-textRun index map — segments `[{startIndex,endIndex,text}]` carrying the **raw Docs API indices** — named ranges, and style info. Uses `suggestionsViewMode=SUGGESTIONS_INLINE`. This is the only valid source of the API indices that `--start/--end` flags consume.
+- `docs-revision <doc_id>` — Record the current head revision as a **pre-edit restore point** (returns `{revisionId, modifiedTime}` + a restore hint); `--list` shows recent revisions with authors. Google Docs keeps full native version history, so this is how you make a live edit reversible without copying the doc. **Run this before any destructive live edit** (see §3 Safe Live-Edit Protocol).
 
 > [!WARNING]
 > **Tool output is capped (~8,000 chars per step).** A bare `docs-cat` on a large doc gets cut off mid-body and later sections silently vanish. For any doc you haven't measured: `docs-cat ID --meta` first, then read the sections you need with `--find` or `--offset/--limit` windows.
@@ -78,7 +79,8 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 | "Create a document from our standard template" | D | `docs-clone-template --template ID --replacements file` |
 | "Fix this typo / update this clause / change these values" | B | `docs-find-replace`, `docs-batch-replace` |
 | "Delete this section / strip the review notes at the end / remove everything after X" | B | `docs-section-delete --from-anchor` |
-| "Finalize this redlined doc: apply the notes, then remove the notes section" | B | `docs-find-replace`/`docs-batch-replace` to apply, then `docs-section-delete --from-anchor` to strip |
+| "Safely edit / finalize a LIVE doc I can't afford to corrupt" | safe-edit | `docs-revision` (mark) → read fully → apply → verify NEW text → `docs-comments-add` recovery note. **See §3 Safe Live-Edit Protocol.** |
+| "Finalize this redlined doc: apply the notes, then remove the notes section" | B | Safe Live-Edit Protocol: `docs-find-replace`/`docs-batch-replace` to apply + verify, then `docs-section-delete --from-anchor` to strip |
 | "Insert a table / image / heading here" | B | `docs-insert-table`, `docs-insert-image`, `docs-style` |
 | "This field updates every cycle (template/report)" | B | `docs-namedrange-create` → `docs-namedrange-replace` |
 | "Apply our branded template / exact typography / complex tables" | C | `docs-export-docx` → OOXML tooling → `docs-import-docx` |
@@ -94,6 +96,17 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 ---
 
 ## 3. Procedures
+
+### Safe Live-Edit Protocol (edit a doc in place without corrupting it)
+Editing a live Google Doc is destructive and retries compound: a half-finished attempt leaves the doc in a state the next attempt misreads. Google Docs keeps **full native version history**, so the safe pattern is not to copy or back up the doc — it is to make every edit **reversible, idempotent, and positively verified**, then leave a note the human can act on. Follow this for any edit to a doc you cannot afford to corrupt (contracts, published docs, anything shared or high-stakes):
+
+1. **Mark the restore point.** `docs-revision DOC_ID` — records the current revision + timestamp before you touch anything. Keep the returned `modifiedTime`; it is the "restore to here" anchor for step 5.
+2. **Read completely first.** Never edit from a partial read. `docs-cat DOC_ID --meta`, then `docs-cat DOC_ID --out doc.txt`; coverage passes when `--out` `chars` equals `--meta` `chars` (both are character counts — do NOT recount with `wc -c`, which counts bytes and false-fails on smart quotes/em-dashes; use `wc -m` if you must). Plan the exact edits from the local file.
+3. **Apply idempotently.** `docs-find-replace`/`docs-batch-replace` report per edit `applied:true` (occurrences>0) or `applied:false` (`0` = target not found: **already applied by a prior run, or never present**). This makes retries safe — an already-applied edit simply reports `absent`, it does not double-apply.
+4. **Verify positively — re-derive, don't assume (B-28).** Re-read (`docs-cat DOC_ID --out doc2.txt`) and confirm the **NEW** text is present for each change. Checking only that the OLD text is gone is the trap that makes a run hunt for a section a prior run already removed. Never treat `absent` alone as success.
+5. **Leave a recovery note.** `docs-comments-add DOC_ID --content "..."` — summarize what you changed and tell the human how to review and undo it, e.g. *"Edits made <date>; my changes are the revisions attributed to me in File → Version history. To undo, restore the version from <modifiedTime> or earlier."* Use a plain comment — **never @mention anyone**: an @mention sends an email (an outbound side effect, C-27); a sidebar comment does not.
+
+Perform any irreversible step (deleting a source/notes section, overwriting the body) **only after** steps 2–4 pass. The step-5 comment is the audit trail — once a source section is removed it is the only durable record of what changed.
 
 ### Create a Professional Document (Lane A+ — recommended for styled output)
 1. Write content as an HTML file with inline CSS styles following the Design System (Section 6):
@@ -147,16 +160,17 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 6. Anti-patterns that WILL fail: repeating a bare `docs-cat` (output is capped every time — you get the same head repeatedly and LoopGuard kills the session); paginating an entire large doc window-by-window through your own context (slow, token-heavy, and you lose track of coverage). Use `--out`.
 
 ### Finalize a Redlined Document (apply notes, then strip the notes section)
-A common request: a doc has review/redline notes appended at the end; incorporate them into the body, then remove the notes so the doc is clean.
+A common request: a doc has review/redline notes appended at the end; incorporate them into the body, then remove the notes so the doc is clean. This is a **destructive live edit** — it follows the Safe Live-Edit Protocol above, with these specializations.
 
-**HARD ORDERING — deviation destroys content.** The notes section is the only copy of the requested changes: if you delete it before every change is applied and verified, the changes are unrecoverable. Do not run ANY mutation until step 2's coverage check passes.
+**HARD ORDERING — deviation destroys content.** The notes section is the only copy of the requested changes: if you delete it before every change is applied AND positively verified, the changes are unrecoverable. Run NO mutation until step 2's coverage check passes.
 
-1. `docs-cat DOC_ID --meta` — total chars + the notes heading (e.g. `[LEGAL REVIEW REDLINES]`) and its offset.
-2. `docs-cat DOC_ID --out doc.txt` — materialize the COMPLETE doc; **coverage passes when the `chars` that `--out` returns equals the `chars` in `--meta`** (both count characters, so they match on a complete read). Do not use `wc -c` (bytes ≠ chars for any non-ASCII text — it false-fails; use `wc -m` if you must recount). Extract every redline item from the local file (`grep -n` / `sed -n`) and enumerate them as an explicit checklist of `{find, replace}` edits. If the two tool-reported char counts genuinely differ, STOP — do not edit.
-3. Apply the changes to the body with `docs-batch-replace` (a pairs file, atomic) or `docs-find-replace` per clause — surgical, formatting-preserving.
-4. Verify EVERY change landed before touching the notes: re-read (`docs-cat DOC_ID --out doc2.txt`) and confirm each checklist item's new text is present in the body.
-5. Only now strip the notes: `docs-section-delete --doc DOC_ID --from-anchor "[LEGAL REVIEW REDLINES]"` — **always `--from-anchor`, never `--start/--end` raw indices** (plain-text offsets are not API indices; a raw-index delete here removes the wrong span).
-6. Verify final state: `docs-cat DOC_ID --meta` — notes heading gone, char count ≈ body-only, spot-check two applied changes.
+1. **Mark + measure.** `docs-revision DOC_ID` (restore anchor), then `docs-cat DOC_ID --meta` — total chars + the notes heading (e.g. `[LEGAL REVIEW REDLINES]`) and its offset.
+2. **Read fully + enumerate.** `docs-cat DOC_ID --out doc.txt`; **coverage passes when `--out` `chars` equals `--meta` `chars`** (both count characters; `wc -c` counts bytes and false-fails on any smart quote/em-dash — use `wc -m` if you must recount). From the local file (`grep -n`/`sed -n`), enumerate every redline as an explicit `{find, replace}` checklist. If the two char counts genuinely differ, STOP.
+   - **Advisory redlines are not all mechanical.** Some notes read "consider adding a clause" rather than "replace X with Y." Apply the mechanical ones; for judgement calls, make your best edit **and** flag it in the step-6 comment for human review — do not block or fail the whole task because a redline resists a clean find/replace.
+3. **Apply idempotently.** `docs-batch-replace DOC_ID --file pairs.json` (atomic) or `docs-find-replace` per clause — surgical, formatting-preserving. Read the per-pair `applied`/`absent` report.
+4. **Verify positively.** Re-read (`docs-cat DOC_ID --out doc2.txt`) and confirm each checklist item's **NEW** text is present in the body. An `absent` in step 3 means either already-applied (new text present — fine) or never-applied (new text missing — fix before continuing). Do not proceed on `absent` alone.
+5. **Only now strip the notes:** `docs-section-delete --doc DOC_ID --from-anchor "[LEGAL REVIEW REDLINES]"` — **always `--from-anchor`, never `--start/--end` raw indices** (plain-text offsets are not API indices; a raw-index delete here removes the wrong span).
+6. **Verify final + leave the recovery note.** `docs-cat DOC_ID --meta` — notes heading gone, char count ≈ body-only, spot-check two applied changes. Then `docs-comments-add DOC_ID --content "..."` summarizing the changes applied (and any advisory items needing review) plus how to review/restore via File → Version history (plain comment, no @mention).
 
 Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrite` it — that loses formatting and is exactly what failed before `docs-section-delete` existed.
 

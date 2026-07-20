@@ -40,5 +40,8 @@ resp_file, doc_id, find = sys.argv[1], sys.argv[2], sys.argv[3]
 data = json.load(open(resp_file))
 replies = data.get('replies',[{}])
 count = replies[0].get('replaceAllText',{}).get('occurrencesChanged',0) if replies else 0
-print(json.dumps({'status':'replaced','docId':doc_id,'find':find,'occurrences':count}, indent=2))
+out = {'status':'replaced','docId':doc_id,'find':find,'occurrences':count,'applied':count>0}
+if count == 0:
+    out['note'] = 'Target not found: already applied by a prior run, or never present. Confirm the NEW text is in the doc before treating this edit as done.'
+print(json.dumps(out, indent=2))
 " "$RESP" "$DOC_ID" "$FIND"

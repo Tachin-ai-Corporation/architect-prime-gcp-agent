@@ -27,6 +27,7 @@ skills/workspace-docs/docs-create bin/docs-create
 skills/workspace-docs/docs-write bin/docs-write
 skills/workspace-docs/docs-section-delete bin/docs-section-delete
 skills/workspace-docs/docs-find-replace bin/docs-find-replace
+skills/workspace-docs/docs-revision bin/docs-revision
 skills/workspace-docs/docs-comments-list bin/docs-comments-list
 skills/workspace-docs/docs-comments-add bin/docs-comments-add
 skills/workspace-docs/docs-comments-resolve bin/docs-comments-resolve

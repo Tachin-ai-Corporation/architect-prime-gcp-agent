@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# docs-revision — Record a pre-edit restore point (or list revision history) for a Google Doc
+# Brain agent: motor (READ)
+# Usage:
+#   docs-revision <doc_id>          Record the current HEAD revision as the pre-edit MARK
+#                                   (the point to restore to if a later edit needs undoing).
+#   docs-revision <doc_id> --list   List recent revisions (newest first): id, time, author.
+#
+# Why: a live doc is edited in place. Google Docs retains full native version history,
+# so the safe pattern is not to copy or back up — it is to (1) note the current revision
+# before editing, and (2) leave a docs-comments-add note afterward saying what changed and
+# how to review/restore via File > Version history. This tool provides step (1)'s anchor.
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+die() { echo "[docs-revision] [ERROR] $*" >&2; exit 1; }
+DOC_ID="${1:-}"; [[ -n "$DOC_ID" && "$DOC_ID" != --* ]] || die "Usage: docs-revision <doc_id> [--list]"
+shift || true
+MODE="mark"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --list) MODE="list"; shift ;;
+    --mark) MODE="mark"; shift ;;
+    *) die "Unknown flag: $1" ;;
+  esac
+done
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+
+RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT
+HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${DRIVE_API}/files/${DOC_ID}/revisions?fields=revisions(id,modifiedTime,lastModifyingUser/displayName)&pageSize=1000")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Drive API returned HTTP ${HTTP_CODE}"
+
+# Drive returns revisions oldest-first; the last element is the current head.
+python3 -c "
+import json, sys
+data = json.load(open(sys.argv[1]))
+doc_id, mode = sys.argv[2], sys.argv[3]
+revs = data.get('revisions', [])
+def row(r):
+    return {'revisionId': r.get('id'),
+            'modifiedTime': r.get('modifiedTime'),
+            'by': (r.get('lastModifyingUser') or {}).get('displayName')}
+if not revs:
+    print(json.dumps({'status':'no_revisions','docId':doc_id,'message':'No revision history available for this doc.'}, indent=2))
+    sys.exit(0)
+if mode == 'list':
+    recent = [row(r) for r in revs][-20:][::-1]  # newest first, cap 20
+    print(json.dumps({'status':'ok','docId':doc_id,'revisionCount':len(revs),'revisions':recent}, indent=2))
+else:
+    head = row(revs[-1])
+    hint = ('Pre-edit restore point recorded. If a later edit needs undoing, in Google Docs '
+            'open File > Version history > See version history and restore the version dated '
+            + str(head['modifiedTime']) + ' (or earlier). Edits you make now appear as newer revisions.')
+    print(json.dumps({'status':'marked','docId':doc_id,'head':head,'revisionCount':len(revs),'restore_hint':hint}, indent=2))
+" "$RESP" "$DOC_ID" "$MODE"
