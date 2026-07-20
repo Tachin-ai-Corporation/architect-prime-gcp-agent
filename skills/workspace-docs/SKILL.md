@@ -1,4 +1,4 @@
-# Skill: Google Docs (v12)
+# Skill: Google Docs (v13)
 
 > [!IMPORTANT]
 > **Execution Instructions**: All commands listed below are CLI scripts. You MUST execute them using the `run_command` tool. Do NOT try to invoke them as native functions or tools, and do NOT hallucinate their JSON responses. Run the command and wait for the actual output.
@@ -58,7 +58,7 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 
 ### Comments & Review
 - `docs-comments-list --doc <doc_id> [--include-resolved]` — List document-level comments.
-- `docs-comments-add --doc <doc_id> --content "TEXT"` — Add a document-level comment.
+- `docs-comments-add --doc <doc_id> --content "TEXT" [--quote "exact text this is about"]` — Add a comment. Comments are document-level (the Drive API can't reliably pin one to a live text range in the Docs editor), so **always pass `--quote` with the exact clause/phrase the comment refers to** — it attaches that text to the comment so the reader sees *what* you're commenting on instead of a floating, context-free note. This is how you give per-clause review feedback (see the "Review a document clause-by-clause" procedure).
 - `docs-comments-resolve --doc <doc_id> --comment-id <cid> [--content "note"]` — Resolve/close a review comment thread (Drive reply with `action=resolve`).
 - `docs-comments-delete --doc <doc_id> --comment-id <cid>` — Permanently remove a comment (no undo).
 - `docs-tab-list <doc_id>` — List tabs with IDs, titles, and hierarchy.
@@ -89,7 +89,8 @@ Use when creating formatted Google Docs from Markdown or HTML, performing surgic
 | "Suggest an edit for human review" | polyfill | `docs-suggest` (then `docs-comments-add` to flag it) |
 | "Resolve/close a review comment" | polyfill | `docs-comments-resolve` |
 | "Delete a comment" | polyfill | `docs-comments-delete` |
-| "Leave feedback / flag an issue" | polyfill | `docs-comments-add` |
+| "Leave feedback / flag an issue" | polyfill | `docs-comments-add` (pass `--quote` with the text it's about) |
+| "Review a contract/doc clause-by-clause, leave feedback per clause" | review | One `docs-comments-add --quote "<clause>" --content "<note>"` per clause. **Do NOT append a review/redline section to the body.** See §3 "Review a document clause-by-clause". |
 
 **Default lane selection:** If the document needs any visual styling beyond what Markdown supports (custom colors, branded fonts, table borders, colored headings), use Lane A+ (HTML). Otherwise, Lane A (Markdown) is simpler. For recurring documents with fixed layouts, use Lane D (Templates).
 
@@ -191,6 +192,19 @@ Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrit
 2. Perform OOXML manipulations locally (e.g., adding `w:ins`/`w:del` tracked changes or templates via `docx-js`/Office scripts).
 3. Import the updated document using `docs-import-docx --file local.docx --title "Q3 Redlines" --folder FOLDER_ID`.
 
+### Review a document clause-by-clause (leave targeted feedback)
+For legal/contract review — feedback that must attach to specific clauses. **Leave one quoted comment per clause; never append a review/redline section to the document body.** An appended "[REVIEW NOTES]" section becomes debt a later "finalize" run must find, incorporate, and delete — the exact pattern that corrupts a doc across retries. Quoted comments keep the feedback *beside the clause* and leave the body clean.
+
+1. Read the whole doc first: `docs-cat DOC_ID --out doc.txt` (coverage-check per "Reading Large Documents").
+2. For each clause you have feedback on, take a short, exact, unique snippet of that clause from `doc.txt`.
+3. Leave one self-contextualizing comment per clause:
+   `docs-comments-add --doc DOC_ID --quote "<exact clause snippet>" --content "<feedback + reasoning>"`
+   The reader sees the quoted clause next to your note. Keep the note plain and factual — no emoji, no voice, no "please review" chatter (a comment is an annotation, not a message; the mouth delivers messages).
+4. Optionally post ONE brief summary comment (e.g. "12 review notes added inline; 3 are advisory"). Do not repeat it every run.
+5. **Idempotent re-review**: before adding, `docs-comments-list --doc DOC_ID`; if you left comments on a prior pass, `docs-comments-resolve` the stale ones (or update in place) rather than stacking near-duplicates. Twelve clean quoted comments beat twenty floating repeats.
+
+Use quoted comments for opinions/questions; reserve `docs-suggest` (the destructive yellow-highlight polyfill below) for concrete edits the human will accept or reject.
+
 ### Suggest → Review → Resolve
 1. If the doc has multiple tabs, run `docs-tab-list DOC_ID` and pick the target tab; otherwise skip this step.
 2. Apply the suggestion(s): `docs-suggest --doc DOC_ID [--tab t.X] --find "old clause" --replace "new clause" --reason "…"` (or `--file suggestions.json` for a batch). The replaced text is highlighted yellow.
@@ -202,7 +216,7 @@ Do NOT try to reconstruct the whole body from `docs-cat` text and re-`--overwrit
 ## 4. Important Notes / Limitations
 
 - **No Native Suggesting Mode**: The Google Docs API has no toggle for "Suggesting Mode". Use `docs-suggest` (the in-place highlighted-edit polyfill) for lightweight review, or Lane C (OOXML redlines) for accept/reject tracked changes.
-- **Comments are Unanchored**: Programmatically created comments appear in the Document Comments sidebar rather than being highlighted on specific text.
+- **Comments are document-level, but not context-free**: the Drive API does not reliably pin a comment to a live text range in the Docs editor, so a programmatic comment shows in the Comments sidebar rather than highlighted on the text. **Always pass `--quote "<exact text>"`** so the comment carries the clause it refers to (`quotedFileContent`) — the reader sees what you mean without a click-to-jump anchor. Emoji/voice do not belong in comments — keep them plain, factual annotations.
 - **Markdown Image Limitation**: Google Drive's Markdown converter does **not** fetch and embed Markdown image syntax (`![caption](url)`). Use `docs-insert-image` (Lane B) to place images at resolved anchors after creation.
 - **Markdown Formatting Limits**: Markdown conversion cannot produce custom colors, custom fonts, table borders, background shading, or fine-grained spacing. For these, use Lane A+ (HTML) instead.
 - **Markdown Code Blocks**: Converted as indented plain text, not monospace-styled blocks. Apply monospace font via `docs-style` post-creation if needed.

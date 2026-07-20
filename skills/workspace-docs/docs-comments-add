@@ -1,24 +1,42 @@
 #!/usr/bin/env bash
 # docs-comments-add — Add a review comment to a Google Doc
 # Brain agent: motor (WRITE)
-# Usage: docs-comments-add --doc DOC_ID --content "This needs revision"
-# NOTE: Google API does not support anchored comments. Comments appear as document-level.
+# Usage: docs-comments-add --doc DOC_ID --content "This needs revision" [--quote "exact text this is about"]
+# Comments are document-level (the Drive API does not reliably position a comment
+# on a live text range in the Docs editor). Pass --quote with the EXACT clause/phrase
+# the comment refers to so the comment is self-contextualizing — the reader sees the
+# quoted text alongside your note instead of a floating, context-free comment.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[docs-comments-add] [ERROR] $*" >&2; exit 1; }
-DOC_ID="" CONTENT=""
+DOC_ID="" CONTENT="" QUOTE=""
 while [[ $# -gt 0 ]]; do
-  case "$1" in --doc) DOC_ID="$2"; shift 2 ;; --content) CONTENT="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --content) CONTENT="$2"; shift 2 ;;
+    --quote) QUOTE="$2"; shift 2 ;;
+    *) die "Unknown: $1" ;;
+  esac
 done
 [[ -n "$DOC_ID" && -n "$CONTENT" ]] || die "Need --doc and --content"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
-BODY=$(python3 -c "import json,sys; print(json.dumps({'content':sys.argv[1]}))" "$CONTENT")
+# Pass content + quote via argv (never interpolated) so quotes/$()/backticks in the
+# text cannot break the shell or inject. quotedFileContent attaches the referenced
+# text to the comment; omitted when --quote is not given.
+BODY=$(python3 -c "
+import json, sys
+content, quote = sys.argv[1], sys.argv[2]
+c = {'content': content}
+if quote:
+    c['quotedFileContent'] = {'mimeType': 'text/plain', 'value': quote}
+print(json.dumps(c))
+" "$CONTENT" "$QUOTE")
 RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT
 HTTP_CODE=$(curl -s -o "$RESP" -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
-  -d "$BODY" "${DRIVE_API}/files/${DOC_ID}/comments?fields=id,content,author,createdTime")
+  -d "$BODY" "${DRIVE_API}/files/${DOC_ID}/comments?fields=id,content,author,createdTime,quotedFileContent")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"message\":\"Comments access denied. Share doc with ${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
@@ -26,5 +44,8 @@ fi
 [[ "$HTTP_CODE" == "200" ]] || die "Drive API returned HTTP ${HTTP_CODE}"
 python3 -c "
 import json,sys; c = json.load(open(sys.argv[1]))
-print(json.dumps({'status':'added','commentId':c.get('id',''),'content':c.get('content','')}, indent=2))
+q = (c.get('quotedFileContent') or {}).get('value')
+out = {'status':'added','commentId':c.get('id',''),'content':c.get('content','')}
+if q: out['quoted'] = q
+print(json.dumps(out, indent=2))
 " "$RESP"
