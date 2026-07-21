@@ -1,8 +1,8 @@
 {
   "id": "memory-consolidate",
   "name": "Memory Consolidation",
-  "version": 2,
-  "description": "Nightly consolidation of working memory, core memory reconciliation, and deep truths lifecycle.",
+  "version": 3,
+  "description": "Nightly consolidation of working memory, core memory reconciliation, and deep truths lifecycle; failures consolidate as forward lessons, never feasibility verdicts.",
   "author": "architect-prime",
   "origin": "core",
   "category": "memory",

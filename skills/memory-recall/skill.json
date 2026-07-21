@@ -1,8 +1,8 @@
 {
   "id": "memory-recall",
   "name": "Memory Recall",
-  "version": 3,
-  "description": "Episodic memory retrieval — recall context from all memory layers plus the work ledger for Cortex.",
+  "version": 4,
+  "description": "Episodic memory retrieval — recall context from all memory layers plus the work ledger for Cortex; frames failures as forward lessons, never feasibility verdicts.",
   "author": "architect-prime",
   "origin": "core",
   "category": "memory",

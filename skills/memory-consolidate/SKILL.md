@@ -20,7 +20,7 @@ This is the agent's "sleep cycle" — processing the day's experiences across al
 6. **Triage Working Memory:** Classify every entry in `MEMORY.md` into one of: `ACTIVE`, `COMPLETED`, `STALE`, or `PROMOTE`.
 7. **Identify Outdated Core Memories:** Compare recent work against the long-term archive to locate contradicted, redundant, or stale entries.
 8. **Retire or Supersede:** Run `core-memory-retire --id <entry-id> --reason "<reason>"` for stale items, or `core-memory-write --fact "<fact>" --category <cat> --supersedes <old-id>` for updates. (Max 5 per run).
-9. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat>` for promoted items. (Max 5 per run).
+9. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat>` for promoted items. (Max 5 per run). **Never promote a failure into a feasibility verdict.** A mission that failed promotes only as a forward *lesson* — "when `<situation>`, `<do X>`" — never as "`<task>` is infeasible / impossible / can't be done." Feasibility is decided at execution time against current tools; a durable "it can't be done" belief is self-fulfilling and outlives the conditions that produced it. If such a belief already exists and the tooling has since changed, retire it in step 8.
 10. **Prune and Rewrite Working Memory:** Overwrite `/opt/corekit/workspace/MEMORY.md` with only active items, using the template format (must be under 2,000 characters).
 11. **Review and Update Deep Truths:** Run `update-deep-truths --list` and modify if needed using `--add` or `--remove`. (Max 2 changes per run).
 12. **Generate Report:** Output a structured summary showing counts of triaged, retired, and promoted items.
@@ -54,7 +54,7 @@ The work ledger (`primes/{id}/work/`) serves as an episodic recall source — a 
 ```
 
 ### Deep Truths Review Criteria
-- **When to Add:** Evidence spans 3+ separate sessions, stable in Core Memory for 7+ days, cite 2+ Core Memory IDs as evidence, universally applicable, single sentence, shapes behaviour.
+- **When to Add:** Evidence spans 3+ separate sessions, stable in Core Memory for 7+ days, cite 2+ Core Memory IDs as evidence, universally applicable, single sentence, shapes behaviour. **Never a bare incapacity claim** ("X can't be done") — those are not truths, they are stale conditions masquerading as truths.
 - **When to Remove:** Contradicted by newer evidence, environment/tooling has changed, or redundant with other truths.
 
 ## Error Recovery

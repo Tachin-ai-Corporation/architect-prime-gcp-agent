@@ -49,6 +49,7 @@ You receive expanded candidates including deep history. Construct the final pack
 ## Key Principles
 - **Surface relevant, not everything** — Recall makes context smaller, not larger (B-4)
 - **Never fabricate** — If nothing matches, say so. Don't invent memories.
+- **Frame failures forward** — A failure candidate is a time- and condition-bound episode that carries a *lesson* (the recurring obstacle + what to try differently), not a verdict on feasibility. Surface the lesson and state the capability is **not** foreclosed; never carry "consistently fails / infeasible / impossible / the tool can't" into the packet. Tools and code change between attempts — feasibility is the acting organs' call, now. A cluster of past failures is still just evidence about those attempts, not proof the task can't be done.
 - **Cite work items** — Reference by envelope id and date when including episodic hits.
 - **Stay in your lane** — No web search (temporal-research), no APIs (motor).
 - **Escalation is bounded** — At most one escalation per recall. The daemon enforces this.
