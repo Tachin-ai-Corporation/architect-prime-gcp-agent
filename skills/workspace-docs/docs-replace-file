@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 # docs-replace-file — Replace a Google Doc's ENTIRE content in place from a local file,
 # in ONE atomic call (Drive files.update media). Preserves the doc id and appends a new
-# revision, so version history stays intact. This is the "edit locally, apply all at once"
-# path: export -> edit the local .docx -> docs-replace-file -> clean up the workspace.
+# revision, so version history stays intact. This is the WHOLESALE-REBUILD path — reserved
+# for when a doc's structure changes so much that surgical edits are impractical:
+# export -> edit the local .docx -> docs-replace-file -> clean up the workspace.
+#
+# FORMATTING-CARRYING FILES ONLY: accepts .docx (Google-export round-trip) and .html
+# (inline-CSS rebuild). It REFUSES .txt/.md — replacing a formatted Doc with plain text or
+# markdown silently flattens every style (header, tables, fonts) to nothing. For a TARGETED
+# change (revise clauses, delete a section, insert text), do NOT use this tool at all — use
+# the surgical verbs (docs-find-replace / docs-batch-replace / docs-section-delete /
+# docs-anchor-insert), which preserve all untouched formatting.
 # Brain agent: motor (WRITE)
-# Usage: docs-replace-file --doc DOC_ID --file edited.docx   (also .html / .md / .txt)
+# Usage: docs-replace-file --doc DOC_ID --file edited.docx   (or .html)
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
@@ -15,19 +23,22 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --doc) DOC_ID="$2"; shift 2 ;;
     --file) FILE="$2"; shift 2 ;;
-    --help|-h) echo "Usage: docs-replace-file --doc <doc_id> --file <edited.docx|.html|.md|.txt>"; exit 0 ;;
+    --help|-h) echo "Usage: docs-replace-file --doc <doc_id> --file <edited.docx|.html>"; exit 0 ;;
     *) die "Unknown: $1" ;;
   esac
 done
 [[ -n "$DOC_ID" && -n "$FILE" ]] || die "Need --doc and --file"
 [[ -f "$FILE" ]] || die "File not found: $FILE"
 # Content-Type by extension; Drive converts the upload back into the native Google Doc.
+# ONLY formatting-carrying types are allowed. Plain text and markdown are refused because a
+# wholesale replace with them flattens every style — the exact way a finalized agreement
+# lost its header, table, and fonts. The error steers to the right path instead.
 case "$FILE" in
   *.docx) MIME="application/vnd.openxmlformats-officedocument.wordprocessingml.document" ;;
   *.html|*.htm) MIME="text/html" ;;
-  *.md|*.markdown) MIME="text/markdown" ;;
-  *.txt) MIME="text/plain" ;;
-  *) die "Unsupported file type (use .docx, .html, .md, or .txt): $FILE" ;;
+  *.txt|*.md|*.markdown)
+    die "Refusing to replace a Doc with plain text/markdown ($FILE) — it destroys all formatting (headers, tables, fonts). For a TARGETED edit use the surgical verbs (docs-find-replace / docs-batch-replace / docs-section-delete / docs-anchor-insert), which preserve untouched formatting. For a genuine full rebuild, supply a .docx (from docs-export-docx, edited with python-docx) or a styled .html." ;;
+  *) die "Unsupported file type (use .docx or .html): $FILE" ;;
 esac
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 RESP="$(mktemp)"; trap 'rm -f "$RESP"' EXIT

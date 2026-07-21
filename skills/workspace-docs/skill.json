@@ -1,9 +1,9 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  15,
-    "description":  "Read, create, and edit Google Docs. Editing works by exporting the doc to a local .docx, editing it with python-docx, and applying the whole result back in one call (version history is the safety net); plus review comments.",
-    "summary":  "Work with Google Docs — read, create, and edit (export -> edit locally -> apply once); leave review comments.",
+    "version":  16,
+    "description":  "Read, create, and edit Google Docs. Edits are surgical and in-place by default (find/replace, delete-section, insert-at-anchor) so all untouched formatting is preserved; a docx round-trip is reserved for wholesale rebuilds. Includes a formatting fingerprint for before/after verification, plus review comments.",
+    "summary":  "Work with Google Docs — read, surgically edit in place (formatting preserved), rebuild via docx only when needed, verify with a formatting fingerprint, and leave review comments.",
     "author":  "architect-prime",
     "origin":  "core",
     "category":  "workspace",

@@ -4,6 +4,9 @@
 # Usage: docs-cat <doc_id> [--meta] [--find "TEXT" [--context N]] [--offset N] [--limit N] [--max-chars N] [--out FILE]
 #   (no flags)      full plain-text body (JSON: docId, title, text, chars)
 #   --meta          title, total chars, heading outline with char offsets — no body text
+#   --fingerprint   structural formatting signature (paragraph styles, tables + dims,
+#                   image count, distinct text styles/fonts) — no body text. Capture
+#                   before and after an edit and diff to prove formatting was preserved.
 #   --find "TEXT"   case-insensitive substring search; returns every match (max 20)
 #                   with its char offset and an excerpt of surrounding context
 #   --context N     chars of context on each side of a --find match (default 800)
@@ -29,11 +32,12 @@ shift || true
 # --find always emit JSON since they carry offsets/matches.) This default flip
 # fixes the failure mode where motor piped docs-cat's JSON into grep/head and
 # got nothing usable.
-META=0; FIND_TEXT=""; CONTEXT=800; OFFSET=0; LIMIT=0; MAX_CHARS=0; JSON=0; HAS_WINDOW=0; OUT_FILE=""
+META=0; FIND_TEXT=""; CONTEXT=800; OFFSET=0; LIMIT=0; MAX_CHARS=0; JSON=0; HAS_WINDOW=0; OUT_FILE=""; FINGERPRINT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --json) JSON=1; shift ;;
     --meta) META=1; shift ;;
+    --fingerprint) FINGERPRINT=1; shift ;;
     --find) FIND_TEXT="${2:-}"; [[ -n "$FIND_TEXT" ]] || die "--find requires a search string"; shift 2 ;;
     --context) CONTEXT="${2:-800}"; shift 2 ;;
     --offset) OFFSET="${2:-0}"; HAS_WINDOW=1; shift 2 ;;
@@ -46,10 +50,10 @@ done
 # Self-limit a bare full read: with no window/meta/find/out flags, default MAX_CHARS
 # to ~6000 so the plain read emits a next_offset continuation hint instead of
 # being silently cut by the ~8K harness output cap.
-if [[ "$HAS_WINDOW" == "0" && "$META" == "0" && -z "$FIND_TEXT" && -z "$OUT_FILE" ]]; then MAX_CHARS=6000; fi
+if [[ "$HAS_WINDOW" == "0" && "$META" == "0" && "$FINGERPRINT" == "0" && -z "$FIND_TEXT" && -z "$OUT_FILE" ]]; then MAX_CHARS=6000; fi
 export DC_META="$META" DC_FIND="$FIND_TEXT" DC_CONTEXT="$CONTEXT" \
        DC_OFFSET="$OFFSET" DC_LIMIT="$LIMIT" DC_MAX_CHARS="$MAX_CHARS" DC_DOC_ID="$DOC_ID" DC_JSON="$JSON" \
-       DC_OUT="$OUT_FILE"
+       DC_OUT="$OUT_FILE" DC_FINGERPRINT="$FINGERPRINT"
 
 # Shared renderer: reads the doc content and applies the selected view.
 # arg1 = 'api' (Docs API JSON, outline available) | 'text' (plain text, DC_TITLE env)
@@ -89,19 +93,80 @@ if kind == 'api':
     def walk_tabs(tabs, pos):
         # Modern docs carry all content under doc['tabs']; doc['body'] is only
         # populated for the first tab (or legacy docs). Iterate every tab so
-        # tab 2+ isn't invisible. Offsets here are PLAIN TEXT (not API indices),
-        # so prepending a per-tab header is safe.
+        # tab 2+ isn't invisible. Tab boundaries are recorded in the OUTLINE as a
+        # 'TAB' entry, NEVER injected into the body text: a synthetic
+        # "===== Tab =====" line in the returned text is a landmine — if that text
+        # is ever written back it lands in the document body (exactly how a
+        # finalized doc got a stray tab marker). Body text stays pure content.
         for tab in tabs:
             props = tab.get('tabProperties', {})
             ttitle = props.get('title', 'Untitled Tab')
-            header = '===== Tab: %s =====\n' % ttitle
-            parts.append(header)
-            pos += len(header)
+            outline.append({'offset': pos, 'style': 'TAB', 'text': ttitle})
             dtab = tab.get('documentTab', {})
             pos = walk(dtab.get('body', {}).get('content', []), pos)
             pos = walk_tabs(tab.get('childTabs', []), pos)
         return pos
 
+    def compute_fingerprint(d):
+        # Deterministic structural signature of the doc's FORMATTING — the thing a
+        # plain-text round-trip destroys. Capture before + after an edit and diff:
+        # tables 1->0, headings collapsing to none, or the font set collapsing to a
+        # single default all mean formatting was flattened. No body text is emitted.
+        styles, tables, fonts = {}, [], {}
+        def sig(ts):
+            if not ts:
+                return None
+            fam = (ts.get('weightedFontFamily') or {}).get('fontFamily', '')
+            sz = (ts.get('fontSize') or {}).get('magnitude', '')
+            col = ((ts.get('foregroundColor') or {}).get('color') or {}).get('rgbColor')
+            rgb = '-'
+            if col is not None:
+                rgb = '%s,%s,%s' % (round(col.get('red', 0), 3), round(col.get('green', 0), 3), round(col.get('blue', 0), 3))
+            flags = ''.join(f for f, k in (('B', 'bold'), ('I', 'italic'), ('U', 'underline')) if ts.get(k))
+            return 'fam=%s sz=%s rgb=%s %s' % (fam or '-', sz or '-', rgb, flags or '-')
+        def walk_fp(content):
+            for elem in content:
+                para = elem.get('paragraph')
+                if para:
+                    st = (para.get('paragraphStyle') or {}).get('namedStyleType', 'NORMAL_TEXT')
+                    styles[st] = styles.get(st, 0) + 1
+                    for r in para.get('elements', []):
+                        tr = r.get('textRun')
+                        if tr:
+                            s = sig(tr.get('textStyle'))
+                            if s:
+                                fonts[s] = fonts.get(s, 0) + len(tr.get('content', ''))
+                    continue
+                table = elem.get('table')
+                if table:
+                    rows = table.get('tableRows', [])
+                    ncols = len(rows[0].get('tableCells', [])) if rows else 0
+                    tables.append('%dx%d' % (len(rows), ncols))
+                    for row in rows:
+                        for cell in row.get('tableCells', []):
+                            walk_fp(cell.get('content', []))
+                    continue
+                toc = elem.get('tableOfContents')
+                if toc:
+                    walk_fp(toc.get('content', []))
+        dtabs = d.get('tabs')
+        if dtabs:
+            def walk_tabs_fp(ts):
+                for t in ts:
+                    walk_fp(t.get('documentTab', {}).get('body', {}).get('content', []))
+                    walk_tabs_fp(t.get('childTabs', []))
+            walk_tabs_fp(dtabs)
+        else:
+            walk_fp(d.get('body', {}).get('content', []))
+        return {
+            'paragraphs_by_style': dict(sorted(styles.items())),
+            'tables': {'count': len(tables), 'dims': tables},
+            'images': len(d.get('inlineObjects', {})) + len(d.get('positionedObjects', {})),
+            'distinct_text_styles': dict(sorted(fonts.items())),
+            'text_style_count': len(fonts),
+        }
+
+    fp = compute_fingerprint(doc) if os.environ.get('DC_FINGERPRINT') == '1' else None
     tabs = doc.get('tabs')
     if tabs:
         walk_tabs(tabs, 0)
@@ -113,12 +178,20 @@ else:
     doc_id = os.environ.get('DC_DOC_ID', '')
     title = os.environ.get('DC_TITLE', 'Untitled Doc')
     outline = None
+    fp = None
 
 env = os.environ
 total = len(text)
 out = {'docId': doc_id, 'title': title, 'chars': total}
 find = env.get('DC_FIND', '')
 out_file = env.get('DC_OUT', '')
+if env.get('DC_FINGERPRINT') == '1':
+    if fp is None:
+        out['note'] = 'fingerprint unavailable (Drive export fallback — no document structure available)'
+    else:
+        out['fingerprint'] = fp
+    print(json.dumps(out, indent=2))
+    sys.exit(0)
 if out_file:
     # Full-content materialization: the COMPLETE text lands on disk in one call
     # (immune to the harness output cap), and the caller gets a verifiable char
@@ -126,7 +199,10 @@ if out_file:
     with open(out_file, 'w', encoding='utf-8') as fh:
         fh.write(text)
     out['written'] = out_file
-    out['note'] = 'complete document text written to file; verify chars, then grep/sed the file locally'
+    out['note'] = ('READ/PLAN ONLY — complete document text written to file; verify chars, '
+                   'then grep/sed it locally. Do NOT write this text back to a Doc: it carries '
+                   'no formatting, so a replace from it flattens the document. Edit the live '
+                   'Doc in place with the surgical verbs instead.')
     print(json.dumps(out, indent=2))
     sys.exit(0)
 if env.get('DC_META') == '1':

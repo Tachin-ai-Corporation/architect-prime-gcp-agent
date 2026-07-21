@@ -1,71 +1,105 @@
-# Skill: Google Docs (v15)
+# Skill: Google Docs (v16)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
 > **real** output — never invoke them as functions and never hallucinate a JSON response.
 
-## The model — edit locally, apply once
-A Google Doc is edited by working on a **local copy** and applying the whole result back in
-**one call** — never by many inline mutations to the live document. Google Docs keeps full
-version history, so this is safe, reversible, and idempotent on retry. Every edit follows:
+## The model — edit in place, surgically
 
-**mark → export → edit the `.docx` locally → apply once → verify → note & clean up.**
+To change an existing Doc, edit **only what changes** and leave everything else untouched.
+Google Docs keeps full version history, so in-place edits are safe and reversible — and
+**formatting is preserved because you never rewrite the parts you are not changing** (the
+header, tables, fonts, and every clause you didn't touch stay exactly as they were).
 
-Reading is direct (`docs-cat`). Creating a brand-new doc is direct (`docs-create`). Leaving
-review feedback is direct (`docs-comments-add --quote`). Any change to an existing doc's
-*content* goes through the edit loop above — that is the whole skill.
+There are two paths, and the first is the default for nearly all real work:
 
-Editing the local `.docx` uses **python-docx** (installed as `python3 -c "import docx"`).
-You have the full document as an object model: paragraphs, runs, tables. Make every planned
-change there, save, and push it back once.
+- **Targeted edit (default):** the surgical Docs-API verbs — swap clause text, delete a
+  section, insert at an anchor. Untouched content is preserved byte-for-byte. This covers
+  redline/finalize/revise work.
+- **Wholesale rebuild (rare):** only when the structure changes so much that surgical edits
+  are impractical (reordering most of the document, rebuilding from a template). Export to
+  `.docx`, edit locally with python-docx, apply once — then verify, because the
+  Doc→docx→Doc conversion shifts some formatting.
+
+**NEVER edit by reading the doc to plain text and writing the text back.** That flattens
+every style to nothing. `docs-cat` text (including `--out`) is for **reading and planning
+only**; `docs-replace-file` refuses `.txt`/`.md` for the same reason.
+
+## The loop (every edit)
+
+**mark → read & fingerprint → edit surgically → verify (incl. formatting) → note & clean up.**
 
 ## Commands
 
-### Read
-- `docs-cat <doc_id>` — plain-text body (pipe/grep-able). Flags for large docs:
-  - `--meta` — title, total chars, heading outline with offsets (**run first on unfamiliar docs**).
-  - `--out FILE` — write the COMPLETE text to FILE in one call; returns `{written, chars}`. The way to read a whole doc. Coverage check: `--out` `chars` should equal `--meta` `chars` (both are character counts — never `wc -c`, which counts bytes).
+### Read (never written back)
+- `docs-cat <doc_id>` — plain-text body (pipe/grep-able). Flags:
+  - `--meta` — title, total chars, heading/tab outline with offsets (**run first on unfamiliar docs**).
+  - `--fingerprint` — structural **formatting signature**: paragraph counts by style, tables + dims, image count, the set of distinct text styles/fonts. Capture **before and after** an edit and diff to prove formatting was preserved.
   - `--find "TEXT" [--context N]` — case-insensitive search, offsets + context.
-  - `--offset N --limit M` — a window of M chars from offset N.
+  - `--out FILE` — write the COMPLETE text to FILE (read/plan only; coverage check: `--out` `chars` == `--meta` `chars`).
+
+### Restore point
+- `docs-revision <doc_id> [--list]` — record the pre-edit head revision (keep its `modifiedTime` as the "restore to here" anchor); `--list` shows recent revisions.
+
+### Targeted edits — surgical, formatting-preserving (the default)
+- `docs-find-replace --doc <id> --find "old" --replace "new" [--match-case]` — swap one known string. The replacement inherits the matched text's formatting. Reports `occurrences`.
+- `docs-batch-replace --doc <id> --file pairs.json` — many swaps in ONE atomic call. `pairs.json` is a list of `{"find": "...", "replace": "...", "matchCase": false}`. Pairs apply **in order** and can cascade (A→B then B→C) — order them intentionally. Reports per-pair `applied`/`absent`.
+- `docs-section-delete --doc <id> --from-anchor "PHRASE" [--keep-anchor]` — delete from a **unique** anchor phrase to the end of the doc (the way to strip a trailing "[LEGAL REVIEW REDLINES]" block: anchor on its heading). Or `--start N --end N` for an explicit **raw Docs-API** index range (from `docs-get`, not `docs-cat` offsets).
+- `docs-anchor-insert --doc <id> --anchor "PHRASE" --text "..." [--position before|after]` — insert text at a **unique** anchor (inherits adjacent formatting; use `docs-style` if it must differ). `\n`/`\t` in `--text` become real breaks.
+- `docs-style` — adjust styling on a range when needed (read its SKILL header for syntax).
+
+### Wholesale rebuild (only when surgical is impractical)
+- `docs-export-docx --doc <id> --out edit.docx` — pull the live doc to a local `.docx`.
+- `docs-replace-file --doc <id> --file edit.docx` — apply an edited `.docx` (or styled `.html`) back in one atomic call; preserves id + version history. **Refuses `.txt`/`.md`** (they destroy formatting).
 
 ### Create a new document
-- `docs-create --title "TITLE" (--from-markdown FILE | --from-html FILE) [--folder FOLDER_ID]` — create a formatted Doc from a local Markdown or HTML file (Drive converts it: `<h1>`→Heading 1, tables, inline CSS colors/fonts). Use HTML when you need colors, fonts, or styled tables; Markdown otherwise.
-
-### Edit an existing document (the docx loop)
-- `docs-revision <doc_id> [--list]` — record the pre-edit head revision (the restore point); `--list` shows recent revisions with authors/timestamps.
-- `docs-export-docx --doc <doc_id> --out FILE.docx` — pull the live doc to a local `.docx`.
-- `docs-replace-file --doc <doc_id> --file FILE.docx` — apply the edited `.docx` back in **one atomic call**. Preserves the doc id and adds a revision (version history intact). Also accepts `.html`/`.md`/`.txt`. Surfaces the real HTTP status + body on failure.
+- `docs-create --title "TITLE" (--from-markdown FILE | --from-html FILE) [--folder FOLDER_ID]` — create a formatted Doc from local Markdown or HTML (Drive converts it). Use HTML for colors/fonts/styled tables; Markdown otherwise.
 
 ### Review comments
-- `docs-comments-add --doc <doc_id> --content "TEXT" [--quote "exact text this is about"]` — leave a comment. Comments are document-level, so **always pass `--quote`** with the exact clause the note is about, so it is self-contextualizing. Plain comments only — **never `@mention`** anyone (an @mention emails them, an outbound side effect; C-27).
-- `docs-comments-list --doc <doc_id> [--include-resolved]` · `docs-comments-resolve --doc <doc_id> --comment-id <id>` · `docs-comments-delete --doc <doc_id> --comment-id <id>`
+- `docs-comments-add --doc <id> --content "TEXT" [--quote "exact clause this is about"]` — leave a comment. **Always pass `--quote`** so it is self-contextualizing. Plain comments only — **never `@mention`** anyone (an @mention emails them; C-27).
+- `docs-comments-list --doc <id> [--include-resolved]` · `docs-comments-resolve --doc <id> --comment-id <id>` · `docs-comments-delete --doc <id> --comment-id <id>`
 
 ---
 
-## Procedure: edit or finalize an existing document
-The core task — apply changes to a live doc (incorporate redlines, revise clauses, remove a
-section, restructure). Do it on a local copy and apply once; do **not** hunt-and-peck the
-live doc with repeated edits.
+## Procedure: edit or finalize an existing document (surgical — the default)
+Incorporate redlines, revise clauses, remove a section. Change only what moves; leave the
+rest — and its formatting — untouched.
 
-1. **Mark the restore point.** `docs-revision DOC_ID` — keep the returned `modifiedTime`; it
-   is the "restore to here" anchor for step 6.
-2. **Read fully + plan every change.** `docs-cat DOC_ID --meta`, then `docs-cat DOC_ID --out doc.txt`
-   (coverage passes when `--out` `chars` == `--meta` `chars`). From the local text, enumerate
-   **all** the edits you intend to make — this is your plan. Advisory items ("consider adding…")
-   are judgement calls: make your best edit and flag it in the step-6 comment; never block on them.
-3. **Export to a local docx.** `docs-export-docx --doc DOC_ID --out edit.docx`.
-4. **Make every edit locally with python-docx**, then save. See "python-docx patterns" below.
-   All changes — text replacements, clause rewrites, deleting a trailing notes/redlines
-   section — happen here, in `edit.docx`.
-5. **Apply once.** `docs-replace-file --doc DOC_ID --file edit.docx` — the whole edited
-   document replaces the live content in a single call, preserving id + version history.
-6. **Verify + note + clean up.**
-   - Verify (B-28): `docs-cat DOC_ID --meta` + `docs-cat DOC_ID --find "..."` spot-checks —
-     confirm the intended changes are present, removed sections are gone, and untouched
-     content survived. Doc→docx→Doc conversion can shift some formatting; check headings/tables.
-   - Recovery note: `docs-comments-add DOC_ID --content "<what changed + any advisory items to review; to undo, restore the version from <modifiedTime> in File > Version history>"` (plain comment, no @mention).
-   - **Clean up the workspace:** `rm -f edit.docx doc.txt` (and any other temp files). Always
-     leave the workspace clean — stray exports confuse the next mission.
+1. **Mark the restore point.** `docs-revision DOC_ID` — keep `modifiedTime` (the step-5 undo anchor).
+2. **Read, plan, and fingerprint.** `docs-cat DOC_ID --meta` (outline + total chars), then
+   `docs-cat DOC_ID --fingerprint` — save this as the **BEFORE** signature. Read detail with
+   `docs-cat DOC_ID --find "..."` or `--out doc.txt` (read/plan **only** — never written back).
+   Enumerate **every** change: which exact strings become which, which section to remove,
+   where to insert. Advisory items ("consider adding…") are judgement calls: make your best
+   edit and flag it in the step-5 comment; never block on them.
+3. **Apply each change surgically** (untouched content keeps its formatting):
+   - Revise wording → `docs-find-replace` (one) or `docs-batch-replace` (many, atomic). Use
+     `find` text unique enough to match exactly the intended spot.
+   - Remove a section (e.g. a trailing redlines block) → `docs-section-delete --from-anchor "[LEGAL REVIEW REDLINES]"`.
+   - Add a clause/paragraph → `docs-anchor-insert` at a unique nearby phrase.
+4. **Verify (B-28):**
+   - `docs-cat DOC_ID --fingerprint` = the **AFTER** signature. Diff it against BEFORE:
+     tables, heading styles, and the distinct-text-style set must be **preserved** — only the
+     counts you intentionally changed should move. A collapse (tables→0, styles→a single
+     default) means formatting was destroyed — investigate before reporting done.
+   - `docs-cat DOC_ID --find` spot-checks: the new text is present, removed sections are
+     gone, untouched clauses survive.
+   - **A finalized agreement legitimately references attached exhibits/schedules** ("… set
+     forth in Exhibit A, attached hereto and incorporated by reference"). A reference to an
+     attachment is normal contract structure, **not** a leftover redline — do not flag it as
+     incomplete or unfinished.
+5. **Note + clean up.** `docs-comments-add DOC_ID --content "<what changed + any advisory items to review; to undo, restore the version from <modifiedTime> in File > Version history>"` (plain comment, no @mention). `rm -f` any temp files (`doc.txt`, etc.) — leave the workspace clean.
+
+## Procedure: wholesale rebuild (rare — only when surgical is impractical)
+When the structure changes so much that surgical edits don't make sense:
+1. `docs-revision DOC_ID` (restore point) + `docs-cat DOC_ID --fingerprint` (BEFORE).
+2. `docs-export-docx --doc DOC_ID --out edit.docx`.
+3. Edit `edit.docx` with python-docx (see patterns), save.
+4. `docs-replace-file --doc DOC_ID --file edit.docx` (one atomic call).
+5. **Verify with a `--fingerprint` diff** — the Doc→docx→Doc conversion shifts some
+   formatting; check headings/tables/fonts and, if something regressed, fix it in the docx
+   and re-apply.
+6. Note + clean up (`rm -f edit.docx`).
 
 ## Procedure: create a new document
 1. Write the content locally as Markdown (`report.md`) or, for colors/fonts/styled tables, HTML (`report.html`).
@@ -79,58 +113,68 @@ For legal/contract review where you give feedback rather than change the text.
    `docs-comments-add --doc DOC_ID --quote "<exact clause snippet>" --content "<feedback + reasoning>"`.
 3. **Never append a "[REVIEW NOTES]" / redline section to the body** — that becomes debt a
    later finalize must find and delete. Feedback lives in comments, beside the clause.
-4. Keep comments plain and factual (no emoji, no "please review" chatter). On re-review,
-   `docs-comments-list` and resolve stale comments instead of stacking duplicates.
+4. Keep comments plain and factual. On re-review, `docs-comments-list` and resolve stale
+   comments instead of stacking duplicates.
 
 ---
 
-## python-docx patterns (editing `edit.docx`)
-Open once, change everything, save once: `d = docx.Document('edit.docx'); ... ; d.save('edit.docx')`.
+## python-docx patterns (rebuild path only)
+Open once, change everything, save once: `d = docx.Document('edit.docx'); … ; d.save('edit.docx')`.
 
-**Replace text.** python-docx splits a paragraph's text across "runs", so a phrase that spans
-runs won't match run-by-run. Rebuild at the paragraph level:
+**Replace text while preserving run formatting.** Edit run text **in place** where the match
+fits inside one run — formatting is untouched. Only rebuild a paragraph when a match spans
+runs, and let the surviving run keep its own style so bold/italic/size survive:
 ```python
 import docx
 d = docx.Document('edit.docx')
 edits = {'Net 30': 'Net 20', 'peregrine3': 'Peregrine III'}   # your planned changes
 def apply(paras):
     for p in paras:
-        new = p.text
-        for old, repl in edits.items(): new = new.replace(old, repl)
-        if new != p.text and p.runs:
-            for r in p.runs: r.text = ''      # clear runs
-            p.runs[0].text = new              # write the full replaced text to the first run
+        # Fast path — match sits inside one run: edit that run, formatting intact.
+        for r in p.runs:
+            for old, new in edits.items():
+                if old in r.text:
+                    r.text = r.text.replace(old, new)
+        # Cross-run match: rebuild via the FIRST run so it keeps that run's font/bold/size.
+        joined = p.text
+        newtext = joined
+        for old, new in edits.items():
+            newtext = newtext.replace(old, new)
+        if newtext != joined and p.runs:
+            keep = p.runs[0]
+            for r in p.runs[1:]:
+                r.text = ''
+            keep.text = newtext
 apply(d.paragraphs)
 for t in d.tables:                            # tables too
     for row in t.rows:
         for c in row.cells: apply(c.paragraphs)
 d.save('edit.docx')
 ```
-(The paragraph-rebuild drops intra-paragraph run formatting only for *changed* paragraphs.)
 
-**Delete a trailing section** (e.g. everything from a `[LEGAL REVIEW REDLINES]` heading to the end):
+**Delete a trailing section** (everything from a heading to the end):
 ```python
 import docx
 d = docx.Document('edit.docx')
 body = d.paragraphs
-start = next((i for i,p in enumerate(body) if 'LEGAL REVIEW REDLINES' in p.text), None)
+start = next((i for i, p in enumerate(body) if 'LEGAL REVIEW REDLINES' in p.text), None)
 if start is not None:
     for p in body[start:]:
-        p._element.getparent().remove(p._element)   # remove the paragraph elements
+        p._element.getparent().remove(p._element)
 d.save('edit.docx')
 ```
-
-**Insert a paragraph** after an anchor: `anchor.insert_paragraph_before(...)` on the following
-paragraph, or `d.add_paragraph(...)` to append. Reorder by removing and re-inserting elements.
 
 ---
 
 ## Notes & limits
-- **Version history is the safety net.** Every `docs-replace-file` adds a revision; nothing is
-  irreversible. That is why editing in place (one apply) is safe and needs no backup copy.
-- **Fidelity.** Doc→docx→Doc conversion is high-fidelity but not perfect — verify headings,
-  tables, and lists after applying; re-export and fix in the docx if something shifted.
-- **Always clean up** local temp files (`edit.docx`, `doc.txt`, scratch sources) when done.
+- **Surgical edits preserve untouched formatting perfectly — prefer them.** Reach for the
+  rebuild path only when the structure genuinely must be rebuilt.
+- **`docs-cat` text is READ/PLAN only.** Never write it back — it has no formatting and
+  carries no styles, so a replace from it flattens the document. `docs-replace-file` refuses
+  `.txt`/`.md` to enforce this.
+- **Fingerprint before + after** to *prove* formatting survived — a passing content check is
+  not a passing formatting check.
+- **Version history is the safety net.** Every write adds a revision; nothing is irreversible.
 - **Sharing.** Creating or editing a doc does not share it — never share unless explicitly asked (sharing emails people; C-27).
 - **Comments never `@mention`.** Plain, self-contextualizing (`--quote`) comments only.
 
@@ -139,7 +183,8 @@ paragraph, or `d.add_paragraph(...)` to append. Reorder by removing and re-inser
 |---|---|---|
 | `403`/`401` / access_denied | Doc not shared with the agent SA | Share the doc with the agent's service-account email. |
 | `docs-cat` output cut off | Doc larger than the output cap | Use `--out FILE` (complete read), then grep/sed the local file. |
-| `--out` chars ≠ `--meta` chars | Genuinely incomplete read | Re-run `--out`; do not edit until they match. |
-| `import docx` fails | python-docx missing | It ships via the skill's apt dependency (`python3-docx`); a redeploy reinstalls it. |
-| `docs-replace-file` non-200 | Bad file / auth / conversion | Read the surfaced HTTP status + body; confirm the local file is a valid `.docx`. |
-| Formatting shifted after apply | Doc↔docx conversion | Re-export, adjust in the docx, re-apply; for pure styling use `--from-html` on a rebuild. |
+| `docs-find-replace`/`batch` reports `absent` (0 occurrences) | `find` text not present (already applied, or never matched) | Confirm the NEW text is in the doc; adjust the `find` string to match the live text exactly. |
+| `docs-section-delete`/`anchor-insert` "anchor not unique/found" | Phrase repeats or doesn't match | Pick a longer, unique anchor phrase copied from `docs-cat` output. |
+| Fingerprint shows tables/styles collapsed after an edit | A plain-text/markdown round-trip flattened the doc | Restore the pre-edit version (File > Version history) and redo the change with the surgical verbs. |
+| `docs-replace-file` refuses `.txt`/`.md` | Wholesale replace from plain text/markdown destroys formatting | For a targeted change use the surgical verbs; for a real rebuild supply `.docx`/`.html`. |
+| `import docx` fails | python-docx missing | Ships via the skill's apt dependency (`python3-docx`); a redeploy reinstalls it. |
