@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# docs-batch-edit — Apply a set of MIXED edits to a Google Doc in ONE atomic batchUpdate.
+# Brain agent: motor (WRITE)
+#
+# The robust way to apply several edits at once: resolve every anchor/index from a SINGLE
+# read, apply index-based ops (insert/delete) in DESCENDING index order so earlier edits
+# never shift later ones (Google Docs API best practice), then run text replacements. All in
+# one request, guarded by the document's revisionId so a concurrent change is rejected, not
+# silently clobbered. Formatting is preserved — only the touched ranges change.
+#
+# Usage: docs-batch-edit --doc DOC_ID --file ops.json
+#   ops.json is a JSON array of operations, applied together:
+#     {"op":"replace","find":"exact old text","replace":"new text","matchCase":false}
+#     {"op":"insert_after","anchor":"unique phrase","text":"text to insert"}
+#     {"op":"insert_before","anchor":"unique phrase","text":"text to insert"}
+#     {"op":"delete_section","from_anchor":"unique heading","keep_anchor":false}
+#     {"op":"delete_section","start":1240,"end":2380}   # raw Docs-API indices (docs-get)
+#   \n and \t in inserted text become real line breaks / tabs.
+#
+# FAIL-FAST: if any anchor is not found or not unique, NOTHING is applied and every
+# unresolved op is reported — re-read the exact live text (docs-cat --find), fix the
+# anchor/find string, and re-run. (Inserts are not idempotent, so a partial apply is unsafe;
+# replaces are idempotent, so re-running after a fix is safe.)
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+die() { echo "[docs-batch-edit] [ERROR] $*" >&2; exit 1; }
+DOC_ID="" OPS_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --doc) DOC_ID="$2"; shift 2 ;;
+    --file) OPS_FILE="$2"; shift 2 ;;
+    --help|-h) echo "Usage: docs-batch-edit --doc <doc_id> --file <ops_json>"; exit 0 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DOC_ID" && -n "$OPS_FILE" ]] || die "Need --doc and --file"
+[[ -f "$OPS_FILE" ]] || die "Ops file not found: $OPS_FILE"
+TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
+
+export DOCSLIB_DIR="${CORE_DIR}/bin"
+python3 -c "
+import urllib.request, urllib.error, json, sys, os
+sys.path.insert(0, os.environ['DOCSLIB_DIR'])
+from _docslib import extract_text_and_map, resolve_tab
+
+doc_id, ops_file, token, email = sys.argv[1:5]
+
+def api_call(url, method='GET', data=None):
+    headers = {'Authorization': f'Bearer {token}'}
+    if data is not None: headers['Content-Type'] = 'application/json'
+    req = urllib.request.Request(url, headers=headers, method=method, data=data)
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', 'replace')
+        if e.code in (401, 403):
+            print(json.dumps({'status':'access_denied','message':f'Docs access denied for {email or \"unknown\"}'})); sys.exit(0)
+        if e.code == 400 and 'revision' in body.lower():
+            print(json.dumps({'status':'stale','message':'Document changed since it was read (revisionId mismatch). Re-read and rebuild the ops.'})); sys.exit(0)
+        sys.stderr.write(f'API error {method}: {e.code} {body}\n'); sys.exit(1)
+
+try:
+    ops = json.load(open(ops_file, encoding='utf-8'))
+    assert isinstance(ops, list)
+except Exception as e:
+    die = f'ops file must be a JSON array: {e}'; sys.stderr.write(die+'\n'); sys.exit(1)
+
+doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE')
+content, tab_id = resolve_tab(doc)
+if content is None:
+    print(json.dumps({'status':'error','message':'requested tab not found'})); sys.exit(0)
+plain, index_map = extract_text_and_map(content)
+doc_end = content[-1].get('endIndex', 1) if content else 1
+revision_id = doc.get('revisionId')
+
+def locate(anchor):
+    occ, s = [], 0
+    while True:
+        p = plain.find(anchor, s)
+        if p == -1: break
+        occ.append(p); s = p + 1
+    return occ
+
+index_reqs = []   # (primary_index, request_dict)
+replace_reqs = []
+failures = []
+for i, op in enumerate(ops):
+    kind = op.get('op')
+    if kind == 'replace':
+        find = op.get('find'); rep = op.get('replace')
+        if not find or rep is None: failures.append({'op_index':i,'reason':'replace needs find + replace'}); continue
+        replace_reqs.append({'replaceAllText':{'containsText':{'text':find,'matchCase':bool(op.get('matchCase',False))},'replaceText':rep}})
+    elif kind in ('insert_after','insert_before'):
+        anchor = op.get('anchor'); text = op.get('text','')
+        if not anchor or not text: failures.append({'op_index':i,'reason':'insert needs anchor + text'}); continue
+        occ = locate(anchor)
+        if not occ: failures.append({'op_index':i,'anchor':anchor,'reason':'anchor not found'}); continue
+        if len(occ) > 1: failures.append({'op_index':i,'anchor':anchor,'reason':f'anchor not unique ({len(occ)} matches)'}); continue
+        c0 = occ[0]
+        if kind == 'insert_before':
+            idx = index_map[c0]
+        else:
+            idx = index_map[c0 + len(anchor) - 1] + 1
+            if idx > doc_end - 1: idx = doc_end - 1
+        loc = {'index': idx}
+        if tab_id: loc['tabId'] = tab_id
+        index_reqs.append((idx, {'insertText':{'location':loc,'text':text}}))
+    elif kind == 'delete_section':
+        if op.get('from_anchor'):
+            anchor = op['from_anchor']; occ = locate(anchor)
+            if not occ: failures.append({'op_index':i,'anchor':anchor,'reason':'anchor not found'}); continue
+            if len(occ) > 1: failures.append({'op_index':i,'anchor':anchor,'reason':f'anchor not unique ({len(occ)} matches)'}); continue
+            c0 = occ[0]
+            start = (index_map[c0 + len(anchor) - 1] + 1) if op.get('keep_anchor') else index_map[c0]
+            end = doc_end - 1
+        else:
+            start = int(op.get('start', 0)); end = min(int(op.get('end', 0)), doc_end - 1)
+        if start < 1 or end <= start: failures.append({'op_index':i,'reason':f'empty/invalid range {start}..{end}'}); continue
+        rng = {'startIndex': start, 'endIndex': end}
+        if tab_id: rng['tabId'] = tab_id
+        index_reqs.append((start, {'deleteContentRange':{'range':rng}}))
+    else:
+        failures.append({'op_index':i,'reason':f'unknown op: {kind}'})
+
+if failures:
+    print(json.dumps({'status':'unresolved','applied':False,
+        'note':'No changes applied (fail-fast). Re-read the exact live text with docs-cat --find, fix the anchor/find strings, and re-run.',
+        'failures':failures}, indent=2)); sys.exit(0)
+
+# Index ops DESCENDING so earlier edits never shift later indices; replaces (text-based) after.
+index_reqs.sort(key=lambda x: x[0], reverse=True)
+requests = [r for _, r in index_reqs] + replace_reqs
+if not requests:
+    print(json.dumps({'status':'no_changes','docId':doc_id})); sys.exit(0)
+
+body = {'requests': requests}
+if revision_id: body['writeControl'] = {'requiredRevisionId': revision_id}
+resp = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate', method='POST', data=json.dumps(body).encode('utf-8'))
+
+replies = resp.get('replies', [])
+n_index = len(index_reqs)
+rep_results = []
+for j, rr in enumerate(replace_reqs):
+    occ = replies[n_index + j].get('replaceAllText', {}).get('occurrencesChanged', 0) if n_index + j < len(replies) else 0
+    rep_results.append({'find': rr['replaceAllText']['containsText']['text'], 'occurrences': occ, 'applied': occ > 0})
+print(json.dumps({'status':'applied','docId':doc_id,'index_ops':n_index,'replace_ops':rep_results,
+    'note':'Applied in one batchUpdate (index ops descending, then replacements). A replace with 0 occurrences did not match — confirm the new text is present.'}, indent=2))
+" "$DOC_ID" "$OPS_FILE" "$TOKEN" "${AGENT_USER_EMAIL:-}"

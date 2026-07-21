@@ -48,6 +48,7 @@ skills/workspace-docs/docs-suggest bin/docs-suggest
 skills/workspace-docs/docs-get bin/docs-get
 skills/workspace-docs/docs-replace-md bin/docs-replace-md
 skills/workspace-docs/docs-batch-replace bin/docs-batch-replace
+skills/workspace-docs/docs-batch-edit bin/docs-batch-edit
 skills/workspace-docs/docs-anchor-insert bin/docs-anchor-insert
 skills/workspace-docs/docs-style bin/docs-style
 skills/workspace-docs/docs-insert-table bin/docs-insert-table

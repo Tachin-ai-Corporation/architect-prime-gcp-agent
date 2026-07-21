@@ -47,7 +47,7 @@ export DOCSLIB_DIR="${CORE_DIR}/bin"
 python3 -c "
 import urllib.request, urllib.error, json, sys, os
 sys.path.insert(0, os.environ['DOCSLIB_DIR'])
-from _docslib import extract_text_and_map
+from _docslib import extract_text_and_map, resolve_tab
 
 doc_id, anchor, keep_anchor, start_arg, end_arg, token, email = sys.argv[1:8]
 keep_anchor = (keep_anchor == 'true')
@@ -65,8 +65,13 @@ def api_call(url, method='GET', headers=None, data=None):
         sys.stderr.write(f'API error {method} {url}: {e.code} {e.read().decode(\"utf-8\")}\n'); sys.exit(1)
 
 
-doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}')
-content = doc.get('body', {}).get('content', [])
+doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true')
+# Read and write must see the same content: resolve the target tab the same way docs-cat
+# does (first tab / legacy body), and carry its tabId into the delete range so the edit
+# lands in the tab we measured — not silently defaulted to a different one.
+content, tab_id = resolve_tab(doc)
+if content is None:
+    sys.stderr.write('Requested tab not found\n'); sys.exit(1)
 # Document end index (last structural element's endIndex). A trailing newline is
 # owned by the body; deleteContentRange must stop at end_of_body-1.
 doc_end = content[-1].get('endIndex', 1) if content else 1
@@ -100,9 +105,11 @@ if del_end <= del_start:
     print(json.dumps({'status':'noop','docId':doc_id,'reason':'empty or inverted range',
                       'start':del_start,'end':del_end})); sys.exit(0)
 
+_rng = {'startIndex': del_start, 'endIndex': del_end}
+if tab_id: _rng['tabId'] = tab_id
 api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
          method='POST', headers={'Content-Type':'application/json'},
-         data=json.dumps({'requests':[{'deleteContentRange':{'range':{'startIndex':del_start,'endIndex':del_end}}}]}).encode('utf-8'))
+         data=json.dumps({'requests':[{'deleteContentRange':{'range':_rng}}]}).encode('utf-8'))
 
 print(json.dumps({'status':'deleted','docId':doc_id,'start':del_start,'end':del_end,
                   'chars_deleted':del_end-del_start,'anchor':anchor or None,'kept_anchor':keep_anchor}, indent=2))

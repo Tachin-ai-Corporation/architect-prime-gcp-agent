@@ -34,7 +34,7 @@ export DOCSLIB_DIR="${CORE_DIR}/bin"
 python3 -c "
 import urllib.request, urllib.error, json, sys, os
 sys.path.insert(0, os.environ['DOCSLIB_DIR'])
-from _docslib import extract_text_and_map
+from _docslib import extract_text_and_map, resolve_tab
 
 doc_id = sys.argv[1]
 anchor = sys.argv[2]
@@ -62,11 +62,15 @@ def api_call(url, method='GET', headers=None, data=None):
         sys.exit(1)
 
 
-# NOTE: do NOT pass includeTabsContent=true — that flag empties the legacy
-# doc['body'], so extract_text_and_map would see no text and every anchor would
-# report 'not found'. Omitting it populates body from the first tab (matches docs-cat).
-doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?suggestionsViewMode=SUGGESTIONS_INLINE')
-body_content = doc.get('body', {}).get('content', [])
+# Read and write must see the same content. Fetch WITH tabs and resolve the target tab the
+# same way docs-cat does, then carry its tabId into the insert location — so the anchor is
+# measured in, and the text lands in, the same tab. (Reading doc['body'] without
+# includeTabsContent only ever sees the first/legacy tab; resolve_tab is tab-safe and reads
+# doc['tabs'] directly, so the flag no longer empties what we read.)
+doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?includeTabsContent=true&suggestionsViewMode=SUGGESTIONS_INLINE')
+body_content, tab_id = resolve_tab(doc)
+if body_content is None:
+    sys.stderr.write('Requested tab not found\n'); sys.exit(1)
 plain_text, index_map = extract_text_and_map(body_content)
 
 # Search for the anchor phrase
@@ -102,11 +106,13 @@ else:
         insert_idx = doc_end - 1
 
 # Execute insert
+_loc = {'index': insert_idx}
+if tab_id: _loc['tabId'] = tab_id
 req_body = {
     'requests': [
         {
             'insertText': {
-                'location': {'index': insert_idx},
+                'location': _loc,
                 'text': text_to_insert
             }
         }

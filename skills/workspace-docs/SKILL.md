@@ -1,4 +1,4 @@
-# Skill: Google Docs (v17)
+# Skill: Google Docs (v18)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -42,10 +42,23 @@ only**; `docs-replace-file` refuses `.txt`/`.md` for the same reason.
 - `docs-revision <doc_id> [--list]` — record the pre-edit head revision (keep its `modifiedTime` as the "restore to here" anchor); `--list` shows recent revisions.
 
 ### Targeted edits — surgical, formatting-preserving (the default)
-- `docs-find-replace --doc <id> --find "old" --replace "new" [--match-case]` — swap one known string. The replacement inherits the matched text's formatting. Reports `occurrences`.
-- `docs-batch-replace --doc <id> --file pairs.json` — many swaps in ONE atomic call. `pairs.json` is a list of `{"find": "...", "replace": "...", "matchCase": false}`. Pairs apply **in order** and can cascade (A→B then B→C) — order them intentionally. Reports per-pair `applied`/`absent`.
-- `docs-section-delete --doc <id> --from-anchor "PHRASE" [--keep-anchor]` — delete from a **unique** anchor phrase to the end of the doc (the way to strip a trailing notes/appendix section: anchor on its heading). Or `--start N --end N` for an explicit **raw Docs-API** index range (from `docs-get`, not `docs-cat` offsets).
-- `docs-anchor-insert --doc <id> --anchor "PHRASE" --text "..." [--position before|after]` — insert text at a **unique** anchor (inherits adjacent formatting; use `docs-style` if it must differ). `\n`/`\t` in `--text` become real breaks.
+Resolve **all** your edits against a single fresh read, then apply them together. Text-based
+replacement is the robust default (no index math, formatting inherited); anchor-based
+inserts/deletes are for structural moves. Anchor on a **unique, structural** phrase (a heading
+beats a clause sentence) and match the **exact live text** — smart quotes, whitespace, and
+section numbers included.
+
+- `docs-batch-edit --doc <id> --file ops.json` — **apply many mixed edits in ONE atomic
+  batchUpdate** (the preferred path for a multi-edit finalize). `ops.json` is a JSON array of
+  `{"op":"replace","find":"…","replace":"…"}`, `{"op":"insert_after"|"insert_before","anchor":"…","text":"…"}`,
+  `{"op":"delete_section","from_anchor":"…"}`. Resolves every anchor from one read, applies
+  index ops highest-index-first (so edits never shift each other), guarded by the doc's
+  revision. **Fail-fast:** if any anchor is not found / not unique, nothing is applied and each
+  miss is reported — fix that string and re-run.
+- `docs-find-replace --doc <id> --find "old" --replace "new" [--match-case]` — swap one known string (text-based; replacement inherits the matched formatting). Reports `occurrences` (0 = not matched).
+- `docs-batch-replace --doc <id> --file pairs.json` — many swaps in one call; `[{"find","replace","matchCase"}]`, applied in order (can cascade). Reports per-pair `applied`/`absent`.
+- `docs-section-delete --doc <id> --from-anchor "PHRASE" [--keep-anchor]` — delete from a **unique** anchor to the end of the doc. Or `--start N --end N` (raw Docs-API indices from `docs-get`).
+- `docs-anchor-insert --doc <id> --anchor "PHRASE" --text "..." [--position before|after]` — insert at a **unique** anchor (inherits adjacent formatting). For several inserts/deletes, prefer `docs-batch-edit` (atomic, reverse-ordered).
 - `docs-style` — adjust styling on a range when needed (read its SKILL header for syntax).
 
 ### Wholesale rebuild (only when surgical is impractical)
@@ -72,11 +85,16 @@ rest — and its formatting — untouched.
    Enumerate **every** change: which exact strings become which, which section to remove,
    where to insert. Advisory items ("consider adding…") are judgement calls: make your best
    edit and flag it in the step-5 comment; never block on them.
-3. **Apply each change surgically** (untouched content keeps its formatting):
-   - Revise wording → `docs-find-replace` (one) or `docs-batch-replace` (many, atomic). Use
-     `find` text unique enough to match exactly the intended spot.
-   - Remove a section (e.g. a trailing notes/appendix section) → `docs-section-delete --from-anchor "<the section's unique heading>"`.
-   - Add a paragraph → `docs-anchor-insert` at a unique nearby phrase.
+3. **Apply the edits from that one read** (untouched content keeps its formatting):
+   - **A multi-edit finalize → assemble every change into one `docs-batch-edit` ops file and
+     apply it once** — replaces + inserts + a section delete, atomically and reverse-ordered.
+     One read, one write, no cross-edit drift.
+   - A single change → `docs-find-replace` (wording) or `docs-anchor-insert` (one paragraph).
+   - **On a miss** (`occurrences: 0`, `absent`, or `anchor not found / not unique`): the edit
+     is **not** impossible — your string just didn't match the live text. Re-read the exact
+     text with `docs-cat DOC_ID --find "<nearby words>"`, copy the **verbatim** string (smart
+     quotes, whitespace, section numbers, and all), and retry. Treat a miss as a signal to
+     re-derive, never as evidence the tool or the API "can't" do it.
 4. **Verify (B-28):**
    - `docs-cat DOC_ID --fingerprint` = the **AFTER** signature. Diff it against BEFORE:
      tables, heading styles, and the distinct-text-style set must be **preserved** — only the
@@ -171,6 +189,8 @@ d.save('edit.docx')
 - **Fingerprint before + after** to *prove* formatting survived — a passing content check is
   not a passing formatting check.
 - **Version history is the safety net.** Every write adds a revision; nothing is irreversible.
+- **A miss means re-derive, not "impossible."** An unmatched anchor or `occurrences: 0` means your string didn't match the live text — re-read the verbatim text and retry. The tools apply real edits; a mismatch is never evidence the API can't.
+- **Stable anchors (optional).** For an edit that must survive intervening changes, create a named range from the initial read and target it by label — it survives edits an exact-text match would lose.
 - **Sharing.** Creating or editing a doc does not share it — never share unless explicitly asked (sharing emails people; C-27).
 - **Comments never `@mention`.** Plain, self-contextualizing (`--quote`) comments only.
 
@@ -180,7 +200,8 @@ d.save('edit.docx')
 | `403`/`401` / access_denied | Doc not shared with the agent SA | Share the doc with the agent's service-account email. |
 | `docs-cat` output cut off | Doc larger than the output cap | Use `--out FILE` (complete read), then grep/sed the local file. |
 | `docs-find-replace`/`batch` reports `absent` (0 occurrences) | `find` text not present (already applied, or never matched) | Confirm the NEW text is in the doc; adjust the `find` string to match the live text exactly. |
-| `docs-section-delete`/`anchor-insert` "anchor not unique/found" | Phrase repeats or doesn't match | Pick a longer, unique anchor phrase copied from `docs-cat` output. |
+| `docs-section-delete`/`anchor-insert` "anchor not unique/found", or `docs-batch-edit` `unresolved` | Phrase repeats or doesn't match the live text | Re-read the exact text (`docs-cat --find`), copy the **verbatim** string (smart quotes/whitespace/section numbers included), and retry — a miss means re-derive, not that the edit is impossible. A longer phrase disambiguates a non-unique anchor. |
+| `docs-batch-edit` reports `stale` | Doc changed since it was read (revisionId mismatch) | Re-read and rebuild the ops from the current text, then re-apply. |
 | Fingerprint shows tables/styles collapsed after an edit | A plain-text/markdown round-trip flattened the doc | Restore the pre-edit version (File > Version history) and redo the change with the surgical verbs. |
 | `docs-replace-file` refuses `.txt`/`.md` | Wholesale replace from plain text/markdown destroys formatting | For a targeted change use the surgical verbs; for a real rebuild supply `.docx`/`.html`. |
 | `import docx` fails | python-docx missing | Ships via the skill's apt dependency (`python3-docx`); a redeploy reinstalls it. |
