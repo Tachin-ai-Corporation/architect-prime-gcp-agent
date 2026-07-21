@@ -21,6 +21,24 @@ export function extractVerdict(output) {
 }
 
 /**
+ * Extract the raw argument string from a report_fail tool-log entry.
+ *
+ * The tool log formats each call as `[TOOL] report_fail({...}) → {result}`, so we capture
+ * everything up to the ` ) → ` result separator. Using that sentinel — NOT the first `)` —
+ * is essential: report_fail args routinely contain parentheses (legal text like
+ * "Section 3.1 (Grant)"), and a first-paren match truncates the JSON to garbage, dropping
+ * the entire failure reason so callers re-plan blind. Mirrors extractProbes' approach.
+ *
+ * @param {string} text - The full agent response including tool execution log
+ * @returns {string|null} - The raw args substring, or null if no report_fail call is present
+ */
+function extractReportFailArgs(text) {
+  const m = text.match(/\[TOOL\] report_fail\(([\s\S]*?)\)\s*→/)
+    || text.match(/\[TOOL\] report_fail\(([\s\S]*)\)\s*$/m);
+  return m ? m[1] : null;
+}
+
+/**
  * Extract the fail recommendation from a report_fail tool call in the log.
  *
  * @param {string} output - The full agent response including tool execution log
@@ -30,10 +48,9 @@ export function extractFailRecommendation(output) {
   if (!output) return 'No recommendation available';
   const text = typeof output === 'string' ? output : JSON.stringify(output);
 
-  // Try to find the tool result JSON from report_fail
-  const failMatch = text.match(/\[TOOL\] report_fail\((.*?)(?:\)|$|\n)/);
-  if (failMatch) {
-    const rawArgs = failMatch[1];
+  // Extract the report_fail args (up to the ` ) → ` sentinel, so internal parens survive).
+  const rawArgs = extractReportFailArgs(text);
+  if (rawArgs) {
     try {
       const args = JSON.parse(rawArgs);
       return args.recommendation || args.reasoning || 'No recommendation available';
@@ -72,9 +89,8 @@ export function extractFailSummary(output) {
   if (!output) return '';
   const text = typeof output === 'string' ? output : JSON.stringify(output);
 
-  const failMatch = text.match(/\[TOOL\] report_fail\((.*?)(?:\)|$|\n)/);
-  if (failMatch) {
-    const rawArgs = failMatch[1];
+  const rawArgs = extractReportFailArgs(text);
+  if (rawArgs) {
     try {
       const args = JSON.parse(rawArgs);
       const failedChecks = (args.checks || []).filter(c => !c.pass);

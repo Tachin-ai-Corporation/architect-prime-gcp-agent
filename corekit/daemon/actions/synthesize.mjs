@@ -137,10 +137,16 @@ export async function handleSynthesize(ctx, deps) {
       if (verdict === 'FAIL') {
         const failSummary = extractFailSummary(verification.output);
         deps.log('WARN', `[synthesize] Cerebellum FAIL on mission ${envelope.id}: ${failSummary}`);
+        // The mission's work already cleared its checkpoints (the checkpoint executor
+        // verifies each milestone; unresolved task failures are caught earlier). So a FAIL
+        // here is about the ANSWER — an over-claim or a missing caveat — not the work. Steer
+        // to synthesize_with_failure (deliver an honest, corrected outcome), NOT checkpoint_plan
+        // (which redoes verified work and churns). Cortex may still re-plan if it judges the
+        // work genuinely incomplete — the guard only forbids a blind re-synthesis.
         return {
           continue: true,
-          activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration, context: { verification_fail: failSummary } },
-          priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED] ${failSummary}` }],
+          activeGuard: { forbidden: 'synthesize', fallback: 'synthesize_with_failure', injectedAt: iteration, context: { verification_fail: failSummary } },
+          priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED] ${failSummary}\n[SYSTEM] The work reached its checkpoints — this is a defect in the ANSWER, not the work. Do NOT redo the work. Correct any over-claim, keep the honest caveat, and return "synthesize_with_failure" stating plainly what was and was not achieved.` }],
         };
       } else if (verdict === 'PROBE' && PROBE_ENABLED) {
         // PROBE verdict — dispatch fresh motor probes, then re-verdict
@@ -182,8 +188,8 @@ export async function handleSynthesize(ctx, deps) {
             deps.log('WARN', `[synthesize] Cerebellum FAIL (post-probe) on mission ${envelope.id}: ${fSummary}`);
             return {
               continue: true,
-              activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration, context: { verification_fail: fSummary } },
-              priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED (post-probe)] ${fSummary}` }],
+              activeGuard: { forbidden: 'synthesize', fallback: 'synthesize_with_failure', injectedAt: iteration, context: { verification_fail: fSummary } },
+              priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED (post-probe)] ${fSummary}\n[SYSTEM] Probes re-derived the claims against ground truth — the ANSWER must be corrected, not the work. Return "synthesize_with_failure" with an honest outcome summary.` }],
             };
           }
           // PASS or null falls through to normal completion
@@ -191,10 +197,10 @@ export async function handleSynthesize(ctx, deps) {
           deps.log('WARN', `[synthesize] PROBE verdict but no parseable probes on mission ${envelope.id} — failing closed (B-28)`);
           return {
             continue: true,
-            activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration, context: { verification_fail: 'probe_unparseable' } },
+            activeGuard: { forbidden: 'synthesize', fallback: 'synthesize_with_failure', injectedAt: iteration, context: { verification_fail: 'probe_unparseable' } },
             priorResultsAppend: [{
               agent: 'cerebellum',
-              result: '[VERIFICATION INCOMPLETE] Re-derivation probes were requested but could not be parsed. Claims remain unverified — re-plan with verifiable evidence, or state the claims so they can be checked from the provided output (B-28).',
+              result: '[VERIFICATION INCOMPLETE] Re-derivation probes were requested but could not be parsed. Do NOT redo the work — deliver an honest answer that marks the affected claims as unverified, via "synthesize_with_failure" (B-28).',
             }],
           };
         }

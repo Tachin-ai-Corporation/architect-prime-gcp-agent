@@ -340,7 +340,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     } else {
       priorResultsAppend.push({
         agent: 'system',
-        result: `[SYSTEM] Checkpoint failed (attempt ${replanCount}/${MAX_REPLANS}). Do NOT decompose the work into finer or tool-level steps — the executor owns the HOW and makes many tool calls per task. Re-plan only to fix the OUTCOME framing or a bad input: clarify what the task must achieve, correct a wrong assumption, or supply a missing input, and keep tasks coarse and outcome-shaped. A specific failing tool or command is the executor's to resolve inside its task, not a reason to add planning steps. Otherwise use "needs_input" to escalate a hard blocker.`,
+        result: `[SYSTEM] Checkpoint failed (attempt ${replanCount}/${MAX_REPLANS}). Do NOT decompose the work into finer or tool-level steps — the executor owns the HOW and makes many tool calls per task. Work already completed successfully in prior_results is DONE — do NOT re-plan or repeat it (re-reading, re-editing, or re-verifying an outcome that already succeeded is wasted churn); re-plan ONLY the specific part that still needs to change. Re-plan to fix the OUTCOME framing or a bad input: clarify what the task must achieve, correct a wrong assumption, or supply a missing input, and keep tasks coarse and outcome-shaped. A specific failing tool or command is the executor's to resolve inside its task, not a reason to add planning steps. Otherwise use "needs_input" to escalate a hard blocker.`,
       });
     }
   }

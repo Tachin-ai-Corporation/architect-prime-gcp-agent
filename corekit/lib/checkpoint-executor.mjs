@@ -1025,7 +1025,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         const cpOutcome = cpResults.map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`).join('\n');
         const isLoadBearing = (envelope._brief?.parts || []).some(p => p.load_bearing);
         log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum`);
-        const cpVer = await dispatchAgent('cerebellum', {
+        const verifyReq = {
           instruction: [
             'Verify that this CHECKPOINT MILESTONE has been achieved. Judge the checkpoint as a',
             'whole against its acceptance criteria — a holistic judgment, not a per-step check.',
@@ -1052,8 +1052,18 @@ export async function executeCheckpoints(checkpoints, opts) {
             ] : []),
           ].filter(Boolean).join('\n'),
           _missionId: envelope.id,
-        });
-        const cpVerdict = extractVerdict(cpVer.output);
+        };
+        let cpVer = await dispatchAgent('cerebellum', verifyReq);
+        let cpVerdict = extractVerdict(cpVer.output);
+        // A verifier that returned nothing usable — empty output, or no tool log at all — is
+        // an infra-ish miss, not a considered verdict. Retry once before failing the milestone
+        // closed; a real PASS/FAIL/PROBE is respected immediately (no retry). This stops a
+        // single empty generation from triggering a full, wasteful re-plan cycle.
+        if (cpVerdict === null && (!cpVer.output || !String(cpVer.output).includes('[TOOL EXECUTION LOG]'))) {
+          log('WARN', `[checkpoint-executor] CP${cpNum}: cerebellum returned no usable verdict (${String(cpVer.output || '').length} chars) — retrying once`);
+          cpVer = await dispatchAgent('cerebellum', verifyReq);
+          cpVerdict = extractVerdict(cpVer.output);
+        }
         if (cpVerdict === 'FAIL') {
           const s = extractFailSummary ? extractFailSummary(cpVer.output) : 'Checkpoint acceptance criteria not met';
           const rec = extractFailRecommendation ? extractFailRecommendation(cpVer.output) : '';
@@ -1081,7 +1091,17 @@ export async function executeCheckpoints(checkpoints, opts) {
 
     // Mark checkpoint complete or failed
     cpEnvelope.status = cpFailed ? 'failed' : 'complete';
-    cpEnvelope.output = cpFailed ? `Checkpoint failed at task ${cpResults.length}/${cpTasks.length}` : `Checkpoint complete: ${cpResults.length} tasks`;
+    // Count only real task results, not the pushed cerebellum verdict pseudo-step (step
+    // "N.verify") — otherwise a milestone-verification failure reads as a bogus task overflow
+    // ("failed at task 3/2" for a 2-task checkpoint). Distinguish a task failure from a
+    // milestone-verification failure so the message says what actually happened.
+    const taskResultCount = cpResults.filter(r => !(typeof r.step === 'string' && r.step.endsWith('.verify'))).length;
+    const verifyFailed = cpResults.some(r => typeof r.step === 'string' && r.step.endsWith('.verify') && !r.success);
+    cpEnvelope.output = !cpFailed
+      ? `Checkpoint complete: ${taskResultCount} tasks`
+      : verifyFailed
+        ? `Checkpoint failed: milestone verification not passed (${taskResultCount}/${cpTasks.length} tasks ran)`
+        : `Checkpoint failed at task ${taskResultCount}/${cpTasks.length}`;
     // SESSION_CONTEXT_PLAN Phase 1: persist the deterministic digest for
     // observability. Dispatch context recomputes it purely from results, so
     // this field is never load-bearing (B-22). Dedicated field — never
@@ -1098,7 +1118,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     cpEnvelope.updated_at = new Date().toISOString();
     await firestoreWrite('work', cpId, cpEnvelope);
     await writeHistory(cpId, 'active', cpEnvelope.status, 'brain',
-      cpFailed ? `Failed at task ${cpResults.length}` : `Complete (${cpResults.length} tasks)`);
+      cpFailed ? `Failed (${taskResultCount} task(s) ran)` : `Complete (${taskResultCount} tasks)`);
 
     allResults.push(...cpResults);
 
