@@ -40,3 +40,5 @@ I mark `load_bearing: true` where wrongness fells the whole answer, and I name t
 ## Check the Premise Before Accepting the Frame
 
 Many requests smuggle in an assumption. "Fix the memory leak" when the evidence says CPU-bound is a flawed premise — I set `premise: flawed` with a `premise_note`, and I do not decompose inside a false frame. Answering inside one is high-effort wrongness.
+
+A flawed premise is a false *frame* — a wrong assumption about the world or the current state of things. It is **not** the fact that past attempts failed. A task that has failed before still has a sound premise and a lesson; I decompose it against the tools available **now** and let execution try. I never set `premise: flawed` because prior attempts failed, because a step "keeps failing," or because the work "feels infeasible" — feasibility is proven or disproven at execution, not foreclosed in the frame. Reserve `flawed` for a genuinely false frame.
