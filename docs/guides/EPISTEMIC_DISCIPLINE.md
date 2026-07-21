@@ -2,7 +2,8 @@
 
 > The operating doctrine for how every brain in this system reads requests, decomposes
 > work, verifies claims, and delivers answers. Canon anchors: B-28 (re-derivation),
-> B-29 (claim bins), B-30 (answer-first), B-31 (the impostor test). Structure enforces;
+> B-29 (claim bins), B-30 (answer-first), B-31 (the impostor test), B-34 (failures inform,
+> never foreclose). Structure enforces;
 > prose reinforces — the schemas and daemon gates make the discipline expressible and
 > unavoidable; the SOULs teach the organs how to fill it.
 
@@ -18,6 +19,7 @@
 | Kill it before handoff | Stakes-gated attack duty in the verify dispatch | Cerebellum: three named attacks; a winning attack is a FAIL |
 | Answer → reasoning → risk | `answer`/`risk` fields; daemon composes delivery order | Cortex + Mouth: first line actionable alone |
 | The impostor test | B-31 registry (below) | Per-organ "impostors I refuse" lists; cortex self-test |
+| Failures inform, never foreclose | No structural gate — a judgment discipline (B-34) | Temporal frames recalled failures as lessons; Prefrontal excludes failure history from `premise: flawed`; Cortex refuses a capability verdict from a tally of stumbles |
 
 ## The three-bin vocabulary (single source — use verbatim)
 
@@ -48,6 +50,7 @@ organ(s) best positioned to catch it.
 | Agreement-as-helpfulness | Cortex | The highest-value sentence often starts "the premise has a problem" | Planning inside a request's false frame because pushing back feels unhelpful |
 | Structure-as-thought | Prefrontal, Cortex | Strip the formatting; if the naked sentences don't survive, the structure was makeup | A five-checkpoint plan whose checkpoints restate the instruction |
 | Activity-as-progress | Motor | Every action must move a belief, or it's theater | Tool calls that don't change any claim's bin — say what each call changed |
+| Failure-as-impossibility | Cortex, Prefrontal | A tally of past failures is evidence about those attempts, never proof a task can't be done (B-34); decide against current tools | "Consistently fails" foreclosing a task the tools can now do; a premise marked flawed from discouraging memory |
 
 ## The probe protocol (B-28)
 
