@@ -1,4 +1,4 @@
-# Skill: Google Docs (v16)
+# Skill: Google Docs (v17)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -9,13 +9,13 @@
 To change an existing Doc, edit **only what changes** and leave everything else untouched.
 Google Docs keeps full version history, so in-place edits are safe and reversible — and
 **formatting is preserved because you never rewrite the parts you are not changing** (the
-header, tables, fonts, and every clause you didn't touch stay exactly as they were).
+header, tables, fonts, and every passage you didn't touch stay exactly as they were).
 
 There are two paths, and the first is the default for nearly all real work:
 
-- **Targeted edit (default):** the surgical Docs-API verbs — swap clause text, delete a
+- **Targeted edit (default):** the surgical Docs-API verbs — swap a passage's text, delete a
   section, insert at an anchor. Untouched content is preserved byte-for-byte. This covers
-  redline/finalize/revise work.
+  revise / finalize / replace-a-section work.
 - **Wholesale rebuild (rare):** only when the structure changes so much that surgical edits
   are impractical (reordering most of the document, rebuilding from a template). Export to
   `.docx`, edit locally with python-docx, apply once — then verify, because the
@@ -44,7 +44,7 @@ only**; `docs-replace-file` refuses `.txt`/`.md` for the same reason.
 ### Targeted edits — surgical, formatting-preserving (the default)
 - `docs-find-replace --doc <id> --find "old" --replace "new" [--match-case]` — swap one known string. The replacement inherits the matched text's formatting. Reports `occurrences`.
 - `docs-batch-replace --doc <id> --file pairs.json` — many swaps in ONE atomic call. `pairs.json` is a list of `{"find": "...", "replace": "...", "matchCase": false}`. Pairs apply **in order** and can cascade (A→B then B→C) — order them intentionally. Reports per-pair `applied`/`absent`.
-- `docs-section-delete --doc <id> --from-anchor "PHRASE" [--keep-anchor]` — delete from a **unique** anchor phrase to the end of the doc (the way to strip a trailing "[LEGAL REVIEW REDLINES]" block: anchor on its heading). Or `--start N --end N` for an explicit **raw Docs-API** index range (from `docs-get`, not `docs-cat` offsets).
+- `docs-section-delete --doc <id> --from-anchor "PHRASE" [--keep-anchor]` — delete from a **unique** anchor phrase to the end of the doc (the way to strip a trailing notes/appendix section: anchor on its heading). Or `--start N --end N` for an explicit **raw Docs-API** index range (from `docs-get`, not `docs-cat` offsets).
 - `docs-anchor-insert --doc <id> --anchor "PHRASE" --text "..." [--position before|after]` — insert text at a **unique** anchor (inherits adjacent formatting; use `docs-style` if it must differ). `\n`/`\t` in `--text` become real breaks.
 - `docs-style` — adjust styling on a range when needed (read its SKILL header for syntax).
 
@@ -62,7 +62,7 @@ only**; `docs-replace-file` refuses `.txt`/`.md` for the same reason.
 ---
 
 ## Procedure: edit or finalize an existing document (surgical — the default)
-Incorporate redlines, revise clauses, remove a section. Change only what moves; leave the
+Apply a set of edits, revise passages, remove a section. Change only what moves; leave the
 rest — and its formatting — untouched.
 
 1. **Mark the restore point.** `docs-revision DOC_ID` — keep `modifiedTime` (the step-5 undo anchor).
@@ -75,19 +75,15 @@ rest — and its formatting — untouched.
 3. **Apply each change surgically** (untouched content keeps its formatting):
    - Revise wording → `docs-find-replace` (one) or `docs-batch-replace` (many, atomic). Use
      `find` text unique enough to match exactly the intended spot.
-   - Remove a section (e.g. a trailing redlines block) → `docs-section-delete --from-anchor "[LEGAL REVIEW REDLINES]"`.
-   - Add a clause/paragraph → `docs-anchor-insert` at a unique nearby phrase.
+   - Remove a section (e.g. a trailing notes/appendix section) → `docs-section-delete --from-anchor "<the section's unique heading>"`.
+   - Add a paragraph → `docs-anchor-insert` at a unique nearby phrase.
 4. **Verify (B-28):**
    - `docs-cat DOC_ID --fingerprint` = the **AFTER** signature. Diff it against BEFORE:
      tables, heading styles, and the distinct-text-style set must be **preserved** — only the
      counts you intentionally changed should move. A collapse (tables→0, styles→a single
      default) means formatting was destroyed — investigate before reporting done.
    - `docs-cat DOC_ID --find` spot-checks: the new text is present, removed sections are
-     gone, untouched clauses survive.
-   - **A finalized agreement legitimately references attached exhibits/schedules** ("… set
-     forth in Exhibit A, attached hereto and incorporated by reference"). A reference to an
-     attachment is normal contract structure, **not** a leftover redline — do not flag it as
-     incomplete or unfinished.
+     gone, untouched content survives.
 5. **Note + clean up.** `docs-comments-add DOC_ID --content "<what changed + any advisory items to review; to undo, restore the version from <modifiedTime> in File > Version history>"` (plain comment, no @mention). `rm -f` any temp files (`doc.txt`, etc.) — leave the workspace clean.
 
 ## Procedure: wholesale rebuild (rare — only when surgical is impractical)
@@ -106,13 +102,13 @@ When the structure changes so much that surgical edits don't make sense:
 2. `docs-create --title "Q3 Report" --from-markdown report.md --folder FOLDER_ID` (or `--from-html`).
 3. Verify: `docs-cat NEW_DOC_ID --meta`. Clean up the local source file if it was a scratch build.
 
-## Procedure: review a document clause-by-clause (leave feedback, don't edit)
-For legal/contract review where you give feedback rather than change the text.
+## Procedure: review a document and leave feedback (don't edit the body)
+For a review pass where you give feedback rather than change the text.
 1. Read fully (`docs-cat DOC_ID --out doc.txt`).
-2. For each clause you have feedback on, leave one quoted comment:
-   `docs-comments-add --doc DOC_ID --quote "<exact clause snippet>" --content "<feedback + reasoning>"`.
-3. **Never append a "[REVIEW NOTES]" / redline section to the body** — that becomes debt a
-   later finalize must find and delete. Feedback lives in comments, beside the clause.
+2. For each passage you have feedback on, leave one quoted comment:
+   `docs-comments-add --doc DOC_ID --quote "<exact snippet>" --content "<feedback + reasoning>"`.
+3. **Never append a "[REVIEW NOTES]" or similar section to the body** — that becomes debt a
+   later edit must find and delete. Feedback lives in comments, beside the passage.
 4. Keep comments plain and factual. On re-review, `docs-comments-list` and resolve stale
    comments instead of stacking duplicates.
 
@@ -157,7 +153,7 @@ d.save('edit.docx')
 import docx
 d = docx.Document('edit.docx')
 body = d.paragraphs
-start = next((i for i, p in enumerate(body) if 'LEGAL REVIEW REDLINES' in p.text), None)
+start = next((i for i, p in enumerate(body) if 'APPENDIX: NOTES' in p.text), None)
 if start is not None:
     for p in body[start:]:
         p._element.getparent().remove(p._element)
