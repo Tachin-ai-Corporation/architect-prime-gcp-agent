@@ -49,6 +49,7 @@ import { extractVerdict, extractFailSummary, extractFailRecommendation } from '.
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { composeDeliverable } from '../corekit/lib/deliverable.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
+import { renderBlackboard } from '../corekit/lib/blackboard.mjs';
 import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
@@ -129,6 +130,8 @@ const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 const HYDRATE_ENABLED = CONTRACTS.organ_context?.hydrate_enabled !== false;
 const HYDRATE_MAX_CHARS = CONTRACTS.organ_context?.hydrate_max_chars || 12000;
 const HYDRATE_MAX_REFS = CONTRACTS.organ_context?.hydrate_max_refs_per_mission || 6;
+const BLACKBOARD_ENABLED = CONTRACTS.organ_context?.blackboard_enabled !== false;
+const BLACKBOARD_MAX_CHARS = CONTRACTS.organ_context?.blackboard_max_chars || 12000;
 
 // Brain's own LLM for simple textâ†’text tasks (summarize, compress, rephrase).
 // Now uses the extracted vertex-text.mjs module via createVertexText().
@@ -3626,6 +3629,19 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   while (iteration < MAX_ITERATIONS) {
     iteration++;
     envelope.iteration = iteration;
+
+    // ORGAN_CONTEXT_SHARING_PLAN Phase 4: maintain the shared mission blackboard — a
+    // deterministic, git-versioned view of goal + result packets + open items, written to the
+    // mission tree each iteration (C-24 substrate, C-5 daemon-maintained). The complete
+    // mission trail in one addressable place any organ can read. Non-fatal (B-22).
+    if (BLACKBOARD_ENABLED && envelope.type === 'M') {
+      try {
+        const _bbDir = `${CORE_DIR}/shared/${envelope.id}`;
+        if (existsSync(_bbDir)) {
+          writeFileSync(`${_bbDir}/MISSION.md`, renderBlackboard(envelope, priorResults, { maxChars: BLACKBOARD_MAX_CHARS, iteration }));
+        }
+      } catch (e) { /* blackboard is observability, never load-bearing */ }
+    }
 
     // Phase 3.3 / SESSION_CONTEXT_PLAN Phase 0b: priorResults budget — prevent
     // unbounded growth. Previously this check sat after the action-dispatch
