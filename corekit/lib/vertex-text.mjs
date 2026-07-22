@@ -107,6 +107,11 @@ export const CORTEX_SCHEMAS = {
         status: { type: 'STRING', enum: ['verified', 'inferred', 'assumed'] },
         note:   { type: 'STRING' },
       }, required: ['claim', 'status'] }},
+      // ORGAN_CONTEXT_SHARING_PLAN Phase 2: names one or more result `ref`s whose full
+      // content you need before you can decide. The daemon fetches them and returns them in
+      // the next turn; your action this turn is deferred. Use only when a result's summary
+      // is genuinely insufficient — never to re-observe work you can already read.
+      request_context: { type: 'ARRAY', items: { type: 'STRING' } },
     },
     required: ['action'],
   },

@@ -206,6 +206,9 @@ export async function executeCheckpoints(checkpoints, opts) {
     log('INFO', `[checkpoint-executor] Checkpoint ${cpNum}/${checkpoints.length}: ${cpEnvelope.instruction.substring(0, 60)} (${cpTasks.length} tasks)`);
 
     let cpResults = [];
+    // ORGAN_CONTEXT_SHARING_PLAN Phase 2: untruncated per-task outputs, kept in-memory only
+    // (never persisted — Firestore 1MiB), so cerebellum verifies from full evidence (B-28).
+    const cpFullOutputs = [];
     let cpFailed = false;
     let delegationDispatched = false;
     delegationCount = 0;
@@ -1000,6 +1003,7 @@ export async function executeCheckpoints(checkpoints, opts) {
         log('INFO', `[TELEMETRY] result_packet step=${stepResult.step} shape=${pkt.shape} bytes=${pkt.bytes} summary_chars=${pkt.summary.length} ref=${tId}`);
       }
       cpResults.push(stepResult);
+      cpFullOutputs.push({ step: stepResult.step, agent: taskAgent, output: (result.output || result.error || '') });
 
       // Record step in ledger
       await recordStep(envelope, taskStepKey, { success: result.success, error: result.error, durationMs: result.durationMs }, STEP_LEDGER_ENABLED, firestoreWrite);
@@ -1041,7 +1045,11 @@ export async function executeCheckpoints(checkpoints, opts) {
     // not a mechanical per-step gate.
     if (!cpFailed && cpEnvelope.accept_criteria && extractVerdict) {
       try {
-        const cpOutcome = cpResults.map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`).join('\n');
+        // ORGAN_CONTEXT_SHARING_PLAN Phase 2: verify from FULL evidence (B-28 re-derivation),
+        // not the packet-summarized `result`. Still bounded by CTX_VERIFY_INPUT below.
+        const fullEvidence = contracts.organ_context?.verifier_full_evidence !== false && cpFullOutputs.length > 0;
+        const evidenceRows = fullEvidence ? cpFullOutputs : cpResults;
+        const cpOutcome = evidenceRows.map(r => `- [${r.step}] ${r.agent}: ${toStr(fullEvidence ? r.output : r.result)}`).join('\n');
         const isLoadBearing = (envelope._brief?.parts || []).some(p => p.load_bearing);
         log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum`);
         const verifyReq = {

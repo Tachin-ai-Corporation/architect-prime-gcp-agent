@@ -125,6 +125,11 @@ const CTX_AGENT_STEP = CONTRACTS.dispatch?.ctx_agent_step || 8000;
 const CTX_VERIFY_INPUT = CONTRACTS.dispatch?.ctx_verify_input || 24000;
 const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 
+// ---- ORGAN_CONTEXT_SHARING_PLAN Phase 2: hydrate-on-demand ----
+const HYDRATE_ENABLED = CONTRACTS.organ_context?.hydrate_enabled !== false;
+const HYDRATE_MAX_CHARS = CONTRACTS.organ_context?.hydrate_max_chars || 12000;
+const HYDRATE_MAX_REFS = CONTRACTS.organ_context?.hydrate_max_refs_per_mission || 6;
+
 // Brain's own LLM for simple textâ†’text tasks (summarize, compress, rephrase).
 // Now uses the extracted vertex-text.mjs module via createVertexText().
 // Bypasses the neural gateway entirely — no agent routing, no workspace, no tools.
@@ -3828,6 +3833,48 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     // Schema enforcement guarantees action field — no normalization needed
     let action = decision.action;
     log('INFO', `Cortex decision: action=${action} (iteration ${iteration})`);
+
+    // ORGAN_CONTEXT_SHARING_PLAN Phase 2: hydrate-on-demand. Cortex read result summaries in
+    // the delta; if it needs a result's FULL content to decide, it names the ref(s) in
+    // request_context. The daemon fetches them (deterministic, C-5), appends them to
+    // prior_results so they ride the next decide delta, and loops WITHOUT dispatching this
+    // turn's action. Bounded: each ref fetched at most once per mission, capped by
+    // HYDRATE_MAX_REFS, content by HYDRATE_MAX_CHARS. This is how an organ gets complete
+    // context instead of re-dispatching work to re-observe a result (B-4 economy preserved:
+    // summaries by default, full content only on explicit request).
+    if (HYDRATE_ENABLED && Array.isArray(decision.request_context) && decision.request_context.length) {
+      envelope._hydrated_refs = envelope._hydrated_refs || [];
+      const fresh = decision.request_context
+        .filter(r => typeof r === 'string' && r && !envelope._hydrated_refs.includes(r));
+      const room = HYDRATE_MAX_REFS - envelope._hydrated_refs.length;
+      const toFetch = fresh.slice(0, Math.max(0, room));
+      if (toFetch.length) {
+        for (const ref of toFetch) {
+          let full = '';
+          try {
+            const doc = await firestoreRead('work', ref);
+            full = toStr(doc?.output || doc?.error || '');
+          } catch (e) { full = `[hydration error for ${ref}: ${e.message}]`; }
+          envelope._hydrated_refs.push(ref);
+          priorResults.push({
+            agent: 'system',
+            task: `hydrated context (ref=${ref})`,
+            result: `[FULL CONTENT ref=${ref}]\n${full.slice(0, HYDRATE_MAX_CHARS)}`,
+            success: true,
+          });
+          log('INFO', `[TELEMETRY] context_hydrated mission=${envelope.id} ref=${ref} bytes=${full.length}`);
+        }
+        continue; // re-decide with the full content now in prior_results
+      }
+      if (fresh.length) {
+        // All requested refs already provided, or the per-mission hydration cap is hit —
+        // tell cortex plainly and let this turn's action proceed (never loop on hydration).
+        priorResults.push({
+          agent: 'system',
+          result: `[SYSTEM] Requested context already provided (or hydration cap of ${HYDRATE_MAX_REFS} reached). Decide from what you already have.`,
+        });
+      }
+    }
 
     // Prevent self-unblock runaway: after a self-unblock attempt, only allow
     // resolution actions (synthesize, blocked). If Cortex/enforceSchema returns
