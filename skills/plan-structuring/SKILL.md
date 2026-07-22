@@ -53,6 +53,15 @@ checkpoint's criteria — that makes the milestone unverifiable against how the 
 chose to work, and it is the over-specification that strands execution. State the end state;
 let the organ choose how to reach it.
 
+**Criteria are format-agnostic unless the requester asked for a format.** The criterion
+states what must be TRUE of the content, never the shape it arrives in. If the user asked to
+"list", "summarize", or "tell me" something, do NOT require "a JSON array" or a specific
+schema — a correct prose answer would fail that check and strand a finished mission (the
+verifier FAILs on format, blocking synthesis of a right answer). Demand a specific
+serialization ONLY when the requester explicitly asked for it (e.g. "give me a CSV").
+Otherwise state the content: "each shared doc is listed with its name, id, and who shared it,
+most-recent first" — not "a JSON array of document objects".
+
 ### Simplicity first
 
 The best plan is the simplest plan that gets the work done.

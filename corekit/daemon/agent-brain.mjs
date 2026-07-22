@@ -3636,11 +3636,15 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     // mission trail in one addressable place any organ can read. Non-fatal (B-22).
     if (BLACKBOARD_ENABLED && envelope.type === 'M') {
       try {
+        // The mission git workspace (shared/<id>) exists during the mission but is rm'd on
+        // finalize (artifacts.mjs) — so mkdir defensively (idempotent when the clone is
+        // present) and emit telemetry, which is the only post-mission signal that it wrote.
         const _bbDir = `${CORE_DIR}/shared/${envelope.id}`;
-        if (existsSync(_bbDir)) {
-          writeFileSync(`${_bbDir}/MISSION.md`, renderBlackboard(envelope, priorResults, { maxChars: BLACKBOARD_MAX_CHARS, iteration }));
-        }
-      } catch (e) { /* blackboard is observability, never load-bearing */ }
+        mkdirSync(_bbDir, { recursive: true });
+        const _bb = renderBlackboard(envelope, priorResults, { maxChars: BLACKBOARD_MAX_CHARS, iteration });
+        writeFileSync(`${_bbDir}/MISSION.md`, _bb);
+        log('INFO', `[TELEMETRY] blackboard_written mission=${envelope.id} iter=${iteration} bytes=${_bb.length}`);
+      } catch (e) { log('WARN', `[blackboard] write failed (non-fatal): ${e.message}`); }
     }
 
     // Phase 3.3 / SESSION_CONTEXT_PLAN Phase 0b: priorResults budget — prevent
