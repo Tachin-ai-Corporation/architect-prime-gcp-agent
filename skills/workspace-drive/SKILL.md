@@ -11,9 +11,9 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 
 ### Read
 - `drive-ls [FOLDER_ID] [--max 20]` — List files and subfolders in a folder. If FOLDER_ID is omitted, lists the root folder.
-  Output: JSON array of file metadata including `id`, `name`, `mimeType`, and `modifiedTime`.
+  Output: JSON array of file metadata including `id`, `name`, `type` (short label), `modified`, and `link`.
 - `drive-search --query "QUERY" [--order-by "KEY desc"] [--max N]` — Search for files using a Google Drive API search query.
-  Output: JSON array of file metadata. Each entry includes `owner`, `created`, `modified`, `shared` (when the file was shared with this account), and `link`.
+  Output: JSON array of file metadata — each entry: `id`, `name`, `type` (short label: `doc`/`sheet`/`slides`/`folder`/`pdf`, else the raw MIME), `owner`, `created`, `modified`, `shared` (when it was shared with this account), `link`.
   `--order-by` controls the sort (default `modifiedTime desc`). **Choose the sort that fits the request — don't default blindly.** Useful keys: `modifiedTime`, `createdTime`, `sharedWithMeTime`, `viewedByMeTime`, `name`, `recency` (append ` desc` for newest-first).
   Common queries (combine with `and`):
   - `name contains 'report'`
@@ -24,6 +24,9 @@ When a task involves files in Google Drive — listing, searching, downloading, 
   - `mimeType = 'application/vnd.google-apps.document'` (Google Docs only)
 
   **Date filtering vs. sorting** — the query can *filter* on `modifiedTime`, `createdTime`, `viewedByMeTime` (operators `<  <=  =  >  >=`, RFC 3339, e.g. `modifiedTime > '2026-05-01T00:00:00'`). `sharedWithMeTime` is different: it can be **sorted** via `--order-by` and is **returned** as `shared`, but it **cannot** be used as a query filter — sort by it and read the `shared` values instead (see "Find files someone shared with you" below).
+
+  **Bound the result set.** Default `--max` is 20. Pass `--max N` to fetch only what you need — a smaller result returns faster and is easier to work with. When the user asks for "the N most recent / latest / top" of something, pass `--max N` (e.g. "3 most recent shared docs" → `--max 3`); don't pull a large list and slice it mentally.
+  **One search per result set.** A single `drive-search` returns the complete set for its query — if results came back, use them; do **not** re-issue the same command expecting more to appear. To get a different result, change `--query`, `--order-by`, or `--max`.
 - `drive-download FILE_ID [--output PATH]` — Download a binary file from Google Drive to a local path.
   Output: Download confirmation details and local path.
 - `drive-download-folder FOLDER_ID [--output /path/to/dir]` — Recursively download an entire folder, preserving directory structure.
@@ -65,10 +68,10 @@ The agent's Workspace account has its own Drive. When a user says "the doc I sha
 
 Don't assume — read what the user asked for and choose the field + sort accordingly.
 
-**"I just shared a doc about X with you" → find the newest share:**
-1. `drive-search --query "sharedWithMe = true and name contains 'X'" --order-by "sharedWithMeTime desc"`
-   (use `fullText contains 'X'` if the topic is in the body, not the title).
-2. The top result is the most-recently-shared match. Confirm with its `shared` timestamp and `owner`, then act on the `id` (e.g. `docs-cat <id>` for a Google Doc).
+**"I just shared a doc about X" / "my N most recent shared docs" → sort by share time:**
+1. `drive-search --query "sharedWithMe = true and name contains 'X'" --order-by "sharedWithMeTime desc" --max 5`
+   (drop `name contains` for a bare "most recent shared"; use `fullText contains 'X'` if the topic is in the body, not the title; **set `--max` to how many you need** — "3 most recent" → `--max 3`).
+2. The top results are the most-recently-shared matches. Confirm with each `shared` timestamp and `owner`, then act on the `id` (e.g. `docs-cat <id>` for a Google Doc). One search returns the full set — format what came back; don't re-run it.
 
 **"Find something I shared with you 1–2 months ago" → a shared-time window:**
 `sharedWithMeTime` can't be filtered in the query, so sort by it and scan the results:
@@ -81,11 +84,12 @@ Don't assume — read what the user asked for and choose the field + sort accord
 ### Find a file by name and download it
 1. Run `drive-search --query "name contains '<filename>'"` to retrieve matching files.
 2. If no results, run `drive-search --query "fullText contains '<filename>'"` to search within file contents.
-3. If multiple files return, examine `mimeType` and `modifiedTime` to find the correct file.
-4. **CRITICAL: Check the `mimeType` before proceeding!**
-   - If the file is a Google Doc (`application/vnd.google-apps.document`), **do not use `drive-download`**. Use `docs-cat <FILE_ID>` or `docs-get --doc <FILE_ID>` (from the `workspace-docs` skill).
-   - If the file is a Google Sheet (`application/vnd.google-apps.spreadsheet`), use the appropriate `workspace-sheets` tools.
-   - For all other standard files (e.g. `application/pdf`, `text/markdown`, `text/plain`), run `drive-download <FILE_ID> --output /tmp/<filename>`.
+3. If multiple files return, examine `type` and `modified` to find the correct file.
+4. **CRITICAL: Check the `type` before proceeding!**
+   - `doc` (Google Doc) → **do not use `drive-download`**. Use `docs-cat <FILE_ID>` or `docs-get --doc <FILE_ID>` (from the `workspace-docs` skill).
+   - `sheet` (Google Sheet) → use the appropriate `workspace-sheets` tools.
+   - `slides` (Google Slides) → use the `workspace-slides` tools.
+   - Any other type (`pdf`, `text/markdown`, `text/plain`, …) → run `drive-download <FILE_ID> --output /tmp/<filename>`.
 5. Verify: Check that local file size > 0 and file exists.
 
 ### Download an entire folder recursively
@@ -154,7 +158,7 @@ The `your-website-project` project uses a sync-service that automatically propag
 Task: "Get the Q3 marketing PDF report and download it locally."
 
 Step 1: drive-search --query "name contains 'Q3' and name contains 'marketing' and mimeType = 'application/pdf'"
-→ Result: [{ "id": "1A2B3C_pdf_id", "name": "Q3 Marketing Report.pdf", "mimeType": "application/pdf" }]
+→ Result: [{ "id": "1A2B3C_pdf_id", "name": "Q3 Marketing Report.pdf", "type": "pdf" }]
 
 Step 2: drive-download 1A2B3C_pdf_id --output /tmp/Q3_Marketing_Report.pdf
 → Result: Downloaded 4.8MB to /tmp/Q3_Marketing_Report.pdf

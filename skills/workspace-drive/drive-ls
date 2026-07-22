@@ -30,6 +30,12 @@ if [[ "$HTTP_CODE" != "200" ]]; then
 fi
 python3 -c "
 import json, sys; data = json.load(open('/tmp/drive-response.json'))
-files = [{'id':f['id'],'name':f['name'],'type':f.get('mimeType',''),'modified':f.get('modifiedTime',''),'link':f.get('webViewLink','')} for f in data.get('files',[])]
+GTYPE = {'document':'doc','spreadsheet':'sheet','presentation':'slides','folder':'folder','form':'form','drawing':'drawing'}
+def short_type(m):
+    if m == 'application/pdf': return 'pdf'
+    if m.startswith('application/vnd.google-apps.'):
+        return GTYPE.get(m.rsplit('.',1)[-1], m.rsplit('.',1)[-1])
+    return m
+files = [{'id':f['id'],'name':f['name'],'type':short_type(f.get('mimeType','')),'modified':f.get('modifiedTime',''),'link':f.get('webViewLink','')} for f in data.get('files',[])]
 print(json.dumps({'files':files,'count':len(files)}, indent=2))
 "

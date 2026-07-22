@@ -40,11 +40,17 @@ fi
 python3 -c "
 import json
 data = json.load(open('/tmp/drive-response.json'))
+GTYPE = {'document':'doc','spreadsheet':'sheet','presentation':'slides','folder':'folder','form':'form','drawing':'drawing'}
+def short_type(m):
+    if m == 'application/pdf': return 'pdf'
+    if m.startswith('application/vnd.google-apps.'):
+        return GTYPE.get(m.rsplit('.',1)[-1], m.rsplit('.',1)[-1])
+    return m
 def owner(f):
     o = f.get('owners') or []
     return o[0].get('emailAddress','') if o else ''
 files = [{
-  'id': f['id'], 'name': f['name'], 'type': f.get('mimeType',''), 'owner': owner(f),
+  'id': f['id'], 'name': f['name'], 'type': short_type(f.get('mimeType','')), 'owner': owner(f),
   'created': f.get('createdTime',''), 'modified': f.get('modifiedTime',''),
   'shared': f.get('sharedWithMeTime',''), 'link': f.get('webViewLink','')
 } for f in data.get('files',[])]
