@@ -13,6 +13,7 @@ import { extractVerdict, extractFailSummary, extractFailRecommendation, extractP
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
+import { buildResultPacket } from './result-packet.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -974,12 +975,30 @@ export async function executeCheckpoints(checkpoints, opts) {
         step: `${cpNum}.${taskNum}`,
         agent: taskAgent,
         task: taskDesc.substring(0, 200),
+        // `result` stays full-fidelity (up to CTX_AGENT_STEP) — cerebellum verifies from it
+        // (B-28, re-derivation needs full evidence). Cortex reads the packet `summary` below.
         result: result.success
           ? smartTruncate(result.output || '', CTX_AGENT_STEP)
           : `[FAILED] ${result.error}\n\n[AGENT OUTPUT]\n${smartTruncate(result.output || '(no output)', CTX_DISPATCH_FAILURE)}`,
         success: result.success,
         durationMs: result.durationMs,
       };
+      // ORGAN_CONTEXT_SHARING_PLAN Phase 1: attach a shape-aware resource packet. The
+      // cortex-facing delta shows `summary` + `ref` (the full output persists on tEnv.output,
+      // fetchable by ref) instead of a blind head+tail clip that drops list rows / tool data.
+      if (contracts.organ_context?.result_store_enabled !== false) {
+        const pkt = buildResultPacket({
+          text: result.success ? (result.output || '') : stepResult.result,
+          ref: tId,
+          budget: contracts.organ_context?.packet_summary_chars || 1200,
+          topK: contracts.organ_context?.list_summary_top_k || 8,
+        });
+        stepResult.summary = pkt.summary;
+        stepResult.ref = pkt.ref;
+        stepResult.bytes = pkt.bytes;
+        stepResult.shape = pkt.shape;
+        log('INFO', `[TELEMETRY] result_packet step=${stepResult.step} shape=${pkt.shape} bytes=${pkt.bytes} summary_chars=${pkt.summary.length} ref=${tId}`);
+      }
       cpResults.push(stepResult);
 
       // Record step in ledger

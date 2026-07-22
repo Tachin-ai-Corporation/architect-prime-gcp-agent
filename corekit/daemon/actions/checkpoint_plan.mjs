@@ -320,6 +320,12 @@ export async function handleCheckpointPlan(ctx, deps) {
     agent: r.agent,
     task: r.task,
     result: r.result,
+    // ORGAN_CONTEXT_SHARING_PLAN Phase 1: carry the resource packet so the cortex delta can
+    // show a shape-aware summary + ref instead of a blind clip of `result`.
+    summary: r.summary,
+    ref: r.ref,
+    bytes: r.bytes,
+    shape: r.shape,
     success: r.success,
     durationMs: r.durationMs,
     checkpoint_step: r.step,

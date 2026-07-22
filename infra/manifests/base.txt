@@ -121,6 +121,7 @@ corekit/lib/envelope-lifecycle.mjs corekit/lib/envelope-lifecycle.mjs
 corekit/lib/deliverable.mjs corekit/lib/deliverable.mjs
 corekit/lib/checkpoint-executor.mjs corekit/lib/checkpoint-executor.mjs
 corekit/lib/compaction.mjs corekit/lib/compaction.mjs
+corekit/lib/result-packet.mjs corekit/lib/result-packet.mjs
 corekit/lib/prompt-blocks.mjs corekit/lib/prompt-blocks.mjs
 corekit/lib/thread-ledger.mjs corekit/lib/thread-ledger.mjs
 corekit/lib/to-str.mjs corekit/lib/to-str.mjs

@@ -170,6 +170,18 @@
     "miss_circuit_breaker": 3,
     "excluded_agents": ["cerebellum"]
   },
+  "organ_context": {
+    "result_store_enabled": true,
+    "packet_summary_chars": 1200,
+    "list_summary_top_k": 8,
+    "hydrate_enabled": true,
+    "hydrate_max_chars": 12000,
+    "hydrate_max_refs_per_mission": 6,
+    "verifier_full_evidence": true,
+    "loop_guard_synthesize": true,
+    "blackboard_enabled": true,
+    "blackboard_max_chars": 12000
+  },
   "projects": {
     "context_max_tokens": 2000,
     "promotion_auto": false,

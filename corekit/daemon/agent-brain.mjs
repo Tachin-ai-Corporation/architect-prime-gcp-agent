@@ -1489,10 +1489,20 @@ const DELTA_RESULT_CHARS = 2000;
 // context). new_results is the tail past the watermark, each result capped.
 function buildDecideDeltaBlock(payload, sentUpto = 0) {
   const p = buildModePayload('decide', payload);
-  const tail = (p.prior_results || []).slice(sentUpto).map(r => ({
-    ...r,
-    result: typeof r.result === 'string' ? smartTruncate(r.result, DELTA_RESULT_CHARS) : r.result,
-  }));
+  const tail = (p.prior_results || []).slice(sentUpto).map(r => {
+    // ORGAN_CONTEXT_SHARING_PLAN Phase 1: when a shape-aware packet is present, show the
+    // `summary` (+ ref/bytes/shape riding along) instead of a blind head+tail clip of the
+    // full result — the clip drops the middle, exactly where list rows / tool data live.
+    // Cortex requests the full content by `ref` only when the summary is insufficient (Phase 2).
+    if (r.summary) {
+      const { summary, result, ...rest } = r;
+      return { ...rest, result: summary };
+    }
+    return {
+      ...r,
+      result: typeof r.result === 'string' ? smartTruncate(r.result, DELTA_RESULT_CHARS) : r.result,
+    };
+  });
   return [{
     label: 'WORKING STATE (delta) — new since your last decision',
     text: JSON.stringify({

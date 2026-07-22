@@ -362,6 +362,24 @@ console.log(miss.length ? 'MISSING:'+miss.join(',') : 'OK');
     fi
   fi
 
+  # ORGAN_CONTEXT_SHARING_PLAN: inter-organ resource-packet + hydration + blackboard knobs
+  for flag in result_store_enabled hydrate_enabled verifier_full_evidence loop_guard_synthesize blackboard_enabled; do
+    VAL="$(read_contract "organ_context.${flag}" 2>/dev/null || echo '')"
+    if [[ "$VAL" == "true" || "$VAL" == "false" ]]; then
+      pass "organ_context.${flag} = ${VAL} (boolean)"
+    else
+      fail "organ_context.${flag} = '${VAL}' (expected boolean)"
+    fi
+  done
+  for field in packet_summary_chars list_summary_top_k hydrate_max_chars hydrate_max_refs_per_mission blackboard_max_chars; do
+    VAL="$(read_contract "organ_context.${field}" 2>/dev/null || echo '')"
+    if [[ "$VAL" =~ ^[0-9]+$ ]] && [[ "$VAL" -ge 1 ]]; then
+      pass "organ_context.${field} = ${VAL}"
+    else
+      fail "organ_context.${field} = '${VAL}' (expected positive number)"
+    fi
+  done
+
   # Delivery retry discipline: bounded retries keep undeliverable envelopes
   # from retrying every poll cycle forever
   for field in max_attempts retry_backoff_base_seconds retry_backoff_max_seconds; do
