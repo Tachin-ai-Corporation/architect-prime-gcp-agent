@@ -148,6 +148,9 @@ const ERROR_NUDGE = 5;
 const ERROR_TERMINATE = 8;
 const ERROR_PATTERNS = ['ERROR:', 'No such file', 'command not found',
   'Permission denied', 'not found', 'ENOENT'];
+// ORGAN_CONTEXT_SHARING_PLAN Phase 3: on a duplicate-loop terminate, give the model one
+// tool-less turn to answer from what it already gathered (instead of returning FAILURE).
+const LOOP_GUARD_SYNTH = CONTRACTS?.organ_context?.loop_guard_synthesize !== false;
 
 class LoopGuard {
   constructor() {
@@ -655,6 +658,33 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
       typeof tc.result === 'string' && tc.result.startsWith('ERROR:'));
     if (hasToolErrors && /SUCCESS/i.test(text)) {
       text += '\n[WARNING: One or more tool calls returned errors. Verify status accuracy.]';
+    }
+  }
+
+  // ORGAN_CONTEXT_SHARING_PLAN Phase 3: loop-guard -> synthesis. If the guard stopped a
+  // duplicate-call loop, the results the model needs are already in localHistory. Give it ONE
+  // tool-less turn to answer from what it gathered (no tools => cannot loop again), preserving
+  // the ground-truth tool log. Any failure keeps the original terminate output (B-22).
+  if (guard._terminated && LOOP_GUARD_SYNTH) {
+    try {
+      const synthHist = [...localHistory, { role: 'user', content: '[SYNTHESIZE NOW] Stop calling tools — the results you need are already in the tool outputs above. Write your final answer to the task now, in prose, from what you have gathered.' }];
+      const synthResp = await retryWithBackoff(
+        () => ai.models.generateContent({
+          model: modelId,
+          contents: convertMessagesToGoogle(synthHist),
+          config: { systemInstruction: systemText, temperature, maxOutputTokens: maxTokens, topP },
+        }),
+        `Google ${modelId} loop-synthesis`
+      );
+      addGoogleUsage(usageAcc, synthResp.usageMetadata);
+      const synthText = (synthResp.candidates?.[0]?.content?.parts || []).find(p => p.text)?.text || '';
+      if (synthText.trim()) {
+        const logIdx = text.indexOf('\n\n---\n[TOOL EXECUTION LOG]');
+        text = synthText + (logIdx >= 0 ? text.slice(logIdx) : '');
+        console.log('[loop] loop-guard synthesis: answered from gathered results');
+      }
+    } catch (e) {
+      console.warn(`[loop] loop-guard synthesis failed (${e.message}) — keeping terminate output`);
     }
   }
 
