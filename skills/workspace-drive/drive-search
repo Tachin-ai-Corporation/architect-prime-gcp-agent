@@ -1,35 +1,52 @@
 #!/usr/bin/env bash
 # drive-search — Search files in Google Drive
 # Brain agent: temporal-memory (READ)
-# Usage: drive-search --query "name contains 'report'" [--max 20]
-#        drive-search --query "sharedWithMe=true" --max 10
-# Query reference: https://developers.google.com/drive/api/guides/search-files
+# Usage: drive-search --query "name contains 'report'" [--order-by "modifiedTime desc"] [--max 20]
+#        drive-search --query "sharedWithMe = true" --order-by "sharedWithMeTime desc"
+# Query terms:  https://developers.google.com/drive/api/guides/ref-search-terms
+# orderBy keys: modifiedTime | createdTime | sharedWithMeTime | viewedByMeTime | name | recency  (append ' desc')
+# NOTE: sharedWithMeTime is SORTABLE (--order-by) and RETURNED (as `shared`), but is NOT a query filter term.
+#       Filterable date fields in --query: modifiedTime, createdTime, viewedByMeTime (ops < <= = > >=, RFC 3339).
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[drive-search] [ERROR] $*" >&2; exit 1; }
-QUERY="" MAX=20
+QUERY="" MAX=20 ORDER_BY="modifiedTime desc"
 while [[ $# -gt 0 ]]; do
-  case "$1" in --query) QUERY="$2"; shift 2 ;; --max) MAX="$2"; shift 2 ;;
+  case "$1" in
+    --query) QUERY="$2"; shift 2 ;;
+    --max) MAX="$2"; shift 2 ;;
+    --order-by) ORDER_BY="$2"; shift 2 ;;
     *) if [[ -z "$QUERY" && "$1" != -* ]]; then QUERY="$1"; shift
-       else die "Unknown: $1"; fi ;; esac
+       else die "Unknown: $1"; fi ;;
+  esac
 done
 [[ -n "$QUERY" ]] || die "Need --query"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY and trashed=false")
+ENC_ORDER=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$ORDER_BY")
 HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
-  "${DRIVE_API}/files?q=${ENC_Q}&pageSize=${MAX}&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,mimeType,modifiedTime,size,webViewLink)&orderBy=modifiedTime%20desc")
+  "${DRIVE_API}/files?q=${ENC_Q}&pageSize=${MAX}&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,mimeType,createdTime,modifiedTime,sharedWithMeTime,size,webViewLink,owners(emailAddress,displayName))&orderBy=${ENC_ORDER}")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"query\":\"${QUERY}\",\"message\":\"I don't have access to search these files. Please share them with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
 fi
 if [[ "$HTTP_CODE" != "200" ]]; then
-  die "Drive API returned HTTP ${HTTP_CODE}"
+  ERRMSG=$(python3 -c "import json; print(json.load(open('/tmp/drive-response.json')).get('error',{}).get('message',''))" 2>/dev/null || true)
+  die "Drive API returned HTTP ${HTTP_CODE}${ERRMSG:+ — ${ERRMSG}}"
 fi
 python3 -c "
-import json, sys; data = json.load(open('/tmp/drive-response.json'))
-files = [{'id':f['id'],'name':f['name'],'type':f.get('mimeType',''),'modified':f.get('modifiedTime',''),'link':f.get('webViewLink','')} for f in data.get('files',[])]
+import json
+data = json.load(open('/tmp/drive-response.json'))
+def owner(f):
+    o = f.get('owners') or []
+    return o[0].get('emailAddress','') if o else ''
+files = [{
+  'id': f['id'], 'name': f['name'], 'type': f.get('mimeType',''), 'owner': owner(f),
+  'created': f.get('createdTime',''), 'modified': f.get('modifiedTime',''),
+  'shared': f.get('sharedWithMeTime',''), 'link': f.get('webViewLink','')
+} for f in data.get('files',[])]
 print(json.dumps({'files':files,'count':len(files)}, indent=2))
 "

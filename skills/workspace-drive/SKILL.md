@@ -12,12 +12,18 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 ### Read
 - `drive-ls [FOLDER_ID] [--max 20]` — List files and subfolders in a folder. If FOLDER_ID is omitted, lists the root folder.
   Output: JSON array of file metadata including `id`, `name`, `mimeType`, and `modifiedTime`.
-- `drive-search --query "QUERY"` — Search for files using a Google Drive API search query.
-  Output: JSON array of matching file metadata.
-  Common queries:
+- `drive-search --query "QUERY" [--order-by "KEY desc"] [--max N]` — Search for files using a Google Drive API search query.
+  Output: JSON array of file metadata. Each entry includes `owner`, `created`, `modified`, `shared` (when the file was shared with this account), and `link`.
+  `--order-by` controls the sort (default `modifiedTime desc`). **Choose the sort that fits the request — don't default blindly.** Useful keys: `modifiedTime`, `createdTime`, `sharedWithMeTime`, `viewedByMeTime`, `name`, `recency` (append ` desc` for newest-first).
+  Common queries (combine with `and`):
   - `name contains 'report'`
-  - `sharedWithMe=true` (files shared with the agent's Workspace account)
+  - `fullText contains 'quarterly budget'` (search inside file contents)
+  - `sharedWithMe = true` (files shared with the agent's Workspace account)
+  - `sharedWithMe = true and name contains 'contract'`
   - `'<folderId>' in parents` (files inside a specific folder)
+  - `mimeType = 'application/vnd.google-apps.document'` (Google Docs only)
+
+  **Date filtering vs. sorting** — the query can *filter* on `modifiedTime`, `createdTime`, `viewedByMeTime` (operators `<  <=  =  >  >=`, RFC 3339, e.g. `modifiedTime > '2026-05-01T00:00:00'`). `sharedWithMeTime` is different: it can be **sorted** via `--order-by` and is **returned** as `shared`, but it **cannot** be used as a query filter — sort by it and read the `shared` values instead (see "Find files someone shared with you" below).
 - `drive-download FILE_ID [--output PATH]` — Download a binary file from Google Drive to a local path.
   Output: Download confirmation details and local path.
 - `drive-download-folder FOLDER_ID [--output /path/to/dir]` — Recursively download an entire folder, preserving directory structure.
@@ -50,6 +56,27 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 
 
 ## Procedures
+
+### Find files someone shared with you
+The agent's Workspace account has its own Drive. When a user says "the doc I shared with you," they mean a file in the **shared-with-me** set (`sharedWithMe = true`). Three time fields matter — pick the one the request is really about:
+- `shared` (`sharedWithMeTime`) — when the file landed in *your* shared list. This is the axis for "recently shared" / "shared last month." Sortable and returned; **not** query-filterable.
+- `modified` (`modifiedTime`) — when the content last changed (often long before it was shared with you). Query-filterable.
+- `created` (`createdTime`) — when the file was first created. Query-filterable.
+
+Don't assume — read what the user asked for and choose the field + sort accordingly.
+
+**"I just shared a doc about X with you" → find the newest share:**
+1. `drive-search --query "sharedWithMe = true and name contains 'X'" --order-by "sharedWithMeTime desc"`
+   (use `fullText contains 'X'` if the topic is in the body, not the title).
+2. The top result is the most-recently-shared match. Confirm with its `shared` timestamp and `owner`, then act on the `id` (e.g. `docs-cat <id>` for a Google Doc).
+
+**"Find something I shared with you 1–2 months ago" → a shared-time window:**
+`sharedWithMeTime` can't be filtered in the query, so sort by it and scan the results:
+1. `drive-search --query "sharedWithMe = true" --order-by "sharedWithMeTime desc" --max 50` (add `and name contains '...'` / `fullText contains '...'` if you know the topic — it narrows the list).
+2. Compute the target window from today's date, then pick the entries whose `shared` value falls inside it. Results are newest-shared-first, so the target sits a little way down the list.
+3. If the window isn't reached, raise `--max` and scan further.
+
+**Who shared it:** the `owner` field on each result shows the file's owner — use it to confirm the file came from the expected person.
 
 ### Find a file by name and download it
 1. Run `drive-search --query "name contains '<filename>'"` to retrieve matching files.
@@ -149,6 +176,20 @@ Step 3: drive-upload /tmp/deck.pptx --name "Q3 Pitch Deck.pptx" --folder 9Z8Y7X_
 → Result: { "id": "4D5E6F_file_id", "name": "Q3 Pitch Deck.pptx" }
 
 Outcome: Folder created and file uploaded successfully.
+```
+
+### Example: Find a doc someone just shared with you
+```
+Task: "I just shared a contract draft with you — pull it up."
+
+Step 1: drive-search --query "sharedWithMe = true and name contains 'contract'" --order-by "sharedWithMeTime desc"
+→ Result: [{ "id": "1AbC...", "name": "Acme Contract Draft", "owner": "teammate@example.com",
+             "shared": "2026-07-22T14:03:00Z", "modified": "2026-07-10T09:12:00Z", "link": "..." }]
+
+Step 2: docs-cat 1AbC...   # Google Doc → use the Docs reader, not drive-download
+
+Outcome: Most-recently-shared match found by ordering on sharedWithMeTime. Note `shared` is newer
+than `modified` — sorting on modifiedTime would have buried it. Opened with the Docs reader.
 ```
 
 ---
