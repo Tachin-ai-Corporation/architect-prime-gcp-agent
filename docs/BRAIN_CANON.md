@@ -24,7 +24,7 @@ The brain processes one envelope at a time, completely, before taking the next. 
 **Worse looks like:** interleaved processing, partial attention, parallel claims, or any structure whose failure modes require reasoning about races.
 
 ### B-3 · Cognition is dispatched to specialists with exactly one job each
-Cortex orchestrates and synthesizes. Prefrontal plans. Motor executes. Cerebellum verifies. Temporal agents recall and research. Every LLM call in the system has a single, nameable purpose, addressed to the agent whose purpose it is.
+Cortex orchestrates and synthesizes. Prefrontal plans. Motor executes. Cerebellum verifies. Temporal-Memory curates the agent's memory — recall and consolidation are two modes of one job (retrieve, record), not two jobs — and Temporal-Research brings in the world. Every LLM call in the system has a single, nameable purpose, addressed to the agent whose purpose it is, and **each organ owns and executes the skills of its one job** — across the board: the memory skills are Temporal-Memory's to run, just as the docs/drive skills are Motor's.
 **Better looks like:** prompts that get shorter and more pointed because the recipient's role carries the context; verification genuinely independent of execution; planning that produces structure the daemon can stamp, not prose the daemon must interpret.
 **Worse looks like:** cortex doing motor's work inline; a "do everything" prompt; verification performed by the same call that produced the work.
 
@@ -34,7 +34,7 @@ Prompt size is a cost, a latency, and an attention hazard. The brain assembles t
 **Worse looks like:** "include everything just in case"; growing system prompts; raw logs pasted where a two-line digest would do.
 
 ### B-5 · Memory is a discipline, not a warehouse
-Three layers, three speeds: working memory (the scratchpad, pruned relentlessly), Core Memory (durable facts, actively retired and superseded), Deep Truths (behavioral firmware, changed rarely and only on multi-session evidence). The value of memory is its signal density. The live conversation is none of these layers — it is deterministic context (B-32), present while the transcript holds it and persisted only through the same consolidation gate as everything else.
+Three layers, three speeds: working memory (the scratchpad, pruned relentlessly), Core Memory (durable facts, actively retired and superseded), Deep Truths (behavioral firmware, changed rarely and only on multi-session evidence). The value of memory is its signal density — achieved by **weighting memory by value**: record the high-value learnings, retire the rest, and surface the best first. **Temporal-Memory owns this discipline** for the whole brain — the single organ that records, reconciles, and ranks memory so every other organ receives the good stuff, pruned. The live conversation is none of these layers — it is deterministic context (B-32), present while the transcript holds it and persisted only through the same consolidation gate as everything else.
 **Better looks like:** smaller working memory carrying more operational truth; retirement and supersession happening as often as promotion; an agent that gets *more* predictable as it accumulates experience.
 **Worse looks like:** memory that only grows; stale facts shaping live decisions; promotion without evidence; an agent whose behavior drifts because its memory did.
 
@@ -78,9 +78,9 @@ How the organs work together. This is the intended shape of every thought the sy
                  │
         ┌────────┴─────────┐                MOTOR — the hands:
         ▼                  ▼                tools, exec, files
-  TEMPORAL-MEMORY    TEMPORAL-RESEARCH      (the only mutator)
-  internal recall,   external info:
-  no external APIs   grounding + fetch
+  TEMPORAL-MEMORY    TEMPORAL-RESEARCH      (the only mutator
+  memory authority   external info:          of external state)
+  recall + record    grounding + fetch
 ```
 
 | Organ | Nature | One job | Never |
@@ -89,9 +89,9 @@ How the organs work together. This is the intended shape of every thought the sy
 | **Brain daemon** | Deterministic | Own the loop: state, stamping, dispatch, transitions | Generates content; outsources control flow |
 | **Cortex** | Judgment | Classify intakes, commit the plan from the Brief, synthesize outcomes | Executes tools; holds the loop; verifies itself |
 | **Prefrontal** | Judgment | Decompose and assess execution-bound work into a Brief | Executes; commits or selects a move; judges the turn as simple or complex; freelances beyond the Brief schema |
-| **Temporal-Memory** | Judgment, read-only | Recall what the agent already knows | Touches external APIs; invents facts |
+| **Temporal-Memory** | Judgment + memory-scoped effects | Curate the agent's memory: recall high-value knowledge on demand; record & reconcile it in consolidation (one job, two modes) | Reaches beyond memory — web (Research), arbitrary/Workspace mutation (Motor); invents facts |
 | **Temporal-Research** | Judgment, read-only | Bring in what the world knows: search + fetch | Mutates state; substitutes for memory |
-| **Motor** | Judgment + effects | Act: tools, exec, files — the only mutator | Verifies its own work; runs two hands at once per envelope; sends messages or communicates with agents/humans — outbound is the mouth's alone (C-27) |
+| **Motor** | Judgment + effects | Act: tools, exec, files — the only mutator of external/world state | Verifies its own work; runs two hands at once per envelope; sends messages or communicates with agents/humans — outbound is the mouth's alone (C-27) |
 | **Cerebellum** | Judgment, read-only | Verify results against accept criteria, independently | Verifies anything it produced; executes fixes |
 | **Mouth** | Deterministic + filter | Classify and deliver outputs to the channel — the sole outbound egress (C-27) | Originates content; bypasses the classify filter; is bypassed by any other outbound path |
 
@@ -186,7 +186,7 @@ Skill consultation is a structural step in the loop, not an organ's discretionar
 | **Motor** | Executes by the skill's procedure, including its safety rules and stop conditions; deviation requires a recorded reason |
 | **Cerebellum** | Verifies against the skill's own checks and expected outcomes — the procedure defines what "done correctly" means |
 | **Temporal-Research** | Never substitutes for an installed skill: the outside world is not consulted for what the skill already prescribes |
-| **Temporal-Memory** | Recall supplements skills with lived context; it never overrides a current skill version with a remembered older one |
+| **Temporal-Memory** | Owns and executes the memory skills — recall (retrieval strategy) and consolidation (recording) — for the whole brain; recall supplements other skills with lived context and never overrides a current skill version with a remembered older one |
 | **Brain daemon** | Owns the resolution step: skill lookup is part of dispatch, deterministic, and skippable by no one |
 
 Deviation is permitted only when the skill demonstrably does not cover the case — and that deviation, with its reason, is recorded. Repeated deviation in the same domain is not a pattern to tolerate; it is a skill gap, and a skill gap is an improvement proposal. Specific tool syntax — command names, argument formats, flag values — lives exclusively in skill documents, never in SOUL files, IDENTITY files, or workspace documentation. SOUL files teach cognitive patterns; skills teach procedures.
