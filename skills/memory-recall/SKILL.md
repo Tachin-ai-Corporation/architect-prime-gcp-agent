@@ -6,9 +6,11 @@ data from all memory layers and the work ledger, then passes it to
 temporal-memory for synthesis.
 
 ## Architecture
-Temporal-memory runs with `maxSteps=1` and no tool access — it is a pure
-synthesizer. The brain daemon's `recallMemory()` function handles all data
-retrieval:
+On the **recall** path, temporal-memory runs with `maxSteps=1` and no tool access — it is a
+pure synthesizer; the brain daemon's `recallMemory()` handles all retrieval and pre-loads the
+data (fast, deterministic — C-5). Recording/consolidation is the separate **tool-executing**
+mode where temporal-memory runs the memory tools itself (see the memory-consolidate skill) —
+same organ, one job (memory), two modes. Recall's pre-loaded sources:
 
 ### Pre-loaded Sources (always included)
 1. **Working Memory** — `MEMORY.md` contents (most current operational state)
@@ -48,6 +50,7 @@ You receive expanded candidates including deep history. Construct the final pack
 
 ## Key Principles
 - **Surface relevant, not everything** — Recall makes context smaller, not larger (B-4)
+- **Rank by value, then recency** — Core Memory carries an importance weight and a usage signal (recall count), and the daemon returns entries value-ranked; lead the packet with the highest-value, most-relevant facts and learnings, and drop low-signal noise. The packet is the pruned good stuff, not a transcript (B-5). I am the whole brain's memory — what I rank well is what every organ gets.
 - **Never fabricate** — If nothing matches, say so. Don't invent memories.
 - **Frame failures forward** — A failure candidate is a time- and condition-bound episode that carries a *lesson* (the recurring obstacle + what to try differently), not a verdict on feasibility. Surface the lesson and state the capability is **not** foreclosed; never carry "consistently fails / infeasible / impossible / the tool can't" into the packet. Tools and code change between attempts — feasibility is the acting organs' call, now. A cluster of past failures is still just evidence about those attempts, not proof the task can't be done.
 - **Cite work items** — Reference by envelope id and date when including episodic hits.

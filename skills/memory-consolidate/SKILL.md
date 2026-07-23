@@ -5,11 +5,17 @@ Automatically triggered by nightly cron. Do not invoke manually. Performs nightl
 
 ## Commands
 
-No executable commands are governed directly by this skill (handled via daemon cron).
+Temporal-Memory executes these directly — it is the memory authority and runs the memory tools itself; the consolidation mission is dispatched with tool access (B-3/B-16).
+- `core-memory-read [--query Q] [--category C] [--since 30d] [--limit N]` — read Core Memory (entries returned value/relevance-ranked).
+- `core-memory-write --fact "<fact>" --category <cat> [--tags "t1,t2"] [--importance <0..1>] [--supersedes <old-id>]` — promote or update a durable fact.
+- `core-memory-retire --id <id> --reason "<why>"` — retire a stale/contradicted entry.
+- `update-deep-truths --list | --add "<truth>" | --remove "<text>"` — Deep Truths lifecycle.
+- `session-summary --hours 24 [--exclude-intent memory_consolidation]` — recent sessions + compaction digests.
+- `runCommand` / `readFile` / `writeFile` — read and rewrite `MEMORY.md`; write the report.
 
 ## Procedures
 
-This is the agent's "sleep cycle" — processing the day's experiences across all three memory layers.
+This is Temporal-Memory's "sleep cycle" — I process the day's experiences across all three memory layers, **running the tools myself** (I am the memory authority for the whole brain), and I weight what I keep by value so recall later surfaces the good stuff first.
 
 ### Nightly Consolidation Playbook
 1. **Gather Working Memory:** Read `/opt/corekit/workspace/MEMORY.md` to see recent focus and open items.
@@ -20,10 +26,10 @@ This is the agent's "sleep cycle" — processing the day's experiences across al
 6. **Triage Working Memory:** Classify every entry in `MEMORY.md` into one of: `ACTIVE`, `COMPLETED`, `STALE`, or `PROMOTE`.
 7. **Identify Outdated Core Memories:** Compare recent work against the long-term archive to locate contradicted, redundant, or stale entries.
 8. **Retire or Supersede:** Run `core-memory-retire --id <entry-id> --reason "<reason>"` for stale items, or `core-memory-write --fact "<fact>" --category <cat> --supersedes <old-id>` for updates. (Max 5 per run).
-9. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat>` for promoted items. (Max 5 per run). **Never promote a failure into a feasibility verdict.** A mission that failed promotes only as a forward *lesson* — "when `<situation>`, `<do X>`" — never as "`<task>` is infeasible / impossible / can't be done." Feasibility is decided at execution time against current tools; a durable "it can't be done" belief is self-fulfilling and outlives the conditions that produced it. If such a belief already exists and the tooling has since changed, retire it in step 8.
+9. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat> --tags "<topic>" --importance <0..1>` for promoted items. (Max 5 per run). **Weight by value (B-5):** set `--importance` high (→1.0) for a learning that recurred across sessions, led to a success, or is load-bearing; leave routine facts at the default. Always set `--tags` (topic) so retrieval can find high-value learnings by subject. This is how recall surfaces the good stuff first — the whole brain benefits from what I weight well. **Never promote a failure into a feasibility verdict.** A mission that failed promotes only as a forward *lesson* — "when `<situation>`, `<do X>`" — never as "`<task>` is infeasible / impossible / can't be done." Feasibility is decided at execution time against current tools; a durable "it can't be done" belief is self-fulfilling and outlives the conditions that produced it. If such a belief already exists and the tooling has since changed, retire it in step 8.
 10. **Prune and Rewrite Working Memory:** Overwrite `/opt/corekit/workspace/MEMORY.md` with only active items, using the template format (must be under 2,000 characters).
 11. **Review and Update Deep Truths:** Run `update-deep-truths --list` and modify if needed using `--add` or `--remove`. (Max 2 changes per run).
-12. **Generate Report:** Output a structured summary showing counts of triaged, retired, and promoted items.
+12. **Generate Report:** Write a structured `consolidation_report.md` to the workspace (and echo it) with counts: working-memory triaged, retirements, promotions, Deep-Truth changes, final MEMORY.md char count. **This file is the mission's verifiable outcome** — cerebellum checks it; never leave the consolidation to be reconstructed after the fact.
 
 ---
 
