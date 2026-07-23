@@ -826,6 +826,10 @@ const _db = createFirestoreClient({ projectId: GCP_PROJECT, logger: log });
 
 const DEPLOYMENT_ROOTED = new Set([
   'work', 'processes', 'plans', 'approvals', 'projects', 'skill-proposals',
+  // On-demand responsibility triggers are a top-level, agent-addressed control
+  // channel (like `work`): the introspect daemon writes them at the documents
+  // root and the brain's checkResponsibilityTriggers reads/claims them there.
+  'responsibility_triggers',
 ]);
 
 function collectionParent(collection) {
