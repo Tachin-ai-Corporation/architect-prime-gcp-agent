@@ -154,6 +154,7 @@ const server = createServer(async (req, res) => {
         temperature,
         top_p: topP,
         session: sessionReq,
+        exec: execReq,
       } = body;
 
       const agentId = parseAgentId(modelRoute);
@@ -190,8 +191,9 @@ const server = createServer(async (req, res) => {
         // op 'open' / 'reset' are handled after the system split below.
       }
 
-      // Load agent config
-      const agentConfig = loadAgentConfig(agentId);
+      // Load agent config (exec = per-request tool-capability opt-in, e.g. temporal-memory
+      // executing consolidation; the recall hot path never sends it — stays toolless).
+      const agentConfig = loadAgentConfig(agentId, { exec: execReq === true });
 
       // Get tools for this agent (undefined = no tools, not empty object)
       const rawTools = getFilteredTools(agentConfig.allowedTools);

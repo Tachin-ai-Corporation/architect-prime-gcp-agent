@@ -48,7 +48,7 @@ export function reloadContracts() {
  * @param {string} agentId  e.g. "cortex", "motor", "prefrontal"
  * @returns {object} { model, fallbackModel, systemPrompt, maxSteps, workspace, allowedTools }
  */
-export function loadAgentConfig(agentId) {
+export function loadAgentConfig(agentId, opts = {}) {
   const contracts = getContracts();
   const workspace = agentId === 'cortex'
     ? join(WORKSPACE_BASE, 'workspace')
@@ -81,10 +81,15 @@ export function loadAgentConfig(agentId) {
     } catch {}
   }
 
-  // Execution agents (motor, cerebellum, temporal-research) get tools
-  // Planning/synthesizing agents (cortex, prefrontal, temporal-memory) don't
+  // Execution agents (motor, cerebellum, temporal-research) always get tools.
+  // Planning/synthesizing agents (cortex, prefrontal) never do.
+  // Temporal-Memory is the memory authority (TEMPORAL_MEMORY_AUTHORITY_PLAN): toolless on
+  // the RECALL hot path (the daemon pre-fetches, C-5), but tool-capable when dispatched to
+  // EXECUTE (consolidation) — signaled per-request by opts.exec. Fail-safe: without the
+  // signal it stays toolless, so recall is never accidentally tool-enabled.
   const EXECUTION_AGENTS = new Set(['motor', 'cerebellum', 'temporal-research']);
-  const needsTools = EXECUTION_AGENTS.has(agentId);
+  const TOOL_ON_REQUEST = new Set(['temporal-memory']);
+  const needsTools = EXECUTION_AGENTS.has(agentId) || (opts.exec === true && TOOL_ON_REQUEST.has(agentId));
 
   return {
     model: agentOverrides.model || defaultModel,

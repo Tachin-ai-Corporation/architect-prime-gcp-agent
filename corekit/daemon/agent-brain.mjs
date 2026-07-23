@@ -1699,6 +1699,9 @@ async function callAgent(agentId, envelope) {
         max_tokens: maxTokens,
         temperature: temperature,
         top_p: topP,
+        // TEMPORAL_MEMORY_AUTHORITY_PLAN P2: task dispatches (dispatchAgent) opt into tool
+        // execution; the recall path calls callAgent without _exec, so it stays toolless.
+        exec: envelope._exec === true,
       }),
       signal: AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
     });
@@ -1983,6 +1986,15 @@ async function recallMemory(query, context = {}) {
 //   2. Nightly consolidation: p-memory-consolidate process (curated promotions)
 async function writeMemory(envelope) {
   try {
+    // TEMPORAL_MEMORY_AUTHORITY_PLAN P2: the nightly consolidation mission must NOT append
+    // its own entry to the working memory it just pruned (self-pollution). Skip it — the
+    // consolidation report is the record, not a MEMORY.md line.
+    const _cons = `${envelope.processId || envelope.processRef || envelope.process_ref || ''} ${envelope.responsibility_id || envelope.responsibilityId || envelope._responsibility || ''}`.toLowerCase();
+    if (_cons.includes('memory-consolidate') || _cons.includes('memory-consolidation') ||
+        /\bmemory consolidation\b|\bnightly memory\b/i.test(toStr(envelope.instruction))) {
+      log('INFO', 'Memory write: skipping consolidation-born envelope (avoid self-pollution)');
+      return;
+    }
     const instruction = toStr(envelope.instruction).replace(/\s+/g, ' ').trim().substring(0, 120);
     const outputText = envelope.output ? toStr(envelope.output) : (envelope.context_summary ? toStr(envelope.context_summary) : '');
     const texture = outputText ? ` -> ${outputText.replace(/\s+/g, ' ').trim().substring(0, 120)}` : '';
@@ -3357,7 +3369,7 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
   const _tokenUsage = { totalInput: 0, totalOutput: 0, totalCached: 0, totalCacheWrites: 0, callCount: 0 };
 
   const dispatchAgent = async (agentId, payload) => {
-    const res = await callAgent(agentId, payload);
+    const res = await callAgent(agentId, { ...payload, _exec: true });
     if (res?.usage) {
       const u = res.usage;
       _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
@@ -3551,7 +3563,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   // verification chain, probes) previously dispatched through raw callAgent,
   // bypassing the mission token accumulator — wrap it like every other path.
   const trackedDispatchAgent = async (agentId, payload) => {
-    const res = await callAgent(agentId, payload);
+    const res = await callAgent(agentId, { ...payload, _exec: true });
     if (res?.usage) {
       const u = res.usage;
       _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
