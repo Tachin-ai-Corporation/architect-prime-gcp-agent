@@ -169,6 +169,38 @@
   flex-shrink: 0;
 }
 
+/* ---- Run now button ---- */
+.runBtn {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(31, 154, 155, 0.4);
+  background: transparent;
+  color: var(--network-teal);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.runBtn:hover {
+  background: rgba(31, 154, 155, 0.1);
+}
+
+.runBtn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.runMsg {
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.runMsgOk { color: var(--network-teal); }
+.runMsgErr { color: var(--status-error); }
+
 /* ---- Toggle Switch ---- */
 .toggle {
   position: relative;

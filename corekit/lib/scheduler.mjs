@@ -466,6 +466,76 @@ export function createScheduler(deps) {
     await processEnvelope(missionEnvelope, memory);
   }
 
+  // ---- On-demand trigger ----
+
+  /**
+   * Fire a responsibility on demand, by id — the deliberate out-of-turn entry
+   * point (operator "Run now" or an agent honoring a user request). Reuses the
+   * same fireResponsibility() engine as the cron loop; differs only in how it
+   * treats the guards:
+   *
+   *   - Singleton is ALWAYS enforced (never two concurrent cycles — a second
+   *     consolidation over the same memory would corrupt it).
+   *   - min_spacing is honored unless opts.bypassSpacing (on-demand callers
+   *     pass true — running "out of turn" is the whole point).
+   *   - A disabled responsibility is refused unless opts.force.
+   *
+   * Dispatch is fire-and-forget: fireResponsibility() runs the whole mission,
+   * so we start it detached and return immediately — neither the agent's decide
+   * loop nor the operator poll blocks for the minutes a cycle takes. Callers
+   * observe the running mission via source_meta.responsibility_id.
+   *
+   * @param {string} id - Responsibility id
+   * @param {object} [opts]
+   * @param {boolean} [opts.bypassSpacing=false] - Skip the min_spacing guard
+   * @param {boolean} [opts.force=false]         - Fire even if disabled
+   * @param {string}  [opts.source='ondemand']   - Telemetry label (agent|operator|…)
+   * @returns {Promise<{ok:boolean, id?:string, name?:string, fired_at?:string, skipped?:boolean, error?:string}>}
+   */
+  async function fireById(id, opts = {}) {
+    const { bypassSpacing = false, force = false, source = 'ondemand' } = opts;
+    const resp = RESPONSIBILITIES.find(r => r.id === id);
+    if (!resp) return { ok: false, error: `responsibility '${id}' not found` };
+    if (resp.enabled === false && !force) {
+      return { ok: false, error: `responsibility '${id}' is disabled` };
+    }
+
+    // Singleton — always enforced. Skip if a non-terminal mission already
+    // exists for this responsibility (mirrors the cron loop's guard).
+    if (resp.singleton && firestoreQuery) {
+      try {
+        const active = await firestoreQuery('work', [
+          { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: id } },
+        ]);
+        const nonTerminal = active.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
+        if (nonTerminal.length > 0) {
+          log('INFO', `fireById ${id}: singleton guard — cycle in progress (${nonTerminal[0].id}), refusing`);
+          return { ok: false, skipped: true, error: `a cycle is already in progress (${nonTerminal[0].id})` };
+        }
+      } catch (e) {
+        log('WARN', `fireById ${id}: singleton check failed (${e.message}), proceeding`);
+      }
+    }
+
+    // Min-spacing — honored unless explicitly bypassed.
+    if (!bypassSpacing) {
+      const lastFired = _respLastFired[id];
+      const minSpacingMs = (resp.min_spacing_minutes || 15) * 60 * 1000;
+      if (lastFired && (Date.now() - lastFired) < minSpacingMs) {
+        return { ok: false, skipped: true, error: `min spacing (${resp.min_spacing_minutes}m) not elapsed` };
+      }
+    }
+
+    _respLastFired[id] = Date.now();
+    // Keep the cron cadence coherent — re-arm the next scheduled fire.
+    if (resp.enabled && resp.schedule) _respNextFire[id] = cronNextFire(resp.schedule);
+    log('INFO', `[TELEMETRY] responsibility_triggered id=${id} source=${source} bypass_spacing=${bypassSpacing === true}`);
+
+    // Fire-and-forget — the mission runs in the background.
+    fireResponsibility(resp).catch(e => log('ERROR', `fireById ${id} fire failed: ${e.message}`));
+    return { ok: true, id, name: resp.name || id, fired_at: now() };
+  }
+
   // ---- Scheduler start/stop ----
 
   /**
@@ -631,6 +701,8 @@ export function createScheduler(deps) {
     stop,
     /** Fire event-triggered responsibilities. */
     fireEvent,
+    /** Fire a responsibility on demand by id (operator "Run now" / agent request). */
+    fireById,
     /** Recalculate next-fire times (after config hot-reload). */
     recalcNextFires,
     /** Get the current loaded responsibilities array. */

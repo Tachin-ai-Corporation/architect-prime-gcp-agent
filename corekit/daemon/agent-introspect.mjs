@@ -520,8 +520,46 @@ function handleSetResponsibilityEnabled(params) {
   return { success: false, error: `Responsibility '${id}' not found in any config file` };
 }
 
+// ---- handleRunResponsibility ----
+// Operator "Run now": the daemon that owns the scheduler (agent-brain) is a
+// separate process, so we bridge by enqueuing a pending doc into the top-level
+// `responsibility_triggers` collection. The brain's pollLoop claims it, fires it
+// via scheduler.fireById, and writes back a terminal status the dashboard reads.
+async function handleRunResponsibility(params) {
+  const { id } = params;
+  if (!id) return { success: false, error: 'Missing required param: id' };
+  const known = readResponsibilityEntries().find(e => e.id === id);
+  if (!known) return { success: false, error: `Responsibility '${id}' not found` };
+  if (!FIRESTORE_URL) return { success: false, error: 'Firestore unavailable' };
+
+  try {
+    const token = await getGceToken();
+    const doc = {
+      agent_id: AGENT_HOSTNAME,
+      responsibility_id: id,
+      status: 'pending',
+      bypass_spacing: true,          // explicit "now" — skip min-spacing (never the singleton guard)
+      requested_by: 'dashboard',
+      requested_at: new Date().toISOString(),
+    };
+    const res = await fetch(`${FIRESTORE_URL}/responsibility_triggers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: encodeMap(doc) }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { success: false, error: `Enqueue failed: ${res.status} ${body.slice(0, 200)}` };
+    }
+    log(`Queued on-demand trigger for ${id}`, { responsibility: id });
+    return { success: true, message: `'${known.name}' queued — the brain will start it within a few seconds.` };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 // ---- Query dispatcher ----
-function processQuery(type, params = {}) {
+async function processQuery(type, params = {}) {
   switch (type) {
     case 'skills': return handleSkills();
     case 'status': return handleStatus();
@@ -531,6 +569,7 @@ function processQuery(type, params = {}) {
     case 'set_model': return handleSetModel(params);
     case 'responsibilities': return handleResponsibilities();
     case 'set_responsibility_enabled': return handleSetResponsibilityEnabled(params);
+    case 'run_responsibility': return await handleRunResponsibility(params);
     default: throw new Error(`Unknown query type: ${type}`);
   }
 }
@@ -546,7 +585,7 @@ async function tick() {
     for (const q of queries) {
       log('Processing query', { type: q.type, path: q.path });
       try {
-        const result = processQuery(q.type, q.params);
+        const result = await processQuery(q.type, q.params);
         // Write result to Firestore BEFORE any restart
         await writeResult(q.path, result);
         log('Query complete', { type: q.type });

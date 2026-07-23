@@ -7,6 +7,8 @@
       "schedule": "0 8 * * *",
       "enabled": true,
       "min_spacing_minutes": 720,
+      "triggerable": true,
+      "singleton": true,
       "processRef": "p-memory-consolidate",
       "instruction": "Execute the nightly memory consolidation cycle: prune working memory of completed and stale entries, reconcile long-term Core Memory by retiring outdated facts and promoting durable new ones, and review Deep Truths for behavioral updates.",
       "context": {
@@ -37,6 +39,8 @@
       "schedule": "0 4 * * 0",
       "enabled": true,
       "min_spacing_minutes": 10080,
+      "triggerable": true,
+      "singleton": true,
       "instruction": "Run garbage collection on git artifact repos to consolidate bundle chains. For each active project, execute: node /opt/corekit/corekit/lib/git-store.mjs gc <projectId> main. List active projects first with project-manage list. Report the number of bundles consolidated per repo.",
       "context": {
         "purpose": "Git artifact repos accumulate bundle objects in GCS as missions create, push, and merge branches. Over time, bundle chains grow long as each push adds incremental bundles. GC consolidates these chains into fewer, larger bundles to improve clone/fetch performance and reduce object count.",

@@ -121,14 +121,30 @@ interface CardProps {
   onMutated: () => void;
 }
 
+interface RunResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 function ResponsibilityCard({ resp, primeId, agentName, onMutated }: CardProps) {
   const [optimisticEnabled, setOptimisticEnabled] = useState(resp.enabled);
   const [instructionExpanded, setInstructionExpanded] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState<RunResult | null>(null);
 
   const { mutate, loading: mutating } = useIntrospectMutation({
     primeId,
     agent: agentName,
   });
+
+  const handleRun = useCallback(async () => {
+    setRunning(true);
+    setRunResult(null);
+    const result = await mutate("run_responsibility", { id: resp.id });
+    setRunResult(result);
+    setRunning(false);
+  }, [mutate, resp.id]);
 
   const handleToggle = useCallback(async () => {
     const newEnabled = !optimisticEnabled;
@@ -170,6 +186,17 @@ function ResponsibilityCard({ resp, primeId, agentName, onMutated }: CardProps) 
 
         <code className={styles.schedule}>{resp.schedule}</code>
 
+        {optimisticEnabled && (
+          <button
+            className={styles.runBtn}
+            onClick={handleRun}
+            disabled={running}
+            title="Run this responsibility now, out of turn"
+          >
+            {running ? "Running…" : "▶ Run now"}
+          </button>
+        )}
+
         <button
           className={`${styles.toggle} ${optimisticEnabled ? styles.toggleOn : ""}`}
           onClick={handleToggle}
@@ -177,6 +204,15 @@ function ResponsibilityCard({ resp, primeId, agentName, onMutated }: CardProps) 
           aria-label={optimisticEnabled ? "Disable responsibility" : "Enable responsibility"}
         />
       </div>
+
+      {runResult && (
+        <div
+          className={`${styles.runMsg} ${runResult.success ? styles.runMsgOk : styles.runMsgErr}`}
+        >
+          {runResult.success ? "✓ " : "⚠ "}
+          {runResult.message || runResult.error || (runResult.success ? "Triggered." : "Failed.")}
+        </div>
+      )}
 
       {/* Instruction */}
       {resp.instruction && (

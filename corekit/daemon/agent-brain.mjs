@@ -29,6 +29,7 @@
 import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync, writeFileSync, mkdirSync } from 'fs';
 import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
+import { hostname } from 'os';
 
 // ---- Shared library imports (Phase 0 extraction) ----
 import { getGceToken } from '../corekit/lib/gce-auth.mjs';
@@ -66,7 +67,8 @@ import {
   handleFollowProcess,
   handleDelegate,
   handleCheckpointPlan,
-  handleWait
+  handleWait,
+  handleTriggerResponsibility
 } from './actions/index.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
@@ -1404,6 +1406,19 @@ function buildModePayload(mode, payload) {
         intent_keywords: p.intent_keywords || [],
       }));
     }
+    // Inject user-triggerable responsibilities so Cortex can honor an explicit
+    // "run this now / out of turn" request by firing the scheduled cycle instead
+    // of re-planning its internal steps. Mechanism-awareness lives here (injected
+    // context), never in SOUL — C-28 layer purity.
+    const triggerableResps = getTriggerableResponsibilities();
+    if (triggerableResps.length > 0) {
+      decidePayload.available_responsibilities = triggerableResps;
+      decidePayload.responsibility_trigger_guidance =
+        'These are scheduled background cycles. If — and only if — the user explicitly asks you to RUN one of them now / out of turn, '
+        + 'respond with { "action": "trigger_responsibility", "responsibilityId": "<id from available_responsibilities>" }. '
+        + 'That starts the cycle in the background; you then confirm to the user. Do NOT use trigger_responsibility for anything not in this list, '
+        + 'and do NOT plan a cycle\'s internal steps yourself — firing the responsibility runs its own process.';
+    }
     // Inject Brief from ANALYZE phase when present
     if (payload.brief) {
       decidePayload.brief = payload.brief;
@@ -1542,6 +1557,8 @@ function buildUserBlocks(mode, payload) {
     const boot = {
       capability_map: p.capability_map,
       available_processes: p.available_processes,
+      available_responsibilities: p.available_responsibilities,
+      responsibility_trigger_guidance: p.responsibility_trigger_guidance,
     };
     const mission = {
       envelope: statics,
@@ -3623,6 +3640,8 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     handleWait,
     dispatchAgent: trackedDispatchAgent,
     extractVerdict: (await import('../lib/verdict.mjs')).extractVerdict,
+    fireResponsibilityById,
+    getTriggerableResponsibilities,
   };
 
   // Phase 2.3: Action dispatch table
@@ -3636,6 +3655,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     delegate: handleDelegate,
     checkpoint_plan: handleCheckpointPlan,
     wait: handleWait,
+    trigger_responsibility: handleTriggerResponsibility,
   };
 
   while (iteration < MAX_ITERATIONS) {
@@ -4002,7 +4022,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     log('WARN', `Unknown action '${action}' — nudging Cortex`);
     priorResults.push({
       agent: 'system',
-      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan${(SKILL_INDEX || []).some(s => s.id === 'delegation') ? ', delegate' : ''}, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait.`,
+      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan${(SKILL_INDEX || []).some(s => s.id === 'delegation') ? ', delegate' : ''}, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait${getTriggerableResponsibilities().length > 0 ? ', trigger_responsibility' : ''}.`,
     });
   }
 
@@ -5087,6 +5107,7 @@ async function main() {
       await reconcileIncomingDelegations();  // ME-5: envelope-driven delegation pickup (runs after intake so the chat-marker path wins when both fire; dedup keeps them from double-creating)
       await checkWaitingEnvelopes();
       await checkApprovedApprovals();
+      await checkResponsibilityTriggers();  // operator "Run now" → fire on-demand
       await dequeueAndProcess();
     } catch (e) {
       log('ERROR', `Poll loop error: ${e.message}`);
@@ -5180,6 +5201,73 @@ async function checkApprovedApprovals() {
 async function fireEventResponsibilities(eventType, eventContext) {
   if (!_scheduler) _initScheduler();
   await _scheduler.fireEvent(eventType, eventContext);
+}
+
+// On-demand responsibility trigger — shared by the agent path (trigger_responsibility
+// action) and the operator path (responsibility_triggers poll). Delegates to the
+// scheduler's fireById primitive; ensures the responsibility set is loaded first.
+async function fireResponsibilityById(id, opts = {}) {
+  if (!_scheduler) _initScheduler();
+  if (RESPONSIBILITIES.length === 0) loadResponsibilities();
+  return _scheduler.fireById(id, opts);
+}
+
+// The curated set of responsibilities a user may ask the agent to run out of
+// turn (opt-in via `triggerable: true`). Injected into the Cortex decide payload
+// and used by the trigger_responsibility handler to validate the requested id.
+function getTriggerableResponsibilities() {
+  if (!_scheduler) _initScheduler();
+  if (RESPONSIBILITIES.length === 0) loadResponsibilities();
+  return RESPONSIBILITIES
+    .filter(r => r.enabled !== false && r.triggerable === true)
+    .map(r => ({
+      id: r.id,
+      name: r.name || r.id,
+      purpose: (r.context?.purpose || r.instruction || '').substring(0, 160),
+    }));
+}
+
+// Operator path for on-demand triggers: the dashboard "Run now" control writes a
+// pending doc to the top-level `responsibility_triggers` collection; this poll
+// (in the 3s pollLoop, beside approvals) claims the ones addressed to this agent,
+// fires them via the shared primitive, and writes back a terminal status the
+// dashboard reads. The collection may not exist yet — a query miss is benign.
+async function checkResponsibilityTriggers() {
+  let pending;
+  try {
+    pending = await firestoreQuery('responsibility_triggers', [
+      { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
+    ], { noOrderBy: true });
+  } catch {
+    return; // collection absent / transient — nothing to do
+  }
+  if (!pending || pending.length === 0) return;
+
+  // Match the trigger doc's agent_id against every form this agent is known by:
+  // the brain's env AGENT_ID, the email prefix, and the same hostname-strip the
+  // introspect daemon (which writes the doc) uses — so the two agree by construction.
+  const emailPrefix = (AGENT_EMAIL || '').split('@')[0];
+  const hostAgentId = hostname().replace(/^fleet-/, '');
+  const idForms = new Set([AGENT_ID, emailPrefix, hostAgentId].filter(Boolean));
+  const mine = pending.filter(t => idForms.has(t.agent_id));
+  for (const t of mine) {
+    try {
+      // Claim first so the next tick can't re-match this doc while it fires.
+      await firestoreWrite('responsibility_triggers', t.id, { ...t, status: 'firing', claimed_at: now() });
+      const r = await fireResponsibilityById(t.responsibility_id, {
+        bypassSpacing: t.bypass_spacing !== false, // default: honor the explicit "now"
+        source: 'operator',
+      });
+      const status = r.ok ? 'fired' : (r.skipped ? 'skipped' : 'error');
+      await firestoreWrite('responsibility_triggers', t.id, {
+        ...t, status, detail: r.error || r.name || null, fired_at: now(),
+      });
+      log('INFO', `Responsibility trigger ${t.id} (${t.responsibility_id}) → ${status}${r.error ? ': ' + r.error : ''}`);
+    } catch (e) {
+      log('WARN', `Responsibility trigger ${t.id} failed: ${e.message}`);
+      try { await firestoreWrite('responsibility_triggers', t.id, { ...t, status: 'error', detail: e.message, fired_at: now() }); } catch { /* best-effort */ }
+    }
+  }
 }
 
 main().catch(e => {

@@ -11,6 +11,7 @@ import { handleFollowProcess } from './follow_process.mjs';
 import { handleDelegate } from './delegate.mjs';
 import { handleCheckpointPlan } from './checkpoint_plan.mjs';
 import { handleWait } from './wait.mjs';
+import { handleTriggerResponsibility } from './trigger_responsibility.mjs';
 
 export {
   handleSynthesize,
@@ -22,9 +23,11 @@ export {
   handleDelegate,
   handleCheckpointPlan,
   handleWait,
+  handleTriggerResponsibility,
 };
 
 export const ACTION_NAMES = [
   'synthesize', 'synthesize_with_failure', 'blocked', 'needs_input',
   'follow_process', 'delegate', 'checkpoint_plan', 'status_update', 'wait',
+  'trigger_responsibility',
 ];
