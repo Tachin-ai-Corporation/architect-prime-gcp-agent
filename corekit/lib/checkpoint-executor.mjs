@@ -861,6 +861,11 @@ export async function executeCheckpoints(checkpoints, opts) {
         _sourceMeta: envelope.source_meta || null,
         prior_results_context: priorContext,
         memory_context: envelope.memory_context || null,
+        // Checkpoint tasks are execution work — grant tool access. The gateway's exec gate
+        // only newly enables TOOL_ON_REQUEST organs (temporal-memory); motor is tool-enabled
+        // by role regardless, and non-execution organs never receive tools. Without this,
+        // temporal-memory ran toolless in checkpoints and could not run its memory CLIs.
+        _exec: true,
       };
 
       if (!VALID_TASK_AGENTS.has(taskAgent)) {

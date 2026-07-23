@@ -284,8 +284,13 @@ export function createScheduler(deps) {
               error: null,
               source_channel: 'scheduler',
               source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, fired_at: now(), process_id: process.id },
-              process_id: process.id,
-              process_version: process.version || 1,
+              // NOTE: do NOT pre-set top-level process_id/process_version here. executeProcess
+              // uses decision.processId (from Cortex's follow_process), not envelope.process_id,
+              // so pre-setting gave no "which process" guarantee — it only tripped
+              // follow_process's "already executed" guard (envelope.process_id truthy) and
+              // short-circuited the process before it ran. Cortex → follow_process →
+              // executeProcess sets these fields for real once the process actually executes.
+              // (source_meta.process_id above is retained for scheduler tracking only.)
               project_id: resp.project_id || DEFAULT_PROJECT_ID,
               created_at: now(),
               started_at: now(),
