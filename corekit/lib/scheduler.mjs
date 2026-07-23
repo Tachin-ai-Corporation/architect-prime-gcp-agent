@@ -504,9 +504,11 @@ export function createScheduler(deps) {
     // exists for this responsibility (mirrors the cron loop's guard).
     if (resp.singleton && firestoreQuery) {
       try {
+        // noOrderBy: a single-field EQUAL avoids the composite index that a
+        // default created_at ordering would require (mirrors dequeueAndProcess).
         const active = await firestoreQuery('work', [
           { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: id } },
-        ]);
+        ], { noOrderBy: true });
         const nonTerminal = active.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
         if (nonTerminal.length > 0) {
           log('INFO', `fireById ${id}: singleton guard — cycle in progress (${nonTerminal[0].id}), refusing`);
@@ -581,7 +583,7 @@ export function createScheduler(deps) {
           try {
             const active = await firestoreQuery('work', [
               { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: r.id } },
-            ]);
+            ], { noOrderBy: true });
             const nonTerminal = active.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
             if (nonTerminal.length > 0) {
               log('INFO', `Responsibility ${r.id}: singleton guard — cycle in progress (${nonTerminal[0].id}), sleeping`);
