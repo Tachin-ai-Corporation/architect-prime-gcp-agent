@@ -166,36 +166,44 @@ if cs_status or cs_category:
 query_str = os.environ.get("QUERY", "").strip()
 query_terms = query_str.lower().split() if query_str else []
 
-if query_terms:
-    filtered = []
-    for entry in results:
-        doc = entry.get("document")
-        if not doc:
-            continue
-        fields = doc.get("fields", {})
-        fact = fields.get("fact", {}).get("stringValue", "").lower()
-        tags_arr = fields.get("tags", {}).get("arrayValue", {}).get("values", [])
-        tags = " ".join(v.get("stringValue", "") for v in tags_arr).lower()
-        searchable = fact + " " + tags
-        match_count = sum(1 for t in query_terms if t in searchable)
-        if match_count > 0:
-            entry["_match_count"] = match_count
-            filtered.append(entry)
-    results = filtered
-    # Sort by match count descending, then by createdAt descending
-    results.sort(
-        key=lambda e: (
-            e.get("_match_count", 0),
-            e.get("document", {}).get("fields", {}).get("createdAt", {}).get("stringValue", ""),
-        ),
-        reverse=True,
-    )
-else:
-    # No query — sort by createdAt descending
-    results.sort(
-        key=lambda e: e.get("document", {}).get("fields", {}).get("createdAt", {}).get("stringValue", ""),
-        reverse=True,
-    )
+def _num(fields, key, default):
+    v = fields.get(key, {})
+    try:
+        return float(v.get("doubleValue", v.get("integerValue", default)))
+    except (TypeError, ValueError):
+        return default
+
+# TEMPORAL_MEMORY_AUTHORITY_PLAN P5: value-ranked retrieval. Surface the good stuff first —
+# rank by importance x confidence x (1 + term-match); recency (createdAt) breaks ties. Missing
+# fields fall back to sensible defaults (importance 0.5, confidence 0.9) so pre-weighting
+# entries still rank sanely. B-5: memory earns its place by value.
+scored = []
+for entry in results:
+    doc = entry.get("document")
+    if not doc:
+        continue
+    fields = doc.get("fields", {})
+    fact = fields.get("fact", {}).get("stringValue", "").lower()
+    tags_arr = fields.get("tags", {}).get("arrayValue", {}).get("values", [])
+    tags = " ".join(v.get("stringValue", "") for v in tags_arr).lower()
+    searchable = fact + " " + tags
+    match_count = sum(1 for t in query_terms if t in searchable) if query_terms else 0
+    if query_terms and match_count == 0:
+        continue  # a query was given but nothing matched — drop
+    importance = _num(fields, "importance", 0.5)
+    confidence = _num(fields, "confidence", 0.9)
+    entry["_match_count"] = match_count
+    entry["_score"] = importance * confidence * (1.0 + match_count)
+    scored.append(entry)
+
+results = scored
+results.sort(
+    key=lambda e: (
+        e.get("_score", 0.0),
+        e.get("document", {}).get("fields", {}).get("createdAt", {}).get("stringValue", ""),
+    ),
+    reverse=True,
+)
 
 count = 0
 for entry in results:

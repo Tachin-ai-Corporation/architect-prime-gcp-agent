@@ -22,6 +22,7 @@ FACT=""
 CATEGORY=""
 TAGS=""
 CONFIDENCE="0.9"
+IMPORTANCE="0.5"
 SOURCE="observation"
 SOURCE_DETAIL=""
 SUPERSEDES=""
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --category)      CATEGORY="$2";      shift 2 ;;
     --tags)          TAGS="$2";          shift 2 ;;
     --confidence)    CONFIDENCE="$2";    shift 2 ;;
+    --importance)    IMPORTANCE="$2";    shift 2 ;;
     --source)        SOURCE="$2";        shift 2 ;;
     --source-detail) SOURCE_DETAIL="$2"; shift 2 ;;
     --supersedes)    SUPERSEDES="$2";    shift 2 ;;
@@ -103,6 +105,7 @@ DOC_BODY=$(cat <<EOF
     "category": {"stringValue": "${CATEGORY}"},
     "tags": {"arrayValue": {"values": ${TAGS_JSON}}},
     "confidence": {"doubleValue": ${CONFIDENCE}},
+    "importance": {"doubleValue": ${IMPORTANCE}},
     "source": {"stringValue": "${SOURCE}"},
     ${SOURCE_DETAIL_FIELD}
     ${SUPERSEDES_FIELD}
