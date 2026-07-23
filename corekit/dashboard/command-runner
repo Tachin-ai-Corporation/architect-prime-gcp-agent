@@ -33,6 +33,16 @@ POLL_INTERVAL="${POLL_INTERVAL:-5}"
 FLEET_BIN="${CORE_DIR}/bin"
 FIRESTORE_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents"
 
+# GH_OWNER/GH_REPO — prefer env (if the systemd unit set them), else resolve from GCE
+# metadata (the same attributes the bootstrap reads), else empty. Under `set -u` a bare
+# ${owner:-$GH_OWNER} in the handlers aborts the whole runner with "unbound variable"
+# when the env lacks GH_OWNER AND a command omits owner/repo — resolving here (and using
+# the ${GH_OWNER:-} guard below) makes the fleet_upgrade/upgrade_corekit path robust to
+# commands that don't pass owner/repo (e.g. dashboard buttons that rely on VM identity).
+_meta() { curl -sf --max-time 2 -H 'Metadata-Flavor: Google' "http://metadata.google.internal/computeMetadata/v1/instance/attributes/$1" 2>/dev/null || true; }
+GH_OWNER="${GH_OWNER:-$(_meta gh_owner)}"
+GH_REPO="${GH_REPO:-$(_meta gh_repo)}"
+
 # ---- LOGGING ----
 log()  { echo "[$(date -Iseconds)] [command-runner] $*"; }
 warn() { echo "[$(date -Iseconds)] [command-runner] WARN: $*" >&2; }
@@ -163,7 +173,7 @@ handle_fleet_upgrade() {
   fi
 
   log "Executing: fleet-upgrade --name ${name} --ref ${ref}"
-  GH_OWNER="${owner:-$GH_OWNER}" GH_REPO="${repo:-$GH_REPO}" "${FLEET_BIN}/fleet-upgrade" --name "$name" --ref "$ref" 2>&1
+  GH_OWNER="${owner:-${GH_OWNER:-}}" GH_REPO="${repo:-${GH_REPO:-}}" "${FLEET_BIN}/fleet-upgrade" --name "$name" --ref "$ref" 2>&1
 }
 
 handle_upgrade_corekit() {
@@ -175,7 +185,7 @@ handle_upgrade_corekit() {
   repo=$(echo "$args_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('repo',''))")
 
   log "Executing: upgrade-corekit --apply ${ref}"
-  GH_OWNER="${owner:-$GH_OWNER}" GH_REPO="${repo:-$GH_REPO}" CORE_DIR="$CORE_DIR" "${FLEET_BIN}/upgrade-corekit" --apply "$ref" 2>&1
+  GH_OWNER="${owner:-${GH_OWNER:-}}" GH_REPO="${repo:-${GH_REPO:-}}" CORE_DIR="$CORE_DIR" "${FLEET_BIN}/upgrade-corekit" --apply "$ref" 2>&1
   local ck_exit=$?
 
   if [[ $ck_exit -eq 0 ]]; then
