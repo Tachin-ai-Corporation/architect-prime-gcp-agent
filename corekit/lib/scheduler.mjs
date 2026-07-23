@@ -10,6 +10,14 @@
 
 import { readFileSync, existsSync } from 'fs';
 
+// A responsibility "cycle in progress" (for the singleton guard) means an M mission
+// that is executing or about to. Everything else — complete/failed/cancelled AND
+// archived/timed_out/blocked/etc — is not blocking. Using an in-progress allowlist
+// (not a terminal denylist) is fail-safe: an unrecognized status never wedges the
+// guard. Prior bug: archived (a terminal state) fell outside the denylist and was
+// treated as in-progress, so a fresh fire was refused against archived history.
+const RESP_IN_PROGRESS = new Set(['active', 'queued', 'pending', 'waiting']);
+
 // ---- Cron expression helpers (pure functions) ----
 
 /**
@@ -514,7 +522,7 @@ export function createScheduler(deps) {
         const active = await firestoreQuery('work', [
           { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: id } },
         ], { noOrderBy: true });
-        const nonTerminal = active.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
+        const nonTerminal = active.filter(e => e.type === 'M' && RESP_IN_PROGRESS.has(e.status));
         if (nonTerminal.length > 0) {
           log('INFO', `fireById ${id}: singleton guard — cycle in progress (${nonTerminal[0].id}), refusing`);
           return { ok: false, skipped: true, error: `a cycle is already in progress (${nonTerminal[0].id})` };
@@ -589,7 +597,7 @@ export function createScheduler(deps) {
             const active = await firestoreQuery('work', [
               { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: r.id } },
             ], { noOrderBy: true });
-            const nonTerminal = active.filter(e => e.status !== 'complete' && e.status !== 'failed' && e.status !== 'cancelled');
+            const nonTerminal = active.filter(e => e.type === 'M' && RESP_IN_PROGRESS.has(e.status));
             if (nonTerminal.length > 0) {
               log('INFO', `Responsibility ${r.id}: singleton guard — cycle in progress (${nonTerminal[0].id}), sleeping`);
               _respNextFire[r.id] = cronNextFire(r.schedule);
