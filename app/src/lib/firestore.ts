@@ -67,10 +67,6 @@ export function processesCol() {
   return getDb().collection("processes");
 }
 
-export function plansCol() {
-  return getDb().collection("plans");
-}
-
 export function skillProposalsCol() {
   return getDb().collection("skill-proposals");
 }

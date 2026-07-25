@@ -193,32 +193,6 @@ export interface Project {
   updated_at: string;
 }
 
-/* ---- Plan types ---- */
-
-export interface Plan {
-  id: string;
-  project_id: string;
-  name: string;
-  process_id: string | null;
-  process_version: number | null;
-  parameters: Record<string, unknown>;
-  layout: {
-    mission: { instruction: string; accept_criteria: string; owner: string };
-    checkpoints: {
-      instruction: string;
-      accept_criteria: string;
-      tasks: { instruction: string; accept_criteria: string; agent: string }[];
-    }[];
-  };
-  mission_id: string | null;
-  amendments: { timestamp: string; reason: string; changes: string; amended_by: string }[];
-  status: 'draft' | 'approved' | 'executing' | 'complete' | 'abandoned';
-  approved_by: string | null;
-  approved_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 /* ---- Active status constants ---- */
 
 /** Canonical set of statuses considered "active" for work tree display */
