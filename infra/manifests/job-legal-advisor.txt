@@ -1,0 +1,65 @@
+# infra/manifests/job-legal-advisor.txt
+# Legal Advisor specialty workspace - layered on top of base + role-fleet
+# Installed by: infra/install.sh --role fleet --job legal-advisor
+
+specialties/legal-advisor/workspace/MEMORY.md workspace/MEMORY.md?
+
+# Workspace skills - Google Drive (skill.json only; tools now in role-fleet)
+skills/workspace-drive/skill.json skills/workspace-drive/skill.json
+
+# Workspace skills - Gmail (read-only; C-27 inbound-only search/get)
+skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
+skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
+skills/workspace-gmail/gmail-search bin/gmail-search
+skills/workspace-gmail/gmail-get bin/gmail-get
+
+# Workspace skills - Docs (contracts are Google Docs; the surgical redline toolset)
+skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
+skills/workspace-docs/skill.json skills/workspace-docs/skill.json
+skills/workspace-docs/_docslib.py bin/_docslib.py
+skills/workspace-docs/docs-cat bin/docs-cat
+skills/workspace-docs/docs-tab-list bin/docs-tab-list
+skills/workspace-docs/docs-create bin/docs-create
+skills/workspace-docs/docs-write bin/docs-write
+skills/workspace-docs/docs-section-delete bin/docs-section-delete
+skills/workspace-docs/docs-find-replace bin/docs-find-replace
+skills/workspace-docs/docs-revision bin/docs-revision
+skills/workspace-docs/docs-replace-file bin/docs-replace-file
+skills/workspace-docs/docs-comments-list bin/docs-comments-list
+skills/workspace-docs/docs-comments-add bin/docs-comments-add
+skills/workspace-docs/docs-comments-resolve bin/docs-comments-resolve
+skills/workspace-docs/docs-comments-delete bin/docs-comments-delete
+skills/workspace-docs/docs-suggest bin/docs-suggest
+skills/workspace-docs/docs-get bin/docs-get
+skills/workspace-docs/docs-replace-md bin/docs-replace-md
+skills/workspace-docs/docs-batch-replace bin/docs-batch-replace
+skills/workspace-docs/docs-batch-edit bin/docs-batch-edit
+skills/workspace-docs/docs-anchor-insert bin/docs-anchor-insert
+skills/workspace-docs/docs-style bin/docs-style
+skills/workspace-docs/docs-insert-table bin/docs-insert-table
+skills/workspace-docs/docs-insert-image bin/docs-insert-image
+skills/workspace-docs/docs-namedrange-create bin/docs-namedrange-create
+skills/workspace-docs/docs-namedrange-replace bin/docs-namedrange-replace
+skills/workspace-docs/docs-export-docx bin/docs-export-docx
+skills/workspace-docs/docs-import-docx bin/docs-import-docx
+skills/workspace-docs/docs-clone-template bin/docs-clone-template
+skills/workspace-docs/docs-format-page bin/docs-format-page
+
+# Workspace skills - Sheets (obligation/deadline tracker)
+skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
+skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
+skills/workspace-sheets/sheets-get bin/sheets-get
+skills/workspace-sheets/sheets-append bin/sheets-append
+skills/workspace-sheets/sheets-update bin/sheets-update
+
+# Legal Advisor responsibilities
+specialties/legal-advisor/responsibilities-legal-advisor.json corekit/responsibilities-job.json
+
+# Specialty brain SOUL appends
+specialties/legal-advisor/brain/cortex/SOUL_APPEND.md corekit/specialties/legal-advisor/brain/cortex/SOUL_APPEND.md
+specialties/legal-advisor/brain/motor/SOUL_APPEND.md corekit/specialties/legal-advisor/brain/motor/SOUL_APPEND.md
+specialties/legal-advisor/brain/cerebellum/SOUL_APPEND.md corekit/specialties/legal-advisor/brain/cerebellum/SOUL_APPEND.md
+
+# Specialty skills
+specialties/legal-advisor/skills/legal-ops/SKILL.md corekit/specialties/legal-advisor/skills/legal-ops/SKILL.md
+specialties/legal-advisor/skills/legal-ops/skill.json corekit/specialties/legal-advisor/skills/legal-ops/skill.json

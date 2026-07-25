@@ -1,0 +1,9 @@
+{
+  "id": "legal-advisor",
+  "name": "Legal Advisor",
+  "version": "1.0.0",
+  "description": "Contract & document review, clause-by-clause risk flagging, surgical redlining, obligation/deadline extraction — assist-and-escalate; a licensed human attorney decides.",
+  "base_skills": ["web-search", "workspace-drive", "workspace-docs", "workspace-gmail", "workspace-sheets", "workspace-git"],
+  "specialty_skills": ["legal-ops"],
+  "brain_appends": ["cortex", "motor", "cerebellum"]
+}

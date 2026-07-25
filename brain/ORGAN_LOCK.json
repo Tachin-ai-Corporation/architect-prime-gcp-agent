@@ -1,7 +1,7 @@
 {
   "_comment": "Organ soft-lock (C-28). Regenerate with corekit/system/update-organ-lock after an INTENTIONAL organ change; include an 'organ-change: intended' commit trailer. Do not hand-edit.",
   "version": 1,
-  "count": 53,
+  "count": 56,
   "files": {
     "brain/fleet/_base/IDENTITY.md": "sha256:799dafadb38f64ff4685c318e85800952b01a72b93eced87b131a8d1550e0be0",
     "brain/fleet/_brain/cerebellum/IDENTITY.md": "sha256:2a2ecc1f59dc04b390945d8fad8888b021b3ef6afc993b1d3cadb2ebf94f6182",
@@ -46,6 +46,9 @@
     "specialties/finance/brain/cerebellum/SOUL_APPEND.md": "sha256:29d375f52d1216d27579e2d6cc0d7662a9a2290f0ff99f5465ab2bf28b31054e",
     "specialties/finance/brain/cortex/SOUL_APPEND.md": "sha256:7eed6cdc29d73de07a39ec66d4c32a9eb787e48656667d46d4ddf6bb151e7adb",
     "specialties/finance/brain/motor/SOUL_APPEND.md": "sha256:05ee2a85ec576732e8d96b2a1907014bf159a3b2118974e332bec30a44ec400c",
+    "specialties/legal-advisor/brain/cerebellum/SOUL_APPEND.md": "sha256:0d24a0f1caf34ade359cf447d35e82c6fd20f79c0c1e5d82f6f568510478c8cb",
+    "specialties/legal-advisor/brain/cortex/SOUL_APPEND.md": "sha256:a518660c99aa773419ebed79b114a4d7fc1aaa872c92c34308e521f3d762245e",
+    "specialties/legal-advisor/brain/motor/SOUL_APPEND.md": "sha256:a255aee522d307b85fd47dcc7dd9878a0669e05173f99ac559e0c53b67ede69b",
     "specialties/pm/brain/cortex/SOUL_APPEND.md": "sha256:ef2847915f3477e601e29bd0652764a7740745e3fee05a1e91ff5aa171a6a87f",
     "specialties/pm/brain/motor/SOUL_APPEND.md": "sha256:6253f795720ebb08f0d552eca802cc7cda486575a874048233a28a1edd17322d",
     "specialties/product-architect/brain/cerebellum/SOUL_APPEND.md": "sha256:437f798fb6ca7617f8d6593aec2a68e474592d638a27b6292cb1f7e07470b794",

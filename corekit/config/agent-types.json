@@ -101,6 +101,17 @@
       "emailPattern": "designer-agent-{name}",
       "skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "skill-introspect", "memory-consolidate", "design-ops"],
       "brain": true
+    },
+    {
+      "id": "legal-advisor",
+      "aliases": ["legal", "counsel", "paralegal"],
+      "title": "Legal Advisor",
+      "glyph": "⚖️",
+      "accent": "#b45309",
+      "specialty": "Contract & document review, clause-by-clause risk flagging, surgical redlining, obligation and deadline extraction, matter organization — assist-and-escalate; a licensed human attorney makes the legal calls",
+      "emailPattern": "legal-agent-{name}",
+      "skills": ["web-search", "workspace-drive", "workspace-docs", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "legal-ops"],
+      "brain": true
     }
   ]
 }

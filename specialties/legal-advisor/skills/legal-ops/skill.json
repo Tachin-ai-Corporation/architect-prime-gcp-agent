@@ -1,0 +1,13 @@
+{
+  "id": "legal-ops",
+  "name": "Legal Operations",
+  "version": 1,
+  "description": "Methodology for contract & document review: clause-by-clause risk flagging, surgical redlining, obligation/deadline extraction, and human-attorney escalation. Assist-and-escalate — never renders legal advice or a legal opinion.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "legal",
+  "agent_part": "motor",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "When reviewing, redlining, or analyzing a contract or legal document, extracting obligations/deadlines, or preparing a legal-review handoff for a human attorney."
+}
