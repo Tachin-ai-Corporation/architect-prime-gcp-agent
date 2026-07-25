@@ -2,6 +2,7 @@
 
 import React from "react";
 import styles from "@/app/page.module.css";
+import { Modal } from "@/components/ui/Modal";
 
 interface ConfirmDeleteModalProps {
   primeName: string;
@@ -19,8 +20,7 @@ export function ConfirmDeleteModal({
   onConfirm,
 }: ConfirmDeleteModalProps) {
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} overlayClassName={styles.modalOverlay} className={styles.modal}>
         <div className={styles.deleteModalHeader}>
           <span className={styles.deleteModalIcon}>🗑</span>
           <span className={styles.modalTitle} style={{ marginBottom: 0 }}>
@@ -63,7 +63,6 @@ export function ConfirmDeleteModal({
             </button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
