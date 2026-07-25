@@ -7,6 +7,7 @@ import { CreateProcessModal } from "./CreateProcessModal";
 import type { ProcessSummary } from "./types";
 import styles from "@/app/p/[id]/processes/page.module.css";
 import { truncate } from "@/lib/format";
+import { AsyncState } from "@/components/ui/AsyncState";
 
 interface ProcessListViewProps {
   primeId: string;
@@ -43,16 +44,8 @@ export function ProcessListView({ primeId, router }: ProcessListViewProps) {
     [primeId, router]
   );
 
-  if (loading) {
-    return (
-      <div className={styles.loading}>
-        <span className={styles.loadingDots}>Loading processes…</span>
-      </div>
-    );
-  }
-
   return (
-    <>
+    <AsyncState loading={loading} loadingLabel="Loading processes…">
       <div className={styles.pgHeader}>
         <h1 className={styles.pgTitle}>Processes</h1>
         <span className={styles.countPill}>{processes.length} total</span>
@@ -108,6 +101,6 @@ export function ProcessListView({ primeId, router }: ProcessListViewProps) {
           }}
         />
       )}
-    </>
+    </AsyncState>
   );
 }

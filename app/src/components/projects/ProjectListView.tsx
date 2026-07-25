@@ -9,6 +9,7 @@ import { ProjectStatusBadge } from "./ProjectStatusBadge";
 import type { ProjectSummary } from "./types";
 import styles from "@/components/projects/ProjectsPage.module.css";
 import { truncate } from "@/lib/format";
+import { AsyncState } from "@/components/ui/AsyncState";
 
 interface ProjectListViewProps {
   primeId?: string;
@@ -153,16 +154,8 @@ export function ProjectListView({ primeId, teamFilter }: ProjectListViewProps) {
     </button>
   );
 
-  if (loading) {
-    return (
-      <div className={styles.loading}>
-        <span className={styles.loadingDots}>Loading projects…</span>
-      </div>
-    );
-  }
-
   return (
-    <>
+    <AsyncState loading={loading} loadingLabel="Loading projects…">
       <div className={styles.pgHeader}>
         <h1 className={styles.pgTitle}>Projects</h1>
         <span className={styles.countPill}>{projects.length} total</span>
@@ -203,6 +196,6 @@ export function ProjectListView({ primeId, teamFilter }: ProjectListViewProps) {
           }}
         />
       )}
-    </>
+    </AsyncState>
   );
 }
