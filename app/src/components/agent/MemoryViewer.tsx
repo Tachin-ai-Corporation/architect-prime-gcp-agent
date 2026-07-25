@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import { MarkdownMessage } from "@/components/MarkdownMessage";
 import styles from "./MemoryViewer.module.css";
+import { AsyncState } from "@/components/ui/AsyncState";
 
 /* ================================================================
    Types
@@ -42,28 +43,6 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
 
 
 
-  /* ---- Loading ---- */
-  if (loading && !didInitRef.current) {
-    return (
-      <div className={styles.loading}>
-        <div className={styles.spinner} />
-        <span className={styles.pulse}>Loading workspace…</span>
-      </div>
-    );
-  }
-
-  /* ---- Error ---- */
-  if (error) {
-    return (
-      <div className={styles.error}>
-        <span className={styles.errorMsg}>⚠ {error}</span>
-        <button className={styles.retryBtn} onClick={refresh}>
-          Retry
-        </button>
-      </div>
-    );
-  }
-
   /* ---- Find MEMORY.md ---- */
   const files = data?.files ?? {};
   const memoryKey = Object.keys(files).find(
@@ -71,55 +50,46 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
   );
   const memoryContent = memoryKey ? files[memoryKey] : null;
 
-  /* ---- Empty ---- */
-  if (!memoryContent) {
-    return (
+  /* ---- Render ---- */
+  return (
+    <AsyncState
+      loading={loading && !didInitRef.current}
+      error={error}
+      onRetry={refresh}
+      loadingLabel="Loading workspace…"
+    >
       <div className={styles.container}>
+        {/* Toolbar */}
         <div className={styles.toolbar}>
-          <span className={styles.timestamp} />
+          <span className={styles.timestamp}>
+            {lastRefreshed
+              ? `Last refreshed ${lastRefreshed.toLocaleTimeString()}`
+              : ""}
+          </span>
           <button
             className={styles.refreshBtn}
             onClick={refresh}
             disabled={loading}
           >
             <span className={styles.refreshIcon}>↻</span>
-            Refresh
+            {loading ? "Refreshing…" : "Refresh"}
           </button>
         </div>
-        <div className={styles.empty}>
-          <div className={styles.emptyIcon}>🧠</div>
-          No working memory found
-        </div>
-      </div>
-    );
-  }
 
-  /* ---- Render ---- */
-  return (
-    <div className={styles.container}>
-      {/* Toolbar */}
-      <div className={styles.toolbar}>
-        <span className={styles.timestamp}>
-          {lastRefreshed
-            ? `Last refreshed ${lastRefreshed.toLocaleTimeString()}`
-            : ""}
-        </span>
-        <button
-          className={styles.refreshBtn}
-          onClick={refresh}
-          disabled={loading}
-        >
-          <span className={styles.refreshIcon}>↻</span>
-          {loading ? "Refreshing…" : "Refresh"}
-        </button>
+        {memoryContent ? (
+          /* Memory card */
+          <div className={styles.card}>
+            <div className={styles.prose}>
+              <MarkdownMessage text={memoryContent} />
+            </div>
+          </div>
+        ) : (
+          <div className={styles.empty}>
+            <div className={styles.emptyIcon}>🧠</div>
+            No working memory found
+          </div>
+        )}
       </div>
-
-      {/* Memory card */}
-      <div className={styles.card}>
-        <div className={styles.prose}>
-          <MarkdownMessage text={memoryContent} />
-        </div>
-      </div>
-    </div>
+    </AsyncState>
   );
 }
