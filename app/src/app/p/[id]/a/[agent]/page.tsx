@@ -8,7 +8,6 @@ import { AgentProjects } from "@/components/agent/AgentProjects";
 import { AgentPlans } from "@/components/agent/AgentPlans";
 import { AgentProcesses } from "@/components/agent/AgentProcesses";
 import { ContractsViewer } from "@/components/agent/ContractsViewer";
-import { CostDashboard } from "@/components/agent/CostDashboard";
 import { ChatPanel } from "@/components/ChatPanel";
 import { FleetCommsReadOnly } from "@/components/FleetCommsReadOnly";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
@@ -21,7 +20,6 @@ const TABS = [
   { key: "overview", label: "Persona", icon: "🎭" },
   { key: "work", label: "Work", icon: "📋" },
   { key: "brain", label: "Models", icon: "🧠" },
-  { key: "costs", label: "Costs", icon: "💰" },
   { key: "contracts", label: "Contracts", icon: "📄" },
   { key: "approvals", label: "Approvals", icon: "✋" },
   { key: "projects", label: "Projects", icon: "📁" },
@@ -231,11 +229,6 @@ export default function AgentDeepDivePage({
               agentName={agent}
             />
           </div>
-        )}
-
-        {/* Costs — LLM token usage per mission and per organ */}
-        {activeTab === "costs" && (
-          <CostDashboard primeId={id} agentName={agent} />
         )}
 
         {/* Contracts — contracts.json viewer (read-only) */}

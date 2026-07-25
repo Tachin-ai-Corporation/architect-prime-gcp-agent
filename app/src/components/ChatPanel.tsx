@@ -113,11 +113,11 @@ export function ChatPanel({ primeId, entityName, entityStatus, specialty, inline
         <div className={styles.emptyState}>
           <div className={styles.hero}>
             <div className={styles.heroAvatar}>
-              P
+              {entityName?.trim()?.[0]?.toUpperCase() || "•"}
             </div>
             <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
             <p className={styles.heroSubtitle}>
-              I'm ready to assist you. How can I help you today?
+              Send a message to start the conversation.
             </p>
           </div>
         </div>
@@ -125,12 +125,9 @@ export function ChatPanel({ primeId, entityName, entityStatus, specialty, inline
         <div className={styles.chatMessages} ref={messagesRef}>
           <div className={styles.hero}>
             <div className={styles.heroAvatar}>
-              P
+              {entityName?.trim()?.[0]?.toUpperCase() || "•"}
             </div>
             <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
-            <p className={styles.heroSubtitle}>
-              I've been trained on our latest manuals and technical specs to give you fast, accurate answers.
-            </p>
           </div>
 
           {messages.map((msg) => {

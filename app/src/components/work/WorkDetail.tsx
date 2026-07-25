@@ -170,11 +170,9 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
         : ""
   }`;
 
-  // Progress value (use iteration as a rough proxy; real progress not in schema)
-  const progress =
-    envelope.status === "active" && envelope.iteration > 0
-      ? Math.min(envelope.iteration * 10, 95)
-      : null;
+  // No real progress metric exists in the envelope schema — the fabricated
+  // iteration×10 "percent" bar was removed. Active state is shown by status + iteration.
+  const progress: number | null = null;
 
   // Waiting/needs_input text
   const waitingText =
@@ -366,7 +364,7 @@ export function WorkDetail({ envelope, allEnvelopes, onClose, primeId }: WorkDet
                         formatDuration(child.started_at, child.completed_at) &&
                         ` · ${formatDuration(child.started_at, child.completed_at)}`}
                       {child.status === "active" && child.iteration > 0 &&
-                        ` · ${Math.min(child.iteration * 10, 95)}%`}
+                        ` · iter ${child.iteration}`}
                       {(child.status === "waiting" || child.status === "needs_input") && (
                         <span className={styles.mkNeedsInput}> · needs input</span>
                       )}

@@ -57,6 +57,7 @@ export default function PrimeDeepDivePage({
 
   /* ---- Introspection target ---- */
   const agentName = `prime-${id}`;
+  // Internal scoping key for prime-owned projects/plans/processes (not shown to the user).
   const agentEmail = `prime-${id}@system`;
 
   /* ---- Overview tab: introspect workspace ---- */
@@ -110,7 +111,6 @@ export default function PrimeDeepDivePage({
               {prime.name.charAt(0).toUpperCase()}
             </div>
             <div className={styles.sidebarName}>{prime.name}</div>
-            <div className={styles.sidebarEmail}>{agentEmail}</div>
             <div className={styles.sidebarStatus}>
               <span className={`badge badge-${prime.status}`}>
                 {prime.status}
@@ -153,7 +153,7 @@ export default function PrimeDeepDivePage({
         <div className={styles.mainContent}>
         {/* Overview */}
         {activeTab === "overview" && (() => {
-          const theme = { glyph: "🧠", accent: "#22d3ee", name: "Prime Agent" };
+          const theme = { glyph: "🧠", accent: "#22d3ee", name: prime.name };
           return (
           <div className={styles.overviewWrap}>
             {/* ── Hero Banner ── */}

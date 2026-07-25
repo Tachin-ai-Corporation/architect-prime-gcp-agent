@@ -223,12 +223,7 @@ function TreeNodeRow({
           )}
 
           {node.status === "active" && node.iteration > 0 && (
-            <div className={styles.rProg}>
-              <div
-                className={styles.rProgFill}
-                style={{ width: `${Math.min(node.iteration * 10, 100)}%` }}
-              />
-            </div>
+            <div className={styles.timer}>iteration {node.iteration}</div>
           )}
 
           {waitingText && (

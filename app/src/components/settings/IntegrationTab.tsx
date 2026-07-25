@@ -155,7 +155,10 @@ export function DWDGuide({ setup, copied, onCopy }: {
   onCopy: (text: string, label: string) => void;
 }) {
   const clientId = setup.dwdClientId || "Loading...";
-  const scopes = "https://www.googleapis.com/auth/chat.messages, https://www.googleapis.com/auth/chat.spaces";
+  // Full DWD scope set — MUST match the settings display list; onboarding previously
+  // shipped only 2 scopes, so operators authorized an incomplete set. (TODO: single
+  // source, ideally derived from contracts.json.)
+  const scopes = "https://www.googleapis.com/auth/chat.messages, https://www.googleapis.com/auth/chat.messages.readonly, https://www.googleapis.com/auth/chat.spaces.readonly, https://www.googleapis.com/auth/gmail.readonly, https://www.googleapis.com/auth/calendar, https://www.googleapis.com/auth/calendar.events, https://www.googleapis.com/auth/drive, https://www.googleapis.com/auth/drive.file, https://www.googleapis.com/auth/documents, https://www.googleapis.com/auth/spreadsheets, https://www.googleapis.com/auth/presentations, https://www.googleapis.com/auth/contacts.readonly, https://www.googleapis.com/auth/admin.directory.orgunit, https://www.googleapis.com/auth/admin.directory.user";
 
   return (
     <div className={stylesHome["dwd-guide"]}>
