@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-Current version: v2026.07.23.13.0
+Current version: v2026.07.25.9.0
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -25,8 +25,8 @@ Everything runs inside the operator's own GCP project: no shared infrastructure,
 ```
 Dashboard (Cloud Run — Next.js)
     │  control plane: fleet lifecycle, chat, work trees, introspection,
-    │  projects, processes, plans, secret management, sidebar-navigated
-    │  agent deep-dive (shared AgentWorkPanel, FleetPanel, ChatPanel)
+    │  projects, processes, secret management, tabbed agent deep-dive
+    │  (shared DeepDiveShell + AgentWorkPanel, FleetPanel, ChatPanel)
     ▼
 Firestore (state store)
     ├── primes/{id}/work/{id}       → M/C/T envelope state machine
