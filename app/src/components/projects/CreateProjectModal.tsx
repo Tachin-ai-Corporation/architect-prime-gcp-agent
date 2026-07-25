@@ -6,6 +6,7 @@ import { ContextEditor } from "./ContextEditor";
 import type { ContextEntry } from "./ContextEditor";
 import type { ProjectSummary } from "./types";
 import styles from "@/components/projects/ProjectsPage.module.css";
+import { Modal } from "@/components/ui/Modal";
 
 interface CreateProjectModalProps {
   primeId?: string;
@@ -39,8 +40,7 @@ export function CreateProjectModal({
   }, [id, name, description, context, onCreated]);
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} overlayClassName={styles.overlay} className={styles.modal}>
         <div className={styles.modalHeader}>
           <h2 className={styles.modalTitle}>Create Project</h2>
           <button className={styles.modalClose} onClick={onClose}>✕</button>
@@ -86,7 +86,6 @@ export function CreateProjectModal({
             {creating ? "Creating…" : "Create Project"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

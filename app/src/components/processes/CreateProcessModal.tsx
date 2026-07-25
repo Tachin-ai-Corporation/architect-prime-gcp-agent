@@ -6,6 +6,7 @@ import { StepEditor } from "./StepEditor";
 import { ParamEditor } from "./ParamEditor";
 import type { ProcessSummary, StepDef, ParamDef } from "./types";
 import styles from "@/app/p/[id]/processes/page.module.css";
+import { Modal } from "@/components/ui/Modal";
 
 const BLANK_STEP: StepDef = {
   title: "",
@@ -67,8 +68,7 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
   }, [id, name, description, intentKeywords, steps, params, primeId, onCreated, onClose]);
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} overlayClassName={styles.overlay} className={styles.modal}>
         <div className={styles.modalHeader}>
           <h2 className={styles.modalTitle}>Create Process</h2>
           <button className={styles.modalClose} onClick={onClose}>✕</button>
@@ -135,7 +135,6 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
             {creating ? "Creating…" : "Create Process"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

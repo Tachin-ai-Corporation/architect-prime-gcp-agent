@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import styles from "./HireModal.module.css";
+import { Modal } from "@/components/ui/Modal";
 import { useDialog } from "@/components/DialogProvider";
 import { api } from "@/lib/api";
 
@@ -65,8 +66,7 @@ export function HireModal({ primeId, agentEmailDomain, open, onClose, onHired }:
   if (!open) return null;
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} overlayClassName={styles.modalOverlay} className={styles.modal}>
         <div className={styles.modalTitle}>Hire New Agent</div>
         <div className={styles.modalField}>
           <label className={styles.modalLabel} htmlFor="hire-agent-type">Specialty</label>
@@ -138,7 +138,6 @@ export function HireModal({ primeId, agentEmailDomain, open, onClose, onHired }:
             {hiring ? "Hiring…" : "Hire"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

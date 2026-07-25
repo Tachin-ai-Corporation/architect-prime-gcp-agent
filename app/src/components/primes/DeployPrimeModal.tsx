@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import styles from "@/app/page.module.css";
+import { Modal } from "@/components/ui/Modal";
 
 const DEFAULT_ZONE = process.env.NEXT_PUBLIC_DEFAULT_ZONE || "us-central1-a";
 const ZONES = Array.from(
@@ -24,8 +25,7 @@ export function DeployPrimeModal({ onClose, onDeploy, deploying }: DeployPrimeMo
   };
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose} overlayClassName={styles.modalOverlay} className={styles.modal}>
         <div className={styles.modalTitle}>Deploy New Prime</div>
         <div className={styles.modalField}>
           <label className={styles.modalLabel} htmlFor="deploy-prime-name">
@@ -73,7 +73,6 @@ export function DeployPrimeModal({ onClose, onDeploy, deploying }: DeployPrimeMo
             {deploying ? "Deploying…" : "Deploy"}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
