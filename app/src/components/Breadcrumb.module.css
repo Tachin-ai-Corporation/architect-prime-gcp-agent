@@ -5,7 +5,7 @@
   align-items: center;
   height: 44px;
   padding: 0 24px;
-  background: #313B47; /* Charcoal */
+  background: var(--charcoal); /* Charcoal */
   border-bottom: 1px solid rgba(86, 99, 115, 0.12); /* Slate 12% */
   flex-shrink: 0;
 }
@@ -37,7 +37,7 @@
 }
 
 .segment {
-  color: #566373; /* Slate */
+  color: var(--slate); /* Slate */
   text-decoration: none;
   transition: color 160ms cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
@@ -47,11 +47,11 @@
 }
 
 .segment:hover {
-  color: #AEB8C4; /* Mist */
+  color: var(--mist); /* Mist */
 }
 
 .current {
-  color: #8FD8E6; /* Signal Aqua */
+  color: var(--signal-aqua); /* Signal Aqua */
   pointer-events: none;
   font-weight: 600;
 }

@@ -119,12 +119,12 @@
 }
 
 .statusDone {
-  color: #3BAA78;
+  color: var(--status-success);
   font-weight: 600;
 }
 
 .statusFail {
-  color: #D84F45;
+  color: var(--pulse);
   font-weight: 600;
 }
 

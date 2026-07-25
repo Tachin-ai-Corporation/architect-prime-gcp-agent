@@ -13,7 +13,7 @@
 }
 
 .pulseDot {
-  fill: #1F9A9B;
+  fill: var(--network-teal);
   filter: drop-shadow(0 0 4px rgba(31, 154, 155, 0.5));
 }
 
@@ -104,7 +104,7 @@
   height: 36px;
   border-radius: 10px;
   background: linear-gradient(135deg, rgba(31, 154, 155, 0.25), rgba(143, 216, 230, 0.12));
-  color: #8FD8E6;
+  color: var(--signal-aqua);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -116,7 +116,7 @@
 .agentName {
   font-size: 14px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .agentMeta {
@@ -124,7 +124,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #7A8696;
+  color: var(--status-neutral);
   margin-top: 2px;
 }
 
@@ -134,7 +134,7 @@
   border-radius: 4px;
   font-weight: 500;
   font-size: 10px;
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 /* Agent card footer (chat + upgrade buttons) */
@@ -202,13 +202,13 @@
 
 .deployBarFill {
   height: 100%;
-  background: linear-gradient(90deg, #1F9A9B, #5FC7B2);
+  background: linear-gradient(90deg, var(--network-teal), var(--care-mint));
   border-radius: 2px;
   transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .deployBarFailed {
-  background: linear-gradient(90deg, #D6A83A, #D84F45);
+  background: linear-gradient(90deg, var(--amber), var(--pulse));
 }
 
 .deployInfo {
@@ -221,13 +221,13 @@
 .deployPct {
   font-size: 11px;
   font-weight: 600;
-  color: #1F9A9B;
+  color: var(--network-teal);
   flex-shrink: 0;
 }
 
 .deployStep {
   font-size: 11px;
-  color: #AEB8C4;
+  color: var(--mist);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -240,7 +240,7 @@
   padding: 0 2px;
   font-size: 12px;
   cursor: pointer;
-  color: #d6a83a;
+  color: var(--amber);
   line-height: 1;
   transition: transform 120ms ease;
   animation: actionPulse 2s ease-in-out infinite;
@@ -263,21 +263,21 @@
 }
 
 .statusOnline {
-  background: #1F9A9B;
+  background: var(--network-teal);
   box-shadow: 0 0 10px rgba(31, 154, 155, 0.4);
 }
 
 .statusDeploying {
-  background: #D6A83A;
+  background: var(--amber);
   animation: statusPulse 1.5s ease-in-out infinite;
 }
 
 .statusError {
-  background: #D84F45;
+  background: var(--pulse);
 }
 
 .statusOffline {
-  background: #566373;
+  background: var(--slate);
   opacity: 0.5;
 }
 

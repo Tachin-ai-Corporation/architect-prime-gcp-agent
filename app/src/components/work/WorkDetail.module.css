@@ -30,7 +30,7 @@
   max-width: 620px;
   max-height: 82vh;
   overflow-y: auto;
-  background: #313B47;
+  background: var(--charcoal);
   border: 1px solid rgba(86, 99, 115, 0.4);
   border-radius: 24px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
@@ -56,7 +56,7 @@
 .mType {
   font-size: 11px;
   font-weight: 600;
-  color: #AEB8C4;
+  color: var(--mist);
   letter-spacing: 0.06em;
 }
 .mClose {
@@ -65,7 +65,7 @@
   border-radius: 6px;
   background: transparent;
   border: 1px solid rgba(86, 99, 115, 0.28);
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 14px;
   cursor: pointer;
   display: flex;
@@ -76,7 +76,7 @@
 }
 .mClose:hover {
   background: rgba(86, 99, 115, 0.2);
-  color: #E6EBF0;
+  color: var(--cloud);
   border-color: rgba(86, 99, 115, 0.4);
 }
 
@@ -91,13 +91,13 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   margin-bottom: 8px;
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 .mTitleAct {
-  color: #8FD8E6;
+  color: var(--signal-aqua);
 }
 .mTitleWait {
-  color: #D6A83A;
+  color: var(--amber);
 }
 
 /* ---- Chips ---- */
@@ -113,22 +113,22 @@
   font-size: 11px;
   font-weight: 500;
   background: rgba(86, 99, 115, 0.16);
-  color: #AEB8C4;
+  color: var(--mist);
 }
 .chipAct {
-  color: #1F9A9B;
+  color: var(--network-teal);
   background: rgba(31, 154, 155, 0.12);
 }
 .chipDone {
-  color: #3BAA78;
+  color: var(--status-success);
   background: rgba(59, 170, 120, 0.14);
 }
 .chipWait {
-  color: #D6A83A;
+  color: var(--amber);
   background: rgba(214, 168, 58, 0.16);
 }
 .chipFail {
-  color: #D84F45;
+  color: var(--pulse);
   background: rgba(216, 79, 69, 0.14);
 }
 .chipPlanned {
@@ -163,7 +163,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #AEB8C4;
+  color: var(--mist);
   margin-top: 5px;
 }
 
@@ -174,21 +174,21 @@
 .mSecTitle {
   font-size: 11px;
   font-weight: 600;
-  color: #566373;
+  color: var(--slate);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-bottom: 8px;
 }
 .mBlock {
   padding: 14px 16px;
-  background: #202833;
+  background: var(--graphite);
   border-radius: 10px;
   font-size: 14px;
-  color: #AEB8C4;
+  color: var(--mist);
   line-height: 1.6;
 }
 .mBlock strong {
-  color: #E6EBF0;
+  color: var(--cloud);
   font-weight: 600;
 }
 
@@ -198,12 +198,12 @@
 
 .mBlockError {
   border-left: 2px solid rgba(216, 79, 69, 0.35);
-  color: #D84F45;
+  color: var(--pulse);
 }
 
 .timer {
   font-size: 11px;
-  color: #D6A83A;
+  color: var(--amber);
   margin-top: 6px;
   font-weight: 500;
 }
@@ -217,12 +217,12 @@
 .mk {
   font-size: 12px;
   font-weight: 600;
-  color: #566373;
+  color: var(--slate);
   padding: 7px 0;
 }
 .mv {
   font-size: 14px;
-  color: #E6EBF0;
+  color: var(--cloud);
   padding: 7px 0;
   border-bottom: 1px solid rgba(86, 99, 115, 0.28);
 }
@@ -231,7 +231,7 @@
 }
 .mvId {
   font-size: 12px;
-  color: #566373;
+  color: var(--slate);
 }
 
 /* ---- Children list ---- */
@@ -258,15 +258,15 @@
   flex-shrink: 0;
 }
 .mkText {
-  color: #AEB8C4;
+  color: var(--mist);
   flex: 1;
 }
 .mkText strong {
-  color: #E6EBF0;
+  color: var(--cloud);
   font-weight: 600;
 }
 .mkNeedsInput {
-  color: #D6A83A;
+  color: var(--amber);
 }
 
 /* ---- Respond form wrapper ---- */

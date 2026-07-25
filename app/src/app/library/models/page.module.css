@@ -16,13 +16,13 @@
 .modelsTitle {
   font-size: 22px;
   font-weight: 700;
-  color: #E6EBF0;
+  color: var(--cloud);
   letter-spacing: -0.02em;
 }
 
 .modelsSubtitle {
   font-size: 12px;
-  color: #7A8696;
+  color: var(--status-neutral);
   margin-top: 2px;
 }
 
@@ -54,13 +54,13 @@
   font-size: 13px;
   background: rgba(214, 168, 58, 0.1);
   border: 1px solid rgba(214, 168, 58, 0.3);
-  color: #D6A83A;
+  color: var(--amber);
   margin-bottom: 16px;
 }
 
 .scannedAt {
   font-size: 11px;
-  color: #566373;
+  color: var(--slate);
   margin-bottom: 12px;
 }
 
@@ -76,7 +76,7 @@
 .providerLabel {
   font-size: 11px;
   font-weight: 600;
-  color: #AEB8C4;
+  color: var(--mist);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 10px;
@@ -96,12 +96,12 @@
 }
 
 .providerLabel:hover {
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .providerCount {
   font-size: 10px;
-  color: #566373;
+  color: var(--slate);
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -147,7 +147,7 @@
 .modelName {
   font-size: 13px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -156,7 +156,7 @@
 
 .modelDesc {
   font-size: 11px;
-  color: #566373;
+  color: var(--slate);
   margin-top: 4px;
   line-height: 1.4;
 }
@@ -187,17 +187,17 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   background: rgba(214, 168, 58, 0.12);
-  color: #D6A83A;
+  color: var(--amber);
 }
 
 .previewTag {
   background: rgba(143, 216, 230, 0.12);
-  color: #8FD8E6;
+  color: var(--signal-aqua);
 }
 
 .costTag {
   font-size: 11px;
-  color: #566373;
+  color: var(--slate);
   font-weight: 500;
 }
 
@@ -213,13 +213,13 @@
 
 .enableLink {
   font-size: 11px;
-  color: #8FD8E6;
+  color: var(--signal-aqua);
   text-decoration: none;
   font-weight: 500;
 }
 
 .enableLink:hover {
-  color: #5FC7B2;
+  color: var(--care-mint);
 }
 
 /* ---- Empty State ---- */
@@ -228,7 +228,7 @@
   text-align: center;
   border-radius: 10px;
   border: 1px dashed rgba(86, 99, 115, 0.35);
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 14px;
   line-height: 1.8;
 }

@@ -17,7 +17,7 @@
   padding: 4px 12px;
   border-radius: 999px;
   background: rgba(214, 168, 58, 0.16);
-  color: #D6A83A;
+  color: var(--amber);
   font-weight: 600;
   font-size: 11px;
   margin-bottom: 12px;
@@ -40,7 +40,7 @@
   padding: 12px 20px;
   font-size: 14px;
   font-weight: 500;
-  color: #AEB8C4;
+  color: var(--mist);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -54,12 +54,12 @@
 }
 
 .tab:hover {
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .tabOn {
-  color: #8FD8E6;
-  border-bottom-color: #1F9A9B;
+  color: var(--signal-aqua);
+  border-bottom-color: var(--network-teal);
   font-weight: 600;
 }
 
@@ -80,17 +80,17 @@
 
 .badgeTeal {
   background: rgba(31, 154, 155, 0.18);
-  color: #1F9A9B;
+  color: var(--network-teal);
 }
 
 .badgeSlate {
   background: rgba(86, 99, 115, 0.2);
-  color: #566373;
+  color: var(--slate);
 }
 
 .badgeAmber {
   background: rgba(214, 168, 58, 0.16);
-  color: #D6A83A;
+  color: var(--amber);
 }
 
 /* ---- Tab body ---- */
@@ -117,13 +117,13 @@
 .emptyTitle {
   font-size: 16px;
   font-weight: 600;
-  color: #AEB8C4;
+  color: var(--mist);
   margin-bottom: 4px;
 }
 
 .emptySub {
   font-size: 13px;
-  color: #566373;
+  color: var(--slate);
 }
 
 /* ---- Pager ---- */
@@ -142,7 +142,7 @@
   font-weight: 500;
   background: transparent;
   border: 1px solid rgba(86, 99, 115, 0.28);
-  color: #AEB8C4;
+  color: var(--mist);
   cursor: pointer;
   font-family: inherit;
   transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -150,7 +150,7 @@
 
 .pgBtn:hover:not(:disabled) {
   border-color: rgba(143, 216, 230, 0.48);
-  color: #E6EBF0;
+  color: var(--cloud);
   background: rgba(143, 216, 230, 0.04);
 }
 
@@ -161,7 +161,7 @@
 
 .pgInfo {
   font-size: 12px;
-  color: #566373;
+  color: var(--slate);
   padding: 0 8px;
 }
 
@@ -169,7 +169,7 @@
 .loading {
   text-align: center;
   padding: 60px 20px;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 14px;
 }
 
@@ -215,13 +215,13 @@
   background: none;
   border: none;
   outline: none;
-  color: #E6EBF0;
+  color: var(--cloud);
   font-size: 14px;
   font-family: inherit;
 }
 
 .archiveSearchInput::placeholder {
-  color: #566373;
+  color: var(--slate);
 }
 
 /* ---- Archive list ---- */
@@ -242,7 +242,7 @@
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  color: #E6EBF0;
+  color: var(--cloud);
   transition: background 120ms ease;
   width: 100%;
 }
@@ -260,20 +260,20 @@
 }
 
 .dotDone {
-  background: #3BAA78;
+  background: var(--status-success);
 }
 
 .dotFailed {
-  background: #D84F45;
+  background: var(--pulse);
 }
 
 .dotCancelled {
-  background: #566373;
+  background: var(--slate);
   opacity: 0.5;
 }
 
 .dotNeutral {
-  background: #7A8696;
+  background: var(--status-neutral);
 }
 
 .dotQueued {
@@ -286,7 +286,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #566373;
+  color: var(--slate);
   width: 90px;
   flex-shrink: 0;
 }
@@ -295,7 +295,7 @@
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: #E6EBF0;
+  color: var(--cloud);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -304,7 +304,7 @@
 
 .archiveOwner {
   font-size: 12px;
-  color: #566373;
+  color: var(--slate);
   font-family: 'JetBrains Mono', monospace;
   width: 80px;
   flex-shrink: 0;
@@ -316,7 +316,7 @@
 
 .archiveDate {
   font-size: 12px;
-  color: #566373;
+  color: var(--slate);
   width: 120px;
   flex-shrink: 0;
   text-align: right;
@@ -324,7 +324,7 @@
 
 .archiveDuration {
   font-size: 12px;
-  color: #566373;
+  color: var(--slate);
   font-family: 'JetBrains Mono', monospace;
   width: 60px;
   flex-shrink: 0;
@@ -335,7 +335,7 @@
 .archiveLoading {
   text-align: center;
   padding: 20px;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 13px;
 }
 

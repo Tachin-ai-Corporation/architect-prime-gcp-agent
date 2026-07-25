@@ -14,7 +14,7 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  color: #D84F45;
+  color: var(--pulse);
 }
 
 .retry {
@@ -109,7 +109,7 @@
 }
 
 .key {
-  color: #1F9A9B;
+  color: var(--network-teal);
   font-family: "SF Mono", "Fira Code", monospace;
   font-size: 12px;
   min-width: 140px;

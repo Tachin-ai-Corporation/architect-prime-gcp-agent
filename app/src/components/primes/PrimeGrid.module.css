@@ -51,13 +51,13 @@
 .chipName {
   font-size: 14px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
   letter-spacing: -0.01em;
 }
 
 .chipMeta {
   font-size: 11px;
-  color: #7A8696;
+  color: var(--status-neutral);
   font-weight: 500;
 }
 
@@ -94,7 +94,7 @@
   padding: 4px 8px;
   font-size: 13px;
   line-height: 1;
-  color: #7A8696;
+  color: var(--status-neutral);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -114,7 +114,7 @@
   padding: 4px 8px;
   font-size: 12px;
   line-height: 1;
-  color: #7A8696;
+  color: var(--status-neutral);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -124,7 +124,7 @@
 }
 
 .chipDeleteBtn:hover {
-  color: #D84F45;
+  color: var(--pulse);
   background: rgba(216, 79, 69, 0.08);
   border-color: rgba(216, 79, 69, 0.25);
 }
@@ -146,21 +146,21 @@
 }
 
 .statusOnline {
-  background: #1F9A9B;
+  background: var(--network-teal);
   box-shadow: 0 0 10px rgba(31, 154, 155, 0.4);
 }
 
 .statusDeploying {
-  background: #D6A83A;
+  background: var(--amber);
   animation: statusPulse 1.5s ease-in-out infinite;
 }
 
 .statusError {
-  background: #D84F45;
+  background: var(--pulse);
 }
 
 .statusOffline {
-  background: #566373;
+  background: var(--slate);
   opacity: 0.5;
 }
 

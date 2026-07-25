@@ -67,13 +67,13 @@
 .label {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary, #E6EBF0);
+  color: var(--text-primary, var(--cloud));
 }
 
 .role {
   font-size: 12px;
   font-style: italic;
-  color: var(--text-tertiary, #566373);
+  color: var(--text-tertiary, var(--slate));
   margin-bottom: var(--space-3, 12px);
   line-height: 1.4;
 }
@@ -86,7 +86,7 @@
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   line-height: 1.55;
-  color: var(--text-secondary, #AEB8C4);
+  color: var(--text-secondary, var(--mist));
   white-space: pre-wrap;
   word-break: break-word;
   padding: var(--space-3, 12px);
@@ -109,7 +109,7 @@
 
 .emptyHint {
   font-size: 12px;
-  color: var(--text-tertiary, #566373);
+  color: var(--text-tertiary, var(--slate));
   font-style: italic;
   padding: var(--space-2, 8px) 0;
 }
@@ -180,12 +180,12 @@
 .modalTitle {
   font-size: 16px;
   font-weight: 700;
-  color: var(--text-primary, #E6EBF0);
+  color: var(--text-primary, var(--cloud));
 }
 
 .modalRole {
   font-size: 13px;
-  color: var(--text-tertiary, #566373);
+  color: var(--text-tertiary, var(--slate));
   font-style: italic;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -201,7 +201,7 @@
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--text-secondary, #AEB8C4);
+  color: var(--text-secondary, var(--mist));
   font-size: 16px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
@@ -210,7 +210,7 @@
 
 .modalClose:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #E6EBF0);
+  color: var(--text-primary, var(--cloud));
 }
 
 /* ---- Modal body ---- */
@@ -224,7 +224,7 @@
   font-family: 'JetBrains Mono', monospace;
   font-size: 12.5px;
   line-height: 1.65;
-  color: var(--text-secondary, #AEB8C4);
+  color: var(--text-secondary, var(--mist));
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;

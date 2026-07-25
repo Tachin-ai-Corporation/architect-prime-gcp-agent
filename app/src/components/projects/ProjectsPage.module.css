@@ -168,7 +168,7 @@
 }
 .badgePaused {
   background: rgba(214, 168, 58, 0.14);
-  color: var(--amber, #D6A83A);
+  color: var(--amber, var(--amber));
 }
 .badgeComplete {
   background: rgba(59, 170, 120, 0.14);

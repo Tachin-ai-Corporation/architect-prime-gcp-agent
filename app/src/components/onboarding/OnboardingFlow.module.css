@@ -27,7 +27,7 @@
 .loadingText {
   font-size: 16px;
   font-weight: 500;
-  color: #AEB8C4;
+  color: var(--mist);
   letter-spacing: -0.01em;
 }
 
@@ -56,7 +56,7 @@
 .onboardingCard {
   width: 100%;
   max-width: 640px;
-  background: #313B47;
+  background: var(--charcoal);
   border: 1px solid rgba(86, 99, 115, 0.25);
   border-radius: 16px;
   padding: 48px 40px;
@@ -79,14 +79,14 @@
 .onboardingTitle {
   font-size: 24px;
   font-weight: 700;
-  color: #E6EBF0;
+  color: var(--cloud);
   letter-spacing: -0.02em;
   margin-bottom: 8px;
 }
 
 .onboardingSubtitle {
   font-size: 14px;
-  color: #AEB8C4;
+  color: var(--mist);
   line-height: 1.6;
 }
 
@@ -112,7 +112,7 @@
   height: 32px;
   border-radius: 50%;
   background: rgba(86, 99, 115, 0.3);
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 14px;
   font-weight: 600;
   display: flex;
@@ -122,7 +122,7 @@
 }
 
 .step.active .stepNumber {
-  background: #246B8F;
+  background: var(--trust-blue);
   color: white;
 }
 
@@ -133,13 +133,13 @@
 .stepTitle {
   font-size: 15px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
   margin-bottom: 4px;
 }
 
 .stepDesc {
   font-size: 13px;
-  color: #AEB8C4;
+  color: var(--mist);
   line-height: 1.5;
   margin-bottom: 12px;
 }

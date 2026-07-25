@@ -25,13 +25,13 @@
 .homeTopTitle {
   font-size: 18px;
   font-weight: 700;
-  color: #E6EBF0;
+  color: var(--cloud);
   letter-spacing: -0.02em;
 }
 
 .homeTopSub {
   font-size: 12px;
-  color: #7A8696;
+  color: var(--status-neutral);
   margin-top: 2px;
 }
 
@@ -153,7 +153,7 @@
   backdrop-filter: blur(8px);
   border: 1px solid rgba(86, 99, 115, 0.3);
   border-radius: 8px;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 14px;
   cursor: pointer;
   transition: all 160ms ease;
@@ -163,7 +163,7 @@
 .chatCloseBtn:hover {
   background: rgba(216, 79, 69, 0.15);
   border-color: rgba(216, 79, 69, 0.4);
-  color: #D84F45;
+  color: var(--pulse);
   transform: scale(1.08);
 }
 
@@ -185,7 +185,7 @@
 .modal {
   width: 420px;
   max-width: 92%;
-  background: #313B47;
+  background: var(--charcoal);
   border: 1px solid rgba(86, 99, 115, 0.3);
   border-radius: 16px;
   padding: 28px;
@@ -195,7 +195,7 @@
 .modalTitle {
   font-size: 18px;
   font-weight: 700;
-  color: #E6EBF0;
+  color: var(--cloud);
   margin-bottom: 20px;
 }
 
@@ -207,7 +207,7 @@
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #AEB8C4;
+  color: var(--mist);
   margin-bottom: 6px;
 }
 
@@ -234,22 +234,22 @@
 }
 .actionModalIcon {
   font-size: 20px;
-  color: #d6a83a;
+  color: var(--amber);
 }
 .actionModalAgent {
   font-size: 12px;
-  color: #7A8696;
+  color: var(--status-neutral);
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(86, 99, 115, 0.2);
 }
 .actionModalAgent strong {
-  color: #AEB8C4;
+  color: var(--mist);
 }
 .actionModalSteps {
   margin: 0 0 8px;
   padding-left: 20px;
-  color: #AEB8C4;
+  color: var(--mist);
   line-height: 1.7;
   font-size: 13px;
 }
@@ -271,14 +271,14 @@
 
 .deleteModalPrime {
   font-size: 12px;
-  color: #7A8696;
+  color: var(--status-neutral);
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(86, 99, 115, 0.2);
 }
 
 .deleteModalPrime strong {
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 .deleteBlockNotice {
@@ -292,13 +292,13 @@
 .deleteBlockTitle {
   font-size: 14px;
   font-weight: 600;
-  color: #D84F45;
+  color: var(--pulse);
   margin-bottom: 6px;
 }
 
 .deleteBlockDesc {
   font-size: 13px;
-  color: #AEB8C4;
+  color: var(--mist);
   line-height: 1.5;
   margin-bottom: 12px;
 }
@@ -318,12 +318,12 @@
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 .deleteWarning {
   font-size: 13px;
-  color: #AEB8C4;
+  color: var(--mist);
   line-height: 1.6;
   margin-bottom: 8px;
   padding: 12px 16px;
@@ -335,7 +335,7 @@
 .deleteConfirmBtn {
   background: rgba(216, 79, 69, 0.12) !important;
   border: 1px solid rgba(216, 79, 69, 0.35) !important;
-  color: #D84F45 !important;
+  color: var(--pulse) !important;
   font-weight: 600;
   transition: all 180ms ease;
 }

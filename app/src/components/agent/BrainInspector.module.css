@@ -3,24 +3,12 @@
    Extracted from Brain page · 1health Design System
    ============================================ */
 
-/* ---- Design tokens (local) ---- */
+/* ---- Component-local shorthands ----
+   The global-token re-declarations that used to live here leaked app-wide (a module
+   :root is global scope) and overrode globals.css — removed. The component now uses the
+   global tokens (var(--cloud) etc.) directly; only these local aliases remain. */
 :root {
-  --graphite: #202833;
-  --charcoal: #313B47;
-  --slate: #566373;
-  --mist: #AEB8C4;
-  --cloud: #E6EBF0;
-  --trust-blue: #246B8F;
-  --network-teal: #1F9A9B;
-  --care-mint: #5FC7B2;
-  --signal-aqua: #8FD8E6;
-  --clinical-ice: #E8F7FA;
-
-  --border-subtle: rgba(86, 99, 115, 0.28);
-  --border-default: rgba(86, 99, 115, 0.4);
   --border-active: rgba(143, 216, 230, 0.48);
-
-  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.24);
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --d-hover: 160ms;
@@ -40,7 +28,7 @@
 .loading {
   padding: 48px;
   text-align: center;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 14px;
 }
 
@@ -54,7 +42,7 @@
 }
 
 .liveLoading {
-  color: #D6A83A;
+  color: var(--amber);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -65,7 +53,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #D6A83A;
+  background: var(--amber);
   animation: livePulseAnim 1.2s ease-in-out infinite;
 }
 
@@ -75,7 +63,7 @@
 }
 
 .liveConnected {
-  color: #3BAA78;
+  color: var(--status-success);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -86,17 +74,17 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #3BAA78;
+  background: var(--status-success);
 }
 
 .liveError {
-  color: #D84F45;
+  color: var(--pulse);
 }
 
 /* ---- Scanned date ---- */
 .scanned {
   font-size: 11px;
-  color: #566373;
+  color: var(--slate);
   margin-bottom: 16px;
 }
 
@@ -123,7 +111,7 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #D6A83A;
+  color: var(--amber);
   font-weight: 500;
 }
 
@@ -142,7 +130,7 @@
   border: 1px solid rgba(86, 99, 115, 0.35);
   border-radius: 8px;
   background: transparent;
-  color: #AEB8C4;
+  color: var(--mist);
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -151,7 +139,7 @@
 }
 .applyDiscard:hover {
   border-color: rgba(216, 79, 69, 0.5);
-  color: #D84F45;
+  color: var(--pulse);
 }
 .applyDiscard:disabled {
   opacity: 0.5;
@@ -162,8 +150,8 @@
   padding: 6px 16px;
   border: none;
   border-radius: 8px;
-  background: linear-gradient(135deg, #1F9A9B, #246B8F);
-  color: #E6EBF0;
+  background: linear-gradient(135deg, var(--network-teal), var(--trust-blue));
+  color: var(--cloud);
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -191,12 +179,12 @@
 .applySuccess {
   background: rgba(59, 170, 120, 0.1);
   border: 1px solid rgba(59, 170, 120, 0.3);
-  color: #3BAA78;
+  color: var(--status-success);
 }
 .applyError {
   background: rgba(216, 79, 69, 0.1);
   border: 1px solid rgba(216, 79, 69, 0.3);
-  color: #D84F45;
+  color: var(--pulse);
 }
 
 /* ---- Section Labels ---- */
@@ -224,7 +212,7 @@
   align-items: center;
   gap: 4px;
   padding: 22px 16px 18px;
-  background: #313B47;
+  background: var(--charcoal);
   border: 1px solid rgba(86, 99, 115, 0.25);
   border-radius: 16px;
   cursor: pointer;
@@ -277,18 +265,18 @@
 .slotLabel {
   font-size: 14px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .slotDesc {
   font-size: 11px;
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 .slotModel {
   font-size: 12px;
   font-weight: 500;
-  color: #8FD8E6;
+  color: var(--signal-aqua);
   margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -298,7 +286,7 @@
 
 .slotModelId {
   font-size: 10px;
-  color: #566373;
+  color: var(--slate);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -308,7 +296,7 @@
 
 .slotModelLoading {
   font-size: 11px;
-  color: #D6A83A;
+  color: var(--amber);
   margin-top: 4px;
   animation: livePulseAnim 1.2s ease-in-out infinite;
 }
@@ -316,7 +304,7 @@
 .slotPendingBadge {
   font-size: 9px;
   font-weight: 600;
-  color: #D6A83A;
+  color: var(--amber);
   background: rgba(214, 168, 58, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
@@ -327,7 +315,7 @@
 
 .slotSwap {
   font-size: 10px;
-  color: #566373;
+  color: var(--slate);
   margin-top: 2px;
 }
 
@@ -344,7 +332,7 @@
 }
 
 .modal {
-  background: #202833;
+  background: var(--graphite);
   border: 1px solid rgba(86, 99, 115, 0.35);
   border-radius: 16px;
   width: 100%;
@@ -367,20 +355,20 @@
 .modalTitle {
   font-size: 15px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .modalClose {
   background: none;
   border: none;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 16px;
   cursor: pointer;
   padding: 4px;
 }
 
 .modalClose:hover {
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .modalBody {
@@ -391,7 +379,7 @@
 .noModels {
   padding: 24px;
   text-align: center;
-  color: #566373;
+  color: var(--slate);
   font-size: 13px;
 }
 
@@ -402,7 +390,7 @@
 .providerLabel {
   font-size: 10px;
   font-weight: 600;
-  color: #AEB8C4;
+  color: var(--mist);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 6px;
@@ -422,7 +410,7 @@
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
-  color: #E6EBF0;
+  color: var(--cloud);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
   transition: background 160ms, border-color 160ms;
@@ -466,12 +454,12 @@
 .modelName {
   font-size: 13px;
   font-weight: 500;
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .modelId {
   font-size: 10px;
-  color: #566373;
+  color: var(--slate);
   font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
 }
 
@@ -483,13 +471,13 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   background: rgba(128, 128, 128, 0.15);
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 .currentBadge {
   font-size: 9px;
   font-weight: 600;
-  color: #8FD8E6;
+  color: var(--signal-aqua);
   background: rgba(143, 216, 230, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
@@ -500,7 +488,7 @@
 .pendingBadge {
   font-size: 9px;
   font-weight: 600;
-  color: #D6A83A;
+  color: var(--amber);
   background: rgba(214, 168, 58, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
@@ -520,7 +508,7 @@
 
 .respCard {
   padding: 16px 20px;
-  background: #313B47;
+  background: var(--charcoal);
   border: 1px solid rgba(86, 99, 115, 0.25);
   border-radius: var(--r-lg);
   transition: border-color var(--d-hover) var(--ease);
@@ -629,7 +617,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #E6EBF0;
+  background: var(--cloud);
   transition: transform 200ms var(--ease);
 }
 .respToggleOn {
@@ -649,7 +637,7 @@
 .respPausedBadge {
   font-size: 9px;
   font-weight: 600;
-  color: #D6A83A;
+  color: var(--amber);
   background: rgba(214, 168, 58, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;

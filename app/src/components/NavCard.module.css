@@ -6,7 +6,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 24px;
-  background: #313B47; /* Charcoal */
+  background: var(--charcoal); /* Charcoal */
   border: 1px solid rgba(86, 99, 115, 0.25); /* Slate 25% */
   border-radius: 16px;
   cursor: pointer;
@@ -38,7 +38,7 @@
   border-color: rgba(143, 216, 230, 0.3); /* Aqua */
 }
 .accent .title {
-  color: #8FD8E6; /* Signal Aqua */
+  color: var(--signal-aqua); /* Signal Aqua */
 }
 
 .action {
@@ -49,7 +49,7 @@
   text-align: center;
 }
 .action .title {
-  color: #5FC7B2; /* Care Mint */
+  color: var(--care-mint); /* Care Mint */
 }
 .action:hover {
   border-color: rgba(95, 199, 178, 0.6);
@@ -62,7 +62,7 @@
   border-color: rgba(214, 168, 58, 0.3); /* Amber */
 }
 .warm .title {
-  color: #D6A83A; /* Amber */
+  color: var(--amber); /* Amber */
 }
 .warm:hover {
   border-color: rgba(214, 168, 58, 0.55);
@@ -82,14 +82,14 @@
 .title {
   font-size: 15px;
   font-weight: 600;
-  color: #E6EBF0; /* Cloud */
+  color: var(--cloud); /* Cloud */
   letter-spacing: -0.01em;
 }
 
 .description {
   font-size: 13px;
   font-weight: 400;
-  color: #AEB8C4; /* Mist */
+  color: var(--mist); /* Mist */
   line-height: 1.5;
 }
 
@@ -107,7 +107,7 @@
   padding: 0 7px;
   border-radius: 9999px;
   background: rgba(214, 168, 58, 0.15); /* Amber tint */
-  color: #D6A83A; /* Amber */
+  color: var(--amber); /* Amber */
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -126,7 +126,7 @@
 
 .progressBar {
   height: 100%;
-  background: linear-gradient(90deg, #1F9A9B, #5FC7B2); /* Teal → Mint */
+  background: linear-gradient(90deg, var(--network-teal), var(--care-mint)); /* Teal → Mint */
   border-radius: 2px;
   transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }

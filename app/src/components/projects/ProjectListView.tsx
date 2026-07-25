@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { CreateProjectModal } from "./CreateProjectModal";
 import { ProjectStatusBadge } from "./ProjectStatusBadge";
 import type { ProjectSummary } from "./types";
-import styles from "@/app/p/[id]/projects/page.module.css";
+import styles from "@/components/projects/ProjectsPage.module.css";
 
 interface ProjectListViewProps {
   primeId?: string;

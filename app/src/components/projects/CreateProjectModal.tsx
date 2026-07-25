@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { ContextEditor } from "./ContextEditor";
 import type { ContextEntry } from "./ContextEditor";
 import type { ProjectSummary } from "./types";
-import styles from "@/app/p/[id]/projects/page.module.css";
+import styles from "@/components/projects/ProjectsPage.module.css";
 
 interface CreateProjectModalProps {
   primeId?: string;

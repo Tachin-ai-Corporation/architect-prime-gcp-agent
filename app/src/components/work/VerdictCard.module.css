@@ -28,8 +28,8 @@
   font-size: 14px;
 }
 
-.cardPass .badge { color: #3BAA78; }
-.cardFail .badge { color: #D84F45; }
+.cardPass .badge { color: var(--status-success); }
+.cardFail .badge { color: var(--pulse); }
 
 .score {
   font-size: 13px;
@@ -81,8 +81,8 @@
   font-weight: 700;
 }
 
-.rowPass .tdStatus { color: #3BAA78; }
-.rowFail .tdStatus { color: #D84F45; }
+.rowPass .tdStatus { color: var(--status-success); }
+.rowFail .tdStatus { color: var(--pulse); }
 
 .evidence {
   color: #8899aa;

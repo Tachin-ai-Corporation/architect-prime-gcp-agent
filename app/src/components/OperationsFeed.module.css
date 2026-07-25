@@ -23,7 +23,7 @@
 .feedTitle {
   font-size: 13px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -44,7 +44,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #7A8696;
+  color: var(--status-neutral);
   font-size: 14px;
   cursor: pointer;
   display: flex;
@@ -55,13 +55,13 @@
 
 .feedClose:hover {
   background: rgba(86, 99, 115, 0.25);
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .feedClear {
   background: none;
   border: none;
-  color: var(--text-tertiary, #566373);
+  color: var(--text-tertiary, var(--slate));
   font-size: 11px;
   cursor: pointer;
   padding: 2px 8px;
@@ -69,7 +69,7 @@
   transition: color 150ms ease, background 150ms ease;
 }
 .feedClear:hover {
-  color: var(--text-primary, #E6EBF0);
+  color: var(--text-primary, var(--cloud));
   background: rgba(86, 99, 115, 0.15);
 }
 
@@ -90,7 +90,7 @@
 .feedEmpty {
   padding: 32px 16px;
   text-align: center;
-  color: #7A8696;
+  color: var(--status-neutral);
   font-size: 13px;
   display: flex;
   flex-direction: column;
@@ -131,7 +131,7 @@
 }
 
 .statusPending {
-  border-left: 3px solid #7A8696;
+  border-left: 3px solid var(--status-neutral);
 }
 
 .statusComplete {
@@ -172,7 +172,7 @@
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #E6EBF0;
+  color: var(--cloud);
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
@@ -184,7 +184,7 @@
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: #7A8696;
+  color: var(--status-neutral);
   margin-top: 2px;
 }
 
@@ -193,11 +193,11 @@
 }
 
 .opDuration {
-  color: #566373;
+  color: var(--slate);
 }
 
 .opTime {
-  color: #566373;
+  color: var(--slate);
 }
 
 /* ---- Progress bar (inline) ---- */
@@ -231,7 +231,7 @@
 /* ---- Expand chevron ---- */
 .opExpand {
   font-size: 12px;
-  color: #566373;
+  color: var(--slate);
   flex-shrink: 0;
   width: 20px;
   text-align: center;
@@ -239,7 +239,7 @@
 }
 
 .opCard:hover .opExpand {
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 /* ---- Retry button ---- */
@@ -285,13 +285,13 @@
   padding: 3px 6px;
   border-radius: 4px;
   font-size: 12px;
-  color: #7A8696;
+  color: var(--status-neutral);
   transition: background 150ms ease;
 }
 
 .opStepActive {
   background: rgba(31, 154, 155, 0.08);
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 .opStepIcon {
@@ -314,7 +314,7 @@
   border-radius: 6px;
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
-  color: #AEB8C4;
+  color: var(--mist);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 120px;

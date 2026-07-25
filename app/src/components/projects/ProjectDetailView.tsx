@@ -10,7 +10,7 @@ import { CanonEditor } from "./CanonEditor";
 import type { Canon } from "./CanonEditor";
 import { ProjectStatusBadge } from "./ProjectStatusBadge";
 import type { ProjectDetail, ProcessSummary, PromotionEntry } from "./types";
-import styles from "@/app/p/[id]/projects/page.module.css";
+import styles from "@/components/projects/ProjectsPage.module.css";
 
 const KIND_ICONS: Record<string, string> = {
   document: "📄",

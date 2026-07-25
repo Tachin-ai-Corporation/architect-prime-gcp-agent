@@ -28,13 +28,13 @@
 .settingsTitle {
   font-size: 22px;
   font-weight: 700;
-  color: #E6EBF0;
+  color: var(--cloud);
   letter-spacing: -0.02em;
 }
 
 .settingsSubtitle {
   font-size: 13px;
-  color: #AEB8C4;
+  color: var(--mist);
   margin-top: 2px;
 }
 
@@ -46,7 +46,7 @@
   background: none;
   border: 1px solid rgba(86, 99, 115, 0.35);
   border-radius: 6px;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 12px;
   font-weight: 500;
   padding: 5px 10px;
@@ -56,7 +56,7 @@
 }
 
 .settingsBack:hover {
-  color: #E6EBF0;
+  color: var(--cloud);
   border-color: rgba(143, 216, 230, 0.4);
   background: rgba(86, 99, 115, 0.15);
 }
@@ -81,7 +81,7 @@
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: #AEB8C4;
+  color: var(--mist);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
   font-weight: 500;
@@ -91,12 +91,12 @@
 }
 
 .tab:hover {
-  color: #E6EBF0;
+  color: var(--cloud);
   background: rgba(86, 99, 115, 0.2);
 }
 
 .tabActive {
-  color: #E6EBF0;
+  color: var(--cloud);
   background: rgba(31, 154, 155, 0.2);
   border: 1px solid rgba(31, 154, 155, 0.35);
   font-weight: 600;
@@ -113,7 +113,7 @@
 
 /* ---- Section ---- */
 .section {
-  background: #313B47;
+  background: var(--charcoal);
   border: 1px solid rgba(86, 99, 115, 0.25);
   border-radius: 16px;
   padding: 24px;
@@ -123,7 +123,7 @@
 .sectionTitle {
   font-size: 15px;
   font-weight: 700;
-  color: #E6EBF0;
+  color: var(--cloud);
   margin-bottom: 16px;
   display: flex;
   align-items: center;
@@ -132,7 +132,7 @@
 
 .sectionDesc {
   font-size: 13px;
-  color: #AEB8C4;
+  color: var(--mist);
   line-height: 1.6;
   margin-bottom: 16px;
 }
@@ -153,13 +153,13 @@
 .fieldLabel {
   font-size: 13px;
   font-weight: 500;
-  color: #AEB8C4;
+  color: var(--mist);
   min-width: 160px;
 }
 
 .fieldValue {
   font-size: 13px;
-  color: #E6EBF0;
+  color: var(--cloud);
   font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
 }
 
@@ -177,27 +177,27 @@
 
 .badgeSuccess {
   background: rgba(59, 170, 120, 0.12);
-  color: #3BAA78;
+  color: var(--status-success);
 }
 
 .badgeWarning {
   background: rgba(214, 168, 58, 0.12);
-  color: #D6A83A;
+  color: var(--amber);
 }
 
 .badgeError {
   background: rgba(216, 79, 69, 0.12);
-  color: #D84F45;
+  color: var(--pulse);
 }
 
 .badgeInfo {
   background: rgba(47, 128, 168, 0.12);
-  color: #2F80A8;
+  color: var(--status-info);
 }
 
 .badgeNeutral {
   background: rgba(174, 184, 196, 0.12);
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 /* ---- Copy rows ---- */
@@ -214,7 +214,7 @@
 .copyLabel {
   font-size: 11px;
   font-weight: 600;
-  color: #AEB8C4;
+  color: var(--mist);
   min-width: 90px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -223,7 +223,7 @@
 .copyValue {
   flex: 1;
   font-size: 12px;
-  color: #E6EBF0;
+  color: var(--cloud);
   font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -235,7 +235,7 @@
   border-radius: 6px;
   border: 1px solid rgba(86, 99, 115, 0.35);
   background: transparent;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -245,7 +245,7 @@
 
 .copyBtn:hover {
   border-color: rgba(143, 216, 230, 0.4);
-  color: #E6EBF0;
+  color: var(--cloud);
 }
 
 /* ---- Alert box ---- */
@@ -260,25 +260,25 @@
 .alertSuccess {
   background: rgba(59, 170, 120, 0.1);
   border: 1px solid rgba(59, 170, 120, 0.3);
-  color: #3BAA78;
+  color: var(--status-success);
 }
 
 .alertError {
   background: rgba(216, 79, 69, 0.1);
   border: 1px solid rgba(216, 79, 69, 0.3);
-  color: #D84F45;
+  color: var(--pulse);
 }
 
 .alertWarning {
   background: rgba(214, 168, 58, 0.1);
   border: 1px solid rgba(214, 168, 58, 0.3);
-  color: #D6A83A;
+  color: var(--amber);
 }
 
 .alertInfo {
   background: rgba(47, 128, 168, 0.1);
   border: 1px solid rgba(47, 128, 168, 0.3);
-  color: #2F80A8;
+  color: var(--status-info);
 }
 
 /* ---- Steps ---- */
@@ -287,15 +287,15 @@
   margin: 0;
   line-height: 2;
   font-size: 13px;
-  color: #AEB8C4;
+  color: var(--mist);
 }
 
 .steps a {
-  color: #8FD8E6;
+  color: var(--signal-aqua);
 }
 
 .steps a:hover {
-  color: #5FC7B2;
+  color: var(--care-mint);
 }
 
 /* ---- Input rows ---- */
@@ -309,7 +309,7 @@
 .settingsLoading {
   text-align: center;
   padding: 48px;
-  color: #AEB8C4;
+  color: var(--mist);
   font-size: 14px;
 }
 

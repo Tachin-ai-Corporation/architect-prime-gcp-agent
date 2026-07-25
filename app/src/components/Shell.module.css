@@ -5,7 +5,7 @@
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  background: #202833; /* Graphite */
+  background: var(--graphite); /* Graphite */
 }
 
 /* ---- Top bar ---- */
@@ -16,7 +16,7 @@
   justify-content: space-between;
   height: 48px;
   padding: 0 20px;
-  background: #313B47; /* Charcoal */
+  background: var(--charcoal); /* Charcoal */
   border-bottom: 1px solid rgba(86, 99, 115, 0.15); /* Slate 15% */
   flex-shrink: 0;
   position: relative;
@@ -63,7 +63,7 @@
 .logoTitle {
   font-size: 14px;
   font-weight: 700;
-  color: #E6EBF0;
+  color: var(--cloud);
   letter-spacing: -0.01em;
 }
 
@@ -89,7 +89,7 @@
   border: none;
   border-radius: 10px;
   background: transparent;
-  color: #AEB8C4; /* Mist */
+  color: var(--mist); /* Mist */
   font-size: 16px;
   cursor: pointer;
   transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -98,17 +98,17 @@
 
 .iconBtn:hover {
   background: rgba(86, 99, 115, 0.2);
-  color: #E6EBF0; /* Cloud */
+  color: var(--cloud); /* Cloud */
   text-decoration: none;
 }
 
 .iconBtnActive {
-  color: var(--signal-aqua, #8FD8E6);
+  color: var(--signal-aqua, var(--signal-aqua));
   background: rgba(31, 154, 155, 0.1);
 }
 
 .iconBtnActive:hover {
-  color: var(--signal-aqua, #8FD8E6);
+  color: var(--signal-aqua, var(--signal-aqua));
   background: rgba(31, 154, 155, 0.15);
 }
 
@@ -118,7 +118,7 @@
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 10px;
   font-weight: 500;
-  color: #566373; /* Slate */
+  color: var(--slate); /* Slate */
   white-space: nowrap;
   user-select: none;
   text-decoration: none;
@@ -133,7 +133,7 @@
 }
 
 .versionStable {
-  color: #3BAA78; /* Success */
+  color: var(--status-success); /* Success */
   font-weight: 600;
   font-size: 9px;
   margin-left: 3px;
@@ -141,7 +141,7 @@
 }
 
 .versionUnstable {
-  color: #D6A83A; /* Amber */
+  color: var(--amber); /* Amber */
   font-weight: 600;
   font-size: 9px;
   margin-left: 3px;
@@ -149,7 +149,7 @@
 }
 
 .versionUpdate {
-  color: #D84F45; /* Pulse */
+  color: var(--pulse); /* Pulse */
   margin-left: 4px;
   font-size: 10px;
 }
@@ -218,7 +218,7 @@
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
-  background: #202833; /* Graphite */
+  background: var(--graphite); /* Graphite */
 }
 
 /* ---- Warning icons ---- */
@@ -234,6 +234,6 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #D6A83A;
+  background: var(--amber);
   animation: badgePulse 2s ease-in-out infinite;
 }

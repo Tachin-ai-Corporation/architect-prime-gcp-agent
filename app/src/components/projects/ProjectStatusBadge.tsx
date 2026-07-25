@@ -1,6 +1,6 @@
 "use client";
 
-import styles from "@/app/p/[id]/projects/page.module.css";
+import styles from "@/components/projects/ProjectsPage.module.css";
 
 interface ProjectStatusBadgeProps {
   status: "active" | "complete" | "completed" | "paused" | "archived";

@@ -130,12 +130,12 @@
 }
 
 .statusDeploying {
-  background: #D6A83A;
+  background: var(--amber);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
-.statusError { background: #D84F45; }
-.statusOffline { background: #566373; opacity: 0.5; }
+.statusError { background: var(--pulse); }
+.statusOffline { background: var(--slate); opacity: 0.5; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -184,13 +184,13 @@
 }
 
 .actionBtnDanger {
-  color: #7A8696;
+  color: var(--status-neutral);
   background: transparent;
   border-color: transparent;
 }
 
 .actionBtnDanger:hover {
-  color: #D84F45;
+  color: var(--pulse);
   background: rgba(216, 79, 69, 0.08);
   border-color: rgba(216, 79, 69, 0.25);
 }
@@ -222,7 +222,7 @@
 .modal {
   width: 420px;
   max-width: 92%;
-  background: #313B47;
+  background: var(--charcoal);
   border: 1px solid rgba(86, 99, 115, 0.3);
   border-radius: 16px;
   padding: 28px;
