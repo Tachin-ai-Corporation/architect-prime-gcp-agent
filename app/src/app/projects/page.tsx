@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import styles from "./page.module.css";
+import styles from "@/components/projects/ProjectsPage.module.css";
 import { ProjectListView } from "@/components/projects/ProjectListView";
 import { ProjectDetailView } from "@/components/projects/ProjectDetailView";
 

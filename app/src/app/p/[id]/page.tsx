@@ -12,6 +12,7 @@ import { FleetPanel } from "@/components/fleet/FleetPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
 import { PersonaPanel } from "@/components/agent/PersonaPanel";
+import { ConfigViewer } from "@/components/agent/ConfigViewer";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import styles from "./page.module.css";
 
@@ -36,6 +37,7 @@ const TABS = [
   { key: "projects", label: "Projects", icon: "📁" },
   { key: "plans", label: "Plans", icon: "🗺️" },
   { key: "processes", label: "Processes", icon: "⚙️" },
+  { key: "config", label: "Config", icon: "🔧" },
   { key: "memory", label: "Memory", icon: "💾" },
   { key: "chat", label: "Chat", icon: "💬" },
 ] as const;
@@ -211,6 +213,11 @@ export default function PrimeDeepDivePage({
         {/* Memory */}
         {activeTab === "memory" && (
           <MemoryViewer primeId={id} agentName={agentName} />
+        )}
+
+        {/* Config */}
+        {activeTab === "config" && (
+          <ConfigViewer primeId={id} />
         )}
 
         {/* Work */}
