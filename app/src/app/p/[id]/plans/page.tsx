@@ -254,7 +254,7 @@ function PlanDetailView({
           )}
           {plan.mission_id && (
             <Link
-              href={`/p/${primeId}/work`}
+              href={`/p/${primeId}#work`}
               className={styles.linkPill}
               id="plan-mission-link"
             >
