@@ -5,8 +5,11 @@
    All colors, spacing, motion, and layout follow the 1health spec.
    ================================================================ */
 
-/* ---- Google Fonts ---- */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* ---- Google Fonts ----
+   Inter is loaded via next/font (layout.tsx) and applied through the body class, so it
+   is intentionally NOT re-imported here (that double-loaded the family). Only JetBrains
+   Mono comes from this import, for code/mono usage. */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* ================================================================
    1. CSS Custom Properties — Design Tokens
@@ -145,6 +148,18 @@ a {
 }
 a:hover {
   text-decoration: none;
+}
+
+/* ---- Keyboard focus ring (a11y) ----
+   The app previously had zero :focus-visible styling, so every button/tab/link/input
+   was keyboard-invisible. One global ring, shown only for keyboard focus (not mouse). */
+:focus-visible {
+  outline: 2px solid var(--signal-aqua);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 code, pre, .mono {
