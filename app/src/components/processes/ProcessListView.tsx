@@ -6,15 +6,11 @@ import { api } from "@/lib/api";
 import { CreateProcessModal } from "./CreateProcessModal";
 import type { ProcessSummary } from "./types";
 import styles from "@/app/p/[id]/processes/page.module.css";
+import { truncate } from "@/lib/format";
 
 interface ProcessListViewProps {
   primeId: string;
   router: ReturnType<typeof useRouter>;
-}
-
-function truncate(text: string, max: number): string {
-  if (!text) return "";
-  return text.length > max ? text.slice(0, max) + "…" : text;
 }
 
 export function ProcessListView({ primeId, router }: ProcessListViewProps) {

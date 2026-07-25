@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import styles from "./ContextEditor.module.css";
+import { truncate } from "@/lib/format";
 
 /* ---- Types ---- */
 export interface ContextEntry {
@@ -359,7 +360,3 @@ export function ContextEditor({ context, onChange, readOnly = false }: ContextEd
 }
 
 /* ---- Helpers ---- */
-function truncate(text: string, max: number): string {
-  if (!text) return "";
-  return text.length > max ? text.slice(0, max) + "…" : text;
-}

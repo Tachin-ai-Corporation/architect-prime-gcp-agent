@@ -7,6 +7,7 @@ import { VerdictCard } from "./VerdictCard";
 import { InternalsPanel } from "./InternalsPanel";
 import type { WorkEnvelope } from "@/lib/types";
 import { formatAgentDisplayName } from "@/components/AgentChip";
+import { elapsedSince, formatDuration } from "@/lib/format";
 
 /* ---- Props ---- */
 interface WorkDetailProps {
@@ -37,32 +38,6 @@ function formatTimestamp(ts: string | null): string {
   } catch {
     return ts;
   }
-}
-
-function formatDuration(start: string | null, end: string | null): string | null {
-  if (!start || !end) return null;
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  if (ms < 0) return null;
-  const secs = Math.floor(ms / 1000);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ${secs % 60}s`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ${mins % 60}m`;
-}
-
-function elapsedSince(isoDate: string | null): string | null {
-  if (!isoDate) return null;
-  const ms = Date.now() - new Date(isoDate).getTime();
-  if (ms < 0) return null;
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return "<1m";
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ${hrs % 24}h`;
 }
 
 function statusLabel(status: string): string {

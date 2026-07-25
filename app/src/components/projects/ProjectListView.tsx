@@ -8,15 +8,11 @@ import { CreateProjectModal } from "./CreateProjectModal";
 import { ProjectStatusBadge } from "./ProjectStatusBadge";
 import type { ProjectSummary } from "./types";
 import styles from "@/components/projects/ProjectsPage.module.css";
+import { truncate } from "@/lib/format";
 
 interface ProjectListViewProps {
   primeId?: string;
   teamFilter?: string | null;
-}
-
-function truncate(text: string, max: number): string {
-  if (!text) return "";
-  return text.length > max ? text.slice(0, max) + "…" : text;
 }
 
 export function ProjectListView({ primeId, teamFilter }: ProjectListViewProps) {
