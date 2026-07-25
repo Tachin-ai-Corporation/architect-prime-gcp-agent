@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import styles from "./AgentItems.module.css";
+import { AsyncState, EmptyState } from "@/components/ui/AsyncState";
 
 /* ================================================================
    Types
@@ -119,41 +120,17 @@ export function AgentProcesses({ primeId, agentEmail }: AgentProcessesProps) {
     });
   }, [processes, resolveSubscribed]);
 
-  /* ---- Loading ---- */
-  if (loading) {
-    return (
-      <div className={styles.loadingState}>
-        <div className={styles.spinner} />
-        <span className={styles.pulse}>Loading processes…</span>
-      </div>
-    );
-  }
-
-  /* ---- Error ---- */
-  if (error) {
-    return (
-      <div className={styles.errorState}>
-        <span className={styles.errorMsg}>⚠ {error}</span>
-        <button className={styles.retryBtn} onClick={fetchProcesses}>
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  /* ---- Empty ---- */
-  if (processes.length === 0) {
-    return (
-      <div className={styles.emptyState}>
-        <div className={styles.emptyIcon}>⚙️</div>
-        No processes found
-      </div>
-    );
-  }
-
-  /* ---- Grid ---- */
+  /* ---- Render ---- */
   return (
-    <div className={styles.itemGrid}>
+    <AsyncState
+      loading={loading}
+      error={error}
+      onRetry={fetchProcesses}
+      isEmpty={processes.length === 0}
+      loadingLabel="Loading processes…"
+      empty={<EmptyState icon="⚙️">No processes found</EmptyState>}
+    >
+      <div className={styles.itemGrid}>
       {displayed.map((proc) => {
         const subscribed = resolveSubscribed(proc);
         const stepCount = proc.steps?.length ?? 0;
@@ -227,6 +204,7 @@ export function AgentProcesses({ primeId, agentEmail }: AgentProcessesProps) {
           </div>
         );
       })}
-    </div>
+      </div>
+    </AsyncState>
   );
 }

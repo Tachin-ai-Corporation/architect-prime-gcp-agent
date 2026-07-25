@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import styles from "./AgentItems.module.css";
+import { AsyncState, EmptyState } from "@/components/ui/AsyncState";
 
 /* ================================================================
    Types
@@ -105,41 +106,16 @@ export function AgentProjects({ primeId, agentEmail }: AgentProjectsProps) {
     return sorted;
   }, [projects, agentEmail, filter]);
 
-  /* ---- Loading ---- */
-  if (loading) {
-    return (
-      <div className={styles.loadingState}>
-        <div className={styles.spinner} />
-        <span className={styles.pulse}>Loading projects…</span>
-      </div>
-    );
-  }
-
-  /* ---- Error ---- */
-  if (error) {
-    return (
-      <div className={styles.errorState}>
-        <span className={styles.errorMsg}>⚠ {error}</span>
-        <button className={styles.retryBtn} onClick={fetchProjects}>
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  /* ---- Empty ---- */
-  if (projects.length === 0) {
-    return (
-      <div className={styles.emptyState}>
-        <div className={styles.emptyIcon}>📁</div>
-        No projects found
-      </div>
-    );
-  }
-
-  /* ---- Grid ---- */
+  /* ---- Render ---- */
   return (
-    <>
+    <AsyncState
+      loading={loading}
+      error={error}
+      onRetry={fetchProjects}
+      isEmpty={projects.length === 0}
+      loadingLabel="Loading projects…"
+      empty={<EmptyState icon="📁">No projects found</EmptyState>}
+    >
       <div className={styles.filterBar}>
         <button
           className={`${styles.filterBtn} ${filter === "all" ? styles.filterBtnActive : ""}`}
@@ -156,10 +132,7 @@ export function AgentProjects({ primeId, agentEmail }: AgentProjectsProps) {
       </div>
 
       {displayed.length === 0 ? (
-        <div className={styles.emptyState}>
-          <div className={styles.emptyIcon}>📁</div>
-          No assigned projects
-        </div>
+        <EmptyState icon="📁">No assigned projects</EmptyState>
       ) : (
         <div className={styles.itemGrid}>
           {displayed.map((project) => {
@@ -211,6 +184,6 @@ export function AgentProjects({ primeId, agentEmail }: AgentProjectsProps) {
           })}
         </div>
       )}
-    </>
+    </AsyncState>
   );
 }

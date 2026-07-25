@@ -1,0 +1,86 @@
+/* ---- AsyncState — shared loading / error / empty triad ---- */
+/* Extracted verbatim from the async-state styles that were re-authored across
+   the agent-tab and list-view components (AgentItems.module.css et al.). */
+
+/* ---- Loading ---- */
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 20px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(143, 216, 230, 0.2);
+  border-top-color: var(--network-teal);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.pulse {
+  animation: pulseAnim 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseAnim {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ---- Error ---- */
+.errorState {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: rgba(216, 79, 69, 0.08);
+  border: 1px solid rgba(216, 79, 69, 0.2);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.errorMsg {
+  flex: 1;
+  color: var(--status-error);
+}
+
+.retryBtn {
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(216, 79, 69, 0.3);
+  background: transparent;
+  color: var(--status-error);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.retryBtn:hover {
+  background: rgba(216, 79, 69, 0.1);
+}
+
+/* ---- Empty ---- */
+.emptyState {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.emptyIcon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
