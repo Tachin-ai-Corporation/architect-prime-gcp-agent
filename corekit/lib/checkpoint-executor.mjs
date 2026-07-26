@@ -1165,7 +1165,30 @@ export async function executeCheckpoints(checkpoints, opts) {
           .filter(r => !(typeof r.step === 'string' && r.step.endsWith('.verify')))
           .map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`)
           .join('\n');
-        log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum`);
+        // ---- Keep the verify prompt under the provider's malformed-call threshold ----
+        // Measured, not guessed: cerebellum returned 0 chars with
+        // finishReason=MALFORMED_FUNCTION_CALL at promptChars 10,516 and 16,234, and
+        // produced a clean verdict at ~4.5k on the SAME evidence. Past a certain
+        // prompt size this model emits a broken function call instead of calling
+        // report_pass/report_fail, which the B-28 fail-closed then reads as a work
+        // failure and blocks a healthy mission. A verifier does not need 16k of
+        // evidence to judge a milestone, so bound the evidence to whatever is left
+        // after the fixed sections rather than letting it set the total.
+        // Every section gets a sub-budget so the TOTAL is bounded by construction.
+        // Capping only the evidence is not enough: a verbose checkpoint instruction
+        // plus long criteria can exceed the threshold on their own, and then the
+        // malformed-call failure returns with no evidence to blame.
+        const VERIFY_PROMPT_MAX = contracts.dispatch?.verify_prompt_max_chars || 8000;
+        const BOILERPLATE = 1200;
+        const instrBudget = Math.min(1500, Math.floor(VERIFY_PROMPT_MAX * 0.2));
+        const critBudget = Math.min(2500, Math.floor(VERIFY_PROMPT_MAX * 0.32));
+        const cpInstrText = smartTruncate(toStr(cpEnvelope.instruction) || `Checkpoint ${cpNum}`, instrBudget);
+        const cpCritText = smartTruncate(toStr(cpEnvelope.accept_criteria), critBudget);
+        const remaining = Math.max(1000,
+          VERIFY_PROMPT_MAX - BOILERPLATE - cpInstrText.length - cpCritText.length);
+        const priorBudget = Math.min(CTX_VERIFY_PRIOR, Math.floor(remaining * 0.35));
+        const evidenceBudget = Math.min(CTX_VERIFY_INPUT, remaining - priorBudget);
+        log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum (evidence<=${evidenceBudget} prior<=${priorBudget} cap=${VERIFY_PROMPT_MAX})`);
         const verifyReq = {
           instruction: [
             'Verify that this CHECKPOINT MILESTONE has been achieved. Judge the checkpoint as a',
@@ -1173,21 +1196,21 @@ export async function executeCheckpoints(checkpoints, opts) {
             'Read the verification SKILL.md before rendering your verdict.',
             '',
             '## Checkpoint',
-            cpEnvelope.instruction || `Checkpoint ${cpNum}`,
+            cpInstrText,
             '',
             '## Acceptance Criteria (the milestone)',
-            cpEnvelope.accept_criteria,
+            cpCritText,
             '',
             ...(priorEstablished ? [
               '## Previously Established (earlier checkpoints — already-verified evidence)',
               'These findings are ALREADY ESTABLISHED. A criterion satisfied here is satisfied,',
               'even if the current checkpoint\'s tasks do not repeat the work. Judge only what',
               'remains. Never fail a criterion for absent evidence when the evidence is below.',
-              smartTruncate(priorEstablished, CTX_VERIFY_PRIOR),
+              smartTruncate(priorEstablished, priorBudget),
               '',
             ] : []),
             '## Combined Task Outputs',
-            smartTruncate(cpOutcome || '(no output)', CTX_VERIFY_INPUT),
+            smartTruncate(cpOutcome || '(no output)', evidenceBudget),
             ...((stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing) ? [
               '',
               `## Attack Duty (stakes: ${missionStakes}${isLoadBearing ? ', load-bearing' : ''})`,

@@ -54,7 +54,7 @@ describe('normalizeName / resourceKey', () => {
     assert.equal(normalizeName('Master Templates'), 'master templates');
     assert.equal(normalizeName('master-templates'), 'master templates');
     assert.equal(normalizeName('  MASTER   TEMPLATES  '), 'master templates');
-    assert.equal(resourceKey('folder', 'Master Templates'), resourceKey('folder', 'master-templates'));
+    assert.equal(resourceKey('drive_folder', 'Master Templates'), resourceKey('drive_folder', 'master-templates'));
   });
 
   it('drops a file extension so a doc and its filename agree', () => {
@@ -63,8 +63,8 @@ describe('normalizeName / resourceKey', () => {
 
   it('keeps genuinely different names apart (aliasing is consolidation\'s job)', () => {
     assert.notEqual(
-      resourceKey('folder', 'signed artifacts'),
-      resourceKey('folder', 'Executed Advisory Agreements'),
+      resourceKey('drive_folder', 'signed artifacts'),
+      resourceKey('drive_folder', 'Executed Advisory Agreements'),
     );
   });
 });
@@ -74,7 +74,7 @@ describe('extractResources — real tool shapes', () => {
     const r = extractResources(DRIVE_SEARCH);
     assert.equal(r.length, 1);
     assert.deepEqual(r[0], {
-      kind: 'folder',
+      kind: 'drive_folder',
       name: 'master templates',
       id: '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH',
     });
@@ -145,14 +145,14 @@ describe('extractResourcesFromProse — ids the operator already gave us', () =>
     assert.equal(byName['In Progress'].id, '1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp');
     assert.equal(byName['Master Templates'].id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH');
     assert.equal(byName['Signed Artifacts'].id, '1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ');
-    for (const x of r) assert.equal(x.kind, 'folder', 'the noun "folder" types them');
+    for (const x of r) assert.equal(x.kind, 'drive_folder', 'the noun "folder" types them');
   });
 
   it('handles a quoted name before the noun', () => {
     const r = extractResourcesFromProse("the 'Signed Artifacts' folder (1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ)");
     assert.equal(r.length, 1);
     assert.equal(r[0].name, 'Signed Artifacts');
-    assert.equal(r[0].kind, 'folder');
+    assert.equal(r[0].kind, 'drive_folder');
   });
 
   it('types by noun — doc, sheet, pdf', () => {
@@ -180,7 +180,7 @@ describe('extractResourcesFromProse — ids the operator already gave us', () =>
 
   it('merges cleanly with tool-captured entries — same folder, one entry', () => {
     const seeded = extractResourcesFromProse(REAL_REQUEST);
-    const captured = [{ kind: 'folder', name: 'master templates', id: '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH' }];
+    const captured = [{ kind: 'drive_folder', name: 'master templates', id: '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH' }];
     const a = mergeResources({}, seeded, { now: 'T0', source: 'request' });
     const b = mergeResources(a.ledger, captured, { now: 'T1', source: '1.1' });
     assert.equal(b.added, 0, 'case-insensitive key collapses "Master Templates" and "master templates"');
@@ -201,8 +201,8 @@ describe('mergeResources', () => {
   it('adds a new entry', () => {
     const { ledger, added } = mergeResources({}, found, { now: 'T0' });
     assert.equal(added, 1);
-    assert.equal(ledger['folder:master templates'].id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH');
-    assert.equal(ledger['folder:master templates'].first_seen, 'T0');
+    assert.equal(ledger['drive_folder:master templates'].id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH');
+    assert.equal(ledger['drive_folder:master templates'].first_seen, 'T0');
   });
 
   it('is idempotent — merging the same batch twice changes nothing', () => {
@@ -215,10 +215,10 @@ describe('mergeResources', () => {
 
   it('updates in place when the id changes, remembering the old one', () => {
     const one = mergeResources({}, found, { now: 'T0' });
-    const moved = [{ kind: 'folder', name: 'master templates', id: '9NEWID_NEWID_NEWID_NEWID' }];
+    const moved = [{ kind: 'drive_folder', name: 'master templates', id: '9NEWID_NEWID_NEWID_NEWID' }];
     const two = mergeResources(one.ledger, moved, { now: 'T2' });
     assert.equal(two.updated, 1);
-    const e = two.ledger['folder:master templates'];
+    const e = two.ledger['drive_folder:master templates'];
     assert.equal(e.id, '9NEWID_NEWID_NEWID_NEWID');
     assert.equal(e.previous_id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH',
       'a dead id must be visible, not silently overwritten');
@@ -226,14 +226,14 @@ describe('mergeResources', () => {
   });
 
   it('is order-independent', () => {
-    const a = [{ kind: 'folder', name: 'A', id: 'AAAAAAAAAAAA' }, { kind: 'doc', name: 'B', id: 'BBBBBBBBBBBB' }];
+    const a = [{ kind: 'drive_folder', name: 'A', id: 'AAAAAAAAAAAA' }, { kind: 'doc', name: 'B', id: 'BBBBBBBBBBBB' }];
     const l1 = mergeResources({}, a, { now: 'T' }).ledger;
     const l2 = mergeResources({}, [...a].reverse(), { now: 'T' }).ledger;
     assert.deepEqual(l1, l2);
   });
 
   it('enforces the cap and reports what it dropped', () => {
-    const many = Array.from({ length: 5 }, (_, i) => ({ kind: 'folder', name: `f${i}`, id: `IDIDIDIDIDID${i}` }));
+    const many = Array.from({ length: 5 }, (_, i) => ({ kind: 'drive_folder', name: `f${i}`, id: `IDIDIDIDIDID${i}` }));
     const { ledger, added, dropped } = mergeResources({}, many, { now: 'T', max: 3 });
     assert.equal(Object.keys(ledger).length, 3);
     assert.equal(added, 3);
@@ -262,8 +262,8 @@ describe('renderResources', () => {
 
   it('sorts cue matches first but keeps everything else', () => {
     const rows = [
-      { kind: 'folder', name: 'unrelated stuff', id: 'ZZZZZZZZZZZZ' },
-      { kind: 'folder', name: 'signed artifacts', id: 'SSSSSSSSSSSS' },
+      { kind: 'drive_folder', name: 'unrelated stuff', id: 'ZZZZZZZZZZZZ' },
+      { kind: 'drive_folder', name: 'signed artifacts', id: 'SSSSSSSSSSSS' },
     ];
     const { ledger } = mergeResources({}, rows, { now: 'T' });
     const out = renderResources(ledger, { cues: ['signed'] });

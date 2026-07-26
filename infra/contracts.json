@@ -96,6 +96,7 @@
     "context_slice_chars": 500,
     "ctx_verify_input": 24000,
     "ctx_verify_prior": 6000,
+    "verify_prompt_max_chars": 8000,
     "synth_verification_enabled": true,
     "synth_verify_min_chars": 400,
     "criteria_pinning_enabled": true,

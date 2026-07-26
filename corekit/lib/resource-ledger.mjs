@@ -22,10 +22,17 @@ const SPACE_RE = /^spaces\/[A-Za-z0-9_-]{4,}$/;
 /** Keys a tool may use for the identifier, in preference order. */
 const ID_KEYS = ['docId', 'fileId', 'folderId', 'id', 'spaceId'];
 
-/** mimeType / short-type → ledger kind. Short types come from drive-ls/search. */
+// mimeType / short-type → ledger kind. Short types come from drive-ls/search.
+//
+// `drive_folder`, `doc`, `sheet` and `slides` deliberately match the project-context
+// vocabulary in docs/primitives/04-PROJECT.md — one word per concept across the repo.
+// `pdf` / `image` / `file` / `space` are ledger-only and carry a ROUTE, not just a
+// type: a pdf tells the reading organ it must convert before it can read. The ledger
+// is never promoted into project context (it is a mission working map, not a durable
+// 40k-ft reference), so it is free to be more specific there.
 const KIND_BY_TYPE = {
-  folder: 'folder',
-  'application/vnd.google-apps.folder': 'folder',
+  folder: 'drive_folder',
+  'application/vnd.google-apps.folder': 'drive_folder',
   doc: 'doc',
   document: 'doc',
   'application/vnd.google-apps.document': 'doc',
@@ -160,7 +167,7 @@ export function extractResources(text) {
 
 /** Nouns that mark the thing an id belongs to, mapped to a ledger kind. */
 const PROSE_NOUNS = {
-  folder: 'folder', directory: 'folder',
+  folder: 'drive_folder', directory: 'drive_folder',
   doc: 'doc', document: 'doc', template: 'doc',
   sheet: 'sheet', spreadsheet: 'sheet',
   deck: 'slides', presentation: 'slides',

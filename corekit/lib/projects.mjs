@@ -609,9 +609,21 @@ export function createProjectRegistry(config) {
       // envelope.context accumulates working notes; only durable resource references may
       // be promoted to the project's 40k-ft view. This was previously UN-guarded and was
       // the main path by which mission particulars leaked into project context.
+      // Mission-scoped working structures that are NEVER project context (C-28) and
+      // must not be reported as promotion failures on every single mission. The
+      // resource ledger is the clear case: it is a name→id map the mission builds as
+      // it works, holding converted temp docs and one-off file ids — exactly what
+      // 04-PROJECT.md says context never holds. Its durability path is MEMORY (the
+      // core-memory `resources` category, promoted by consolidation), not the
+      // project's 40,000-ft view. Skipping it silently keeps the C-28 log honest:
+      // a "skipped" line should mean something went wrong, not that a by-design
+      // structure exists.
+      const NOT_PROJECT_CONTEXT = new Set(['resources']);
+
       const newEntries = {};
       for (const [key, entry] of Object.entries(missionContext)) {
         if (projectContext[key]) continue;
+        if (NOT_PROJECT_CONTEXT.has(key)) continue;
         const { ok, reason } = validateContextEntry(key, entry);
         if (!ok) { log('INFO', `Context promotion: skipped '${key}' (C-28): ${reason}`); continue; }
         newEntries[key] = entry;
