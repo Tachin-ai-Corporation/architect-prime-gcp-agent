@@ -1066,6 +1066,20 @@ export async function executeCheckpoints(checkpoints, opts) {
         const evidenceRows = fullEvidence ? cpFullOutputs : cpResults;
         const cpOutcome = evidenceRows.map(r => `- [${r.step}] ${r.agent}: ${toStr(fullEvidence ? r.output : r.result)}`).join('\n');
         const isLoadBearing = (envelope._brief?.parts || []).some(p => p.load_bearing);
+
+        // Evidence banked from EARLIER checkpoints — this run's prior checkpoints
+        // plus anything carried across a re-plan (savedResults). Without it the
+        // verifier sees only the current checkpoint's outputs while judging criteria
+        // that a re-plan carried forward, and fails work that already succeeded:
+        // a real run FAILed "Drive folder IDs are identified" one round after those
+        // exact IDs had been found and quoted in its own prior verdict. A milestone
+        // must never fail for evidence that exists upstream (B-28 re-derivation
+        // needs the evidence, and a re-plan must not erase it).
+        const CTX_VERIFY_PRIOR = contracts.dispatch?.ctx_verify_prior || 6000;
+        const priorEstablished = allResults
+          .filter(r => !(typeof r.step === 'string' && r.step.endsWith('.verify')))
+          .map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`)
+          .join('\n');
         log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum`);
         const verifyReq = {
           instruction: [
@@ -1079,6 +1093,14 @@ export async function executeCheckpoints(checkpoints, opts) {
             '## Acceptance Criteria (the milestone)',
             cpEnvelope.accept_criteria,
             '',
+            ...(priorEstablished ? [
+              '## Previously Established (earlier checkpoints — already-verified evidence)',
+              'These findings are ALREADY ESTABLISHED. A criterion satisfied here is satisfied,',
+              'even if the current checkpoint\'s tasks do not repeat the work. Judge only what',
+              'remains. Never fail a criterion for absent evidence when the evidence is below.',
+              smartTruncate(priorEstablished, CTX_VERIFY_PRIOR),
+              '',
+            ] : []),
             '## Combined Task Outputs',
             smartTruncate(cpOutcome || '(no output)', CTX_VERIFY_INPUT),
             ...((stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing) ? [

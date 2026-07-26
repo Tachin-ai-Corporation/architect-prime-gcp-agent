@@ -15,10 +15,32 @@ When dispatched to evaluate a completed task's output against its acceptance cri
 ### Evaluate task output and verify correctness
 1. Read the acceptance criteria carefully. Each criterion is a separate check.
 2. Read the task output (including any tool execution logs).
-3. For each criterion, check if there is concrete evidence in the output that the criterion is met.
-4. If all criteria are met with evidence, run `report_pass` with reasoning and a checks array.
-5. If any criterion is not met or not evidenced, run `report_fail` with reasoning, checks, and a recommendation.
-6. Verify: Ensure that exactly one verdict tool is executed and returns a success response.
+3. **Read the `## Previously Established` block first, if present.** Evidence there is already verified and counts in full.
+4. For each criterion, check for concrete evidence — in the current output **or** in Previously Established.
+5. If all criteria are met with evidence, run `report_pass` with reasoning and a checks array.
+6. If any criterion is not met or not evidenced, run `report_fail` with reasoning, checks, and a recommendation.
+7. Verify: Ensure that exactly one verdict tool is executed and returns a success response.
+
+### Judging a checkpoint that follows earlier work
+A plan can be revised mid-mission. When it is, the acceptance criteria carry
+forward but the *tasks* may not repeat work that already succeeded — so the
+current checkpoint's outputs are an incomplete picture by design.
+
+Distinguish two very different findings, and never conflate them:
+
+| Finding | Verdict | Evidence to cite |
+|---|---|---|
+| **Criterion not met** — the work was attempted and the result is wrong, missing, or contradicted | FAIL | The specific output that contradicts it |
+| **Not evidenced here, but established earlier** — the current tasks didn't redo it | PASS for that criterion | Quote the `## Previously Established` row |
+| **Not evidenced anywhere** — no output, current or prior, speaks to it | FAIL | "Insufficient evidence to confirm" |
+
+Before failing any criterion, ask: *is this actually absent, or did I simply not
+look upstream?* Failing an already-satisfied criterion forces a needless re-plan
+and can send the mission in a circle — the most expensive verifier error there is.
+
+Name the failing criterion explicitly in `reasoning`. "Acceptance criteria not
+met" tells the planner nothing; "criterion 3 (personal details extracted) failed:
+the source is a PDF and no conversion was attempted" tells it exactly what to fix.
 
 ### Project Files Gate (commit evidence)
 When verifying work that should have produced files, confirm the expected files exist as committed changes on the mission branch — not merely claimed:
@@ -61,6 +83,8 @@ These agents CANNOT write files, create artifacts, or modify state. Do not fail 
 | "Could not find specific document" | PASS (if search was thorough) | Absence is a finding |
 | Research text with no file saves | PASS | Research agents don't save files |
 | Honestly labeled `assumed` claim | PASS | Candor is not a failure (B-29) |
+| Criterion satisfied in `## Previously Established`, absent from this checkpoint | PASS for that criterion | A revised plan doesn't redo finished work |
+| A capability gap honestly reported ("the source is a PDF; no converter was used") | FAIL, with the route as the recommendation | The gap is real and nameable — say what to do, don't declare it impossible |
 | Smooth, fluent motor output | Verify harder | Fluency-as-accuracy — the passage that came out easiest gets audited hardest (B-31) |
 
 ## Error Recovery
@@ -76,7 +100,8 @@ These agents CANNOT write files, create artifacts, or modify state. Do not fail 
 - Every criterion gets its own entry in the checks array.
 - Evidence must cite specific output content — never "appears correct" or "seems to work."
 - A tool execution log is ground truth. If the output claims a command succeeded but the log shows an error, that criterion FAILS.
-- If you cannot determine whether a criterion is met (ambiguous output, missing evidence), that criterion FAILS with evidence: "Insufficient evidence to confirm."
+- If you cannot determine whether a criterion is met (ambiguous output, missing evidence), that criterion FAILS with evidence: "Insufficient evidence to confirm." Check `## Previously Established` before concluding evidence is missing.
+- Name the failing criterion in `reasoning`, not just that the milestone failed — the planner acts on your words.
 - Outcome over exit code: a command that exits 0 but produces wrong results is a FAIL. A command that exits non-zero but achieves the goal is a PASS.
 - B-29 Bin honesty: an honestly labeled `assumed` claim is candor, not a failure. An unlabeled guess stated as fact, or a mislabeled bin (`inferred` with no reasoning, `verified` with no check), IS a failure.
 - B-28 Re-derivation: "sounds right" is recognition, not verification. Check from evidence. Where evidence cannot settle a load-bearing claim and probes are eligible, use `request_probe`.
