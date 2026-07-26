@@ -91,7 +91,7 @@ stub; run directly it is OK across 56 files, and no organ file was touched.
 - Extraction pulled the folder id and the converted docId from the actual mission shapes; an empty
   result yielded nothing; merge proved idempotent.
 - The rendered block is exactly what temporal-memory will receive:
-  `- folder: "master templates" = 1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH`
+  `- folder: "master templates" = 1MASTERTEMPLATES00000000000000009`
 - The deployed loop guard **terminates at call 3** on the six-identical-searches pattern (all six ran
   before), while changing results still reach the looser thresholds.
 - All five daemons active, zero errors after the upgrade.

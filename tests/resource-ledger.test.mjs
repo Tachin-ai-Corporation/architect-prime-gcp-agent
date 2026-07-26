@@ -15,16 +15,16 @@ import {
 // search returning empty because the real folder name differs from the request's.
 const REAL_REQUEST = "Create 3 monthly retainer compensation addendums for Sara K, "
   + "Marnie B, and Kaeryn and place them in the In Progress folder "
-  + "(1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp).  Workflow: 1. Find the monthly fee comp "
+  + "(1INPROGRESSFOLDER0000000000000009).  Workflow: 1. Find the monthly fee comp "
   + "addendum master template in the Master Templates folder "
-  + "(1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH) and duplicate it 3 times. 2. Read the signed "
+  + "(1MASTERTEMPLATES00000000000000009) and duplicate it 3 times. 2. Read the signed "
   + "advisor contracts from the Signed Artifacts folder "
-  + "(1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ)";
+  + "(1SIGNEDARTIFACTS00000000000000009)";
 
 // A drive-search hit for the folder this mission kept failing to find.
 const DRIVE_SEARCH = JSON.stringify({
   files: [{
-    id: '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH',
+    id: '1MASTERTEMPLATES00000000000000009',
     name: 'master templates',
     type: 'folder',
     owner: 'someone@example.com',
@@ -40,14 +40,14 @@ const DRIVE_SEARCH_EMPTY = '{"files":[],"count":0}';
 // drive-to-doc, the new conversion tool.
 const DRIVE_TO_DOC = JSON.stringify({
   status: 'converted',
-  docId: '1YfqT9IcpVpPm7wOix_-jPbbzFXUu-_8JE-NPLinnexQ',
+  docId: '1CONVERTEDDOC0000000000000000000000000000009',
   name: 'Sara K Agreement [text]',
   sourceMime: 'application/pdf',
-  readWith: 'docs-cat 1YfqT9IcpVpPm7wOix_-jPbbzFXUu-_8JE-NPLinnexQ',
+  readWith: 'docs-cat 1CONVERTEDDOC0000000000000000000000000000009',
 });
 
 // The real transport: JSON escaped inside a runCommand_response wrapper.
-const NESTED = '{"runCommand_response": {"result": "{\\"status\\":\\"created\\",\\"id\\":\\"1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp\\",\\"name\\":\\"In Progress\\",\\"link\\":\\"https://x\\"}"}}';
+const NESTED = '{"runCommand_response": {"result": "{\\"status\\":\\"created\\",\\"id\\":\\"1INPROGRESSFOLDER0000000000000009\\",\\"name\\":\\"In Progress\\",\\"link\\":\\"https://x\\"}"}}';
 
 describe('normalizeName / resourceKey', () => {
   it('collapses case and punctuation so one folder is one entry', () => {
@@ -76,7 +76,7 @@ describe('extractResources — real tool shapes', () => {
     assert.deepEqual(r[0], {
       kind: 'drive_folder',
       name: 'master templates',
-      id: '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH',
+      id: '1MASTERTEMPLATES00000000000000009',
     });
   });
 
@@ -88,14 +88,14 @@ describe('extractResources — real tool shapes', () => {
     const r = extractResources(DRIVE_TO_DOC);
     assert.equal(r.length, 1);
     assert.equal(r[0].kind, 'doc');
-    assert.equal(r[0].id, '1YfqT9IcpVpPm7wOix_-jPbbzFXUu-_8JE-NPLinnexQ');
+    assert.equal(r[0].id, '1CONVERTEDDOC0000000000000000000000000000009');
   });
 
   it('digs JSON out of an escaped runCommand_response wrapper', () => {
     const r = extractResources(NESTED);
     assert.equal(r.length, 1, 'nested escaped payloads are how results actually arrive');
     assert.equal(r[0].name, 'In Progress');
-    assert.equal(r[0].id, '1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp');
+    assert.equal(r[0].id, '1INPROGRESSFOLDER0000000000000009');
   });
 
   it('survives a full prose transcript with fenced JSON and finds every id', () => {
@@ -116,14 +116,14 @@ SUCCESS`;
     const r = extractResources(transcript);
     const ids = r.map(x => x.id).sort();
     assert.deepEqual(ids, [
-      '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH',
-      '1YfqT9IcpVpPm7wOix_-jPbbzFXUu-_8JE-NPLinnexQ',
+      '1MASTERTEMPLATES00000000000000009',
+      '1CONVERTEDDOC0000000000000000000000000000009',
     ].sort());
   });
 
   it('ignores short/garbage ids and unnamed objects', () => {
     assert.deepEqual(extractResources('{"id":"abc","name":"too short"}'), []);
-    assert.deepEqual(extractResources('{"id":"1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH"}'), [],
+    assert.deepEqual(extractResources('{"id":"1MASTERTEMPLATES00000000000000009"}'), [],
       'an id with no name cannot be recalled by name — worthless to the ledger');
   });
 
@@ -142,14 +142,14 @@ describe('extractResourcesFromProse — ids the operator already gave us', () =>
   it('recovers all three folders from the real request that failed', () => {
     const r = extractResourcesFromProse(REAL_REQUEST);
     const byName = Object.fromEntries(r.map(x => [x.name, x]));
-    assert.equal(byName['In Progress'].id, '1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp');
-    assert.equal(byName['Master Templates'].id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH');
-    assert.equal(byName['Signed Artifacts'].id, '1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ');
+    assert.equal(byName['In Progress'].id, '1INPROGRESSFOLDER0000000000000009');
+    assert.equal(byName['Master Templates'].id, '1MASTERTEMPLATES00000000000000009');
+    assert.equal(byName['Signed Artifacts'].id, '1SIGNEDARTIFACTS00000000000000009');
     for (const x of r) assert.equal(x.kind, 'drive_folder', 'the noun "folder" types them');
   });
 
   it('handles a quoted name before the noun', () => {
-    const r = extractResourcesFromProse("the 'Signed Artifacts' folder (1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ)");
+    const r = extractResourcesFromProse("the 'Signed Artifacts' folder (1SIGNEDARTIFACTS00000000000000009)");
     assert.equal(r.length, 1);
     assert.equal(r[0].name, 'Signed Artifacts');
     assert.equal(r[0].kind, 'drive_folder');
@@ -164,8 +164,8 @@ describe('extractResourcesFromProse — ids the operator already gave us', () =>
   // A wrong name->id mapping is worse than none, because it gets trusted.
   it('refuses to invent a pair when the name is ambiguous', () => {
     for (const t of [
-      'folder ID: 1FqC20zToVEA8QQM-9fJeyfM2EC0a7I4n',
-      'Master template doc = 14J_MTJPpns7UaZ3nzcy64TjwVtiaENLZbDZxscbq1Fc',
+      'folder ID: 1AMBIGFOLDER000000000000000000009',
+      'Master template doc = 1AMBIGDOC00000000000000000000000000000000009',
       'put it in the folder (1AbCdEfGhIjKlMnOpQrStUvWxYz123456)',
     ]) {
       assert.deepEqual(extractResourcesFromProse(t), [], `must skip: ${t}`);
@@ -180,7 +180,7 @@ describe('extractResourcesFromProse — ids the operator already gave us', () =>
 
   it('merges cleanly with tool-captured entries — same folder, one entry', () => {
     const seeded = extractResourcesFromProse(REAL_REQUEST);
-    const captured = [{ kind: 'drive_folder', name: 'master templates', id: '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH' }];
+    const captured = [{ kind: 'drive_folder', name: 'master templates', id: '1MASTERTEMPLATES00000000000000009' }];
     const a = mergeResources({}, seeded, { now: 'T0', source: 'request' });
     const b = mergeResources(a.ledger, captured, { now: 'T1', source: '1.1' });
     assert.equal(b.added, 0, 'case-insensitive key collapses "Master Templates" and "master templates"');
@@ -201,7 +201,7 @@ describe('mergeResources', () => {
   it('adds a new entry', () => {
     const { ledger, added } = mergeResources({}, found, { now: 'T0' });
     assert.equal(added, 1);
-    assert.equal(ledger['drive_folder:master templates'].id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH');
+    assert.equal(ledger['drive_folder:master templates'].id, '1MASTERTEMPLATES00000000000000009');
     assert.equal(ledger['drive_folder:master templates'].first_seen, 'T0');
   });
 
@@ -220,7 +220,7 @@ describe('mergeResources', () => {
     assert.equal(two.updated, 1);
     const e = two.ledger['drive_folder:master templates'];
     assert.equal(e.id, '9NEWID_NEWID_NEWID_NEWID');
-    assert.equal(e.previous_id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH',
+    assert.equal(e.previous_id, '1MASTERTEMPLATES00000000000000009',
       'a dead id must be visible, not silently overwritten');
     assert.equal(e.updated_at, 'T2');
   });
@@ -252,7 +252,7 @@ describe('renderResources', () => {
     const out = renderResources(ledger);
     assert.match(out, /Known Resources/);
     assert.match(out, /do NOT search for these again/);
-    assert.match(out, /folder: "master templates" = 1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH/);
+    assert.match(out, /folder: "master templates" = 1MASTERTEMPLATES00000000000000009/);
   });
 
   it('returns empty string for an empty ledger (no dead block in the prompt)', () => {
@@ -289,7 +289,7 @@ describe('seedFromProse', () => {
   it('seeds the ids the operator stated in the request', () => {
     const { ledger, added } = seedFromProse({}, REAL_REQUEST, { now: 'T', source: 'request' });
     assert.equal(added, 3, 'all three folders the request named');
-    assert.equal(ledger[resourceKey('drive_folder', 'In Progress')].id, '1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp');
+    assert.equal(ledger[resourceKey('drive_folder', 'In Progress')].id, '1INPROGRESSFOLDER0000000000000009');
     assert.equal(Object.values(ledger).every(v => v.source === 'request'), true);
   });
 
@@ -327,11 +327,11 @@ describe('seedFromProse', () => {
 // Mission A pinned the master template with t->c; mission B, with the correct id
 // rendered in its own prompt, pinned Sara K's contract with k->c while transcribing
 // the other two ids perfectly. One wrong character in one of three is the whole defect.
-const TRUE_TEMPLATE = '1cI1JSGLmb32xzNMR7dEnmL6fYn9ZjEerENtIBaa1VKc';
-const TYPO_TEMPLATE = '1cI1JSGLmb32xzNMR7dEnmL6fYn9ZjEerENcIBaa1VKc';
-const TRUE_SARA     = '1d46qBPvwsnvROkDhQ7vdZzQSb_6QRLSES17luNKMtks';
-const TYPO_SARA     = '1d46qBPvwsnvROcDhQ7vdZzQSb_6QRLSES17luNKMtks';
-const TRUE_MARNIE   = '172z_RzPvUgdfpgzdoD0uaVFKTCgXca7JBlMNlcaztts';
+const TRUE_TEMPLATE = '1TEMPLATEFIXED000000000000000000000000000009';
+const TYPO_TEMPLATE = '1TEMPLATEFIXED000000000000000000000X00000009';
+const TRUE_SARA     = '1ADVISORAGREEMENT000000000000000000000000009';
+const TYPO_SARA     = '1ADVISORAGREEMXNT000000000000000000000000009';
+const TRUE_MARNIE   = '1SECONDAGREEMENT0000000000000000000000000009';
 
 const LEDGER = mergeResources({}, [
   { kind: 'file', name: 'MASTER Comp Addendum Fixed', id: TRUE_TEMPLATE },

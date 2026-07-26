@@ -176,8 +176,8 @@ const PROSE_NOUNS = {
 
 /**
  * Extract name→id pairs written in PROSE, e.g. an operator's request:
- *   "place them in the In Progress folder (1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp)"
- *   "the 'Signed Artifacts' folder (1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ)"
+ *   "place them in the In Progress folder (1INPROGRESSFOLDER0000000000000009)"
+ *   "the 'Signed Artifacts' folder (1SIGNEDARTIFACTS00000000000000009)"
  *
  * This closes the gap that made the ledger useless on a real mission: the request
  * already named all three folders WITH their ids, and the agent still ran
