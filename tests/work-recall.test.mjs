@@ -175,7 +175,7 @@ describe('searchWork', () => {
 // ── recentWorkDigest ────────────────────────────────────────────────
 
 describe('recentWorkDigest', () => {
-  it('groups completed work by day', async () => {
+  it('groups work by day', async () => {
     const now = new Date();
     const yesterday = new Date(Date.now() - 86400000);
     const docs = [
@@ -188,10 +188,33 @@ describe('recentWorkDigest', () => {
       owner: 'bot@test.com',
       sinceDays: 7,
     });
-    assert.ok(digest.includes('## Work Completed'), 'should have header');
+    assert.match(digest, /## Recent Work \(Last 7 Days\)/, 'should have header');
     assert.ok(digest.includes('###'), 'should have day headers');
     assert.ok(digest.includes('Task A'), 'should include Task A');
     assert.ok(digest.includes('Task C'), 'should include Task C');
+    assert.ok(digest.includes('(id:d1)'), 'each row cites its id so recall can point at a mission');
+  });
+
+  // The digest deliberately spans every terminal outcome, not just success:
+  // failures and blocks carry the most learning, so each row is prefixed with an
+  // outcome marker and a why-blurb drawn from output||error.
+  it('marks non-complete outcomes and carries a why-blurb', async () => {
+    const now = new Date().toISOString();
+    const docs = [
+      makeEnvelope({ id: 'ok1', title: 'Shipped it', completed_at: now }),
+      makeEnvelope({ id: 'bad1', title: 'Broke it', status: 'failed', output: '', error: 'PDF text extraction unavailable', completed_at: now }),
+      makeEnvelope({ id: 'wait1', title: 'Stuck on it', status: 'blocked', output: 'Waiting on operator', completed_at: now }),
+    ];
+    const digest = await recentWorkDigest({
+      firestoreQuery: mockFirestoreQuery(docs),
+      owner: 'bot@test.com',
+      sinceDays: 7,
+    });
+    assert.ok(digest.includes('[done]'), 'complete work is marked [done]');
+    assert.ok(digest.includes('[FAILED]'), 'a failure is marked [FAILED]');
+    assert.ok(digest.includes('[blocked]'), 'a block is marked [blocked]');
+    assert.ok(digest.includes('PDF text extraction unavailable'), 'a failure carries its error as the blurb');
+    assert.ok(digest.includes('Waiting on operator'), 'a block carries its output as the blurb');
   });
 
   it('handles empty results gracefully', async () => {
@@ -200,6 +223,18 @@ describe('recentWorkDigest', () => {
       owner: 'bot@test.com',
       sinceDays: 7,
     });
-    assert.ok(digest.includes('No completed work found'), 'should say no work found');
+    assert.ok(digest.includes('No recent work found'), 'should say no work found');
+    assert.match(digest, /## Recent Work \(Last 7 Days\)/, 'empty state keeps the header');
+  });
+
+  it('excludes work older than the window', async () => {
+    const old = new Date(Date.now() - 30 * 86400000).toISOString();
+    const digest = await recentWorkDigest({
+      firestoreQuery: mockFirestoreQuery([makeEnvelope({ id: 'stale', title: 'Ancient history', completed_at: old })]),
+      owner: 'bot@test.com',
+      sinceDays: 7,
+    });
+    assert.ok(!digest.includes('Ancient history'), 'work outside the window is dropped');
+    assert.ok(digest.includes('No recent work found'), 'and the digest reports empty');
   });
 });
