@@ -14,7 +14,7 @@ import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket } from './result-packet.mjs';
-import { extractResources, mergeResources } from './resource-ledger.mjs';
+import { extractResources, extractResourcesFromProse, mergeResources, renderResources } from './resource-ledger.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -101,11 +101,39 @@ export async function executeCheckpoints(checkpoints, opts) {
   const CHECKPOINT_RESUME_ENABLED = contracts.dispatch?.checkpoint_resume_enabled !== false;
   const RESOURCE_LEDGER_ENABLED = contracts.memory?.resource_ledger?.enabled !== false;
   const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
+  const RESOURCE_LEDGER_RECALL_LIMIT = contracts.memory?.resource_ledger?.recall_limit ?? 40;
   const PROBE_ENABLED = contracts.dispatch?.verify_probe_enabled !== false;
   const PROBE_MAX = contracts.dispatch?.verify_probe_max ?? 2;
   const PROBE_STAKES_MIN = contracts.dispatch?.verify_probe_stakes_min || 'consequential';
   const ATTACK_STAKES_MIN = contracts.dispatch?.attack_duty_stakes_min || 'consequential';
   const missionStakes = envelope.stakes || 'routine';
+
+  // ---- Seed the resource ledger from the request itself ----
+  // The operator usually SAYS the ids: "place them in the In Progress folder
+  // (1ozAGM…)". A real mission was handed all three folder ids in its request and
+  // still ran name-based searches for them — one of which came back empty because
+  // the folder's real name differs from the name in the request. Anything already
+  // stated is known; seeding costs one regex pass and removes the search entirely.
+  if (RESOURCE_LEDGER_ENABLED) {
+    try {
+      const seedText = [envelope.instruction, envelope.source_text, envelope.context_summary]
+        .filter(Boolean).map(toStr).join('\n');
+      const seeded = extractResourcesFromProse(seedText);
+      if (seeded.length > 0) {
+        envelope.context = envelope.context || {};
+        const { ledger, added, updated } = mergeResources(
+          envelope.context.resources, seeded,
+          { max: RESOURCE_LEDGER_MAX, now: new Date().toISOString(), source: 'request' },
+        );
+        envelope.context.resources = ledger;
+        if (added || updated) {
+          log('INFO', `[TELEMETRY] resource_ledger mission=${envelope.id} step=request added=${added} updated=${updated} total=${Object.keys(ledger).length}`);
+        }
+      }
+    } catch (e) {
+      log('WARN', `Resource ledger seed failed: ${e.message}`);
+    }
+  }
 
   let allResults = savedResults || [];
   let planFailed = false;
@@ -855,8 +883,26 @@ export async function executeCheckpoints(checkpoints, opts) {
         digestChars: contracts?.compaction?.checkpoint_digest_chars || 4000,
       });
 
+      // Known identifiers, carried to the organ that is about to act.
+      // recallMemory() runs ONCE per mission, before any task — so ids captured or
+      // seeded during the mission never reach later iterations through recall. That
+      // is why a mission "found the folder in an earlier iteration" and then "could
+      // not re-locate it": the knowledge existed and was never handed over. Memory
+      // still owns finding and ranking identifiers; the executor's job is only to
+      // keep them in front of the organ doing the work.
+      let knownResources = '';
+      if (RESOURCE_LEDGER_ENABLED) {
+        try {
+          knownResources = renderResources(envelope.context?.resources, {
+            limit: RESOURCE_LEDGER_RECALL_LIMIT,
+            cues: String(taskDesc || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3),
+          });
+        } catch { knownResources = ''; }
+      }
+
       const dispatchPayload = {
-        instruction: currentInstruction + currentSkillCatalog,
+        instruction: currentInstruction + currentSkillCatalog
+          + (knownResources ? `\n\n${knownResources}\n(These are already resolved. Use the id directly — do not search for them by name.)` : ''),
         accept_criteria: taskCriteria,
         _missionId: envelope.id,
         _projectContext: dispatchProjCtx,

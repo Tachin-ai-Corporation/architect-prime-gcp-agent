@@ -158,6 +158,82 @@ export function extractResources(text) {
   return out;
 }
 
+/** Nouns that mark the thing an id belongs to, mapped to a ledger kind. */
+const PROSE_NOUNS = {
+  folder: 'folder', directory: 'folder',
+  doc: 'doc', document: 'doc', template: 'doc',
+  sheet: 'sheet', spreadsheet: 'sheet',
+  deck: 'slides', presentation: 'slides',
+  pdf: 'pdf', file: 'file', space: 'space',
+};
+
+/**
+ * Extract name→id pairs written in PROSE, e.g. an operator's request:
+ *   "place them in the In Progress folder (1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp)"
+ *   "the 'Signed Artifacts' folder (1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ)"
+ *
+ * This closes the gap that made the ledger useless on a real mission: the request
+ * already named all three folders WITH their ids, and the agent still ran
+ * name-based searches for them — one of which returned empty because the folder's
+ * real name differs from the one in the request.
+ *
+ * DELIBERATELY CONSERVATIVE. A wrong name→id mapping is worse than none, because
+ * it will be trusted: a pair is emitted only when the name is unambiguous — quoted,
+ * or Capitalised words immediately followed by a type noun. A bare id with vague
+ * surrounding prose is skipped.
+ *
+ * @param {string} text - instruction / request prose
+ * @returns {Array<{kind: string, name: string, id: string}>}
+ */
+export function extractResourcesFromProse(text) {
+  const s = typeof text === 'string' ? text : '';
+  if (!s) return [];
+  const out = [];
+  const seen = new Set();
+
+  // Drive ids are long; 25+ avoids matching ordinary words and hashes in prose.
+  for (const m of s.matchAll(/\b([A-Za-z0-9_-]{25,})\b/g)) {
+    const id = m[1];
+    if (!/[0-9]/.test(id) || !/[A-Za-z]/.test(id)) continue;   // must look like an id
+    const before = s.slice(Math.max(0, m.index - 120), m.index);
+
+    // Strip the punctuation that sits between the name and the id:
+    //   "... folder (", "... folder ID: ", "... doc = "
+    const lead = before.replace(/[\s(\[{:=,–—-]*(?:id|ID|folder id|file id)?[\s:=]*$/, '');
+
+    // Shape A — quoted name then a type noun:  'Signed Artifacts' folder
+    let hit = lead.match(/["'“”‘’]([^"'“”‘’]{2,60})["'“”‘’]\s*(folder|directory|doc|document|template|sheet|spreadsheet|deck|presentation|pdf|file|space)?\s*$/i);
+    let name = hit && hit[1];
+    let noun = hit && hit[2];
+
+    // Shape B — Capitalised words then a type noun:  In Progress folder
+    if (!name) {
+      hit = lead.match(/((?:[A-Z][\w&.-]*\s+){0,4}[A-Z][\w&.-]*)\s+(folder|directory|doc|document|template|sheet|spreadsheet|deck|presentation|pdf|file|space)\s*$/);
+      name = hit && hit[1];
+      noun = hit && hit[2];
+    }
+
+    // Shape C — a bare quoted name with no noun at all: "Master Templates" (1Og…)
+    if (!name) {
+      hit = lead.match(/["'“”‘’]([^"'“”‘’]{2,60})["'“”‘’]\s*$/);
+      name = hit && hit[1];
+    }
+
+    if (!name) continue;                                  // ambiguous — skip it
+    name = name.trim().replace(/\s+/g, ' ');
+    if (!name || name.length < 2) continue;
+    // Reject leading connectives that survive the capitalised-words shape.
+    if (/^(The|A|An|This|That|In|At|To|From|And|Of|For)$/i.test(name)) continue;
+
+    const kind = PROSE_NOUNS[String(noun || '').toLowerCase()] || 'file';
+    const dedup = `${resourceKey(kind, name)}|${id}`;
+    if (seen.has(dedup)) continue;
+    seen.add(dedup);
+    out.push({ kind, name, id });
+  }
+  return out;
+}
+
 /**
  * Find balanced {...} / [...] substrings. A brace counter beats a regex here
  * because the payloads nest and a greedy/lazy pattern gets either too much or

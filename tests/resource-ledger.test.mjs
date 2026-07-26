@@ -6,8 +6,20 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  extractResources, mergeResources, renderResources, resourceKey, normalizeName,
+  extractResources, extractResourcesFromProse, mergeResources, renderResources,
+  resourceKey, normalizeName,
 } from '../corekit/lib/resource-ledger.mjs';
+
+// The verbatim request from mission w-1785084942002-86b6c4ad. It named all three
+// folders WITH their ids, and the agent still searched for them by name — one
+// search returning empty because the real folder name differs from the request's.
+const REAL_REQUEST = "Create 3 monthly retainer compensation addendums for Sara K, "
+  + "Marnie B, and Kaeryn and place them in the In Progress folder "
+  + "(1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp).  Workflow: 1. Find the monthly fee comp "
+  + "addendum master template in the Master Templates folder "
+  + "(1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH) and duplicate it 3 times. 2. Read the signed "
+  + "advisor contracts from the Signed Artifacts folder "
+  + "(1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ)";
 
 // A drive-search hit for the folder this mission kept failing to find.
 const DRIVE_SEARCH = JSON.stringify({
@@ -123,6 +135,63 @@ SUCCESS`;
 
   it('de-duplicates repeated mentions of the same resource', () => {
     assert.equal(extractResources(`${DRIVE_SEARCH}\n${DRIVE_SEARCH}`).length, 1);
+  });
+});
+
+describe('extractResourcesFromProse — ids the operator already gave us', () => {
+  it('recovers all three folders from the real request that failed', () => {
+    const r = extractResourcesFromProse(REAL_REQUEST);
+    const byName = Object.fromEntries(r.map(x => [x.name, x]));
+    assert.equal(byName['In Progress'].id, '1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp');
+    assert.equal(byName['Master Templates'].id, '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH');
+    assert.equal(byName['Signed Artifacts'].id, '1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ');
+    for (const x of r) assert.equal(x.kind, 'folder', 'the noun "folder" types them');
+  });
+
+  it('handles a quoted name before the noun', () => {
+    const r = extractResourcesFromProse("the 'Signed Artifacts' folder (1rukU1vuhkcYrd8n_uJQfuxnokcXHW0RJ)");
+    assert.equal(r.length, 1);
+    assert.equal(r[0].name, 'Signed Artifacts');
+    assert.equal(r[0].kind, 'folder');
+  });
+
+  it('types by noun — doc, sheet, pdf', () => {
+    const kinds = ['document', 'spreadsheet', 'pdf'].map(noun =>
+      extractResourcesFromProse(`see the "Thing" ${noun} (1AbCdEfGhIjKlMnOpQrStUvWxYz123456)`)[0]?.kind);
+    assert.deepEqual(kinds, ['doc', 'sheet', 'pdf']);
+  });
+
+  // A wrong name->id mapping is worse than none, because it gets trusted.
+  it('refuses to invent a pair when the name is ambiguous', () => {
+    for (const t of [
+      'folder ID: 1FqC20zToVEA8QQM-9fJeyfM2EC0a7I4n',
+      'Master template doc = 14J_MTJPpns7UaZ3nzcy64TjwVtiaENLZbDZxscbq1Fc',
+      'put it in the folder (1AbCdEfGhIjKlMnOpQrStUvWxYz123456)',
+    ]) {
+      assert.deepEqual(extractResourcesFromProse(t), [], `must skip: ${t}`);
+    }
+  });
+
+  it('never mistakes a commit sha or mission id for a resource', () => {
+    assert.deepEqual(extractResourcesFromProse('commit 3e25f8b7bfee9a1c2d3e4f5a6b7c8d9e0f1a2b3c is on main'), []);
+    assert.deepEqual(extractResourcesFromProse('mission w-1785084942002-86b6c4ad blocked'), []);
+    assert.deepEqual(extractResourcesFromProse('no identifiers here at all'), []);
+  });
+
+  it('merges cleanly with tool-captured entries — same folder, one entry', () => {
+    const seeded = extractResourcesFromProse(REAL_REQUEST);
+    const captured = [{ kind: 'folder', name: 'master templates', id: '1OgWUOx-TPxhryVxn0TeJnDQUjUCiMOdH' }];
+    const a = mergeResources({}, seeded, { now: 'T0', source: 'request' });
+    const b = mergeResources(a.ledger, captured, { now: 'T1', source: '1.1' });
+    assert.equal(b.added, 0, 'case-insensitive key collapses "Master Templates" and "master templates"');
+    assert.equal(b.updated, 0, 'same id — nothing to update');
+    assert.equal(Object.keys(b.ledger).length, 3);
+  });
+
+  it('never throws on junk', () => {
+    for (const bad of ['', null, undefined, '(((', '1'.repeat(500)]) {
+      assert.ok(Array.isArray(extractResourcesFromProse(bad)));
+    }
   });
 });
 
