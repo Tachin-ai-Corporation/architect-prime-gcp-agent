@@ -1,11 +1,11 @@
 {
+  "_model_field_note": "This file carries per-organ SAMPLING params (max_tokens, temperature, top_p) and routes — NOT model selection. The gateway resolves the model from contracts.vertex.models, then any workspace-<organ>/config.json override (corekit/brain/config.mjs). A decorative 'model' field used to sit on every organ here; it read as authoritative, was never consulted for selection, and had drifted to name a model the fleet does not run. It was removed rather than synced, because two places claiming to choose the model is the defect. To change a model, edit contracts.vertex.models.",
   "version": "1.1",
   "agent_id": "stan",
   "job": "devops",
   "agents": {
     "cortex": {
       "route": "brain/cortex",
-      "model": "gemini-3.1-pro-preview",
       "intents": ["classify", "decide", "synthesize", "short_circuit"],
       "tools": [],
       "description": "Guiding intelligence. Classifies intake, decides actions, synthesizes results.",
@@ -16,18 +16,16 @@
     },
     "temporal-memory": {
       "route": "brain/temporal-memory",
-      "model": "gemini-3.1-pro-preview",
       "intents": ["recall", "write"],
       "tools": ["core-memory-read", "core-memory-write", "core-memory-retire", "session-summary", "update-deep-truths"],
       "description": "Memory recall and storage. Searches long-term memory by query, reads/writes core identity facts.",
       "constraints": "Memory only. No external APIs.",
-      "max_tokens": 8192,
+      "max_tokens": 32768,
       "temperature": 0.3,
       "top_p": 0.9
     },
     "motor": {
       "route": "brain/motor",
-      "model": "gemini-3.1-pro-preview",
       "intents": ["execute"],
       "tools": ["drive-ls", "drive-upload", "drive-mkdir", "drive-mv", "drive-cat", "drive-find", "drive-meta", "drive-share", "drive-trash", "gmail-search", "gmail-read", "calendar-create", "calendar-events", "calendar-update", "calendar-delete", "calendar-search", "exec", "responsibility-manage", "project-manage", "process-manage"],
       "description": "Autonomous execution agent. Investigates, reasons, and chains tool calls to achieve goals. Runs shell commands, manages files, Google Drive, Gmail, Calendar, and project configs.",
@@ -38,30 +36,27 @@
     },
     "cerebellum": {
       "route": "brain/cerebellum",
-      "model": "gemini-3.1-pro-preview",
       "intents": ["verify"],
       "tools": [],
       "description": "Verification agent. Evaluates results against acceptance criteria. Returns structured pass/fail verdicts with evidence.",
       "constraints": "Read-only verification.",
-      "_max_tokens_note": "Raised 8192 -> 24576. Reasoning tokens are billed against this same output ceiling, so an organ that re-derives a multi-clause milestone (B-28) can spend the entire allowance thinking and emit no verdict at all: at 8192 one checkpoint twice returned finishReason=MAX_TOKENS with ~1300 visible chars and no report_pass/report_fail, and the fail-closed path read that as failed work and blocked a healthy mission. 8192 was the smallest ceiling in the fleet, on the organ doing the most reasoning per call. A ceiling is not a spend — verdicts stay short. NOTE: the 'model' field in this file is NOT what selects the model; the gateway resolves that from contracts.vertex.models plus any workspace-<organ>/config.json override (see corekit/brain/config.mjs).",
-      "max_tokens": 24576,
+      "_max_tokens_note": "Raised 8192 -> 32768, to parity with cortex and prefrontal. Reasoning tokens bill against this same output ceiling, so an organ that re-derives a multi-clause milestone (B-28) can spend the entire allowance thinking and emit no verdict at all: at 8192 one checkpoint twice returned finishReason=MAX_TOKENS with ~1300 visible chars and no report_pass/report_fail, and the fail-closed path read that as failed work and blocked a healthy mission. 8192 was the smallest ceiling in the fleet, on the organ that reasons most per call. A ceiling is not a spend — verdicts stay short.",
+      "max_tokens": 32768,
       "temperature": 0.1,
       "top_p": 0.85
     },
     "temporal-research": {
       "route": "brain/temporal-research",
-      "model": "gemini-3.1-pro-preview",
       "intents": ["research"],
       "tools": ["vertex-grounding-search", "web-fetch"],
       "description": "Web search and page content extraction. Uses Vertex AI grounding for search queries and web-fetch for reading specific URLs. Returns research findings with sources and provenance.",
       "constraints": "Read-only research.",
-      "max_tokens": 16384,
+      "max_tokens": 32768,
       "temperature": 0.5,
       "top_p": 0.95
     },
     "prefrontal": {
       "route": "brain/prefrontal",
-      "model": "gemini-3.1-pro-preview",
       "intents": ["analyze"],
       "tools": [],
       "description": "Work decomposition and assessment. Breaks execution-bound work into typed parts with ownership, risk, dependencies, and process matches. Produces the Brief.",
