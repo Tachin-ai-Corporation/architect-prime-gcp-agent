@@ -1,27 +1,36 @@
 #!/usr/bin/env bash
 # drive-download — Download a file from Google Drive
-# Brain agent: temporal-memory (READ)
-# Usage: drive-download --file FILE_ID [--output /path/to/save]
+# Brain agent: motor (READ)
+# Usage: drive-download --file FILE_ID [--output /path/to/save] [--force]
 # For Google Docs/Sheets/Slides, exports as PDF by default. Use --mime to override.
+#
+# Idempotent (C-18): if the target path already holds the same bytes (md5 match),
+# the download is skipped and {"status":"cached"} is returned. Re-running a task
+# after a timeout must not produce a second copy under a second name.
+#
+# NOTE: downloaded bytes are NOT readable as text. For a PDF or image, convert
+# first: `drive-to-doc --file <path|id>` then `docs-cat <docId>`.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 die() { echo "[drive-download] [ERROR] $*" >&2; exit 1; }
-FILE_ID="" OUTPUT="" EXPORT_MIME=""
+FILE_ID="" OUTPUT="" EXPORT_MIME="" FORCE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --file) FILE_ID="$2"; shift 2 ;; --output) OUTPUT="$2"; shift 2 ;;
     --mime) EXPORT_MIME="$2"; shift 2 ;;
+    --force) FORCE=1; shift ;;
     *) if [[ -z "$FILE_ID" && "$1" != -* ]]; then FILE_ID="$1"; shift
        elif [[ -n "$FILE_ID" && -z "$OUTPUT" && "$1" != -* ]]; then OUTPUT="$1"; shift
        else die "Unknown: $1"; fi ;; esac
 done
 [[ -n "$FILE_ID" ]] || die "Need --file <file_id>"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
-# Get file metadata to determine type
+# Get file metadata to determine type. md5Checksum/size are present for binary
+# files (absent for Google-native types, which are exported on the fly).
 HTTP_CODE=$(curl -s -o /tmp/drive-meta.json -w '%{http_code}' \
-  -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?supportsAllDrives=true&fields=name,mimeType")
+  -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?supportsAllDrives=true&fields=name,mimeType,md5Checksum,size")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"message\":\"I don't have access to this file. Please share it with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
@@ -31,7 +40,19 @@ if [[ "$HTTP_CODE" != "200" ]]; then
 fi
 NAME=$(python3 -c "import json; print(json.load(open('/tmp/drive-meta.json')).get('name','file'))")
 MIME=$(python3 -c "import json; print(json.load(open('/tmp/drive-meta.json')).get('mimeType',''))")
+REMOTE_MD5=$(python3 -c "import json; print(json.load(open('/tmp/drive-meta.json')).get('md5Checksum',''))")
 [[ -n "$OUTPUT" ]] || OUTPUT="/tmp/${NAME}"
+
+# ---- C-18: already have these exact bytes? Then this is a no-op. ----
+# A retried task (e.g. after a timeout) must reuse what is on disk rather than
+# fetching a second copy under a second name.
+if [[ "$FORCE" -eq 0 && -s "$OUTPUT" && -n "$REMOTE_MD5" ]]; then
+  LOCAL_MD5="$(md5sum "$OUTPUT" 2>/dev/null | cut -d' ' -f1 || echo '')"
+  if [[ -n "$LOCAL_MD5" && "$LOCAL_MD5" == "$REMOTE_MD5" ]]; then
+    echo "{\"status\":\"cached\",\"path\":\"${OUTPUT}\",\"name\":\"${NAME}\",\"mimeType\":\"${MIME}\",\"note\":\"Identical bytes already on disk (md5 match) — download skipped. Pass --force to refetch.\"}"
+    exit 0
+  fi
+fi
 # Google Workspace types need export, regular files use direct download
 if echo "$MIME" | grep -q "google-apps"; then
   [[ -n "$EXPORT_MIME" ]] || EXPORT_MIME="application/pdf"
@@ -42,4 +63,12 @@ else
   curl -sf -H "Authorization: Bearer ${TOKEN}" \
     "${DRIVE_API}/files/${FILE_ID}?alt=media&supportsAllDrives=true" -o "$OUTPUT"
 fi
-echo "{\"status\":\"downloaded\",\"path\":\"${OUTPUT}\",\"name\":\"${NAME}\",\"mimeType\":\"${MIME}\"}"
+# Tell the caller how to READ what it just fetched. Without this, a motor that
+# downloads a PDF has bytes and no route, and concludes the task is impossible.
+NEXT=""
+case "$MIME" in
+  application/pdf|image/*) NEXT=",\"readWith\":\"drive-to-doc --file ${OUTPUT}  then  docs-cat <docId>\",\"note\":\"These bytes are NOT text. Do not readFile a PDF or image - convert first (OCR included).\"" ;;
+  text/*|application/json|application/xml) NEXT=",\"readWith\":\"readFile ${OUTPUT}\"" ;;
+  *) NEXT=",\"note\":\"Binary file. If it is a document, convert it with drive-to-doc before reading.\"" ;;
+esac
+echo "{\"status\":\"downloaded\",\"path\":\"${OUTPUT}\",\"name\":\"${NAME}\",\"mimeType\":\"${MIME}\"${NEXT}}"

@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# drive-to-doc — Convert a PDF or image into a readable Google Doc (OCR)
+# Brain agent: motor (WRITE)
+#
+# Why this exists: a PDF's bytes are not text. Downloading one and reading it
+# yields mojibake that fills the context window and teaches nothing. Drive can
+# convert-on-upload — set the target mimeType to a Google Doc and the API runs
+# OCR — so the readable route is: convert here, then read with `docs-cat`.
+#
+# Usage:
+#   drive-to-doc --file FILE_ID            # a PDF/image already in Drive
+#   drive-to-doc --file /path/to/file.pdf  # a local file
+#   drive-to-doc --file X [--name "Title"] [--folder FOLDER_ID] [--ocr-lang en] [--force]
+#
+# Output: {"status":"converted"|"cached"|"already_doc","docId":"...","name":"...","readWith":"docs-cat <docId>"}
+# Idempotent (C-18): an existing Doc with the derived name is reused unless --force.
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+DRIVE_API="https://www.googleapis.com/drive/v3"
+UPLOAD_API="https://www.googleapis.com/upload/drive/v3"
+DOC_MIME="application/vnd.google-apps.document"
+die() { echo "[drive-to-doc] [ERROR] $*" >&2; exit 1; }
+
+FILE="" NAME="" FOLDER="" OCR_LANG="en" FORCE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --file) FILE="$2"; shift 2 ;;
+    --name) NAME="$2"; shift 2 ;;
+    --folder) FOLDER="$2"; shift 2 ;;
+    --ocr-lang) OCR_LANG="$2"; shift 2 ;;
+    --force) FORCE=1; shift ;;
+    *) if [[ -z "$FILE" && "$1" != -* ]]; then FILE="$1"; shift
+       else die "Unknown arg: $1"; fi ;;
+  esac
+done
+[[ -n "$FILE" ]] || die "Need --file <driveFileId | localPath>"
+TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
+
+TMP=""
+cleanup() { [[ -n "$TMP" && -f "$TMP" ]] && rm -f "$TMP" || true; }
+trap cleanup EXIT
+
+# ---- Resolve the source: local path wins, otherwise treat it as a Drive id ----
+SRC_MIME="" SRC_NAME=""
+if [[ -f "$FILE" ]]; then
+  TMP="$FILE"                          # already local; do NOT delete it on exit
+  trap - EXIT
+  SRC_NAME="$(basename "$FILE")"
+  SRC_MIME="$(file --mime-type -b "$FILE" 2>/dev/null || echo application/octet-stream)"
+else
+  HTTP_CODE=$(curl -s -o /tmp/dtd-meta.json -w '%{http_code}' \
+    -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files/${FILE}?supportsAllDrives=true&fields=name,mimeType")
+  if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
+    echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE}\",\"message\":\"I don't have access to this file. Please share it with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
+    exit 0
+  fi
+  [[ "$HTTP_CODE" == "200" ]] || die "Drive API returned HTTP ${HTTP_CODE} reading file metadata for ${FILE}"
+  SRC_NAME="$(python3 -c "import json;print(json.load(open('/tmp/dtd-meta.json')).get('name','file'))")"
+  SRC_MIME="$(python3 -c "import json;print(json.load(open('/tmp/dtd-meta.json')).get('mimeType',''))")"
+
+  # Already a Google Doc — nothing to convert; docs-cat reads it directly.
+  if [[ "$SRC_MIME" == "$DOC_MIME" ]]; then
+    python3 -c "
+import json
+print(json.dumps({'status':'already_doc','docId':'${FILE}','name':'''${SRC_NAME}''',
+                  'readWith':'docs-cat ${FILE}',
+                  'note':'Source is already a Google Doc — no conversion needed.'}, indent=2))
+"
+    exit 0
+  fi
+  # Other Google-native types have their own readers; converting them here would
+  # be lossy and wrong (C-28 — one route per file class).
+  case "$SRC_MIME" in
+    application/vnd.google-apps.spreadsheet) die "Source is a Google Sheet — use the workspace-sheets skill, not conversion." ;;
+    application/vnd.google-apps.presentation) die "Source is Google Slides — use the workspace-slides skill, not conversion." ;;
+    application/vnd.google-apps.folder) die "Source is a folder, not a document." ;;
+  esac
+
+  TMP="$(mktemp /tmp/drive-to-doc-XXXXXX)"
+  curl -sf -H "Authorization: Bearer ${TOKEN}" \
+    "${DRIVE_API}/files/${FILE}?alt=media&supportsAllDrives=true" -o "$TMP" \
+    || die "Failed to download source bytes for ${FILE}"
+fi
+
+[[ -s "$TMP" ]] || die "Source file is empty — nothing to convert"
+
+# ---- Derived name: stable, so the idempotency check can find a prior run ----
+[[ -n "$NAME" ]] || NAME="$(python3 -c "
+import os, sys
+base = os.path.splitext(sys.argv[1])[0].strip()
+print(f'{base} [text]')
+" "$SRC_NAME")"
+
+# ---- C-18: reuse an existing conversion instead of making another copy ----
+if [[ "$FORCE" -eq 0 ]]; then
+  ENC_Q=$(python3 -c "
+import urllib.parse, sys
+name = sys.argv[1].replace(chr(92), chr(92)*2).replace(\"'\", chr(92)+\"'\")
+print(urllib.parse.quote(f\"name = '{name}' and mimeType = '{sys.argv[2]}' and trashed = false\"))
+" "$NAME" "$DOC_MIME")
+  if curl -s -o /tmp/dtd-find.json -H "Authorization: Bearer ${TOKEN}" \
+      "${DRIVE_API}/files?q=${ENC_Q}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name)" ; then
+    EXISTING="$(python3 -c "
+import json
+try:
+    fs = json.load(open('/tmp/dtd-find.json')).get('files') or []
+    print(fs[0]['id'] if fs else '')
+except Exception:
+    print('')
+")"
+    if [[ -n "$EXISTING" ]]; then
+      python3 -c "
+import json
+print(json.dumps({'status':'cached','docId':'${EXISTING}','name':'''${NAME}''',
+                  'readWith':'docs-cat ${EXISTING}',
+                  'note':'A converted Doc with this name already exists — reused (pass --force to reconvert).'}, indent=2))
+"
+      exit 0
+    fi
+  fi
+fi
+
+# ---- Convert: multipart create with the Google Doc target mimeType + OCR ----
+# Documented convert-on-upload path: the target mimeType in the metadata part is
+# what triggers conversion; ocrLanguage improves text recovery from scans.
+META="$(python3 -c "
+import json, sys
+meta = {'name': sys.argv[1], 'mimeType': sys.argv[2]}
+if sys.argv[3]: meta['parents'] = [sys.argv[3]]
+print(json.dumps(meta))
+" "$NAME" "$DOC_MIME" "$FOLDER")"
+
+HTTP_CODE=$(curl -s -o /tmp/dtd-resp.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" \
+  -F "metadata=${META};type=application/json" \
+  -F "file=@${TMP};type=${SRC_MIME}" \
+  "${UPLOAD_API}/files?uploadType=multipart&ocrLanguage=${OCR_LANG}&supportsAllDrives=true&fields=id,name,mimeType")
+
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
+  echo "{\"status\":\"access_denied\",\"folder\":\"${FOLDER:-root}\",\"message\":\"I don't have access to create the converted Doc here. Please share the target folder with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
+  exit 0
+fi
+if [[ "$HTTP_CODE" != "200" ]]; then
+  ERRMSG=$(python3 -c "import json;print(json.load(open('/tmp/dtd-resp.json')).get('error',{}).get('message',''))" 2>/dev/null || true)
+  die "Drive API returned HTTP ${HTTP_CODE}${ERRMSG:+ — ${ERRMSG}} converting ${SRC_NAME} (${SRC_MIME})"
+fi
+
+python3 -c "
+import json
+r = json.load(open('/tmp/dtd-resp.json'))
+did = r.get('id','')
+print(json.dumps({
+  'status': 'converted',
+  'docId': did,
+  'name': r.get('name',''),
+  'sourceMime': '''${SRC_MIME}''',
+  'ocrLanguage': '${OCR_LANG}',
+  'readWith': f'docs-cat {did}',
+  'cleanupWith': f'drive-delete {did}',
+  'note': 'Converted copy for reading. The original is untouched. Trash the copy when done.',
+}, indent=2))
+"

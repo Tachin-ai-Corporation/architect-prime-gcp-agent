@@ -27,8 +27,12 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 
   **Bound the result set.** Default `--max` is 20. Pass `--max N` to fetch only what you need — a smaller result returns faster and is easier to work with. When the user asks for "the N most recent / latest / top" of something, pass `--max N` (e.g. "3 most recent shared docs" → `--max 3`); don't pull a large list and slice it mentally.
   **One search per result set.** A single `drive-search` returns the complete set for its query — if results came back, use them; do **not** re-issue the same command expecting more to appear. To get a different result, change `--query`, `--order-by`, or `--max`.
-- `drive-download FILE_ID [--output PATH]` — Download a binary file from Google Drive to a local path.
-  Output: Download confirmation details and local path.
+- `drive-download FILE_ID [--output PATH] [--force]` — Download a binary file from Google Drive to a local path.
+  Output: `status` (`downloaded` | `cached`), `path`, `name`, `mimeType`, and a `readWith` hint naming the tool that can actually read what you fetched.
+  **Idempotent**: if the target path already holds the same bytes (md5 match) it returns `cached` and skips the fetch. Never download the same file twice under a second name — re-run the same command and read the `status`. Pass `--force` only when you need to refetch changed content.
+- `drive-to-doc --file FILE_ID_OR_PATH [--name TITLE] [--folder FOLDER_ID] [--ocr-lang en] [--force]` — Convert a PDF or image into a **readable Google Doc** (Drive runs OCR during conversion). Accepts a Drive file ID or a local path.
+  Output: `status` (`converted` | `cached` | `already_doc`), `docId`, `readWith` (`docs-cat <docId>`), `cleanupWith` (`drive-delete <docId>`).
+  The original file is never modified — this creates a readable copy. Idempotent: a prior conversion with the same derived name is reused unless `--force`.
 - `drive-download-folder FOLDER_ID [--output /path/to/dir]` — Recursively download an entire folder, preserving directory structure.
   Google Workspace docs are exported as PDF. Max depth: 10 levels.
   Output: JSON summary with file/folder counts and output directory.
@@ -89,8 +93,26 @@ Don't assume — read what the user asked for and choose the field + sort accord
    - `doc` (Google Doc) → **do not use `drive-download`**. Use `docs-cat <FILE_ID>` or `docs-get --doc <FILE_ID>` (from the `workspace-docs` skill).
    - `sheet` (Google Sheet) → use the appropriate `workspace-sheets` tools.
    - `slides` (Google Slides) → use the `workspace-slides` tools.
-   - Any other type (`pdf`, `text/markdown`, `text/plain`, …) → run `drive-download <FILE_ID> --output /tmp/<filename>`.
+   - `pdf` or an image → **you want its text, not its bytes**: `drive-to-doc --file <FILE_ID>` then `docs-cat <docId>`. See "Read a PDF or image" below.
+   - Plain text (`text/markdown`, `text/plain`, `application/json`, …) → run `drive-download <FILE_ID> --output /tmp/<filename>`, then `readFile`.
 5. Verify: Check that local file size > 0 and file exists.
+
+### Read a PDF or image (text extraction)
+A PDF's bytes are not text. `readFile` on a downloaded PDF returns unreadable
+bytes, consumes the whole context window, and yields nothing usable — the tool
+will refuse it and point you back here. Drive can convert, with OCR:
+
+1. `drive-to-doc --file <FILE_ID>` — works on a Drive file ID *or* a local path
+   (so an already-downloaded PDF is fine). Returns a `docId`.
+2. `docs-cat <docId>` — read the extracted text (from the `workspace-docs` skill).
+3. `drive-delete <docId>` — trash the converted copy once you have what you need.
+   The original is never touched.
+
+**Do not conclude that a PDF is unreadable.** If step 1 fails, read its error:
+a 403 means the file needs sharing with the agent's account, a 404 means the ID
+is wrong. Both are resolvable. Scanned documents may OCR imperfectly — pass
+`--ocr-lang <BCP-47>` for non-English text, and if a specific field is genuinely
+illegible, ask for that one field rather than abandoning the task.
 
 ### Download an entire folder recursively
 1. Run `drive-download-folder FOLDER_ID --output /path/to/local/dir` to download all files and subfolders.
@@ -102,6 +124,9 @@ Don't assume — read what the user asked for and choose the field + sort accord
 
 ### Edit a file from Drive
 When you need to modify a file that lives in Google Drive:
+This procedure is for **text** files (markdown, plain text, JSON, CSV). A PDF,
+image, or Office file cannot be edited this way — convert or use its own skill.
+
 1. Run `drive-ls FOLDER_ID` to find the file's ID.
 2. Run `drive-download FILE_ID --output /path/to/local/file` to download it.
 3. Run `readFile` on the downloaded file to load its contents into context.
@@ -149,6 +174,9 @@ The `your-website-project` project uses a sync-service that automatically propag
 | `429 rateLimitExceeded` | Too many API requests | Wait 30 seconds, then retry the command once. |
 | Search returns empty | Query filter too narrow | Broaden the search by removing mimeType restrictions or searching partial names. |
 | Download fails on Google Doc | Attempting binary download of a Google native doc | Use the specific reader tool (e.g., `docs-cat` for Docs, sheet tools for Sheets) rather than `drive-download`. |
+| `readFile` refuses the file: "is PDF, not text" | A PDF/image was downloaded and read directly — its bytes aren't characters | `drive-to-doc --file <path or id>` → `docs-cat <docId>`. This is a routing problem, not a missing capability. |
+| Downloaded the same file twice under different names | Re-ran a download after a timeout or retry without checking state | `drive-download` is idempotent — re-run the *same* `--output` path and read `status` (`cached` means the bytes are already there). |
+| OCR text is garbled or partial | Scanned/low-quality source, or wrong OCR language | Re-run `drive-to-doc --force --ocr-lang <BCP-47>`. If one field is still illegible, ask for that field alone — don't abandon the task. |
 | File uploaded to Drive but not syncing to GCS | File is in the root folder | Move the file to a subdirectory (e.g., `public/`). The sync-service ignores root-level files by design. |
 
 ## Examples
