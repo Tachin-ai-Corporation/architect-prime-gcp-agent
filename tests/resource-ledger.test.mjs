@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   extractResources, extractResourcesFromProse, mergeResources, renderResources,
-  resourceKey, normalizeName, seedFromProse,
+  resourceKey, normalizeName, seedFromProse, repairIds, isEditDistanceOne,
 } from '../corekit/lib/resource-ledger.mjs';
 
 // The verbatim request from mission w-1785084942002-86b6c4ad. It named all three
@@ -320,5 +320,111 @@ describe('seedFromProse', () => {
     for (const bad of ['', null, undefined, 'draft three addendums, leave blanks empty']) {
       assert.deepEqual(seedFromProse(undefined, bad, {}), { ledger: {}, added: 0, updated: 0, dropped: 0 });
     }
+  });
+});
+
+// Both fixtures below are the ACTUAL miscopied ids from two consecutive missions.
+// Mission A pinned the master template with t->c; mission B, with the correct id
+// rendered in its own prompt, pinned Sara K's contract with k->c while transcribing
+// the other two ids perfectly. One wrong character in one of three is the whole defect.
+const TRUE_TEMPLATE = '1cI1JSGLmb32xzNMR7dEnmL6fYn9ZjEerENtIBaa1VKc';
+const TYPO_TEMPLATE = '1cI1JSGLmb32xzNMR7dEnmL6fYn9ZjEerENcIBaa1VKc';
+const TRUE_SARA     = '1d46qBPvwsnvROkDhQ7vdZzQSb_6QRLSES17luNKMtks';
+const TYPO_SARA     = '1d46qBPvwsnvROcDhQ7vdZzQSb_6QRLSES17luNKMtks';
+const TRUE_MARNIE   = '172z_RzPvUgdfpgzdoD0uaVFKTCgXca7JBlMNlcaztts';
+
+const LEDGER = mergeResources({}, [
+  { kind: 'file', name: 'MASTER Comp Addendum Fixed', id: TRUE_TEMPLATE },
+  { kind: 'doc', name: 'Sara K Agreement Advisory', id: TRUE_SARA },
+  { kind: 'doc', name: 'Marnie B HCSC Engagement SOW', id: TRUE_MARNIE },
+], { now: 'T', source: '1.1' }).ledger;
+
+describe('isEditDistanceOne', () => {
+  it('catches a single substitution — the observed failure mode', () => {
+    assert.equal(isEditDistanceOne(TYPO_SARA, TRUE_SARA), true);
+    assert.equal(isEditDistanceOne(TYPO_TEMPLATE, TRUE_TEMPLATE), true);
+  });
+
+  it('catches one insertion or deletion', () => {
+    assert.equal(isEditDistanceOne('abc123def456ghi789jkl012m', 'abc123def456ghi789jkl012'), true);
+    assert.equal(isEditDistanceOne('abc123def456ghi789jkl012', 'abc123def456ghi789jkl012m'), true);
+  });
+
+  it('rejects identical strings — distance 0 is not distance 1', () => {
+    assert.equal(isEditDistanceOne(TRUE_SARA, TRUE_SARA), false);
+  });
+
+  it('rejects two or more edits, and unrelated ids', () => {
+    assert.equal(isEditDistanceOne(TRUE_SARA, TRUE_MARNIE), false);
+    assert.equal(isEditDistanceOne('abcde12345abcde12345abcde', 'abXde12345abXde12345abcde'), false);
+  });
+
+  it('never throws on non-strings', () => {
+    for (const [a, b] of [[null, 'x'], [undefined, undefined], [1, 2], ['x', {}]]) {
+      assert.equal(isEditDistanceOne(a, b), false);
+    }
+  });
+});
+
+describe('repairIds', () => {
+  it('repairs the exact id that blocked a real mission', () => {
+    const task = `Extract the full name and address for Sara K from the Google Doc with ID ${TYPO_SARA}.`;
+    const { text, repairs, unknown } = repairIds(task, LEDGER);
+    assert.equal(text.includes(TRUE_SARA), true);
+    assert.equal(text.includes(TYPO_SARA), false);
+    assert.equal(repairs.length, 1);
+    assert.deepEqual({ from: repairs[0].from, to: repairs[0].to }, { from: TYPO_SARA, to: TRUE_SARA });
+    assert.equal(repairs[0].name, 'Sara K Agreement Advisory', 'names the resource so the log is readable');
+    assert.deepEqual(unknown, []);
+  });
+
+  it('leaves correct ids untouched and repairs only the broken one', () => {
+    const plan = `read ${TRUE_MARNIE}, then ${TYPO_SARA}, then ${TRUE_TEMPLATE}`;
+    const { text, repairs } = repairIds(plan, LEDGER);
+    assert.equal(repairs.length, 1, 'exactly the one that was wrong');
+    assert.equal(text, `read ${TRUE_MARNIE}, then ${TRUE_SARA}, then ${TRUE_TEMPLATE}`);
+  });
+
+  // Timidity is the point: a wrong "correction" is worse than none, because it looks right.
+  it('reports an unknown id rather than snapping it to something plausible', () => {
+    const novel = '1ZZZZZZZZZZZZZZZZZZZZ9999999999999999999999z';
+    const { text, repairs, unknown } = repairIds(`open ${novel}`, LEDGER);
+    assert.equal(text, `open ${novel}`, 'an id we have never seen may be perfectly real');
+    assert.deepEqual(repairs, []);
+    assert.deepEqual(unknown, [novel]);
+  });
+
+  it('refuses to choose when two ledger ids are both one edit away', () => {
+    const a = 'AAAAAAAAAAAAAAAAAAAAAAAA1';
+    const ambiguous = mergeResources({}, [
+      { kind: 'doc', name: 'one', id: `${a}b` },
+      { kind: 'doc', name: 'two', id: `${a}c` },
+    ], { now: 'T' }).ledger;
+    const { text, repairs, unknown } = repairIds(`${a}d`, ambiguous);
+    assert.equal(text, `${a}d`);
+    assert.deepEqual(repairs, []);
+    assert.deepEqual(unknown, [`${a}d`]);
+  });
+
+  it('ignores commit shas, mission ids, and ordinary prose', () => {
+    const sha = '3e25f8b7bfee9a1c2d3e4f5a6b7c8d9e0f1a2b3c';
+    const t = `mission w-1785092700317-25f61f77 at commit ${sha} duplicated the template`;
+    const { text, repairs } = repairIds(t, LEDGER);
+    assert.equal(text, t);
+    assert.deepEqual(repairs, []);
+  });
+
+  it('is a no-op with an empty ledger or empty text', () => {
+    assert.deepEqual(repairIds(`x ${TYPO_SARA}`, {}), { text: `x ${TYPO_SARA}`, repairs: [], unknown: [] });
+    for (const bad of ['', null, undefined]) {
+      assert.deepEqual(repairIds(bad, LEDGER), { text: '', repairs: [], unknown: [] });
+    }
+  });
+
+  it('is idempotent — repairing repaired text changes nothing', () => {
+    const once = repairIds(`use ${TYPO_SARA}`, LEDGER);
+    const twice = repairIds(once.text, LEDGER);
+    assert.equal(twice.text, once.text);
+    assert.deepEqual(twice.repairs, []);
   });
 });

@@ -1404,6 +1404,23 @@ function buildModePayload(mode, payload) {
         decidePayload.required_processes = rp;
       }
     }
+    // ---- Known identifiers, as they stand RIGHT NOW ----
+    // Layer E already offers the ledger to memory, but recallMemory runs once per
+    // mission before any task, so every id resolved *during* the mission is invisible
+    // to the decider. A mission that had just captured three doc ids in its own step 1.1
+    // reached the next decision unable to name them, invented an action called
+    // `request_context` to go and fetch what it already had, was nudged, and blocked.
+    // Deciding is exactly when knowing the ids matters, so hand over the live ledger.
+    if (RESOURCE_LEDGER_ENABLED) {
+      try {
+        const block = renderResources(payload.envelope?.context?.resources, {
+          limit: RESOURCE_LEDGER_RECALL_LIMIT,
+          cues: String(payload.envelope?.instruction || '')
+            .toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3),
+        });
+        if (block) decidePayload.known_resources = block;
+      } catch { /* a bookkeeping miss must never cost a decision */ }
+    }
     // Inject available processes so Cortex can suggest follow_process
     if (Object.keys(PROCESSES).length > 0) {
       decidePayload.available_processes = Object.values(PROCESSES).map(p => ({

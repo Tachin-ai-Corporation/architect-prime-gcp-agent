@@ -43,7 +43,8 @@
       "tools": [],
       "description": "Verification agent. Evaluates results against acceptance criteria. Returns structured pass/fail verdicts with evidence.",
       "constraints": "Read-only verification.",
-      "max_tokens": 8192,
+      "_max_tokens_note": "Raised 8192 -> 24576. Reasoning tokens are billed against this same output ceiling, so an organ that re-derives a multi-clause milestone (B-28) can spend the entire allowance thinking and emit no verdict at all: at 8192 one checkpoint twice returned finishReason=MAX_TOKENS with ~1300 visible chars and no report_pass/report_fail, and the fail-closed path read that as failed work and blocked a healthy mission. 8192 was the smallest ceiling in the fleet, on the organ doing the most reasoning per call. A ceiling is not a spend — verdicts stay short. NOTE: the 'model' field in this file is NOT what selects the model; the gateway resolves that from contracts.vertex.models plus any workspace-<organ>/config.json override (see corekit/brain/config.mjs).",
+      "max_tokens": 24576,
       "temperature": 0.1,
       "top_p": 0.85
     },

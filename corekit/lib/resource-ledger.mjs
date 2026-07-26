@@ -357,6 +357,92 @@ export function seedFromProse(existing, text, opts = {}) {
   return mergeResources(ledger, fresh, opts);
 }
 
+// Mirrors the id shape extractResourcesFromProse looks for: long enough that ordinary
+// words and hashes cannot match, and mixed letters+digits. Keep the two in step.
+const ID_SHAPE_G = /\b([A-Za-z0-9_-]{25,})\b/g;
+const looksLikeId = t => /[0-9]/.test(t) && /[A-Za-z]/.test(t);
+
+/**
+ * True when `a` and `b` differ by exactly one substitution, insertion, or deletion.
+ * Bounded at 1, so it walks the strings once instead of building a DP table.
+ */
+export function isEditDistanceOne(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || a === b) return false;
+  const la = a.length, lb = b.length;
+  if (Math.abs(la - lb) > 1) return false;
+
+  if (la === lb) {
+    let diff = 0;
+    for (let i = 0; i < la; i++) {
+      if (a[i] !== b[i] && ++diff > 1) return false;
+    }
+    return diff === 1;
+  }
+
+  const [short, long] = la < lb ? [a, b] : [b, a];
+  let i = 0, j = 0, skipped = false;
+  while (i < short.length && j < long.length) {
+    if (short[i] === long[j]) { i++; j++; continue; }
+    if (skipped) return false;
+    skipped = true; j++;                 // consume one char of the longer string
+  }
+  return true;
+}
+
+/**
+ * Correct mistyped identifiers against the ledger.
+ *
+ * An id is not the kind of thing that can be almost right, and asking a model to
+ * transcribe a 44-character opaque string is asking for a defect: one observed plan
+ * copied three ids out of the ledger block in its own prompt and got one of them
+ * wrong by a single character, which is enough to fail the checkpoint on every retry
+ * forever. Telling the planner to copy carefully does not fix that — nothing
+ * informational does. Repair is therefore deterministic and lives in the daemon (C-4).
+ *
+ * The rule is deliberately timid: a token is corrected ONLY when it is id-shaped, is
+ * NOT already a known id, and is edit-distance 1 from EXACTLY ONE ledger id. Zero
+ * candidates means it is simply an id we have not seen — possibly a real one the
+ * ledger has not captured yet — and more than one means we would be guessing. Both
+ * are left exactly as written and reported instead. Two genuine Drive ids differing by
+ * one character does not happen, so a unique distance-1 hit is a typo, not a coincidence.
+ *
+ * Pure: no I/O, no clock (B-19).
+ *
+ * @param {string} text
+ * @param {Object} ledger - keyed by resourceKey(), values carry {id, name, kind}
+ * @returns {{text: string, repairs: Array<{from,to,name,kind}>, unknown: string[]}}
+ */
+export function repairIds(text, ledger) {
+  const s = typeof text === 'string' ? text : '';
+  const byId = new Map();
+  for (const v of Object.values(ledger || {})) {
+    if (v && typeof v.id === 'string' && v.id) byId.set(v.id, v);
+  }
+  if (!s || byId.size === 0) return { text: s, repairs: [], unknown: [] };
+
+  const repairs = [];
+  const unknown = [];
+  const out = s.replace(ID_SHAPE_G, (tok) => {
+    if (!looksLikeId(tok) || byId.has(tok)) return tok;
+    const hits = [];
+    for (const id of byId.keys()) {
+      if (isEditDistanceOne(tok, id)) {
+        hits.push(id);
+        if (hits.length > 1) break;             // ambiguous — stop, never guess
+      }
+    }
+    if (hits.length !== 1) {
+      if (!unknown.includes(tok)) unknown.push(tok);
+      return tok;
+    }
+    const to = hits[0];
+    const e = byId.get(to);
+    repairs.push({ from: tok, to, name: e.name, kind: e.kind });
+    return to;
+  });
+  return { text: out, repairs, unknown };
+}
+
 /**
  * Render the ledger as the compact block memory hands to temporal-memory.
  * One line per resource so an id is never wrapped or truncated mid-token.

@@ -5,7 +5,7 @@ import { normalizeTargetEmail } from '../../lib/delegation.mjs';
 import {
   buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary,
 } from '../../lib/checkpoint-spine.mjs';
-import { renderResources, seedFromProse } from '../../lib/resource-ledger.mjs';
+import { renderResources, repairIds, seedFromProse } from '../../lib/resource-ledger.mjs';
 
 export async function handleCheckpointPlan(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
@@ -192,8 +192,49 @@ export async function handleCheckpointPlan(ctx, deps) {
     ? `${plannerResources}\nEvery id above was read back from a tool result. When a task needs one of these resources, COPY the id from this block character for character. Never retype one from memory or from an earlier task, and never invent one — if a resource you need is not listed, name it and let the executing organ resolve it.`
     : '';
 
+  // ---- Deterministic id repair, applied to every plan before anything pins it ----
+  // Telling a planner to copy ids carefully does not work: one observed plan copied
+  // three ids out of the ledger block in its own prompt and got one wrong by a single
+  // character. That is enough to fail its checkpoint identically on every retry, and
+  // the spine then pins it. Transcription accuracy is not something a prompt can fix,
+  // so the daemon fixes it instead (C-4) — timidly: only a unique edit-distance-1 hit
+  // against a known id is a typo; anything else is left alone and logged.
+  const repairPlan = (cps, where) => {
+    if (!LEDGER_ENABLED || !Array.isArray(cps) || cps.length === 0) return;
+    const ledger = envelope.context?.resources;
+    if (!ledger || Object.keys(ledger).length === 0) return;
+    const allRepairs = [];
+    const allUnknown = [];
+    const fix = (obj, field) => {
+      if (typeof obj?.[field] !== 'string' || !obj[field]) return;
+      const { text, repairs, unknown } = repairIds(obj[field], ledger);
+      if (repairs.length > 0) obj[field] = text;
+      allRepairs.push(...repairs);
+      for (const u of unknown) if (!allUnknown.includes(u)) allUnknown.push(u);
+    };
+    for (const cp of cps) {
+      fix(cp, 'instruction');
+      fix(cp, 'accept_criteria');
+      for (const t of (cp.tasks || [])) {
+        fix(t, 'task');
+        fix(t, 'instruction');
+        fix(t, 'accept_criteria');
+      }
+    }
+    for (const r of allRepairs) {
+      log('WARN', `[TELEMETRY] id_repair mission=${envelope.id} at=${where} kind=${r.kind} name="${r.name}" from=${r.from} to=${r.to}`);
+    }
+    // Not an error — an id the ledger has not captured is often perfectly real. It is
+    // logged because a hallucinated id looks exactly like this too, and the difference
+    // only shows up as a tool failure later.
+    if (allUnknown.length > 0) {
+      log('INFO', `[TELEMETRY] id_unverified mission=${envelope.id} at=${where} count=${allUnknown.length} ids=${allUnknown.slice(0, 5).join(',')}`);
+    }
+  };
+
   // Try cortex-provided inline structure first
   let checkpoints = extractCheckpoints(decision);
+  repairPlan(checkpoints, 'cortex_inline');
   // Track the source where it is DECIDED, not by inspecting decision.checkpoints
   // afterwards: cortex often emits a `checkpoints` key that fails extraction or
   // agent validation, so the key's mere presence proved nothing and every
@@ -317,7 +358,20 @@ export async function handleCheckpointPlan(ctx, deps) {
           '## Acceptance criteria (FIXED — plan tasks that satisfy these as written)',
           target.accept_criteria || '(none stated)',
           '',
-          failureNote ? `## Why the last attempt did not satisfy them\n${failureNote}` : '',
+          // Framed as a checklist, not a narrative. The verifier reports one bullet per
+          // unmet clause; a real re-plan read a two-clause FAIL and produced tasks for
+          // one clause only, dropping "the draft doc ids are identified". The criteria
+          // are pinned, so a checkpoint re-tasked against half of them cannot ever pass
+          // — it failed three times on the same missing half.
+          failureNote ? [
+            '## Clauses the verifier found UNMET — every one needs a task',
+            failureNote,
+            '',
+            'Treat the above as a checklist. Read the pinned criteria clause by clause and',
+            'make sure your task list addresses EVERY unmet clause, not only the one that',
+            'looks easiest or most recent. A checkpoint is judged against all of its',
+            'criteria at once: leaving one clause untasked guarantees another failure.',
+          ].join('\n') : '',
           '',
           // Verified ids go IMMEDIATELY before the failed-task list, because that list
           // is where a bad id gets copied from: the re-plan shows prefrontal its own
@@ -339,7 +393,12 @@ export async function handleCheckpointPlan(ctx, deps) {
 
       let newCps = null;
       if (scoped.success && scoped.output) {
-        try { newCps = extractCheckpoints(await enforceSchema(scoped.output, 'plan')); }
+        // Repaired BEFORE applyReplan, or the typo lands in the spine and is re-served
+        // to the planner as its own prior work on every subsequent round.
+        try {
+          newCps = extractCheckpoints(await enforceSchema(scoped.output, 'plan'));
+          repairPlan(newCps, `scoped_cp${target.n}`);
+        }
         catch (e) { log('WARN', `Scoped re-plan schema/parse failed: ${e.message}`); }
       }
       const newTasks = newCps?.[0]?.tasks || [];
@@ -435,6 +494,7 @@ export async function handleCheckpointPlan(ctx, deps) {
         try {
           const planParsed = await enforceSchema(planResult.output, 'plan');
           checkpoints = extractCheckpoints(planParsed);
+          repairPlan(checkpoints, 'prefrontal_mission');
           if (checkpoints && checkpoints.length > 0) {
             planSource = 'prefrontal';
             log('INFO', `Prefrontal structured ${checkpoints.length} checkpoints, ${checkpoints.reduce((s, c) => s + c.tasks.length, 0)} total tasks`);

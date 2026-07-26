@@ -1203,6 +1203,13 @@ export async function executeCheckpoints(checkpoints, opts) {
             'Verify that this CHECKPOINT MILESTONE has been achieved. Judge the checkpoint as a',
             'whole against its acceptance criteria — a holistic judgment, not a per-step check.',
             'Read the verification SKILL.md before rendering your verdict.',
+            // Ordering, not brevity: reason as fully as the work deserves, but register the
+            // verdict as soon as it is reached. A verifier that saves the tool call for the
+            // end of a long write-up loses the whole judgment when the output budget runs
+            // out — observed twice on one checkpoint, at a prompt size well inside the cap.
+            'Call report_pass or report_fail AS SOON AS you have reached your judgment. Do not',
+            'save the tool call for the end of a long write-up: if your output budget runs out',
+            'first, the verdict you reached is lost and the milestone fails for no reason.',
             '',
             '## Checkpoint',
             cpInstrText,
@@ -1263,6 +1270,12 @@ export async function executeCheckpoints(checkpoints, opts) {
           // cheap, differently-shaped attempt before conceding.
           if (emptyVerdict(cpVer)) {
             log('WARN', `[checkpoint-executor] CP${cpNum}: still no verdict — one reduced-prompt attempt (${emptyDiag(cpVer, 2)})`);
+            // Two different causes produce an empty verdict and they need different
+            // explanations. MALFORMED_FUNCTION_CALL means the prompt was too big. MAX_TOKENS
+            // means the OUTPUT budget ran out — a verifier that reasons at length before
+            // calling report_pass/report_fail spends its whole allowance on thinking and
+            // emits no verdict, which happens at prompt sizes far below any cap.
+            let budgetExhausted = /MAX_TOKENS/i.test(String(cpVer.finishReason || ''));
             const reduced = {
               instruction: [
                 'Verify this checkpoint against its acceptance criteria. Call report_pass or',
@@ -1279,7 +1292,10 @@ export async function executeCheckpoints(checkpoints, opts) {
             cpVer = await dispatchAgent('cerebellum', reduced);
             cpVerdict = extractVerdict(cpVer.output);
             if (cpVerdict) {
-              log('INFO', `[checkpoint-executor] CP${cpNum}: reduced prompt produced ${cpVerdict} — the full prompt was the problem, not the work`);
+              log('INFO', `[checkpoint-executor] CP${cpNum}: reduced prompt produced ${cpVerdict} — `
+                + (budgetExhausted
+                  ? `the verifier's OUTPUT budget was exhausted before it emitted a verdict (finishReason=MAX_TOKENS at ${(verifyReq.instruction || '').length} prompt chars, well inside the cap) — less to reason about left room for the verdict. Not a problem with the work.`
+                  : 'the full prompt was the problem, not the work'));
             } else {
               log('WARN', `[checkpoint-executor] CP${cpNum}: reduced prompt also empty (${emptyDiag(cpVer, 3)})`);
             }
