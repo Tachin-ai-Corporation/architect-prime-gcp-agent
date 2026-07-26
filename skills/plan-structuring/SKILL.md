@@ -75,6 +75,16 @@ checkpoint's criteria — that makes the milestone unverifiable against how the 
 chose to work, and it is the over-specification that strands execution. State the end state;
 let the organ choose how to reach it.
 
+**The outcome names a state, never the method that reaches it.** A checkpoint's
+`instruction` is pinned for the whole mission — a failure re-tasks it, and the outcome
+wording stands. So a method written into the outcome becomes a permanent constraint on
+every later attempt, including after that method has already been carried out or has
+been proven to be the wrong one. Write "three addendum drafts exist in the In Progress
+folder, one per advisor"; not "prepare the drafts *by duplicating the master template*".
+The second reads as an outcome and behaves as an instruction: it kept re-tasking a
+duplication step in a real mission whose documents had already been created, because
+the outcome it was re-planning against still demanded duplication.
+
 **Criteria are format-agnostic unless the requester asked for a format.** The criterion
 states what must be TRUE of the content, never the shape it arrives in. If the user asked to
 "list", "summarize", or "tell me" something, do NOT require "a JSON array" or a specific
@@ -182,6 +192,24 @@ skill by name at most; NEVER name a command, flag, or API operation. Anti-patter
 the generated JSON array of Google Docs API batch_update operations" — there is no such
 tool, and the planner cannot know the real command surface. Write the outcome instead:
 "incorporate the redline changes into the body and remove the redline notes section."
+
+### Identifiers are copied, never retyped
+
+When a request carries a "Known Resources" block, every id in it was read back from a
+tool result. If a task needs one, **copy it from that block character for character.**
+Never retype an id from memory, never carry one over from an earlier task list, and
+never invent one to fill a gap.
+
+An id is not the kind of thing that can be *almost* right. A single wrong character
+produces a task that fails instantly and identically on every retry — and because the
+checkpoint skeleton is pinned, that task gets re-derived from your own previous wording
+each round, so the same wrong id is copied forward indefinitely. One mission spent every
+attempt it had this way: the verified id sat in the same prompt as the task that had it
+wrong by one letter.
+
+If a resource you need has no id in that block, **do not guess one.** Name the resource
+plainly ("the master addendum template in the Master Templates folder") and let the
+executing organ resolve it — resolving identifiers is work it can do and you cannot.
 
 ### Accept criteria are evidence-bearing
 Write accept_criteria a verifier can check against concrete evidence, at the OUTCOME level.
