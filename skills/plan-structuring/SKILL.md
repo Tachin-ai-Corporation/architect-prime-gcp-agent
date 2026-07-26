@@ -9,6 +9,28 @@ No executable commands are governed directly by this skill (prefrontal-only plan
 
 ## Procedures
 
+### Re-plan ONE checkpoint (request marked `[PLAN STRUCTURING — SINGLE CHECKPOINT]`)
+A mission's checkpoint skeleton is pinned after the first plan: a checkpoint that fails is
+re-tasked, the mission is not re-shaped. When the request carries that marker you are being
+asked for **tasks only**, for the one checkpoint named in it.
+
+1. **Treat the outcome and the acceptance criteria as FIXED.** They are given as "do not
+   reword" for a reason — checkpoints that already passed are keeping their verdicts against
+   these exact criteria. Plan tasks that satisfy the criteria *as written*.
+2. **Read "why the last attempt did not satisfy them"** and change the approach, not the
+   goal. If the previous tasks failed on mechanics (a wrong command, an unread doc), the new
+   tasks should be more specific about the *outcome to reach*, not longer.
+3. **Return exactly one checkpoint** in `checkpoints`. Do not include the other checkpoints,
+   even to restate them; anything you add beyond the one asked for is discarded.
+4. Only propose different `accept_criteria` if the pinned wording is genuinely
+   **unachievable** (it asks for something that cannot exist), not merely awkward. One
+   refinement per checkpoint is accepted; after that the pinned wording stands, so spend it
+   carefully.
+
+If you conclude the *mission* is mis-shaped — a whole phase is missing, or the goal was
+misread — say so plainly in your reasoning rather than smuggling it in as extra checkpoints.
+Re-shaping the mission is a decision that belongs to cortex.
+
 ### Structure a checkpoint and task plan
 1. Read the input goal, Brief parts, and available skill index.
 2. Define checkpoints as **verifiable milestones** — each a meaningful state the mission reaches that is worth an independent quality check (a phase gate, a specialty handoff, a deliverable produced). A checkpoint is NOT a task grouping or a tool step; it is the milestone cerebellum will judge.

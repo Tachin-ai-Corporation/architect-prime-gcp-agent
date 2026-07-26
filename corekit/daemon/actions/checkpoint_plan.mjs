@@ -2,6 +2,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeTargetEmail } from '../../lib/delegation.mjs';
+import {
+  buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary,
+} from '../../lib/checkpoint-spine.mjs';
 
 export async function handleCheckpointPlan(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
@@ -127,6 +130,28 @@ export async function handleCheckpointPlan(ctx, deps) {
     log('INFO', `Checkpoint plan: multi-delegation detected (${allTargetEmails.size} targets: ${[...allTargetEmails].join(', ')}). Proceeding with normal checkpoint execution.`);
   }
 
+  // ---- Pinned spine: is this a RE-plan of a mission we already shaped? ----
+  // A checkpoint failure should re-plan that checkpoint, not the mission. Without
+  // this, a CP2 failure discarded the whole plan and re-ran a CP1 that had passed
+  // twenty seconds earlier — one real mission spent 1.11M input tokens that way.
+  // Outcomes are stable in practice (four observed missions never changed them);
+  // task lists are not. So the outcomes+criteria are pinned and only the failed
+  // checkpoint's tasks are re-derived.
+  const SPINE_ENABLED = CONTRACTS?.dispatch?.spine_pinning_enabled !== false;
+  const PIN_CRITERIA = CONTRACTS?.dispatch?.criteria_pinning_enabled !== false;
+  const MAX_CRITERIA_REV = CONTRACTS?.dispatch?.max_criteria_revisions ?? 1;
+  const existingSpine = Array.isArray(envelope._cp_spine) ? envelope._cp_spine : null;
+  const scopedIdx = (SPINE_ENABLED && existingSpine) ? firstIncompleteIndex(existingSpine) : -1;
+  const isScopedReplan = scopedIdx >= 0 && scopedIdx < (existingSpine?.length || 0);
+
+  // Cortex can demand a full re-shape (it judged the goal itself mis-framed). Rare,
+  // and loud — never the reflex response to a checkpoint failing.
+  const forceFullReplan = decision.replan_scope === 'mission' || decision.replan_full === true;
+  if (SPINE_ENABLED && existingSpine && forceFullReplan) {
+    log('WARN', `[TELEMETRY] spine_replaced mission=${envelope.id} reason=${decision.replan_reason || 'cortex requested mission-scope re-plan'} prior=${spineSummary(existingSpine)}`);
+    envelope._cp_spine = null;
+  }
+
   // Try cortex-provided inline structure first
   let checkpoints = extractCheckpoints(decision);
   // Track the source where it is DECIDED, not by inspecting decision.checkpoints
@@ -212,6 +237,84 @@ export async function handleCheckpointPlan(ctx, deps) {
     return res;
   };
 
+  // ---- Scoped re-plan: re-task ONE checkpoint against its pinned outcome ----
+  // Runs before the full-structuring path below and, on success, replaces it: the
+  // rebuilt plan keeps every completed verdict and every untouched checkpoint.
+  let spineScope = 'mission';
+  let startCpIndexOverride = 0;
+  if (SPINE_ENABLED && isScopedReplan && !forceFullReplan) {
+    const target = existingSpine[scopedIdx];
+    log('INFO', `Checkpoint plan: SCOPED re-plan of CP${target.n} only (spine ${spineSummary(existingSpine)}) — completed checkpoints keep their verdicts`);
+    try {
+      let skillDoc = '';
+      try {
+        skillDoc = fs.readFileSync(path.join(CORE_DIR, 'skills', 'plan-structuring', 'SKILL.md'), 'utf8');
+      } catch { /* the skill is advisory here; proceed without it */ }
+
+      const failureNote = (priorResults || [])
+        .filter(r => typeof r.result === 'string' && r.result.includes('[CHECKPOINT VERIFICATION FAILED]'))
+        .slice(-1)[0]?.result || decision.failure_summary || '';
+
+      const scoped = await dispatchAgent('prefrontal', {
+        instruction: [
+          '[PLAN STRUCTURING — SINGLE CHECKPOINT]',
+          'Structure the TASKS for exactly one checkpoint. Do not re-plan the mission and do',
+          'not restate the other checkpoints — they are already decided.',
+          '',
+          skillDoc ? `## Plan Structuring Skill Instructions\n${skillDoc}` : '',
+          '',
+          `## Brain Capability Map (plan by outcome; the executing organ picks its own skills)\n${CAPABILITY_MAP}`,
+          '',
+          `## Checkpoint ${target.n} — outcome (FIXED, do not reword)`,
+          target.outcome,
+          '',
+          '## Acceptance criteria (FIXED — plan tasks that satisfy these as written)',
+          target.accept_criteria || '(none stated)',
+          '',
+          failureNote ? `## Why the last attempt did not satisfy them\n${failureNote}` : '',
+          '',
+          '## Tasks that were tried and did not get there',
+          (target.tasks || []).map(t => `- ${toStr(t.task || t.instruction || '')}`).join('\n') || '(none)',
+          '',
+          'Return a plan whose checkpoints array contains EXACTLY ONE checkpoint: this one.',
+        ].filter(Boolean).join('\n'),
+        _missionId: envelope.id,
+        _sourceMeta: envelope.source_meta || envelope._sourceMeta || null,
+        _projectContext: envelope._projectContext || null,
+        _sourceText: envelope.source_text || envelope._sourceText || null,
+      });
+
+      let newCps = null;
+      if (scoped.success && scoped.output) {
+        try { newCps = extractCheckpoints(await enforceSchema(scoped.output, 'plan')); }
+        catch (e) { log('WARN', `Scoped re-plan schema/parse failed: ${e.message}`); }
+      }
+      const newTasks = newCps?.[0]?.tasks || [];
+      if (newTasks.length > 0) {
+        const { spine, criteriaChanged, revisionRefused } = applyReplan(
+          existingSpine, scopedIdx, newTasks,
+          {
+            newCriteria: newCps[0].accept_criteria,
+            pinCriteria: PIN_CRITERIA,
+            maxCriteriaRevisions: MAX_CRITERIA_REV,
+            now: new Date().toISOString(),
+          },
+        );
+        envelope._cp_spine = spine;
+        const rebuilt = rebuildFromSpine(spine);
+        checkpoints = rebuilt.checkpoints;
+        startCpIndexOverride = rebuilt.startCpIndex;
+        planSource = 'prefrontal';
+        spineScope = 'checkpoint';
+        log('INFO', `Scoped re-plan: CP${target.n} re-tasked (${newTasks.length} tasks), resuming at CP${rebuilt.startCpIndex + 1} of ${spine.length}${criteriaChanged ? ' [criteria refined]' : ''}${revisionRefused ? ' [further criteria rewording refused — pinned wording holds]' : ''}`);
+      } else {
+        log('WARN', 'Scoped re-plan produced no tasks — falling back to full mission structuring');
+      }
+    } catch (e) {
+      log('WARN', `Scoped re-plan dispatch failed: ${e.message} — falling back to full structuring`);
+    }
+  }
+
   // CP4: If cortex didn't provide a valid structure, dispatch to prefrontal
   if (!checkpoints || checkpoints.length === 0) {
     const planGoal = decision.goal || decision.instruction || decision.reasoning || envelope.instruction;
@@ -275,9 +378,18 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
+  // First plan for this mission — pin the spine so later failures re-task instead of
+  // re-shaping. Outcomes and criteria are captured here and held from now on.
+  if (SPINE_ENABLED && !Array.isArray(envelope._cp_spine) && checkpoints?.length > 0) {
+    envelope._cp_spine = buildSpine(checkpoints, { now: new Date().toISOString() });
+    log('INFO', `Checkpoint spine pinned: ${spineSummary(envelope._cp_spine)}`);
+  }
+
   // Telemetry: plan structuring source (assigned at the branch that produced it)
   log('INFO', `[TELEMETRY] plan_structuring: ${JSON.stringify({
     source: planSource,
+    scope: spineScope,
+    spine_reused: spineScope === 'checkpoint',
     checkpoints: checkpoints?.length || 0,
     tasks: checkpoints?.reduce((s, c) => s + c.tasks.length, 0) || 0,
     missionId: envelope.id,
@@ -319,7 +431,10 @@ export async function handleCheckpointPlan(ctx, deps) {
     CORE_DIR,
     CTX_AGENT_STEP,
     CTX_DISPATCH_FAILURE,
-    startCpIndex: 0,
+    // On a scoped re-plan, start past the checkpoints that already passed. This is
+    // the mechanism that stops a passed CP1 being re-run when CP2 fails — the
+    // executor already supported it; nothing was ever telling it where to resume.
+    startCpIndex: startCpIndexOverride,
     startTaskIndex: 0,
     savedResults: [],
     buildProjectContext,

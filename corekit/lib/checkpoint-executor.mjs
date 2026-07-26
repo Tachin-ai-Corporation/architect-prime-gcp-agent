@@ -15,6 +15,7 @@ import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket } from './result-packet.mjs';
 import { extractResources, extractResourcesFromProse, mergeResources, renderResources } from './resource-ledger.mjs';
+import { markCheckpoint, spineSummary } from './checkpoint-spine.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -102,6 +103,7 @@ export async function executeCheckpoints(checkpoints, opts) {
   const RESOURCE_LEDGER_ENABLED = contracts.memory?.resource_ledger?.enabled !== false;
   const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
   const RESOURCE_LEDGER_RECALL_LIMIT = contracts.memory?.resource_ledger?.recall_limit ?? 40;
+  const SPINE_PINNING_ENABLED = contracts.dispatch?.spine_pinning_enabled !== false;
   const PROBE_ENABLED = contracts.dispatch?.verify_probe_enabled !== false;
   const PROBE_MAX = contracts.dispatch?.verify_probe_max ?? 2;
   const PROBE_STAKES_MIN = contracts.dispatch?.verify_probe_stakes_min || 'consequential';
@@ -1303,6 +1305,17 @@ export async function executeCheckpoints(checkpoints, opts) {
 
     // Mark checkpoint complete or failed
     cpEnvelope.status = cpFailed ? 'failed' : 'complete';
+
+    // Record the verdict on the pinned spine. The executor is the only thing that
+    // knows whether a milestone actually passed, so it owns this write — and it is
+    // what stops a later checkpoint's failure from costing this one's verdict.
+    if (SPINE_PINNING_ENABLED && Array.isArray(envelope._cp_spine)) {
+      envelope._cp_spine = markCheckpoint(
+        envelope._cp_spine, ci, cpFailed ? 'failed' : 'complete',
+        { now: new Date().toISOString() },
+      );
+      log('INFO', `[TELEMETRY] spine_status mission=${envelope.id} cp=${cpNum} status=${cpFailed ? 'failed' : 'complete'} spine=${spineSummary(envelope._cp_spine)}`);
+    }
     // Count only real task results, not the pushed cerebellum verdict pseudo-step (step
     // "N.verify") — otherwise a milestone-verification failure reads as a bogus task overflow
     // ("failed at task 3/2" for a 2-task checkpoint). Distinguish a task failure from a
