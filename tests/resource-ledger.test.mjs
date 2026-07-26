@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   extractResources, extractResourcesFromProse, mergeResources, renderResources,
-  resourceKey, normalizeName,
+  resourceKey, normalizeName, seedFromProse,
 } from '../corekit/lib/resource-ledger.mjs';
 
 // The verbatim request from mission w-1785084942002-86b6c4ad. It named all three
@@ -276,5 +276,49 @@ describe('renderResources', () => {
     const many = Array.from({ length: 6 }, (_, i) => ({ kind: 'doc', name: `d${i}`, id: `IDIDIDIDIDID${i}` }));
     const { ledger } = mergeResources({}, many, { now: 'T' });
     assert.match(renderResources(ledger, { limit: 2 }), /…4 more/);
+  });
+});
+
+
+// seedFromProse exists so the PLANNER and the EXECUTOR seed identically. The planner
+// call is the one that matters for correctness: before it existed, seeding ran only
+// inside executeCheckpoints — after planning — so the very plan that writes ids into
+// tasks was structured against an empty ledger, and a hand-typed id with one wrong
+// character got pinned into the checkpoint skeleton.
+describe('seedFromProse', () => {
+  it('seeds the ids the operator stated in the request', () => {
+    const { ledger, added } = seedFromProse({}, REAL_REQUEST, { now: 'T', source: 'request' });
+    assert.equal(added, 3, 'all three folders the request named');
+    assert.equal(ledger[resourceKey('drive_folder', 'In Progress')].id, '1ozAGMRXzIMytkYwkzf5xBELQwBDqCQOp');
+    assert.equal(Object.values(ledger).every(v => v.source === 'request'), true);
+  });
+
+  it('is idempotent — both callers may seed the same text every iteration', () => {
+    const first = seedFromProse({}, REAL_REQUEST, { now: 'T1', source: 'request' });
+    const second = seedFromProse(first.ledger, REAL_REQUEST, { now: 'T2', source: 'request' });
+    assert.equal(second.added, 0);
+    assert.equal(second.updated, 0);
+    assert.deepEqual(second.ledger, first.ledger);
+  });
+
+  // The oscillation guard. A seed runs on every mission iteration, so if prose could
+  // overwrite a tool-captured id, a stale id in the request would clobber the corrected
+  // one on every pass and the ledger would flip back and forth for the whole mission.
+  it('never overwrites an id captured from a tool result', () => {
+    const observed = mergeResources({}, [
+      { kind: 'drive_folder', name: 'In Progress', id: 'TOOLOBSERVEDIDTOOLOBSERVEDID' },
+    ], { now: 'T', source: '1.1' }).ledger;
+
+    const { ledger, added, updated } = seedFromProse(observed, REAL_REQUEST, { now: 'T2', source: 'request' });
+    assert.equal(updated, 0, 'prose is a claim; a tool result is an observation');
+    assert.equal(ledger[resourceKey('drive_folder', 'In Progress')].id, 'TOOLOBSERVEDIDTOOLOBSERVEDID');
+    assert.equal(ledger[resourceKey('drive_folder', 'In Progress')].source, '1.1');
+    assert.equal(added, 2, 'the two folders it had not already observed still seed');
+  });
+
+  it('returns an empty ledger for prose with no ids, without throwing', () => {
+    for (const bad of ['', null, undefined, 'draft three addendums, leave blanks empty']) {
+      assert.deepEqual(seedFromProse(undefined, bad, {}), { ledger: {}, added: 0, updated: 0, dropped: 0 });
+    }
   });
 });

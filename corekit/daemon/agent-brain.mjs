@@ -1439,6 +1439,11 @@ function buildModePayload(mode, payload) {
           : 'standard (local work via motor/research), approval_gate (destructive_or_public risk — operator gate), ask (unresolvable unknowns — use needs_input)',
         sequencing: 'Independent parts fan out within a checkpoint. Dependent parts serialize via checkpoint boundaries.',
         skill_guidance: 'Write task instructions that describe WHAT should happen, not HOW. Sub-agents are specialists — they know their own tools. Describe the desired outcome, inputs, and acceptance criteria.',
+        // Without this, the hatch is unreachable: it is read off `decision` and named
+        // nowhere else. A real mission diagnosed its own plan as mis-shaped ("the docs
+        // already exist; the remaining work is to populate them"), had no key to say
+        // so, invented an action that does not exist, and blocked.
+        replan_scope: 'A checkpoint that fails is re-tasked against its pinned outcome — the mission keeps its shape. If the SHAPE itself is wrong (a phase is missing, or the outcomes describe work that is already done or was never needed), send { action: "checkpoint_plan", replan_scope: "mission", replan_reason: "..." } to discard the pinned skeleton and re-shape. Use it when re-tasking cannot fix the problem, not when a task merely failed.',
       };
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
@@ -1451,6 +1456,11 @@ function buildModePayload(mode, payload) {
         rule: 'ALL work MUST use checkpoint_plan. One focused task per task entry. Even single-step work is one checkpoint with one task.',
         reasoning: 'Each motor task has a limited step budget. Atomic tasks prevent timeouts and preserve context on failure. The M→C→T hierarchy ensures progress tracking and enables re-planning on failure.',
         skill_guidance: 'Write task instructions that describe WHAT should happen, not HOW. Sub-agents are specialists — they know their own tools. Describe the desired outcome, inputs, and acceptance criteria.',
+        // Without this, the hatch is unreachable: it is read off `decision` and named
+        // nowhere else. A real mission diagnosed its own plan as mis-shaped ("the docs
+        // already exist; the remaining work is to populate them"), had no key to say
+        // so, invented an action that does not exist, and blocked.
+        replan_scope: 'A checkpoint that fails is re-tasked against its pinned outcome — the mission keeps its shape. If the SHAPE itself is wrong (a phase is missing, or the outcomes describe work that is already done or was never needed), send { action: "checkpoint_plan", replan_scope: "mission", replan_reason: "..." } to discard the pinned skeleton and re-shape. Use it when re-tasking cannot fix the problem, not when a task merely failed.',
       };
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {

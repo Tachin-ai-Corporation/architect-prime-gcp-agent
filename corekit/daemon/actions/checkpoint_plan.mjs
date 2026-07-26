@@ -5,6 +5,7 @@ import { normalizeTargetEmail } from '../../lib/delegation.mjs';
 import {
   buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary,
 } from '../../lib/checkpoint-spine.mjs';
+import { renderResources, seedFromProse } from '../../lib/resource-ledger.mjs';
 
 export async function handleCheckpointPlan(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
@@ -152,6 +153,45 @@ export async function handleCheckpointPlan(ctx, deps) {
     envelope._cp_spine = null;
   }
 
+  // ---- Known identifiers, carried to the PLANNER ----
+  // The ledger reached the executing organ but never the organ that WRITES the ids.
+  // A planner with no verified id types one out, and a single wrong character becomes
+  // a task that fails identically on every retry — then the spine pins it. That is
+  // exactly how one mission died: the ledger held the master template's id, read back
+  // from a Drive listing, while the pinned task carried the same id with one character
+  // different. Seeding first matters as much as rendering: the seed used to run inside
+  // the executor, i.e. AFTER planning, so the first plan — the one that introduces the
+  // typo — saw an empty ledger even when the operator had stated the ids outright.
+  const LEDGER_ENABLED = CONTRACTS?.memory?.resource_ledger?.enabled !== false;
+  const LEDGER_MAX = CONTRACTS?.memory?.resource_ledger?.max_entries ?? 200;
+  const LEDGER_LIMIT = CONTRACTS?.memory?.resource_ledger?.recall_limit ?? 40;
+  let plannerResources = '';
+  if (LEDGER_ENABLED) {
+    try {
+      const seedText = [envelope.instruction, envelope.source_text, envelope.context_summary]
+        .filter(Boolean).map(toStr).join('\n');
+      envelope.context = envelope.context || {};
+      const { ledger, added, updated } = seedFromProse(
+        envelope.context.resources, seedText,
+        { max: LEDGER_MAX, now: new Date().toISOString(), source: 'request' },
+      );
+      envelope.context.resources = ledger;
+      if (added || updated) {
+        log('INFO', `[TELEMETRY] resource_ledger mission=${envelope.id} step=plan added=${added} updated=${updated} total=${Object.keys(ledger).length}`);
+      }
+      plannerResources = renderResources(ledger, {
+        limit: LEDGER_LIMIT,
+        cues: String(decision.goal || decision.instruction || envelope.instruction || '')
+          .toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3),
+      });
+    } catch (e) {
+      log('WARN', `Planner resource block failed: ${e.message}`);
+    }
+  }
+  const PLANNER_ID_RULE = plannerResources
+    ? `${plannerResources}\nEvery id above was read back from a tool result. When a task needs one of these resources, COPY the id from this block character for character. Never retype one from memory or from an earlier task, and never invent one — if a resource you need is not listed, name it and let the executing organ resolve it.`
+    : '';
+
   // Try cortex-provided inline structure first
   let checkpoints = extractCheckpoints(decision);
   // Track the source where it is DECIDED, not by inspecting decision.checkpoints
@@ -242,6 +282,12 @@ export async function handleCheckpointPlan(ctx, deps) {
   // rebuilt plan keeps every completed verdict and every untouched checkpoint.
   let spineScope = 'mission';
   let startCpIndexOverride = 0;
+  // Evidence from checkpoints that already PASSED, carried into the resumed run.
+  // A scoped re-plan starts execution past them, so without this their results are
+  // gone and the next checkpoint's verifier judges its criteria with no sight of the
+  // work that satisfied the earlier ones — which is how a milestone came to FAIL for
+  // "folder ids are identified" one round after its own prior verdict had quoted them.
+  let bankedResults = [];
   if (SPINE_ENABLED && isScopedReplan && !forceFullReplan) {
     const target = existingSpine[scopedIdx];
     log('INFO', `Checkpoint plan: SCOPED re-plan of CP${target.n} only (spine ${spineSummary(existingSpine)}) — completed checkpoints keep their verdicts`);
@@ -273,8 +319,15 @@ export async function handleCheckpointPlan(ctx, deps) {
           '',
           failureNote ? `## Why the last attempt did not satisfy them\n${failureNote}` : '',
           '',
+          // Verified ids go IMMEDIATELY before the failed-task list, because that list
+          // is where a bad id gets copied from: the re-plan shows prefrontal its own
+          // previous tasks, so a typo'd id is re-copied every round and the checkpoint
+          // fails the same way forever.
+          PLANNER_ID_RULE,
+          '',
           '## Tasks that were tried and did not get there',
           (target.tasks || []).map(t => `- ${toStr(t.task || t.instruction || '')}`).join('\n') || '(none)',
+          'Any identifier appearing in that list is SUSPECT — it did not work. Take ids from the block above, not from these tasks.',
           '',
           'Return a plan whose checkpoints array contains EXACTLY ONE checkpoint: this one.',
         ].filter(Boolean).join('\n'),
@@ -306,6 +359,18 @@ export async function handleCheckpointPlan(ctx, deps) {
         startCpIndexOverride = rebuilt.startCpIndex;
         planSource = 'prefrontal';
         spineScope = 'checkpoint';
+
+        // Keep the results of the checkpoints we are skipping past. Step ids are
+        // "<cp>.<task>" (and "<cp>.verify"), so the leading number selects them.
+        const doneCps = new Set(
+          spine.filter(s => s.status === 'complete').map(s => String(s.n)),
+        );
+        if (doneCps.size > 0) {
+          const prior = envelope._cp_progress?.allResults;
+          bankedResults = (Array.isArray(prior) ? prior : [])
+            .filter(r => doneCps.has(String(r?.step || '').split('.')[0]));
+          log('INFO', `Scoped re-plan: banking ${bankedResults.length} result(s) from ${doneCps.size} completed checkpoint(s)`);
+        }
         log('INFO', `Scoped re-plan: CP${target.n} re-tasked (${newTasks.length} tasks), resuming at CP${rebuilt.startCpIndex + 1} of ${spine.length}${criteriaChanged ? ' [criteria refined]' : ''}${revisionRefused ? ' [further criteria rewording refused — pinned wording holds]' : ''}`);
       } else {
         log('WARN', 'Scoped re-plan produced no tasks — falling back to full mission structuring');
@@ -347,6 +412,11 @@ export async function handleCheckpointPlan(ctx, deps) {
           planGoal,
           '',
           envelope._brief ? `## Brief\n${JSON.stringify(envelope._brief)}` : '',
+          '',
+          // Volatile tail, deliberately: the ledger grows during a mission, so placing
+          // it above the skill doc / capability map would break the cacheable stable
+          // prefix those two provide (MR-4a).
+          PLANNER_ID_RULE,
           '',
           processMatchHint || '',  // Process match hint if any
           '',
@@ -436,7 +506,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     // executor already supported it; nothing was ever telling it where to resume.
     startCpIndex: startCpIndexOverride,
     startTaskIndex: 0,
-    savedResults: [],
+    savedResults: bankedResults,
     buildProjectContext,
   });
 

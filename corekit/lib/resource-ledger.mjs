@@ -327,6 +327,37 @@ export function mergeResources(existing, found, opts = {}) {
 }
 
 /**
+ * Seed the ledger from free prose — the request text, a context summary, a brief.
+ *
+ * Composes extractResourcesFromProse + mergeResources so every caller seeds the
+ * same way. Two callers need it at different moments: the PLANNER needs a seeded
+ * ledger before it writes a single task (a planner that cannot see a verified id
+ * types one from memory, and a one-character slip becomes a pinned task that fails
+ * identically forever), and the EXECUTOR needs it for the process-engine path that
+ * never passes through plan structuring.
+ *
+ * Seeding FILLS GAPS ONLY — an existing entry is never overwritten. Prose states a
+ * claim; a tool result reports an observation, so the observation wins. This is also
+ * what keeps repeated seeding safe: both callers run on every mission iteration, and
+ * without the gap-only rule a stale id in the request would overwrite a tool-corrected
+ * one on every pass, then get corrected again, forever. (Tool captures still go
+ * through mergeResources directly, where a changed id DOES update in place — that
+ * path is how a moved or replaced resource gets fixed.)
+ *
+ * @param {Object} existing - current ledger
+ * @param {string} text - prose that may state ids
+ * @param {Object} [opts] - forwarded to mergeResources (max, now, source)
+ * @returns {{ledger: Object, added: number, updated: number, dropped: number}}
+ */
+export function seedFromProse(existing, text, opts = {}) {
+  const ledger = { ...(existing || {}) };
+  const fresh = extractResourcesFromProse(text)
+    .filter(r => r && r.kind && r.name && !(resourceKey(r.kind, r.name) in ledger));
+  if (fresh.length === 0) return { ledger, added: 0, updated: 0, dropped: 0 };
+  return mergeResources(ledger, fresh, opts);
+}
+
+/**
  * Render the ledger as the compact block memory hands to temporal-memory.
  * One line per resource so an id is never wrapped or truncated mid-token.
  *

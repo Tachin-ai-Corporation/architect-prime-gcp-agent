@@ -14,7 +14,7 @@ import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket } from './result-packet.mjs';
-import { extractResources, extractResourcesFromProse, mergeResources, renderResources } from './resource-ledger.mjs';
+import { extractResources, mergeResources, renderResources, seedFromProse } from './resource-ledger.mjs';
 import { markCheckpoint, spineSummary } from './checkpoint-spine.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
@@ -116,21 +116,21 @@ export async function executeCheckpoints(checkpoints, opts) {
   // still ran name-based searches for them — one of which came back empty because
   // the folder's real name differs from the name in the request. Anything already
   // stated is known; seeding costs one regex pass and removes the search entirely.
+  // Idempotent: checkpoint_plan seeds this same text before it structures a plan
+  // (the planner needs the ids too). This call still earns its place — the
+  // process-engine path reaches the executor without passing through planning.
   if (RESOURCE_LEDGER_ENABLED) {
     try {
       const seedText = [envelope.instruction, envelope.source_text, envelope.context_summary]
         .filter(Boolean).map(toStr).join('\n');
-      const seeded = extractResourcesFromProse(seedText);
-      if (seeded.length > 0) {
-        envelope.context = envelope.context || {};
-        const { ledger, added, updated } = mergeResources(
-          envelope.context.resources, seeded,
-          { max: RESOURCE_LEDGER_MAX, now: new Date().toISOString(), source: 'request' },
-        );
-        envelope.context.resources = ledger;
-        if (added || updated) {
-          log('INFO', `[TELEMETRY] resource_ledger mission=${envelope.id} step=request added=${added} updated=${updated} total=${Object.keys(ledger).length}`);
-        }
+      envelope.context = envelope.context || {};
+      const { ledger, added, updated } = seedFromProse(
+        envelope.context.resources, seedText,
+        { max: RESOURCE_LEDGER_MAX, now: new Date().toISOString(), source: 'request' },
+      );
+      envelope.context.resources = ledger;
+      if (added || updated) {
+        log('INFO', `[TELEMETRY] resource_ledger mission=${envelope.id} step=request added=${added} updated=${updated} total=${Object.keys(ledger).length}`);
       }
     } catch (e) {
       log('WARN', `Resource ledger seed failed: ${e.message}`);
@@ -902,9 +902,16 @@ export async function executeCheckpoints(checkpoints, opts) {
         } catch { knownResources = ''; }
       }
 
+      // Precedence is stated, not implied. A task instruction can name an id that
+      // DISAGREES with the ledger's, and the organ then has to choose blind: one real
+      // mission failed identically on every attempt because a planner had hand-copied
+      // the master template's id with a single character wrong, while the correct id —
+      // read from a Drive listing — sat in the ledger in the same prompt. A ledger id
+      // came out of a tool result; an id in an instruction was typed by a planner.
       const dispatchPayload = {
         instruction: currentInstruction + currentSkillCatalog
-          + (knownResources ? `\n\n${knownResources}\n(These are already resolved. Use the id directly — do not search for them by name.)` : ''),
+          + (knownResources ? `\n\n${knownResources}\n(These are already resolved. Use the id directly — do not search for them by name.\n`
+            + `If the instruction above names an id for one of these resources and the two DISAGREE, trust the id in this block: it was read back from a tool result, while the one in the instruction was typed out when the plan was written. Say in your report that you did so.)` : ''),
         accept_criteria: taskCriteria,
         _missionId: envelope.id,
         _projectContext: dispatchProjCtx,
