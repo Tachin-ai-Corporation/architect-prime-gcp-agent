@@ -3987,6 +3987,14 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
     // Prevent self-unblock runaway: after a self-unblock attempt, only allow
     // resolution actions (synthesize, blocked). If Cortex/enforceSchema returns
     // checkpoint_plan, it's stalling — force to blocked.
+    //
+    // This guard is correct and stays as-is. It once ended a mission that was
+    // actually progressing, but the fault was upstream, not here: the checkpoint
+    // had "failed" only because cerebellum returned an empty verdict twice and the
+    // B-28 fail-closed treated that as a work failure. Loosening a guard that
+    // demonstrably stops 5-7 iteration spin loops would trade a rare false block
+    // for a common runaway. The fix is to stop producing spurious failures — see
+    // the reduced-prompt retry in checkpoint-executor.mjs.
     if ((envelope._swf_state === 'awaiting_unblock' || envelope._swf_state === 'unblock_attempted') && action === 'checkpoint_plan') {
       log('WARN', `Post-unblock guard: blocking checkpoint_plan after self-unblock — forcing blocked`);
       action = 'blocked';

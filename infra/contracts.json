@@ -35,7 +35,14 @@
   "gateway": {
     "port": 18789,
     "timeoutSeconds": 180,
-    "bind": "loopback"
+    "bind": "loopback",
+    "_loop_guard_comment": "Stuck-loop bounds. duplicate_* count identical ARGUMENTS (cannot distinguish a pointless repeat from legitimate polling). identical_result_* count byte-identical RESULTS for the same arguments — a proven no-op, so bounded tighter. semantic_* bound the varying-arguments case, where a lone nudge was demonstrably ignorable.",
+    "duplicate_nudge_threshold": 3,
+    "duplicate_terminate_threshold": 4,
+    "identical_result_nudge_threshold": 2,
+    "identical_result_terminate_threshold": 3,
+    "semantic_nudge_threshold": 8,
+    "semantic_terminate_threshold": 16
   },
   "tools": {
     "_comment": "Gateway tool-result discipline (B-4). A tool result IS context: bound it, ANNOUNCE the bound so the organ can re-derive instead of assuming it saw everything, and never let a binary file reach a model. An unbounded readFile on a downloaded PDF once pushed a single organ call to 877k input tokens.",

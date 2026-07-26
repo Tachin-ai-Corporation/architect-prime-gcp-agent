@@ -144,6 +144,17 @@ function finalizeUsage(acc) {
 // ---- Loop guard: detect stuck tool-calling loops ----
 const DUPLICATE_NUDGE = CONTRACTS?.gateway?.duplicate_nudge_threshold || 3;
 const DUPLICATE_TERMINATE = CONTRACTS?.gateway?.duplicate_terminate_threshold || 4;
+// A repeat that returns a BYTE-IDENTICAL result is a proven no-op, so it needs a
+// tighter bound than the arg-only counters above (which cannot tell a pointless
+// repeat from legitimate polling). Observed failure: 20 drive-search calls in one
+// mission, the same query six times, each returning the same empty
+// {"files":[],"count":0} — 300s of dispatch budget spent learning nothing.
+const IDENTICAL_NUDGE = CONTRACTS?.gateway?.identical_result_nudge_threshold || 2;
+const IDENTICAL_TERMINATE = CONTRACTS?.gateway?.identical_result_terminate_threshold || 3;
+// Escalation for the varying-args case: the semantic nudge fires once and is
+// easily ignored, so give it a terminal bound too.
+const SEMANTIC_NUDGE = CONTRACTS?.gateway?.semantic_nudge_threshold || 8;
+const SEMANTIC_TERMINATE = CONTRACTS?.gateway?.semantic_terminate_threshold || 16;
 const ERROR_NUDGE = 5;
 const ERROR_TERMINATE = 8;
 const ERROR_PATTERNS = ['ERROR:', 'No such file', 'command not found',
@@ -156,10 +167,13 @@ class LoopGuard {
   constructor() {
     this.callCounts = new Map();
     this.toolNameCounts = new Map();
+    this.identicalCounts = new Map();   // sig -> consecutive byte-identical results
+    this.lastFingerprint = new Map();   // sig -> fingerprint of its previous result
     this.consecutiveErrors = 0;
     this.nudgedDuplicate = false;
     this.nudgedErrors = false;
     this._nudgedSemantic = false;
+    this._nudgedIdentical = false;
     this._terminated = false;
   }
 
@@ -175,6 +189,35 @@ class LoopGuard {
     const isError = ERROR_PATTERNS.some(p => resultStr.includes(p));
     if (isError) { this.consecutiveErrors++; }
     else { this.consecutiveErrors = 0; this.nudgedErrors = false; }
+
+    // ---- Identical-result detection ----
+    // Length plus a leading slice: cheap, deterministic, and precise enough that
+    // two results colliding are the same for this purpose. Compared per signature
+    // so a repeat whose result CHANGED (legitimate polling) is left alone, while a
+    // repeat that provably learned nothing is stopped early.
+    const fingerprint = `${resultStr.length}:${resultStr.slice(0, 300)}`;
+    let identical = 1;
+    if (this.lastFingerprint.get(sig) === fingerprint) {
+      identical = (this.identicalCounts.get(sig) || 1) + 1;
+      this.identicalCounts.set(sig, identical);
+    } else {
+      this.lastFingerprint.set(sig, fingerprint);
+      this.identicalCounts.set(sig, 1);
+    }
+
+    if (identical >= IDENTICAL_TERMINATE) {
+      this._terminated = true;
+      const argsStr = JSON.stringify(args);
+      return { action: 'terminate',
+        message: `[LOOP DETECTED] ${toolName} returned a byte-identical result ${identical} times for the same arguments. Repeating it cannot produce new information.\n`
+          + `If the answer is "nothing found", that IS the finding — the target may exist under a different name, or the search terms may be wrong. Report what you observed and what you tried, so the next attempt can start from a different angle.\n`
+          + `[STUCK REPORT] ${JSON.stringify({ stuck_tool: toolName, stuck_args: argsStr.slice(0, 200), identical_results: identical, total_calls: this._totalCalls() })}` };
+    }
+    if (identical >= IDENTICAL_NUDGE && !this._nudgedIdentical) {
+      this._nudgedIdentical = true;
+      return { action: 'nudge',
+        message: `[WARNING] ${toolName} just returned the exact same result as last time for identical arguments. Running it again will return the same thing. Change the arguments (broaden the name, drop a filter, list the parent instead of searching) or accept the result and move on.` };
+    }
 
     if (count >= DUPLICATE_TERMINATE) {
       this._terminated = true;
@@ -203,7 +246,16 @@ class LoopGuard {
       return { action: 'nudge',
         message: `[WARNING] ${this.consecutiveErrors} consecutive tool calls have returned errors. If the task cannot be completed, report FAILURE with what you've observed.` };
     }
-    if (nameCount >= 8 && !this._nudgedSemantic) {
+    if (nameCount >= SEMANTIC_TERMINATE) {
+      // The single semantic nudge below is easy to ignore — a real run made 20
+      // drive-search calls after being nudged at 8. Give it a terminal bound.
+      this._terminated = true;
+      return { action: 'terminate',
+        message: `[LOOP DETECTED] You have called ${toolName} ${nameCount} times this turn with varying arguments and have not converged. Stopping.\n`
+          + `Report what you established and what remains unknown — a partial, honest result is worth more than another variation on the same search.\n`
+          + `[STUCK REPORT] ${JSON.stringify({ stuck_tool: toolName, distinct_calls: this.callCounts.size, total_calls: this._totalCalls() })}` };
+    }
+    if (nameCount >= SEMANTIC_NUDGE && !this._nudgedSemantic) {
       this._nudgedSemantic = true;
       return { action: 'nudge',
         message: `[WARNING] You have called ${toolName} ${nameCount} times this turn (with varying arguments). You may be stuck in a semantic loop. Consider a completely different strategy or report FAILURE.` };

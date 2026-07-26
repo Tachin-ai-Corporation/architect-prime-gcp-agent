@@ -1162,10 +1162,50 @@ export async function executeCheckpoints(checkpoints, opts) {
         // an infra-ish miss, not a considered verdict. Retry once before failing the milestone
         // closed; a real PASS/FAIL/PROBE is respected immediately (no retry). This stops a
         // single empty generation from triggering a full, wasteful re-plan cycle.
-        if (cpVerdict === null && (!cpVer.output || !String(cpVer.output).includes('[TOOL EXECUTION LOG]'))) {
-          log('WARN', `[checkpoint-executor] CP${cpNum}: cerebellum returned no usable verdict (${String(cpVer.output || '').length} chars) — retrying once`);
+        const emptyVerdict = v => extractVerdict(v.output) === null
+          && (!v.output || !String(v.output).includes('[TOOL EXECUTION LOG]'));
+        // Diagnostics on an empty generation: without finishReason an empty reply is
+        // indistinguishable from a refusal, a filter, or an output budget consumed by
+        // thinking. A real run returned 0 chars TWICE on the same 9,746-token input —
+        // deterministic, not flaky — and there was no way to tell which.
+        const emptyDiag = (v, attempt) => `attempt=${attempt} chars=${String(v.output || '').length} `
+          + `finishReason=${v.finishReason || 'unknown'} promptChars=${(verifyReq.instruction || '').length} `
+          + `error=${(v.error || 'none').toString().slice(0, 120)}`;
+
+        if (emptyVerdict(cpVer)) {
+          log('WARN', `[checkpoint-executor] CP${cpNum}: cerebellum returned no usable verdict — retrying once (${emptyDiag(cpVer, 1)})`);
           cpVer = await dispatchAgent('cerebellum', verifyReq);
           cpVerdict = extractVerdict(cpVer.output);
+
+          // Second empty reply on an identical prompt means the prompt itself is the
+          // problem, so repeating it a third time is pointless. Ask the same question
+          // with far less of it: criteria plus a hard-clipped evidence slice, none of
+          // the attack/probe scaffolding. Failing closed here blocks a mission that may
+          // be perfectly on track — that is exactly what happened — so it is worth one
+          // cheap, differently-shaped attempt before conceding.
+          if (emptyVerdict(cpVer)) {
+            log('WARN', `[checkpoint-executor] CP${cpNum}: still no verdict — one reduced-prompt attempt (${emptyDiag(cpVer, 2)})`);
+            const reduced = {
+              instruction: [
+                'Verify this checkpoint against its acceptance criteria. Call report_pass or',
+                'report_fail exactly once. Be brief — one sentence of reasoning per criterion.',
+                '',
+                '## Acceptance Criteria',
+                smartTruncate(toStr(cpEnvelope.accept_criteria), 2000),
+                '',
+                '## Evidence',
+                smartTruncate(cpOutcome || '(no output)', 6000),
+              ].join('\n'),
+              _missionId: envelope.id,
+            };
+            cpVer = await dispatchAgent('cerebellum', reduced);
+            cpVerdict = extractVerdict(cpVer.output);
+            if (cpVerdict) {
+              log('INFO', `[checkpoint-executor] CP${cpNum}: reduced prompt produced ${cpVerdict} — the full prompt was the problem, not the work`);
+            } else {
+              log('WARN', `[checkpoint-executor] CP${cpNum}: reduced prompt also empty (${emptyDiag(cpVer, 3)})`);
+            }
+          }
         }
         if (cpVerdict === 'FAIL') {
           const s = extractFailSummary ? extractFailSummary(cpVer.output) : 'Checkpoint acceptance criteria not met';
