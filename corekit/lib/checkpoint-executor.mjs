@@ -9,7 +9,7 @@ import { smartTruncate } from './vertex-text.mjs';
 import { buildPriorWorkContext, renderCheckpointDigest } from './compaction.mjs';
 import { makeAddress } from './channel.mjs';
 import { composeDelegationMarker, normalizeTargetEmail } from './delegation.mjs';
-import { extractVerdict, extractFailSummary, extractFailRecommendation, stakesAtLeast } from './verdict.mjs';
+import { extractVerdict, extractFailSummary, extractFailRecommendation, isMissingEvidenceFail, stakesAtLeast } from './verdict.mjs';
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
@@ -110,6 +110,7 @@ export async function executeCheckpoints(checkpoints, opts) {
   // asking it. The contract flags stay (documented dormant there) so re-enabling is one
   // change once the loop is built — but no dead read here pretending it is wired.
   const ATTACK_STAKES_MIN = contracts.dispatch?.attack_duty_stakes_min || 'consequential';
+  const FULL_EVIDENCE_MAX = contracts.dispatch?.verify_full_evidence_max_chars ?? 80000;
   const missionStakes = envelope.stakes || 'routine';
 
   // ---- Seed the resource ledger from the request itself ----
@@ -1372,12 +1373,79 @@ export async function executeCheckpoints(checkpoints, opts) {
           }
         }
 
+        // ---- A FAIL for MISSING evidence is not a failed milestone ----
+        // The verifier is telling us it could not SEE the work, which is a request for
+        // more evidence, not a judgement against the work. One real checkpoint edited
+        // three documents correctly, got 2,833 chars of evidence for all three, PASSED
+        // the first clause and failed the second because one document's content "is not
+        // fully visible in the provided transcript". So: give it the evidence it asked
+        // for and ask again. This is the serviced form of the probe we removed — bounded
+        // to one extra call, deterministic, and it answers the only question the verifier
+        // actually raised.
+        if (cpVerdict === 'FAIL') {
+          const failReason = extractFailSummary ? extractFailSummary(cpVer.output) : '';
+          if (isMissingEvidenceFail(failReason)) {
+            log('WARN', `[checkpoint-executor] CP${cpNum}: FAIL cites MISSING evidence, not wrong work — re-verifying with the full evidence set: ${String(failReason).slice(0, 160)}`);
+            try {
+              const fullReq = {
+                instruction: [
+                  'Verify this checkpoint against its acceptance criteria. Call report_pass or',
+                  'report_fail exactly once, as soon as you reach your judgement.',
+                  '',
+                  'Your previous verdict said the evidence was not fully visible. The COMPLETE',
+                  'evidence is below, untruncated. Judge the work on it. Do NOT fail a criterion',
+                  'for missing evidence again — if something is genuinely absent from the work,',
+                  'say which criterion and what is missing from the ARTIFACT, not from this text.',
+                  '',
+                  '## Acceptance Criteria',
+                  toStr(cpEnvelope.accept_criteria),
+                  '',
+                  '## Complete Evidence',
+                  // Generous but bounded — "unbounded" is how a single call once reached
+                  // 877k input tokens. ~28x the slice that produced the false FAIL.
+                  smartTruncate(cpOutcome || '(no output)', FULL_EVIDENCE_MAX),
+                ].join('\n'),
+                _missionId: envelope.id,
+              };
+              const reVer = await dispatchAgent('cerebellum', fullReq);
+              const reVerdict = extractVerdict(reVer.output);
+              if (reVerdict === 'PASS' || reVerdict === 'FAIL') {
+                log('INFO', `[checkpoint-executor] CP${cpNum}: re-verification on full evidence returned ${reVerdict} (prompt ${fullReq.instruction.length} chars)`);
+                cpVer = reVer;
+                cpVerdict = reVerdict;
+              } else {
+                log('WARN', `[checkpoint-executor] CP${cpNum}: re-verification produced no verdict (${emptyDiag(reVer, 'full-evidence', fullReq.instruction)})`);
+              }
+            } catch (e) {
+              log('WARN', `[checkpoint-executor] CP${cpNum}: full-evidence re-verification failed to dispatch: ${e.message}`);
+            }
+          }
+        }
+
         if (cpVerdict === 'FAIL') {
           const s = extractFailSummary ? extractFailSummary(cpVer.output) : 'Checkpoint acceptance criteria not met';
           const rec = extractFailRecommendation ? extractFailRecommendation(cpVer.output) : '';
-          log('WARN', `[checkpoint-executor] Cerebellum FAIL on CP${cpNum} milestone: ${s}`);
+          // Still unseen after being handed everything. The milestone does NOT pass (B-28
+          // holds: nothing is verified here), but this must not be reported as failed WORK.
+          // Marked inconclusive so the synthesize guard can tell it from a real failure —
+          // otherwise a mission that finished its work gets forced to `blocked`.
+          const inconclusive = isMissingEvidenceFail(s);
+          if (inconclusive) {
+            log('WARN', `[checkpoint-executor] CP${cpNum}: verification INCONCLUSIVE — the verifier still could not see the evidence. Milestone unverified and flagged for review; the work itself is NOT marked failed.`);
+            cpEnvelope.needs_review = true;
+          } else {
+            log('WARN', `[checkpoint-executor] Cerebellum FAIL on CP${cpNum} milestone: ${s}`);
+          }
           cpFailed = true;
-          cpResults.push({ step: `${cpNum}.verify`, agent: 'cerebellum', result: `[CHECKPOINT VERIFICATION FAILED] ${s}${rec ? `\nRecommendation: ${rec}` : ''}`, success: false });
+          cpResults.push({
+            step: `${cpNum}.verify`,
+            agent: 'cerebellum',
+            result: inconclusive
+              ? `[CHECKPOINT VERIFICATION INCONCLUSIVE] The verifier could not see enough evidence to judge this milestone: ${s}. The work was NOT judged wrong. Treat the tasks' own reported outcomes as the best available account, and say plainly which parts remain unverified.`
+              : `[CHECKPOINT VERIFICATION FAILED] ${s}${rec ? `\nRecommendation: ${rec}` : ''}`,
+            success: false,
+            ...(inconclusive ? { inconclusive: true } : {}),
+          });
         } else if (cpVerdict === 'PASS') {
           log('INFO', `[checkpoint-executor] Cerebellum PASS on CP${cpNum} milestone`);
         } else {
@@ -1387,7 +1455,17 @@ export async function executeCheckpoints(checkpoints, opts) {
           log('WARN', `[checkpoint-executor] CP${cpNum}: no terminal checkpoint verdict — failing closed (B-28)`);
           cpFailed = true;
           cpEnvelope.needs_review = true;
-          cpResults.push({ step: `${cpNum}.verify`, agent: 'cerebellum', result: '[CHECKPOINT VERIFICATION INCOMPLETE] No terminal PASS/FAIL verdict (B-28 fail-closed).', success: false });
+          // Also inconclusive: a verifier that returned nothing has not judged the work
+          // wrong. The milestone stays unverified (fail-closed), but downstream must not
+          // treat "we never got a verdict" as "the work failed" — that is precisely how a
+          // mission with finished deliverables ends up reported as blocked.
+          cpResults.push({
+            step: `${cpNum}.verify`,
+            agent: 'cerebellum',
+            result: '[CHECKPOINT VERIFICATION INCONCLUSIVE] No terminal PASS/FAIL verdict was returned, so this milestone is unverified (B-28 fail-closed). The work was NOT judged wrong.',
+            success: false,
+            inconclusive: true,
+          });
         }
       } catch (e) {
         // Transient verifier-infra failure (dispatch threw), not a refusal. Flag for review

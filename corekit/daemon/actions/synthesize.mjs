@@ -35,9 +35,23 @@ export async function handleSynthesize(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
   const { log, createCT, completeEnvelope, MAX_ITERATIONS } = deps;
 
-  // Check for unresolved failures — block premature success synthesis
+  // Check for unresolved failures — block premature success synthesis.
+  //
+  // `inconclusive` is excluded alongside `timedOut`, and for the same reason: neither is a
+  // judgement that the work is wrong. An inconclusive row means the verifier could not SEE
+  // the evidence (or returned no verdict at all) — the milestone is unverified, but the
+  // tasks reported their outcomes and there is something real to tell the requester.
+  //
+  // Counting those as hard failures is what turned a finished mission into a blocked one:
+  // three documents were correctly edited, the verifier failed one clause because a
+  // document's content "is not fully visible in the provided transcript", cortex correctly
+  // diagnosed the truncation and chose synthesize — and this guard rejected it, pushing the
+  // mission through synthesize_with_failure into the post-unblock guard and out as
+  // `blocked`, with three finished documents inside it. The guards were each doing their
+  // job; the input was a lie. Synthesis is still not allowed to paper over a REAL failure.
   const lastSuccessIdx = priorResults.map((r, i) => r.success === true ? i : -1).filter(i => i >= 0).pop() ?? -1;
-  const hasUnresolvedFail = priorResults.some((r, i) => r.success === false && !r.timedOut && i > lastSuccessIdx);
+  const hasUnresolvedFail = priorResults.some((r, i) =>
+    r.success === false && !r.timedOut && !r.inconclusive && i > lastSuccessIdx);
   if (hasUnresolvedFail && iteration < MAX_ITERATIONS - 1) {
     log('WARN', `Blocking premature synthesize — unresolved hard failures in prior_results (iteration ${iteration})`);
     return {

@@ -136,6 +136,38 @@ export function extractProbes(output) {
 }
 
 /**
+ * Did this FAIL reason say "the work is wrong", or "I could not see the work"?
+ *
+ * These are different verdicts wearing the same label, and conflating them destroys
+ * finished work. A real mission edited all three documents correctly; the verifier had
+ * 2,833 chars of evidence for three documents, PASSED the first clause outright, then
+ * failed the second because "the ops.json content for Marlene B's addendum is not fully
+ * visible in the provided transcript". Nothing was wrong with the work. That FAIL then
+ * counted as an unresolved hard failure, blocked the synthesis cortex had correctly
+ * chosen, and the mission ended up reported as blocked with three finished documents
+ * inside it.
+ *
+ * A verifier that cannot see the evidence is asking for more, not condemning the work.
+ * Detection is textual because the verdict arrives as prose, and deliberately narrow:
+ * every phrase here is about the VERIFIER'S VIEW of the evidence, never about the
+ * artifact's content. "The document is missing a signature block" must NOT match — that
+ * is a genuine finding about the work.
+ *
+ * @param {string} reason - the FAIL summary/reason text
+ * @returns {boolean} true when the failure is about absent evidence, not wrong work
+ */
+export function isMissingEvidenceFail(reason) {
+  const s = typeof reason === 'string' ? reason : '';
+  if (!s) return false;
+  return /\b(?:not|isn'?t|is not|was not|wasn'?t|cannot be|can'?t be|could not be|couldn'?t be)\s+(?:fully\s+|entirely\s+|clearly\s+)?(?:visible|shown|displayed|included|present)\s+in\s+the\s+(?:provided\s+|given\s+|supplied\s+)?(?:transcript|output|outputs|evidence|log|logs|context)\b/i.test(s)
+    || /\b(?:truncat\w+|elided|cut off|clipped)\b[^.]{0,60}\b(?:evidence|output|transcript|content|log)\b/i.test(s)
+    || /\b(?:evidence|output|transcript|content|log)\b[^.]{0,60}\b(?:truncat\w+|elided|cut off|clipped)\b/i.test(s)
+    || /\b(?:cannot|can'?t|could not|couldn'?t|unable to)\s+(?:fully\s+)?(?:see|read|verify|confirm|determine|assess)\b[^.]{0,80}\b(?:because|since|as)\b[^.]{0,80}\b(?:not (?:provided|included|shown|visible)|truncat\w+|missing from the (?:transcript|output|evidence))\b/i.test(s)
+    || /\b(?:insufficient|inadequate|no)\s+evidence\s+(?:was\s+)?(?:provided|included|available|present)\b/i.test(s)
+    || /\bevidence\s+(?:for [^.]{0,40})?(?:is|was)\s+(?:not (?:provided|included|available)|missing|absent)\b/i.test(s);
+}
+
+/**
  * Ordinal stakes comparison.
  * stakesAtLeast('consequential', 'routine') === true means the first meets/exceeds the second.
  *
