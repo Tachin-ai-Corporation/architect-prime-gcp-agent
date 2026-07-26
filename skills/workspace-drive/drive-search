@@ -38,7 +38,7 @@ if [[ "$HTTP_CODE" != "200" ]]; then
   die "Drive API returned HTTP ${HTTP_CODE}${ERRMSG:+ — ${ERRMSG}}"
 fi
 python3 -c "
-import json
+import json, sys
 data = json.load(open('/tmp/drive-response.json'))
 GTYPE = {'document':'doc','spreadsheet':'sheet','presentation':'slides','folder':'folder','form':'form','drawing':'drawing'}
 def short_type(m):
@@ -54,5 +54,17 @@ files = [{
   'created': f.get('createdTime',''), 'modified': f.get('modifiedTime',''),
   'shared': f.get('sharedWithMeTime',''), 'link': f.get('webViewLink','')
 } for f in data.get('files',[])]
-print(json.dumps({'files':files,'count':len(files)}, indent=2))
-"
+out = {'files': files, 'count': len(files)}
+# Zero rows is evidence about the QUERY at least as often as about the file. A
+# mission searched a requester's prose phrasing twice, got 0 both times, and
+# concluded the template was missing; the real name shared none of those words.
+if not files:
+    out['query'] = sys.argv[1] if len(sys.argv) > 1 else ''
+    out['note'] = ('Zero rows does NOT mean the file is absent - this query is deterministic, '
+                   'so re-running it returns zero again. name contains matches a literal '
+                   'substring, not the requester phrasing: a request for the fixed comp addendum '
+                   'template can be stored as MASTER_..._Comp_Addendum_Fixed, sharing no words. '
+                   'Change the query or the method: one short distinctive token, fullText '
+                   'contains for body text, or list the folder with drive-ls and read the real names.')
+print(json.dumps(out, indent=2))
+" "$QUERY"

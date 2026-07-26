@@ -9,9 +9,17 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 
 ## Commands
 
+> **Every `FILE_ID` / `FOLDER_ID` argument is an opaque Drive id** — no spaces, no dots, no
+> slashes, never a local filename. Copy it verbatim from `drive-ls` or `drive-search` output;
+> never retype one, and never alter a character of one that returned 404 (a mutated id is a
+> different file, not a retry). `drive-ls`, `drive-copy`, `drive-download` and `drive-to-doc`
+> reject an argument that is obviously a name or a path *before* the API call — that failure is
+> your argument, not the file.
+
 ### Read
 - `drive-ls [FOLDER_ID] [--max 20]` — List files and subfolders in a folder. If FOLDER_ID is omitted, lists the root folder.
   Output: JSON array of file metadata including `id`, `name`, `type` (short label), `modified`, and `link`.
+  When several rows share a long name prefix the output also carries `lookalikes` — `sharedPrefix` plus the `differBy` remainders. That block is the answer to "which one is it": read the remainders, not the prefix. See "Find a specific named file in a folder".
 - `drive-search --query "QUERY" [--order-by "KEY desc"] [--max N]` — Search for files using a Google Drive API search query.
   Output: JSON array of file metadata — each entry: `id`, `name`, `type` (short label: `doc`/`sheet`/`slides`/`folder`/`pdf`, else the raw MIME), `owner`, `created`, `modified`, `shared` (when it was shared with this account), `link`.
   `--order-by` controls the sort (default `modifiedTime desc`). **Choose the sort that fits the request — don't default blindly.** Useful keys: `modifiedTime`, `createdTime`, `sharedWithMeTime`, `viewedByMeTime`, `name`, `recency` (append ` desc` for newest-first).
@@ -27,12 +35,16 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 
   **Bound the result set.** Default `--max` is 20. Pass `--max N` to fetch only what you need — a smaller result returns faster and is easier to work with. When the user asks for "the N most recent / latest / top" of something, pass `--max N` (e.g. "3 most recent shared docs" → `--max 3`); don't pull a large list and slice it mentally.
   **One search per result set.** A single `drive-search` returns the complete set for its query — if results came back, use them; do **not** re-issue the same command expecting more to appear. To get a different result, change `--query`, `--order-by`, or `--max`.
+  **`count: 0` is a fact about the query, not about the file.** The search is deterministic: the identical query returns zero again. `name contains` matches a literal substring, so the requester's phrasing usually misses the stored name entirely. Change the query or the method — one short distinctive token, `fullText contains` for body text, or `drive-ls` on the folder. A zero-row response carries this rule in its `note` field.
 - `drive-download FILE_ID [--output PATH] [--force]` — Download a binary file from Google Drive to a local path.
   Output: `status` (`downloaded` | `cached`), `path`, `name`, `mimeType`, and a `readWith` hint naming the tool that can actually read what you fetched.
   **Idempotent**: if the target path already holds the same bytes (md5 match) it returns `cached` and skips the fetch. Never download the same file twice under a second name — re-run the same command and read the `status`. Pass `--force` only when you need to refetch changed content.
-- `drive-to-doc --file FILE_ID_OR_PATH [--name TITLE] [--folder FOLDER_ID] [--ocr-lang en] [--force]` — Convert a PDF or image into a **readable Google Doc** (Drive runs OCR during conversion). Accepts a Drive file ID or a local path.
+- `drive-to-doc --file FILE_ID_OR_PATH [--name TITLE] [--folder FOLDER_ID] [--ocr-lang en] [--force]` — Convert a PDF or image into a **readable Google Doc** (Drive runs OCR during conversion). Accepts a Drive file ID or a local path **that exists**.
   Output: `status` (`converted` | `cached` | `already_doc`), `docId`, `readWith` (`docs-cat <docId>`), `cleanupWith` (`drive-delete <docId>`).
   The original file is never modified — this creates a readable copy. Idempotent: a prior conversion with the same derived name is reused unless `--force`.
+  `--file` is an id or a real path — nothing in between. A bare filename with nothing on disk behind it (a previous `--output` name, say) is rejected up front: resolve the id with `drive-search`/`drive-ls`, or `drive-upload` the local file and pass the returned id.
+
+> ⚠️ **Never round-trip a Google Doc.** If `type` is `doc`, read it directly with the `workspace-docs` skill's reader. Exporting it to PDF with `drive-download` and converting that back with `drive-to-doc` produces a lossy OCR copy of something already readable, and costs two API calls plus a doc to clean up. `drive-to-doc` short-circuits a Doc id with `status: already_doc` rather than converting it — treat that as the instruction it is.
 - `drive-download-folder FOLDER_ID [--output /path/to/dir]` — Recursively download an entire folder, preserving directory structure.
   Google Workspace docs are exported as PDF. Max depth: 10 levels.
   Output: JSON summary with file/folder counts and output directory.
@@ -88,8 +100,40 @@ Don't assume — read what the user asked for and choose the field + sort accord
 
 **Who shared it:** the `owner` field on each result shows the file's owner — use it to confirm the file came from the expected person.
 
+### Find a specific named file in a folder
+The requester's words are not the filename. A request for "the fixed comp addendum master
+template" pointed at a file actually called `MASTER_widgetco_Comp_Addendum_Fixed`. The prose
+search returned zero rows twice, and the mission then built three documents from the wrong
+template. The order below is the fix.
+
+1. **Never put prose phrasing into `name contains`.** It matches a literal substring, not an
+   intent. Zero rows from a prose query tells you the query was wrong; it is not evidence the
+   file is absent.
+2. **List the folder and read the real names:** `drive-ls <FOLDER_ID>`. A listing is ground
+   truth. Do this first whenever you know where the file lives.
+3. **Match on the distinguishing token.** When several names share a long prefix, the prefix is
+   worthless and the *difference* is the whole answer. One real folder held
+   `..._Comp_Addendum_Application_Internal_Royalty`, `..._Comp_Addendum_Application_Partner`, and
+   `..._Comp_Addendum_Fixed` — only the suffix told them apart. `drive-ls` surfaces exactly this
+   as `lookalikes.differBy`; decide from those remainders.
+4. **Never take the first row as "the file."** Listings are ordered by modification time, which
+   has nothing to do with the request. Say which `name` you chose and why it matches the request,
+   before you act on it — then copy that row's `id` verbatim. An id that 404s is the wrong id, not
+   a typo to be adjusted: one mission edited a single character of a failing id and retried, which
+   can only ever address a different file.
+5. **Confirm the name once before an action you will repeat N times.** Cloning a template for
+   three people turns one wrong choice into three wrong documents — and the find-and-replace pass
+   afterwards can never match, because the wrong template carries different placeholders. Confirm
+   the chosen file's name up front, then fan out.
+
+**An empty result is not an absence.** A zero-row search means the query was wrong at least as
+often as it means the file is missing. Widen it (one distinctive token, or `fullText contains`) or
+switch to `drive-ls`. Do not re-run the identical query — it will return zero again.
+
 ### Find a file by name and download it
-1. Run `drive-search --query "name contains '<filename>'"` to retrieve matching files.
+1. Run `drive-search --query "name contains '<filename>'"` to retrieve matching files. If you are
+   after one specific file among lookalikes, or you know its folder, use "Find a specific named
+   file in a folder" above instead — a listing beats a substring guess.
 2. If no results, run `drive-search --query "fullText contains '<filename>'"` to search within file contents.
 3. If multiple files return, examine `type` and `modified` to find the correct file.
 4. **CRITICAL: Check the `type` before proceeding!**
@@ -174,8 +218,12 @@ The `your-website-project` project uses a sync-service that automatically propag
 |-----------------|-------------|----------|
 | `403 forbidden` | Service account lacks access permissions | Ask the user to share the file or folder with the agent's Workspace email address (shown in the error response). |
 | `404 notFound` | Invalid file/folder ID, or it has been deleted | Run `drive-search` with a name-based query to find the correct, active ID. |
+| `404 notFound`, then a retry with a slightly different ID | An id was retyped, truncated, or had a character changed after it failed | **Never edit an identifier.** A mutated id is a different file, not a retry — the odds it exists are nil. Re-resolve with `drive-ls`/`drive-search` and copy the `id` verbatim. |
 | `429 rateLimitExceeded` | Too many API requests | Wait 30 seconds, then retry the command once. |
-| Search returns empty | Query filter too narrow | Broaden the search by removing mimeType restrictions or searching partial names. |
+| Search returns empty (`count: 0`) | The query is wrong at least as often as the file is absent — usually the requester's prose used as a `name contains` substring | Change the query or the method: drop mimeType restrictions, try one short distinctive token, `fullText contains` for body text, or `drive-ls <FOLDER_ID>` and read the real names. Do not re-run the identical query; it is deterministic and will return zero again. |
+| `looks like a local path` / `looks like a filename or local path` (instant failure) | A local filename or path was passed where a Drive ID is required — often the `--output` name from an earlier download | Resolve the real id with `drive-search` or `drive-ls` and pass that. If the file only exists locally, `drive-upload` it and use the returned id. `drive-to-doc` also accepts a local path, but only one that exists on disk. |
+| Several lookalike names in one folder; wrong one chosen | Acted on the first row of a listing, or matched the shared prefix instead of the difference | Read the `lookalikes` block from `drive-ls`: the `sharedPrefix` identifies nothing, `differBy` is the decision. Name the file you chose and why before acting — and confirm it once before an action you will repeat N times. |
+| Built N documents from the wrong template; replacements then match nothing | The template was chosen by prefix or listing order, and the wrong template carries different placeholders | Stop; do not debug the replacement step. Re-verify the source file's `name` against the request, then rebuild from the correct template. A wrong source multiplies once per copy. |
 | Download fails on Google Doc | Attempting binary download of a Google native doc | Use the specific reader tool (e.g., `docs-cat` for Docs, sheet tools for Sheets) rather than `drive-download`. |
 | `readFile` refuses the file: "is PDF, not text" | A PDF/image was downloaded and read directly — its bytes aren't characters | `drive-to-doc --file <path or id>` → `docs-cat <docId>`. This is a routing problem, not a missing capability. |
 | Downloaded the same file twice under different names | Re-ran a download after a timeout or retry without checking state | `drive-download` is idempotent — re-run the *same* `--output` path and read `status` (`cached` means the bytes are already there). |

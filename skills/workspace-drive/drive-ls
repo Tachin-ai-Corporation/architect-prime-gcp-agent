@@ -14,6 +14,14 @@ while [[ $# -gt 0 ]]; do
     *) if [[ -z "$FOLDER" && "$1" != -* ]]; then FOLDER="$1"; shift
        else die "Unknown: $1"; fi ;; esac
 done
+# ---- Guard: the argument is a folder ID, not a folder name or local path ----
+# A Drive id is an opaque token: no slashes, no spaces, no extension.
+if [[ -n "$FOLDER" ]]; then
+  case "$FOLDER" in
+    */*|*\\*|*[[:space:]]*|*.*)
+      die "'${FOLDER}' looks like a folder NAME or a local path, not a Drive folder ID (an opaque token — no spaces, no dots, no slashes). Resolve it first: drive-search --query \"name contains 'PART_OF_NAME' and mimeType = 'application/vnd.google-apps.folder'\" and use the returned id." ;;
+  esac
+fi
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 QUERY="trashed=false"
 [[ -n "$FOLDER" ]] && QUERY="'${FOLDER}' in parents and trashed=false"
@@ -29,7 +37,7 @@ if [[ "$HTTP_CODE" != "200" ]]; then
   die "Drive API returned HTTP ${HTTP_CODE}"
 fi
 python3 -c "
-import json, sys; data = json.load(open('/tmp/drive-response.json'))
+import json, os, sys; data = json.load(open('/tmp/drive-response.json'))
 GTYPE = {'document':'doc','spreadsheet':'sheet','presentation':'slides','folder':'folder','form':'form','drawing':'drawing'}
 def short_type(m):
     if m == 'application/pdf': return 'pdf'
@@ -37,5 +45,25 @@ def short_type(m):
         return GTYPE.get(m.rsplit('.',1)[-1], m.rsplit('.',1)[-1])
     return m
 files = [{'id':f['id'],'name':f['name'],'type':short_type(f.get('mimeType','')),'modified':f.get('modifiedTime',''),'link':f.get('webViewLink','')} for f in data.get('files',[])]
-print(json.dumps({'files':files,'count':len(files)}, indent=2))
+# Lookalike names are the trap this listing exists to defuse: a folder of
+# MASTER_..._Internal_Royalty / MASTER_..._Partner / MASTER_..._Fixed had its FIRST
+# row copied three times. Surface the shared prefix and, more importantly, the part
+# that actually distinguishes the rows.
+def lookalikes(names):
+    s = sorted(names)
+    if len(s) < 2: return None
+    groups, cur = [], [s[0]]
+    for prev, nxt in zip(s, s[1:]):
+        if len(os.path.commonprefix([prev, nxt])) >= 12: cur.append(nxt)
+        else: groups.append(cur); cur = [nxt]
+    groups.append(cur)
+    g = max(groups, key=len)
+    if len(g) < 2: return None
+    pre = os.path.commonprefix(g)
+    return {'sharedPrefix': pre, 'differBy': [n[len(pre):] for n in g],
+            'note': str(len(g)) + ' names here share that prefix, so the prefix identifies nothing - the difference does. Rows are ordered by modification time, so the first row is not the answer. Match the distinguishing token to the request, state which name you chose, then act on that row id (copy it verbatim - never retype an id).'}
+out = {'files': files, 'count': len(files)}
+la = lookalikes([f['name'] for f in files])
+if la: out['lookalikes'] = la
+print(json.dumps(out, indent=2))
 "

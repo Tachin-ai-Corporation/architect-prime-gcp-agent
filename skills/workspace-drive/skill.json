@@ -1,7 +1,7 @@
 {
   "id": "workspace-drive",
   "name": "Google Drive",
-  "version": 5,
+  "version": 6,
   "description": "Interact with Google Drive — list, search (incl. files shared with the agent, by share time), download, upload, convert PDFs/images to readable Docs (OCR), create folders, rename, move, delete, and share files.",
   "author": "architect-prime",
   "origin": "core",

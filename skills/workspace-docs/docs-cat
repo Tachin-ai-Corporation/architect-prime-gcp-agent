@@ -19,6 +19,9 @@
 # Large docs: downstream tool output is capped (~8K chars per step), so a full
 # read of a big doc gets cut off mid-body. For full content use --out FILE; for
 # a section use --meta first, then --find or --offset/--limit windows.
+# <doc_id> is an ID, never a path: a local filename is rejected before any API call,
+# and a 404 is reported with its three causes (wrong id / not a Doc / no access).
+# Never alter characters of an id and retry — re-resolve it from drive-ls or drive-search.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
@@ -26,6 +29,18 @@ DOCS_API="https://docs.googleapis.com/v1/documents"
 die() { echo "[docs-cat] [ERROR] $*" >&2; exit 1; }
 DOC_ID="${1:-}"; [[ -n "$DOC_ID" ]] || die "Usage: docs-cat <doc_id> [--json] [--meta] [--find TEXT [--context N]] [--offset N --limit N] [--max-chars N]"
 shift || true
+
+# An ID is not a path. A local filename can never be a Doc ID, so reject it HERE —
+# before the API turns the mistake into an opaque 404 that hides the real reason.
+DOC_ID_LC="$(printf '%s' "$DOC_ID" | tr 'A-Z' 'a-z')"
+if [[ "$DOC_ID" == */* || "$DOC_ID" == *'\'* || "$DOC_ID_LC" =~ \.(pdf|docx|doc|txt|md|json|csv|html|htm|rtf|odt|xlsx|pptx)$ ]]; then
+  { echo "[docs-cat] [ERROR] '${DOC_ID}' is a local path/filename, not a Google Doc ID."
+    echo "  Every docs-* tool takes the Doc ID only — the token between /d/ and /edit in the doc's URL."
+    echo "  Find the id:   drive-ls <folderId>   or   drive-search --query \"name contains '<fragment of the real filename>'\""
+    echo "  Not a Doc yet: drive-to-doc --file <driveFileId>   — then read the docId it returns."
+  } >&2
+  exit 1
+fi
 
 # Default output is PLAIN TEXT — the body, ready to pipe/grep. Pass --json for
 # the structured {docId,title,text,chars} wrapper. (Structured modes --meta and
@@ -290,6 +305,19 @@ fi
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"docId\":\"${DOC_ID}\",\"message\":\"Doc access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
   exit 0
+fi
+# A bare "404" once made an agent MUTATE ONE CHARACTER of the id and retry. A 404 has
+# exactly three causes and they need three different recoveries — name all three.
+if [[ "$HTTP_CODE" == "404" ]]; then
+  { echo "[docs-cat] [ERROR] Docs API returned HTTP 404 — no readable Google Doc at id ${DOC_ID}. Three causes, three fixes:"
+    echo "  (a) the id is wrong or was invented -> re-resolve it: drive-ls <containingFolderId>, or"
+    echo "      drive-search --query \"name contains '<fragment of the real filename>'\"; copy the id verbatim from that output."
+    echo "      An id is NEVER almost-right — do not change a character and retry."
+    echo "  (b) the file exists but is NOT a native Google Doc (PDF/.docx/Sheet) -> the Docs API cannot read it:"
+    echo "      drive-to-doc --file ${DOC_ID}   then docs-cat the docId that returns."
+    echo "  (c) no permission on the file -> share it with ${AGENT_USER_EMAIL:-the agent service account} and report the block; retrying will not help."
+  } >&2
+  exit 1
 fi
 [[ "$HTTP_CODE" == "200" ]] || die "Docs API returned HTTP ${HTTP_CODE}"
 python3 -c "$RENDER" api "$TMP_RESP"

@@ -21,6 +21,11 @@
 # unresolved op is reported — re-read the exact live text (docs-cat --find), fix the
 # anchor/find string, and re-run. (Inserts are not idempotent, so a partial apply is unsafe;
 # replaces are idempotent, so re-running after a fix is safe.)
+#
+# REPORTING: each replacement comes back with its occurrence count, and every find-string that
+# matched ZERO times is flagged (`zero_match`, with a hint) and collected in `zero_match_finds`.
+# That list is the actionable problem — the document's real placeholders are not the ones you
+# assumed. Re-read the doc and rebuild those find strings; re-running the same ops changes nothing.
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
@@ -35,6 +40,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$DOC_ID" && -n "$OPS_FILE" ]] || die "Need --doc and --file"
+# --doc is a Doc ID, never a path (--file is the local one). Catch the swap before the API
+# answers with an opaque 404 that hides which argument was wrong.
+DOC_ID_LC="$(printf '%s' "$DOC_ID" | tr 'A-Z' 'a-z')"
+if [[ "$DOC_ID" == */* || "$DOC_ID" == *'\'* || "$DOC_ID_LC" =~ \.(pdf|docx|doc|txt|md|json|csv|html|htm|rtf|odt|xlsx|pptx)$ ]]; then
+  { echo "[docs-batch-edit] [ERROR] --doc '${DOC_ID}' is a local path/filename, not a Google Doc ID."
+    echo "  Find the id:   drive-ls <folderId>   or   drive-search --query \"name contains '<fragment of the real filename>'\""
+    echo "  Not a Doc yet: drive-to-doc --file <driveFileId>   — then use the docId it returns."
+  } >&2
+  exit 1
+fi
 [[ -f "$OPS_FILE" ]] || die "Ops file not found: $OPS_FILE"
 TOKEN="$("$WS_TOKEN" --scope docs)" || die "Auth failed"
 
@@ -143,8 +158,32 @@ replies = resp.get('replies', [])
 n_index = len(index_reqs)
 rep_results = []
 for j, rr in enumerate(replace_reqs):
+    ct = rr['replaceAllText']['containsText']
     occ = replies[n_index + j].get('replaceAllText', {}).get('occurrencesChanged', 0) if n_index + j < len(replies) else 0
-    rep_results.append({'find': rr['replaceAllText']['containsText']['text'], 'occurrences': occ, 'applied': occ > 0})
-print(json.dumps({'status':'applied','docId':doc_id,'index_ops':n_index,'replace_ops':rep_results,
-    'note':'Applied in one batchUpdate (index ops descending, then replacements). A replace with 0 occurrences did not match — confirm the new text is present.'}, indent=2))
+    r = {'find': ct['text'], 'occurrences': occ, 'applied': occ > 0}
+    # A zero-occurrence replace is the actionable failure, not a footnote: the find-string is
+    # not in the document. Say so per replacement; and when the text IS there under a different
+    # case, name that too — matchCase:true is a cheap, invisible way to match nothing.
+    if occ == 0:
+        r['zero_match'] = True
+        if ct.get('matchCase') and ct['text'].lower() in plain.lower():
+            r['hint'] = 'text IS present under different capitalisation — copy the exact casing or drop matchCase'
+        else:
+            r['hint'] = 'not present in the document as written — re-read the live text and copy the placeholder verbatim'
+    rep_results.append(r)
+zero = [r['find'] for r in rep_results if r['occurrences'] == 0]
+matched = len(rep_results) - len(zero)
+out = {'status': 'applied', 'docId': doc_id, 'index_ops': n_index, 'replace_ops': rep_results,
+       'replacements_matched': matched, 'replacements_zero_match': len(zero)}
+if zero:
+    out['zero_match_finds'] = zero
+    out['note'] = ('Applied in one batchUpdate, but ' + str(len(zero)) + ' of ' + str(len(rep_results)) +
+        ' find-string(s) matched NOTHING and changed nothing (zero_match_finds); ' + str(matched) + ' applied. '
+        'A zero match means the document does not contain that string — its real placeholders differ from the ones '
+        'you assumed. Re-read the live text (docs-cat ' + doc_id + ' --find \"[\", or --out doc.txt) and rebuild those '
+        'find strings verbatim from it. Re-running the SAME replacements will change nothing.')
+else:
+    out['note'] = ('Applied in one batchUpdate (index ops descending, then replacements); '
+                   'every find-string matched at least once.')
+print(json.dumps(out, indent=2))
 " "$DOC_ID" "$OPS_FILE" "$TOKEN" "${AGENT_USER_EMAIL:-}"

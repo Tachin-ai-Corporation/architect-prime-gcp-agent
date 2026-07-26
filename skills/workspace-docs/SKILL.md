@@ -1,4 +1,4 @@
-# Skill: Google Docs (v18)
+# Skill: Google Docs (v19)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -39,6 +39,18 @@ only**; `docs-replace-file` refuses `.txt`/`.md` for the same reason.
   - `--out FILE` — write the COMPLETE text to FILE (read/plan only; coverage check: `--out` `chars` == `--meta` `chars`).
 - `docs-tab-list <doc_id>` — list the doc's tabs with ids, titles and hierarchy. Run this first on a multi-tab doc: the edit tools default to the first tab, so an anchor "not found" on a tabbed doc usually means you are looking at the wrong tab.
 
+**Every docs-\* tool takes a Doc ID, never a path.** The id is the token between `/d/` and
+`/edit` in the doc's URL. An argument containing `/` or `\`, or ending in `.pdf`/`.docx`/`.txt`/
+`.md`/`.json`, is refused **before any API call** — `docs-cat sara_agreement.pdf` is an argument
+mistake, not a missing document. Get the real id from `drive-ls <folderId>` or
+`drive-search --query "name contains '<fragment of the actual filename>'"`; if the file is not a
+native Doc, convert it with `drive-to-doc --file <driveFileId>` and use the `docId` it returns.
+
+**An identifier is never almost-right.** A 404 means the id is *wrong*, not close. Re-resolve it
+from a listing (`drive-ls`) or a search and copy it verbatim. **Changing a character of an id and
+retrying is never correct** — an id you edited is an id you invented. The same rule holds for
+folder ids and file ids: copy, never retype, never repair.
+
 ### Restore point
 - `docs-revision <doc_id> [--list]` — record the pre-edit head revision (keep its `modifiedTime` as the "restore to here" anchor); `--list` shows recent revisions.
 
@@ -50,7 +62,9 @@ beats a clause sentence) and match the **exact live text** — smart quotes, whi
 section numbers included.
 
 - `docs-batch-edit --doc <id> --file ops.json` — **apply many mixed edits in ONE atomic
-  batchUpdate** (the preferred path for a multi-edit finalize). `ops.json` is a JSON array of
+  batchUpdate** (the preferred path for a multi-edit finalize). Reports every replacement's
+  `occurrences` and collects any find-string that matched zero times in `zero_match_finds` —
+  read that list before declaring the edit done. `ops.json` is a JSON array of
   `{"op":"replace","find":"…","replace":"…"}`, `{"op":"insert_after"|"insert_before","anchor":"…","text":"…"}`,
   `{"op":"delete_section","from_anchor":"…"}`. Resolves every anchor from one read, applies
   index ops highest-index-first (so edits never shift each other), guarded by the doc's
@@ -81,8 +95,8 @@ label attached to a span, so it survives edits that would move or break a text a
 ### Create a new document
 - `docs-create --title "TITLE" (--from-markdown FILE | --from-html FILE) [--folder FOLDER_ID]` — create a formatted Doc from local Markdown or HTML (Drive converts it). Use HTML for colors/fonts/styled tables; Markdown otherwise.
   There is **no `--from-doc`**. To start from an existing Doc, use `docs-clone-template` below.
-- `docs-clone-template --template DOC_ID --title "New Title" [--folder FOLDER_ID] [--replacements FILE]` — **copy an existing Doc and optionally fill its placeholders in the same call.** This is the tool for "duplicate the master template for each X". `--replacements` takes a JSON file of `{"[Placeholder]": "value"}` pairs, so clone-and-fill is one command, not four.
-  Output includes the new `docId`. The template is never modified.
+- `docs-clone-template --template DOC_ID --title "New Title" [--folder FOLDER_ID] [--replacements FILE]` — **copy an existing Doc and optionally fill its placeholders in the same call.** This is the tool for "duplicate the master template for each X". `--replacements` takes a JSON file of `{"[Placeholder]": "value"}` pairs (a `[{"find":…,"replace":…}]` list is accepted too), so clone-and-fill is one command, not four.
+  Output includes the new `docId`, plus per-placeholder `replacements` counts and a `zero_match_finds` list — a placeholder that matched nothing means the template's token is not what you wrote, and that copy shipped unfilled. The template is never modified.
 
 ### Review comments
 - `docs-comments-add --doc <id> --content "TEXT" [--quote "exact clause this is about"]` — leave a comment. **Always pass `--quote`** so it is self-contextualizing. Plain comments only — **never `@mention`** anyone (an @mention emails them; C-27).
@@ -96,21 +110,40 @@ label attached to a span, so it survives edits that would move or break a text a
 For "make N copies of this template, one per person/item". The whole job is **one command per
 copy** — do not export, re-create, or hand-build the document.
 
-1. **Read the template once** — `docs-cat <templateId> --meta` then `docs-cat <templateId>` — and
-   list its placeholders verbatim (e.g. `[Advisor Name]`, `[Effective Date]`, `[Project Fee]`).
-   Exact spelling and brackets matter; they are the find-strings in step 3.
-2. **Write one replacements file per subject**, `{"[Advisor Name]": "…", "[Project Fee]": "…"}`.
-   Leave a value as `""` for anything genuinely unknown — an empty field in a draft is honest and
-   expected; inventing a value is not.
+1. **Read the template first — MANDATORY, before you write a single find-string.**
+   `docs-cat <templateId> --meta` then `docs-cat <templateId> --out template.txt`, and copy its
+   placeholders **verbatim out of that output** (e.g. `[Advisor Name]`, `[Effective Date]`,
+   `[Project Fee]`). Exact spelling, case, and brackets matter — they are the find-strings in
+   step 3. **Find-strings invented from the request's phrasing match nothing:** the fill reports
+   zero occurrences and you ship N copies with the placeholders still in them. You cannot infer a
+   template's tokens from the task description, and you may not skip this read because the
+   template "obviously" contains a field. If the folder holds lookalike templates whose names
+   differ only by a suffix, this read is also how you confirm you picked the right one — its
+   placeholder set is the evidence, and confirming it *after* making N copies is too late.
+2. **Write one replacements file per subject**, `{"[Advisor Name]": "…", "[Project Fee]": "…"}`,
+   using only tokens that appeared in step 1's output. Leave a value as `""` for anything
+   genuinely unknown — an empty field in a draft is honest and expected; inventing a value is not.
 3. **Clone and fill in one call, per subject:**
    `docs-clone-template --template <templateId> --title "<Subject> - <DocName>" --folder <destFolderId> --replacements subject.json`
-4. **Verify each copy** — `docs-cat <newDocId> --find "["` should return no unresolved
-   placeholders you intended to fill. Compare `docs-cat --fingerprint` against the template to
-   confirm the formatting survived.
+4. **Verify each copy** — check the call's own report first (`replacements`, `zero_match_finds`,
+   `replacements_applied`), then `docs-cat <newDocId> --find "["`, which should return no
+   unresolved placeholders you intended to fill. Compare `docs-cat --fingerprint` against the
+   template to confirm the formatting survived.
 5. The copies land directly in `--folder`; no separate move step is needed.
 
-> If `--replacements` is impractical (values discovered later), clone first, then fill with
-> **one** `docs-batch-edit` per copy — never a sequence of single replacements.
+> If `--replacements` is impractical (values discovered later), clone first, then **read the
+> clone** — `docs-cat <newDocId> --find "["` (or `--out clone.txt`) — to harvest its **actual**
+> placeholder tokens, and only then write the ops file and apply it with **one**
+> `docs-batch-edit` per copy — never a sequence of single replacements. Writing an ops file from
+> the request text without reading the clone is how a batch of addendums ended up with every
+> find-string matching nothing.
+>
+> **A zero-match report is a re-read signal, not a retry signal.** `zero_match_finds` from
+> `docs-batch-edit` (or `replacements_applied: 0` / `zero_match_finds` from
+> `docs-clone-template`) means the placeholders differ from what you assumed — re-read the clone
+> and rebuild those find strings verbatim. Re-running the same replacements changes nothing, and
+> a different template than the one you read has different placeholders: confirm you cloned the
+> template you actually read.
 
 ---
 
@@ -223,6 +256,15 @@ d.save('edit.docx')
 ## Notes & limits
 - **Surgical edits preserve untouched formatting perfectly — prefer them.** Reach for the
   rebuild path only when the structure genuinely must be rebuilt.
+- **A Google Doc is already readable — never round-trip it.** If the file is a native Doc, read
+  it with `docs-cat <docId>`. Do **not** `drive-download` it to `.pdf`/`.docx` and `drive-to-doc`
+  the local file back: one agent did exactly that, burned several minutes, and produced nothing
+  it did not already have (`drive-to-doc` on a Doc just answers `already_doc`). Conversion is
+  only for files that are *not* Docs — a PDF, an image, a `.docx` you were sent. `docs-export-docx`
+  is for the rebuild path, not for reading.
+- **A Doc ID is not a filename, and never almost-right.** Ids come from `drive-ls`/`drive-search`
+  output, copied verbatim; a path or filename is rejected before the API call, and a 404 is
+  re-resolved from a listing, never patched a character at a time.
 - **`docs-cat` text is READ/PLAN only.** Never write it back — it has no formatting and
   carries no styles, so a replace from it flattens the document. `docs-replace-file` refuses
   `.txt`/`.md` to enforce this.
@@ -238,12 +280,17 @@ d.save('edit.docx')
 | Symptom | Cause | Recovery |
 |---|---|---|
 | `403`/`401` / access_denied | Doc not shared with the agent SA | Share the doc with the agent's service-account email. |
+| `404` from the Docs API | One of three: (a) the id is wrong/invented, (b) the file exists but is **not** a native Doc (PDF/`.docx`/Sheet), (c) no permission | The tool prints all three with their fix. (a) Re-resolve the id — `drive-ls <containingFolderId>` or `drive-search --query "name contains '<fragment>'"` — and copy it verbatim. (b) `drive-to-doc --file <driveFileId>`, then `docs-cat` the returned `docId`. (c) Report the access block; retrying will not help. |
+| Tempted to tweak an id and retry after a 404 | Treating an id as approximately right | **Never.** An id you edited is an id you invented — one mission mutated a single character and re-ran, which cannot succeed. Re-resolve from a listing or search. |
+| `is a local path/filename, not a Google Doc ID` (instant, no API call) | A path/filename was passed where an id belongs (`docs-cat`, `docs-batch-edit --doc`, `docs-clone-template --template`) | `drive-ls <folderId>` / `drive-search` for the id; `drive-to-doc --file <driveFileId>` if the file is not a Doc, then use its `docId`. |
+| Reaching for `drive-download` + `drive-to-doc` on a Doc | Treating a native Doc as a foreign file | Read it with `docs-cat <docId>`. The round-trip costs minutes and yields nothing; `drive-to-doc` on a Doc returns `already_doc`. |
 | Instant (<20ms) `Command failed` / `Unknown arg` | An invented flag — the command died in argument parsing and never reached the API | Re-read the command's line above and use the documented flag. A sub-20ms failure is *always* your arguments. Do not try a third spelling, and do not switch to a different tool hoping its flags differ — look the flag up. |
 | "I need to duplicate this Doc" | Reaching for `docs-create --from-doc` (does not exist) or `drive-copy` | `docs-clone-template --template <id> --title "…" [--folder …]`. See "duplicate a template and fill it" above. `drive-copy` (workspace-drive) is a plain file copy with no placeholder filling. |
 | Anchor "not found" on a doc with tabs | The edit tools default to the first tab | `docs-tab-list <doc_id>`, then pass the right `--tab`. |
 | `docs-cat` output cut off | Doc larger than the output cap | Use `--out FILE` (complete read), then grep/sed the local file. |
 | `docs-find-replace`/`batch` reports `absent` (0 occurrences) | `find` text not present (already applied, or never matched) | Confirm the NEW text is in the doc; adjust the `find` string to match the live text exactly. |
 | `docs-section-delete`/`anchor-insert` "anchor not unique/found", or `docs-batch-edit` `unresolved` | Phrase repeats or doesn't match the live text | Re-read the exact text (`docs-cat --find`), copy the **verbatim** string (smart quotes/whitespace/section numbers included), and retry — a miss means re-derive, not that the edit is impossible. A longer phrase disambiguates a non-unique anchor. |
+| `docs-batch-edit` reports `zero_match_finds` (or `docs-clone-template` reports `zero_match_finds` / `replacements_applied: 0`) | Those find-strings are not in the document — the real placeholders differ from the ones you assumed (usually written from the request text instead of read from the doc) | Read the live doc (`docs-cat <id> --find "["` or `--out doc.txt`), copy the placeholders **verbatim**, and re-run only the misses. **Do not re-run the same replacements** — nothing will change. A `hint` of "present under different capitalisation" means drop `matchCase` or copy the exact casing. |
 | `docs-batch-edit` reports `stale` | Doc changed since it was read (revisionId mismatch) | Re-read and rebuild the ops from the current text, then re-apply. |
 | Fingerprint shows tables/styles collapsed after an edit | A plain-text/markdown round-trip flattened the doc | Restore the pre-edit version (File > Version history) and redo the change with the surgical verbs. |
 | `docs-replace-file` refuses `.txt`/`.md` | Wholesale replace from plain text/markdown destroys formatting | For a targeted change use the surgical verbs; for a real rebuild supply `.docx`/`.html`. |

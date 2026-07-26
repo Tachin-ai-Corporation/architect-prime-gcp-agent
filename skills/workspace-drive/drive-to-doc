@@ -35,6 +35,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$FILE" ]] || die "Need --file <driveFileId | localPath>"
+
+# ---- Guard: a bare filename is neither a Drive id nor a local file ----
+# A Drive id is an opaque token — no slashes, no extension. A mission passed
+# `--file sara_k_agreement.pdf` (the --output name from an earlier download) and
+# the API 404'd on a filename. A real local path is legitimate here; a path that
+# does not exist is always the wrong argument, so fail before spending a token.
+if [[ ! -e "$FILE" ]]; then
+  case "$FILE" in
+    */*|*\\*|*.pdf|*.PDF|*.doc|*.docx|*.txt|*.md|*.json|*.csv|*.xlsx|*.pptx|*.png|*.jpg|*.jpeg|*.tif|*.tiff|*.html)
+      die "--file got '${FILE}', which looks like a local path but nothing exists there. --file needs a Drive file ID (an opaque token — no extension) or an existing local path. Find an ID with drive-search or drive-ls. If the file is LOCAL, upload it with drive-upload and pass the returned id." ;;
+  esac
+fi
+
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 
 TMP=""
@@ -66,7 +79,7 @@ else
 import json
 print(json.dumps({'status':'already_doc','docId':'${FILE}','name':'''${SRC_NAME}''',
                   'readWith':'docs-cat ${FILE}',
-                  'note':'Source is already a Google Doc — no conversion needed.'}, indent=2))
+                  'note':'Source is already a Google Doc — no conversion needed. Read it directly with the workspace-docs skill. Never export a Doc to PDF and convert it back; the round trip loses structure and gains nothing.'}, indent=2))
 "
     exit 0
   fi

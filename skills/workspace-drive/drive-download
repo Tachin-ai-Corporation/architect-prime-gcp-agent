@@ -26,6 +26,13 @@ while [[ $# -gt 0 ]]; do
        else die "Unknown: $1"; fi ;; esac
 done
 [[ -n "$FILE_ID" ]] || die "Need --file <file_id>"
+# ---- Guard: this argument is an id, never a local path ----
+# A Drive id is an opaque token: no slashes, no extension. Passing a filename here
+# (often the --output name of an earlier download) reaches the API and 404s.
+case "$FILE_ID" in
+  */*|*\\*|*[[:space:]]*|*.pdf|*.PDF|*.doc|*.docx|*.txt|*.md|*.json|*.csv|*.xlsx|*.pptx|*.png|*.jpg|*.jpeg|*.tif|*.tiff|*.html)
+    die "'${FILE_ID}' looks like a local path or filename, not a Drive file ID (an opaque token — no extension, no spaces). Find the ID with drive-search or drive-ls. If the file is LOCAL you already have it — read it where it sits; to put it in Drive use drive-upload." ;;
+esac
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 # Get file metadata to determine type. md5Checksum/size are present for binary
 # files (absent for Google-native types, which are exported on the fly).

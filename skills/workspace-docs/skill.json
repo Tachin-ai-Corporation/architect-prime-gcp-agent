@@ -1,7 +1,7 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  18,
+    "version":  19,
     "description":  "Read, create, and edit Google Docs. Edits are surgical and in-place by default (find/replace, delete-section, insert-at-anchor) so all untouched formatting is preserved; a docx round-trip is reserved for wholesale rebuilds. Includes a formatting fingerprint for before/after verification, plus review comments.",
     "summary":  "Work with Google Docs — read, surgically edit in place (formatting preserved), rebuild via docx only when needed, verify with a formatting fingerprint, and leave review comments.",
     "author":  "architect-prime",

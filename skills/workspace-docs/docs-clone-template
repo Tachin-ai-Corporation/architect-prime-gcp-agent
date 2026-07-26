@@ -20,6 +20,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ -n "$TEMPLATE" && -n "$TITLE" ]] || die "Need --template and --title"
+# --template is a Doc ID, never a path or a filename you saw in a search result.
+TEMPLATE_LC="$(printf '%s' "$TEMPLATE" | tr 'A-Z' 'a-z')"
+if [[ "$TEMPLATE" == */* || "$TEMPLATE" == *'\'* || "$TEMPLATE_LC" =~ \.(pdf|docx|doc|txt|md|json|csv|html|htm|rtf|odt|xlsx|pptx)$ ]]; then
+  { echo "[docs-clone-template] [ERROR] --template '${TEMPLATE}' is a local path/filename, not a Google Doc ID."
+    echo "  Find the id:   drive-ls <folderId>   or   drive-search --query \"name contains '<fragment of the real filename>'\""
+    echo "  Copy the id from that output verbatim — never retype or edit characters of an id."
+  } >&2
+  exit 1
+fi
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 
 python3 -c "
@@ -59,6 +68,8 @@ new_id = result['id']
 # clone: we always fall through to print the created-doc JSON below.
 replacements_applied = 0
 replacements_failed = False
+fill_report = []
+zero_match = []
 
 if replacements_file:
     try:
@@ -68,6 +79,14 @@ if replacements_file:
         sys.stderr.write(f'Failed to read replacements file: {e}\\n')
         pairs = []
         replacements_failed = True
+
+    # Accept BOTH documented shapes: the placeholder mapping
+    # {'[Advisor Name]': 'Jane'} and a list of {'find','replace'} objects. The mapping is
+    # what the SKILL documents and what callers write; taking only the list form meant a
+    # correct replacements file skipped the entire fill and the clone shipped with its
+    # placeholders intact.
+    if isinstance(pairs, dict):
+        pairs = [{'find': k, 'replace': '' if v is None else str(v)} for k, v in pairs.items()]
 
     valid_pairs = []
     for i, pair in enumerate(pairs):
@@ -105,8 +124,15 @@ if replacements_file:
         try:
             with urllib.request.urlopen(req2) as r2:
                 fill_resp = json.loads(r2.read().decode('utf-8'))
-            for rep in fill_resp.get('replies', []):
-                replacements_applied += rep.get('replaceAllText', {}).get('occurrencesChanged', 0)
+            # Report per placeholder. A total-only count hides the case that matters: every
+            # find-string missed, so the copy still says [Advisor Name] everywhere.
+            for i, rep in enumerate(fill_resp.get('replies', [])):
+                occ = rep.get('replaceAllText', {}).get('occurrencesChanged', 0)
+                replacements_applied += occ
+                find = valid_pairs[i]['find'] if i < len(valid_pairs) else ''
+                fill_report.append({'find': find, 'occurrences': occ, 'applied': occ > 0})
+                if occ == 0:
+                    zero_match.append(find)
         except urllib.error.HTTPError as e:
             if e.code in [401, 403]:
                 print(json.dumps({'status': 'access_denied', 'message': f'Access denied for {email or \"unknown\"}'}))
@@ -117,7 +143,7 @@ if replacements_file:
             sys.stderr.write(f'Fill error: {e}\\n')
             replacements_failed = True
 
-print(json.dumps({
+result_out = {
     'status': 'created',
     'docId': new_id,
     'title': title,
@@ -125,5 +151,14 @@ print(json.dumps({
     'link': f'https://docs.google.com/document/d/{new_id}',
     'replacements_applied': replacements_applied,
     'replacements_failed': replacements_failed
-}, indent=2))
+}
+if fill_report:
+    result_out['replacements'] = fill_report
+if zero_match:
+    result_out['zero_match_finds'] = zero_match
+    result_out['note'] = (f'{len(zero_match)} of {len(fill_report)} placeholder(s) matched NOTHING in the copy '
+                          '(zero_match_finds) — the template does not contain those tokens as written. Read the '
+                          f'clone (docs-cat {new_id} --find \"[\") to get its ACTUAL placeholders, then fill the '
+                          'remainder with one docs-batch-edit. Re-running the same replacements changes nothing.')
+print(json.dumps(result_out, indent=2))
 " "$TEMPLATE" "$TITLE" "$FOLDER" "$REPLACEMENTS" "$TOKEN" "${AGENT_USER_EMAIL:-}" "$WS_TOKEN"
