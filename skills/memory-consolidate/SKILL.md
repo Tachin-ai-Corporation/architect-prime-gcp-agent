@@ -22,7 +22,13 @@ This is Temporal-Memory's "sleep cycle" — I process the day's experiences acro
 2. **Retrieve Recent Conversations:** Run `session-summary --hours 24 --limit 20` to extract user interactions. Long missions include a `Digest:` section — compaction digests whose `learning:` lines carry pre-binned claims distilled in-flight; treat these as first-class promotion candidates (they already passed epistemic-bin validation).
 3. **Scan Recent Work Ledger:** The brain daemon queries the agent's completed work envelopes from the last 7 days (via the same episodic retrieval used for recall). Use these to identify facts worth promoting — completed missions carry verified outcomes.
 4. **Scan Recent Core Memory:** Run `core-memory-read --since 30d --limit 20` to scan recent long-term writes.
-5. **Scan Full Category Archives:** Run `core-memory-read --category <cat>` for categories: `architecture`, `operations`, `iam`, `decisions`, `patterns`, `errors`.
+5. **Scan Full Category Archives:** Run `core-memory-read --category <cat>` for categories: `architecture`, `operations`, `iam`, `decisions`, `patterns`, `errors`, `resources`.
+5b. **Promote and reconcile Resources (the name→id table):** Missions capture external identifiers — Drive folders, docs, chat spaces — onto their envelope as they resolve them. Promote the durable ones into the `resources` category so the *next* mission never has to search for them:
+   - `core-memory-write --fact '<kind>: "<name>" = <id>' --category resources --tags "<kind>,<project>" --importance 0.8`
+   - One entry per identifier, written in exactly that form so recall can parse it back. This is a **lookup table, not narrative memory** — no prose, no commentary.
+   - **Record aliases as their own entries.** If a mission searched for "signed artifacts" and the folder is actually *Executed Advisory Agreements*, write **both** names pointing at the same id. The alias is the expensive knowledge: one real mission burned its entire dispatch budget re-running the same failed search six times because the name in the plan was not the name in Drive.
+   - **Reconcile, don't accumulate.** When an id has changed, `--supersedes` the old entry. When a target no longer resolves, retire it in step 8 — a confidently wrong id is worse than no id, because it will be trusted.
+   - The `resources` cap does not consume the step-9 promotion budget: identifiers are cheap, high-value, and self-limiting (one per real-world object).
 6. **Triage Working Memory:** Classify every entry in `MEMORY.md` into one of: `ACTIVE`, `COMPLETED`, `STALE`, or `PROMOTE`.
 7. **Identify Outdated Core Memories:** Compare recent work against the long-term archive to locate contradicted, redundant, or stale entries.
 8. **Retire or Supersede:** Run `core-memory-retire --id <entry-id> --reason "<reason>"` for stale items, or `core-memory-write --fact "<fact>" --category <cat> --supersedes <old-id>` for updates. (Max 5 per run).
@@ -43,6 +49,7 @@ The work ledger (`primes/{id}/work/`) serves as an episodic recall source — a 
 |---|---|---|---|---|
 | **Working Memory** (`MEMORY.md`) | Local file | Every Cortex call (system prompt) | Hours–days | Prune completed/stale items, keep < 2,000 chars |
 | **Core Memory** (Firestore) | `core_memory` collection | On-demand via recall | Weeks–months | Retire stale entries, promote stable new facts |
+| ↳ **Resources** (`resources` category) | same collection | Recall Layer E, every mission | Until the target moves | Promote captured identifiers, record aliases, supersede on change |
 | **Deep Truths** (`SOUL.md` § Deep Truths) | Local file | Every Cortex call (system prompt) | Months–permanent | Change only with strong multi-session evidence |
 
 ### Phase 5 MEMORY.md Template

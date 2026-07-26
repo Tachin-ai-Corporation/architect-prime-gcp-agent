@@ -236,7 +236,7 @@
       "enabled": true,
       "max_entries": 200,
       "recall_limit": 40,
-      "promote_on_complete": true
+      "_promotion": "Promotion into the durable `resources` category is TEMPORAL-MEMORY's job, done during consolidation (memory-consolidate SKILL step 5b) — not a daemon auto-write. v2026.06.21.1.0 deliberately removed daemon writes to core memory as noise, and temporal-memory is the memory authority and sole memory mutator. The daemon only captures to the envelope; within-mission and across-resume reuse works from there immediately, and cross-mission reuse lands at the next consolidation."
     }
   },
   "workspaces": {
