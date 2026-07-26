@@ -223,6 +223,15 @@
     "enforce_schema_max_attempts": 2,
     "disable_thinking": true
   },
+  "memory": {
+    "_comment": "Memory subsystem knobs. resource_ledger: an external identifier (Drive folder/doc id, chat space) is a fact about the world that does not change — resolve it once, remember it, never search again. Capture is deterministic from structured tool output (C-4/C-5) and lands on the mission envelope in Firestore, so it survives a resume that re-clones and destroys the working tree. Surfacing is memory's job: recall Layer E offers it to temporal-memory, which remains the sole producer of the packet the brain sees.",
+    "resource_ledger": {
+      "enabled": true,
+      "max_entries": 200,
+      "recall_limit": 40,
+      "promote_on_complete": true
+    }
+  },
   "workspaces": {
     "_comment": "Canonical workspace directories the daemon reads from. Manifests MUST target these paths.",
     "cortex": "workspace",

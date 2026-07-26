@@ -5,7 +5,13 @@
 #   core-memory-write --fact "<fact text>" --category <category> [--tags "tag1,tag2"] \
 #                     [--confidence 0.9] [--source observation] [--supersedes <id>] [--agent <name>]
 #
-# Categories: architecture, operations, iam, decisions, patterns, errors
+# Categories: architecture, operations, iam, decisions, patterns, errors, resources
+#
+# `resources` is the name→id lookup table, not narrative memory. One entry per
+# identifier, written as: <kind>: "<name>" = <id>   (e.g. folder: "master
+# templates" = 1OgWUOx...). Use --supersedes when an id changes so the table
+# updates instead of accumulating duplicates. This is what stops an agent
+# re-deriving a Drive folder id by search on every mission.
 #
 # Fleet agents auto-detect via AGENT_ID env var (set by fleet-bootstrap).
 # Memory path: primes/{primeId}/fleet/{agent}/memory/core
@@ -50,7 +56,7 @@ fi
 
 if [[ -z "$FACT" || -z "$CATEGORY" ]]; then
   echo "Usage: core-memory-write --fact \"<text>\" --category <category> [options]" >&2
-  echo "Categories: architecture, operations, iam, decisions, patterns, errors" >&2
+  echo "Categories: architecture, operations, iam, decisions, patterns, errors, resources" >&2
   exit 1
 fi
 

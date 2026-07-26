@@ -5,7 +5,9 @@
 # Usage:
 #   core-memory-read --category <category> [--query "<search terms>"] [--status active] [--limit 10] [--agent <name>] [--since <duration>]
 #
-# Categories: architecture, operations, iam, decisions, patterns, errors
+# Categories: architecture, operations, iam, decisions, patterns, errors, resources
+#          `resources` is the name→id lookup table (folder/doc/space ids), read by
+#          the daemon's recall Layer E as well as by agents.
 #
 # Fleet agents auto-detect via AGENT_ID env var (set by fleet-bootstrap).
 # Memory path: primes/{primeId}/fleet/{agent}/memory/core

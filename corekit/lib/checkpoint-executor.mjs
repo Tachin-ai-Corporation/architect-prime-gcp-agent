@@ -14,6 +14,7 @@ import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket } from './result-packet.mjs';
+import { extractResources, mergeResources } from './resource-ledger.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -98,6 +99,8 @@ export async function executeCheckpoints(checkpoints, opts) {
 
   const STEP_LEDGER_ENABLED = contracts.dispatch?.step_ledger_enabled !== false;
   const CHECKPOINT_RESUME_ENABLED = contracts.dispatch?.checkpoint_resume_enabled !== false;
+  const RESOURCE_LEDGER_ENABLED = contracts.memory?.resource_ledger?.enabled !== false;
+  const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
   const PROBE_ENABLED = contracts.dispatch?.verify_probe_enabled !== false;
   const PROBE_MAX = contracts.dispatch?.verify_probe_max ?? 2;
   const PROBE_STAKES_MIN = contracts.dispatch?.verify_probe_stakes_min || 'consequential';
@@ -976,6 +979,34 @@ export async function executeCheckpoints(checkpoints, opts) {
       tEnv.completed_at = new Date().toISOString();
       tEnv.updated_at = new Date().toISOString();
       await firestoreWrite('work', tId, tEnv);
+
+      // ---- Resource ledger capture (RESOURCE_LEDGER_PLAN, C-4/C-5) ----
+      // An external id resolved once must never be searched for again. Capture is
+      // deterministic — the ids come from the structured JSON the skills already
+      // emit, parsed by the daemon, with no LLM in the path. It lands on the
+      // ENVELOPE (Firestore), not the working tree: a resume re-clones the tree
+      // and destroys everything in it, which is exactly how a mission came to
+      // re-run the same failing drive-search six times for a folder it had
+      // already located. Memory surfaces this later — see recallMemory Layer E.
+      if (RESOURCE_LEDGER_ENABLED) {
+        try {
+          const found = extractResources(toStr(tEnv.output));
+          if (found.length > 0) {
+            envelope.context = envelope.context || {};
+            const { ledger, added, updated, dropped } = mergeResources(
+              envelope.context.resources, found,
+              { max: RESOURCE_LEDGER_MAX, now: new Date().toISOString(), source: `${cpNum}.${taskNum}` },
+            );
+            envelope.context.resources = ledger;
+            if (added || updated || dropped) {
+              log('INFO', `[TELEMETRY] resource_ledger mission=${envelope.id} step=${cpNum}.${taskNum} added=${added} updated=${updated} dropped=${dropped} total=${Object.keys(ledger).length}`);
+            }
+          }
+        } catch (e) {
+          // Never fail a task that produced real work over a bookkeeping miss.
+          log('WARN', `Resource ledger capture failed: ${e.message}`);
+        }
+      }
       await writeHistory(tId, 'active', tEnv.status, taskAgent,
         result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
 

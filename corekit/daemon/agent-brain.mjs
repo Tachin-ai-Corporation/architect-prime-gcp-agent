@@ -55,6 +55,7 @@ import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
+import { renderResources, resourceKey } from '../corekit/lib/resource-ledger.mjs';
 import { toContentParts } from '../corekit/lib/prompt-blocks.mjs';
 import { shouldCompact, splitIterationBlocks, redactSecrets, validateMissionDigest, missionDigestInstruction, spliceCompacted } from '../corekit/lib/compaction.mjs';
 import { threadKeyFor, appendTurn as ledgerAppendTurn, compactThread } from '../corekit/lib/thread-ledger.mjs';
@@ -126,6 +127,8 @@ const CTX_DISPATCH_SUCCESS = CONTRACTS.dispatch?.ctx_dispatch_success || 4000;
 const CTX_DISPATCH_FAILURE = CONTRACTS.dispatch?.ctx_dispatch_failure || 3000;
 const CTX_AGENT_STEP = CONTRACTS.dispatch?.ctx_agent_step || 8000;
 const CTX_VERIFY_INPUT = CONTRACTS.dispatch?.ctx_verify_input || 24000;
+const RESOURCE_LEDGER_ENABLED = CONTRACTS.memory?.resource_ledger?.enabled !== false;
+const RESOURCE_LEDGER_RECALL_LIMIT = CONTRACTS.memory?.resource_ledger?.recall_limit ?? 40;
 const CTX_CORTEX_STEP = CONTRACTS.dispatch?.ctx_cortex_step || 4000;
 
 // ---- ORGAN_CONTEXT_SHARING_PLAN Phase 2: hydrate-on-demand ----
@@ -1919,7 +1922,50 @@ async function recallMemory(query, context = {}) {
       }
     }
 
-    log('INFO', `[TELEMETRY] recall_layers scope=${scope} cues=${cues.length} coreIds=${seenCoreIds.size} digestHits=${layerCHits} workHits=${layerDHits}`);
+    // ---- Layer E: Resource Ledger (name → id, already resolved) ----
+    // The highest-value, most-deterministic recall content: an external id costs
+    // an API search to re-derive, and re-deriving is how a mission burned its
+    // whole dispatch budget re-finding a folder it already had. Two sources: this
+    // mission's captured ledger (envelope.context.resources — survives the resume
+    // that destroys the working tree) and durable core memory.
+    //
+    // UNSHIFTED, not pushed: the candidate block is trimmed from the tail, so
+    // anything appended last is what gets cut. These lines are tiny and must
+    // never be the thing dropped for budget.
+    let layerEHits = 0;
+    if (RESOURCE_LEDGER_ENABLED) {
+      try {
+        let ledger = { ...(context.resources || {}) };
+
+        // Durable half: core memory's `resources` category, cue-filtered.
+        if (existsSync(coreMemScript)) {
+          try {
+            const resOut = execFileSync(coreMemScript, [
+              '--category', 'resources', '--status', 'active', '--limit', '25',
+              ...(cues.length > 0 ? ['--query', cues.slice(0, 4).join(' ')] : []),
+            ], { timeout: 10000, stdio: 'pipe', env: { ...process.env, CORE_DIR } }).toString();
+            // Promoted facts are stored as `kind: "name" = id` — parse them back
+            // into ledger shape so both halves render identically.
+            for (const m of resOut.matchAll(/([a-z]+):\s*"([^"]+)"\s*=\s*([A-Za-z0-9_\-/]{10,})/g)) {
+              const key = resourceKey(m[1], m[2]);
+              if (!ledger[key]) ledger[key] = { kind: m[1], name: m[2], id: m[3], source: 'core-memory' };
+            }
+          } catch (e) {
+            log('DEBUG', `Memory recall: core-memory resources read failed: ${e.message}`);
+          }
+        }
+
+        const block = renderResources(ledger, { limit: RESOURCE_LEDGER_RECALL_LIMIT, cues });
+        if (block) {
+          memoryParts.unshift(block);
+          layerEHits = Object.keys(ledger).length;
+        }
+      } catch (e) {
+        log('WARN', `Memory recall: resource ledger failed: ${e.message}`);
+      }
+    }
+
+    log('INFO', `[TELEMETRY] recall_layers scope=${scope} cues=${cues.length} coreIds=${seenCoreIds.size} digestHits=${layerCHits} workHits=${layerDHits} resourceHits=${layerEHits}`);
 
     // ---- Trim candidates to budget ----
     const CANDIDATE_BUDGET_CHARS = 8000;
@@ -3514,7 +3560,13 @@ async function processEnvelope(envelope, memoryContext) {
 
 async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   // Use passed memory context, or recall fresh if not provided
-  const memory = memoryContext || await recallMemory(envelope.instruction);
+  // Pass this mission's captured resource ledger into recall. On a RESUME the
+  // envelope is re-read from Firestore, so identifiers resolved in earlier
+  // iterations arrive here even though the working tree was re-cloned and its
+  // contents destroyed — which is the whole point of storing them on the envelope.
+  const memory = memoryContext || await recallMemory(envelope.instruction, {
+    resources: envelope.context?.resources,
+  });
 
   // Phase 5: Initialize shared workspace for this envelope (+ git clone if project)
   await initSharedWorkspace(envelope.id, { projectId: envelope.project_id });
@@ -4928,7 +4980,7 @@ async function dequeueAndProcess() {
     log('INFO', `[WORK QUEUE] Dequeuing mission ${next.id}: "${(next.title || next.instruction || '').substring(0, 60)}" (${queued.length} total queued)`);
 
     try {
-      const memory = await recallMemory(next.instruction);
+      const memory = await recallMemory(next.instruction, { resources: next.context?.resources });
       await processEnvelope(next, memory);
     } catch (e) {
       log('ERROR', `Failed to process dequeued mission ${next.id}: ${e.message}`);
