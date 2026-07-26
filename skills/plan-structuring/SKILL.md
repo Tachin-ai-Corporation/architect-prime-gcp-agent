@@ -20,9 +20,17 @@ asked for **tasks only**, for the one checkpoint named in it.
 2. **Read "why the last attempt did not satisfy them"** and change the approach, not the
    goal. If the previous tasks failed on mechanics (a wrong command, an unread doc), the new
    tasks should be more specific about the *outcome to reach*, not longer.
-3. **Return exactly one checkpoint** in `checkpoints`. Do not include the other checkpoints,
+3. **Cover every unmet clause.** Split the pinned criteria into their separate clauses and
+   check your task list against each one. The verifier judges all clauses at once, so a
+   plan that satisfies some of them still fails — and because the criteria are pinned, it
+   fails the same way every round. A real checkpoint whose criteria read "the draft doc ids
+   are identified **and** personal details are extracted" was re-tasked three times with
+   extraction tasks only; nothing ever listed the folder, so it could not pass at any point.
+   If a clause is already satisfied by earlier evidence, say so in your reasoning rather
+   than silently dropping it.
+4. **Return exactly one checkpoint** in `checkpoints`. Do not include the other checkpoints,
    even to restate them; anything you add beyond the one asked for is discarded.
-4. Only propose different `accept_criteria` if the pinned wording is genuinely
+5. Only propose different `accept_criteria` if the pinned wording is genuinely
    **unachievable** (it asks for something that cannot exist), not merely awkward. One
    refinement per checkpoint is accepted; after that the pinned wording stands, so spend it
    carefully.
