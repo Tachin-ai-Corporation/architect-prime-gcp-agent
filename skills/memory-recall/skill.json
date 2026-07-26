@@ -7,7 +7,8 @@
   "origin": "core",
   "category": "memory",
   "agent_part": "temporal-memory",
-  "scripts": ["core-memory-read", "session-summary"],
+  "_scripts_note": "Recall is daemon-prefetched and toolless on the hot path (C-5) — the daemon gathers the raw layers and temporal-memory synthesizes the packet. session-summary is declared by memory-consolidate, which is the mode that actually runs it.",
+  "scripts": ["core-memory-read"],
   "requires": {},
   "when_to_use": "When Cortex dispatches temporal-memory for recall — retrieve relevant context from working memory, core memory, episodic work history, and recent sessions."
 }

@@ -670,6 +670,40 @@ t.types.forEach(x => console.log(x.id));
     [[ $TRI_FAIL -eq 0 ]] && pass "Tri-source skill consistency verified across all agent types"
   fi
 
+  # ---- Check 14b: Skill-doc coverage (B-17) ----
+  # Every command an agent is DECLARED to have must be described in its SKILL.md.
+  # B-17 enforces skill use where a skill exists — but an organ cannot follow a doc
+  # that never mentions the tool, so it guesses. A real mission burned six invented
+  # invocations (`drive-copy --src/--dst/--name`, `docs-create --from-doc`) trying to
+  # copy a Doc, because `drive-copy` and `docs-clone-template` were installed and
+  # declared yet documented nowhere. Same discipline as C-9's file+manifest rule,
+  # applied to file+documentation.
+  #
+  # `scripts[]` is the AGENT-FACING declaration, not the install list (manifests
+  # install; only the dashboard reads this). Daemon-internal tools therefore belong
+  # in neither scripts[] nor SKILL.md — see the _scripts_note keys.
+  DOC_FAIL=0
+  for SKILL_JSON in skills/*/skill.json; do
+    [[ -f "$SKILL_JSON" ]] || continue
+    SKILL_MD="$(dirname "$SKILL_JSON")/SKILL.md"
+    [[ -f "$SKILL_MD" ]] || { fail "Skill-doc coverage: $(dirname "$SKILL_JSON") has skill.json but no SKILL.md"; DOC_FAIL=$((DOC_FAIL + 1)); continue; }
+    UNDOC=$(python3 -c "
+import json, sys, io
+try:
+    scripts = json.load(io.open('$SKILL_JSON', encoding='utf-8')).get('scripts') or []
+except Exception as e:
+    print('PARSE_ERROR', e); sys.exit()
+md = io.open('$SKILL_MD', encoding='utf-8', errors='replace').read()
+# '_'-prefixed entries are libraries (e.g. _docslib.py), not agent commands.
+print(' '.join(s for s in scripts if not s.startswith('_') and s not in md))
+" 2>/dev/null)
+    if [[ -n "$UNDOC" ]]; then
+      fail "Skill-doc coverage (B-17): $(basename "$(dirname "$SKILL_JSON")") declares undocumented command(s): ${UNDOC}"
+      DOC_FAIL=$((DOC_FAIL + 1))
+    fi
+  done
+  [[ $DOC_FAIL -eq 0 ]] && pass "Skill-doc coverage — every declared command appears in its SKILL.md (B-17)"
+
   # ---- Check 15: Organ layer purity (C-28) ----
   # Organ SOULs carry character, not tool syntax or process ids. Flag backtick-wrapped
   # command-with-flag invocations and backtick process ids. Skill NAMES are allowed.

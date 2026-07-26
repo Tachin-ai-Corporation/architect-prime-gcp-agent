@@ -48,6 +48,9 @@ When a task involves files in Google Drive — listing, searching, downloading, 
 > ⚠️ **IMPORTANT**: Use `work-publish` instead of `drive-upload` when publishing work products or artifacts. `work-publish` enforces the standard folder hierarchy. Use `drive-upload` only for edge cases where you need direct folder control.
 
 ### Write
+- `drive-copy --file FILE_ID [--title "New Title"] [--folder FOLDER_ID]` — Copy any Drive file. Omit `--title` to keep the original name; omit `--folder` to copy alongside the original.
+  Output: `status`, `fileId` (the **new** copy), `name`, `mimeType`.
+  > **Copying a template to fill in?** Use `docs-clone-template` (workspace-docs) instead — it clones *and* fills placeholders in one call. `drive-copy` is a plain file copy with no placeholder handling.
 - `drive-upload PATH [--name NAME] [--folder FOLDER_ID]` — Upload a local file to a specific Drive folder. For artifact publishing, prefer `work-publish` instead.
   Output: Uploaded file metadata including the newly created `id`.
 - `drive-mkdir --name NAME [--parent PARENT_ID]` — Create a new folder inside Google Drive.
@@ -177,6 +180,8 @@ The `your-website-project` project uses a sync-service that automatically propag
 | `readFile` refuses the file: "is PDF, not text" | A PDF/image was downloaded and read directly — its bytes aren't characters | `drive-to-doc --file <path or id>` → `docs-cat <docId>`. This is a routing problem, not a missing capability. |
 | Downloaded the same file twice under different names | Re-ran a download after a timeout or retry without checking state | `drive-download` is idempotent — re-run the *same* `--output` path and read `status` (`cached` means the bytes are already there). |
 | OCR text is garbled or partial | Scanned/low-quality source, or wrong OCR language | Re-run `drive-to-doc --force --ocr-lang <BCP-47>`. If one field is still illegible, ask for that field alone — don't abandon the task. |
+| `Unknown arg: --src` (or any instant, sub-20ms failure) | An invented flag — the command died in argument parsing, never reached the API | Re-read the command's line in this SKILL.md and use the documented flag. A failure under ~20ms is *always* your arguments, never the network or permissions. Do not try a third spelling; the flags above are the only ones that exist. |
+| Copying a doc "didn't work" after several attempts | Reaching for the wrong tool | A **template with placeholders** → `docs-clone-template`. A **plain file copy** → `drive-copy --file`. Nothing else copies a Drive file. |
 | File uploaded to Drive but not syncing to GCS | File is in the root folder | Move the file to a subdirectory (e.g., `public/`). The sync-service ignores root-level files by design. |
 
 ## Examples

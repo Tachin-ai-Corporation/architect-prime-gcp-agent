@@ -37,6 +37,7 @@ only**; `docs-replace-file` refuses `.txt`/`.md` for the same reason.
   - `--fingerprint` — structural **formatting signature**: paragraph counts by style, tables + dims, image count, the set of distinct text styles/fonts. Capture **before and after** an edit and diff to prove formatting was preserved.
   - `--find "TEXT" [--context N]` — case-insensitive search, offsets + context.
   - `--out FILE` — write the COMPLETE text to FILE (read/plan only; coverage check: `--out` `chars` == `--meta` `chars`).
+- `docs-tab-list <doc_id>` — list the doc's tabs with ids, titles and hierarchy. Run this first on a multi-tab doc: the edit tools default to the first tab, so an anchor "not found" on a tabbed doc usually means you are looking at the wrong tab.
 
 ### Restore point
 - `docs-revision <doc_id> [--list]` — record the pre-edit head revision (keep its `modifiedTime` as the "restore to here" anchor); `--list` shows recent revisions.
@@ -60,17 +61,56 @@ section numbers included.
 - `docs-section-delete --doc <id> --from-anchor "PHRASE" [--keep-anchor]` — delete from a **unique** anchor to the end of the doc. Or `--start N --end N` (raw Docs-API indices from `docs-get`).
 - `docs-anchor-insert --doc <id> --anchor "PHRASE" --text "..." [--position before|after]` — insert at a **unique** anchor (inherits adjacent formatting). For several inserts/deletes, prefer `docs-batch-edit` (atomic, reverse-ordered).
 - `docs-style` — adjust styling on a range when needed (read its SKILL header for syntax).
+- `docs-insert-table --doc <id> --anchor "phrase" --rows N --cols M` — insert a table at a **unique** anchor.
+- `docs-insert-image --doc <id> --anchor "phrase" --url IMAGE_URL` — insert an inline image from a public URL at a **unique** anchor (PNG/JPEG/GIF, <50MB, <25MP).
+- `docs-format-page --doc <id> [--margins "1in"] [--header "text"] [--footer "text"] [--orientation portrait|landscape]` — page-level formatting only; does not touch body text.
+
+**Fields that change every cycle — use a named range, not an anchor.** A named range is a
+label attached to a span, so it survives edits that would move or break a text anchor:
+- `docs-namedrange-create --doc <id> --name RANGE_NAME (--anchor "phrase" | --start N --end N)` — label the span once.
+- `docs-namedrange-replace --doc <id> --name RANGE_NAME --text "new content"` — replace by label, no index math.
+  If a human edit splits the range, `--replace` only hits the first fragment — re-create the range.
 
 ### Wholesale rebuild (only when surgical is impractical)
 - `docs-export-docx --doc <id> --out edit.docx` — pull the live doc to a local `.docx`.
 - `docs-replace-file --doc <id> --file edit.docx` — apply an edited `.docx` (or styled `.html`) back in one atomic call; preserves id + version history. **Refuses `.txt`/`.md`** (they destroy formatting).
+- `docs-import-docx --file FILE.docx --title TITLE [--folder FOLDER_ID]` — import a local `.docx` as a **new** native Doc (the inbound half of the round-trip).
+- `docs-write --doc <id> (--text "…" | --file FILE) [--append | --overwrite] [--markdown]` — append to, or overwrite, the body. `--append` is safe; **`--overwrite` discards the existing body and its formatting.**
+- `docs-replace-md --doc <id> (--file FILE | --text "…")` — replace the whole body from Markdown. Same caveat: you are re-authoring the document, not editing it. Only for a doc you own end-to-end.
 
 ### Create a new document
 - `docs-create --title "TITLE" (--from-markdown FILE | --from-html FILE) [--folder FOLDER_ID]` — create a formatted Doc from local Markdown or HTML (Drive converts it). Use HTML for colors/fonts/styled tables; Markdown otherwise.
+  There is **no `--from-doc`**. To start from an existing Doc, use `docs-clone-template` below.
+- `docs-clone-template --template DOC_ID --title "New Title" [--folder FOLDER_ID] [--replacements FILE]` — **copy an existing Doc and optionally fill its placeholders in the same call.** This is the tool for "duplicate the master template for each X". `--replacements` takes a JSON file of `{"[Placeholder]": "value"}` pairs, so clone-and-fill is one command, not four.
+  Output includes the new `docId`. The template is never modified.
 
 ### Review comments
 - `docs-comments-add --doc <id> --content "TEXT" [--quote "exact clause this is about"]` — leave a comment. **Always pass `--quote`** so it is self-contextualizing. Plain comments only — **never `@mention`** anyone (an @mention emails them; C-27).
 - `docs-comments-list --doc <id> [--include-resolved]` · `docs-comments-resolve --doc <id> --comment-id <id>` · `docs-comments-delete --doc <id> --comment-id <id>`
+- `docs-suggest --doc <id> [--tab <tab>] --find "text" --replace "text" [--reason "why"]` — propose a change for a human to accept or reject, instead of applying it. Use when the edit is a *recommendation*, not an instruction you were given.
+
+---
+
+## Procedure: duplicate a template and fill it (one per subject)
+
+For "make N copies of this template, one per person/item". The whole job is **one command per
+copy** — do not export, re-create, or hand-build the document.
+
+1. **Read the template once** — `docs-cat <templateId> --meta` then `docs-cat <templateId>` — and
+   list its placeholders verbatim (e.g. `[Advisor Name]`, `[Effective Date]`, `[Project Fee]`).
+   Exact spelling and brackets matter; they are the find-strings in step 3.
+2. **Write one replacements file per subject**, `{"[Advisor Name]": "…", "[Project Fee]": "…"}`.
+   Leave a value as `""` for anything genuinely unknown — an empty field in a draft is honest and
+   expected; inventing a value is not.
+3. **Clone and fill in one call, per subject:**
+   `docs-clone-template --template <templateId> --title "<Subject> - <DocName>" --folder <destFolderId> --replacements subject.json`
+4. **Verify each copy** — `docs-cat <newDocId> --find "["` should return no unresolved
+   placeholders you intended to fill. Compare `docs-cat --fingerprint` against the template to
+   confirm the formatting survived.
+5. The copies land directly in `--folder`; no separate move step is needed.
+
+> If `--replacements` is impractical (values discovered later), clone first, then fill with
+> **one** `docs-batch-edit` per copy — never a sequence of single replacements.
 
 ---
 
@@ -198,6 +238,9 @@ d.save('edit.docx')
 | Symptom | Cause | Recovery |
 |---|---|---|
 | `403`/`401` / access_denied | Doc not shared with the agent SA | Share the doc with the agent's service-account email. |
+| Instant (<20ms) `Command failed` / `Unknown arg` | An invented flag — the command died in argument parsing and never reached the API | Re-read the command's line above and use the documented flag. A sub-20ms failure is *always* your arguments. Do not try a third spelling, and do not switch to a different tool hoping its flags differ — look the flag up. |
+| "I need to duplicate this Doc" | Reaching for `docs-create --from-doc` (does not exist) or `drive-copy` | `docs-clone-template --template <id> --title "…" [--folder …]`. See "duplicate a template and fill it" above. `drive-copy` (workspace-drive) is a plain file copy with no placeholder filling. |
+| Anchor "not found" on a doc with tabs | The edit tools default to the first tab | `docs-tab-list <doc_id>`, then pass the right `--tab`. |
 | `docs-cat` output cut off | Doc larger than the output cap | Use `--out FILE` (complete read), then grep/sed the local file. |
 | `docs-find-replace`/`batch` reports `absent` (0 occurrences) | `find` text not present (already applied, or never matched) | Confirm the NEW text is in the doc; adjust the `find` string to match the live text exactly. |
 | `docs-section-delete`/`anchor-insert` "anchor not unique/found", or `docs-batch-edit` `unresolved` | Phrase repeats or doesn't match the live text | Re-read the exact text (`docs-cat --find`), copy the **verbatim** string (smart quotes/whitespace/section numbers included), and retry — a miss means re-derive, not that the edit is impossible. A longer phrase disambiguates a non-unique anchor. |

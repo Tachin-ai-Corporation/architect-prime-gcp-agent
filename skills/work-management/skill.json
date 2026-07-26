@@ -13,9 +13,9 @@
     "process-manage",
     "work-log-read",
     "work-output-read",
-    "task-log-read",
-    "task-log-write"
+    "task-log-read"
   ],
+  "_scripts_note": "task-log-write is DAEMON-INTERNAL — agent-mouth calls it fire-and-forget after delivering output. It is installed by the manifest but is not an agent-facing command, so it is not declared here and not documented in SKILL.md: an agent writing its own task-lifecycle records would be writing the mouth's ledger.",
   "requires": {},
   "when_to_use": "When creating, updating, listing, or querying responsibilities, projects, or processes."
 }
