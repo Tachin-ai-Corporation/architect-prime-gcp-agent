@@ -6,6 +6,7 @@ import {
   buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary,
 } from '../../lib/checkpoint-spine.mjs';
 import { renderResources, repairIds, seedFromProse } from '../../lib/resource-ledger.mjs';
+import { findBackReferences, formatBackReference } from '../../lib/plan-lint.mjs';
 
 export async function handleCheckpointPlan(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
@@ -223,6 +224,19 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
     for (const r of allRepairs) {
       log('WARN', `[TELEMETRY] id_repair mission=${envelope.id} at=${where} kind=${r.kind} name="${r.name}" from=${r.from} to=${r.to}`);
+    }
+    // WARNING ONLY, on purpose. A task whose input is an identifier the PREVIOUS task has to
+    // discover is the shape that built three documents from the wrong template: task 1 named
+    // the right file, task 2 re-resolved "identified in the previous task" from context and
+    // took the first row of a folder listing instead. Rejecting the plan here is tempting, but
+    // the detector is new and an over-eager gate would strand valid plans — so measure first
+    // and read plan_backref before deciding whether to enforce.
+    try {
+      for (const f of findBackReferences(cps)) {
+        log('WARN', `[TELEMETRY] plan_backref mission=${envelope.id} at=${where} ${formatBackReference(f)}`);
+      }
+    } catch (e) {
+      log('WARN', `Plan back-reference lint failed: ${e.message}`);
     }
     // Not an error — an id the ledger has not captured is often perfectly real. It is
     // logged because a hallucinated id looks exactly like this too, and the difference

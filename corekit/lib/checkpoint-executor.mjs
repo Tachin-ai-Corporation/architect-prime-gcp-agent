@@ -9,7 +9,7 @@ import { smartTruncate } from './vertex-text.mjs';
 import { buildPriorWorkContext, renderCheckpointDigest } from './compaction.mjs';
 import { makeAddress } from './channel.mjs';
 import { composeDelegationMarker, normalizeTargetEmail } from './delegation.mjs';
-import { extractVerdict, extractFailSummary, extractFailRecommendation, extractProbes, stakesAtLeast } from './verdict.mjs';
+import { extractVerdict, extractFailSummary, extractFailRecommendation, stakesAtLeast } from './verdict.mjs';
 import { detectMotorFailure } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
@@ -104,9 +104,11 @@ export async function executeCheckpoints(checkpoints, opts) {
   const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
   const RESOURCE_LEDGER_RECALL_LIMIT = contracts.memory?.resource_ledger?.recall_limit ?? 40;
   const SPINE_PINNING_ENABLED = contracts.dispatch?.spine_pinning_enabled !== false;
-  const PROBE_ENABLED = contracts.dispatch?.verify_probe_enabled !== false;
-  const PROBE_MAX = contracts.dispatch?.verify_probe_max ?? 2;
-  const PROBE_STAKES_MIN = contracts.dispatch?.verify_probe_stakes_min || 'consequential';
+  // verify_probe_* is deliberately NOT read. The probe loop does not exist: nothing ever
+  // serviced a returned probe request, so advertising request_probe only produced verifiers
+  // that asked a question we could not answer and milestones that then failed closed for
+  // asking it. The contract flags stay (documented dormant there) so re-enabling is one
+  // change once the loop is built — but no dead read here pretending it is wired.
   const ATTACK_STAKES_MIN = contracts.dispatch?.attack_duty_stakes_min || 'consequential';
   const missionStakes = envelope.stakes || 'routine';
 
@@ -911,7 +913,11 @@ export async function executeCheckpoints(checkpoints, opts) {
       const dispatchPayload = {
         instruction: currentInstruction + currentSkillCatalog
           + (knownResources ? `\n\n${knownResources}\n(These are already resolved. Use the id directly — do not search for them by name.\n`
-            + `If the instruction above names an id for one of these resources and the two DISAGREE, trust the id in this block: it was read back from a tool result, while the one in the instruction was typed out when the plan was written. Say in your report that you did so.)` : ''),
+            + `PRECEDENCE, strongest first, when two sources name an id for the same resource:\n`
+            + `  1. This block, and any id an earlier task reported as a verified claim — read back from a tool result.\n`
+            + `  2. An id written into the instruction above — typed out when the plan was written, so it can be mistyped.\n`
+            + `  3. A row in a raw listing you are looking at now — the WEAKEST source, because a listing answers "what is in this folder", not "which one did we mean".\n`
+            + `Never take the first row of a listing as "the" file. One mission had the right template named in this block, took the first row of a folder listing instead, and built three documents from the wrong template. If sources disagree, use the strongest and say in your report that you did.)` : ''),
         accept_criteria: taskCriteria,
         _missionId: envelope.id,
         _projectContext: dispatchProjCtx,
@@ -1227,17 +1233,22 @@ export async function executeCheckpoints(checkpoints, opts) {
             ] : []),
             '## Combined Task Outputs',
             smartTruncate(cpOutcome || '(no output)', evidenceBudget),
-            ...((stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing) ? [
-              '',
-              `## Attack Duty (stakes: ${missionStakes}${isLoadBearing ? ', load-bearing' : ''})`,
-              'Before any PASS, run three attacks and record them: strongest domain objection; flip test; boundary probe.',
-              'A winning attack is a FAIL with the attack as the recommendation.',
-            ] : []),
-            ...(PROBE_ENABLED && (stakesAtLeast(missionStakes, PROBE_STAKES_MIN) || isLoadBearing) ? [
-              '',
-              '## Probe Eligibility',
-              `For any load-bearing claim you cannot verify from the evidence, use request_probe (max ${PROBE_MAX}).`,
-            ] : []),
+            // Attack duty and probe eligibility used to live HERE, in the same call as the
+            // verdict. Both are gone from the first attempt, for two different reasons:
+            //
+            // PROBE was advertised and never serviced. Nothing reads a returned probe request
+            // (extractProbes was imported and never called), so a verifier that obeyed the
+            // instruction and asked for more evidence produced no terminal verdict — and the
+            // B-28 fail-closed then failed the milestone for asking a question we invited.
+            // It stays out until the probe loop actually exists.
+            //
+            // ATTACK DUTY moved to its own pass below. Attacks exist to prevent a false PASS,
+            // so a FAIL never needed them, and asking one call to both reach a verdict and
+            // attack it split the output budget between the two. The dedicated pass gets the
+            // whole budget for attacking and can overturn a PASS — stricter, not looser.
+            // Keeping the first attempt lean also removes it as a suspect in the
+            // MALFORMED_FUNCTION_CALL failures: the reduced prompt that reliably WORKS is
+            // exactly the one without this scaffolding, at a size the full prompt beat.
           ].filter(Boolean).join('\n'),
           _missionId: envelope.id,
         };
@@ -1253,14 +1264,26 @@ export async function executeCheckpoints(checkpoints, opts) {
         // indistinguishable from a refusal, a filter, or an output budget consumed by
         // thinking. A real run returned 0 chars TWICE on the same 9,746-token input —
         // deterministic, not flaky — and there was no way to tell which.
-        const emptyDiag = (v, attempt) => `attempt=${attempt} chars=${String(v.output || '').length} `
-          + `finishReason=${v.finishReason || 'unknown'} promptChars=${(verifyReq.instruction || '').length} `
+        // promptChars is a parameter, not a closure over verifyReq: this diagnostic is also used
+        // for the adversarial pass, which sends a different prompt, and reporting the verify
+        // prompt's length there would misattribute the cause.
+        const emptyDiag = (v, attempt, promptText) => `attempt=${attempt} chars=${String(v.output || '').length} `
+          + `finishReason=${v.finishReason || 'unknown'} promptChars=${String(promptText ?? verifyReq.instruction ?? '').length} `
           + `error=${(v.error || 'none').toString().slice(0, 120)}`;
 
+        // A MALFORMED_FUNCTION_CALL is the provider deterministically refusing THIS prompt:
+        // observed twice in a row, byte-identical, same 0-char result. Re-sending it is a
+        // wasted call and a wasted minute, so skip straight to the differently-shaped attempt.
+        // Anything else (an unknown reason, a transient blank) may well be flaky — retry that.
+        const deterministicRefusal = v => /MALFORMED_FUNCTION_CALL/i.test(String(v.finishReason || ''));
         if (emptyVerdict(cpVer)) {
-          log('WARN', `[checkpoint-executor] CP${cpNum}: cerebellum returned no usable verdict — retrying once (${emptyDiag(cpVer, 1)})`);
-          cpVer = await dispatchAgent('cerebellum', verifyReq);
-          cpVerdict = extractVerdict(cpVer.output);
+          if (deterministicRefusal(cpVer)) {
+            log('WARN', `[checkpoint-executor] CP${cpNum}: no verdict and finishReason is deterministic — skipping the identical retry, going straight to a reduced prompt (${emptyDiag(cpVer, 1)})`);
+          } else {
+            log('WARN', `[checkpoint-executor] CP${cpNum}: cerebellum returned no usable verdict — retrying once (${emptyDiag(cpVer, 1)})`);
+            cpVer = await dispatchAgent('cerebellum', verifyReq);
+            cpVerdict = extractVerdict(cpVer.output);
+          }
 
           // Second empty reply on an identical prompt means the prompt itself is the
           // problem, so repeating it a third time is pointless. Ask the same question
@@ -1301,6 +1324,54 @@ export async function executeCheckpoints(checkpoints, opts) {
             }
           }
         }
+        // ---- Adversarial pass (B-28) — only over a PASS, and only when stakes earn it ----
+        // An attack exists to stop a FALSE pass, so a FAIL never needed one. Run as its own
+        // call the whole output budget goes to attacking, instead of competing with the
+        // verdict inside one reply.
+        //
+        // Asymmetry on purpose: a first attempt with no verdict fails the milestone CLOSED,
+        // but this pass returning no verdict leaves the PASS standing. The milestone already
+        // earned a terminal verdict from its evidence; an infra miss in an EXTRA check must
+        // not destroy a verdict that was properly reached.
+        if (cpVerdict === 'PASS' && (stakesAtLeast(missionStakes, ATTACK_STAKES_MIN) || isLoadBearing)) {
+          try {
+            const atkEvidenceBudget = Math.max(1000, VERIFY_PROMPT_MAX - BOILERPLATE - cpCritText.length);
+            const atkReq = {
+              instruction: [
+                `You already judged this checkpoint a PASS. Now try to overturn it (stakes: ${missionStakes}${isLoadBearing ? ', load-bearing' : ''}).`,
+                'Run three attacks and record each one:',
+                '  1. The strongest objection a domain expert would raise.',
+                '  2. A flip test — what would have to be true for this to be wrong?',
+                '  3. A boundary probe — the edge case most likely to be unhandled.',
+                '',
+                'If any attack lands, call report_fail with that attack as the recommendation. If',
+                'all three fail to land, call report_pass. Register the verdict as soon as you reach it.',
+                'Do NOT pass merely because the earlier verdict passed — re-derive from the evidence.',
+                '',
+                '## Acceptance Criteria (the milestone)',
+                cpCritText,
+                '',
+                '## Evidence',
+                smartTruncate(cpOutcome || '(no output)', atkEvidenceBudget),
+              ].join('\n'),
+              _missionId: envelope.id,
+            };
+            const atk = await dispatchAgent('cerebellum', atkReq);
+            const atkVerdict = extractVerdict(atk.output);
+            if (atkVerdict === 'FAIL') {
+              log('WARN', `[checkpoint-executor] CP${cpNum}: adversarial pass OVERTURNED the PASS — an attack landed`);
+              cpVer = atk;
+              cpVerdict = 'FAIL';
+            } else if (atkVerdict === 'PASS') {
+              log('INFO', `[checkpoint-executor] CP${cpNum}: adversarial pass upheld the PASS (three attacks, none landed)`);
+            } else {
+              log('WARN', `[checkpoint-executor] CP${cpNum}: adversarial pass returned no verdict (${emptyDiag(atk, 'attack', atkReq.instruction)}) — the earned PASS stands`);
+            }
+          } catch (e) {
+            log('WARN', `[checkpoint-executor] CP${cpNum}: adversarial pass dispatch failed: ${e.message} — the earned PASS stands`);
+          }
+        }
+
         if (cpVerdict === 'FAIL') {
           const s = extractFailSummary ? extractFailSummary(cpVer.output) : 'Checkpoint acceptance criteria not met';
           const rec = extractFailRecommendation ? extractFailRecommendation(cpVer.output) : '';

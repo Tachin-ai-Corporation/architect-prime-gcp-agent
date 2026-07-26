@@ -1461,6 +1461,10 @@ function buildModePayload(mode, payload) {
         // already exist; the remaining work is to populate them"), had no key to say
         // so, invented an action that does not exist, and blocked.
         replan_scope: 'A checkpoint that fails is re-tasked against its pinned outcome — the mission keeps its shape. If the SHAPE itself is wrong (a phase is missing, or the outcomes describe work that is already done or was never needed), send { action: "checkpoint_plan", replan_scope: "mission", replan_reason: "..." } to discard the pinned skeleton and re-shape. Use it when re-tasking cannot fix the problem, not when a task merely failed.',
+        // Cortex has invented `retask` and `request_context` when it wanted behaviour nobody
+        // told it already exists by default. Naming the defaults is cheaper than nudging it
+        // back from an action that was never in the schema.
+        after_a_failed_checkpoint: 'Returning { action: "checkpoint_plan" } is enough — the failed checkpoint is re-tasked automatically against its pinned outcome, and checkpoints that already PASSED keep their verdicts and are not re-run. There is no separate "retask" action; do not invent one. There is also no action for fetching more context: the identifiers already resolved this mission are handed to you in known_resources on every decision, and full step outputs are retrievable by the ref on each result — so ask for a re-task, not for a lookup.',
       };
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
@@ -1478,6 +1482,10 @@ function buildModePayload(mode, payload) {
         // already exist; the remaining work is to populate them"), had no key to say
         // so, invented an action that does not exist, and blocked.
         replan_scope: 'A checkpoint that fails is re-tasked against its pinned outcome — the mission keeps its shape. If the SHAPE itself is wrong (a phase is missing, or the outcomes describe work that is already done or was never needed), send { action: "checkpoint_plan", replan_scope: "mission", replan_reason: "..." } to discard the pinned skeleton and re-shape. Use it when re-tasking cannot fix the problem, not when a task merely failed.',
+        // Cortex has invented `retask` and `request_context` when it wanted behaviour nobody
+        // told it already exists by default. Naming the defaults is cheaper than nudging it
+        // back from an action that was never in the schema.
+        after_a_failed_checkpoint: 'Returning { action: "checkpoint_plan" } is enough — the failed checkpoint is re-tasked automatically against its pinned outcome, and checkpoints that already PASSED keep their verdicts and are not re-run. There is no separate "retask" action; do not invent one. There is also no action for fetching more context: the identifiers already resolved this mission are handed to you in known_resources on every decision, and full step outputs are retrievable by the ref on each result — so ask for a re-task, not for a lookup.',
       };
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
