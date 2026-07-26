@@ -552,6 +552,12 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
 
     const stepText = parts.find(p => p.text)?.text || '';
     if (stepText) {
+      // Separate iterations. Raw `+=` glued the end of one step's prose onto the
+      // start of the next heading ("...confirm the usage.## Step 3: Download"),
+      // producing a transcript that reads as corrupt and that the verifier then
+      // has to judge. Each model turn is its own block; the agent may restart its
+      // own "## Step N" numbering, which is legible once the blocks are separated.
+      if (text && !/\n\s*$/.test(text) && !/^\s*\n/.test(stepText)) text += '\n\n';
       text += stepText;
     }
 

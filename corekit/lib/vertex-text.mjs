@@ -495,7 +495,12 @@ export function createVertexText(config) {
       // Fast path: deterministic validate (no LLM call)
       const check = validateSchema(parsed, schemaName);
       if (check.valid) {
-        log('DEBUG', `enforceSchema OK (deterministic): action=${parsed.action || parsed.classification}`);
+        // Report the schema that was enforced, and only the discriminator the
+        // schema actually has. The `plan` schema carries neither action nor
+        // classification, so this line used to read "action=undefined" on every
+        // successful plan validation — a passing check that looked like a fault.
+        const _disc = parsed.action || parsed.classification;
+        log('DEBUG', `enforceSchema OK (deterministic): schema=${schemaName}${_disc ? ` action=${_disc}` : ''}`);
         return parsed;
       }
       log('INFO', `enforceSchema deterministic invalid: ${check.reason} | action=${parsed?.action || 'none'}`);

@@ -979,13 +979,21 @@ export async function executeCheckpoints(checkpoints, opts) {
       await writeHistory(tId, 'active', tEnv.status, taskAgent,
         result.success ? `Completed (${result.durationMs}ms)` : `Failed: ${result.error}`);
 
-      // Save output file in shared/
+      // Save the step transcript under missions/<missionId>/steps/ — NOT the tree
+      // root. These are process notes, not project artifacts, and the root is the
+      // project repo: rooted notes get committed to main and then re-cloned into
+      // every later mission's working tree, so a mission would open with ~20
+      // unrelated task files (and a 100KB doc dump) from previous work sitting
+      // beside its own. That is both noise and a real read-the-wrong-file hazard.
+      // `missions/` is the existing convention for mission records (mission-record.mjs).
       if (result.success && result.output && result.output.length > 200) {
         try {
           const taskTitle = tEnv.title || `task-${cpNum}-${taskNum}`;
           const slug = taskTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
-          const { writeFileSync: wfs } = await import('fs');
-          wfs(`${CORE_DIR}/shared/${envelope.id}/${slug}.md`, result.output);
+          const { writeFileSync: wfs, mkdirSync: mkd } = await import('fs');
+          const stepsDir = `${CORE_DIR}/shared/${envelope.id}/missions/${envelope.id}/steps`;
+          mkd(stepsDir, { recursive: true });
+          wfs(`${stepsDir}/${cpNum}.${taskNum}-${slug}.md`, result.output);
         } catch (e) { /* ignore */ }
       }
 

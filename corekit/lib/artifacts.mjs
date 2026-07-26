@@ -75,6 +75,37 @@ export function createArtifactManager(deps) {
   // =========================================================================
 
   /**
+   * Seed the mission working tree's .gitignore with the classes of file a mission
+   * fetches to READ rather than to produce. Idempotent (C-18): the managed block
+   * is written once and skipped on any later call, so a resumed mission does not
+   * accumulate duplicates and a project's own rules are never clobbered.
+   *
+   * @param {string} sharedDir - Absolute path to the mission working tree
+   */
+  async function ensureWorkspaceGitignore(sharedDir) {
+    const MARKER = '# --- corekit: downloaded source material (inputs, not artifacts) ---';
+    const RULES = [
+      MARKER,
+      '# Fetched to be read (drive-download, drive-to-doc). Publish deliverables',
+      '# with work-publish instead of committing raw source files here.',
+      '*.pdf', '*.docx', '*.xlsx', '*.pptx',
+      '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp',
+      '*.zip', '*.gz', '*.tar',
+      '# --- end corekit block ---',
+      '',
+    ].join('\n');
+    try {
+      const { readFileSync, writeFileSync, existsSync } = await import('fs');
+      const p = `${sharedDir}/.gitignore`;
+      const existing = existsSync(p) ? readFileSync(p, 'utf8') : '';
+      if (existing.includes(MARKER)) return;
+      writeFileSync(p, existing ? `${existing.replace(/\n*$/, '\n')}\n${RULES}` : RULES);
+    } catch (e) {
+      log('WARN', `Could not seed workspace .gitignore in ${sharedDir}: ${e.message}`);
+    }
+  }
+
+  /**
    * Initialize a shared workspace directory for an envelope.
    * Creates `{coreDir}/shared/{envelopeId}/` via shell, then clones the
    * project's git artifact repo and creates a mission branch.
@@ -112,6 +143,13 @@ export function createArtifactManager(deps) {
           // Branch may exist if resuming
           try { execSync(`git checkout "${branch}"`, { cwd: sharedDir, timeout: 5000 }); } catch { /* ignore */ }
         }
+        // Keep working files out of the artifact substrate. Missions download
+        // source material to read it — contracts, statements, scans — and those
+        // are INPUTS, not artifacts. Committing them would push third-party
+        // personal data into the permanent git store, and bloat every future
+        // clone of this repo. Written after clone/checkout so it lands on the
+        // mission branch; appended (not overwritten) if the project ships its own.
+        await ensureWorkspaceGitignore(sharedDir);
         log('INFO', `Git workspace initialized: repo=${repoId} branch=${branch} base=${ref?.sha?.slice(0, 8) || 'empty'}`);
       } catch (e) {
         log('WARN', `Git workspace init failed (non-fatal): ${e.message}`);

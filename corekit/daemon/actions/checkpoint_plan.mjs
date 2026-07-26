@@ -129,6 +129,12 @@ export async function handleCheckpointPlan(ctx, deps) {
 
   // Try cortex-provided inline structure first
   let checkpoints = extractCheckpoints(decision);
+  // Track the source where it is DECIDED, not by inspecting decision.checkpoints
+  // afterwards: cortex often emits a `checkpoints` key that fails extraction or
+  // agent validation, so the key's mere presence proved nothing and every
+  // prefrontal-structured re-plan was mislabeled `cortex_inline` in telemetry —
+  // exactly the data we use to judge plan quality.
+  let planSource = (checkpoints && checkpoints.length > 0) ? 'cortex_inline' : 'none';
 
   // Validate agent types for inline checkpoints
   if (checkpoints && checkpoints.length > 0) {
@@ -148,6 +154,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
     if (hasInvalidAgent) {
       checkpoints = null;
+      planSource = 'none';
     }
   }
 
@@ -187,6 +194,24 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
+  // Wrap callAgent to accumulate token usage telemetry locally. Defined HERE,
+  // before the first dispatch: the plan-structuring call below used raw callAgent
+  // and so escaped accounting entirely — its tokens never reached _tokenUsage and
+  // no llm_usage line was emitted, which silently under-reported mission_total.
+  const dispatchAgent = async (agentId, payload) => {
+    const res = await callAgent(agentId, payload);
+    if (res?.usage) {
+      const u = res.usage;
+      _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
+      _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
+      _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
+      _tokenUsage.totalCacheWrites += (u.cacheCreationTokenCount || 0);
+      _tokenUsage.callCount++;
+      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${res.durationMs || 0}ms`);
+    }
+    return res;
+  };
+
   // CP4: If cortex didn't provide a valid structure, dispatch to prefrontal
   if (!checkpoints || checkpoints.length === 0) {
     const planGoal = decision.goal || decision.instruction || decision.reasoning || envelope.instruction;
@@ -200,19 +225,25 @@ export async function handleCheckpointPlan(ctx, deps) {
         log('WARN', `Failed to read plan-structuring SKILL.md: ${err.message}`);
       }
 
-      const planResult = await callAgent('prefrontal', {
+      // Stable content FIRST, volatile content LAST. The skill doc and capability
+      // map are byte-identical on every structuring call; the goal and prior
+      // results change every time. Any stable text placed after volatile text is
+      // uncacheable by construction — the capability map used to sit below the
+      // goal, so it could never join a cached prefix. Ordering is the whole fix
+      // (same principle as the boot/mission/volatile tiers in prompt-blocks).
+      const planResult = await dispatchAgent('prefrontal', {
         instruction: [
           '[PLAN STRUCTURING]',
           'Structure a checkpoint/task plan for the goal using the provided plan-structuring skill instructions.',
           '',
           skillDoc ? `## Plan Structuring Skill Instructions\n${skillDoc}` : '',
           '',
+          `## Brain Capability Map (plan by outcome; the executing organ picks its own skills — never name a skill/tool here)\n${CAPABILITY_MAP}`,
+          '',
           '## Goal',
           planGoal,
           '',
           envelope._brief ? `## Brief\n${JSON.stringify(envelope._brief)}` : '',
-          '',
-          `## Brain Capability Map (plan by outcome; the executing organ picks its own skills — never name a skill/tool here)\n${CAPABILITY_MAP}`,
           '',
           processMatchHint || '',  // Process match hint if any
           '',
@@ -232,6 +263,7 @@ export async function handleCheckpointPlan(ctx, deps) {
           const planParsed = await enforceSchema(planResult.output, 'plan');
           checkpoints = extractCheckpoints(planParsed);
           if (checkpoints && checkpoints.length > 0) {
+            planSource = 'prefrontal';
             log('INFO', `Prefrontal structured ${checkpoints.length} checkpoints, ${checkpoints.reduce((s, c) => s + c.tasks.length, 0)} total tasks`);
           }
         } catch (e) {
@@ -243,8 +275,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
-  // Telemetry: plan structuring source
-  const planSource = checkpoints ? (decision.checkpoints ? 'cortex_inline' : 'prefrontal') : 'none';
+  // Telemetry: plan structuring source (assigned at the branch that produced it)
   log('INFO', `[TELEMETRY] plan_structuring: ${JSON.stringify({
     source: planSource,
     checkpoints: checkpoints?.length || 0,
@@ -262,22 +293,8 @@ export async function handleCheckpointPlan(ctx, deps) {
 
   log('INFO', `Checkpoint plan received: ${checkpoints.length} checkpoints`);
 
-  // Wrap callAgent to accumulate token usage telemetry locally
-  const dispatchAgent = async (agentId, payload) => {
-    const res = await callAgent(agentId, payload);
-    if (res?.usage) {
-      const u = res.usage;
-      _tokenUsage.totalInput += (u.promptTokenCount || u.input_tokens || 0);
-      _tokenUsage.totalOutput += (u.candidatesTokenCount || u.output_tokens || 0);
-      _tokenUsage.totalCached += (u.cachedContentTokenCount || 0);
-      _tokenUsage.totalCacheWrites += (u.cacheCreationTokenCount || 0);
-      _tokenUsage.callCount++;
-      log('INFO', `[TELEMETRY] llm_usage mission=${envelope.id} organ=${agentId} model=${REGISTRY.agents?.[agentId]?.route || agentId} input=${u.promptTokenCount || u.input_tokens || 0} output=${u.candidatesTokenCount || u.output_tokens || 0} cached=${u.cachedContentTokenCount || 0} cache_write=${u.cacheCreationTokenCount || 0} duration=${res.durationMs || 0}ms`);
-    }
-    return res;
-  };
-
-  // Run!
+  // Run! (dispatchAgent — the usage-accounting wrapper — is defined above, so the
+  // plan-structuring call and every task dispatch share one accounting path.)
   const execResult = await executeCheckpoints(checkpoints, {
     dispatchAgent,
     envelope,
