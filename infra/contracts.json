@@ -37,6 +37,15 @@
     "timeoutSeconds": 180,
     "bind": "loopback"
   },
+  "tools": {
+    "_comment": "Gateway tool-result discipline (B-4). A tool result IS context: bound it, ANNOUNCE the bound so the organ can re-derive instead of assuming it saw everything, and never let a binary file reach a model. An unbounded readFile on a downloaded PDF once pushed a single organ call to 877k input tokens.",
+    "output_chars": 24000,
+    "output_head_chars": 16000,
+    "output_tail_chars": 6000,
+    "timeout_ms": 120000,
+    "max_buffer_bytes": 4194304,
+    "binary_guard": true
+  },
   "env": {
     "GOOGLE_GENAI_USE_VERTEXAI": "True",
     "GCE_METADATA_HOST": "metadata.google.internal"

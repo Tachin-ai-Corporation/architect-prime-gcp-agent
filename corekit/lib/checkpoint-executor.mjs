@@ -909,12 +909,22 @@ export async function executeCheckpoints(checkpoints, opts) {
         truncatedNudge = '\n\n[TRUNCATION] Your previous reply hit the token limit. Do NOT paste large content (logs, full file contents, big JSON) into your response — write it to a file in your workspace and return only a concise summary plus the file path.';
       }
 
+      // A timeout is NOT a wrong-argument failure. The generic "investigate why it
+      // failed" frame sends the organ hunting for a bug that isn't there, when the
+      // real problem is batch size — and some of the work may already have landed,
+      // so blind repetition duplicates it (the 2026-07-26 mission re-downloaded
+      // every contract under a second name after a 300s abort).
+      let timeoutNudge = '';
+      if (/timed?\s?out/i.test(result.error || '')) {
+        timeoutNudge = '\n\n[TIMEOUT] The previous attempt did not finish inside its time budget — treat its outcome as UNKNOWN, not failed. Work may already be partly done: re-check current state first (list the folder, check whether the output already exists) and skip what is already there. Then do the remainder in smaller batches — one file or id per command, never a loop over many.';
+      }
+
       // Retry once on failure (for non-optional tasks)
       if (!result.success && !isOptional) {
         log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum} failed (${taskAgent}): ${result.error}. Retrying...`);
         result = await dispatchAgent(taskAgent, {
           ...dispatchPayload,
-          instruction: `${currentInstruction}${currentSkillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Read the governing SKILL.md and use its documented commands. Investigate why it failed (wrong arguments? missing input? wrong target? unread doc?) and correct it — a failing command is something you resolve, not a dead end. Do not simulate results.${truncatedNudge}`,
+          instruction: `${currentInstruction}${currentSkillCatalog}\n\n[RETRY] Previous attempt failed: ${result.error}. Read the governing SKILL.md and use its documented commands. Investigate why it failed (wrong arguments? missing input? wrong target? unread doc?) and correct it — a failing command is something you resolve, not a dead end. Do not simulate results.${truncatedNudge}${timeoutNudge}`,
           prior_results_context: [
             priorContext,
             `[PREVIOUS ATTEMPT FAILED] ${result.error}\nOutput: ${smartTruncate(result.output || '', 500)}`,
