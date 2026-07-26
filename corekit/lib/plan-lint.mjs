@@ -7,7 +7,7 @@
 // Task 1 found the template and reported its id as a verified claim. Task 2 was a
 // SEPARATE dispatch, so it had to re-resolve the phrase "identified in the previous
 // task" from context — and picked the first row of a folder listing
-// (…_Comp_Addendum_Application_Internal_Royalty) instead of …_Comp_Addendum_Fixed.
+// (…_Addendum_Retainer_Royalty) instead of …_Addendum_Retainer_Fixed.
 // Three documents were built from the wrong template and every downstream
 // find-replace then had nothing to match.
 //
@@ -21,20 +21,22 @@
 //
 // Pure: no I/O, no clock, no randomness (B-19).
 
-/** Verbs by which a plan says an identifier was already discovered. */
-const DISCOVERED = 'identified|found|located|discovered|determined|resolved|retrieved'
-  + '|obtained|captured|returned|reported|noted|selected|confirmed|verified|specified'
-  + '|referenced|mentioned|listed|surfaced';
+/**
+ * Verbs that mean "an identifier was RESOLVED", and only those.
+ *
+ * Deliberately narrow. Weaker verbs (noted, listed, mentioned, specified, referenced,
+ * reported, returned) were here and made "the responsibilities listed above" and "the
+ * rates specified above" into findings — both of which point at the REQUEST, not at a
+ * previous task's output. A lint that cries wolf gets ignored, which costs more than the
+ * coverage it buys.
+ */
+const DISCOVERED = 'identified|found|located|discovered|determined|resolved|retrieved';
 
 /** Words pointing backwards through the plan. */
 const BACKWARD = 'previous|prior|preceding|earlier|last|foregoing|aforementioned';
 
 /** The units a planner numbers its work in. */
 const UNIT = 'task|tasks|step|steps|checkpoint|checkpoints|sub-?task|action|instruction';
-
-/** Nouns that name a thing an earlier task had to hand back. */
-const HANDOFF = 'id|ids|identifier|identifiers|url|urls|link|links|path|name|names'
-  + '|value|result|results|output|outputs';
 
 /** Prepositions that make what follows an input rather than a destination. */
 const FROM = 'in|from|by|per|of|at|during|using|with|based\\s+on';
@@ -56,20 +58,22 @@ const PATTERNS = [
   /\bthe\s+aforementioned\b/i,
   // "the template you located", "the doc you just found"
   new RegExp(`\\byou\\s+(?:just\\s+|already\\s+|previously\\s+)?(?:${DISCOVERED})\\b`, 'i'),
-  // "using the id from", "with the file ID returned", "pass the folder id discovered"
-  new RegExp(
-    `\\b(?:using|use|with|pass(?:ing)?|supply(?:ing)?|reference|referencing)\\s+the\\s+`
-    + `(?:[\\w-]+\\s+){0,4}?(?:${HANDOFF})\\s+`
-    + `(?:from|returned|discovered|found|identified|located|determined|obtained|reported|captured|noted)\\b`,
-    'i',
-  ),
+  // A pattern matching "using the <thing> id from …" used to live here, and it fired on
+  // "using the folder id from the Known Resources block" — which is precisely what the
+  // plan-structuring skill instructs a planner to do. It never constrained the source
+  // after "from" to be an earlier TASK, so every source matched, including the correct
+  // one. Removed rather than narrowed: patterns 1 and 2 already catch the same sentence
+  // whenever the source really is a previous task ("… from the previous task", "… from
+  // step 1"), so nothing observed is lost and the false positive is gone.
 ];
 
 /** A task may carry its text as `task`, `instruction`, or be a bare string. */
 function taskText(task) {
   if (typeof task === 'string') return task.trim();
   if (!task || typeof task !== 'object') return '';
-  const t = task.task ?? task.instruction ?? task.description ?? '';
+  // `||`, not `??`: a task carrying `task: ''` must still fall through to `instruction`.
+  // With `??` an empty string counted as present and blocked the fallback entirely.
+  const t = task.task || task.instruction || task.description || '';
   return typeof t === 'string' ? t.trim() : '';
 }
 
@@ -95,9 +99,15 @@ export function matchBackReference(text) {
 /**
  * Find tasks whose required input is an identifier a previous sibling must discover.
  *
- * Only a task that is NOT first in its checkpoint can be flagged — the first task has
- * no previous sibling, so a backward phrase there points outside the checkpoint and
- * means something else.
+ * Only the very FIRST task of the whole plan is exempt — it has nothing behind it, so a
+ * backward phrase there refers to something outside the plan and means something else.
+ *
+ * The exemption is plan-wide rather than per-checkpoint on purpose. Per-checkpoint let the
+ * defect through whenever the split straddled a boundary: a plan of CP1 "locate the
+ * template" / CP2 "duplicate the template identified in the previous task" went uncounted,
+ * because the offending task was index 0 of its own checkpoint. The hazard is identical
+ * either way — a separate dispatch re-resolving an identifier from context — and a
+ * checkpoint boundary makes it slightly worse, not better.
  *
  * @param {Array<{tasks?: Array}>} checkpoints - structured plan, as the executor sees it
  * @returns {Array<{checkpoint: number, task: number, phrase: string, text: string}>}
@@ -106,10 +116,12 @@ export function matchBackReference(text) {
 export function findBackReferences(checkpoints) {
   if (!Array.isArray(checkpoints)) return [];
   const findings = [];
+  let seen = 0;                                  // tasks encountered across the whole plan
   checkpoints.forEach((cp, ci) => {
     const tasks = cp && Array.isArray(cp.tasks) ? cp.tasks : [];
     tasks.forEach((task, ti) => {
-      if (ti === 0) return;                      // no previous sibling to refer to
+      seen += 1;
+      if (seen === 1) return;                    // nothing precedes the plan's first task
       const text = taskText(task);
       const phrase = matchBackReference(text);
       if (phrase) findings.push({ checkpoint: ci + 1, task: ti + 1, phrase, text });

@@ -102,7 +102,7 @@ Don't assume — read what the user asked for and choose the field + sort accord
 
 ### Find a specific named file in a folder
 The requester's words are not the filename. A request for "the fixed comp addendum master
-template" pointed at a file actually called `MASTER_widgetco_Comp_Addendum_Fixed`. The prose
+template" pointed at a file actually called `MASTER_widgetco_Addendum_Retainer_Fixed`. The prose
 search returned zero rows twice, and the mission then built three documents from the wrong
 template. The order below is the fix.
 
@@ -113,8 +113,8 @@ template. The order below is the fix.
    truth. Do this first whenever you know where the file lives.
 3. **Match on the distinguishing token.** When several names share a long prefix, the prefix is
    worthless and the *difference* is the whole answer. One real folder held
-   `..._Comp_Addendum_Application_Internal_Royalty`, `..._Comp_Addendum_Application_Partner`, and
-   `..._Comp_Addendum_Fixed` — only the suffix told them apart. `drive-ls` surfaces exactly this
+   `..._Addendum_Retainer_Royalty`, `..._Addendum_Retainer_Partner`, and
+   `..._Addendum_Retainer_Fixed` — only the suffix told them apart. `drive-ls` surfaces exactly this
    as `lookalikes.differBy`; decide from those remainders.
 4. **Never take the first row as "the file."** Listings are ordered by modification time, which
    has nothing to do with the request. Say which `name` you chose and why it matches the request,

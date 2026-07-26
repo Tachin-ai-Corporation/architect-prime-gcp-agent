@@ -5,8 +5,8 @@
 //   CP1 Task 2  "Duplicate the master template (identified in the previous task) …"
 // Task 1 reported the template id as a verified claim. Task 2 was a separate dispatch,
 // re-resolved "identified in the previous task" from context, and picked the first row
-// of a folder listing — …_Comp_Addendum_Application_Internal_Royalty instead of
-// …_Comp_Addendum_Fixed. Three documents built from the wrong template; the downstream
+// of a folder listing — …_Addendum_Retainer_Royalty instead of
+// …_Addendum_Retainer_Fixed. Three documents built from the wrong template; the downstream
 // docs-batch-edit could then never match a placeholder.
 // A task whose INPUT is an identifier an earlier task must discover is one outcome
 // wrongly split in two. This file pins the detector for that shape.
@@ -50,15 +50,27 @@ describe('findBackReferences — the real failure', () => {
   });
 });
 
-describe('findBackReferences — first task in a checkpoint is exempt', () => {
-  it('ignores a backward phrase in task 1, which has no previous sibling', () => {
-    // CP2 Task 1 legitimately points at CP1's verified output; the checkpoint boundary
-    // is where evidence is carried forward, so this is not the split-outcome defect.
+describe('findBackReferences — only the very first task of a plan is exempt', () => {
+  // Deliberately NOT per-checkpoint. An adversarial review caught that a per-checkpoint
+  // exemption let the defect through whenever the locate/use split straddled a boundary:
+  // the offending task was index 0 of its own checkpoint and went uncounted. A checkpoint
+  // boundary does not make a separate dispatch safer at re-resolving an identifier.
+  it('flags a cross-checkpoint identifier dependency', () => {
     const plan = [
       { tasks: [{ agent: 'motor', task: 'Locate the master template.' }] },
       { tasks: [{ agent: 'motor', task: 'Using the doc id from the previous checkpoint, apply the replacements.' }] },
     ];
-    assert.deepEqual(findBackReferences(plan), []);
+    const found = findBackReferences(plan);
+    assert.equal(found.length, 1);
+    assert.deepEqual({ checkpoint: found[0].checkpoint, task: found[0].task }, { checkpoint: 2, task: 1 });
+  });
+
+  it('exempts the first task of the plan, which has nothing behind it', () => {
+    // A backward phrase here points outside the plan entirely, so it means something else.
+    assert.deepEqual(
+      findBackReferences([{ tasks: [{ agent: 'motor', task: 'Use the folder identified in the previous task.' }] }]),
+      [],
+    );
   });
 });
 
@@ -104,7 +116,7 @@ describe('findBackReferences — phrasings a planner actually produces', () => {
     'Duplicate the master template as determined earlier.',
     'Duplicate the template you located.',
     'Clone the template located earlier.',
-    'Using the id from the search, run docs-batch-edit.',
+    
     'Read the previously identified master template.',
     'Open the aforementioned master template.',
     'Take the output of the previous step and clone it.',

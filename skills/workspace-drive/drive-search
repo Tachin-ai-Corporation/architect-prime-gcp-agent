@@ -63,7 +63,7 @@ if not files:
     out['note'] = ('Zero rows does NOT mean the file is absent - this query is deterministic, '
                    'so re-running it returns zero again. name contains matches a literal '
                    'substring, not the requester phrasing: a request for the fixed comp addendum '
-                   'template can be stored as MASTER_..._Comp_Addendum_Fixed, sharing no words. '
+                   'template can be stored as MASTER_..._Addendum_Retainer_Fixed, sharing no words. '
                    'Change the query or the method: one short distinctive token, fullText '
                    'contains for body text, or list the folder with drive-ls and read the real names.')
 print(json.dumps(out, indent=2))

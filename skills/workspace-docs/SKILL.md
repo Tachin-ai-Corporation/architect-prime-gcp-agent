@@ -214,7 +214,7 @@ runs, and let the surviving run keep its own style so bold/italic/size survive:
 ```python
 import docx
 d = docx.Document('edit.docx')
-edits = {'Net 30': 'Net 20', 'peregrine3': 'Peregrine III'}   # your planned changes
+edits = {'Net 30': 'Net 20', 'acme': 'Peregrine III'}   # your planned changes
 def apply(paras):
     for p in paras:
         # Fast path — match sits inside one run: edit that run, formatting intact.

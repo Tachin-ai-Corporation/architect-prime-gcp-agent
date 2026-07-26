@@ -210,9 +210,9 @@ is a single outcome, and splitting it is how the wrong file gets used.
 Each task runs as its own dispatch. A back-reference like "identified in the previous task",
 "found above", or "from step 1" is not a pointer the executor can resolve — the organ receiving
 task B has to work out which id you meant from whatever context came along, and it can pick
-wrong. In a real mission task A correctly identified `MASTER_..._Comp_Addendum_Fixed` and
+wrong. In a real mission task A correctly identified `MASTER_..._Addendum_Retainer_Fixed` and
 reported its id as a verified claim; task B took the first row of a folder listing instead
-(`MASTER_..._Comp_Addendum_Application_Internal_Royalty`) and built three documents from the
+(`MASTER_..._Addendum_Retainer_Royalty`) and built three documents from the
 wrong template. Nothing failed loudly — the work just came out wrong.
 
 Write one task that owns the whole outcome: "duplicate the fixed monthly comp addendum master
