@@ -394,10 +394,10 @@ except Exception as e:
 # Readback verification: re-read the doc's named styles from the API and confirm they match
 brand_verified = {}
 try:
-    verify_doc = json.loads(api_call(
+    verify_doc = api_call(
         f'https://docs.googleapis.com/v1/documents/{doc_id}',
         headers={}
-    ))
+    )
     for ns in verify_doc.get('namedStyles', {}).get('styles', []):
         nst = ns.get('namedStyleType', '')
         if nst not in style_map:
