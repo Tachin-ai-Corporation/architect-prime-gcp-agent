@@ -1,4 +1,4 @@
-# Skill: Google Docs (v21)
+# Skill: Google Docs (v22)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -316,23 +316,57 @@ a design team, not a text editor.
 
 ---
 
-## Procedure: create a professionally formatted document from HTML
+## Procedure: create a professionally formatted document (PRIMARY)
 
-The richest path for new documents. Google Docs converts HTML with inline CSS faithfully —
-fonts, colors, tables, images, spacing all survive.
+Use `docs-create-branded` for all new documents that need professional formatting. This tool
+takes structured JSON content and handles ALL HTML generation, branding, and page formatting
+internally. The motor provides the *content* — the tool handles the *design*.
 
-**This is a SINGLE motor task.** All steps below happen in one execution — do not split
-"read brand guide" and "create document" into separate checkpoint tasks. The motor reads
-the brand guide, writes the HTML file, runs `docs-create`, applies page formatting, and
-verifies — all in one call.
+**This is a SINGLE motor task.** Write a JSON file with the document sections, then run one
+command. Do NOT split "read brand guide" and "create document" into separate tasks.
 
 ### Steps
 
-1. **If a brand guide is referenced**, read it: `docs-cat <brandGuideId> --out brand.txt`,
-   extract the `Key: Value` pairs, then `rm -f brand.txt`. Otherwise use default brand values.
-2. **Write a complete HTML file** to `doc.html`. The HTML must include ALL document content
-   with inline CSS. Use `cat <<'HTMLEOF' > doc.html` to write the file. Use the template below,
-   substituting brand values and filling in real content:
+1. **Write a content JSON file** (`sections.json`) with the document structure:
+
+```json
+[
+  {"type": "callout", "content": "**Executive Summary:** Overview of key findings and recommendations."},
+  {"type": "heading", "level": 2, "text": "Project Status"},
+  {"type": "paragraph", "text": "The following table summarizes active projects."},
+  {"type": "table", "headers": ["Project", "Status", "Lead", "Budget", "Completion"],
+   "rows": [["Alpha Platform", "Active", "John D.", "$50K", "75%"],
+            ["Beta Launch", "Planning", "Jane S.", "$30K", "20%"]]},
+  {"type": "heading", "level": 2, "text": "Key Highlights"},
+  {"type": "bullets", "items": ["**Revenue up 15%** quarter-over-quarter.", "New client onboarded.", "Team expanded by 2 hires."]},
+  {"type": "heading", "level": 2, "text": "Risks & Mitigations"},
+  {"type": "numbered", "items": ["**Supply chain delay** — mitigated by dual sourcing.", "**Budget pressure** — reduced scope for Phase 2."]},
+  {"type": "divider"},
+  {"type": "footer", "text": "Confidential — for internal use only."}
+]
+```
+
+2. **Create the doc** (one command):
+   `docs-create-branded --title "Q3 2026 Project Status Report" --subtitle "Prepared by Operations — July 2026" --content sections.json --folder <folderId> --brand-doc <brandGuideDocId> --header "Company Name" --footer "Confidential"`
+
+3. **Verify:** `docs-cat <newDocId> --meta` + `docs-cat <newDocId> --fingerprint`
+4. **Clean up:** `rm -f sections.json`
+
+Section types: `callout`, `heading` (level 1-6), `paragraph`, `table` (headers + rows),
+`bullets`, `numbered`, `divider`, `footer`. Text supports `**bold**` for emphasis.
+
+Omit `--brand-doc` to use built-in defaults (Montserrat headings, Open Sans body, navy/steel-blue/coral palette).
+
+---
+
+## Alternative: create from raw HTML (advanced)
+
+For documents that need custom HTML layout beyond what `docs-create-branded` supports.
+Use `docs-create --from-html` with a hand-crafted HTML file. The motor must write the
+complete HTML to a file and run the command in ONE task.
+
+1. **Write a complete HTML file** to `doc.html` using `cat <<'HTMLEOF' > doc.html`.
+   Use the template below, substituting brand values and filling in real content:
 
 ```html
 <html><head><style>
@@ -406,12 +440,13 @@ try to put headers/footers in the HTML.
 | **Lists** | `<ul>`, `<ol>`, `<li>` | Nested lists preserved. `list-style-type` partially honored |
 | **NOT supported** | `flexbox`, `grid`, `position`, `float`, `@media`, CSS variables, `calc()`, `@import`, external stylesheets, `box-shadow`, `text-shadow`, `border-radius`, gradients, `transform`, `opacity` | Keep CSS simple — inline styles are most reliable |
 
-### When to use HTML vs surgical edits
+### When to use which path
 
 | Situation | Path |
 |---|---|
-| New document that needs professional formatting | `docs-create --from-html` with styled HTML |
-| New document from a template | `docs-clone-template` (inherits template's formatting) |
+| **New document — any professional format** | `docs-create-branded` with JSON sections (PRIMARY) |
+| New document — custom HTML layout needed | `docs-create --from-html` with hand-crafted HTML (advanced) |
+| New document from an existing template | `docs-clone-template` (inherits template's formatting) |
 | Editing an existing doc — change text/sections | Surgical edits (`docs-batch-edit`, `docs-find-replace`) |
 | Applying brand styles to an existing doc's headings | `docs-style` with brand font/size/color per heading |
 | Complete reformat of an existing doc | `docs-export-docx` → edit with python-docx → `docs-replace-file` |

@@ -51,6 +51,7 @@ skills/workspace-docs/docs-batch-replace bin/docs-batch-replace
 skills/workspace-docs/docs-batch-edit bin/docs-batch-edit
 skills/workspace-docs/docs-anchor-insert bin/docs-anchor-insert
 skills/workspace-docs/docs-style bin/docs-style
+skills/workspace-docs/docs-create-branded bin/docs-create-branded
 skills/workspace-docs/docs-insert-table bin/docs-insert-table
 skills/workspace-docs/docs-insert-image bin/docs-insert-image
 skills/workspace-docs/docs-namedrange-create bin/docs-namedrange-create

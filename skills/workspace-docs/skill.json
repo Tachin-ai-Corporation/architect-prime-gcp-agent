@@ -1,9 +1,9 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  21,
-    "description":  "Read, create, and edit Google Docs with professional formatting and branding. Edits are surgical and in-place by default (find/replace, delete-section, insert-at-anchor) so all untouched formatting is preserved. Rich styling via docs-style (font, size, color, spacing, shading). Create beautifully formatted docs from HTML with full branding support. A docx round-trip is reserved for wholesale rebuilds. Includes a formatting fingerprint for before/after verification, plus review comments.",
-    "summary":  "Work with Google Docs — create professionally formatted documents with branding, surgically edit in place (formatting preserved), apply rich styling (fonts, colors, spacing, shading), rebuild via docx only when needed, verify with a formatting fingerprint, and leave review comments.",
+    "version":  22,
+    "description":  "Read, create, and edit Google Docs with professional formatting and branding. Create beautifully branded docs from structured JSON content (docs-create-branded) or HTML (docs-create --from-html). Edits are surgical and in-place by default. Rich styling via docs-style (font, size, color, spacing, shading). Auto-enrichment: the skill adds professional formatting even when the request is sparse. A docx round-trip is reserved for wholesale rebuilds.",
+    "summary":  "Work with Google Docs — create professionally branded documents from structured content, surgically edit in place (formatting preserved), apply rich styling, auto-enrich sparse requests with professional formatting, verify with fingerprints.",
     "author":  "architect-prime",
     "origin":  "core",
     "category":  "workspace",
@@ -35,6 +35,7 @@
                     "docs-replace-file",
                     "docs-revision",
                     "docs-clone-template",
+                    "docs-create-branded",
                     "docs-format-page",
                     "_docslib.py"
                 ],
