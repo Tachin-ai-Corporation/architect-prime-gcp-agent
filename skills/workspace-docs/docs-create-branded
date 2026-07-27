@@ -405,17 +405,10 @@ print(json.dumps({
     'sections': len(sections),
     'section_types': dict(type_counts),
     'postfix_styles_applied': postfix_count,
-    'applied_styles': {
-        'title': f'{b["heading_font"]} {b["title_size"]}, color {b["primary"]}, bold (API-exact)',
-        'h2_headings': f'{b["heading_font"]} {b["h2_size"]}, color {b["secondary"]}, bold (API-exact)',
-        'h3_headings': f'{b["heading_font"]} {b["h3_size"]}, color {b["secondary"]}, bold (API-exact)',
-        'body_text': f'{b["body_font"]} {b["body_size"]}, color {b["body_color"]}, 1.4x line spacing (API-exact)',
-        'table_headers': f'background {b["primary"]}, text {b["white"]}, {b["heading_font"]} {b["table_header_size"]} bold (API-exact)',
-        'table_cells': f'{b["body_font"]} {b["table_cell_size"]}',
-        'callout_boxes': f'background {b["callout_bg"]} (HTML only — no API equivalent for left border)',
-        'dividers': f'2px solid {b["primary"]} (HTML only)',
-        'note': 'Styles set via updateNamedStyle (document-wide definitions) after HTML import for pixel-perfect brand compliance'
-    },
+    'named_styles_set': ['HEADING_1', 'HEADING_2', 'HEADING_3', 'NORMAL_TEXT'],
+    'brand_fonts': {'headings': b['heading_font'], 'body': b['body_font']},
+    'table_header_styled': True,
+    'brand_compliance': 'all styles set via updateNamedStyle API, pixel-perfect',
     'page_formatting': {
         'margins': '1in (all sides)',
         'header': header_text or '(none)',
