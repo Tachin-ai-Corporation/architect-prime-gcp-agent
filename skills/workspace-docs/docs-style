@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # docs-style — Apply styling or heading levels to an anchor phrase or text range
 # Brain agent: motor (WRITE)
-# Usage: docs-style --doc DOC_ID (--anchor "phrase" | --start START_IDX --end END_IDX) --style "HEADING_1|bold|italic|align=CENTER|color=#FF0000"
+# Usage: docs-style --doc DOC_ID (--anchor "phrase" | --start START_IDX --end END_IDX) --style "HEADING_1|bold|italic|align=CENTER|color=#FF0000|font=Montserrat|size=14"
 set -euo pipefail
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
@@ -54,13 +54,25 @@ def api_call(url, method='GET', headers=None, data=None):
         sys.stderr.write(f'API error {method} {url}: {e.code} {e.read().decode(\"utf-8\")}\\n')
         sys.exit(1)
 
+def parse_hex(val):
+    h = val.strip().lstrip('#')
+    if len(h) == 3:
+        h = ''.join(c * 2 for c in h)
+    if len(h) != 6 or any(c not in '0123456789abcdefABCDEF' for c in h):
+        return None
+    return {'color': {'rgbColor': {
+        'red': int(h[0:2], 16) / 255.0,
+        'green': int(h[2:4], 16) / 255.0,
+        'blue': int(h[4:6], 16) / 255.0
+    }}}
+
 
 # 1. Resolve range
 if anchor:
     doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}?suggestionsViewMode=SUGGESTIONS_INLINE')
     body_content = doc.get('body', {}).get('content', [])
     plain_text, index_map = extract_text_and_map(body_content)
-    
+
     occurrences = []
     start = 0
     while True:
@@ -69,14 +81,14 @@ if anchor:
             break
         occurrences.append(pos)
         start = pos + 1
-        
+
     if not occurrences:
         sys.stderr.write(f'Anchor not found: \"{anchor}\"\\n')
         sys.exit(1)
     if len(occurrences) > 1:
         sys.stderr.write(f'Anchor not unique: found {len(occurrences)} occurrences of \"{anchor}\"\\n')
         sys.exit(1)
-        
+
     c_start = occurrences[0]
     start_idx = index_map[c_start]
     end_idx = index_map[c_start + len(anchor) - 1] + 1
@@ -84,7 +96,7 @@ else:
     start_idx = int(start_idx_str)
     end_idx = int(end_idx_str)
 
-# 2. Parse style
+# 2. Parse style — comma-separated tokens
 text_style = {}
 p_style = {}
 
@@ -99,27 +111,29 @@ for part in parts:
     elif part == 'strikethrough':
         text_style['strikethrough'] = True
     elif part.startswith('color='):
-        hex_color = part.split('=', 1)[1].strip().lstrip('#')
-        if len(hex_color) == 3:
-            hex_color = ''.join(ch * 2 for ch in hex_color)
-        if len(hex_color) != 6 or any(ch not in '0123456789abcdefABCDEF' for ch in hex_color):
+        c = parse_hex(part.split('=', 1)[1])
+        if not c:
             sys.stderr.write(f'Invalid hex color: \"{part}\" (use #RRGGBB or #RGB)\\n')
             sys.exit(1)
-        r = int(hex_color[0:2], 16) / 255.0
-        g = int(hex_color[2:4], 16) / 255.0
-        b = int(hex_color[4:6], 16) / 255.0
-        text_style['foregroundColor'] = {
-            'color': {
-                'rgbColor': {
-                    'red': r,
-                    'green': g,
-                    'blue': b
-                }
-            }
-        }
+        text_style['foregroundColor'] = c
+    elif part.startswith('font='):
+        font_name = part.split('=', 1)[1].strip()
+        text_style['weightedFontFamily'] = {'fontFamily': font_name, 'weight': 400}
+    elif part.startswith('size='):
+        size_str = part.split('=', 1)[1].strip().rstrip('pt')
+        try:
+            text_style['fontSize'] = {'magnitude': float(size_str), 'unit': 'PT'}
+        except ValueError:
+            sys.stderr.write(f'Invalid size: \"{part}\" (use size=14 or size=14pt)\\n')
+            sys.exit(1)
+    elif part.startswith('highlight='):
+        c = parse_hex(part.split('=', 1)[1])
+        if not c:
+            sys.stderr.write(f'Invalid highlight color: \"{part}\" (use #RRGGBB or #RGB)\\n')
+            sys.exit(1)
+        text_style['backgroundColor'] = c
     elif part.startswith('align='):
         align_val = part.split('=', 1)[1].strip().upper()
-        # Docs API enums are START/CENTER/END/JUSTIFIED; accept LEFT/RIGHT as aliases.
         align_map = {
             'LEFT': 'START', 'START': 'START',
             'RIGHT': 'END', 'END': 'END',
@@ -129,8 +143,44 @@ for part in parts:
             sys.stderr.write(f'Invalid alignment: \"{align_val}\" (use START/LEFT, CENTER, END/RIGHT, or JUSTIFIED)\\n')
             sys.exit(1)
         p_style['alignment'] = align_map[align_val]
+    elif part.startswith('lineSpacing='):
+        try:
+            p_style['lineSpacing'] = float(part.split('=', 1)[1].strip())
+        except ValueError:
+            sys.stderr.write(f'Invalid lineSpacing: \"{part}\" (use 100=single, 115=1.15x, 150=1.5x, 200=double)\\n')
+            sys.exit(1)
+    elif part.startswith('spaceAbove='):
+        try:
+            pts = float(part.split('=', 1)[1].strip().rstrip('pt'))
+            p_style['spaceAbove'] = {'magnitude': pts, 'unit': 'PT'}
+        except ValueError:
+            sys.stderr.write(f'Invalid spaceAbove: \"{part}\" (use points, e.g. spaceAbove=6)\\n')
+            sys.exit(1)
+    elif part.startswith('spaceBelow='):
+        try:
+            pts = float(part.split('=', 1)[1].strip().rstrip('pt'))
+            p_style['spaceBelow'] = {'magnitude': pts, 'unit': 'PT'}
+        except ValueError:
+            sys.stderr.write(f'Invalid spaceBelow: \"{part}\" (use points, e.g. spaceBelow=6)\\n')
+            sys.exit(1)
+    elif part.startswith('indent='):
+        try:
+            pts = float(part.split('=', 1)[1].strip().rstrip('pt'))
+            p_style['indentStart'] = {'magnitude': pts, 'unit': 'PT'}
+        except ValueError:
+            sys.stderr.write(f'Invalid indent: \"{part}\" (use points, e.g. indent=36)\\n')
+            sys.exit(1)
+    elif part.startswith('shade='):
+        c = parse_hex(part.split('=', 1)[1])
+        if not c:
+            sys.stderr.write(f'Invalid shade color: \"{part}\" (use #RRGGBB or #RGB)\\n')
+            sys.exit(1)
+        p_style['shading'] = {'backgroundColor': c}
     elif part in ['HEADING_1', 'HEADING_2', 'HEADING_3', 'HEADING_4', 'HEADING_5', 'HEADING_6', 'TITLE', 'SUBTITLE', 'NORMAL_TEXT']:
         p_style['namedStyleType'] = part
+    else:
+        sys.stderr.write(f'Unknown style token: \"{part}\"\\n')
+        sys.exit(1)
 
 requests = []
 if text_style:

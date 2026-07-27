@@ -1,4 +1,4 @@
-# Skill: Google Docs (v19)
+# Skill: Google Docs (v20)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -74,7 +74,15 @@ section numbers included.
 - `docs-batch-replace --doc <id> --file pairs.json` — many swaps in one call; `[{"find","replace","matchCase"}]`, applied in order (can cascade). Reports per-pair `applied`/`absent`.
 - `docs-section-delete --doc <id> --from-anchor "PHRASE" [--keep-anchor]` — delete from a **unique** anchor to the end of the doc. Or `--start N --end N` (raw Docs-API indices from `docs-get`).
 - `docs-anchor-insert --doc <id> --anchor "PHRASE" --text "..." [--position before|after]` — insert at a **unique** anchor (inherits adjacent formatting). For several inserts/deletes, prefer `docs-batch-edit` (atomic, reverse-ordered).
-- `docs-style` — adjust styling on a range when needed (read its SKILL header for syntax).
+- `docs-style --doc <id> (--anchor "phrase" | --start N --end N) --style "tokens"` — apply
+  formatting. Comma-separated tokens:
+  - **Text:** `bold`, `italic`, `underline`, `strikethrough`, `color=#HEX`, `highlight=#HEX`
+    (text background), `font=FontName` (Google Docs font, e.g. Montserrat, Open Sans, Roboto),
+    `size=Npt` (font size in points)
+  - **Paragraph:** `align=LEFT|CENTER|RIGHT|JUSTIFIED`, `HEADING_1`..`HEADING_6`, `TITLE`,
+    `SUBTITLE`, `NORMAL_TEXT`, `lineSpacing=N` (100=single, 115=1.15x, 200=double),
+    `spaceAbove=Npt`, `spaceBelow=Npt`, `indent=Npt`, `shade=#HEX` (paragraph background)
+  - Example: `--style "font=Montserrat, size=14, color=#1B2A4A, bold, spaceBelow=6"`
 - `docs-insert-table --doc <id> --anchor "phrase" --rows N --cols M` — insert a table at a **unique** anchor.
 - `docs-insert-image --doc <id> --anchor "phrase" --url IMAGE_URL` — insert an inline image from a public URL at a **unique** anchor (PNG/JPEG/GIF, <50MB, <25MP).
 - `docs-format-page --doc <id> [--margins "1in"] [--header "text"] [--footer "text"] [--orientation portrait|landscape]` — page-level formatting only; does not touch body text.
@@ -202,6 +210,180 @@ For a review pass where you give feedback rather than change the text.
    later edit must find and delete. Feedback lives in comments, beside the passage.
 4. Keep comments plain and factual. On re-review, `docs-comments-list` and resolve stale
    comments instead of stacking duplicates.
+
+---
+
+## Branding system
+
+A **brand guide** is a Google Doc or JSON file that defines colors, fonts, and formatting
+standards. When a mission references a brand guide, read it first and use its values for every
+document you create or format. When no brand guide is specified, use the **default brand** below.
+
+### Default brand values (use when no brand guide is provided)
+
+| Element | Value |
+|---|---|
+| Primary color | `#1B2A4A` (deep navy) |
+| Secondary color | `#3D5A80` (steel blue) |
+| Accent color | `#E07A5F` (warm coral) |
+| Heading text color | `#1B2A4A` |
+| Body text color | `#2D3748` |
+| Table header background | `#1B2A4A` |
+| Table header text | `#FFFFFF` |
+| Table alt-row background | `#F7F8FA` |
+| Heading font | Montserrat |
+| Body font | Open Sans |
+| Title size | 26pt |
+| Heading 1 size | 22pt |
+| Heading 2 size | 16pt |
+| Heading 3 size | 13pt |
+| Body size | 11pt |
+| Line spacing | 1.15 (= `lineSpacing=115`) |
+| Margins | 1in |
+| Accent divider | 2px solid primary color |
+
+### Brand guide format
+
+A brand guide document uses this structure — the agent reads it with `docs-cat` and extracts
+values by line prefix. Missing lines fall back to the defaults above.
+
+```
+Brand Guide: [Company Name]
+
+COLORS
+Primary: #HEX
+Secondary: #HEX
+Accent: #HEX
+Heading Text: #HEX
+Body Text: #HEX
+Table Header Background: #HEX
+Table Header Text: #HEX
+Table Row Alt: #HEX
+
+TYPOGRAPHY
+Heading Font: FontName
+Body Font: FontName
+Title Size: N
+Heading 1 Size: N
+Heading 2 Size: N
+Heading 3 Size: N
+Body Size: N
+Line Spacing: N
+
+PAGE
+Margins: 1in
+Header: text for the header
+Footer: text for the footer
+
+ELEMENTS
+Logo URL: https://publicly-accessible-image-url
+Divider Color: #HEX
+Link Color: #HEX
+```
+
+### Reading a brand guide
+
+1. `docs-cat <brandGuideId> --out brand.txt`
+2. Parse each `Key: Value` line. Missing keys → default brand values.
+3. Store the parsed values as variables for HTML generation or `docs-style` calls.
+4. `rm -f brand.txt` after extracting values.
+
+---
+
+## Procedure: create a professionally formatted document from HTML
+
+The richest path for new documents. Google Docs converts HTML with inline CSS faithfully —
+fonts, colors, tables, images, spacing all survive. Use this for any document that needs to look
+polished.
+
+1. **Read the brand guide** (if specified) or use default brand values.
+2. **Write a local HTML file** (`doc.html`) with inline CSS. Use the template below as a
+   starting point, substituting brand values:
+
+```html
+<html><head><style>
+  body { font-family: 'Open Sans', sans-serif; font-size: 11pt; color: #2D3748; line-height: 1.4; }
+  h1 { font-family: 'Montserrat', sans-serif; font-size: 22pt; color: #1B2A4A; border-bottom: 2px solid #1B2A4A; padding-bottom: 4pt; margin-bottom: 12pt; }
+  h2 { font-family: 'Montserrat', sans-serif; font-size: 16pt; color: #3D5A80; margin-top: 18pt; margin-bottom: 8pt; }
+  h3 { font-family: 'Montserrat', sans-serif; font-size: 13pt; color: #3D5A80; margin-top: 14pt; margin-bottom: 6pt; }
+  table { border-collapse: collapse; width: 100%; margin: 12pt 0; }
+  th { background-color: #1B2A4A; color: #FFFFFF; font-family: 'Montserrat', sans-serif; font-size: 10pt; font-weight: 600; text-align: left; padding: 8pt 12pt; }
+  td { padding: 8pt 12pt; border-bottom: 1px solid #E2E8F0; font-size: 10pt; }
+  tr:nth-child(even) td { background-color: #F7F8FA; }
+  .accent { color: #E07A5F; font-weight: 600; }
+  .callout { background-color: #F0F4F8; border-left: 4px solid #3D5A80; padding: 10pt 14pt; margin: 12pt 0; font-size: 10pt; }
+  .divider { border: none; border-top: 2px solid #1B2A4A; margin: 18pt 0; }
+  .subtitle { font-family: 'Open Sans', sans-serif; font-size: 13pt; color: #3D5A80; margin-top: -8pt; margin-bottom: 16pt; }
+</style></head><body>
+
+<h1>Document Title</h1>
+<p class="subtitle">Subtitle or date line</p>
+
+<h2>Section Heading</h2>
+<p>Body text here. Use <span class="accent">accent color</span> for emphasis.</p>
+
+<div class="callout">Callout box for important notes or summaries.</div>
+
+<h2>Data Section</h2>
+<table>
+  <tr><th>Column A</th><th>Column B</th><th>Column C</th></tr>
+  <tr><td>Row 1</td><td>Value</td><td>Value</td></tr>
+  <tr><td>Row 2</td><td>Value</td><td>Value</td></tr>
+</table>
+
+<hr class="divider">
+<p style="font-size: 9pt; color: #718096;">Footer note or disclaimer text.</p>
+
+</body></html>
+```
+
+3. `docs-create --title "Document Title" --from-html doc.html --folder <folderId>`
+4. `docs-format-page --doc <newDocId> --margins "1in" --header "Company Name" --footer "Confidential"`
+5. **Verify:** `docs-cat <newDocId> --meta` (structure check) + `docs-cat <newDocId> --fingerprint`
+   (confirm tables, styles, and fonts survived conversion).
+6. `rm -f doc.html`
+
+### CSS properties honored by Google Docs HTML import
+
+| Category | Properties | Notes |
+|---|---|---|
+| **Text** | `color`, `font-family`, `font-size`, `font-weight`, `font-style`, `text-decoration`, `text-align`, `vertical-align` | Font must exist in Google Docs catalog (includes Google Fonts: Montserrat, Open Sans, Roboto, Lato, Poppins, Merriweather, Raleway, Playfair Display, etc.) |
+| **Background** | `background-color` | Works on `td`, `th`, `div`, `span`, `p` |
+| **Tables** | `border`, `border-collapse`, `border-color`, `border-width`, `padding`, `width` | Per-cell and per-table. `border-collapse: collapse` recommended. |
+| **Spacing** | `margin-top`, `margin-bottom`, `padding`, `line-height` | Applied to paragraphs and block elements |
+| **Layout** | `width` (on `table`, `img`), `text-indent` | Percentage widths on tables work |
+| **Images** | `<img src="..." width="..." height="...">` | URL must be publicly accessible. Use HTML attributes, not CSS, for dimensions |
+| **Lists** | `<ul>`, `<ol>`, `<li>` | Nested lists preserved. `list-style-type` partially honored |
+| **NOT supported** | `flexbox`, `grid`, `position`, `float`, `@media`, CSS variables, `calc()`, `@import`, external stylesheets, `box-shadow`, `text-shadow`, `border-radius`, gradients, `transform`, `opacity` | Keep CSS simple — inline styles are most reliable |
+
+### When to use HTML vs surgical edits
+
+| Situation | Path |
+|---|---|
+| New document that needs professional formatting | `docs-create --from-html` with styled HTML |
+| New document from a template | `docs-clone-template` (inherits template's formatting) |
+| Editing an existing doc — change text/sections | Surgical edits (`docs-batch-edit`, `docs-find-replace`) |
+| Applying brand styles to an existing doc's headings | `docs-style` with brand font/size/color per heading |
+| Complete reformat of an existing doc | `docs-export-docx` → edit with python-docx → `docs-replace-file` |
+
+---
+
+## Procedure: apply branding to an existing document
+
+When you need to restyle an existing document to match a brand guide.
+
+1. **Read the brand guide** (or use defaults).
+2. `docs-cat <docId> --meta` — get the heading outline with offsets.
+3. For the document title (if present):
+   `docs-style --doc <id> --anchor "<title text>" --style "font=Montserrat, size=26, color=#1B2A4A, bold"`
+4. For each Heading 1:
+   `docs-style --doc <id> --anchor "<heading text>" --style "font=Montserrat, size=22, color=#1B2A4A, HEADING_1"`
+5. For each Heading 2:
+   `docs-style --doc <id> --anchor "<heading text>" --style "font=Montserrat, size=16, color=#3D5A80, HEADING_2"`
+6. For body text ranges:
+   `docs-style --doc <id> --start N --end M --style "font=Open Sans, size=11, color=#2D3748, lineSpacing=115"`
+7. `docs-format-page --doc <id> --margins "1in" --header "Company Name" --footer "Confidential"`
+8. `docs-cat <docId> --fingerprint` — confirm styles applied.
 
 ---
 
