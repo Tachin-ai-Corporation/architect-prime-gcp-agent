@@ -558,6 +558,15 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
     }))
   }] : undefined;
 
+  // Verdict agents (cerebellum) must ALWAYS produce a function call — a text-only
+  // response is never a valid verdict. mode:'ANY' constrains Gemini to produce a
+  // well-formed call on every step, which both prevents text-only non-verdicts and
+  // reduces MALFORMED_FUNCTION_CALL rates by tightening the output format.
+  const hasVerdictTools = tools && Object.values(tools).some(t => t.name === 'report_pass');
+  const googleToolConfig = hasVerdictTools
+    ? { functionCallingConfig: { mode: 'ANY' } }
+    : undefined;
+
   // Layer D: Inject skill catalog into system prompt for execution agents.
   // Blocks resolve stable-first; Gemini receives one joined string either way.
   const sysBlocks = resolveSystemBlocks(systemBlocks, systemPrompt, tools ? getSkillCatalog() : '');
@@ -589,6 +598,7 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
           ...(cachedContentName
             ? { cachedContent: cachedContentName }
             : { systemInstruction: systemText, tools: googleTools }),
+          ...(googleToolConfig ? { toolConfig: googleToolConfig } : {}),
           temperature,
           maxOutputTokens: maxTokens,
           topP,

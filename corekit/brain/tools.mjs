@@ -346,11 +346,27 @@ export const requestProbe = {
 };
 
 // ---- Helper: Convert standard schema to Google uppercase type schema ----
+// Gemini's functionDeclarations accept a SUBSET of JSON Schema. Passing
+// unsupported keywords doesn't fail the API call but CAN produce
+// finishReason=MALFORMED_FUNCTION_CALL when the model's output is validated
+// against constraints the SDK doesn't understand. Observed: request_probe's
+// minItems/maxItems triggered deterministic MALFORMED at prompt sizes well
+// inside the documented safe threshold (~4.5K chars).
+const UNSUPPORTED_SCHEMA_KEYS = new Set([
+  'minItems', 'maxItems', 'minLength', 'maxLength',
+  'pattern', 'default', 'additionalProperties',
+  'anyOf', 'oneOf', 'allOf', 'not', '$ref', '$schema',
+  'uniqueItems', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
+  'multipleOf', 'format', 'examples', 'const',
+]);
 export function toGoogleSchema(schema) {
   if (!schema) return undefined;
   const copy = JSON.parse(JSON.stringify(schema));
   const convert = (node) => {
     if (node && typeof node === 'object') {
+      for (const key of UNSUPPORTED_SCHEMA_KEYS) {
+        delete node[key];
+      }
       if (typeof node.type === 'string') {
         node.type = node.type.toUpperCase();
       }

@@ -1317,7 +1317,7 @@ export async function executeCheckpoints(checkpoints, opts) {
                   ? `the verifier's OUTPUT budget was exhausted before it emitted a verdict (finishReason=MAX_TOKENS at ${(verifyReq.instruction || '').length} prompt chars, well inside the cap) — less to reason about left room for the verdict. Not a problem with the work.`
                   : 'the full prompt was the problem, not the work'));
             } else {
-              log('WARN', `[checkpoint-executor] CP${cpNum}: reduced prompt also empty (${emptyDiag(cpVer, 3)})`);
+              log('WARN', `[checkpoint-executor] CP${cpNum}: reduced prompt also empty (${emptyDiag(cpVer, 3, reduced.instruction)})`);
             }
           }
         }
