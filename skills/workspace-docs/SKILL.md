@@ -1,4 +1,4 @@
-# Skill: Google Docs (v25)
+# Skill: Google Docs (v27)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -339,6 +339,11 @@ to include.
 Use `docs-create-branded` for all new documents. This tool takes structured JSON content and
 handles ALL HTML generation, branding, and page formatting internally. The motor provides the
 *content* — the tool handles the *design*.
+
+**`--brand-doc` reads the brand guide FOR YOU.** Pass the brand guide's Doc ID and the tool
+reads it, extracts colors/fonts/sizes, and applies them to the HTML. Do NOT `docs-cat` the
+brand guide yourself, do NOT parse its content, do NOT extract hex values manually. The tool
+does all of that internally. If `--brand-doc` is omitted, professional defaults are used.
 
 **This is a SINGLE motor task.** Write a JSON file with the document sections, then run one
 command. Do NOT split "read brand guide" and "create document" into separate tasks.
