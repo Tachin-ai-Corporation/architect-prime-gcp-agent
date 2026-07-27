@@ -119,15 +119,15 @@ For "make N copies of this template, one per person/item". The whole job is **on
 copy** — do not export, re-create, or hand-build the document.
 
 1. **Read the template first — MANDATORY, before you write a single find-string.**
-   `docs-cat <templateId> --meta` then `docs-cat <templateId> --out template.txt`, and copy its
-   placeholders **verbatim out of that output** (e.g. `[Advisor Name]`, `[Effective Date]`,
-   `[Project Fee]`). Exact spelling, case, and brackets matter — they are the find-strings in
-   step 3. **Find-strings invented from the request's phrasing match nothing:** the fill reports
-   zero occurrences and you ship N copies with the placeholders still in them. You cannot infer a
-   template's tokens from the task description, and you may not skip this read because the
-   template "obviously" contains a field. If the folder holds lookalike templates whose names
-   differ only by a suffix, this read is also how you confirm you picked the right one — its
-   placeholder set is the evidence, and confirming it *after* making N copies is too late.
+   `docs-cat <templateId> --out template.txt` then `readFile template.txt`. Copy placeholders
+   **verbatim out of that output**. Exact spelling, case, and brackets matter — they are the
+   find-strings in step 2. **Find-strings invented from the request's phrasing match nothing:**
+   the fill reports zero occurrences and you ship copies with the placeholders still in them.
+   Example: the task says "Contractor: ACME LLC, Rate: $10,000/mo" → you write
+   `{"CONTRACTOR": "ACME LLC", "RATE": "$10,000"}` → but the template actually says
+   `NAME/ENTITY` and `[$_____ per month]`. Zero replacements applied. You must read the template
+   to discover `NAME/ENTITY`, `[$_____ per month]`, `[DURATION]`, etc. — every template uses
+   different tokens and you cannot guess them from the task description.
 2. **Write one replacements file per subject**, `{"[Advisor Name]": "…", "[Project Fee]": "…"}`,
    using only tokens that appeared in step 1's output. Leave a value as `""` for anything
    genuinely unknown — an empty field in a draft is honest and expected; inventing a value is not.

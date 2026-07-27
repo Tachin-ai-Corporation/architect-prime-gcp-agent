@@ -157,8 +157,31 @@ if fill_report:
 if zero_match:
     result_out['zero_match_finds'] = zero_match
     result_out['note'] = (f'{len(zero_match)} of {len(fill_report)} placeholder(s) matched NOTHING in the copy '
-                          '(zero_match_finds) — the template does not contain those tokens as written. Read the '
-                          f'clone (docs-cat {new_id} --find \"[\") to get its ACTUAL placeholders, then fill the '
-                          'remainder with one docs-batch-edit. Re-running the same replacements changes nothing.')
+                          '(zero_match_finds) — the template does not contain those tokens as written. '
+                          'Rebuild your find-strings from clone_text_preview below (or docs-cat the clone). '
+                          'Re-running the same replacements changes nothing.')
+    # Auto-read the clone's text when replacements failed, so the motor can see the
+    # actual placeholder format and self-correct without a separate docs-cat call.
+    try:
+        docs_read_token = docs_token if 'docs_token' in dir() else token
+        doc_url = f'https://docs.googleapis.com/v1/documents/{new_id}'
+        req3 = urllib.request.Request(doc_url, headers={
+            'Authorization': f'Bearer {docs_read_token}',
+            'Content-Type': 'application/json'
+        })
+        with urllib.request.urlopen(req3) as r3:
+            doc_data = json.loads(r3.read().decode('utf-8'))
+        # Extract plain text from body content
+        text_parts = []
+        for elem in doc_data.get('body', {}).get('content', []):
+            para = elem.get('paragraph', {})
+            for pe in para.get('elements', []):
+                tr = pe.get('textRun', {})
+                if tr.get('content'):
+                    text_parts.append(tr['content'])
+        clone_text = ''.join(text_parts).strip()
+        result_out['clone_text_preview'] = clone_text[:2000]
+    except Exception:
+        pass  # best-effort — don't fail the clone output over a preview read
 print(json.dumps(result_out, indent=2))
 " "$TEMPLATE" "$TITLE" "$FOLDER" "$REPLACEMENTS" "$TOKEN" "${AGENT_USER_EMAIL:-}" "$WS_TOKEN"
