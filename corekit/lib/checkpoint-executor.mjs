@@ -1161,11 +1161,15 @@ export async function executeCheckpoints(checkpoints, opts) {
     // not a mechanical per-step gate.
     if (!cpFailed && cpEnvelope.accept_criteria && extractVerdict) {
       try {
-        // ORGAN_CONTEXT_SHARING_PLAN Phase 2: verify from FULL evidence (B-28 re-derivation),
-        // not the packet-summarized `result`. Still bounded by CTX_VERIFY_INPUT below.
-        const fullEvidence = contracts.organ_context?.verifier_full_evidence !== false && cpFullOutputs.length > 0;
-        const evidenceRows = fullEvidence ? cpFullOutputs : cpResults;
-        const cpOutcome = evidenceRows.map(r => `- [${r.step}] ${r.agent}: ${toStr(fullEvidence ? r.output : r.result)}`).join('\n');
+        // First-attempt evidence uses result packets (already capped at CTX_AGENT_STEP).
+        // Compact evidence keeps the verify prompt under the MALFORMED_FUNCTION_CALL
+        // threshold (~10K prompt chars on Gemini Flash) while preserving the key signal:
+        // tool results, not motor reasoning. Full motor output is reserved for the
+        // missing-evidence re-verify path where the verifier explicitly asked for more.
+        const cpOutcome = cpResults.map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`).join('\n');
+        const cpOutcomeFull = (contracts.organ_context?.verifier_full_evidence !== false && cpFullOutputs.length > 0)
+          ? cpFullOutputs.map(r => `- [${r.step}] ${r.agent}: ${toStr(r.output)}`).join('\n')
+          : cpOutcome;
         const isLoadBearing = (envelope._brief?.parts || []).some(p => p.load_bearing);
 
         // Evidence banked from EARLIER checkpoints — this run's prior checkpoints
@@ -1182,18 +1186,10 @@ export async function executeCheckpoints(checkpoints, opts) {
           .map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`)
           .join('\n');
         // ---- Keep the verify prompt under the provider's malformed-call threshold ----
-        // Measured, not guessed: cerebellum returned 0 chars with
-        // finishReason=MALFORMED_FUNCTION_CALL at promptChars 10,516 and 16,234, and
-        // produced a clean verdict at ~4.5k on the SAME evidence. Past a certain
-        // prompt size this model emits a broken function call instead of calling
-        // report_pass/report_fail, which the B-28 fail-closed then reads as a work
-        // failure and blocks a healthy mission. A verifier does not need 16k of
-        // evidence to judge a milestone, so bound the evidence to whatever is left
-        // after the fixed sections rather than letting it set the total.
-        // Every section gets a sub-budget so the TOTAL is bounded by construction.
-        // Capping only the evidence is not enough: a verbose checkpoint instruction
-        // plus long criteria can exceed the threshold on their own, and then the
-        // malformed-call failure returns with no evidence to blame.
+        // Measured: MALFORMED_FUNCTION_CALL at promptChars 10,516 / 13,208 / 16,234;
+        // clean verdicts at ~4.5K. The fix is two-part: compact evidence above (result
+        // packets instead of verbose motor output), and the cap below (9000 default).
+        // Full motor output is reserved for the missing-evidence re-verify path.
         const VERIFY_PROMPT_MAX = contracts.dispatch?.verify_prompt_max_chars || 8000;
         const BOILERPLATE = 1200;
         const instrBudget = Math.min(1500, Math.floor(VERIFY_PROMPT_MAX * 0.2));
@@ -1204,7 +1200,7 @@ export async function executeCheckpoints(checkpoints, opts) {
           VERIFY_PROMPT_MAX - BOILERPLATE - cpInstrText.length - cpCritText.length);
         const priorBudget = Math.min(CTX_VERIFY_PRIOR, Math.floor(remaining * 0.35));
         const evidenceBudget = Math.min(CTX_VERIFY_INPUT, remaining - priorBudget);
-        log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum (evidence<=${evidenceBudget} prior<=${priorBudget} cap=${VERIFY_PROMPT_MAX})`);
+        log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum (evidence<=${evidenceBudget} prior<=${priorBudget} cap=${VERIFY_PROMPT_MAX} compact=${cpOutcome.length} full=${cpOutcomeFull.length})`);
         const verifyReq = {
           instruction: [
             'Verify that this CHECKPOINT MILESTONE has been achieved. Judge the checkpoint as a',
@@ -1387,6 +1383,8 @@ export async function executeCheckpoints(checkpoints, opts) {
           if (isMissingEvidenceFail(failReason)) {
             log('WARN', `[checkpoint-executor] CP${cpNum}: FAIL cites MISSING evidence, not wrong work — re-verifying with the full evidence set: ${String(failReason).slice(0, 160)}`);
             try {
+              const fullEvCritText = smartTruncate(toStr(cpEnvelope.accept_criteria), critBudget);
+              const fullEvBudget = Math.min(FULL_EVIDENCE_MAX, Math.max(3000, 9000 - fullEvCritText.length));
               const fullReq = {
                 instruction: [
                   'Verify this checkpoint against its acceptance criteria. Call report_pass or',
@@ -1398,12 +1396,10 @@ export async function executeCheckpoints(checkpoints, opts) {
                   'say which criterion and what is missing from the ARTIFACT, not from this text.',
                   '',
                   '## Acceptance Criteria',
-                  toStr(cpEnvelope.accept_criteria),
+                  fullEvCritText,
                   '',
                   '## Complete Evidence',
-                  // Generous but bounded — "unbounded" is how a single call once reached
-                  // 877k input tokens. ~28x the slice that produced the false FAIL.
-                  smartTruncate(cpOutcome || '(no output)', FULL_EVIDENCE_MAX),
+                  smartTruncate(cpOutcomeFull || '(no output)', fullEvBudget),
                 ].join('\n'),
                 _missionId: envelope.id,
               };
