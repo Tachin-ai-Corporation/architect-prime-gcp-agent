@@ -391,6 +391,37 @@ try:
 except Exception as e:
     sys.stderr.write(f'Post-process styling warning: {e}\n')
 
+# Readback verification: re-read the doc's named styles from the API and confirm they match
+brand_verified = {}
+try:
+    verify_doc = json.loads(api_call(
+        f'https://docs.googleapis.com/v1/documents/{doc_id}',
+        headers={}
+    ))
+    for ns in verify_doc.get('namedStyles', {}).get('styles', []):
+        nst = ns.get('namedStyleType', '')
+        if nst not in style_map:
+            continue
+        ts = ns.get('textStyle', {})
+        ff = ts.get('weightedFontFamily', {})
+        fs = ts.get('fontSize', {})
+        actual_font = ff.get('fontFamily', '')
+        actual_weight = ff.get('weight', 0)
+        actual_size = fs.get('magnitude', 0)
+        actual_bold = ts.get('bold', False)
+        expected = style_map[nst]
+        exp_font = expected['text']['weightedFontFamily']['fontFamily']
+        exp_weight = expected['text']['weightedFontFamily']['weight']
+        exp_size = expected['text']['fontSize']['magnitude']
+        exp_bold = expected['text'].get('bold', False)
+        ok = (actual_font == exp_font and actual_weight == exp_weight
+              and abs(actual_size - exp_size) < 0.1 and actual_bold == exp_bold)
+        brand_verified[nst] = f'{actual_font}/{actual_weight} {actual_size}pt bold={actual_bold} {"PASS" if ok else "FAIL"}'
+except Exception as e:
+    brand_verified = {'error': str(e)}
+
+all_pass = all('PASS' in v for v in brand_verified.values()) if brand_verified else False
+
 # Count section types for evidence
 from collections import Counter
 type_counts = Counter(s.get('type', 'unknown') for s in sections)
@@ -405,10 +436,10 @@ print(json.dumps({
     'sections': len(sections),
     'section_types': dict(type_counts),
     'postfix_styles_applied': postfix_count,
-    'named_styles_set': ['HEADING_1', 'HEADING_2', 'HEADING_3', 'NORMAL_TEXT'],
+    'brand_verification': brand_verified,
+    'brand_all_pass': all_pass,
     'brand_fonts': {'headings': b['heading_font'], 'body': b['body_font']},
     'table_header_styled': True,
-    'brand_compliance': 'all styles set via updateNamedStyle API, pixel-perfect',
     'page_formatting': {
         'margins': '1in (all sides)',
         'header': header_text or '(none)',
