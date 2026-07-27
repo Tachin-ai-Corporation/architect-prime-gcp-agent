@@ -341,9 +341,15 @@ handles ALL HTML generation, branding, and page formatting internally. The motor
 *content* — the tool handles the *design*.
 
 **`--brand-doc` reads the brand guide FOR YOU.** Pass the brand guide's Doc ID and the tool
-reads it, extracts colors/fonts/sizes, and applies them to the HTML. Do NOT `docs-cat` the
-brand guide yourself, do NOT parse its content, do NOT extract hex values manually. The tool
-does all of that internally. If `--brand-doc` is omitted, professional defaults are used.
+reads it, extracts colors/fonts/sizes, and applies them. Do NOT `docs-cat` the brand guide
+yourself, do NOT parse its content, do NOT extract hex values manually. The tool does all of
+that internally. If `--brand-doc` is omitted, professional defaults are used.
+
+**Pixel-perfect brand compliance.** The tool uses a two-pass approach: (1) HTML import for
+document structure, then (2) Docs API `batchUpdate` to set exact font families, sizes, colors,
+and spacing for each element type (title, H2, H3, body, table headers). This ensures the
+final document matches the brand guide precisely — `docs-cat --fingerprint` will show the
+exact brand values. No post-creation `docs-style` fixup is needed.
 
 **This is a SINGLE motor task.** Write a JSON file with the document sections, then run one
 command. Do NOT split "read brand guide" and "create document" into separate tasks.

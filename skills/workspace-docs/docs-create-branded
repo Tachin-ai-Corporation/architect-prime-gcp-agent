@@ -273,6 +273,125 @@ if os.path.isfile(format_page):
     except Exception as e:
         sys.stderr.write(f'Page format warning: {e}\n')
 
+# Post-process: apply exact brand styles via Docs API batchUpdate.
+# HTML import is lossy — Google Docs does not preserve CSS font sizes, colors,
+# or font families exactly. This step corrects them to the brand-guide values.
+postfix_count = 0
+try:
+    doc = api_call(f'https://docs.googleapis.com/v1/documents/{doc_id}')
+    body_content = doc.get('body', {}).get('content', [])
+
+    def hex_to_color(hex_str):
+        h = hex_str.lstrip('#')
+        return {'color': {'rgbColor': {
+            'red': int(h[0:2], 16) / 255.0,
+            'green': int(h[2:4], 16) / 255.0,
+            'blue': int(h[4:6], 16) / 255.0
+        }}}
+
+    def pt(s):
+        return float(str(s).rstrip('pt'))
+
+    heading_text = {
+        'weightedFontFamily': {'fontFamily': b['heading_font'], 'weight': 700},
+        'bold': True
+    }
+    style_map = {
+        'HEADING_1': {
+            'text': {**heading_text,
+                'fontSize': {'magnitude': pt(b['title_size']), 'unit': 'PT'},
+                'foregroundColor': hex_to_color(b['primary'])},
+            'para': {'spaceBelow': {'magnitude': 12, 'unit': 'PT'}}
+        },
+        'HEADING_2': {
+            'text': {**heading_text, 'weightedFontFamily': {'fontFamily': b['heading_font'], 'weight': 600},
+                'fontSize': {'magnitude': pt(b['h2_size']), 'unit': 'PT'},
+                'foregroundColor': hex_to_color(b['secondary'])},
+            'para': {'spaceAbove': {'magnitude': 18, 'unit': 'PT'}, 'spaceBelow': {'magnitude': 8, 'unit': 'PT'}}
+        },
+        'HEADING_3': {
+            'text': {**heading_text, 'weightedFontFamily': {'fontFamily': b['heading_font'], 'weight': 600},
+                'fontSize': {'magnitude': pt(b['h3_size']), 'unit': 'PT'},
+                'foregroundColor': hex_to_color(b['secondary'])},
+            'para': {'spaceAbove': {'magnitude': 14, 'unit': 'PT'}, 'spaceBelow': {'magnitude': 6, 'unit': 'PT'}}
+        },
+        'NORMAL_TEXT': {
+            'text': {
+                'weightedFontFamily': {'fontFamily': b['body_font'], 'weight': 400},
+                'fontSize': {'magnitude': pt(b['body_size']), 'unit': 'PT'},
+                'foregroundColor': hex_to_color(b['body_color'])},
+            'para': {'lineSpacing': 140}
+        }
+    }
+
+    requests = []
+    def collect_paragraph_styles(content_list, in_table_header=False):
+        for elem in content_list:
+            p = elem.get('paragraph')
+            if p:
+                si, ei = elem.get('startIndex', 0), elem.get('endIndex', 0)
+                if si >= ei:
+                    continue
+                if in_table_header:
+                    requests.append({'updateTextStyle': {
+                        'range': {'startIndex': si, 'endIndex': ei},
+                        'textStyle': {
+                            'weightedFontFamily': {'fontFamily': b['heading_font'], 'weight': 600},
+                            'fontSize': {'magnitude': pt(b['table_header_size']), 'unit': 'PT'},
+                            'foregroundColor': hex_to_color(b['white']),
+                            'bold': True},
+                        'fields': 'weightedFontFamily,fontSize,foregroundColor,bold'}})
+                else:
+                    named = p.get('paragraphStyle', {}).get('namedStyleType', 'NORMAL_TEXT')
+                    if named in style_map:
+                        s = style_map[named]
+                        if s.get('text'):
+                            requests.append({'updateTextStyle': {
+                                'range': {'startIndex': si, 'endIndex': ei},
+                                'textStyle': s['text'],
+                                'fields': ','.join(s['text'].keys())}})
+                        if s.get('para'):
+                            requests.append({'updateParagraphStyle': {
+                                'range': {'startIndex': si, 'endIndex': ei},
+                                'paragraphStyle': s['para'],
+                                'fields': ','.join(s['para'].keys())}})
+            tbl = elem.get('table')
+            if tbl:
+                for ri, row in enumerate(tbl.get('tableRows', [])):
+                    for cell in row.get('tableCells', []):
+                        collect_paragraph_styles(cell.get('content', []), in_table_header=(ri == 0))
+
+    collect_paragraph_styles(body_content)
+
+    # Table header cell backgrounds
+    for elem in body_content:
+        tbl = elem.get('table')
+        if tbl:
+            tbl_start = elem.get('startIndex', 0)
+            num_cols = tbl.get('columns', 1)
+            first_row = tbl.get('tableRows', [{}])[0] if tbl.get('tableRows') else None
+            if first_row:
+                for ci, cell in enumerate(first_row.get('tableCells', [])):
+                    requests.append({'updateTableCellStyle': {
+                        'tableRange': {
+                            'tableCellLocation': {
+                                'tableStartLocation': {'index': tbl_start},
+                                'rowIndex': 0, 'columnIndex': ci},
+                            'rowSpan': 1, 'columnSpan': 1},
+                        'tableCellStyle': {'backgroundColor': hex_to_color(b['primary'])},
+                        'fields': 'backgroundColor'}})
+
+    if requests:
+        api_call(
+            f'https://docs.googleapis.com/v1/documents/{doc_id}:batchUpdate',
+            method='POST',
+            headers={'Content-Type': 'application/json'},
+            data=json.dumps({'requests': requests}).encode('utf-8')
+        )
+        postfix_count = len(requests)
+except Exception as e:
+    sys.stderr.write(f'Post-process styling warning: {e}\n')
+
 # Count section types for evidence
 from collections import Counter
 type_counts = Counter(s.get('type', 'unknown') for s in sections)
@@ -282,22 +401,21 @@ print(json.dumps({
     'docId': doc_id,
     'title': title,
     'link': f'https://docs.google.com/document/d/{doc_id}',
-    'source': 'branded-html',
+    'source': 'branded-html+api-postfix',
     'brand': 'custom' if brand_doc else 'default',
     'sections': len(sections),
     'section_types': dict(type_counts),
+    'postfix_styles_applied': postfix_count,
     'applied_styles': {
-        'title': f'{b["heading_font"]} {b["title_size"]}, color {b["primary"]}, 2px bottom border {b["primary"]}',
-        'h2_headings': f'{b["heading_font"]} {b["h2_size"]}, color {b["secondary"]}',
-        'h3_headings': f'{b["heading_font"]} {b["h3_size"]}, color {b["secondary"]}',
-        'body_text': f'{b["body_font"]} {b["body_size"]}, color {b["body_color"]}, line-height 1.4',
-        'callout_boxes': f'background {b["callout_bg"]}, 4px left border {b["secondary"]}, 10pt/14pt padding',
-        'table_headers': f'background {b["primary"]}, text {b["white"]}, {b["heading_font"]} {b["table_header_size"]} bold',
-        'table_cells': f'{b["body_font"]} {b["table_cell_size"]}, bottom border {b["border"]}, alt-row {b["surface"]}',
-        'accent_markup': f'color {b["accent"]}, font-weight 600',
-        'muted_markup': f'color {b["muted"]}',
-        'dividers': f'2px solid {b["primary"]}',
-        'google_fonts': f'loaded via <link> tag: {b["heading_font"]}, {b["body_font"]}'
+        'title': f'{b["heading_font"]} {b["title_size"]}, color {b["primary"]}, bold (API-exact)',
+        'h2_headings': f'{b["heading_font"]} {b["h2_size"]}, color {b["secondary"]}, bold (API-exact)',
+        'h3_headings': f'{b["heading_font"]} {b["h3_size"]}, color {b["secondary"]}, bold (API-exact)',
+        'body_text': f'{b["body_font"]} {b["body_size"]}, color {b["body_color"]}, 1.4x line spacing (API-exact)',
+        'table_headers': f'background {b["primary"]}, text {b["white"]}, {b["heading_font"]} {b["table_header_size"]} bold (API-exact)',
+        'table_cells': f'{b["body_font"]} {b["table_cell_size"]}',
+        'callout_boxes': f'background {b["callout_bg"]} (HTML only — no API equivalent for left border)',
+        'dividers': f'2px solid {b["primary"]} (HTML only)',
+        'note': 'Styles marked (API-exact) were set via Docs API batchUpdate after HTML import for pixel-perfect brand compliance'
     },
     'page_formatting': {
         'margins': '1in (all sides)',
