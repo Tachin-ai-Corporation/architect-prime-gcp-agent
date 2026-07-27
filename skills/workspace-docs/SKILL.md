@@ -1,4 +1,4 @@
-# Skill: Google Docs (v22)
+# Skill: Google Docs (v23)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -197,9 +197,13 @@ When the structure changes so much that surgical edits don't make sense:
 6. Note + clean up (`rm -f edit.docx`).
 
 ## Procedure: create a new document
-1. Write the content locally as Markdown (`report.md`) or, for colors/fonts/styled tables, HTML (`report.html`).
-2. `docs-create --title "Q3 Report" --from-markdown report.md --folder FOLDER_ID` (or `--from-html`).
-3. Verify: `docs-cat NEW_DOC_ID --meta`. Clean up the local source file if it was a scratch build.
+
+**Use `docs-create-branded` (see the PRIMARY procedure below).** It takes structured JSON
+content and handles ALL HTML generation, branding, fonts, and page formatting internally.
+Do NOT write raw HTML yourself — `docs-create-branded` does it better and the motor does
+not need to produce any HTML.
+
+For plain-text-only docs with zero formatting (rare): `docs-create --title "…" --from-markdown file.md --folder FOLDER_ID`.
 
 ## Procedure: review a document and leave feedback (don't edit the body)
 For a review pass where you give feedback rather than change the text.
@@ -316,11 +320,17 @@ a design team, not a text editor.
 
 ---
 
-## Procedure: create a professionally formatted document (PRIMARY)
+## Procedure: create a professionally formatted document (THE ONLY PATH)
 
-Use `docs-create-branded` for all new documents that need professional formatting. This tool
-takes structured JSON content and handles ALL HTML generation, branding, and page formatting
-internally. The motor provides the *content* — the tool handles the *design*.
+> [!IMPORTANT]
+> **ALWAYS use `docs-create-branded` for new documents.** Never write raw HTML yourself.
+> This tool generates the HTML internally with correct fonts (Google Fonts loaded), brand
+> colors, tables, callouts, and page formatting. The motor's job is to write a JSON content
+> file — the tool handles ALL design.
+
+Use `docs-create-branded` for all new documents. This tool takes structured JSON content and
+handles ALL HTML generation, branding, and page formatting internally. The motor provides the
+*content* — the tool handles the *design*.
 
 **This is a SINGLE motor task.** Write a JSON file with the document sections, then run one
 command. Do NOT split "read brand guide" and "create document" into separate tasks.
