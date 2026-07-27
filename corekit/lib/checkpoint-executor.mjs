@@ -1185,12 +1185,12 @@ export async function executeCheckpoints(checkpoints, opts) {
           .filter(r => !(typeof r.step === 'string' && r.step.endsWith('.verify')))
           .map(r => `- [${r.step}] ${r.agent}: ${toStr(r.result)}`)
           .join('\n');
-        // ---- Keep the verify prompt under the provider's malformed-call threshold ----
-        // Measured: MALFORMED_FUNCTION_CALL at promptChars 10,516 / 13,208 / 16,234;
-        // clean verdicts at ~4.5K. The fix is two-part: compact evidence above (result
-        // packets instead of verbose motor output), and the cap below (9000 default).
-        // Full motor output is reserved for the missing-evidence re-verify path.
-        const VERIFY_PROMPT_MAX = contracts.dispatch?.verify_prompt_max_chars || 8000;
+        // ---- Verify prompt evidence budget ----
+        // Originally capped at 8K to avoid MALFORMED_FUNCTION_CALL at 10K-16K prompts.
+        // Root cause was bad toGoogleSchema + wrong toolConfig (fixed f5d3a79); raised
+        // to 12K so the adversarial pass sees enough evidence for document-editing
+        // missions (7K+ of tool log was being truncated to 4.8K, causing false overturns).
+        const VERIFY_PROMPT_MAX = contracts.dispatch?.verify_prompt_max_chars || 12000;
         const BOILERPLATE = 1200;
         const instrBudget = Math.min(1500, Math.floor(VERIFY_PROMPT_MAX * 0.2));
         const critBudget = Math.min(2500, Math.floor(VERIFY_PROMPT_MAX * 0.32));
