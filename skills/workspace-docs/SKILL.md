@@ -1,4 +1,4 @@
-# Skill: Google Docs (v20)
+# Skill: Google Docs (v21)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -290,15 +290,49 @@ Link Color: #HEX
 
 ---
 
+## Auto-enrichment — every document must look professional
+
+When the user's request is sparse ("create a status report", "draft a proposal"), you are
+responsible for adding the formatting detail they didn't specify. The skill owns the standard
+of quality, not the prompt. Apply ALL of the following automatically unless the user
+explicitly opts out:
+
+- **Brand colors and fonts** — read the brand guide if one is referenced, otherwise use
+  default brand values above. Never create a document in the default Google Docs style.
+- **Heading hierarchy** — every document gets a styled title (H1), subtitle line, and at
+  least one H2 section heading. Add H3 sub-sections where the content warrants it.
+- **Callout boxes** — summaries, key takeaways, or important notes go in a styled callout
+  (ice-blue background, steel-blue left border).
+- **Tables** — any data that has columns belongs in a styled table with a navy header row,
+  white header text, and alternating row shading. Never present tabular data as plain text.
+- **Emphasis** — key terms and critical values get accent color + bold. Secondary info gets
+  muted color.
+- **Footer disclaimer** — add a muted 9pt footer line (e.g. "Confidential" or
+  "Draft — for internal use") unless the user provides one.
+- **Page formatting** — 1in margins, branded header and footer text via `docs-format-page`.
+
+The goal: a user who asks for "a report" gets back a document that looks like it came from
+a design team, not a text editor.
+
+---
+
 ## Procedure: create a professionally formatted document from HTML
 
 The richest path for new documents. Google Docs converts HTML with inline CSS faithfully —
-fonts, colors, tables, images, spacing all survive. Use this for any document that needs to look
-polished.
+fonts, colors, tables, images, spacing all survive.
 
-1. **Read the brand guide** (if specified) or use default brand values.
-2. **Write a local HTML file** (`doc.html`) with inline CSS. Use the template below as a
-   starting point, substituting brand values:
+**This is a SINGLE motor task.** All steps below happen in one execution — do not split
+"read brand guide" and "create document" into separate checkpoint tasks. The motor reads
+the brand guide, writes the HTML file, runs `docs-create`, applies page formatting, and
+verifies — all in one call.
+
+### Steps
+
+1. **If a brand guide is referenced**, read it: `docs-cat <brandGuideId> --out brand.txt`,
+   extract the `Key: Value` pairs, then `rm -f brand.txt`. Otherwise use default brand values.
+2. **Write a complete HTML file** to `doc.html`. The HTML must include ALL document content
+   with inline CSS. Use `cat <<'HTMLEOF' > doc.html` to write the file. Use the template below,
+   substituting brand values and filling in real content:
 
 ```html
 <html><head><style>
@@ -314,34 +348,50 @@ polished.
   .callout { background-color: #F0F4F8; border-left: 4px solid #3D5A80; padding: 10pt 14pt; margin: 12pt 0; font-size: 10pt; }
   .divider { border: none; border-top: 2px solid #1B2A4A; margin: 18pt 0; }
   .subtitle { font-family: 'Open Sans', sans-serif; font-size: 13pt; color: #3D5A80; margin-top: -8pt; margin-bottom: 16pt; }
+  .muted { font-size: 9pt; color: #718096; }
 </style></head><body>
 
 <h1>Document Title</h1>
-<p class="subtitle">Subtitle or date line</p>
+<p class="subtitle">Subtitle — prepared by [Author], [Date]</p>
+
+<div class="callout"><strong>Executive Summary:</strong> A brief overview paragraph
+summarizing the document's key points and conclusions.</div>
 
 <h2>Section Heading</h2>
-<p>Body text here. Use <span class="accent">accent color</span> for emphasis.</p>
-
-<div class="callout">Callout box for important notes or summaries.</div>
+<p>Body text here. Use <span class="accent">accent color</span> for key terms and
+critical values.</p>
 
 <h2>Data Section</h2>
 <table>
-  <tr><th>Column A</th><th>Column B</th><th>Column C</th></tr>
-  <tr><td>Row 1</td><td>Value</td><td>Value</td></tr>
-  <tr><td>Row 2</td><td>Value</td><td>Value</td></tr>
+  <tr><th>Column A</th><th>Column B</th><th>Column C</th><th>Status</th></tr>
+  <tr><td>Item 1</td><td>Description</td><td>Value</td><td><span class="accent">Active</span></td></tr>
+  <tr><td>Item 2</td><td>Description</td><td>Value</td><td>Complete</td></tr>
+  <tr><td>Item 3</td><td>Description</td><td>Value</td><td>Pending</td></tr>
 </table>
 
+<h2>Key Points</h2>
+<ul>
+  <li><strong>First point</strong> — supporting detail.</li>
+  <li><strong>Second point</strong> — supporting detail.</li>
+  <li><strong>Third point</strong> — supporting detail.</li>
+</ul>
+
 <hr class="divider">
-<p style="font-size: 9pt; color: #718096;">Footer note or disclaimer text.</p>
+<p class="muted">Confidential — for internal use only.</p>
 
 </body></html>
 ```
 
-3. `docs-create --title "Document Title" --from-html doc.html --folder <folderId>`
-4. `docs-format-page --doc <newDocId> --margins "1in" --header "Company Name" --footer "Confidential"`
-5. **Verify:** `docs-cat <newDocId> --meta` (structure check) + `docs-cat <newDocId> --fingerprint`
-   (confirm tables, styles, and fonts survived conversion).
-6. `rm -f doc.html`
+3. **Create the doc:** `docs-create --title "Document Title" --from-html doc.html --folder <folderId>`
+4. **Apply page formatting** (headers and footers are page-level, NOT part of the HTML body):
+   `docs-format-page --doc <newDocId> --margins "1in" --header "Company Name" --footer "Confidential"`
+5. **Verify:** `docs-cat <newDocId> --meta` (structure) + `docs-cat <newDocId> --fingerprint` (styles/fonts).
+6. **Clean up:** `rm -f doc.html brand.txt`
+
+**Key boundary:** HTML covers the document BODY (text, headings, tables, callout boxes,
+bullet lists, dividers, footer disclaimers). Page-level chrome (margins, running headers,
+running footers) is `docs-format-page` — a separate command after the doc exists. Do not
+try to put headers/footers in the HTML.
 
 ### CSS properties honored by Google Docs HTML import
 
