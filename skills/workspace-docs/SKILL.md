@@ -1,4 +1,4 @@
-# Skill: Google Docs (v23)
+# Skill: Google Docs (v24)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -363,9 +363,21 @@ command. Do NOT split "read brand guide" and "create document" into separate tas
 4. **Clean up:** `rm -f sections.json`
 
 Section types: `callout`, `heading` (level 1-6), `paragraph`, `table` (headers + rows),
-`bullets`, `numbered`, `divider`, `footer`. Text supports `**bold**` for emphasis.
+`bullets`, `numbered`, `divider`, `footer`.
+
+**Text markup** (use in any text/content field — the tool renders them as styled HTML):
+- `**bold text**` → strong/bold
+- `{{accent:key metric}}` → accent color (coral) + bold weight
+- `{{muted:secondary info}}` → muted color (slate gray)
+- Plain text → body color, normal weight
+
+**Never write raw HTML tags** (`<b>`, `<span>`, `<strong>`, etc.) in JSON content — they
+appear as literal text in the document. Use the markup patterns above instead.
 
 Omit `--brand-doc` to use built-in defaults (Montserrat headings, Open Sans body, navy/steel-blue/coral palette).
+
+The tool's output includes `page_formatting` confirming margins, header, and footer were
+applied, plus `fonts` and `colors` showing which brand values were used.
 
 ---
 

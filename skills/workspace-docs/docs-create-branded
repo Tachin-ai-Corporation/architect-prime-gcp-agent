@@ -144,10 +144,13 @@ with open(content_file, 'r', encoding='utf-8') as f:
 def esc(text):
     return html_mod.escape(str(text))
 
-def bold_markup(text):
-    """Convert **text** to <strong>text</strong>"""
+def rich_markup(text):
     import re
-    return re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', esc(text))
+    t = esc(text)
+    t = re.sub(r'\{\{accent:(.+?)\}\}', rf'<span style="color: {b["accent"]}; font-weight: 600">\1</span>', t)
+    t = re.sub(r'\{\{muted:(.+?)\}\}', rf'<span style="color: {b["muted"]}">\1</span>', t)
+    t = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
+    return t
 
 # Build HTML
 b = brand
@@ -179,28 +182,28 @@ if subtitle:
 for sec in sections:
     t = sec.get('type', '')
     if t == 'callout':
-        body_html += f'<div class="callout">{bold_markup(sec.get("content", ""))}</div>\n'
+        body_html += f'<div class="callout">{rich_markup(sec.get("content", ""))}</div>\n'
     elif t == 'heading':
         lvl = min(max(sec.get('level', 2), 1), 6)
         body_html += f'<h{lvl}>{esc(sec.get("text", ""))}</h{lvl}>\n'
     elif t == 'paragraph':
-        body_html += f'<p>{bold_markup(sec.get("text", ""))}</p>\n'
+        body_html += f'<p>{rich_markup(sec.get("text", ""))}</p>\n'
     elif t == 'table':
         headers = sec.get('headers', [])
         rows = sec.get('rows', [])
         body_html += '<table>\n<tr>' + ''.join(f'<th>{esc(h)}</th>' for h in headers) + '</tr>\n'
         for row in rows:
-            body_html += '<tr>' + ''.join(f'<td>{bold_markup(c)}</td>' for c in row) + '</tr>\n'
+            body_html += '<tr>' + ''.join(f'<td>{rich_markup(c)}</td>' for c in row) + '</tr>\n'
         body_html += '</table>\n'
     elif t == 'bullets':
         body_html += '<ul>\n'
         for item in sec.get('items', []):
-            body_html += f'<li>{bold_markup(item)}</li>\n'
+            body_html += f'<li>{rich_markup(item)}</li>\n'
         body_html += '</ul>\n'
     elif t == 'numbered':
         body_html += '<ol>\n'
         for item in sec.get('items', []):
-            body_html += f'<li>{bold_markup(item)}</li>\n'
+            body_html += f'<li>{rich_markup(item)}</li>\n'
         body_html += '</ol>\n'
     elif t == 'divider':
         body_html += '<hr class="divider">\n'
@@ -273,6 +276,14 @@ print(json.dumps({
     'link': f'https://docs.google.com/document/d/{doc_id}',
     'source': 'branded-html',
     'brand': 'custom' if brand_doc else 'default',
-    'sections': len(sections)
+    'sections': len(sections),
+    'fonts': f'{b["heading_font"]} (headings), {b["body_font"]} (body) — loaded via Google Fonts',
+    'colors': f'primary={b["primary"]}, secondary={b["secondary"]}, accent={b["accent"]}',
+    'page_formatting': {
+        'margins': '1in (all sides)',
+        'header': header_text or '(none)',
+        'footer': footer_text,
+        'applied_via': 'docs-format-page'
+    }
 }, indent=2))
 PYEOF
