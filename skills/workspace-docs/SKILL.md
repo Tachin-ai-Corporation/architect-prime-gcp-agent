@@ -1,4 +1,4 @@
-# Skill: Google Docs (v24)
+# Skill: Google Docs (v25)
 
 > [!IMPORTANT]
 > All commands below are CLI scripts. Run them with the `run_command` tool and read the
@@ -315,8 +315,16 @@ explicitly opts out:
   "Draft — for internal use") unless the user provides one.
 - **Page formatting** — 1in margins, branded header and footer text via `docs-format-page`.
 
+- **Sample content** — when the user provides no specific data ("make a status report",
+  "create a performance summary"), populate the document with **realistic sample data**
+  (example metrics, placeholder names, representative numbers). Never ask for data or
+  block the mission — a beautifully formatted document with sample content is far more
+  useful than no document. The user can fill in real values later.
+
 The goal: a user who asks for "a report" gets back a document that looks like it came from
-a design team, not a text editor.
+a design team, not a text editor. **Never respond with `needs_input` for a document
+creation request** — the document type itself tells you what sections and sample content
+to include.
 
 ---
 
