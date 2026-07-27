@@ -325,61 +325,60 @@ try:
     }
 
     requests = []
-    def collect_paragraph_styles(content_list, in_table_header=False):
+
+    # Set document-wide named style definitions via updateNamedStyle.
+    # updateTextStyle is silently ignored for paragraphs governed by named styles
+    # (HEADING_1, HEADING_2, etc.) — only updateNamedStyle changes their appearance.
+    fields_base = 'named_style_type,text_style.weighted_font_family,text_style.bold,text_style.font_size,text_style.foreground_color'
+    for named_type, s in style_map.items():
+        para_fields = []
+        for k in s.get('para', {}):
+            snake = ''.join('_' + c.lower() if c.isupper() else c for c in k).lstrip('_')
+            para_fields.append('paragraph_style.' + snake)
+        mask = fields_base + (',' + ','.join(para_fields) if para_fields else '')
+        requests.append({'updateNamedStyle': {
+            'namedStyle': {
+                'namedStyleType': named_type,
+                'textStyle': s['text'],
+                'paragraphStyle': s.get('para', {})
+            },
+            'fields': mask
+        }})
+
+    # Table header text and backgrounds — updateTextStyle works for table cells
+    def collect_table_styles(content_list):
         for elem in content_list:
-            p = elem.get('paragraph')
-            if p:
-                si, ei = elem.get('startIndex', 0), elem.get('endIndex', 0)
-                if si >= ei:
-                    continue
-                if in_table_header:
-                    requests.append({'updateTextStyle': {
-                        'range': {'startIndex': si, 'endIndex': ei},
-                        'textStyle': {
-                            'weightedFontFamily': {'fontFamily': b['heading_font'], 'weight': 600},
-                            'fontSize': {'magnitude': pt(b['table_header_size']), 'unit': 'PT'},
-                            'foregroundColor': hex_to_color(b['white']),
-                            'bold': True},
-                        'fields': 'weightedFontFamily,fontSize,foregroundColor,bold'}})
-                else:
-                    named = p.get('paragraphStyle', {}).get('namedStyleType', 'NORMAL_TEXT')
-                    if named in style_map:
-                        s = style_map[named]
-                        if s.get('text'):
+            tbl = elem.get('table')
+            if not tbl:
+                continue
+            tbl_start = elem.get('startIndex', 0)
+            first_row = tbl.get('tableRows', [None])[0]
+            if not first_row:
+                continue
+            for ci, cell in enumerate(first_row.get('tableCells', [])):
+                requests.append({'updateTableCellStyle': {
+                    'tableRange': {
+                        'tableCellLocation': {
+                            'tableStartLocation': {'index': tbl_start},
+                            'rowIndex': 0, 'columnIndex': ci},
+                        'rowSpan': 1, 'columnSpan': 1},
+                    'tableCellStyle': {'backgroundColor': hex_to_color(b['primary'])},
+                    'fields': 'backgroundColor'}})
+                for ce in cell.get('content', []):
+                    p = ce.get('paragraph')
+                    if p:
+                        si, ei = ce.get('startIndex', 0), ce.get('endIndex', 0)
+                        if si < ei:
                             requests.append({'updateTextStyle': {
                                 'range': {'startIndex': si, 'endIndex': ei},
-                                'textStyle': s['text'],
-                                'fields': ','.join(s['text'].keys())}})
-                        if s.get('para'):
-                            requests.append({'updateParagraphStyle': {
-                                'range': {'startIndex': si, 'endIndex': ei},
-                                'paragraphStyle': s['para'],
-                                'fields': ','.join(s['para'].keys())}})
-            tbl = elem.get('table')
-            if tbl:
-                for ri, row in enumerate(tbl.get('tableRows', [])):
-                    for cell in row.get('tableCells', []):
-                        collect_paragraph_styles(cell.get('content', []), in_table_header=(ri == 0))
+                                'textStyle': {
+                                    'weightedFontFamily': {'fontFamily': b['heading_font'], 'weight': 600},
+                                    'fontSize': {'magnitude': pt(b['table_header_size']), 'unit': 'PT'},
+                                    'foregroundColor': hex_to_color(b['white']),
+                                    'bold': True},
+                                'fields': 'weightedFontFamily,fontSize,foregroundColor,bold'}})
 
-    collect_paragraph_styles(body_content)
-
-    # Table header cell backgrounds
-    for elem in body_content:
-        tbl = elem.get('table')
-        if tbl:
-            tbl_start = elem.get('startIndex', 0)
-            num_cols = tbl.get('columns', 1)
-            first_row = tbl.get('tableRows', [{}])[0] if tbl.get('tableRows') else None
-            if first_row:
-                for ci, cell in enumerate(first_row.get('tableCells', [])):
-                    requests.append({'updateTableCellStyle': {
-                        'tableRange': {
-                            'tableCellLocation': {
-                                'tableStartLocation': {'index': tbl_start},
-                                'rowIndex': 0, 'columnIndex': ci},
-                            'rowSpan': 1, 'columnSpan': 1},
-                        'tableCellStyle': {'backgroundColor': hex_to_color(b['primary'])},
-                        'fields': 'backgroundColor'}})
+    collect_table_styles(body_content)
 
     if requests:
         api_call(
@@ -401,7 +400,7 @@ print(json.dumps({
     'docId': doc_id,
     'title': title,
     'link': f'https://docs.google.com/document/d/{doc_id}',
-    'source': 'branded-html+api-postfix',
+    'source': 'branded-html+updateNamedStyle',
     'brand': 'custom' if brand_doc else 'default',
     'sections': len(sections),
     'section_types': dict(type_counts),
@@ -415,7 +414,7 @@ print(json.dumps({
         'table_cells': f'{b["body_font"]} {b["table_cell_size"]}',
         'callout_boxes': f'background {b["callout_bg"]} (HTML only — no API equivalent for left border)',
         'dividers': f'2px solid {b["primary"]} (HTML only)',
-        'note': 'Styles marked (API-exact) were set via Docs API batchUpdate after HTML import for pixel-perfect brand compliance'
+        'note': 'Styles set via updateNamedStyle (document-wide definitions) after HTML import for pixel-perfect brand compliance'
     },
     'page_formatting': {
         'margins': '1in (all sides)',

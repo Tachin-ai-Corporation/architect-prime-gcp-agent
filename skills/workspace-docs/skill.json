@@ -1,7 +1,7 @@
 {
     "id":  "workspace-docs",
     "name":  "Google Docs",
-    "version":  28,
+    "version":  29,
     "description":  "Read, create, and edit Google Docs with professional formatting and branding. Create beautifully branded docs from structured JSON content (docs-create-branded) or HTML (docs-create --from-html). Edits are surgical and in-place by default. Rich styling via docs-style (font, size, color, spacing, shading). Auto-enrichment: the skill adds professional formatting even when the request is sparse. A docx round-trip is reserved for wholesale rebuilds.",
     "summary":  "Work with Google Docs — create professionally branded documents from structured content, surgically edit in place (formatting preserved), apply rich styling, auto-enrich sparse requests with professional formatting, verify with fingerprints.",
     "author":  "architect-prime",
