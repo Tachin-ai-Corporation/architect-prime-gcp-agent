@@ -257,6 +257,7 @@ finally:
 
 # Apply page formatting if docs-format-page exists
 format_page = os.path.join(os.environ.get('CORE_DIR', '/opt/corekit'), 'bin', 'docs-format-page')
+fmt_ok = False
 if os.path.isfile(format_page):
     import subprocess
     fmt_cmd = [format_page, '--doc', doc_id, '--margins', '1in']
@@ -265,9 +266,16 @@ if os.path.isfile(format_page):
     if header_text:
         fmt_cmd.extend(['--header', header_text])
     try:
-        subprocess.run(fmt_cmd, capture_output=True, timeout=30)
+        r = subprocess.run(fmt_cmd, capture_output=True, timeout=30)
+        fmt_ok = r.returncode == 0
+        if not fmt_ok:
+            sys.stderr.write(f'Page format error: exit {r.returncode} {r.stderr.decode("utf-8","replace")}\n')
     except Exception as e:
         sys.stderr.write(f'Page format warning: {e}\n')
+
+# Count section types for evidence
+from collections import Counter
+type_counts = Counter(s.get('type', 'unknown') for s in sections)
 
 print(json.dumps({
     'status': 'created',
@@ -277,13 +285,26 @@ print(json.dumps({
     'source': 'branded-html',
     'brand': 'custom' if brand_doc else 'default',
     'sections': len(sections),
-    'fonts': f'{b["heading_font"]} (headings), {b["body_font"]} (body) — loaded via Google Fonts',
-    'colors': f'primary={b["primary"]}, secondary={b["secondary"]}, accent={b["accent"]}',
+    'section_types': dict(type_counts),
+    'applied_styles': {
+        'title': f'{b["heading_font"]} {b["title_size"]}, color {b["primary"]}, 2px bottom border {b["primary"]}',
+        'h2_headings': f'{b["heading_font"]} {b["h2_size"]}, color {b["secondary"]}',
+        'h3_headings': f'{b["heading_font"]} {b["h3_size"]}, color {b["secondary"]}',
+        'body_text': f'{b["body_font"]} {b["body_size"]}, color {b["body_color"]}, line-height 1.4',
+        'callout_boxes': f'background {b["callout_bg"]}, 4px left border {b["secondary"]}, 10pt/14pt padding',
+        'table_headers': f'background {b["primary"]}, text {b["white"]}, {b["heading_font"]} {b["table_header_size"]} bold',
+        'table_cells': f'{b["body_font"]} {b["table_cell_size"]}, bottom border {b["border"]}, alt-row {b["surface"]}',
+        'accent_markup': f'color {b["accent"]}, font-weight 600',
+        'muted_markup': f'color {b["muted"]}',
+        'dividers': f'2px solid {b["primary"]}',
+        'google_fonts': f'loaded via <link> tag: {b["heading_font"]}, {b["body_font"]}'
+    },
     'page_formatting': {
         'margins': '1in (all sides)',
         'header': header_text or '(none)',
         'footer': footer_text,
-        'applied_via': 'docs-format-page'
+        'applied_via': 'docs-format-page',
+        'success': fmt_ok
     }
 }, indent=2))
 PYEOF
