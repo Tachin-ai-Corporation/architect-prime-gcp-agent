@@ -9,7 +9,14 @@ infra/contracts.json corekit/contracts.json
 corekit/system/upgrade-corekit bin/upgrade-corekit
 corekit/system/validate-contracts bin/validate-contracts
 corekit/system/agent-ou-manage bin/agent-ou-manage
-corekit/system/secret-read bin/secret-read
+# secret-read ships from skills/secrets/ — the single implementation for every
+# role. base.txt and role-prime.txt once installed DIFFERENT scripts to this same
+# dest, so whichever manifest concatenated last silently won: primes got the
+# no-prefix variant, fleet agents got one that prepended 'aps-secret-'. The same
+# documented command resolved different secrets depending on role. The no-prefix
+# variant is canonical — callers pass the full name (github-pr passes
+# 'aps-secret-github-token'), and it uses mktemp rather than a fixed /tmp path.
+skills/secrets/secret-read bin/secret-read
 
 # Chat tools (DWD)
 # C-27: chat-send is NOT installed to agents — the mouth is the sole outbound

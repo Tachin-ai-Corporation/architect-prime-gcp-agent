@@ -704,6 +704,90 @@ print(' '.join(s for s in scripts if not s.startswith('_') and s not in md))
   done
   [[ $DOC_FAIL -eq 0 ]] && pass "Skill-doc coverage — every declared command appears in its SKILL.md (B-17)"
 
+  # ---- Check 14c: Phantom capability — SKILL.md installed without its tools ----
+  # Check 14b proves the DOC describes the tools. This proves the tools are
+  # actually INSTALLED wherever the doc is. B-17 enforces skill use where a skill
+  # exists, so a cortex that discovers a SKILL.md will follow it and dispatch the
+  # commands inside — and if the manifest shipped only the doc, every one of them
+  # is "command not found". Not a guess that might work; a guaranteed failure.
+  #
+  # Found in production: role-prime.txt installed SKILL.md + skill.json for
+  # workspace-drive/docs/sheets/slides/gmail/calendar and none of the ~60 tools
+  # they describe — not even ws-token, which all six need to authenticate.
+  #
+  # Composition mirrors install.sh: a role manifest is concatenated with base.txt
+  # (and, for fleet, each job manifest), so a tool installed by any layer in the
+  # same composition satisfies the doc shipped by another.
+  # Implemented with node, not python3: this repo is maintained from a Windows
+  # shell where `python3` resolves to the Microsoft Store stub, which exits 0 and
+  # prints nothing. A python3-based check would report PASS while testing nothing —
+  # a silent hole in exactly the guard meant to close a silent hole. Caught by
+  # negative-testing this check against a deliberately reintroduced phantom.
+  PHANTOM_FAIL=0
+  check_composition() {
+    local label="$1"; shift
+    local out
+    out=$(node -e '
+const fs = require("fs");
+const [label, ...manifests] = process.argv.slice(1);
+const composed = manifests
+  .filter(m => fs.existsSync(m))
+  .map(m => fs.readFileSync(m, "utf8"))
+  .join("\n");
+if (!composed.trim()) process.exit(0);
+
+// Parse into (source, dest) pairs. What matters is the DEST: a command exists on
+// the VM iff something lands it at bin/<tool>, whatever the source. Sources vary
+// by skill family — workspace-* ship tools from skills/<id>/, while fleet-* ship
+// theirs from corekit/fleet/ — so a source-path check would false-positive on
+// every fleet skill.
+const sources = new Set();
+const dests = new Set();
+for (let line of composed.split(/\r?\n/)) {
+  line = line.replace(/#.*$/, "").trim();
+  if (!line) continue;
+  const [src, dst] = line.split(/\s+/);
+  if (!src) continue;
+  sources.add(src);
+  if (dst) dests.add(dst.replace(/\?$/, ""));   // strip no-clobber marker
+}
+
+// Skills whose SKILL.md this composition ships.
+const shipped = [...sources]
+  .map(p => /^skills\/([a-z0-9-]+)\/SKILL\.md$/.exec(p))
+  .filter(Boolean)
+  .map(m => m[1]);
+
+for (const id of [...new Set(shipped)].sort()) {
+  const sj = `skills/${id}/skill.json`;
+  if (!fs.existsSync(sj)) continue;
+  let meta;
+  try { meta = JSON.parse(fs.readFileSync(sj, "utf8")); }
+  catch { continue; }
+  // Gateway-native skills declare tool CALLS (registered in corekit/brain/tools.mjs),
+  // not shell binaries — there is correctly no bin/ entry to find.
+  if (meta._scripts_kind === "gateway") continue;
+  const scripts = meta.scripts || [];
+  // "_"-prefixed entries are libraries (_docslib.py), not agent commands.
+  const missing = scripts.filter(s => !s.startsWith("_") && !dests.has(`bin/${s}`));
+  if (missing.length) console.log(`${id}\t${missing.join(" ")}`);
+}
+' "$label" "$@" 2>/dev/null)
+    [[ -z "$out" ]] && return 0
+    while IFS=$'\t' read -r skill_id missing; do
+      [[ -z "$skill_id" ]] && continue
+      fail "Phantom capability (B-17): ${label} installs skills/${skill_id}/SKILL.md but not its tool(s): ${missing}"
+      PHANTOM_FAIL=$((PHANTOM_FAIL + 1))
+    done <<< "$out"
+  }
+  check_composition "role prime" infra/manifests/base.txt infra/manifests/role-prime.txt
+  for JM in infra/manifests/job-*.txt; do
+    [[ -f "$JM" ]] || continue
+    check_composition "role fleet + $(basename "$JM" .txt)" \
+      infra/manifests/base.txt infra/manifests/role-fleet.txt "$JM"
+  done
+  [[ $PHANTOM_FAIL -eq 0 ]] && pass "No phantom capability — every installed SKILL.md has its tools (B-17)"
+
   # ---- Check 15: Organ layer purity (C-28) ----
   # Organ SOULs carry character, not tool syntax or process ids. Flag backtick-wrapped
   # command-with-flag invocations and backtick process ids. Skill NAMES are allowed.
@@ -722,25 +806,70 @@ print(' '.join(s for s in scripts if not s.startswith('_') and s not in md))
   # Every organ file's content hash must match brain/ORGAN_LOCK.json. Any drift is an
   # un-acknowledged organ change: re-pin with corekit/system/update-organ-lock and include
   # an 'organ-change: intended' commit trailer. Deep-truths region is excluded from the hash.
+  # Implemented in node, not python3. This repo is maintained from a Windows shell
+  # where `python3` is the Microsoft Store stub: it prints an install hint to stderr
+  # and exits non-zero, so this check reported a bare "ERROR" on every local run.
+  # A tripwire that always fires is a tripwire that gets ignored — it was effectively
+  # disabled on the one machine that edits organ files. node is already this script's
+  # interpreter of choice (Checks 14/14c) and is present in both environments.
   if [[ -f "brain/ORGAN_LOCK.json" ]]; then
-    LOCK_RESULT=$(python3 - <<'PYEOF' 2>/dev/null || echo "ERROR"
-import hashlib, json, glob, os
-MARKER = "<!-- Managed by update-deep-truths"
-lock = json.load(open("brain/ORGAN_LOCK.json", encoding="utf-8"))["files"]
-patterns = ["brain/fleet/_brain/*/SOUL.md","brain/fleet/_brain/*/IDENTITY.md","brain/fleet/_base/IDENTITY.md","brain/prime/*/SOUL.md","brain/prime/*/IDENTITY.md","specialties/*/brain/*/SOUL_APPEND.md"]
-files = sorted({f.replace(os.sep,"/") for p in patterns for f in glob.glob(p)})
-drift = []
-for f in files:
-    t = open(f, encoding="utf-8").read()
-    i = t.find(MARKER)
-    h = "sha256:"+hashlib.sha256((t[:i] if i>=0 else t).encode("utf-8")).hexdigest()
-    if f not in lock: drift.append(f"NEW (unpinned): {f}")
-    elif lock[f] != h: drift.append(f"CHANGED: {f}")
-for f in lock:
-    if f not in files: drift.append(f"REMOVED: {f}")
-print("\n".join(drift) if drift else "OK")
-PYEOF
-)
+    LOCK_RESULT=$(node -e '
+const fs = require("fs"), path = require("path"), crypto = require("crypto");
+const MARKER = "<!-- Managed by update-deep-truths";
+const lock = JSON.parse(fs.readFileSync("brain/ORGAN_LOCK.json", "utf8")).files;
+
+// Expand the same globs the pinner uses, without a glob dependency.
+const globs = [
+  ["brain/fleet/_brain", "*", "SOUL.md"],
+  ["brain/fleet/_brain", "*", "IDENTITY.md"],
+  ["brain/fleet/_base", null, "IDENTITY.md"],
+  ["brain/prime", "*", "SOUL.md"],
+  ["brain/prime", "*", "IDENTITY.md"],
+  ["specialties", "*/brain/*", "SOUL_APPEND.md"],
+];
+const found = new Set();
+for (const [root, mid, leaf] of globs) {
+  if (!fs.existsSync(root)) continue;
+  if (mid === null) {
+    const p = `${root}/${leaf}`;
+    if (fs.existsSync(p)) found.add(p);
+  } else if (mid === "*") {
+    for (const d of fs.readdirSync(root)) {
+      const p = `${root}/${d}/${leaf}`;
+      if (fs.existsSync(p)) found.add(p);
+    }
+  } else {
+    // specialties/<spec>/brain/<organ>/SOUL_APPEND.md
+    for (const spec of fs.readdirSync(root)) {
+      const bdir = `${root}/${spec}/brain`;
+      if (!fs.existsSync(bdir) || !fs.statSync(bdir).isDirectory()) continue;
+      for (const organ of fs.readdirSync(bdir)) {
+        const p = `${bdir}/${organ}/${leaf}`;
+        if (fs.existsSync(p)) found.add(p);
+      }
+    }
+  }
+}
+const files = [...found].sort();
+const drift = [];
+for (const f of files) {
+  // MUST match update-organ-lock byte for byte. That pinner reads with Python
+  // text mode (`open(f, encoding="utf-8")`), whose universal-newline translation
+  // collapses \r\n and lone \r to \n before hashing — so the pinned hashes are of
+  // LF-normalized content. readFileSync in node does no such translation, and
+  // without this normalize every CRLF organ file reports a false CHANGED. One
+  // does: brain/prime/cortex/SOUL.md is 273 CRLF lines and flagged immediately.
+  // (No apostrophes in this block — it lives inside a single-quoted bash string.)
+  const t = fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const i = t.indexOf(MARKER);
+  const body = i >= 0 ? t.slice(0, i) : t;
+  const h = "sha256:" + crypto.createHash("sha256").update(body, "utf8").digest("hex");
+  if (!(f in lock)) drift.push(`NEW (unpinned): ${f}`);
+  else if (lock[f] !== h) drift.push(`CHANGED: ${f}`);
+}
+for (const f of Object.keys(lock)) if (!found.has(f)) drift.push(`REMOVED: ${f}`);
+console.log(drift.length ? drift.join("\n") : "OK");
+' 2>/dev/null || echo "ERROR")
     if [[ "$LOCK_RESULT" == "OK" ]]; then
       pass "Organ soft-lock — all organ files match ORGAN_LOCK.json (C-28)"
     else

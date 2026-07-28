@@ -73,24 +73,27 @@ skills/gcp-admin/skill.json     skills/gcp-admin/skill.json
 skills/scripting/SKILL.md       skills/scripting/SKILL.md
 skills/scripting/skill.json     skills/scripting/skill.json
 
-# Credentials & Secrets
-skills/secrets/SKILL.md   skills/secrets/SKILL.md
-skills/secrets/skill.json skills/secrets/skill.json
-skills/secrets/secret-read bin/secret-read
+# Credentials & Secrets — installed by base.txt for every role (was duplicated
+# here, and the secret-read line pointed at a DIFFERENT source than base's,
+# colliding on bin/secret-read). Single source now lives in base.txt.
 
-# Workspace skills (for self-improvement tasks)
-skills/workspace-drive/SKILL.md skills/workspace-drive/SKILL.md
-skills/workspace-drive/skill.json skills/workspace-drive/skill.json
-skills/workspace-docs/SKILL.md skills/workspace-docs/SKILL.md
-skills/workspace-docs/skill.json skills/workspace-docs/skill.json
-skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
-skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
-skills/workspace-slides/SKILL.md skills/workspace-slides/SKILL.md
-skills/workspace-slides/skill.json skills/workspace-slides/skill.json
-skills/workspace-gmail/SKILL.md skills/workspace-gmail/SKILL.md
-skills/workspace-gmail/skill.json skills/workspace-gmail/skill.json
-skills/workspace-calendar/SKILL.md skills/workspace-calendar/SKILL.md
-skills/workspace-calendar/skill.json skills/workspace-calendar/skill.json
+# Workspace skills — DELIBERATELY ABSENT (C-1, B-17).
+#
+# Prime is a factory, not a doer. It previously installed SKILL.md + skill.json
+# for workspace-drive/docs/sheets/slides/gmail/calendar and NONE of the ~60 tools
+# those docs describe — not even ws-token, the auth helper every one of them needs.
+# That is phantom capability: B-17 enforces skill use where a skill exists, so a
+# prime cortex would discover workspace-docs, follow the SKILL.md, dispatch
+# `docs-cat`, and get "command not found" — a guaranteed failure, not a guess.
+#
+# A Prime's power is general, not clerical: gcloud (gcp-admin), the shell
+# (system-shell), scripting, git/GitHub, and web-search. Artifacts belong in git
+# (C-24). Anything that needs Drive, Docs, Sheets, Slides, Gmail or Calendar is a
+# fleet agent's job — hire one (fleet-hire) rather than growing a second pair of
+# hands here. `gcloud storage` remains available via gcp-admin as an escape hatch.
+#
+# If a Prime ever genuinely needs a workspace surface, install the TOOLS with the
+# doc — never the doc alone. validate-contracts Check 14c enforces exactly that.
 
 # Git operations (for repo improvements)
 specialties/engineer/skills/git-ops/skill.json   skills/git-ops/skill.json

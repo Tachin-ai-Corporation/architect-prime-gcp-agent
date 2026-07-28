@@ -98,27 +98,62 @@ case "${1:-}" in
     if [[ "$EXISTING_ROLE" == "fleet" && -z "$EXISTING_JOB" ]]; then
       EXISTING_JOB="$(jq -r '.agentType // .specialty // empty' "$CHAT_CFG_UPGRADE" 2>/dev/null || true)"
     fi
-    if [[ "$EXISTING_ROLE" == "fleet" && -z "$EXISTING_JOB" ]]; then
-      echo 'ERROR: Cannot determine agent job/specialty. Check STATE.json or chat-config.json.' >&2
-      exit 1
+    # ---- Resolve the specialty from its AUTHORITATIVE source ----
+    # VM metadata `specialty` is set once at fleet-deploy and is the bootstrap
+    # input; STATE.json `job` is merely DERIVED from it by the previous install.
+    # Treating the derived copy as truth let one bad invocation stick forever: an
+    # agent deployed as `assistant` was upgraded once with `--job pm`, and every
+    # upgrade after that re-read `pm` from STATE.json and reinstalled the wrong
+    # specialty — wrong skills, wrong responsibilities, indefinitely. Metadata
+    # wins; STATE.json and chat-config are fallbacks for pre-metadata VMs.
+    META_SPECIALTY="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/specialty' 2>/dev/null || true)"
+    RESOLVED_JOB=""
+    if [[ "$EXISTING_ROLE" == "fleet" ]]; then
+      if [[ -n "$META_SPECIALTY" ]]; then
+        RESOLVED_JOB="$META_SPECIALTY"
+        # Announce a correction rather than silently overwriting.
+        FIRST_EXISTING="${EXISTING_JOB%% *}"
+        if [[ -n "$FIRST_EXISTING" && "$FIRST_EXISTING" != "$META_SPECIALTY" ]]; then
+          echo "  NOTE: STATE.json job '${FIRST_EXISTING}' disagrees with VM metadata specialty '${META_SPECIALTY}' — using metadata."
+        fi
+      else
+        RESOLVED_JOB="${EXISTING_JOB%% *}"
+      fi
+      # Fail closed only after every source has been consulted — metadata last
+      # was previously unreachable, because the fatal check ran before this block.
+      if [[ -z "$RESOLVED_JOB" ]]; then
+        echo 'ERROR: Cannot determine agent job/specialty. Checked VM metadata specialty, STATE.json job, chat-config.json agentType.' >&2
+        exit 1
+      fi
     fi
+
     INSTALL_ARGS="--upgrade $RESOLVED_REF"
     [[ -n "$EXISTING_ROLE" ]] && INSTALL_ARGS="$INSTALL_ARGS --role $EXISTING_ROLE"
-    if [[ -n "$EXISTING_JOB" ]]; then
-      for j in $EXISTING_JOB; do
-        INSTALL_ARGS="$INSTALL_ARGS --job $j"
-      done
-    fi
-    # Append operator job layers from VM metadata (comma-separated)
+
+    # ---- Compose the job list, deduped ----
+    # Previously the whole space-joined STATE.json `job` string was re-expanded
+    # into --job flags AND operator_jobs metadata was appended again — so every
+    # upgrade added one more copy of each operator job, and install.sh wrote the
+    # grown list straight back to STATE.json. Observed in production at 53 copies
+    # of one operator job on a single agent. The specialty leads; operator layers
+    # follow in metadata order; duplicates are dropped.
     OPERATOR_JOBS="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/operator_jobs' 2>/dev/null || true)"
+    JOB_LIST=()
+    [[ -n "$RESOLVED_JOB" ]] && JOB_LIST+=("$RESOLVED_JOB")
     if [[ -n "$OPERATOR_JOBS" ]]; then
       IFS=',' read -ra OJ_ARRAY <<< "$OPERATOR_JOBS"
       for oj in "${OJ_ARRAY[@]}"; do
         oj="$(echo "$oj" | xargs)"
-        [[ -n "$oj" ]] && INSTALL_ARGS="$INSTALL_ARGS --job $oj"
+        [[ -n "$oj" ]] && JOB_LIST+=("$oj")
       done
     fi
-    echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${EXISTING_JOB:-none} | Operator: ${OPERATOR_JOBS:-none}"
+    SEEN_JOBS=" "
+    for j in ${JOB_LIST[@]+"${JOB_LIST[@]}"}; do
+      case "$SEEN_JOBS" in *" $j "*) continue ;; esac
+      SEEN_JOBS="${SEEN_JOBS}${j} "
+      INSTALL_ARGS="$INSTALL_ARGS --job $j"
+    done
+    echo "  Role: ${EXISTING_ROLE:-legacy} | Job: ${RESOLVED_JOB:-none} | Operator: ${OPERATOR_JOBS:-none}"
 
     # ---- Legacy migration: remove stale workspace-{specialty}/ dirs ----
     # Allowlist: only dirs in contracts.workspaces survive

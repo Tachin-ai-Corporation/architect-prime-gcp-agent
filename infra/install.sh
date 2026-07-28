@@ -69,6 +69,24 @@ if [[ -n "$ROLE" && "$ROLE" != "prime" && "$ROLE" != "fleet" ]]; then
   exit 1
 fi
 
+# Dedupe --job (defence in depth; upgrade-corekit dedupes too). A repeated job
+# fetches and concatenates the same manifest twice, and is written back verbatim
+# to STATE.json — where the next upgrade re-expands it into flags again. That
+# feedback loop reached 53 copies of one job on a production agent.
+if [[ ${#JOB[@]} -gt 1 ]]; then
+  _seen_jobs=" "
+  _dedup_jobs=()
+  for _j in "${JOB[@]}"; do
+    case "$_seen_jobs" in *" ${_j} "*) continue ;; esac
+    _seen_jobs="${_seen_jobs}${_j} "
+    _dedup_jobs+=("$_j")
+  done
+  if [[ ${#_dedup_jobs[@]} -lt ${#JOB[@]} ]]; then
+    echo "[WARN] Dropped $(( ${#JOB[@]} - ${#_dedup_jobs[@]} )) duplicate --job flag(s)"
+  fi
+  JOB=("${_dedup_jobs[@]}")
+fi
+
 # ---- CONFIG (env-overridable) ----
 GH_OWNER="${GH_OWNER:-YOUR_GITHUB_ORG}"
 GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
@@ -189,19 +207,34 @@ if [[ "$MODE" == "check" ]]; then
     d="$(echo "$match" | sed 's/"\([^"]*\)":"sha256:.*/\1/')"
     [[ -n "$d" ]] && known_dests["$d"]=1
   done < <(grep -o '"[^"]*":"sha256:[^"]*"' "$STATE_FILE")
+  # Two classes, reported distinctly so the label matches what actually happens:
+  #   [ORPHAN] — under a reconciled dir (skills/, corekit/specialties/); step 4.6
+  #             removes it on the next upgrade.
+  #   [EXTRA]  — under bin/, corekit/lib/, corekit/processes/; reported only.
+  #             bin/ is deliberately not swept (agents and skill-setup write there).
   extra_count=0
-  for scan_dir in bin skills corekit/lib corekit/processes; do
+  orphan_count=0
+  for scan_dir in skills corekit/specialties bin corekit/lib corekit/processes; do
     base="${INSTALL_ROOT}/${scan_dir}"
     run test -d "$base" 2>/dev/null || continue
+    case "$scan_dir" in
+      skills|corekit/specialties) tag="ORPHAN" ;;
+      *)                          tag="EXTRA"  ;;
+    esac
     while IFS= read -r f; do
       rel="${f#"${INSTALL_ROOT}"/}"
       if [[ -z "${known_dests[$rel]+x}" ]]; then
-        echo "  [EXTRA] ${rel}"
-        extra_count=$((extra_count + 1))
+        echo "  [${tag}] ${rel}"
+        if [[ "$tag" == "ORPHAN" ]]; then
+          orphan_count=$((orphan_count + 1))
+        else
+          extra_count=$((extra_count + 1))
+        fi
       fi
     done < <(run find "$base" -type f -not -path "*/custom-skills/*" 2>/dev/null)
   done
-  [[ $extra_count -gt 0 ]] && echo "  (${extra_count} extra file(s) not in STATE.json — pruned on next upgrade)"
+  [[ $orphan_count -gt 0 ]] && echo "  (${orphan_count} orphan(s) — removed on next upgrade by the manifest-truth reconcile)"
+  [[ $extra_count -gt 0 ]] && echo "  (${extra_count} extra file(s) outside reconciled dirs — reported only, not removed)"
 
   echo ""
   echo "Results: ${ok_count} ok, ${drift_count} drifted, ${missing_count} missing"
@@ -424,6 +457,53 @@ if [[ -f "$STATE_FILE" && ${#file_hashes[@]} -gt 0 ]]; then
   # Sweep now-empty skill/action dirs left behind by pruned files.
   run find "${INSTALL_ROOT}/skills" "${INSTALL_ROOT}/bin/actions" -mindepth 1 -type d -empty -delete 2>/dev/null || true
   echo "Pruned ${pruned} decommissioned file(s)."
+fi
+
+# ---- 4.6 Manifest-truth reconcile (orphans the STATE.json prune cannot see) ----
+# The prune above is keyed on the PREVIOUS STATE.json: it removes what the last
+# manifest owned and this one dropped. Anything orphaned BEFORE that mechanism
+# existed was never a STATE.json key, so it is structurally invisible to it — and
+# stays on the VM forever. A fleet audit found exactly that: `work-logging` (no
+# source anywhere in the repo) on four agents, prime-only `telemetry` and
+# `skill-authoring` on three fleet agents, fleet-only `delegation` on both primes,
+# and a stale `specialties/assistant/` tree on an agent whose job had been
+# switched. Every one reported `in_STATE=0`.
+#
+# This pass reconciles against the CURRENT manifest instead of the previous one:
+# under the two directories that hold nothing but manifest-managed product content,
+# any file the freshly-built manifest does not own is an orphan and is removed.
+# Both scopes are exhaustively manifest-owned by construction — skills/ holds
+# SKILL.md + skill.json, corekit/specialties/ holds specialty SOUL appends and
+# skill bundles. Runtime state lives elsewhere (workspace*/, agents/, shared/) and
+# is never scanned. custom-skills/ is excluded so agent-authored skills survive.
+#
+# NOT extended to bin/: agents legitimately write helper scripts there mid-mission,
+# and skill-setup installs dependencies into it. Deleting those would violate C-18.
+# Guarded on a non-empty manifest so a partial fetch cannot sweep the tree.
+if [[ ${#file_hashes[@]} -gt 0 ]]; then
+  info "Reconciling against current manifest (orphan sweep)..."
+  orphaned=0
+  for scan_dir in skills corekit/specialties; do
+    base="${INSTALL_ROOT}/${scan_dir}"
+    run test -d "$base" 2>/dev/null || continue
+    while IFS= read -r f; do
+      [[ -z "$f" ]] && continue
+      rel="${f#"${INSTALL_ROOT}"/}"
+      # Owned by the manifest we just installed? → keep.
+      if [[ -n "${file_hashes[$rel]+x}" ]]; then continue; fi
+      # Runtime-owned seeds (?) and live agent state are never orphans.
+      if [[ -n "${noclobber_dests[$rel]+x}" ]]; then continue; fi
+      case "$rel" in
+        */MEMORY.md|*/progress.json) continue ;;
+      esac
+      run rm -f "$f" 2>/dev/null || true
+      echo "  [orphan] ${rel}"
+      orphaned=$((orphaned + 1))
+    done < <(run find "$base" -type f -not -path "*/custom-skills/*" 2>/dev/null)
+  done
+  run find "${INSTALL_ROOT}/skills" "${INSTALL_ROOT}/corekit/specialties" \
+    -mindepth 1 -type d -empty -delete 2>/dev/null || true
+  echo "Removed ${orphaned} orphaned file(s) not owned by the current manifest."
 fi
 
 # ---- 5. Write STATE.json ----
