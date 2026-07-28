@@ -6,6 +6,8 @@
   "origin": "core",
   "category": "verification",
   "agent_part": "cerebellum",
+  "_scripts_kind": "gateway",
+  "_scripts_note": "report_pass/report_fail are GATEWAY-NATIVE tool calls registered in corekit/brain/tools.mjs, not shell binaries — the cerebellum invokes them as functions and verdict.mjs reads the chosen name as the verdict. No manifest installs them to bin/, which is correct. '_scripts_kind': 'gateway' tells the phantom-capability check (validate-contracts 14c) not to expect a bin/ entry.",
   "scripts": [
     "report_pass",
     "report_fail"
