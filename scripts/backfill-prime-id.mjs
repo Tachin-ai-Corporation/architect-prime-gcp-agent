@@ -4,8 +4,8 @@
 // which prime_id each doc belongs to, then patches the top-level doc.
 //
 // Usage:
-//   GCP_PROJECT_ID=architect-prime-beta node scripts/backfill-prime-id.mjs           # dry-run
-//   GCP_PROJECT_ID=architect-prime-beta node scripts/backfill-prime-id.mjs --apply   # apply
+//   GCP_PROJECT_ID=your-gcp-project node scripts/backfill-prime-id.mjs           # dry-run
+//   GCP_PROJECT_ID=your-gcp-project node scripts/backfill-prime-id.mjs --apply   # apply
 
 const DRY_RUN = !process.argv.includes('--apply');
 const GCP_PROJECT_ID = process.env.GCP_PROJECT_ID;

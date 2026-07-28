@@ -6,7 +6,7 @@
 # Errors are non-fatal — indexes can be created manually later.
 #
 # Usage:
-#   GCP_PROJECT_ID=architect-prime-beta bash provision-firestore-indexes.sh
+#   GCP_PROJECT_ID=your-gcp-project bash provision-firestore-indexes.sh
 
 set -euo pipefail
 

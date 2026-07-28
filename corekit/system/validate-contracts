@@ -891,6 +891,63 @@ console.log(drift.length ? drift.join("\n") : "OK");
       pass "Platform process purity — no tool syntax in corekit/config/processes (C-28)"
     fi
   fi
+
+  # ---- Check 18: Template cleanliness — no real project id baked into platform files ----
+  # This repo is a PUBLIC template: anyone forks it and bootstraps their own GCP
+  # project. A concrete project id in a platform file ships one deployment's
+  # identity to every fork. app/src/lib/firebase.ts carried
+  # `process.env.NEXT_PUBLIC_FIREBASE_PROJECT || '<a real project id>'` as a
+  # hardcoded fallback in LIVE client code, plus three usage comments naming the
+  # same project — while every API route already read the env var with no default.
+  #
+  # Stated as a POSITIVE rule so the check itself leaks nothing: a project-shaped
+  # literal in these positions must be one of the sanctioned placeholders.
+  # operator/ is exempt by charter — it is explicitly operator-specific content.
+  # Scope is `git ls-files` — TRACKED files only. Walking the filesystem instead
+  # picked up a gitignored .claude/ worktree holding a pre-fix copy of the repo and
+  # reported it as a live violation. Tracked-only is also exactly the invariant:
+  # the rule is about what the repo SHIPS, not what sits in the working directory.
+  TPL_RESULT=$(git ls-files 2>/dev/null | node -e '
+const fs = require("fs");
+const OK = new Set(["your-gcp-project", "your-project", "your-project-id", "example-project"]);
+const EXT = /\.(ts|tsx|js|mjs|cjs|sh|json|md|txt)$/;
+const files = fs.readFileSync(0, "utf8").split("\n").filter(Boolean)
+  .filter(f => EXT.test(f))
+  .filter(f => !f.startsWith("operator/"));   // charter-exempt: operator-specific by design
+
+// Never pass vacuously: an empty file list means the scope broke, not that the
+// repo is clean. (The python3-stub lesson — a check that tests nothing is worse
+// than no check, because it reads as proof.)
+if (files.length === 0) { console.log("ERROR: no tracked files matched — scope broken"); process.exit(0); }
+
+// A project fallback: env var whose name mentions PROJECT, defaulted to a literal.
+const FALLBACK = /process\.env\.[A-Za-z_]*PROJECT[A-Za-z_]*\s*\|\|\s*["`\x27]([A-Za-z0-9][A-Za-z0-9-]{4,})["`\x27]/g;
+// A project assignment in a usage example: GCP_PROJECT_ID=<literal>
+const ASSIGN = /\b[A-Z_]*PROJECT[A-Z_]*=([A-Za-z0-9][A-Za-z0-9-]{4,})\b/g;
+
+const hits = [];
+for (const f of files) {
+  let t; try { t = fs.readFileSync(f, "utf8"); } catch { continue; }
+  for (const re of [FALLBACK, ASSIGN]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(t))) {
+      const v = m[1];
+      if (OK.has(v)) continue;
+      if (/^(true|false|null|undefined)$/i.test(v)) continue;
+      const line = t.slice(0, m.index).split("\n").length;
+      hits.push(`${f}:${line}  ${v}`);
+    }
+  }
+}
+console.log(hits.length ? hits.slice(0, 8).join("\n") : "OK");
+' 2>/dev/null || echo "ERROR")
+  if [[ "$TPL_RESULT" == "OK" ]]; then
+    pass "Template cleanliness — no concrete project id in platform files"
+  else
+    fail "Template cleanliness: a real project id is baked into a platform file. Use a placeholder (your-gcp-project) or read the env var with no default:"
+    echo "$TPL_RESULT" | head -8 | sed 's/^/    /'
+  fi
 fi
 
 # ============================================================

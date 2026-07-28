@@ -1,6 +1,6 @@
 /**
  * Derive a short human display name from an agent id/email
- * (e.g. "assistant-agent-millie@tachin.ag" → "millie").
+ * (e.g. "assistant-agent-millie@example.com" → "millie").
  * (The former <AgentChip> component was removed; this helper is still used by
  * the work views. Relocates to lib/format.ts in the primitives phase.)
  */
