@@ -108,6 +108,13 @@ to let Sheets interpret dates, numbers, and formulas the way the UI would.
    are present; confirm you did not overwrite neighbouring cells.
 
 ### Add a new record to a table
+0. **Idempotency first (C-18): a write must be safe to re-run.** In-place value
+   updates already are (setting a cell to the same value twice is a no-op). Adding
+   a row is NOT — a naive re-run inserts a duplicate. So before you add, scan the
+   table you just read for a row whose identifying field (its name/description/key)
+   already matches the record you are about to add. If one exists, a previous
+   attempt already added it — update that row in place if needed and STOP; do not
+   insert a second copy.
 1. Discover + read so you know the header row, which column holds each field, and
    **where the table ends** — the first empty row after its data, and whether more
    content (another table, notes, totals) sits below that.
