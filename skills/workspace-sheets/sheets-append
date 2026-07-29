@@ -7,15 +7,24 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
 die() { echo "[sheets-append] [ERROR] $*" >&2; exit 1; }
-SHEET_ID="" RANGE="" VALUES=""
+SHEET_ID="" RANGE="" VALUES="" TAB=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sheet) SHEET_ID="$2"; shift 2 ;; --range) RANGE="$2"; shift 2 ;;
+    --tab) TAB="$2"; shift 2 ;;
     --values) VALUES="$2"; shift 2 ;; *) die "Unknown: $1" ;; esac
 done
-[[ -n "$SHEET_ID" && -n "$RANGE" && -n "$VALUES" ]] || die "Need --sheet, --range, --values"
+# --tab wraps the (verbatim) tab name in the required single quotes and prepends
+# it. For append, --range is the table's column span, e.g. --tab 'Tasks' --range A:N.
+if [[ -n "$TAB" ]]; then
+  [[ -n "$RANGE" ]] || die "With --tab, give --range as the column span (e.g. --tab 'Tasks' --range A:N)"
+  TAB_ESC="${TAB//\'/\'\'}"
+  RANGE="'${TAB_ESC}'!${RANGE}"
+fi
+[[ -n "$SHEET_ID" && -n "$RANGE" && -n "$VALUES" ]] || die "Need --sheet, --range (or --tab + --range), --values"
 TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
-ENC_RANGE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$RANGE")
+# safe='' so a slash in a tab name is encoded, not left to split the URL → 400.
+ENC_RANGE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$RANGE")
 HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "{\"values\":${VALUES}}" \

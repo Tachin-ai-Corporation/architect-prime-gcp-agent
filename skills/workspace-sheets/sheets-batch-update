@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# sheets-batch-update — Apply several targeted cell updates in ONE call.
+# This is the RECOMMENDED way to write. Each update carries its own A1 range and
+# its values; nothing else in the sheet is touched, so all formatting, merges,
+# formulas, and conditional formatting in untouched cells are preserved. Because
+# the ranges travel in the request BODY (not the URL), tab names containing
+# spaces or slashes need only the normal single-quote wrapping — no URL encoding.
+#
+# --data is a JSON array of {"range": A1, "values": [[...]]} objects.
+# Usage (inline):
+#   sheets-batch-update --sheet ID --data '[{"range":"'"'"'Q3 Plan'"'"'!F5","values":[["Done"]]},{"range":"Sheet1!B2","values":[["Yellow"]]}]'
+# Usage (from a file — safer for many/large updates; write the JSON, then pass its path):
+#   sheets-batch-update --sheet ID --data-file /tmp/updates.json
+# Add --raw to store values verbatim (default USER_ENTERED lets Sheets parse dates/numbers/formulas).
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
+die() { echo "[sheets-batch-update] [ERROR] $*" >&2; exit 1; }
+SHEET_ID="" DATA="" DATA_FILE="" INPUT="USER_ENTERED"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sheet) SHEET_ID="$2"; shift 2 ;;
+    --data) DATA="$2"; shift 2 ;;
+    --data-file) DATA_FILE="$2"; shift 2 ;;
+    --raw) INPUT="RAW"; shift ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$DATA_FILE" ]] && DATA="$(cat "$DATA_FILE")"
+[[ -n "$SHEET_ID" && -n "$DATA" ]] || die "Need --sheet and --data (or --data-file): a JSON array of {range,values}"
+# Validate the data is a JSON array before spending a token / API call.
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d,list) and d, 'must be a non-empty JSON array'; [ (_['range'], _['values']) for _ in d ]" "$DATA" \
+  || die "--data must be a non-empty JSON array of objects each with 'range' and 'values'"
+TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
+python3 -c "
+import json,sys
+data=json.loads(sys.argv[1])
+print(json.dumps({'valueInputOption':sys.argv[2],'data':data}))
+" "$DATA" "$INPUT" > /tmp/sheets-batch-body.json
+HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  --data @/tmp/sheets-batch-body.json \
+  "${SHEETS_API}/${SHEET_ID}/values:batchUpdate")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"sheet\":\"${SHEET_ID}\",\"message\":\"Sheets access denied. Share with ${AGENT_USER_EMAIL:-the agent Workspace email}.\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE} (body in /tmp/sheets-response.json)"
+python3 -c "
+import json
+d=json.load(open('/tmp/sheets-response.json'))
+resp=d.get('responses',[])
+print(json.dumps({
+  'status':'updated',
+  'totalUpdatedCells': d.get('totalUpdatedCells',0),
+  'totalUpdatedRows': d.get('totalUpdatedRows',0),
+  'ranges':[r.get('updatedRange','') for r in resp],
+}, indent=2))
+"

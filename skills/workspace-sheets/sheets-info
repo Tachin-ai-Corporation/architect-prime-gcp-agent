@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# sheets-info — Discover a spreadsheet's structure BEFORE reading or writing.
+# Returns the title and, for every tab: its exact name, dimensions, the last
+# column letter, and any frozen header rows. Run this FIRST whenever you do not
+# already know the exact tab names — never assume a tab is called "Sheet1".
+# Usage: sheets-info --sheet SHEET_ID
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
+die() { echo "[sheets-info] [ERROR] $*" >&2; exit 1; }
+SHEET_ID=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sheet) SHEET_ID="$2"; shift 2 ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$SHEET_ID" ]] || die "Need --sheet"
+TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
+HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
+  -H "Authorization: Bearer ${TOKEN}" \
+  "${SHEETS_API}/${SHEET_ID}?fields=properties.title,sheets(properties(title,sheetId,index,gridProperties))")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"sheet\":\"${SHEET_ID}\",\"message\":\"Sheets access denied. Share the spreadsheet with ${AGENT_USER_EMAIL:-the agent Workspace email}.\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE} (body in /tmp/sheets-response.json)"
+python3 -c "
+import json
+def colname(n):
+    s=''
+    while n>0:
+        n,r=divmod(n-1,26); s=chr(65+r)+s
+    return s or 'A'
+d=json.load(open('/tmp/sheets-response.json'))
+tabs=[]
+for s in d.get('sheets',[]):
+    p=s['properties']; gp=p.get('gridProperties',{})
+    cols=gp.get('columnCount',0); rows=gp.get('rowCount',0)
+    tabs.append({
+        'title': p['title'],                # exact name — copy verbatim into --tab
+        'sheetId': p['sheetId'],
+        'index': p.get('index'),
+        'rows': rows,
+        'cols': cols,
+        'lastColumn': colname(cols),         # e.g. read A1:<lastColumn><rows>
+        'frozenRows': gp.get('frozenRowCount',0),
+        'frozenCols': gp.get('frozenColumnCount',0),
+    })
+print(json.dumps({'title': d.get('properties',{}).get('title'), 'tabs': tabs}, indent=2))
+"

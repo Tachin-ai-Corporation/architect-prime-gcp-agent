@@ -7,15 +7,25 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
 die() { echo "[sheets-get] [ERROR] $*" >&2; exit 1; }
-SHEET_ID="" RANGE=""
+SHEET_ID="" RANGE="" TAB=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sheet) SHEET_ID="$2"; shift 2 ;; --range) RANGE="$2"; shift 2 ;;
+    --tab) TAB="$2"; shift 2 ;;
     *) die "Unknown: $1" ;; esac
 done
-[[ -n "$SHEET_ID" && -n "$RANGE" ]] || die "Need --sheet and --range"
+# --tab wraps the (verbatim) tab name in the required single quotes and prepends
+# it, so the caller never has to quote a name containing spaces or a slash.
+if [[ -n "$TAB" ]]; then
+  [[ -n "$RANGE" ]] || die "With --tab, give --range as the A1 span only (e.g. --tab 'Q3 Plan' --range A1:D10)"
+  TAB_ESC="${TAB//\'/\'\'}"   # A1 escapes an internal single-quote by doubling it
+  RANGE="'${TAB_ESC}'!${RANGE}"
+fi
+[[ -n "$SHEET_ID" && -n "$RANGE" ]] || die "Need --sheet and (--range or --tab + --range)"
 TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
-ENC_RANGE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$RANGE")
+# safe='' so a slash in a tab name (e.g. 'Tracker w/ Pri') is encoded, not left
+# to split the URL path into a 400.
+ENC_RANGE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$RANGE")
 HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   "${SHEETS_API}/${SHEET_ID}/values/${ENC_RANGE}")
