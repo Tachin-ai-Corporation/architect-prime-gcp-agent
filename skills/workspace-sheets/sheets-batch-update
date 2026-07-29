@@ -7,9 +7,17 @@
 # spaces or slashes need only the normal single-quote wrapping — no URL encoding.
 #
 # --data is a JSON array of {"range": A1, "values": [[...]]} objects.
-# Usage (inline):
-#   sheets-batch-update --sheet ID --data '[{"range":"'"'"'Q3 Plan'"'"'!F5","values":[["Done"]]},{"range":"Sheet1!B2","values":[["Yellow"]]}]'
-# Usage (from a file — safer for many/large updates; write the JSON, then pass its path):
+#
+# STRONGLY PREFERRED: pass --tab "<Tab Name>" and use BARE A1 spans in the ranges
+# (no tab prefix, no quotes). The tool prepends the correctly-quoted tab to each.
+# This keeps --data free of single quotes, so it survives shell quoting — the JSON
+# has only double quotes and wraps cleanly in a single-quoted argument:
+#   sheets-batch-update --sheet ID --tab "Tracker w/ Pri" \
+#     --data '[{"range":"F26","values":[["Completed"]]},{"range":"F5","values":[["Yellow"]]}]'
+# Do NOT put a quoted tab name INSIDE --data (e.g. "'"'"'Tab'"'"'!F5") — the embedded
+# single quotes are near-impossible to escape correctly on a shell command line.
+# For updates spanning MULTIPLE tabs, omit --tab and give each entry a full range;
+# then use --data-file to avoid the quoting trap:
 #   sheets-batch-update --sheet ID --data-file /tmp/updates.json
 # Add --raw to store values verbatim (default USER_ENTERED lets Sheets parse dates/numbers/formulas).
 set -euo pipefail
@@ -17,10 +25,11 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
 die() { echo "[sheets-batch-update] [ERROR] $*" >&2; exit 1; }
-SHEET_ID="" DATA="" DATA_FILE="" INPUT="USER_ENTERED"
+SHEET_ID="" DATA="" DATA_FILE="" INPUT="USER_ENTERED" TAB=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sheet) SHEET_ID="$2"; shift 2 ;;
+    --tab) TAB="$2"; shift 2 ;;
     --data) DATA="$2"; shift 2 ;;
     --data-file) DATA_FILE="$2"; shift 2 ;;
     --raw) INPUT="RAW"; shift ;;
@@ -29,15 +38,22 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$DATA_FILE" ]] && DATA="$(cat "$DATA_FILE")"
 [[ -n "$SHEET_ID" && -n "$DATA" ]] || die "Need --sheet and --data (or --data-file): a JSON array of {range,values}"
-# Validate the data is a JSON array before spending a token / API call.
-python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d,list) and d, 'must be a non-empty JSON array'; [ (_['range'], _['values']) for _ in d ]" "$DATA" \
-  || die "--data must be a non-empty JSON array of objects each with 'range' and 'values'"
 TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
+# Validate + assemble the body in one pass. If --tab is given, prepend the
+# single-quoted (apostrophe-doubled) tab to every entry range that has no '!'.
 python3 -c "
 import json,sys
-data=json.loads(sys.argv[1])
-print(json.dumps({'valueInputOption':sys.argv[2],'data':data}))
-" "$DATA" "$INPUT" > /tmp/sheets-batch-body.json
+data, input_opt, tab = json.loads(sys.argv[1]), sys.argv[2], sys.argv[3]
+assert isinstance(data,list) and data, 'must be a non-empty JSON array'
+if tab:
+    q = \"'\" + tab.replace(\"'\", \"''\") + \"'\"
+for e in data:
+    assert 'range' in e and 'values' in e, \"each entry needs 'range' and 'values'\"
+    if tab and '!' not in e['range']:
+        e['range'] = q + '!' + e['range']
+print(json.dumps({'valueInputOption':input_opt,'data':data}))
+" "$DATA" "$INPUT" "$TAB" > /tmp/sheets-batch-body.json \
+  || die "--data must be a non-empty JSON array of objects each with 'range' and 'values'"
 HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   --data @/tmp/sheets-batch-body.json \

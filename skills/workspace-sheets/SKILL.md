@@ -35,10 +35,14 @@ facts drive everything below:
 ### Write (in place)
 - `sheets-update --sheet <ID> --tab "<Tab Name>" --range "F5" --values '[["Done"]]'`
   — Overwrite one cell or a contiguous block. Formatting of those cells is kept.
-- `sheets-batch-update --sheet <ID> --data '[{"range":"'"'"'Tab Name'"'"'!F5","values":[["Done"]]}, ...]'`
+- `sheets-batch-update --sheet <ID> --tab "<Tab Name>" --data '[{"range":"F26","values":[["Done"]]},{"range":"F5","values":[["Yellow"]]}]'`
   — **Preferred for more than one change**: apply many scattered updates in ONE
-  call. Ranges live in the request body, so no URL quirks. Also accepts
-  `--data-file <path>` when the update set is large.
+  call. With `--tab`, the ranges are **bare spans** (`F26`, not `'Tab'!F26`) and the
+  tool prepends the tab — so `--data` contains only double quotes and survives the
+  shell. **Never embed a single-quoted tab name inside `--data`** (e.g.
+  `'Tab'!F26`): those inner single quotes cannot be escaped on the command line and
+  the call fails before it runs. For updates across MULTIPLE tabs, omit `--tab`,
+  give full ranges, and pass `--data-file <path>` to sidestep the quoting.
 
 ### Append
 - `sheets-append --sheet <ID> --tab "<Tab Name>" --range "A:N" --values '[[...]]'`
@@ -76,8 +80,9 @@ to let Sheets interpret dates, numbers, and formulas the way the UI would.
    its column letter. Example: the row whose key cell equals "Onboarding" is row
    9 and Status is column F, so the target is `F9`.
 3. Apply the changes to those cells only:
-   - one change → `sheets-update --tab … --range F9 --values '[["In progress"]]'`
-   - several → one `sheets-batch-update` with a `{range,values}` entry per cell.
+   - one change → `sheets-update --tab "<name>" --range F9 --values '[["In progress"]]'`
+   - several → one `sheets-batch-update --tab "<name>" --data '[{"range":"F9","values":[["In progress"]]}, …]'`
+     (bare spans in the ranges; the tool adds the tab — keeps `--data` quote-safe).
    Untouched cells (and all formatting) stay exactly as they were.
 4. Verify: re-read the changed cells (`sheets-get`) and confirm the new values
    are present; confirm you did not overwrite neighbouring cells.
