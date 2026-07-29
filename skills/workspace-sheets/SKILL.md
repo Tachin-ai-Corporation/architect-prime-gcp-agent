@@ -44,9 +44,17 @@ facts drive everything below:
   the call fails before it runs. For updates across MULTIPLE tabs, omit `--tab`,
   give full ranges, and pass `--data-file <path>` to sidestep the quoting.
 
-### Append
+### Add a row
+- `sheets-insert-row --sheet <ID> --tab "<Tab Name>" --before-row N [--count 1]`
+  — Insert blank row(s) above row N, shifting everything below DOWN so nothing is
+  overwritten. New rows inherit the formatting of the row above. Then fill row N
+  with `sheets-update`/`sheets-batch-update`. This is the safe way to add a row to
+  a table that has other content beneath it.
 - `sheets-append --sheet <ID> --tab "<Tab Name>" --range "A:N" --values '[[...]]'`
-  — Add new row(s) below the last filled row of the table in that column span.
+  — Add row(s) after the last filled row **in that column span**. Only safe when
+  the tab is a single flat list — if any other block shares those columns lower
+  down (a second table, a totals row), append lands after *that*, not after your
+  table. When unsure, insert instead.
 
 Add `--raw` to a write to store text verbatim; omit it (default `USER_ENTERED`)
 to let Sheets interpret dates, numbers, and formulas the way the UI would.
@@ -60,6 +68,18 @@ to let Sheets interpret dates, numbers, and formulas the way the UI would.
   column span for append (`A:N`).
 - Column letters past Z continue `AA, AB, …`; `sheets-info` gives you
   `lastColumn` so you never have to count.
+
+## Locating the right cell
+- The **column** for a field is the one whose header-row cell holds that field's
+  name. Find that column letter, and write to it — do not eyeball a neighbour. If
+  "Status" is the 6th column, its letter is F; write to `F<row>`, not `E<row>`.
+- The **row** is a record's position counted from row 1 (the values you read are
+  1-indexed to the sheet). Match the record by a stable key cell (its name/id),
+  not by guessing an offset.
+- Use the spreadsheet **ID exactly as given** — copy it, never retype it; a single
+  wrong character is a different (or missing) spreadsheet.
+- After writing, the verify read is what catches an off-by-one column or row —
+  always do it (see procedures).
 
 ## Procedures
 
@@ -87,13 +107,24 @@ to let Sheets interpret dates, numbers, and formulas the way the UI would.
 4. Verify: re-read the changed cells (`sheets-get`) and confirm the new values
    are present; confirm you did not overwrite neighbouring cells.
 
-### Append new records
-1. Discover + read the header row so your new row's cells line up with the
-   existing columns (same order, same meaning).
-2. `sheets-append --tab "<name>" --range "<A:lastColumn>" --values '[[...]]'` with
-   the new row's cells in column order; leave a cell `""` where you have no value.
-3. Verify: the response `updatedRange` sits directly below the previously last
-   filled row, and the columns align with the header.
+### Add a new record to a table
+1. Discover + read so you know the header row, which column holds each field, and
+   **where the table ends** — the first empty row after its data, and whether more
+   content (another table, notes, totals) sits below that.
+2. Choose the landing row:
+   - If one or more empty rows immediately follow the table and nothing below
+     needs to stay put → fill the first empty row with `sheets-update`.
+   - If the table butts directly against other content, or you must keep that
+     content in place → `sheets-insert-row --before-row <first row after the
+     table>` (optionally `--count`), then fill the new blank row.
+   - Only use `sheets-append` when the tab is a single flat list with nothing
+     below the table in those columns.
+3. Write the new row's cells in column order (matching the header), leaving `""`
+   where you have no value, and reuse the vocabulary the column already uses
+   (e.g. the exact status wording seen in other rows).
+4. Verify: read the new row back and confirm each value sits under the correct
+   header, and that the row below it is the content you expected (you did not
+   overwrite an existing row).
 
 ### Work within a template's intent
 When a sheet is a structured template (a header block, one or more labelled

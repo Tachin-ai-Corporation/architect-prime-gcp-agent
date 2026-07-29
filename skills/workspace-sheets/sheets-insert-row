@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# sheets-insert-row — Insert blank row(s) into a tab, shifting everything below DOWN.
+# Use this to add a row to a table that has other content beneath it, so nothing
+# is overwritten. New rows inherit the formatting of the row directly above them
+# (pass --no-inherit to opt out). After inserting, fill the new row with
+# sheets-update / sheets-batch-update.
+#
+# --before-row N inserts above 1-based row N (existing row N moves to N+count).
+# Usage: sheets-insert-row --sheet ID --tab "Tasks" --before-row 12 [--count 1] [--no-inherit]
+set -euo pipefail
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+WS_TOKEN="${CORE_DIR}/bin/ws-token"
+SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
+die() { echo "[sheets-insert-row] [ERROR] $*" >&2; exit 1; }
+SHEET_ID="" TAB="" GID="" BEFORE="" COUNT=1 INHERIT=true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sheet) SHEET_ID="$2"; shift 2 ;;
+    --tab) TAB="$2"; shift 2 ;;
+    --gid) GID="$2"; shift 2 ;;
+    --before-row) BEFORE="$2"; shift 2 ;;
+    --count) COUNT="$2"; shift 2 ;;
+    --no-inherit) INHERIT=false; shift ;;
+    *) die "Unknown: $1" ;;
+  esac
+done
+[[ -n "$SHEET_ID" && -n "$BEFORE" ]] || die "Need --sheet and --before-row (1-based)"
+[[ -n "$TAB" || -n "$GID" ]] || die "Need --tab or --gid (get the tab's sheetId from sheets-info)"
+[[ "$BEFORE" =~ ^[0-9]+$ && "$BEFORE" -ge 1 ]] || die "--before-row must be a positive integer"
+TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
+# Resolve the tab name -> numeric sheetId (gid) if not given directly.
+if [[ -z "$GID" ]]; then
+  curl -s -o /tmp/sheets-response.json -w '' -H "Authorization: Bearer ${TOKEN}" \
+    "${SHEETS_API}/${SHEET_ID}?fields=sheets.properties(title,sheetId)" >/dev/null
+  GID=$(python3 -c "
+import json,sys
+d=json.load(open('/tmp/sheets-response.json'))
+tab=sys.argv[1]
+for s in d.get('sheets',[]):
+    p=s['properties']
+    if p.get('title')==tab: print(p['sheetId']); break
+else: sys.exit('TAB_NOT_FOUND')
+" "$TAB") || die "Tab '${TAB}' not found — check the name with sheets-info"
+fi
+START=$((BEFORE - 1)); END=$((START + COUNT))
+python3 -c "
+import json,sys
+gid,start,end,inh=int(sys.argv[1]),int(sys.argv[2]),int(sys.argv[3]),(sys.argv[4]=='true')
+print(json.dumps({'requests':[{'insertDimension':{'range':{'sheetId':gid,'dimension':'ROWS','startIndex':start,'endIndex':end},'inheritFromBefore':inh}}]}))
+" "$GID" "$START" "$END" "$INHERIT" > /tmp/sheets-insert-body.json
+HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
+  -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+  --data @/tmp/sheets-insert-body.json \
+  "${SHEETS_API}/${SHEET_ID}:batchUpdate")
+if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
+  echo "{\"status\":\"access_denied\",\"sheet\":\"${SHEET_ID}\",\"message\":\"Sheets access denied. Share with ${AGENT_USER_EMAIL:-the agent Workspace email}.\"}"
+  exit 0
+fi
+[[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE} (body in /tmp/sheets-response.json)"
+echo "{\"status\":\"inserted\",\"tab\":\"${TAB:-gid:$GID}\",\"inserted_rows\":${COUNT},\"before_row\":${BEFORE},\"note\":\"rows at and below ${BEFORE} shifted down by ${COUNT}; now fill row ${BEFORE}\"}"

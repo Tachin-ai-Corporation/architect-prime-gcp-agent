@@ -20,6 +20,7 @@ skills/workspace-sheets/sheets-append bin/sheets-append
 skills/workspace-sheets/sheets-update bin/sheets-update
 skills/workspace-sheets/sheets-info bin/sheets-info
 skills/workspace-sheets/sheets-batch-update bin/sheets-batch-update
+skills/workspace-sheets/sheets-insert-row bin/sheets-insert-row
 
 # Finance responsibilities
 specialties/finance/responsibilities-finance.json corekit/responsibilities-job.json
