@@ -7,7 +7,7 @@
       "accent": "#38bdf8",
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "gcp-devops"],
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "gcp-devops", "firebase"],
       "brain": true
     },
     {

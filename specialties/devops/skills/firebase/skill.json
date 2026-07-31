@@ -1,0 +1,27 @@
+{
+  "id": "firebase",
+  "name": "Firebase (Hosting: deploy, inspect, diagnose)",
+  "version": 1,
+  "description": "Deploy, inspect, and diagnose Firebase Hosting via the firebase/gcloud/gsutil/curl CLIs; apply Firestore indexes.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "infrastructure",
+  "agent_part": "motor",
+  "when_to_use": "When deploying a Firebase Hosting site (preview channels or staging->production), inspecting hosting sites/channels/config, diagnosing why content is not served at its expected URL, or applying Firestore indexes.",
+  "scripts": [
+    "firebase",
+    "gcloud",
+    "gsutil",
+    "curl"
+  ],
+  "requires": {
+    "npm": [
+      "firebase-tools"
+    ],
+    "bin": [
+      "gcloud",
+      "gsutil",
+      "curl"
+    ]
+  }
+}

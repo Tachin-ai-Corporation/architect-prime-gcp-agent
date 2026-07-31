@@ -1,7 +1,7 @@
 {
   "id": "gcp-devops",
   "name": "GCP DevOps Operations",
-  "version": 2,
+  "version": 3,
   "description": "GCP infrastructure procedures — service accounts, IAM, Cloud Run, Cloud Build.",
   "author": "architect-prime",
   "origin": "specialty",
@@ -10,17 +10,13 @@
   "scripts": [
     "gcloud",
     "gsutil",
-    "firebase",
     "docker"
   ],
   "requires": {
-    "npm": [
-      "firebase-tools"
-    ],
     "bin": [
       "gcloud",
       "gsutil"
     ]
   },
-  "when_to_use": "When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Cloud Build) or deploying the website / Firebase Hosting — including staging-channel deploys and production promotes — using CLI tools (gcloud, gsutil, firebase)."
+  "when_to_use": "When performing GCP infrastructure tasks (service accounts, IAM, Cloud Run, Cloud Build) using CLI tools (gcloud, gsutil, docker)."
 }

@@ -113,7 +113,7 @@ curl -X POST https://your-sync-service.run.app/renew-watch
 - **Auto-remediation**: Renews expired Drive watch
 
 ### Manual Diagnostics
-Use Stan's `firebase-hosting-diagnostics` skill for ad-hoc troubleshooting:
+Use Stan's `firebase` skill for ad-hoc troubleshooting:
 
 ```
 @Devops-Agent Stan diagnose the sync service for your-website-project
