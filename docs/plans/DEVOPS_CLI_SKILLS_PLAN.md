@@ -1,7 +1,12 @@
 # DevOps per-CLI Skills — dissolve `gcp-devops` into one-CLI-per-skill
 
-**Status:** PLANNED (teed up, not started). **Prereq DONE:** the `firebase` skill was already
-extracted from `gcp-devops` (v2026.07.31.0.0–.0.2) and proven on the devops canary.
+**Status:** ✅ DONE — implemented and proven on the devops canary (v2026.07.31.1.0 atomic split +
+v2026.07.31.1.1 canary counting-idiom fix). `gcp-devops` is retired; `gcloud`/`gsutil`/`docker`
+are live on Stan. Recommended placement was taken (Firestore-REST + Cloud Logging folded into
+`gcloud`). **Prereq DONE:** the `firebase` skill was already extracted from `gcp-devops`
+(v2026.07.31.0.0–.0.2). The 14b/14c specialty-skill coverage gap and the base-motor-SOUL principle
+below remain open follow-ons; the canary also surfaced a brain **evidence-elision** churn
+(cerebellum can't verify when tool logs are elided) — reported separately, not part of this work.
 
 ## Why
 
