@@ -127,6 +127,7 @@ corekit/lib/channel.mjs corekit/lib/channel.mjs
 corekit/lib/envelope-lifecycle.mjs corekit/lib/envelope-lifecycle.mjs
 corekit/lib/deliverable.mjs corekit/lib/deliverable.mjs
 corekit/lib/checkpoint-executor.mjs corekit/lib/checkpoint-executor.mjs
+corekit/lib/finalization.mjs corekit/lib/finalization.mjs
 corekit/lib/compaction.mjs corekit/lib/compaction.mjs
 corekit/lib/result-packet.mjs corekit/lib/result-packet.mjs
 corekit/lib/blackboard.mjs corekit/lib/blackboard.mjs

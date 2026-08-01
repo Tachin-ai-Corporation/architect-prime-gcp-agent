@@ -1,7 +1,9 @@
 // Action handler: synthesize_with_failure
+import { isRealTaskFailure, isRealTaskSuccess } from '../../lib/finalization.mjs';
+
 export async function handleSynthesizeWithFailure(ctx, deps) {
   const { envelope, decision, priorResults, iteration, _tokenUsage } = ctx;
-  const { log, firestoreWrite, completeEnvelope, toStr, MAX_ITERATIONS } = deps;
+  const { log, firestoreWrite, completeEnvelope, toStr, MAX_ITERATIONS, CONTRACTS = {} } = deps;
 
   const swfState = envelope._swf_state || null;
 
@@ -9,7 +11,15 @@ export async function handleSynthesizeWithFailure(ctx, deps) {
   const recentDispatches = priorResults.filter(r => r.agent !== 'system' && r.agent !== 'human');
   const lastPlanStart = priorResults.findLastIndex(r => r.agent === 'system' && r.result?.includes('[SYSTEM] Checkpoint'));
   const recentWork = lastPlanStart >= 0 ? recentDispatches.filter((_, i) => i >= lastPlanStart) : recentDispatches;
-  const recentAllSucceeded = recentWork.length > 0 && recentWork.every(r => r.success !== false);
+  // A milestone-verification verdict (step "N.verify") judges a checkpoint, not the WORK,
+  // and an inconclusive/timed-out row is not a failure — exclude both from the "did recent
+  // work actually succeed?" test (the same exclusion synthesize.mjs applies). Without it a
+  // checkpoint whose TASKS all succeeded but whose milestone FAILed defeated this upgrade and
+  // steered a finished mission toward `blocked` (the flyer mission). Gated for single-revert.
+  const GUARD = CONTRACTS.dispatch?.blocked_requires_real_blocker !== false;
+  const recentAllSucceeded = GUARD
+    ? (recentWork.some(isRealTaskSuccess) && !recentWork.some(isRealTaskFailure))
+    : (recentWork.length > 0 && recentWork.every(r => r.success !== false));
 
   if (recentAllSucceeded) {
     log('INFO', `swf[upgrade]: recent work all succeeded — upgrading to synthesize`);
@@ -27,7 +37,7 @@ export async function handleSynthesizeWithFailure(ctx, deps) {
       continue: true,
       priorResultsAppend: [{
         agent: 'system',
-        result: `[SELF-UNBLOCK CHECK] Before accepting this failure, try to find an alternative approach. Can you resolve this yourself using a different method? If YES: use "checkpoint_plan" to try the alternative. If NO — this is a genuine external dependency you cannot work around — use "blocked" action with a concrete blocker description. Do NOT use synthesize_with_failure; use "blocked" instead.`,
+        result: `[SELF-UNBLOCK CHECK] Before accepting this failure, check what actually happened.\n(a) If the deliverable is in fact COMPLETE and the only "failure" was a checkpoint/milestone verdict — the tasks themselves succeeded — do NOT report a blocker. Deliver the finished result now with "synthesize", noting honestly any milestone that was left unverified.\n(b) If it is genuinely incomplete but you can resolve it a different way, use "checkpoint_plan" to try the alternative.\n(c) ONLY if this is a genuine external dependency you cannot work around, use the "blocked" action with a concrete description of the obstacle (the thing standing in your way — not a summary of what you accomplished). Do NOT use synthesize_with_failure.`,
       }],
     };
   }
