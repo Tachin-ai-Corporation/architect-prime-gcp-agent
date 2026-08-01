@@ -158,7 +158,11 @@ All run headless Chrome on the mission's HTML/CSS files (paths are local files i
 2. **Compose** — plan the big moves: the hero moment, where the drama lives, the sections and rhythm.
 3. **Tokens** — pull the project system, or define one from your concept, into `:root` (a palette
    with depth, a real type scale, a spacing scale). Load a web font.
-4. **Build** — semantic, mobile-first HTML; style from tokens; add responsive + hover/focus/active.
+4. **Build — markup and its styles together, in one pass.** Write semantic, mobile-first HTML *and*
+   its complete CSS in the same step, styling from tokens with responsive + hover/focus/active. Author
+   every file **in full** — an empty or stub `style.css` means the design does not exist yet. Work
+   economically: read your inputs (this SKILL, the brief) **once** and don't re-recall mid-task — a task
+   has a bounded tool-call budget, and re-reads spend it before the artifact is finished.
 5. **Render & self-critique** — `design-render` (full-page + a breakpoint); judge it hard against
    Self-critique; make the single highest-impact move; **re-render**. Iterate until genuinely good.
 6. **Accessibility** — `design-a11y`; fix any critical/serious (usually contrast or a missing
@@ -174,6 +178,7 @@ snippet, or a prose description of changes (those fail verification). Keep the s
 | Symptom | Likely cause | Recovery |
 |---|---|---|
 | It renders correct and accessible but looks **generic or bland** | You stopped at the floor — no concept committed; timid type, color, and space | Return to the concept and make ONE bold move: a real display web font at large scale, dramatic space, a richer/darker palette, or a background treatment. "Correct" is not the goal — beautiful is. |
+| `style.css` (or a file) came out **empty or partial** and the design won't render | Authoring ran past its per-task tool-call budget — steps spent on re-reads/recall before the CSS was written | Author the markup and its **full** CSS in ONE pass; read inputs once, skip re-recall. If the outcome is genuinely too large for one task, the split is authoring vs render vs deliver — never HTML vs CSS. |
 | Everything looks equally important | Hierarchy never established | Stop styling; re-rank the content and let size/weight/position encode the ranking. |
 | Type feels flat and default | `system-ui` everywhere, uniform sizes | Load an expressive web font; open up the scale — a large, confident headline against small body. |
 | A margin/padding/gap is ignored (element uses default spacing) | Arithmetic written as `var(--x) * N` — invalid CSS, silently dropped | Wrap it in `calc()`: `calc(var(--x) * N)`. Only `calc()` evaluates arithmetic inside a CSS value. |

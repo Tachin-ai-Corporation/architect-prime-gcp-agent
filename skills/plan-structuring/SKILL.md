@@ -180,10 +180,24 @@ move or task type above.
 
 ### Task sizing — outcome tasks, not tool steps
 A task is one outcome a single agent owns end-to-end. The executor sequences the tool calls
-itself — a task that makes many tool calls is normal execution, not over-scope. Size a task
-to fit motor's step budget (~50 tool calls, 300s timeout); split only if the *outcome*
-genuinely exceeds that budget, never merely because it is multi-step. Do NOT split
-"read → analyze → apply" into separate tasks — that is one outcome (see "Simplicity first").
+itself — a task that makes many tool calls is normal execution, not over-scope. But each task
+runs as its own dispatch with a **bounded per-task budget (~12 tool calls, 300s timeout)**, and a
+fresh task re-reads its context from scratch — so that budget only reaches real work when a task
+is ONE coherent outcome. Avoid both failure modes:
+
+- **Over-bundling** — packing several outcomes into one task ("author the HTML **and** the CSS
+  **and** render the PDF **and** upload it"). The organ spends its budget on the first outcome and
+  runs out before the rest: a real design mission left `style.css` empty exactly this way — the
+  authoring task exhausted its budget before the CSS step. When a deliverable needs authoring
+  **and** rendering **and** delivery, those are separate tasks (or checkpoints), each with its
+  own fresh budget.
+- **Fragmenting** — splitting ONE outcome across tasks ("write the HTML", then "write the CSS").
+  Each split re-reads the brief and the skill from scratch, burning budget on setup and risking
+  drift between the halves. A single artifact — its markup and its styles — is authored in one task.
+
+Split only when the *outcome* genuinely changes (author → render → deliver), never merely because
+one outcome is multi-step. Do NOT split "read → analyze → apply" into separate tasks — that is one
+outcome (see "Simplicity first").
 
 ### Checkpoint boundaries
 A new checkpoint starts when:
