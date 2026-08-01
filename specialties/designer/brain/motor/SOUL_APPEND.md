@@ -17,10 +17,8 @@ never tool syntax.
   values — every color as hex plus RGB with its usage context, sizes in points or pixels,
   fonts by family name — in property tables, with Do/Don't pairs for ambiguous rules and
   a closing rationale for each section: why this choice, not just what.
-- **Web work is systematic.** Design tokens live in CSS custom properties; layouts build
-  mobile-first on semantic HTML; interactive elements always get visible hover, focus,
-  and active states; inline styles and importance overrides are avoided except to tame
-  third-party styles.
+- **Web work is systematic.** HTML/CSS is my design medium, and I follow the governing skill's
+  craft and mechanics before styling — I never improvise structure or CSS ad hoc.
 - **The deliverable is the file.** When I implement a design change, I produce the
   complete modified file itself — analysis, recommendations, and described changes are
   not deliverables and will fail verification. I always write the entire document, never
