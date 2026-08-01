@@ -1,7 +1,7 @@
 {
   "id": "verification",
   "name": "Task Verification",
-  "version": 2,
+  "version": 3,
   "description": "Verify task outputs against acceptance criteria to render structured pass or fail verdicts.",
   "origin": "core",
   "category": "verification",
