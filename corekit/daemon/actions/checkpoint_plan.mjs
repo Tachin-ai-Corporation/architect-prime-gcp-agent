@@ -149,6 +149,29 @@ export async function handleCheckpointPlan(ctx, deps) {
   // Cortex can demand a full re-shape (it judged the goal itself mis-framed). Rare,
   // and loud — never the reflex response to a checkpoint failing.
   const forceFullReplan = decision.replan_scope === 'mission' || decision.replan_full === true;
+
+  // ---- Refuse a full re-shape of an ALL-PASSING mission ----
+  // The elision churn: a read-only discovery re-planned its already-PASSED checkpoint 5+
+  // times (mission-scope, discarding the passed spine each round) because the tool data rode
+  // as a ref Cortex never hydrated — 52 calls / 1.4M tokens. A mission whose checkpoints all
+  // passed and none failed has verified work to DELIVER, not re-shape. Refuse and steer to
+  // finish or hydrate; genuinely-wrong verified work escalates via synthesize_with_failure,
+  // never an infinite re-shape.
+  const REJECT_PASSING_REPLAN = CONTRACTS?.dispatch?.reject_full_replan_when_passing !== false;
+  const spineHasFailure = Array.isArray(existingSpine) && existingSpine.some(s => s && s.status === 'failed');
+  const spineHasComplete = Array.isArray(existingSpine) && existingSpine.some(s => s && s.status === 'complete');
+  if (SPINE_ENABLED && existingSpine && forceFullReplan && REJECT_PASSING_REPLAN && spineHasComplete && !spineHasFailure) {
+    const passRefs = [...new Set((priorResults || []).filter(r => r && r.ref && r.success).map(r => r.ref))].slice(0, 6);
+    log('WARN', `[TELEMETRY] full_replan_refused mission=${envelope.id} spine=${spineSummary(existingSpine)} reason=${String(decision.replan_reason || '').slice(0, 160)}`);
+    return {
+      continue: true,
+      priorResultsAppend: [{
+        agent: 'system',
+        result: `[SYSTEM] Full mission re-plan refused: every checkpoint has PASSED verification, so re-shaping would discard verified work. Return "synthesize" and write the answer now. If a passed task's summary is not enough to write it, name its ref in "request_context"${passRefs.length ? ` (${passRefs.join(', ')})` : ''} to fetch the full output — do NOT re-plan to re-observe a result you can read.`,
+      }],
+    };
+  }
+
   if (SPINE_ENABLED && existingSpine && forceFullReplan) {
     log('WARN', `[TELEMETRY] spine_replaced mission=${envelope.id} reason=${decision.replan_reason || 'cortex requested mission-scope re-plan'} prior=${spineSummary(existingSpine)}`);
     envelope._cp_spine = null;
@@ -637,6 +660,22 @@ export async function handleCheckpointPlan(ctx, deps) {
     priorResultsAppend.push({
       agent: 'system',
       result: `[SYSTEM] All checkpoint tasks were already completed in previous iterations — no new work was done. You MUST "synthesize" your answer now using the results already gathered. Do NOT create another checkpoint_plan.`,
+    });
+  }
+
+  // ---- Passed-plan → FINISH nudge ----
+  // A passed plan does not auto-complete the mission — Cortex must choose synthesize, and
+  // today it gets NO steer on success (only planFailed / allReplayed are nudged). On a
+  // discovery mission whose data rides as a ref (not inline in the summary), Cortex that
+  // "needs to read the full outputs" re-planned instead of hydrating — 52 calls / 1.4M tokens.
+  // Tell it plainly: the work passed; synthesize now, hydrate a ref if you need the data,
+  // never re-run verified work. A nudge (not a hard guard) — Cortex may still act otherwise.
+  const PASS_NUDGE = CONTRACTS?.dispatch?.pass_synthesize_nudge_enabled !== false;
+  if (PASS_NUDGE && !planFailed && !allReplayed) {
+    const passRefs = [...new Set(allResults.filter(r => r && r.ref && r.success).map(r => r.ref))].slice(0, 6);
+    priorResultsAppend.push({
+      agent: 'system',
+      result: `[SYSTEM] All ${checkpoints.length} checkpoint(s) PASSED verification — the work is DONE. Return "synthesize" now and write the answer from your result summaries. If you need a task's FULL output to write it, name its ref in "request_context"${passRefs.length ? ` (${passRefs.join(', ')})` : ''} and it will be fetched for you. Do NOT re-plan or re-run verified work to re-observe a result you can already read.`,
     });
   }
 

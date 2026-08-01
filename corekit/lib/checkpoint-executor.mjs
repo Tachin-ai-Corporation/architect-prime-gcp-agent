@@ -10,10 +10,10 @@ import { buildPriorWorkContext, renderCheckpointDigest } from './compaction.mjs'
 import { makeAddress } from './channel.mjs';
 import { composeDelegationMarker, normalizeTargetEmail } from './delegation.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation, isMissingEvidenceFail, stakesAtLeast } from './verdict.mjs';
-import { detectMotorFailure } from './agent-output.mjs';
+import { detectMotorFailure, isRecoveredToolError } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
-import { buildResultPacket } from './result-packet.mjs';
+import { buildResultPacket, packToolEvidence } from './result-packet.mjs';
 import { extractResources, mergeResources, renderResources, seedFromProse } from './resource-ledger.mjs';
 import { markCheckpoint, spineSummary } from './checkpoint-spine.mjs';
 
@@ -100,6 +100,11 @@ export async function executeCheckpoints(checkpoints, opts) {
 
   const STEP_LEDGER_ENABLED = contracts.dispatch?.step_ledger_enabled !== false;
   const CHECKPOINT_RESUME_ENABLED = contracts.dispatch?.checkpoint_resume_enabled !== false;
+  // A single sub-command error the motor RECOVERED from must not hard-fail a task whose
+  // deliverable is complete (it blocked a finished discovery mission). When true, such an
+  // error is annotated and left for cerebellum to arbitrate; when false, the strict
+  // any-substring hard-fail returns.
+  const RECOVERED_TOOL_ERROR_SOFT = contracts.dispatch?.recovered_tool_error_soft_fail !== false;
   const RESOURCE_LEDGER_ENABLED = contracts.memory?.resource_ledger?.enabled !== false;
   const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
   const RESOURCE_LEDGER_RECALL_LIMIT = contracts.memory?.resource_ledger?.recall_limit ?? 40;
@@ -953,14 +958,25 @@ export async function executeCheckpoints(checkpoints, opts) {
 
       let result = await dispatchAgent(taskAgent, dispatchPayload);
 
-      // Motor failure check
-      if (taskAgent === 'motor') {
-        const motorCheck = detectMotorFailure(result.output || result.error || '');
-        if (motorCheck.failed) {
-          result.success = false;
-          result.error = motorCheck.detail;
+      // Motor failure check. A detected failure is the task OUTCOME (hard-fail) UNLESS the
+      // motor recovered from a sub-command error and still produced the deliverable — then it
+      // is an incident: annotate it for cerebellum to weigh, don't fail the task (B-28,
+      // verification arbitrates from the full evidence). Without this a discovery that
+      // gathered everything was reported `blocked` because one command in its tool log
+      // printed "command failed".
+      const applyMotorCheck = (res) => {
+        if (taskAgent !== 'motor') return;
+        const mc = detectMotorFailure(res.output || res.error || '');
+        if (!mc.failed) return;
+        if (RECOVERED_TOOL_ERROR_SOFT && isRecoveredToolError(res.output || '')) {
+          log('WARN', `[checkpoint-executor] CP${cpNum} T${taskNum}: motor reported "${mc.detail}" in a tool call but recovered and produced a deliverable — not hard-failing; cerebellum arbitrates`);
+          res.output = (res.output || '') + `\n[EVIDENCE WARNING: a tool call reported "${mc.detail}" during this task; the motor recovered and produced a result. Verify the final answer is complete and accounts for that error.]`;
+          return;
         }
-      }
+        res.success = false;
+        res.error = mc.detail;
+      };
+      applyMotorCheck(result);
 
       // #4B: token-limit truncation ('length') — the reply was cut mid-stream, usually
       // because the agent pasted a huge blob (raw logs, full JSON, a file dump) instead of
@@ -996,13 +1012,7 @@ export async function executeCheckpoints(checkpoints, opts) {
           ].filter(Boolean).join('\n\n'),
         });
 
-        if (taskAgent === 'motor') {
-          const motorCheck = detectMotorFailure(result.output || result.error || '');
-          if (motorCheck.failed) {
-            result.success = false;
-            result.error = motorCheck.detail;
-          }
-        }
+        applyMotorCheck(result);
       }
 
       // Telemetry / Evidence floor
@@ -1111,6 +1121,10 @@ export async function executeCheckpoints(checkpoints, opts) {
           ref: tId,
           budget: contracts.organ_context?.packet_summary_chars || 1200,
           topK: contracts.organ_context?.list_summary_top_k || 8,
+          // Below this many chars of prose OUTSIDE the tool log, the tool RESULTS are the
+          // answer (a discovery mission) — digest them into the summary instead of eliding
+          // the whole result to a bare marker Cortex cannot synthesize from.
+          minProse: contracts.organ_context?.tool_answer_min_prose_chars || 240,
         });
         stepResult.summary = pkt.summary;
         stepResult.ref = pkt.ref;
@@ -1198,7 +1212,13 @@ export async function executeCheckpoints(checkpoints, opts) {
         const cpCritText = smartTruncate(toStr(cpEnvelope.accept_criteria), critBudget);
         const remaining = Math.max(1000,
           VERIFY_PROMPT_MAX - BOILERPLATE - cpInstrText.length - cpCritText.length);
-        const priorBudget = Math.min(CTX_VERIFY_PRIOR, Math.floor(remaining * 0.35));
+        // Reserve a slice for prior-checkpoint evidence ONLY when there is some. A single-
+        // checkpoint (or first-checkpoint) mission has no prior evidence, yet the reservation
+        // still ran — capping the current evidence for nothing. A live read-only discovery
+        // FAILed exactly here: its 8,883-char evidence was capped to 6,770, truncating the
+        // gcloud command the verifier then reported as "never executed". No prior → the whole
+        // remaining budget goes to the evidence under test.
+        const priorBudget = priorEstablished ? Math.min(CTX_VERIFY_PRIOR, Math.floor(remaining * 0.35)) : 0;
         const evidenceBudget = Math.min(CTX_VERIFY_INPUT, remaining - priorBudget);
         log('INFO', `[checkpoint-executor] CP${cpNum}: verifying checkpoint milestone with cerebellum (evidence<=${evidenceBudget} prior<=${priorBudget} cap=${VERIFY_PROMPT_MAX} compact=${cpOutcome.length} full=${cpOutcomeFull.length})`);
         const verifyReq = {
@@ -1380,26 +1400,43 @@ export async function executeCheckpoints(checkpoints, opts) {
         // actually raised.
         if (cpVerdict === 'FAIL') {
           const failReason = extractFailSummary ? extractFailSummary(cpVer.output) : '';
-          if (isMissingEvidenceFail(failReason)) {
-            log('WARN', `[checkpoint-executor] CP${cpNum}: FAIL cites MISSING evidence, not wrong work — re-verifying with the full evidence set: ${String(failReason).slice(0, 160)}`);
+          // Re-verify on the FULL evidence when the FAIL says "can't see it" OR when we KNOW we
+          // fed the verifier a truncated view (compact exceeded the evidence budget). The second
+          // trigger is deterministic and catches the fail that hides as a substantive objection —
+          // "no gcloud command was executed to get the count" when the command DID run but sat in
+          // the dropped middle. Either way the verdict was reached on less than the whole result.
+          const compactTruncated = cpOutcomeFull.length > evidenceBudget || cpOutcome.length > evidenceBudget;
+          if (isMissingEvidenceFail(failReason) || compactTruncated) {
+            log('WARN', `[checkpoint-executor] CP${cpNum}: re-verifying on full evidence (trigger=${isMissingEvidenceFail(failReason) ? 'missing-evidence-text' : 'compact-truncated'}, compact=${cpOutcome.length} full=${cpOutcomeFull.length} budget=${evidenceBudget}): ${String(failReason).slice(0, 140)}`);
             try {
               const fullEvCritText = smartTruncate(toStr(cpEnvelope.accept_criteria), critBudget);
-              const fullEvBudget = Math.min(FULL_EVIDENCE_MAX, Math.max(3000, 9000 - fullEvCritText.length));
+              // The re-verify prompt is lean (criteria + evidence, no attack/prior scaffolding),
+              // so it can spend nearly the whole verify budget on evidence. The old `9000 - crit`
+              // hardcap made verify_full_evidence_max_chars DEAD (it never bound) and starved this
+              // path to ~6.5K — the very truncation that produced the FAIL. Bind the contract knob
+              // under a prompt-safe ceiling (raising it past what the verifier model can ingest is
+              // a contract + model change, not a code change).
+              const fullEvBudget = Math.min(FULL_EVIDENCE_MAX, Math.max(3000, VERIFY_PROMPT_MAX - fullEvCritText.length - BOILERPLATE));
+              // Keep every tool's RESULT (shape-aware), not a head+tail clip that drops the middle
+              // where a command's output lives — this is exactly the evidence B-28 re-derives from.
+              const fullEvidenceText = cpFullOutputs.length > 0
+                ? packToolEvidence(cpFullOutputs, fullEvBudget)
+                : smartTruncate(cpOutcomeFull || '(no output)', fullEvBudget);
               const fullReq = {
                 instruction: [
                   'Verify this checkpoint against its acceptance criteria. Call report_pass or',
                   'report_fail exactly once, as soon as you reach your judgement.',
                   '',
-                  'Your previous verdict said the evidence was not fully visible. The COMPLETE',
-                  'evidence is below, untruncated. Judge the work on it. Do NOT fail a criterion',
-                  'for missing evidence again — if something is genuinely absent from the work,',
-                  'say which criterion and what is missing from the ARTIFACT, not from this text.',
+                  'Your previous verdict was reached on a truncated view. The COMPLETE evidence is',
+                  'below — every tool call\'s result is included. Judge the work on it. Do NOT fail a',
+                  'criterion for missing evidence again — if something is genuinely absent from the',
+                  'work, say which criterion and what is missing from the ARTIFACT, not from this text.',
                   '',
                   '## Acceptance Criteria',
                   fullEvCritText,
                   '',
                   '## Complete Evidence',
-                  smartTruncate(cpOutcomeFull || '(no output)', fullEvBudget),
+                  fullEvidenceText || '(no output)',
                 ].join('\n'),
                 _missionId: envelope.id,
               };
