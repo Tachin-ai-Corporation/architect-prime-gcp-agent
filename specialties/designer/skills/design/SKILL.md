@@ -3,118 +3,162 @@
 ## When to Use
 Producing any visual design — a page, component, layout, mockup, report, one-pager, email, or
 slide content — by authoring it as **HTML/CSS**, then converting to the delivery format. HTML/CSS
-is the design *medium* (expressive, tokenizable, inspectable, deterministically convertible); the
-deliverable format (web, PDF, image, `.docx`, `.pptx`) is a render target, not a redo. For
-governing a project's design *system* / brand (tokens, component libraries, cross-medium audits),
-see the `design-ops` skill — this skill *produces* designs that conform to that system.
+is the design *medium*; the deliverable format (web, PDF, image, `.docx`, `.pptx`) is a render
+target, not a redo. For governing a project's design *system* / brand (tokens, component
+libraries, cross-medium audits), see the `design-ops` skill — this skill *produces* the designs.
+
+## Work like a designer — decide, don't decorate
+Great design is a sequence of confident decisions, not markup with styling sprinkled on. Do this
+thinking **before** you touch HTML:
+
+1. **Understand the brief.** Who is this for? What is the ONE thing it must achieve? What feeling
+   should it leave, and what is the brand's personality? If the brief is thin, *decide these
+   yourself* — a designer brings a point of view, they don't wait to be told.
+2. **Form a concept.** Name a creative direction in 2–4 words ("bold editorial", "calm & premium",
+   "playful & warm", "brutalist & confident"), plus a mood and a reference or metaphor. Every later
+   choice — type, color, space, motion — must serve it. **A design without a concept is generic by
+   default.**
+3. **Write the content.** *You* decide the actual words: headline, subhead, body copy, labels, CTA.
+   Content and form are one design — never design around placeholder text. Make the words sharp,
+   specific, and on-concept.
+4. **Compose the big moves** (before any pixel). What is the hero moment that owns the first screen?
+   Where does the drama live — a huge headline, dramatic space, a striking color field? What are the
+   sections and their rhythm down the page? What does the eye hit 1st, 2nd, 3rd?
+5. **Build it** in HTML/CSS to realize the vision (craft + fundamentals below).
+6. **Critique and refine.** Render it and look with a hard eye (see Self-critique). The first version
+   is a *draft* — good design is refined, never one-shot.
+
+## Make it beautiful — not merely correct
+Correctness (the Fundamentals) is the floor. **Beauty is the job.** The difference is a concept
+committed to, and *ambition in the execution*:
+
+- **Commit to the concept, boldly.** A clear, slightly daring point of view beats safe blandness
+  every time. Let the personality show loudly — in the type, the color, the space, the motion.
+- **Restrained in elements, ambitious in execution.** Use *few* elements — but make them *striking*.
+  A minimal page should still be bold: one enormous headline, dramatic negative space, one confident
+  color move. **Minimal ≠ timid or plain. If the result looks merely "fine" or "clean," it is not
+  done.**
+- **Let typography carry the design.** Choose an expressive typeface with real character — load a
+  **web font** (e.g. Google Fonts via `<link>`; it renders in the tools' pipeline) with a system
+  fallback; do *not* default to `system-ui`. Set the hero headline **large and confident**
+  (think `clamp(2.5rem, 7vw, 6rem)`), tight leading (~1.05), a strong weight, maybe tighter tracking.
+  Contrast it hard against small, quiet body text. **Great type alone can make a page beautiful.**
+- **Color with depth and intent.** Build a *considered* palette, not three flat colors: a neutral
+  ramp with a temperature (warm greys, cool near-blacks), a purposeful accent, real tints and shades
+  (5–9 steps). Reach for a rich dark background, a subtle 2–3-stop gradient, or a duotone when it
+  serves the mood. Color must evoke the concept **and** pass contrast — both, not either.
+- **Compose with drama.** Big/small **scale contrast**. **Negative space as a device**, not leftover
+  padding — let key things breathe. **Asymmetry and tension** over dead-centering everything. A clear
+  **hero moment**. **Depth**: overlap, layering, a soft considered shadow, a foreground/background
+  relationship — not flat boxes stacked in a column.
+- **Richness, tastefully — CSS is your visual material.** Backgrounds beyond flat white: a tonal
+  section band, a gradient, a hint of texture, a blurred color blob. With no image assets,
+  **gradients, geometric shapes, big type, and rules ARE the art** — a page can be beautiful with
+  zero photos. Add details (a fine divider, a small badge, a considered radius) with intent.
+- **Finish.** Optical alignment (not just mathematical), one consistent radius + one elevation
+  language, considered hover/transition, spacing that breathes on a rhythm, no orphans or widows.
+  The last 10% of polish separates good from great.
+
+## Self-critique — do this every time, before you deliver
+Render it (`design-render`, full-page + one breakpoint) and look **hard**, as an art director would:
+- Can I name the concept *from the design alone*, or is it generic?
+- Does **one** thing seize attention on the first screen, or does everything blur together?
+- Is the type **expressive and confident**, or default and timid?
+- Is the color a **considered palette with depth**, or a few flat / arbitrary values?
+- Is there **depth, rhythm, and dramatic space** — or is it a flat stack of centered boxes?
+- **Would a strong design studio ship this?**
+
+If any answer is weak, name the **single highest-impact move** — usually a real display web font at
+large scale, more dramatic space, a richer/darker palette, or a background treatment — **make that
+one move and re-render.** Repeat until it is genuinely good, not merely correct. *Stopping at
+"correct and accessible" is the most common failure of this skill.*
 
 ## The substrate: author in HTML/CSS
-- Build everything as **semantic HTML + CSS, mobile-first**.
+- Build as **semantic HTML + CSS, mobile-first**.
 - **Design tokens live in CSS custom properties** (`--color-*`, `--space-*`, `--font-*`, `--radius-*`)
   at `:root`, so one change propagates and every value traces to a token.
-- **Consume the project's design system** from project context (palette, type, spacing, logo);
-  never invent brand values when a system exists. If none exists, define a minimal one first —
-  that is the `design-ops` skill's job.
+- **Consume the project's design system** from project context when one exists (palette, type,
+  spacing, logo) — never invent brand values then. If none exists, your concept defines a minimal one.
 
-## Best practices — design for human visual consumption
-The goal is not "valid HTML"; it is a page a human reads *effortlessly* and finds *pleasing*. Every
-rule below has a reason — carry the reason, not just the rule.
+## Fundamentals — the floor (never ship below this)
+These prevent ugliness and illegibility; the sections above create beauty. **Both are required.**
 
-### Hierarchy first
-Decide what the viewer sees **1st / 2nd / 3rd before styling anything.** One dominant focal point
-per view. Size, weight, color, and position encode importance — the most important thing is the most
-prominent. If everything is bold, nothing is.
+### Hierarchy
+Decide 1st / 2nd / 3rd before styling. One dominant focal point per view; size, weight, color, and
+position encode importance. If everything is bold, nothing is.
 
-### Typography (most designs are mostly text)
-- A **modular type scale** (e.g. 1.2–1.25 ratio): one H1, a clear H2/H3, body, small — not a dozen ad-hoc sizes.
-- **Body ≥ 16px**; line-height ~1.5 for body, ~1.15–1.25 for headings.
-- **Line length 45–75 characters** (`max-width: ~65ch` on text blocks) — long lines are hard to track.
-- **1–2 typefaces max**; pair a distinctive heading face with a highly legible body face.
-- **Left-align** body text; avoid justified (rivers of whitespace) and centered multi-line paragraphs.
+### Typography mechanics
+- A **modular scale** (≥ 1.25 ratio; larger ratios read as more designed). **Body ≥ 16px**;
+  line-height ~1.5 body, ~1.05–1.2 headings.
+- **Measure 45–75 characters** (`max-width: ~65ch`) on running text.
+- **1–2 typefaces**; a distinctive display face + a legible body face. **Left-align** body; avoid
+  justified text and centered multi-line paragraphs.
 
 ### Spacing & rhythm
-- **One spacing scale** (4/8px based): `--space-1:4px … --space-6:48px`. Every margin/padding is a
-  scale step — no arbitrary `13px`.
+- **One spacing scale** (4/8px based): `--space-1:4px … --space-8`. Every margin/padding is a step —
+  no arbitrary `13px`.
 - **Arithmetic on a token needs `calc()`.** `padding: var(--space-2)` is fine, but
-  `padding: var(--space-1) * 2` is **invalid CSS** — the browser silently drops it and the element
-  falls back to its default spacing. Always wrap arithmetic: `calc(var(--space-1) * 2)`.
-- **Whitespace groups and separates** (proximity): related things closer, unrelated things farther.
-- Consistent vertical rhythm; generous margins around blocks; do not fear empty space.
+  `padding: var(--space-1) * 2` is **invalid CSS** — silently dropped, the element falls back to its
+  default. Always `calc(var(--space-1) * 2)`.
+- Whitespace groups and separates (proximity); generous, rhythmic vertical spacing.
 
 ### Color & contrast
-- **Restraint**: a small palette (1–2 brand, a neutral ramp, one accent). The accent earns attention
-  *because* it is rare.
-- **WCAG AA contrast** — 4.5:1 body, 3:1 large text — a constraint met from the start, verified not eyeballed.
-- **Never carry meaning by color alone** (add an icon, label, or shape) — colorblind- and grayscale-safe.
+- **WCAG AA** — 4.5:1 body, 3:1 large text — from the start, verified not eyeballed. (Accessibility
+  and beauty are not in tension: a strong palette hits both.)
+- **Never carry meaning by color alone** (add an icon, label, or shape).
 
-### Layout & composition
-- **Align to a grid**; keep consistent alignment edges — misalignment reads as sloppiness.
-- Respect **reading patterns** (F for text-heavy, Z for sparse/landing); place the primary action on
-  the path the eye travels.
-- Group with cards/sections; use borders and shadows sparingly — **one elevation language**, not five.
-
-### Responsive
-- **Mobile-first**: base styles target small screens; `min-width` media queries add complexity upward.
-- Prefer **fluid** sizing (`%`, `clamp()`, `minmax()`); add breakpoints only where the layout actually breaks.
-- **No horizontal scroll at any width.** Tap targets ≥ 44px.
-
-### Interaction & state
-- Every interactive element has visible **`:hover`, `:focus-visible`, and `:active`** states.
-- Motion is subtle and purposeful (150–250ms) and respects `prefers-reduced-motion`.
-
-### Restraint (the mark of good design)
-Remove until it breaks, then add one thing back. Fewer weights, fewer colors, fewer boxes.
-Consistency over novelty — a calm, consistent page beats a busy, clever one for consumption.
+### Layout, responsive, interaction
+- Align to a grid; consistent edges. **Mobile-first**; fluid sizing (`clamp()`, `minmax()`),
+  breakpoints only where the layout breaks; **no horizontal scroll** at any width; tap targets ≥ 44px.
+- Every interactive element has visible **`:hover`, `:focus-visible`, `:active`**; motion subtle
+  (150–250ms), honoring `prefers-reduced-motion`.
 
 ## Tools
 All three run headless Chrome on the mission's HTML/CSS files (paths are local files in the workspace).
 
 - **`design-render <file.html> [--breakpoints 320,768,1440] [--width N] [--full] [--out p.png]`** —
-  screenshot the design at one or more viewport widths (`--full` = the whole scrollable page). Use it to
-  SEE the output and confirm no horizontal scroll at each breakpoint. Prints JSON with the PNG paths.
+  screenshot the design at one or more viewport widths (`--full` = the whole scrollable page). Your
+  eyes on the work — render early and often, and critique what you see. Prints JSON with the PNG paths.
 - **`design-export <file.html> --to pdf|png|docx|pptx [--out p] [--slide-selector "section"]`** —
-  convert the design to a delivery format. `pdf`/`png` are full fidelity (Chrome); `docx` is structural
-  (pandoc — content + hierarchy, not pixel-perfect); `pptx` renders each slide element (default `section`)
-  to a full-bleed image (pixel-perfect, non-editable content).
-- **`design-a11y <file.html> [--width N]`** — axe-core audit incl. WCAG AA contrast. Prints a JSON report
-  with a `score` (100 = clean) and per-rule violations. Aim for **no critical or serious** violations.
-
-> These operate on the HTML/CSS *source*: author it per the best-practices above, render to see it, run
-> a11y to verify contrast/structure, then export to the delivery format. Keep the source with every export.
+  convert to a delivery format. `pdf`/`png` are full fidelity (Chrome); `docx` is structural (pandoc);
+  `pptx` renders each slide element (default `section`) to a full-bleed image (pixel-perfect).
+- **`design-a11y <file.html> [--width N]`** — axe-core audit incl. WCAG AA contrast; JSON `score`
+  (100 = clean) + per-rule violations. Aim for **no critical or serious** violations.
 
 ## Procedures
 
-### Design a page or component
-1. **Hierarchy** — write the content outline and rank importance *before any CSS*.
-2. **Tokens** — pull the project design system (or define a minimal one) into `:root` custom properties.
-3. **Structure** — semantic HTML skeleton, mobile-first, one idea per section.
-4. **Style from tokens** — apply the type scale, spacing scale, and palette; every value is a token.
-5. **Responsive pass** — add breakpoints only where the layout breaks; confirm no horizontal scroll.
-6. **State pass** — hover / focus-visible / active on every interactive element; honor reduced-motion.
-7. **Render & verify** — `design-render --breakpoints 320,768,1440` and read the images back against the
-   hierarchy you set; run `design-a11y` for contrast + structure. Fix and re-render until it reads cleanly,
-   with no horizontal scroll at any breakpoint and no critical/serious a11y violations.
-8. **Convert** — `design-export --to <format>` produces the deliverable (pdf/png/docx/pptx); keep the
-   HTML/CSS source alongside it.
+### Design something (the full process)
+1. **Concept & content** — decide the goal / audience / feeling, name the concept, and **write the
+   real content** (headline, copy, CTA). Never lorem ipsum.
+2. **Compose** — plan the big moves: the hero moment, where the drama lives, the sections and rhythm.
+3. **Tokens** — pull the project system, or define one from your concept, into `:root` (a palette
+   with depth, a real type scale, a spacing scale). Load a web font.
+4. **Build** — semantic, mobile-first HTML; style from tokens; add responsive + hover/focus/active.
+5. **Render & self-critique** — `design-render` (full-page + a breakpoint); judge it hard against
+   Self-critique; make the single highest-impact move; **re-render**. Iterate until genuinely good.
+6. **Accessibility** — `design-a11y`; fix any critical/serious (usually contrast or a missing
+   landmark); confirm no horizontal scroll at each breakpoint.
+7. **Convert** — `design-export --to <format>` for the deliverable; keep the HTML/CSS source with it.
 
 ### The deliverable is the file
 Produce the complete HTML/CSS file(s), written in full to the mission workspace — never a diff, a
-snippet, or a prose description of changes (those fail verification). Keep the source alongside any exports.
+snippet, or a prose description of changes (those fail verification). Keep the source with any exports.
 
 ## Error Recovery
 
 | Symptom | Likely cause | Recovery |
 |---|---|---|
-| Contrast check fails (< 4.5:1) | Text/background too close in luminance | Adjust the lightness/saturation of one until it clears AA; re-verify. |
-| Web font fails to load | Blocked or slow font URL | Define a robust fallback stack (`system-ui, -apple-system, Segoe UI, sans-serif`) and verify it renders. |
-| Horizontal scroll on mobile | Fixed widths or an overflowing element | Use fluid units + `max-width:100%` on media; find the overflowing element and constrain it. |
+| It renders correct and accessible but looks **generic or bland** | You stopped at the floor — no concept committed; timid type, color, and space | Return to the concept and make ONE bold move: a real display web font at large scale, dramatic space, a richer/darker palette, or a background treatment. "Correct" is not the goal — beautiful is. |
 | Everything looks equally important | Hierarchy never established | Stop styling; re-rank the content and let size/weight/position encode the ranking. |
-| Inconsistent spacing | Arbitrary pixel values | Replace with spacing-scale tokens — one scale, no one-offs. |
+| Type feels flat and default | `system-ui` everywhere, uniform sizes | Load an expressive web font; open up the scale — a large, confident headline against small body. |
 | A margin/padding/gap is ignored (element uses default spacing) | Arithmetic written as `var(--x) * N` — invalid CSS, silently dropped | Wrap it in `calc()`: `calc(var(--x) * N)`. Only `calc()` evaluates arithmetic inside a CSS value. |
-| It looks "off" but nothing's wrong | Misalignment or too many competing elements | Align to the grid; remove decoration until the hierarchy is clear, then add back one thing. |
+| Contrast check fails (< 4.5:1) | Text/background too close in luminance | Adjust the lightness/saturation of one until it clears AA; re-verify. Keep the palette's mood. |
+| Web font fails to load | Blocked or slow font URL | Confirm a robust fallback stack (`'Font', system-ui, -apple-system, sans-serif`) renders acceptably; re-render to check. |
+| Horizontal scroll on mobile | Fixed widths or an overflowing element | Fluid units + `max-width:100%` on media; find the overflowing element and constrain it. |
 
 ## Safety
 - Verify the project's design system exists before designing — never assume brand values.
-- Every decision traces to a token or a stated rationale ("blue = brand primary", not "blue looks nice").
+- Every decision traces to a token or a stated rationale ("ink-black because the concept is
+  editorial", not "black looks nice").
 - Accessibility is a starting constraint (contrast, focus, alt text, reduced-motion), not a final polish.
 - Keep source files alongside exports; never overwrite without a versioned backup.
