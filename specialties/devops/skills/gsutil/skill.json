@@ -1,0 +1,19 @@
+{
+  "id": "gsutil",
+  "name": "gsutil (Google Cloud Storage)",
+  "version": 1,
+  "description": "Google Cloud Storage operations via gsutil — list/inspect objects and buckets, create buckets, copy/sync files, set bucket permissions.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "infrastructure",
+  "agent_part": "motor",
+  "when_to_use": "When working with Google Cloud Storage via gsutil: listing or inspecting objects/buckets, creating buckets, copying or syncing files to/from a bucket, or setting bucket IAM permissions.",
+  "scripts": [
+    "gsutil"
+  ],
+  "requires": {
+    "bin": [
+      "gsutil"
+    ]
+  }
+}

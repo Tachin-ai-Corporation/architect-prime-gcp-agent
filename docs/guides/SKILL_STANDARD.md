@@ -20,7 +20,7 @@ Every skill is graded 1–5 based on which layers are present and substantive. T
 
 **Target grades:**
 - Every skill: ≥ 2 (no stubs)
-- High-traffic skills (workspace-drive, workspace-gmail, workspace-docs, workspace-sheets, workspace-chat, gcp-devops, firebase): ≥ 4
+- High-traffic skills (workspace-drive, workspace-gmail, workspace-docs, workspace-sheets, workspace-chat, gcloud, firebase): ≥ 4
 - Skills with measured success rate below 80%: upgrade until success rate exceeds 80%
 
 ---

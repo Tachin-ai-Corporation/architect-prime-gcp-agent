@@ -1,0 +1,21 @@
+{
+  "id": "gcloud",
+  "name": "gcloud (GCP infrastructure CLI)",
+  "version": 1,
+  "description": "GCP infrastructure via the gcloud CLI — IAM/service accounts, Cloud Run, Cloud Build, resource discovery, Cloud Logging, and Firestore-REST reads.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "infrastructure",
+  "agent_part": "motor",
+  "when_to_use": "When performing GCP infrastructure tasks with the gcloud CLI: creating/binding service accounts and IAM, deploying Cloud Run services, Cloud Build, discovering existing resources, reading Cloud Logging, or reading Firestore documents via the REST API.",
+  "scripts": [
+    "gcloud",
+    "curl"
+  ],
+  "requires": {
+    "bin": [
+      "gcloud",
+      "curl"
+    ]
+  }
+}

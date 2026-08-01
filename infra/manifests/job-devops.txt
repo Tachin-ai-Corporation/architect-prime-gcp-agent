@@ -14,8 +14,12 @@ specialties/devops/brain/motor/SOUL_APPEND.md corekit/specialties/devops/brain/m
 specialties/devops/brain/cerebellum/SOUL_APPEND.md corekit/specialties/devops/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty-specific skills (discovered by brain daemon at runtime)
-specialties/devops/skills/gcp-devops/SKILL.md corekit/specialties/devops/skills/gcp-devops/SKILL.md
-specialties/devops/skills/gcp-devops/skill.json corekit/specialties/devops/skills/gcp-devops/skill.json
+specialties/devops/skills/gcloud/SKILL.md corekit/specialties/devops/skills/gcloud/SKILL.md
+specialties/devops/skills/gcloud/skill.json corekit/specialties/devops/skills/gcloud/skill.json
+specialties/devops/skills/gsutil/SKILL.md corekit/specialties/devops/skills/gsutil/SKILL.md
+specialties/devops/skills/gsutil/skill.json corekit/specialties/devops/skills/gsutil/skill.json
+specialties/devops/skills/docker/SKILL.md corekit/specialties/devops/skills/docker/SKILL.md
+specialties/devops/skills/docker/skill.json corekit/specialties/devops/skills/docker/skill.json
 specialties/devops/skills/firebase/SKILL.md corekit/specialties/devops/skills/firebase/SKILL.md
 specialties/devops/skills/firebase/skill.json corekit/specialties/devops/skills/firebase/skill.json
 

@@ -1,0 +1,20 @@
+{
+  "id": "docker",
+  "name": "docker (container images to Artifact Registry)",
+  "version": 1,
+  "description": "Build, tag, and push container images to GCP Artifact Registry with docker (deploy to Cloud Run via the gcloud skill).",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "infrastructure",
+  "agent_part": "motor",
+  "when_to_use": "When building, tagging, or pushing container images to GCP Artifact Registry with the docker CLI (the build/push half of a Cloud Run deploy; the deploy itself is in the gcloud skill).",
+  "scripts": [
+    "docker",
+    "gcloud"
+  ],
+  "requires": {
+    "bin": [
+      "gcloud"
+    ]
+  }
+}
