@@ -19,6 +19,9 @@ copy/sync files, set bucket permissions, and remove objects. For IAM / Cloud Run
 - `gsutil ls -L -b gs://BUCKET` — bucket metadata (location, storage class).
 - `gsutil iam get gs://BUCKET` — read the bucket's IAM policy.
 
+> **Count objects** with `gsutil ls gs://BUCKET/PREFIX/ | wc -l` — never save a listing to a file and
+> hand-parse it with a `python3 -c` one-liner (fragile shell quoting).
+
 ### Write (mutating — see Safety)
 - `gsutil mb -l REGION gs://BUCKET` — make a bucket.
 - `gsutil cp LOCAL gs://BUCKET/PATH` / `gsutil cp gs://BUCKET/PATH LOCAL` — copy to / from a bucket.

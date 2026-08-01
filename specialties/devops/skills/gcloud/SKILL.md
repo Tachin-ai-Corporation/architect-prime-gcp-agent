@@ -20,6 +20,15 @@ images use the **`docker`** skill; for Firebase Hosting use the **`firebase`** s
 - `gcloud logging read '<filter>' --project=PROJECT --freshness=1h` — read logs (filter syntax below).
 - `curl -s -H "Authorization: Bearer $TOKEN" "$FIRESTORE_URL/PATH"` — read Firestore docs (below).
 
+### Counting and extracting fields (let gcloud format — never hand-parse JSON)
+`gcloud` formats output for you. Do **not** save `--format=json` to a file and count/parse it with
+an improvised `python3 -c "..."` one-liner — the nested shell quoting breaks easily. Instead:
+- **Count** resources: `gcloud <group> list --project=PROJECT --format='value(FIELD)' | wc -l`.
+- **One field per line**: `--format='value(FIELD)'`; **several** (tab-separated): `--format='value(F1,F2)'`.
+- **Human table**: `--format='table(F1,F2,F3)'`; machine JSON only when a caller will parse it: `--format=json`.
+
+Example — count service accounts: `gcloud iam service-accounts list --project=PROJECT --format='value(email)' | wc -l`.
+
 ### Write (mutating — see Safety)
 - `gcloud iam service-accounts create ...` — create a service account.
 - `gcloud projects add-iam-policy-binding ...` — grant a role.
