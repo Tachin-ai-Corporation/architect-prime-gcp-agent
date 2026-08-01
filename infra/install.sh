@@ -410,6 +410,9 @@ run chown -R 1000:1000 "${INSTALL_ROOT}" 2>/dev/null || true
 run find "${INSTALL_ROOT}" -type d -exec chmod 755 {} \; 2>/dev/null || true
 run find "${INSTALL_ROOT}" -type f -exec chmod 644 {} \; 2>/dev/null || true
 run find "${INSTALL_ROOT}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+# Skill setup.sh scripts live in skill dirs (not bin/), so the blanket 644 above leaves them
+# non-executable and skill-setup's `-x` check skips them. Make any manifested setup.sh runnable.
+run find "${INSTALL_ROOT}" -type f -name 'setup.sh' -exec chmod 755 {} \; 2>/dev/null || true
 
 # Belt-and-suspenders: ensure no CRLF in any bin scripts
 # (defensive against SCP from Windows, git autocrlf, etc.)
