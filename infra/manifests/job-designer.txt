@@ -13,6 +13,8 @@ specialties/designer/brain/motor/SOUL_APPEND.md corekit/specialties/designer/bra
 specialties/designer/brain/cerebellum/SOUL_APPEND.md corekit/specialties/designer/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty-specific skills (discovered by brain daemon at runtime)
+specialties/designer/skills/design/SKILL.md corekit/specialties/designer/skills/design/SKILL.md
+specialties/designer/skills/design/skill.json corekit/specialties/designer/skills/design/skill.json
 specialties/designer/skills/design-ops/SKILL.md corekit/specialties/designer/skills/design-ops/SKILL.md
 specialties/designer/skills/design-ops/skill.json corekit/specialties/designer/skills/design-ops/skill.json
 

@@ -1,7 +1,7 @@
 # Skill: Design Operations
 
 ## When to Use
-When creating brand guidelines, design systems, visual concepts, or coordinating design across Slides, Docs, and HTML/CSS.
+When creating or governing a design **system** — brand guidelines, design tokens, component libraries — or auditing cross-medium consistency across Slides, Docs, and HTML/CSS. (Producing a design *in* HTML/CSS is the `design` skill; this skill defines the system that a design conforms to.)
 
 ## Commands
 

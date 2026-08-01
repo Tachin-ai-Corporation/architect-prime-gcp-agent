@@ -1,0 +1,13 @@
+{
+  "id": "design",
+  "name": "Design (HTML/CSS medium)",
+  "version": 1,
+  "description": "Produce visual designs by authoring HTML/CSS with best practices for human visual consumption, then convert to the delivery format (web, PDF, image, docx, pptx).",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "design",
+  "agent_part": "motor",
+  "when_to_use": "When producing a visual design — page, component, layout, mockup, report, one-pager, email, or slide content — authored as HTML/CSS and converted to the delivery format. For governing a design system/brand (tokens, component libraries, cross-medium audits), use design-ops.",
+  "scripts": [],
+  "requires": {}
+}

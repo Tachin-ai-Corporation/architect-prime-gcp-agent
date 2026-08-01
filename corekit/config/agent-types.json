@@ -99,7 +99,7 @@
       "accent": "#e879f9",
       "specialty": "Branding, design systems, visual concepts, pixel-perfect implementation across Slides, Docs, and HTML/CSS",
       "emailPattern": "designer-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "skill-introspect", "memory-consolidate", "design-ops"],
+      "skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "skill-introspect", "memory-consolidate", "design-ops", "design"],
       "brain": true
     },
     {

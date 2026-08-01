@@ -1,13 +1,13 @@
 {
   "id": "design-ops",
   "name": "Design Operations",
-  "version": 2,
-  "description": "Design system creation, brand guideline enforcement, visual concept development, and cross-medium design coordination.",
+  "version": 3,
+  "description": "Design-system governance — brand guidelines, design tokens, component libraries, and cross-medium consistency audits (the system a design conforms to; production is the design skill).",
   "author": "architect-prime",
   "origin": "specialty",
   "category": "design",
   "agent_part": "motor",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When creating brand guidelines, design systems, visual concepts, or coordinating design across Slides/Docs/HTML."
+  "when_to_use": "When creating or governing a design SYSTEM — brand guidelines, design tokens, component libraries — or auditing cross-medium consistency. Producing a design in HTML/CSS is the design skill; design-ops defines the system a design conforms to."
 }
