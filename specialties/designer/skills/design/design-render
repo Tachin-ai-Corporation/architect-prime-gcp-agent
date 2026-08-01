@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+// design-render — render an HTML file to PNG via headless Chrome, at one or more viewport widths.
+// Usage:
+//   design-render <input.html> [--width 1440] [--breakpoints 320,768,1440]
+//                 [--height 900] [--full] [--dsf 2] [--out <path.png>]
+// --full captures the entire scrollable page; otherwise the viewport (width x height).
+// Prints JSON { ok, rendered:[{width,out,fullPage}] }.
+import { createRequire } from 'node:module';
+import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve, dirname, basename, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const CHROME = process.env.CHROME_BIN || '/usr/bin/google-chrome-stable';
+
+const argv = process.argv.slice(2);
+const flags = {}; const pos = [];
+for (let i = 0; i < argv.length; i++) {
+  const t = argv[i];
+  if (t.startsWith('--')) { const k = t.slice(2); const nx = argv[i + 1]; if (nx === undefined || nx.startsWith('--')) flags[k] = true; else flags[k] = argv[++i]; }
+  else pos.push(t);
+}
+const input = pos[0];
+if (!input) { console.error('usage: design-render <input.html> [--width N | --breakpoints a,b,c] [--full] [--out path.png]'); process.exit(2); }
+const inPath = resolve(input);
+if (!existsSync(inPath)) { console.error(`ERROR: input not found: ${inPath}`); process.exit(2); }
+if (!existsSync(CHROME)) { console.error(`ERROR: Chrome not found at ${CHROME}. Run skill-setup (installs google-chrome-stable).`); process.exit(3); }
+
+const widths = flags.breakpoints
+  ? String(flags.breakpoints).split(',').map(s => parseInt(s, 10)).filter(Boolean)
+  : [parseInt(flags.width || '1440', 10)];
+const height = parseInt(flags.height || '900', 10);
+const dsf = parseFloat(flags.dsf || '2');
+const full = !!flags.full;
+const url = pathToFileURL(inPath).href;
+const outBase = flags.out ? String(flags.out).replace(/\.png$/i, '')
+  : join(dirname(inPath), basename(inPath).replace(/\.html?$/i, ''));
+
+let puppeteer;
+try {
+  const root = execSync('npm root -g', { encoding: 'utf8' }).trim();
+  puppeteer = createRequire(root.endsWith('/') ? root : root + '/')('puppeteer-core');
+} catch (e) { console.error('ERROR: puppeteer-core not installed globally. Run skill-setup.', e.message); process.exit(3); }
+
+const browser = await puppeteer.launch({
+  executablePath: CHROME, headless: 'new',
+  args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--hide-scrollbars', '--force-color-profile=srgb'],
+});
+try {
+  const rendered = [];
+  for (const w of widths) {
+    const page = await browser.newPage();
+    await page.setViewport({ width: w, height, deviceScaleFactor: dsf });
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+    const out = widths.length > 1 ? `${outBase}-${w}.png` : `${outBase}.png`;
+    await page.screenshot({ path: out, fullPage: full });
+    rendered.push({ width: w, out, fullPage: full });
+    await page.close();
+  }
+  console.log(JSON.stringify({ ok: true, rendered }, null, 2));
+} catch (e) {
+  console.error('ERROR: render failed:', e.message);
+  process.exitCode = 1;
+} finally {
+  await browser.close();
+}

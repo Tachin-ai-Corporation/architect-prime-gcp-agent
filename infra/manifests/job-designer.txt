@@ -15,6 +15,10 @@ specialties/designer/brain/cerebellum/SOUL_APPEND.md corekit/specialties/designe
 # Specialty-specific skills (discovered by brain daemon at runtime)
 specialties/designer/skills/design/SKILL.md corekit/specialties/designer/skills/design/SKILL.md
 specialties/designer/skills/design/skill.json corekit/specialties/designer/skills/design/skill.json
+specialties/designer/skills/design/design-render bin/design-render
+specialties/designer/skills/design/design-export bin/design-export
+specialties/designer/skills/design/design-a11y bin/design-a11y
+specialties/designer/skills/design/setup.sh corekit/specialties/designer/skills/design/setup.sh
 specialties/designer/skills/design-ops/SKILL.md corekit/specialties/designer/skills/design-ops/SKILL.md
 specialties/designer/skills/design-ops/skill.json corekit/specialties/designer/skills/design-ops/skill.json
 

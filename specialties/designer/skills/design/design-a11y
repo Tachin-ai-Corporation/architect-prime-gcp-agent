@@ -1,0 +1,52 @@
+#!/usr/bin/env node
+// design-a11y — accessibility audit (axe-core, incl. WCAG AA contrast) of an HTML file via headless Chrome.
+// Usage: design-a11y <input.html> [--width 1440]
+// Prints JSON { ok, score, violations, nodes, byImpact, detail:[...] }.
+// score = 100 - weighted penalty (critical 10 / serious 5 / moderate 2 / minor 1, per affected node).
+import { createRequire } from 'node:module';
+import { execSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const CHROME = process.env.CHROME_BIN || '/usr/bin/google-chrome-stable';
+
+const argv = process.argv.slice(2);
+const input = argv.find(a => !a.startsWith('--'));
+const wI = argv.indexOf('--width');
+const width = wI >= 0 ? parseInt(argv[wI + 1], 10) : 1440;
+if (!input) { console.error('usage: design-a11y <input.html> [--width N]'); process.exit(2); }
+const inPath = resolve(input);
+if (!existsSync(inPath)) { console.error(`ERROR: input not found: ${inPath}`); process.exit(2); }
+if (!existsSync(CHROME)) { console.error(`ERROR: Chrome not found at ${CHROME}. Run skill-setup.`); process.exit(3); }
+
+let puppeteer, axeSource;
+try {
+  const root = execSync('npm root -g', { encoding: 'utf8' }).trim();
+  const req = createRequire(root.endsWith('/') ? root : root + '/');
+  puppeteer = req('puppeteer-core');
+  axeSource = readFileSync(req.resolve('axe-core'), 'utf8');
+} catch (e) { console.error('ERROR: puppeteer-core / axe-core not installed globally. Run skill-setup.', e.message); process.exit(3); }
+
+const browser = await puppeteer.launch({
+  executablePath: CHROME, headless: 'new',
+  args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage'],
+});
+try {
+  const page = await browser.newPage();
+  await page.setViewport({ width, height: 900 });
+  await page.goto(pathToFileURL(inPath).href, { waitUntil: 'networkidle0', timeout: 30000 });
+  await page.evaluate(axeSource);
+  const res = await page.evaluate(async () => await window.axe.run(document, { resultTypes: ['violations'] }));
+  const v = res.violations || [];
+  const weight = { critical: 10, serious: 5, moderate: 2, minor: 1 };
+  const nodes = v.reduce((s, x) => s + x.nodes.length, 0);
+  const penalty = v.reduce((s, x) => s + (weight[x.impact] || 1) * x.nodes.length, 0);
+  const score = Math.max(0, 100 - penalty);
+  const byImpact = v.reduce((m, x) => { m[x.impact] = (m[x.impact] || 0) + x.nodes.length; return m; }, {});
+  console.log(JSON.stringify({
+    ok: true, score, violations: v.length, nodes, byImpact,
+    detail: v.map(x => ({ id: x.id, impact: x.impact, nodes: x.nodes.length, help: x.help })),
+  }, null, 2));
+} catch (e) { console.error('ERROR: a11y failed:', e.message); process.exitCode = 1; }
+finally { await browser.close(); }

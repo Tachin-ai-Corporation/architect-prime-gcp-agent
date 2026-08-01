@@ -63,6 +63,22 @@ prominent. If everything is bold, nothing is.
 Remove until it breaks, then add one thing back. Fewer weights, fewer colors, fewer boxes.
 Consistency over novelty — a calm, consistent page beats a busy, clever one for consumption.
 
+## Tools
+All three run headless Chrome on the mission's HTML/CSS files (paths are local files in the workspace).
+
+- **`design-render <file.html> [--breakpoints 320,768,1440] [--width N] [--full] [--out p.png]`** —
+  screenshot the design at one or more viewport widths (`--full` = the whole scrollable page). Use it to
+  SEE the output and confirm no horizontal scroll at each breakpoint. Prints JSON with the PNG paths.
+- **`design-export <file.html> --to pdf|png|docx|pptx [--out p] [--slide-selector "section"]`** —
+  convert the design to a delivery format. `pdf`/`png` are full fidelity (Chrome); `docx` is structural
+  (pandoc — content + hierarchy, not pixel-perfect); `pptx` renders each slide element (default `section`)
+  to a full-bleed image (pixel-perfect, non-editable content).
+- **`design-a11y <file.html> [--width N]`** — axe-core audit incl. WCAG AA contrast. Prints a JSON report
+  with a `score` (100 = clean) and per-rule violations. Aim for **no critical or serious** violations.
+
+> These operate on the HTML/CSS *source*: author it per the best-practices above, render to see it, run
+> a11y to verify contrast/structure, then export to the delivery format. Keep the source with every export.
+
 ## Procedures
 
 ### Design a page or component
@@ -72,8 +88,11 @@ Consistency over novelty — a calm, consistent page beats a busy, clever one fo
 4. **Style from tokens** — apply the type scale, spacing scale, and palette; every value is a token.
 5. **Responsive pass** — add breakpoints only where the layout breaks; confirm no horizontal scroll.
 6. **State pass** — hover / focus-visible / active on every interactive element; honor reduced-motion.
-7. **Verify** — read the design back against the hierarchy you set; confirm contrast, spacing consistency,
-   and that the focal point dominates. (Render/measure/export tooling is documented in this skill as it ships.)
+7. **Render & verify** — `design-render --breakpoints 320,768,1440` and read the images back against the
+   hierarchy you set; run `design-a11y` for contrast + structure. Fix and re-render until it reads cleanly,
+   with no horizontal scroll at any breakpoint and no critical/serious a11y violations.
+8. **Convert** — `design-export --to <format>` produces the deliverable (pdf/png/docx/pptx); keep the
+   HTML/CSS source alongside it.
 
 ### The deliverable is the file
 Produce the complete HTML/CSS file(s), written in full to the mission workspace — never a diff, a

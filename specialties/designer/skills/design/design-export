@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+// design-export — convert an HTML/CSS design to a delivery format.
+// Usage:
+//   design-export <input.html> --to pdf|png|docx|pptx [--out <path>]
+//                 [--width 1440] [--format A4] [--slide-selector "section"]
+// pdf / png : headless Chrome (full fidelity).  docx : pandoc (structural).
+// pptx : each slide element (default `section`) is rendered to an image and placed full-bleed
+//        on a 16:9 slide — pixel-perfect but non-editable content (falls back to one full-page slide).
+// Prints JSON { ok, to, out }.
+import { createRequire } from 'node:module';
+import { execSync, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve, dirname, basename, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const CHROME = process.env.CHROME_BIN || '/usr/bin/google-chrome-stable';
+function greq(name) {
+  const root = execSync('npm root -g', { encoding: 'utf8' }).trim();
+  return createRequire(root.endsWith('/') ? root : root + '/')(name);
+}
+function hasBin(b) { try { execSync(`command -v ${b}`, { stdio: 'ignore' }); return true; } catch { return false; } }
+
+const argv = process.argv.slice(2);
+const flags = {}; const pos = [];
+for (let i = 0; i < argv.length; i++) {
+  const t = argv[i];
+  if (t.startsWith('--')) { const k = t.slice(2); const nx = argv[i + 1]; if (nx === undefined || nx.startsWith('--')) flags[k] = true; else flags[k] = argv[++i]; }
+  else pos.push(t);
+}
+const input = pos[0];
+const to = flags.to;
+if (!input || !to) { console.error('usage: design-export <input.html> --to pdf|png|docx|pptx [--out path] [--width N] [--slide-selector "section"]'); process.exit(2); }
+const inPath = resolve(input);
+if (!existsSync(inPath)) { console.error(`ERROR: input not found: ${inPath}`); process.exit(2); }
+const outPath = flags.out ? resolve(String(flags.out))
+  : join(dirname(inPath), basename(inPath).replace(/\.html?$/i, '') + '.' + to);
+const url = pathToFileURL(inPath).href;
+const width = parseInt(flags.width || '1440', 10);
+
+async function withPage(fn) {
+  if (!existsSync(CHROME)) { console.error(`ERROR: Chrome not found at ${CHROME}. Run skill-setup.`); process.exit(3); }
+  const puppeteer = greq('puppeteer-core');
+  const browser = await puppeteer.launch({
+    executablePath: CHROME, headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--force-color-profile=srgb'],
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width, height: 900, deviceScaleFactor: 2 });
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 45000 });
+    return await fn(page);
+  } finally { await browser.close(); }
+}
+
+try {
+  if (to === 'pdf') {
+    await withPage(async (page) => { await page.pdf({ path: outPath, format: flags.format || 'A4', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } }); });
+  } else if (to === 'png') {
+    await withPage(async (page) => { await page.screenshot({ path: outPath, fullPage: true }); });
+  } else if (to === 'docx') {
+    if (!hasBin('pandoc')) { console.error('ERROR: pandoc not installed. Run skill-setup.'); process.exit(3); }
+    const r = spawnSync('pandoc', [inPath, '-f', 'html', '-o', outPath], { encoding: 'utf8' });
+    if (r.status !== 0) { console.error('ERROR: pandoc failed:', (r.stderr || r.stdout || '').slice(0, 500)); process.exit(1); }
+  } else if (to === 'pptx') {
+    const pptxgen = greq('pptxgenjs');
+    const Pptx = pptxgen.default || pptxgen;
+    const sel = flags['slide-selector'] || 'section';
+    await withPage(async (page) => {
+      const count = await page.$$eval(sel, els => els.length).catch(() => 0);
+      const pptx = new Pptx();
+      pptx.defineLayout({ name: 'W16x9', width: 13.333, height: 7.5 });
+      pptx.layout = 'W16x9';
+      const place = (buf) => { const s = pptx.addSlide(); s.addImage({ data: 'image/png;base64,' + buf.toString('base64'), x: 0, y: 0, w: 13.333, h: 7.5 }); };
+      if (count > 0) {
+        const els = await page.$$(sel);
+        for (const el of els) place(await el.screenshot({ type: 'png' }));
+      } else {
+        place(await page.screenshot({ fullPage: true, type: 'png' }));
+      }
+      await pptx.writeFile({ fileName: outPath });
+    });
+  } else { console.error(`ERROR: unknown --to '${to}' (pdf|png|docx|pptx)`); process.exit(2); }
+  console.log(JSON.stringify({ ok: true, to, out: outPath }, null, 2));
+} catch (e) { console.error('ERROR: export failed:', e.message); process.exit(1); }
