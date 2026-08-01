@@ -35,6 +35,9 @@ prominent. If everything is bold, nothing is.
 ### Spacing & rhythm
 - **One spacing scale** (4/8px based): `--space-1:4px … --space-6:48px`. Every margin/padding is a
   scale step — no arbitrary `13px`.
+- **Arithmetic on a token needs `calc()`.** `padding: var(--space-2)` is fine, but
+  `padding: var(--space-1) * 2` is **invalid CSS** — the browser silently drops it and the element
+  falls back to its default spacing. Always wrap arithmetic: `calc(var(--space-1) * 2)`.
 - **Whitespace groups and separates** (proximity): related things closer, unrelated things farther.
 - Consistent vertical rhythm; generous margins around blocks; do not fear empty space.
 
@@ -107,6 +110,7 @@ snippet, or a prose description of changes (those fail verification). Keep the s
 | Horizontal scroll on mobile | Fixed widths or an overflowing element | Use fluid units + `max-width:100%` on media; find the overflowing element and constrain it. |
 | Everything looks equally important | Hierarchy never established | Stop styling; re-rank the content and let size/weight/position encode the ranking. |
 | Inconsistent spacing | Arbitrary pixel values | Replace with spacing-scale tokens — one scale, no one-offs. |
+| A margin/padding/gap is ignored (element uses default spacing) | Arithmetic written as `var(--x) * N` — invalid CSS, silently dropped | Wrap it in `calc()`: `calc(var(--x) * N)`. Only `calc()` evaluates arithmetic inside a CSS value. |
 | It looks "off" but nothing's wrong | Misalignment or too many competing elements | Align to the grid; remove decoration until the hierarchy is clear, then add back one thing. |
 
 ## Safety

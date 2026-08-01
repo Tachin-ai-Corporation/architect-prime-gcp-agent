@@ -1,7 +1,7 @@
 {
   "id": "design",
   "name": "Design (HTML/CSS medium)",
-  "version": 2,
+  "version": 3,
   "description": "Produce visual designs by authoring HTML/CSS with best practices for human visual consumption, then render, check, and convert to the delivery format (web, PDF, image, docx, pptx).",
   "author": "architect-prime",
   "origin": "specialty",
