@@ -2,8 +2,9 @@
 // design-render — render an HTML file to PNG via headless Chrome, at one or more viewport widths.
 // Usage:
 //   design-render <input.html> [--width 1440] [--breakpoints 320,768,1440]
-//                 [--height 900] [--full] [--dsf 2] [--out <path.png>]
+//                 [--height 900] [--full] [--print] [--dsf 2] [--out <path.png>]
 // --full captures the entire scrollable page; otherwise the viewport (width x height).
+// --print emulates print media (for critiquing print/paged designs the way they export to PDF).
 // Prints JSON { ok, rendered:[{width,out,fullPage}] }.
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
@@ -51,6 +52,7 @@ try {
   for (const w of widths) {
     const page = await browser.newPage();
     await page.setViewport({ width: w, height, deviceScaleFactor: dsf });
+    if (flags.print) await page.emulateMediaType('print');   // critique print/paged pieces as they render to PDF
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
     const out = widths.length > 1 ? `${outBase}-${w}.png` : `${outBase}.png`;
     await page.screenshot({ path: out, fullPage: full });

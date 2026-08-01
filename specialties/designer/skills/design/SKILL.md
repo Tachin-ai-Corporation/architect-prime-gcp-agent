@@ -113,15 +113,40 @@ position encode importance. If everything is bold, nothing is.
 - Every interactive element has visible **`:hover`, `:focus-visible`, `:active`**; motion subtle
   (150–250ms), honoring `prefers-reduced-motion`.
 
-## Tools
-All three run headless Chrome on the mission's HTML/CSS files (paths are local files in the workspace).
+## Designing for print / paged output (flyers, brochures, multi-page PDFs)
+Print is **paged, not scrolled** — you design to a fixed page and control every break. Screen habits
+(continuous flow, `vh`/`vw`) don't apply; think page by page, in document order.
 
-- **`design-render <file.html> [--breakpoints 320,768,1440] [--width N] [--full] [--out p.png]`** —
-  screenshot the design at one or more viewport widths (`--full` = the whole scrollable page). Your
-  eyes on the work — render early and often, and critique what you see. Prints JSON with the PNG paths.
+- **Set the page.** `@page { size: A4; margin: 0; }` — A4 is 210×297mm, US Letter 8.5×11in; add
+  `landscape` for wide. `margin: 0` for full-bleed glossy, or e.g. `margin: 12mm` for a safe content
+  inset. Author print dimensions in **physical units** (mm/cm/in), not px/vw.
+- **One box per page.** Wrap each page in a container the exact page size
+  (`.page { width: 210mm; min-height: 297mm; box-sizing: border-box; }`) and force the break with
+  `break-after: page` on every page **except the last**. Content order = document order = page order.
+- **Avoid the blank trailing page.** A page box at *exactly* the page height plus any padding,
+  border, margin, or a `break-after` on the final page spills into an empty extra page. Use
+  `box-sizing: border-box`, no `break-after` on the last page, no bottom margin on the last block; if
+  a blank page persists, trim the height a hair (`min-height: 296mm`) — then **verify the count**.
+- **Keep blocks whole** with `break-inside: avoid` on anything that must not split across pages.
+- **Full-bleed glossy:** `@page margin: 0` + backgrounds/images to the paper edge (the exporter turns
+  on `printBackground`); keep critical text inside a safe inset from the trim.
+- **Export and verify.** `design-export --to pdf` uses the CSS `@page` size/margins and reports a
+  **`pages`** count — confirm it equals your intent (exactly 2 for a two-pager; no blank trailing page).
+- **Critique the print view, not the screen.** Screen and print media differ — judge a print piece
+  from `design-render --print` (print-media emulation) or the exported PDF, never the plain render.
+
+## Tools
+All run headless Chrome on the mission's HTML/CSS files (paths are local files in the workspace).
+
+- **`design-render <file.html> [--breakpoints 320,768,1440] [--full] [--print] [--out p.png]`** —
+  screenshot the design at one or more viewport widths (`--full` = the whole scrollable page;
+  `--print` = print-media emulation, for paged/flyer pieces). Your eyes on the work — render early and
+  often, and critique what you see. Prints JSON with the PNG paths.
 - **`design-export <file.html> --to pdf|png|docx|pptx [--out p] [--slide-selector "section"]`** —
   convert to a delivery format. `pdf`/`png` are full fidelity (Chrome); `docx` is structural (pandoc);
-  `pptx` renders each slide element (default `section`) to a full-bleed image (pixel-perfect).
+  `pptx` renders each slide element (default `section`) to a full-bleed image (pixel-perfect). For a
+  print/paged design (`@page` in the CSS) the PDF adopts the CSS page size + margins and the JSON
+  includes a **`pages`** count — use it to verify clean pagination.
 - **`design-a11y <file.html> [--width N]`** — axe-core audit incl. WCAG AA contrast; JSON `score`
   (100 = clean) + per-rule violations. Aim for **no critical or serious** violations.
 
@@ -155,6 +180,8 @@ snippet, or a prose description of changes (those fail verification). Keep the s
 | Contrast check fails (< 4.5:1) | Text/background too close in luminance | Adjust the lightness/saturation of one until it clears AA; re-verify. Keep the palette's mood. |
 | Web font fails to load | Blocked or slow font URL | Confirm a robust fallback stack (`'Font', system-ui, -apple-system, sans-serif`) renders acceptably; re-render to check. |
 | Horizontal scroll on mobile | Fixed widths or an overflowing element | Fluid units + `max-width:100%` on media; find the overflowing element and constrain it. |
+| A flyer/print PDF is one long page, not paged | No `@page` / `.page` boxes / `break-after` | Design to fixed `.page` containers with `break-after: page` between them; set `@page { size }`. |
+| PDF has a blank trailing page | Last `.page` = exactly the page height + padding/border, or a `break-after` on the final page | `box-sizing: border-box`; drop the final `break-after` and any trailing bottom margin; trim `min-height` a hair; re-check the reported `pages`. |
 
 ## Safety
 - Verify the project's design system exists before designing — never assume brand values.

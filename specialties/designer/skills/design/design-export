@@ -9,7 +9,7 @@
 // Prints JSON { ok, to, out }.
 import { createRequire } from 'node:module';
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname, basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -54,7 +54,15 @@ async function withPage(fn) {
 
 try {
   if (to === 'pdf') {
-    await withPage(async (page) => { await page.pdf({ path: outPath, format: flags.format || 'A4', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } }); });
+    // If the CSS declares @page (a print/paged design), let it drive size + margins; otherwise
+    // fall back to an A4, zero-margin, full-bleed page (web page -> PDF).
+    const paged = /@page\b/i.test(readFileSync(inPath, 'utf8'));
+    await withPage(async (page) => {
+      const opts = paged
+        ? { path: outPath, preferCSSPageSize: true, printBackground: true }
+        : { path: outPath, format: flags.format || 'A4', printBackground: true, margin: { top: '0', right: '0', bottom: '0', left: '0' } };
+      await page.pdf(opts);
+    });
   } else if (to === 'png') {
     await withPage(async (page) => { await page.screenshot({ path: outPath, fullPage: true }); });
   } else if (to === 'docx') {
@@ -80,5 +88,12 @@ try {
       await pptx.writeFile({ fileName: outPath });
     });
   } else { console.error(`ERROR: unknown --to '${to}' (pdf|png|docx|pptx)`); process.exit(2); }
-  console.log(JSON.stringify({ ok: true, to, out: outPath }, null, 2));
+  // For PDFs, report the page count so pagination can be verified (needs poppler-utils' pdfinfo).
+  let pages = null;
+  if (to === 'pdf' && hasBin('pdfinfo')) {
+    const r = spawnSync('pdfinfo', [outPath], { encoding: 'utf8' });
+    const m = /Pages:\s+(\d+)/.exec(r.stdout || '');
+    if (m) pages = parseInt(m[1], 10);
+  }
+  console.log(JSON.stringify({ ok: true, to, out: outPath, ...(pages != null ? { pages } : {}) }, null, 2));
 } catch (e) { console.error('ERROR: export failed:', e.message); process.exit(1); }
