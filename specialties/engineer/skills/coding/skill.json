@@ -1,7 +1,7 @@
 {
   "id": "coding",
   "name": "Coding (implement in a codebase)",
-  "version": 1,
+  "version": 2,
   "description": "Implement or change code in an existing repository — understand the codebase, make the smallest idiomatic change wired end-to-end (including turning a design into working code), verify it runs locally, then commit through the git flow.",
   "author": "architect-prime",
   "origin": "specialty",

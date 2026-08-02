@@ -21,9 +21,13 @@ touching and you have watched it work.
    not invent your own.
 
 2. **Locate the change surface by reading, not guessing.** Find the exact files and functions
-   to touch. Trace how the current behaviour works before you extend it. In a noisy repo,
-   separate real source from artifacts (generated files, notes, transcripts, `node_modules`,
-   build output) — change source, never generated output.
+   to touch. Trace how the current behaviour works before you extend it. **Edit the real,
+   existing file** — the one the task names (e.g. `index.html`) or the actual entry file the
+   app/site uses. NEVER invent a new filename or create a parallel file (writing `home.html`
+   when the page is `index.html`, or a `*-new` copy) — that leaves the real file untouched and
+   the change invisible. In a noisy repo, separate real source from artifacts (generated files,
+   notes, transcripts, duplicated/`-main` copies, `node_modules`, build output): confirm which
+   file the running site/app actually serves, and change THAT — never a copy or generated output.
 
 3. **Implement idiomatically.** Write code that reads like the code around it — its naming,
    its patterns, its structure. **Wire it end-to-end**: a feature is not a stub — the data
@@ -40,10 +44,15 @@ touching and you have watched it work.
    did not break what was working. Read the output and errors; fix the **cause** and re-run
    until it is clean. "It should work" is not "it works."
 
-5. **Leave the tree green, then hand to the git flow.** Self-review your diff — only the files
-   you meant, nothing stray, no debug leftovers or secrets. Confirm it builds / renders / tests
-   pass. THEN commit and sync through the git flow (see "The substrate" below). Do not commit a
-   red tree.
+5. **Prove the real file changed, then leave the tree green.** Run `work-diff` / `work-status`
+   and CONFIRM the exact file(s) you meant to change are the ones that actually changed, with
+   your change in them. **If the diff does not show your intended source file changed — or shows
+   a new/renamed file you didn't intend — you have NOT implemented it** (you edited the wrong
+   path, or only produced the code as text): go back, edit the real file, and re-check the diff.
+   The deliverable is the changed file proven by the diff, never a description of the change.
+   Then confirm it builds / renders / tests pass, only the files you meant are touched (no stray
+   files, debug leftovers, or secrets), and commit + sync through the git flow (see "The
+   substrate"). Do not commit a red or empty-of-your-change tree.
 
 ## Principles — the difference between "wrote code" and "shipped a working change"
 - **Read before you write.** The codebase already answers most "how should I…" questions.
@@ -84,7 +93,9 @@ mutates state.
 3. **Implement** the smallest idiomatic change, wired end-to-end.
 4. **Verify locally**: install deps → build → test → run/serve and observe the change. Fix and
    re-run until clean.
-5. **Self-review** the diff (`work-diff`): only intended files, no leftovers/secrets.
+5. **Self-review** the diff (`work-diff`): confirm the file(s) you intended to change actually
+   show your change — if the real target file isn't in the diff, you edited the wrong path; fix
+   it. Only intended files, no stray files/leftovers/secrets.
 6. **Commit** (`work-commit` with a C-23 message, `--add-all`) and **sync** (`work-sync`).
 7. **Report** what changed, how you verified it (the commands you ran and what they showed), and
    the commit sha.
@@ -122,6 +133,7 @@ When handed a design, mockup, or spec (e.g. from a designer):
 | Dependencies missing / import errors | Deps not installed for this checkout | Install with the project's own manager (`npm install`, `pip install -r …`, `go mod download`, …), then re-run. |
 | A test fails | Your change broke behaviour — or the test encodes an assumption your change intentionally changed | Default: fix the code, not the test. Only edit a test if the requirement genuinely changed, and say why. Never delete a test to go green. |
 | You edited the wrong file / a generated file | Located by guessing, or edited build output | Revert it (`work-diff` to see, restore from git), re-locate the real source by reading, and redo the change there. |
+| `work-diff` shows no change to your target file — or a **new** file (e.g. `home.html`) instead of the existing one (`index.html`) | You edited an invented/parallel file, or only produced the new code as a message instead of writing it into the file | The real file is untouched. Find the file the task names / the app actually serves, edit THAT in place, and re-run `work-diff` until it shows your change in the intended file. Never report done until the diff proves the real file changed. |
 | Can't tell the stack / how to run it | No obvious manifest | Look wider (Makefile, Dockerfile, CI config, README); if it is plainly static assets, treat it as a static site (no build). Don't invent a toolchain. |
 | Repo is full of unrelated files/notes | A noisy or artifact-polluted repo | Identify the actual source (the files the site/app is built from) and ignore the noise; change only real source. |
 | Big diff for a small change | Reformatting or an editor rewrote unrelated lines | Reduce the diff to only the intended change; re-run the formatter the project uses (if any), not a different one. |
