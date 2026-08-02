@@ -56,6 +56,11 @@ touching and you have watched it work.
 
 ## Principles — the difference between "wrote code" and "shipped a working change"
 - **Read before you write.** The codebase already answers most "how should I…" questions.
+- **Verify the current state — don't trust memory that it's already done.** Before concluding a
+  change already exists (and declining to make it), confirm it in the CURRENT code — read the
+  file, check `work-diff`. A memory that a past mission did it is NOT proof the code is in that
+  state (that mission may have failed or touched the wrong file). If the task asks for it and it
+  is not there now, implement it.
 - **Match the house style.** Foreign patterns are a defect even when they "work" — the next
   change has to live beside yours.
 - **Make it actually run.** Verification is watching it work, not believing it will.
