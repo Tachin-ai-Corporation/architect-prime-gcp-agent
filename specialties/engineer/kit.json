@@ -1,9 +1,9 @@
 {
   "id": "engineer",
   "name": "Software Engineer",
-  "version": "1.0.0",
-  "description": "Software development, code quality, testing, feature branches, pull requests, code review",
+  "version": "1.1.0",
+  "description": "Software development in the internal git-store flow — understand a codebase, implement changes and designs, test locally, then commit and merge; plus code review.",
   "base_skills": ["web-search", "workspace-git"],
-  "specialty_skills": ["git-ops", "code-review"],
+  "specialty_skills": ["coding", "code-review"],
   "brain_appends": ["cortex", "motor", "cerebellum"]
 }

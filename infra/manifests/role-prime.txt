@@ -95,9 +95,11 @@ skills/scripting/skill.json     skills/scripting/skill.json
 # If a Prime ever genuinely needs a workspace surface, install the TOOLS with the
 # doc — never the doc alone. validate-contracts Check 14c enforces exactly that.
 
-# Git operations (for repo improvements)
-specialties/engineer/skills/git-ops/skill.json   skills/git-ops/skill.json
-specialties/engineer/skills/git-ops/SKILL.md     skills/git-ops/SKILL.md
+# Git operations (for repo improvements — Prime does real GitHub/upstream work).
+# Lives in skills/ (core), not the engineer specialty: the fleet's internal git flow is
+# workspace-git + the git store; git-ops (GitHub gh/PR, conventional commits) is Prime-only.
+skills/git-ops/skill.json   skills/git-ops/skill.json
+skills/git-ops/SKILL.md     skills/git-ops/SKILL.md
 
 # Tier-landing skills (REPO vs LOCAL improvement paths)
 

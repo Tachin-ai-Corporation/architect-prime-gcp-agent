@@ -30,10 +30,13 @@ done
 # Default dir to shared/<repoId>
 [[ -n "$DIR" ]] || DIR="${CORE_DIR}/shared/${REPO_ID}"
 
-# Build args for git-store.mjs
-ARGS=("clone" "$REPO_ID")
-[[ -n "$BRANCH" ]] && ARGS+=("--ref" "$BRANCH")
-ARGS+=("--dir" "$DIR")
+# Default the ref explicitly. git-store.mjs's clone parses the token after <repoId> as the
+# branch when --ref is absent, so a bare `work-clone <repo> --dir X` would be parsed with
+# branch="--dir". Always passing --ref keeps clone robust regardless of flag order.
+BRANCH="${BRANCH:-main}"
 
-log "Cloning repo=${REPO_ID} branch=${BRANCH:-main} dir=${DIR}"
+# Build args for git-store.mjs (always explicit --ref and --dir)
+ARGS=("clone" "$REPO_ID" "--ref" "$BRANCH" "--dir" "$DIR")
+
+log "Cloning repo=${REPO_ID} branch=${BRANCH} dir=${DIR}"
 node "$GIT_STORE" "${ARGS[@]}"

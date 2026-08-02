@@ -1,0 +1,13 @@
+{
+  "id": "coding",
+  "name": "Coding (implement in a codebase)",
+  "version": 1,
+  "description": "Implement or change code in an existing repository — understand the codebase, make the smallest idiomatic change wired end-to-end (including turning a design into working code), verify it runs locally, then commit through the git flow.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "engineering",
+  "agent_part": "motor",
+  "when_to_use": "When implementing or changing code in an existing repo — a feature, wiring-up, a bug fix, or turning a design into working code — then verifying it runs locally and committing through the git flow. Not for throwaway one-off scripts, and not for reviewing someone else's diff (that is code-review).",
+  "scripts": [],
+  "requires": {}
+}

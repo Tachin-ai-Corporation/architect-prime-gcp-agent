@@ -13,8 +13,11 @@ specialties/engineer/brain/motor/SOUL_APPEND.md corekit/specialties/engineer/bra
 specialties/engineer/brain/cerebellum/SOUL_APPEND.md corekit/specialties/engineer/brain/cerebellum/SOUL_APPEND.md
 
 # Specialty skills
-specialties/engineer/skills/git-ops/SKILL.md corekit/specialties/engineer/skills/git-ops/SKILL.md
-specialties/engineer/skills/git-ops/skill.json corekit/specialties/engineer/skills/git-ops/skill.json
+# NOTE: git-ops (GitHub-flavored: gh pr create, conventional commits) is NOT installed for the
+# engineer — the fleet's git flow is the internal git store (workspace-git, base) + C-23 commits.
+# git-ops remains a Prime skill (role-prime.txt) for real GitHub/upstream-PR work.
+specialties/engineer/skills/coding/SKILL.md corekit/specialties/engineer/skills/coding/SKILL.md
+specialties/engineer/skills/coding/skill.json corekit/specialties/engineer/skills/coding/skill.json
 specialties/engineer/skills/code-review/SKILL.md corekit/specialties/engineer/skills/code-review/SKILL.md
 specialties/engineer/skills/code-review/skill.json corekit/specialties/engineer/skills/code-review/skill.json
 

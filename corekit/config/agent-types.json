@@ -18,7 +18,7 @@
       "accent": "#a78bfa",
       "specialty": "Full-stack development, code review, debugging, API design, architecture, testing",
       "emailPattern": "engineer-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "git-ops", "code-review"],
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "coding", "code-review"],
       "brain": true
     },
     {

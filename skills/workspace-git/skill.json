@@ -1,7 +1,7 @@
 {
   "id": "workspace-git",
   "name": "Git Workspace",
-  "version": 1,
+  "version": 2,
   "description": "Manage git-backed artifact workspaces — clone repos, create branches, commit, sync, merge, view status/diffs/logs.",
   "author": "architect-prime",
   "origin": "core",
