@@ -76,8 +76,13 @@ touching and you have watched it work.
 ## The substrate: you work in a git-backed repo (workspace-git)
 The brain daemon **auto-clones the mission's project repo** into your working directory
 (`shared/<missionId>/`) and puts you on a `mission/<missionId>` branch. **Do not re-clone the
-main project** — just start reading and working in that directory. Move the change through the
-flow with the `workspace-git` tools:
+main project** — just start reading and working in that directory. That directory **is the
+project root**: the repo's files sit right there (e.g. `index.html` and `styles.css` at the top
+level), NOT under a `sites/<name>/` or `<repo>-main/` subpath. Before editing, list the tree
+(`work-status`, or `ls`) and confirm the **real** location of the file you were sent to change.
+If a path you were handed doesn't exist, the layout was assumed — find the actual file and edit
+THAT; never `mkdir` the assumed path or create a parallel file to make a guess true. Move the
+change through the flow with the `workspace-git` tools:
 - Inspect: `work-status`, `work-diff`, `work-diff --stat`, `work-log`.
 - Commit a verified change: `work-commit "v{YYYY}.{MM}.{DD}.{index}.{subindex}: what changed" --add-all`
   (canonical C-23 message — NOT conventional-commit `feat:`/`fix:` prefixes).
@@ -139,6 +144,7 @@ When handed a design, mockup, or spec (e.g. from a designer):
 | A test fails | Your change broke behaviour — or the test encodes an assumption your change intentionally changed | Default: fix the code, not the test. Only edit a test if the requirement genuinely changed, and say why. Never delete a test to go green. |
 | You edited the wrong file / a generated file | Located by guessing, or edited build output | Revert it (`work-diff` to see, restore from git), re-locate the real source by reading, and redo the change there. |
 | `work-diff` shows no change to your target file — or a **new** file (e.g. `home.html`) instead of the existing one (`index.html`) | You edited an invented/parallel file, or only produced the new code as a message instead of writing it into the file | The real file is untouched. Find the file the task names / the app actually serves, edit THAT in place, and re-run `work-diff` until it shows your change in the intended file. Never report done until the diff proves the real file changed. |
+| A path you were handed doesn't exist (e.g. `sites/<name>/index.html`) | An assumed nested/monorepo layout — the auto-clone root **is** the project root | List the tree (`work-status`, `ls`); the file is usually at the workspace root. Edit the real file at its actual path. Do NOT create the assumed directory/file to make the guessed path real. |
 | Can't tell the stack / how to run it | No obvious manifest | Look wider (Makefile, Dockerfile, CI config, README); if it is plainly static assets, treat it as a static site (no build). Don't invent a toolchain. |
 | Repo is full of unrelated files/notes | A noisy or artifact-polluted repo | Identify the actual source (the files the site/app is built from) and ignore the noise; change only real source. |
 | Big diff for a small change | Reformatting or an editor rewrote unrelated lines | Reduce the diff to only the intended change; re-run the formatter the project uses (if any), not a different one. |

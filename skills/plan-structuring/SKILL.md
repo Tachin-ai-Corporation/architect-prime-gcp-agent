@@ -215,6 +215,17 @@ the generated JSON array of Google Docs API batch_update operations" — there i
 tool, and the planner cannot know the real command surface. Write the outcome instead:
 "incorporate the redline changes into the body and remove the redline notes section."
 
+### Code tasks name the target by role, not an assumed path
+For work in a code repo, the daemon auto-clones the project into the doer's workspace and the
+engineer discovers where files actually live. Name the change by its **role in the outcome**
+("the homepage", "the FAQ section of the landing page", "the nav styles"), never a guessed
+filesystem path. A concrete path you did not read is usually wrong: a real mission targeted
+`sites/<project>/index.html` — an assumed monorepo layout — when the repo served
+`index.html` from its root, so every attempt edited a path that did not exist. The clone root
+**is** the project root; there is no `sites/<name>/` or `<repo>/` prefix to prepend. If the
+requester named an exact file, pass that name through verbatim; otherwise describe the surface
+and let the engineer locate the real file.
+
 ### Never split a task away from the identifier it needs
 
 If task B needs an id that task A has to go and discover, **A and B are one task.** Do not write
