@@ -10,6 +10,47 @@
 import { getGceToken } from './gce-auth.mjs';
 import { ensureRepo, cloneRepo, pushWithRetry, pushBranch, mergeBranch, buildManifest, readRef, sanitizeRepoId, allocateVersion } from './git-store.mjs';
 
+// Marker for the corekit-managed block in a mission tree's LOCAL git excludes.
+const WORKSPACE_EXCLUDE_MARKER = '# --- corekit: mission scratch (inputs + bookkeeping, never artifacts) ---';
+
+/**
+ * Render the corekit-managed block for a mission working tree's LOCAL git excludes
+ * (`.git/info/exclude`), merged onto whatever is already there. Pure — no I/O.
+ *
+ * Ignores two classes of non-artifact file that the daemon/motor leave in the tree:
+ *   - source material downloaded to be READ (contracts, scans, images), not produced;
+ *   - corekit mission bookkeeping (the MISSION.md blackboard + the missions/ record,
+ *     step-transcript and session-log dir) — telemetry, not a project artifact (C-24).
+ *
+ * Bookkeeping paths are root-anchored (`/MISSION.md`, `/missions/`) so a project's own
+ * nested paths deeper in the tree are never masked. Idempotent (C-18): if the managed
+ * block is already present, returns the input unchanged with changed=false.
+ *
+ * @param {string} [existing] - Current exclude-file contents
+ * @returns {{ content: string, changed: boolean }}
+ */
+export function renderWorkspaceExcludes(existing = '') {
+  if (existing.includes(WORKSPACE_EXCLUDE_MARKER)) {
+    return { content: existing, changed: false };
+  }
+  const block = [
+    WORKSPACE_EXCLUDE_MARKER,
+    '# Downloaded to be READ (drive-download, drive-to-doc) — publish deliverables with',
+    '# work-publish; do not commit raw source material into the artifact substrate.',
+    '*.pdf', '*.docx', '*.xlsx', '*.pptx',
+    '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp',
+    '*.zip', '*.gz', '*.tar',
+    '# Corekit mission bookkeeping the daemon writes into the tree — process notes, not',
+    "# a project artifact. Root-anchored so a project's own nested paths stay safe.",
+    '/MISSION.md',
+    '/missions/',
+    '# --- end corekit block ---',
+    '',
+  ].join('\n');
+  const content = existing ? `${existing.replace(/\n*$/, '\n')}\n${block}` : block;
+  return { content, changed: true };
+}
+
 /**
  * Create an artifact manager instance.
  *
@@ -75,33 +116,27 @@ export function createArtifactManager(deps) {
   // =========================================================================
 
   /**
-   * Seed the mission working tree's .gitignore with the classes of file a mission
-   * fetches to READ rather than to produce. Idempotent (C-18): the managed block
-   * is written once and skipped on any later call, so a resumed mission does not
-   * accumulate duplicates and a project's own rules are never clobbered.
+   * Seed the mission working tree's LOCAL git excludes (`.git/info/exclude`) so the
+   * daemon's scratch never enters the project repo. Uses the repo-local exclude file
+   * (NOT a tracked `.gitignore`) on purpose: the rules are mission-local and re-seeded
+   * every mission, and keeping them out of `.gitignore` means the merged diff carries
+   * ONLY the real source change — the exclude file itself is never committed (CR-4).
+   * Idempotent (C-18): the managed block is written once and skipped thereafter.
    *
-   * @param {string} sharedDir - Absolute path to the mission working tree
+   * @param {string} sharedDir - Absolute path to the mission working tree (repo root)
    */
-  async function ensureWorkspaceGitignore(sharedDir) {
-    const MARKER = '# --- corekit: downloaded source material (inputs, not artifacts) ---';
-    const RULES = [
-      MARKER,
-      '# Fetched to be read (drive-download, drive-to-doc). Publish deliverables',
-      '# with work-publish instead of committing raw source files here.',
-      '*.pdf', '*.docx', '*.xlsx', '*.pptx',
-      '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp',
-      '*.zip', '*.gz', '*.tar',
-      '# --- end corekit block ---',
-      '',
-    ].join('\n');
+  async function ensureWorkspaceExcludes(sharedDir) {
     try {
-      const { readFileSync, writeFileSync, existsSync } = await import('fs');
-      const p = `${sharedDir}/.gitignore`;
+      const { readFileSync, writeFileSync, existsSync, mkdirSync } = await import('fs');
+      const infoDir = `${sharedDir}/.git/info`;
+      // Normal clone → .git is a directory; ensure info/ exists before appending.
+      try { mkdirSync(infoDir, { recursive: true }); } catch { /* ignore */ }
+      const p = `${infoDir}/exclude`;
       const existing = existsSync(p) ? readFileSync(p, 'utf8') : '';
-      if (existing.includes(MARKER)) return;
-      writeFileSync(p, existing ? `${existing.replace(/\n*$/, '\n')}\n${RULES}` : RULES);
+      const { content, changed } = renderWorkspaceExcludes(existing);
+      if (changed) writeFileSync(p, content);
     } catch (e) {
-      log('WARN', `Could not seed workspace .gitignore in ${sharedDir}: ${e.message}`);
+      log('WARN', `Could not seed workspace git excludes in ${sharedDir}: ${e.message}`);
     }
   }
 
@@ -143,13 +178,13 @@ export function createArtifactManager(deps) {
           // Branch may exist if resuming
           try { execSync(`git checkout "${branch}"`, { cwd: sharedDir, timeout: 5000 }); } catch { /* ignore */ }
         }
-        // Keep working files out of the artifact substrate. Missions download
-        // source material to read it — contracts, statements, scans — and those
-        // are INPUTS, not artifacts. Committing them would push third-party
-        // personal data into the permanent git store, and bloat every future
-        // clone of this repo. Written after clone/checkout so it lands on the
-        // mission branch; appended (not overwritten) if the project ships its own.
-        await ensureWorkspaceGitignore(sharedDir);
+        // Keep the daemon's scratch out of the artifact substrate. Two classes leak
+        // into the tree otherwise: source material downloaded to be READ (contracts,
+        // scans — third-party data that would bloat every future clone), and corekit
+        // mission bookkeeping (MISSION.md, missions/ records + step transcripts). Both
+        // go into the repo-LOCAL `.git/info/exclude`, so they are ignored during the
+        // mission yet never committed — the merged diff is only the real source change.
+        await ensureWorkspaceExcludes(sharedDir);
         log('INFO', `Git workspace initialized: repo=${repoId} branch=${branch} base=${ref?.sha?.slice(0, 8) || 'empty'}`);
       } catch (e) {
         log('WARN', `Git workspace init failed (non-fatal): ${e.message}`);
