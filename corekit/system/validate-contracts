@@ -230,6 +230,16 @@ for (const x of t.types) console.log(x.id);
     fi
   done
 
+  # ---- Check 10c: brain per-task execution budget ----
+  # config.mjs maxSteps for execution agents (motor/cerebellum/temporal-research). Absent →
+  # code falls back to 12 (too tight for a full coding task). Must be a sane integer.
+  BMI="$(read_contract 'brain.max_iterations' 2>/dev/null || echo '')"
+  if [[ "$BMI" =~ ^[0-9]+$ ]] && [[ "$BMI" -ge 8 ]]; then
+    pass "brain.max_iterations = ${BMI} (per-task execution-agent budget)"
+  else
+    fail "brain.max_iterations = '${BMI}' (expected integer >= 8)"
+  fi
+
   # ---- Check 10b: idempotency config fields (fail closed) ----
   for field in step_ledger_enabled checkpoint_resume_enabled pass_synthesize_nudge_enabled reject_full_replan_when_passing recovered_tool_error_soft_fail blocked_requires_real_blocker; do
     VAL="$(read_contract "dispatch.${field}" 2>/dev/null || echo '')"

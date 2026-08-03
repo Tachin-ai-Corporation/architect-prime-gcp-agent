@@ -918,9 +918,16 @@ async function main() {
 
     async clone() {
       const repoId = args[0];
-      const branch = args[args.indexOf('--ref') >= 0 ? args.indexOf('--ref') + 1 : 1] || loadConfig().defaultBranch;
-      const dir = args[args.indexOf('--dir') >= 0 ? args.indexOf('--dir') + 1 : 2] || `./${repoId}`;
-      if (!repoId) throw new Error('Usage: clone <repoId> [--ref <branch>] [--dir <path>]');
+      if (!repoId || repoId.startsWith('--')) throw new Error('Usage: clone <repoId> [--ref <branch>] [--dir <path>]');
+      // Parse --ref/--dir by flag. Positional forms (clone <repo> [<branch>] [<dir>]) still work,
+      // but a token starting with '--' is NEVER a positional value — that is what made
+      // `clone <repo> --dir X` (no --ref) mis-read branch as "--dir".
+      const refIdx = args.indexOf('--ref');
+      const dirIdx = args.indexOf('--dir');
+      const posBranch = (args[1] && !args[1].startsWith('--')) ? args[1] : null;
+      const posDir = (args[2] && !args[2].startsWith('--')) ? args[2] : null;
+      const branch = (refIdx >= 0 ? args[refIdx + 1] : posBranch) || loadConfig().defaultBranch;
+      const dir = (dirIdx >= 0 ? args[dirIdx + 1] : posDir) || `./${repoId}`;
       const result = await cloneRepo(repoId, branch, dir);
       return result;
     },

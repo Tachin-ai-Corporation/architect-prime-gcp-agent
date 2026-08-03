@@ -126,6 +126,10 @@
     "attack_duty_stakes_min": "consequential",
     "min_deliverable_chars": 1
   },
+  "_brain_comment": "Per-task tool-call budget for EXECUTION agents (motor/cerebellum/temporal-research) in the neural gateway (corekit/brain/config.mjs maxSteps). DISTINCT from dispatch.max_iterations (the mission decide-loop cap). Absent until now → config.mjs fell back to 12, too tight for a full coding task (read files → edit → serve+verify → work-diff → commit exceeds 12 and fails mid-way, forcing the re-plan churn seen in the bobby coding loop). Raised to 25: comfortable headroom, still inside the 300s per-task timeout; cerebellum/research stop early on their own regardless. See docs/plans/CODING_RELIABILITY_PLAN.md CR-2.",
+  "brain": {
+    "max_iterations": 25
+  },
   "ears": {
     "firestore_poll_ms": 3000,
     "gchat_poll_ms": 5000,

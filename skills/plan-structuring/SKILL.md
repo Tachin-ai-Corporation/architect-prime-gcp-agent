@@ -181,7 +181,7 @@ move or task type above.
 ### Task sizing — outcome tasks, not tool steps
 A task is one outcome a single agent owns end-to-end. The executor sequences the tool calls
 itself — a task that makes many tool calls is normal execution, not over-scope. But each task
-runs as its own dispatch with a **bounded per-task budget (~12 tool calls, 300s timeout)**, and a
+runs as its own dispatch with a **bounded per-task budget (~25 tool calls, 300s timeout)**, and a
 fresh task re-reads its context from scratch — so that budget only reaches real work when a task
 is ONE coherent outcome. Avoid both failure modes:
 

@@ -147,6 +147,19 @@ setup_all() {
   local count=0
 
   # Base skills
+  # Prune dangling skill symlinks. Specialty/custom skills are symlinked into SKILLS_DIR
+  # (below). When a skill is de-manifested, install.sh's reconcile removes its real dir — but
+  # that sweep is `find -type f` and never touches the now-dangling symlink, so it lingers and
+  # the skill stays "visible" (a de-manifested git-ops persisted on the engineer this way).
+  # Remove any max-depth-1 symlink whose target no longer exists, before re-linking the current set.
+  if [[ -d "$SKILLS_DIR" ]]; then
+    while IFS= read -r stale; do
+      [[ -n "$stale" ]] || continue
+      rm -f "$stale"
+      info "pruned dangling skill link: $(basename "$stale")"
+    done < <(find "$SKILLS_DIR" -maxdepth 1 -type l ! -exec test -e {} \; -print 2>/dev/null)
+  fi
+
   if [[ -d "$SKILLS_DIR" ]]; then
     for skill_dir in "$SKILLS_DIR"/*/; do
       [[ -d "$skill_dir" ]] || continue
