@@ -67,13 +67,18 @@ export function loadAgentConfig(agentId, opts = {}) {
   // on a real code+deploy mission. Cortex is unaffected (always its own model).
   const vertexCfg = contracts.vertex || {};
   const models = vertexCfg.models || {};
-  const subagentModel = (opts.strong && models.subagentStrong)
-    ? models.subagentStrong
-    : (models.subagent || 'vertex-google/gemini-2.5-flash');
   const defaultModel = agentId === 'cortex'
     ? (models.cortex || 'vertex-google/gemini-2.5-flash')
-    : subagentModel;
+    : (models.subagent || 'vertex-google/gemini-2.5-flash');
   const fallbackModel = models.cortexFallback || 'vertex-google/gemini-2.5-flash';
+  // Phase E (CR-9): a strong-tier request routes a subagent to `subagentStrong`
+  // (gemini-2.5-pro). It must win over BOTH the contracts default AND any per-agent
+  // workspace config.json `model` pin — workspace-motor/-prefrontal pin flash, and that
+  // pin (applied via agentOverrides.model in the return) would otherwise silently defeat
+  // the strong routing, which is exactly what happened on first deploy.
+  const strongModel = (opts.strong && agentId !== 'cortex' && models.subagentStrong)
+    ? models.subagentStrong
+    : null;
 
   const brainCfg = contracts.brain || {};
   const maxSteps = brainCfg.max_iterations || 12;
@@ -98,7 +103,7 @@ export function loadAgentConfig(agentId, opts = {}) {
   const needsTools = EXECUTION_AGENTS.has(agentId) || (opts.exec === true && TOOL_ON_REQUEST.has(agentId));
 
   return {
-    model: agentOverrides.model || defaultModel,
+    model: strongModel || agentOverrides.model || defaultModel,
     fallbackModel: agentOverrides.fallbackModel || fallbackModel,
     systemPrompt,
     maxSteps: needsTools ? (agentOverrides.maxSteps || maxSteps) : 1,
