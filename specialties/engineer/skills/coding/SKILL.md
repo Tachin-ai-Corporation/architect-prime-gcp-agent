@@ -116,10 +116,14 @@ Detect first, then use the project's own commands:
   run its build, run its tests, then run the app (dev server, CLI, or entry point) and confirm
   the behaviour. Example shape (read the real scripts, don't assume names): `npm install` →
   `npm run build` → `npm test` → `npm run dev` then fetch the URL.
-- **Static site (HTML/CSS/JS, no build step)**: there is nothing to compile. Verify the markup
-  is well-formed and your change is present, that CSS/links/asset paths resolve, and that it
-  serves — e.g. run a static server (`python3 -m http.server`) in the dir and fetch the page,
-  or open it with any available renderer. Confirm nothing else on the page broke.
+- **Static site (HTML/CSS/JS, no build step)**: there is nothing to compile. Prefer a
+  **no-server** check — read the file back and confirm your change is present in the markup and
+  that CSS/link/asset paths are correct relative paths; a static change rarely needs a running
+  server. When you DO need to serve it (to exercise JS/behaviour), bind a **free/ephemeral
+  port**, never a fixed common one: `python3 -m http.server 0` binds an open port (read the one
+  it prints), or pick a high random port; fetch the page, assert the change, then stop the
+  server. Never assume `:8000`/`:3000` is free — a stale server there makes the serve step churn
+  on "Address already in use". Confirm nothing else on the page broke.
 - **A library or a subcommand**: exercise it — run the relevant test, or a tiny script that
   imports/calls the changed code and prints the result.
 If you genuinely cannot run it in this environment, say exactly why and verify as far as you
@@ -141,6 +145,7 @@ When handed a design, mockup, or spec (e.g. from a designer):
 | Build fails after your change | A real error your change introduced (or a pre-existing break) | Read the full error — it names file+line. Fix the cause; re-run the build. If it failed *before* your change too, say so and scope your work to what you can verify. |
 | `command not found` for the build/test | You guessed the command instead of reading the manifest | Open `package.json` scripts / the README and use the project's real command. |
 | Dependencies missing / import errors | Deps not installed for this checkout | Install with the project's own manager (`npm install`, `pip install -r …`, `go mod download`, …), then re-run. |
+| "Address already in use" / the serve step hangs or keeps retrying on a port | You bound a fixed common port (`:8000`/`:3000`) a stale server already holds | Bind an ephemeral port (`python3 -m http.server 0`, then read the port it prints) or a high random one, fetch, assert, then stop the server. For a static change, skip the server entirely and assert the change by reading the file back. Don't retry the same busy port. |
 | A test fails | Your change broke behaviour — or the test encodes an assumption your change intentionally changed | Default: fix the code, not the test. Only edit a test if the requirement genuinely changed, and say why. Never delete a test to go green. |
 | You edited the wrong file / a generated file | Located by guessing, or edited build output | Revert it (`work-diff` to see, restore from git), re-locate the real source by reading, and redo the change there. |
 | `work-diff` shows no change to your target file — or a **new** file (e.g. `home.html`) instead of the existing one (`index.html`) | You edited an invented/parallel file, or only produced the new code as a message instead of writing it into the file | The real file is untouched. Find the file the task names / the app actually serves, edit THAT in place, and re-run `work-diff` until it shows your change in the intended file. Never report done until the diff proves the real file changed. |

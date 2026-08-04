@@ -130,6 +130,15 @@ tasks. Prime agents never delegate — for Prime, structure fleet-related work a
 `standard` motor tasks that operate on the fleet directly (SSH via system-shell,
 work-log reads, fleet-verify/fleet-upgrade).
 
+**Delegate only cross-specialty work — never your own.** A part your OWN specialty and
+tools can accomplish is a `standard` task YOU own, not a delegation. Delegate a part ONLY
+when it needs a specialty you do not have. A devops agent deploys its own releases, an
+engineer writes its own code, a designer makes its own designs — do not hand a teammate the
+work you are the one equipped for. Observed failure: a devops agent delegated a website
+DEPLOY (its own specialty's job) to an engineer with no deploy tools; the engineer could
+only block. When the same agent owns the whole outcome, it is one `standard` task (or a
+checkpoint of standard tasks), not a hand-off.
+
 **No placeholder instructions.** Every task instruction — especially delegation
 tasks — must be concrete and actionable. NEVER write "PLACEHOLDER", "will be
 filled later", "TBD", or any deferred content. The executor sends instructions
