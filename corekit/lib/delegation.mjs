@@ -249,3 +249,65 @@ export function parseResultTrailer(text) {
   }
   return (result.fullOutputChars || result.artifactRef) ? result : null;
 }
+
+// ---- Capability guard (deterministic delegation backstop) ----
+
+// Base skills every specialty carries — too generic to signal a specialty boundary,
+// so they are never treated as a distinctive capability the target "lacks".
+const GENERIC_SKILLS = new Set([
+  'web-search', 'workspace-drive', 'skill-introspect', 'memory-consolidate',
+  'memory-recall', 'work-management', 'verification', 'read-my-skills', 'secrets',
+  'delegation',
+]);
+
+function escapeRe(s) {
+  return String(s).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+/**
+ * Deterministic guard against a *mis-directed* cross-agent delegation — a delegator
+ * handing a teammate work that the teammate's specialty cannot do while the delegator's
+ * own specialty can. This is the failure we saw live: a devops agent delegated a Firebase
+ * DEPLOY (its own specialty's work) to an engineer with no deploy skill, and the engineer
+ * blocked. Pure, direction-aware: fires ONLY when work is sent AWAY from the agent that can
+ * do it, never the reverse (an engineer delegating a deploy TO devops is fine).
+ *
+ * Conservative by design: it fires only when the task instruction *explicitly invokes* a
+ * distinctive capability (a skill/CLI id like `firebase`, `gcloud`, `docker`) that the
+ * delegator has and the target lacks. Item 1 (ownership routing) is the primary fix; this is
+ * the backstop that keeps a mis-delegation from silently blocking a delegate.
+ *
+ * @param {object} o
+ * @param {string} o.instruction        - the delegation task instruction text
+ * @param {string} o.delegatorSpecialty - the delegating agent's specialty id (e.g. 'devops')
+ * @param {string} o.targetSpecialty    - the delegate's specialty id (e.g. 'engineer')
+ * @param {Object<string,string[]>} o.specialtySkills - specialty id -> skill ids
+ * @returns {{ ok: boolean, selfCapable: boolean, offending: string[], reason: string }}
+ */
+export function checkDelegationCapability({ instruction, delegatorSpecialty, targetSpecialty, specialtySkills } = {}) {
+  const clear = { ok: true, selfCapable: false, offending: [], reason: '' };
+  if (!instruction || !delegatorSpecialty || !targetSpecialty || !specialtySkills) return clear;
+  if (delegatorSpecialty === targetSpecialty) return clear; // same specialty → self-delegation guard's job
+  const own = specialtySkills[delegatorSpecialty];
+  const target = specialtySkills[targetSpecialty];
+  if (!Array.isArray(own) || own.length === 0) return clear; // unknown delegator caps → don't guess
+  const targetSet = new Set(Array.isArray(target) ? target : []);
+  // Gap = distinctive capabilities the delegator has that the target lacks.
+  const gap = own.filter(s => !GENERIC_SKILLS.has(s) && !targetSet.has(s));
+  if (gap.length === 0) return clear;
+  const text = String(instruction).toLowerCase();
+  // Match a skill id as a standalone token — NOT as part of a filename/path (so a task to
+  // edit `firebase.json` does not read as "deploy via firebase"). Boundaries exclude word
+  // chars, dots and slashes on both sides.
+  const offending = gap.filter(skill => {
+    const s = escapeRe(String(skill).toLowerCase());
+    return new RegExp(`(?:^|[^\\w./-])${s}(?:[^\\w./-]|$)`).test(text);
+  });
+  if (offending.length === 0) return clear;
+  return {
+    ok: false,
+    selfCapable: true, // the offending capabilities are, by construction, the delegator's own
+    offending,
+    reason: `delegation to '${targetSpecialty}' invokes ${offending.join(', ')} — a capability it lacks but this '${delegatorSpecialty}' agent owns; do it yourself instead of delegating`,
+  };
+}

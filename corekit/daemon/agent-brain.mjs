@@ -1156,7 +1156,7 @@ async function callPrefrontal(payload) {
   // decomposition and ownership routing. Prefrontal plans by OUTCOME; it never sees
   // how a skill works and never names a skill/tool — the executing organ owns the how.
   if (CAPABILITY_MAP) {
-    sysParts.push(`[BRAIN CAPABILITY MAP — what each organ can do, high level]\nDecompose by outcome and route by ownership. You see WHICH organ can do WHAT, never HOW. Never name a skill, command, or tool for another organ — the executing organ chooses its own.\n\n${CAPABILITY_MAP}`);
+    sysParts.push(`[BRAIN CAPABILITY MAP — what each organ can do, high level]\nDecompose by outcome and route by ownership. You see WHICH organ can do WHAT, never HOW. Never name a skill, command, or tool for another organ — the executing organ chooses its own.\n\nOWNERSHIP: mark a part \`local\` (this agent does it) whenever your OWN capabilities below can accomplish it — your specialty's work is yours and is never delegated. Mark a part \`teammate\` ONLY when it needs a capability no organ of yours has. A devops agent deploys its own releases, an engineer writes its own code, a designer makes its own designs — delegate outward only what your specialty genuinely cannot do. Do not hand a teammate work you are the one equipped for.\n\n${CAPABILITY_MAP}`);
   }
   const systemPrompt = sysParts.join('\n\n');
 

@@ -8,7 +8,8 @@ import { toStr } from './to-str.mjs';
 import { smartTruncate } from './vertex-text.mjs';
 import { buildPriorWorkContext, renderCheckpointDigest } from './compaction.mjs';
 import { makeAddress } from './channel.mjs';
-import { composeDelegationMarker, normalizeTargetEmail } from './delegation.mjs';
+import { composeDelegationMarker, normalizeTargetEmail, checkDelegationCapability } from './delegation.mjs';
+import { readFileSync as _readFileSync } from 'fs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation, isMissingEvidenceFail, stakesAtLeast } from './verdict.mjs';
 import { detectMotorFailure, isRecoveredToolError } from './agent-output.mjs';
 import { createHash } from 'crypto';
@@ -18,6 +19,28 @@ import { extractResources, mergeResources, renderResources, seedFromProse } from
 import { markCheckpoint, spineSummary } from './checkpoint-spine.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
+
+// Delegation capability guard (Item 2): the agent's own specialty + the specialty→skills
+// map, read once from installed config. Used to catch a delegation that hands a teammate
+// work its specialty cannot do while this agent's own specialty can. Read-once (cached);
+// on any read failure the guard degrades to a no-op (returns null → guard skipped).
+let _delegCapCache = null;
+function loadDelegationCapMaps(coreDir) {
+  if (_delegCapCache !== null) return _delegCapCache || null;
+  try {
+    const cfg = JSON.parse(_readFileSync(`${coreDir}/corekit/chat-config.json`, 'utf8'));
+    const agentSpecialty = cfg.specialty || cfg.agentType || '';
+    const types = JSON.parse(_readFileSync(`${coreDir}/corekit/config/agent-types.json`, 'utf8'));
+    const specialtySkills = {};
+    for (const t of (types.types || [])) {
+      if (t.id) specialtySkills[t.id] = Array.isArray(t.skills) ? t.skills : [];
+    }
+    _delegCapCache = agentSpecialty ? { agentSpecialty, specialtySkills } : false;
+  } catch {
+    _delegCapCache = false;
+  }
+  return _delegCapCache || null;
+}
 
 function deriveStepKey(envId, cpNum, action, target = '', iteration = '') {
   const hash = createHash('sha256');
@@ -571,12 +594,38 @@ export async function executeCheckpoints(checkpoints, opts) {
           continue;
         }
 
-        // ---- Self-delegation guard ----
+        // ---- Self-delegation guard + capability guard ----
+        // Item 2: before dispatching, check whether the target specialty can even do the
+        // work. A delegation that invokes a capability the target lacks but THIS agent owns
+        // (e.g. a devops agent handing a Firebase deploy to an engineer) is self-defeating —
+        // the delegate can only block on it. Do it ourselves instead. Read-once, flag-gated.
+        const _delegInstruction = task.instruction || task.task || task.summary || '';
+        const _capMaps = (contracts?.dispatch?.delegation_capability_guard !== false)
+          ? loadDelegationCapMaps(CORE_DIR) : null;
+        const _capCheck = _capMaps
+          ? checkDelegationCapability({
+              instruction: _delegInstruction,
+              delegatorSpecialty: _capMaps.agentSpecialty,
+              targetSpecialty: delegateSpecialty,
+              specialtySkills: _capMaps.specialtySkills,
+            })
+          : { ok: true };
         // If the delegation resolves to THIS agent, convert to a local motor task
         // instead of sending a GChat message to ourselves (which causes infinite loops).
         if (targetAgentEmail === (AGENT_EMAIL || AGENT_ID)) {
           log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: delegation to '${delegateSpecialty}' resolved to SELF (${targetAgentEmail}) — converting to local motor task`);
           // Override: treat as standard motor task
+          stepType = 'standard';
+          task.agent = 'motor';
+          taskAgent = 'motor';
+          // Fall through to standard task execution below
+        } else if (!_capCheck.ok && _capCheck.selfCapable) {
+          log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: [capability-guard] ${_capCheck.reason} — converting to local motor task`);
+          cpResults.push({
+            step: `${cpNum}.${taskNum}`, agent: 'system',
+            result: `[ADVISORY] Delegation to '${delegateSpecialty}' redirected to a local task: it invokes ${_capCheck.offending.join(', ')}, which that specialty lacks and this agent owns. Do your own specialty's work; delegate only what needs a specialty you do not have.`,
+            success: true,
+          });
           stepType = 'standard';
           task.agent = 'motor';
           taskAgent = 'motor';
