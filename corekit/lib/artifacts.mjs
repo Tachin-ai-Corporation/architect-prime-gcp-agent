@@ -247,13 +247,22 @@ export function createArtifactManager(deps) {
       // Check if there's anything to commit
       const status = execSync('git status --porcelain', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
       if (!status) {
-        log('DEBUG', `commitAndSync: nothing to commit for ${envelopeId}`);
+        log('DEBUG', `commitAndSync: nothing new to stage for ${envelopeId}`);
         // Guard: unborn HEAD on empty repos throws fatal; detect and return cleanly
         const headCheck = execSync('git rev-parse --verify -q HEAD 2>/dev/null || echo unborn', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
         if (headCheck === 'unborn') {
           return { committed: false, synced: true, sha: null, unborn: true };
         }
-        return { committed: false, synced: true, sha: headCheck };
+        // A LOCAL commit the motor already made (its own work-commit) leaves nothing new to
+        // stage — but that commit has NOT necessarily reached the git store, so returning here
+        // without pushing leaves the mission branch ref behind and the completion merge finds
+        // nothing: the "committed but nothing landed on main" failure seen on real code missions.
+        // Push the existing HEAD so a motor-side commit actually propagates.
+        const pushResult = await pushWithRetry(repoId, branch, sharedDir, agentId || 'brain');
+        const synced = pushResult.status === 'pushed' || pushResult.status === 'up_to_date';
+        if (synced) log('INFO', `commitAndSync: pushed pre-existing commit ${headCheck.slice(0, 8)} on ${branch} (${pushResult.status})`);
+        else log('WARN', `commitAndSync: push of pre-existing commit ${headCheck.slice(0, 8)} failed (${pushResult.status})`);
+        return { committed: false, synced, sha: headCheck };
       }
 
       // Set agent identity
