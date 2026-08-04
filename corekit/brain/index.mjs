@@ -155,6 +155,7 @@ const server = createServer(async (req, res) => {
         top_p: topP,
         session: sessionReq,
         exec: execReq,
+        strong: strongReq,
       } = body;
 
       const agentId = parseAgentId(modelRoute);
@@ -193,7 +194,15 @@ const server = createServer(async (req, res) => {
 
       // Load agent config (exec = per-request tool-capability opt-in, e.g. temporal-memory
       // executing consolidation; the recall hot path never sends it — stays toolless).
-      const agentConfig = loadAgentConfig(agentId, { exec: execReq === true });
+      // Phase E (CR-9): route the planning/execution organs that churn on hard work to the
+      // stronger `subagentStrong` model — either because the agent is in the contracts
+      // allowlist (vertex.strong_model_agents), or because the caller asked (strong:true).
+      const strongAgents = getContracts()?.vertex?.strong_model_agents || [];
+      const useStrongModel = strongReq === true || strongAgents.includes(agentId);
+      const agentConfig = loadAgentConfig(agentId, { exec: execReq === true, strong: useStrongModel });
+      if (useStrongModel) {
+        console.log(`[brain] #${rid} TELEMETRY strong_model agent=${agentId} model=${agentConfig.model}`);
+      }
 
       // Get tools for this agent (undefined = no tools, not empty object)
       const rawTools = getFilteredTools(agentConfig.allowedTools);

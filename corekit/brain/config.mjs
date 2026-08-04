@@ -61,12 +61,18 @@ export function loadAgentConfig(agentId, opts = {}) {
     systemPrompt = readFileSync(soulPath, 'utf8');
   }
 
-  // Default model from contracts
+  // Default model from contracts. Phase E (CR-9): a subagent may run on the stronger
+  // `subagentStrong` (gemini-2.5-pro) instead of `subagent` (flash) when opts.strong is set
+  // — the gateway sets it for the planning/execution organs (prefrontal, motor) that churned
+  // on a real code+deploy mission. Cortex is unaffected (always its own model).
   const vertexCfg = contracts.vertex || {};
   const models = vertexCfg.models || {};
+  const subagentModel = (opts.strong && models.subagentStrong)
+    ? models.subagentStrong
+    : (models.subagent || 'vertex-google/gemini-2.5-flash');
   const defaultModel = agentId === 'cortex'
     ? (models.cortex || 'vertex-google/gemini-2.5-flash')
-    : (models.subagent || 'vertex-google/gemini-2.5-flash');
+    : subagentModel;
   const fallbackModel = models.cortexFallback || 'vertex-google/gemini-2.5-flash';
 
   const brainCfg = contracts.brain || {};

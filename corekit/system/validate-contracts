@@ -275,6 +275,25 @@ console.log(missing.length === 0 ? 'OK' : 'MISSING:' + missing.join(','));
     fail "vertex.context_windows incomplete (${CW_CHECK})"
   fi
 
+  # Phase E (CR-9): strong_model_agents must be an array of valid subagent ids, and if it is
+  # non-empty a vertex.models.subagentStrong must exist for them to route to.
+  SMA_CHECK="$(node -e "
+const c = JSON.parse(require('fs').readFileSync('$CONTRACTS','utf8'));
+const list = c.vertex?.strong_model_agents;
+if (list === undefined) { console.log('OK:absent'); process.exit(0); }
+if (!Array.isArray(list)) { console.log('NOT-ARRAY'); process.exit(0); }
+const valid = new Set(c.agents?.subagentIds || []);
+const bad = list.filter(a => !valid.has(a));
+if (bad.length) { console.log('INVALID:' + bad.join(',')); process.exit(0); }
+if (list.length && !c.vertex?.models?.subagentStrong) { console.log('NO-STRONG-MODEL'); process.exit(0); }
+console.log('OK:' + list.length);
+" 2>/dev/null || echo 'ERROR')"
+  if [[ "$SMA_CHECK" == OK* ]]; then
+    pass "vertex.strong_model_agents valid (${SMA_CHECK#OK:} → subagentStrong)"
+  else
+    fail "vertex.strong_model_agents invalid (${SMA_CHECK})"
+  fi
+
   # SESSION_CONTEXT_PLAN Phase 2: prompt-caching knobs
   for field in anthropic_cache_ttl_stable anthropic_cache_ttl_mission; do
     TTL="$(read_contract "vertex.${field}" 2>/dev/null || echo '')"
