@@ -11,8 +11,8 @@
       "subagent": "vertex-google/gemini-2.5-flash",
       "subagentStrong": "vertex-google/gemini-2.5-pro"
     },
-    "_strong_model_comment": "Phase E (CR-9): the two organs that churn on hard work — prefrontal (planning) and motor (execution/coding) — run on the stronger `subagentStrong` (gemini-2.5-pro) instead of the default `subagent` (flash). On a real 2-agent code+deploy mission the flash motor+prefrontal over-decomposed, hallucinated a premise, ping-ponged delegations, and mis-handled paths ('reported success' while files stayed unmodified). Cortex is already Opus; cerebellum/temporal-research/temporal-memory stay on flash. Routed in the gateway BY AGENT ID (config.mjs picks subagentStrong when opts.strong; index.mjs sets strong for agents in this list, or when a caller passes strong:true). Empty the list to revert the fleet to flash.",
-    "strong_model_agents": ["prefrontal", "motor"],
+    "_strong_model_comment": "Phase E (CR-9): mechanism to route the planning/execution organs (prefrontal, motor) to the stronger `subagentStrong` (gemini-2.5-pro). Wired end-to-end (config.mjs picks subagentStrong when opts.strong; the gateway sets strong for agents in this list, or when a caller passes strong:true; a strong request wins over a per-agent workspace model pin). Currently DISABLED (empty list → whole fleet stays on flash): a live canary showed pro improves planning coherence (removed a hallucinated premise, correct state assessment) but adds ~10x latency and did NOT close a hard 2-agent code+deploy mission that is ALSO blocked by failure-memory over-planning (CR-8) and motor git/firebase command reliability. Re-enabling is a cost/latency decision — put the agent ids back in this list.",
+    "strong_model_agents": [],
     "anthropic_prompt_caching": true,
     "anthropic_cache_ttl_stable": "1h",
     "anthropic_cache_ttl_mission": "1h",
