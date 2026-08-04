@@ -4,9 +4,21 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      ".git",
+      ".git/**",
+      "**/.git/**"
     ],
     "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "X-Robots-Tag",
+            "value": "noindex, nofollow"
+          }
+        ]
+      },
       {
         "source": "/public/**",
         "headers": [

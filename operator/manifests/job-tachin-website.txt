@@ -1,31 +1,16 @@
-# Tachin Website — operator job manifest
-# Install this layer only on agents that manage the Tachin website.
+# Tachin public-file sync — operator job manifest
+# NOTE: The Tachin marketing website was retired on 2026-08-04. This job
+# formerly installed both the website and the public-file sync; it now installs
+# ONLY the public-file sync processes + devops sync-health responsibilities.
+# The tachin-website.web.app Firebase site now serves solely the Drive-folder
+# sync (/public/** -> proxy-service), fully de-indexed.
+# Install on the devops agent that manages the Tachin public-file sync.
 # Usage: install.sh --job tachin-website
 
-# Website source files (motor reads from operator/sites/ path)
-operator/sites/tachin-website/index.html operator/sites/tachin-website/index.html
-operator/sites/tachin-website/about.html operator/sites/tachin-website/about.html
-operator/sites/tachin-website/security.html operator/sites/tachin-website/security.html
-operator/sites/tachin-website/privacy.html operator/sites/tachin-website/privacy.html
-operator/sites/tachin-website/terms.html operator/sites/tachin-website/terms.html
-operator/sites/tachin-website/newly-released.html operator/sites/tachin-website/newly-released.html
-operator/sites/tachin-website/styles.css operator/sites/tachin-website/styles.css
-
-# Tachin-specific processes
-operator/processes/p-web-content.json corekit/processes/p-web-content.json
-operator/processes/p-web-deploy.json corekit/processes/p-web-deploy.json
-operator/processes/p-web-design.json corekit/processes/p-web-design.json
-operator/processes/p-web-feature.json corekit/processes/p-web-feature.json
-operator/processes/p-web-verify.json corekit/processes/p-web-verify.json
+# Public-file sync processes
 operator/processes/p-publicfile-health.json corekit/processes/p-publicfile-health.json
 operator/processes/p-publicfile-publish.json corekit/processes/p-publicfile-publish.json
 operator/processes/p-sync-trigger.json corekit/processes/p-sync-trigger.json
 
 # Devops responsibilities (sync health, etc.)
 operator/responsibilities/responsibilities-devops.json corekit/responsibilities-devops.json
-
-# Design docs (motor reads from operator/docs/ path)
-operator/docs/TACHIN_DESIGN_SYSTEM.md operator/docs/TACHIN_DESIGN_SYSTEM.md
-operator/docs/TACHIN_SITE_IA.md operator/docs/TACHIN_SITE_IA.md
-operator/docs/TACHIN_WEB_PROJECTS_PLAN.md operator/docs/TACHIN_WEB_PROJECTS_PLAN.md
-
