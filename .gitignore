@@ -8,8 +8,8 @@ __pycache__/
 scratch/
 scratch-*.sh
 docs_api.json
-skills.tar.gz
-skills.zip
+*.tar.gz
+*.zip
 
 # Claude Code local harness — NEVER publish into the template repo
 .claude/

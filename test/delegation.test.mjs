@@ -146,6 +146,7 @@ describe('parseDelegationMarker', () => {
       from: 'arch@domain.com',
       project: 'proj-self-improvement',
       drive: null,
+      criteria: null,
       body: 'Implement manifest-dedup refactor.',
     });
   });
