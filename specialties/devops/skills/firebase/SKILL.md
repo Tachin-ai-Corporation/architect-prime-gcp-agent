@@ -50,6 +50,16 @@ tool*. The only programs you invoke here are:
    ```json
    { "hosting": { "public": ".", "ignore": ["firebase.json", "**/node_modules/**"] } }
    ```
+   **Multi-site project? Name the target site — this is not optional.** If the project hosts
+   more than one site (`firebase hosting:sites:list` shows >1), a config with no `site` deploys
+   to the project's *default* site — which may belong to a different service and whose content
+   you would clobber. Add `"site": "SITE_ID"` inside the `hosting` object so both the channel
+   deploy and the live deploy act on the intended site:
+   ```json
+   { "hosting": { "site": "SITE_ID", "public": ".", "ignore": ["firebase.json", "**/node_modules/**"] } }
+   ```
+   (Alternatively map a target once with `firebase target:apply hosting TARGET SITE`, then deploy
+   with `--only hosting:TARGET`.) Confirm the resolved site in the deploy output before promoting.
 3. Deploy to a **preview channel** first, from the deploy directory:
    ```bash
    firebase hosting:channel:deploy staging --project=PROJECT
@@ -129,6 +139,7 @@ architecture, the hops map on as:
 | `firebase-hosting-diagnostics: not found`, or any command built from this skill's name | Treated the skill as a program | The skill is a **procedure**, not a command. Run the real CLIs above (`firebase`, `gcloud`, `gsutil`, `curl`). |
 | `Unknown command`/`is not a Firebase command`; instant (<20 ms) failure | Invented a `firebase` subcommand | Re-read Read/Write above and use a documented one. Sub-20 ms means argument parsing, not the API. |
 | `Error: No site found` | Hosting not initialized for the project | `firebase hosting:sites:list`; create with `firebase hosting:sites:create SITE --project=PROJECT` if needed. |
+| Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Project has multiple Hosting sites and `firebase.json` names none, so it used the default site | Add `"site": "SITE_ID"` to the `hosting` object (list sites with `firebase hosting:sites:list`), or map a target with `firebase target:apply hosting TARGET SITE` and deploy `--only hosting:TARGET`. Re-deploy to the correct site. |
 | Deploy reports **0 files** | `hosting.public` points at the wrong directory | Point `public` at the directory holding the files (`.` when `firebase.json` sits with them); redeploy. |
 | Rewrite to Cloud Run not working | Used `destination` instead of `run` | Use `"run": {"serviceId": "SERVICE", "region": "REGION"}`; `destination` is for local-file redirects only. |
 | Backend serves the content but Hosting returns 404 | Rewrite missing/incorrect, or deploy stale | Fix `firebase.json` rewrites and `firebase deploy --only hosting`. |
