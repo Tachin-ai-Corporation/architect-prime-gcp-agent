@@ -85,7 +85,7 @@ Improvisation → Pattern → Draft → Review → Skill → Deployed → Measur
 1. **Improvisation.** An agent solves a problem without a skill, reasoning from tools alone.
 2. **Pattern.** The same class of problem appears repeatedly (detected via skill-miss telemetry or operator observation).
 3. **Draft.** A skill package is created via `skill-authoring` — by a human, by Prime's skill-gap analysis, or by the agent that discovered the pattern.
-4. **Review.** The draft is reviewed against the SKILL_STANDARD. `validate-skills` grades it.
+4. **Review.** The draft is reviewed against the SKILL_STANDARD; `validate-contracts` (Check 14b/14c) enforces that every declared command is documented.
 5. **Skill.** The package is committed to the repo.
 6. **Deployed.** The manifest installs it to agents. The skill catalog advertises it.
 7. **Measured.** Per-skill telemetry (success rate, stuck rate, tool count, duration) tracks effectiveness.

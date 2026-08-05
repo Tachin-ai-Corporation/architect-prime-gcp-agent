@@ -59,7 +59,7 @@ project context fields present, etc.}
 
 Group by Read/Write when the skill has both. Include output format — motor needs to know what to parse. Every entry in `skill.json.scripts[]` must have a corresponding entry here.
 
-**Grading rule:** Present if SKILL.md has a section with ≥ 1 command documented with syntax and description. Every `scripts[]` entry has a matching command entry (checked by `validate-skills`).
+**Grading rule:** Present if SKILL.md has a section with ≥ 1 command documented with syntax and description. Every `scripts[]` entry has a matching command entry — enforced by `validate-contracts` (Check 14b, skill-doc coverage; Check 14c, phantom capability), which fails the build on any undocumented declared command.
 
 ### Layer 3 — Procedures
 
@@ -147,7 +147,7 @@ Each example is a complete task→tool-sequence→output trace. Include at least
 3. **Test the procedure manually.** Run the commands in the procedure on a real system. Capture the actual output. Use that output in your Layer 5 examples — real output is better than fabricated output.
 4. **Add error recovery from experience.** The first version of a skill won't have a complete error table. Add entries as motor encounters failures — each failure is a row in the table.
 5. **Use `skill-authoring` for the package.** The `skill-author create` command generates `skill.json` + `SKILL.md` scaffolding. Fill in the layers.
-6. **Grade with `validate-skills`.** Run before committing. Target ≥ 3 for new skills, ≥ 4 for high-traffic skills.
+6. **Grade against this standard by reading it**, and run `validate-contracts --repo` before committing — Check 14b/14c hard-fail if any declared command is undocumented (there is no separate `validate-skills` tool). Target ≥ 3 for new skills, ≥ 4 for high-traffic skills.
 
 ---
 
