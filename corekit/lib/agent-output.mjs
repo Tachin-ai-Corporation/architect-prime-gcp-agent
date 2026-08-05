@@ -66,7 +66,31 @@ export function isRecoveredToolError(output, { minAnswerChars = 200 } = {}) {
   const logMatch = text.match(logRe);
   if (!logMatch) return false;                              // no tool log → any failure is the answer
   const answer = text.replace(new RegExp(logRe, 'g'), '').trim();
-  if (answer.length < minAnswerChars) return false;         // no real deliverable → treat as failure
   if (detectMotorFailure(answer).failed) return false;      // the answer itself declares failure
-  return detectMotorFailure(logMatch[0]).failed;            // failure lives only in the tool log
+  if (!detectMotorFailure(logMatch[0]).failed) return false; // failure isn't in the tool log
+  // Recovered when EITHER a substantive deliverable sits outside the log (a discovery's prose
+  // answer), OR the tool log shows the motor retried PAST the failure — a non-failing tool call
+  // after the last failing one means the failed command was superseded (an action task's
+  // deliverable is the successful action, so its prose answer is legitimately short). In both
+  // cases the task is not hard-failed; checkpoint verification (cerebellum) still arbitrates the
+  // milestone against its criteria (B-28), so this only spares the wasteful hard-fail / re-plan.
+  if (answer.length >= minAnswerChars) return true;
+  return toolLogShowsRetryRecovery(logMatch[0]);
+}
+
+/**
+ * Does the tool log show recovery-by-retry — a successful tool call after the last failing one?
+ * Entries render as `[TOOL] name(args) → result`; a failing entry's result trips
+ * detectMotorFailure. If the last failing entry is followed by a non-failing entry, the motor
+ * retried and the retry stuck. Fewer than two entries, or a failure at the terminal entry,
+ * returns false (no evidence of recovery).
+ * @param {string} log - the [TOOL EXECUTION LOG] block
+ * @returns {boolean}
+ */
+export function toolLogShowsRetryRecovery(log) {
+  const entries = toStr(log).split(/(?=\[TOOL\]\s)/).map(s => s.trim()).filter(e => e.startsWith('[TOOL]'));
+  if (entries.length < 2) return false;
+  let lastFail = -1, lastOk = -1;
+  entries.forEach((e, i) => { if (detectMotorFailure(e).failed) lastFail = i; else lastOk = i; });
+  return lastFail >= 0 && lastOk > lastFail;
 }

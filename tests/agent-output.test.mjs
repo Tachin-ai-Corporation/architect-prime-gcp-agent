@@ -7,7 +7,7 @@
 // recovered incident (annotate, let cerebellum arbitrate) from a real outcome failure.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectMotorFailure, isRecoveredToolError } from '../corekit/lib/agent-output.mjs';
+import { detectMotorFailure, isRecoveredToolError, toolLogShowsRetryRecovery } from '../corekit/lib/agent-output.mjs';
 
 // A discovery that RECOVERED: a substantive clean answer, with the failure confined to one
 // tool-log line (a fragile count command), and a follow-up command that got the data anyway.
@@ -23,6 +23,30 @@ fleet-millie RUNNING
 [TOOL] system-shell({"cmd":"gcloud compute firewall-rules list"}) → default-allow-ssh
 default-allow-icmp
 default-allow-internal
+[END TOOL LOG]`;
+
+// An ACTION task (a deploy) that RECOVERED BY RETRY: the deliverable is the successful action,
+// so the prose answer is legitimately SHORT (below minAnswerChars) — recovery is proven by the
+// tool log alone (a failed command superseded by a successful retry of the same action).
+const DEPLOY_RETRY = `Deployed the site to the staging preview channel and captured the URL.
+
+---
+[TOOL EXECUTION LOG]
+[TOOL] runCommand({"command":"firebase hosting:channel:deploy staging --cwd=/x"}) → Error: command failed: unknown option --cwd
+[TOOL] runCommand({"command":"cd /x && firebase hosting:channel:deploy staging"}) → Channel URL: https://tachin-web--staging-abc123.web.app [expires 7d]
+[END TOOL LOG]`;
+
+// Same discovery, but the failed command is the TERMINAL tool call — no later success — so the
+// tool log shows no retry-recovery; only the answer-length path can recover it (isolates the gate).
+const RECOVERED_NORETRY = `## Infrastructure Discovery
+
+I completed the read-only discovery. Compute Engine instances: fleet-stan (RUNNING) and fleet-millie (RUNNING). IAM service accounts: 18 total. I attempted a firewall count last but the command did not work; the rest of the discovery is complete and reported above at length so this answer clears the minimum-length gate for the isolated test below.
+
+---
+[TOOL EXECUTION LOG]
+[TOOL] system-shell({"cmd":"gcloud compute instances list"}) → fleet-stan RUNNING
+fleet-millie RUNNING
+[TOOL] system-shell({"cmd":"gcloud compute firewall-rules list --format=value(name) | wc -l"}) → Error: command failed (exit code 2): bad quoting near unexpected token
 [END TOOL LOG]`;
 
 describe('detectMotorFailure — unchanged strict behavior', () => {
@@ -73,8 +97,27 @@ describe('isRecoveredToolError — recovered incident vs outcome failure', () =>
     assert.equal(isRecoveredToolError(clean), false);
   });
 
-  it('respects a custom minAnswerChars threshold', () => {
-    // With an impossibly high bar, even a full deliverable is treated as too thin → not recovered.
-    assert.equal(isRecoveredToolError(RECOVERED, { minAnswerChars: 100000 }), false);
+  it('answer-length gate: an impossibly-high bar defeats the ANSWER path when the log shows no retry-recovery', () => {
+    // RECOVERED_NORETRY's failure is the terminal tool call → no retry-recovery; only the answer
+    // path can recover it, and an impossibly-high bar closes that path.
+    assert.equal(isRecoveredToolError(RECOVERED_NORETRY, { minAnswerChars: 100000 }), false);
+    assert.equal(isRecoveredToolError(RECOVERED_NORETRY), true); // default bar: its long answer recovers it
+  });
+});
+
+describe('retry-recovery — a failed command superseded by a later success (action tasks)', () => {
+  it('isRecoveredToolError TRUE: short answer, but the log shows the deploy retried and succeeded', () => {
+    assert.ok(DEPLOY_RETRY.replace(/\[TOOL EXECUTION LOG\][\s\S]*/, '').trim().length < 200, 'fixture answer is short');
+    assert.equal(detectMotorFailure(DEPLOY_RETRY).failed, true, 'the failed --cwd attempt still trips detection');
+    assert.equal(isRecoveredToolError(DEPLOY_RETRY), true);
+  });
+  it('toolLogShowsRetryRecovery TRUE when a non-failing call follows the last failing one', () => {
+    assert.equal(toolLogShowsRetryRecovery(DEPLOY_RETRY.match(/\[TOOL EXECUTION LOG\][\s\S]*/)[0]), true);
+  });
+  it('toolLogShowsRetryRecovery FALSE when the terminal call failed (no recovery)', () => {
+    assert.equal(toolLogShowsRetryRecovery(RECOVERED_NORETRY.match(/\[TOOL EXECUTION LOG\][\s\S]*/)[0]), false);
+  });
+  it('toolLogShowsRetryRecovery FALSE with fewer than two tool entries', () => {
+    assert.equal(toolLogShowsRetryRecovery('[TOOL EXECUTION LOG]\n[TOOL] x() → Error: command failed\n[END TOOL LOG]'), false);
   });
 });
