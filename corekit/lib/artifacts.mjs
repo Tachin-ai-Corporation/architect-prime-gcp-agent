@@ -17,10 +17,12 @@ const WORKSPACE_EXCLUDE_MARKER = '# --- corekit: mission scratch (inputs + bookk
  * Render the corekit-managed block for a mission working tree's LOCAL git excludes
  * (`.git/info/exclude`), merged onto whatever is already there. Pure — no I/O.
  *
- * Ignores two classes of non-artifact file that the daemon/motor leave in the tree:
+ * Ignores three classes of non-artifact file that the daemon/motor leave in the tree:
  *   - source material downloaded to be READ (contracts, scans, images), not produced;
  *   - corekit mission bookkeeping (the MISSION.md blackboard + the missions/ record,
- *     step-transcript and session-log dir) — telemetry, not a project artifact (C-24).
+ *     step-transcript and session-log dir) — telemetry, not a project artifact (C-24);
+ *   - organ / agent-workspace identity (IDENTITY/MEMORY/SOUL, the shared tree) — a
+ *     defense so a mis-targeted git add -A never leaks an organ into an artifact (C-28).
  *
  * Bookkeeping paths are root-anchored (`/MISSION.md`, `/missions/`) so a project's own
  * nested paths deeper in the tree are never masked. Idempotent (C-18): if the managed
@@ -44,6 +46,14 @@ export function renderWorkspaceExcludes(existing = '') {
     "# a project artifact. Root-anchored so a project's own nested paths stay safe.",
     '/MISSION.md',
     '/missions/',
+    '# Organ / agent-workspace identity — belt-and-suspenders so that even a mis-targeted',
+    "# git add -A can never leak an organ's IDENTITY/MEMORY/SOUL or the shared tree into a",
+    '# project artifact (C-28). Root-anchored; work-commit also hard-refuses such a tree.',
+    '/IDENTITY.md',
+    '/MEMORY.md',
+    '/SOUL.md',
+    '/SOUL_APPEND.md',
+    '/shared',
     '# --- end corekit block ---',
     '',
   ].join('\n');

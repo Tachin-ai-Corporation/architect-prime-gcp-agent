@@ -29,6 +29,19 @@ done
 
 cd "$DIR"
 
+# Guard: never commit the CoreKit root or an organ/agent workspace. A `git add -A` run
+# from the wrong cwd sweeps organ identity (IDENTITY/MEMORY/SOUL) + the shared tree into a
+# mission commit — the organ-pollution bug. Fail loudly so the motor re-runs from the
+# mission workspace (shared/<missionId>) instead of silently leaking an organ into an artifact (C-28).
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[[ -n "$REPO_ROOT" ]] || die "Not inside a git repository (cwd: $(pwd)). Run work-commit inside the mission workspace."
+if [[ "$(readlink -f "$REPO_ROOT" 2>/dev/null)" == "$(readlink -f "$CORE_DIR" 2>/dev/null)" ]]; then
+  die "Refusing to commit at the CoreKit root ($REPO_ROOT). Run work-commit inside the mission workspace (shared/<missionId>)."
+fi
+for _organ in IDENTITY.md SOUL.md SOUL_APPEND.md; do
+  [[ -e "$REPO_ROOT/$_organ" ]] && die "Refusing to commit: organ file '$_organ' at the repo root ($REPO_ROOT) marks an agent/organ workspace, not a mission tree. Run from shared/<missionId>."
+done
+
 # Stage all if requested
 if [[ $ADD_ALL -eq 1 ]]; then
   git add -A >&2

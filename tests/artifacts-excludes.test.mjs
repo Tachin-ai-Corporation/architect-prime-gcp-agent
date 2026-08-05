@@ -25,6 +25,14 @@ describe('renderWorkspaceExcludes', () => {
     assert.match(content, /^\/missions\/$/m);
   });
 
+  it('ignores organ / agent-workspace identity so a stray add -A cannot leak it (C-28)', () => {
+    const { content } = renderWorkspaceExcludes('');
+    // Root-anchored organ identity + the shared tree — belt-and-suspenders behind work-commit's guard.
+    for (const pat of ['/IDENTITY.md', '/MEMORY.md', '/SOUL.md', '/SOUL_APPEND.md', '/shared']) {
+      assert.ok(content.split('\n').includes(pat), `expected ${pat} in excludes`);
+    }
+  });
+
   it('still ignores downloaded source material (inputs, not artifacts)', () => {
     const { content } = renderWorkspaceExcludes('');
     for (const pat of ['*.pdf', '*.docx', '*.png', '*.zip']) {
