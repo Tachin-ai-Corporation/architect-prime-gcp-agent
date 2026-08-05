@@ -37,15 +37,34 @@ function buildTrees(envelopes: WorkEnvelope[]): TreeNode[] {
     nodeMap.set(e.id, { ...e, childIds: e.children || [], children: [] });
   }
 
+  // Would linking `childId` under `parentId` close a cycle? Walk up the parent_id
+  // chain from the prospective parent; reaching the child (or revisiting any node)
+  // means the link is cyclic. Malformed parent_id graphs do occur in practice — a
+  // mission's churn / ATTACH can point an envelope back at an ancestor — and without
+  // this guard the recursive tree render (WorkTree / hasActiveDescendant) would
+  // infinite-loop and crash the tab. Guarding here keeps the built children graph a
+  // strict forest, so every downstream consumer is automatically cycle-safe.
+  const wouldCycle = (childId: string, parentId: string): boolean => {
+    let cur: string | null | undefined = parentId;
+    const seen = new Set<string>();
+    while (cur && nodeMap.has(cur)) {
+      if (cur === childId || seen.has(cur)) return true;
+      seen.add(cur);
+      cur = nodeMap.get(cur)!.parent_id;
+    }
+    return false;
+  };
+
   const roots: TreeNode[] = [];
 
-  // Second pass: link children to parents
+  // Second pass: link children to parents (self-links and cycles fall back to root)
   for (const e of envelopes) {
     const node = nodeMap.get(e.id)!;
-    if (!e.parent_id || !nodeMap.has(e.parent_id)) {
+    const parentId = e.parent_id;
+    if (!parentId || !nodeMap.has(parentId) || parentId === e.id || wouldCycle(e.id, parentId)) {
       roots.push(node);
     } else {
-      nodeMap.get(e.parent_id)!.children.push(node);
+      nodeMap.get(parentId)!.children.push(node);
     }
   }
 
@@ -110,10 +129,12 @@ export function useWorkEnvelopes(
       return;
     }
 
+    let cancelled = false;
     const fetchWork = async () => {
       const data = await api<{ envelopes: WorkEnvelope[] }>(
         `/api/primes/${primeId}/work`
       );
+      if (cancelled) return;
       if (data?.envelopes) {
         setEnvelopes(data.envelopes);
       }
@@ -123,11 +144,21 @@ export function useWorkEnvelopes(
     setLoading(true);
     fetchWork();
 
-    // Poll every 5s
-    pollRef.current = setInterval(fetchWork, 5000);
+    // Refresh on an interval, but skip while the tab is hidden. The previous fixed
+    // 5s poll re-fetched the whole work set and rebuilt every tree forever — even on
+    // a backgrounded tab — the kind of steady churn that pressures memory on a long-
+    // open, heavy page. Poll less often, only when visible, and refresh immediately
+    // when the tab regains focus so it never looks stale.
+    const REFRESH_MS = 15000;
+    const tick = () => { if (!document.hidden) fetchWork(); };
+    pollRef.current = setInterval(tick, REFRESH_MS);
+    const onVisible = () => { if (!document.hidden) fetchWork(); };
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
+      cancelled = true;
       if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [primeId]);
 
