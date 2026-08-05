@@ -46,10 +46,15 @@ tool*. The only programs you invoke here are:
 
 ### Deploy a site (staging → approval → production)
 1. Prepare the deploy directory with all static files.
-2. Ensure a `firebase.json` exists in it. Minimal static config:
-   ```json
+2. **Write** `firebase.json` in the deploy directory yourself — **never run `firebase init`**.
+   Every `init` subcommand is interactive and hangs with no TTY: it burns the whole command
+   timeout, then the turn loop-guards out. Create the file directly instead, e.g.:
+   ```bash
+   cat > firebase.json <<'EOF'
    { "hosting": { "public": ".", "ignore": ["firebase.json", "**/node_modules/**"] } }
+   EOF
    ```
+   `firebase deploy` needs no project init — the `--project` flag and this `firebase.json` are enough.
    **Multi-site project? Name the target site — this is not optional.** If the project hosts
    more than one site (`firebase hosting:sites:list` shows >1), a config with no `site` deploys
    to the project's *default* site — which may belong to a different service and whose content
@@ -140,6 +145,7 @@ architecture, the hops map on as:
 | `Unknown command`/`is not a Firebase command`; instant (<20 ms) failure | Invented a `firebase` subcommand | Re-read Read/Write above and use a documented one. Sub-20 ms means argument parsing, not the API. |
 | `Error: No site found` | Hosting not initialized for the project | `firebase hosting:sites:list`; create with `firebase hosting:sites:create SITE --project=PROJECT` if needed. |
 | Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Project has multiple Hosting sites and `firebase.json` names none, so it used the default site | Add `"site": "SITE_ID"` to the `hosting` object (list sites with `firebase hosting:sites:list`), or map a target with `firebase target:apply hosting TARGET SITE` and deploy `--only hosting:TARGET`. Re-deploy to the correct site. |
+| `firebase init` hangs, times out (~120s), then the turn loop-guards out | `init` is interactive and blocks forever with no TTY | **Never run `firebase init` (or any `init` subcommand).** Write `firebase.json` directly (Deploy step 2), then deploy with `hosting:channel:deploy` / `deploy --only hosting`. Deploying needs no init. |
 | Deploy reports **0 files** | `hosting.public` points at the wrong directory | Point `public` at the directory holding the files (`.` when `firebase.json` sits with them); redeploy. |
 | Rewrite to Cloud Run not working | Used `destination` instead of `run` | Use `"run": {"serviceId": "SERVICE", "region": "REGION"}`; `destination` is for local-file redirects only. |
 | Backend serves the content but Hosting returns 404 | Rewrite missing/incorrect, or deploy stale | Fix `firebase.json` rewrites and `firebase deploy --only hosting`. |
