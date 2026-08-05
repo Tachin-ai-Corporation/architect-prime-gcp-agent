@@ -8,6 +8,7 @@
 # NOTE: sharedWithMeTime is SORTABLE (--order-by) and RETURNED (as `shared`), but is NOT a query filter term.
 #       Filterable date fields in --query: modifiedTime, createdTime, viewedByMeTime (ops < <= = > >=, RFC 3339).
 set -euo pipefail
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
@@ -26,7 +27,7 @@ done
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY and trashed=false")
 ENC_ORDER=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$ORDER_BY")
-HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o $__DT/drive-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   "${DRIVE_API}/files?q=${ENC_Q}&pageSize=${MAX}&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,mimeType,createdTime,modifiedTime,sharedWithMeTime,size,webViewLink,owners(emailAddress,displayName))&orderBy=${ENC_ORDER}")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
@@ -34,12 +35,12 @@ if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   exit 0
 fi
 if [[ "$HTTP_CODE" != "200" ]]; then
-  ERRMSG=$(python3 -c "import json; print(json.load(open('/tmp/drive-response.json')).get('error',{}).get('message',''))" 2>/dev/null || true)
+  ERRMSG=$(python3 -c "import json; print(json.load(open('$__DT/drive-response.json')).get('error',{}).get('message',''))" 2>/dev/null || true)
   die "Drive API returned HTTP ${HTTP_CODE}${ERRMSG:+ — ${ERRMSG}}"
 fi
 python3 -c "
 import json, sys
-data = json.load(open('/tmp/drive-response.json'))
+data = json.load(open('$__DT/drive-response.json'))
 GTYPE = {'document':'doc','spreadsheet':'sheet','presentation':'slides','folder':'folder','form':'form','drawing':'drawing'}
 def short_type(m):
     if m == 'application/pdf': return 'pdf'

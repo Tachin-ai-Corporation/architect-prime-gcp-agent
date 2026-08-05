@@ -3,6 +3,7 @@
 # Brain agent: motor (WRITE)
 # Usage: drive-copy --file FILE_ID [--title "New Title"] [--folder FOLDER_ID]
 set -euo pipefail
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
@@ -40,17 +41,17 @@ print(json.dumps(data))
 " "$TITLE" "$FOLDER_ID")
 fi
 
-HTTP_CODE=$(curl -s -o /tmp/drive-copy-resp.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o $__DT/drive-copy-resp.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "$BODY" "${DRIVE_API}/files/${FILE_ID}/copy?supportsAllDrives=true")
 
 if [[ "$HTTP_CODE" != "200" ]]; then
-  die "Drive API returned HTTP ${HTTP_CODE}: $(cat /tmp/drive-copy-resp.json)"
+  die "Drive API returned HTTP ${HTTP_CODE}: $(cat $__DT/drive-copy-resp.json)"
 fi
 
 python3 -c "
 import json
-p = json.load(open('/tmp/drive-copy-resp.json'))
+p = json.load(open('$__DT/drive-copy-resp.json'))
 print(json.dumps({
     'status': 'copied',
     'fileId': p.get('id', ''),

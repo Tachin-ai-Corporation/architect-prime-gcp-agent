@@ -3,6 +3,7 @@
 # Brain agent: motor (WRITE)
 # Usage: drive-mkdir --name "Project Files" [--parent FOLDER_ID]
 set -euo pipefail
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
@@ -23,13 +24,13 @@ ENC_Q=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1
 SEARCH_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,webViewLink)"
 
 # 1. Pre-search for existing folder
-HTTP_CODE=$(curl -s -o /tmp/drive-search.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$SEARCH_URL")
+HTTP_CODE=$(curl -s -o $__DT/drive-search.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$SEARCH_URL")
 if [[ "$HTTP_CODE" == "200" ]]; then
-  EXISTING_ID=$(jq -r '.files[0].id // empty' /tmp/drive-search.json 2>/dev/null || true)
+  EXISTING_ID=$(jq -r '.files[0].id // empty' $__DT/drive-search.json 2>/dev/null || true)
   if [[ -n "$EXISTING_ID" ]]; then
     jq -n --arg id "$EXISTING_ID" \
-          --arg name "$(jq -r '.files[0].name // empty' /tmp/drive-search.json 2>/dev/null)" \
-          --arg link "$(jq -r '.files[0].webViewLink // empty' /tmp/drive-search.json 2>/dev/null)" \
+          --arg name "$(jq -r '.files[0].name // empty' $__DT/drive-search.json 2>/dev/null)" \
+          --arg link "$(jq -r '.files[0].webViewLink // empty' $__DT/drive-search.json 2>/dev/null)" \
           '{status: "existing", id: $id, name: $name, link: $link}'
     exit 0
   fi
@@ -40,7 +41,7 @@ BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\"}
 if [[ -n "$PARENT" ]]; then
   BODY="{\"name\":\"${NAME}\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"${PARENT}\"]}"
 fi
-HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o $__DT/drive-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "$BODY" "${DRIVE_API}/files?supportsAllDrives=true&fields=id,name,webViewLink")
 
@@ -52,23 +53,23 @@ if [[ "$HTTP_CODE" != "200" ]]; then
   die "Drive API returned HTTP ${HTTP_CODE}"
 fi
 
-NEW_ID=$(jq -r '.id // empty' /tmp/drive-response.json 2>/dev/null || true)
+NEW_ID=$(jq -r '.id // empty' $__DT/drive-response.json 2>/dev/null || true)
 if [[ -z "$NEW_ID" ]]; then
   die "Failed to parse new folder ID"
 fi
 
 # 3. Race condition guard: Re-search and pick earliest
 DEDUP_URL="${DRIVE_API}/files?q=${ENC_Q}&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=createdTime&fields=files(id,name,webViewLink)"
-HTTP_CODE=$(curl -s -o /tmp/drive-dedup.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$DEDUP_URL")
+HTTP_CODE=$(curl -s -o $__DT/drive-dedup.json -w '%{http_code}' -H "Authorization: Bearer ${TOKEN}" "$DEDUP_URL")
 if [[ "$HTTP_CODE" == "200" ]]; then
-  WINNER_ID=$(jq -r '.files[0].id // empty' /tmp/drive-dedup.json 2>/dev/null || true)
+  WINNER_ID=$(jq -r '.files[0].id // empty' $__DT/drive-dedup.json 2>/dev/null || true)
   if [[ -n "$WINNER_ID" && "$WINNER_ID" != "$NEW_ID" ]]; then
     # Trash our duplicate
     curl -sf -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" -d '{"trashed":true}' "${DRIVE_API}/files/${NEW_ID}?supportsAllDrives=true" >/dev/null 2>&1 || true
     # Return winner
     jq -n --arg id "$WINNER_ID" \
-          --arg name "$(jq -r '.files[0].name // empty' /tmp/drive-dedup.json 2>/dev/null)" \
-          --arg link "$(jq -r '.files[0].webViewLink // empty' /tmp/drive-dedup.json 2>/dev/null)" \
+          --arg name "$(jq -r '.files[0].name // empty' $__DT/drive-dedup.json 2>/dev/null)" \
+          --arg link "$(jq -r '.files[0].webViewLink // empty' $__DT/drive-dedup.json 2>/dev/null)" \
           '{status: "existing", id: $id, name: $name, link: $link}'
     exit 0
   fi
@@ -76,6 +77,6 @@ fi
 
 # 4. We won the race, return ours
 jq -n --arg id "$NEW_ID" \
-      --arg name "$(jq -r '.name // empty' /tmp/drive-response.json 2>/dev/null)" \
-      --arg link "$(jq -r '.webViewLink // empty' /tmp/drive-response.json 2>/dev/null)" \
+      --arg name "$(jq -r '.name // empty' $__DT/drive-response.json 2>/dev/null)" \
+      --arg link "$(jq -r '.webViewLink // empty' $__DT/drive-response.json 2>/dev/null)" \
       '{status: "created", id: $id, name: $name, link: $link}'

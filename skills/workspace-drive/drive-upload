@@ -3,6 +3,7 @@
 # Brain agent: motor (WRITE)
 # Usage: drive-upload --file /path/to/file.pdf [--name "Report.pdf"] [--folder FOLDER_ID]
 set -euo pipefail
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 UPLOAD_API="https://www.googleapis.com/upload/drive/v3"
@@ -22,7 +23,7 @@ MIME="$(file --mime-type -b "$FILE" 2>/dev/null || echo "application/octet-strea
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 META="{\"name\":\"${NAME}\"}"
 [[ -n "$FOLDER" ]] && META="{\"name\":\"${NAME}\",\"parents\":[\"${FOLDER}\"]}"
-HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o $__DT/drive-response.json -w '%{http_code}' \
   -X POST -H "Authorization: Bearer ${TOKEN}" \
   -F "metadata=${META};type=application/json" \
   -F "file=@${FILE};type=${MIME}" \
@@ -35,6 +36,6 @@ if [[ "$HTTP_CODE" != "200" ]]; then
   die "Drive API returned HTTP ${HTTP_CODE}"
 fi
 python3 -c "
-import json; f = json.load(open('/tmp/drive-response.json'))
+import json; f = json.load(open('$__DT/drive-response.json'))
 print(json.dumps({'status':'uploaded','id':f.get('id',''),'name':f.get('name',''),'webViewLink':f.get('webViewLink',''),'webContentLink':f.get('webContentLink','')}, indent=2))
 "

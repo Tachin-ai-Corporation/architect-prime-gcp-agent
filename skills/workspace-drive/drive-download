@@ -11,6 +11,7 @@
 # NOTE: downloaded bytes are NOT readable as text. For a PDF or image, convert
 # first: `drive-to-doc --file <path|id>` then `docs-cat <docId>`.
 set -euo pipefail
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
@@ -36,7 +37,7 @@ esac
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
 # Get file metadata to determine type. md5Checksum/size are present for binary
 # files (absent for Google-native types, which are exported on the fly).
-HTTP_CODE=$(curl -s -o /tmp/drive-meta.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o $__DT/drive-meta.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${DRIVE_API}/files/${FILE_ID}?supportsAllDrives=true&fields=name,mimeType,md5Checksum,size")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
   echo "{\"status\":\"access_denied\",\"fileId\":\"${FILE_ID}\",\"message\":\"I don't have access to this file. Please share it with ${AGENT_USER_EMAIL:-unknown}\",\"agentEmail\":\"${AGENT_USER_EMAIL:-unknown}\"}"
@@ -45,9 +46,9 @@ fi
 if [[ "$HTTP_CODE" != "200" ]]; then
   die "Drive API returned HTTP ${HTTP_CODE} getting file metadata"
 fi
-NAME=$(python3 -c "import json; print(json.load(open('/tmp/drive-meta.json')).get('name','file'))")
-MIME=$(python3 -c "import json; print(json.load(open('/tmp/drive-meta.json')).get('mimeType',''))")
-REMOTE_MD5=$(python3 -c "import json; print(json.load(open('/tmp/drive-meta.json')).get('md5Checksum',''))")
+NAME=$(python3 -c "import json; print(json.load(open('$__DT/drive-meta.json')).get('name','file'))")
+MIME=$(python3 -c "import json; print(json.load(open('$__DT/drive-meta.json')).get('mimeType',''))")
+REMOTE_MD5=$(python3 -c "import json; print(json.load(open('$__DT/drive-meta.json')).get('md5Checksum',''))")
 [[ -n "$OUTPUT" ]] || OUTPUT="/tmp/${NAME}"
 
 # ---- C-18: already have these exact bytes? Then this is a no-op. ----

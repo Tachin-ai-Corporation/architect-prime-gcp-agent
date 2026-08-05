@@ -3,6 +3,7 @@
 # Brain agent: motor (WRITE)
 # Usage: drive-rename --file FILE_ID --name "New Name"
 set -euo pipefail
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
@@ -15,7 +16,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$FILE_ID" && -n "$NAME" ]] || die "Need --file and --name"
 TOKEN="$("$WS_TOKEN" --scope drive)" || die "Auth failed"
-HTTP_CODE=$(curl -s -o /tmp/drive-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o $__DT/drive-response.json -w '%{http_code}' \
   -X PATCH -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
   -d "{\"name\":\"${NAME}\"}" "${DRIVE_API}/files/${FILE_ID}?supportsAllDrives=true&fields=id,name")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "404" ]]; then
@@ -25,4 +26,4 @@ fi
 if [[ "$HTTP_CODE" != "200" ]]; then
   die "Drive API returned HTTP ${HTTP_CODE}"
 fi
-python3 -c "import json; f=json.load(open('/tmp/drive-response.json')); print(json.dumps({'status':'renamed','id':f.get('id',''),'name':f.get('name','')}, indent=2))"
+python3 -c "import json; f=json.load(open('$__DT/drive-response.json')); print(json.dumps({'status':'renamed','id':f.get('id',''),'name':f.get('name','')}, indent=2))"
