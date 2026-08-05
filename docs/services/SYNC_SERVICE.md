@@ -2,157 +2,114 @@
 
 ## Overview
 
-The sync service keeps a Firebase Hosting deployment in sync with changes made to the Google Drive source folder. It operates as a **Cloud Run service** that watches for Drive changes and automatically propagates them to the live site.
+The **sync-service** is a Cloud Run service that continuously mirrors a Google Drive source folder into a GCS bucket, which the **proxy-service** serves through Firebase Hosting under `/public/**`. It keeps the public bucket in lock-step with Drive: new and changed files appear within ~10–30 seconds, and deletions are reconciled automatically.
+
+> This is the **public file sync**, not a website deploy. See [PUBLIC_FILE_SERVICE.md](./PUBLIC_FILE_SERVICE.md) for the service-level overview and operator procedures.
 
 ## Pipeline
 
 ```
-Google Drive            →  sync-service  →  GCS Bucket              →  proxy-service  →  Firebase Hosting
-(root folder)              (Cloud Run)       (your-website-assets)       (Cloud Run)       (your-project.web.app)
-YOUR_DRIVE_FOLDER_ID                         /public/ prefix
+Google Drive          →  sync-service   →  GCS bucket            →  proxy-service  →  Firebase Hosting
+(source folder,          (Cloud Run,        (YOUR_WEBSITE_ASSETS,     (Cloud Run)       (/public/** on
+ subfolders only)         polling loop)      subfolder paths)                             YOUR_SITE.web.app)
 ```
 
-### How It Works
+## How It Works — Four Sync Tiers
 
-1. **Drive Watch**: On startup, the sync-service auto-registers [Drive API `files.watch()`](https://developers.google.com/drive/api/reference/rest/v3/files/watch) channels on **both** the root website folder AND the `public/` subfolder, pointing notifications to its own `/sync-all` endpoint. ⚠️ `files.watch()` only monitors the watched item itself — NOT its children. That's why both folders must be watched individually.
-2. **Change Detection**: When a file is added, updated, or deleted in a watched folder, Google sends an HTTP POST notification to the sync-service's `/sync-all` endpoint
-3. **Full Sync**: The sync-service traverses the entire Drive folder tree, syncing files from **subdirectories only** (root-level files are ignored by design) to the `your-website-assets` GCS bucket under the `public/` prefix
-4. **Deletion Reconciliation**: Files in GCS that no longer exist in Drive subfolders are automatically deleted
-5. **Proxy Service**: The proxy-service Cloud Run instance serves files from the GCS bucket
-6. **Firebase Hosting**: Firebase rewrites route requests through the proxy to serve the synced content
+The service is **polling-first**. `files.watch()` webhooks proved unreliable for detecting child-file changes, so an in-process poll loop is the primary mechanism, backed by three safety nets.
 
-### ⚠️ Root Files Are Ignored
+| # | Tier | Cadence | Mechanism |
+|---|------|---------|-----------|
+| 1 | **Smart poll** (primary) | every **10 s** | Lists the Drive folder tree, compares each file's `modifiedTime` against an in-memory cache, uploads only the deltas. A no-op poll is ~1 API call, <1 s. |
+| 2 | **Full reconciliation** | every **5 min** | Re-downloads every file and reconciles GCS deletions (removes any GCS object with no matching Drive file). Corrects drift the delta path missed. |
+| 3 | **Cloud Scheduler** | every **15 min** (`*/15 * * * *`, job `drive-sync-all-job`) | External `POST /sync-all` — a safety net independent of the in-process loop. |
+| 4 | **Changes API webhook** | instant (when it fires) | `changes.watch()` push notifications hit `POST /webhook/changes` → a smart sync. Present but effectively dormant (Drive push delivery is unreliable); the poll loop is what keeps things current. Live health shows `webhookSyncs: 0`. |
 
-The sync-service **only syncs files in subdirectories** (e.g., `public/`, `images/`). Files placed directly in the root Drive folder are intentionally skipped. To sync a file, place it in a subfolder.
+### Smart sync vs. full sync
+- **Smart sync**: list → compare `modifiedTime` to the cache → upload changed files only → drop cache entries whose files disappeared from Drive. Runs every 10 s.
+- **Full sync**: clears the cache, re-downloads everything, then lists the whole bucket and deletes any object not present in Drive. Runs on startup, every 5 min, and on every `/sync-all`.
 
-### Expected Latency
+### What gets synced
+- **Only files inside subdirectories** of the source folder are synced (e.g. `public/`, `images/`). Files at the **root** of the source folder are **ignored by design**.
+- The GCS path mirrors the Drive subfolder path: Drive `source/public/report.html` → GCS `public/report.html` → URL `/public/report.html`.
+- Content-type is set by extension (`.html`, `.css`, `.js`, `.md`, `.json`; otherwise Drive's mime type).
 
-Drive push notifications have a built-in delay of ~60-90 seconds. Combined with potential Cloud Run cold starts, end-to-end sync typically takes **60-90 seconds**.
+### Deletion reconciliation
+Files removed from Drive are removed from GCS on the next sync — smart sync drops them when they vanish from the listing; full sync sweeps the whole bucket against Drive.
 
-### ⚠️ min-instances=1 Required
+## Reliability Hardening
 
-The sync-service **must** run with `min-instances=1`. If the service scales to zero, the Drive watch channel dies and new file uploads are never synced. This is a permanent infrastructure requirement.
+- **`syncRunning` mutex** — overlapping syncs can't stack.
+- **Watchdog** — a 1-minute timer calls `process.exit(1)` if no poll has succeeded for 5 minutes; Cloud Run restarts the container.
+- **`/health` returns 503 when stale** (>5 min since last successful poll) so the Cloud Run liveness check restarts the instance.
+- **`process.on('unhandledRejection')`** logs and continues; **`uncaughtException`** exits for a clean restart.
+- **`min-instances=1` is mandatory** — the poll loop lives inside the container, so it must never scale to zero. (It is also why the Changes API watch is a bonus, not a dependency.)
 
-### Firebase Hosting Rewrite
+## Changes API Watch (Tier 4 detail)
 
-Firebase Hosting uses a Cloud Run rewrite (`/public/**` → `proxy-service`) to serve GCS files. The hosting config is stored in `services/hosting/firebase.json`. After any change, deploy with:
-```bash
-firebase deploy --only hosting --project=your-website-project
-```
+`watchHandler.js` registers a **`changes.watch()`** channel — NOT the old `files.watch()`, which only reported folder-metadata changes (renames/moves), never child-file edits. The channel points to `POST /webhook/changes`, expires after 24 h, and auto-renews every 12 h. It is best-effort: if registration fails, the poll loop carries the service.
 
 ## Infrastructure
 
-| Component | Type | URL | Project |
-|-----------|------|-----|---------|
-| sync-service | Cloud Run | `https://your-sync-service.run.app` | your-website-project |
-| proxy-service | Cloud Run | `https://your-proxy-service.run.app` | your-website-project |
-| GCS Bucket | Cloud Storage | `gs://your-website-assets` | your-website-project |
-| Firebase Hosting | Hosting | `https://your-project.web.app` | your-website-project |
-| Drive Root Folder | Google Drive | `YOUR_DRIVE_FOLDER_ID` | — |
-| Drive Public Folder | Google Drive | `YOUR_DRIVE_PUBLIC_FOLDER_ID` | — |
+| Component | Type | Value (placeholder) |
+|-----------|------|---------------------|
+| sync-service | Cloud Run | `https://your-sync-service.run.app` |
+| proxy-service | Cloud Run | `https://your-proxy-service.run.app` |
+| GCS bucket | Cloud Storage | `gs://YOUR_WEBSITE_ASSETS` |
+| Firebase Hosting | Hosting | `https://YOUR_SITE.web.app` (serves `/public/**`) |
+| Drive source folder | Google Drive | `YOUR_DRIVE_FOLDER_ID` (subfolders are synced) |
+| Cloud Scheduler | Scheduler | `drive-sync-all-job` — `*/15 * * * *` → `POST /sync-all` |
 
-### Service Account
+> Operator-specific values (the real project, bucket, Drive folder IDs, service URLs, and service account) live in the sync service's project context in Firestore (a `projects/*` doc) and in the Cloud Run service's env vars — **not** in this template doc.
 
-`drive-sync-sa@your-gcp-project.iam.gserviceaccount.com` — used by the Cloud Run service. Needs:
-- Google Drive read access to the root folder
-- `roles/storage.objectAdmin` on the GCS bucket
+### Environment variables (referenced by the current code)
 
-### Environment Variables (sync-service)
+| Variable | Purpose |
+|----------|---------|
+| `DRIVE_FOLDER_ID` | Root Drive folder to mirror (only its subfolders are synced) |
+| `GCS_BUCKET_NAME` | Target GCS bucket |
+| `SERVICE_URL` | Self-URL, used as the Changes-API webhook address |
 
-| Variable | Value | Description |
-|----------|-------|-------------|
-| `DRIVE_FOLDER_ID` | `YOUR_DRIVE_FOLDER_ID` | Root website folder in Google Drive |
-| `GCS_BUCKET_NAME` | `your-website-assets` | Target GCS bucket |
-| `GCS_PREFIX` | `public` | Prefix for synced files in GCS |
-| `FIREBASE_PROJECT` | `your-website-project` | Firebase project ID |
-| `SERVICE_URL` | `https://your-sync-service.run.app` | Self-URL for Drive watch registration |
+Runs as the project's compute service account — needs Drive read on the source folder and `roles/storage.objectAdmin` on the bucket.
 
 ### Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/sync-all` | POST | Receives Drive webhook notifications; traverses folder tree and syncs to GCS |
-| `/renew-watch` | POST | Re-registers the Drive API watch channel (call when watch expires) |
-| `/health` | GET | Health check endpoint |
-| `/syncService` | POST | Legacy: sync a single file by `fileId` |
-| `/pubsub/drive-event` | POST | Pub/Sub push handler (triggers syncAll) |
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Rich JSON: poll cadence, last sync times, `staleSec`, tracked file count, per-tier `stats`, `watch` status. **503 when stale.** |
+| `/sync-all` | POST | Full sync + reconcile (Cloud Scheduler, manual, legacy) |
+| `/webhook/changes` | POST | Changes API push → smart sync |
+| `/renew-watch` | POST | Re-register the Changes API watch |
+| `/pubsub/drive-event` | POST | Pub/Sub push → smart sync |
+| `/`, `/syncService` | POST | Legacy: sync a single file by `fileId` |
 
 ### Source Code
 
-Source code is version-controlled in the architect-prime repo at `services/sync-service/`.
+Version-controlled at `services/sync-service/`: `server.js` (orchestrator — tiers + hardening), `index.js` (smart/full sync + upload), `watchHandler.js` (Changes API watch), plus `Dockerfile` and `package.json`. Entry point: `npm start` → `node server.js`.
 
-## ⚠️ Important: Drive Watch Expiration
-
-The Drive API watch channel expires every **~24 hours**. The sync-service auto-registers the watch on startup, but if the Cloud Run instance scales to zero and no requests arrive, the watch may not be renewed.
-
-### Automated Watch Renewal
-- A nightly responsibility (`r-sync-health-nightly`) checks the watch status at 2:00 AM CT
-- If the watch is expired, the health check process (`p-sync-health-check`) automatically renews it
-
-### Manual Watch Renewal
-```bash
-curl -X POST https://your-sync-service.run.app/renew-watch
-```
-
-## Relationship to Full Website Deploy
-
-| | Sync Service | Full Website Deploy (`p-deploy-website`) |
-|---|---|---|
-| **Scope** | Individual file changes in Drive subfolders | Complete rebuild from Drive to Firebase Hosting |
-| **Trigger** | Automatic (Drive push notification) | Manual (GChat request or process invocation) |
-| **Pipeline** | Drive → sync-service → GCS → proxy → Hosting | Drive → download → firebase deploy |
-| **Speed** | ~60-90 seconds | Minutes (full download + deploy cycle) |
-| **Use Case** | Day-to-day content updates | Initial deployment, major restructuring, disaster recovery |
+> ⚠️ **The deployed image is built with `gcloud run deploy --source`**, not from a pinned artifact. Keep `services/sync-service/` in step with production and redeploy from it, so a rebuild never regresses the implementation.
 
 ## Monitoring
 
-### Nightly Health Check
-- **Responsibility**: `r-sync-health-nightly` (cron: `0 7 * * *` UTC = 2am CT)
-- **Process**: `p-sync-health-check` (5 steps)
-- **Checks**: Cloud Run status, Drive watch active, GCS bucket freshness
-- **Auto-remediation**: Renews expired Drive watch
-
-### Manual Diagnostics
-Use Stan's `firebase` skill for ad-hoc troubleshooting:
-
-```
-@Devops-Agent Stan diagnose the sync service for your-website-project
-```
-
-This runs a 6-step diagnostic walkthrough covering every stage of the pipeline.
-
-### Key Log Commands
-
-```bash
-# Sync service logs
-gcloud run services logs read sync-service --project=your-website-project --region=us-central1 --limit=20
-
-# Check watch status
-gcloud run services logs read sync-service --project=your-website-project --region=us-central1 --limit=30 | grep -E 'watch|expir|renew'
-
-# GCS bucket contents
-gsutil ls gs://your-website-assets/public/
-
-# Renew watch manually
-curl -X POST https://your-sync-service.run.app/renew-watch
-```
+- **Nightly health** — responsibility `r-sync-health-nightly` (`0 7 * * *` UTC) runs process `p-publicfile-health`: checks sync-service `/health`, GCS freshness, the proxy, and the hosting rewrite.
+- **Manual health**: `GET https://your-sync-service.run.app/health`
+- **Manual full sync**: `POST https://your-sync-service.run.app/sync-all`
+- **Logs**: `gcloud run services logs read sync-service --project=YOUR_PROJECT --region=us-central1 --limit=30`
 
 ## Troubleshooting
 
-| Symptom | Likely Cause | Fix |
+| Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| File in Drive subfolder but not in GCS | Watch expired | Call `/renew-watch` endpoint |
-| File in Drive root but not in GCS | By design | Move file to a subfolder (e.g., `public/`) |
-| Sync-service returning 503 | Cloud Run instance cold start | Wait 30s, retry |
-| File in GCS but 404 on site | Proxy rewrite misconfigured | Check firebase.json rewrites |
-| Watch renewal returns error | Service account permissions | Verify SA has Drive API access |
-| Stale content on live site | CDN cache | Clear Firebase Hosting cache |
-| Sync takes >2 minutes | Drive notification delay + cold start | Normal; check logs for processing time |
+| File in a Drive subfolder but not on the site | Wait one poll cycle (~10 s) or `POST /sync-all` | Confirm it is in a **subfolder**, not the folder root |
+| File in the Drive root not syncing | By design — root files are ignored | Move it into a subfolder (e.g. `public/`) |
+| `/health` returns 503 | Poll loop stale >5 min | The watchdog self-restarts the container; check logs for the failing cause |
+| File in GCS but 404 on the site | Hosting rewrite missing | Ensure `services/hosting/firebase.json` has `/public/** → proxy-service` |
+| Nothing syncing at all | Service scaled to zero | Confirm `min-instances=1` |
 
 ## Change Log
 
 | Date | Change |
 |------|--------|
-| 2026-06-20 | **Fixed watch address bug**: changed from Pub/Sub topic URL to sync-service Cloud Run URL. Added auto-registration on startup. |
-| 2026-06-20 | Added source code to `services/sync-service/` in the repo |
-| 2026-06-20 | Created nightly health monitoring (`r-sync-health-nightly` + `p-sync-health-check`) |
+| 2026-06-20 | Initial webhook (`files.watch`) implementation; source added to repo |
+| 2026-07-03 | **Rewrote to polling-first** — `files.watch` never detected child-file changes; replaced with a 10 s smart-poll loop + 5 min full reconciliation + `changes.watch` + watchdog/health-restart |
+| 2026-08-04 | Repo source + this doc reconciled to the deployed implementation; dead `files.watch` scripts removed; marketing website retired (the site now serves the sync only) |

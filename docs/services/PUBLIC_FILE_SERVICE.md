@@ -2,118 +2,83 @@
 
 ## Overview
 
-Ad-hoc public file hosting service. Files placed in a designated Google Drive folder are automatically mirrored to GCS and served at public URLs.
+Ad-hoc public file hosting. Files placed in a designated Google Drive folder are automatically mirrored to GCS and served at stable public URLs under `/public/**`.
 
-> **This is NOT the marketing website.** It is infrastructure plumbing for hosting arbitrary public assets (PDFs, images, documents) at stable URLs under `/public/**`.
+> **This is NOT a marketing website.** It is infrastructure plumbing for hosting arbitrary public assets (PDFs, images, HTML, documents) at stable URLs. For the technical architecture (sync tiers, hardening, endpoints), see [SYNC_SERVICE.md](./SYNC_SERVICE.md).
 
 ---
 
 ## Architecture
 
 ```
-Google Drive  →  sync-service (Cloud Run)  →  GCS Bucket  →  proxy-service (Cloud Run)  →  Firebase Hosting (/public/**)
+Google Drive  →  sync-service (Cloud Run)  →  GCS bucket  →  proxy-service (Cloud Run)  →  Firebase Hosting (/public/**)
 ```
 
-1. Files are placed in a designated Google Drive folder (or its subdirectories).
-2. Drive sends a watch notification to the sync-service.
-3. The sync-service mirrors files from Drive into GCS.
-4. The proxy-service reads from GCS and serves files over HTTP.
-5. Firebase Hosting rewrites `/public/**` requests to the proxy-service.
+1. Files are placed in a **subdirectory** of the designated Drive folder (root-level files are ignored).
+2. The sync-service **polls Drive every 10 seconds** (delta by `modifiedTime`), backed by a 5-minute full reconciliation and a 15-minute Cloud Scheduler safety net.
+3. Changed files are mirrored into the GCS bucket, preserving the subdirectory path.
+4. The proxy-service reads from GCS and serves the files over HTTP.
+5. Firebase Hosting rewrites `/public/**` to the proxy-service.
+
+> Historical note: the service originally used Drive `files.watch()` webhooks, which never reliably detected child-file changes. It was rewritten to polling on 2026-07-03; a `changes.watch()` webhook remains as an instant-path bonus but is effectively dormant.
 
 ---
 
 ## Components
 
-| Component         | Value                                                              |
-| ----------------- | ------------------------------------------------------------------ |
-| GCP Project       | `tachin-website`                                                   |
-| Sync Service      | `https://sync-service-m32774wz2q-uc.a.run.app`                    |
-| Proxy Service     | `https://proxy-service-m32774wz2q-uc.a.run.app`                   |
-| GCS Bucket        | `tachin-website-assets`                                            |
-| Drive Root Folder | `1s5yUdEH5M5ugISHG9oqauQzDXuMszKjV` (contains images/, public/)  |
-| Drive /public Folder | `1mdirwpy-ecggSAh6dExXVfFSTSBv7FJt`                            |
-| Service Account   | `drive-sync-sa@tachin-website.iam.gserviceaccount.com`             |
-| Sync SA (actual)  | `92079628910-compute@developer.gserviceaccount.com` (default compute SA) |
-| Firebase Hosting  | `https://tachin-website.web.app`                                   |
-| Public URL Base   | `https://tachin-website.web.app/public/`                           |
+Operator-specific values (the real project, bucket, Drive folder IDs, service URLs, and service account) are recorded in the sync service's project context in Firestore (a `projects/*` doc). In this template doc they are placeholders:
+
+| Component            | Value (placeholder)                                   |
+| -------------------- | ----------------------------------------------------- |
+| GCP Project          | `YOUR_GCP_PROJECT`                                    |
+| Sync Service         | `https://your-sync-service.run.app`                   |
+| Proxy Service        | `https://your-proxy-service.run.app`                  |
+| GCS Bucket           | `YOUR_WEBSITE_ASSETS`                                 |
+| Drive Source Folder  | `YOUR_DRIVE_FOLDER_ID` (sync its subfolders, e.g. `public/`, `images/`) |
+| Firebase Hosting     | `https://YOUR_SITE.web.app`                           |
+| Public URL Base      | `https://YOUR_SITE.web.app/public/`                   |
 
 ---
 
 ## How It Works
 
-### Watch Registration
-
-- The sync-service auto-registers a Google Drive watch on startup.
-- Watches are registered on BOTH the root folder AND the /public subfolder.
-- Reason: `files.watch()` only monitors the watched item itself, NOT children.
-- Watch webhook points to `{SERVICE_URL}/sync-all`.
-- Channel token is set to the ROOT folder ID so sync-all always traverses from root.
-
-### Sync Behavior
-
-- When a watch notification arrives, the sync-service scans all files in the Drive folder.
+### Sync behavior
+- The sync-service **polls every 10 s** and syncs only files whose `modifiedTime` changed; a 5-minute full reconciliation and a 15-minute Cloud Scheduler `POST /sync-all` back it up. See [SYNC_SERVICE.md](./SYNC_SERVICE.md) for the full four-tier design.
 - **Root files are IGNORED** — only files inside subdirectories of the source folder are synced.
-- Files are uploaded to the GCS bucket preserving the subdirectory structure.
-- Example: Drive path `source-folder/public/report.html` → GCS path `public/report.html` → URL `/public/report.html`
+- Files are uploaded to GCS preserving the subdirectory structure: Drive `source/public/report.html` → GCS `public/report.html` → URL `/public/report.html`.
 
-### Deletion Reconciliation
+### Deletion reconciliation
+Any GCS file with no corresponding Drive file is automatically deleted, keeping the public bucket clean.
 
-- After syncing, the service compares GCS contents against Drive contents.
-- Any GCS file that no longer has a corresponding Drive file is **automatically deleted**.
-- This keeps the public bucket clean and prevents stale assets.
-
-### Watch Renewal
-
-- Drive watches expire after approximately 24 hours.
-- **Automatic renewals** happen via:
-  1. Cloud Scheduler `drive-sync-all-job` runs daily at midnight UTC (GCP-level)
-  2. Nightly responsibility `r-sync-health-nightly` at 7am UTC (agent-level)
-  3. Sync-service auto-registers watches on startup
-- Manual renewal: `POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch`
+### min-instances
+sync-service MUST run with `min-instances=1` — the 10-second poll loop lives inside the container, so if it scales to zero, syncing stops.
 
 ---
 
 ## Operational Procedures
 
-### Trigger a Sync
+| Process | Purpose |
+|---------|---------|
+| **`p-sync-trigger`** | Manually trigger a full sync (`POST /sync-all`); returns synced / ignored / deleted files. |
+| **`p-publicfile-health`** | Verify the pipeline end to end: sync-service `/health`, proxy serving, GCS/Drive drift. |
+| **`p-publicfile-publish`** | Publish a new file: place it in a Drive subfolder → wait ~10 s (auto-sync) or trigger a sync → verify the public URL. |
 
-Use process **`p-sync-trigger`** to manually sync all files from Drive to GCS:
-- POST to `/sync-all` endpoint
-- Returns list of synced, ignored, and deleted files
-- This is the lightweight option — use when someone just wants to sync
+### Manual operations
 
-### Health Check
-
-Use process **`p-publicfile-health`** to verify the service is operating correctly:
-- Confirm the Drive watch is active
-- Verify sync-service is responding
-- Verify proxy-service is serving files
-- Check for GCS/Drive drift
-
-### Publish a File
-
-Use process **`p-publicfile-publish`** to add a new public file:
-1. Place the file in a subdirectory of the Drive source folder (never at root).
-2. Wait for auto-sync (triggered by watch) or manually trigger sync.
-3. Verify the file is accessible at its public URL.
-
-### Manual Operations
-
-| Operation      | Command |
-|----------------|---------|
-| Trigger sync   | `POST https://sync-service-m32774wz2q-uc.a.run.app/sync-all` |
-| Renew watch    | `POST https://sync-service-m32774wz2q-uc.a.run.app/renew-watch` |
-| Health check   | `GET https://sync-service-m32774wz2q-uc.a.run.app/health` |
+| Operation                | Command                                                 |
+| ------------------------ | ------------------------------------------------------- |
+| Trigger full sync        | `POST https://your-sync-service.run.app/sync-all`       |
+| Health check             | `GET  https://your-sync-service.run.app/health`         |
+| Renew Changes-API watch  | `POST https://your-sync-service.run.app/renew-watch`    |
 
 ---
 
 ## Important Boundaries
 
-| Concern                     | Rule                                                                  |
-| --------------------------- | --------------------------------------------------------------------- |
-| **Public file service**     | Serves `/public/**` on `tachin-website.web.app`                       |
-| **Marketing website**       | Serves everything else at the root (`/`, `/about`, etc.)              |
-| **Firebase rewrite**        | The `/public/**` rewrite in `firebase.json` **MUST be preserved** by all website deploys |
-| **GCP Projects**            | These are two separate *work-management* projects (`tachin-public-files` vs `tachin-website`) but share the same GCP project (`tachin-website`) |
-| **Source of truth**         | Drive folder is source of truth for public files; git is source of truth for the website |
-| **min-instances**           | sync-service MUST have min-instances=1 — if it scales to zero, the Drive watch channel dies |
+| Concern | Rule |
+| ------- | ---- |
+| **Public file service** | Serves `/public/**` on `YOUR_SITE.web.app`. |
+| **Don't co-host a website** | Serve **only** the public file sync on this site. A marketing website belongs in its own GCP/Firebase project — co-hosting a site whose `firebase.json` has a catch-all SPA rewrite (`** → /index.html`) will clobber the `/public/**` proxy rewrite and break the sync's serving. |
+| **Firebase rewrite** | The `/public/** → proxy-service` rewrite in `services/hosting/firebase.json` MUST be preserved by any hosting deploy. |
+| **De-indexing** | Hosting serves `X-Robots-Tag: noindex` on every path plus `robots.txt: Disallow: /`. Preserve both on any redeploy. |
+| **Source of truth** | The Drive folder is the source of truth for public files; `services/sync-service/` is the source of truth for the service code. |

@@ -1,67 +1,139 @@
-const { google } = require('googleapis');
+// watchHandler.js — Changes API watch management
+//
+// Replaces the broken files.watch() approach with changes.watch().
+// files.watch() only monitors folder METADATA changes (renames, moves).
+// changes.watch() monitors ALL file changes the service account can see,
+// including files added/modified/deleted inside watched folders.
+
 const crypto = require('crypto');
 
-const PUBLIC_FOLDER_ID = process.env.DRIVE_PUBLIC_FOLDER_ID;
-if (!PUBLIC_FOLDER_ID) throw new Error('DRIVE_PUBLIC_FOLDER_ID env var is required');
-const ROOT_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
-if (!ROOT_FOLDER_ID) throw new Error('DRIVE_FOLDER_ID env var is required');
+const SERVICE_URL = process.env.SERVICE_URL || 'https://your-sync-service.run.app';
 
-async function registerWatch(req, res) {
+// ── Watch state ─────────────────────────────────────────────────────────────
+
+let savedPageToken = null;
+let watchChannelId = null;
+let watchResourceId = null;
+let watchExpiration = null;
+let registeredAt = null;
+let lastWebhookTime = null;
+let renewalTimer = null;
+
+// ── Initialize: get start token + register watch ────────────────────────────
+
+async function initChangesWatch(drive) {
+  // 1. Get initial page token
   try {
-    const auth = new google.auth.GoogleAuth({
-      scopes: ['https://www.googleapis.com/auth/drive']
+    const res = await drive.changes.getStartPageToken({ supportsAllDrives: true });
+    savedPageToken = res.data.startPageToken;
+    console.log(`Changes API: startPageToken = ${savedPageToken}`);
+  } catch (err) {
+    console.error('Failed to get startPageToken:', err.message);
+    return;
+  }
+
+  // 2. Register watch channel
+  await registerChannel(drive);
+
+  // 3. Auto-renewal every 12 hours (watches expire at 24h)
+  if (renewalTimer) clearInterval(renewalTimer);
+  renewalTimer = setInterval(() => {
+    console.log('[watch] Auto-renewing changes watch channel...');
+    registerChannel(drive).catch(err => {
+      console.error('[watch] Renewal failed:', err.message);
     });
-    const drive = google.drive({ version: 'v3', auth });
+  }, 12 * 60 * 60 * 1000);
+}
 
-    const serviceUrl = process.env.SERVICE_URL;
-    if (!serviceUrl) throw new Error('SERVICE_URL env var is required');
-    const address = `${serviceUrl}/sync-all`;
+// ── Register a changes.watch channel ────────────────────────────────────────
 
-    // Register watches on BOTH the root folder AND the public subfolder.
-    // files.watch() only detects changes to the watched item itself, NOT its children.
-    // Watching the public subfolder ensures notifications fire when files are added to /public/.
-    const foldersToWatch = [
-      { id: ROOT_FOLDER_ID, label: 'root' },
-      { id: PUBLIC_FOLDER_ID, label: 'public' }
-    ];
+async function registerChannel(drive) {
+  const channelId = crypto.randomUUID();
+  const expiration = Date.now() + 24 * 60 * 60 * 1000;
+  const address = `${SERVICE_URL}/webhook/changes`;
 
-    const results = [];
-    for (const folder of foldersToWatch) {
-      const channelId = crypto.randomUUID();
-      console.log(`Registering watch for ${folder.label} folder: ${folder.id}`);
-      console.log(`Using channel ID: ${channelId}`);
-      console.log(`Using webhook address: ${address}`);
+  console.log(`[watch] Registering changes.watch: channel=${channelId}`);
+  console.log(`[watch] Webhook address: ${address}`);
 
+  try {
+    // Stop any existing channel first
+    if (watchChannelId && watchResourceId) {
       try {
-        const response = await drive.files.watch({
-          fileId: folder.id,
-          supportsAllDrives: true,
-          requestBody: {
-            id: channelId,
-            type: 'web_hook',
-            address: address,
-            // Pass ROOT folder ID as token so sync-all traverses from root
-            token: ROOT_FOLDER_ID
-          }
+        await drive.channels.stop({
+          requestBody: { id: watchChannelId, resourceId: watchResourceId }
         });
-        console.log(`Watch registered for ${folder.label}:`, response.data);
-        results.push({ folder: folder.label, ...response.data });
-      } catch (err) {
-        console.error(`Watch registration failed for ${folder.label}:`, err.message);
-        results.push({ folder: folder.label, error: err.message });
+        console.log(`[watch] Stopped previous channel: ${watchChannelId}`);
+      } catch (_) { /* channel may already be expired */ }
+    }
+
+    const res = await drive.changes.watch({
+      pageToken: savedPageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+      requestBody: {
+        id: channelId,
+        type: 'web_hook',
+        address,
+        expiration: String(expiration)
+      }
+    });
+
+    watchChannelId = res.data.id;
+    watchResourceId = res.data.resourceId;
+    watchExpiration = Number(res.data.expiration);
+    registeredAt = Date.now();
+
+    console.log(`[watch] Registered: channel=${watchChannelId}, expires=${new Date(watchExpiration).toISOString()}`);
+    return res.data;
+  } catch (err) {
+    console.error('[watch] Registration failed:', err.message);
+    if (err.code === 410 || err.status === 410) {
+      // Page token expired — get a fresh one
+      console.log('[watch] PageToken expired (410), refreshing...');
+      try {
+        const tokenRes = await drive.changes.getStartPageToken({ supportsAllDrives: true });
+        savedPageToken = tokenRes.data.startPageToken;
+        console.log(`[watch] New startPageToken = ${savedPageToken}`);
+        // Retry registration with fresh token
+        return registerChannel(drive);
+      } catch (refreshErr) {
+        console.error('[watch] Token refresh failed:', refreshErr.message);
       }
     }
-
-    res.status(200).send(results);
-  } catch (error) {
-    console.error('Error:', error.message);
-    if (error.response && error.response.data) {
-      console.error(JSON.stringify(error.response.data, null, 2));
-      res.status(500).send(error.response.data);
-    } else {
-      res.status(500).send({ error: error.message });
-    }
+    throw err;
   }
 }
 
-module.exports = { registerWatch };
+// ── Record that a webhook was received ──────────────────────────────────────
+
+function recordWebhook() {
+  lastWebhookTime = Date.now();
+}
+
+// ── Status for health endpoint ──────────────────────────────────────────────
+
+function getWatchStatus() {
+  return {
+    channelId: watchChannelId,
+    registeredAt: registeredAt ? new Date(registeredAt).toISOString() : null,
+    expiration: watchExpiration ? new Date(watchExpiration).toISOString() : null,
+    expiresInMin: watchExpiration ? Math.max(0, Math.floor((watchExpiration - Date.now()) / 60000)) : null,
+    lastWebhookTime: lastWebhookTime ? new Date(lastWebhookTime).toISOString() : null,
+    pageToken: savedPageToken
+  };
+}
+
+// ── Legacy /renew-watch handler (re-registers using new Changes API) ────────
+
+async function registerWatch(req, res) {
+  try {
+    const { getDrive } = require('./index');
+    await initChangesWatch(getDrive());
+    res.status(200).json(getWatchStatus());
+  } catch (error) {
+    console.error('[watch] Manual renewal failed:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+module.exports = { initChangesWatch, recordWebhook, getWatchStatus, registerWatch };
