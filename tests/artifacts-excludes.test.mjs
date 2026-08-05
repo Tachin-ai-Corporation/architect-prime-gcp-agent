@@ -9,7 +9,7 @@
 //   LOCAL `.git/info/exclude` (never committed) rather than a tracked `.gitignore`.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderWorkspaceExcludes } from '../corekit/lib/artifacts.mjs';
+import { renderWorkspaceExcludes, resolveCommitAssets } from '../corekit/lib/artifacts.mjs';
 
 describe('renderWorkspaceExcludes', () => {
   it('emits the corekit block on an empty exclude file', () => {
@@ -33,7 +33,7 @@ describe('renderWorkspaceExcludes', () => {
     }
   });
 
-  it('still ignores downloaded source material (inputs, not artifacts)', () => {
+  it('still ignores downloaded source material (inputs, not artifacts) by default', () => {
     const { content } = renderWorkspaceExcludes('');
     for (const pat of ['*.pdf', '*.docx', '*.png', '*.zip']) {
       assert.ok(content.split('\n').includes(pat), `expected ${pat} in excludes`);
@@ -63,5 +63,58 @@ describe('renderWorkspaceExcludes', () => {
     assert.match(content, /node_modules\//);
     assert.match(content, /dist\//);
     assert.match(content, /^\/missions\/$/m);
+  });
+});
+
+describe('renderWorkspaceExcludes — asset-bearing project (keepAssets)', () => {
+  // The tachin-web pathology: a website's own images are the deliverable, but the default
+  // input-hygiene excludes dropped *.png/*.jpg so the migrated git tree shipped HTML-only.
+  const IMAGE_GLOBS = ['*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp'];
+
+  it('does NOT exclude image/media globs when keepAssets is set', () => {
+    const { content } = renderWorkspaceExcludes('', { keepAssets: true });
+    const lines = content.split('\n');
+    for (const pat of IMAGE_GLOBS) {
+      assert.ok(!lines.includes(pat), `${pat} must NOT be excluded for an asset-bearing project`);
+    }
+  });
+
+  it('still excludes archives + office docs even with keepAssets (never a site\'s source)', () => {
+    const { content } = renderWorkspaceExcludes('', { keepAssets: true });
+    const lines = content.split('\n');
+    for (const pat of ['*.pdf', '*.docx', '*.xlsx', '*.pptx', '*.zip', '*.gz', '*.tar']) {
+      assert.ok(lines.includes(pat), `expected ${pat} still excluded with keepAssets`);
+    }
+  });
+
+  it('still ignores bookkeeping + organ identity with keepAssets (C-24/C-28 defenses hold)', () => {
+    const { content } = renderWorkspaceExcludes('', { keepAssets: true });
+    for (const pat of ['/MISSION.md', '/missions/', '/IDENTITY.md', '/SOUL.md', '/shared']) {
+      assert.ok(content.split('\n').includes(pat), `expected ${pat} still excluded with keepAssets`);
+    }
+  });
+
+  it('is idempotent with keepAssets too', () => {
+    const first = renderWorkspaceExcludes('', { keepAssets: true }).content;
+    assert.equal(renderWorkspaceExcludes(first, { keepAssets: true }).changed, false);
+  });
+});
+
+describe('resolveCommitAssets', () => {
+  it('is false for a plain/undefined project (default input hygiene)', () => {
+    assert.equal(resolveCommitAssets(undefined), false);
+    assert.equal(resolveCommitAssets({}), false);
+    assert.equal(resolveCommitAssets({ class: 'code' }), false);
+  });
+
+  it('is true for a web/website/site-class project', () => {
+    assert.equal(resolveCommitAssets({ class: 'web' }), true);
+    assert.equal(resolveCommitAssets({ type: 'website' }), true);
+    assert.equal(resolveCommitAssets({ class: 'site' }), true);
+  });
+
+  it('honours an explicit commit_assets flag over class', () => {
+    assert.equal(resolveCommitAssets({ commit_assets: true, class: 'code' }), true);
+    assert.equal(resolveCommitAssets({ commit_assets: false, class: 'web' }), false);
   });
 });

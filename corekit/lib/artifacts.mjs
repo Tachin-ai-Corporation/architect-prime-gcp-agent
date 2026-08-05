@@ -18,7 +18,12 @@ const WORKSPACE_EXCLUDE_MARKER = '# --- corekit: mission scratch (inputs + bookk
  * (`.git/info/exclude`), merged onto whatever is already there. Pure — no I/O.
  *
  * Ignores three classes of non-artifact file that the daemon/motor leave in the tree:
- *   - source material downloaded to be READ (contracts, scans, images), not produced;
+ *   - source material downloaded to be READ (contracts, scans), not produced — images too
+ *     by default, since a downloaded scan is an input that would bloat every future clone.
+ *     For an ASSET-BEARING project (opts.keepAssets — a website whose own images are the
+ *     deliverable) the media globs are NOT excluded, so the site's images commit as artifacts.
+ *     Archives (*.zip/*.gz/*.tar) and office docs (*.pdf/*.docx/…) stay excluded regardless —
+ *     those are never a static site's committable source;
  *   - corekit mission bookkeeping (the MISSION.md blackboard + the missions/ record,
  *     step-transcript and session-log dir) — telemetry, not a project artifact (C-24);
  *   - organ / agent-workspace identity (IDENTITY/MEMORY/SOUL, the shared tree) — a
@@ -29,18 +34,27 @@ const WORKSPACE_EXCLUDE_MARKER = '# --- corekit: mission scratch (inputs + bookk
  * block is already present, returns the input unchanged with changed=false.
  *
  * @param {string} [existing] - Current exclude-file contents
+ * @param {object} [opts]
+ * @param {boolean} [opts.keepAssets] - Asset-bearing project: keep image/media globs committable.
  * @returns {{ content: string, changed: boolean }}
  */
-export function renderWorkspaceExcludes(existing = '') {
+export function renderWorkspaceExcludes(existing = '', opts = {}) {
   if (existing.includes(WORKSPACE_EXCLUDE_MARKER)) {
     return { content: existing, changed: false };
   }
+  const keepAssets = opts.keepAssets === true;
+  // Media: excluded by default (a downloaded scan is an input), but for an asset-bearing
+  // project the site's own images ARE the artifact, so keep them committable.
+  const mediaLines = keepAssets
+    ? ['# Asset-bearing project (class: web / commit_assets): images are deliverable source,',
+       '# so media globs are intentionally NOT excluded here — they commit as artifacts.']
+    : ['*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp'];
   const block = [
     WORKSPACE_EXCLUDE_MARKER,
     '# Downloaded to be READ (drive-download, drive-to-doc) — publish deliverables with',
     '# work-publish; do not commit raw source material into the artifact substrate.',
     '*.pdf', '*.docx', '*.xlsx', '*.pptx',
-    '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp',
+    ...mediaLines,
     '*.zip', '*.gz', '*.tar',
     '# Corekit mission bookkeeping the daemon writes into the tree — process notes, not',
     "# a project artifact. Root-anchored so a project's own nested paths stay safe.",
@@ -59,6 +73,20 @@ export function renderWorkspaceExcludes(existing = '') {
   ].join('\n');
   const content = existing ? `${existing.replace(/\n*$/, '\n')}\n${block}` : block;
   return { content, changed: true };
+}
+
+/**
+ * Whether a project's own binary assets (images) are committable artifacts rather than
+ * downloaded scratch. True for an explicit `commit_assets` flag or a web/site-class project.
+ * Mirrors resolveMergePolicy's precedence: an explicit field wins, else derive from class/type.
+ * @param {object} [project]
+ * @returns {boolean}
+ */
+export function resolveCommitAssets(project) {
+  if (project?.commit_assets === true) return true;
+  if (project?.commit_assets === false) return false;
+  const cls = project?.class || project?.type;
+  return cls === 'web' || cls === 'website' || cls === 'site';
 }
 
 /**
@@ -134,8 +162,10 @@ export function createArtifactManager(deps) {
    * Idempotent (C-18): the managed block is written once and skipped thereafter.
    *
    * @param {string} sharedDir - Absolute path to the mission working tree (repo root)
+   * @param {object} [opts]
+   * @param {boolean} [opts.keepAssets] - Asset-bearing project: keep media committable.
    */
-  async function ensureWorkspaceExcludes(sharedDir) {
+  async function ensureWorkspaceExcludes(sharedDir, opts = {}) {
     try {
       const { readFileSync, writeFileSync, existsSync, mkdirSync } = await import('fs');
       const infoDir = `${sharedDir}/.git/info`;
@@ -143,7 +173,7 @@ export function createArtifactManager(deps) {
       try { mkdirSync(infoDir, { recursive: true }); } catch { /* ignore */ }
       const p = `${infoDir}/exclude`;
       const existing = existsSync(p) ? readFileSync(p, 'utf8') : '';
-      const { content, changed } = renderWorkspaceExcludes(existing);
+      const { content, changed } = renderWorkspaceExcludes(existing, opts);
       if (changed) writeFileSync(p, content);
     } catch (e) {
       log('WARN', `Could not seed workspace git excludes in ${sharedDir}: ${e.message}`);
@@ -194,7 +224,8 @@ export function createArtifactManager(deps) {
         // mission bookkeeping (MISSION.md, missions/ records + step transcripts). Both
         // go into the repo-LOCAL `.git/info/exclude`, so they are ignored during the
         // mission yet never committed — the merged diff is only the real source change.
-        await ensureWorkspaceExcludes(sharedDir);
+        // An asset-bearing project (website) keeps its own images committable (keepAssets).
+        await ensureWorkspaceExcludes(sharedDir, { keepAssets: resolveCommitAssets(project) });
         log('INFO', `Git workspace initialized: repo=${repoId} branch=${branch} base=${ref?.sha?.slice(0, 8) || 'empty'}`);
       } catch (e) {
         log('WARN', `Git workspace init failed (non-fatal): ${e.message}`);
