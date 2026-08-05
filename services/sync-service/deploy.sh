@@ -35,7 +35,13 @@ gcloud run deploy "${SERVICE_NAME}" \
   --region "${REGION}" \
   --min-instances 1 \
   --max-instances 10 \
+  --no-cpu-throttling \
+  --cpu-boost \
   --update-env-vars "GCS_BUCKET_NAME=${GCS_BUCKET_NAME},DRIVE_FOLDER_ID=${DRIVE_FOLDER_ID},SERVICE_URL=${SERVICE_URL}"
+
+# --no-cpu-throttling (CPU always allocated) is REQUIRED — the 10s poll loop runs between
+# HTTP requests; without it Cloud Run throttles CPU when idle and the sync only crawls
+# forward during request handling. --cpu-boost speeds the startup full sync.
 
 echo "==> Done. Verify the poll loop is live:"
 echo "    curl -s ${SERVICE_URL}/health | python3 -m json.tool"
