@@ -7,6 +7,7 @@
 
 const { Storage } = require('@google-cloud/storage');
 const { google } = require('googleapis');
+const { contentTypeFor, planDelta } = require('./sync-core');
 
 const storage = new Storage();
 const BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'default-sync-bucket';
@@ -87,13 +88,7 @@ async function collectFiles(drive, rootFolderId) {
 // ── Upload one file from Drive → GCS ────────────────────────────────────────
 
 async function uploadFile(drive, bucket, fileId, fileName, mimeType, gcsPath) {
-  let contentType = mimeType;
-  const lower = fileName.toLowerCase();
-  if (lower.endsWith('.html')) contentType = 'text/html';
-  else if (lower.endsWith('.css'))  contentType = 'text/css';
-  else if (lower.endsWith('.js'))   contentType = 'application/javascript';
-  else if (lower.endsWith('.md'))   contentType = 'text/markdown';
-  else if (lower.endsWith('.json')) contentType = 'application/json';
+  const contentType = contentTypeFor(fileName, mimeType);
 
   const response = await drive.files.get(
     { fileId, alt: 'media' },
@@ -122,14 +117,10 @@ async function smartSync(folderId) {
   folderId = folderId || ROOT_FOLDER_ID;
 
   const { files, ignored } = await collectFiles(drive, folderId);
-  const currentPaths = new Set();
+  const { upload, delete: toDelete } = planDelta(files, fileCache);
   const synced = [];
 
-  for (const file of files) {
-    currentPaths.add(file.gcsPath);
-    const cached = fileCache.get(file.gcsPath);
-    if (cached && cached.modifiedTime === file.modifiedTime) continue;
-
+  for (const file of upload) {
     console.log(`Syncing ${file.gcsPath}`);
     try {
       await uploadFile(drive, bucket, file.id, file.name, file.mimeType, file.gcsPath);
@@ -142,15 +133,13 @@ async function smartSync(folderId) {
 
   // Delete files that disappeared from Drive
   const deleted = [];
-  for (const [gcsPath] of fileCache) {
-    if (!currentPaths.has(gcsPath)) {
-      console.log(`Deleting orphaned: ${gcsPath}`);
-      try {
-        await bucket.file(gcsPath).delete();
-        deleted.push(gcsPath);
-      } catch (err) { /* ignore delete failures */ }
-      fileCache.delete(gcsPath);
-    }
+  for (const gcsPath of toDelete) {
+    console.log(`Deleting orphaned: ${gcsPath}`);
+    try {
+      await bucket.file(gcsPath).delete();
+      deleted.push(gcsPath);
+    } catch (err) { /* ignore delete failures */ }
+    fileCache.delete(gcsPath);
   }
 
   // Ensure all current files are in cache
