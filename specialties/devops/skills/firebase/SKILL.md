@@ -39,13 +39,25 @@ tool*. The only programs you invoke here are:
 
 ### Write (mutating — obey Safety below)
 - `firebase hosting:channel:deploy CHANNEL --project=PROJECT` — deploy to a **preview** channel; prints a preview URL.
-- `firebase deploy --only hosting --project=PROJECT` — deploy to the **live** site.
+- `firebase hosting:clone SRC_SITE:SRC_CHANNEL DST_SITE:DST_CHANNEL --project=PROJECT` — copy an **exact version** between channels/sites (e.g. `tachin-web:staging tachin-web:live`). This is the **promote** command: it releases the already-built, already-reviewed version to live without rebuilding.
+- `firebase deploy --only hosting --project=PROJECT` — build+deploy the local directory to the **live** site. Ships whatever is in `public/` *now* — only correct when that directory is the reviewed source (see Deploy procedure).
 - `firebase deploy --only firestore:indexes --project=PROJECT` — apply Firestore indexes from `firestore.indexes.json`.
 
 ## Procedures
 
 ### Deploy a site (staging → approval → production)
-1. Prepare the deploy directory with all static files.
+The golden rule: **source from the reviewed repo, promote by cloning.** The content you deploy
+must be the project's canonical source, and what reaches production must be the exact version the
+owner approved on staging — not a fresh rebuild of whatever is lying around.
+
+1. **Get the deploy directory from the project's reviewed source — never an ad-hoc or ambient
+   tree.** Clone the project's git artifact repo into a clean directory and deploy *that*
+   (`work-clone REPO` via the workspace-git skill, or `git-store clone REPO --ref main --dir DIR`).
+   Do **not** aim `"public": "."` at your mission workspace — that ships whatever scratch is
+   there (the "prod live but incomplete" failure: missing pages/images, stale `<title>`). After
+   cloning, sanity-check the inventory before deploying: `ls -R` the dir; a static site has its
+   HTML pages **and** its `images/`/assets — if the images aren't there you are about to ship a
+   broken site, so fix the source first.
 2. **Write** `firebase.json` in the deploy directory yourself — **never run `firebase init`**.
    Every `init` subcommand is interactive and hangs with no TTY: it burns the whole command
    timeout, then the turn loop-guards out. Create the file directly instead, e.g.:
@@ -69,11 +81,24 @@ tool*. The only programs you invoke here are:
    ```bash
    firebase hosting:channel:deploy staging --project=PROJECT
    ```
-4. Verify the preview URL (in the command output) serves the expected content.
+4. Verify the preview URL (in the command output) serves the expected content — **every page
+   AND every image**, not just `/`. `curl` a couple of `images/…` paths too; a site that 200s on
+   `/` but 404s on its images is not ready to promote.
 5. **STOP — report the preview URL to the owner and wait for explicit approval.** Do not
    promote to production on your own.
-6. After approval, deploy live: `firebase deploy --only hosting --project=PROJECT`.
-7. Verify the live URL responds correctly (`curl -sS -D- -o /dev/null https://SITE/`).
+6. **After approval, PROMOTE the reviewed version — do not rebuild.** Clone the exact staging
+   version that was approved to the live channel, so production serves the same bytes the owner
+   reviewed:
+   ```bash
+   firebase hosting:clone SITE:staging SITE:live --project=PROJECT   # e.g. tachin-web:staging tachin-web:live
+   ```
+   A fresh `firebase deploy --only hosting` from the *same, unchanged* directory also works, but
+   re-deploying risks shipping something different from what was reviewed — prefer the clone.
+   Fallback if the CLI clone is unavailable: release the reviewed version via the Hosting REST
+   API — `POST https://firebasehosting.googleapis.com/v1beta1/sites/SITE/releases?versionName=sites/SITE/versions/VERSION`
+   with an empty body (`-d "{}"`) and an `X-Goog-User-Project: QUOTA_PROJECT` header.
+7. Verify the live URL end to end — `/`, a content page, and an image
+   (`curl -sS -D- -o /dev/null https://SITE/`, then `…/images/…`).
 
 ### Diagnose why a URL isn't serving
 A Firebase Hosting request resolves in stages. Walk them **in order**, discovering real
@@ -147,6 +172,7 @@ architecture, the hops map on as:
 | Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Project has multiple Hosting sites and `firebase.json` names none, so it used the default site | Add `"site": "SITE_ID"` to the `hosting` object (list sites with `firebase hosting:sites:list`), or map a target with `firebase target:apply hosting TARGET SITE` and deploy `--only hosting:TARGET`. Re-deploy to the correct site. |
 | `firebase init` hangs, times out (~120s), then the turn loop-guards out | `init` is interactive and blocks forever with no TTY | **Never run `firebase init` (or any `init` subcommand).** Write `firebase.json` directly (Deploy step 2), then deploy with `hosting:channel:deploy` / `deploy --only hosting`. Deploying needs no init. |
 | Deploy reports **0 files** | `hosting.public` points at the wrong directory | Point `public` at the directory holding the files (`.` when `firebase.json` sits with them); redeploy. |
+| Prod went live but content is **incomplete or wrong** (missing pages/images, stale `<title>`) | Deployed the ambient mission workspace (`public:"."`) instead of the project's reviewed source | Promote the approved **staging** version rather than rebuilding: `firebase hosting:clone SITE:staging SITE:live` (or a REST version-release of the reviewed version). Then always deploy from a clean clone of the project repo, never the scratch tree; re-verify `/` + a page + an image. |
 | Rewrite to Cloud Run not working | Used `destination` instead of `run` | Use `"run": {"serviceId": "SERVICE", "region": "REGION"}`; `destination` is for local-file redirects only. |
 | Backend serves the content but Hosting returns 404 | Rewrite missing/incorrect, or deploy stale | Fix `firebase.json` rewrites and `firebase deploy --only hosting`. |
 | Content in origin but backend returns 404 | Backend not routed for that path/prefix, or origin name wrong | Check the backend's routing and re-verify the origin object name/bucket. |
