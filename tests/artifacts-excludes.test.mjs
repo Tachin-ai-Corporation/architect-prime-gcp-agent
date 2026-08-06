@@ -9,7 +9,7 @@
 //   LOCAL `.git/info/exclude` (never committed) rather than a tracked `.gitignore`.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderWorkspaceExcludes, resolveCommitAssets } from '../corekit/lib/artifacts.mjs';
+import { renderWorkspaceExcludes, resolveCommitAssets, motorWorkspaceSweepPlan } from '../corekit/lib/artifacts.mjs';
 
 describe('renderWorkspaceExcludes', () => {
   it('emits the corekit block on an empty exclude file', () => {
@@ -116,5 +116,41 @@ describe('resolveCommitAssets', () => {
   it('honours an explicit commit_assets flag over class', () => {
     assert.equal(resolveCommitAssets({ commit_assets: true, class: 'code' }), true);
     assert.equal(resolveCommitAssets({ commit_assets: false, class: 'web' }), false);
+  });
+});
+
+describe('motorWorkspaceSweepPlan', () => {
+  // The pathology: the motor's persistent workspace (its tool cwd) accumulated an old
+  // site + node_modules + git clones across missions, and `firebase deploy public:"."`
+  // shipped that blob to staging. The sweep clears scratch at mission start.
+  const dirent = (name, isSymlink = false) => ({ name, isSymlink });
+
+  it('removes scratch but keeps identity / working-memory / runtime files', () => {
+    const entries = [
+      dirent('SOUL.md'), dirent('IDENTITY.md'), dirent('MEMORY.md'), dirent('TASK.json'),
+      dirent('config.json'), dirent('progress.json'), dirent('sessions.json'),
+      dirent('CLASSIFIED_MEMORY.md'), dirent('custom-skills'),
+      dirent('index.html'), dirent('node_modules'), dirent('.git'), dirent('report.md'),
+      dirent('tachin-website-repo'), dirent('hosting_public'),
+    ];
+    const removed = motorWorkspaceSweepPlan(entries).sort();
+    assert.deepEqual(removed, ['.git', 'hosting_public', 'index.html', 'node_modules', 'report.md', 'tachin-website-repo'].sort());
+    // none of the keep-set was scheduled for deletion
+    for (const keep of ['SOUL.md','IDENTITY.md','MEMORY.md','TASK.json','config.json','progress.json','sessions.json','CLASSIFIED_MEMORY.md','custom-skills']) {
+      assert.ok(!removed.includes(keep), `must keep ${keep}`);
+    }
+  });
+
+  it('NEVER removes a symlink — the `shared` missions link (and any symlink) is untouched', () => {
+    const entries = [dirent('shared', true), dirent('index.html'), dirent('weird-link', true)];
+    const removed = motorWorkspaceSweepPlan(entries);
+    assert.ok(!removed.includes('shared'), 'shared symlink must never be swept');
+    assert.ok(!removed.includes('weird-link'), 'no symlink is ever swept');
+    assert.deepEqual(removed, ['index.html']);
+  });
+
+  it('is a no-op on a clean workspace and on empty input', () => {
+    assert.deepEqual(motorWorkspaceSweepPlan([]), []);
+    assert.deepEqual(motorWorkspaceSweepPlan([dirent('SOUL.md'), dirent('MEMORY.md'), dirent('shared', true)]), []);
   });
 });

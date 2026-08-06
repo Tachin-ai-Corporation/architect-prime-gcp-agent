@@ -89,6 +89,64 @@ export function resolveCommitAssets(project) {
   return cls === 'web' || cls === 'website' || cls === 'site';
 }
 
+// Entries in the persistent motor workspace (`{coreDir}/workspace`, the motor's tool cwd)
+// that are identity, working memory, live runtime state, agent-authored skills, or the
+// shared-missions symlink. EVERYTHING else there is per-mission scratch that must not
+// survive into the next mission: a mission that writes a site/clone/node_modules there and
+// then runs `firebase deploy public:"."` would otherwise ship the previous mission's files
+// (this is exactly how an old marketing-site build reached a staging URL). Symlinks are
+// ALSO always kept and never traversed, so `shared` (→ every mission tree) is untouched.
+const MOTOR_WORKSPACE_KEEP = new Set([
+  'SOUL.md', 'SOUL_APPEND.md', 'IDENTITY.md', 'MEMORY.md', 'CLASSIFIED_MEMORY.md',
+  'TASK.json', 'config.json', 'progress.json', 'sessions.json',
+  'custom-skills', 'shared',
+]);
+
+/**
+ * Decide which top-level entries of the persistent motor workspace to delete. Pure (B-19):
+ * takes dirents as `{ name, isSymlink }`, returns the names to remove — everything that is
+ * neither in the keep-set nor a symlink.
+ * @param {Array<{name:string, isSymlink:boolean}>} entries
+ * @returns {string[]}
+ */
+export function motorWorkspaceSweepPlan(entries) {
+  return (entries || [])
+    .filter((e) => e && e.name && !e.isSymlink && !MOTOR_WORKSPACE_KEEP.has(e.name))
+    .map((e) => e.name);
+}
+
+/**
+ * Sweep the persistent motor workspace of non-identity scratch. Best-effort + idempotent
+ * (C-18): a clean workspace sweeps to a no-op. Skips symlinks entirely so the `shared`
+ * missions link is never followed or removed.
+ * @param {string} coreDir
+ * @param {function} [log]
+ * @returns {Promise<{removed: string[]}>}
+ */
+export async function sweepMotorWorkspace(coreDir = '/opt/corekit', log = () => {}) {
+  try {
+    const { readdirSync, rmSync } = await import('fs');
+    const { join } = await import('path');
+    const dir = `${coreDir}/workspace`;
+    let dirents;
+    try { dirents = readdirSync(dir, { withFileTypes: true }); }
+    catch { return { removed: [] }; } // no persistent workspace → nothing to sweep
+    const entries = dirents.map((d) => ({ name: d.name, isSymlink: d.isSymbolicLink() }));
+    const toRemove = motorWorkspaceSweepPlan(entries);
+    for (const name of toRemove) {
+      try { rmSync(join(dir, name), { recursive: true, force: true }); }
+      catch (e) { log('WARN', `sweepMotorWorkspace: could not remove ${name}: ${e.message}`); }
+    }
+    if (toRemove.length) {
+      log('INFO', `Swept motor workspace: removed ${toRemove.length} stale scratch entr${toRemove.length === 1 ? 'y' : 'ies'} (kept identity/runtime + symlinks)`);
+    }
+    return { removed: toRemove };
+  } catch (e) {
+    log('WARN', `sweepMotorWorkspace failed (non-fatal): ${e.message}`);
+    return { removed: [] };
+  }
+}
+
 /**
  * Create an artifact manager instance.
  *
@@ -191,6 +249,11 @@ export function createArtifactManager(deps) {
    * @param {object} [opts.envelope]  - Envelope ref for degradation marking
    */
   async function initWorkspace(envelopeId, opts = {}) {
+    // Start clean: clear last mission's scratch out of the persistent motor workspace (the
+    // motor's tool cwd) so a stray `public:"."` deploy can't ship stale leftovers. The
+    // per-mission working tree is shared/<id>/ (created below); the persistent workspace
+    // should only ever hold identity/runtime files between missions.
+    await sweepMotorWorkspace(coreDir, log);
     const sharedDir = `${coreDir}/shared/${envelopeId}`;
     try {
       const { execSync } = await import('child_process');
