@@ -55,6 +55,30 @@ Every project has a git repo in the tenant's GCS-backed git store. Objects (bund
 ### Start working on a mission (called by daemon, not motor)
 The brain daemon calls `work-clone` and `work-branch` automatically when activating a mission. Motor agents receive a pre-configured working directory.
 
+### Edit a file in the working tree — surgically, and mind the quote trap
+Your changes go into files in `shared/<missionId>/`. A content change (retitle an
+`index.html` heading, tweak a CSS value) is a *surgical* edit: change the smallest unique
+span and leave the rest byte-for-byte identical. HOW you make the edit decides whether you
+quietly corrupt the file:
+
+- **Match the smallest unique token — never a whole block.** To retitle one heading, target
+  just that text: `sed -i 's/>Proof</>The proof</' index.html`. Do NOT build a multi-line
+  `sed` whose pattern is a big chunk of surrounding markup — basic `sed` cannot match across
+  newlines, so it fails and you retry blind.
+- **THE QUOTE TRAP — it silently corrupts files.** A `sed 's/…/…/'` program is wrapped in
+  single quotes by the shell. If the text inside contains an apostrophe or quote — `payor's`,
+  `class="x"`, an inline `<script>` using `'.reveal'` — the shell escaping turns every `'`
+  into `\'` and writes the backslashes into the file, mangling dozens of quotes and breaking
+  inline JS (the page then renders blank below the first broken script). If the span you must
+  match or insert contains any quote, do NOT hand it to inline `sed`.
+- **Beyond a tiny quote-free token, edit by writing the file — not by a shell string.** Read
+  the file, compute the new content, and write it literally (`writeFile`, or a small `python3`
+  `s=open(p).read().replace(OLD,NEW,1); open(p,'w').write(s)`) — string ops never shell-escape.
+- **Prove the edit is surgical BEFORE you commit.** `work-diff --stat` must show ~the lines you
+  meant — a one-word change is a 1–2 line diff, not the whole file — and `grep -n "\\'" <file>`
+  must return nothing (a stray `\'` = you hit the quote trap: revert the file and redo it with
+  `writeFile`/`python3`). A change that corrupts the file is not a completed change.
+
 ### Commit checkpoint work
 1. Make your file changes in the working directory.
 2. Run `work-commit "v2026.07.04.1.0: description of changes" --add-all` to commit all changes.
@@ -79,6 +103,7 @@ The brain daemon calls `work-merge` automatically when completing a mission. Thi
 | `work-commit` fails | No staged changes | Use `--add-all` or manually stage files with `git add` |
 | `work-merge` returns `AWAITING_APPROVAL` | Gated merge policy | Normal — approval will be handled by the approval gate system |
 | `work-merge` returns `failed` | Merge conflict | Resolve conflicts in a local clone, commit, then re-merge |
+| A one-line content edit shows a whole-file `work-diff`, stray `\'`/`\"` in the file, or the page renders blank below the first section | An inline `sed 's/…/…/'` whose pattern/replacement held apostrophes or quotes — the shell escaped them into the file, breaking inline JS | Revert the file; redo as the smallest quote-free token, or via `writeFile`/`python3` `.replace()` (literal, no shell escaping). Confirm `work-diff --stat` is minimal and `grep "\\'" <file>` is empty before `work-commit` |
 
 ## Important Rules
 
