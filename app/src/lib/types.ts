@@ -161,6 +161,20 @@ export interface WorkHistoryEntry {
 
 /* ---- Project types ---- */
 
+/**
+ * A member of a project team. Stored on `projects/{id}.team[]` as objects.
+ * `responsibilities` is free-text used by the agent fleet for delegation
+ * routing. Older records may store bare email strings — use `normalizeTeam`
+ * to coerce mixed data into this shape before reading.
+ */
+export interface ProjectTeamMember {
+  email: string;
+  role?: string;
+  name?: string;
+  type?: string;
+  responsibilities?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -170,7 +184,7 @@ export interface Project {
   status: 'active' | 'complete' | 'paused' | 'archived';
   parent_id: string | null;
   depends_on: string[];
-  team: string[];
+  team: ProjectTeamMember[];
   created_by: string;
   drive_folder_id?: string;
   drive_url?: string;
@@ -191,6 +205,22 @@ export interface Project {
   };
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Coerce a possibly-legacy team array into `ProjectTeamMember` objects.
+ * Legacy entries stored as bare email strings become `{ email }`; object
+ * entries pass through with every field (incl. `responsibilities`) preserved,
+ * so the full array can be safely written back to Firestore. Nullish/non-array
+ * input yields an empty array.
+ */
+export function normalizeTeam(
+  team: readonly (ProjectTeamMember | string)[] | null | undefined,
+): ProjectTeamMember[] {
+  if (!Array.isArray(team)) return [];
+  return team.map((member) =>
+    typeof member === "string" ? { email: member } : member,
+  );
 }
 
 /* ---- Active status constants ---- */

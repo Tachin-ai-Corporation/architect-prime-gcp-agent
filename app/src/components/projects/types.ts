@@ -1,5 +1,6 @@
 import type { ContextEntry } from "./ContextEditor";
 import type { Canon } from "./CanonEditor";
+import type { ProjectTeamMember } from "@/lib/types";
 
 export interface ProjectSummary {
   id: string;
@@ -10,7 +11,7 @@ export interface ProjectSummary {
   description: string;
   parent_id: string | null;
   depends_on: string[];
-  team?: string[];
+  team?: ProjectTeamMember[];
   created_by?: string;
   drive_folder_id?: string;
   drive_url?: string;

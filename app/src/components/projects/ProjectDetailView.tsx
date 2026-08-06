@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api } from "@/lib/api";
+import { normalizeTeam, type ProjectTeamMember } from "@/lib/types";
 import { ContextEditor } from "./ContextEditor";
 import type { ContextEntry } from "./ContextEditor";
 import { CanonEditor } from "./CanonEditor";
@@ -36,6 +37,8 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
   const [localContext, setLocalContext] = useState<Record<string, ContextEntry>>({});
   const [localCanon, setLocalCanon] = useState<Canon | undefined>(undefined);
   const [canonDirty, setCanonDirty] = useState(false);
+  const [team, setTeam] = useState<ProjectTeamMember[]>([]);
+  const [teamDirty, setTeamDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [resolvedPrimeId, setResolvedPrimeId] = useState<string | null>(null);
 
@@ -61,6 +64,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
         setLocalContext(data.project.context ?? {});
         setLocalCanon(data.project.canon);
         setLinkedProcessIds(data.project.standardProcesses ?? []);
+        setTeam(normalizeTeam(data.project.team));
         setResolvedPrimeId(primeId || data.project.created_by || "chuck");
         setLoading(false);
       } else if (!cancelled) {
@@ -120,6 +124,14 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
     setCanonDirty(true);
   }, []);
 
+  /* ---- Team responsibilities change ---- */
+  const handleResponsibilityChange = useCallback((index: number, value: string) => {
+    setTeam((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, responsibilities: value } : m)),
+    );
+    setTeamDirty(true);
+  }, []);
+
   /* ---- Process linking ---- */
   const handleLinkProcess = useCallback((processId: string) => {
     setLinkedProcessIds((prev) => [...prev, processId]);
@@ -143,7 +155,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
   }, [projectId]);
 
   /* ---- Save ---- */
-  const isDirty = contextDirty || processesDirty || editDesc || canonDirty;
+  const isDirty = contextDirty || processesDirty || editDesc || canonDirty || teamDirty;
   const handleSave = useCallback(async () => {
     setSaving(true);
     const payload: Record<string, unknown> = {
@@ -154,6 +166,11 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
     if (canonDirty && localCanon) {
       payload.canon = localCanon;
     }
+    // Full-array replace: send the complete team objects (all fields preserved),
+    // only when responsibilities were edited, so unrelated saves don't rewrite it.
+    if (teamDirty) {
+      payload.team = team;
+    }
     await api(`/api/projects/${projectId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -162,9 +179,10 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
     setContextDirty(false);
     setProcessesDirty(false);
     setCanonDirty(false);
+    setTeamDirty(false);
     setEditDesc(false);
     setSaving(false);
-  }, [projectId, desc, localContext, linkedProcessIds, canonDirty, localCanon]);
+  }, [projectId, desc, localContext, linkedProcessIds, canonDirty, localCanon, teamDirty, team]);
 
   if (loading) {
     return (
@@ -296,6 +314,45 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
           context={localContext}
           onChange={handleContextChange}
         />
+      </div>
+
+      {/* ---- Team section ---- */}
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Team</h2>
+          {team.length > 0 && (
+            <span className={styles.countPill}>
+              {team.length} member{team.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        {team.length > 0 ? (
+          <div className={styles.promotionCards}>
+            {team.map((member, index) => (
+              <div key={member.email || index} className={styles.processCard}>
+                <div className={styles.processCardHeader}>
+                  <span className={styles.processCardName}>{member.name || member.email}</span>
+                  {member.role && <span className={styles.processVersionBadge}>{member.role}</span>}
+                </div>
+                <div className={styles.processCardMeta}>
+                  {member.email && <span className={styles.processCardSteps}>{member.email}</span>}
+                  {member.type && <span className={styles.processCardSteps}>· {member.type}</span>}
+                </div>
+                <label className={styles.fieldLabel}>Responsibilities</label>
+                <textarea
+                  className={styles.fieldTextarea}
+                  value={member.responsibilities ?? ""}
+                  onChange={(e) => handleResponsibilityChange(index, e.target.value)}
+                  rows={2}
+                  placeholder="What this member owns — used by the fleet for delegation routing"
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.emptySection}>No team members on this project.</div>
+        )}
       </div>
 
       {/* ---- Standard Processes section ---- */}
