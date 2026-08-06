@@ -311,3 +311,41 @@ export function checkDelegationCapability({ instruction, delegatorSpecialty, tar
     reason: `delegation to '${targetSpecialty}' invokes ${offending.join(', ')} — a capability it lacks but this '${delegatorSpecialty}' agent owns; do it yourself instead of delegating`,
   };
 }
+
+// ---- Delegation result summarization (childResults / cpResults) ----
+
+/**
+ * The agent label for a delegation result. Use the DELEGATE's email
+ * (`source_meta.target_agent_email`) — NOT the delegation envelope's `owner`, which
+ * is the DELEGATOR. Labelling with `owner` made a COMPLETED delegation read back to
+ * cortex as a failed "self-delegation" and triggered a needless re-plan / self-execute.
+ * Falls back to `owner`, then `'unknown'`. Pure.
+ * @param {object} env - delegation child/task envelope
+ * @returns {string}
+ */
+export function delegationResultAgent(env) {
+  if (!env) return 'unknown';
+  return (env.source_meta && env.source_meta.target_agent_email) || env.owner || 'unknown';
+}
+
+/**
+ * Summarize a terminal delegation envelope into the result shape a waiting mission
+ * forwards to cortex. Pure; `toStr` coerces possibly-structured fields to a string
+ * (inject the daemon's `toStr`). Success = complete|archived — `archived` is a
+ * terminal SUCCESS for a delegation (the sweeper archived a delivered result).
+ * @param {object} env
+ * @param {(v:any)=>string} [toStr]
+ * @param {{taskMax?:number, resultMax?:number}} [limits]
+ * @returns {{agent:string, task:string, result:string, success:boolean}}
+ */
+export function summarizeDelegationResult(env, toStr, { taskMax = 200, resultMax = 4000 } = {}) {
+  const s = typeof toStr === 'function' ? toStr : (v) => (v == null ? '' : String(v));
+  const e = env || {};
+  const isSuccess = e.status === 'complete' || e.status === 'archived';
+  return {
+    agent: delegationResultAgent(e),
+    task: s(e.instruction).substring(0, taskMax),
+    result: isSuccess ? s(e.output).substring(0, resultMax) : `[FAILED] ${e.error || e.status}`,
+    success: isSuccess,
+  };
+}

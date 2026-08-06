@@ -44,7 +44,7 @@ import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
 import { createArtifactManager } from '../corekit/lib/artifacts.mjs';
 import { createNotifier } from '../corekit/lib/notifications.mjs';
 import { createHistoryWriter } from '../corekit/lib/history.mjs';
-import { composeDelegationMarker, composeDelegationResultMarker } from '../corekit/lib/delegation.mjs';
+import { composeDelegationMarker, composeDelegationResultMarker, summarizeDelegationResult, delegationResultAgent } from '../corekit/lib/delegation.mjs';
 import { makeAddress } from '../corekit/lib/channel.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
@@ -89,7 +89,16 @@ try {
 const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const PRIME_ID = process.env.PRIME_ID || '';
 const AGENT_ID = process.env.AGENT_ID || 'agent';
-const AGENT_EMAIL = process.env.AGENT_USER_EMAIL || '';
+// An unrendered provisioning placeholder (a chat-config.json copied verbatim so
+// AGENT_USER_EMAIL is the literal "${AGENT_USER_EMAIL}") must NEVER become an envelope
+// owner — it did on a mis-provisioned Prime, stamping 500+ envelopes with a literal that
+// archival then auto-cancelled. Treat a `${`-bearing value as unset → owner falls back to
+// AGENT_ID (a stable, real identifier). The real identity is fixed at provisioning.
+const _rawAgentEmail = process.env.AGENT_USER_EMAIL || '';
+const AGENT_EMAIL = _rawAgentEmail.includes('${') ? '' : _rawAgentEmail;
+if (_rawAgentEmail.includes('${')) {
+  console.warn(`[brain] AGENT_USER_EMAIL is an unrendered placeholder (${_rawAgentEmail}); treating as unset — owners fall back to AGENT_ID. Fix provisioning (chat-config.json / .identity-lock).`);
+}
 const GATEWAY_PORT = CONTRACTS.gateway?.port || 18789;
 const GATEWAY_URL = `http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`;
 const MAX_ITERATIONS = CONTRACTS.dispatch?.max_iterations || 12;
@@ -592,7 +601,7 @@ function _initProcessEngine() {
                 const sibResults = [];
                 for (const sibId of siblings) {
                   if (sibId === delegRef.id) {
-                    sibResults.push({ agent: delegRef.source_meta?.target_agent_email || delegRef.owner, result: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS), success: true });
+                    sibResults.push({ agent: delegationResultAgent(delegRef), result: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS), success: true });
                     continue;
                   }
                   const sib = await firestoreRead('work', sibId);
@@ -602,7 +611,7 @@ function _initProcessEngine() {
                     && Array.isArray(sib?.children) && sib.children.length > 0;
                   if (!sib || (!_sibFastFailTransient && ['complete', 'failed', 'archived', 'cancelled', 'blocked', 'needs_input'].includes(sib?.status))) {
                     const isOk = sib?.status === 'complete' || sib?.status === 'archived';
-                    sibResults.push({ agent: sib?.source_meta?.target_agent_email || sib?.owner || 'unknown', result: smartTruncate(toStr(sib?.output || sib?.status || ''), RESULT_PREVIEW_CHARS), success: isOk });
+                    sibResults.push({ agent: delegationResultAgent(sib), result: smartTruncate(toStr(sib?.output || sib?.status || ''), RESULT_PREVIEW_CHARS), success: isOk });
                   } else {
                     allDone = false;
                     break;
@@ -4829,19 +4838,10 @@ async function checkWaitingEnvelopes() {
         const _fastFailTransient = child.status === 'failed' && child.delivery_fast_failed === true
           && Array.isArray(child.children) && child.children.length > 0;
         if (!_fastFailTransient && (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled' || child.status === 'blocked' || child.status === 'needs_input')) {
-          const isSuccess = child.status === 'complete' || child.status === 'archived';
-          childResults.push({
-            // Label with the DELEGATE's email (source_meta.target_agent_email), NOT the
-            // delegation envelope's `owner` — owner is the DELEGATOR. Using owner made a
-            // COMPLETED delegation read back to cortex as a failed "self-delegation" and
-            // triggered a needless re-plan / self-execute. Fall back to owner only if absent.
-            agent: child.source_meta?.target_agent_email || child.owner,
-            task: toStr(child.instruction).substring(0, 200),
-            result: isSuccess
-              ? toStr(child.output).substring(0, 4000)
-              : `[FAILED] ${child.error || child.status}`,
-            success: isSuccess,
-          });
+          // Label by the DELEGATE's email, not the delegation owner (= the delegator);
+          // see summarizeDelegationResult (delegation.mjs) for why owner mislabels a
+          // completed delegation as a failed self-delegation.
+          childResults.push(summarizeDelegationResult(child, toStr));
         } else {
           allChildrenDone = false;
         }
@@ -4943,17 +4943,7 @@ async function checkWaitingEnvelopes() {
             const _tcFastFailTransient = tc.status === 'failed' && tc.delivery_fast_failed === true
               && Array.isArray(tc.children) && tc.children.length > 0;
             if (!_tcFastFailTransient && (tc.status === 'complete' || tc.status === 'failed' || tc.status === 'archived' || tc.status === 'cancelled' || tc.status === 'blocked' || tc.status === 'needs_input')) {
-              const isSuccess = tc.status === 'complete' || tc.status === 'archived';
-              cpResults.push({
-                // Delegate's email, not the delegation envelope owner (= the delegator).
-                // See the childResults note above: labelling with owner mislabelled a
-                // completed delegation as a failed self-delegation to cortex, which then
-                // re-planned and self-executed the checkpoint instead of accepting the result.
-                agent: tc.source_meta?.target_agent_email || tc.owner,
-                task: toStr(tc.instruction).substring(0, 200),
-                result: isSuccess ? toStr(tc.output).substring(0, 4000) : `[FAILED] ${tc.error || tc.status}`,
-                success: isSuccess,
-              });
+              cpResults.push(summarizeDelegationResult(tc, toStr));
             } else {
               allDone = false;
             }

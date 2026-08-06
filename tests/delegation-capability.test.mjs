@@ -7,7 +7,7 @@
 // distinctive capability the target lacks but the delegator owns.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkDelegationCapability } from '../corekit/lib/delegation.mjs';
+import { checkDelegationCapability, summarizeDelegationResult, delegationResultAgent } from '../corekit/lib/delegation.mjs';
 
 // Mirrors corekit/config/agent-types.json.
 const specialtySkills = {
@@ -70,5 +70,52 @@ describe('checkDelegationCapability', () => {
     assert.equal(checkDelegationCapability({}).ok, true);
     assert.equal(checkDelegationCapability({ instruction: 'deploy via firebase', delegatorSpecialty: 'devops', targetSpecialty: 'engineer' }).ok, true); // no map
     assert.equal(checkDelegationCapability({ instruction: 'x', delegatorSpecialty: 'unknown', targetSpecialty: 'engineer', specialtySkills }).ok, true); // unknown delegator caps
+  });
+});
+
+// Regression guard for the delegation-result-misread bug: a completed delegation was
+// labelled by the envelope's `owner` (= the DELEGATOR), so cortex read a teammate's
+// finished work as a failed "self-delegation" and re-planned / self-executed.
+describe('delegationResultAgent', () => {
+  it('labels by the DELEGATE email (source_meta.target_agent_email), NOT owner=delegator', () => {
+    const env = { owner: 'product-architect-agent-archie@x', source_meta: { target_agent_email: 'engineer-agent-bobby@x' } };
+    assert.equal(delegationResultAgent(env), 'engineer-agent-bobby@x');
+  });
+  it('falls back to owner when there is no delegate email', () => {
+    assert.equal(delegationResultAgent({ owner: 'devops-agent-stan@x', source_meta: {} }), 'devops-agent-stan@x');
+    assert.equal(delegationResultAgent({ owner: 'devops-agent-stan@x' }), 'devops-agent-stan@x');
+  });
+  it("returns 'unknown' for a null/empty envelope", () => {
+    assert.equal(delegationResultAgent(null), 'unknown');
+    assert.equal(delegationResultAgent({}), 'unknown');
+  });
+});
+
+describe('summarizeDelegationResult', () => {
+  const toStr = (v) => (v == null ? '' : String(v));
+  it('a completed delegation is SUCCESS, labelled by the delegate, carrying its output', () => {
+    const env = { status: 'complete', owner: 'delegator@x', source_meta: { target_agent_email: 'bobby@x' }, instruction: 'edit index.html', output: 'done: The proof' };
+    assert.deepEqual(summarizeDelegationResult(env, toStr), { agent: 'bobby@x', task: 'edit index.html', result: 'done: The proof', success: true });
+  });
+  it("treats 'archived' as terminal success (a delivered result the sweeper archived)", () => {
+    const r = summarizeDelegationResult({ status: 'archived', source_meta: { target_agent_email: 'bobby@x' }, output: 'ok' }, toStr);
+    assert.equal(r.success, true);
+    assert.equal(r.result, 'ok');
+  });
+  it('a failed delegation carries [FAILED] + the error, not the output', () => {
+    const r = summarizeDelegationResult({ status: 'failed', owner: 'delegator@x', error: 'boom', output: 'ignored' }, toStr);
+    assert.equal(r.success, false);
+    assert.equal(r.result, '[FAILED] boom');
+    assert.equal(r.agent, 'delegator@x'); // no delegate email → owner fallback
+  });
+  it('truncates task and result to their caps', () => {
+    const r = summarizeDelegationResult({ status: 'complete', instruction: 'x'.repeat(500), output: 'y'.repeat(9000), source_meta: { target_agent_email: 'b@x' } }, toStr);
+    assert.equal(r.task.length, 200);
+    assert.equal(r.result.length, 4000);
+  });
+  it('works without a toStr (defaults to String coercion)', () => {
+    const r = summarizeDelegationResult({ status: 'complete', instruction: 42, output: 7, source_meta: { target_agent_email: 'b@x' } });
+    assert.equal(r.task, '42');
+    assert.equal(r.result, '7');
   });
 });
