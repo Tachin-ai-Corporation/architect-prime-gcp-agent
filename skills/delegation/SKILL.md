@@ -12,6 +12,8 @@ When project work should be assigned to a teammate agent on the same project ins
 
 ## Two Delegation Paths
 
+> **Address teammates by their REAL email, never the `@example.com` placeholders shown in the examples below** — those are illustrative and reach no one. Take the actual email from the **`### Team`** block of your project context (each member is listed with email + responsibilities). In a `checkpoint_plan` delegation task you may instead set `agent` to the specialty (`"engineer"`, `"devops"`, `"designer"`, …) and the executor routes to the online teammate for that role; a bare `target_email` on a direct `delegate` must be a real, registered fleet address.
+
 ### Path 1: Direct Delegation (simple, one-off)
 Use the `action: "delegate"` cortex decision. This is best for single tasks that need a teammate.
 
