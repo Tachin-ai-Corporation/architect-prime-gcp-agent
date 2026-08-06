@@ -448,6 +448,9 @@ export function createProjectRegistry(config) {
           parts.push(`— ${member.email}`);
           if (member.type) parts.push(`[${member.type}]`);
           header.push(`- ${parts.join(' ')}`);
+          // Free-text, plain-language description of what this participant does on THIS
+          // project — the primary signal Cortex uses to pick a delegate ("who does what").
+          if (member.responsibilities) header.push(`    ↳ ${member.responsibilities}`);
         }
       }
     }

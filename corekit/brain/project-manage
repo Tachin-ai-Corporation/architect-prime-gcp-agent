@@ -793,13 +793,15 @@ print(f'Completed project \'{target_id}\'.')
       MEMBER_ROLE="$2"
       MEMBER_NAME="${3:-}"
       MEMBER_TYPE="${4:-agent}"
+      MEMBER_RESP="${5:-}"
       MEMBER_JSON_INPUT="{\"email\": \"${MEMBER_EMAIL}\", \"role\": \"${MEMBER_ROLE}\", \"name\": \"${MEMBER_NAME}\", \"type\": \"${MEMBER_TYPE}\"}"
     else
-      echo "Usage: project-manage team-add <projectId> <email> <role> [name] [type]" >&2
-      echo "   or: project-manage team-add <projectId> '<json>'" >&2
+      echo "Usage: project-manage team-add <projectId> <email> <role> [name] [type] [responsibilities]" >&2
+      echo "   or: project-manage team-add <projectId> '<json>'   (JSON form for multi-word responsibilities)" >&2
+      echo "   'responsibilities' is a plain-language description of what this participant does on the project — it is what Cortex reads to route delegations." >&2
       exit 1
     fi
-    export TARGET_ID MEMBER_JSON_INPUT
+    export TARGET_ID MEMBER_JSON_INPUT MEMBER_RESP
     python3 -c "
 import json, sys, subprocess, os
 from datetime import datetime, timezone
