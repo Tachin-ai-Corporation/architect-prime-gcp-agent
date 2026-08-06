@@ -592,7 +592,7 @@ function _initProcessEngine() {
                 const sibResults = [];
                 for (const sibId of siblings) {
                   if (sibId === delegRef.id) {
-                    sibResults.push({ agent: delegRef.owner, result: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS), success: true });
+                    sibResults.push({ agent: delegRef.source_meta?.target_agent_email || delegRef.owner, result: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS), success: true });
                     continue;
                   }
                   const sib = await firestoreRead('work', sibId);
@@ -602,7 +602,7 @@ function _initProcessEngine() {
                     && Array.isArray(sib?.children) && sib.children.length > 0;
                   if (!sib || (!_sibFastFailTransient && ['complete', 'failed', 'archived', 'cancelled', 'blocked', 'needs_input'].includes(sib?.status))) {
                     const isOk = sib?.status === 'complete' || sib?.status === 'archived';
-                    sibResults.push({ agent: sib?.owner || 'unknown', result: smartTruncate(toStr(sib?.output || sib?.status || ''), RESULT_PREVIEW_CHARS), success: isOk });
+                    sibResults.push({ agent: sib?.source_meta?.target_agent_email || sib?.owner || 'unknown', result: smartTruncate(toStr(sib?.output || sib?.status || ''), RESULT_PREVIEW_CHARS), success: isOk });
                   } else {
                     allDone = false;
                     break;
@@ -4831,7 +4831,11 @@ async function checkWaitingEnvelopes() {
         if (!_fastFailTransient && (child.status === 'complete' || child.status === 'failed' || child.status === 'archived' || child.status === 'cancelled' || child.status === 'blocked' || child.status === 'needs_input')) {
           const isSuccess = child.status === 'complete' || child.status === 'archived';
           childResults.push({
-            agent: child.owner,
+            // Label with the DELEGATE's email (source_meta.target_agent_email), NOT the
+            // delegation envelope's `owner` — owner is the DELEGATOR. Using owner made a
+            // COMPLETED delegation read back to cortex as a failed "self-delegation" and
+            // triggered a needless re-plan / self-execute. Fall back to owner only if absent.
+            agent: child.source_meta?.target_agent_email || child.owner,
             task: toStr(child.instruction).substring(0, 200),
             result: isSuccess
               ? toStr(child.output).substring(0, 4000)
@@ -4941,7 +4945,11 @@ async function checkWaitingEnvelopes() {
             if (!_tcFastFailTransient && (tc.status === 'complete' || tc.status === 'failed' || tc.status === 'archived' || tc.status === 'cancelled' || tc.status === 'blocked' || tc.status === 'needs_input')) {
               const isSuccess = tc.status === 'complete' || tc.status === 'archived';
               cpResults.push({
-                agent: tc.owner,
+                // Delegate's email, not the delegation envelope owner (= the delegator).
+                // See the childResults note above: labelling with owner mislabelled a
+                // completed delegation as a failed self-delegation to cortex, which then
+                // re-planned and self-executed the checkpoint instead of accepting the result.
+                agent: tc.source_meta?.target_agent_email || tc.owner,
                 task: toStr(tc.instruction).substring(0, 200),
                 result: isSuccess ? toStr(tc.output).substring(0, 4000) : `[FAILED] ${tc.error || tc.status}`,
                 success: isSuccess,
