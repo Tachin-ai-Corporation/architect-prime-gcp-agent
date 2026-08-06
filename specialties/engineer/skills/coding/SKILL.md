@@ -153,6 +153,7 @@ When handed a design, mockup, or spec (e.g. from a designer):
 | Can't tell the stack / how to run it | No obvious manifest | Look wider (Makefile, Dockerfile, CI config, README); if it is plainly static assets, treat it as a static site (no build). Don't invent a toolchain. |
 | Repo is full of unrelated files/notes | A noisy or artifact-polluted repo | Identify the actual source (the files the site/app is built from) and ignore the noise; change only real source. |
 | Big diff for a small change | Reformatting or an editor rewrote unrelated lines | Reduce the diff to only the intended change; re-run the formatter the project uses (if any), not a different one. |
+| A one-word edit produced a huge diff, stray `\'` in the file, or the page renders blank below the fold | You edited by piping a large quoted block through inline `sed` — the shell escaped the apostrophes/quotes into the file | Make the edit surgical: match the smallest unique token, or use `writeFile`/a `python3` `.replace()` (literal, no shell escaping). See system-shell "Edit a file in place — quote trap". Verify `work-diff --stat` is minimal and `grep "\\'"` is empty. |
 
 ## Safety
 - **Never** write secrets, keys, or tokens into code or commits; read them at runtime via the

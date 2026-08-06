@@ -139,6 +139,13 @@ work. Their default action is `delegate` — they plan, coordinate, and audit.
 | Designer | Self-execute with motor | Only delegate when another specialty is needed |
 | Engineer | Self-execute with motor | Only delegate when another specialty is needed |
 
+**Editing a project's source files (HTML/CSS/code/content) is implementation, not planning.** A
+product architect or PM delegates that edit to the engineer (or the designer for visual work) —
+never self-executes it as a motor task, even for a "one-word" change. What is yours: framing the
+change, writing the acceptance criteria, and reviewing the committed diff. What is the
+specialist's: making the edit with their coding/design tools (which carry the surgical-edit and
+quote-escaping disciplines a raw shell does not).
+
 ## Process-Backed Delegations
 
 When delegating a task that the delegate has a **defined process** for (e.g.,

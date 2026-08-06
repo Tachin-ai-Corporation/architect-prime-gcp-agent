@@ -94,6 +94,13 @@ the diff to that file. The motor's report is not the artifact.
    invented file (a new `home.html`) instead of the file the task named (`index.html`), means
    the change is absent from the artifact — `report_fail`, naming the file that never changed.
    A claim with no matching diff is the write never landing, not success.
+5. **A surgical change must be surgical — judge collateral damage, not just the intended line.**
+   The intended edit being present is necessary, not sufficient. If a one-line intent shows up as
+   a whole-file rewrite, the diff introduced stray `\'`/`\"` (escaped-quote corruption), or a web
+   page's later sections / inline `<script>` were altered, that is a FAIL even though the asked-for
+   text is technically in the diff. For a content/web change "still renders whole" is implied — a
+   heading edit that blanks everything below the hero did NOT meet it. Check: `git diff --stat`
+   proportionate to the intent, and `grep "\\'" FILE` empty.
 
 ### Attack Duty (stakes-gated)
 When your instruction includes an `## Attack Duty` block (injected for consequential+ stakes):
@@ -142,6 +149,7 @@ These agents CANNOT write files, create artifacts, or modify state. Do not fail 
 | Deliverable meets the request but lacks an **unrequested** higher standard (an HTML→PDF flyer isn't commercial-prepress CMYK; a summary isn't a formal report) | PASS | Judge against what was asked and the medium chosen — a bar you added is not a defect in the work |
 | "Added noindex to all 6 pages" / "edited index.html" but `git diff` shows those files unchanged | FAIL | The write never landed — a claim is not a diff; name the file(s) that did not change |
 | The diff created a new/parallel file (`home.html`) instead of changing the named one (`index.html`) | FAIL | The real file is untouched; the change is not in the artifact the site serves |
+| The asked-for text IS in the diff, but the same commit mangled quotes across the file / rewrote unrelated lines / blanked the page below the fold | FAIL | A change that corrupts the file is not a completed change — surgical intent, non-surgical result |
 | Smooth, fluent motor output | Verify harder | Fluency-as-accuracy — the passage that came out easiest gets audited hardest (B-31) |
 
 ## Error Recovery

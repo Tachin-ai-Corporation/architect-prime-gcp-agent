@@ -83,7 +83,13 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
    ```
 4. Verify the preview URL (in the command output) serves the expected content — **every page
    AND every image**, not just `/`. `curl` a couple of `images/…` paths too; a site that 200s on
-   `/` but 404s on its images is not ready to promote.
+   `/` but 404s on its images is not ready to promote. Also confirm the page RENDERED WHOLE, not
+   merely that it 200s: compare the served byte size to your source file (a deploy that dropped
+   content is markedly smaller), `grep` the served HTML for a marker from **below the fold** (a
+   late section heading, the footer) — present means the page didn't die halfway — and `grep` for
+   a stray `\'`/`\"` (escaped quotes = a corrupted source edit shipped; see the system-shell
+   "quote trap"). A `/` that 200s can still be visually blank below the hero when an inline
+   `<script>` was corrupted, and that is NOT ready to promote.
 5. **STOP — report the preview URL to the owner and wait for explicit approval.** Do not
    promote to production on your own.
 6. **After approval, PROMOTE the reviewed version — do not rebuild.** Clone the exact staging
@@ -170,6 +176,7 @@ architecture, the hops map on as:
 | `Unknown command`/`is not a Firebase command`; instant (<20 ms) failure | Invented a `firebase` subcommand | Re-read Read/Write above and use a documented one. Sub-20 ms means argument parsing, not the API. |
 | `Error: No site found` | Hosting not initialized for the project | `firebase hosting:sites:list`; create with `firebase hosting:sites:create SITE --project=PROJECT` if needed. |
 | A page's embedded Google Doc (`<iframe>`) shows nothing / stays blank | The iframe `src` uses the RAW doc form `docs.google.com/document/d/<DOC_ID>/pub?embedded=true` (returns **401**) instead of the Published-to-web form `…/document/d/e/<PUBLISH_TOKEN>/pub?embedded=true` | In Google Docs, **File → Share → Publish to web**, copy that embed URL (it contains `/d/e/<token>/`) and use it in the iframe. The publish token **cannot** be derived from the doc id — if you lack access, ask the doc owner for the published URL. Quick check: `curl -s -o /dev/null -w '%{http_code}' <src>` → 200 = embeddable, 401 = not published. |
+| Deployed page 200s but renders blank below the hero / first section | Shipped a source file with corrupted inline JS — an upstream edit escaped its quotes (`'`→`\'`), so the script that reveals lower sections throws | Do NOT promote. `curl` the served HTML and `grep "\\'"` — stray backslash-quotes confirm it. Fix the source edit (see system-shell "quote trap"), redeploy to the preview channel, re-verify whole-page render, then promote. To recover a broken live/staging channel fast, clone the last-good version back: `firebase hosting:clone SITE:live SITE:staging` (or a REST version-release of the good version to the channel). |
 | Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Project has multiple Hosting sites and `firebase.json` names none, so it used the default site | Add `"site": "SITE_ID"` to the `hosting` object (list sites with `firebase hosting:sites:list`), or map a target with `firebase target:apply hosting TARGET SITE` and deploy `--only hosting:TARGET`. Re-deploy to the correct site. |
 | `firebase init` hangs, times out (~120s), then the turn loop-guards out | `init` is interactive and blocks forever with no TTY | **Never run `firebase init` (or any `init` subcommand).** Write `firebase.json` directly (Deploy step 2), then deploy with `hosting:channel:deploy` / `deploy --only hosting`. Deploying needs no init. |
 | Deploy reports **0 files** | `hosting.public` points at the wrong directory | Point `public` at the directory holding the files (`.` when `firebase.json` sits with them); redeploy. |
