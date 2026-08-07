@@ -32,6 +32,11 @@ export function buildSpine(checkpoints, opts = {}) {
     outcome: cp.instruction || `Checkpoint ${i + 1}`,
     accept_criteria: cp.accept_criteria || '',
     tasks: Array.isArray(cp.tasks) ? cp.tasks : [],
+    // Baton model: which agent owns this checkpoint (email). Null = the mission
+    // originator. Passed through from the structured plan; drives the intra-mission
+    // hand-off in the executor (see corekit/lib/baton.mjs). Absent/ignored under the
+    // default child-mission delegation model.
+    assignee: cp.assignee || null,
     status: 'pending',
     criteria_revisions: 0,
     created_at: now,

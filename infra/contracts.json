@@ -119,6 +119,12 @@
     "blocked_requires_real_blocker": true,
     "_delegation_capability_guard_comment": "A delegation must not hand a teammate work its specialty cannot do while the delegator's own specialty can. Observed live: a devops agent delegated a Firebase DEPLOY (its own work) to an engineer with no deploy skill, and the engineer blocked (`Unknown blocker`), then the mission failed. When true: before dispatching a cross-agent delegation, the executor compares the target specialty's skills (agent-types.json) to the delegator's; if the task instruction explicitly invokes a distinctive capability the target lacks but the delegator owns (a skill/CLI id like `firebase`/`gcloud`/`docker`, matched as a standalone token, not a filename), the delegation is redirected to a local motor task the delegating agent executes itself. Direction-aware (only fires when work is sent AWAY from the agent that can do it) and conservative (only on an explicit capability token). Complements the ownership-routing guidance (a part your own capabilities cover is `local`, never delegated). Reverts to prior behavior when false.",
     "delegation_capability_guard": true,
+    "_delegation_model_comment": "Delegation MODEL. 'child-mission' (default, current behavior): a delegation spawns a SEPARATE mission on the delegate (materializeDelegationMission) and only a summarized result returns. 'handoff' (baton): ONE mission travels agent->agent — the delegate works the SAME work/{id} (its assigned checkpoints on the shared _cp_spine) and hands the same mission back, so context AND the mission/<id> git branch travel natively. Routing keys on the envelope: assignee (whose turn it is) vs originator (who started it); each _cp_spine[n].assignee tags a checkpoint. Decision logic is pure in corekit/lib/baton.mjs; see docs/plans/DELEGATION_HANDOFF_PLAN.md. Flag-gated so both models coexist during rollout — flip to 'handoff' per-fleet after canary.",
+    "delegation": {
+      "model": "child-mission",
+      "handoff_lease_ms": 1800000,
+      "reclaim_enabled": true
+    },
     "goal_state_enabled": true,
     "goal_check_required": true,
     "wait_min_minutes": 1,

@@ -133,6 +133,7 @@ corekit/lib/result-packet.mjs corekit/lib/result-packet.mjs
 corekit/lib/blackboard.mjs corekit/lib/blackboard.mjs
 corekit/lib/resource-ledger.mjs corekit/lib/resource-ledger.mjs
 corekit/lib/checkpoint-spine.mjs corekit/lib/checkpoint-spine.mjs
+corekit/lib/baton.mjs corekit/lib/baton.mjs
 corekit/lib/plan-lint.mjs corekit/lib/plan-lint.mjs
 corekit/lib/prompt-blocks.mjs corekit/lib/prompt-blocks.mjs
 corekit/lib/thread-ledger.mjs corekit/lib/thread-ledger.mjs
