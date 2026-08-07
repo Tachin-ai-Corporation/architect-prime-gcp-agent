@@ -548,9 +548,20 @@ export async function handleCheckpointPlan(ctx, deps) {
 
   // Baton model: turn the planner's teammate-delegation signals into per-checkpoint assignees,
   // so the executor hands the WHOLE mission to the teammate (who resumes this spine) instead of
-  // spawning a child mission. No-op under the default child-mission model.
+  // spawning a child mission. Assignees are RESOLVED against the project team roster — the
+  // planner regularizes opaque emails (it emitted engineer-agent@<operator-domain> with the
+  // real engineer-agent-bobby@… in its own context), so the deterministic machine resolves the
+  // role, never trusts a model-emitted address (C-4/C-5). No-op under the default child-mission model.
   if (handoffModelEnabled(CONTRACTS) && checkpoints?.length > 0) {
-    checkpoints = deriveHandoffCheckpoints(checkpoints);
+    const team = (envelope.project_id && PROJECTS?.[envelope.project_id]?.team) || [];
+    const delegated = checkpoints.filter(c => (c.tasks || []).some(t => t && (t.type === 'delegation' || t._step_type === 'delegation'))).length;
+    checkpoints = deriveHandoffCheckpoints(checkpoints, team);
+    const assigned = checkpoints.map((c, i) => `cp${i + 1}:${(c.assignee || 'orig').split('@')[0]}`).join(',');
+    log('INFO', `[TELEMETRY] baton_assignees mission=${envelope.id} roster=${team.length} delegated_cps=${delegated} spine=[${assigned}]`);
+    const unresolved = checkpoints.filter(c => (c.tasks || []).some(t => t && (t.type === 'delegation' || t._step_type === 'delegation')) && !c.assignee);
+    if (unresolved.length > 0) {
+      log('WARN', `[TELEMETRY] baton_assignee_unresolved mission=${envelope.id} count=${unresolved.length} — checkpoint kept with originator (no roster match for the planner's delegate); check the project team roster.`);
+    }
   }
 
   // First plan for this mission — pin the spine so later failures re-task instead of

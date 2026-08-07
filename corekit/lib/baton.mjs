@@ -129,23 +129,74 @@ export function reclaimPatch(env, { now } = {}) {
 }
 
 /**
+ * Resolve a delegation signal to a REAL teammate email using the project roster —
+ * deterministically, because an LLM planner regularizes opaque strings: it emitted
+ * `engineer-agent@<operator-domain>` with the correct `engineer-agent-bobby@…` sitting
+ * right there in its context. The email is data the machine moves; the model only needs
+ * to name the role (C-4/C-5). Mirrors the child-mission executor's "validate target_email
+ * against the registry → fall through to specialty lookup" (checkpoint-executor.mjs), so
+ * both dispatch models resolve teammates identically. Precedence: verbatim roster email →
+ * specialty/role → name. Never resolves to a human (batons route to agent daemons).
+ * Returns a canonical roster email, or null when nothing matches — the caller then keeps
+ * the checkpoint with the originator rather than STRANDING the mission on an unverifiable
+ * assignee no daemon will ever dequeue. Pure.
+ *
+ * @param {Array} roster  project team: [{email, role, name, type}]
+ * @param {{target_email?:string,_specialty?:string,agent?:string,target_role?:string,target_name?:string}} signal
+ * @returns {string|null}
+ */
+export function resolveAssignee(roster, signal) {
+  const s = signal || {};
+  const team = (Array.isArray(roster) ? roster : []).filter(m => m && m.email && m.type !== 'human');
+  if (!team.length) return s.target_email || null; // no roster → best-effort passthrough (legacy behavior)
+  const lpp = e => String(e || '').split('@')[0].toLowerCase().trim();
+  const norm = v => String(v || '').toLowerCase().trim();
+  // 1. verbatim email (matched by localpart) → the roster's canonical address
+  if (s.target_email) {
+    const hit = team.find(m => lpp(m.email) === lpp(s.target_email));
+    if (hit) return hit.email;
+  }
+  // 2. specialty / role — the robust signal; the email is opaque, the role is not.
+  //    Match the roster `role`, or (for specialties like product-architect that map to a
+  //    role label such as `lead`) the specialty token embedded in the member email localpart.
+  const spec = norm(s._specialty || s.target_role || s.agent);
+  if (spec && spec !== 'motor' && spec !== 'delegation') {
+    const hit = team.find(m => norm(m.role) === spec) || team.find(m => lpp(m.email).includes(spec));
+    if (hit) return hit.email;
+  }
+  // 3. name
+  const nm = norm(s.target_name);
+  if (nm) {
+    const hit = team.find(m => norm(m.name) === nm);
+    if (hit) return hit.email;
+  }
+  // 4. unresolved — do not invent an address; the caller keeps the originator
+  return null;
+}
+
+/**
  * Turn a structured plan's teammate-delegation signals into per-checkpoint ASSIGNEES for the
- * baton model. The planner signals teammate work today as a delegation task (a task carrying
- * `target_email`); under the handoff model that becomes a checkpoint assigned to that teammate,
- * whose tasks the teammate runs as its OWN motor work on the shared mission — no nested
- * delegation. Pure; returns a new array (input untouched). A checkpoint with an explicit
- * `assignee` is honored as-is; a checkpoint with no teammate signal keeps the originator
- * (assignee stays null → checkpointAssignee falls back to the originator).
+ * baton model. The planner signals teammate work today as a delegation task (carrying a
+ * `target_email` and/or an `agent`/`_specialty`); under the handoff model that becomes a
+ * checkpoint assigned to that teammate, whose tasks the teammate runs as its OWN motor work
+ * on the shared mission — no nested delegation. The assignee is RESOLVED against the project
+ * roster (resolveAssignee) so a hallucinated email never reaches the spine. Pure; returns a
+ * new array (input untouched). A checkpoint with an explicit `assignee` is honored as-is; a
+ * checkpoint whose delegation cannot be resolved keeps the originator (assignee stays null →
+ * checkpointAssignee falls back to the originator) rather than stranding the mission.
  *
  * @param {Array} checkpoints  structured-plan checkpoints (post extractCheckpoints)
+ * @param {Array} [roster]     project team roster [{email, role, name, type}]; omitted → legacy passthrough
  * @returns {Array}
  */
-export function deriveHandoffCheckpoints(checkpoints) {
+export function deriveHandoffCheckpoints(checkpoints, roster) {
   if (!Array.isArray(checkpoints)) return [];
   return checkpoints.map((cp) => {
     const tasks = Array.isArray(cp && cp.tasks) ? cp.tasks : [];
-    const deleg = tasks.find(t => t && (t.type === 'delegation' || t._step_type === 'delegation') && t.target_email);
-    const assignee = (cp && cp.assignee) || (deleg ? deleg.target_email : null);
+    const deleg = tasks.find(t => t && (t.type === 'delegation' || t._step_type === 'delegation')
+      && (t.target_email || t._specialty || t.agent));
+    let assignee = (cp && cp.assignee) || null;
+    if (!assignee && deleg) assignee = resolveAssignee(roster, deleg);
     if (!assignee) return cp;
     // De-delegate: the assignee executes these as its own motor tasks on the shared mission.
     const localTasks = tasks.map((t) => {

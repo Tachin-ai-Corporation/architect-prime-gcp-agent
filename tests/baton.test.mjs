@@ -4,8 +4,17 @@ import assert from 'node:assert/strict';
 import {
   sameAgent, effectiveAssignee, missionOriginator, checkpointAssignee,
   decideHop, myRunEnd, handoffPatch, isBatonStale, reclaimPatch, handoffModelEnabled,
-  deriveHandoffCheckpoints,
+  deriveHandoffCheckpoints, resolveAssignee,
 } from '../corekit/lib/baton.mjs';
+
+// A project team roster shaped like projects/{id}.team (tachin-web).
+const ROSTER = [
+  { email: 'chill@tachin.ai', role: 'owner', name: 'Christopher', type: 'human' },
+  { email: 'product-architect-agent-archie@tachin.ag', role: 'lead', name: 'Archie', type: 'agent' },
+  { email: 'devops-agent-stan@tachin.ag', role: 'devops', name: 'Stan', type: 'agent' },
+  { email: 'designer-agent-dot@tachin.ag', role: 'designer', name: 'Dot', type: 'agent' },
+  { email: 'engineer-agent-bobby@tachin.ag', role: 'engineer', name: 'Bobby', type: 'agent' },
+];
 
 const A = 'product-architect-agent-archie@tachin.ag';
 const B = 'engineer-agent-bobby@tachin.ag';
@@ -134,6 +143,65 @@ describe('deriveHandoffCheckpoints', () => {
   it('is a no-op on empty/absent input', () => {
     assert.deepEqual(deriveHandoffCheckpoints([]), []);
     assert.deepEqual(deriveHandoffCheckpoints(null), []);
+  });
+});
+
+describe('resolveAssignee (roster resolution — the canary bug)', () => {
+  it('repairs the planner-hallucinated pattern email via the specialty signal', () => {
+    // The exact live failure: planner emitted engineer-agent@<operator-domain> (wrong domain,
+    // missing -bobby) with agent="engineer". Resolve by role -> the roster's real address.
+    assert.equal(
+      resolveAssignee(ROSTER, { target_email: 'engineer-agent@tachin.ai', agent: 'engineer' }),
+      'engineer-agent-bobby@tachin.ag',
+    );
+    assert.equal(
+      resolveAssignee(ROSTER, { target_email: 'devops-agent@tachin.ai', _specialty: 'devops' }),
+      'devops-agent-stan@tachin.ag',
+    );
+  });
+  it('honors a verbatim-correct email (case-insensitive) and returns the canonical form', () => {
+    assert.equal(resolveAssignee(ROSTER, { target_email: 'ENGINEER-AGENT-BOBBY@tachin.ag' }), 'engineer-agent-bobby@tachin.ag');
+  });
+  it('resolves a specialty whose role label differs, via the email localpart token', () => {
+    // product-architect maps to role "lead"; match the specialty token in the member email.
+    assert.equal(resolveAssignee(ROSTER, { agent: 'product-architect' }), 'product-architect-agent-archie@tachin.ag');
+  });
+  it('resolves by teammate name', () => {
+    assert.equal(resolveAssignee(ROSTER, { target_name: 'Bobby' }), 'engineer-agent-bobby@tachin.ag');
+  });
+  it('NEVER resolves to a human — batons route to agent daemons', () => {
+    assert.equal(resolveAssignee(ROSTER, { target_email: 'chill@tachin.ai' }), null);
+  });
+  it('returns null when nothing matches (caller keeps the originator, never strands)', () => {
+    assert.equal(resolveAssignee(ROSTER, { agent: 'astrophysicist' }), null);
+    assert.equal(resolveAssignee(ROSTER, {}), null);
+  });
+  it('with no roster, falls back to the raw target_email (legacy passthrough)', () => {
+    assert.equal(resolveAssignee([], { target_email: 'x@y.z' }), 'x@y.z');
+    assert.equal(resolveAssignee(undefined, { _specialty: 'engineer' }), null);
+  });
+});
+
+describe('deriveHandoffCheckpoints with roster', () => {
+  it('pins the RESOLVED roster email as assignee, not the hallucinated one', () => {
+    const cps = [
+      { instruction: 'edit', tasks: [{ type: 'delegation', agent: 'engineer', target_email: 'engineer-agent@tachin.ai', task: 'edit index.html' }] },
+      { instruction: 'deploy', tasks: [{ type: 'delegation', agent: 'devops', target_email: 'devops-agent@tachin.ai', task: 'deploy' }] },
+      { instruction: 'report', tasks: [{ agent: 'motor', type: 'standard', task: 'report' }] },
+    ];
+    const out = deriveHandoffCheckpoints(cps, ROSTER);
+    assert.equal(out[0].assignee, 'engineer-agent-bobby@tachin.ag');
+    assert.equal(out[1].assignee, 'devops-agent-stan@tachin.ag');
+    assert.ok(!out[2].assignee);            // originator keeps the report
+    assert.equal(out[0].tasks[0].agent, 'motor');       // de-delegated
+    assert.equal(out[0].tasks[0].target_email, undefined);
+    assert.equal(out[0].tasks[0].task, 'edit index.html');
+  });
+  it('keeps the originator when a delegation cannot be resolved (no strand)', () => {
+    const cps = [{ instruction: 'x', tasks: [{ type: 'delegation', agent: 'astrophysicist', task: 'x' }] }];
+    const out = deriveHandoffCheckpoints(cps, ROSTER);
+    assert.ok(!out[0].assignee);            // unresolved -> stays with originator
+    assert.equal(out[0].tasks[0].type, 'delegation'); // not de-delegated (no assignee)
   });
 });
 
