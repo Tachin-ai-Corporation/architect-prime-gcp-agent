@@ -90,8 +90,17 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
    a stray `\'`/`\"` (escaped quotes = a corrupted source edit shipped; see the system-shell
    "quote trap"). A `/` that 200s can still be visually blank below the hero when an inline
    `<script>` was corrupted, and that is NOT ready to promote.
+   **Report that Channel URL verbatim as the checkpoint's outcome** — e.g. "Deployed to staging:
+   https://SITE--staging-….web.app". A checkpoint whose criterion is "a valid staging URL is
+   provided" FAILS verification when your result only says "deployed": the verifier judges the
+   evidence you reported, and a bare "done" is not evidence of a reachable URL. Carry the URL out.
 5. **STOP — report the preview URL to the owner and wait for explicit approval.** Do not
-   promote to production on your own.
+   promote to production on your own. When your checkpoint's task is "deploy to STAGING", it
+   touches the **staging channel only** — never `firebase deploy` (that ships the LIVE site) and
+   never a clone-to-live. Promotion to production is its OWN later step (6): even when the owner
+   pre-approved production in advance, that pre-approval lets step 6 proceed without a fresh
+   prompt — it does NOT merge deploy-to-staging and promote-to-live into one action. Do only the
+   checkpoint in front of you; leave prod untouched until the promote checkpoint.
 6. **After approval, PROMOTE the reviewed version — do not rebuild.** Clone the exact staging
    version that was approved to the live channel, so production serves the same bytes the owner
    reviewed:

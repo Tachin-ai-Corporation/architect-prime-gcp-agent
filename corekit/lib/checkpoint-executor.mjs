@@ -59,7 +59,7 @@ function getStepResult(envelope, stepKey) {
   return envelope.step_ledger?.[stepKey];
 }
 
-async function recordStep(envelope, stepKey, result, enabled, firestoreWrite) {
+async function recordStep(envelope, stepKey, result, enabled, firestoreWrite, meta = {}) {
   if (!enabled) return;
   envelope.step_ledger = envelope.step_ledger || {};
   envelope.step_ledger[stepKey] = {
@@ -67,6 +67,10 @@ async function recordStep(envelope, stepKey, result, enabled, firestoreWrite) {
     error: result.error || null,
     durationMs: result.durationMs || 0,
     timestamp: new Date().toISOString(),
+    // Tag with the owning checkpoint so a milestone FAIL can clear exactly this
+    // checkpoint's task entries (crash-resume dedup must not replay them into a
+    // failed re-attempt) without recomputing opaque step-key hashes.
+    ...(meta.cp != null ? { cp: meta.cp } : {}),
   };
   envelope.updated_at = new Date().toISOString();
   await firestoreWrite('work', envelope.id, envelope);
@@ -1210,7 +1214,7 @@ export async function executeCheckpoints(checkpoints, opts) {
       cpFullOutputs.push({ step: stepResult.step, agent: taskAgent, output: (result.output || result.error || '') });
 
       // Record step in ledger
-      await recordStep(envelope, taskStepKey, { success: result.success, error: result.error, durationMs: result.durationMs }, STEP_LEDGER_ENABLED, firestoreWrite);
+      await recordStep(envelope, taskStepKey, { success: result.success, error: result.error, durationMs: result.durationMs }, STEP_LEDGER_ENABLED, firestoreWrite, { cp: cpNum });
 
       // Persist checkpoint progress
       if (CHECKPOINT_RESUME_ENABLED && !isPreStamped) {
@@ -1584,6 +1588,25 @@ export async function executeCheckpoints(checkpoints, opts) {
 
     // Mark checkpoint complete or failed
     cpEnvelope.status = cpFailed ? 'failed' : 'complete';
+
+    // C2: a failed milestone means this checkpoint's tasks must RE-RUN on the next
+    // attempt — clear their step-ledger entries so the crash-resume dedup does not
+    // replay a stale "complete" stub. That stub is exactly what looped the baton
+    // deploy checkpoint: the real deploy result (with the staging URL) was replaced
+    // by "[REPLAYED] Step already completed" (no URL), so cerebellum re-failed forever.
+    // Mode-agnostic — a re-planned checkpoint in child-mission mode benefits identically.
+    if (cpFailed && STEP_LEDGER_ENABLED && envelope.step_ledger) {
+      let _cleared = 0;
+      for (const _k of Object.keys(envelope.step_ledger)) {
+        if (envelope.step_ledger[_k] && envelope.step_ledger[_k].cp === cpNum) {
+          delete envelope.step_ledger[_k];
+          _cleared++;
+        }
+      }
+      if (_cleared > 0) {
+        log('INFO', `[checkpoint-executor] CP${cpNum} milestone failed — cleared ${_cleared} step-ledger entr${_cleared === 1 ? 'y' : 'ies'} so the re-attempt re-runs the task(s), not replays them`);
+      }
+    }
 
     // Record the verdict on the pinned spine. The executor is the only thing that
     // knows whether a milestone actually passed, so it owns this write — and it is

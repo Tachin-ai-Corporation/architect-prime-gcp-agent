@@ -3567,8 +3567,11 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
   envelope.updated_at = now();
   await firestoreWrite('work', envelope.id, envelope);
 
-  // Re-enter the normal cortex loop for synthesis
-  await _processEnvelopeInner(envelope, memory, null);
+  // Re-enter the normal cortex loop for synthesis/escalation. Pass _skipBatonResume:
+  // this re-entry carries the just-run checkpoint RESULTS to cortex — a failed checkpoint
+  // must reach cortex (scoped re-plan / synthesize_with_failure / blocked), NOT be
+  // re-intercepted by the baton execute-gate and re-run forever (the CP2 resume loop).
+  await _processEnvelopeInner(envelope, memory, null, true);
 }
 
 // ---- Envelope processing (Phase 3: memory-enriched Cortex loop) ----
@@ -3613,7 +3616,7 @@ async function processEnvelope(envelope, memoryContext) {
   }
 }
 
-async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
+async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBatonResume = false) {
   // Use passed memory context, or recall fresh if not provided
   // Pass this mission's captured resource ledger into recall. On a RESUME the
   // envelope is re-read from Firestore, so identifiers resolved in earlier
@@ -3632,7 +3635,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   // checkpoint assigned to me — I do NOT re-enter cortex to re-plan someone else's mission (the
   // organs understand this; this routing makes it deterministic). 'synthesize'/'handback' fall
   // through to the normal loop, where an all-complete spine lands on the synthesize nudge.
-  if (handoffModelEnabled(CONTRACTS) && Array.isArray(envelope._cp_spine) && envelope._cp_spine.length > 0 && envelope._baton) {
+  if (!_skipBatonResume && handoffModelEnabled(CONTRACTS) && Array.isArray(envelope._cp_spine) && envelope._cp_spine.length > 0 && envelope._baton) {
     const _me = AGENT_EMAIL || AGENT_ID;
     const _hop = decideHop(envelope._cp_spine, { me: _me, originator: missionOriginator(envelope) });
     if (_hop.action === 'execute') {
