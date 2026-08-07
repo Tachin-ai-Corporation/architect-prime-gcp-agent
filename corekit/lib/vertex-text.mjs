@@ -63,7 +63,7 @@ export const CORTEX_SCHEMAS = {
       action:     { type: 'STRING', enum: [
         'checkpoint_plan', 'synthesize', 'synthesize_with_failure',
         'needs_input', 'blocked', 'follow_process', 'status_update',
-        'delegate', 'wait', 'trigger_responsibility',
+        'delegate', 'wait', 'trigger_responsibility', 'project_bootstrap',
       ]},
       reasoning:  { type: 'STRING' },
       checkpoints: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
@@ -101,6 +101,34 @@ export const CORTEX_SCHEMAS = {
         assessment: { type: 'STRING' },
       }},
       project_id:      { type: 'STRING' },
+      // project_bootstrap: a PM/lead's spec for standing up a new delivery project. The daemon
+      // binds it to the mission's origin GChat space and resolves team emails from the roster.
+      project: { type: 'OBJECT', properties: {
+        id:          { type: 'STRING' },
+        name:        { type: 'STRING' },
+        description: { type: 'STRING' },
+        goal:        { type: 'STRING' },
+        team: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+          role:             { type: 'STRING' },
+          specialty:        { type: 'STRING' },
+          name:             { type: 'STRING' },
+          email:            { type: 'STRING' },
+          type:             { type: 'STRING' },
+          responsibilities: { type: 'STRING' },
+        } }},
+        canon: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+          key:  { type: 'STRING' },
+          text: { type: 'STRING' },
+        }, required: ['key', 'text'] }},
+        context: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+          key:     { type: 'STRING' },
+          kind:    { type: 'STRING' },
+          ref:     { type: 'STRING' },
+          url:     { type: 'STRING' },
+          name:    { type: 'STRING' },
+          summary: { type: 'STRING' },
+        }, required: ['key'] }},
+      }},
       answer: { type: 'STRING' },
       risk:   { type: 'STRING' },
       assumptions: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
@@ -374,7 +402,7 @@ export function createVertexText(config) {
       return { valid: true };
     }
     if (schemaName === 'decide') {
-      const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate', 'wait', 'trigger_responsibility'];
+      const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate', 'wait', 'trigger_responsibility', 'project_bootstrap'];
       if (!allowed.includes(parsed.action)) return { valid: false, reason: `action missing or invalid: ${parsed.action}` };
       if (Array.isArray(parsed.assumptions)) {
         for (const a of parsed.assumptions) {

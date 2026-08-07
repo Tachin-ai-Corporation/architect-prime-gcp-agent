@@ -21,6 +21,46 @@ No custom corekit scripts are governed directly by this skill (handled via core 
    ```
 4. Verify: Ensure the project is successfully registered in Firestore.
 
+### Bootstrap a Delivery Project (from a chat ask)
+When the operator asks you — in a chat space — to **set up / create / stand up a NEW project**
+(its own team, and this chat as its channel), you bootstrap it yourself. You do NOT need the
+operator to pre-create anything in Firestore.
+
+**The space you received the ask in IS the project's space.** When the request arrived on a space
+not yet linked to a project, the decision context surfaces it as `project_bootstrap_available`
+(with `origin_space`). Respond with the **`project_bootstrap`** action:
+```jsonc
+{
+  "action": "project_bootstrap",
+  "project": {
+    "name": "1health Website",
+    "description": "…",
+    "goal": "Ship the single-page site to production via draft → staging → prod",
+    "team": [
+      { "role": "engineer", "specialty": "engineer",   "responsibilities": "page code + commits" },
+      { "role": "devops",   "specialty": "devops",     "responsibilities": "GCP + staging/prod deploy" },
+      { "role": "designer", "specialty": "designer",   "responsibilities": "design drafts" }
+    ],
+    "canon":   [ { "key": "deploy-flow", "text": "draft → staging (share URL) → owner approval → prod" } ],
+    "context": [ { "key": "source", "kind": "drive", "ref": "<drive-file-id>", "summary": "the site HTML" } ]
+  }
+}
+```
+What the system does deterministically: creates `projects/{id}` bound to this space, resolves each
+teammate's **real** fleet email from the roster (name them by role/specialty — never write an
+email yourself), seeds the team/canon/context, and **re-scopes this mission to the new project**.
+It is idempotent — if a project is already bound to this space, it is adopted, not duplicated.
+
+After it returns, **keep going in the same mission**: plan the actual delivery with `checkpoint_plan`
+and delegate to the team. Your delegations now route through this space automatically.
+
+**The one thing you cannot do:** add teammates as *members* of the chat space (that needs operator
+/ Chat-admin rights). If a delegation later reports it was *not delivered*, the teammate isn't in
+this space — use `needs_input` to ask the operator to add that exact address, then continue.
+
+Never route a new project's work through some *other* project's space — bind to the space the ask
+came from, or ask the operator.
+
 ### Propose an Improvement Plan
 1. **Audit:** Read target files and identify the improvement opportunity.
 2. **Draft:** Write the plan as a structured document containing scope, before/after description, rubric claim, acceptance criteria, and risk notes.

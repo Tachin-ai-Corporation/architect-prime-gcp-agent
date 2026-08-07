@@ -125,6 +125,10 @@
       "handoff_lease_ms": 1800000,
       "reclaim_enabled": true
     },
+    "_project_bootstrap_comment": "Fleet PROJECT BOOTSTRAP. When enabled, a PM/lead role (has the project-ops skill) may choose the project_bootstrap action to stand up a whole delivery project from a chat ask: the GChat space the ask arrived on becomes the project's comms space, the team is seeded (emails resolved from the fleet roster), and the mission is re-scoped to the new project so its delegations route through that space. Handler: corekit/daemon/actions/project_bootstrap.mjs; pure core corekit/lib/project-bootstrap.mjs; see docs/plans/PROJECT_BOOTSTRAP_PLAN.md. Adding the delegate bots as space MEMBERS stays an operator action (no chat.memberships scope). Default off; enable per-VM for canary via AGENT_PROJECT_BOOTSTRAP=on, or flip here after canary.",
+    "project_bootstrap": {
+      "enabled": false
+    },
     "goal_state_enabled": true,
     "goal_check_required": true,
     "wait_min_minutes": 1,

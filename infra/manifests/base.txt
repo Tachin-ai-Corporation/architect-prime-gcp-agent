@@ -134,6 +134,7 @@ corekit/lib/blackboard.mjs corekit/lib/blackboard.mjs
 corekit/lib/resource-ledger.mjs corekit/lib/resource-ledger.mjs
 corekit/lib/checkpoint-spine.mjs corekit/lib/checkpoint-spine.mjs
 corekit/lib/baton.mjs corekit/lib/baton.mjs
+corekit/lib/project-bootstrap.mjs corekit/lib/project-bootstrap.mjs
 corekit/lib/plan-lint.mjs corekit/lib/plan-lint.mjs
 corekit/lib/prompt-blocks.mjs corekit/lib/prompt-blocks.mjs
 corekit/lib/thread-ledger.mjs corekit/lib/thread-ledger.mjs
@@ -149,6 +150,7 @@ corekit/daemon/agent-brain.mjs bin/agent-brain.mjs
 corekit/daemon/actions/blocked.mjs bin/actions/blocked.mjs
 corekit/daemon/actions/checkpoint_plan.mjs bin/actions/checkpoint_plan.mjs
 corekit/daemon/actions/delegate.mjs bin/actions/delegate.mjs
+corekit/daemon/actions/project_bootstrap.mjs bin/actions/project_bootstrap.mjs
 corekit/daemon/actions/follow_process.mjs bin/actions/follow_process.mjs
 corekit/daemon/actions/index.mjs bin/actions/index.mjs
 corekit/daemon/actions/needs_input.mjs bin/actions/needs_input.mjs

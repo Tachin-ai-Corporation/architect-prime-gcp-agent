@@ -52,6 +52,7 @@ import { composeDeliverable } from '../corekit/lib/deliverable.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
 import { rebuildFromSpine } from '../corekit/lib/checkpoint-spine.mjs';
 import { handoffModelEnabled, decideHop, missionOriginator, effectiveAssignee } from '../corekit/lib/baton.mjs';
+import { projectBootstrapEnabled, missionOriginSpace } from '../corekit/lib/project-bootstrap.mjs';
 import { renderBlackboard } from '../corekit/lib/blackboard.mjs';
 import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
@@ -71,7 +72,8 @@ import {
   handleDelegate,
   handleCheckpointPlan,
   handleWait,
-  handleTriggerResponsibility
+  handleTriggerResponsibility,
+  handleProjectBootstrap
 } from './actions/index.mjs';
 
 // Alias: many call sites still use getAuthToken() for direct REST calls.
@@ -94,6 +96,13 @@ if (process.env.AGENT_DELEGATION_MODEL) {
   CONTRACTS.dispatch = CONTRACTS.dispatch || {};
   CONTRACTS.dispatch.delegation = { ...(CONTRACTS.dispatch.delegation || {}), model: process.env.AGENT_DELEGATION_MODEL };
   console.log(`[brain] delegation model override from env: ${process.env.AGENT_DELEGATION_MODEL}`);
+}
+// Per-VM override for the project_bootstrap action — canary enablement WITHOUT a global flip.
+// `AGENT_PROJECT_BOOTSTRAP=on` on a PM/lead agent's VM lets it stand up projects from a chat ask.
+if (process.env.AGENT_PROJECT_BOOTSTRAP) {
+  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
+  CONTRACTS.dispatch.project_bootstrap = { ...(CONTRACTS.dispatch.project_bootstrap || {}), enabled: process.env.AGENT_PROJECT_BOOTSTRAP === 'on' };
+  console.log(`[brain] project_bootstrap override from env: ${process.env.AGENT_PROJECT_BOOTSTRAP}`);
 }
 
 // ---- Config ----
@@ -1462,6 +1471,23 @@ function buildModePayload(mode, payload) {
         + 'respond with { "action": "trigger_responsibility", "responsibilityId": "<id from available_responsibilities>" }. '
         + 'That starts the cycle in the background; you then confirm to the user. Do NOT use trigger_responsibility for anything not in this list, '
         + 'and do NOT plan a cycle\'s internal steps yourself — firing the responsibility runs its own process.';
+    }
+    // Fleet project bootstrap: when a PM/lead is asked to STAND UP a new project and the ask
+    // arrived on a chat space not yet linked to a project, surface the space + the action. The
+    // action binds a new project to THIS space and re-scopes the mission so delivery can then
+    // delegate through it. Gated on the flag + the project-ops skill (PM/lead role only).
+    if (projectBootstrapEnabled(CONTRACTS) && (SKILL_INDEX || []).some(s => s.id === 'project-ops')) {
+      const _originSpace = missionOriginSpace(payload.envelope);
+      const _curSpace = envProjectId && PROJECTS[envProjectId]?.gchat_space_id;
+      if (_originSpace && !_curSpace) {
+        decidePayload.project_bootstrap_available = {
+          origin_space: _originSpace,
+          note: `This request arrived on GChat space "${_originSpace}", which is NOT yet linked to a project — this mission fell back to a default project with no comms space, so you cannot delegate from it yet.`,
+          when: 'If the ask is to SET UP / CREATE / BOOTSTRAP a new project (its own team + this chat as its channel), respond with project_bootstrap. It binds a new project to THIS space, seeds the team, and re-scopes this mission to it — then you plan and delegate the real work normally.',
+          form: '{ "action": "project_bootstrap", "project": { "name": "...", "description": "...", "goal": "...", "team": [ {"role":"engineer","specialty":"engineer","responsibilities":"..."}, {"role":"devops","specialty":"devops","responsibilities":"..."} ], "canon": [ {"key":"deploy-flow","text":"..."} ], "context": [ {"key":"source","kind":"drive","ref":"<id>","summary":"..."} ] } }',
+          boundary: 'Name teammates by role/specialty — the system resolves their real fleet emails; never invent one. You CANNOT add teammates to the chat space (operator only). After bootstrap, if a delegation reports it was not delivered, use needs_input to ask the operator to add that teammate to this space.',
+        };
+      }
     }
     // Inject Brief from ANALYZE phase when present
     if (payload.brief) {
@@ -3791,6 +3817,9 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
     checkpoint_plan: handleCheckpointPlan,
     wait: handleWait,
     trigger_responsibility: handleTriggerResponsibility,
+    // Fleet project bootstrap — only offered when enabled (flag / per-VM env). A PM/lead
+    // stands up a delivery project from a chat ask, binding it to the origin space.
+    ...(projectBootstrapEnabled(CONTRACTS) ? { project_bootstrap: handleProjectBootstrap } : {}),
   };
 
   while (iteration < MAX_ITERATIONS) {
@@ -4165,7 +4194,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
     log('WARN', `Unknown action '${action}' — nudging Cortex`);
     priorResults.push({
       agent: 'system',
-      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan${(SKILL_INDEX || []).some(s => s.id === 'delegation') ? ', delegate' : ''}, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait${getTriggerableResponsibilities().length > 0 ? ', trigger_responsibility' : ''}.`,
+      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan${(SKILL_INDEX || []).some(s => s.id === 'delegation') ? ', delegate' : ''}, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait${getTriggerableResponsibilities().length > 0 ? ', trigger_responsibility' : ''}${projectBootstrapEnabled(CONTRACTS) && (SKILL_INDEX || []).some(s => s.id === 'project-ops') ? ', project_bootstrap' : ''}.`,
     });
   }
 

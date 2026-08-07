@@ -12,6 +12,7 @@ import { handleDelegate } from './delegate.mjs';
 import { handleCheckpointPlan } from './checkpoint_plan.mjs';
 import { handleWait } from './wait.mjs';
 import { handleTriggerResponsibility } from './trigger_responsibility.mjs';
+import { handleProjectBootstrap } from './project_bootstrap.mjs';
 
 export {
   handleSynthesize,
@@ -24,10 +25,11 @@ export {
   handleCheckpointPlan,
   handleWait,
   handleTriggerResponsibility,
+  handleProjectBootstrap,
 };
 
 export const ACTION_NAMES = [
   'synthesize', 'synthesize_with_failure', 'blocked', 'needs_input',
   'follow_process', 'delegate', 'checkpoint_plan', 'status_update', 'wait',
-  'trigger_responsibility',
+  'trigger_responsibility', 'project_bootstrap',
 ];
