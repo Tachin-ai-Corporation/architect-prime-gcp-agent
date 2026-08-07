@@ -194,6 +194,13 @@ export async function executeCheckpoints(checkpoints, opts) {
     if (HANDOFF_MODE && Array.isArray(envelope._cp_spine)) {
       const _sc = envelope._cp_spine[ci] || null;
       const _me = AGENT_EMAIL || AGENT_ID;
+      // Skip checkpoints already COMPLETE: only the first not-complete checkpoint drives the
+      // baton. Without this, a re-entry after all work is done hands the *completed* cp back to
+      // its old assignee (cp1->bobby, cp2->stan, …) and the mission bounces agent→agent forever
+      // instead of finalizing — the synthesis-phase non-termination the staging canary exposed.
+      // When every checkpoint is complete the loop falls through to the originator's hand-back/
+      // synthesize (post-loop), which is the clean terminal path.
+      if (_sc && _sc.status === 'complete') continue;
       const _cpOwner = checkpointAssignee(_sc, missionOriginator(envelope));
       if (_sc && _cpOwner && !sameAgent(_cpOwner, _me)) {
         try { if (gitCommitAndSync) await gitCommitAndSync(envelope.id, envelope.project_id, `baton: hand-off before CP${ci + 1}`); }
