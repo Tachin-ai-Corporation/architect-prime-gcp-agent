@@ -3,7 +3,18 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
-## Current Architecture (v2026.08.06.2.6)
+## Current Architecture (v2026.08.07.1.2)
+
+> **Delegation BATON model implemented, flag OFF (v2026.08.07.1.0–1.2, `f99568c`).** Single-mission
+> checkpoint hand-off: instead of a child mission, ONE mission travels agent→agent (delegate works the
+> same `work/{id}` on its assigned checkpoints, hands it back) so context + the `mission/<id>` git branch
+> travel. Pure `corekit/lib/baton.mjs` (20 tests) + `_cp_spine.assignee` + executor hand-off/hand-back +
+> daemon resume-on-handoff + assignee-routing + `checkpoint_plan` assignee-derivation; **fleet cortex+prefrontal
+> SOUL now fundamentally understands delegated work as contributing to a teammate's mission** (ORGAN_LOCK
+> re-pinned). Gated by `contracts.dispatch.delegation.model` (default `child-mission`) → fleet unaffected.
+> **Canary not yet run** — enable per-VM via env `AGENT_DELEGATION_MODEL=handoff` (no global flip). Follow-ups:
+> reclaim sweep (lease written, no caller) + attribution (dashboard/telemetry/recall by assignee). Full detail:
+> `docs/plans/DELEGATION_HANDOFF_PLAN.md`.
 
 ### System Stack
 - **Cloud Run** — Next.js dashboard (tabs-primary deep-dive via shared `DeepDiveShell`+`useHashTab`, `components/ui/` primitives [`AsyncState`, `Modal`], 1health design system) + REST API (control plane)
