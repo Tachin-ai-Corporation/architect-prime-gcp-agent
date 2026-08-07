@@ -50,6 +50,8 @@ import { extractVerdict, extractFailSummary, extractFailRecommendation } from '.
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { composeDeliverable } from '../corekit/lib/deliverable.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
+import { rebuildFromSpine } from '../corekit/lib/checkpoint-spine.mjs';
+import { handoffModelEnabled, decideHop, missionOriginator, effectiveAssignee } from '../corekit/lib/baton.mjs';
 import { renderBlackboard } from '../corekit/lib/blackboard.mjs';
 import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
@@ -83,6 +85,15 @@ try {
   CONTRACTS = JSON.parse(readFileSync(CORE_DIR + '/corekit/contracts.json', 'utf8'));
 } catch (e) {
   console.log('[brain] WARN: contracts.json not found, using defaults');
+}
+// Per-VM override for the delegation model — canary enablement WITHOUT a global contracts flip.
+// `AGENT_DELEGATION_MODEL=handoff` on one agent's VM turns on the baton model for that agent only;
+// it mutates the in-memory contracts so both the daemon and the executor (which receives
+// `contracts`) observe it. Unset (default) leaves the committed model in place (child-mission).
+if (process.env.AGENT_DELEGATION_MODEL) {
+  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
+  CONTRACTS.dispatch.delegation = { ...(CONTRACTS.dispatch.delegation || {}), model: process.env.AGENT_DELEGATION_MODEL };
+  console.log(`[brain] delegation model override from env: ${process.env.AGENT_DELEGATION_MODEL}`);
 }
 
 // ---- Config ----
@@ -3615,6 +3626,27 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId) {
   // Phase 5: Initialize shared workspace for this envelope (+ git clone if project)
   await initSharedWorkspace(envelope.id, { projectId: envelope.project_id });
 
+  // ---- Baton pickup: a handed-off mission resumes its pinned spine here, not cortex ----
+  // Under the handoff delegation model a mission travels agent→agent. When I dequeue a mission
+  // handed to me (it carries a pinned _cp_spine and a _baton), I resume the executor at the first
+  // checkpoint assigned to me — I do NOT re-enter cortex to re-plan someone else's mission (the
+  // organs understand this; this routing makes it deterministic). 'synthesize'/'handback' fall
+  // through to the normal loop, where an all-complete spine lands on the synthesize nudge.
+  if (handoffModelEnabled(CONTRACTS) && Array.isArray(envelope._cp_spine) && envelope._cp_spine.length > 0 && envelope._baton) {
+    const _me = AGENT_EMAIL || AGENT_ID;
+    const _hop = decideHop(envelope._cp_spine, { me: _me, originator: missionOriginator(envelope) });
+    if (_hop.action === 'execute') {
+      log('INFO', `[baton] resume mission=${envelope.id} at CP${_hop.index + 1} (assignee=${effectiveAssignee(envelope)}, originator=${missionOriginator(envelope)})`);
+      envelope.status = 'active';
+      envelope.updated_at = now();
+      await firestoreWrite('work', envelope.id, envelope);
+      await writeHistory(envelope.id, 'active', 'active', 'brain', `Baton: resuming pinned spine at CP${_hop.index + 1}`);
+      const { checkpoints: _cps } = rebuildFromSpine(envelope._cp_spine);
+      await executeCheckpointPlanResume(envelope, { checkpointIndex: _hop.index, taskIndex: 0, allResults: [], checkpoints: _cps }, memory);
+      return;
+    }
+  }
+
   // CP5: Checkpoint resume — if we crashed mid-checkpoint-plan, resume from
   // the last completed step instead of re-running analyze/decide
   if (CHECKPOINT_RESUME_ENABLED && envelope._cp_progress) {
@@ -5005,7 +5037,9 @@ async function dequeueAndProcess() {
     const allQueued = await firestoreQuery('work', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'queued' } },
     ], { noOrderBy: true });
-    const queued = allQueued.filter(e => e.type === 'M' && (e.owner || '').includes(agentOwner.split('@')[0]));
+    // Route by the mission's current ASSIGNEE (baton model), which shims to `owner` when unset
+    // (child-mission model) — so this is behavior-identical until a checkpoint is assigned away.
+    const queued = allQueued.filter(e => e.type === 'M' && (effectiveAssignee(e) || '').includes(agentOwner.split('@')[0]));
     if (queued.length === 0) return;
 
     // Sort: missions with context_forward (resumed/unblocked) first, then by created_at FIFO

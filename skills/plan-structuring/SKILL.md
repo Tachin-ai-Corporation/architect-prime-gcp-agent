@@ -138,6 +138,13 @@ over-decomposed. Ask: could two adjacent tasks be one task? Usually yes.
 1 checkpoint, 1 delegation task. A plan that delegates to two agents in sequence 
 is: 2 checkpoints, 1 delegation task each. That's it.
 
+**Under the handoff delegation model** (when active), a delegation task means the checkpoint is
+ASSIGNED to that teammate — the whole mission travels to them, they run that checkpoint on the
+shared spine (with all the context and prior work), and it returns. You still express teammate
+work as a delegation task to the right specialist; the daemon turns it into the assignment.
+Structure the sequence so each agent owns a contiguous run of checkpoints, and make the FINAL
+deliver/synthesis checkpoint your own — the originator integrates the returned work and delivers.
+
 **Delegation is fleet-only and project-scoped.** Only fleet agents working
 within a project (one with a team and a GChat space) may use `type: "delegation"`
 tasks. Prime agents never delegate — for Prime, structure fleet-related work as

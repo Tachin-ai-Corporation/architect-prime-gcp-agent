@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   sameAgent, effectiveAssignee, missionOriginator, checkpointAssignee,
   decideHop, myRunEnd, handoffPatch, isBatonStale, reclaimPatch, handoffModelEnabled,
+  deriveHandoffCheckpoints,
 } from '../corekit/lib/baton.mjs';
 
 const A = 'product-architect-agent-archie@tachin.ag';
@@ -109,6 +110,30 @@ describe('isBatonStale / reclaimPatch', () => {
     assert.equal(p.status, 'queued');
     assert.equal(p._baton.turn, 4);
     assert.equal(p._baton.reclaimed, true);
+  });
+});
+
+describe('deriveHandoffCheckpoints', () => {
+  it('turns a delegation task into a checkpoint assignee and de-delegates its tasks', () => {
+    const cps = [
+      { instruction: 'edit', tasks: [{ type: 'delegation', target_email: B, _specialty: 'engineer', task: 'edit index.html', accept_criteria: 'done' }] },
+      { instruction: 'deliver', tasks: [{ agent: 'motor', type: 'standard', task: 'report' }] },
+    ];
+    const out = deriveHandoffCheckpoints(cps);
+    assert.equal(out[0].assignee, B);
+    assert.equal(out[0].tasks[0].agent, 'motor');
+    assert.equal(out[0].tasks[0].type, 'standard');
+    assert.equal(out[0].tasks[0].target_email, undefined); // stripped — no nested delegation
+    assert.equal(out[0].tasks[0].task, 'edit index.html');  // instruction preserved
+    assert.ok(!out[1].assignee); // no teammate signal → stays the originator's (null/undefined)
+  });
+  it('honors an explicit checkpoint assignee', () => {
+    const out = deriveHandoffCheckpoints([{ assignee: C, tasks: [{ agent: 'motor', task: 'x' }] }]);
+    assert.equal(out[0].assignee, C);
+  });
+  it('is a no-op on empty/absent input', () => {
+    assert.deepEqual(deriveHandoffCheckpoints([]), []);
+    assert.deepEqual(deriveHandoffCheckpoints(null), []);
   });
 });
 

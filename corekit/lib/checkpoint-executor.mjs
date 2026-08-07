@@ -17,6 +17,7 @@ import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket, packToolEvidence } from './result-packet.mjs';
 import { extractResources, mergeResources, renderResources, seedFromProse } from './resource-ledger.mjs';
 import { markCheckpoint, spineSummary } from './checkpoint-spine.mjs';
+import { checkpointAssignee, sameAgent, missionOriginator, handoffPatch, handoffModelEnabled } from './baton.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -132,6 +133,10 @@ export async function executeCheckpoints(checkpoints, opts) {
   const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
   const RESOURCE_LEDGER_RECALL_LIMIT = contracts.memory?.resource_ledger?.recall_limit ?? 40;
   const SPINE_PINNING_ENABLED = contracts.dispatch?.spine_pinning_enabled !== false;
+  // Baton delegation model: when a checkpoint is assigned to a different agent, the whole
+  // mission is handed to them (they resume this same spine) instead of spawning a child mission.
+  const HANDOFF_MODE = handoffModelEnabled(contracts);
+  const HANDOFF_LEASE_MS = contracts.dispatch?.delegation?.handoff_lease_ms || 1800000;
   // verify_probe_* is deliberately NOT read. The probe loop does not exist: nothing ever
   // serviced a returned probe request, so advertising request_probe only produced verifiers
   // that asked a question we could not answer and milestones that then failed closed for
@@ -177,6 +182,26 @@ export async function executeCheckpoints(checkpoints, opts) {
   const isPreStamped = checkpoints[0] && checkpoints[0].cEnvelope !== undefined;
 
   for (let ci = startCpIndex; ci < checkpoints.length; ci++) {
+    // ---- Baton hand-off: this checkpoint belongs to a teammate ----
+    // Persist work-in-progress on the shared mission branch, then hand the WHOLE mission to the
+    // assignee — their daemon dequeues it by assignee, re-clones the branch, and resumes this
+    // same spine at this checkpoint. Context + git branch travel with the mission. No child
+    // mission, no re-plan. Only active under the handoff delegation model (flag-gated).
+    if (HANDOFF_MODE && Array.isArray(envelope._cp_spine)) {
+      const _sc = envelope._cp_spine[ci] || null;
+      const _me = AGENT_EMAIL || AGENT_ID;
+      const _cpOwner = checkpointAssignee(_sc, missionOriginator(envelope));
+      if (_sc && _cpOwner && !sameAgent(_cpOwner, _me)) {
+        try { if (gitCommitAndSync) await gitCommitAndSync(envelope.id, envelope.project_id, `baton: hand-off before CP${ci + 1}`); }
+        catch (e) { log('WARN', `[baton] pre-handoff sync failed (non-fatal): ${e.message}`); }
+        Object.assign(envelope, handoffPatch(envelope, _cpOwner, { now: Date.now(), leaseMs: HANDOFF_LEASE_MS }));
+        envelope._cp_progress = null; // hand-off is at a checkpoint boundary — the assignee starts fresh
+        await firestoreWrite('work', envelope.id, envelope);
+        log('INFO', `[baton] hand-off mission=${envelope.id} CP${ci + 1} -> ${_cpOwner}`);
+        log('INFO', `[TELEMETRY] baton_handoff mission=${envelope.id} cp=${ci + 1} from=${_me} to=${_cpOwner} turn=${(envelope._baton && envelope._baton.turn) || 0}`);
+        return { paused: true, handedOff: true, to: _cpOwner, results: allResults };
+      }
+    }
     const cpEntry = checkpoints[ci];
     const cpNum = ci + 1;
     const taskStartIdx = (ci === startCpIndex) ? startTaskIndex : 0;
@@ -1636,6 +1661,26 @@ export async function executeCheckpoints(checkpoints, opts) {
   if (CHECKPOINT_RESUME_ENABLED && !isPreStamped) {
     envelope._cp_progress = null;
     await firestoreWrite('work', envelope.id, envelope);
+  }
+
+  // ---- Baton hand-back: all my checkpoints are done, but I am not the originator ----
+  // In the handoff model the originator owns the final synthesis + delivery, so a teammate that
+  // finished the last assigned checkpoint returns the whole mission to the originator rather than
+  // completing (and delivering) it here. The originator resumes, sees an all-complete spine, and
+  // synthesizes. (Normally the plan's final checkpoint is the originator's, so this is a backstop.)
+  if (HANDOFF_MODE && !planFailed && Array.isArray(envelope._cp_spine)) {
+    const _me = AGENT_EMAIL || AGENT_ID;
+    const _orig = missionOriginator(envelope);
+    if (_orig && !sameAgent(_orig, _me)) {
+      try { if (gitCommitAndSync) await gitCommitAndSync(envelope.id, envelope.project_id, 'baton: hand back to originator'); }
+      catch (e) { log('WARN', `[baton] pre-handback sync failed (non-fatal): ${e.message}`); }
+      Object.assign(envelope, handoffPatch(envelope, _orig, { now: Date.now(), leaseMs: HANDOFF_LEASE_MS }));
+      envelope._cp_progress = null;
+      await firestoreWrite('work', envelope.id, envelope);
+      log('INFO', `[baton] hand-back mission=${envelope.id} -> originator ${_orig}`);
+      log('INFO', `[TELEMETRY] baton_handback mission=${envelope.id} from=${_me} to=${_orig}`);
+      return { paused: true, handedOff: true, to: _orig, results: allResults };
+    }
   }
 
   return { success: !planFailed, results: allResults };

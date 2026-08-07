@@ -128,6 +128,37 @@ export function reclaimPatch(env, { now } = {}) {
   };
 }
 
+/**
+ * Turn a structured plan's teammate-delegation signals into per-checkpoint ASSIGNEES for the
+ * baton model. The planner signals teammate work today as a delegation task (a task carrying
+ * `target_email`); under the handoff model that becomes a checkpoint assigned to that teammate,
+ * whose tasks the teammate runs as its OWN motor work on the shared mission — no nested
+ * delegation. Pure; returns a new array (input untouched). A checkpoint with an explicit
+ * `assignee` is honored as-is; a checkpoint with no teammate signal keeps the originator
+ * (assignee stays null → checkpointAssignee falls back to the originator).
+ *
+ * @param {Array} checkpoints  structured-plan checkpoints (post extractCheckpoints)
+ * @returns {Array}
+ */
+export function deriveHandoffCheckpoints(checkpoints) {
+  if (!Array.isArray(checkpoints)) return [];
+  return checkpoints.map((cp) => {
+    const tasks = Array.isArray(cp && cp.tasks) ? cp.tasks : [];
+    const deleg = tasks.find(t => t && (t.type === 'delegation' || t._step_type === 'delegation') && t.target_email);
+    const assignee = (cp && cp.assignee) || (deleg ? deleg.target_email : null);
+    if (!assignee) return cp;
+    // De-delegate: the assignee executes these as its own motor tasks on the shared mission.
+    const localTasks = tasks.map((t) => {
+      if (t && (t.type === 'delegation' || t._step_type === 'delegation')) {
+        const { type, _step_type, target_email, _specialty, ...rest } = t;
+        return { ...rest, agent: 'motor', type: 'standard' };
+      }
+      return t;
+    });
+    return { ...cp, assignee, tasks: localTasks };
+  });
+}
+
 /** True when the baton model is active per contracts (default: off / child-mission). */
 export function handoffModelEnabled(contracts) {
   return (contracts && contracts.dispatch && contracts.dispatch.delegation

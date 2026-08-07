@@ -5,6 +5,7 @@ import { normalizeTargetEmail } from '../../lib/delegation.mjs';
 import {
   buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary,
 } from '../../lib/checkpoint-spine.mjs';
+import { handoffModelEnabled, deriveHandoffCheckpoints } from '../../lib/baton.mjs';
 import { renderResources, repairIds, seedFromProse } from '../../lib/resource-ledger.mjs';
 import { findBackReferences, formatBackReference } from '../../lib/plan-lint.mjs';
 
@@ -543,6 +544,13 @@ export async function handleCheckpointPlan(ctx, deps) {
     } catch (e) {
       log('WARN', `Prefrontal plan structuring dispatch failed: ${e.message}`);
     }
+  }
+
+  // Baton model: turn the planner's teammate-delegation signals into per-checkpoint assignees,
+  // so the executor hands the WHOLE mission to the teammate (who resumes this spine) instead of
+  // spawning a child mission. No-op under the default child-mission model.
+  if (handoffModelEnabled(CONTRACTS) && checkpoints?.length > 0) {
+    checkpoints = deriveHandoffCheckpoints(checkpoints);
   }
 
   // First plan for this mission — pin the spine so later failures re-task instead of
