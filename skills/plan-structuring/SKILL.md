@@ -34,6 +34,20 @@ asked for **tasks only**, for the one checkpoint named in it.
    **unachievable** (it asks for something that cannot exist), not merely awkward. One
    refinement per checkpoint is accepted; after that the pinned wording stands, so spend it
    carefully.
+6. **A delegated checkpoint stays delegated on re-plan — re-delegate the GAP, don't take it
+   over.** If the checkpoint's work was handed to a specialist and came back partial or failed,
+   the fix is to re-DELEGATE the specific remaining gap to that SAME specialist — state what
+   they already achieved and the exact piece still open — NOT to convert the checkpoint into
+   self-executed `motor` tasks that redo their work. A product architect coordinates and
+   re-delegates; it does not take over the engineer's checkpoint. (Observed: an engineer
+   surgically made a one-word edit but its *commit* did not land cleanly; the planner re-tasked
+   the checkpoint as motor work — cloning and re-editing from scratch — instead of re-delegating
+   "commit the edit you already made, on the mission branch, with a C-23 message." The gap was
+   the commit, not the edit.)
+7. **Never plan a "clone the repo" / "checkout main" step.** The daemon has ALREADY cloned the
+   project repo and put the doer on the `mission/<missionId>` branch in the working dir — for
+   motor AND delegate tasks alike. A clone/checkout task is wasted motion that also detaches from
+   the mission branch; the doer just starts working in the existing working dir.
 
 If you conclude the *mission* is mis-shaped — a whole phase is missing, or the goal was
 misread — say so plainly in your reasoning rather than smuggling it in as extra checkpoints.
@@ -233,7 +247,9 @@ filesystem path. A concrete path you did not read is usually wrong: a real missi
 `index.html` from its root, so every attempt edited a path that did not exist. The clone root
 **is** the project root; there is no `sites/<name>/` or `<repo>/` prefix to prepend. If the
 requester named an exact file, pass that name through verbatim; otherwise describe the surface
-and let the engineer locate the real file.
+and let the engineer locate the real file. **Never plan a "clone the repo" or "checkout main"
+task** — the daemon has already put the doer in the cloned repo on the mission branch; a
+clone/checkout step is wasted motion and risks detaching from the mission branch.
 
 ### Never split a task away from the identifier it needs
 

@@ -80,10 +80,20 @@ quietly corrupt the file:
   `writeFile`/`python3`). A change that corrupts the file is not a completed change.
 
 ### Commit checkpoint work
-1. Make your file changes in the working directory.
-2. Run `work-commit "v2026.07.04.1.0: description of changes" --add-all` to commit all changes.
-3. Run `work-sync <repoId> --branch mission/<missionId>` to push to the ether.
-4. Verify: Run `work-status` to confirm clean working tree and synced state.
+You are ALREADY on your `mission/<missionId>` branch (the daemon put you there) and the repo is
+already cloned into the working dir. Do NOT `git checkout`/switch to `main`, and never commit on
+`main` — it is refused; the daemon merges your mission branch to main on completion. Just commit
+on the branch you are on.
+1. Make your file changes in the working directory (see "Edit a file in the working tree").
+2. **Confirm the diff is ONLY your change before committing.** Run `work-diff --stat` — it must
+   show just the file(s) you meant. If it lists unrelated or scratch files, do NOT `--add-all`
+   (that sweeps the whole tree — a commit carrying dozens of unintended files is a failed
+   commit); stage only your file(s) (`git add <path>`) and commit those.
+3. Commit with the **C-23** message — `work-commit "v{YYYY}.{MM}.{DD}.{index}.{subindex}: what
+   changed"` — NOT a conventional-commit `fix:`/`feat:` message. Add `--add-all` ONLY when step 2
+   confirmed every pending change is yours.
+4. Run `work-sync <repoId> --branch mission/<missionId>` to push to the ether.
+5. Verify: `work-status` shows a clean working tree on your `mission/<missionId>` branch, synced.
 
 ### Inspect what changed
 1. Run `work-status` to see which files are modified, staged, or untracked.
