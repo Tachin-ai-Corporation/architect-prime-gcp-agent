@@ -10,6 +10,7 @@
 import { getGceToken } from './gce-auth.mjs';
 import { firestoreEncode, firestoreDecode } from './firestore.mjs';
 import { validateContextEntry } from './project-context.mjs';
+import { renderDeployBlock } from './deploy-target.mjs';
 
 /**
  * Create a project registry instance.
@@ -431,6 +432,17 @@ export function createProjectRegistry(config) {
           header.push(`- **${entry.key}**: ${entry.text}`);
         }
       }
+    }
+
+    // Deploy target — the authoritative, disambiguated hosting site / GCP project / source
+    // for THIS project. A first-class field (not a context packet) so its structured
+    // subfields survive to the brain: a devops agent reads THIS instead of inferring the
+    // site from the project name (they differ — site '1health-website' lives under project
+    // 'tachin-website') or shipping a placeholder from an empty dir.
+    const deployBlock = renderDeployBlock(p.deploy);
+    if (deployBlock) {
+      header.push('');
+      header.push(deployBlock);
     }
 
     // Render team members so Cortex knows who to delegate to

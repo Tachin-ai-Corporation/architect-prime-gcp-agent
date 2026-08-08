@@ -17,6 +17,7 @@ import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket, packToolEvidence } from './result-packet.mjs';
 import { extractResources, mergeResources, renderResources, seedFromProse } from './resource-ledger.mjs';
 import { markCheckpoint, spineSummary } from './checkpoint-spine.mjs';
+import { deployTargetLine } from './deploy-target.mjs';
 import { checkpointAssignee, sameAgent, missionOriginator, handoffPatch, handoffModelEnabled } from './baton.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
@@ -817,6 +818,11 @@ export async function executeCheckpoints(checkpoints, opts) {
             log('WARN', `[delegation] Artifact publish / input pointer before delegation failed: ${e.message}`);
           }
         }
+        // Name the project's DEPLOY TARGET in the delegated instruction (belt-and-suspenders
+        // beside the delegate's own project render): the exact hosting site, GCP project, and
+        // source — so a devops delegate deploys the right content to the right site.
+        const _dtLine = deployTargetLine(PROJECTS[envelope.project_id]?.deploy);
+        if (_dtLine) taskDesc += `\n\n[DEPLOY TARGET] ${_dtLine} — deploy to THIS site/project; fetch the source first.`;
         const priorCtx = [...allResults, ...cpResults]
           .filter(r => r.success)
           .map(r => `[Prior work — ${r.agent}]: ${smartTruncate(r.result || '', contextSliceChars)}`)

@@ -62,7 +62,7 @@ export async function handleProjectBootstrap(ctx, deps) {
   const nowIso = now();
   const built = buildProjectDoc({
     id, name: spec.name, description: spec.description, goal: spec.goal, spaceId: space,
-    team, canon: spec.canon, context: spec.context, owner: ownerEmail || selfEmail, createdBy: AGENT_ID, now: nowIso,
+    team, canon: spec.canon, context: spec.context, deploy: spec.deploy, owner: ownerEmail || selfEmail, createdBy: AGENT_ID, now: nowIso,
   });
   const doc = adopted ? { ...(PROJECTS[id] || {}), ...built, created_at: (PROJECTS[id] && PROJECTS[id].created_at) || nowIso } : built;
   try {

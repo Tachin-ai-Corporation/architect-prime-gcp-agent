@@ -128,6 +128,13 @@ export const CORTEX_SCHEMAS = {
           name:    { type: 'STRING' },
           summary: { type: 'STRING' },
         }, required: ['key'] }},
+        deploy: { type: 'OBJECT', properties: {
+          platform:     { type: 'STRING' },
+          gcp_project:  { type: 'STRING' },
+          hosting_site: { type: 'STRING' },
+          source: { type: 'OBJECT', properties: { kind: { type: 'STRING' }, ref: { type: 'STRING' } } },
+          flow:         { type: 'STRING' },
+        }},
       }},
       answer: { type: 'STRING' },
       risk:   { type: 'STRING' },

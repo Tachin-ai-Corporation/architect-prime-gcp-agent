@@ -6,6 +6,8 @@
 // project_bootstrap action handler) supplies `now`, reads the fleet roster, performs the
 // Firestore writes, and re-scopes the mission. Correctness lives here where it is tested.
 
+import { normalizeDeployDescriptor, validateDeployDescriptor } from './deploy-target.mjs';
+
 const localpart = (e) => String(e || '').split('@')[0].toLowerCase().trim();
 
 /** True when the project_bootstrap action is enabled per contracts (default: off). */
@@ -88,7 +90,7 @@ export function membershipGap(requiredEmails, memberEmails) {
  * canon: [{key,text}] -> { authority:[owner], entries:[{key,text,updated_at,updated_by}] }
  * context: [{key,kind,ref,url,name,summary}] -> Context-Packet map.
  */
-export function buildProjectDoc({ id, name, description, goal, spaceId, team, canon, context, owner, createdBy, now }) {
+export function buildProjectDoc({ id, name, description, goal, spaceId, team, canon, context, deploy, owner, createdBy, now }) {
   const by = createdBy || owner || '';
   const doc = {
     id,
@@ -105,6 +107,10 @@ export function buildProjectDoc({ id, name, description, goal, spaceId, team, ca
     created_at: now,
     updated_at: now,
   };
+  // Deploy target — first-class + unambiguous (site vs GCP project), only when valid, so a
+  // devops agent reads it instead of inferring the site or shipping a placeholder.
+  const _deploy = normalizeDeployDescriptor(deploy);
+  if (_deploy && validateDeployDescriptor(_deploy).ok) doc.deploy = _deploy;
   if (Array.isArray(canon) && canon.length) {
     doc.canon = {
       authority: owner ? [owner] : [],

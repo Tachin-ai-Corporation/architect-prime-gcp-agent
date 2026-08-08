@@ -1,6 +1,7 @@
 // Action handler: delegate
 import { normalizeTargetEmail } from '../../lib/delegation.mjs';
 import { sanitizeRepoId } from '../../lib/git-store.mjs';
+import { deployTargetLine } from '../../lib/deploy-target.mjs';
 
 export async function handleDelegate(ctx, deps) {
   const { envelope, decision } = ctx;
@@ -155,6 +156,10 @@ export async function handleDelegate(ctx, deps) {
       + `  work-clone ${_delegRepoId} --ref ${_delegMissionBranch} --dir delegator-inputs\n`
       + `then read from \`delegator-inputs/\`. If a named file is absent, it was not produced — do not loop; report what is missing.`;
   }
+  // Name the project's DEPLOY TARGET in the delegated instruction (beside the delegate's
+  // own project render): the exact hosting site, GCP project, and source.
+  const _dtLine = deployTargetLine(PROJECTS[envelope.project_id]?.deploy);
+  if (_dtLine) delegateInstructionEnriched += `\n\n[DEPLOY TARGET] ${_dtLine} — deploy to THIS site/project; fetch the source first.`;
 
   const cpEnvelope = {
     id: cpId,

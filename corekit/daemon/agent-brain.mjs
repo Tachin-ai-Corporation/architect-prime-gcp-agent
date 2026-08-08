@@ -1183,12 +1183,15 @@ async function callPrefrontal(payload) {
       null, 2
     )}`);
   }
-  const envProjectId = payload.envelope?.project_id;
+  const envProjectId = payload.project_id || payload.envelope?.project_id;
   if (envProjectId && PROJECTS[envProjectId]) {
     const proj = PROJECTS[envProjectId];
     sysParts.push(`[PROJECT CONTEXT]\n${JSON.stringify({
       id: proj.id, name: proj.name, description: proj.description,
       context: proj.context || {},
+      // Deploy target (unambiguous site vs gcp project) so the planner names the right
+      // site for a deploy checkpoint instead of inferring it from the project name.
+      deploy: proj.deploy || null,
       team: (proj.team || []).map(m => ({ email: m.email, role: m.role, name: m.name, type: m.type })),
     }, null, 2)}`);
   }
@@ -1428,12 +1431,16 @@ function buildModePayload(mode, payload) {
       pending_queue: payload.pending_queue || [],
     };
     decidePayload.capability_map = CAPABILITY_MAP;
-    // Inject project context if envelope is scoped to a project
-    const envProjectId = payload.envelope?.project_id;
+    // Inject project context if envelope is scoped to a project.
+    // The trimmed decide envelope (decideArgs) omits project_id and passes it TOP-LEVEL
+    // (commit c686809) — so read the top-level first, then fall back to the nested field.
+    // Without this fallback the canon-bearing rendered_project_context (now incl. the
+    // Deployment block) never reached cortex at decide, only the canon-less registry.
+    const envProjectId = payload.project_id || payload.envelope?.project_id;
     if (envProjectId && PROJECTS[envProjectId]) {
       const proj = PROJECTS[envProjectId];
       decidePayload.project = proj;
-      
+
       // Inject rendered canon prominently for cortex to see
       const renderedCtx = buildProjectContext(envProjectId, payload.envelope?.context);
       if (renderedCtx) {
