@@ -74,6 +74,32 @@ this space — use `needs_input` to ask the operator to add that exact address, 
 Never route a new project's work through some *other* project's space — bind to the space the ask
 came from, or ask the operator.
 
+### Keep the project's context current (do this automatically — don't wait to be asked)
+A project you own or lead is a **living record**. Keep it accurate as the work moves so the next
+mission — yours or a teammate's — starts from the truth, not a stale snapshot. After any of the
+triggers below, update the project yourself with `project-manage`. Each tool is idempotent
+(re-setting the same key/member updates in place), so it is always safe to refresh.
+
+| When this happens | Update | Command |
+|---|---|---|
+| A member joins, leaves, or their role / responsibilities change | the team | `project-manage team-add <id> <email> <role> [name] [type]` (updates in place if the email is already on the team; use the JSON form `team-add <id> '{"email":"…","role":"…","name":"…","type":"agent","responsibilities":"what they do"}'` for a plain-language duty). Remove with `project-manage team-remove <id> <email>`. |
+| A durable, authoritative fact is set or changes (source of truth, a required access, a lasting convention, the deploy flow) | canon | `project-manage canon-set <id> <key> "<one durable fact>"` — re-set the same key to update it |
+| A lasting resource is created or moved (a Drive folder, a repo, a doc/sheet, a stable URL) | context packet | `project-manage add-context <id> <key> '{"kind":"drive_folder|repo|doc|sheet|url|convention","ref":"<id-or-url>","name":"…","summary":"<durable fact>"}'` |
+| The deploy target is established or changes | the deploy descriptor | `project-manage update <id> '{"deploy":{"platform":"firebase-hosting","gcp_project":"<project>","hosting_site":"<site>","source":{"kind":"drive|git","ref":"<id>"},"flow":"…"}}'` (keep hosting site and GCP project as SEPARATE fields — see Bootstrap) |
+| A secret becomes a required input (an API token, a deploy credential) | canon — **by reference only (C-8)** | `project-manage canon-set <id> <key> "Requires secret 'aps-secret-<name>'; read at use time via secret-read. Never store or paste the value."` The value stays in the secret store; the project points only at its **name**. |
+
+**What does NOT belong in project context** (the shared validator will silently drop it): this run's
+document/mission ids, transient state ("repo is at commit X", "staging currently shows Y"), history or
+past failures, or a sequence of steps / a procedure. Those belong to the mission/artifact, a process,
+or nowhere. Project context is the durable **40,000-ft view any future mission would reuse** (C-28).
+
+**Don't duplicate the machine.** The daemon already auto-mines durable facts from a completed
+mission's output into project context. Before adding, check what's already there
+(`project-manage get <id>`, `canon-list <id>`, `team-list <id>`) and only add what's genuinely missing.
+
+**Verify:** re-read with `project-manage get <id>` (or `canon-list` / `team-list`) and confirm the
+entry reads back as intended.
+
 ### Propose an Improvement Plan
 1. **Audit:** Read target files and identify the improvement opportunity.
 2. **Draft:** Write the plan as a structured document containing scope, before/after description, rubric claim, acceptance criteria, and risk notes.

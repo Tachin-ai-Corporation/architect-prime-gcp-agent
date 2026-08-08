@@ -1,7 +1,7 @@
 {
   "id": "project-ops",
   "name": "Project Operations",
-  "version": 2,
+  "version": 3,
   "description": "Procedures for managing projects, processes, and plans using CoreKit tools.",
   "author": "architect-prime",
   "origin": "specialty",
@@ -9,5 +9,5 @@
   "agent_part": "motor",
   "scripts": [],
   "requires": {},
-  "when_to_use": "When managing projects, processes, or improvement plans — creating projects, adding team members, defining processes, tracking progress."
+  "when_to_use": "When managing projects, processes, or improvement plans — creating projects, adding team members, defining processes, tracking progress, and keeping a project's context (team, roles, canon facts, resources, deploy target, secret references) current as the work moves."
 }
