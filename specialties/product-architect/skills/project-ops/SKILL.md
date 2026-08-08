@@ -84,9 +84,23 @@ triggers below, update the project yourself with `project-manage`. Each tool is 
 |---|---|---|
 | A member joins, leaves, or their role / responsibilities change | the team | `project-manage team-add <id> <email> <role> [name] [type]` (updates in place if the email is already on the team; use the JSON form `team-add <id> '{"email":"…","role":"…","name":"…","type":"agent","responsibilities":"what they do"}'` for a plain-language duty). Remove with `project-manage team-remove <id> <email>`. |
 | A durable, authoritative fact is set or changes (source of truth, a required access, a lasting convention, the deploy flow) | canon | `project-manage canon-set <id> <key> "<one durable fact>"` — re-set the same key to update it |
-| A lasting resource is created or moved (a Drive folder, a repo, a doc/sheet, a stable URL) | context packet | `project-manage add-context <id> <key> '{"kind":"drive_folder|repo|doc|sheet|url|convention","ref":"<id-or-url>","name":"…","summary":"<durable fact>"}'` |
+| A lasting resource is created or moved (a Drive file/folder, a repo, a doc/sheet, a stable URL) | context packet | `project-manage add-context <id> <key> '{"kind":"<one of the kinds below>","ref":"<id-or-url>","name":"…","summary":"<durable fact>"}'` |
 | The deploy target is established or changes | the deploy descriptor | `project-manage update <id> '{"deploy":{"platform":"firebase-hosting","gcp_project":"<project>","hosting_site":"<site>","source":{"kind":"drive|git","ref":"<id>"},"flow":"…"}}'` (keep hosting site and GCP project as SEPARATE fields — see Bootstrap) |
 | A secret becomes a required input (an API token, a deploy credential) | canon — **by reference only (C-8)** | `project-manage canon-set <id> <key> "Requires secret 'aps-secret-<name>'; read at use time via secret-read. Never store or paste the value."` The value stays in the secret store; the project points only at its **name**. |
+
+**Context `kind` is a FIXED vocabulary — and it is NOT the deploy descriptor's `source.kind`.**
+Valid context kinds: `drive_folder` (a Drive folder), `doc` (a Google Doc **or a single Drive
+file**), `sheet`, `slides`, `repo` / `git`, `url`, `resource` (any other durable thing),
+`convention` (a rule/requirement — e.g. a secret reference). A single Drive **file** is
+`kind:"doc"`; a Drive **folder** is `kind:"drive_folder"` — **never `kind:"drive"`.** (`drive` is
+only the *deploy* descriptor's `source.kind`, a different field entirely.) An out-of-vocabulary kind
+is silently coerced, so choose from this list — don't retry with variants.
+
+**One stable key per fact — re-set it, never duplicate.** `add-context`/`canon-set` update the entry
+*at that key* in place, so keep a single, stable key per fact (`source`, `deploy-secret`, …) and
+re-set THAT key to change it. Before you add, `project-manage get <id>` (or `canon-list <id>`) and
+reuse the existing key — retries that invent a fresh key each time leave the project with `source`
+**and** `source-content`, `deploy-token` **and** `deploy-secret`: noise the next mission must reconcile.
 
 **What does NOT belong in project context** (the shared validator will silently drop it): this run's
 document/mission ids, transient state ("repo is at commit X", "staging currently shows Y"), history or
