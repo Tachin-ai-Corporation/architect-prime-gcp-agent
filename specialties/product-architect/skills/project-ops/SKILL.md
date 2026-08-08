@@ -42,10 +42,23 @@ not yet linked to a project, the decision context surfaces it as `project_bootst
       { "role": "designer", "specialty": "designer",   "responsibilities": "design drafts" }
     ],
     "canon":   [ { "key": "deploy-flow", "text": "draft → staging (share URL) → owner approval → prod" } ],
-    "context": [ { "key": "source", "kind": "drive", "ref": "<drive-file-id>", "summary": "the site HTML" } ]
+    "context": [ { "key": "source", "kind": "drive", "ref": "<drive-file-id>", "summary": "the site HTML" } ],
+    "deploy":  {
+      "platform": "firebase-hosting",
+      "gcp_project": "your-gcp-project",       // firebase --project (the GCP/Firebase project)
+      "hosting_site": "your-hosting-site",     // firebase --site (the deploy TARGET; NOT the project)
+      "source": { "kind": "drive", "ref": "<drive-file-id>" },
+      "flow": "staging channel → share URL → owner approval → promote to live"
+    }
   }
 }
 ```
+**The `deploy` block is how the devops teammate knows WHERE to ship.** Name the Hosting **site**
+(the `--site` deploy target) and the GCP/Firebase **project** (`--project`) as **separate** fields —
+they are often different (a site `your-hosting-site` can live under project `your-gcp-project`), and
+conflating them deploys to the wrong place. Give `source` the canonical content locator (a Drive file
+id or a git repo) so the deploy fetches the real content, not an empty dir. The devops agent reads
+this verbatim — it does not guess the site.
 What the system does deterministically: creates `projects/{id}` bound to this space, resolves each
 teammate's **real** fleet email from the roster (name them by role/specialty — never write an
 email yourself), seeds the team/canon/context, and **re-scopes this mission to the new project**.

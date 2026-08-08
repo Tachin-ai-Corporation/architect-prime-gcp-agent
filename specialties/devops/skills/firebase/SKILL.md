@@ -50,14 +50,30 @@ The golden rule: **source from the reviewed repo, promote by cloning.** The cont
 must be the project's canonical source, and what reaches production must be the exact version the
 owner approved on staging — not a fresh rebuild of whatever is lying around.
 
+0. **Read the deploy target from the project's `## Deployment` block — do NOT infer it.** A mission
+   scoped to a project renders an authoritative Deployment block in your context (and the delegation
+   often carries a `[DEPLOY TARGET] site=… project=… source=…` line). It names two DISTINCT things:
+   the **Hosting site** (the `--site` deploy target) and the **GCP/Firebase project** (`--project`).
+   They are frequently different — e.g. site `your-hosting-site` lives under project
+   `your-gcp-project` — so **never** assume the site equals the project name, and **never** run a
+   bare `firebase deploy` (no `--site`), which silently hits the project's *default* site (a
+   different service's — you'd clobber it). Every command below carries **both** `--site <hosting_site>`
+   and `--project <gcp_project>` from this block. If the project has no Deployment block and you
+   cannot determine the site, `needs_input` and ask the operator — do not guess.
+
 1. **Get the deploy directory from the project's reviewed source — never an ad-hoc or ambient
-   tree.** Clone the project's git artifact repo into a clean directory and deploy *that*
-   (`work-clone REPO` via the workspace-git skill, or `git-store clone REPO --ref main --dir DIR`).
+   tree.** Use the `source` from the Deployment block:
+   - **`source.kind: git`/`repo`** → clone it into a clean dir and deploy *that* (`work-clone REPO`
+     via the workspace-git skill, or `git-store clone REPO --ref main --dir DIR`).
+   - **`source.kind: drive`** → the content is a Google Drive file/folder; `drive-download <ref>`
+     (workspace-drive) INTO the clean deploy dir before deploying. A fresh project's git repo is
+     often empty/placeholder — deploying it ships the 33-byte Firebase default page, so fetch the
+     real Drive source first.
    Do **not** aim `"public": "."` at your mission workspace — that ships whatever scratch is
    there (the "prod live but incomplete" failure: missing pages/images, stale `<title>`). After
-   cloning, sanity-check the inventory before deploying: `ls -R` the dir; a static site has its
-   HTML pages **and** its `images/`/assets — if the images aren't there you are about to ship a
-   broken site, so fix the source first.
+   staging the source, sanity-check the inventory before deploying: `ls -R` the dir; a static site
+   has its HTML pages **and** its `images/`/assets — if the real content isn't there you are about
+   to ship a broken or placeholder site, so fix the source first.
 2. **Write** `firebase.json` in the deploy directory yourself — **never run `firebase init`**.
    Every `init` subcommand is interactive and hangs with no TTY: it burns the whole command
    timeout, then the turn loop-guards out. Create the file directly instead, e.g.:
@@ -186,7 +202,8 @@ architecture, the hops map on as:
 | `Error: No site found` | Hosting not initialized for the project | `firebase hosting:sites:list`; create with `firebase hosting:sites:create SITE --project=PROJECT` if needed. |
 | A page's embedded Google Doc (`<iframe>`) shows nothing / stays blank | The iframe `src` uses the RAW doc form `docs.google.com/document/d/<DOC_ID>/pub?embedded=true` (returns **401**) instead of the Published-to-web form `…/document/d/e/<PUBLISH_TOKEN>/pub?embedded=true` | In Google Docs, **File → Share → Publish to web**, copy that embed URL (it contains `/d/e/<token>/`) and use it in the iframe. The publish token **cannot** be derived from the doc id — if you lack access, ask the doc owner for the published URL. Quick check: `curl -s -o /dev/null -w '%{http_code}' <src>` → 200 = embeddable, 401 = not published. |
 | Deployed page 200s but renders blank below the hero / first section | Shipped a source file with corrupted inline JS — an upstream edit escaped its quotes (`'`→`\'`), so the script that reveals lower sections throws | Do NOT promote. `curl` the served HTML and `grep "\\'"` — stray backslash-quotes confirm it. Fix the source edit (see system-shell "quote trap"), redeploy to the preview channel, re-verify whole-page render, then promote. To recover a broken live/staging channel fast, clone the last-good version back: `firebase hosting:clone SITE:live SITE:staging` (or a REST version-release of the good version to the channel). |
-| Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Project has multiple Hosting sites and `firebase.json` names none, so it used the default site | Add `"site": "SITE_ID"` to the `hosting` object (list sites with `firebase hosting:sites:list`), or map a target with `firebase target:apply hosting TARGET SITE` and deploy `--only hosting:TARGET`. Re-deploy to the correct site. |
+| Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Ran a bare deploy / `firebase.json` names no site, so it hit the project's default site — often because the site was inferred from the GCP project name (they differ) | Read the project's `## Deployment` block for the authoritative `hosting_site`; add `"site": "<hosting_site>"` to the `hosting` object (and always pass `--site`/`--project`), or map a target with `firebase target:apply hosting TARGET SITE`. Re-deploy to the correct site. |
+| Staging/live URL 200s but serves the 33-byte Firebase default page (`Hello, Firebase Hosting!`) or a stub, not the real site | Deployed an empty/placeholder dir — the project's real source (often a Drive file, or an empty freshly-created repo) was never fetched into the deploy dir | `drive-download <source.ref>` (or clone the source repo) INTO the clean deploy dir per Deploy step 1, confirm the real files are present (`ls -R`), then redeploy to the preview channel and re-verify the served bytes match the source. |
 | `firebase init` hangs, times out (~120s), then the turn loop-guards out | `init` is interactive and blocks forever with no TTY | **Never run `firebase init` (or any `init` subcommand).** Write `firebase.json` directly (Deploy step 2), then deploy with `hosting:channel:deploy` / `deploy --only hosting`. Deploying needs no init. |
 | Deploy reports **0 files** | `hosting.public` points at the wrong directory | Point `public` at the directory holding the files (`.` when `firebase.json` sits with them); redeploy. |
 | Prod went live but content is **incomplete or wrong** (missing pages/images, stale `<title>`) | Deployed the ambient mission workspace (`public:"."`) instead of the project's reviewed source | Promote the approved **staging** version rather than rebuilding: `firebase hosting:clone SITE:staging SITE:live` (or a REST version-release of the reviewed version). Then always deploy from a clean clone of the project repo, never the scratch tree; re-verify `/` + a page + an image. |
