@@ -203,6 +203,15 @@ export interface Project {
       updated_by?: string;
     }>;
   };
+  // Authoritative deploy target — the hosting site (deploy target) and GCP project are
+  // DISTINCT fields so a devops agent never confuses one for the other.
+  deploy?: {
+    platform: string;
+    gcp_project?: string;
+    hosting_site?: string;
+    source?: { kind: string; ref: string } | null;
+    flow?: string;
+  };
   created_at: string;
   updated_at: string;
 }

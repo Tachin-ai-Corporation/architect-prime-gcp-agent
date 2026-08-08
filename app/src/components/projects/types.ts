@@ -30,6 +30,14 @@ export interface ProjectDetail extends ProjectSummary {
   context: Record<string, ContextEntry>;
   standardProcesses?: string[];
   canon?: Canon;
+  // Authoritative deploy target (hosting site vs GCP project kept distinct).
+  deploy?: {
+    platform: string;
+    gcp_project?: string;
+    hosting_site?: string;
+    source?: { kind: string; ref: string } | null;
+    flow?: string;
+  };
 }
 
 export interface ProcessSummary {
