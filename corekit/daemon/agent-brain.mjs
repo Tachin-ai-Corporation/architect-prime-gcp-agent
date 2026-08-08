@@ -1541,9 +1541,19 @@ function buildModePayload(mode, payload) {
       };
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
-        decidePayload.dispatch_guidance.process_preference = 
+        decidePayload.dispatch_guidance.process_preference =
           `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`;
       }
+    }
+    // When project_bootstrap is the required first step (mission on an unlinked space), REPLACE
+    // the "use checkpoint_plan" mandate above with a bootstrap-first directive — otherwise the two
+    // conflict and cortex loops on checkpoint_plan (whose delegations cannot deliver with no space).
+    if (decidePayload.project_bootstrap_available) {
+      decidePayload.dispatch_guidance = {
+        rule: 'This request arrived on a chat space that has NO project yet, so your FIRST action MUST be project_bootstrap (see project_bootstrap_available). Do NOT use checkpoint_plan or delegate now — with no project there is no delivery route, they cannot succeed, and you will loop. project_bootstrap creates the project bound to THIS space and re-scopes the mission.',
+        form: decidePayload.project_bootstrap_available.form,
+        then: 'Only AFTER project_bootstrap returns do you plan the real work (edit, deploy, etc.) with checkpoint_plan in the now-created project.',
+      };
     }
     // CP-5: Inject GOAL STATE block for missions with accept criteria
     if (CONTRACTS.dispatch?.goal_state_enabled !== false && payload.envelope?.accept_criteria) {
@@ -4154,6 +4164,30 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
         if (_activeGuard.context) Object.assign(decision, _activeGuard.context);
       }
       _activeGuard = null; // One-shot: guard expires after one check
+    }
+
+    // Deterministic bootstrap steering (project_bootstrap): a mission on a chat space with NO
+    // project cannot checkpoint_plan/delegate to success — there is no delivery route, so it
+    // loops (checkpoint_plan → delegation can't deliver → re-plan → needs_input). If cortex
+    // avoids project_bootstrap here, reject-and-redirect up to twice, then block cleanly rather
+    // than loop. Self-disables the instant a project exists for the space (post-bootstrap
+    // re-scope makes envelope.project_id carry a gchat_space_id), so delivery planning is untouched.
+    if (projectBootstrapEnabled(CONTRACTS)
+        && (action === 'checkpoint_plan' || action === 'delegate')
+        && (SKILL_INDEX || []).some(s => s.id === 'project-ops')
+        && missionOriginSpace(envelope)
+        && !(envelope.project_id && PROJECTS[envelope.project_id]?.gchat_space_id)) {
+      envelope._pb_nudges = (envelope._pb_nudges || 0) + 1;
+      if (envelope._pb_nudges <= 2) {
+        log('WARN', `[project_bootstrap] rejecting '${action}' on unlinked space ${missionOriginSpace(envelope)} — redirecting to project_bootstrap (nudge ${envelope._pb_nudges})`);
+        priorResults.push({ agent: 'system', result: `[SYSTEM] REJECTED action "${action}": this mission is on GChat space ${missionOriginSpace(envelope)}, which has NO project yet — so "${action}" has no delivery route and cannot succeed (this is why it loops). Respond NOW with { "action": "project_bootstrap", "project": { "name": "...", "goal": "...", "team": [ {"role":"engineer","specialty":"engineer","responsibilities":"..."}, {"role":"devops","specialty":"devops","responsibilities":"..."}, {"role":"designer","specialty":"designer","responsibilities":"..."} ], "canon": [...], "context": [...] } }. The chat this arrived on IS the project's space. Plan/delegate the actual work AFTER the project exists.` });
+        continue;
+      }
+      log('ERROR', `[project_bootstrap] cortex avoided project_bootstrap after 2 redirects on ${envelope.id} — blocking rather than looping`);
+      action = 'blocked';
+      decision.action = 'blocked';
+      decision.blocker = decision.blocker || 'This request needs a new project stood up (its chat space is not linked to any project yet), but the bootstrap step did not run. Create the project from the dashboard, or re-send the request.';
+      decision.blocker_type = 'setup_incomplete';
     }
 
     // Phase 2.3: Dispatch table lookup for all 8 action handlers
