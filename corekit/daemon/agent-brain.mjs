@@ -155,7 +155,7 @@ const CORTEX_ROUTE = CONTRACTS.agents?.gatewayRoute || 'brain/cortex';
 // Brain's own LLM â€” used ONLY for simple textâ†’text summarization via direct
 // Vertex AI calls (not through gateway). Classify/decide/synthesize always use
 // cortex through the gateway. See summarizeViaVertex() below.
-const BRAIN_MODEL = CONTRACTS.dispatch?.model || 'gemini-2.5-flash';
+const BRAIN_MODEL = CONTRACTS.dispatch?.model || 'gemini-3.5-flash';
 const BRAIN_ROUTE = CORTEX_ROUTE;  // classify/decide/synthesize always use cortex
 
 // ---- Project contracts config ----

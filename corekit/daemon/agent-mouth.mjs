@@ -76,7 +76,7 @@ try {
 } catch {}
 const MOUTH_CFG = CONTRACTS.mouth || {};
 const LLM_ENABLED = MOUTH_CFG.llm_enabled !== false;
-const LLM_MODEL = MOUTH_CFG.model || 'gemini-2.5-flash';
+const LLM_MODEL = MOUTH_CFG.model || 'gemini-3.5-flash';
 const LLM_MAX_TOKENS = MOUTH_CFG.maxTokens || 8192;
 const LLM_TEMPERATURE = MOUTH_CFG.temperature ?? 0.1;
 const STATUS_ENABLED = MOUTH_CFG.status_updates?.enabled !== false;

@@ -20,7 +20,7 @@
 # Environment:
 #   AGENT_ID     — Agent identifier (default: prime)
 #   CORE_DIR     — CoreKit host root (default: /opt/corekit)
-#   GEMINI_MODEL — Model to use (default: from contracts.json or gemini-2.5-flash)
+#   GEMINI_MODEL — Model to use (default: from contracts.json or gemini-3.5-flash)
 #   REGION       — GCP region (default: from contracts.json or global)
 # ============================================================
 set -euo pipefail
@@ -31,10 +31,10 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 
 # Read defaults from contracts.json if available
 CONTRACTS_FILE="${CORE_DIR}/corekit/contracts.json"
-DEFAULT_MODEL="gemini-2.5-flash"
+DEFAULT_MODEL="gemini-3.5-flash"
 DEFAULT_REGION="global"
 if [[ -f "$CONTRACTS_FILE" ]]; then
-  DEFAULT_MODEL="$(python3 -c "import json; print(json.load(open('$CONTRACTS_FILE')).get('vertex',{}).get('subagentModel','gemini-2.5-flash'))" 2>/dev/null || echo "gemini-2.5-flash")"
+  DEFAULT_MODEL="$(python3 -c "import json; print(json.load(open('$CONTRACTS_FILE')).get('vertex',{}).get('subagentModel','gemini-3.5-flash'))" 2>/dev/null || echo "gemini-3.5-flash")"
   DEFAULT_REGION="$(python3 -c "import json; print(json.load(open('$CONTRACTS_FILE')).get('vertex',{}).get('location','global'))" 2>/dev/null || echo "global")"
 fi
 

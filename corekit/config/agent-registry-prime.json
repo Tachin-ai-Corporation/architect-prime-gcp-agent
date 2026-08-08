@@ -1,11 +1,11 @@
 {
-  "version": "1.2",
+  "_model_field_note": "This file carries per-organ SAMPLING params (max_tokens, temperature, top_p) and routes — NOT model selection. The gateway resolves the model from contracts.vertex.models, then any workspace-<organ>/config.json override (corekit/brain/config.mjs). A decorative 'model' field used to sit on every organ here; it read as authoritative, was never consulted for selection (the daemon dispatches by route; config.mjs picks the model), and had drifted to name models the agent does not run. It was removed rather than synced, because two places claiming to choose the model is the defect. To change a model, edit contracts.vertex.models.",
+  "version": "1.3",
   "agent_id": "prime",
   "job": "prime",
   "agents": {
     "cortex": {
       "route": "brain/cortex",
-      "model": "gemini-3.1-pro-preview",
       "intents": ["classify", "decide", "synthesize", "short_circuit"],
       "tools": [],
       "description": "Guiding intelligence. Classifies intake, decides actions, synthesizes results.",
@@ -16,7 +16,6 @@
     },
     "temporal-memory": {
       "route": "brain/temporal-memory",
-      "model": "gemini-2.5-flash",
       "intents": ["recall", "write"],
       "tools": ["core-memory-read", "core-memory-write", "core-memory-retire", "session-summary", "update-deep-truths"],
       "description": "Memory recall and storage. Searches long-term memory by query, reads/writes core identity facts.",
@@ -27,7 +26,6 @@
     },
     "motor": {
       "route": "brain/motor",
-      "model": "gemini-2.5-flash",
       "intents": ["execute"],
       "tools": [
         "drive-ls", "drive-upload", "drive-mkdir", "drive-mv", "drive-cat", "drive-find", "drive-meta", "drive-share", "drive-trash",
@@ -45,7 +43,6 @@
     },
     "cerebellum": {
       "route": "brain/cerebellum",
-      "model": "gemini-2.5-flash",
       "intents": ["verify"],
       "tools": [],
       "description": "Verification agent. Evaluates results against acceptance criteria. Returns structured pass/fail verdicts with evidence.",
@@ -56,7 +53,6 @@
     },
     "temporal-research": {
       "route": "brain/temporal-research",
-      "model": "gemini-2.5-flash",
       "intents": ["research"],
       "tools": ["vertex-grounding-search", "web-fetch"],
       "description": "Web search and page content extraction. Uses Vertex AI grounding for search queries and web-fetch for reading specific URLs. Returns research findings with sources and provenance.",
@@ -67,7 +63,6 @@
     },
     "prefrontal": {
       "route": "brain/prefrontal",
-      "model": "gemini-2.5-flash",
       "intents": ["plan"],
       "tools": [],
       "description": "Deep planning specialist. Decomposes complex tasks into checkpoint plans or sequential task plans. Also designs responsibility process documentation.",

@@ -66,13 +66,13 @@ GChat message → agent-ears → intake (Firestore) → agent-brain → work env
 | `AGENT_ID` | `process.env.AGENT_ID` | Short agent name (e.g. `stan`) |
 | `AGENT_EMAIL` | `process.env.AGENT_USER_EMAIL` | Full email (often empty!) |
 | `PRIME_ID` | `process.env.PRIME_ID` | Prime identifier (e.g. `chucknorris`) |
-| `BRAIN_MODEL` | `contracts.dispatch.model` | Model for summarization (default: `gemini-2.5-flash`) |
+| `BRAIN_MODEL` | `contracts.dispatch.model` | Model for summarization (default: `gemini-3.5-flash`) |
 | `CORTEX_ROUTE` | `contracts.agents.gatewayRoute` | Gateway route for Cortex calls |
 | `FIRESTORE_BASE` | computed | `https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents` |
 
 ## Common Pitfalls
 
-### 1. Gemini 2.5 Flash Thinking Model
+### 1. Gemini Flash Thinking Model
 - Response has multiple `parts`: `parts[0]` = thought (may be empty/tiny), `parts[1+]` = actual text
 - `summarizeViaVertex()` extracts the **last non-thought** text part
 - For trivial tasks (titles), use `disableThinking: true` via `thinkingConfig: { thinkingBudget: 0 }`

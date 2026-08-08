@@ -8,7 +8,7 @@
     "models": {
       "cortex": "vertex-anthropic/claude-opus-4-6",
       "cortexFallback": "vertex-google/gemini-2.5-pro",
-      "subagent": "vertex-google/gemini-2.5-flash",
+      "subagent": "vertex-google/gemini-3.5-flash",
       "subagentStrong": "vertex-google/gemini-2.5-pro"
     },
     "_strong_model_comment": "Phase E (CR-9): mechanism to route the planning/execution organs (prefrontal, motor) to the stronger `subagentStrong` (gemini-2.5-pro). Wired end-to-end (config.mjs picks subagentStrong when opts.strong; the gateway sets strong for agents in this list, or when a caller passes strong:true; a strong request wins over a per-agent workspace model pin). Currently DISABLED (empty list → whole fleet stays on flash): a live canary showed pro improves planning coherence (removed a hallucinated premise, correct state assessment) but adds ~10x latency and did NOT close a hard 2-agent code+deploy mission that is ALSO blocked by failure-memory over-planning (CR-8) and motor git/firebase command reliability. Re-enabling is a cost/latency decision — put the agent ids back in this list.",
@@ -23,7 +23,7 @@
     "context_windows": {
       "claude-opus-4-6": 200000,
       "gemini-2.5-pro": 1048576,
-      "gemini-2.5-flash": 1048576
+      "gemini-3.5-flash": 1048576
     }
   },
   "agents": {
@@ -68,7 +68,7 @@
     "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
   },
   "dispatch": {
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.5-flash",
     "poll_interval_ms": 3000,
     "max_iterations": 50,
     "gateway_timeout_ms": 300000,
@@ -160,14 +160,14 @@
     "mention_match": "annotation",
     "preprocess": {
       "enabled": true,
-      "model": "gemini-2.5-flash",
+      "model": "gemini-3.5-flash",
       "maxTokens": 2000,
       "temperature": 0.0
     }
   },
   "mouth": {
     "llm_enabled": true,
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.5-flash",
     "maxTokens": 2000,
     "temperature": 0.1,
     "fallback": "deliver_raw",
@@ -246,7 +246,7 @@
     "archive_completed_after_days": 30
   },
   "utility": {
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.5-flash",
     "location": "us-central1",
     "maxTokens": {
       "summarize": 1024,

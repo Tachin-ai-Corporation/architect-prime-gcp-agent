@@ -138,8 +138,8 @@ for AGENT_ID_ITEM in cortex ${C_SUBAGENT_IDS}; do
 import json
 c = json.load(open('${CONTRACTS}'))
 agent_config = {
-  'model': c['vertex']['models'].get('cortex' if '${AGENT_ID_ITEM}' == 'cortex' else 'subagent', 'vertex-google/gemini-2.5-flash'),
-  'fallbackModel': c['vertex']['models'].get('cortexFallback', 'vertex-google/gemini-2.5-flash'),
+  'model': c['vertex']['models'].get('cortex' if '${AGENT_ID_ITEM}' == 'cortex' else 'subagent', 'vertex-google/gemini-3.5-flash'),
+  'fallbackModel': c['vertex']['models'].get('cortexFallback', 'vertex-google/gemini-3.5-flash'),
   'maxSteps': c['dispatch']['max_iterations'],
 }
 json.dump(agent_config, open('${AGENT_DIR}/config.json', 'w'), indent=2)

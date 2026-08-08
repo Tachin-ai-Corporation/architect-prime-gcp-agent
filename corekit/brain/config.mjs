@@ -68,9 +68,9 @@ export function loadAgentConfig(agentId, opts = {}) {
   const vertexCfg = contracts.vertex || {};
   const models = vertexCfg.models || {};
   const defaultModel = agentId === 'cortex'
-    ? (models.cortex || 'vertex-google/gemini-2.5-flash')
-    : (models.subagent || 'vertex-google/gemini-2.5-flash');
-  const fallbackModel = models.cortexFallback || 'vertex-google/gemini-2.5-flash';
+    ? (models.cortex || 'vertex-google/gemini-3.5-flash')
+    : (models.subagent || 'vertex-google/gemini-3.5-flash');
+  const fallbackModel = models.cortexFallback || 'vertex-google/gemini-3.5-flash';
   // Phase E (CR-9): a strong-tier request routes a subagent to `subagentStrong`
   // (gemini-2.5-pro). It must win over BOTH the contracts default AND any per-agent
   // workspace config.json `model` pin — workspace-motor/-prefrontal pin flash, and that

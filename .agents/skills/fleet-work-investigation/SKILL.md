@@ -155,7 +155,7 @@ done
 3. Only M-type envelopes get delivered; C and T are always `internal`
 
 ### Title showing as fallback/truncated
-1. `summarizeViaVertex` uses Gemini 2.5 Flash which has thinking enabled by default
+1. `summarizeViaVertex` uses Gemini Flash which has thinking enabled by default
 2. Response `parts[0]` is the thought, `parts[1+]` is the answer
 3. Title generation uses `disableThinking: true` to avoid this
 4. Check brain DEBUG logs for `summarizeViaVertex result: N chars`
