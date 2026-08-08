@@ -1477,8 +1477,12 @@ function buildModePayload(mode, payload) {
     // action binds a new project to THIS space and re-scopes the mission so delivery can then
     // delegate through it. Gated on the flag + the project-ops skill (PM/lead role only).
     if (projectBootstrapEnabled(CONTRACTS) && (SKILL_INDEX || []).some(s => s.id === 'project-ops')) {
-      const _originSpace = missionOriginSpace(payload.envelope);
-      const _curSpace = envProjectId && PROJECTS[envProjectId]?.gchat_space_id;
+      // The decide envelope projection is trimmed (no source_meta/project_id), so the origin
+      // space is passed in explicitly by the caller (computed from the FULL envelope). Fall
+      // back to the projection for any path that still carries source_meta.
+      const _originSpace = payload.origin_space || missionOriginSpace(payload.envelope);
+      const _pid = payload.project_id || envProjectId;
+      const _curSpace = _pid && PROJECTS[_pid]?.gchat_space_id;
       if (_originSpace && !_curSpace) {
         decidePayload.project_bootstrap_available = {
           origin_space: _originSpace,
@@ -3944,6 +3948,10 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
         context_summary: envelope.context_summary,
         conversation_context: envelope.conversation_context || null,
       },
+      // Trimmed projection above omits source_meta/project_id (context economy); pass the
+      // fields the decide-payload builder needs from the FULL envelope explicitly.
+      origin_space: missionOriginSpace(envelope),
+      project_id: envelope.project_id,
       memory,
       envelope_context: envelopeContext,
       prior_results: priorResults,
