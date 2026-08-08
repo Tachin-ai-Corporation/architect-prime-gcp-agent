@@ -1482,11 +1482,13 @@ function buildModePayload(mode, payload) {
       if (_originSpace && !_curSpace) {
         decidePayload.project_bootstrap_available = {
           origin_space: _originSpace,
-          note: `This request arrived on GChat space "${_originSpace}", which is NOT yet linked to a project — this mission fell back to a default project with no comms space, so you cannot delegate from it yet.`,
+          note: `This request arrived on GChat space "${_originSpace}", which is NOT yet linked to a project — this mission fell back to a default project with no comms space, so you cannot delegate or plan project work from it yet.`,
           when: 'If the ask is to SET UP / CREATE / BOOTSTRAP a new project (its own team + this chat as its channel), respond with project_bootstrap. It binds a new project to THIS space, seeds the team, and re-scopes this mission to it — then you plan and delegate the real work normally.',
+          precedence: 'This OVERRIDES the "use checkpoint_plan" guidance for a project-setup ask: do NOT checkpoint_plan or delegate work into a project that does not exist yet — that is exactly what fails here (no space → delegation cannot deliver, and you loop into needs_input). Bootstrap FIRST with project_bootstrap; the mission then auto-continues and you checkpoint_plan the delivery in the now-created project. Do not ask the operator to create the project or to pick a space — creating it from THIS space is your job now.',
           form: '{ "action": "project_bootstrap", "project": { "name": "...", "description": "...", "goal": "...", "team": [ {"role":"engineer","specialty":"engineer","responsibilities":"..."}, {"role":"devops","specialty":"devops","responsibilities":"..."} ], "canon": [ {"key":"deploy-flow","text":"..."} ], "context": [ {"key":"source","kind":"drive","ref":"<id>","summary":"..."} ] } }',
           boundary: 'Name teammates by role/specialty — the system resolves their real fleet emails; never invent one. You CANNOT add teammates to the chat space (operator only). After bootstrap, if a delegation reports it was not delivered, use needs_input to ask the operator to add that teammate to this space.',
         };
+        log('INFO', `[TELEMETRY] project_bootstrap_offered mission=${payload.envelope?.id} space=${_originSpace}`);
       }
     }
     // Inject Brief from ANALYZE phase when present
