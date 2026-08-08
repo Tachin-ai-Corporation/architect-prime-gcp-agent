@@ -156,6 +156,34 @@ export function rebuildFromSpine(spine) {
 }
 
 /**
+ * Finalize gate (B-28/B-1): a mission with a pinned spine must not be reported
+ * COMPLETE while its DELIVERABLE checkpoint is unmet. The last spine entry is the
+ * deliverable (a delivery mission ends "report the staging URL"); if it is not
+ * `complete`, a plain `synthesize` would be claiming success the work never reached
+ * — the false-green that let a 4-checkpoint delivery terminate `complete` with
+ * CP2/3/4 pending and an empty deliverable after the review delegation looped.
+ *
+ * Returns null when finalize is allowed (no spine, or the terminal checkpoint is
+ * complete — a mission may legitimately finish early). Otherwise returns the unmet
+ * checkpoints so the caller can escalate honestly (needs_input / synthesize_with_failure)
+ * naming exactly what is outstanding, instead of papering over it.
+ *
+ * Pure (B-19).
+ *
+ * @param {Array} spine
+ * @returns {null | {unmet: Array<{n:number, outcome:string, status:string}>, terminal: {n:number, outcome:string}}}
+ */
+export function finalizeBlockedBySpine(spine) {
+  const s = Array.isArray(spine) ? spine : [];
+  if (s.length === 0) return null;                 // no spine → answer-only mission, no gate
+  const last = s[s.length - 1];
+  if (isComplete(last)) return null;               // deliverable checkpoint done → finalize allowed
+  const unmet = s.filter(e => !isComplete(e))
+    .map(e => ({ n: e.n, outcome: e.outcome || `Checkpoint ${e.n}`, status: e.status || 'pending' }));
+  return { unmet, terminal: { n: last.n, outcome: last.outcome || `Checkpoint ${last.n}` } };
+}
+
+/**
  * One-line shape for logs and telemetry, e.g. "3cp 1✓ 1▸ 1·".
  *
  * @param {Array} spine

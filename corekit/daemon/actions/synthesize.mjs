@@ -2,6 +2,7 @@
 
 import { extractVerdict, extractFailSummary, extractProbes, stakesAtLeast } from '../../lib/verdict.mjs';
 import { filterProjectContext, validateContextEntry } from '../../lib/project-context.mjs';
+import { finalizeBlockedBySpine } from '../../lib/checkpoint-spine.mjs';
 
 // Pure exemption predicate — determines if verification can be skipped.
 function isSynthExempt(envelope, contracts = {}) {
@@ -62,6 +63,39 @@ export async function handleSynthesize(ctx, deps) {
       }],
       activeGuard: { forbidden: 'synthesize', fallback: 'checkpoint_plan', injectedAt: iteration },
     };
+  }
+
+  // FC-A (B-28/B-1): a mission with a pinned spine must not synthesize a COMPLETE while
+  // its DELIVERABLE checkpoint is unmet. The 1health delivery false-completed with CP2/3/4
+  // pending and an empty deliverable after the review delegation looped — a synthesized
+  // "done" the work never reached. Fail-closed: steer to an honest escalation, and on the
+  // last iteration terminate as needs_input directly so no false-green ever escapes.
+  if (deps.CONTRACTS?.dispatch?.finalize_requires_spine_complete) {
+    const gate = finalizeBlockedBySpine(envelope._cp_spine);
+    if (gate) {
+      const unmetList = gate.unmet.map(u => `CP${u.n} (${u.status}): ${u.outcome}`).join('; ');
+      log('WARN', `[synthesize] False-complete blocked on ${envelope.id} — deliverable checkpoint unmet: ${unmetList}`);
+      log('INFO', `[TELEMETRY] finalize_blocked_spine mission=${envelope.id} unmet=${gate.unmet.length} terminal_cp=${gate.terminal.n} iter=${iteration}`);
+      if (iteration < MAX_ITERATIONS - 1) {
+        return {
+          continue: true,
+          activeGuard: { forbidden: 'synthesize', fallback: 'needs_input', injectedAt: iteration },
+          priorResultsAppend: [{
+            agent: 'system',
+            result: `[SYSTEM] Cannot synthesize COMPLETE: the deliverable checkpoint "${gate.terminal.outcome}" is not done (unmet: ${unmetList}). There is no result to report. Either (1) dispatch to finish the outstanding checkpoint(s), or (2) if a delegate cannot proceed / an input or access is missing, use "needs_input" to escalate to the operator with exactly what is needed. Do NOT report this mission complete.`,
+          }],
+        };
+      }
+      // Last iteration — terminate honestly rather than let a false-complete through.
+      await completeEnvelope(envelope, {
+        status: 'needs_input',
+        output: `I could not complete this mission. The deliverable checkpoint "${gate.terminal.outcome}" did not finish (unmet: ${unmetList}). I've stopped rather than report a result I don't have — please advise how you'd like to proceed.`,
+        historyDetail: 'Finalize blocked: deliverable checkpoint unmet (fail-closed)',
+        skipArtifacts: true, skipMemory: true, skipCleanup: true,
+        tokenUsage: _tokenUsage,
+      });
+      return { exit: true };
+    }
   }
 
   // B-30: Compose answer-first output when cortex provides structured fields.

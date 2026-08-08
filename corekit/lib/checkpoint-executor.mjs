@@ -799,7 +799,11 @@ export async function executeCheckpoints(checkpoints, opts) {
               + `of repo \`${repoId}\` in the shared git store (they may not yet be on \`main\`). `
               + `Before you depend on a named input file, retrieve them:\n`
               + `  work-clone ${repoId} --ref ${missionBranch} --dir delegator-inputs\n`
-              + `then read from the \`delegator-inputs/\` directory. If a named file is absent there, it was not produced — do not loop; report what is missing.`;
+              + `then read from the \`delegator-inputs/\` directory. If the branch is EMPTY or a named input `
+              + `is absent there, it simply was not committed to the branch — this is NOT a blocker and NOT a `
+              + `reason to loop or report failure. Fetch the input from its DURABLE source instead: your project `
+              + `context and this instruction carry the canonical locators (a Drive file id, a source repo, a doc) — `
+              + `retrieve from there (e.g. \`drive-download <id>\`) and proceed. Report a missing input only if it exists in NO durable source.`;
             if (manifest && manifest.kind === 'artifact_manifest' && Array.isArray(manifest.files) && manifest.files.length) {
               const fileList = manifest.files.slice(0, 25)
                 .map(f => `  - ${typeof f === 'string' ? f : (f.path || f.name || '')}`)

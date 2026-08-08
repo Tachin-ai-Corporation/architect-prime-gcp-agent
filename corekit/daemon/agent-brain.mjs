@@ -44,7 +44,7 @@ import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
 import { createArtifactManager } from '../corekit/lib/artifacts.mjs';
 import { createNotifier } from '../corekit/lib/notifications.mjs';
 import { createHistoryWriter } from '../corekit/lib/history.mjs';
-import { composeDelegationMarker, composeDelegationResultMarker, summarizeDelegationResult, delegationResultAgent } from '../corekit/lib/delegation.mjs';
+import { composeDelegationMarker, composeDelegationResultMarker, summarizeDelegationResult, delegationResultAgent, bumpRedelegation, redelegationKey, composeRedelegationEscalation } from '../corekit/lib/delegation.mjs';
 import { makeAddress } from '../corekit/lib/channel.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
 import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
@@ -103,6 +103,19 @@ if (process.env.AGENT_PROJECT_BOOTSTRAP) {
   CONTRACTS.dispatch = CONTRACTS.dispatch || {};
   CONTRACTS.dispatch.project_bootstrap = { ...(CONTRACTS.dispatch.project_bootstrap || {}), enabled: process.env.AGENT_PROJECT_BOOTSTRAP === 'on' };
   console.log(`[brain] project_bootstrap override from env: ${process.env.AGENT_PROJECT_BOOTSTRAP}`);
+}
+// Per-VM overrides for the delivery-robustness guards (FC-A/FC-B) — canary WITHOUT a global flip.
+// `AGENT_FINALIZE_SPINE_GUARD=on` forbids a false-complete while the deliverable checkpoint is unmet;
+// `AGENT_REDELEG_CAP=on` bounds re-delegation of a repeatedly-failing checkpoint → operator escalation.
+if (process.env.AGENT_FINALIZE_SPINE_GUARD) {
+  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
+  CONTRACTS.dispatch.finalize_requires_spine_complete = process.env.AGENT_FINALIZE_SPINE_GUARD === 'on';
+  console.log(`[brain] finalize_requires_spine_complete override from env: ${process.env.AGENT_FINALIZE_SPINE_GUARD}`);
+}
+if (process.env.AGENT_REDELEG_CAP) {
+  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
+  CONTRACTS.dispatch.redelegation_cap_enabled = process.env.AGENT_REDELEG_CAP === 'on';
+  console.log(`[brain] redelegation_cap_enabled override from env: ${process.env.AGENT_REDELEG_CAP}`);
 }
 
 // ---- Config ----
@@ -4983,6 +4996,30 @@ async function checkWaitingEnvelopes() {
 
         const parent = await firestoreRead('work', waiting.parent_id);
         if (parent && parent.status === 'active') {
+          // FC-B: bound re-delegation of a repeatedly-failing checkpoint (see Phase B twin).
+          if (!cAllOk && CONTRACTS?.dispatch?.redelegation_cap_enabled) {
+            const cap = CONTRACTS?.dispatch?.redelegation_max ?? 2;
+            const key = redelegationKey(waiting);
+            const bumped = bumpRedelegation(parent._cp_redeleg, key, cap);
+            parent._cp_redeleg = bumped.counters;
+            if (bumped.exceeded) {
+              const firstFail = childResults.find(r => !r.success) || {};
+              log('WARN', `[TELEMETRY] redelegation_capped mission=${parent.id} cp="${key}" attempts=${bumped.attempts}`);
+              await completeEnvelope(parent, {
+                status: 'needs_input',
+                output: composeRedelegationEscalation({
+                  goal: parent.goal || parent.instruction,
+                  checkpointOutcome: waiting.title || waiting.instruction,
+                  agentLabel: firstFail.agent,
+                  reason: firstFail.result,
+                  attempts: bumped.attempts,
+                }),
+                historyDetail: `Re-delegation cap (${bumped.attempts}) hit on checkpoint`,
+                skipArtifacts: true, skipMemory: true, skipCleanup: true,
+              });
+              continue;
+            }
+          }
           parent.status = 'queued';
           parent.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;
           if (!cAllOk) parent._cp_progress = null; // force cortex re-entry, not mechanical resume
@@ -5077,6 +5114,34 @@ async function checkWaitingEnvelopes() {
           child.output = delegationSummary;
           child.updated_at = now();
           await firestoreWrite('work', childId, child);
+
+          // FC-B: bound re-delegation of a repeatedly-failing checkpoint. Unbounded, a
+          // delegate that structurally cannot succeed loops — the 1health review re-delegated
+          // ~6× over 35 min, then false-completed. After the cap, escalate to the operator
+          // honestly instead of clearing _cp_progress for yet another cortex → re-delegate round.
+          if (!cpAllOk && CONTRACTS?.dispatch?.redelegation_cap_enabled) {
+            const cap = CONTRACTS?.dispatch?.redelegation_max ?? 2;
+            const key = redelegationKey(child);
+            const bumped = bumpRedelegation(active._cp_redeleg, key, cap);
+            active._cp_redeleg = bumped.counters;
+            if (bumped.exceeded) {
+              const firstFail = cpResults.find(r => !r.success) || {};
+              log('WARN', `[TELEMETRY] redelegation_capped mission=${active.id} cp="${key}" attempts=${bumped.attempts}`);
+              await completeEnvelope(active, {
+                status: 'needs_input',
+                output: composeRedelegationEscalation({
+                  goal: active.goal || active.instruction,
+                  checkpointOutcome: child.title || child.instruction,
+                  agentLabel: firstFail.agent,
+                  reason: firstFail.result,
+                  attempts: bumped.attempts,
+                }),
+                historyDetail: `Re-delegation cap (${bumped.attempts}) hit on checkpoint`,
+                skipArtifacts: true, skipMemory: true, skipCleanup: true,
+              });
+              break;
+            }
+          }
 
           active.status = 'queued';
           active.context_forward = `[DELEGATION RESULTS]\n${delegationSummary}`;

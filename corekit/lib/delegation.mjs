@@ -349,3 +349,67 @@ export function summarizeDelegationResult(env, toStr, { taskMax = 200, resultMax
     success: isSuccess,
   };
 }
+
+// ---- Re-delegation cap (bounded retries → honest escalation) ----
+// A checkpoint whose delegation returns with failures is re-queued to cortex, which
+// typically re-delegates. Unbounded, a delegate that STRUCTURALLY cannot succeed (an
+// input it can't reach, a member it can't add) loops: one live delivery re-delegated
+// the same failing review ~6 times over 35 min, then false-completed. These helpers
+// bound the retries so the mission escalates to the operator instead of looping.
+// Pure, deterministic (B-19).
+
+/**
+ * A stable per-checkpoint key for the re-delegation counter. Keys on the delegated
+ * checkpoint's OUTCOME (title/instruction) — which the spine pins across re-plans, so
+ * re-delegating "the same checkpoint" bumps the same counter even though each re-plan
+ * mints a fresh checkpoint envelope id. Pure.
+ * @param {object} child - the delegated checkpoint (C) envelope
+ * @returns {string}
+ */
+export function redelegationKey(child) {
+  const c = child || {};
+  const raw = (c.title || c.instruction || c.id || '').toString();
+  const norm = raw.slice(0, 100).toLowerCase().replace(/\s+/g, ' ').trim();
+  return norm ? `cp:${norm}` : `id:${c.id || 'unknown'}`;
+}
+
+/**
+ * Bump the re-delegation counter for a checkpoint. Returns the updated counter map
+ * (input not mutated), the new attempt count, and whether the cap is now exceeded.
+ * `exceeded` is true once attempts pass `cap` — with cap=2 that is the THIRD failed
+ * round (attempts 1 and 2 still re-delegate; the enriched retry gets its chance).
+ * Pure.
+ * @param {Object<string,number>|undefined} counters
+ * @param {string} key
+ * @param {number} [cap=2]
+ * @returns {{counters: Object<string,number>, attempts: number, exceeded: boolean}}
+ */
+export function bumpRedelegation(counters, key, cap = 2) {
+  const c = { ...(counters || {}) };
+  c[key] = (c[key] || 0) + 1;
+  return { counters: c, attempts: c[key], exceeded: c[key] > cap };
+}
+
+/**
+ * Compose the operator-facing escalation when a checkpoint's re-delegation cap is hit.
+ * Names the outstanding checkpoint, the delegate, and its last reported reason — an
+ * honest "I'm stuck on X, here's why, here's what I need" instead of a false-green.
+ * Pure.
+ * @param {object} o
+ * @param {string} [o.goal]              - the mission goal
+ * @param {string} [o.checkpointOutcome] - the checkpoint that keeps failing
+ * @param {string} [o.agentLabel]        - the delegate (email/name)
+ * @param {string} [o.reason]            - the delegate's last failure summary
+ * @param {number} [o.attempts]          - failed rounds so far
+ * @returns {string}
+ */
+export function composeRedelegationEscalation({ goal, checkpointOutcome, agentLabel, reason, attempts } = {}) {
+  const lines = [];
+  lines.push(`I'm blocked on this delivery and need your input.`);
+  if (checkpointOutcome) lines.push('', `**Stuck on:** ${checkpointOutcome}`);
+  if (agentLabel) lines.push(`**Delegated to:** ${agentLabel} — ${attempts || 'several'} attempt(s), each unresolved.`);
+  if (reason) lines.push('', `**Last reported reason:** ${String(reason).slice(0, 500)}`);
+  if (goal) lines.push('', `I can't finish "${String(goal).slice(0, 200)}" until this is resolved.`);
+  lines.push('', `Re-delegating again would just loop. What would you like me to do — supply the missing input, adjust the plan, or have me take a different approach?`);
+  return lines.join('\n');
+}

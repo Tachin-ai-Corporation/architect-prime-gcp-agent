@@ -7,6 +7,9 @@ import {
   composeDelegationResultMarker,
   parseDelegationMarker,
   parseDelegationResultMarker,
+  bumpRedelegation,
+  redelegationKey,
+  composeRedelegationEscalation,
 } from '../corekit/lib/delegation.mjs';
 
 // ---- isDelegationMarker ----
@@ -241,5 +244,56 @@ describe('round-trip compose → parse', () => {
     assert.equal(parsed.status, opts.status);
     assert.equal(parsed.missionId, opts.missionId);
     assert.equal(parsed.body, opts.body);
+  });
+});
+
+// ---- Re-delegation cap (FC-B) ----
+
+describe('redelegationKey', () => {
+  it('keys on the checkpoint OUTCOME so re-plans bump the same counter', () => {
+    // Each re-plan mints a fresh checkpoint id but keeps the pinned outcome/title.
+    const a = redelegationKey({ id: 'w-c-1', title: 'Delegate to the designer (Dot) for review of the HTML draft.' });
+    const b = redelegationKey({ id: 'w-c-2-different-id', title: 'Delegate to the designer (Dot) for review of the HTML draft.' });
+    assert.equal(a, b, 'same outcome → same key across re-delegations');
+    assert.ok(a.startsWith('cp:'));
+  });
+  it('normalizes whitespace/case and falls back to id only when there is no outcome text', () => {
+    assert.equal(redelegationKey({ title: '  Review   THE Draft ' }), redelegationKey({ instruction: 'review the draft' }));
+    assert.equal(redelegationKey({ id: 'w-x' }), 'cp:w-x', 'id used as outcome text when title/instruction absent');
+    assert.equal(redelegationKey({}), 'id:unknown', 'truly-empty → id: fallback');
+  });
+});
+
+describe('bumpRedelegation', () => {
+  it('does not exceed within the cap, exceeds past it (cap=2 → 3rd round escalates)', () => {
+    let counters;
+    const k = 'cp:review';
+    let r = bumpRedelegation(counters, k, 2); assert.deepEqual([r.attempts, r.exceeded], [1, false]);
+    r = bumpRedelegation(r.counters, k, 2);   assert.deepEqual([r.attempts, r.exceeded], [2, false]);
+    r = bumpRedelegation(r.counters, k, 2);   assert.deepEqual([r.attempts, r.exceeded], [3, true]);
+  });
+  it('counts each checkpoint independently and never mutates the input', () => {
+    const c0 = { 'cp:a': 2 };
+    const r = bumpRedelegation(c0, 'cp:b', 2);
+    assert.equal(r.counters['cp:a'], 2, 'other checkpoint untouched');
+    assert.equal(r.counters['cp:b'], 1);
+    assert.equal(c0['cp:b'], undefined, 'input not mutated');
+  });
+});
+
+describe('composeRedelegationEscalation', () => {
+  it('names the stuck checkpoint, the delegate, and the reason — an honest ask, not a false green', () => {
+    const msg = composeRedelegationEscalation({
+      goal: 'Deploy the 1health site to staging and report the URL',
+      checkpointOutcome: 'Delegate to the designer (Dot) for review of the HTML draft',
+      agentLabel: 'designer-agent-dot@example.com',
+      reason: '[FAILED] the input branch was empty',
+      attempts: 3,
+    });
+    assert.match(msg, /Stuck on:.*review of the HTML draft/);
+    assert.match(msg, /designer-agent-dot@example\.com/);
+    assert.match(msg, /input branch was empty/);
+    assert.match(msg, /1health site to staging/);
+    assert.match(msg, /loop/i, 'explains why it stopped rather than retrying');
   });
 });

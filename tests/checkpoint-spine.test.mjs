@@ -10,6 +10,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildSpine, firstIncompleteIndex, markCheckpoint, applyReplan, rebuildFromSpine, spineSummary,
+  finalizeBlockedBySpine,
 } from '../corekit/lib/checkpoint-spine.mjs';
 
 const PLAN = [
@@ -152,5 +153,38 @@ describe('spineSummary', () => {
     assert.match(spineSummary(s), /3cp done=1 failed=1 pending=1/);
     assert.equal(spineSummary([]), 'none');
     assert.equal(spineSummary(null), 'none');
+  });
+});
+
+describe('finalizeBlockedBySpine — the false-complete guard (FC-A)', () => {
+  it('allows finalize when there is no spine (answer-only mission)', () => {
+    assert.equal(finalizeBlockedBySpine(null), null);
+    assert.equal(finalizeBlockedBySpine([]), null);
+  });
+
+  it('blocks when the DELIVERABLE (last) checkpoint is unmet — the 1health false-complete', () => {
+    // CP1 done; CP2/3/4 pending (the review→deploy→report-URL delivery never finished)
+    let s = buildSpine(PLAN.concat([{ instruction: 'Report the staging URL', accept_criteria: 'URL posted', tasks: [] }]), { now: 'T' });
+    s = markCheckpoint(s, 0, 'complete', { now: 'T1' });
+    const gate = finalizeBlockedBySpine(s);
+    assert.ok(gate, 'a synthesize→complete here is a false green and must be blocked');
+    assert.equal(gate.terminal.n, 4, 'the deliverable is the last checkpoint');
+    assert.equal(gate.unmet.length, 3, 'CP2/3/4 are named as outstanding');
+    assert.deepEqual(gate.unmet.map(u => u.n), [2, 3, 4]);
+  });
+
+  it('allows finalize once the deliverable checkpoint is complete (even if earlier ones somehow are not)', () => {
+    // Terminal complete → the deliverable exists → a mission may legitimately finish.
+    let s = buildSpine(PLAN, { now: 'T' });
+    s = markCheckpoint(s, 2, 'complete', { now: 'T' });   // last checkpoint done
+    assert.equal(finalizeBlockedBySpine(s), null);
+  });
+
+  it('blocks a fully-pending spine and names every checkpoint', () => {
+    const s = buildSpine(PLAN, { now: 'T' });
+    const gate = finalizeBlockedBySpine(s);
+    assert.ok(gate);
+    assert.equal(gate.unmet.length, 3);
+    assert.equal(gate.unmet[0].status, 'pending');
   });
 });
