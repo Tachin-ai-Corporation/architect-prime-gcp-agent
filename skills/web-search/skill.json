@@ -1,7 +1,7 @@
 {
   "id": "web-search",
   "name": "Web Search & Fetch",
-  "version": 2,
+  "version": 3,
   "description": "Real-time web search and URL content extraction via Vertex AI grounding.",
   "author": "architect-prime",
   "origin": "core",

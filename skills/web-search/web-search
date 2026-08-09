@@ -34,7 +34,8 @@ CONTRACTS_FILE="${CORE_DIR}/corekit/contracts.json"
 DEFAULT_MODEL="gemini-3.5-flash"
 DEFAULT_REGION="global"
 if [[ -f "$CONTRACTS_FILE" ]]; then
-  DEFAULT_MODEL="$(python3 -c "import json; print(json.load(open('$CONTRACTS_FILE')).get('vertex',{}).get('subagentModel','gemini-3.5-flash'))" 2>/dev/null || echo "gemini-3.5-flash")"
+  # contracts stores the subagent model as "vertex-google/<id>"; the Vertex REST path below needs the bare <id>
+  DEFAULT_MODEL="$(python3 -c "import json; m=json.load(open('$CONTRACTS_FILE')).get('vertex',{}).get('models',{}).get('subagent','gemini-3.5-flash'); print(m.split('/')[-1])" 2>/dev/null || echo "gemini-3.5-flash")"
   DEFAULT_REGION="$(python3 -c "import json; print(json.load(open('$CONTRACTS_FILE')).get('vertex',{}).get('location','global'))" 2>/dev/null || echo "global")"
 fi
 
