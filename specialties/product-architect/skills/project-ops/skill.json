@@ -1,7 +1,7 @@
 {
   "id": "project-ops",
   "name": "Project Operations",
-  "version": 3,
+  "version": 4,
   "description": "Procedures for managing projects, processes, and plans using CoreKit tools.",
   "author": "architect-prime",
   "origin": "specialty",

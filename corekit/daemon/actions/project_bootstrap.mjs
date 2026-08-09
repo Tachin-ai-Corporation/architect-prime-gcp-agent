@@ -11,7 +11,7 @@
 // clear "not delivered" signal if a teammate is missing. It never fabricates a teammate email.
 import {
   projectBootstrapEnabled, missionOriginSpace, findProjectBySpace,
-  slugifyProjectId, resolveTeam, buildProjectDoc,
+  slugifyProjectId, resolveTeam, buildProjectDoc, teammatesMissingResponsibilities,
 } from '../../lib/project-bootstrap.mjs';
 
 export async function handleProjectBootstrap(ctx, deps) {
@@ -74,6 +74,15 @@ export async function handleProjectBootstrap(ctx, deps) {
   await writeHistory(envelope.id, envelope.status, envelope.status, 'brain', `${adopted ? 'Adopted' : 'Bootstrapped'} project ${id} bound to ${space}`);
   log('INFO', `[TELEMETRY] project_bootstrapped mission=${envelope.id} project=${id} space=${space} adopted=${adopted} team=${team.length} unresolved=${unresolved.length}`);
 
+  // Deterministic backstop (C-4): the lead (this PM) + operator owner are auto-added above WITH a
+  // responsibilities line. Every SPECIALIST teammate should carry one too — the brain renders it as
+  // the per-member "who does what" that the planner reads to pick a delegate. Surface any that are
+  // missing so silent under-specification (a thin team that starves delegation) is visible + nudged.
+  const missingResp = teammatesMissingResponsibilities(team);
+  if (missingResp.length) {
+    log('WARN', `[TELEMETRY] project_team_missing_responsibilities mission=${envelope.id} project=${id} members=${missingResp.join(',')}`);
+  }
+
   // ---- Re-scope THIS mission to the new project (the auto-continue) ----
   // From now on the mission's delegations resolve PROJECTS[id].gchat_space_id = the origin
   // space, so they deliver. Refresh the in-memory map so this same iteration's downstream
@@ -91,6 +100,7 @@ export async function handleProjectBootstrap(ctx, deps) {
     `Team: ${team.map(t => `${t.name || t.email} (${t.role})`).join(', ') || '(just you)'}.`,
   ];
   if (unresolved.length) parts.push(`NOTE: could not match these requested roles to a registered fleet agent and left them off: ${unresolved.join(', ')}.`);
+  if (missingResp.length) parts.push(`Heads-up: ${missingResp.join(', ')} ${missingResp.length === 1 ? 'has' : 'have'} no recorded responsibilities — a teammate with no "who does what" is one the planner cannot reliably target. Give each a one-line responsibility (per the project-ops procedure) so your delegations land on the right specialist.`);
   parts.push(`Delegations are delivered IN this space. The teammates you delegate to (${teammates.join(', ') || 'none yet'}) must be MEMBERS of this space — you cannot add them (that needs the operator). If a delegation reports it was not delivered, use needs_input to ask the operator to add that teammate to the space.`);
   parts.push(`Now plan the delivery with checkpoint_plan and delegate to the team as the work needs.`);
   return append(parts.join(' '));

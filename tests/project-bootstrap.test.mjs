@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   projectBootstrapEnabled, missionOriginSpace, slugifyProjectId,
   findProjectBySpace, resolveTeam, membershipGap, buildProjectDoc,
+  teammatesMissingResponsibilities,
 } from '../corekit/lib/project-bootstrap.mjs';
 
 const ROSTER = [
@@ -12,6 +13,29 @@ const ROSTER = [
   { email: 'devops-agent-stan@tachin.ag', specialty: 'devops', status: 'online' },
   { email: 'designer-agent-dot@tachin.ag', specialty: 'designer', status: 'offline' },
 ];
+
+describe('teammatesMissingResponsibilities', () => {
+  it('flags agent teammates with no responsibilities, excluding lead/owner by role', () => {
+    const team = [
+      { email: 'lead@x', role: 'lead', type: 'agent' },                                  // excluded (lead)
+      { email: 'owner@x', role: 'owner', type: 'human', name: 'op' },                     // excluded (owner/human)
+      { email: 'eng@x', role: 'engineer', type: 'agent' },                               // flagged (no resp)
+      { email: 'dev@x', role: 'devops', type: 'agent', responsibilities: 'deploys' },    // ok
+      { email: 'des@x', role: 'designer', type: 'agent', responsibilities: '   ' },      // flagged (blank)
+    ];
+    assert.deepEqual(teammatesMissingResponsibilities(team), ['eng@x', 'des@x']);
+  });
+  it('returns [] for a fully-specified team and for empty/undefined input', () => {
+    assert.deepEqual(teammatesMissingResponsibilities([{ email: 'a@x', role: 'engineer', type: 'agent', responsibilities: 'x' }]), []);
+    assert.deepEqual(teammatesMissingResponsibilities([]), []);
+    assert.deepEqual(teammatesMissingResponsibilities(undefined), []);
+  });
+  it('ignores string/emailless members and honors excludeRoles override', () => {
+    const team = ['legacy-id', { role: 'engineer', type: 'agent' }, { email: 'e@x', role: 'engineer', type: 'agent' }];
+    assert.deepEqual(teammatesMissingResponsibilities(team), ['e@x']);
+    assert.deepEqual(teammatesMissingResponsibilities(team, { excludeRoles: ['engineer'] }), []);
+  });
+});
 
 describe('projectBootstrapEnabled', () => {
   it('is off unless dispatch.project_bootstrap.enabled === true', () => {

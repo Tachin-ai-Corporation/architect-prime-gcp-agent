@@ -79,6 +79,22 @@ export function resolveTeam(teamSpec, roster, opts = {}) {
   return { team, unresolved };
 }
 
+/**
+ * Agent teammates on a team with no `responsibilities` — the field the brain renders as the
+ * per-member "who does what" line, which is the primary signal Cortex uses to pick a delegate
+ * (projects.mjs buildContext). The auto-added lead (the PM) and owner always carry a default, so
+ * they are excluded by role. A non-empty result means the PM under-specified the roster and the
+ * planner will have a weak delegation signal for those members. Pure. Returns an array of emails.
+ */
+export function teammatesMissingResponsibilities(team, opts = {}) {
+  const exclude = new Set((opts.excludeRoles || ['lead', 'owner']).map(r => String(r).toLowerCase()));
+  return (Array.isArray(team) ? team : [])
+    .filter(m => m && m.email && String(m.type || 'agent').toLowerCase() === 'agent')
+    .filter(m => !exclude.has(String(m.role || '').toLowerCase()))
+    .filter(m => !String(m.responsibilities || '').trim())
+    .map(m => m.email);
+}
+
 /** Required agent emails NOT present among the space's members (localpart-compared). Pure. */
 export function membershipGap(requiredEmails, memberEmails) {
   const mem = new Set((memberEmails || []).map(localpart).filter(Boolean));

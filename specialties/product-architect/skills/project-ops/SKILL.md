@@ -42,7 +42,7 @@ not yet linked to a project, the decision context surfaces it as `project_bootst
       { "role": "designer", "specialty": "designer",   "responsibilities": "design drafts" }
     ],
     "canon":   [ { "key": "deploy-flow", "text": "draft → staging (share URL) → owner approval → prod" } ],
-    "context": [ { "key": "source", "kind": "drive", "ref": "<drive-file-id>", "summary": "the site HTML" } ],
+    "context": [ { "key": "source", "kind": "doc", "ref": "<drive-file-id>", "summary": "the site HTML" } ],
     "deploy":  {
       "platform": "firebase-hosting",
       "gcp_project": "your-gcp-project",       // firebase --project (the GCP/Firebase project)
@@ -59,10 +59,21 @@ they are often different (a site `your-hosting-site` can live under project `you
 conflating them deploys to the wrong place. Give `source` the canonical content locator (a Drive file
 id or a git repo) so the deploy fetches the real content, not an empty dir. The devops agent reads
 this verbatim — it does not guess the site.
+**Every teammate needs a `role` AND a one-line `responsibilities` (who does what on THIS project).**
+That responsibilities line is exactly what the brain renders to the planner as the "who does what"
+signal it uses to pick a delegate — a teammate with a bare role but no responsibilities is one you
+cannot reliably delegate to, so the work silently lands back on you. Spec the **full roster** the
+delivery needs (engineer / devops / designer / …), each with its own duty. You do NOT list yourself
+or the operator: the system adds **you as `lead`** and the requesting operator as **`owner`**
+automatically (both with a responsibilities line) — you only spec the specialists.
+
 What the system does deterministically: creates `projects/{id}` bound to this space, resolves each
 teammate's **real** fleet email from the roster (name them by role/specialty — never write an
-email yourself), seeds the team/canon/context, and **re-scopes this mission to the new project**.
-It is idempotent — if a project is already bound to this space, it is adopted, not duplicated.
+email yourself), auto-adds you (lead) + the operator (owner), seeds the team/canon/context, and
+**re-scopes this mission to the new project**. It is idempotent — if a project is already bound to
+this space, it is adopted, not duplicated. If the return message says any teammate has "no recorded
+responsibilities," fill it in immediately (see *Keep the project's context current* below) — an
+incomplete roster is the single most common reason a PM fails to delegate.
 
 After it returns, **keep going in the same mission**: plan the actual delivery with `checkpoint_plan`
 and delegate to the team. Your delegations now route through this space automatically.
@@ -79,6 +90,14 @@ A project you own or lead is a **living record**. Keep it accurate as the work m
 mission — yours or a teammate's — starts from the truth, not a stale snapshot. After any of the
 triggers below, update the project yourself with `project-manage`. Each tool is idempotent
 (re-setting the same key/member updates in place), so it is always safe to refresh.
+
+**Every team member carries BOTH a `role` and a one-line `responsibilities`** — the role labels
+them, the responsibilities say *what they do on this project*, and it is the responsibilities line
+the planner reads to target a delegation. A member with a bare role and no responsibilities can't be
+reliably delegated to. So: keep the roster **complete** (lead + every specialist the work needs —
+don't drop the designer/engineer/devops), and whenever you add or refresh a member set **both**
+fields. If you inherit a project whose team is thin (missing members, or members with no
+responsibilities), fill it in before you plan — that is prep for delegation, not busywork.
 
 | When this happens | Update | Command |
 |---|---|---|
