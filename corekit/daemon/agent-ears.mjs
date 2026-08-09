@@ -62,7 +62,7 @@ const CHAT_CONFIG = CONTRACTS.chat || {};
 // Preprocessing config (LLM-based message repair for gchat)
 const PREPROCESS_CFG = EARS_CONFIG.preprocess || {};
 const PREPROCESS_ENABLED = PREPROCESS_CFG.enabled === true && CHANNEL === 'gchat';
-const PREPROCESS_MODEL = PREPROCESS_CFG.model || 'gemini-3.5-flash';
+const PREPROCESS_MODEL = PREPROCESS_CFG.model || 'gemini-3.6-flash';
 const PREPROCESS_MAX_TOKENS = PREPROCESS_CFG.maxTokens || 2000;
 const PREPROCESS_TEMPERATURE = PREPROCESS_CFG.temperature ?? 0.0;
 

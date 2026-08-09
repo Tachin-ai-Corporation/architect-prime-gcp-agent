@@ -4,7 +4,7 @@
 //
 // Run:   node --test corekit/brain/test/vertex-probe.mjs
 // Env:   GOOGLE_CLOUD_PROJECT  (required — GCP project ID)
-//        GOOGLE_CLOUD_LOCATION (optional — defaults to "us-central1")
+//        GOOGLE_CLOUD_LOCATION (optional — Google location, defaults to "global"; Anthropic uses us-east5)
 //
 
 import { describe, it } from 'node:test';
@@ -13,21 +13,22 @@ import { GoogleGenAI } from '@google/genai';
 import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
 
 const project = process.env.GOOGLE_CLOUD_PROJECT;
-const location = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
+const googleLocation = process.env.GOOGLE_CLOUD_LOCATION || 'global';
+const anthropicLocation = process.env.ANTHROPIC_LOCATION || 'us-east5';
 
 if (!project) {
   console.error('ERROR: GOOGLE_CLOUD_PROJECT env var is required');
   process.exit(1);
 }
 
-console.log(`[vertex-probe] project=${project} location=${location}`);
+console.log(`[vertex-probe] project=${project} googleLocation=${googleLocation} anthropicLocation=${anthropicLocation}`);
 
 describe('Vertex AI provider smoke tests', () => {
 
-  it('Google (Gemini 3.5 Flash) via GoogleGenAI', async () => {
-    const google = new GoogleGenAI({ vertexai: true, project, location });
+  it('Google (Gemini 3.6 Flash) via GoogleGenAI', async () => {
+    const google = new GoogleGenAI({ vertexai: true, project, location: googleLocation });
     const response = await google.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-3.6-flash',
       contents: 'Reply with exactly the text: VERTEX_GOOGLE_OK',
       config: {
         maxOutputTokens: 20,
@@ -39,7 +40,7 @@ describe('Vertex AI provider smoke tests', () => {
   });
 
   it('Anthropic (Claude 3.5 Sonnet) via AnthropicVertex', async () => {
-    const anthropic = new AnthropicVertex({ projectId: project, region: location });
+    const anthropic = new AnthropicVertex({ projectId: project, region: anthropicLocation });
     const response = await anthropic.messages.create({
       model: 'claude-3-5-sonnet@20240620',
       max_tokens: 20,

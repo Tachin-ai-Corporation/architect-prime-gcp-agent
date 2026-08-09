@@ -66,7 +66,7 @@ GChat message → agent-ears → intake (Firestore) → agent-brain → work env
 | `AGENT_ID` | `process.env.AGENT_ID` | Short agent name (e.g. `stan`) |
 | `AGENT_EMAIL` | `process.env.AGENT_USER_EMAIL` | Full email (often empty!) |
 | `PRIME_ID` | `process.env.PRIME_ID` | Prime identifier (e.g. `chucknorris`) |
-| `BRAIN_MODEL` | `contracts.dispatch.model` | Model for summarization (default: `gemini-3.5-flash`) |
+| `BRAIN_MODEL` | `contracts.dispatch.model` | Model for summarization (default: `gemini-3.6-flash`) |
 | `CORTEX_ROUTE` | `contracts.agents.gatewayRoute` | Gateway route for Cortex calls |
 | `FIRESTORE_BASE` | computed | `https://firestore.googleapis.com/v1/projects/{PROJECT}/databases/(default)/documents` |
 

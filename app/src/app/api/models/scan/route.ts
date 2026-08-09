@@ -308,7 +308,7 @@ async function probeModel(
       });
       if (res.status === 200 || res.status === 429) return res.status;
 
-      // Regional 404 → try global endpoint (some GA models like gemini-3.5-flash are global-only)
+      // Regional 404 → try global endpoint (some GA models like gemini-3.6-flash are global-only)
       const globalUrl = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${model.id}:generateContent`;
       const gRes = await fetch(globalUrl, {
         method: "POST", headers, body,

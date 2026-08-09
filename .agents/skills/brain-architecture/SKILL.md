@@ -12,11 +12,11 @@ description: Use when working on the brain agent system — creating/editing age
 | Agent | Model | Role | Workspace |
 |-------|-------|------|-----------|
 | **cortex** | gemini-3.1-pro-preview | JSON Decide Loop — envelope coordinator (DEFAULT) | `/opt/corekit/workspace` |
-| **temporal-research** | gemini-3.5-flash | Web search (Vertex AI grounding) | `/opt/corekit/workspace-temporal-research` |
-| **temporal-memory** | gemini-3.5-flash | Pure memory/context recall (NO external APIs) | `/opt/corekit/workspace-temporal-memory` |
-| **prefrontal** | gemini-3.5-flash | Planning + dispatch (two-mode: simple + advisory) | `/opt/corekit/workspace-prefrontal` |
-| **motor** | gemini-3.5-flash | Execution — ALL Google Workspace tools + advisory mode | `/opt/corekit/workspace-motor` |
-| **cerebellum** | gemini-3.5-flash | Verification + validation-rule checking | `/opt/corekit/workspace-cerebellum` |
+| **temporal-research** | gemini-3.6-flash | Web search (Vertex AI grounding) | `/opt/corekit/workspace-temporal-research` |
+| **temporal-memory** | gemini-3.6-flash | Pure memory/context recall (NO external APIs) | `/opt/corekit/workspace-temporal-memory` |
+| **prefrontal** | gemini-3.6-flash | Planning + dispatch (two-mode: simple + advisory) | `/opt/corekit/workspace-prefrontal` |
+| **motor** | gemini-3.6-flash | Execution — ALL Google Workspace tools + advisory mode | `/opt/corekit/workspace-motor` |
+| **cerebellum** | gemini-3.6-flash | Verification + validation-rule checking | `/opt/corekit/workspace-cerebellum` |
 
 > **Model source of truth:** the per-organ model is resolved at runtime from `infra/contracts.json` → `vertex.models` (the `subagent` tier for the five subagent organs; the `cortex` tier for cortex). The registry files (`corekit/config/agent-registry*.json`) carry routes + sampling params only — not model selection. To change a model, edit `contracts.vertex.models`.
 

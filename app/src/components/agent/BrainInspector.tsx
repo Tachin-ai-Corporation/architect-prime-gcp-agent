@@ -134,7 +134,7 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
 
 
   const [slots, setSlots] = useState<SlotDef[]>([]);
-  const [defaultDaemonModel, setDefaultDaemonModel] = useState("gemini-3.5-flash");
+  const [defaultDaemonModel, setDefaultDaemonModel] = useState("gemini-3.6-flash");
 
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 

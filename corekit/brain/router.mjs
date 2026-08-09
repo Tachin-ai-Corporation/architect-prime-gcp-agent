@@ -13,7 +13,7 @@ let _config = {};
 /**
  * Initialize direct client SDKs with GCP project and locations.
  */
-export async function initRouter({ project, googleLocation = 'us-central1', anthropicLocation = 'us-east5' }) {
+export async function initRouter({ project, googleLocation = 'global', anthropicLocation = 'us-east5' }) {
   _config = { project, googleLocation, anthropicLocation };
 
   _googleClient = new GoogleGenAI({

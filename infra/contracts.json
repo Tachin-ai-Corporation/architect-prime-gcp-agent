@@ -3,12 +3,12 @@
   "_budget_posture": "A bound exists to stop an UNBOUNDED blowup, not to save money. Agent success is worth far more than tokens, so every char/token budget here is sized for the work to succeed and only then bounded. The evidence runs both ways and both lessons are load-bearing: an uncapped readFile once pushed a single organ call to 877k input tokens (so caps stay, and every cap ANNOUNCES itself so an organ can re-derive instead of assuming it saw everything) — while a stingy cap silently truncated the Drive listing that held the right template, and the mission built three documents from the wrong one (so caps are generous). Subagent organs run on a 1,048,576-token context window; operating at 10% of it and paying for that in truncation-shaped failures was a bad trade. HARD CEILINGS THAT ARE NOT ABOUT COST, and must not be raised: dispatch.context_token_budget <= 125000 because _accumulated_context persists on the Firestore work document (1 MiB) and budget x 4 chars must fit inside it; compaction.working_budget_tokens <= dispatch.context_token_budget by the same argument. validate-contracts enforces both, and it caught a 500000 attempt made in exactly the generous spirit above — generosity stops where a storage limit starts. ONE ABSOLUTE RULE: nothing here may become unbounded. dispatch.verify_prompt_max_chars was briefly cut to 6000 to dodge a provider malformed-call threshold, and that was a cautionary tale: dodging one failure mode by starving evidence bought a worse one. But the REAL fix was neither a generous cap (24000 still hit MALFORMED at 13K) nor a stingy one — it was switching the evidence SOURCE from verbose motor output to compact result packets, which contain the tool results the verifier needs at a fraction of the size. The cap is now 9000 and first-attempt evidence is compact; full motor output is reserved for the missing-evidence re-verify path, bounded dynamically. See _verify_prompt_comment.",
   "version": 2,
   "vertex": {
-    "location": "us-central1",
+    "location": "global",
     "anthropicLocation": "us-east5",
     "models": {
       "cortex": "vertex-anthropic/claude-opus-4-6",
-      "cortexFallback": "vertex-google/gemini-2.5-pro",
-      "subagent": "vertex-google/gemini-3.5-flash",
+      "cortexFallback": "vertex-google/gemini-3.6-flash",
+      "subagent": "vertex-google/gemini-3.6-flash",
       "subagentStrong": "vertex-google/gemini-2.5-pro"
     },
     "_strong_model_comment": "Phase E (CR-9): mechanism to route the planning/execution organs (prefrontal, motor) to the stronger `subagentStrong` (gemini-2.5-pro). Wired end-to-end (config.mjs picks subagentStrong when opts.strong; the gateway sets strong for agents in this list, or when a caller passes strong:true; a strong request wins over a per-agent workspace model pin). Currently DISABLED (empty list → whole fleet stays on flash): a live canary showed pro improves planning coherence (removed a hallucinated premise, correct state assessment) but adds ~10x latency and did NOT close a hard 2-agent code+deploy mission that is ALSO blocked by failure-memory over-planning (CR-8) and motor git/firebase command reliability. Re-enabling is a cost/latency decision — put the agent ids back in this list.",
@@ -23,7 +23,7 @@
     "context_windows": {
       "claude-opus-4-6": 200000,
       "gemini-2.5-pro": 1048576,
-      "gemini-3.5-flash": 1048576
+      "gemini-3.6-flash": 1048576
     }
   },
   "agents": {
@@ -68,7 +68,7 @@
     "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
   },
   "dispatch": {
-    "model": "gemini-3.5-flash",
+    "model": "gemini-3.6-flash",
     "poll_interval_ms": 3000,
     "max_iterations": 50,
     "gateway_timeout_ms": 300000,
@@ -160,14 +160,14 @@
     "mention_match": "annotation",
     "preprocess": {
       "enabled": true,
-      "model": "gemini-3.5-flash",
+      "model": "gemini-3.6-flash",
       "maxTokens": 2000,
       "temperature": 0.0
     }
   },
   "mouth": {
     "llm_enabled": true,
-    "model": "gemini-3.5-flash",
+    "model": "gemini-3.6-flash",
     "maxTokens": 2000,
     "temperature": 0.1,
     "fallback": "deliver_raw",
@@ -246,8 +246,8 @@
     "archive_completed_after_days": 30
   },
   "utility": {
-    "model": "gemini-3.5-flash",
-    "location": "us-central1",
+    "model": "gemini-3.6-flash",
+    "location": "global",
     "maxTokens": {
       "summarize": 1024,
       "title": 60,

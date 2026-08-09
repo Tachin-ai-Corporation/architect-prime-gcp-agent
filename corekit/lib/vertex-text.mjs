@@ -247,7 +247,7 @@ export function summarizeTitle(text, maxLen = 80) {
  * @param {object} config
  * @param {string} config.projectId - GCP project ID
  * @param {string} config.location - Vertex AI location (e.g. 'global', 'us-central1')
- * @param {string} config.model - Model name (e.g. 'gemini-3.5-flash')
+ * @param {string} config.model - Model name (e.g. 'gemini-3.6-flash')
  * @param {number} [config.timeoutMs=30000] - Default timeout for Vertex calls
  * @param {function} [config.logger] - Logger function, defaults to console.log
  * @returns {object} Client with summarize/generateTitle/enforceSchema/transform methods
