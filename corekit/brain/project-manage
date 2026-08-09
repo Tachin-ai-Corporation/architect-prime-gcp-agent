@@ -9,11 +9,12 @@
 #   project-manage update '<id>' '<json>' [--processes <comma-separated-ids>]  # Update project
 #   project-manage archive '<id>'          # Set status to 'archived'
 #   project-manage pause '<id>'            # Set status to 'paused'
-#   project-manage team-add <id> <email> <role> [name] [type]  # Add/update team member (simple)
-#   project-manage team-add <id> '<json>'                      # Add/update team member (JSON)
+#   project-manage team-add <id> <email> <role> [name] [type] [responsibilities]  # Add/update team member (positional)
+#   project-manage team-add <id> '<json>'                      # Add/update team member (JSON string or file path)
+#   project-manage team-add <id> --stdin                       # Add/update team member (JSON on stdin — shell-safe for apostrophes/quotes; PREFER for free text)
 #   project-manage team-remove <id> <email># Remove team member by email
 #   project-manage team-list <id>          # List team members in table format
-#   project-manage add-context <id> <key> '<json-or-string>'  # Add/update a single context key
+#   project-manage add-context <id> <key> '<json-or-string>'|--stdin  # Add/update a context key (--stdin: value on stdin, shell-safe)
 #   project-manage add-process <id> <process-id>              # Link a process to the project
 #
 # The JSON for create must include: id, name, description, context, goal
@@ -780,28 +781,35 @@ print(f'Completed project \'{target_id}\'.')
   team-add)
     TARGET_ID="${1:?'team-add requires a project id'}"
     shift
-    # Support two syntaxes:
-    #   Positional: team-add <projectId> <email> <role> [name] [type]
-    #   JSON:       team-add <projectId> '<json>'
-    if [[ "${1:-}" == "{"* || -f "${1:-}" ]]; then
+    # Support three syntaxes:
+    #   Positional: team-add <projectId> <email> <role> [name] [type] [responsibilities]
+    #   JSON:       team-add <projectId> '<json>'      (JSON string or a file path)
+    #   Stdin:      team-add <projectId> --stdin        (JSON on stdin — shell-safe for apostrophes/quotes)
+    if [[ "${1:-}" == "-" || "${1:-}" == "--stdin" ]]; then
+      MEMBER_JSON_INPUT="$(cat)"
+    elif [[ "${1:-}" == "{"* || -f "${1:-}" ]]; then
       MEMBER_JSON_INPUT="$1"
       if [ -f "$MEMBER_JSON_INPUT" ]; then
         MEMBER_JSON_INPUT=$(cat "$MEMBER_JSON_INPUT")
       fi
     elif [[ -n "${1:-}" && -n "${2:-}" ]]; then
-      MEMBER_EMAIL="$1"
-      MEMBER_ROLE="$2"
-      MEMBER_NAME="${3:-}"
-      MEMBER_TYPE="${4:-agent}"
-      MEMBER_RESP="${5:-}"
-      MEMBER_JSON_INPUT="{\"email\": \"${MEMBER_EMAIL}\", \"role\": \"${MEMBER_ROLE}\", \"name\": \"${MEMBER_NAME}\", \"type\": \"${MEMBER_TYPE}\"}"
+      # Build the member JSON in python from env vars — quote-safe (name/responsibilities may
+      # contain apostrophes or quotes) AND it carries responsibilities ($5), which the old
+      # shell-string form silently dropped.
+      export M_EMAIL="$1" M_ROLE="$2" M_NAME="${3:-}" M_TYPE="${4:-agent}" M_RESP="${5:-}"
+      MEMBER_JSON_INPUT="$(python3 -c 'import json,os
+m={"email":os.environ["M_EMAIL"],"role":os.environ["M_ROLE"],"name":os.environ.get("M_NAME",""),"type":os.environ.get("M_TYPE","agent")}
+r=os.environ.get("M_RESP","")
+if r: m["responsibilities"]=r
+print(json.dumps(m))')"
     else
       echo "Usage: project-manage team-add <projectId> <email> <role> [name] [type] [responsibilities]" >&2
-      echo "   or: project-manage team-add <projectId> '<json>'   (JSON form for multi-word responsibilities)" >&2
+      echo "   or: project-manage team-add <projectId> '<json>'    (JSON string or file path)" >&2
+      echo "   or: project-manage team-add <projectId> --stdin       (JSON on stdin — shell-safe for apostrophes/quotes)" >&2
       echo "   'responsibilities' is a plain-language description of what this participant does on the project — it is what Cortex reads to route delegations." >&2
       exit 1
     fi
-    export TARGET_ID MEMBER_JSON_INPUT MEMBER_RESP
+    export TARGET_ID MEMBER_JSON_INPUT
     python3 -c "
 import json, sys, subprocess, os
 from datetime import datetime, timezone
@@ -1136,14 +1144,17 @@ for t in team:
     CANON_KEY="${2:?'canon-set requires a key'}"
     shift 2
     CANON_TEXT="$*"
-    [ -z "$CANON_TEXT" ] && { echo "ERROR: canon-set requires text after the key" >&2; exit 1; }
+    # --stdin: read the canon text from stdin (shell-safe for apostrophes/quotes/newlines).
+    if [[ "$CANON_TEXT" == "-" || "$CANON_TEXT" == "--stdin" ]]; then CANON_TEXT="$(cat)"; fi
+    [ -z "$CANON_TEXT" ] && { echo "ERROR: canon-set requires text after the key (or --stdin)" >&2; exit 1; }
+    export TARGET_ID CANON_KEY CANON_TEXT
     python3 -c "
-import json, sys, subprocess, datetime
+import json, sys, subprocess, datetime, os
 
-target_id = '$TARGET_ID'
-canon_key = '$CANON_KEY'
-canon_text = '''$CANON_TEXT'''
-agent_email = '${AGENT_USER_EMAIL:-unknown}'
+target_id = os.environ['TARGET_ID']
+canon_key = os.environ['CANON_KEY']
+canon_text = os.environ['CANON_TEXT']
+agent_email = os.environ.get('AGENT_USER_EMAIL', 'unknown')
 
 token = subprocess.check_output(['gcloud', 'auth', 'print-access-token', '--quiet'], stderr=subprocess.DEVNULL).decode().strip()
 base = '${FIRESTORE_BASE}'
@@ -1434,14 +1445,17 @@ for a in new_authority:
   add-context)
     TARGET_ID="${1:?'add-context requires a project id'}"
     CTX_KEY="${2:?'add-context requires a context key'}"
-    CTX_VALUE="${3:?'add-context requires a value (JSON packet or plain string)'}"
+    CTX_VALUE="${3:?'add-context requires a value (JSON packet or plain string, or --stdin)'}"
+    # --stdin: read the value from stdin (shell-safe for apostrophes/quotes/newlines).
+    if [[ "$CTX_VALUE" == "-" || "$CTX_VALUE" == "--stdin" ]]; then CTX_VALUE="$(cat)"; fi
+    export TARGET_ID CTX_KEY CTX_VALUE
     python3 -c "
-import json, sys, subprocess
+import json, sys, subprocess, os
 from datetime import datetime, timezone
 
-target_id = '$TARGET_ID'
-ctx_key = '$CTX_KEY'
-raw_value = '''$CTX_VALUE'''
+target_id = os.environ['TARGET_ID']
+ctx_key = os.environ['CTX_KEY']
+raw_value = os.environ['CTX_VALUE']
 
 # Determine if value is a context packet or a plain string
 try:

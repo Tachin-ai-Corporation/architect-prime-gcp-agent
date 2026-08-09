@@ -113,15 +113,16 @@ const getFirebaseToken = async () => {
 
 export const runCommand = {
   name: 'runCommand',
-  description: `Execute a shell command on the agent's host. You MUST read the relevant SKILL.md with readFile before your first use of any command. Skill docs: /opt/corekit/skills/<id>/SKILL.md. Never guess at command syntax.`,
+  description: `Execute a shell command on the agent's host. You MUST read the relevant SKILL.md with readFile before your first use of any command. Skill docs: /opt/corekit/skills/<id>/SKILL.md. Never guess at command syntax. When an argument contains free text with apostrophes, double quotes, newlines, or $ (e.g. a project responsibilities/canon line), do NOT inline it in the command — pass it in the 'stdin' field and read it with a '--stdin' flag (CoreKit CLIs like project-manage accept it). Inlining such text in single quotes causes "Unterminated quoted string".`,
   schema: {
     type: 'object',
     properties: {
       command: { type: 'string', description: 'Shell command to execute. Use CoreKit scripts for agent capabilities.' },
+      stdin: { type: 'string', description: 'Optional. Text piped to the command on stdin — the shell-safe channel for free text with quotes/apostrophes/newlines. The shell never parses it, so it cannot break quoting. Pair with a command that reads stdin (e.g. `project-manage team-add <id> --stdin`).' },
     },
     required: ['command'],
   },
-  execute: async ({ command }) => {
+  execute: async ({ command, stdin }) => {
     // Breadcrumb for the in-flight call. When an ORGAN dispatch is aborted by the
     // daemon (dispatch.gateway_timeout_ms) the organ's own reply is lost, so this
     // line is the only record of what it was doing — without it a 300s abort is
@@ -139,12 +140,24 @@ export const runCommand = {
       if (token) {
         env.FIREBASE_TOKEN = token;
       }
-      const { stdout, stderr } = await execAsync(command, {
+      const opts = {
         cwd: process.env.WORKSPACE || '/opt/corekit/workspace',
         timeout: TOOL_TIMEOUT(),
         maxBuffer: MAX_BUFFER(),
         env,
+      };
+      // When stdin is supplied, feed it to the child on its stdin rather than the shell
+      // command line — the shell-safe channel for free text with quotes/apostrophes/newlines
+      // (fixes the "Unterminated quoted string" break when free text is inlined in the command).
+      const runWithStdin = (cmd, input) => new Promise((resolve, reject) => {
+        const child = execCb(cmd, opts, (err, stdout, stderr) => {
+          if (err) { err.stdout = stdout; err.stderr = stderr; reject(err); } else resolve({ stdout, stderr });
+        });
+        try { child.stdin.end(input); } catch { /* child may have exited before stdin write */ }
       });
+      const { stdout, stderr } = (typeof stdin === 'string' && stdin.length > 0)
+        ? await runWithStdin(command, stdin)
+        : await execAsync(command, opts);
       const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : '')).trim();
       console.log(`[tools] runCommand ✓ ${Date.now() - t0}ms ${output.length}b`);
       return { result: capResult(output, 'command output') || '(no output)' };
