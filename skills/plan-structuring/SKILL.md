@@ -116,6 +116,19 @@ serialization ONLY when the requester explicitly asked for it (e.g. "give me a C
 Otherwise state the content: "each shared doc is listed with its name, id, and who shared it,
 most-recent first" — not "a JSON array of document objects".
 
+**Criteria test the deliverable, not the tooling that produced it.** The criterion asserts
+the artifact's observable OUTCOME — it exists, it is reachable, its content is right — never an
+incidental detail of the tool run that made it: a deprecation warning, a log line, an exit-code
+cosmetic, which auth method or CLI flag was used, or "no warnings were emitted". Those are
+runtime noise, not the deliverable; pinning one fails work that actually succeeded, and it is
+often impossible in the environment as it is (a warning the tool always prints), so the
+milestone can never pass however well the artifact turned out. A deploy checkpoint's criterion
+is "the staging URL returns HTTP 200 and serves the updated page", NOT "the deploy used a
+non-deprecated authentication method" — a deploy whose CLI warned that a token is deprecated but
+that served the page at a reachable URL SUCCEEDED. Put a runtime detail in a criterion ONLY when
+the requester named it as a requirement — never invented from a tool's cosmetics or a recalled
+incident.
+
 ### Simplicity first
 
 The best plan is the simplest plan that gets the work done.
