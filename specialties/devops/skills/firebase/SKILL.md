@@ -65,15 +65,24 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
    tree.** Use the `source` from the Deployment block:
    - **`source.kind: git`/`repo`** → clone it into a clean dir and deploy *that* (`work-clone REPO`
      via the workspace-git skill, or `git-store clone REPO --ref main --dir DIR`).
-   - **`source.kind: drive`** → the content is a Google Drive file/folder; `drive-download <ref>`
-     (workspace-drive) INTO the clean deploy dir before deploying. A fresh project's git repo is
-     often empty/placeholder — deploying it ships the 33-byte Firebase default page, so fetch the
-     real Drive source first.
+   - **`source.kind: drive`** → `drive-download <ref>` (workspace-drive) INTO the clean deploy dir.
+     A Drive source is one of two **shapes** — the Deployment block may say (`file`/`folder`); if it
+     doesn't, look at what actually downloads (`ls -R`):
+     - **A single file** (one self-contained HTML page — the common one-page site): that file **is**
+       the site. Place it as `index.html` in the deploy dir. It is **complete on its own** — a
+       one-page site legitimately has **no** `images/` dir, so do **not** treat missing assets as a
+       broken download, and do **not** write a checkpoint criterion like *"download all files from
+       the folder"* — there is no folder, and that criterion can never pass.
+     - **A folder** (a multi-page site): download the whole tree, preserving structure — its HTML
+       pages **and** its `images/`/assets.
+     A fresh project's git repo is often empty/placeholder — deploying it ships the 33-byte Firebase
+     default page, so fetch the real Drive source first.
    Do **not** aim `"public": "."` at your mission workspace — that ships whatever scratch is
    there (the "prod live but incomplete" failure: missing pages/images, stale `<title>`). After
-   staging the source, sanity-check the inventory before deploying: `ls -R` the dir; a static site
-   has its HTML pages **and** its `images/`/assets — if the real content isn't there you are about
-   to ship a broken or placeholder site, so fix the source first.
+   staging the source, sanity-check that the deploy dir matches the **source** before deploying
+   (`ls -R`): a single-file source → exactly your `index.html`; a folder source → its pages plus
+   `images/`/assets. The completeness bar is **"the deploy dir contains the site as the source
+   defines it"** — not "a folder of many files." If the real content isn't there, fix the source first.
 2. **Write** `firebase.json` in the deploy directory yourself — **never run `firebase init`**.
    Every `init` subcommand is interactive and hangs with no TTY: it burns the whole command
    timeout, then the turn loop-guards out. Create the file directly instead, e.g.:
@@ -97,15 +106,17 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
    ```bash
    firebase hosting:channel:deploy staging --project=PROJECT
    ```
-4. Verify the preview URL (in the command output) serves the expected content — **every page
-   AND every image**, not just `/`. `curl` a couple of `images/…` paths too; a site that 200s on
-   `/` but 404s on its images is not ready to promote. Also confirm the page RENDERED WHOLE, not
-   merely that it 200s: compare the served byte size to your source file (a deploy that dropped
-   content is markedly smaller), `grep` the served HTML for a marker from **below the fold** (a
-   late section heading, the footer) — present means the page didn't die halfway — and `grep` for
-   a stray `\'`/`\"` (escaped quotes = a corrupted source edit shipped; see the system-shell
-   "quote trap"). A `/` that 200s can still be visually blank below the hero when an inline
-   `<script>` was corrupted, and that is NOT ready to promote.
+4. Verify the preview URL (in the command output) serves the expected content — verify **what
+   the site actually has**, not an assumed shape. **Always** confirm `/` RENDERED WHOLE (not
+   merely a 200): compare the served byte size to your source (a deploy that dropped content is
+   markedly smaller), `grep` the served HTML for a marker from **below the fold** (a late section
+   heading, the footer) — present means the page didn't die halfway — and `grep` for a stray
+   `\'`/`\"` (escaped quotes = a corrupted source edit shipped; see the system-shell "quote
+   trap"). A `/` that 200s can still be visually blank below the hero when an inline `<script>`
+   was corrupted, and that is NOT ready to promote. **If** the site is multi-page / has assets,
+   also `curl` a couple of other pages and `images/…` paths — one that 200s on `/` but 404s on its
+   images is not ready. A **single-page** site with no separate assets is fully verified by the
+   whole-render check on `/` alone — do **not** fail it for `images/` paths its source never had.
    **Report that Channel URL verbatim as the checkpoint's outcome** — e.g. "Deployed to staging:
    https://SITE--staging-….web.app". A checkpoint whose criterion is "a valid staging URL is
    provided" FAILS verification when your result only says "deployed": the verifier judges the
@@ -204,6 +215,7 @@ architecture, the hops map on as:
 | Deployed page 200s but renders blank below the hero / first section | Shipped a source file with corrupted inline JS — an upstream edit escaped its quotes (`'`→`\'`), so the script that reveals lower sections throws | Do NOT promote. `curl` the served HTML and `grep "\\'"` — stray backslash-quotes confirm it. Fix the source edit (see system-shell "quote trap"), redeploy to the preview channel, re-verify whole-page render, then promote. To recover a broken live/staging channel fast, clone the last-good version back: `firebase hosting:clone SITE:live SITE:staging` (or a REST version-release of the good version to the channel). |
 | Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Ran a bare deploy / `firebase.json` names no site, so it hit the project's default site — often because the site was inferred from the GCP project name (they differ) | Read the project's `## Deployment` block for the authoritative `hosting_site`; add `"site": "<hosting_site>"` to the `hosting` object (and always pass `--site`/`--project`), or map a target with `firebase target:apply hosting TARGET SITE`. Re-deploy to the correct site. |
 | Staging/live URL 200s but serves the 33-byte Firebase default page (`Hello, Firebase Hosting!`) or a stub, not the real site | Deployed an empty/placeholder dir — the project's real source (often a Drive file, or an empty freshly-created repo) was never fetched into the deploy dir | `drive-download <source.ref>` (or clone the source repo) INTO the clean deploy dir per Deploy step 1, confirm the real files are present (`ls -R`), then redeploy to the preview channel and re-verify the served bytes match the source. |
+| Verification keeps failing on "download all files from the folder" / missing `images/`, but the source is a single file | A single-FILE Drive site (one self-contained HTML page) is being treated as an incomplete folder | A one-page site is COMPLETE as that one file: place it as `index.html`, and verify by whole-render of `/` (byte size + a below-the-fold marker), NOT by a folder inventory or `images/` paths it never had. Read the Deployment block's `source` shape (`file` vs `folder`); never write a "download the whole folder" criterion for a single-file source. |
 | `firebase init` hangs, times out (~120s), then the turn loop-guards out | `init` is interactive and blocks forever with no TTY | **Never run `firebase init` (or any `init` subcommand).** Write `firebase.json` directly (Deploy step 2), then deploy with `hosting:channel:deploy` / `deploy --only hosting`. Deploying needs no init. |
 | Deploy reports **0 files** | `hosting.public` points at the wrong directory | Point `public` at the directory holding the files (`.` when `firebase.json` sits with them); redeploy. |
 | Prod went live but content is **incomplete or wrong** (missing pages/images, stale `<title>`) | Deployed the ambient mission workspace (`public:"."`) instead of the project's reviewed source | Promote the approved **staging** version rather than rebuilding: `firebase hosting:clone SITE:staging SITE:live` (or a REST version-release of the reviewed version). Then always deploy from a clean clone of the project repo, never the scratch tree; re-verify `/` + a page + an image. |
