@@ -7,7 +7,7 @@
 // distinctive capability the target lacks but the delegator owns.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkDelegationCapability, summarizeDelegationResult, delegationResultAgent } from '../corekit/lib/delegation.mjs';
+import { checkDelegationCapability, checkExecutionCapability, summarizeDelegationResult, delegationResultAgent } from '../corekit/lib/delegation.mjs';
 
 // Mirrors corekit/config/agent-types.json.
 const specialtySkills = {
@@ -70,6 +70,92 @@ describe('checkDelegationCapability', () => {
     assert.equal(checkDelegationCapability({}).ok, true);
     assert.equal(checkDelegationCapability({ instruction: 'deploy via firebase', delegatorSpecialty: 'devops', targetSpecialty: 'engineer' }).ok, true); // no map
     assert.equal(checkDelegationCapability({ instruction: 'x', delegatorSpecialty: 'unknown', targetSpecialty: 'engineer', specialtySkills }).ok, true); // unknown delegator caps
+  });
+});
+
+// The MIRROR guard: a local execution task that invokes a distinctive capability the
+// EXECUTING agent's specialty LACKS but a teammate's specialty OWNS must be delegated, not
+// run locally. The pathology, live: a product-architect ran a Firebase deploy on its own
+// motor (no firebase skill, no deploy perms) and false-completed. Same conservative
+// token-matching contract as checkDelegationCapability, opposite direction.
+describe('checkExecutionCapability (mirror — a local task that should be delegated)', () => {
+  const skills = {
+    devops: ['web-search', 'workspace-drive', 'gcloud', 'gsutil', 'docker', 'firebase'],
+    engineer: ['web-search', 'workspace-drive', 'coding', 'code-review'],
+    'product-architect': ['web-search', 'workspace-drive', 'design', 'project-ops'],
+  };
+
+  it('FIRES on the observed failure: product-architect running a firebase deploy locally → reroute to devops', () => {
+    const r = checkExecutionCapability({
+      instruction: 'Deploy the updated marketing site to the Firebase Hosting staging channel and share the preview URL.',
+      executorSpecialty: 'product-architect', specialtySkills: skills,
+    });
+    assert.equal(r.reroute, true);
+    assert.equal(r.targetSpecialty, 'devops');
+    assert.deepEqual(r.offending, ['firebase']);
+  });
+
+  it('does NOT reroute a task the executor CAN do (devops running its own firebase deploy)', () => {
+    const r = checkExecutionCapability({
+      instruction: 'Deploy the site to the firebase staging channel.',
+      executorSpecialty: 'devops', specialtySkills: skills,
+    });
+    assert.equal(r.reroute, false); // firebase is devops's own skill
+  });
+
+  it('does NOT reroute in-specialty work with no distinctive foreign capability token', () => {
+    const r = checkExecutionCapability({
+      instruction: 'Write the robots.txt and add noindex meta tags to every page.',
+      executorSpecialty: 'product-architect', specialtySkills: skills,
+    });
+    assert.equal(r.reroute, false); // no foreign skill id invoked as a token
+  });
+
+  it('does NOT fire on a filename that merely contains a skill id (firebase.json)', () => {
+    const r = checkExecutionCapability({
+      instruction: 'Update the firebase.json rewrites in the repo.',
+      executorSpecialty: 'product-architect', specialtySkills: skills,
+    });
+    assert.equal(r.reroute, false);
+  });
+
+  it('collects multiple offending capabilities and picks the specialty covering the most', () => {
+    const r = checkExecutionCapability({
+      instruction: 'Use gcloud and docker to build and push the image.',
+      executorSpecialty: 'product-architect', specialtySkills: skills,
+    });
+    assert.equal(r.reroute, true);
+    assert.equal(r.targetSpecialty, 'devops');
+    assert.ok(r.offending.includes('gcloud') && r.offending.includes('docker'));
+  });
+
+  it('prefers a roster specialty when two specialties own the invoked capability', () => {
+    const twoOwners = {
+      'product-architect': ['design', 'project-ops'],
+      devops: ['gcloud', 'firebase'],
+      'platform-eng': ['gcloud', 'firebase'],
+    };
+    const r = checkExecutionCapability({
+      instruction: 'Deploy via firebase to staging.',
+      executorSpecialty: 'product-architect', specialtySkills: twoOwners,
+      rosterSpecialties: ['platform-eng'],
+    });
+    assert.equal(r.reroute, true);
+    assert.equal(r.targetSpecialty, 'platform-eng'); // roster tie-break beats alphabetical (devops)
+  });
+
+  it('does not reroute when the only owner of the invoked token IS the executor specialty', () => {
+    const r = checkExecutionCapability({
+      instruction: 'Run the design render.',
+      executorSpecialty: 'product-architect', specialtySkills: skills,
+    });
+    assert.equal(r.reroute, false); // 'design' is the executor's own; no OTHER specialty owns it
+  });
+
+  it('degrades to no reroute on missing inputs / unknown executor caps (never throws)', () => {
+    assert.equal(checkExecutionCapability({}).reroute, false);
+    assert.equal(checkExecutionCapability({ instruction: 'deploy via firebase', executorSpecialty: 'x' }).reroute, false); // no map
+    assert.equal(checkExecutionCapability({ instruction: 'deploy via firebase', executorSpecialty: 'unknown', specialtySkills: skills }).reroute, false); // unknown executor caps
   });
 });
 

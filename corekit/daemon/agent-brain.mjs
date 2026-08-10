@@ -567,6 +567,7 @@ function _initProcessEngine() {
     suggestContextPromotions,
     buildProjectContext,
     completeEnvelope,
+    contracts: CONTRACTS,
     onMissionComplete: async (mission) => {
       // Create delegation result envelope for delivery back to the delegator
       if (!mission.source_meta?.delegation_ref) return;

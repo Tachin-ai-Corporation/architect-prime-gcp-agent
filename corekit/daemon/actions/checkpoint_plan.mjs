@@ -310,15 +310,29 @@ export async function handleCheckpointPlan(ctx, deps) {
         (cp.tasks || []).some(t => t.step_type === 'approval_gate' || t._step_type === 'approval_gate')
       );
       if (!hasApprovalGate) {
-        log('WARN', `[checkpoint_plan] Irreversibility guard: ${destructiveParts.length} destructive_or_public part(s) but no approval_gate in plan`);
-        // Inject warning as prior result so cortex sees it on next iteration
-        return {
-          continue: true,
-          priorResultsAppend: [{
-            agent: 'system',
-            result: `[IRREVERSIBILITY WARNING] The Brief contains ${destructiveParts.length} destructive_or_public part(s) (${destructiveParts.map(p => p.id).join(', ')}) but the plan has no approval_gate step. Add an approval_gate or re-plan with explicit operator confirmation before destructive actions.`,
-          }],
-        };
+        // BOUNDED (WS-4): nudge for a missing approval_gate at most ONCE per mission. The old
+        // unbounded form returned {continue:true} every iteration a destructive_or_public part
+        // lacked a gate — if cortex kept not adding one it burned all MAX_ITERATIONS and fell
+        // back to a follow_process that ran the risky action locally and unverified (the live
+        // false-complete). We detect a prior nudge in priorResults (which carries across
+        // iterations) and, after one, PROCEED with the plan as-is — the checkpoint executor +
+        // cerebellum honesty backstop verify the outcome regardless. Flag-gated (default on);
+        // classification of what IS destructive stays in the organ SOUL (C-28), not here.
+        const GUARD_BOUNDED = CONTRACTS?.dispatch?.irreversibility_guard_bounded !== false;
+        const alreadyNudged = (priorResults || []).some(r =>
+          typeof r?.result === 'string' && r.result.includes('[IRREVERSIBILITY WARNING]'));
+        if (!GUARD_BOUNDED || !alreadyNudged) {
+          log('WARN', `[checkpoint_plan] Irreversibility guard: ${destructiveParts.length} destructive_or_public part(s) but no approval_gate in plan`);
+          // Inject warning as prior result so cortex sees it on next iteration
+          return {
+            continue: true,
+            priorResultsAppend: [{
+              agent: 'system',
+              result: `[IRREVERSIBILITY WARNING] The Brief contains ${destructiveParts.length} destructive_or_public part(s) (${destructiveParts.map(p => p.id).join(', ')}) but the plan has no approval_gate step. Add an approval_gate or re-plan with explicit operator confirmation before destructive actions.`,
+            }],
+          };
+        }
+        log('WARN', `[checkpoint_plan] Irreversibility guard already surfaced once for this mission; proceeding with the plan as-is (no approval_gate was added) rather than looping.`);
       }
     }
   }

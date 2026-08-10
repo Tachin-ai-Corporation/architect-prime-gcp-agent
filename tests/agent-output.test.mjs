@@ -7,7 +7,7 @@
 // recovered incident (annotate, let cerebellum arbitrate) from a real outcome failure.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectMotorFailure, isRecoveredToolError, toolLogShowsRetryRecovery } from '../corekit/lib/agent-output.mjs';
+import { detectMotorFailure, isRecoveredToolError, toolLogShowsRetryRecovery, isDeliveryCriticalIntent } from '../corekit/lib/agent-output.mjs';
 
 // A discovery that RECOVERED: a substantive clean answer, with the failure confined to one
 // tool-log line (a fragile count command), and a follow-up command that got the data anyway.
@@ -119,5 +119,55 @@ describe('retry-recovery — a failed command superseded by a later success (act
   });
   it('toolLogShowsRetryRecovery FALSE with fewer than two tool entries', () => {
     assert.equal(toolLogShowsRetryRecovery('[TOOL EXECUTION LOG]\n[TOOL] x() → Error: command failed\n[END TOOL LOG]'), false);
+  });
+});
+
+// WS-1b: a delivery-critical task (deploy/publish/promote) must not soft-pass a failed command
+// on PROSE LENGTH alone — confident narrative is not a deployed artifact. It still soft-passes
+// on PROVEN retry-recovery (the deploy actually succeeded on a second attempt), preserving FU-A.
+describe('isDeliveryCriticalIntent — delivery-critical task detection', () => {
+  it('TRUE for deploy / publish / promote / release / go-live / push-to-production / firebase deploy', () => {
+    for (const s of [
+      'Deploy the site to the staging channel.',
+      'Publish the updated docs to the site.',
+      'Promote staging to production.',
+      'Cut a release of the package.',
+      'Take the feature go live for all users.',
+      'Push to production once approved.',
+      'Run firebase deploy for the hosting target.',
+      'Update the deployment and share the URL.',
+    ]) assert.equal(isDeliveryCriticalIntent(s), true, s);
+  });
+  it('FALSE for tasks with no delivery verb', () => {
+    for (const s of [
+      'Summarize the meeting notes into three bullets.',
+      'Edit index.html to add a noindex meta tag.',
+      'Gather the last three missions for each agent.',
+      '',
+      null,
+    ]) assert.equal(isDeliveryCriticalIntent(s), false, String(s));
+  });
+});
+
+describe('isRecoveredToolError requireActionRecovery — the delivery-critical soft-pass gate', () => {
+  // A failed deploy whose motor wrote a LONG confident narrative but never retried: the
+  // answer-length path would soft-pass it (false-complete). requireActionRecovery closes that.
+  const DEPLOY_FAIL_LONG_PROSE = `I have completed the deployment of the site to the staging preview channel. `
+    + `The build compiled cleanly, assets were uploaded, and the hosting configuration was applied as specified. `
+    + `Everything looks good and the site should now be live on the staging URL for review by the team.\n\n`
+    + `---\n[TOOL EXECUTION LOG]\n`
+    + `[TOOL] runCommand({"command":"firebase hosting:channel:deploy staging"}) → Error: command failed (exit code 1): HTTP Error: 403, permission denied\n`
+    + `[END TOOL LOG]`;
+
+  it('default (non-delivery): long prose beside a tool-log failure recovers (unchanged behavior)', () => {
+    assert.ok(DEPLOY_FAIL_LONG_PROSE.replace(/\[TOOL EXECUTION LOG\][\s\S]*/, '').trim().length >= 200);
+    assert.equal(isRecoveredToolError(DEPLOY_FAIL_LONG_PROSE), true);
+  });
+  it('requireActionRecovery: the SAME failed deploy no longer soft-passes on prose length', () => {
+    assert.equal(isRecoveredToolError(DEPLOY_FAIL_LONG_PROSE, { requireActionRecovery: true }), false);
+  });
+  it('requireActionRecovery preserves FU-A: a deploy that retried and SUCCEEDED still recovers', () => {
+    // DEPLOY_RETRY: first attempt failed on --cwd, retry produced a Channel URL → proven action recovery.
+    assert.equal(isRecoveredToolError(DEPLOY_RETRY, { requireActionRecovery: true }), true);
   });
 });

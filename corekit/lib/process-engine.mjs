@@ -17,6 +17,34 @@ import { executeCheckpoints } from './checkpoint-executor.mjs';
 import { toStr } from './to-str.mjs';
 
 /**
+ * Synthesize a checkpoint-level acceptance criterion for a process checkpoint from its grouped
+ * steps. The process→checkpoint conversion historically stamped accept_criteria:'' , which
+ * DISARMED cerebellum checkpoint verification — the executor gates verification on a non-empty
+ * criterion, so a process mission completed without a single milestone check and could
+ * false-complete (a deploy step that failed silently still reported ✅). Joining the steps'
+ * own accept_criteria hands cerebellum a real milestone to re-derive (B-28). Pure.
+ *
+ * @param {Array<{accept_criteria?: string}>} tasks - the checkpoint's grouped step tasks
+ * @param {string} [checkpointTitle] - fallback milestone when no step carries a criterion
+ * @returns {string}
+ */
+export function synthesizeCheckpointCriterion(tasks, checkpointTitle = '') {
+  const criteria = (Array.isArray(tasks) ? tasks : [])
+    .map(t => toStr(t && t.accept_criteria).trim())
+    .filter(Boolean);
+  // Dedup while preserving order — grouped steps frequently share a criterion.
+  const seen = new Set();
+  const unique = criteria.filter(c => { const k = c.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  if (unique.length) return unique.join(' AND ');
+  // No step criteria — fall back to the checkpoint's own milestone, else a generic outcome
+  // clause. Either still ARMS verification so cerebellum re-derives the steps' outcomes.
+  const title = toStr(checkpointTitle).trim();
+  return title
+    ? `The checkpoint milestone is achieved: "${title}". Concrete tool evidence shows each step's outcome was produced (not simulated), with no unresolved errors.`
+    : `Every step in this checkpoint achieved its stated outcome, with concrete tool evidence and no unresolved errors.`;
+}
+
+/**
  * Create a process engine instance.
  *
  * @param {object} deps
@@ -77,7 +105,13 @@ export function createProcessEngine(deps) {
     onMissionComplete: _onMissionComplete,
     completeEnvelope: _completeEnvelope,
     contextBudgets = {},
+    contracts = {},
   } = deps;
+
+  // Re-arm cerebellum checkpoint verification for process missions (default on). When off,
+  // the pre-fix behavior returns: process checkpoints carry accept_criteria:'' and verify is
+  // skipped. See synthesizeCheckpointCriterion + checkpoint-executor's verification gate.
+  const PROCESS_CP_VERIFY = contracts.dispatch?.process_checkpoint_verification !== false;
 
   const log = deps.logger || ((level, msg) => console.log(`[process-engine] ${level}: ${msg}`));
 
@@ -290,11 +324,14 @@ export function createProcessEngine(deps) {
 
       // Create checkpoint boundary
       if (step.checkpointBoundary || i === expandedSteps.length - 1) {
+        const cpInstruction = substitute(step.checkpointBoundary
+          ? `Checkpoint ${cpIndex}: ${step.title || 'Steps ' + (i - currentTasks.length + 2) + '-' + (i + 1)}`
+          : `Process Steps`);
         checkpoints.push({
-          instruction: substitute(step.checkpointBoundary
-            ? `Checkpoint ${cpIndex}: ${step.title || 'Steps ' + (i - currentTasks.length + 2) + '-' + (i + 1)}`
-            : `Process Steps`),
-          accept_criteria: '',
+          instruction: cpInstruction,
+          // Synthesize a real milestone criterion so cerebellum verifies this checkpoint
+          // (the historical '' disarmed verification and let process missions false-complete).
+          accept_criteria: PROCESS_CP_VERIFY ? synthesizeCheckpointCriterion(currentTasks, cpInstruction) : '',
           tasks: currentTasks,
         });
         currentTasks = [];
@@ -893,7 +930,9 @@ export function createProcessEngine(deps) {
       firestoreRead,
       firestoreQuery,
       generateId,
-      contracts: {},
+      // Real contracts (not {}), so the process path reads the same dispatch flags/budgets
+      // as checkpoint_plan — soft-pass guard, verify budgets, ledger, resume all consistent.
+      contracts,
       skillIndex: '',
       PROJECTS: (projects && typeof projects.getAll === 'function' ? projects.getAll() : {}) || {},
       delegationEnabled,

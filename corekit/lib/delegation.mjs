@@ -312,6 +312,82 @@ export function checkDelegationCapability({ instruction, delegatorSpecialty, tar
   };
 }
 
+/**
+ * Symmetric mirror of checkDelegationCapability. Where that guard catches a mis-directed
+ * delegation (sending a teammate work THIS agent should do itself), this one catches the
+ * opposite: a LOCAL execution task that invokes a distinctive capability the EXECUTING
+ * agent's own specialty LACKS but another specialty OWNS. Running it locally can only fail —
+ * no skill, no perms — so it should be delegated to the specialty that owns it. This is the
+ * generic linchpin behind the observed live failure: a product-architect ran a Firebase
+ * deploy on its own motor (it has no firebase skill, no deploy perms) instead of delegating
+ * to the devops teammate, then falsely reported success.
+ *
+ * Pure and conservative, exactly like checkDelegationCapability: fires ONLY when the task
+ * instruction *explicitly invokes* a distinctive capability (a skill/CLI id like `firebase`,
+ * `gcloud`, `docker`) as a standalone token — never on a filename/path match, never on a
+ * GENERIC_SKILL every specialty carries. Returns no reroute when the executor's caps are
+ * unknown (never guess), when nothing distinctive is invoked, or when the only owner IS the
+ * executor's own specialty.
+ *
+ * Target selection is deterministic: among specialties that own an invoked-and-missing
+ * capability, rank by (1) membership in the project roster, (2) how many of the offending
+ * capabilities the specialty covers, (3) specialty id alphabetically. The chosen target is a
+ * SPECIALTY id — the caller resolves it to an online agent via the fleet registry (which
+ * applies the existing online/self/concurrent/cap/dedup delegation guards).
+ *
+ * @param {object} o
+ * @param {string} o.instruction        - the local task instruction text
+ * @param {string} o.executorSpecialty  - the executing agent's specialty id (e.g. 'product-architect')
+ * @param {Object<string,string[]>} o.specialtySkills - specialty id -> skill ids
+ * @param {string[]} [o.rosterSpecialties] - specialties present on the project roster (preferred targets)
+ * @returns {{ reroute: boolean, targetSpecialty: string|null, offending: string[], reason: string }}
+ */
+export function checkExecutionCapability({ instruction, executorSpecialty, specialtySkills, rosterSpecialties = [] } = {}) {
+  const clear = { reroute: false, targetSpecialty: null, offending: [], reason: '' };
+  if (!instruction || !executorSpecialty || !specialtySkills) return clear;
+  const own = specialtySkills[executorSpecialty];
+  if (!Array.isArray(own)) return clear; // unknown executor caps → don't guess
+  const ownSet = new Set(own);
+  const text = String(instruction).toLowerCase();
+  // For each OTHER specialty, the distinctive skills it owns that the executor LACKS and
+  // whose id appears as a standalone token in the instruction. Same token-match rule as
+  // checkDelegationCapability: boundaries exclude word chars, dots and slashes on both sides
+  // so `firebase.json` in an edit task does not read as "deploy via firebase".
+  const ownedBy = new Map(); // skill id -> [specialty ids that own it]
+  for (const [spec, skills] of Object.entries(specialtySkills)) {
+    if (spec === executorSpecialty) continue;
+    if (!Array.isArray(skills)) continue;
+    for (const skill of skills) {
+      if (GENERIC_SKILLS.has(skill) || ownSet.has(skill)) continue;
+      const s = escapeRe(String(skill).toLowerCase());
+      if (!new RegExp(`(?:^|[^\\w./-])${s}(?:[^\\w./-]|$)`).test(text)) continue;
+      if (!ownedBy.has(skill)) ownedBy.set(skill, []);
+      ownedBy.get(skill).push(spec);
+    }
+  }
+  const offending = [...ownedBy.keys()];
+  if (offending.length === 0) return clear;
+  // Tally candidate target specialties across all offending capabilities.
+  const tally = new Map(); // specialty -> count of offending caps it covers
+  for (const specs of ownedBy.values()) {
+    for (const spec of specs) tally.set(spec, (tally.get(spec) || 0) + 1);
+  }
+  const rosterSet = new Set(Array.isArray(rosterSpecialties) ? rosterSpecialties : []);
+  const ranked = [...tally.entries()].sort((a, b) => {
+    const ra = rosterSet.has(a[0]) ? 1 : 0, rb = rosterSet.has(b[0]) ? 1 : 0;
+    if (rb !== ra) return rb - ra;          // roster members first
+    if (b[1] !== a[1]) return b[1] - a[1];  // then most offending caps covered
+    return a[0] < b[0] ? -1 : 1;            // then alphabetical (determinism)
+  });
+  const targetSpecialty = ranked[0][0];
+  return {
+    reroute: true,
+    targetSpecialty,
+    offending,
+    reason: `local task invokes ${offending.join(', ')} — a capability this '${executorSpecialty}' agent lacks but '${targetSpecialty}' owns; delegate it rather than run it locally`,
+  };
+}
+
 // ---- Delegation result summarization (childResults / cpResults) ----
 
 /**

@@ -57,10 +57,15 @@ export function detectMotorFailure(output) {
  * Every other shape returns false, preserving the strict hard-fail.
  *
  * @param {*} output - the motor's full response (prose answer + tool log)
- * @param {{minAnswerChars?: number}} [opts]
+ * @param {{minAnswerChars?: number, requireActionRecovery?: boolean}} [opts]
+ *   requireActionRecovery — for a DELIVERY-CRITICAL task (deploy/publish/promote), confident
+ *   prose is NOT the deliverable, so the answer-length recovery path is disabled: recovery then
+ *   requires PROOF the action itself succeeded on a retry (a non-failing tool call after the
+ *   last failing one). Without this, a failed deploy with a long narrative soft-passes into a
+ *   false-complete (observed live: a deploy hit HTTP 404 yet the mission reported ✅).
  * @returns {boolean}
  */
-export function isRecoveredToolError(output, { minAnswerChars = 200 } = {}) {
+export function isRecoveredToolError(output, { minAnswerChars = 200, requireActionRecovery = false } = {}) {
   const text = toStr(output);
   const logRe = /\[TOOL EXECUTION LOG\][\s\S]*?(?:\[END TOOL LOG\]|$)/;
   const logMatch = text.match(logRe);
@@ -74,7 +79,10 @@ export function isRecoveredToolError(output, { minAnswerChars = 200 } = {}) {
   // deliverable is the successful action, so its prose answer is legitimately short). In both
   // cases the task is not hard-failed; checkpoint verification (cerebellum) still arbitrates the
   // milestone against its criteria (B-28), so this only spares the wasteful hard-fail / re-plan.
-  if (answer.length >= minAnswerChars) return true;
+  // A delivery-critical task never recovers on prose length alone — only on proven action
+  // recovery (a successful retry). Every other task keeps the answer-length path (a discovery's
+  // long prose IS its deliverable).
+  if (!requireActionRecovery && answer.length >= minAnswerChars) return true;
   return toolLogShowsRetryRecovery(logMatch[0]);
 }
 
@@ -93,4 +101,36 @@ export function toolLogShowsRetryRecovery(log) {
   let lastFail = -1, lastOk = -1;
   entries.forEach((e, i) => { if (detectMotorFailure(e).failed) lastFail = i; else lastOk = i; });
   return lastFail >= 0 && lastOk > lastFail;
+}
+
+/**
+ * Is a task's core action a publish/deploy/promote/release — one where the command IS the
+ * deliverable? For such a task a motor-reported command failure is the OUTCOME, not a
+ * recovered sub-command incident: there is no deliverable if the publish itself failed. The
+ * recovered-tool-error soft-pass (isRecoveredToolError) must NOT spare it — a failed deploy
+ * that still produced confident prose is exactly how a false-complete slips through (the live
+ * failure: a deploy hit HTTP 404 yet the mission reported ✅). Pure. Matches distinctive
+ * delivery verbs as word-boundary tokens; it errs toward TRUE (a task that merely mentions
+ * deploy/publish/promote is treated as delivery-critical). That only costs a benign task the
+ * prose-length soft-pass on a genuine motor failure — never correctness — so the strict side
+ * is the safe side.
+ * @param {string} instruction - the task instruction text
+ * @returns {boolean}
+ */
+export function isDeliveryCriticalIntent(instruction) {
+  const text = toStr(instruction).toLowerCase();
+  if (!text) return false;
+  const patterns = [
+    /\bdeploy(?:ing|ed|ment|s)?\b/,
+    /\bpublish(?:ing|ed|es)?\b/,
+    /\bpromot(?:e|ing|ed|ion)\b/,
+    /\brelease(?:d|s|ing)?\b/,
+    /\brollout\b/,
+    /\broll\s+out\b/,
+    /\bgo\s+live\b/,
+    /\bpush\s+to\s+(?:prod|production|live|staging)\b/,
+    /\bfirebase\s+(?:deploy|hosting)\b/,
+    /\bhosting:channel\b/,
+  ];
+  return patterns.some(re => re.test(text));
 }

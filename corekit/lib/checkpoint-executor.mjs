@@ -8,10 +8,10 @@ import { toStr } from './to-str.mjs';
 import { smartTruncate } from './vertex-text.mjs';
 import { buildPriorWorkContext, renderCheckpointDigest } from './compaction.mjs';
 import { makeAddress } from './channel.mjs';
-import { composeDelegationMarker, normalizeTargetEmail, checkDelegationCapability } from './delegation.mjs';
+import { composeDelegationMarker, normalizeTargetEmail, checkDelegationCapability, checkExecutionCapability } from './delegation.mjs';
 import { readFileSync as _readFileSync } from 'fs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation, isMissingEvidenceFail, stakesAtLeast } from './verdict.mjs';
-import { detectMotorFailure, isRecoveredToolError } from './agent-output.mjs';
+import { detectMotorFailure, isRecoveredToolError, isDeliveryCriticalIntent } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket, packToolEvidence } from './result-packet.mjs';
@@ -134,6 +134,13 @@ export async function executeCheckpoints(checkpoints, opts) {
   // error is annotated and left for cerebellum to arbitrate; when false, the strict
   // any-substring hard-fail returns.
   const RECOVERED_TOOL_ERROR_SOFT = contracts.dispatch?.recovered_tool_error_soft_fail !== false;
+  // WS-1b: a delivery-critical (publish/deploy) task that FAILED must not soft-pass on prose
+  // length — a failed deploy is a real failure, not a recovered incident. Default on.
+  const PUBLISH_SOFT_PASS_GUARD = contracts.dispatch?.publish_soft_pass_guard !== false;
+  // WS-2: reroute a LOCAL task that invokes a capability this agent's specialty lacks but a
+  // teammate's owns into a delegation to the owner (the symmetric mirror of the delegation-
+  // side capability guard). Default on; fires on both the checkpoint_plan and process paths.
+  const EXEC_CAP_REROUTE = contracts.dispatch?.execution_capability_reroute !== false;
   const RESOURCE_LEDGER_ENABLED = contracts.memory?.resource_ledger?.enabled !== false;
   const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
   const RESOURCE_LEDGER_RECALL_LIMIT = contracts.memory?.resource_ledger?.recall_limit ?? 40;
@@ -334,8 +341,40 @@ export async function executeCheckpoints(checkpoints, opts) {
         taskDesc = toStr(task.task || task.instruction || '');
         taskCriteria = task.accept_criteria
           || `The task's stated outcome is achieved: "${toStr(task.task || task.brief_part || '').substring(0, 200)}". Concrete tool evidence shows the outcome was produced (not simulated), with no unresolved errors.`;
-        stepType = task._step_type || task.type || 'standard';
+        // Recognize all three field-name variants the planner/process layers emit for a step
+        // type ('_step_type', bare 'step_type', 'type') so an explicit delegation/approval step
+        // is honored regardless of which layer authored it.
+        stepType = task._step_type || task.step_type || task.type || 'standard';
         isOptional = task._optional === true;
+      }
+
+      // WS-2: route specialty-owned execution to the owning teammate. A LOCAL motor task that
+      // invokes a distinctive capability THIS agent's specialty lacks but a project teammate's
+      // specialty OWNS can only fail here (no skill, no perms) — convert it to a delegation so
+      // the owner runs it. Generic and fires on BOTH execution paths (checkpoint_plan and
+      // follow_process converge on this loop). It flips stepType→'delegation' + sets the target
+      // specialty, so the delegation branch below reuses its resolution, source handoff and
+      // deploy-target injection. The mirror of the delegation-side capability guard: that one
+      // catches sending work AWAY that we should do ourselves; this one catches doing work
+      // LOCALLY that we should send to the owner.
+      if (EXEC_CAP_REROUTE && delegationEnabled && stepType === 'standard' && taskAgent === 'motor') {
+        const capMaps = loadDelegationCapMaps(CORE_DIR);
+        if (capMaps && capMaps.agentSpecialty && capMaps.specialtySkills) {
+          const rosterSpecialties = Object.values(PROJECTS?.[envelope.project_id]?.team || {})
+            .map(m => m && (m.specialty || m.type)).filter(Boolean);
+          const reroute = checkExecutionCapability({
+            instruction: taskDesc,
+            executorSpecialty: capMaps.agentSpecialty,
+            specialtySkills: capMaps.specialtySkills,
+            rosterSpecialties,
+          });
+          if (reroute.reroute && reroute.targetSpecialty && reroute.targetSpecialty !== capMaps.agentSpecialty) {
+            log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: [execution-capability] ${reroute.reason} — rerouting to a delegation`);
+            stepType = 'delegation';
+            task._specialty = reroute.targetSpecialty;
+            taskAgent = reroute.targetSpecialty; // labels/logs read the delegate specialty
+          }
+        }
       }
 
       if (!taskAgent) {
@@ -561,7 +600,11 @@ export async function executeCheckpoints(checkpoints, opts) {
 
       // ---- Delegation: cross-agent dispatch via GChat ----
       if (stepType === 'delegation') {
-        const delegateSpecialty = task._specialty || taskAgent;
+        // On the pre-stamped (process) path `task` is the T-envelope, so the delegate specialty
+        // lives at source_meta.specialty — read it too, else an explicit process delegation step
+        // resolved to the agent's own type and self-delegated. (_specialty wins when set, incl.
+        // the WS-2 reroute above.)
+        const delegateSpecialty = task._specialty || task.source_meta?.specialty || taskAgent;
 
         // Delegation is fleet-only (skill.json roles) and project-scoped.
         // Agents without the skill (Primes) never enter the delegation path.
@@ -1063,7 +1106,13 @@ export async function executeCheckpoints(checkpoints, opts) {
         if (taskAgent !== 'motor') return;
         const mc = detectMotorFailure(res.output || res.error || '');
         if (!mc.failed) return;
-        if (RECOVERED_TOOL_ERROR_SOFT && isRecoveredToolError(res.output || '')) {
+        // A delivery-critical task (deploy/publish/promote) that failed must NOT soft-pass on
+        // prose length — a failed publish is a real failure, not a recovered incident (the live
+        // false-complete: a deploy hit HTTP 404 yet the mission reported ✅). It may still
+        // soft-pass on PROVEN retry-recovery (the action itself succeeded on a later attempt),
+        // which preserves the FU-A recovered-by-retry behavior.
+        const requireActionRecovery = PUBLISH_SOFT_PASS_GUARD && isDeliveryCriticalIntent(taskDesc);
+        if (RECOVERED_TOOL_ERROR_SOFT && isRecoveredToolError(res.output || '', { requireActionRecovery })) {
           log('WARN', `[checkpoint-executor] CP${cpNum} T${taskNum}: motor reported "${mc.detail}" in a tool call but recovered and produced a deliverable — not hard-failing; cerebellum arbitrates`);
           res.output = (res.output || '') + `\n[EVIDENCE WARNING: a tool call reported "${mc.detail}" during this task; the motor recovered and produced a result. Verify the final answer is complete and accounts for that error.]`;
           return;
