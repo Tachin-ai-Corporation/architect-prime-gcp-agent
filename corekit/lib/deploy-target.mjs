@@ -21,8 +21,15 @@ function s(v) { return (v == null ? '' : String(v)).trim(); }
  * Coerce loosely-shaped input (from a bootstrap decision, project-manage JSON, or a
  * project doc) into a clean descriptor. Returns null when there is nothing usable.
  *
- * @param {object} input - { platform?, gcp_project?, hosting_site?, source?:{kind,ref}, flow? }
- * @returns {null | {platform:string, gcp_project:string, hosting_site:string, source:({kind:string,ref:string}|null), flow:string}}
+ * A drive source may optionally declare its SHAPE — a single `file` (one self-contained page →
+ * the site's index.html) or a `folder` (a tree of pages + assets). This removes a real
+ * failure: a devops agent treated a single-FILE Drive source as an incomplete folder and its
+ * cortex wrote a "download all files from the folder" criterion that could never pass. Shape is
+ * optional and drive-only; when absent the deploying agent inspects what the download yields.
+ * `drive_file`/`drive_folder` are accepted as friendly kind aliases for `drive` + a shape.
+ *
+ * @param {object} input - { platform?, gcp_project?, hosting_site?, source?:{kind,ref,shape?}, flow? }
+ * @returns {null | {platform:string, gcp_project:string, hosting_site:string, source:({kind:string,ref:string,shape?:string}|null), flow:string}}
  */
 export function normalizeDeployDescriptor(input) {
   if (!input || typeof input !== 'object') return null;
@@ -36,8 +43,13 @@ export function normalizeDeployDescriptor(input) {
   if (rawSrc && typeof rawSrc === 'object') {
     let kind = s(rawSrc.kind).toLowerCase();
     if (kind === 'repo') kind = 'git';               // repo is an alias for git
+    let shape = s(rawSrc.shape).toLowerCase();
+    if (kind === 'drive_file') { kind = 'drive'; shape = shape || 'file'; }
+    else if (kind === 'drive_folder') { kind = 'drive'; shape = shape || 'folder'; }
+    if (shape !== 'file' && shape !== 'folder') shape = '';   // only file|folder are meaningful
+    if (kind !== 'drive') shape = '';                          // shape is drive-only (git is always a tree)
     const ref = s(rawSrc.ref || rawSrc.id || rawSrc.url);
-    if (SOURCE_KINDS.has(kind) && ref) source = { kind, ref };
+    if (SOURCE_KINDS.has(kind) && ref) source = shape ? { kind, ref, shape } : { kind, ref };
   }
 
   // Nothing meaningful → no descriptor.
@@ -87,9 +99,18 @@ export function renderDeployBlock(d) {
     lines.push(`- Hosting site (deploy TARGET — firebase \`--site\`): \`${n.hosting_site}\``);
     lines.push(`- Firebase/GCP project (firebase \`--project\`): \`${n.gcp_project}\`   ← NOT the deploy site`);
     if (n.source) {
-      const how = n.source.kind === 'drive'
-        ? `Google Drive file \`${n.source.ref}\` — fetch it INTO the clean deploy dir before deploying`
-        : `git repo \`${n.source.ref}\` — clone it into a clean dir and deploy that`;
+      let how;
+      if (n.source.kind === 'drive') {
+        if (n.source.shape === 'folder') {
+          how = `Google Drive FOLDER \`${n.source.ref}\` — \`drive-download ${n.source.ref}\` ALL its files into the clean deploy dir, preserving structure (a multi-page site: pages + assets)`;
+        } else if (n.source.shape === 'file') {
+          how = `Google Drive FILE \`${n.source.ref}\` — a single self-contained page; \`drive-download ${n.source.ref}\` and place it as \`index.html\` in the clean deploy dir. A one-page site is COMPLETE with just that file — do NOT treat a missing \`images/\` as incomplete`;
+        } else {
+          how = `Google Drive source \`${n.source.ref}\` — \`drive-download ${n.source.ref}\` into the clean deploy dir, then INSPECT what landed: a single file IS the site (place as \`index.html\`); a folder is the whole tree. Deploy what the source actually contains — do not assume a folder`;
+        }
+      } else {
+        how = `git repo \`${n.source.ref}\` — clone it into a clean dir and deploy that`;
+      }
       lines.push(`- Source content: ${how}`);
     }
     lines.push(`- ${n.flow || 'Flow: staging channel → share URL → owner approval → promote to live (hosting:clone)'}`);
@@ -116,6 +137,9 @@ export function deployTargetLine(d) {
   const parts = [];
   if (n.hosting_site) parts.push(`site=${n.hosting_site}`);
   if (n.gcp_project) parts.push(`project=${n.gcp_project}`);
-  if (n.source) parts.push(`source=${n.source.kind}:${n.source.ref}`);
+  if (n.source) {
+    parts.push(`source=${n.source.kind}:${n.source.ref}`);
+    if (n.source.shape) parts.push(`shape=${n.source.shape}`);
+  }
   return parts.join(' ');
 }

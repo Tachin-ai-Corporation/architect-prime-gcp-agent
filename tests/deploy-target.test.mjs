@@ -42,6 +42,19 @@ describe('normalizeDeployDescriptor', () => {
     assert.equal(n.hosting_site, 'sX');
   });
 
+  it('carries an explicit drive source.shape (file|folder), and drops a nonsense shape', () => {
+    assert.equal(normalizeDeployDescriptor({ ...FULL, source: { kind: 'drive', ref: 'r', shape: 'file' } }).source.shape, 'file');
+    assert.equal(normalizeDeployDescriptor({ ...FULL, source: { kind: 'drive', ref: 'r', shape: 'FOLDER' } }).source.shape, 'folder');
+    assert.equal('shape' in normalizeDeployDescriptor({ ...FULL, source: { kind: 'drive', ref: 'r', shape: 'zip' } }).source, false);
+  });
+  it('accepts drive_file / drive_folder as friendly kind aliases → kind drive + shape', () => {
+    assert.deepEqual(normalizeDeployDescriptor({ ...FULL, source: { kind: 'drive_file', ref: 'r' } }).source, { kind: 'drive', ref: 'r', shape: 'file' });
+    assert.deepEqual(normalizeDeployDescriptor({ ...FULL, source: { kind: 'drive_folder', ref: 'r' } }).source, { kind: 'drive', ref: 'r', shape: 'folder' });
+  });
+  it('ignores shape on a non-drive (git) source — git is always a tree', () => {
+    assert.deepEqual(normalizeDeployDescriptor({ ...FULL, source: { kind: 'git', ref: 'r', shape: 'file' } }).source, { kind: 'git', ref: 'r' });
+  });
+
   it('returns null when there is nothing usable', () => {
     assert.equal(normalizeDeployDescriptor(null), null);
     assert.equal(normalizeDeployDescriptor({}), null);
@@ -76,8 +89,22 @@ describe('renderDeployBlock', () => {
     assert.match(md, /GCP project \(firebase `--project`\): `tachin-website`.*NOT the deploy site/);
     assert.match(md, /firebase hosting:channel:deploy staging --site 1health-website --project tachin-website/);
   });
-  it('tells a drive source to be fetched INTO the deploy dir (the placeholder bug)', () => {
-    assert.match(renderDeployBlock(FULL), /Google Drive file `1OJ9F6M9`.*fetch it INTO the clean deploy dir/);
+  it('a drive source with NO shape renders shape-neutral guidance (inspect, do not assume a folder)', () => {
+    const md = renderDeployBlock(FULL);
+    assert.match(md, /Google Drive source `1OJ9F6M9`/);
+    assert.match(md, /INSPECT what landed/);
+    assert.match(md, /do not assume a folder/i);
+  });
+  it('a single-FILE drive source says place it as index.html and not to expect an images dir', () => {
+    const md = renderDeployBlock({ ...FULL, source: { kind: 'drive', ref: '1OJ9F6M9', shape: 'file' } });
+    assert.match(md, /Google Drive FILE `1OJ9F6M9`/);
+    assert.match(md, /place it as `index\.html`/);
+    assert.match(md, /do NOT treat a missing `images\/` as incomplete/);
+  });
+  it('a FOLDER drive source says download ALL its files preserving structure', () => {
+    const md = renderDeployBlock({ ...FULL, source: { kind: 'drive', ref: '1OJ9F6M9', shape: 'folder' } });
+    assert.match(md, /Google Drive FOLDER `1OJ9F6M9`/);
+    assert.match(md, /ALL its files/);
   });
   it('renders a git source as a clone', () => {
     const md = renderDeployBlock({ ...FULL, source: { kind: 'git', ref: 'tachin-web' } });
@@ -92,6 +119,12 @@ describe('renderDeployBlock', () => {
 describe('deployTargetLine', () => {
   it('is a compact site/project/source one-liner for a delegated instruction', () => {
     assert.equal(deployTargetLine(FULL), 'site=1health-website project=tachin-website source=drive:1OJ9F6M9');
+  });
+  it('includes shape when the source declares it', () => {
+    assert.equal(
+      deployTargetLine({ ...FULL, source: { kind: 'drive', ref: 'r', shape: 'file' } }),
+      'site=1health-website project=tachin-website source=drive:r shape=file',
+    );
   });
   it('is empty when absent', () => {
     assert.equal(deployTargetLine(null), '');
