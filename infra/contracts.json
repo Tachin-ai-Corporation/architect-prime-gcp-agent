@@ -134,9 +134,9 @@
     "project_bootstrap": {
       "enabled": false
     },
-    "_delivery_robustness_comment": "Two guards for multi-agent DELIVERY, from a live 1health mission that false-completed: archie re-delegated a design review ~6x over 35 min (the delegate's input branch was empty), then SYNTHESIZED `complete` with 3 of 4 checkpoints still pending and an empty deliverable — a false green. finalize_requires_spine_complete (FC-A, synthesize.mjs): a mission with a pinned _cp_spine may not synthesize COMPLETE while its DELIVERABLE (last) checkpoint is unmet — it fails closed to needs_input naming what's outstanding. redelegation_cap_enabled (FC-B, agent-brain.mjs checkWaitingEnvelopes): a checkpoint whose delegation returns with failures is re-delegated at most redelegation_max times; past that the mission escalates to the operator (needs_input) instead of looping. Both default off; enable per-VM for canary via AGENT_FINALIZE_SPINE_GUARD=on / AGENT_REDELEG_CAP=on, or flip here after canary. Revert = false.",
-    "finalize_requires_spine_complete": false,
-    "redelegation_cap_enabled": false,
+    "_delivery_robustness_comment": "Two guards for multi-agent DELIVERY, from a live 1health mission that false-completed: archie re-delegated a design review ~6x over 35 min (the delegate's input branch was empty), then SYNTHESIZED `complete` with 3 of 4 checkpoints still pending and an empty deliverable — a false green. finalize_requires_spine_complete (FC-A, synthesize.mjs): a mission with a pinned _cp_spine may not synthesize COMPLETE while its DELIVERABLE (last) checkpoint is unmet — it fails closed to needs_input naming what's outstanding. redelegation_cap_enabled (FC-B, agent-brain.mjs checkWaitingEnvelopes): a checkpoint whose delegation returns with failures is re-delegated at most redelegation_max times; past that the mission escalates to the operator (needs_input) instead of looping. Both were PROVEN on the archie delivery-robustness canary, and the deploy-delegation canary (2026-08-10) then showed that with delegation now the norm, a delegate that cannot converge makes the delegator re-delegate UNBOUNDED — exactly what FC-B caps — so both are now default ON here. The AGENT_FINALIZE_SPINE_GUARD / AGENT_REDELEG_CAP env vars still override per-VM. Both fire only on a pinned-spine mission with an unmet deliverable / a repeatedly-failing delegation. Revert = false.",
+    "finalize_requires_spine_complete": true,
+    "redelegation_cap_enabled": true,
     "redelegation_max": 2,
     "goal_state_enabled": true,
     "goal_check_required": true,
