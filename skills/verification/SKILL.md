@@ -102,6 +102,30 @@ the diff to that file. The motor's report is not the artifact.
    heading edit that blanks everything below the hero did NOT meet it. Check: `git diff --stat`
    proportionate to the intent, and `grep "\\'" FILE` empty.
 
+### Deploy/Publish Gate (reachable artifact — verify the URL, not the claim)
+When the criterion is a **deploy or publish** — the deliverable is now reachable at a URL (a
+staging/preview channel, a live site, a published page) — judge the **reachable artifact**, not
+the motor's "✅ deployed" prose. A deploy that printed a URL but was never fetched, or was
+fetched and did not return content, is NOT a completed deploy. This is the live false-complete
+this gate exists for: a deploy reported success while the URL served **HTTP 404 / 0 bytes**, and
+no URL ever reached the requester.
+1. **A URL must be present and named.** The output must carry the exact deployed URL.
+   "Deployed successfully" with no URL is not evidenced — `report_fail`, recommending the URL be
+   reported.
+2. **The URL must be shown reachable in the evidence.** The tool log must contain a fetch of
+   that URL — a `curl` (or equivalent) showing **HTTP 200 and a non-empty body**. A `firebase
+   deploy` / CLI success line is the tool's own claim, not proof the artifact serves; the
+   reachability check is the proof (B-28 re-derivation). If the deploy printed a URL but the
+   evidence shows no fetch of it, that is not-yet-verified — `report_fail` naming the missing
+   reachability check, do not PASS on the CLI's say-so.
+3. **A 404 / 000 / 5xx / empty body is a FAIL**, even when the deploy command exited 0 — outcome
+   over exit code. Name the URL and the status you see.
+4. **Judge the RIGHT target.** If the request named a specific site/channel (e.g. the staging
+   channel of a named site), the fetched URL must be that target — a 200 from the *default* site
+   is not the deploy that was asked for.
+Match the depth to the request: a whole-site deploy implies `/` **and** a representative page
+and image reachable (the deploy skill fetches these); a single-page publish implies that page.
+
 ### Attack Duty (stakes-gated)
 When your instruction includes an `## Attack Duty` block (injected for consequential+ stakes):
 1. Before any PASS, run three attacks and record each as a check entry:
@@ -150,6 +174,8 @@ These agents CANNOT write files, create artifacts, or modify state. Do not fail 
 | "Added noindex to all 6 pages" / "edited index.html" but `git diff` shows those files unchanged | FAIL | The write never landed — a claim is not a diff; name the file(s) that did not change |
 | The diff created a new/parallel file (`home.html`) instead of changing the named one (`index.html`) | FAIL | The real file is untouched; the change is not in the artifact the site serves |
 | The asked-for text IS in the diff, but the same commit mangled quotes across the file / rewrote unrelated lines / blanked the page below the fold | FAIL | A change that corrupts the file is not a completed change — surgical intent, non-surgical result |
+| "Deployed ✅ to `<url>`" but the log shows no fetch of that URL, or a 404 / 5xx / empty body | FAIL | A deploy is proven by the artifact serving (HTTP 200 + content), not the CLI success line — a bare claim or a 404 is a false-complete |
+| A deploy 200s on the **default** site when a specific site/channel was named | FAIL | Right outcome, wrong target — the deploy the requester asked for did not land |
 | Smooth, fluent motor output | Verify harder | Fluency-as-accuracy — the passage that came out easiest gets audited hardest (B-31) |
 
 ## Error Recovery

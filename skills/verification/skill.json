@@ -1,11 +1,12 @@
 {
   "id": "verification",
   "name": "Task Verification",
-  "version": 4,
+  "version": 5,
   "description": "Verify task outputs against acceptance criteria to render structured pass or fail verdicts.",
   "origin": "core",
   "category": "verification",
   "agent_part": "cerebellum",
+  "_deploy_gate_note": "v5: added the Deploy/Publish Gate — a deploy/publish criterion passes only on an observed HTTP-200 fetch of the exact claimed URL (right site/channel), never on a CLI 'deployed ✅' line (B-28). Closes the live false-complete where a deploy served 404 yet reported success.",
   "_scripts_kind": "gateway",
   "_scripts_note": "report_pass/report_fail are GATEWAY-NATIVE tool calls registered in corekit/brain/tools.mjs, not shell binaries — the cerebellum invokes them as functions and verdict.mjs reads the chosen name as the verdict. No manifest installs them to bin/, which is correct. '_scripts_kind': 'gateway' tells the phantom-capability check (validate-contracts 14c) not to expect a bin/ entry.",
   "scripts": [
