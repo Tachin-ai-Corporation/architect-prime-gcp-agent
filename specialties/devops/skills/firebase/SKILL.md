@@ -102,7 +102,16 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
    ```
    (Alternatively map a target once with `firebase target:apply hosting TARGET SITE`, then deploy
    with `--only hosting:TARGET`.) Confirm the resolved site in the deploy output before promoting.
-3. Deploy to a **preview channel** first, from the deploy directory:
+3. **Pre-deploy gate — never ship an empty or half-fetched dir (a deploy REPLACES the channel).**
+   `hosting:channel:deploy` (and `deploy`) overwrite that channel/site's content wholesale, so
+   deploying an empty or incomplete directory turns a **working** preview/site into a 404. Before
+   you deploy, confirm the deploy dir actually holds the site: `test -s <public>/index.html` and
+   `ls -R` shows the real pages/assets. If the source fetch (`drive-download`, `work-clone`/clone)
+   **errored, returned no file, or the dir is empty — STOP, do NOT deploy.** A transient
+   `access_denied`/network error on the fetch usually succeeds on a retry, so retry the fetch
+   first; if it still fails, escalate `needs_input`. Never deploy nothing over a live channel — a
+   failed fetch must never become a shipped 404. THEN deploy to the **preview channel** first,
+   from the deploy directory:
    ```bash
    firebase hosting:channel:deploy staging --project=PROJECT
    ```
@@ -218,6 +227,7 @@ architecture, the hops map on as:
 | Verification keeps failing on "download all files from the folder" / missing `images/`, but the source is a single file | A single-FILE Drive site (one self-contained HTML page) is being treated as an incomplete folder | A one-page site is COMPLETE as that one file: place it as `index.html`, and verify by whole-render of `/` (byte size + a below-the-fold marker), NOT by a folder inventory or `images/` paths it never had. Read the Deployment block's `source` shape (`file` vs `folder`); never write a "download the whole folder" criterion for a single-file source. |
 | `firebase init` hangs, times out (~120s), then the turn loop-guards out | `init` is interactive and blocks forever with no TTY | **Never run `firebase init` (or any `init` subcommand).** Write `firebase.json` directly (Deploy step 2), then deploy with `hosting:channel:deploy` / `deploy --only hosting`. Deploying needs no init. |
 | Deploy reports **0 files** | `hosting.public` points at the wrong directory | Point `public` at the directory holding the files (`.` when `firebase.json` sits with them); redeploy. |
+| A working preview/live channel suddenly 404s ("Site/Page Not Found") right after a deploy | Deployed an empty/half-fetched dir — the source fetch (`drive-download`/clone) errored or returned nothing, but the deploy ran anyway and REPLACED the channel wholesale | Never deploy an unverified dir (Deploy step 3 gate: `test -s <public>/index.html` first). Recover: re-fetch the real source and redeploy, or clone a known-good version back (`firebase hosting:clone SITE:live SITE:staging`). Retry a transient `access_denied`/network fetch; escalate `needs_input` if it persists — never ship empty over a live channel. |
 | Prod went live but content is **incomplete or wrong** (missing pages/images, stale `<title>`) | Deployed the ambient mission workspace (`public:"."`) instead of the project's reviewed source | Promote the approved **staging** version rather than rebuilding: `firebase hosting:clone SITE:staging SITE:live` (or a REST version-release of the reviewed version). Then always deploy from a clean clone of the project repo, never the scratch tree; re-verify `/` + a page + an image. |
 | Rewrite to Cloud Run not working | Used `destination` instead of `run` | Use `"run": {"serviceId": "SERVICE", "region": "REGION"}`; `destination` is for local-file redirects only. |
 | Backend serves the content but Hosting returns 404 | Rewrite missing/incorrect, or deploy stale | Fix `firebase.json` rewrites and `firebase deploy --only hosting`. |
