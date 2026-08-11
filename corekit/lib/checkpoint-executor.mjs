@@ -153,6 +153,21 @@ export async function executeCheckpoints(checkpoints, opts) {
   // fleet default (same pattern as AGENT_REDELEG_CAP / AGENT_FINALIZE_SPINE_GUARD).
   const NONTERMINAL_MILESTONE_NONHALT = process.env.AGENT_NONTERM_MILESTONE_NONHALT === '1'
     || contracts.dispatch?.nonterminal_milestone_nonhalting === true;
+  // FC-E (spine convergence): when a checkpoint resumes with ALL its tasks already banked
+  // (the delegation-resume case — the delegate's child completed, so the task is recorded
+  // done), the executor "skips" it. That skip marks the CHILD envelope complete but used to
+  // `continue` past the spine write — so the pinned spine entry stayed `pending`. Because
+  // firstIncompleteIndex() returns the first non-`complete` entry, a later re-plan (e.g. the
+  // terminal checkpoint failing) then re-targeted this already-done checkpoint and the executor
+  // restarted the WHOLE mission from it — re-running a completed edit/deploy forever (the
+  // archie->bobby->stan reset-loop: spine [pending,pending,failed] despite CP1/CP2 done). Fix:
+  // advance the spine on the skip too. Honest because a skip means the tasks SUCCEEDED (a failed
+  // task/milestone clears the step-ledger so it re-runs, never skips), delegated completions are
+  // re-derived at the resume seam (WS-3), and the terminal deliverable is re-derived again at
+  // synthesize (mandatory for delegated outcomes) before the mission is reported complete.
+  // Opt-in (changes spine bookkeeping); default OFF until proven on canary, same env pattern.
+  const SKIP_ADVANCES_SPINE = process.env.AGENT_SKIP_ADVANCES_SPINE === '1'
+    || contracts.dispatch?.skip_advances_spine === true;
   // Baton delegation model: when a checkpoint is assigned to a different agent, the whole
   // mission is handed to them (they resume this same spine) instead of spawning a child mission.
   const HANDOFF_MODE = handoffModelEnabled(contracts);
@@ -304,6 +319,14 @@ export async function executeCheckpoints(checkpoints, opts) {
         if (!cpEnvelope.completed_at) cpEnvelope.completed_at = new Date().toISOString();
         await firestoreWrite('work', cpId, cpEnvelope);
         await writeHistory(cpId, cpEnvelope.status, 'complete', 'brain', 'Skipped (empty or all tasks already complete)');
+      }
+      // FC-E: advance the pinned spine too, or firstIncompleteIndex() keeps returning this
+      // done checkpoint and a later re-plan restarts the mission here (the reset-loop). Only
+      // the spine write was missing — the child envelope was already marked complete above.
+      if (SKIP_ADVANCES_SPINE && SPINE_PINNING_ENABLED && Array.isArray(envelope._cp_spine)
+        && envelope._cp_spine[ci] && envelope._cp_spine[ci].status !== 'complete') {
+        envelope._cp_spine = markCheckpoint(envelope._cp_spine, ci, 'complete', { now: new Date().toISOString() });
+        log('INFO', `[TELEMETRY] spine_status mission=${envelope.id} cp=${cpNum} status=complete (tasks-banked skip) spine=${spineSummary(envelope._cp_spine)}`);
       }
       continue;
     }

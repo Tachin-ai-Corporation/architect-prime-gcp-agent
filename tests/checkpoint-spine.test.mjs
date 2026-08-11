@@ -213,3 +213,48 @@ describe('checkpointFailureHalts — FC-D non-terminal milestone convergence', (
     assert.equal(checkpointFailureHalts(), false);
   });
 });
+
+describe('FC-E — the reset-loop invariant the skip path must preserve', () => {
+  // The archie→bobby→stan reset-loop: a resumed EDIT and DEPLOY checkpoint (tasks banked via
+  // delegation) were skipped WITHOUT their spine entry being advanced, so the pinned spine read
+  // [pending, pending, failed] though the edit + deploy were done. firstIncompleteIndex then
+  // returns 0 (the edit), so the scoped re-plan re-targets the edit and the executor restarts the
+  // whole mission — re-running a completed edit/deploy forever. The executor fix (SKIP_ADVANCES_SPINE)
+  // marks a skipped checkpoint complete; these tests lock the spine contract that makes that correct.
+  const THREE = [
+    { instruction: 'Edit the hero headline', accept_criteria: 'headline updated', tasks: [] },
+    { instruction: 'Deploy to staging', accept_criteria: 'staging serves it', tasks: [] },
+    { instruction: 'Report the staging URL', accept_criteria: 'URL posted', tasks: [] },
+  ];
+
+  it('BUG shape: edit+deploy left pending → firstIncompleteIndex points at the EDIT (restart loop)', () => {
+    let s = buildSpine(THREE, { now: 'T' });
+    s = markCheckpoint(s, 2, 'failed', { now: 'T' });                 // only the terminal was marked
+    assert.equal(firstIncompleteIndex(s), 0, 'the reset-loop: re-plan/resume restarts from the edit');
+    assert.equal(rebuildFromSpine(s).startCpIndex, 0);
+  });
+
+  it('FIXED shape: skip advanced edit+deploy to complete → re-plan scopes to the TERMINAL only', () => {
+    let s = buildSpine(THREE, { now: 'T' });
+    s = markCheckpoint(s, 0, 'complete', { now: 'T1' });              // skip advanced the edit
+    s = markCheckpoint(s, 1, 'complete', { now: 'T2' });              // skip advanced the deploy
+    s = markCheckpoint(s, 2, 'failed', { now: 'T3' });                // terminal genuinely failed
+    assert.equal(firstIncompleteIndex(s), 2, 'only the failed terminal is re-planned');
+    assert.equal(rebuildFromSpine(s).startCpIndex, 2, 'the executor resumes at the terminal, not the edit');
+    // …and a scoped re-plan of the terminal must NOT disturb the completed edit/deploy verdicts.
+    const { spine } = applyReplan(s, 2, [{ agent: 'motor', task: 'report the url' }], { now: 'T4' });
+    assert.equal(spine[0].status, 'complete', 'edit verdict preserved');
+    assert.equal(spine[1].status, 'complete', 'deploy verdict preserved');
+    assert.equal(spine[2].status, 'pending', 'only the terminal is made runnable again');
+  });
+
+  it('once the deploy (terminal, no separate report CP) is complete, finalize is allowed', () => {
+    // The plan-structuring half of the fix folds "report the URL" into the deploy checkpoint, so a
+    // two-checkpoint mission (edit → deploy+report) finalizes cleanly when the deploy completes.
+    let s = buildSpine(THREE.slice(0, 2), { now: 'T' });
+    s = markCheckpoint(s, 0, 'complete', { now: 'T1' });
+    s = markCheckpoint(s, 1, 'complete', { now: 'T2' });
+    assert.equal(firstIncompleteIndex(s), -1, 'whole spine done');
+    assert.equal(finalizeBlockedBySpine(s), null, 'deliverable met → finalize allowed');
+  });
+});
