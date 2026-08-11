@@ -129,6 +129,18 @@ that served the page at a reachable URL SUCCEEDED. Put a runtime detail in a cri
 the requester named it as a requirement — never invented from a tool's cosmetics or a recalled
 incident.
 
+**A criterion must not require a mission-completion-time state — above all, a commit "on `main`".**
+An agent commits to its own `mission/<id>` branch; the daemon merges that branch to `main` only
+when the mission COMPLETES — a checkpoint cannot push to `main` itself (`work-commit`/`work-sync`
+target the mission branch, direct commits to `main` are refused). So a checkpoint criterion like
+"the commit is pushed to the `main` branch" or "index.html on `main` contains …" can NEVER be met
+from inside the mission: the editing organ makes the edit correctly, then FAILS its own criterion
+and thrashes (real incident — a hero-headline edit was committed correctly yet the checkpoint was
+marked failed for not being "on main"). Write the edit deliverable as its CONTENT, committed:
+"index.html contains the new hero headline, committed to the repo" — not "…on `main`". Reaching
+`main` is the daemon's completion-time mechanism, not the checkpoint's deliverable; a later deploy
+checkpoint then reads `main`, which by then carries the merged edit.
+
 ### Simplicity first
 
 The best plan is the simplest plan that gets the work done.

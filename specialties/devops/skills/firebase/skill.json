@@ -1,7 +1,7 @@
 {
   "id": "firebase",
   "name": "Firebase (Hosting: deploy, inspect, diagnose)",
-  "version": 5,
+  "version": 6,
   "description": "Deploy, inspect, and diagnose Firebase Hosting via the firebase/gcloud/gsutil/curl CLIs; apply Firestore indexes.",
   "author": "architect-prime",
   "origin": "specialty",

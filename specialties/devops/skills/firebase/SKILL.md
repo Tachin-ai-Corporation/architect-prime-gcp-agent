@@ -75,7 +75,14 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
      deploying from it are two separate missions**: if the *same* mission first commits the source
      and then deploys, the clone reads a `main` that does not yet have the commit (an empty/placeholder
      dir — the step-3 pre-deploy gate will correctly STOP you). Seed the source in one mission; let it
-     complete; deploy from `main` in a later mission.
+     complete; deploy from `main` in a later mission. **But if a teammate edited the content in an
+     EARLIER checkpoint of THIS mission that already completed, that edit is already merged to `main`
+     (delegated checkpoints merge on their own completion) — clone `main` and you get it.**
+     **Exception — YOU edited the content in this same task:** when your task both edits the site and
+     deploys it (e.g. "change the hero, then give me a staging link"), deploy the dir you EDITED — do
+     **not** re-clone `main` for the deploy, because your edit is on the mission branch, not on `main`
+     yet. Commit the edit (it merges to `main` on mission completion) AND deploy that same working tree,
+     so staging reflects the change now.
    - **`source.kind: drive`** → `drive-download <ref>` (workspace-drive) INTO the clean deploy dir.
      A Drive source is one of two **shapes** — the Deployment block may say (`file`/`folder`); if it
      doesn't, look at what actually downloads (`ls -R`):
