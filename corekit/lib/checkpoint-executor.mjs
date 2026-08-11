@@ -16,7 +16,7 @@ import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from './git-store.mjs';
 import { buildResultPacket, packToolEvidence } from './result-packet.mjs';
 import { extractResources, mergeResources, renderResources, seedFromProse } from './resource-ledger.mjs';
-import { markCheckpoint, spineSummary } from './checkpoint-spine.mjs';
+import { markCheckpoint, spineSummary, checkpointFailureHalts } from './checkpoint-spine.mjs';
 import { deployTargetLine } from './deploy-target.mjs';
 import { checkpointAssignee, sameAgent, missionOriginator, handoffPatch, handoffModelEnabled } from './baton.mjs';
 
@@ -145,6 +145,14 @@ export async function executeCheckpoints(checkpoints, opts) {
   const RESOURCE_LEDGER_MAX = contracts.memory?.resource_ledger?.max_entries ?? 200;
   const RESOURCE_LEDGER_RECALL_LIMIT = contracts.memory?.resource_ledger?.recall_limit ?? 40;
   const SPINE_PINNING_ENABLED = contracts.dispatch?.spine_pinning_enabled !== false;
+  // FC-D: a non-terminal checkpoint whose tasks succeeded but whose MILESTONE could not be
+  // confirmed (a delegate did the work in its own workspace the delegator's verifier can't see)
+  // must not HALT the mission — the deliverable (terminal) checkpoint's observable milestone is
+  // the real gate. Opt-in (changes halt semantics); default OFF until proven on canary. The
+  // AGENT_NONTERM_MILESTONE_NONHALT=1 per-VM env enables it for a canary without flipping the
+  // fleet default (same pattern as AGENT_REDELEG_CAP / AGENT_FINALIZE_SPINE_GUARD).
+  const NONTERMINAL_MILESTONE_NONHALT = process.env.AGENT_NONTERM_MILESTONE_NONHALT === '1'
+    || contracts.dispatch?.nonterminal_milestone_nonhalting === true;
   // Baton delegation model: when a checkpoint is assigned to a different agent, the whole
   // mission is handed to them (they resume this same spine) instead of spawning a child mission.
   const HANDOFF_MODE = handoffModelEnabled(contracts);
@@ -1652,8 +1660,26 @@ export async function executeCheckpoints(checkpoints, opts) {
       }
     }
 
-    // Mark checkpoint complete or failed
-    cpEnvelope.status = cpFailed ? 'failed' : 'complete';
+    // FC-D: decide whether a FAILED checkpoint HALTS the plan, or the mission may proceed. A
+    // MILESTONE-only failure (every task succeeded, only the cerebellum verdict failed) on a
+    // NON-terminal checkpoint does not halt — the delegate did the work in its own workspace the
+    // delegator's verifier cannot see, and the deliverable (terminal) checkpoint's OBSERVABLE
+    // milestone is the real gate (see checkpointFailureHalts). A real task failure, or any failure
+    // on the terminal checkpoint, still halts (fail-closed). Flag-gated (default OFF).
+    const isTerminalCp = ci === (checkpoints.length - 1);
+    const taskHardFailed = cpResults.some(r => !(typeof r.step === 'string' && r.step.endsWith('.verify')) && r.success === false);
+    const proceedPastFail = NONTERMINAL_MILESTONE_NONHALT && cpFailed
+      && !checkpointFailureHalts({ isTerminal: isTerminalCp, taskFailure: taskHardFailed });
+    if (proceedPastFail) {
+      cpEnvelope.needs_review = true;   // tasks done; milestone unconfirmed here — flagged, not fatal
+      log('WARN', `[checkpoint-executor] CP${cpNum} milestone unconfirmed but all tasks succeeded and this is NOT the deliverable checkpoint — proceeding (the terminal checkpoint's observable milestone is the gate); needs_review flagged`);
+      log('INFO', `[TELEMETRY] nonterminal_milestone_nonhalt mission=${envelope.id} cp=${cpNum}`);
+    }
+
+    // Mark checkpoint complete or failed. A proceed-past (non-halting) milestone failure records
+    // 'complete' so the spine advances and the terminal checkpoint can run + gate; the
+    // needs_review flag and the pushed .verify result keep the caveat honest.
+    cpEnvelope.status = (cpFailed && !proceedPastFail) ? 'failed' : 'complete';
 
     // C2: a failed milestone means this checkpoint's tasks must RE-RUN on the next
     // attempt — clear their step-ledger entries so the crash-resume dedup does not
@@ -1661,7 +1687,7 @@ export async function executeCheckpoints(checkpoints, opts) {
     // deploy checkpoint: the real deploy result (with the staging URL) was replaced
     // by "[REPLAYED] Step already completed" (no URL), so cerebellum re-failed forever.
     // Mode-agnostic — a re-planned checkpoint in child-mission mode benefits identically.
-    if (cpFailed && STEP_LEDGER_ENABLED && envelope.step_ledger) {
+    if (cpFailed && !proceedPastFail && STEP_LEDGER_ENABLED && envelope.step_ledger) {
       let _cleared = 0;
       for (const _k of Object.keys(envelope.step_ledger)) {
         if (envelope.step_ledger[_k] && envelope.step_ledger[_k].cp === cpNum) {
@@ -1679,10 +1705,10 @@ export async function executeCheckpoints(checkpoints, opts) {
     // what stops a later checkpoint's failure from costing this one's verdict.
     if (SPINE_PINNING_ENABLED && Array.isArray(envelope._cp_spine)) {
       envelope._cp_spine = markCheckpoint(
-        envelope._cp_spine, ci, cpFailed ? 'failed' : 'complete',
+        envelope._cp_spine, ci, (cpFailed && !proceedPastFail) ? 'failed' : 'complete',
         { now: new Date().toISOString() },
       );
-      log('INFO', `[TELEMETRY] spine_status mission=${envelope.id} cp=${cpNum} status=${cpFailed ? 'failed' : 'complete'} spine=${spineSummary(envelope._cp_spine)}`);
+      log('INFO', `[TELEMETRY] spine_status mission=${envelope.id} cp=${cpNum} status=${(cpFailed && !proceedPastFail) ? 'failed' : 'complete'}${proceedPastFail ? ' (milestone-unconfirmed, proceeding)' : ''} spine=${spineSummary(envelope._cp_spine)}`);
     }
     // Count only real task results, not the pushed cerebellum verdict pseudo-step (step
     // "N.verify") — otherwise a milestone-verification failure reads as a bogus task overflow
@@ -1692,9 +1718,11 @@ export async function executeCheckpoints(checkpoints, opts) {
     const verifyFailed = cpResults.some(r => typeof r.step === 'string' && r.step.endsWith('.verify') && !r.success);
     cpEnvelope.output = !cpFailed
       ? `Checkpoint complete: ${taskResultCount} tasks`
-      : verifyFailed
-        ? `Checkpoint failed: milestone verification not passed (${taskResultCount}/${cpTasks.length} tasks ran)`
-        : `Checkpoint failed at task ${taskResultCount}/${cpTasks.length}`;
+      : proceedPastFail
+        ? `Checkpoint tasks complete (${taskResultCount} tasks); milestone unconfirmed in this workspace — proceeding, the deliverable checkpoint is the gate (needs_review)`
+        : verifyFailed
+          ? `Checkpoint failed: milestone verification not passed (${taskResultCount}/${cpTasks.length} tasks ran)`
+          : `Checkpoint failed at task ${taskResultCount}/${cpTasks.length}`;
     // SESSION_CONTEXT_PLAN Phase 1: persist the deterministic digest for
     // observability. Dispatch context recomputes it purely from results, so
     // this field is never load-bearing (B-22). Dedicated field — never
@@ -1740,10 +1768,13 @@ export async function executeCheckpoints(checkpoints, opts) {
       }
     }
 
-    if (cpFailed) {
+    if (cpFailed && !proceedPastFail) {
       planFailed = true;
       break;
     }
+    // proceedPastFail: a non-terminal checkpoint's milestone was unconfirmed but its tasks all
+    // succeeded — do NOT halt; fall through to the next checkpoint so the deliverable (terminal)
+    // checkpoint runs and its observable milestone gates the mission.
   }
 
   // Clear progress

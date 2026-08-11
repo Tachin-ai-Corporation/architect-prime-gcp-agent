@@ -184,6 +184,33 @@ export function finalizeBlockedBySpine(spine) {
 }
 
 /**
+ * Should a FAILED checkpoint HALT the whole plan (stop and re-plan), or may the mission
+ * proceed to the next checkpoint?
+ *
+ * A checkpoint fails for one of two reasons: a TASK hard-failed (the work itself failed), or
+ * its MILESTONE verdict did not pass (cerebellum could not confirm the outcome, over tasks
+ * that all succeeded). A milestone-only failure on a NON-terminal checkpoint must NOT halt the
+ * mission: the checkpoint's work is frequently done by a DELEGATE in the delegate's OWN
+ * workspace/branch, which the delegator's verifier cannot see — so the delegator's FAIL is not
+ * proof the work is wrong — and the DELIVERABLE (the terminal checkpoint) carries its own
+ * OBSERVABLE milestone (a reachable URL, a served page) that is the real gate. Proceeding lets
+ * the terminal run and prove — or, if the earlier work really was wrong, disprove — the end
+ * state; a genuinely bad edit still surfaces as a terminal-milestone FAIL, which halts honestly.
+ *
+ * Halts when: a real task failed, OR the failure is on the TERMINAL (deliverable) checkpoint.
+ * Proceeds when: a non-terminal checkpoint's milestone failed but its tasks all succeeded.
+ * Fail-closed is preserved for real work failures and for the deliverable itself (B-28/FC-A).
+ *
+ * @param {{isTerminal:boolean, taskFailure:boolean}} o
+ * @returns {boolean} true = halt (planFailed + break); false = flag needs_review and continue
+ */
+export function checkpointFailureHalts({ isTerminal, taskFailure } = {}) {
+  if (taskFailure) return true;   // the work itself failed → halt (fail-closed)
+  if (isTerminal) return true;    // the deliverable milestone failed → halt (honest escalate)
+  return false;                   // non-terminal, tasks OK, milestone-only → proceed; terminal gates
+}
+
+/**
  * One-line shape for logs and telemetry, e.g. "3cp 1✓ 1▸ 1·".
  *
  * @param {Array} spine

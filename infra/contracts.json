@@ -138,6 +138,8 @@
     "finalize_requires_spine_complete": true,
     "redelegation_cap_enabled": true,
     "redelegation_max": 2,
+    "_nonterminal_milestone_nonhalt_comment": "FC-D (checkpoint-executor.mjs, pure checkpointFailureHalts in checkpoint-spine.mjs): a live 1health 'change the hero + give me a staging link' mission delivered the outcome (deploy checkpoint served the change on staging) but re-planned to iteration 8 without completing, because an upstream EDIT checkpoint's milestone kept 'failing' — the edit was made by a DELEGATE (bobby) in the delegate's own workspace/branch, invisible to the delegator's (archie's) cerebellum verification, so a clean edit read as a FAIL, halted the plan (executor break) and looped. When ON, a NON-terminal checkpoint whose TASKS all succeeded but whose MILESTONE could not be confirmed does not HALT the mission — it is flagged needs_review and the plan proceeds so the DELIVERABLE (terminal) checkpoint runs and its OBSERVABLE milestone (a reachable URL) gates. A real task failure, or any failure on the terminal checkpoint, still halts (fail-closed, B-28/FC-A preserved). Opt-in (changes halt semantics); default OFF until proven on canary.",
+    "nonterminal_milestone_nonhalting": false,
     "goal_state_enabled": true,
     "goal_check_required": true,
     "wait_min_minutes": 1,

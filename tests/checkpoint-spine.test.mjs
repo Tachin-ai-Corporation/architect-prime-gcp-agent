@@ -10,7 +10,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildSpine, firstIncompleteIndex, markCheckpoint, applyReplan, rebuildFromSpine, spineSummary,
-  finalizeBlockedBySpine,
+  finalizeBlockedBySpine, checkpointFailureHalts,
 } from '../corekit/lib/checkpoint-spine.mjs';
 
 const PLAN = [
@@ -186,5 +186,30 @@ describe('finalizeBlockedBySpine — the false-complete guard (FC-A)', () => {
     assert.ok(gate);
     assert.equal(gate.unmet.length, 3);
     assert.equal(gate.unmet[0].status, 'pending');
+  });
+});
+
+describe('checkpointFailureHalts — FC-D non-terminal milestone convergence', () => {
+  it('HALTS on a real task failure, terminal or not', () => {
+    assert.equal(checkpointFailureHalts({ isTerminal: false, taskFailure: true }), true);
+    assert.equal(checkpointFailureHalts({ isTerminal: true, taskFailure: true }), true);
+  });
+
+  it('HALTS on ANY failure of the terminal (deliverable) checkpoint — fail-closed', () => {
+    // The deliverable milestone is the real gate; a terminal milestone FAIL must halt honestly.
+    assert.equal(checkpointFailureHalts({ isTerminal: true, taskFailure: false }), true);
+  });
+
+  it('PROCEEDS past a NON-terminal milestone-only failure (tasks ok) — the 1health edit-checkpoint case', () => {
+    // bobby's delegated edit succeeded, but archie's cerebellum could not see it in archie's
+    // workspace → a milestone FAIL that must NOT halt: the deploy (terminal) checkpoint gates.
+    assert.equal(checkpointFailureHalts({ isTerminal: false, taskFailure: false }), false);
+  });
+
+  it('with no signals returns proceed=false (edge; the executor always passes real booleans)', () => {
+    // Pure-function edge case: undefined isTerminal/taskFailure → neither halt condition fires.
+    // The executor only calls this when cpFailed is already true AND the flag is ON, and always
+    // supplies computed booleans, so this default is defensive, not a live path.
+    assert.equal(checkpointFailureHalts(), false);
   });
 });
