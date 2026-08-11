@@ -53,13 +53,18 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
 0. **Read the deploy target from the project's `## Deployment` block — do NOT infer it.** A mission
    scoped to a project renders an authoritative Deployment block in your context (and the delegation
    often carries a `[DEPLOY TARGET] site=… project=… source=…` line). It names two DISTINCT things:
-   the **Hosting site** (the `--site` deploy target) and the **GCP/Firebase project** (`--project`).
-   They are frequently different — e.g. site `your-hosting-site` lives under project
-   `your-gcp-project` — so **never** assume the site equals the project name, and **never** run a
-   bare `firebase deploy` (no `--site`), which silently hits the project's *default* site (a
-   different service's — you'd clobber it). Every command below carries **both** `--site <hosting_site>`
-   and `--project <gcp_project>` from this block. If the project has no Deployment block and you
-   cannot determine the site, `needs_input` and ask the operator — do not guess.
+   the **Hosting site** (the deploy target) and the **GCP/Firebase project** (`--project`). They are
+   frequently different — e.g. site `your-hosting-site` lives under project `your-gcp-project` — so
+   **never** assume the site equals the project name. **The Hosting site is NOT a CLI flag.** Neither
+   `firebase deploy` nor `firebase hosting:channel:deploy` accepts `--site` — passing it errors
+   `unknown option '--site'` (verified, firebase-tools 15.x). You select the site by putting
+   `"site": "<hosting_site>"` inside the `hosting` object of `firebase.json` (Deploy step 2), or by
+   mapping a target once (`firebase target:apply hosting <target> <hosting_site>`) and deploying with
+   `--only hosting:<target>`. Every deploy command still passes `--project <gcp_project>`. Without the
+   site set in `firebase.json`, a bare deploy silently hits the project's *default* site (a different
+   service's — you'd clobber it), so in a multi-site project setting `"site"` is mandatory. If the
+   project has no Deployment block and you cannot determine the site, `needs_input` and ask the
+   operator — do not guess.
 
 1. **Get the deploy directory from the project's reviewed source — never an ad-hoc or ambient
    tree.** Use the `source` from the Deployment block:
@@ -117,10 +122,15 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
    `access_denied`/network error on the fetch usually succeeds on a retry, so retry the fetch
    first; if it still fails, escalate `needs_input`. Never deploy nothing over a live channel — a
    failed fetch must never become a shipped 404. THEN deploy to the **preview channel** first,
-   from the deploy directory:
+   **from the deploy directory** — `firebase` reads `firebase.json` from the CURRENT WORKING
+   DIRECTORY, and the motor's `runCommand` starts in a default dir that is NOT your deploy dir and
+   does NOT persist a prior `cd`. So `cd` into the deploy dir in the SAME command (reading
+   `firebase.json` by absolute path is not enough — the CLI still looks in cwd):
    ```bash
-   firebase hosting:channel:deploy staging --project=PROJECT
+   cd "$DEPLOY_DIR" && firebase hosting:channel:deploy staging --project=PROJECT
    ```
+   A bare `firebase hosting:channel:deploy …` from the wrong cwd fails with an unhelpful
+   `Command failed` (no `firebase.json` found) — not a permissions or API problem.
 4. Verify the preview URL (in the command output) serves the expected content — verify **what
    the site actually has**, not an assumed shape. **Always** confirm `/` RENDERED WHOLE (not
    merely a 200): compare the served byte size to your source (a deploy that dropped content is
@@ -228,7 +238,9 @@ architecture, the hops map on as:
 | `Error: No site found` | Hosting not initialized for the project | `firebase hosting:sites:list`; create with `firebase hosting:sites:create SITE --project=PROJECT` if needed. |
 | A page's embedded Google Doc (`<iframe>`) shows nothing / stays blank | The iframe `src` uses the RAW doc form `docs.google.com/document/d/<DOC_ID>/pub?embedded=true` (returns **401**) instead of the Published-to-web form `…/document/d/e/<PUBLISH_TOKEN>/pub?embedded=true` | In Google Docs, **File → Share → Publish to web**, copy that embed URL (it contains `/d/e/<token>/`) and use it in the iframe. The publish token **cannot** be derived from the doc id — if you lack access, ask the doc owner for the published URL. Quick check: `curl -s -o /dev/null -w '%{http_code}' <src>` → 200 = embeddable, 401 = not published. |
 | Deployed page 200s but renders blank below the hero / first section | Shipped a source file with corrupted inline JS — an upstream edit escaped its quotes (`'`→`\'`), so the script that reveals lower sections throws | Do NOT promote. `curl` the served HTML and `grep "\\'"` — stray backslash-quotes confirm it. Fix the source edit (see system-shell "quote trap"), redeploy to the preview channel, re-verify whole-page render, then promote. To recover a broken live/staging channel fast, clone the last-good version back: `firebase hosting:clone SITE:live SITE:staging` (or a REST version-release of the good version to the channel). |
-| Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Ran a bare deploy / `firebase.json` names no site, so it hit the project's default site — often because the site was inferred from the GCP project name (they differ) | Read the project's `## Deployment` block for the authoritative `hosting_site`; add `"site": "<hosting_site>"` to the `hosting` object (and always pass `--site`/`--project`), or map a target with `firebase target:apply hosting TARGET SITE`. Re-deploy to the correct site. |
+| Deploy landed on the wrong site / clobbered another service's content, or the CLI is ambiguous about which site | Ran a bare deploy / `firebase.json` names no site, so it hit the project's default site — often because the site was inferred from the GCP project name (they differ) | Read the project's `## Deployment` block for the authoritative `hosting_site`; add `"site": "<hosting_site>"` to the `hosting` object (and pass `--project`; the site comes from `firebase.json`, NOT a `--site` flag), or map a target with `firebase target:apply hosting TARGET SITE`. Re-deploy to the correct site. |
+| `error: unknown option '--site'` on `firebase deploy` or `hosting:channel:deploy` | Passed `--site` — these deploy commands have no such flag (firebase-tools 15.x) | The Hosting site is NOT a CLI flag. Put `"site": "<hosting_site>"` in the `hosting` object of `firebase.json` (or map a target: `firebase target:apply hosting TARGET SITE`, then `--only hosting:TARGET`), and pass only `--project`. |
+| `hosting:channel:deploy` / `hosting:channel:list` fail with a generic `Command failed` (no detail), yet `hosting:sites:list` works | Ran `firebase` from the wrong cwd — it reads `firebase.json` from the CURRENT directory and finds none (reading the file by absolute path doesn't help) | `cd` into the deploy dir in the SAME command: `cd "$DEPLOY_DIR" && firebase hosting:channel:deploy staging --project=PROJECT`. The motor's `runCommand` does not persist a prior `cd`. |
 | Staging/live URL 200s but serves the 33-byte Firebase default page (`Hello, Firebase Hosting!`) or a stub, not the real site | Deployed an empty/placeholder dir — the project's real source (often a Drive file, or an empty freshly-created repo) was never fetched into the deploy dir | `drive-download <source.ref>` (or clone the source repo) INTO the clean deploy dir per Deploy step 1, confirm the real files are present (`ls -R`), then redeploy to the preview channel and re-verify the served bytes match the source. |
 | Verification keeps failing on "download all files from the folder" / missing `images/`, but the source is a single file | A single-FILE Drive site (one self-contained HTML page) is being treated as an incomplete folder | A one-page site is COMPLETE as that one file: place it as `index.html`, and verify by whole-render of `/` (byte size + a below-the-fold marker), NOT by a folder inventory or `images/` paths it never had. Read the Deployment block's `source` shape (`file` vs `folder`); never write a "download the whole folder" criterion for a single-file source. |
 | `firebase init` hangs, times out (~120s), then the turn loop-guards out | `init` is interactive and blocks forever with no TTY | **Never run `firebase init` (or any `init` subcommand).** Write `firebase.json` directly (Deploy step 2), then deploy with `hosting:channel:deploy` / `deploy --only hosting`. Deploying needs no init. |
