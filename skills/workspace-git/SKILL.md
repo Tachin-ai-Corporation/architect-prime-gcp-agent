@@ -78,12 +78,23 @@ quietly corrupt the file:
   meant — a one-word change is a 1–2 line diff, not the whole file — and `grep -n "\\'" <file>`
   must return nothing (a stray `\'` = you hit the quote trap: revert the file and redo it with
   `writeFile`/`python3`). A change that corrupts the file is not a completed change.
+- **Edit the REPO-TRACKED file, inside your working dir — not a stray copy.** The file to change
+  is the one git tracks in `shared/<missionId>/` (the working dir the daemon set up). If after your
+  edit `work-diff --stat` shows **nothing changed**, you edited a file OUTSIDE the tracked tree (a
+  root-level or scratch copy at a different path) — the edit is invisible to the repo and will never
+  reach `main` or a git-source deploy. Find the tracked file (`work-status` lists it; it lives under
+  your working dir), edit THAT one, and confirm `work-diff` now shows your change.
 
 ### Commit checkpoint work
 You are ALREADY on your `mission/<missionId>` branch (the daemon put you there) and the repo is
-already cloned into the working dir. Do NOT `git checkout`/switch to `main`, and never commit on
-`main` — it is refused; the daemon merges your mission branch to main on completion. Just commit
-on the branch you are on.
+already cloned into the working dir. Do NOT `git checkout`/switch to `main`, do NOT create a NEW
+branch (do not `work-branch` a `feature/…` branch), do NOT clone, and do NOT try to `work-merge`
+your work onto `main` yourself. A push to `main` is refused, and there is **no** direct-push-to-main
+capability — the daemon merges your `mission/<missionId>` branch onto `main` **automatically on
+mission completion**. Reaching `main` is NOT your step; your job is only to edit + commit + sync on
+the branch you are already on. (A task instruction that says "create a branch from main" or "push to
+main" is over-specified — ignore the git mechanism and just edit the file in place, commit, sync.)
+Just commit on the branch you are on.
 1. Make your file changes in the working directory (see "Edit a file in the working tree").
 2. **Confirm the diff is ONLY your change before committing.** Run `work-diff --stat` — it must
    show just the file(s) you meant. If it lists unrelated or scratch files, do NOT `--add-all`

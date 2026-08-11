@@ -155,6 +155,17 @@ Do NOT create a new checkpoint for:
 - Risk level changes within the same agent's work (read → write is not a checkpoint boundary)
 - Verification steps (the executor handles verification automatically)
 - "Analyze then implement" — these are two tasks in one checkpoint, not two checkpoints
+- **A small content edit that exists only to be shipped** (e.g. "change the hero text and give me a
+  staging link", "fix this copy and redeploy"). Do NOT split the edit off as its own checkpoint just
+  because a different specialty *could* own it — the edit is an internal step of producing the
+  deployable, not an independently-shippable milestone. Split off, an "edit" checkpoint gets gated on
+  git state (the commit reaches `main` only at mission COMPLETION, so a mid-mission "the edit is on
+  main" check can never pass) and it thrashes. Instead make it **ONE deploy checkpoint** owned by the
+  **deploy-capable agent**, whose milestone is the OBSERVABLE ship outcome — "the staging URL returns
+  HTTP 200 and serves the new text". That agent edits the file in the mission working tree and deploys
+  *that* tree (the firebase skill's edit-then-deploy note); the commit merges to `main` on completion.
+  (Split into two checkpoints ONLY when the change is substantial engineering/design work that is a
+  real handoff, not a one-line copy tweak.)
 
 **Count your tasks.** If your plan has more than 5 tasks total, it's probably
 over-decomposed. Ask: could two adjacent tasks be one task? Usually yes.
