@@ -166,6 +166,17 @@ Do NOT create a new checkpoint for:
   *that* tree (the firebase skill's edit-then-deploy note); the commit merges to `main` on completion.
   (Split into two checkpoints ONLY when the change is substantial engineering/design work that is a
   real handoff, not a one-line copy tweak.)
+- **Reporting or returning a result the mission already produced** (e.g. "report the staging URL",
+  "share the preview link", "give me the URL", "send back the document link"). The checkpoint that
+  PRODUCED the artifact — the deploy that returned the URL, the build that emitted the link — is the
+  deliverable; that URL is its output, not a separate milestone. Reporting it is the mission's ANSWER:
+  a `synthesize` move (cortex), voiced by the mouth (C-27) — never a trailing "report the URL"
+  checkpoint. A separate report checkpoint re-verifies what the prior one already made: cerebellum
+  re-checks that the URL is "clearly stated", which FAILS whenever the motor's wording doesn't echo it
+  in the exact shape the verifier expects, so the terminal checkpoint churns on a milestone that adds
+  nothing — and each terminal failure re-plans the mission (the reset-loop). The deploy checkpoint,
+  whose milestone is "the staging URL returns HTTP 200 and serves the updated page", is BOTH the ship
+  and the source of the URL to report; make it the LAST checkpoint.
 
 **Count your tasks.** If your plan has more than 5 tasks total, it's probably
 over-decomposed. Ask: could two adjacent tasks be one task? Usually yes.
