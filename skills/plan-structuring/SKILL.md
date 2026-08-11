@@ -164,6 +164,14 @@ Do NOT create a new checkpoint for:
   **deploy-capable agent**, whose milestone is the OBSERVABLE ship outcome — "the staging URL returns
   HTTP 200 and serves the new text". That agent edits the file in the mission working tree and deploys
   *that* tree (the firebase skill's edit-then-deploy note); the commit merges to `main` on completion.
+  If YOU (the planning agent) are NOT that deploy-capable agent — you are an orchestrator/PM delegating
+  the work — then this edit-and-ship is a **delegation** to the teammate who owns it: a single
+  delegation covering edit+deploy to the deploy-capable teammate, or (proven, and better for a real
+  code change) a delegation of the edit to the **engineer** followed by a delegation of the deploy to
+  the deploy-capable agent. Do NOT assign the repo/source content edit to your OWN `motor`: editing a
+  project's tracked source is engineering a teammate owns, and an orchestrator's own-motor edit of
+  code/content is exactly the step that silently fails (reports success, leaves the file unchanged) and
+  then ships the un-edited tree — the deliverable comes out wrong. Delegate the edit; never motor it.
   (Split into two checkpoints ONLY when the change is substantial engineering/design work that is a
   real handoff, not a one-line copy tweak.)
 - **Reporting or returning a result the mission already produced** (e.g. "report the staging URL",
