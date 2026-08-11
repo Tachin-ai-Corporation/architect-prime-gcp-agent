@@ -64,7 +64,13 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
 1. **Get the deploy directory from the project's reviewed source — never an ad-hoc or ambient
    tree.** Use the `source` from the Deployment block:
    - **`source.kind: git`/`repo`** → clone it into a clean dir and deploy *that* (`work-clone REPO`
-     via the workspace-git skill, or `git-store clone REPO --ref main --dir DIR`).
+     via the workspace-git skill, or `git-store clone REPO --ref main --dir DIR`). A clone reads the
+     repo's **`main`** branch — and a mission's own commits land on its mission branch and merge to
+     `main` only when that mission **completes** (objects-before-refs). So **seeding a repo and
+     deploying from it are two separate missions**: if the *same* mission first commits the source
+     and then deploys, the clone reads a `main` that does not yet have the commit (an empty/placeholder
+     dir — the step-3 pre-deploy gate will correctly STOP you). Seed the source in one mission; let it
+     complete; deploy from `main` in a later mission.
    - **`source.kind: drive`** → `drive-download <ref>` (workspace-drive) INTO the clean deploy dir.
      A Drive source is one of two **shapes** — the Deployment block may say (`file`/`folder`); if it
      doesn't, look at what actually downloads (`ls -R`):
