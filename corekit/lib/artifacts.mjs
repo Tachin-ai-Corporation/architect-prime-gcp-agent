@@ -336,7 +336,7 @@ export function createArtifactManager(deps) {
     const branch = `mission/${envelopeId}`;
 
     try {
-      const { execSync } = await import('child_process');
+      const { execSync, execFileSync } = await import('child_process');
 
       // Check if git repo exists
       try {
@@ -372,11 +372,15 @@ export function createArtifactManager(deps) {
       // Set agent identity
       const agentName = agentId || 'brain';
       const agentMail = agentEmail || `${agentName}@agent`;
-      execSync(`git config user.name "${agentName}"`, { cwd: sharedDir, timeout: 3000 });
-      execSync(`git config user.email "${agentMail}"`, { cwd: sharedDir, timeout: 3000 });
+      // Shell-free (execFileSync, argv array) so identity/message free text — which can carry
+      // backticks, $, ", or newlines (the commit message is derived from the mission goal) —
+      // is never re-interpreted by /bin/sh. A backtick in the message previously opened an
+      // unterminated backquote substitution and dropped the mission-record commit.
+      execFileSync('git', ['config', 'user.name', agentName], { cwd: sharedDir, timeout: 3000 });
+      execFileSync('git', ['config', 'user.email', agentMail], { cwd: sharedDir, timeout: 3000 });
 
       // Commit
-      execSync(`git commit -m ${JSON.stringify(message)}`, { cwd: sharedDir, timeout: 10000 });
+      execFileSync('git', ['commit', '-m', message], { cwd: sharedDir, timeout: 10000 });
       const sha = execSync('git rev-parse HEAD', { cwd: sharedDir, timeout: 3000, encoding: 'utf8' }).trim();
       log('INFO', `commitAndSync: committed ${sha.slice(0, 8)} on ${branch}`);
 
