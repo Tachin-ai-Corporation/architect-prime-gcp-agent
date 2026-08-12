@@ -112,6 +112,17 @@
       "emailPattern": "legal-agent-{name}",
       "skills": ["web-search", "workspace-drive", "workspace-docs", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "legal-ops"],
       "brain": true
+    },
+    {
+      "id": "web-master",
+      "aliases": ["webmaster", "web", "web-producer"],
+      "title": "Web Master",
+      "glyph": "🌐",
+      "accent": "#14b8a6",
+      "specialty": "End-to-end ownership of a website surface — visual design, content/copy, code implementation, and Firebase staging→approval→production deploys plus hosting config, single-handed",
+      "emailPattern": "web-agent-{name}",
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "design", "design-ops", "coding", "firebase", "gcloud", "project-ops"],
+      "brain": true
     }
   ]
 }

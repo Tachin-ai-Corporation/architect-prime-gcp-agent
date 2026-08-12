@@ -1,0 +1,53 @@
+# infra/manifests/job-web-master.txt
+# Web-Master specialty — single-handed ownership of a website vertical (design + content +
+# code + Firebase deploy/config), layered on top of base + role-fleet.
+# Installed by: infra/install.sh --role fleet --job web-master
+#
+# The web-master REUSES existing specialty skills rather than copying them: each reused skill is
+# sourced from its owning specialty and installed exactly as that specialty installs it (byte-for-byte),
+# so a single source of truth is preserved and the brain discovers each skill by its skill.json id.
+# Base skills (web-search, workspace-git, skill-introspect, memory-consolidate, workspace-drive tools)
+# come from base.txt + role-fleet.txt — not re-listed here (same pattern as job-engineer.txt).
+
+specialties/web-master/workspace/MEMORY.md workspace/MEMORY.md?
+
+# Web-Master responsibilities (merged with base by Brain scheduler)
+specialties/web-master/responsibilities-web-master.json corekit/responsibilities-job.json
+
+# Specialty brain SOUL appends (assemble-persona layers these onto the base organ SOULs)
+specialties/web-master/brain/cortex/SOUL_APPEND.md corekit/specialties/web-master/brain/cortex/SOUL_APPEND.md
+specialties/web-master/brain/motor/SOUL_APPEND.md corekit/specialties/web-master/brain/motor/SOUL_APPEND.md
+specialties/web-master/brain/cerebellum/SOUL_APPEND.md corekit/specialties/web-master/brain/cerebellum/SOUL_APPEND.md
+
+# ── Reused skills (sourced from their owning specialties; single source of truth) ──
+
+# design — concept + content/copy + HTML/CSS craft + render/export/a11y loop (from designer)
+specialties/designer/skills/design/SKILL.md corekit/specialties/designer/skills/design/SKILL.md
+specialties/designer/skills/design/skill.json corekit/specialties/designer/skills/design/skill.json
+specialties/designer/skills/design/design-render bin/design-render
+specialties/designer/skills/design/design-export bin/design-export
+specialties/designer/skills/design/design-a11y bin/design-a11y
+specialties/designer/skills/design/setup.sh corekit/specialties/designer/skills/design/setup.sh
+
+# design-ops — brand-system governance (from designer)
+specialties/designer/skills/design-ops/SKILL.md corekit/specialties/designer/skills/design-ops/SKILL.md
+specialties/designer/skills/design-ops/skill.json corekit/specialties/designer/skills/design-ops/skill.json
+
+# coding — implement the design as committed code in the git-store flow (from engineer)
+specialties/engineer/skills/coding/SKILL.md corekit/specialties/engineer/skills/coding/SKILL.md
+specialties/engineer/skills/coding/skill.json corekit/specialties/engineer/skills/coding/skill.json
+
+# firebase — staging/production deploys, promote-by-clone, hosting config, URL diagnosis (from devops)
+specialties/devops/skills/firebase/SKILL.md corekit/specialties/devops/skills/firebase/SKILL.md
+specialties/devops/skills/firebase/skill.json corekit/specialties/devops/skills/firebase/skill.json
+
+# gcloud — GCP-side hosting config, Cloud Run backends, service identity (from devops)
+specialties/devops/skills/gcloud/SKILL.md corekit/specialties/devops/skills/gcloud/SKILL.md
+specialties/devops/skills/gcloud/skill.json corekit/specialties/devops/skills/gcloud/skill.json
+
+# project-ops — keep the site's project context + deploy descriptor current (from product-architect)
+specialties/product-architect/skills/project-ops/SKILL.md corekit/specialties/product-architect/skills/project-ops/SKILL.md
+specialties/product-architect/skills/project-ops/skill.json corekit/specialties/product-architect/skills/project-ops/skill.json
+
+# Workspace skills — Google Drive (skill.json only; tools come from role-fleet)
+skills/workspace-drive/skill.json skills/workspace-drive/skill.json

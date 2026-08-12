@@ -1,0 +1,9 @@
+{
+  "id": "web-master",
+  "name": "Web Master",
+  "version": "1.0.0",
+  "description": "End-to-end ownership of a website surface — visual design, content/copy, code implementation, and Firebase staging/production deploys plus hosting config, single-handed.",
+  "base_skills": ["web-search", "workspace-drive", "workspace-git"],
+  "specialty_skills": ["design", "design-ops", "coding", "firebase", "gcloud", "project-ops"],
+  "brain_appends": ["cortex", "motor", "cerebellum"]
+}
