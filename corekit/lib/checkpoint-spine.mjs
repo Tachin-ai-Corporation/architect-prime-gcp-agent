@@ -184,6 +184,34 @@ export function finalizeBlockedBySpine(spine) {
 }
 
 /**
+ * Probe-gated finalize (an FC-A refinement). finalizeBlockedBySpine gates on the SPINE — the
+ * checkpoint bookkeeping. That bookkeeping can be STALE or WRONG while the deliverable is
+ * OBSERVABLY met: a delegate deployed the change (staging serves it, HTTP 200), then a later
+ * re-plan re-tasked the deploy onto the orchestrator's OWN motor, which failed (no perms) and
+ * marked the terminal checkpoint 'failed' — so FC-A blocks a mission whose deliverable is
+ * actually live (the false-negative that stranded a 'change the hero → staging link' mission at
+ * iter 9+ though the new hero was live). The spine can't tell truth from bookkeeping; only
+ * re-deriving the ARTIFACT can. So when the mission rests on a DELEGATED observable deliverable,
+ * DEFER the spine block to the mandatory delegated-outcome re-derivation the synthesize verify
+ * already runs, and re-apply the block fail-closed unless that re-derivation explicitly confirms
+ * the deliverable (PASS). Honesty is preserved: a live artifact PASSES and finalizes; a genuinely
+ * missing one FAILS (→ honest failure) or is inconclusive (→ fail-closed, exactly as FC-A now).
+ *
+ * Two-phase (the caller runs the re-derivation between the phases): call with
+ * deliverableVerdict === undefined at the gate to decide defer-vs-block; call again with the
+ * re-derivation's verdict to decide allow-vs-block.
+ *
+ * @param {{flagOn:boolean, restsOnDelegation:boolean, deliverableVerdict?:('PASS'|'FAIL'|null)}} o
+ * @returns {'block'|'defer'|'allow'}
+ */
+export function probeGatedFinalizeAction({ flagOn, restsOnDelegation, deliverableVerdict } = {}) {
+  if (!flagOn || !restsOnDelegation) return 'block';   // flag off / not delegated → original FC-A block
+  if (deliverableVerdict === undefined) return 'defer'; // gate phase: run the ground-truth re-derivation
+  if (deliverableVerdict === 'PASS') return 'allow';    // re-derivation confirms it → finalize despite the spine
+  return 'block';                                       // FAIL / inconclusive / null → fail-closed (B-28/FC-A)
+}
+
+/**
  * Should a FAILED checkpoint HALT the whole plan (stop and re-plan), or may the mission
  * proceed to the next checkpoint?
  *

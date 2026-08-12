@@ -10,7 +10,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildSpine, firstIncompleteIndex, markCheckpoint, applyReplan, rebuildFromSpine, spineSummary,
-  finalizeBlockedBySpine, checkpointFailureHalts,
+  finalizeBlockedBySpine, checkpointFailureHalts, probeGatedFinalizeAction,
 } from '../corekit/lib/checkpoint-spine.mjs';
 
 const PLAN = [
@@ -256,5 +256,33 @@ describe('FC-E — the reset-loop invariant the skip path must preserve', () => 
     s = markCheckpoint(s, 1, 'complete', { now: 'T2' });
     assert.equal(firstIncompleteIndex(s), -1, 'whole spine done');
     assert.equal(finalizeBlockedBySpine(s), null, 'deliverable met → finalize allowed');
+  });
+});
+
+describe('probeGatedFinalizeAction — FC-A false-negative refinement (#237)', () => {
+  it('BLOCKS (original FC-A) when the flag is off, regardless of delegation', () => {
+    assert.equal(probeGatedFinalizeAction({ flagOn: false, restsOnDelegation: true, deliverableVerdict: undefined }), 'block');
+    assert.equal(probeGatedFinalizeAction({ flagOn: false, restsOnDelegation: true, deliverableVerdict: 'PASS' }), 'block');
+  });
+
+  it('BLOCKS a non-delegated mission (no ground-truth artifact to re-derive)', () => {
+    assert.equal(probeGatedFinalizeAction({ flagOn: true, restsOnDelegation: false, deliverableVerdict: undefined }), 'block');
+  });
+
+  it('DEFERS a delegated mission at the gate (verdict unknown) → run the re-derivation', () => {
+    assert.equal(probeGatedFinalizeAction({ flagOn: true, restsOnDelegation: true, deliverableVerdict: undefined }), 'defer');
+  });
+
+  it('ALLOWS finalize only when the re-derivation PASSES (deliverable observably met)', () => {
+    assert.equal(probeGatedFinalizeAction({ flagOn: true, restsOnDelegation: true, deliverableVerdict: 'PASS' }), 'allow');
+  });
+
+  it('re-BLOCKS fail-closed on a non-PASS re-derivation (FAIL / inconclusive / null)', () => {
+    assert.equal(probeGatedFinalizeAction({ flagOn: true, restsOnDelegation: true, deliverableVerdict: 'FAIL' }), 'block');
+    assert.equal(probeGatedFinalizeAction({ flagOn: true, restsOnDelegation: true, deliverableVerdict: null }), 'block');
+  });
+
+  it('empty-arg edge is a safe block', () => {
+    assert.equal(probeGatedFinalizeAction(), 'block');
   });
 });

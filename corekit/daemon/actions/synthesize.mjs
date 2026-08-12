@@ -2,7 +2,7 @@
 
 import { extractVerdict, extractFailSummary, extractProbes, stakesAtLeast } from '../../lib/verdict.mjs';
 import { filterProjectContext, validateContextEntry } from '../../lib/project-context.mjs';
-import { finalizeBlockedBySpine } from '../../lib/checkpoint-spine.mjs';
+import { finalizeBlockedBySpine, probeGatedFinalizeAction } from '../../lib/checkpoint-spine.mjs';
 
 // Pure exemption predicate — determines if verification can be skipped.
 function isSynthExempt(envelope, contracts = {}) {
@@ -65,36 +65,63 @@ export async function handleSynthesize(ctx, deps) {
     };
   }
 
-  // FC-A (B-28/B-1): a mission with a pinned spine must not synthesize a COMPLETE while
-  // its DELIVERABLE checkpoint is unmet. The 1health delivery false-completed with CP2/3/4
-  // pending and an empty deliverable after the review delegation looped — a synthesized
-  // "done" the work never reached. Fail-closed: steer to an honest escalation, and on the
-  // last iteration terminate as needs_input directly so no false-green ever escapes.
+  // restsOnDelegation: this mission IS a delegate finalizing its own claim, or it is the
+  // DELEGATOR synthesizing a teammate's returned result. Computed here (also used by the verify
+  // path below) because the probe-gated finalize refinement (FC-F) needs it at the FC-A gate.
+  const restsOnDelegation = !!envelope.source_meta?.delegation_ref
+    || priorResults.some(r => typeof r?.result === 'string' && r.result.includes('[DELEGATION RESULT'));
+
+  // FC-A (B-28/B-1): a mission with a pinned spine must not synthesize a COMPLETE while its
+  // DELIVERABLE checkpoint is unmet. Fail-closed: steer to an honest escalation, and on the last
+  // iteration terminate as needs_input directly so no false-green ever escapes.
+  //
+  // FC-F (probe_gated_finalize): the spine is BOOKKEEPING, not ground truth. A delegate can have
+  // put the deliverable live (staging serves the change, HTTP 200) while a LATER re-plan re-tasked
+  // the deploy onto the orchestrator's own motor, which failed (no perms) and marked the terminal
+  // checkpoint 'failed' — so a spine-only block is a FALSE-NEGATIVE (the observed reprove#3 churn).
+  // When the mission rests on a DELEGATED observable deliverable, DEFER this block to the mandatory
+  // delegated-outcome re-derivation the verify path below already runs, and re-apply it fail-closed
+  // unless that re-derivation explicitly confirms the deliverable (PASS). Only an OBSERVED pass
+  // unblocks — no false-positive.
+  let deferredFromSpineGate = false;
+  let spineGate = null;
+  const escalateUnmetDeliverable = async (gate, note) => {
+    const unmetList = gate.unmet.map(u => `CP${u.n} (${u.status}): ${u.outcome}`).join('; ');
+    log('WARN', `[synthesize] False-complete blocked on ${envelope.id} — deliverable checkpoint unmet: ${unmetList}${note}`);
+    log('INFO', `[TELEMETRY] finalize_blocked_spine mission=${envelope.id} unmet=${gate.unmet.length} terminal_cp=${gate.terminal.n} iter=${iteration}${note ? ' probe_gated=1 verified=0' : ''}`);
+    if (iteration < MAX_ITERATIONS - 1) {
+      return {
+        continue: true,
+        activeGuard: { forbidden: 'synthesize', fallback: 'needs_input', injectedAt: iteration },
+        priorResultsAppend: [{
+          agent: 'system',
+          result: `[SYSTEM] Cannot synthesize COMPLETE: the deliverable checkpoint "${gate.terminal.outcome}" is not done (unmet: ${unmetList}). There is no result to report. Either (1) dispatch to finish the outstanding checkpoint(s), or (2) if a delegate cannot proceed / an input or access is missing, use "needs_input" to escalate to the operator with exactly what is needed. Do NOT report this mission complete.`,
+        }],
+      };
+    }
+    // Last iteration — terminate honestly rather than let a false-complete through.
+    await completeEnvelope(envelope, {
+      status: 'needs_input',
+      output: `I could not complete this mission. The deliverable checkpoint "${gate.terminal.outcome}" did not finish (unmet: ${unmetList}). I've stopped rather than report a result I don't have — please advise how you'd like to proceed.`,
+      historyDetail: 'Finalize blocked: deliverable checkpoint unmet (fail-closed)',
+      skipArtifacts: true, skipMemory: true, skipCleanup: true,
+      tokenUsage: _tokenUsage,
+    });
+    return { exit: true };
+  };
   if (deps.CONTRACTS?.dispatch?.finalize_requires_spine_complete) {
     const gate = finalizeBlockedBySpine(envelope._cp_spine);
     if (gate) {
-      const unmetList = gate.unmet.map(u => `CP${u.n} (${u.status}): ${u.outcome}`).join('; ');
-      log('WARN', `[synthesize] False-complete blocked on ${envelope.id} — deliverable checkpoint unmet: ${unmetList}`);
-      log('INFO', `[TELEMETRY] finalize_blocked_spine mission=${envelope.id} unmet=${gate.unmet.length} terminal_cp=${gate.terminal.n} iter=${iteration}`);
-      if (iteration < MAX_ITERATIONS - 1) {
-        return {
-          continue: true,
-          activeGuard: { forbidden: 'synthesize', fallback: 'needs_input', injectedAt: iteration },
-          priorResultsAppend: [{
-            agent: 'system',
-            result: `[SYSTEM] Cannot synthesize COMPLETE: the deliverable checkpoint "${gate.terminal.outcome}" is not done (unmet: ${unmetList}). There is no result to report. Either (1) dispatch to finish the outstanding checkpoint(s), or (2) if a delegate cannot proceed / an input or access is missing, use "needs_input" to escalate to the operator with exactly what is needed. Do NOT report this mission complete.`,
-          }],
-        };
+      const PROBE_GATED_FINALIZE = process.env.AGENT_PROBE_GATED_FINALIZE === '1'
+        || deps.CONTRACTS?.dispatch?.probe_gated_finalize === true;
+      if (probeGatedFinalizeAction({ flagOn: PROBE_GATED_FINALIZE, restsOnDelegation, deliverableVerdict: undefined }) === 'defer') {
+        // Don't block on the spine — let the mandatory re-derivation below judge on ground truth.
+        deferredFromSpineGate = true;
+        spineGate = gate;
+        log('INFO', `[synthesize] FC-F: deferring the spine finalize-gate to the deliverable re-derivation on ${envelope.id} (spine says unmet: ${gate.unmet.map(u => 'CP' + u.n).join(',')}; the delegated deliverable's observable milestone is the real gate)`);
+      } else {
+        return await escalateUnmetDeliverable(gate, '');
       }
-      // Last iteration — terminate honestly rather than let a false-complete through.
-      await completeEnvelope(envelope, {
-        status: 'needs_input',
-        output: `I could not complete this mission. The deliverable checkpoint "${gate.terminal.outcome}" did not finish (unmet: ${unmetList}). I've stopped rather than report a result I don't have — please advise how you'd like to proceed.`,
-        historyDetail: 'Finalize blocked: deliverable checkpoint unmet (fail-closed)',
-        skipArtifacts: true, skipMemory: true, skipCleanup: true,
-        tokenUsage: _tokenUsage,
-      });
-      return { exit: true };
     }
   }
 
@@ -118,7 +145,10 @@ export async function handleSynthesize(ctx, deps) {
 
   // CP-6: Universal completion verification
   const skipVerify = isSynthExempt(envelope, deps.CONTRACTS);
-  if (!skipVerify && deps.dispatchAgent && deps.extractVerdict) {
+  // FC-F: when we deferred the spine finalize-gate, the deliverable MUST be re-derived here (never
+  // exempt) — this verification is the ground-truth gate that replaces the deferred spine check.
+  let verificationPassed = false;
+  if ((!skipVerify || deferredFromSpineGate) && deps.dispatchAgent && deps.extractVerdict) {
     const missionStakes = envelope.stakes || 'routine';
     const ATTACK_STAKES_MIN = deps.CONTRACTS?.dispatch?.attack_duty_stakes_min || 'consequential';
     const PROBE_ENABLED = deps.CONTRACTS?.dispatch?.verify_probe_enabled !== false;
@@ -132,8 +162,7 @@ export async function handleSynthesize(ctx, deps) {
     // verification was a shallow text-coherence check.) Detect two cases: this
     // mission IS a delegate finalizing its own claim (delegation_ref), or this
     // mission is the DELEGATOR synthesizing a teammate's returned result.
-    const restsOnDelegation = !!envelope.source_meta?.delegation_ref
-      || priorResults.some(r => typeof r?.result === 'string' && r.result.includes('[DELEGATION RESULT'));
+    // restsOnDelegation computed above (also used by the FC-A/FC-F finalize gate).
     const attackEligible = restsOnDelegation || stakesAtLeast(missionStakes, ATTACK_STAKES_MIN);
     const probeEligible = PROBE_ENABLED && (restsOnDelegation || stakesAtLeast(missionStakes, PROBE_STAKES_MIN));
 
@@ -240,6 +269,7 @@ export async function handleSynthesize(ctx, deps) {
               priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED (post-probe)] ${fSummary}\n[SYSTEM] Probes re-derived the claims against ground truth — the ANSWER must be corrected, not the work. Return "synthesize_with_failure" with an honest outcome summary.` }],
             };
           }
+          if (fv === 'PASS') verificationPassed = true;   // FC-F: post-probe PASS confirms the deliverable
           // PASS or null falls through to normal completion
         } else {
           deps.log('WARN', `[synthesize] PROBE verdict but no parseable probes on mission ${envelope.id} — failing closed (B-28)`);
@@ -256,11 +286,24 @@ export async function handleSynthesize(ctx, deps) {
         deps.log('WARN', `[synthesize] Cerebellum did not render verdict for mission ${envelope.id}`);
         envelope.needs_review = true;
         envelope.review_reason = 'Cerebellum did not render verdict on synthesis';
+      } else if (verdict === 'PASS') {
+        verificationPassed = true;   // FC-F: explicit PASS confirms the deliverable
       }
       // PASS falls through to normal completion
     } catch (e) {
       deps.log('WARN', `[synthesize] Verification failed: ${e.message}`);
     }
+  }
+
+  // FC-F: we DEFERRED the spine finalize-gate to the ground-truth re-derivation above. Re-apply it
+  // fail-closed unless the deliverable was EXPLICITLY verified — a live artifact PASSED and
+  // finalizes (the false-negative fixed); a missing/inconclusive one is escalated honestly, exactly
+  // as FC-A would have (a FAIL already returned synthesize_with_failure before reaching here).
+  if (deferredFromSpineGate) {
+    if (probeGatedFinalizeAction({ flagOn: true, restsOnDelegation, deliverableVerdict: verificationPassed ? 'PASS' : 'FAIL' }) !== 'allow') {
+      return await escalateUnmetDeliverable(spineGate, ' [probe-gated: re-derivation did not confirm the deliverable]');
+    }
+    log('INFO', `[TELEMETRY] finalize_blocked_spine mission=${envelope.id} probe_gated=1 verified=1 terminal_cp=${spineGate.terminal.n} iter=${iteration} — deliverable re-derived observably met; finalizing despite the spine verdict`);
   }
 
   await completeEnvelope(envelope, {
