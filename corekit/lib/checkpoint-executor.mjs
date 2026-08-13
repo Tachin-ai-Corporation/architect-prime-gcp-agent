@@ -490,6 +490,19 @@ export async function executeCheckpoints(checkpoints, opts) {
                 processName: { stringValue: PROJECTS[envelope.project_id]?.name || '' },
                 planId: { stringValue: envelope.plan_id || '' },
                 prime_id: { stringValue: PRIME_ID },
+                // ---- Scope fields (approval-leakage fix) ----
+                // WHO owns this gate and WHICH conversation it came from, so an
+                // "approve" reply resolves only the resolving agent's own,
+                // in-context approvals — never the whole prime's accumulated
+                // pending set (cross-agent/cross-mission leakage). Additive and
+                // always written; the scoping FILTER that reads them is flag-gated
+                // (dispatch.approval_scope_enabled). Legacy docs lack these fields
+                // and are naturally excluded by an owner-scoped resolver — which is
+                // correct, since they are exactly the stale cross-mission residue.
+                owner: { stringValue: envelope.owner || AGENT_EMAIL || AGENT_ID || '' },
+                project_id: { stringValue: envelope.project_id || '' },
+                source_channel: { stringValue: envelope.source_channel || '' },
+                source_space: { stringValue: (envelope.source_meta && (envelope.source_meta.space || envelope.source_meta.spaceName)) || (envelope.project_id && PROJECTS[envelope.project_id] && PROJECTS[envelope.project_id].gchat_space_id) || '' },
                 status: { stringValue: 'pending' },
                 requestedAt: { stringValue: new Date().toISOString() },
               }}),

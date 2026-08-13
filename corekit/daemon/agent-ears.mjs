@@ -639,6 +639,20 @@ async function updateFirestoreStatus(status) {
 
 // ---- Phase 3: Approval gate response detection ----
 async function checkApprovalResponse(text) {
+  // ---- Approval SCOPING (leakage fix): defer to the brain as the SINGLE resolver ----
+  // When approval_scope_enabled, the brain owns approval resolution: it is
+  // owner/conversation-scoped and disambiguates. Ears must NOT also auto-resolve
+  // the single most-recent PRIME-WIDE pending approval here — that divergent,
+  // unscoped path is exactly what let one agent's "approve" flip another agent's
+  // gate. Returning false lets the message fall through to normal intake, where
+  // the brain's scoped handleApprovalResponse handles it. Env override mirrors
+  // agent-brain.mjs so a per-VM canary (AGENT_APPROVAL_SCOPE=on) is consistent
+  // across both daemons; flag OFF ⇒ this fast-path behaves exactly as before.
+  const _scopeEnabled = process.env.AGENT_APPROVAL_SCOPE
+    ? process.env.AGENT_APPROVAL_SCOPE === 'on'
+    : (CONTRACTS.dispatch?.approval_scope_enabled === true);
+  if (_scopeEnabled) return false;
+
   // Extract the actual user message (after context lines)
   const lines = text.split('\n');
   const currentMsgLine = lines.find(l => l.startsWith('User: ')) || lines[lines.length - 1];

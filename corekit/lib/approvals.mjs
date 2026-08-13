@@ -224,3 +224,66 @@ export function createApprovalChecker(deps) {
     stopPolling,
   };
 }
+
+/**
+ * Pure scope filter for approval resolution (approval-leakage fix).
+ *
+ * Given the prime-wide set of PENDING approvals and the identity/context of the
+ * agent resolving an "approve"/"reject" reply, return only the approvals that
+ * agent may resolve: its OWN gates (by owner), refined to the SAME conversation
+ * (space / project / channel) when that can be determined. This collapses the
+ * cross-agent / cross-mission leak where one agent's "approve" pulled the whole
+ * fleet's accumulated pending approvals into a disambiguation (or a bulk
+ * "approve all").
+ *
+ * Semantics:
+ *  - Owner scope is STRICT when identity is known: an approval owned by a
+ *    different agent is dropped, and a legacy approval with no `owner` is dropped
+ *    too — it is stale cross-mission residue (every new doc carries an owner
+ *    once the stamping fix in checkpoint-executor ships).
+ *  - Conversation refinement only NARROWS and never strands: the most specific
+ *    discriminator that actually matches ≥1 of the agent's own approvals wins
+ *    (space > project > channel); if none apply (e.g. docs predate the stamp),
+ *    the owner-scoped set is returned unchanged.
+ *  - With no known agent identity, do NOT over-filter (return the input) — a
+ *    safety fallback so a mis-provisioned agent behaves exactly as before.
+ *
+ * Impure orphan hygiene (voiding approvals whose envelope is no longer
+ * awaiting_approval) is intentionally NOT done here — it needs envelope reads
+ * and lives in the caller. This function stays pure and unit-testable.
+ *
+ * @param {Array<object>} approvals - pending approval docs (may carry owner, source_space, project_id, source_channel)
+ * @param {object} ctx
+ * @param {string} [ctx.agentEmail] - the resolving agent's email (AGENT_EMAIL)
+ * @param {string} [ctx.space]      - the conversation's space id, if known
+ * @param {string} [ctx.projectId]  - the conversation's project id, if known
+ * @param {string} [ctx.channel]    - the conversation's channel, if known
+ * @returns {Array<object>} the subset this agent may resolve
+ */
+export function scopeApprovalsToAgent(approvals, ctx = {}) {
+  if (!Array.isArray(approvals) || approvals.length === 0) return [];
+  const { agentEmail, space, projectId, channel } = ctx;
+
+  // 1) Owner scope (strict when identity is known).
+  let scoped = agentEmail
+    ? approvals.filter(a => a && a.owner === agentEmail)
+    : approvals.slice();
+
+  if (scoped.length <= 1) return scoped; // nothing left to refine
+
+  // 2) Conversation refinement — narrow to the same conversation when we can,
+  //    using the most specific discriminator that actually applies to MY set.
+  //    A discriminator matching none of my approvals is skipped (never strand).
+  const discriminators = [
+    space     ? (a => a.source_space === space)       : null,
+    projectId ? (a => a.project_id === projectId)     : null,
+    channel   ? (a => a.source_channel === channel)   : null,
+  ].filter(Boolean);
+
+  for (const match of discriminators) {
+    const narrowed = scoped.filter(match);
+    if (narrowed.length > 0) { scoped = narrowed; break; }
+  }
+
+  return scoped;
+}

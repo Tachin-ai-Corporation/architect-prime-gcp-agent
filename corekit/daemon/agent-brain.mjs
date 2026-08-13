@@ -39,7 +39,7 @@ import { createVertexText, CORTEX_SCHEMAS, smartTruncate } from '../corekit/lib/
 import { createProjectRegistry } from '../corekit/lib/projects.mjs';
 import { createProcessEngine } from '../corekit/lib/process-engine.mjs';
 import { createScheduler } from '../corekit/lib/scheduler.mjs';
-import { createApprovalChecker } from '../corekit/lib/approvals.mjs';
+import { createApprovalChecker, scopeApprovalsToAgent } from '../corekit/lib/approvals.mjs';
 import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
 import { createArtifactManager } from '../corekit/lib/artifacts.mjs';
 import { createNotifier } from '../corekit/lib/notifications.mjs';
@@ -116,6 +116,15 @@ if (process.env.AGENT_REDELEG_CAP) {
   CONTRACTS.dispatch = CONTRACTS.dispatch || {};
   CONTRACTS.dispatch.redelegation_cap_enabled = process.env.AGENT_REDELEG_CAP === 'on';
   console.log(`[brain] redelegation_cap_enabled override from env: ${process.env.AGENT_REDELEG_CAP}`);
+}
+// Per-VM override for approval SCOPING — canary WITHOUT a global flip.
+// `AGENT_APPROVAL_SCOPE=on` scopes an "approve"/"reject" reply to the resolving
+// agent's OWN, in-conversation pending approvals (instead of the whole prime's
+// accumulated set) and lets the brain be the single resolver (ears defers).
+if (process.env.AGENT_APPROVAL_SCOPE) {
+  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
+  CONTRACTS.dispatch.approval_scope_enabled = process.env.AGENT_APPROVAL_SCOPE === 'on';
+  console.log(`[brain] approval_scope_enabled override from env: ${process.env.AGENT_APPROVAL_SCOPE}`);
 }
 
 // ---- Config ----
@@ -2612,6 +2621,49 @@ async function handleApprovalResponse(intake) {
   } catch (e) {
     log('DEBUG', `Approval pre-check query failed: ${e.message}`);
     return null; // Query failed — fall through to normal classify
+  }
+
+  // ---- Scope to THIS agent's own, in-conversation approvals (leakage fix) ----
+  // The query above is prime-wide (every fleet agent's approvals share prime_id).
+  // Without scoping, one agent's "approve" pulls the whole fleet's accumulated
+  // pending approvals into a disambiguation — or, with "approve all", bulk-resolves
+  // unrelated cross-mission/cross-agent gates. When approval_scope_enabled, narrow
+  // to the resolving agent's OWN gates (by owner, refined to the same conversation),
+  // and void any of MY own gates whose mission is no longer awaiting approval so
+  // stale residue stops piling up. Flag OFF ⇒ prior prime-wide behavior, unchanged.
+  if (CONTRACTS?.dispatch?.approval_scope_enabled && Array.isArray(pendingApprovals) && pendingApprovals.length > 0) {
+    const beforeN = pendingApprovals.length;
+    const ctxScope = {
+      agentEmail: AGENT_EMAIL || AGENT_ID || undefined,
+      space: intake.source_meta?.space || intake.source_meta?.spaceName || undefined,
+      channel: intake.source || undefined,
+    };
+    let scoped = scopeApprovalsToAgent(pendingApprovals, ctxScope);
+
+    // Opportunistic orphan hygiene: void my own pending gates whose envelope is
+    // no longer awaiting_approval (superseded / cancelled / already resolved).
+    // Best-effort and bounded (the owner-scoped set is small); never throws, and
+    // a read/write hiccup keeps the approval (fail-open, never strands a reply).
+    const live = [];
+    for (const a of scoped) {
+      try {
+        const env = a.envelopeId ? await firestoreRead('work', a.envelopeId) : null;
+        if (env && env.status && env.status !== 'awaiting_approval') {
+          await firestoreWrite('approvals', a.id, {
+            ...a, status: 'voided', resolvedAt: now(),
+            resolvedBy: `brain:scope-gc:${AGENT_ID}`,
+            reason: `Auto-voided: envelope ${a.envelopeId} is ${env.status}, not awaiting_approval`,
+          });
+          log('INFO', `Approval scope-gc: voided orphan ${a.id} (envelope ${a.envelopeId} = ${env.status})`);
+        } else {
+          live.push(a);
+        }
+      } catch { live.push(a); }
+    }
+    scoped = live;
+
+    log('INFO', `Approval scope: ${beforeN} prime-wide → ${scoped.length} own/in-context for ${ctxScope.agentEmail || 'agent'} (space=${ctxScope.space || '-'})`);
+    pendingApprovals = scoped;
   }
 
   if (!pendingApprovals || pendingApprovals.length === 0) {
