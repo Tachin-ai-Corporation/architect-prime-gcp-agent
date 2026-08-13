@@ -77,20 +77,24 @@ info "Installing CoreKit..."
 mkdir -p "${CORE_DIR}"
 curl -sfL "${CORE_BASE}/infra/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
-CORE_REF="${CORE_REF}" \
-  GH_OWNER="${GH_OWNER}" \
-  GH_REPO="${GH_REPO}" \
-  CORE_ROOT="${CORE_ROOT}" \
-  JOB_FLAGS="--job ${SPECIALTY}"
-  # Append operator job layers (comma-separated in VM metadata)
-  if [[ -n "$OPERATOR_JOBS" ]]; then
-    IFS=',' read -ra OJ_ARRAY <<< "$OPERATOR_JOBS"
-    for oj in "${OJ_ARRAY[@]}"; do
-      oj="$(echo "$oj" | xargs)"  # trim whitespace
-      [[ -n "$oj" ]] && JOB_FLAGS="$JOB_FLAGS --job $oj"
-    done
-  fi
-  bash /tmp/install.sh --role fleet $JOB_FLAGS
+# Export the CoreKit source so install.sh (a CHILD process) inherits it. Without `export`
+# these are unexported shell variables — install.sh then silently falls back to its
+# `GH_OWNER=YOUR_GITHUB_ORG` / `CORE_REF=main` defaults and 404s on the very first manifest
+# fetch. (Only JOB_FLAGS is safe as a plain var: it is expanded by THIS shell on the bash line
+# below, not read from install.sh's environment.) A missing trailing `\` on the JOB_FLAGS line
+# had detached these assignments from the `bash /tmp/install.sh` invocation, so they applied to
+# nothing.
+export CORE_REF GH_OWNER GH_REPO CORE_ROOT
+JOB_FLAGS="--job ${SPECIALTY}"
+# Append operator job layers (comma-separated in VM metadata)
+if [[ -n "$OPERATOR_JOBS" ]]; then
+  IFS=',' read -ra OJ_ARRAY <<< "$OPERATOR_JOBS"
+  for oj in "${OJ_ARRAY[@]}"; do
+    oj="$(echo "$oj" | xargs)"  # trim whitespace
+    [[ -n "$oj" ]] && JOB_FLAGS="$JOB_FLAGS --job $oj"
+  done
+fi
+bash /tmp/install.sh --role fleet $JOB_FLAGS
 
 # ---- 4) Read contracts.json for cross-cutting values ----
 CONTRACTS="${CORE_DIR}/corekit/contracts.json"
