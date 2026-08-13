@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "engines": { "node": ">=20" },
+  "_dep_pinning_comment": "@google/genai is PINNED exact (no caret): the bootstrap npm-installs at deploy time, so a caret let fresh hires drift to a newer minor than the running fleet. 2.17.0 began rejecting the gateway's manually-built function-call turns with 'Function call is missing a thought_signature in functionCall parts' (HTTP 400/500 on every motor tool-call), while the fleet on 2.8.0 was fine. Pinned to the proven 2.8.0. See loop.mjs for the thought_signature-preserving fix that makes newer versions safe again; bump this deliberately + re-verify a fresh hire's motor when raising it.",
   "dependencies": {
-    "@google/genai": "^2.0.0",
+    "@google/genai": "2.8.0",
     "@anthropic-ai/vertex-sdk": "^0.17.0"
   },
   "scripts": {
