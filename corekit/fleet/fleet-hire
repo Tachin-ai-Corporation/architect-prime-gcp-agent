@@ -142,8 +142,15 @@ if [[ -z "$EMAIL" ]]; then
 fi
 
 # ---- COMPUTE DISPLAY NAMES ----
-D_FIRST="$(echo "${SPECIALTY}-agent" | sed 's/^./\u&/' | sed 's/-\(.\)/-\u\1/g')"
-D_LAST="$(echo "${NAME}" | sed 's/^./\u&/')"
+# Derive First/Last from the resolved EMAIL local part using the SAME split-on-last-hyphen logic
+# fleet-deploy uses to write chat-config.json agentFirstName/agentLastName — so the hint the operator
+# follows matches what the agent actually expects (@-mention filtering requires an exact match).
+# Deriving from the specialty id instead diverges whenever the emailPattern prefix differs from the
+# id, e.g. specialty `web-master` with emailPattern `web-agent-{name}` → hint said "Web-Master-Agent"
+# but the agent was "Web-Agent". Keep this in lockstep with fleet-deploy lines ~107-109.
+EMAIL_LOCAL="${EMAIL%%@*}"
+D_LAST="$(echo "$EMAIL_LOCAL" | awk -F- '{print $NF}' | sed 's/^./\u&/')"
+D_FIRST="$(echo "$EMAIL_LOCAL" | sed "s/-${EMAIL_LOCAL##*-}$//" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g' | sed 's/ /-/g')"
 
 # ---- CREATE FLEET DOC (instant dashboard feedback) ----
 log "Creating fleet doc: ${NAME} (${SPECIALTY})"
