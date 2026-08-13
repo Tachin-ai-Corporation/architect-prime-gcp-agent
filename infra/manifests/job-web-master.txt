@@ -55,5 +55,13 @@ specialties/devops/skills/gcloud/skill.json corekit/specialties/web-master/skill
 specialties/product-architect/skills/project-ops/SKILL.md corekit/specialties/web-master/skills/project-ops/SKILL.md
 specialties/product-architect/skills/project-ops/skill.json corekit/specialties/web-master/skills/project-ops/skill.json
 
+# ── Owned skill: web-domains — connect a custom domain to a Firebase Hosting site ──
+# Web-master-OWNED (sourced from this specialty, installed into its own namespace). Generic:
+# register a custom domain via the Hosting customDomains REST API, report the exact DNS records
+# the operator must add at any provider (AWS Route 53, Cloudflare, …), then verify. Helper → bin/.
+specialties/web-master/skills/web-domains/SKILL.md corekit/specialties/web-master/skills/web-domains/SKILL.md
+specialties/web-master/skills/web-domains/skill.json corekit/specialties/web-master/skills/web-domains/skill.json
+specialties/web-master/skills/web-domains/domain-connect bin/domain-connect
+
 # Workspace skills — Google Drive (skill.json only; tools come from role-fleet)
 skills/workspace-drive/skill.json skills/workspace-drive/skill.json

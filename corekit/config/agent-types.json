@@ -121,7 +121,7 @@
       "accent": "#14b8a6",
       "specialty": "End-to-end ownership of a website surface — visual design, content/copy, code implementation, and Firebase staging→approval→production deploys plus hosting config, single-handed",
       "emailPattern": "web-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "design", "design-ops", "coding", "firebase", "gcloud", "project-ops"],
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "design", "design-ops", "coding", "firebase", "gcloud", "project-ops", "web-domains"],
       "brain": true
     }
   ]

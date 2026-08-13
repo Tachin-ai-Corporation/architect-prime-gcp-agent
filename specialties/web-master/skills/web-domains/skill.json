@@ -1,0 +1,13 @@
+{
+  "id": "web-domains",
+  "name": "Web Domains (Firebase Hosting custom domains + DNS)",
+  "version": 1,
+  "description": "Connect a custom domain to a Firebase Hosting site: register via the Hosting customDomains REST API, report the exact DNS records the operator must add (provider-agnostic), then verify.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "infrastructure",
+  "agent_part": "motor",
+  "when_to_use": "When a website surface needs a custom domain (apex or subdomain) pointed at its Firebase Hosting site — to determine exactly which DNS records to hand the operator/DNS admin, apply them, and verify the domain goes live over HTTPS.",
+  "scripts": ["domain-connect", "gcloud", "curl"],
+  "requires": { "bin": ["gcloud", "curl", "python3"] }
+}

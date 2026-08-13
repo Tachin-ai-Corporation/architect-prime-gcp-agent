@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# domain-connect — connect (or check) a CUSTOM DOMAIN on a Firebase Hosting site.
+#
+# It registers the domain with Firebase Hosting and reports the EXACT DNS records
+# the operator must add at their DNS provider (AWS Route 53, Cloudflare, Google
+# Cloud DNS, GoDaddy, …). It is DNS-PROVIDER-AGNOSTIC: this tool NEVER touches your
+# DNS — it tells you precisely what records to create, then verifies once they exist.
+#
+# Generic: pass any --project / --site / --domain. Nothing here is site-specific.
+#
+# Usage:
+#   domain-connect add    --project P --site S --domain D   # register + show required DNS records + state
+#   domain-connect status --project P --site S --domain D   # re-check state + remaining required records (poll this)
+#   domain-connect remove --project P --site S --domain D   # delete the custom domain registration
+#
+# Auth: uses the caller's `gcloud auth print-access-token`. The identity needs
+# roles/firebasehosting.admin (or Owner/Editor) on the Firebase PROJECT that owns SITE.
+set -euo pipefail
+
+usage() { echo "Usage: domain-connect <add|status|remove> --project P --site S --domain D" >&2; exit 2; }
+
+CMD="${1:-}"; [[ -n "$CMD" ]] && shift || usage
+PROJECT=""; SITE=""; DOMAIN=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) PROJECT="${2:-}"; shift 2;;
+    --site)    SITE="${2:-}"; shift 2;;
+    --domain)  DOMAIN="${2:-}"; shift 2;;
+    -h|--help) usage;;
+    *) echo "unknown arg: $1" >&2; usage;;
+  esac
+done
+[[ -n "$CMD" && -n "$PROJECT" && -n "$SITE" && -n "$DOMAIN" ]] || usage
+
+API="https://firebasehosting.googleapis.com/v1beta1/projects/${PROJECT}/sites/${SITE}/customDomains"
+TOKEN="$(gcloud auth print-access-token 2>/dev/null)"
+[[ -n "$TOKEN" ]] || { echo "ERROR: could not obtain an access token (gcloud auth print-access-token)" >&2; exit 1; }
+HDR=(-H "Authorization: Bearer ${TOKEN}" -H "X-Goog-User-Project: ${PROJECT}" -H "Content-Type: application/json")
+
+report() {
+  # reads the CustomDomain JSON on stdin and prints a human + operator friendly report
+  python3 - "$DOMAIN" "$SITE" "$PROJECT" <<'PY'
+import sys, json
+domain, site, project = sys.argv[1], sys.argv[2], sys.argv[3]
+raw = sys.stdin.read()
+try:
+    d = json.loads(raw)
+except Exception:
+    print("Could not parse API response:\n" + raw[:2000]); sys.exit(0)
+if isinstance(d, dict) and 'error' in d:
+    print("API error:\n" + json.dumps(d['error'], indent=2)[:1500]); sys.exit(0)
+
+host = d.get('hostState', '?'); own = d.get('ownershipState', '?')
+cert = (d.get('cert') or {}).get('state', '?')
+live = (host == 'HOST_ACTIVE' and own == 'OWNERSHIP_ACTIVE')
+print(f"domain : {domain}")
+print(f"site   : {site}  (project {project})")
+print(f"state  : hostState={host}  ownershipState={own}  certState={cert}")
+
+def collect(node):
+    out = []
+    for rs in (node or {}).get('desired', []) or []:
+        for r in rs.get('records', []) or []:
+            out.append((r.get('type', '?'),
+                        r.get('domainName', rs.get('domainName', domain)),
+                        r.get('rdata', '?'),
+                        (r.get('requiredAction', '') or '')))
+    return out
+
+rows = collect(d.get('requiredDnsUpdates'))
+rows += collect(((d.get('cert') or {}).get('verification') or {}).get('dns'))
+seen, uniq = set(), []
+for t, n, v, a in rows:
+    if a and a.upper() not in ('ADD', 'ADD_RECORD', ''):
+        continue  # only show records to ADD
+    k = (t, n, v)
+    if k in seen:
+        continue
+    seen.add(k); uniq.append((t, n, v))
+
+if uniq:
+    print("\nADD these DNS records at your DNS provider (e.g. AWS Route 53 hosted zone for the base domain):")
+    print("  %-6s  %-38s  %s" % ("TYPE", "HOST / NAME", "VALUE"))
+    print("  %-6s  %-38s  %s" % ("-" * 6, "-" * 38, "-" * 20))
+    for t, n, v in uniq:
+        print("  %-6s  %-38s  %s" % (t, n, v))
+    print("\nNotes:")
+    print("  • TXT record(s) prove domain ownership; A/AAAA/CNAME records route traffic to Firebase.")
+    print("  • These values come straight from Firebase — do NOT hardcode IPs; they can change.")
+    print("  • Add them EXACTLY as shown (TTL 3600 is fine). Apex A-records: create a standard A record")
+    print("    with each VALUE (in Route 53 a plain A record, not an alias).")
+    print("  • After the operator adds them, run:  domain-connect status --project %s --site %s --domain %s" % (project, site, domain))
+elif live:
+    print("\n✅ LIVE — the custom domain is fully connected and serving. No DNS changes required.")
+else:
+    print("\nNo required records reported yet (the API may still be computing them). Re-run `status` shortly.")
+    ref = {'requiredDnsUpdates': d.get('requiredDnsUpdates'), 'cert': d.get('cert')}
+    print("Raw reference:\n" + json.dumps(ref, indent=2)[:1800])
+PY
+}
+
+case "$CMD" in
+  add)
+    resp="$(curl -sS -X POST "${HDR[@]}" "${API}?customDomainId=${DOMAIN}" -d '{}' || true)"
+    if echo "$resp" | grep -q '"error"'; then
+      if echo "$resp" | grep -qiE 'already[ _]?exists'; then
+        echo "custom domain ${DOMAIN} is already registered — fetching current state"
+      else
+        echo "register call returned an error:"; echo "$resp" | python3 -m json.tool 2>/dev/null || echo "$resp"
+        echo "(continuing to fetch current state)"
+      fi
+    else
+      echo "registered custom domain ${DOMAIN} on site ${SITE}"
+    fi
+    curl -sS "${HDR[@]}" "${API}/${DOMAIN}" | report
+    ;;
+  status)
+    curl -sS "${HDR[@]}" "${API}/${DOMAIN}" | report
+    ;;
+  remove)
+    curl -sS -X DELETE "${HDR[@]}" "${API}/${DOMAIN}" >/dev/null && echo "removed custom-domain registration ${DOMAIN}"
+    ;;
+  *) usage;;
+esac
