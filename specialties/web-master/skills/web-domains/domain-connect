@@ -38,11 +38,13 @@ TOKEN="$(gcloud auth print-access-token 2>/dev/null)"
 HDR=(-H "Authorization: Bearer ${TOKEN}" -H "X-Goog-User-Project: ${PROJECT}" -H "Content-Type: application/json")
 
 report() {
-  # reads the CustomDomain JSON on stdin and prints a human + operator friendly report
-  python3 - "$DOMAIN" "$SITE" "$PROJECT" <<'PY'
-import sys, json
+  # prints a human + operator-friendly report from the CustomDomain JSON in $1.
+  # The JSON is passed via env (RESP), NOT stdin — stdin here is the heredoc script,
+  # so piping curl into this function would conflict (curl: (23) Failed writing body).
+  RESP="$1" python3 - "$DOMAIN" "$SITE" "$PROJECT" <<'PY'
+import sys, os, json
 domain, site, project = sys.argv[1], sys.argv[2], sys.argv[3]
-raw = sys.stdin.read()
+raw = os.environ.get('RESP', '')
 try:
     d = json.loads(raw)
 except Exception:
@@ -112,10 +114,10 @@ case "$CMD" in
     else
       echo "registered custom domain ${DOMAIN} on site ${SITE}"
     fi
-    curl -sS "${HDR[@]}" "${API}/${DOMAIN}" | report
+    report "$(curl -sS "${HDR[@]}" "${API}/${DOMAIN}")"
     ;;
   status)
-    curl -sS "${HDR[@]}" "${API}/${DOMAIN}" | report
+    report "$(curl -sS "${HDR[@]}" "${API}/${DOMAIN}")"
     ;;
   remove)
     curl -sS -X DELETE "${HDR[@]}" "${API}/${DOMAIN}" >/dev/null && echo "removed custom-domain registration ${DOMAIN}"
