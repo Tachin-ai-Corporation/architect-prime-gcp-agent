@@ -404,6 +404,14 @@ done
 
 echo "Installed ${installed} files into ${INSTALL_ROOT}."
 
+# ---- 3b. Layout symlinks ----
+# bin/ daemon code is flattened into bin/ but imports ../../lib (= ${INSTALL_ROOT}/lib), while the
+# actual modules install to corekit/lib. Create the bridge symlink so those imports resolve.
+# Idempotent (ln -sfn) and self-healing. Older agents carry this symlink from an earlier install and
+# keep it across upgrades — which is why only FRESH deploys regressed without it (agent-brain
+# crash-loops with ERR_MODULE_NOT_FOUND on lib/*.mjs, e.g. lib/verdict.mjs from actions/synthesize).
+run ln -sfn "${INSTALL_ROOT}/corekit/lib" "${INSTALL_ROOT}/lib"
+
 # ---- 4. Set permissions ----
 info "Setting ownership and permissions..."
 run chown -R 1000:1000 "${INSTALL_ROOT}" 2>/dev/null || true
