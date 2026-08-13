@@ -357,12 +357,15 @@ function convertMessagesToGoogle(messages) {
     if (msg.toolCalls && msg.toolCalls.length > 0) {
       result.push({
         role: 'model',
-        parts: msg.toolCalls.map(tc => ({
-          functionCall: {
-            name: tc.toolName || tc.name,
-            args: tc.args,
-          }
-        }))
+        parts: msg.toolCalls.map(tc => {
+          // Echo back the thoughtSignature Gemini returned with this call (captured at parse
+          // time below). Gemini 3.x "thinking" models REQUIRE it on the functionCall part in
+          // later turns — without it the API 400s: "Function call is missing a thought_signature
+          // in functionCall parts". Omitted cleanly for models/SDK versions that never emit one.
+          const part = { functionCall: { name: tc.toolName || tc.name, args: tc.args } };
+          if (tc.thoughtSignature) part.thoughtSignature = tc.thoughtSignature;
+          return part;
+        })
       });
       continue;
     }
@@ -628,7 +631,11 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
       .map(p => ({
         id: p.functionCall.name + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
         name: p.functionCall.name,
-        args: p.functionCall.args
+        args: p.functionCall.args,
+        // Capture the thoughtSignature Gemini 3.x emits alongside a functionCall part. It must be
+        // echoed back on that part in subsequent turns (see history-replay above) or the API 400s.
+        // Undefined on models/SDK versions that don't emit it — harmless.
+        thoughtSignature: p.thoughtSignature
       }));
 
     if (stepCalls.length === 0) {
@@ -654,7 +661,8 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
       toolCalls: stepCalls.map(sc => ({
         id: sc.id,
         toolName: sc.name,
-        args: sc.args
+        args: sc.args,
+        thoughtSignature: sc.thoughtSignature  // Gemini-only; carried so history-replay can echo it
       }))
     });
 
