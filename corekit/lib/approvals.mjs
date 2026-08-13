@@ -41,6 +41,7 @@ export function createApprovalChecker(deps) {
   const {
     primeId,
     gcpProject,
+    agentEmail,
   } = config;
 
   // Firestore REST base for approval queries (uses direct REST, not firestoreQuery,
@@ -76,7 +77,14 @@ export function createApprovalChecker(deps) {
 
       // Query for approved or rejected approvals
       for (const targetStatus of ['approved', 'rejected']) {
-        const queryUrl = `${FIRESTORE_BASE}/approvals:runQuery`;
+        // Root-collection runQuery is `<database>/documents:runQuery` with the
+        // collection named in `from` — NOT `<database>/documents/approvals:runQuery`,
+        // which addresses a DOCUMENT named "approvals" and returns HTTP 400. The
+        // malformed URL made this poll 400 on every cycle (silently swallowed by the
+        // `if (!resp.ok) continue`), so APPROVED missions never auto-resumed — they
+        // lingered forever in awaiting_approval. `from: collectionId: 'approvals'`
+        // (below) already names the collection; the URL must be the documents root.
+        const queryUrl = `${FIRESTORE_BASE}:runQuery`;
         const resp = await fetch(queryUrl, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -117,12 +125,29 @@ export function createApprovalChecker(deps) {
           const approvalId = row.document.name.split('/').pop();
           const envelopeId = fields.envelopeId?.stringValue;
           const processed = fields._processed?.booleanValue;
+          const apprOwner = fields.owner?.stringValue;
 
           if (!envelopeId || processed) continue;
 
+          // ---- Owner scope ----
+          // EVERY agent's brain runs this poller against the prime-wide `approvals`
+          // collection. Resume only THIS agent's OWN missions — the owning agent's
+          // poller resumes theirs. Skip a non-owned approval WITHOUT marking it
+          // _processed, so the owner still picks it up. (Approval docs carry `owner`
+          // since the approval-scope fix; older docs fall back to the envelope owner.)
+          if (agentEmail && apprOwner && apprOwner !== agentEmail) continue;
+
+          // Load the paused envelope
+          const envDoc = await firestoreRead('work', envelopeId);
+
+          // Fallback owner scope for pre-stamp approval docs (no `owner` field).
+          if (agentEmail && envDoc && envDoc.owner && envDoc.owner !== agentEmail) continue;
+
           log('INFO', `Approval ${approvalId} ${targetStatus} — resuming envelope ${envelopeId}`);
 
-          // Mark approval as processed to avoid re-processing
+          // Mark approval processed now that THIS agent owns the resume (avoids
+          // re-processing on the next poll). Done after the owner check so a
+          // non-owned approval is left for its owner.
           const approvalDocPath = row.document.name.split('/documents/')[1];
           await fetch(`${FIRESTORE_BASE}/${approvalDocPath}?updateMask.fieldPaths=_processed`, {
             method: 'PATCH',
@@ -130,8 +155,6 @@ export function createApprovalChecker(deps) {
             body: JSON.stringify({ fields: { _processed: { booleanValue: true } } }),
           }).catch(() => {});
 
-          // Load the paused envelope
-          const envDoc = await firestoreRead('work', envelopeId);
           if (!envDoc || envDoc.status !== 'awaiting_approval') {
             log('WARN', `Approval ${approvalId}: envelope ${envelopeId} not in awaiting_approval state (${envDoc?.status})`);
             continue;

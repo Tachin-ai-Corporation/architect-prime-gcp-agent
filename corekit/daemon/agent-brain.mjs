@@ -5509,6 +5509,7 @@ function _initApprovals() {
     config: {
       primeId: PRIME_ID,
       gcpProject: GCP_PROJECT,
+      agentEmail: AGENT_EMAIL,
     },
   });
 }

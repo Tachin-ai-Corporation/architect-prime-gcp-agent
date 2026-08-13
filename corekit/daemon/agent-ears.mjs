@@ -674,7 +674,10 @@ async function checkApprovalResponse(text) {
   // Check if there are any pending approvals
   try {
     const token = await getGceToken();
-    const queryUrl = `${FIRESTORE_URL}/approvals:runQuery`;
+    // Root-collection runQuery is `<database>/documents:runQuery` (collection named
+    // in `from`), NOT `.../documents/approvals:runQuery` which 400s. (This path is
+    // deferred to the brain when approval_scope_enabled; fixed for correctness.)
+    const queryUrl = `${FIRESTORE_URL}:runQuery`;
     const resp = await fetch(queryUrl, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
