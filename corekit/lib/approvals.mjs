@@ -112,7 +112,12 @@ export function createApprovalChecker(deps) {
                   ],
                 },
               },
-              limit: 5,
+              // Raised from 5: this equality query has NO orderBy, so Firestore
+              // returns by __name__ ascending — a small window let OLDER approvals
+              // (lower apr-<ts> ids) permanently starve a NEWER one out of view, so a
+              // just-approved mission never resumed. _processed marking + owner-scope
+              // keep the effective per-cycle work small.
+              limit: 100,
             },
           }),
         });
@@ -191,8 +196,29 @@ export function createApprovalChecker(deps) {
             log('INFO', `Approved: resuming process plan for ${envelopeId}`);
             await resumeProcessPlan(envDoc);
           } else {
-            // Non-process work: resume through Cortex decide loop (legacy)
-            log('INFO', `Resuming checkpoint plan from CP${pausedCpIndex + 1} task ${pausedTaskIndex + 2}`);
+            // Non-process work: resume through the Cortex decide loop.
+            // ADVANCE THE SPINE at the approved gate: the human granted the approval,
+            // so the paused checkpoint's objective (obtain approval) is MET. Mark its
+            // pinned-spine entry complete BEFORE re-entering the planner — otherwise
+            // firstIncompleteIndex keeps returning THIS checkpoint, the scoped re-plan
+            // re-inserts the approval gate, and the mission re-gates forever (observed:
+            // a prod-promote looping iter 1->2->3, a fresh apr- each time) instead of
+            // advancing to the checkpoint that performs the approved action. Only when
+            // the gate was the checkpoint's LAST task (the common approval-boundary
+            // case); otherwise leave it for the planner (advancing would drop remaining
+            // tasks). Sibling of skip_advances_spine (FC-E), at the approval seam.
+            const _cpDef = Array.isArray(pausedCheckpoints) ? pausedCheckpoints[pausedCpIndex] : null;
+            const _taskCount = ((_cpDef && (_cpDef.tasks || _cpDef.steps)) || []).length;
+            const _gateWasLastTask = !_taskCount || pausedTaskIndex >= _taskCount - 1;
+            if (_gateWasLastTask && Array.isArray(envDoc._cp_spine) && envDoc._cp_spine[pausedCpIndex]
+                && envDoc._cp_spine[pausedCpIndex].status !== 'complete') {
+              envDoc._cp_spine[pausedCpIndex].status = 'complete';
+              envDoc._cp_spine[pausedCpIndex].outcome = envDoc._cp_spine[pausedCpIndex].outcome || 'Operator approval granted at the gate';
+              envDoc._cp_spine[pausedCpIndex].verdict = envDoc._cp_spine[pausedCpIndex].verdict || 'pass';
+              log('INFO', `Approval ${approvalId}: advanced spine — CP${pausedCpIndex + 1} marked complete (approval granted); planner targets the next checkpoint`);
+            }
+
+            log('INFO', `Resuming checkpoint plan after the approved gate at CP${pausedCpIndex + 1}`);
 
             envDoc.status = 'active';
             envDoc.updated_at = now();
