@@ -105,7 +105,9 @@ mutates state.
    re-run until clean.
 5. **Self-review** the diff (`work-diff`): confirm the file(s) you intended to change actually
    show your change — if the real target file isn't in the diff, you edited the wrong path; fix
-   it. Only intended files, no stray files/leftovers/secrets.
+   it. Only intended files, no stray files/leftovers/secrets — and **no stray content**: a hunk
+   that adds or removes anything OUTSIDE your intended edit (a stray `}`/quote/tag, a truncated
+   region, reformatted lines) is a defect, not cosmetic — reduce the diff to exactly the change.
 6. **Commit** (`work-commit` with a C-23 message, `--add-all`) and **sync** (`work-sync`).
 7. **Report** what changed, how you verified it (the commands you ran and what they showed), and
    the commit sha.
@@ -116,14 +118,26 @@ Detect first, then use the project's own commands:
   run its build, run its tests, then run the app (dev server, CLI, or entry point) and confirm
   the behaviour. Example shape (read the real scripts, don't assume names): `npm install` →
   `npm run build` → `npm test` → `npm run dev` then fetch the URL.
-- **Static site (HTML/CSS/JS, no build step)**: there is nothing to compile. Prefer a
-  **no-server** check — read the file back and confirm your change is present in the markup and
-  that CSS/link/asset paths are correct relative paths; a static change rarely needs a running
-  server. When you DO need to serve it (to exercise JS/behaviour), bind a **free/ephemeral
-  port**, never a fixed common one: `python3 -m http.server 0` binds an open port (read the one
-  it prints), or pick a high random port; fetch the page, assert the change, then stop the
-  server. Never assume `:8000`/`:3000` is free — a stale server there makes the serve step churn
-  on "Address already in use". Confirm nothing else on the page broke.
+- **Static site (HTML/CSS/JS, no build step)**: there is nothing to compile — but **reading the
+  file back is NOT sufficient verification**. A syntax slip (an unclosed `<style>`/`<script>`, a
+  broken inline `<script>`, a stray character, a truncated block) leaves the *source* reading
+  fine while the *page* renders blank or mangled — the exact class of bug that keeps shipping to
+  a live site. Verify the RENDER, not the text:
+  1. **Structural check (fast, deterministic).** The tag structure must be intact: `<style>` vs
+     `</style>` counts match, `<script>` vs `</script>` counts match, and `<!doctype>` /
+     `<head>` / `</head>` / `<body>` / `</body>` are all present and in order. A truncating or
+     quote-"fixing" edit fails this immediately — an unclosed `<style>` swallows the entire body
+     as CSS text, so the page renders blank.
+  2. **Render check (mandatory for an HTML/CSS change).** Load the page in a **headless browser**
+     and read the *rendered* DOM (not the source): confirm `<body>` has content (non-empty), your
+     change is visible in the rendered output, and no other section blanked or shows stray markup.
+     If a headless **screenshot/render tool** is available (e.g. a `*-render` tool), render the
+     page and LOOK — a stray character (`}`), a broken section, or a blank fold is obvious in the
+     render and invisible in a read-back. Only a passing render proves an HTML edit. To exercise
+     JS behaviour, serve on a **free/ephemeral port** (`python3 -m http.server 0` — read the port
+     it prints; never assume `:8000`/`:3000` is free, a stale server there churns on "Address
+     already in use"), fetch, then stop the server.
+  3. **Assets & paths.** Confirm CSS/link/asset references are correct relative paths.
 - **A library or a subcommand**: exercise it — run the relevant test, or a tiny script that
   imports/calls the changed code and prints the result.
 If you genuinely cannot run it in this environment, say exactly why and verify as far as you
@@ -154,6 +168,8 @@ When handed a design, mockup, or spec (e.g. from a designer):
 | Repo is full of unrelated files/notes | A noisy or artifact-polluted repo | Identify the actual source (the files the site/app is built from) and ignore the noise; change only real source. |
 | Big diff for a small change | Reformatting or an editor rewrote unrelated lines | Reduce the diff to only the intended change; re-run the formatter the project uses (if any), not a different one. |
 | A one-word edit produced a huge diff, stray `\'` in the file, or the page renders blank below the fold | You edited by piping a large quoted block through inline `sed` — the shell escaped the apostrophes/quotes into the file | Make the edit surgical: match the smallest unique token, or use `writeFile`/a `python3` `.replace()` (literal, no shell escaping). See system-shell "Edit a file in place — quote trap". Verify `work-diff --stat` is minimal and `grep "\\'"` is empty. |
+| The whole page (or everything below a point) renders BLANK though the source "reads fine" | An unclosed `<style>`/`<script>` — often from a truncating or quote-"fixing" edit — swallows the rest of the document as CSS/JS text | Run the structural check: `<style>`==`</style>`, `<script>`==`</script>`, and `</head>`+`<body>` present/ordered. Close the unclosed tag, or **restore the file from the last-good commit** (`git checkout <good-sha> -- <file>`) instead of re-editing corrupted text. NEVER verify an HTML edit by read-back alone — render it and read the rendered body. |
+| A stray character (`}`, `{`, a quote, a tag fragment) shows up in the rendered page | An edit added markup OUTSIDE the intended change — a leftover from a template/interpolation or a botched find/replace | The diff self-review must catch it: any change outside your intended edit is a defect. Revert, redo surgically (smallest unique match, literal `.replace()`), then RENDER to confirm the artifact is gone (a read-back won't show it as wrong). |
 
 ## Safety
 - **Never** write secrets, keys, or tokens into code or commits; read them at runtime via the
